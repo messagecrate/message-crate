@@ -1,4 +1,4 @@
-//! Per-account import session records (one row per message-crate-push / CLI import run).
+//! Per-account Import Run records (one row per Import Run).
 
 use anyhow::{Result, bail};
 use chrono::Utc;
@@ -9,51 +9,55 @@ use sqlx::{Row, SqliteConnection};
 use crate::db::begin_write;
 use crate::paging::{Direction, SortKey};
 
-/// Where a live import session is in its lifecycle.
+/// Where a running Import Run is: a part of one of its Stages, or a Review
+/// between them (`CONTEXT.md`).
 ///
 /// `status` records how a run ended; this records where it is. Both are
-/// needed: a session can sit at `Write` while running, and at `Write`
-/// having failed.
+/// needed: a run can sit at `Write` while running, and at `Write` having
+/// failed. `Parse` and `Write` are the two parts of the Staging Stage.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImportStage {
-    /// Reading the backup. Nothing durable exists yet.
+    /// Staging, reading the backup. Nothing durable exists yet.
     Parse,
-    /// Writing conversation files and staging attachments.
+    /// Staging, writing conversation files and staging attachments.
     Write,
-    /// Waiting for the user to approve spending time on the media step.
-    AwaitingGate1,
-    /// Converting or compressing staged media.
-    Transcode,
-    /// Waiting for the user to approve what lands in the database.
-    AwaitingGate2,
-    /// Uploading to the server.
-    Pushing,
+    /// The Staging Review: waiting for the person to approve the Media Stage.
+    StagingReview,
+    /// The Media Stage: converting or compressing staged attachments.
+    Media,
+    /// The Media Review: waiting for the person to approve what lands in the
+    /// database.
+    MediaReview,
+    /// The Upload Stage: writing the staged messages into Message Crate.
+    Upload,
 }
 
 impl ImportStage {
+    /// Every stage, in the order a run passes through them.
+    pub const ALL: [Self; 6] = [
+        Self::Parse,
+        Self::Write,
+        Self::StagingReview,
+        Self::Media,
+        Self::MediaReview,
+        Self::Upload,
+    ];
+
     /// Stored spelling of this stage.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Parse => "parse",
             Self::Write => "write",
-            Self::AwaitingGate1 => "awaiting_gate_1",
-            Self::Transcode => "transcode",
-            Self::AwaitingGate2 => "awaiting_gate_2",
-            Self::Pushing => "pushing",
+            Self::StagingReview => "staging_review",
+            Self::Media => "media",
+            Self::MediaReview => "media_review",
+            Self::Upload => "upload",
         }
     }
 
     /// Parse a stored spelling, or `None` when it is not one of the six.
     pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "parse" => Some(Self::Parse),
-            "write" => Some(Self::Write),
-            "awaiting_gate_1" => Some(Self::AwaitingGate1),
-            "transcode" => Some(Self::Transcode),
-            "awaiting_gate_2" => Some(Self::AwaitingGate2),
-            "pushing" => Some(Self::Pushing),
-            _ => None,
-        }
+        Self::ALL.into_iter().find(|stage| stage.as_str() == s)
     }
 }
 
@@ -109,14 +113,49 @@ impl std::fmt::Display for ImportStatus {
     }
 }
 
+/// The Stage of an Import Run an issue came from: the values
+/// `import_issues.stage` holds and every issue on the wire carries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ImportIssueStage {
+    /// Reading the backup and writing its messages and attachments into the
+    /// Staging Directory.
+    Staging,
+    /// Converting or compressing the staged attachments.
+    Media,
+    /// Writing the staged messages and attachments into Message Crate.
+    Upload,
+}
+
+impl ImportIssueStage {
+    /// Every stage, in the order a run passes through them.
+    pub const ALL: [Self; 3] = [Self::Staging, Self::Media, Self::Upload];
+
+    /// The value as the wire and the database spell it.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Staging => "staging",
+            Self::Media => "media",
+            Self::Upload => "upload",
+        }
+    }
+
+    /// The stage `value` spells, or `None` for any other word.
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|s| s.as_str() == value)
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
-/// One row of `imports`: a per-account import session record.
+/// One row of `imports`: a per-account Import Run record.
 pub struct ImportRow {
-    /// Import session id.
+    /// Import Run id.
     pub id: i64,
-    /// Account that owns the session.
+    /// Account that owns the run.
     pub account_id: i64,
-    /// Source id the session imports.
+    /// Source id the run imports.
     pub source: String,
     /// Importing tool, e.g. `message-crate-push`.
     pub tool: Option<String>,
@@ -148,11 +187,11 @@ pub struct ImportRow {
     pub upload_ms: Option<i64>,
     /// Client-provided summary payload.
     pub summary_json: Option<String>,
-    /// Lifecycle stage while the session is live; `None` once it is over.
+    /// Lifecycle stage while the run is live; `None` once it is over.
     pub stage: Option<String>,
     /// Absolute path to the staging folder on the client that owns it.
     pub staging_dir: Option<String>,
-    /// Which install created the session.
+    /// Which install created the run.
     pub device_id: Option<String>,
     /// Import form snapshot, for restoring the screen.
     pub form_json: Option<String>,
@@ -162,7 +201,7 @@ pub struct ImportRow {
     pub source_identities: Option<String>,
 }
 
-/// Outcome fields written when a session completes.
+/// Outcome fields written when a run completes.
 #[derive(Debug, Clone, Default)]
 pub struct CompleteImportArgs {
     /// How the run ended: `completed`, `completed_with_issues` or `failed`.
@@ -185,7 +224,7 @@ pub struct CompleteImportArgs {
     pub upload_ms: Option<i64>,
     /// Client-provided summary payload.
     pub summary_json: Option<String>,
-    /// Per-file issues to record against the session.
+    /// Per-file issues to record against the run.
     pub issues: Vec<ImportIssueInput>,
 }
 
@@ -209,13 +248,13 @@ impl CompleteImportArgs {
     }
 }
 
-/// One problem to record against an import session.
+/// One problem to record against an Import Run.
 #[derive(Debug, Clone)]
 pub struct ImportIssueInput {
     /// Issue category: `error` or `skip`.
     pub kind: String,
-    /// Pipeline stage that reported it.
-    pub step: String,
+    /// Stage the issue came from.
+    pub stage: ImportIssueStage,
     /// The file or message the issue is about.
     pub item: String,
     /// Human-readable explanation.
@@ -227,12 +266,12 @@ pub struct ImportIssueInput {
 pub struct ImportIssueRow {
     /// Issue row id.
     pub id: i64,
-    /// Session the issue belongs to.
+    /// Run the issue belongs to.
     pub import_id: i64,
     /// Issue category: `error` or `skip`.
     pub kind: String,
-    /// Pipeline stage that reported it.
-    pub step: String,
+    /// Stage the issue came from.
+    pub stage: ImportIssueStage,
     /// The file or message the issue is about.
     pub item: String,
     /// Human-readable explanation.
@@ -241,28 +280,28 @@ pub struct ImportIssueRow {
     pub created_at: String,
 }
 
-/// An import session row plus its recorded issues.
+/// An Import Run row plus its recorded issues.
 #[derive(Debug, Clone, Serialize)]
 pub struct ImportDetail {
-    /// The session.
+    /// The run.
     pub row: ImportRow,
     /// Issues recorded for it.
     pub issues: Vec<ImportIssueRow>,
 }
 
-/// Failure looking up or reusing an import session.
+/// Failure looking up or reusing an Import Run.
 #[derive(Debug, thiserror::Error)]
 pub enum ImportLookupError {
-    /// No session with this id for this account.
+    /// No run with this id for this account.
     #[error("import {import_id} not found for this account")]
     NotFound {
-        /// The session id that was looked up.
+        /// The run id that was looked up.
         import_id: i64,
     },
-    /// Session exists but cannot be reused (wrong status/source/mode).
+    /// Run exists but cannot be reused (wrong status/source/mode).
     #[error("{message}")]
-    InvalidSession {
-        /// Why the session cannot be reused.
+    InvalidRun {
+        /// Why the run cannot be reused.
         message: String,
     },
     /// Database failure.
@@ -276,7 +315,7 @@ impl From<sqlx::Error> for ImportLookupError {
     }
 }
 
-/// Everything recorded when a session begins.
+/// Everything recorded when a run begins.
 pub struct StartImportArgs<'a> {
     /// Owning account.
     pub account_id: i64,
@@ -288,11 +327,11 @@ pub struct StartImportArgs<'a> {
     pub dedupe: bool,
     /// Client/tool name, when the caller names one.
     pub tool: Option<&'a str>,
-    /// Stage the session opens at.
+    /// Stage the run opens at.
     pub stage: ImportStage,
     /// Absolute staging path on the client.
     pub staging_dir: Option<&'a str>,
-    /// Which install is creating this session.
+    /// Which install is creating this run.
     pub device_id: Option<&'a str>,
     /// Import form snapshot as JSON.
     pub form_json: Option<&'a str>,
@@ -303,7 +342,7 @@ pub struct StartImportArgs<'a> {
 }
 
 impl<'a> StartImportArgs<'a> {
-    /// A session opening at [`ImportStage::Parse`] with nothing recorded
+    /// A run opening at [`ImportStage::Parse`] with nothing recorded
     /// about the client: no staging folder, device, form snapshot,
     /// fingerprint, or identities. The CLI importer and most tests start
     /// here; a caller with more to record uses struct update syntax on
@@ -325,18 +364,18 @@ impl<'a> StartImportArgs<'a> {
     }
 }
 
-/// Why a session could not be started.
+/// Why a run could not be started.
 #[derive(Debug, thiserror::Error)]
 pub enum StartImportError {
-    /// This account already has a live session. The partial unique index
+    /// This account already has a running Import Run. The partial unique index
     /// rejected the insert, so this holds even against a racing client.
     ///
-    /// Naming the way out matters: a killed CLI import leaves a session open
+    /// Naming the way out matters: a killed CLI import leaves a run open
     /// that blocks every later one. The desktop app's Import screen can
     /// resume or discard it; `message-crate-server imports discard` can
     /// discard it without the app.
     #[error(
-        "this account already has an active import session; open Import in the desktop app to resume or discard it, or run `message-crate-server imports discard --account <account>`"
+        "this account already has a running Import Run; open Import in the desktop app to resume or discard it, or run `message-crate-server imports discard --account <account>`"
     )]
     AlreadyActive,
     /// Anything else.
@@ -344,11 +383,11 @@ pub enum StartImportError {
     Db(anyhow::Error),
 }
 
-/// Open a new import session.
+/// Open a new Import Run.
 ///
 /// # Errors
 ///
-/// [`StartImportError::AlreadyActive`] when a live session already exists
+/// [`StartImportError::AlreadyActive`] when a running Import Run already exists
 /// for this account; [`StartImportError::Db`] for any other failure.
 pub async fn start_import(
     conn: &mut SqliteConnection,
@@ -464,7 +503,7 @@ pub async fn get_owned_import(
 /// # Errors
 ///
 /// [`ImportLookupError::NotFound`] when the account owns no such import,
-/// [`ImportLookupError::InvalidSession`] when it is no longer running.
+/// [`ImportLookupError::InvalidRun`] when it is no longer running.
 pub async fn require_running_import(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -472,7 +511,7 @@ pub async fn require_running_import(
 ) -> std::result::Result<ImportRow, ImportLookupError> {
     let existing = get_owned_import(&mut *conn, account_id, import_id).await?;
     if existing.status != ImportStatus::Running {
-        return Err(ImportLookupError::InvalidSession {
+        return Err(ImportLookupError::InvalidRun {
             message: format!(
                 "import {import_id} is not running (status={})",
                 existing.status
@@ -482,8 +521,8 @@ pub async fn require_running_import(
     Ok(existing)
 }
 
-/// Move a live session to another stage, optionally recording what the user
-/// approved at the gate they just passed.
+/// Move a running Import Run to another stage, optionally recording what the user
+/// approved at the Review they just passed.
 ///
 /// `summary_json` is written to `imports.summary_json` only when
 /// `Some`; `None` leaves whatever is already stored there untouched. Most
@@ -493,7 +532,7 @@ pub async fn require_running_import(
 /// # Errors
 ///
 /// [`ImportLookupError::NotFound`] when the account owns no such import,
-/// [`ImportLookupError::InvalidSession`] when it is no longer running.
+/// [`ImportLookupError::InvalidRun`] when it is no longer running.
 pub async fn set_import_stage(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -531,22 +570,22 @@ async fn not_running(
         Err(err) => err,
         // Running again cannot happen: a run that has finished stays
         // finished. Reported as finished, which it was at the write.
-        Ok(_) => ImportLookupError::InvalidSession {
+        Ok(_) => ImportLookupError::InvalidRun {
             message: format!("import {import_id} is not running"),
         },
     }
 }
 
-/// Close a live session the user gave up on.
+/// Close a running Import Run the user gave up on.
 ///
 /// Records `cancelled` and clears `stage`, which frees the account's
-/// single active slot. Nothing reclaims a session on a timer — a session
+/// single active slot. Nothing reclaims a run on a timer — a run
 /// is broken by an explicit discard or not at all.
 ///
 /// # Errors
 ///
 /// [`ImportLookupError::NotFound`] when the account owns no such import,
-/// [`ImportLookupError::InvalidSession`] when it is no longer running.
+/// [`ImportLookupError::InvalidRun`] when it is no longer running.
 pub async fn discard_import(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -570,14 +609,14 @@ pub async fn discard_import(
     Ok(())
 }
 
-/// Discard the account's live session, whichever it is, and return the row
+/// Discard the account's running Import Run, whichever it is, and return the row
 /// as it was before the discard; `None` when the account has no live
-/// session.
+/// run.
 ///
 /// This is the way out for a command-line operator: a killed
-/// `message-crate-server import` leaves its session running, and the
+/// `message-crate-server import` leaves its run open, and the
 /// partial unique index then refuses every later import. The operator knows
-/// the account, not the session id, so the lookup happens here rather than
+/// the account, not the run id, so the lookup happens here rather than
 /// making them find the id first.
 ///
 /// # Errors
@@ -608,7 +647,7 @@ pub async fn discard_running_import(
 /// Finish a running import: prefer client counts, else derive from linked
 /// messages. A run that has already finished is its permanent record and is
 /// never rewritten, so completing one is
-/// [`ImportLookupError::InvalidSession`] (`409`), checked first and again by
+/// [`ImportLookupError::InvalidRun`] (`409`), checked first and again by
 /// the update itself, so two completions racing cannot both land.
 pub async fn complete_import(
     conn: &mut SqliteConnection,
@@ -692,7 +731,7 @@ pub async fn complete_import(
     .execute(&mut *tx)
     .await?;
     if updated.rows_affected() == 0 {
-        return Err(ImportLookupError::InvalidSession {
+        return Err(ImportLookupError::InvalidRun {
             message: format!("import {import_id} finished while it was being completed"),
         }
         .into());
@@ -713,13 +752,13 @@ async fn insert_issues(
         sqlx::query(
             r"
             INSERT INTO import_issues (
-                import_id, kind, step, item, reason, created_at
+                import_id, kind, stage, item, reason, created_at
             ) VALUES ($1, $2, $3, $4, $5, $6)
             ",
         )
         .bind(import_id)
         .bind(&issue.kind)
-        .bind(&issue.step)
+        .bind(issue.stage.as_str())
         .bind(&issue.item)
         .bind(&issue.reason)
         .bind(Utc::now().to_rfc3339())
@@ -746,7 +785,7 @@ pub async fn get_import_detail(
     let row = get_owned_import(conn, account_id, import_id).await?;
     let issue_rows: Vec<(i64, i64, String, String, String, String, String)> = sqlx::query_as(
         r"
-        SELECT id, import_id, kind, step, item, reason, created_at
+        SELECT id, import_id, kind, stage, item, reason, created_at
         FROM import_issues
         WHERE import_id = $1
         ORDER BY id ASC
@@ -757,18 +796,23 @@ pub async fn get_import_detail(
     .await?;
     let issues = issue_rows
         .into_iter()
-        .map(
-            |(id, import_id, kind, step, item, reason, created_at)| ImportIssueRow {
+        .map(|(id, import_id, kind, stage, item, reason, created_at)| {
+            let stage = ImportIssueStage::parse(&stage).ok_or_else(|| {
+                sqlx::Error::Decode(
+                    format!("import_issues.stage holds unknown value '{stage}'").into(),
+                )
+            })?;
+            Ok(ImportIssueRow {
                 id,
                 import_id,
                 kind,
-                step,
+                stage,
                 item,
                 reason,
                 created_at,
-            },
-        )
-        .collect();
+            })
+        })
+        .collect::<std::result::Result<Vec<_>, sqlx::Error>>()?;
     Ok(ImportDetail { row, issues })
 }
 
@@ -812,7 +856,7 @@ pub struct ImportSummary {
     pub source_fingerprint: serde_json::Value,
     /// Addresses the backup's device sent from (JSON array), or null.
     pub source_identities: serde_json::Value,
-    /// What the user approved at the last gate they passed, or null. The
+    /// What the user approved at the last Review they passed, or null. The
     /// column `PATCH /v1/imports/{id}` writes with its `summary`.
     pub summary: serde_json::Value,
 }
@@ -972,7 +1016,7 @@ pub struct TopAttachment {
     /// Conversation label, when set.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conversation_title: Option<String>,
-    /// Raw text of the conversation's chat handle (via `handles`).
+    /// Raw text of the identity that keys the conversation.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chat_identifier: Option<String>,
 }
