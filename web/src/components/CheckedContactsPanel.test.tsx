@@ -7,8 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ContactDetail } from "../lib/contactDetail";
 import { keys } from "../lib/queryKeys";
 import { routeQueryKey } from "../lib/routeQueryKey";
-import { TimeZoneContext } from "../lib/timeZone";
 import { mockedAuth, renderWithProviders as render, testQueryClient } from "../test/providers";
+import { inTimeZone } from "../test/timeZone";
 import CheckedContactsPanel from "./CheckedContactsPanel";
 
 vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
@@ -143,9 +143,10 @@ describe("CheckedContactsPanel", () => {
     client.setQueryData(routeQueryKey(7, keys.contacts.detail(1)), sam);
 
     rtlRender(
-      <TimeZoneContext.Provider value="UTC">
-        <CheckedContactsPanel contacts={[{ id: "1", name: "Sam" }]} onClear={() => {}} />
-      </TimeZoneContext.Provider>,
+      inTimeZone(
+        "UTC",
+        <CheckedContactsPanel contacts={[{ id: "1", name: "Sam" }]} onClear={() => {}} />,
+      ),
       {
         wrapper: ({ children }) => (
           <QueryClientProvider client={client}>{children}</QueryClientProvider>

@@ -2,8 +2,8 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { TimeZoneContext } from "../lib/timeZone";
 import type { Message } from "../lib/types";
+import { inTimeZone } from "../test/timeZone";
 import MessageSearchRow from "./MessageSearchRow";
 
 afterEach(cleanup);
@@ -39,9 +39,10 @@ function message(over: Partial<Message> = {}): Message {
 
 function renderRow(m: Message, terms = [{ text: "photo", prefix: false }]) {
   return render(
-    <TimeZoneContext.Provider value="America/New_York">
-      <MessageSearchRow message={m} terms={terms} isSelected={false} onClick={() => {}} />
-    </TimeZoneContext.Provider>,
+    inTimeZone(
+      "America/New_York",
+      <MessageSearchRow message={m} terms={terms} isSelected={false} onClick={() => {}} />,
+    ),
   );
 }
 
@@ -51,8 +52,10 @@ describe("MessageSearchRow", () => {
     const row = screen.getByRole("button");
     expect(row).toHaveTextContent("Family");
     expect(row).toHaveTextContent(
-      new Date("2024-01-01T12:00:00Z").toLocaleDateString([], {
-        timeZone: "UTC",
+      // The message's own instant, as a day in New York, where it is still
+      // 1 January: a row that formatted in UTC would show 2 January.
+      new Date("2024-01-02T03:30:00Z").toLocaleDateString([], {
+        timeZone: "America/New_York",
         year: "numeric",
         month: "short",
         day: "numeric",
