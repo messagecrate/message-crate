@@ -251,8 +251,13 @@ fn executable_name(name: &str) -> String {
 /// How much of the end of ffmpeg's stderr a failure carries.
 const STDERR_TAIL_BYTES: usize = 8 * 1024;
 
-/// Run ffmpeg with `args`, failing with the end of its stderr when it exits
-/// non-zero.
+/// Flags in front of every ffmpeg run: no version banner or build
+/// configuration, no stats line, and only errors on stderr. A failure then
+/// carries the lines that say why it failed, not kilobytes of preamble.
+const QUIET_FFMPEG: [&str; 4] = ["-hide_banner", "-nostats", "-loglevel", "error"];
+
+/// Run ffmpeg with [`QUIET_FFMPEG`] and `args`, failing with the end of its
+/// stderr when it exits non-zero.
 ///
 /// A thread reads stderr while ffmpeg runs. ffmpeg writes a stats line about
 /// twice a second, and a pipe nobody reads fills at 64 KiB on Linux, after
@@ -264,6 +269,7 @@ pub(crate) fn run_ffmpeg(args: &[String]) -> Result<()> {
         )
     })?;
     let mut child = Command::new(ffmpeg)
+        .args(QUIET_FFMPEG)
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -477,6 +483,37 @@ mod tests {
             message.contains("in.mov: Invalid data found when processing input"),
             "message was {message:?}"
         );
+    }
+
+    /// ffmpeg writes its banner, build configuration and stats lines unless
+    /// told not to, and a failure carried them in front of its cause. The
+    /// mock writes them as ffmpeg does, unless it is given the quiet flags
+    /// (#1412).
+    #[cfg(unix)]
+    #[test]
+    fn run_ffmpeg_failure_carries_the_cause_without_the_banner_or_stats() {
+        let _guard = tools_test_lock();
+        let _restore = RestoreToolsDir::capture();
+        let _dir = mock_ffmpeg_dir(concat!(
+            "case \" $* \" in *' -hide_banner '*) ;; *) ",
+            "echo 'ffmpeg version 6.1.1 Copyright (c) 2000-2023 the FFmpeg developers' >&2; ",
+            "echo '  configuration: --enable-gpl --enable-libx265' >&2 ;; esac\n",
+            "case \" $* \" in *' -nostats '*) ;; *) ",
+            "echo 'frame=  12 fps=0.0 q=0.0 size=       0kB time=00:00:00.40' >&2 ;; esac\n",
+            "echo 'in.mov: Invalid data found when processing input' >&2\nexit 1",
+        ));
+
+        let err =
+            run_ffmpeg_within_a_minute(&["-i", "in.mov", "out.mp4"]).expect_err("ffmpeg exits 1");
+
+        let message = format!("{err:#}");
+        assert!(
+            message.contains("in.mov: Invalid data found when processing input"),
+            "the cause is kept: {message:?}"
+        );
+        for preamble in ["ffmpeg version", "configuration:", "frame="] {
+            assert!(!message.contains(preamble), "{preamble} kept: {message:?}");
+        }
     }
 
     /// A failure after megabytes of warnings keeps the end, where ffmpeg
