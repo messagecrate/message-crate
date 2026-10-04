@@ -110,7 +110,6 @@ export default function OwnerHome() {
       <AppHeader
         searchQuery={accountSearch}
         searchTarget="accounts"
-        fullScreen={false}
         onSearchChange={handleSearchChange}
         onSearch={handleSearchChange}
       />

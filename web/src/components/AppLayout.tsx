@@ -11,7 +11,7 @@ import { useContactGroups } from "../lib/useContactGroups";
 import { useMessageTags } from "../lib/useMessageTags";
 import ContactList from "../screens/ContactList";
 import ConversationList from "../screens/ConversationList";
-import AppHeader from "./AppHeader";
+import AppHeader, { type HeaderSearchTarget } from "./AppHeader";
 import CheckedContactsPanel from "./CheckedContactsPanel";
 import { ColumnResizeProvider } from "./ColumnResizeContext";
 import ContactDrawer from "./ContactDrawer";
@@ -144,15 +144,20 @@ export default function AppLayout() {
 
   const trashMode = mode === "trash";
   const isFullScreen = mode === "import" || mode === "export" || mode === "settings";
-  // The full-screen routes have no list to search. Export carries `?q=` for
-  // its own scope box, which is not a header search.
-  const searchQuery = isFullScreen
-    ? ""
+  // The header search searches the list of the section the person is in.
+  // The full-screen routes have no list, so the header offers no search there:
+  // Export carries `?q=` for its own scope box, which typing in the header
+  // must never change.
+  const searchTarget: HeaderSearchTarget | null = isFullScreen
+    ? null
     : trashMode
-      ? trashSearch
+      ? "trash"
       : contactsMode
-        ? contactSearch
-        : conversationSearch;
+        ? "contacts"
+        : resultsView(searchParams) === "messages"
+          ? "messages"
+          : "conversations";
+  const searchQuery = trashMode ? trashSearch : contactsMode ? contactSearch : conversationSearch;
 
   // `replace: true` is inherited from every other caller here and is
   // deliberate: typing in a search box must not fill the history with one
@@ -280,16 +285,7 @@ export default function AppLayout() {
       <div className="flex h-screen flex-col bg-bg font-sans text-text">
         <AppHeader
           searchQuery={searchQuery}
-          searchTarget={
-            trashMode
-              ? "trash"
-              : contactsMode
-                ? "contacts"
-                : resultsView(searchParams) === "messages"
-                  ? "messages"
-                  : "conversations"
-          }
-          fullScreen={isFullScreen}
+          searchTarget={searchTarget}
           onSearchChange={handleSearchChange}
           onSearch={handleSearch}
         />

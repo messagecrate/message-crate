@@ -76,22 +76,22 @@ const SEARCH_TARGETS: Record<
 export default function AppHeader({
   searchQuery,
   searchTarget,
-  fullScreen,
   onSearchChange,
   onSearch,
 }: {
   searchQuery: string;
-  searchTarget: HeaderSearchTarget;
   /**
-   * True on Import, Export and Settings, which have no list: the box's value
-   * there is always empty, so it starts again when a list comes back rather
-   * than keeping text typed there, which searched no list.
+   * The list the search box searches: the one in the section the person is
+   * in. `null` on a screen with no list (Import, Export, Settings), which
+   * shows no box. The bar keeps its height and the middle stays, empty, so
+   * the name and the account button do not move, and a box that comes back
+   * starts from its list's search rather than from text typed before.
    */
-  fullScreen: boolean;
+  searchTarget: HeaderSearchTarget | null;
   onSearchChange: (v: string) => void;
   onSearch: (q: string) => void;
 }) {
-  const target = SEARCH_TARGETS[searchTarget];
+  const target = searchTarget === null ? null : SEARCH_TARGETS[searchTarget];
   // Same key as LeftPanel so a stored width does not flash at the default.
   const [brandWidth] = useState(() =>
     loadWidth(
@@ -105,7 +105,7 @@ export default function AppHeader({
   return (
     <>
       <header
-        className={`relative flex shrink-0 items-center border-b border-border bg-panel ${Z_APP_HEADER}`}
+        className={`relative flex h-14 shrink-0 items-center border-b border-border bg-panel ${Z_APP_HEADER}`}
       >
         <div
           className="box-border flex h-12 shrink-0 items-center px-3"
@@ -113,19 +113,23 @@ export default function AppHeader({
         >
           <span className="text-[0.875rem] font-bold text-text">Message Crate</span>
         </div>
-        <div className="flex min-w-0 flex-1 items-center justify-center px-3 py-2">
-          <div className="w-full max-w-xl">
-            <SearchBar
-              key={fullScreen ? `${searchTarget}-full-screen` : searchTarget}
-              value={searchQuery}
-              scope={target.scope}
-              list={target.list}
-              placeholder={target.placeholder}
-              advancedMode={target.advancedMode}
-              onChange={onSearchChange}
-              onSubmit={onSearch}
-            />
-          </div>
+        {/* The bar's height is fixed rather than taken from the search box, so
+            a screen with no box keeps the same header. */}
+        <div className="flex min-w-0 flex-1 items-center justify-center px-3">
+          {target && (
+            <div className="w-full max-w-xl">
+              <SearchBar
+                key={searchTarget}
+                value={searchQuery}
+                scope={target.scope}
+                list={target.list}
+                placeholder={target.placeholder}
+                advancedMode={target.advancedMode}
+                onChange={onSearchChange}
+                onSubmit={onSearch}
+              />
+            </div>
+          )}
         </div>
         <div className="flex shrink-0 items-center px-3">
           <AppAccountMenu />
