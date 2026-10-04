@@ -246,9 +246,9 @@ fn every_conversation_file_is_a_current_schema_document_and_the_counts_match_the
             .filter(|(source, _)| source == wanted)
             .count()
     };
-    assert_eq!(per_source(IMESSAGE_SOURCE), 20);
-    assert_eq!(per_source(SBR_SOURCE), 5);
-    assert_eq!(per_source(WHATSAPP_SOURCE), 6);
+    assert_eq!(per_source(IMESSAGE_SOURCE), 17);
+    assert_eq!(per_source(SBR_SOURCE), 3);
+    assert_eq!(per_source(WHATSAPP_SOURCE), 4);
     let empty_threads = documents
         .iter()
         .filter(|(_, doc)| doc.messages.is_empty())
