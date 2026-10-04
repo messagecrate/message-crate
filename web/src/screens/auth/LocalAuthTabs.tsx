@@ -5,6 +5,9 @@ import ClaimForm from "./ClaimForm";
 import CreateAccountForm from "./CreateAccountForm";
 import LoginForm from "./LoginForm";
 
+/** Login and Create Account share the strip in halves, in the card's 14px text. */
+const loginTabClass = "flex-1 text-center text-[0.875rem]";
+
 /**
  * The ways into a Message Crate, which depend on what state it is in.
  *
@@ -59,10 +62,10 @@ export default function LocalAuthTabs({
         aria-label="Log in or create an account"
         className="relative mb-6 flex border-b border-border"
       >
-        <Tab id="login" className="flex-1 text-center text-[0.875rem]">
+        <Tab id="login" className={loginTabClass}>
           Login
         </Tab>
-        <Tab id="create" className="flex-1 text-center text-[0.875rem]">
+        <Tab id="create" className={loginTabClass}>
           Create Account
         </Tab>
       </TabList>
