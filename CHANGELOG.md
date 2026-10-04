@@ -756,11 +756,11 @@ released versions carry their date on the heading.
 
 #### Search
 
-- 2026-10-04 **`identity:` finds only phone numbers, email addresses and
-  usernames.** `identity:nam` listed every conversation known only by a
-  name, and `identity:less` the conversation that names nobody, though
-  neither has an address that matches. `identity:` now matches only a real
-  phone number, email address or username, as `with:` does.
+- 2026-10-04 **`identity:` no longer lists every conversation known only
+  by a name.** `identity:nam` listed every conversation whose backup gave a
+  name and no address, and `identity:less` the conversation that names
+  nobody. Neither search lists them now, unless someone in them has an
+  identity that matches.
 - 2026-10-04 **Import, Export and Settings show no search box.** The search
   at the top searches the list of the section you are in, and these screens
   have no list yet, so the box there searched nothing. On Export, typing in it
