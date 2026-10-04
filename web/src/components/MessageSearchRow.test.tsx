@@ -52,6 +52,7 @@ describe("MessageSearchRow", () => {
     expect(row).toHaveTextContent("Family");
     expect(row).toHaveTextContent(
       new Date("2024-01-01T12:00:00Z").toLocaleDateString([], {
+        timeZone: "UTC",
         year: "numeric",
         month: "short",
         day: "numeric",

@@ -48,7 +48,11 @@ const identities = () =>
 
 describe("IdentityTable", () => {
   it("shows the eight columns, text left and numbers right, with the header aligned like its cells", () => {
-    render(<IdentityTable {...dates} rows={rows} onRemove={() => {}} />);
+    render(
+      <TimeZoneContext.Provider value="UTC">
+        <IdentityTable {...dates} rows={rows} onRemove={() => {}} />
+      </TimeZoneContext.Provider>,
+    );
 
     expect(headers()).toEqual([
       "Service",
@@ -163,7 +167,11 @@ describe("IdentityTable", () => {
 
     // The rows' conversations add up to 3; two identities share one, so the
     // contact has 2.
-    render(<IdentityTable {...dates} rows={rows} totalConversations={2} onRemove={() => {}} />);
+    render(
+      <TimeZoneContext.Provider value="UTC">
+        <IdentityTable {...dates} rows={rows} totalConversations={2} onRemove={() => {}} />
+      </TimeZoneContext.Provider>,
+    );
     const summary = screen.getByText("Summary").closest("[role=row]");
     const cells = within(summary as HTMLElement).getAllByRole("gridcell");
     expect(cells.map((c) => c.textContent)).toEqual([
