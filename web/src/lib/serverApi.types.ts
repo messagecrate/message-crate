@@ -1550,10 +1550,11 @@ export interface components {
         /** @description One of an account's Import Runs as its reader may see it. */
         AccountImportRun: components["schemas"]["ImportRun"] | components["schemas"]["OwnerImportRun"];
         /**
-         * @description An account's Import Runs as its reader may see them: in full for the
-         *     account itself, each an `OwnerImportRun` for the owner.
+         * @description An account's Import Runs as its reader may see them: each an
+         *     `ImportRunSummary` for the account itself, an `OwnerImportRun` for the
+         *     owner. Neither carries the run's issues.
          */
-        AccountImportRuns: components["schemas"]["Page_ImportRun"] | components["schemas"]["Page_OwnerImportRun"];
+        AccountImportRuns: components["schemas"]["Page_ImportRunSummary"] | components["schemas"]["Page_OwnerImportRun"];
         /** @description One account's share of the messages held: an id, a username and numbers. */
         AccountMessages: {
             /** Format: int64 */
@@ -2574,11 +2575,23 @@ export interface components {
         };
         /**
          * @description An Import Run: one per import, the same record wherever the interface
-         *     hands one out. It holds the counts Settings shows, everything the desktop
-         *     app needs to resume a running run, and the issues and notes the run
-         *     recorded.
+         *     hands one run out. It is the run as a list answers it, the
+         *     `ImportRunSummary`, with the issues and the notes the run recorded.
          */
-        ImportRun: {
+        ImportRun: components["schemas"]["ImportRunSummary"] & {
+            /** @description Issues the run recorded, oldest first. */
+            issues: components["schemas"]["ImportIssue"][];
+            /** @description Notes the run recorded, oldest first, apart from its issues. */
+            notes: components["schemas"]["ImportNote"][];
+        };
+        /**
+         * @description An Import Run as a list of runs answers it: every field of the run but
+         *     its issues and notes. A run may record any number of either, so a page
+         *     that carried them would have no bound on its size; `GET /v1/imports/{id}`
+         *     answers them (#1559,
+         *     `docs/architecture/http-api.md`, "Lists").
+         */
+        ImportRunSummary: {
             /**
              * Format: int64
              * @description Attachments counted for the run.
@@ -2622,8 +2635,11 @@ export interface components {
              * @description Import Run id.
              */
             id: number;
-            /** @description Issues the run recorded, oldest first. */
-            issues: components["schemas"]["ImportIssue"][];
+            /**
+             * Format: int64
+             * @description How many issues the run recorded.
+             */
+            issue_count: number;
             /**
              * Format: int64
              * @description Messages counted for the run.
@@ -2631,8 +2647,6 @@ export interface components {
             message_count: number;
             /** @description Import mode (`replace` or `append`). */
             mode: string;
-            /** @description Notes the run recorded, oldest first, apart from its issues. */
-            notes: components["schemas"]["ImportNote"][];
             /**
              * Format: int64
              * @description Time spent parsing, when finished.
@@ -2898,6 +2912,12 @@ export interface components {
              * @description Conversation row id.
              */
             id: number;
+            /**
+             * @description True for a group conversation, by the rule the conversation list's
+             *     `is_group` follows, so a client never reads `conversation_type` to
+             *     decide it.
+             */
+            is_group: boolean;
             /**
              * @description The title the conversation is shown by, as the conversation list's
              *     `label` gives it: for a conversation the account holder has with
@@ -3653,7 +3673,7 @@ export interface components {
             total: number;
         };
         /** @description One page of a list. */
-        Page_ImportRun: {
+        Page_ImportRunSummary: {
             /** @description The rows on this page. */
             items: {
                 /**
@@ -3699,8 +3719,11 @@ export interface components {
                  * @description Import Run id.
                  */
                 id: number;
-                /** @description Issues the run recorded, oldest first. */
-                issues: components["schemas"]["ImportIssue"][];
+                /**
+                 * Format: int64
+                 * @description How many issues the run recorded.
+                 */
+                issue_count: number;
                 /**
                  * Format: int64
                  * @description Messages counted for the run.
@@ -3708,8 +3731,6 @@ export interface components {
                 message_count: number;
                 /** @description Import mode (`replace` or `append`). */
                 mode: string;
-                /** @description Notes the run recorded, oldest first, apart from its issues. */
-                notes: components["schemas"]["ImportNote"][];
                 /**
                  * Format: int64
                  * @description Time spent parsing, when finished.
@@ -9675,7 +9696,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Page_ImportRun"];
+                    "application/json": components["schemas"]["Page_ImportRunSummary"];
                 };
             };
             /** @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. */

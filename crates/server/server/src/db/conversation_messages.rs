@@ -18,6 +18,7 @@ use sqlx::{Executor, Row};
 
 pub use message_crate_api_types::{Attachment, Message, MessageConversation, Tapback};
 
+use crate::db::conversations::is_group_type;
 use crate::db::ownership::owns_conversation;
 use crate::db::participant_names::load_for_conversations;
 use crate::db::sql::{SqlParam, bind_all, bind_args, group_rows_by_id};
@@ -392,6 +393,7 @@ async fn fetch_message_page(
                 conversation: MessageConversation {
                     id: r.conversation_id,
                     chat_identifier: r.chat_identifier,
+                    is_group: is_group_type(&r.conversation_type),
                     conversation_type: r.conversation_type,
                     group_title: r.group_title,
                     label: r.label,

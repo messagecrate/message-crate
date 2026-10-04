@@ -256,7 +256,7 @@ async fn list_imports_includes_duration_ms() {
             .await
             .unwrap();
     assert_eq!((imports.len(), total), (1, 1));
-    assert_eq!(imports[0].duration_ms, Some(48_000));
+    assert_eq!(imports[0].row.duration_ms, Some(48_000));
     let (running, total) = list_imports_page(
         &mut conn,
         ACCOUNT_ID,
@@ -321,7 +321,7 @@ async fn the_list_sorted_by_start_ascending_puts_the_oldest_run_first() {
         .await
         .unwrap();
 
-    let listed: Vec<i64> = imports.iter().map(|run| run.id).collect();
+    let listed: Vec<i64> = imports.iter().map(|run| run.row.id).collect();
     assert_eq!(listed, started);
 }
 
@@ -331,7 +331,7 @@ async fn running_import(conn: &mut SqliteConnection, account: i64) -> Option<Imp
     let (items, _) = list_imports_page(conn, account, Some("running"), &DEFAULT_IMPORT_SORT, 1, 0)
         .await
         .unwrap();
-    items.into_iter().next()
+    items.into_iter().next().map(|listed| listed.row)
 }
 
 #[tokio::test]

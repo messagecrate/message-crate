@@ -12,6 +12,11 @@ vi.mock("../lib/useSearchSuggestions", async (importOriginal) => ({
   useSearchSuggestions: () => [],
 }));
 
+vi.mock("../lib/searchFields", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/searchFields")>()),
+  useMarkedWords: () => ({ marked: [], ready: true }),
+}));
+
 afterEach(cleanup);
 
 const props = {

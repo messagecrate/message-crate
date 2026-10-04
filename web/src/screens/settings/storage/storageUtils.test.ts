@@ -33,6 +33,7 @@ function accountImportRun(partial: Partial<AccountImportRun> = {}): AccountImpor
     source_fingerprint: null,
     source_identities: null,
     summary: {},
+    issue_count: 0,
     issues: [],
     notes: [],
     ...partial,

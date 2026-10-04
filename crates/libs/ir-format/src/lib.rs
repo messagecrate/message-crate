@@ -12,6 +12,7 @@ mod clean;
 mod export_transforms;
 mod format_sink;
 mod normalize;
+mod placeholders;
 mod read_csv;
 mod read_json;
 mod read_mail;
@@ -36,6 +37,48 @@ pub use write::{
 use normalize::normalize_document_for_compare;
 #[cfg(test)]
 use write::write_conversation_csv;
+
+/// A temporary directory an export marked with the sentinel, for a test
+/// that writes into one.
+#[cfg(test)]
+pub(crate) fn export_dir() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join(EXPORT_SENTINEL), "").expect("sentinel");
+    dir
+}
+
+/// Run `f` with the permissions of `dir` set to `mode`, then set them back to
+/// `0o755` before returning, so the temporary directory can still be
+/// removed.
+///
+/// `None`, with a line on stderr, when a file can still be written into
+/// `dir` under `mode`: a user such as root gets past the permissions, cannot
+/// exercise the failure, and the test has nothing to check.
+#[cfg(all(test, unix))]
+pub(crate) fn with_directory_mode<T>(
+    dir: &std::path::Path,
+    mode: u32,
+    f: impl FnOnce() -> T,
+) -> Option<T> {
+    use std::os::unix::fs::PermissionsExt;
+
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(mode))
+        .expect("set the directory's mode");
+    let probe = dir.join("probe");
+    let result = if std::fs::write(&probe, b"").is_ok() {
+        let _ = std::fs::remove_file(&probe);
+        eprintln!(
+            "skipped: {} can still be written with mode {mode:o}",
+            dir.display()
+        );
+        None
+    } else {
+        Some(f())
+    };
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o755))
+        .expect("restore the directory's mode");
+    result
+}
 
 #[cfg(test)]
 #[path = "lib_tests.rs"]

@@ -1,3 +1,4 @@
+import { fixedSettings } from "../../lib/account";
 import { useSettingsAccount } from "../../lib/useSettingsAccount";
 import { AccountPermissionsSection } from "./AccountPermissionsSection";
 import { ApiTokensSection } from "./ApiTokensSection";
@@ -29,9 +30,7 @@ export function AccountSettingsPanel({ managedAccountId }: { managedAccountId?: 
 
   const managed = managedAccountId !== undefined;
   const isOwner = profile.is_owner === true;
-  // The Demo Account never has a password, whoever asks: anyone at the login
-  // card enters it (`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`).
-  const isDemo = profile.is_demo === true;
+  const fixed = fixedSettings(profile);
 
   return (
     <div>
@@ -49,7 +48,7 @@ export function AccountSettingsPanel({ managedAccountId }: { managedAccountId?: 
         <AccountPermissionsSection profile={profile} managedAccountId={managedAccountId} />
       ) : null}
 
-      {isDemo ? (
+      {fixed.password ? (
         <>
           <h3 className={sectionTitleClass}>Password</h3>
           <p className="mb-6 mt-0 text-[0.813rem] text-muted">
@@ -76,7 +75,8 @@ export function AccountSettingsPanel({ managedAccountId }: { managedAccountId?: 
 
       {!isOwner ? (
         <ProfileDangerZone
-          isDemo={profile.is_demo === true}
+          messagesFixed={fixed.deleteMessages}
+          accountFixed={fixed.deleteOwnAccount}
           username={profile.username}
           hasPassword={profile.has_password}
           canDelete={profile.can_delete ?? true}

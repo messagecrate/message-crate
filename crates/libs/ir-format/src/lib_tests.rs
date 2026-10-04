@@ -1,7 +1,6 @@
 //! Round-trip tests for reading and writing conversation documents.
 
 use super::*;
-use mail::clean_previous_mail_output;
 use message_crate_core::OutputFormat;
 use message_ir::{
     ConversationDocument, IrDirection, IrImessage, IrMessage, IrMessageKind, IrService,
@@ -66,7 +65,6 @@ fn writes_json_csv_jsonl_and_eml() {
     assert!(csv.contains("timestamp_unix_ms"));
     assert!(csv.contains("+15555550100")); // owner handle filled
 
-    let _ = clean_previous_mail_output(tmp.path());
     let eml_dir = write_format(tmp.path(), OutputFormat::Eml, doc).unwrap();
     assert!(eml_dir.is_dir());
 }
@@ -344,7 +342,6 @@ fn roundtrip_eml_and_mbox() {
         message_ir::testutil::sample_imessage_document(),
     ] {
         let tmp = tempfile::tempdir().unwrap();
-        let _ = clean_previous_mail_output(tmp.path());
         let eml_dir = write_format(tmp.path(), OutputFormat::Eml, doc.clone()).unwrap();
         let back_eml = read_conversation_eml_dir(&eml_dir).unwrap();
         // Outgoing EML must carry sender + owner identity headers. Only the
@@ -371,7 +368,6 @@ fn roundtrip_eml_and_mbox() {
 
         assert_docs_equal_after_normalize(doc.clone(), back_eml);
 
-        let _ = clean_previous_mail_output(tmp.path());
         let mbox_path = write_format(tmp.path(), OutputFormat::Mbox, doc.clone()).unwrap();
         let back_mbox = read_conversation_mbox(&mbox_path).unwrap();
         assert_docs_equal_after_normalize(doc, back_mbox);

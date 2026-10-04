@@ -94,6 +94,13 @@ pub struct ConversationSummary {
     pub tags: Vec<String>,
 }
 
+/// Whether a stored `conversation_type` is a group: `group` in any case.
+/// The conversation list and a message's conversation both answer by this,
+/// so the two never disagree about one conversation.
+pub(crate) fn is_group_type(conversation_type: &str) -> bool {
+    conversation_type.eq_ignore_ascii_case("group")
+}
+
 struct RawConversation {
     id: i64,
     conversation_type: String,
@@ -283,7 +290,7 @@ async fn load_conversation_rows(
 
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
-        let is_group = row.conversation_type.eq_ignore_ascii_case("group");
+        let is_group = is_group_type(&row.conversation_type);
         let service = display_service_label(
             source_sets
                 .get(&row.id)

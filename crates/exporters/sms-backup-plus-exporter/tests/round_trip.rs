@@ -6,7 +6,7 @@ use crate::emit::{ConvertExportArgs, convert_export};
 use chrono::{TimeZone, Utc};
 use message_crate_core::{ExportReport, ExportTransforms, OutputFormat};
 use message_ir::{ConversationDocument, IrDirection};
-use message_ir_format::{FormatSink, read_conversation_jsonl};
+use message_ir_format::{FormatSink, mark_export_folder, read_conversation_jsonl};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -54,6 +54,7 @@ fn import(input: &Path, output: &Path) -> Vec<ConversationDocument> {
 /// attachments the import staged under `staged` copied in first, as Convert
 /// does.
 fn export(documents: Vec<ConversationDocument>, staged: &Path, output: &Path) -> ExportReport {
+    mark_export_folder(output).unwrap();
     let attachments = output.join("attachments");
     fs::create_dir_all(&attachments).unwrap();
     for entry in fs::read_dir(staged.join("attachments")).unwrap() {

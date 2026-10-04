@@ -94,9 +94,9 @@ impl MergedArchive for SmsBackupPlusArchive {
         Ok(output_dir.to_path_buf())
     }
 
-    /// None: the archive writes only folders of `.eml` files, and the next
-    /// clean of the folder removes every such folder as it does the EML
-    /// format's (`mail::clean_previous_mail_output`).
+    /// None: the archive writes only directories of `.eml` files, and the
+    /// next clean of the output directory removes every such directory as it
+    /// does the EML format's (`message_ir_format::clean_previous_ir_output`).
     fn file_names(&self) -> Vec<String> {
         Vec::new()
     }

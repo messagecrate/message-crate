@@ -7885,7 +7885,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page_ImportRun"
+                  "$ref": "#/components/schemas/Page_ImportRunSummary"
                 }
               }
             }
@@ -12124,7 +12124,7 @@
       "AccountImportRuns": {
         "oneOf": [
           {
-            "$ref": "#/components/schemas/Page_ImportRun",
+            "$ref": "#/components/schemas/Page_ImportRunSummary",
             "description": "The account's own runs."
           },
           {
@@ -12132,7 +12132,7 @@
             "description": "Another account's runs, as the owner reads them."
           }
         ],
-        "description": "An account's Import Runs as its reader may see them: in full for the\naccount itself, each an `OwnerImportRun` for the owner."
+        "description": "An account's Import Runs as its reader may see them: each an\n`ImportRunSummary` for the account itself, an `OwnerImportRun` for the\nowner. Neither carries the run's issues."
       },
       "AccountMessages": {
         "type": "object",
@@ -14157,8 +14157,40 @@
         }
       },
       "ImportRun": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ImportRunSummary",
+            "description": "Everything a list answers for the run: the counts Settings shows,\neverything the desktop app needs to resume a running run, and how\nmany issues it recorded."
+          },
+          {
+            "type": "object",
+            "required": [
+              "issues",
+              "notes"
+            ],
+            "properties": {
+              "issues": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ImportIssue"
+                },
+                "description": "Issues the run recorded, oldest first."
+              },
+              "notes": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ImportNote"
+                },
+                "description": "Notes the run recorded, oldest first, apart from its issues."
+              }
+            }
+          }
+        ],
+        "description": "An Import Run: one per import, the same record wherever the interface\nhands one run out. It is the run as a list answers it, the\n`ImportRunSummary`, with the issues and the notes the run recorded."
+      },
+      "ImportRunSummary": {
         "type": "object",
-        "description": "An Import Run: one per import, the same record wherever the interface\nhands one out. It holds the counts Settings shows, everything the desktop\napp needs to resume a running run, and the issues and notes the run\nrecorded.",
+        "description": "An Import Run as a list of runs answers it: every field of the run but\nits issues and notes. A run may record any number of either, so a page\nthat carried them would have no bound on its size; `GET /v1/imports/{id}`\nanswers them (#1559,\n`docs/architecture/http-api.md`, \"Lists\").",
         "required": [
           "id",
           "source",
@@ -14173,8 +14205,7 @@
           "source_fingerprint",
           "source_identities",
           "summary",
-          "issues",
-          "notes",
+          "issue_count",
           "contacts_new",
           "contacts_changed"
         ],
@@ -14243,12 +14274,11 @@
             "format": "int64",
             "description": "Import Run id."
           },
-          "issues": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ImportIssue"
-            },
-            "description": "Issues the run recorded, oldest first."
+          "issue_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many issues the run recorded.",
+            "minimum": 0
           },
           "message_count": {
             "type": "integer",
@@ -14258,13 +14288,6 @@
           "mode": {
             "type": "string",
             "description": "Import mode (`replace` or `append`)."
-          },
-          "notes": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ImportNote"
-            },
-            "description": "Notes the run recorded, oldest first, apart from its issues."
           },
           "parse_ms": {
             "type": [
@@ -14699,6 +14722,7 @@
           "id",
           "chat_identifier",
           "conversation_type",
+          "is_group",
           "participants"
         ],
         "properties": {
@@ -14721,6 +14745,10 @@
             "type": "integer",
             "format": "int64",
             "description": "Conversation row id."
+          },
+          "is_group": {
+            "type": "boolean",
+            "description": "True for a group conversation, by the rule the conversation list's\n`is_group` follows, so a client never reads `conversation_type` to\ndecide it."
           },
           "label": {
             "type": [
@@ -16205,7 +16233,7 @@
           }
         }
       },
-      "Page_ImportRun": {
+      "Page_ImportRunSummary": {
         "type": "object",
         "description": "One page of a list.",
         "required": [
@@ -16219,7 +16247,7 @@
             "type": "array",
             "items": {
               "type": "object",
-              "description": "An Import Run: one per import, the same record wherever the interface\nhands one out. It holds the counts Settings shows, everything the desktop\napp needs to resume a running run, and the issues and notes the run\nrecorded.",
+              "description": "An Import Run as a list of runs answers it: every field of the run but\nits issues and notes. A run may record any number of either, so a page\nthat carried them would have no bound on its size; `GET /v1/imports/{id}`\nanswers them (#1559,\n`docs/architecture/http-api.md`, \"Lists\").",
               "required": [
                 "id",
                 "source",
@@ -16234,8 +16262,7 @@
                 "source_fingerprint",
                 "source_identities",
                 "summary",
-                "issues",
-                "notes",
+                "issue_count",
                 "contacts_new",
                 "contacts_changed"
               ],
@@ -16304,12 +16331,11 @@
                   "format": "int64",
                   "description": "Import Run id."
                 },
-                "issues": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ImportIssue"
-                  },
-                  "description": "Issues the run recorded, oldest first."
+                "issue_count": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "How many issues the run recorded.",
+                  "minimum": 0
                 },
                 "message_count": {
                   "type": "integer",
@@ -16319,13 +16345,6 @@
                 "mode": {
                   "type": "string",
                   "description": "Import mode (`replace` or `append`)."
-                },
-                "notes": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ImportNote"
-                  },
-                  "description": "Notes the run recorded, oldest first, apart from its issues."
                 },
                 "parse_ms": {
                   "type": [

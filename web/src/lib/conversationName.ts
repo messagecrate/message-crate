@@ -2,7 +2,7 @@
 export type ConversationNameParts = {
   /** The title the server gives the conversation: the export's, or the account's name for a conversation with yourself. */
   title: string | null | undefined;
-  /** Whether the conversation is a group, as the server reads `conversation_type`. */
+  /** Whether the conversation is a group: the server's `is_group`. */
   isGroup: boolean;
   participants: readonly { name: string }[];
 };
@@ -19,9 +19,4 @@ export function conversationName({ title, isGroup, participants }: ConversationN
   const names = participants.map((p) => p.name);
   if (!isGroup) return names[0] ?? "(unknown)";
   return names.length > 0 ? names.join(", ") : "(unknown)";
-}
-
-/** Whether a `conversation_type` is a group, as the server reads it: ignoring case. */
-export function isGroupType(conversationType: string): boolean {
-  return conversationType.toLowerCase() === "group";
 }

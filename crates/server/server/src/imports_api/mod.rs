@@ -794,11 +794,28 @@ pub(crate) struct ImportIssue {
 }
 
 /// An Import Run: one per import, the same record wherever the interface
-/// hands one out. It holds the counts Settings shows, everything the desktop
-/// app needs to resume a running run, and the issues and notes the run
-/// recorded.
+/// hands one run out. It is the run as a list answers it, the
+/// `ImportRunSummary`, with the issues and the notes the run recorded.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct ImportRun {
+    /// Everything a list answers for the run: the counts Settings shows,
+    /// everything the desktop app needs to resume a running run, and how
+    /// many issues it recorded.
+    #[serde(flatten)]
+    pub(crate) run: ImportRunSummary,
+    /// Issues the run recorded, oldest first.
+    pub(crate) issues: Vec<ImportIssue>,
+    /// Notes the run recorded, oldest first, apart from its issues.
+    pub(crate) notes: Vec<ImportNote>,
+}
+
+/// An Import Run as a list of runs answers it: every field of the run but
+/// its issues and notes. A run may record any number of either, so a page
+/// that carried them would have no bound on its size; `GET /v1/imports/{id}`
+/// answers them (#1559,
+/// `docs/architecture/http-api.md`, "Lists").
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub(crate) struct ImportRunSummary {
     /// Import Run id.
     pub(crate) id: i64,
     /// Source id the run imports.
@@ -846,14 +863,46 @@ pub(crate) struct ImportRun {
     /// What the person approved at the last Review they passed, or null. The
     /// column `PATCH /v1/imports/{id}` writes with its `summary`.
     pub(crate) summary: serde_json::Value,
-    /// Issues the run recorded, oldest first.
-    pub(crate) issues: Vec<ImportIssue>,
-    /// Notes the run recorded, oldest first, apart from its issues.
-    pub(crate) notes: Vec<ImportNote>,
+    /// How many issues the run recorded.
+    pub(crate) issue_count: u64,
     /// Contacts this run created.
     pub(crate) contacts_new: u64,
     /// Contacts it only changed.
     pub(crate) contacts_changed: u64,
+}
+
+impl From<crate::db::imports::ListedImport> for ImportRunSummary {
+    fn from(listed: crate::db::imports::ListedImport) -> Self {
+        let row = listed.row;
+        Self {
+            id: row.id,
+            source: row.source,
+            tool: row.tool,
+            mode: row.mode,
+            dedupe: row.dedupe,
+            status: row.status,
+            started_at: row.started_at,
+            finished_at: row.finished_at,
+            message_count: row.message_count,
+            attachment_count: row.attachment_count,
+            bytes_uploaded: row.bytes_uploaded,
+            duration_ms: row.duration_ms,
+            parse_ms: row.parse_ms,
+            attachments_ms: row.attachments_ms,
+            prepare_ms: row.prepare_ms,
+            upload_ms: row.upload_ms,
+            stage: row.stage,
+            staging_dir: row.staging_dir,
+            device_id: row.device_id,
+            form: crate::db::imports::json_column(row.form_json),
+            source_fingerprint: crate::db::imports::json_column(row.source_fingerprint),
+            source_identities: crate::db::imports::json_column(row.source_identities),
+            summary: crate::db::imports::json_column(row.summary_json),
+            issue_count: listed.issue_count,
+            contacts_new: listed.contacts.new_count,
+            contacts_changed: listed.contacts.changed_count,
+        }
+    }
 }
 
 /// An Import Run as the owner reads it under another account: its source,
@@ -914,37 +963,60 @@ pub(crate) async fn owner_import_run(
     row: crate::db::imports::ImportRow,
 ) -> Result<OwnerImportRun, ApiError> {
     let issue_count = crate::db::imports::issue_count(conn, row.id).await?;
+    listed_import(conn, row, issue_count)
+        .await
+        .map(OwnerImportRun::from)
+}
+
+/// One run's row as the list would read it, given its issue count: the
+/// contact tally is read here.
+async fn listed_import(
+    conn: &mut SqliteConnection,
+    row: crate::db::imports::ImportRow,
+    issue_count: u64,
+) -> Result<crate::db::imports::ListedImport, ApiError> {
     let contacts = crate::db::import_contacts::counts(conn, row.id)
         .await
         .map_err(ApiError::Internal)?;
-    let counts = match crate::db::imports::json_column(row.summary_json) {
-        serde_json::Value::Object(summary) => summary
-            .into_iter()
-            .filter_map(|(name, value)| value.as_i64().map(|n| (name, n)))
-            .collect(),
-        _ => std::collections::BTreeMap::new(),
-    };
-    Ok(OwnerImportRun {
-        id: row.id,
-        source: row.source,
-        tool: row.tool,
-        mode: row.mode,
-        status: row.status,
-        started_at: row.started_at,
-        finished_at: row.finished_at,
-        message_count: row.message_count,
-        attachment_count: row.attachment_count,
-        bytes_uploaded: row.bytes_uploaded,
-        duration_ms: row.duration_ms,
-        parse_ms: row.parse_ms,
-        attachments_ms: row.attachments_ms,
-        prepare_ms: row.prepare_ms,
-        upload_ms: row.upload_ms,
-        counts,
+    Ok(crate::db::imports::ListedImport {
+        row,
         issue_count,
-        contacts_new: contacts.new_count,
-        contacts_changed: contacts.changed_count,
+        contacts,
     })
+}
+
+impl From<crate::db::imports::ListedImport> for OwnerImportRun {
+    fn from(listed: crate::db::imports::ListedImport) -> Self {
+        let row = listed.row;
+        let counts = match crate::db::imports::json_column(row.summary_json) {
+            serde_json::Value::Object(summary) => summary
+                .into_iter()
+                .filter_map(|(name, value)| value.as_i64().map(|n| (name, n)))
+                .collect(),
+            _ => std::collections::BTreeMap::new(),
+        };
+        Self {
+            id: row.id,
+            source: row.source,
+            tool: row.tool,
+            mode: row.mode,
+            status: row.status,
+            started_at: row.started_at,
+            finished_at: row.finished_at,
+            message_count: row.message_count,
+            attachment_count: row.attachment_count,
+            bytes_uploaded: row.bytes_uploaded,
+            duration_ms: row.duration_ms,
+            parse_ms: row.parse_ms,
+            attachments_ms: row.attachments_ms,
+            prepare_ms: row.prepare_ms,
+            upload_ms: row.upload_ms,
+            counts,
+            issue_count: listed.issue_count,
+            contacts_new: listed.contacts.new_count,
+            contacts_changed: listed.contacts.changed_count,
+        }
+    }
 }
 
 /// The account's Import Runs, newest first, as a page. `status=running`
@@ -961,46 +1033,42 @@ pub(crate) async fn owner_import_run(
         ("sort" = Option<String>, Query, description = "`started_at` or `-started_at`. Default `-started_at`, newest first.")
     ),
     responses(
-        (status = 200, body = Page<ImportRun>),
+        (status = 200, body = Page<ImportRunSummary>),
     )
 )]
 pub(crate) async fn list_imports(
     State(state): State<AppState>,
     ImportAccess(auth): ImportAccess,
     Query(query): Query<ListImportsQuery>,
-) -> Result<Json<Page<ImportRun>>, ApiError> {
+) -> Result<Json<Page<ImportRunSummary>>, ApiError> {
     let mut conn = state.db.acquire().await?;
     let rows = import_rows_page(&mut conn, resolve_import_account(&auth), query).await?;
-    import_runs_page(&mut conn, rows).await.map(Json)
+    Ok(Json(runs_page(rows)))
 }
 
-/// A page of import rows as a page of Import Runs, each with its issues and
-/// contact tally.
-pub(crate) async fn import_runs_page(
-    conn: &mut SqliteConnection,
-    rows: Page<crate::db::imports::ImportRow>,
-) -> Result<Page<ImportRun>, ApiError> {
-    let mut items = Vec::with_capacity(rows.items.len());
-    for row in rows.items {
-        items.push(import_run(conn, row).await?);
-    }
-    Ok(Page {
-        items,
+/// A page of listed runs as a page of one run type: [`ImportRunSummary`]
+/// for the account, [`OwnerImportRun`] for the owner. It reads nothing.
+pub(crate) fn runs_page<T: From<crate::db::imports::ListedImport>>(
+    rows: Page<crate::db::imports::ListedImport>,
+) -> Page<T> {
+    Page {
+        items: rows.items.into_iter().map(T::from).collect(),
         total: rows.total,
         limit: rows.limit,
         offset: rows.offset,
-    })
+    }
 }
 
-/// One account's Import Runs as a page of rows. `GET /v1/imports` answers
-/// from it for the credential's account and `GET /v1/accounts/{id}/imports`
-/// for the account named, so the two lists cannot drift; each shapes the
-/// rows for whoever reads them.
+/// One account's Import Runs as a page of rows, each with its issue count
+/// and contact tally, read in the list's own statements. `GET /v1/imports`
+/// answers from it for the credential's account and
+/// `GET /v1/accounts/{id}/imports` for the account named, so the two lists
+/// cannot drift; each shapes the rows for whoever reads them.
 pub(crate) async fn import_rows_page(
     conn: &mut SqliteConnection,
     account: i64,
     query: ListImportsQuery,
-) -> Result<Page<crate::db::imports::ImportRow>, ApiError> {
+) -> Result<Page<crate::db::imports::ListedImport>, ApiError> {
     let page = page_params(
         query.limit,
         query.offset,
@@ -1386,9 +1454,17 @@ pub(crate) async fn import_run(
     conn: &mut SqliteConnection,
     row: crate::db::imports::ImportRow,
 ) -> Result<ImportRun, ApiError> {
-    let issues = crate::db::imports::list_import_issues(conn, row.id)
+    let issues: Vec<ImportIssue> = crate::db::imports::list_import_issues(conn, row.id)
         .await
-        .map_err(ApiError::Internal)?;
+        .map_err(ApiError::Internal)?
+        .into_iter()
+        .map(|issue| ImportIssue {
+            kind: issue.kind,
+            stage: issue.stage,
+            item: issue.item,
+            reason: issue.reason,
+        })
+        .collect();
     let notes = crate::db::imports::list_import_notes(conn, row.id)
         .await
         .map_err(ApiError::Internal)?
@@ -1398,49 +1474,9 @@ pub(crate) async fn import_run(
             item: note.item,
             text: note.text,
         })
-        .collect::<Vec<_>>();
-    let contacts = crate::db::import_contacts::counts(conn, row.id)
-        .await
-        .map_err(ApiError::Internal)?;
-    let issues = issues
-        .into_iter()
-        .map(|issue| ImportIssue {
-            kind: issue.kind,
-            stage: issue.stage,
-            item: issue.item,
-            reason: issue.reason,
-        })
         .collect();
-
-    Ok(ImportRun {
-        id: row.id,
-        source: row.source,
-        tool: row.tool,
-        mode: row.mode,
-        dedupe: row.dedupe,
-        status: row.status,
-        started_at: row.started_at,
-        finished_at: row.finished_at,
-        message_count: row.message_count,
-        attachment_count: row.attachment_count,
-        bytes_uploaded: row.bytes_uploaded,
-        duration_ms: row.duration_ms,
-        parse_ms: row.parse_ms,
-        attachments_ms: row.attachments_ms,
-        prepare_ms: row.prepare_ms,
-        upload_ms: row.upload_ms,
-        stage: row.stage,
-        staging_dir: row.staging_dir,
-        device_id: row.device_id,
-        form: crate::db::imports::json_column(row.form_json),
-        source_fingerprint: crate::db::imports::json_column(row.source_fingerprint),
-        source_identities: crate::db::imports::json_column(row.source_identities),
-        summary: crate::db::imports::json_column(row.summary_json),
-        issues,
-        notes,
-        contacts_new: contacts.new_count,
-        contacts_changed: contacts.changed_count,
-    })
+    let run = listed_import(conn, row, issues.len() as u64).await?.into();
+    Ok(ImportRun { run, issues, notes })
 }
 
 /// New stage for a running Import Run.

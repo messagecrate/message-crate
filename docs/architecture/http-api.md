@@ -248,6 +248,23 @@ contacts created and changed is on the run's own record, and the contacts are
 a page. Why: a page can only count its own rows, and a field beside `items`
 that counts something else is a second shape.
 
+A list's row carries nothing that grows without bound. Where a resource
+holds such a collection, as an Import Run holds its issues, the list answers
+how many in a count (`issue_count`) and the resource's own `GET` answers the
+collection. `GET /v1/imports` and an account's own
+`GET /v1/accounts/{id}/imports` answer each run as an `ImportRunSummary`,
+with `issue_count` and without the issues. The owner's
+`GET /v1/accounts/{id}/imports` answers each as an `OwnerImportRun`, which
+also counts the issues and never carries them. `GET /v1/imports/{id}`
+answers the issues. The count is read in the list's own statement, never by
+a statement per row. Why: `limit` bounds a page's rows and nothing else, so a collection
+inside each row left a page's size to whatever the runs recorded. Forty
+WhatsApp runs of 20,000 skipped files each made one page of Settings →
+Storage carry about 800,000 issues, and one statement per row made a page of
+500 runs a thousand statements (#1559).
+Rejected: capping how many issues a run stores. It bounds the list by
+throwing away the diagnostics the run exists to keep.
+
 `limit` is at least 1 and at most 500, default 40, on every list including an
 Export Run's messages. `offset` is at most 50 000 on the browse lists. A value
 outside the range is `validation-failed`, never a silent clamp. One
@@ -505,7 +522,8 @@ What each reaches:
   Rejected: narrowing by the username the entries keep, which reads two
   accounts that held one username as one, and takes in the logins refused for
   the username while no account held it.
-- The account reads its own runs in full. The owner reads each run as an
+- The account reads its own runs in full, a list's rows less what
+  [Lists](#lists) keeps out of a row. The owner reads each run as an
   `OwnerImportRun` or `OwnerExportRun`: the source, mode, tool, times,
   outcome and counts, with the counts an import's summary reported and how
   many issues it recorded, and for an export only which form its scope took.
@@ -690,12 +708,20 @@ A `HEAD` handler takes the method's own verb, `head`: `head_asset`.
 A `POST` that reads is named for what it returns, as its route is:
 `list_contact_summaries`, `get_address_book`.
 
-A type on the wire is named one of two ways, and a reader can tell which from
-the name:
+A type on the wire is named one of three ways, and a reader can tell which
+from the name:
 
 - A thing the interface hands out is named for what it is, with no suffix:
-  `Message`, `Account`, `ApiToken`, `Contact`, `ContactSummary`, `Identity`,
-  `ImportRun`. It keeps that name wherever it appears.
+  `Message`, `Account`, `ApiToken`, `Contact`, `Identity`, `ImportRun`. It
+  keeps that name wherever it appears.
+- A projection of such a thing, a type that answers part of it where the
+  whole does not belong, is the thing's name with one word that says which
+  part, and is written down here with its reason. `Summary` is the thing as
+  a list answers it: `ContactSummary` is a contact's row in the Contacts
+  list, and `ImportRunSummary` is an Import Run without its issues, which
+  `ImportRun` adds to it ([Lists](#lists)). `Owner` is the thing as the
+  owner reads it under another account: `OwnerImportRun` and
+  `OwnerExportRun` ([Credentials and reach](#credentials-and-reach)).
 - An action's input and output are named for the action:
   `VerbNounRequest` for a body sent in, `VerbNounResponse` for an answer that
   is not a thing (`CreateApiTokenRequest`, `DeleteMessagesResponse`), and

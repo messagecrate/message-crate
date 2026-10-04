@@ -21,6 +21,12 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-04 **A search word the other list takes stays in the box.**
+  Switching between Conversations and Messages with a word only one of them
+  takes, such as `from:me` on Conversations, no longer shows an error. The
+  word is underlined with a red wavy line and the list searches with the rest.
+  Click the word to see which list it works in, and **Remove** it there if you
+  no longer want it. Switching back searches with it again.
 - 2026-10-04 **Notes you sent to yourself are their own conversation.** A chat
   with your own number or email, such as Apple Messages to yourself or
   WhatsApp's "Message yourself", imports with no one else in it and no
@@ -650,6 +656,17 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-04 **Exporting from a second server or account no longer makes
+  the first download every attachment again.** When Export from two
+  servers, or two accounts, wrote into one directory, the run that
+  finished last forgot which attachments the other had already
+  downloaded, so the other's next Export downloaded all of them again. Each
+  server and account now keeps its own record.
+- 2026-10-04 **Nothing an export did not write is ever removed.** Every
+  step that removes or replaces files from an earlier export, including
+  the obfuscated export's placeholders, now checks for itself that an
+  export wrote the directory, and refuses one that it did not. Before,
+  three of those steps relied on the step before them to check.
 - 2026-10-04 **Messages sent to nobody survive an export as SMS Backup+
   mail.** OpenExtract keeps sent texts that name no recipient in one
   conversation. Exported as **EML (SMS Backup+)** and imported again, they
@@ -940,6 +957,12 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-04 **Import history in Settings → Storage loads quickly however
+  many problems your imports recorded.** The list used to bring every error
+  and skipped item of every import on the page, so a few large WhatsApp
+  imports with thousands of skipped files each could make it slow to open.
+  It now shows how many each import recorded, in a new Issues column, and
+  reads the problems themselves only when you open that import.
 - 2026-10-04 **Deleting your account in the desktop app deletes its
   Staging Directories on this computer.** Deleting your own account during
   or after an import left that import's Staging Directory on disk, with
@@ -1156,6 +1179,13 @@ released versions carry their date on the heading.
   messages, and the files in other accounts' folders. The reset stops if any
   of them changed. On a database of about 1.3 million messages the check
   takes about 14 seconds.
+- 2026-10-04 **Deleting attachments no longer holds up everyone else.**
+  Emptying the Trash, deleting a conversation or all of an account's
+  messages, and the clean-up at the end of an import deleted every file
+  while keeping all other changes waiting. With many files on a slow disk,
+  another person's import, a sign-in or media conversion could wait 15
+  seconds and fail. The files are now set aside in a moment and deleted
+  afterwards, while everything else goes on.
 
 ### Upgrading
 
