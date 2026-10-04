@@ -302,6 +302,10 @@ Every case offers **Discard this import**, which ends the run.
 The run keeps the Errors it recorded before it was discarded.
 On the computer that staged the run, it also deletes the Staging Directory.
 
+A run whose app closed or crashed keeps every Error that Staging, Media, or Upload had reported before it stopped, because each Error is written into the Staging Directory the moment its Stage reports it.
+A resumed Stage reads again what it had not finished, and an Error it reports again is listed once.
+An Upload Error about a conversation that the resumed Upload then sends is dropped, so the run never records a failure for a conversation that reached the Message Crate.
+
 | The run stopped | The screen reads | The button |
 |---|---|---|
 | Before Staging began copying | `Pick up your last import` | **Start over** reads the backup from the beginning with the same settings. |

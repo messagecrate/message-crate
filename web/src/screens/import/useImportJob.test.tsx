@@ -24,7 +24,12 @@ import type {
   StagingSummary,
   TauriJobResult,
 } from "../../lib/tauri";
-import type { AttachmentMediaMode, ImportIssueEvent, ImportProgressEvent } from "../../lib/types";
+import type {
+  AttachmentMediaMode,
+  ImportFileDoneEvent,
+  ImportIssueEvent,
+  ImportProgressEvent,
+} from "../../lib/types";
 import { restoreFormFromSnapshot, snapshotSecret } from "./formSnapshot";
 import { importRunStore } from "./importRunStore";
 
@@ -1023,12 +1028,14 @@ describe("useImportJob wiring", () => {
       step: "upload",
       item: "a.jsonl:attachments/big.mov",
       reason: "too large",
+      conversation: "a.jsonl",
     };
     const conversationRow: ImportIssueEvent = {
       kind: "error",
       step: "upload",
       item: "b.jsonl",
       reason: "connection refused",
+      conversation: "b.jsonl",
     };
     runMock.mockReset();
     runMock.mockImplementationOnce(runResultWithIssue(EXTRACT_RESULT, stagingIssue));
@@ -1069,7 +1076,13 @@ describe("useImportJob wiring", () => {
     expect(staging_dir).toBe("/home/sam/message-crate/staging-iphone");
     expect(record.issues).toEqual([
       { kind: "skip", stage: "staging", item: "IMG_1.HEIC", reason: "missing" },
-      { kind: "skip", stage: "upload", item: "a.jsonl:attachments/big.mov", reason: "too large" },
+      {
+        kind: "skip",
+        stage: "upload",
+        item: "a.jsonl:attachments/big.mov",
+        reason: "too large",
+        conversation: "a.jsonl",
+      },
     ]);
     expect(record.bytesUploaded).toBe(4_096);
     expect(record.filesSucceeded).toBe(1);
@@ -2337,6 +2350,112 @@ describe("useImportJob resume path", () => {
     expect(invokeDeleteStagingMock).toHaveBeenCalled();
   });
 
+  /**
+   * A push that stands in for `awaitTauriJob`: it calls the invoke function,
+   * sends `events` to the job's listeners, and returns what the Staging Directory held
+   * once the window wrote the record they lead to. That is what an app that
+   * closed at that moment, before the Upload ended, would leave.
+   */
+  function pushThatSends(
+    events: (
+      onIssue: (event: ImportIssueEvent) => void,
+      onFileDone: (event: ImportFileDoneEvent) => void,
+    ) => void,
+    recorded: (record: Record<string, unknown>) => boolean,
+    seen: { record?: Record<string, unknown> },
+  ) {
+    return async (
+      fn: () => Promise<unknown>,
+      _onLog?: (line: string) => void,
+      _onProgress?: (event: ImportProgressEvent) => void,
+      onIssue?: (event: ImportIssueEvent) => void,
+      onFileDone?: (event: ImportFileDoneEvent) => void,
+    ) => {
+      await fn();
+      events(
+        (event) => onIssue?.(event),
+        (event) => onFileDone?.(event),
+      );
+      await waitFor(() => {
+        const last = saveRunRecordMock.mock.lastCall?.[0] as
+          | { record: Record<string, unknown> }
+          | undefined;
+        expect(last != null && recorded(last.record)).toBe(true);
+        seen.record = last?.record;
+      });
+      return { summary: "Push finished.", report: failedReport() };
+    };
+  }
+
+  it("writes an Upload issue into the Staging Directory before the Upload ends (#1639)", async () => {
+    const skip: ImportIssueEvent = {
+      kind: "skip",
+      step: "upload",
+      item: "a.jsonl:attachments/big.mov",
+      reason: "too large",
+      conversation: "a.jsonl",
+    };
+    readRunRecordMock.mockResolvedValue({ issues: [] });
+    const seen: { record?: Record<string, unknown> } = {};
+    runMock.mockImplementation(
+      pushThatSends(
+        (onIssue, onFileDone) => {
+          onIssue(skip);
+          onFileDone({ file: "a.jsonl", status: "ok" });
+        },
+        (record) => (record.issues as unknown[]).length > 0,
+        seen,
+      ),
+    );
+    const { result } = renderHook(() => useImportJob());
+    await act(async () => {
+      await result.current.startImport(baseForm, { sessionId: 7, stagingDir: "/staging/paused" });
+    });
+
+    expect(seen.record?.issues).toEqual([
+      {
+        kind: "skip",
+        stage: "upload",
+        item: "a.jsonl:attachments/big.mov",
+        reason: "too large",
+        conversation: "a.jsonl",
+      },
+    ]);
+  });
+
+  it("does not send with a Discard a failure the resumed Upload undid before the app closed (#1639)", async () => {
+    // Pause 1 left a.jsonl failed. The resumed Upload sends it, and the app
+    // closes before that Upload ends, so the Staging Directory keeps the record written
+    // while it ran.
+    const failed = {
+      kind: "error",
+      stage: "upload",
+      item: "a.jsonl",
+      reason: "connection refused",
+      conversation: "a.jsonl",
+    };
+    readRunRecordMock.mockResolvedValue({ issues: [], lastStopIssues: [failed] });
+    const seen: { record?: Record<string, unknown> } = {};
+    runMock.mockImplementation(
+      pushThatSends(
+        (_onIssue, onFileDone) => onFileDone({ file: "a.jsonl", status: "ok" }),
+        (record) => (record.lastStopIssues as unknown[]).length === 0,
+        seen,
+      ),
+    );
+    const { result } = renderHook(() => useImportJob());
+    await act(async () => {
+      await result.current.startImport(baseForm, { sessionId: 7, stagingDir: "/staging/paused" });
+    });
+    expect(seen.record).toBeDefined();
+    readRunRecordMock.mockResolvedValue(seen.record);
+    discardImportSessionMock.mockClear();
+
+    await act(() => result.current.discardRun(7, "/staging/paused"));
+
+    expect(discardImportSessionMock).toHaveBeenCalledWith(7, []);
+  });
+
   it("still posts /complete against the resumed run id", async () => {
     const { result } = renderHook(() => useImportJob());
 
@@ -2578,6 +2697,45 @@ describe("useImportJob resumeAtReview", () => {
     // plan stored at the last gate.
     expect(setImportStageMock).toHaveBeenCalledWith(1, "media", approved);
     expect(setImportStageMock).toHaveBeenCalledWith(1, "media_review", approved);
+  });
+
+  it("drops an earlier part's Media row once the resumed pass converts that file (#1639)", async () => {
+    // Part 1's pass could not convert IMG_4.MOV. The resumed pass converts
+    // it, and the app may close before that pass ends.
+    const earlier = {
+      kind: "skip",
+      stage: "media",
+      item: "a.jsonl:IMG_4.MOV",
+      reason: "could not be converted",
+    };
+    readRunRecordMock.mockResolvedValue({ issues: [earlier] });
+    const seen: { record?: { issues: unknown[] } } = {};
+    runMock.mockImplementationOnce(
+      async (
+        fn: () => Promise<unknown>,
+        _onLog?: (line: string) => void,
+        _onProgress?: (event: ImportProgressEvent) => void,
+        onIssue?: (event: ImportIssueEvent) => void,
+      ) => {
+        const before = saveRunRecordMock.mock.calls.length;
+        await fn();
+        onIssue?.({ kind: "resolved", step: "media", item: "a.jsonl:IMG_4.MOV", reason: "" });
+        await waitFor(() => expect(saveRunRecordMock.mock.calls.length).toBeGreaterThan(before));
+        seen.record = saveRunRecordMock.mock.lastCall?.[0].record;
+        return { summary: "Transcode finished.", transcode: undefined };
+      },
+    );
+    const approved = stagingSummary({ mediaMode: "convert", conversations: 7 });
+    invokeSummarizeStagingMock.mockResolvedValueOnce(approved);
+    const { result } = renderHook(() => useImportJob());
+    await act(async () => {
+      await result.current.resumeAtReview(
+        activeSession({ stage: "media", summary: approved }),
+        form({ attachmentMedia: "convert" }),
+      );
+    });
+
+    expect(seen.record?.issues).toEqual([]);
   });
 
   it("shows a 3-row list with the Media row active while the pass re-runs on a media resume", async () => {
