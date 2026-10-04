@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { type ContactHandle, useUpdateContact } from "../../lib/contactDetail";
-import { formatHandleServiceLabel, inferService } from "./contactDrawerTypes";
+import { type HandleService, listedServerService, serverService } from "../../lib/handleService";
+import { formatHandleServiceLabel } from "./contactDrawerTypes";
 import type { RemoveIdentityTarget } from "./handleTableLogic";
 
 /**
@@ -28,17 +29,25 @@ export function useHandleMutations({ contactId }: { contactId: string }) {
   const confirmRemoveHandle = () => {
     if (!removeTarget || busy) return;
     const address = removeTarget.address;
-    const service = inferService(address, removeTarget.service);
+    // An email address names no service: the list calls it `email` whatever
+    // service it is on, and an import can store one on WhatsApp. With no
+    // service named, nor one the server takes, the server finds the identity
+    // on the phone service first, then WhatsApp.
+    const service =
+      removeTarget.service === "email" ? undefined : listedServerService(removeTarget.service);
     updateContact.mutate(
       { contactId, body: { remove_identity: { address, service } } },
       { onSuccess: () => setRemoveTarget(null) },
     );
   };
 
-  const confirmAdd = (args: { address: string; service: string }) => {
+  const confirmAdd = (args: { address: string; service: HandleService }) => {
     if (busy) return;
     updateContact.mutate(
-      { contactId, body: { add_identity: { address: args.address, service: args.service } } },
+      {
+        contactId,
+        body: { add_identity: { address: args.address, service: serverService(args.service) } },
+      },
       { onSuccess: () => setAdding(false) },
     );
   };

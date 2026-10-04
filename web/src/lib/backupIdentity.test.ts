@@ -2,17 +2,17 @@ import { describe, expect, it } from "vitest";
 import {
   identityMessageCounts,
   identityOnProfile,
-  identityService,
+  identityType,
   needsIdentityStop,
   parseSourceIdentities,
 } from "./backupIdentity";
 
 const profile = { phones: ["+1 (555) 555-0110"], emails: ["Owner@Example.com"] };
 
-describe("identityService", () => {
+describe("identityType", () => {
   it("calls anything with an @ an email and the rest a phone", () => {
-    expect(identityService("owner@example.com")).toBe("email");
-    expect(identityService("+15555550110")).toBe("phone");
+    expect(identityType("owner@example.com")).toBe("email");
+    expect(identityType("+15555550110")).toBe("phone");
   });
 });
 
