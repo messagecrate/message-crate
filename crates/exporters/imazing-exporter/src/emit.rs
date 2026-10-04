@@ -422,11 +422,6 @@ impl Ingest {
                 convo
                     .extra
                     .insert("source_kind".into(), discovered.kind.as_str().to_string());
-                if session.key.is_name_only() {
-                    convo
-                        .extra
-                        .insert(message_ir::CHAT_ID_IS_NAME.into(), "1".into());
-                }
                 Conversation {
                     key: session.key.clone(),
                     convo,

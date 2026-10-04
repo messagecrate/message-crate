@@ -47,6 +47,18 @@ pub enum ConversationKey {
     NameOnly(String),
 }
 
+/// The name a name-only chat id holds: what follows [`NAME_CHAT_ID_PREFIX`].
+/// `None` for any other chat id, [`NAMELESS_CHAT_ID`] included.
+///
+/// A conversation keyed by a name has no address, so the name is the
+/// identity of the person it is with: the projection gives that person no
+/// address, and the server stores the name as an identity of type `other`.
+pub fn name_of_chat_id(chat_id: &str) -> Option<&str> {
+    chat_id
+        .strip_prefix(NAME_CHAT_ID_PREFIX)
+        .filter(|name| !name.trim().is_empty())
+}
+
 impl ConversationKey {
     /// The conversation's chat id: the address for [`Self::OneToOne`],
     /// `group:` and the vendor id for [`Self::Group`], and `name:` and the
@@ -89,6 +101,15 @@ mod tests {
     fn two_different_names_never_share_a_key() {
         assert_ne!(name("张伟"), name("李娜"));
         assert_ne!(name("Ana Lee"), name("Ana.Lee"));
+    }
+
+    /// The name comes back out of a name key, and out of no other key.
+    #[test]
+    fn only_a_name_key_holds_a_name() {
+        assert_eq!(name_of_chat_id(&name(" Ana Lee ")), Some("Ana Lee"));
+        assert_eq!(name_of_chat_id(NAMELESS_CHAT_ID), None);
+        assert_eq!(name_of_chat_id("AMAZON"), None);
+        assert_eq!(name_of_chat_id("group:1"), None);
     }
 
     /// A name key is the whole trimmed name behind `name:`.

@@ -28,7 +28,7 @@ pub mod testutil;
 
 pub use attachment_path::{UNSAFE_ATTACHMENT_PATH, UnsafeAttachmentPath, safe_attachment_path};
 pub use conversation_key::{
-    ConversationKey, GROUP_CHAT_ID_PREFIX, NAME_CHAT_ID_PREFIX, NAMELESS_CHAT_ID,
+    ConversationKey, GROUP_CHAT_ID_PREFIX, NAME_CHAT_ID_PREFIX, NAMELESS_CHAT_ID, name_of_chat_id,
 };
 pub use durable::{rename_into_place, write_atomic, write_atomic_via};
 pub use identity::{
@@ -47,15 +47,6 @@ pub use schema_version::{
 /// Schema version written into every [`ConversationDocument`] (currently 4).
 pub const SCHEMA_VERSION: u32 = 4;
 
-/// `PendingConversation::extra` key marking a chat keyed by a person's name
-/// rather than an address.
-///
-/// The rescue exporters (iMazing, OpenExtract, SMS Backup+) read formats that
-/// sometimes identify the other party by name alone. They set this so the
-/// projection emits a participant carrying the name and no identity, instead
-/// of promoting the chat id made from the name into the handle field. The server resolves the
-/// name against contacts on import.
-pub const CHAT_ID_IS_NAME: &str = "chat_id_is_name";
 /// One exported chat: export metadata, conversation roster and stats, and messages.
 ///
 /// This is the common-message schema every exporter writes and every reader
