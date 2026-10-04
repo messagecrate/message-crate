@@ -496,6 +496,12 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-04 **An obfuscated export keeps a reply to a message in another
+  conversation.** Apple Messages can reply or react to a message in another
+  conversation. In an obfuscated export, that reply or reaction pointed at
+  no message. It now points at its message, wherever in the export that
+  message is. A message the export leaves out, such as one outside the date
+  range, still can't be pointed at.
 - 2026-10-04 **GO SMS Pro and SMS Backup+ attachments keep their size when
   their files are left out.** A run with Attachments set to Skip wrote each
   GO SMS Pro and SMS Backup+ attachment without its size. Each one now

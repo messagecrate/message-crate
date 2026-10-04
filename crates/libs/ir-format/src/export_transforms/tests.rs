@@ -65,7 +65,7 @@ fn obfuscate_drops_the_vendor_bag() {
     let mut doc = message_ir::testutil::sample_document("secret");
     assert!(doc.messages[0].source.is_some());
     let mut anon = Obfuscator::new([7u8; 32]);
-    obfuscate_document(&mut doc, &mut anon);
+    obfuscate_document(&mut doc, &mut anon, &mut RenamedGuids::new());
     assert!(
         doc.messages[0].source.is_none(),
         "obfuscated output must not carry vendor fields"
@@ -77,7 +77,7 @@ fn obfuscate_replaces_the_owner_address_on_each_message() {
     let mut doc = message_ir::testutil::sample_document("secret");
     doc.messages[0].owner_handle = Some("+15555550100".into());
     let mut anon = Obfuscator::new([7u8; 32]);
-    obfuscate_document(&mut doc, &mut anon);
+    obfuscate_document(&mut doc, &mut anon, &mut RenamedGuids::new());
     let owner = doc.messages[0].owner_handle.as_deref();
     assert_ne!(owner, Some("+15555550100"));
     assert_eq!(
@@ -100,7 +100,7 @@ fn obfuscate_keeps_me_on_a_sent_message_and_replaces_a_real_name() {
     doc.messages = vec![labelled, named];
 
     let mut anon = Obfuscator::new([7u8; 32]);
-    obfuscate_document(&mut doc, &mut anon);
+    obfuscate_document(&mut doc, &mut anon, &mut RenamedGuids::new());
 
     assert_eq!(doc.messages[0].sender_display_name.as_deref(), Some("Me"));
     let replaced = doc.messages[1].sender_display_name.as_deref().unwrap();
@@ -415,7 +415,7 @@ fn obfuscated_export_keeps_no_string_from_the_source() {
 fn obfuscate_keeps_each_tapback_and_replaces_only_who_reacted() {
     let mut doc = doc_with_a_marker_in_every_field();
     let mut anon = Obfuscator::new([7u8; 32]);
-    obfuscate_document(&mut doc, &mut anon);
+    obfuscate_document(&mut doc, &mut anon, &mut RenamedGuids::new());
 
     let tapbacks = doc.messages[0]
         .imessage
@@ -497,8 +497,11 @@ fn obfuscate_makes_each_guid_again_and_keeps_replies_pointing_at_their_target() 
     let before: Vec<String> = doc.messages.iter().map(|m| m.guid.clone()).collect();
 
     let obfuscated = |doc: &ConversationDocument| {
-        let mut doc = doc.clone();
-        obfuscate_document(&mut doc, &mut Obfuscator::new([7u8; 32]));
+        let mut docs = [doc.clone()];
+        let mut renamed = RenamedGuids::new();
+        obfuscate_document(&mut docs[0], &mut Obfuscator::new([7u8; 32]), &mut renamed);
+        point_targets_at_new_guids(&mut docs, &renamed);
+        let [doc] = docs;
         doc
     };
     let after = obfuscated(&doc);
@@ -523,6 +526,107 @@ fn obfuscate_makes_each_guid_again_and_keeps_replies_pointing_at_their_target() 
         "one seed gives one guid"
     );
     let mut other_seed = doc.clone();
-    obfuscate_document(&mut other_seed, &mut Obfuscator::new([8u8; 32]));
+    obfuscate_document(
+        &mut other_seed,
+        &mut Obfuscator::new([8u8; 32]),
+        &mut RenamedGuids::new(),
+    );
     assert_ne!(other_seed.messages[0].guid, after.messages[0].guid);
+}
+
+/// Two conversations for the cross-conversation tests: A holds one message,
+/// and B holds one whose iMessage extension is `link` with A's message's id.
+fn two_conversations(link: impl FnOnce(String) -> IrImessage) -> Vec<ConversationDocument> {
+    let mut a = doc_with_image_attachment();
+    a.messages[0].attachments.clear();
+    a.messages[0].guid = "a-target".into();
+    let mut b = doc_with_image_attachment();
+    b.conversation.chat_identifier = "+15555550102".into();
+    b.messages[0].attachments.clear();
+    b.messages[0].guid = "b-link".into();
+    b.messages[0].imessage = Some(link("a-target".into()));
+    vec![a, b]
+}
+
+fn obfuscate_all(docs: &mut [ConversationDocument]) {
+    let tmp = tempfile::tempdir().unwrap();
+    let transforms = ExportTransforms {
+        media: MediaMode::Disabled,
+        obfuscate: true,
+        obfuscate_seed: Some(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
+        ),
+        ..ExportTransforms::none()
+    };
+    apply_transforms(docs, tmp.path(), &transforms).unwrap();
+}
+
+/// Apple Messages can reply to a message in another conversation, and each
+/// conversation is its own document, so the reply's target is found across
+/// every document of the export, not only its own.
+#[test]
+fn obfuscate_points_a_reply_at_its_target_in_another_conversation() {
+    let mut docs = two_conversations(|target| IrImessage {
+        is_reply: true,
+        in_reply_to_guid: Some(target),
+        ..IrImessage::default()
+    });
+    obfuscate_all(&mut docs);
+    assert_ne!(docs[0].messages[0].guid, "a-target");
+    assert_eq!(
+        docs[1].messages[0]
+            .imessage
+            .as_ref()
+            .unwrap()
+            .in_reply_to_guid
+            .as_deref(),
+        Some(docs[0].messages[0].guid.as_str()),
+        "the reply points at its target's new guid"
+    );
+}
+
+#[test]
+fn obfuscate_points_a_tapback_at_its_target_in_another_conversation() {
+    let mut docs = two_conversations(|target| IrImessage {
+        associated_guid: Some(target),
+        ..IrImessage::default()
+    });
+    obfuscate_all(&mut docs);
+    assert_ne!(docs[0].messages[0].guid, "a-target");
+    assert_eq!(
+        docs[1].messages[0]
+            .imessage
+            .as_ref()
+            .unwrap()
+            .associated_guid
+            .as_deref(),
+        Some(docs[0].messages[0].guid.as_str()),
+        "the tapback points at its target's new guid"
+    );
+}
+
+/// A target in no document of the export, such as one the date range left
+/// out, keeps the keyed stand-in: its original id does not survive.
+#[test]
+fn obfuscate_replaces_a_target_outside_the_export_with_its_stand_in() {
+    let mut docs = two_conversations(|_| IrImessage {
+        is_reply: true,
+        in_reply_to_guid: Some("not-exported".into()),
+        ..IrImessage::default()
+    });
+    obfuscate_all(&mut docs);
+    let target = docs[1].messages[0]
+        .imessage
+        .as_ref()
+        .unwrap()
+        .in_reply_to_guid
+        .clone()
+        .unwrap();
+    assert_ne!(target, "not-exported");
+    assert_eq!(target.len(), 64);
+    assert!(
+        docs.iter()
+            .flat_map(|d| &d.messages)
+            .all(|m| m.guid != target)
+    );
 }
