@@ -34,8 +34,6 @@ pub struct ReadReport {
     pub sms_seen: u64,
     /// MMS elements parsed.
     pub mms_seen: u64,
-    /// Attachment files staged under `attachments/`.
-    pub attachments_saved: u64,
     /// Outgoing messages in produced documents.
     pub sent: u64,
     /// Incoming messages in produced documents.
@@ -71,10 +69,10 @@ pub struct ReadOptions<'a> {
     /// parsed, so no payload stays in memory; `None` when the run does not
     /// copy attachments, and then no payload is kept at all.
     pub spool: Option<&'a AttachmentSpool>,
-    /// Whether to stage the spooled attachments into `attachments_dir`
-    /// here. `false` leaves them in the spool for a caller that stages them
-    /// itself; the write queue does, one conversation at a time.
-    pub stage_attachments: bool,
+    /// A folder under the input whose files the read leaves out: Convert's
+    /// output when it sits inside the backup's folder, so a backup an
+    /// earlier run wrote there is never read back in as input.
+    pub skip: Option<&'a Path>,
     /// How to write attachment files after parse.
     pub media: MediaMode,
     /// Image/video compress settings used when `media` converts or compresses.
@@ -121,8 +119,9 @@ struct PendingConversation {
     messages: Vec<PendingMessage>,
 }
 
-/// The XML files to read: the file itself, or every `.xml` under the folder.
-fn collect_xml_paths(input: &Path) -> Result<Vec<PathBuf>> {
+/// The XML files to read: the file itself, or every `.xml` under the folder
+/// outside `skip`.
+fn collect_xml_paths(input: &Path, skip: Option<&Path>) -> Result<Vec<PathBuf>> {
     if input.is_file() {
         return Ok(vec![input.to_path_buf()]);
     }
@@ -133,6 +132,7 @@ fn collect_xml_paths(input: &Path) -> Result<Vec<PathBuf>> {
         p.extension()
             .and_then(|e| e.to_str())
             .is_some_and(|e| e.eq_ignore_ascii_case("xml"))
+            && !skip.is_some_and(|skip| p.starts_with(skip))
     })?;
     paths.sort();
     if paths.is_empty() {
@@ -181,11 +181,11 @@ fn queue_attachments(
         .collect()
 }
 
-/// Stage the attachments a read left in `options.spool` into
-/// `options.attachments_dir`, reading one spooled file at a time.
-/// [`read_backup`] calls it when `options.stage_attachments` is set; a
-/// caller that reads with it unset calls it once the read has succeeded,
-/// so a backup the read refuses writes nothing outside the spool.
+/// Stage the attachments [`read_backup`] left in `options.spool` into
+/// `options.attachments_dir`, reading one spooled file at a time, and return
+/// how many distinct files were written. A caller stages only once the read
+/// has succeeded, so a backup the read refuses writes nothing outside the
+/// spool.
 ///
 /// # Errors
 ///
@@ -194,8 +194,7 @@ fn queue_attachments(
 pub fn stage_read_attachments(
     documents: &mut [ConversationDocument],
     options: &ReadOptions<'_>,
-    report: &mut ReadReport,
-) -> Result<()> {
+) -> Result<u64> {
     let mut sources: Vec<_> = documents
         .iter()
         .flat_map(|doc| doc.messages.iter())
@@ -213,7 +212,7 @@ pub fn stage_read_attachments(
         MediaMode::Disabled
     };
     let attachments_dir = options.attachments_dir.unwrap_or_else(|| Path::new(""));
-    report.attachments_saved += stage_conversation_attachments(
+    stage_conversation_attachments(
         document_messages(documents),
         attachments_dir,
         &MediaConfig {
@@ -228,8 +227,7 @@ pub fn stage_read_attachments(
         options.progress,
         options.cancel,
     )
-    .map_err(anyhow::Error::msg)?;
-    Ok(())
+    .map_err(anyhow::Error::msg)
 }
 
 /// The conversation id: `chat-<key>` for groups, else the peer's handle key.
@@ -491,7 +489,9 @@ fn ir_participants(conversation: &PendingConversation) -> Vec<IrParticipant> {
 
 /// Parse SMS Backup & Restore XML into conversation documents.
 ///
-/// Stages attachments and drops duplicate messages.
+/// Drops duplicate messages. Each attachment's payload is left in
+/// `options.spool` for [`stage_read_attachments`] or the write queue to
+/// stage.
 ///
 /// # Errors
 ///
@@ -501,7 +501,7 @@ pub fn read_backup(
     input: &Path,
     options: ReadOptions<'_>,
 ) -> Result<(Vec<ConversationDocument>, ReadReport)> {
-    let paths = collect_xml_paths(input)?;
+    let paths = collect_xml_paths(input, options.skip)?;
     let mut owner_phones = options.owner_phones.to_vec();
     if owner_phones.is_empty() {
         // Owner inference is best-effort: the main pass below already reports
@@ -598,9 +598,6 @@ pub fn read_backup(
         ));
         report.conversations += 1;
     }
-    if options.stage_attachments {
-        stage_read_attachments(&mut documents, &options, &mut report)?;
-    }
     Ok((documents, report))
 }
 
@@ -619,7 +616,7 @@ mod tests {
             owner_phones,
             attachments_dir,
             spool,
-            stage_attachments: true,
+            skip: None,
             media: if spool.is_some() {
                 MediaMode::Clone
             } else {
@@ -640,8 +637,10 @@ mod tests {
         let output = dir.path().join("output");
         let stage = output.join("attachments");
         let spool = AttachmentSpool::open(dir.path()).unwrap();
-        let (docs, report) = read_backup(&input, opts(&[], Some(&stage), Some(&spool))).unwrap();
-        assert_eq!(report.attachments_saved, 1);
+        let (mut docs, _) = read_backup(&input, opts(&[], Some(&stage), Some(&spool))).unwrap();
+        let saved =
+            stage_read_attachments(&mut docs, &opts(&[], Some(&stage), Some(&spool))).unwrap();
+        assert_eq!(saved, 1);
         let staged: Vec<_> = fs::read_dir(&stage)
             .unwrap()
             .map(|e| e.unwrap().path())
@@ -680,8 +679,10 @@ mod tests {
         let output = dir.path().join("output");
         let stage = output.join("attachments");
         let spool = AttachmentSpool::open(dir.path()).unwrap();
-        let (docs, report) = read_backup(&input, opts(&[], Some(&stage), Some(&spool))).unwrap();
-        assert_eq!(report.attachments_saved, 1);
+        let (mut docs, _) = read_backup(&input, opts(&[], Some(&stage), Some(&spool))).unwrap();
+        let saved =
+            stage_read_attachments(&mut docs, &opts(&[], Some(&stage), Some(&spool))).unwrap();
+        assert_eq!(saved, 1);
         let mut writer = SbrBackupSession::create(&output).unwrap();
         writer.append_document(&docs[0]).unwrap();
         let xml = fs::read_to_string(writer.finish().unwrap()).unwrap();
@@ -703,8 +704,10 @@ mod tests {
         let output = dir.path().join("output");
         let stage = output.join("attachments");
         let spool = AttachmentSpool::open(dir.path()).unwrap();
-        let (docs, report) = read_backup(&input, opts(&[], Some(&stage), Some(&spool))).unwrap();
-        assert_eq!(report.attachments_saved, 1);
+        let (mut docs, _) = read_backup(&input, opts(&[], Some(&stage), Some(&spool))).unwrap();
+        let saved =
+            stage_read_attachments(&mut docs, &opts(&[], Some(&stage), Some(&spool))).unwrap();
+        assert_eq!(saved, 1);
         assert_eq!(docs[0].messages[0].text, "card");
         let mut writer = SbrBackupSession::create(&output).unwrap();
         writer.append_document(&docs[0]).unwrap();
@@ -806,9 +809,7 @@ mod tests {
         let spool = AttachmentSpool::open(dir.path()).unwrap();
         let owner = vec!["+15555550100".to_string()];
 
-        let mut options = opts(&owner, Some(&stage), Some(&spool));
-        options.stage_attachments = false;
-        let (docs, report) = read_backup(&input, options).unwrap();
+        let (docs, _) = read_backup(&input, opts(&owner, Some(&stage), Some(&spool))).unwrap();
 
         let attachments: Vec<_> = docs[0]
             .messages
@@ -832,7 +833,24 @@ mod tests {
             "nothing was staged, so nothing to point at"
         );
         assert!(!stage.exists(), "no attachment files were written");
-        assert_eq!(report.attachments_saved, 0);
+    }
+
+    /// An `.xml` file under `skip` is not read, so a backup Convert wrote
+    /// into an output inside the input's folder is never read back in.
+    #[test]
+    fn a_backup_under_the_skipped_folder_is_not_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let sms = r#"<smses><sms protocol="0" address="+15555550101" date="1400773261000" type="1" body="kept"/></smses>"#;
+        fs::write(dir.path().join("smses.xml"), sms).unwrap();
+        let output = dir.path().join("converted");
+        fs::create_dir_all(&output).unwrap();
+        fs::write(output.join("smses.xml"), sms.replace("kept", "skipped")).unwrap();
+
+        assert_eq!(
+            collect_xml_paths(dir.path(), Some(&output)).unwrap(),
+            [dir.path().join("smses.xml")]
+        );
+        assert_eq!(collect_xml_paths(dir.path(), None).unwrap().len(), 2);
     }
 
     /// A run that does not copy attachments keeps no payload anywhere.
