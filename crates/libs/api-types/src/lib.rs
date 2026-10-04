@@ -430,6 +430,9 @@ pub enum Deletion {
 }
 
 impl Deletion {
+    /// Both marks.
+    pub const ALL: [Self; 2] = [Self::DeletedInSourceApp, Self::Unsent];
+
     /// The mark as the wire and the database spell it.
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -440,9 +443,7 @@ impl Deletion {
 
     /// Read a sent or stored value; anything else names no mark.
     pub fn parse(value: &str) -> Option<Self> {
-        [Self::DeletedInSourceApp, Self::Unsent]
-            .into_iter()
-            .find(|d| d.as_str() == value)
+        Self::ALL.into_iter().find(|d| d.as_str() == value)
     }
 }
 

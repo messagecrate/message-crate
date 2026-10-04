@@ -5,10 +5,9 @@ use crate::normalize::{imessage_from_parts, source_from_parts};
 use anyhow::{Context, Result, bail};
 use message_csv::{AttachmentCell, ParticipantCell};
 use message_ir::{
-    ConversationDocument, ConversationHeader, ConversationMeta, ConversationStats, Deletion,
-    ExportMeta, IrAttachment, IrConversationType, IrDirection, IrImessage, IrMessage,
-    IrMessageKind, IrParticipant, IrService, Reaction, SCHEMA_VERSION, nonempty,
-    parse_android_type,
+    ConversationDocument, ConversationHeader, ConversationMeta, ConversationStats, ExportMeta,
+    IrAttachment, IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind,
+    IrParticipant, IrService, Reaction, SCHEMA_VERSION, nonempty, parse_android_type,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -112,7 +111,7 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
 
     let is_reply = message_csv::parse_bool(get("is_reply"));
     // A mark the CSV names wrongly is refused rather than read as none.
-    let deletion = Deletion::read(get("deletion")).context("bad deletion")?;
+    let deletion = message_ir::parse_deletion(get("deletion")).context("bad deletion")?;
     let thread_originator_part = {
         let s = get("thread_originator_part");
         if s.is_empty() { None } else { s.parse().ok() }

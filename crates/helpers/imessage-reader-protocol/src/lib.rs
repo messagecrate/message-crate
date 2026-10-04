@@ -451,42 +451,7 @@ impl Deletion {
             Self::Unsent => "unsent",
         }
     }
-
-    /// The mark a text field holds, as the CSV cell and the mail header
-    /// write it: blank for no mark, else [`Self::as_str`]'s text.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`UnknownDeletion`] for any other text, so a reader refuses
-    /// it rather than read it as no mark.
-    pub fn read(text: &str) -> Result<Option<Self>, UnknownDeletion> {
-        let text = text.trim();
-        if text.is_empty() {
-            return Ok(None);
-        }
-        Self::ALL
-            .into_iter()
-            .find(|d| d.as_str() == text)
-            .map(Some)
-            .ok_or_else(|| UnknownDeletion(text.to_string()))
-    }
 }
-
-/// Text that names neither mark of [`Deletion`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UnknownDeletion(pub String);
-
-impl std::fmt::Display for UnknownDeletion {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{:?} is neither deleted_in_source_app nor unsent",
-            self.0
-        )
-    }
-}
-
-impl std::error::Error for UnknownDeletion {}
 
 /// One attachment's metadata and where its bytes are.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -594,19 +559,13 @@ mod tests {
     }
 
     #[test]
-    fn a_deletion_is_written_as_serde_writes_it_and_read_back() {
+    fn a_deletion_is_written_as_serde_writes_it() {
         for deletion in Deletion::ALL {
             assert_eq!(
                 serde_json::to_string(&deletion).unwrap(),
                 format!("\"{}\"", deletion.as_str())
             );
-            assert_eq!(Deletion::read(deletion.as_str()), Ok(Some(deletion)));
         }
-        assert_eq!(Deletion::read(" "), Ok(None));
-        assert_eq!(
-            Deletion::read("deleted").unwrap_err().to_string(),
-            r#""deleted" is neither deleted_in_source_app nor unsent"#
-        );
     }
 
     #[test]

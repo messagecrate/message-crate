@@ -60,6 +60,42 @@ pub use imessage_reader_protocol::Reaction;
 /// file carries.
 pub use imessage_reader_protocol::Deletion;
 
+/// The mark a text field holds, as the CSV `deletion` cell and the
+/// `X-ME-Deletion` mail header write it: blank for no mark, else
+/// [`Deletion::as_str`]'s text.
+///
+/// # Errors
+///
+/// Returns [`UnknownDeletion`] for any other text, so a reader refuses it
+/// rather than read it as no mark.
+pub fn parse_deletion(text: &str) -> Result<Option<Deletion>, UnknownDeletion> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Ok(None);
+    }
+    Deletion::ALL
+        .into_iter()
+        .find(|d| d.as_str() == text)
+        .map(Some)
+        .ok_or_else(|| UnknownDeletion(text.to_string()))
+}
+
+/// Text that names neither mark of [`Deletion`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownDeletion(pub String);
+
+impl std::fmt::Display for UnknownDeletion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:?} is neither deleted_in_source_app nor unsent",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for UnknownDeletion {}
+
 /// Schema version written into every [`ConversationDocument`] (currently 7).
 pub const SCHEMA_VERSION: u32 = 7;
 

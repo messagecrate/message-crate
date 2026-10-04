@@ -213,3 +213,17 @@ fn a_source_is_empty_only_when_it_has_neither_a_type_nor_a_field() {
 }
 
 mod digests;
+
+/// A blank field is no mark, each mark reads back from its own text, and any
+/// other text is refused by name.
+#[test]
+fn a_deletion_field_reads_each_mark_and_refuses_other_text() {
+    for deletion in crate::Deletion::ALL {
+        assert_eq!(crate::parse_deletion(deletion.as_str()), Ok(Some(deletion)));
+    }
+    assert_eq!(crate::parse_deletion(" "), Ok(None));
+    assert_eq!(
+        crate::parse_deletion("deleted").unwrap_err().to_string(),
+        r#""deleted" is neither deleted_in_source_app nor unsent"#
+    );
+}
