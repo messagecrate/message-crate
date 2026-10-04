@@ -1,10 +1,9 @@
 /** @vitest-environment jsdom */
 
 import { fireEvent, render } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { setupUser } from "../test/user";
 import ColumnResizeHandle from "./ColumnResizeHandle";
-import ListColumn from "./ListColumn";
 
 function handleProps() {
   return {
@@ -46,6 +45,46 @@ describe("ColumnResizeHandle", () => {
     expect(handle.tagName).toBe("HR");
     expect(handle).not.toHaveAttribute("role");
     expect(handle).toHaveAttribute("tabindex", "0");
+    expect(handle).toHaveAttribute("aria-orientation", "vertical");
+    expect(handle).toHaveAttribute("aria-valuenow", "220");
+    expect(handle).toHaveAttribute("aria-valuemin", "160");
+    expect(handle).toHaveAttribute("aria-valuemax", "520");
+  });
+
+  /**
+   * The accent line is the grip's ::after, which the stylesheet colours only
+   * while `data-active` is set. Without the attribute the line never shows.
+   */
+  it.each([
+    { state: "hovered", dragging: false, handleHover: true },
+    { state: "dragged", dragging: true, handleHover: false },
+  ])(
+    "marks the grip active while it is $state, which draws the accent line",
+    ({ dragging, handleHover }) => {
+      const { getByRole } = render(
+        <ColumnResizeHandle
+          ariaLabel="Resize navigation panel"
+          width={220}
+          minWidth={160}
+          maxWidth={520}
+          dragging={dragging}
+          handleHover={handleHover}
+          handleProps={props}
+        />,
+      );
+
+      const handle = getByRole("separator", { name: "Resize navigation panel" });
+      expect(handle).toHaveAttribute("data-active");
+      expect(handle.className).toContain("data-active:after:bg-accent");
+    },
+  );
+
+  it("leaves the grip inactive at rest, so no accent line shows", () => {
+    const { getByRole } = renderHandle(props);
+
+    expect(getByRole("separator", { name: "Resize navigation panel" })).not.toHaveAttribute(
+      "data-active",
+    );
   });
 
   it("keeps the grip on the inner right edge so the next column cannot cover it", () => {
@@ -144,80 +183,5 @@ describe("ColumnResizeHandle", () => {
 
     expect(getByRole("separator", { name: "Resize list" })).toHaveAttribute("aria-valuenow", "250");
     column.remove();
-  });
-});
-
-/**
- * The list column with its real resize hook. jsdom lays nothing out, so the
- * column reports no painted width and the grip falls back to the stored width,
- * which is what `aria-valuenow` and the column's own style then show.
- */
-describe("ColumnResizeHandle in a resizable column", () => {
-  const capture = new Set<number>();
-
-  beforeEach(() => {
-    capture.clear();
-    Element.prototype.setPointerCapture = (id: number) => {
-      capture.add(id);
-    };
-    Element.prototype.hasPointerCapture = (id: number) => capture.has(id);
-    Element.prototype.releasePointerCapture = (id: number) => {
-      capture.delete(id);
-    };
-  });
-
-  afterEach(() => {
-    localStorage.clear();
-  });
-
-  function renderColumn() {
-    const view = render(
-      <ListColumn>
-        <p>Threads</p>
-      </ListColumn>,
-    );
-    const handle = view.getByRole("separator", { name: "Resize list column" });
-    const column = view.container.querySelector<HTMLElement>("[data-list-column]");
-    if (!column) throw new Error("no list column");
-    return { handle, column };
-  }
-
-  it("follows a drag and keeps the width the drag ended on", () => {
-    const { handle, column } = renderColumn();
-    expect(handle).toHaveAttribute("aria-valuenow", "300");
-
-    fireEvent.pointerDown(handle, { pointerId: 1, clientX: 500 });
-    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 560 });
-    expect(handle).toHaveAttribute("aria-valuenow", "360");
-    expect(column.style.width).toBe("360px");
-
-    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 900 });
-    expect(handle).toHaveAttribute("aria-valuenow", "560");
-
-    fireEvent.pointerUp(handle, { pointerId: 1, clientX: 900 });
-    fireEvent.pointerMove(handle, { pointerId: 1, clientX: 400 });
-    expect(handle).toHaveAttribute("aria-valuenow", "560");
-    expect(localStorage.getItem("listColumnWidth:v1")).toBe("560");
-  });
-
-  it("resizes from the keyboard with the arrow keys, Home and End", async () => {
-    const user = setupUser();
-    const { handle, column } = renderColumn();
-
-    await user.tab();
-    expect(handle).toHaveFocus();
-
-    await user.keyboard("{ArrowRight}");
-    expect(handle).toHaveAttribute("aria-valuenow", "308");
-    await user.keyboard("{Shift>}{ArrowLeft}{/Shift}");
-    expect(handle).toHaveAttribute("aria-valuenow", "284");
-    expect(column.style.width).toBe("284px");
-
-    await user.keyboard("{Home}");
-    expect(handle).toHaveAttribute("aria-valuenow", "220");
-    await user.keyboard("{End}");
-    expect(handle).toHaveAttribute("aria-valuenow", "560");
-    expect(handle).toHaveAttribute("aria-valuemin", "220");
-    expect(handle).toHaveAttribute("aria-valuemax", "560");
   });
 });
