@@ -674,6 +674,90 @@ async fn an_upload_answers_its_state() {
     crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::NotFound);
 }
 
+/// The upload routes that do not install anything never read the stored
+/// file, even when one with the upload's fingerprint is already stored:
+/// reading an upload's state, writing a part and ending an upload answer
+/// from the upload's own files, so a client polling a large video's upload
+/// does not pay a read of the whole file each time. Starting an upload
+/// reads the stored file once, to answer that it is already there.
+#[tokio::test]
+async fn the_upload_routes_read_a_stored_file_only_to_start_an_upload() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let mut state = fixture.state.clone();
+    state.asset_part_size = 16;
+    let bytes: Vec<u8> = (0u8..40).collect();
+    let sha = sha256_hex(&bytes);
+
+    let (_, started): (String, serde_json::Value) = crate::test_support::post_created_json(
+        &state,
+        &format!("/v1/assets/{sha}/uploads"),
+        &user.token,
+        serde_json::json!({ "bytes": 40 }),
+    )
+    .await;
+    let upload_id = started["upload_id"].as_str().unwrap();
+    let (status, text) = crate::test_support::put_raw(
+        &state,
+        &format!("/v1/assets/{sha}"),
+        &user.token,
+        "application/octet-stream",
+        bytes.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{text}");
+    let stored = state
+        .cfg
+        .paths
+        .assets_dir_for_account(user.account_id)
+        .join(shard_rel_path(&Sha256::parse(&sha).unwrap(), ""));
+    assert!(stored.is_file());
+    let before = hashed::count(&stored);
+
+    let upload: serde_json::Value = crate::test_support::get_json(
+        &state,
+        &format!("/v1/assets/{sha}/uploads/{upload_id}"),
+        &user.token,
+    )
+    .await;
+    assert_eq!(upload["received_parts"], serde_json::json!([]));
+    let (status, text) = crate::test_support::put_raw(
+        &state,
+        &format!("/v1/assets/{sha}/uploads/{upload_id}/parts/1"),
+        &user.token,
+        "application/octet-stream",
+        bytes[..16].to_vec(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    let (status, text) = crate::test_support::delete_raw(
+        &state,
+        &format!("/v1/assets/{sha}/uploads/{upload_id}"),
+        &user.token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{text}");
+    assert_eq!(
+        hashed::count(&stored),
+        before,
+        "reading, writing a part of and ending an upload read the stored file"
+    );
+
+    let (status, text) = crate::test_support::post_raw(
+        &state,
+        &format!("/v1/assets/{sha}/uploads"),
+        &user.token,
+        "application/json",
+        serde_json::to_vec(&serde_json::json!({ "bytes": 40 })).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    assert_eq!(
+        hashed::count(&stored),
+        before + 1,
+        "starting an upload of a stored file reads it once"
+    );
+}
+
 /// The attachment size limit is read from the Server Settings on each upload:
 /// the owner lowers it, and the next upload over it is refused by the server
 /// that was already running, whether it is sent as one `PUT` or opened as a

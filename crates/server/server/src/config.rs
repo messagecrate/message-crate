@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use serde::Deserialize;
@@ -74,6 +74,34 @@ fn known_keys<T>(name: &str, section: Section<T>) -> Result<T> {
     Ok(section.known)
 }
 
+/// Refuse a `[paths]` value that is not one plain directory name.
+///
+/// `assets_dir` and `assets_converted_dir` are joined onto each account's
+/// directory. An absolute path, or on Windows one with a drive (`C:assets`),
+/// would replace that directory, so every account's attachments would share
+/// one; a separator or `..` would reach outside it; an empty name or `.`
+/// would be the account's directory itself. A name starting with `.` is
+/// refused too, because the server keeps `.removing` beside the attachments
+/// and deletes what is in it. A name ending in `.` or a space is refused,
+/// because Windows drops those, so `assets.` would be `assets` there.
+fn require_directory_name(key: &str, value: &str) -> Result<()> {
+    let mut components = Path::new(value).components();
+    let one_name =
+        matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none();
+    let plain = one_name
+        && !value.starts_with('.')
+        && !value.ends_with(['.', ' '])
+        && !value.contains(['/', '\\', ':']);
+    if !plain {
+        bail!(
+            "[paths] {key} = {value:?} is not a directory name. It names one directory inside \
+             each account's directory, such as \"assets\": not empty, with no separator, no \
+             `:`, not starting with `.`, and not ending in `.` or a space"
+        );
+    }
+    Ok(())
+}
+
 impl ConfigFile {
     /// The configuration the file states, or the refusal of what it should not hold.
     fn into_config(self) -> Result<Config> {
@@ -84,8 +112,22 @@ impl ConfigFile {
                 key_list(&self.unknown)
             );
         }
+        let paths = known_keys("paths", self.paths)?;
+        require_directory_name("assets_dir", &paths.assets_dir)?;
+        require_directory_name("assets_converted_dir", &paths.assets_converted_dir)?;
+        if paths.assets_dir.to_lowercase() == paths.assets_converted_dir.to_lowercase() {
+            // Originals and Previews are swept under different rules, and a
+            // Preview not yet recorded would be swept as an unnamed original.
+            // macOS and Windows ignore letter case by default, so `media` and
+            // `Media` are one directory there.
+            bail!(
+                "[paths] assets_dir and assets_converted_dir are both {:?}. Originals and \
+                 Previews need a directory each; give them different names",
+                paths.assets_dir
+            );
+        }
         Ok(Config {
-            paths: known_keys("paths", self.paths)?,
+            paths,
             server: self
                 .server
                 .map(|section| known_keys("server", section))
@@ -378,299 +420,4 @@ pub(crate) fn config_root(path: &Path) -> Result<PathBuf> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A config file at `<dir>/config/server.toml` holding `text`.
-    fn config_file(dir: &Path, text: &str) -> PathBuf {
-        let config_dir = dir.join("config");
-        fs::create_dir_all(&config_dir).unwrap();
-        let path = config_dir.join("server.toml");
-        fs::write(&path, text).unwrap();
-        path
-    }
-
-    #[test]
-    fn without_db_the_database_is_the_configured_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = config_file(dir.path(), "[paths]\ndb = \"/srv/messagecrate.db\"\n");
-
-        let cfg = Config::load_with_db(&path, None).unwrap();
-
-        assert_eq!(cfg.paths.db, PathBuf::from("/srv/messagecrate.db"));
-    }
-
-    #[test]
-    fn db_replaces_the_configured_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = config_file(dir.path(), "[paths]\ndb = \"/srv/messagecrate.db\"\n");
-
-        let cfg = Config::load_with_db(&path, Some(PathBuf::from("/elsewhere/other.db"))).unwrap();
-
-        assert_eq!(cfg.paths.db, PathBuf::from("/elsewhere/other.db"));
-    }
-
-    /// S7-12: `--db data/messagecrate.db` names the file `[paths] db =
-    /// "data/messagecrate.db"` names, wherever the command runs, rather than
-    /// a file under the working directory.
-    #[test]
-    fn a_relative_db_resolves_where_the_config_key_does() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = config_file(dir.path(), "[paths]\ndb = \"data/messagecrate.db\"\n");
-
-        let from_key = Config::load(&path).unwrap();
-        let from_flag =
-            Config::load_with_db(&path, Some(PathBuf::from("data/messagecrate.db"))).unwrap();
-
-        assert_eq!(from_flag.paths.db, from_key.paths.db);
-        assert_eq!(from_flag.paths.db, dir.path().join("data/messagecrate.db"));
-    }
-
-    #[test]
-    fn validate_source_id_accepts_slugs() {
-        assert!(validate_source_id("imessage").is_ok());
-        assert!(validate_source_id("go-sms-pro").is_ok());
-        assert!(validate_source_id("sms_backup_plus").is_ok());
-        assert!(validate_source_id("a1").is_ok());
-    }
-
-    #[test]
-    fn validate_source_id_rejects_bad() {
-        assert!(validate_source_id("").is_err());
-        assert!(validate_source_id("iMessage").is_err());
-        assert!(validate_source_id("../x").is_err());
-        assert!(validate_source_id("-bad").is_err());
-        assert!(validate_source_id("has space").is_err());
-    }
-
-    #[test]
-    fn relative_paths_resolve_against_the_folder_above_the_config_folder() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = config_file(
-            dir.path(),
-            "[paths]\ndb = \"data/messagecrate.db\"\ndata_dir = \"data\"\n\n\
-             [server]\nstatic_dir = \"site\"\n",
-        );
-
-        let cfg = Config::load(&path).unwrap();
-
-        assert_eq!(cfg.paths.db, dir.path().join("data/messagecrate.db"));
-        assert_eq!(cfg.paths.data_dir, dir.path().join("data"));
-        assert_eq!(
-            cfg.require_server().unwrap().static_dir,
-            dir.path().join("site")
-        );
-    }
-
-    /// The defaults `docs/developer/reference/config-and-accounts.md` states.
-    #[test]
-    fn a_config_with_no_settings_loads_the_documented_defaults() {
-        let dir = tempfile::tempdir().unwrap();
-        let config_dir = dir.path().join("config");
-        fs::create_dir_all(&config_dir).unwrap();
-        let path = config_dir.join("config.toml");
-        fs::write(
-            &path,
-            "[paths]\ndb = \"data/messagecrate.db\"\n\n[server]\n",
-        )
-        .unwrap();
-
-        let cfg = Config::load(&path).unwrap();
-
-        assert_eq!(cfg.paths.data_dir, dir.path().join("data"));
-        assert_eq!(
-            cfg.paths.assets_dir_for_account(7),
-            dir.path().join("data/7/assets")
-        );
-        assert_eq!(
-            cfg.paths.assets_converted_dir_for_account(7),
-            dir.path().join("data/7/assets_converted")
-        );
-        let server = cfg.require_server().unwrap();
-        assert_eq!(server.bind, "127.0.0.1:8080");
-        assert_eq!(server.asset_part_size, 67_108_864);
-        assert!(!server.openapi_ui);
-        assert!(server.cors_origins.is_empty());
-    }
-
-    /// Write `text` as `config/config.toml` under a fresh folder and load it.
-    fn load_text(text: &str) -> Result<Config> {
-        let dir = tempfile::tempdir().unwrap();
-        let config_dir = dir.path().join("config");
-        fs::create_dir_all(&config_dir).unwrap();
-        let path = config_dir.join("config.toml");
-        fs::write(&path, text).unwrap();
-        Config::load(&path)
-    }
-
-    /// The limit left the config file. A line that still sets it is refused,
-    /// and the refusal says where the limit is set now, because a line that
-    /// loaded and did nothing would leave the operator believing it held.
-    #[test]
-    fn a_config_that_still_sets_asset_max_bytes_is_refused_and_told_where_the_limit_lives() {
-        let err = load_text(
-            "[paths]\ndb = \"data/messagecrate.db\"\n\n[server]\nasset_max_bytes = 536870912\n",
-        )
-        .unwrap_err();
-        let text = format!("{err:#}");
-
-        assert!(text.contains("config.toml"), "{text}");
-        assert!(text.contains("[server] asset_max_bytes"), "{text}");
-        assert!(text.contains("Server Settings screen"), "{text}");
-    }
-
-    /// A key the server does not use is refused wherever it sits, by its name
-    /// and its section: a misspelt key otherwise loads as the default.
-    #[test]
-    fn a_config_with_an_unknown_key_is_refused_naming_the_key_and_its_section() {
-        for (section, config) in [
-            (
-                "[paths]",
-                "[paths]\ndb = \"data/messagecrate.db\"\nasset_dir = \"assets\"\n",
-            ),
-            (
-                "[server]",
-                "[paths]\ndb = \"data/messagecrate.db\"\n\n[server]\nasset_dir = 1\n",
-            ),
-        ] {
-            let text = format!("{:#}", load_text(config).unwrap_err());
-            assert!(text.contains("`asset_dir`"), "{section}: {text}");
-            assert!(text.contains(section), "{section}: {text}");
-        }
-    }
-
-    /// Every unknown key is named, not only the first.
-    #[test]
-    fn every_unknown_key_in_a_section_is_named() {
-        let text = format!(
-            "{:#}",
-            load_text(
-                "[paths]\ndb = \"data/messagecrate.db\"\n\n[server]\nbnd = \"x\"\nport = 1\n"
-            )
-            .unwrap_err()
-        );
-        assert!(text.contains("`bnd`") && text.contains("`port`"), "{text}");
-    }
-
-    /// A section the server does not have, or a key outside any section.
-    #[test]
-    fn a_config_with_an_unknown_section_is_refused_naming_it() {
-        let text = format!(
-            "{:#}",
-            load_text("[paths]\ndb = \"data/messagecrate.db\"\n\n[sever]\nbind = \"x\"\n")
-                .unwrap_err()
-        );
-        assert!(text.contains("`sever`"), "{text}");
-        assert!(text.contains("[paths] and [server]"), "{text}");
-    }
-
-    /// `[database]` named the connection URL while the server ran on Postgres
-    /// too. It is an unknown section now, so a config that still has it is
-    /// refused by name and never read as if the URL were honoured.
-    #[test]
-    fn a_config_with_the_removed_database_section_is_refused_naming_it() {
-        let text = format!(
-            "{:#}",
-            load_text(
-                "[paths]\ndb = \"data/messagecrate.db\"\n\n[database]\nurl = \"sqlite://x.db\"\n"
-            )
-            .unwrap_err()
-        );
-        assert!(text.contains("`database`"), "{text}");
-    }
-
-    /// The config files the repository ships must load under the same rule:
-    /// the example a developer copies and the one the Docker image starts from.
-    #[test]
-    fn every_committed_config_file_loads() {
-        let repo = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../..");
-        for file in ["config/config.toml.example", "config/config.docker.toml"] {
-            let text = fs::read_to_string(repo.join(file)).unwrap();
-            if let Err(err) = load_text(&text) {
-                panic!("{file} does not load: {err:#}");
-            }
-        }
-    }
-
-    const PACKAGED_ORIGINS: &[&str] = &[
-        "https://tauri.localhost",
-        "http://tauri.localhost",
-        "tauri://localhost",
-    ];
-
-    /// `scripts/run-dev.sh` only uncomments the `# cors_origins =` line.
-    /// That line must be a complete array or the config it writes on a first
-    /// run is invalid TOML.
-    #[test]
-    fn example_cors_origins_uncomments_to_a_complete_array() {
-        let example = include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../config/config.toml.example"
-        ));
-        let cors_lines: Vec<&str> = example
-            .lines()
-            .filter(|line| {
-                line.starts_with("# cors_origins =") || line.starts_with("cors_origins =")
-            })
-            .collect();
-        assert_eq!(
-            cors_lines.len(),
-            1,
-            "run-dev.sh uncomments one cors_origins line"
-        );
-        assert!(
-            cors_lines[0].contains('[') && cors_lines[0].contains(']'),
-            "cors_origins must stay on one line so sed yields a closed array, got {}",
-            cors_lines[0]
-        );
-
-        let uncommented: String = example
-            .lines()
-            .map(|line| {
-                line.strip_prefix("# cors_origins =")
-                    .map(|rest| format!("cors_origins ={rest}"))
-                    .unwrap_or_else(|| line.to_string())
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        let cfg: Config =
-            Config::parse(&uncommented).expect("example after run-dev.sh sed must parse");
-        let origins = &cfg
-            .server
-            .as_ref()
-            .expect("[server] in example")
-            .cors_origins;
-        for origin in [
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-            PACKAGED_ORIGINS[0],
-            PACKAGED_ORIGINS[1],
-            PACKAGED_ORIGINS[2],
-        ] {
-            assert!(
-                origins.iter().any(|item| item == origin),
-                "missing {origin} in {origins:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn docker_config_includes_packaged_desktop_origins() {
-        let docker = include_str!(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../config/config.docker.toml"
-        ));
-        let cfg = Config::parse(docker).expect("config.docker.toml must parse");
-        let origins = &cfg
-            .server
-            .as_ref()
-            .expect("[server] in docker config")
-            .cors_origins;
-        for origin in PACKAGED_ORIGINS {
-            assert!(
-                origins.iter().any(|item| item == origin),
-                "missing {origin} in {origins:?}"
-            );
-        }
-    }
-}
+mod tests;
