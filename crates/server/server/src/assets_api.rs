@@ -451,6 +451,8 @@ pub fn hash_and_store(
 ///
 /// Returns an error when the file cannot be opened or read.
 pub(crate) fn hash_file(path: &Path) -> Result<String> {
+    #[cfg(test)]
+    hashed::record(path);
     let file = open_nofollow_read(path)?;
     let mut reader = BufReader::new(file);
     let mut hasher = Sha256Hasher::new();
@@ -463,6 +465,26 @@ pub(crate) fn hash_file(path: &Path) -> Result<String> {
         hasher.update(&buf[..n]);
     }
     Ok(hex_encode(&hasher.finalize()))
+}
+
+/// Every path [`hash_file`] was asked to read, so a test can show that a
+/// route answers without reading a stored file. Tests run in parallel, so a
+/// test looks only for paths under its own temporary directory.
+#[cfg(test)]
+pub(crate) mod hashed {
+    use std::path::{Path, PathBuf};
+    use std::sync::Mutex;
+
+    static PATHS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+    pub(super) fn record(path: &Path) {
+        PATHS.lock().unwrap().push(path.to_path_buf());
+    }
+
+    /// How many times `path` has been hashed so far.
+    pub(crate) fn count(path: &Path) -> usize {
+        PATHS.lock().unwrap().iter().filter(|p| *p == path).count()
+    }
 }
 
 /// Read the MIME sidecar for `sha`, if present and non-empty.
@@ -1062,7 +1084,7 @@ pub(crate) async fn create_asset_upload(
     AxumPath(sha256): AxumPath<Sha256>,
     Json(body): Json<CreateAssetUploadRequest>,
 ) -> Result<Response, ApiError> {
-    let (account, _existing) = resolve_asset_lookup(&state, &auth, &sha256).await?;
+    let account = resolve_import_account(&auth);
     let assets_dir = state.cfg.paths.assets_dir_for_account(account);
     let mime = body.mime.clone();
     let bytes = body.bytes;
@@ -1128,7 +1150,7 @@ pub(crate) async fn replace_asset_upload_part(
     request: Request,
 ) -> Result<Json<ReplaceAssetUploadPartResponse>, ApiError> {
     require_content_type(&headers)?;
-    let (account, _existing) = resolve_asset_lookup(&state, &auth, &sha256).await?;
+    let account = resolve_import_account(&auth);
     if part == 0 {
         return Err(ApiError::validation("part number must be >= 1"));
     }
@@ -1281,7 +1303,7 @@ pub(crate) async fn get_asset_upload(
     ImportAccess(auth): ImportAccess,
     AxumPath((sha256, upload_id)): AxumPath<(Sha256, String)>,
 ) -> Result<Json<AssetUpload>, ApiError> {
-    let (account, _existing) = resolve_asset_lookup(&state, &auth, &sha256).await?;
+    let account = resolve_import_account(&auth);
     let assets_dir = state.cfg.paths.assets_dir_for_account(account);
     let sha = sha256.clone();
     let uid = upload_id.clone();
@@ -1319,7 +1341,7 @@ pub(crate) async fn delete_asset_upload(
     ImportAccess(auth): ImportAccess,
     AxumPath((sha256, upload_id)): AxumPath<(Sha256, String)>,
 ) -> Result<axum::http::StatusCode, ApiError> {
-    let (account, _existing) = resolve_asset_lookup(&state, &auth, &sha256).await?;
+    let account = resolve_import_account(&auth);
     let assets_dir = state.cfg.paths.assets_dir_for_account(account);
     let sha = sha256.clone();
     let uid = upload_id.clone();

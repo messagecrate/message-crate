@@ -74,6 +74,27 @@ fn known_keys<T>(name: &str, section: Section<T>) -> Result<T> {
     Ok(section.known)
 }
 
+/// Refuse a `[paths]` value that is not one plain directory name.
+///
+/// `assets_dir` and `assets_converted_dir` are joined onto each account's
+/// directory. An absolute path would replace that directory, so every
+/// account's attachments would share one; a separator or `..` would reach
+/// outside it; an empty name or `.` would be the account's directory itself.
+fn require_directory_name(key: &str, value: &str) -> Result<()> {
+    let plain = !value.is_empty()
+        && value != "."
+        && value != ".."
+        && !value.contains(['/', '\\'])
+        && !Path::new(value).is_absolute();
+    if !plain {
+        bail!(
+            "[paths] {key} = {value:?} is not a directory name. It names one directory inside \
+             each account's directory, such as \"assets\": no separator, no `..`, and not empty"
+        );
+    }
+    Ok(())
+}
+
 impl ConfigFile {
     /// The configuration the file states, or the refusal of what it should not hold.
     fn into_config(self) -> Result<Config> {
@@ -84,8 +105,11 @@ impl ConfigFile {
                 key_list(&self.unknown)
             );
         }
+        let paths = known_keys("paths", self.paths)?;
+        require_directory_name("assets_dir", &paths.assets_dir)?;
+        require_directory_name("assets_converted_dir", &paths.assets_converted_dir)?;
         Ok(Config {
-            paths: known_keys("paths", self.paths)?,
+            paths,
             server: self
                 .server
                 .map(|section| known_keys("server", section))
@@ -577,6 +601,54 @@ mod tests {
             .unwrap_err()
         );
         assert!(text.contains("`database`"), "{text}");
+    }
+
+    /// `assets_dir` and `assets_converted_dir` are joined onto each
+    /// account's directory, so anything but one plain directory name is
+    /// refused by its key: an absolute path would put every account's
+    /// attachments in one directory, and a separator or `..` would reach
+    /// outside the account's own. A plain name loads.
+    #[test]
+    fn an_assets_directory_that_is_not_one_plain_name_is_refused_naming_its_key() {
+        for key in ["assets_dir", "assets_converted_dir"] {
+            for value in [
+                "/srv/mc/assets",
+                "media/assets",
+                "media\\\\assets",
+                "..",
+                ".",
+                "../assets",
+                "",
+            ] {
+                let config =
+                    format!("[paths]\ndb = \"data/messagecrate.db\"\n{key} = \"{value}\"\n");
+                let Err(err) = load_text(&config) else {
+                    panic!("{key} = {value:?} loaded");
+                };
+                let text = format!("{err:#}");
+                assert!(
+                    text.contains(&format!("[paths] {key}")),
+                    "{key} = {value:?}: {text}"
+                );
+            }
+        }
+
+        // A plain name other than the default loads, and the account's
+        // directories are that name under the account's own directory.
+        let cfg = load_text(
+            "[paths]\ndb = \"data/messagecrate.db\"\nassets_dir = \"originals\"\nassets_converted_dir = \"previews.v2\"\n",
+        )
+        .unwrap();
+        assert!(
+            cfg.paths
+                .assets_dir_for_account(7)
+                .ends_with("data/7/originals")
+        );
+        assert!(
+            cfg.paths
+                .assets_converted_dir_for_account(7)
+                .ends_with("data/7/previews.v2")
+        );
     }
 
     /// The config files the repository ships must load under the same rule:

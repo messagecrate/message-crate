@@ -1,8 +1,10 @@
 //! Import-time media rewrite before the content-addressed asset store.
 //!
-//! The modes and the conversions are the `media` crate's, the same ones the
-//! desktop export applies, so an attachment converted on import and one
-//! converted on export come out as the same bytes.
+//! The modes and the conversions are the `media` crate's. The compress
+//! options are the server's own ([`server_compress_options`], a 1080p cap),
+//! not the ones a desktop Import Run chose on its Import form (720p unless
+//! changed), so an attachment the server compresses and the same attachment
+//! compressed by the desktop app can come out as different bytes.
 
 use std::path::{Path, PathBuf};
 

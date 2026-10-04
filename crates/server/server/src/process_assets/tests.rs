@@ -266,6 +266,15 @@ fn a_missing_original_is_an_error_only_when_a_conversion_is_wanted() {
         plan(&row("aa/notes.txt"), &opts, missing).unwrap(),
         Plan::Skip(SkipReason::NotMedia)
     );
+    // A damaged Preview with no original to convert it from again is dropped.
+    let missing_and_damaged = OnDisk {
+        original_exists: false,
+        preview: PreviewFile::Damaged,
+    };
+    assert_eq!(
+        plan(&row("aa/photo.jpg"), &opts, missing_and_damaged).unwrap(),
+        Plan::DropDamagedPreview
+    );
 }
 
 #[test]
@@ -879,6 +888,74 @@ async fn a_missing_original_is_counted_as_a_failure_and_the_run_goes_on() {
         stats(2, 0, 1, 1)
     );
     assert_eq!(derived_of(&mut conn, attachment_id).await, None);
+}
+
+/// A damaged Preview whose original is missing cannot be converted again.
+/// The run drops it rather than leave the rows naming it, so the server
+/// stops serving it as if whole: every row that names it, from every
+/// source, is cleared, the file is deleted, and the attachment still counts
+/// as a failure. A dry run says so and changes nothing.
+#[tokio::test]
+async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_failure() {
+    let (opened, _dir, imessage_attachment) = fixture_with_png("imessage").await;
+    let mut conn = opened.conn().await.unwrap();
+    let message_id = seed_message(&mut conn, "sms").await;
+    let sms_attachment =
+        attach_stored_blob(&opened, &mut conn, message_id, SHA, ".png", PNG_1X1_RGB).await;
+    let preview_sha = "c".repeat(64);
+    let rel = format!("cc/{preview_sha}.jpg");
+    let preview = opened
+        .cfg
+        .paths
+        .assets_converted_dir_for_account(ACCOUNT)
+        .join(&rel);
+    fs::create_dir_all(preview.parent().unwrap()).unwrap();
+    fs::write(&preview, b"a Preview cut short").unwrap();
+    sqlx::query(
+        "UPDATE attachments
+         SET derived_sha256 = $1, derived_assets_path = $2, derived_mime_type = 'image/jpeg'",
+    )
+    .bind(&preview_sha)
+    .bind(&rel)
+    .execute(&mut *conn)
+    .await
+    .unwrap();
+    fs::remove_file(
+        opened
+            .cfg
+            .paths
+            .assets_dir_for_account(ACCOUNT)
+            .join(format!("ab/{SHA}.png")),
+    )
+    .unwrap();
+    let named = Some((preview_sha, rel, "image/jpeg".to_string()));
+
+    let dry_run = ProcessAssetsOptions {
+        dry_run: true,
+        ..Default::default()
+    };
+    assert_eq!(run(&opened, &dry_run).await.unwrap(), stats(1, 0, 0, 1));
+    assert!(preview.is_file(), "a dry run deletes nothing");
+    assert_eq!(derived_of(&mut conn, imessage_attachment).await, named);
+
+    assert_eq!(
+        run(&opened, &ProcessAssetsOptions::default())
+            .await
+            .unwrap(),
+        stats(1, 0, 0, 1)
+    );
+    assert!(!preview.exists(), "the damaged Preview is deleted");
+    assert_eq!(derived_of(&mut conn, imessage_attachment).await, None);
+    assert_eq!(derived_of(&mut conn, sms_attachment).await, None);
+    let named_columns: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM attachments
+         WHERE derived_sha256 IS NOT NULL OR derived_assets_path IS NOT NULL
+            OR derived_mime_type IS NOT NULL",
+    )
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(named_columns, 0, "every derived column is cleared");
 }
 
 #[tokio::test]
