@@ -510,7 +510,8 @@ What each reaches:
   outcome and counts, with the counts an import's summary reported and how
   many issues it recorded, and for an export only which form its scope took.
   Why: a staging summary lists the addresses of everyone in the backup, an
-  issue names its conversation's file, and an export's query is a search over
+  issue names its conversation's file, a note names a file or an address, and
+  an export's query is a search over
   the account's messages, all content under
   `docs/adr/0008-the-owner-holds-no-messages.md`. The owner's view is a type
   of its own rather than the account's with fields removed, so a field added

@@ -227,6 +227,8 @@ pub struct CompleteImportArgs {
     pub summary_json: Option<String>,
     /// Per-file issues to record against the run.
     pub issues: Vec<ImportIssueInput>,
+    /// Per-item notes to record against the run.
+    pub notes: Vec<ImportNoteInput>,
 }
 
 impl CompleteImportArgs {
@@ -260,6 +262,29 @@ pub struct ImportIssueInput {
     pub item: String,
     /// Human-readable explanation.
     pub reason: String,
+}
+
+/// One note to record against an Import Run: something the run did with an
+/// item that is worth knowing but did not fail.
+#[derive(Debug, Clone)]
+pub struct ImportNoteInput {
+    /// Stage the note came from.
+    pub stage: ImportIssueStage,
+    /// The file, message or address the note is about.
+    pub item: String,
+    /// What the run did with it.
+    pub text: String,
+}
+
+/// One stored `import_notes` row.
+#[derive(Debug, Clone)]
+pub struct ImportNoteRow {
+    /// Stage the note came from.
+    pub stage: ImportIssueStage,
+    /// The file, message or address the note is about.
+    pub item: String,
+    /// What the run did with it.
+    pub text: String,
 }
 
 /// One stored `import_issues` row.
@@ -580,7 +605,7 @@ async fn not_running(
 /// Close a running Import Run the user gave up on.
 ///
 /// Records `cancelled` with `issues`, the Import Errors the run recorded
-/// before it was given up, and clears `stage`, which frees the account's
+/// before it was given up, and its `notes`, and clears `stage`, which frees the account's
 /// single active slot. Nothing reclaims a run on a timer — a run
 /// is broken by an explicit discard or not at all.
 ///
@@ -593,12 +618,13 @@ pub async fn discard_import(
     account_id: i64,
     import_id: i64,
     issues: &[ImportIssueInput],
+    notes: &[ImportNoteInput],
 ) -> std::result::Result<(), ImportLookupError> {
     for issue in issues {
         validate_issue_kind(&issue.kind)?;
     }
-    // The update and the issue inserts are one write transaction, so a
-    // discarded run never lands without the issues it was discarded with.
+    // The update and the inserts are one write transaction, so a discarded
+    // run never lands without the issues and notes it was discarded with.
     let mut tx = begin_write(conn).await?;
     // The status check is in the update, so a run that completed after the
     // caller read it keeps its record instead of being rewritten as cancelled.
@@ -617,6 +643,7 @@ pub async fn discard_import(
         return Err(not_running(conn, account_id, import_id).await);
     }
     insert_issues(&mut tx, import_id, issues).await?;
+    insert_notes(&mut tx, import_id, notes).await?;
     tx.commit().await?;
     Ok(())
 }
@@ -650,7 +677,7 @@ pub async fn discard_running_import(
         return Ok(None);
     };
     let running = import_from_row(&row)?;
-    discard_import(conn, account_id, running.id, &[])
+    discard_import(conn, account_id, running.id, &[], &[])
         .await
         .map_err(|err| anyhow::anyhow!(err))?;
     Ok(Some(running))
@@ -749,6 +776,7 @@ pub async fn complete_import(
         .into());
     }
     insert_issues(&mut tx, import_id, &args.issues).await?;
+    insert_notes(&mut tx, import_id, &args.notes).await?;
     tx.commit().await?;
 
     Ok(get_owned_import(&mut *conn, account_id, import_id).await?)
@@ -773,6 +801,30 @@ async fn insert_issues(
         .bind(issue.stage.as_str())
         .bind(&issue.item)
         .bind(&issue.reason)
+        .bind(Utc::now().to_rfc3339())
+        .execute(&mut *conn)
+        .await?;
+    }
+    Ok(())
+}
+
+/// Append note rows for an import.
+async fn insert_notes(
+    conn: &mut SqliteConnection,
+    import_id: i64,
+    notes: &[ImportNoteInput],
+) -> Result<()> {
+    for note in notes {
+        sqlx::query(
+            r"
+            INSERT INTO import_notes (import_id, stage, item, text, created_at)
+            VALUES ($1, $2, $3, $4, $5)
+            ",
+        )
+        .bind(import_id)
+        .bind(note.stage.as_str())
+        .bind(&note.item)
+        .bind(&note.text)
         .bind(Utc::now().to_rfc3339())
         .execute(&mut *conn)
         .await?;
@@ -826,6 +878,35 @@ pub async fn list_import_issues(
                 reason,
                 created_at,
             })
+        })
+        .collect::<std::result::Result<Vec<_>, sqlx::Error>>()?)
+}
+
+/// The notes recorded for one import, oldest first. The caller has already
+/// established that `import_id` is the account's.
+///
+/// # Errors
+///
+/// Returns an error when the statement fails or a row holds an unknown stage.
+pub async fn list_import_notes(
+    conn: &mut SqliteConnection,
+    import_id: i64,
+) -> Result<Vec<ImportNoteRow>> {
+    let rows: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT stage, item, text FROM import_notes WHERE import_id = $1 ORDER BY id ASC",
+    )
+    .bind(import_id)
+    .fetch_all(&mut *conn)
+    .await?;
+    Ok(rows
+        .into_iter()
+        .map(|(stage, item, text)| {
+            let stage = ImportIssueStage::parse(&stage).ok_or_else(|| {
+                sqlx::Error::Decode(
+                    format!("import_notes.stage holds unknown value '{stage}'").into(),
+                )
+            })?;
+            Ok(ImportNoteRow { stage, item, text })
         })
         .collect::<std::result::Result<Vec<_>, sqlx::Error>>()?)
 }
@@ -1079,7 +1160,7 @@ pub async fn record_credential(
 /// deleted: each keeps `username` and its counts, and is marked with
 /// `deletion_entry_id`, the account's `account_deleted` entry. A run still
 /// open is closed as `cancelled` at `now`, and what describes the person's
-/// messages goes: its issues, form, staging folder, source details and the
+/// messages goes: its issues and notes, form, staging folder, source details and the
 /// addresses the backup sent from (ADR 0020).
 ///
 /// # Errors
@@ -1102,6 +1183,13 @@ pub async fn detach_from_account(
     .await?;
     sqlx::query(
         "DELETE FROM import_issues
+         WHERE import_id IN (SELECT id FROM imports WHERE account_id = $1)",
+    )
+    .bind(account_id)
+    .execute(&mut *conn)
+    .await?;
+    sqlx::query(
+        "DELETE FROM import_notes
          WHERE import_id IN (SELECT id FROM imports WHERE account_id = $1)",
     )
     .bind(account_id)

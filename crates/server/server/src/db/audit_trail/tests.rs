@@ -20,7 +20,7 @@ async fn a_refused_username_is_cut_to_the_username_limit() {
 }
 
 /// Deleting an account keeps its Import Runs and their counts, and drops what
-/// describes the person's messages: the run's issues, its form, its staging
+/// describes the person's messages: the run's issues and notes, its form, its staging
 /// folder and the addresses the backup sent from. A run still open is closed.
 #[tokio::test]
 async fn deleting_an_account_keeps_an_import_runs_counts_and_drops_its_details() {
@@ -41,6 +41,14 @@ async fn deleting_an_account_keeps_an_import_runs_counts_and_drops_its_details()
     sqlx::query(
         "INSERT INTO import_issues (import_id, kind, stage, item, reason, created_at)
          VALUES ($1, 'skip', 'staging', 'chat-with-bob.txt', 'unreadable', 'now')",
+    )
+    .bind(import_id)
+    .execute(&mut *conn)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO import_notes (import_id, stage, item, text, created_at)
+         VALUES ($1, 'staging', 'bob@example.com', 'kept by this email address', 'now')",
     )
     .bind(import_id)
     .execute(&mut *conn)
@@ -82,6 +90,11 @@ async fn deleting_an_account_keeps_an_import_runs_counts_and_drops_its_details()
         .await
         .unwrap();
     assert_eq!(issues, 0);
+    let notes: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM import_notes")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(notes, 0);
 }
 
 /// A password change renews the Session, so a live Session never reads as

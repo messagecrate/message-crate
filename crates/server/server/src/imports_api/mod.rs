@@ -637,16 +637,45 @@ pub(crate) struct CompleteImportRequest {
     pub(crate) summary: Option<serde_json::Value>,
     #[serde(default)]
     pub(crate) issues: Vec<ImportIssueRequest>,
+    /// The run's notes, apart from its Import Errors. A note never makes a
+    /// run `completed_with_issues`.
+    #[serde(default)]
+    pub(crate) notes: Vec<ImportNoteRequest>,
 }
 
 /// The Import Errors a discarded run recorded before it was given up. A run
 /// that paused and is then discarded never posts `complete`, so its issues
-/// come with the discard.
+/// and notes come with the discard.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct DiscardImportRequest {
     /// The run's Import Errors so far. The list is empty when the run
     /// recorded none.
     pub(crate) issues: Vec<ImportIssueRequest>,
+    /// The run's notes so far.
+    #[serde(default)]
+    pub(crate) notes: Vec<ImportNoteRequest>,
+}
+
+/// One note a Stage of the Import Run recorded: something it did with an
+/// item that is worth knowing but did not fail, such as a message it kept
+/// with a caveat.
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub(crate) struct ImportNoteRequest {
+    /// Stage the note came from.
+    pub(crate) stage: crate::db::imports::ImportIssueStage,
+    /// The file, message or address the note is about.
+    pub(crate) item: String,
+    /// What the run did with it, in one sentence.
+    pub(crate) text: String,
+}
+
+/// One requested note, as the database records it.
+fn note_input(note: ImportNoteRequest) -> crate::db::imports::ImportNoteInput {
+    crate::db::imports::ImportNoteInput {
+        stage: note.stage,
+        item: note.item,
+        text: note.text,
+    }
 }
 
 /// One error or skip a Stage of the Import Run reported.
@@ -742,6 +771,18 @@ pub(crate) struct ListImportsQuery {
     pub(crate) sort: Option<String>,
 }
 
+/// One stored import note: something the run did with an item that is worth
+/// knowing but did not fail.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub(crate) struct ImportNote {
+    /// Stage the note came from.
+    pub(crate) stage: crate::db::imports::ImportIssueStage,
+    /// The file, message or address the note is about.
+    item: String,
+    /// What the run did with it.
+    text: String,
+}
+
 /// One stored import issue.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct ImportIssue {
@@ -754,7 +795,8 @@ pub(crate) struct ImportIssue {
 
 /// An Import Run: one per import, the same record wherever the interface
 /// hands one out. It holds the counts Settings shows, everything the desktop
-/// app needs to resume a running run, and the issues the run recorded.
+/// app needs to resume a running run, and the issues and notes the run
+/// recorded.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct ImportRun {
     /// Import Run id.
@@ -806,6 +848,8 @@ pub(crate) struct ImportRun {
     pub(crate) summary: serde_json::Value,
     /// Issues the run recorded, oldest first.
     pub(crate) issues: Vec<ImportIssue>,
+    /// Notes the run recorded, oldest first, apart from its issues.
+    pub(crate) notes: Vec<ImportNote>,
     /// Contacts this run created.
     pub(crate) contacts_new: u64,
     /// Contacts it only changed.
@@ -815,9 +859,9 @@ pub(crate) struct ImportRun {
 /// An Import Run as the owner reads it under another account: its source,
 /// mode, times, outcome and counts, and nothing of what the backup held
 /// (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may
-/// see"). The run's summary, its issues and its form say whom the account
-/// talks to, so they stay out, and a field reaches the owner only by being
-/// added here.
+/// see"). The run's summary, its issues, its notes and its form say whom the
+/// account talks to, so they stay out, and a field reaches the owner only by
+/// being added here.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct OwnerImportRun {
     /// Import Run id.
@@ -1143,6 +1187,7 @@ pub(crate) async fn complete_import(
         upload_ms: body.upload_ms,
         summary_json,
         issues: body.issues.into_iter().map(issue_input).collect(),
+        notes: body.notes.into_iter().map(note_input).collect(),
     };
     let mut conn = state.db.acquire().await?;
     let row = complete_run(&mut conn, account, import_id, &args)
@@ -1335,8 +1380,8 @@ fn import_date_ymd(row: &crate::db::imports::ImportRow) -> String {
         )
 }
 
-/// One Import Run in full, read from its row, its issues and its contact
-/// tally. The caller has already established that the row is the account's.
+/// One Import Run in full, read from its row, its issues, its notes and its
+/// contact tally. The caller has already established that the row is the account's.
 pub(crate) async fn import_run(
     conn: &mut SqliteConnection,
     row: crate::db::imports::ImportRow,
@@ -1344,6 +1389,16 @@ pub(crate) async fn import_run(
     let issues = crate::db::imports::list_import_issues(conn, row.id)
         .await
         .map_err(ApiError::Internal)?;
+    let notes = crate::db::imports::list_import_notes(conn, row.id)
+        .await
+        .map_err(ApiError::Internal)?
+        .into_iter()
+        .map(|note| ImportNote {
+            stage: note.stage,
+            item: note.item,
+            text: note.text,
+        })
+        .collect::<Vec<_>>();
     let contacts = crate::db::import_contacts::counts(conn, row.id)
         .await
         .map_err(ApiError::Internal)?;
@@ -1382,6 +1437,7 @@ pub(crate) async fn import_run(
         source_identities: crate::db::imports::json_column(row.source_identities),
         summary: crate::db::imports::json_column(row.summary_json),
         issues,
+        notes,
         contacts_new: contacts.new_count,
         contacts_changed: contacts.changed_count,
     })
@@ -1470,8 +1526,9 @@ pub(crate) async fn discard_import(
     let account = resolve_import_account(&auth);
     validate_import_issues(&body.issues)?;
     let issues: Vec<_> = body.issues.into_iter().map(issue_input).collect();
+    let notes: Vec<_> = body.notes.into_iter().map(note_input).collect();
     let mut conn = state.db.acquire().await?;
-    crate::db::imports::discard_import(&mut conn, account, import_id, &issues).await?;
+    crate::db::imports::discard_import(&mut conn, account, import_id, &issues, &notes).await?;
     let run = full_import_run(&mut conn, account, import_id).await;
     drop(conn);
     crate::asset_store::sweep_after_run(&state.db, &state.cfg.paths, account).await;

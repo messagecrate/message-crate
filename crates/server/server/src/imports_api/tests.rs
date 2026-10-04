@@ -4372,6 +4372,77 @@ async fn a_discard_records_the_issues_it_carries() {
     assert_eq!(issues[0]["reason"], "convert failed");
 }
 
+/// A completion records the notes the desktop app sends apart from its
+/// Import Errors: a note is something the run did that is worth knowing, so
+/// the run reads back with it in `notes` and its `issues` stay empty
+/// (#1626).
+#[tokio::test]
+async fn a_completion_records_the_notes_it_carries_apart_from_its_issues() {
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    let (_, created): (String, serde_json::Value) = post_created_json(
+        state,
+        "/v1/imports",
+        token,
+        serde_json::json!({ "source": "imazing" }),
+    )
+    .await;
+    let id = created["id"].as_i64().unwrap();
+    let note = serde_json::json!({
+        "stage": "staging",
+        "item": "Messages/IMG_0002.jpg",
+        "text": "2 rows name this picture; its Live Photo video goes to the first of them in the CSV",
+    });
+
+    let completed: serde_json::Value = post_json(
+        state,
+        &format!("/v1/imports/{id}/complete"),
+        token,
+        serde_json::json!({ "status": "completed", "notes": [note] }),
+    )
+    .await;
+
+    assert_eq!(completed["status"], "completed", "{completed}");
+    assert_eq!(completed["notes"], serde_json::json!([note]), "{completed}");
+    assert_eq!(completed["issues"], serde_json::json!([]), "{completed}");
+    let run: serde_json::Value = get_json(state, &format!("/v1/imports/{id}"), token).await;
+    assert_eq!(run["notes"], serde_json::json!([note]), "{run}");
+}
+
+/// A discarded run keeps the notes the desktop app sends with the discard,
+/// as it keeps its Import Errors (#1626).
+#[tokio::test]
+async fn a_discard_records_the_notes_it_carries() {
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    let (_, created): (String, serde_json::Value) = post_created_json(
+        state,
+        "/v1/imports",
+        token,
+        serde_json::json!({ "source": "sms-backup-plus" }),
+    )
+    .await;
+    let id = created["id"].as_i64().unwrap();
+    let note = serde_json::json!({
+        "stage": "staging",
+        "item": "1.eml",
+        "text": "This message records no phone number or email address for the other person.",
+    });
+
+    let discarded: serde_json::Value = post_json(
+        state,
+        &format!("/v1/imports/{id}/discard"),
+        token,
+        serde_json::json!({ "issues": [], "notes": [note] }),
+    )
+    .await;
+
+    assert_eq!(discarded["status"], "cancelled", "{discarded}");
+    assert_eq!(discarded["notes"], serde_json::json!([note]), "{discarded}");
+}
+
 /// A discard's issues are checked the way a completion's are: a kind that is
 /// neither `error` nor `skip` is refused, and the run stays running.
 #[tokio::test]
