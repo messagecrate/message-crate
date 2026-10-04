@@ -80,10 +80,6 @@ RUN chmod +x /usr/local/bin/docker-entrypoint-release.sh \
 
 USER node
 
-ENV HOSTNAME=0.0.0.0 \
-    MC_DB=/app/data/messagecrate.db \
-    MC_DATA_DIR=/app/data
-
 EXPOSE 8080
 VOLUME ["/app/data"]
 
