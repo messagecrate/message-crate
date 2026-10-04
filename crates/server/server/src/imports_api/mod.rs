@@ -617,9 +617,9 @@ pub(crate) struct CompleteImportRequest {
 /// The Import Errors a discarded run recorded before it was given up. A run
 /// that paused and is then discarded never posts `complete`, so its issues
 /// come with the discard.
-#[derive(Debug, Default, Deserialize, utoipa::ToSchema)]
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct DiscardImportRequest {
-    #[serde(default)]
+    /// The run's Import Errors so far; empty when it recorded none.
     pub(crate) issues: Vec<ImportIssueRequest>,
 }
 

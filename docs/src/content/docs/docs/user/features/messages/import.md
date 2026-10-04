@@ -342,7 +342,6 @@ After a success the Message Crate holds the messages, so the staged copy is no l
 After a failed Staging or Media, nothing complete was staged, so there is nothing to upload.
 A run that is cancelled or paused leaves the Staging Directory in place, because the staged files are what a resume reads.
 The Errors of a paused run are kept with its staged files, so the finished run lists the Errors of every part.
-Errors from Staging and Media are kept there as they happen, so a run interrupted by the app closing keeps the Errors up to that moment.
 
 A run that succeeded leads with where to go next:
 

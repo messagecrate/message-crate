@@ -634,9 +634,11 @@ async function saveCarriedRecord(
 
 /**
  * Write the record again as an issue of Staging or Media arrives, so an app
- * that closes mid-stage leaves that stage's issues in the folder for the
- * resume to read. A crash loses only the issues that arrived while the last
- * write was on its way to disk.
+ * that closes mid-stage leaves the issues the window has received in the
+ * folder for the resume to read. A crash loses only the issues that arrived
+ * while the last write was on its way to disk. The extract still sends its
+ * issues only when Staging ends, and Media sends none, so until they send
+ * each one as it happens a crash mid-stage still loses them (#1639).
  *
  * An Upload's issues wait for the end of the Upload (`saveCarriedRecord`):
  * the record leaves out the conversations a resumed Upload sends again, and
@@ -1510,8 +1512,9 @@ async function runImport(
 }
 
 /**
- * Discard a run the person gave up on: close it on the server as cancelled,
- * with the Import Errors its record holds, and delete its staging folder.
+ * End a run the person gave up on, by a Cancel at a Review or a Discard of a
+ * paused run: close it on the server as cancelled, with the Import Errors its
+ * record holds (`issuesToDiscard`), and delete its staging folder.
  *
  * The record is in the folder, so it is read before the folder goes, and a
  * record that cannot be read discards the run with no Import Errors. The
@@ -1538,7 +1541,7 @@ async function discardRun(sessionId: number | null, stagingDir: string | null): 
   ]);
 }
 
-/** Cancel the run from a review: discard it (`discardRun`) and go back to the form. */
+/** Cancel the run at a Review: end it (`discardRun`) and go back to the form. */
 async function cancelRun(): Promise<void> {
   if (scratch.reviewAction) return;
   scratch.reviewAction = true;

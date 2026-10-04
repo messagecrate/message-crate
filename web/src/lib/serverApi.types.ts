@@ -2276,7 +2276,8 @@ export interface components {
          *     come with the discard.
          */
         DiscardImportRequest: {
-            issues?: components["schemas"]["ImportIssueRequest"][];
+            /** @description The run's Import Errors so far; empty when it recorded none. */
+            issues: components["schemas"]["ImportIssueRequest"][];
         };
         /**
          * @description Which list an Export Run's query is for (`docs/architecture/http-api.md`,

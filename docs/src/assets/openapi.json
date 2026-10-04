@@ -13432,12 +13432,16 @@
       "DiscardImportRequest": {
         "type": "object",
         "description": "The Import Errors a discarded run recorded before it was given up. A run\nthat paused and is then discarded never posts `complete`, so its issues\ncome with the discard.",
+        "required": [
+          "issues"
+        ],
         "properties": {
           "issues": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ImportIssueRequest"
-            }
+            },
+            "description": "The run's Import Errors so far; empty when it recorded none."
           }
         }
       },

@@ -2186,7 +2186,7 @@ async fn a_batch_into_a_run_that_is_not_running_is_a_state_conflict() {
         &state,
         &format!("/v1/imports/{id}/discard"),
         &token,
-        serde_json::json!({}),
+        serde_json::json!({ "issues": [] }),
     )
     .await;
 
@@ -2716,7 +2716,7 @@ async fn every_route_on_another_accounts_run_is_not_found_and_changes_nothing() 
                 &format!("{run}/discard"),
                 token,
                 "application/json",
-                "{}",
+                r#"{"issues":[]}"#,
             )
             .await,
         ),
@@ -4287,7 +4287,7 @@ async fn an_import_run_reads_the_same_from_every_route() {
         state,
         &format!("/v1/imports/{discarded_id}/discard"),
         token,
-        serde_json::json!({}),
+        serde_json::json!({ "issues": [] }),
     )
     .await;
     assert_eq!(discarded["status"], "cancelled", "{discarded}");

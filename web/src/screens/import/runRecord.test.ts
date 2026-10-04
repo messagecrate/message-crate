@@ -4,10 +4,10 @@ import type { PushFinishedReport } from "../../lib/tauri";
 import {
   EMPTY_RUN_RECORD,
   filesSkippedOverRun,
+  issuesToDiscard,
   parseRunRecord,
   type RunPart,
   type RunRecord,
-  issuesToDiscard,
   recordToCarry,
   wholeRun,
 } from "./runRecord";

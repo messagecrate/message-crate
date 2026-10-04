@@ -242,15 +242,14 @@ released versions carry their date on the heading.
 
 #### Importing
 
-- 2026-10-04 **An import keeps its errors when it is discarded or the app
-  closes, and keeps its converted files when they cannot be read back.**
-  Discarding a paused import recorded it with no errors, though it had
-  some. It now keeps the errors it had recorded. An app that closed during
-  Staging or Media lost that stage's errors so far; they are now kept as
-  they happen, so a resumed import still lists them. When Media finished
-  but its files could not be read back afterwards, the import ended as
-  failed and deleted the converted files. It now goes back to the form,
-  and resuming it reads the files again.
+- 2026-10-04 **A discarded import keeps its errors, and an import keeps its
+  converted files when they cannot be read back.** Discarding an import,
+  or cancelling it at a Review, recorded it with no errors, though it had
+  some. It now keeps the errors it had recorded, including the
+  conversations a paused Upload could not send. When Media finished but
+  its files could not be read back afterwards, the import ended as failed
+  and deleted the converted files. It now goes back to the form, and
+  resuming it reads the files again.
 - 2026-10-04 An internal fix to how an upload finishes an Import Run;
   nothing you see changes.
 - 2026-10-04 **An iMazing import no longer reports a Live Photo choice as an
