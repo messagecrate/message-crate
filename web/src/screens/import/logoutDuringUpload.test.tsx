@@ -318,13 +318,13 @@ describe("logging out during an Upload", () => {
     expect(result.current.job.summaryView?.filesFailed).toBe(0);
   });
 
-  it("deletes a deleted account's staging folders once the Upload has paused and the session is revoked", async () => {
+  it("deletes a deleted account's Staging Directories once the Upload has paused and the session is revoked", async () => {
     const result = await startUpload();
 
     await act(() =>
       result.current.auth.logout({
         ask: false,
-        deletedAccountFolders: ["/home/sam/staging-iphone"],
+        deletedAccountDirectories: ["/home/sam/staging-iphone"],
       }),
     );
 
@@ -349,7 +349,7 @@ describe("logging out during an Upload", () => {
     act(() => {
       void result.current.auth.logout({
         ask: false,
-        deletedAccountFolders: ["/home/sam/staging-iphone"],
+        deletedAccountDirectories: ["/home/sam/staging-iphone"],
       });
     });
     await user.click(await screen.findByRole("button", { name: "Log out now" }));
@@ -373,7 +373,7 @@ describe("logging out during an Upload", () => {
     cancelMock.mockImplementation(() => {});
 
     act(() => {
-      void result.current.auth.logout({ ask: false, deletedAccountFolders: [] });
+      void result.current.auth.logout({ ask: false, deletedAccountDirectories: [] });
     });
 
     expect(await screen.findByText(DELETED_PAUSING)).toBeTruthy();
@@ -401,14 +401,14 @@ describe("logging out during an Upload", () => {
     expect(getToken()).toBe("next-session-token");
   });
 
-  it("names a deleted account's staging folder it could not delete", async () => {
+  it("names a deleted account's Staging Directory it could not delete", async () => {
     deleteStagingMock.mockRejectedValueOnce(new Error("permission denied"));
     const result = await logIn();
 
     await act(() =>
       result.current.auth.logout({
         ask: false,
-        deletedAccountFolders: ["/home/sam/staging-iphone", "/home/sam/staging-android"],
+        deletedAccountDirectories: ["/home/sam/staging-iphone", "/home/sam/staging-android"],
       }),
     );
 

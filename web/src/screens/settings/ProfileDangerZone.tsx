@@ -5,7 +5,7 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import DeleteAccountDialog from "../../components/DeleteAccountDialog";
 import PlainButton from "../../components/PlainButton";
 import { useAuth } from "../../lib/auth";
-import { accountStagingFolders } from "../../lib/importSession";
+import { accountStagingDirectories } from "../../lib/importSession";
 import { keys } from "../../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
 import { deleteAccount, deleteAllMessages as deleteAllMessagesRoute } from "../../lib/serverApi";
@@ -71,12 +71,16 @@ export function ProfileDangerZone({
   const notPermitted = !canDelete && !managed;
   const count = messageCount.toLocaleString();
   // Only the desktop app can find and delete folders on this computer.
-  const checkFolders = deleteDialogOpen && !managed && isTauri();
-  const stagingFolders = useRouteQuery(
-    keys.imports.stagingFolders,
-    (signal) => accountStagingFolders(signal),
-    { enabled: checkFolders, staleTime: 0 },
+  const checkDirectories = deleteDialogOpen && !managed && isTauri();
+  const stagingDirectories = useRouteQuery(
+    keys.imports.stagingDirectories,
+    (signal) => accountStagingDirectories(signal),
+    { enabled: checkDirectories, staleTime: 0 },
   );
+  // A look that failed deletes nothing, as the dialog says, even with an
+  // earlier list still cached.
+  const directoriesToDelete =
+    checkDirectories && !stagingDirectories.isError ? (stagingDirectories.data ?? []) : [];
 
   const deleteAllMessages = async () => {
     if (messagesLocked || notPermitted) return;
@@ -113,7 +117,7 @@ export function ProfileDangerZone({
       // named are deleted once the session is revoked.
       void logout({
         ask: false,
-        deletedAccountFolders: checkFolders ? (stagingFolders.data ?? []) : [],
+        deletedAccountDirectories: directoriesToDelete,
       });
     } catch (e) {
       setDangerError(e instanceof Error ? e.message : String(e));
@@ -242,14 +246,14 @@ export function ProfileDangerZone({
           open={deleteDialogOpen}
           username={username}
           hasPassword={hasPassword}
-          stagingFolders={
-            checkFolders
+          stagingDirectories={
+            checkDirectories
               ? {
                   // A look still under way holds the confirm, even with an earlier
                   // list cached: that list may miss a folder made since.
-                  checking: stagingFolders.isFetching,
-                  paths: stagingFolders.data ?? [],
-                  error: stagingFolders.error?.message ?? "",
+                  checking: stagingDirectories.isFetching,
+                  paths: directoriesToDelete,
+                  error: stagingDirectories.error?.message ?? "",
                 }
               : undefined
           }

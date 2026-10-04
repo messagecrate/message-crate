@@ -42,11 +42,14 @@ interface AuthContextValue extends AuthState {
    * for the pause, less when the person presses **Log out now**, and then
    * revokes the session anyway and says the Upload resumes from what it sent.
    *
-   * `deletedAccountFolders` is given when the account has just been deleted:
+   * `deletedAccountDirectories` is given when the account has just been deleted:
    * its Staging Directories on this computer, deleted once the session is
    * revoked. One that cannot be deleted is named in a notice.
    */
-  logout: (options?: { ask?: boolean; deletedAccountFolders?: readonly string[] }) => Promise<void>;
+  logout: (options?: {
+    ask?: boolean;
+    deletedAccountDirectories?: readonly string[];
+  }) => Promise<void>;
   setServer: (url: string) => void;
   /**
    * Check the saved login again, after a startup check the server never
@@ -357,10 +360,10 @@ function SessionProvider({
   const logout = useCallback(
     async ({
       ask = true,
-      deletedAccountFolders,
+      deletedAccountDirectories,
     }: {
       ask?: boolean;
-      deletedAccountFolders?: readonly string[];
+      deletedAccountDirectories?: readonly string[];
     } = {}) => {
       const uploadRunning = isUploadRunning();
       if (ask && uploadRunning) {
@@ -371,7 +374,7 @@ function SessionProvider({
         if (!logOut) return;
       }
       if (uploadRunning) {
-        setDialog({ kind: "pausing", accountDeleted: deletedAccountFolders !== undefined });
+        setDialog({ kind: "pausing", accountDeleted: deletedAccountDirectories !== undefined });
       }
       const pause = pauseWithinLimit();
       let paused = true;
@@ -381,19 +384,19 @@ function SessionProvider({
       } finally {
         setDialog(null);
       }
-      if (deletedAccountFolders) {
+      if (deletedAccountDirectories) {
         // The run went with the account, so nothing resumes; its folders go
         // too, and one that stays is named rather than left without a word.
         // An Upload that did not pause in time may still write into its
         // folder, so the folders go once it has ended. The deleted account's
         // token is refused, so that is soon.
         await pause.ended;
-        const undeleted = await deleteStagingFolders(deletedAccountFolders);
+        const undeleted = await deleteStagingDirectories(deletedAccountDirectories);
         if (undeleted.length > 0) {
           setDialog({
             kind: "notice",
             title: "Staging Directories left on this computer",
-            body: <UndeletedFolders folders={undeleted} />,
+            body: <UndeletedDirectories directories={undeleted} />,
           });
         }
       } else if (!paused) {
@@ -487,12 +490,14 @@ const UPLOAD_NOT_PAUSED_BODY = (
 );
 
 /** A Staging Directory that could not be deleted, and why. */
-type UndeletedFolder = { path: string; reason: string };
+type UndeletedDirectory = { path: string; reason: string };
 
-/** Delete each folder, and return the ones that could not be deleted. */
-async function deleteStagingFolders(folders: readonly string[]): Promise<UndeletedFolder[]> {
-  const undeleted: UndeletedFolder[] = [];
-  for (const path of folders) {
+/** Delete each directory, and return the ones that could not be deleted. */
+async function deleteStagingDirectories(
+  directories: readonly string[],
+): Promise<UndeletedDirectory[]> {
+  const undeleted: UndeletedDirectory[] = [];
+  for (const path of directories) {
     try {
       await invokeDeleteStaging({ staging_dir: path });
     } catch (e) {
@@ -503,14 +508,14 @@ async function deleteStagingFolders(folders: readonly string[]): Promise<Undelet
 }
 
 /** Names each Staging Directory a deleted account left behind, and why. */
-function UndeletedFolders({ folders }: { folders: readonly UndeletedFolder[] }) {
+function UndeletedDirectories({ directories }: { directories: readonly UndeletedDirectory[] }) {
   return (
     <>
       <p className="mt-3 text-[0.875rem] leading-relaxed text-muted">
         Message Crate could not delete these Staging Directories of the deleted account. Delete them
         by hand to free the space they take:
       </p>
-      <PathList paths={folders.map((folder) => ({ path: folder.path, note: folder.reason }))} />
+      <PathList paths={directories.map(({ path, reason }) => ({ path, note: reason }))} />
     </>
   );
 }

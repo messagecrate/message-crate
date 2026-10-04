@@ -180,8 +180,10 @@ pub(crate) struct Session {
 
 impl Session {
     /// Run `op` against the server with retries, and stop the run when the
-    /// server refuses the session token. Every request of the run goes
-    /// through here, so none can miss the refusal.
+    /// server refuses the session token. Every request that sends
+    /// conversations or attachments goes through here, so none of them can
+    /// miss the refusal. Starting and completing the push's own Import Run
+    /// do not: the desktop app passes its run, so the push does neither.
     ///
     /// # Errors
     ///
@@ -444,31 +446,21 @@ fn refused_at_login(
     run_started: Instant,
 ) -> PushReport {
     PushReport {
-        ok: false,
         cancelled: true,
         session_refused: true,
-        account: 0,
-        username: String::new(),
         mode: cfg.mode,
         started_at,
         finished_at: now_stamp(),
         elapsed_ms: elapsed_ms(run_started),
         conversations_total: files.len() as u64,
-        conversations_ok: 0,
-        conversations_failed: 0,
-        conversations_skipped: 0,
         conversations_cancelled: files.len() as u64,
-        messages_attempted: 0,
-        messages_inserted: 0,
-        messages_deduped: 0,
-        messages_failed: 0,
-        assets_uploaded: 0,
-        assets_skipped: 0,
-        assets_bytes: 0,
         results: files
             .iter()
             .map(|path| crate::report::FileResult::cancelled(&file_label(path)))
             .collect(),
+        // Nothing was sent, and no account answered: every count is 0, the
+        // account 0 and the username empty.
+        ..PushReport::default()
     }
 }
 

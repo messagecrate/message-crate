@@ -5,7 +5,7 @@ import PathList from "./PathList";
 import PlainButton from "./PlainButton";
 
 /** The account's Staging Directories on this computer, as the dialog shows them. */
-export type StagingFoldersCheck = {
+export type StagingDirectoriesCheck = {
   checking: boolean;
   paths: readonly string[];
   /** Why they could not be looked for, or empty. */
@@ -18,7 +18,7 @@ export type StagingFoldersCheck = {
  * set, so the dialog asks for it only then and confirms with none otherwise.
  * `error` is why the last confirm failed; the dialog stays open to retry.
  *
- * `stagingFolders`, in the desktop app, are the account's Staging
+ * `stagingDirectories`, in the desktop app, are the account's Staging
  * Directories on this computer, deleted with the account. The dialog names them before
  * the person confirms, and holds the confirm while it looks for them.
  *
@@ -29,7 +29,7 @@ export default function DeleteAccountDialog({
   open,
   username,
   hasPassword,
-  stagingFolders,
+  stagingDirectories,
   deleting = false,
   error = "",
   onClose,
@@ -38,7 +38,7 @@ export default function DeleteAccountDialog({
   open: boolean;
   username: string;
   hasPassword: boolean;
-  stagingFolders?: StagingFoldersCheck;
+  stagingDirectories?: StagingDirectoriesCheck;
   deleting?: boolean;
   error?: string;
   onClose: () => void;
@@ -56,7 +56,7 @@ export default function DeleteAccountDialog({
       <DeleteAccountForm
         username={username}
         hasPassword={hasPassword}
-        stagingFolders={stagingFolders}
+        stagingDirectories={stagingDirectories}
         deleting={deleting}
         error={error}
         onClose={onClose}
@@ -69,7 +69,7 @@ export default function DeleteAccountDialog({
 function DeleteAccountForm({
   username,
   hasPassword,
-  stagingFolders,
+  stagingDirectories,
   deleting,
   error,
   onClose,
@@ -77,7 +77,7 @@ function DeleteAccountForm({
 }: {
   username: string;
   hasPassword: boolean;
-  stagingFolders?: StagingFoldersCheck;
+  stagingDirectories?: StagingDirectoriesCheck;
   deleting: boolean;
   error: string;
   onClose: () => void;
@@ -89,7 +89,7 @@ function DeleteAccountForm({
   const expected = username.trim();
   const matches =
     expected.length > 0 && typedUsername === expected && (!hasPassword || password.length > 0);
-  const checkingFolders = stagingFolders?.checking ?? false;
+  const checkingDirectories = stagingDirectories?.checking ?? false;
 
   return (
     <>
@@ -109,7 +109,7 @@ function DeleteAccountForm({
         attachments will be permanently deleted.
       </p>
 
-      {stagingFolders ? <StagingFoldersNote check={stagingFolders} /> : null}
+      {stagingDirectories ? <StagingDirectoriesNote check={stagingDirectories} /> : null}
 
       <label className="mt-5 block">
         <span className="text-[0.875rem] text-text">
@@ -145,7 +145,7 @@ function DeleteAccountForm({
       <div className="mt-5 flex justify-end">
         <Button
           variant="danger"
-          disabled={deleting || !matches || checkingFolders}
+          disabled={deleting || !matches || checkingDirectories}
           onClick={() => onConfirm(hasPassword ? password : undefined)}
           className="!px-4 !py-2 !text-[0.813rem]"
         >
@@ -157,7 +157,7 @@ function DeleteAccountForm({
 }
 
 /** Names the Staging Directories deleted with the account, or says why it cannot. */
-function StagingFoldersNote({ check }: { check: StagingFoldersCheck }) {
+function StagingDirectoriesNote({ check }: { check: StagingDirectoriesCheck }) {
   const text = "mt-3 text-[0.875rem] leading-relaxed text-muted";
   if (check.checking) {
     return (

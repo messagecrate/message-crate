@@ -64,7 +64,7 @@ export async function getActiveImportSession(
  * whichever computer ran it, so each one is looked for here and only the
  * folders found are named. Desktop app only: it asks the app for each path.
  */
-export async function accountStagingFolders(signal?: AbortSignal): Promise<string[]> {
+export async function accountStagingDirectories(signal?: AbortSignal): Promise<string[]> {
   const runs = await listEveryImport({ signal });
   const paths = [...new Set(runs.flatMap((run) => (run.staging_dir ? [run.staging_dir] : [])))];
   const found = await Promise.all(

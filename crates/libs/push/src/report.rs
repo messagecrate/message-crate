@@ -92,7 +92,7 @@ pub struct UploadProfile {
 }
 
 /// Final summary of a whole push (also written to disk as the report file).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PushReport {
     /// `true` when no conversation failed and the run was not cancelled.
     pub ok: bool,

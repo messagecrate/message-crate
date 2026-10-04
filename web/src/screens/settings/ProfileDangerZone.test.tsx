@@ -15,7 +15,7 @@ const deleteAccount = vi.hoisted(() => vi.fn());
 const deleteAllMessages = vi.hoisted(() => vi.fn());
 const logout = vi.hoisted(() => vi.fn());
 const desktop = vi.hoisted(() => ({ value: false }));
-const accountStagingFolders = vi.hoisted(() => vi.fn());
+const accountStagingDirectories = vi.hoisted(() => vi.fn());
 
 vi.mock("../../lib/tauri-check", () => ({
   isTauri: () => desktop.value,
@@ -23,7 +23,7 @@ vi.mock("../../lib/tauri-check", () => ({
 
 vi.mock("../../lib/importSession", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/importSession")>()),
-  accountStagingFolders: (...a: unknown[]) => accountStagingFolders(...a),
+  accountStagingDirectories: (...a: unknown[]) => accountStagingDirectories(...a),
 }));
 
 vi.mock("../../lib/auth", () => ({
@@ -46,7 +46,7 @@ beforeEach(() => {
   deleteAllMessages.mockReset();
   logout.mockReset();
   desktop.value = false;
-  accountStagingFolders.mockReset();
+  accountStagingDirectories.mockReset();
 });
 
 afterEach(cleanup);
@@ -79,7 +79,7 @@ describe("ProfileDangerZone", () => {
 
   it("names the account's Staging Directories on this computer, and deletes them with the account", async () => {
     desktop.value = true;
-    accountStagingFolders.mockResolvedValue(["/home/carol/staging/iphone-2026-10-04"]);
+    accountStagingDirectories.mockResolvedValue(["/home/carol/staging/iphone-2026-10-04"]);
     deleteAccount.mockResolvedValue(undefined);
     const user = userEvent.setup({ delay: null });
     render(
@@ -105,7 +105,7 @@ describe("ProfileDangerZone", () => {
     await waitFor(() =>
       expect(logout).toHaveBeenCalledWith({
         ask: false,
-        deletedAccountFolders: ["/home/carol/staging/iphone-2026-10-04"],
+        deletedAccountDirectories: ["/home/carol/staging/iphone-2026-10-04"],
       }),
     );
     expect(deleteAccount).toHaveBeenCalledWith({ confirm: true, current_password: undefined });
@@ -116,9 +116,9 @@ describe("ProfileDangerZone", () => {
     // The list from the last time the dialog was open, and a new look that
     // has not answered yet.
     const client = testQueryClient();
-    seedEntries(client, 7, [keys.imports.stagingFolders]);
-    client.setQueryData(routeQueryKey(7, keys.imports.stagingFolders), ["/home/carol/old"]);
-    accountStagingFolders.mockReturnValue(new Promise(() => {}));
+    seedEntries(client, 7, [keys.imports.stagingDirectories]);
+    client.setQueryData(routeQueryKey(7, keys.imports.stagingDirectories), ["/home/carol/old"]);
+    accountStagingDirectories.mockReturnValue(new Promise(() => {}));
     const user = userEvent.setup({ delay: null });
     render(
       <QueryClientProvider client={client}>
@@ -133,11 +133,39 @@ describe("ProfileDangerZone", () => {
     const dialog = screen.getByRole("dialog");
     await user.type(within(dialog).getByRole("textbox", { name: /Type your username/ }), "carol");
 
-    expect(accountStagingFolders).toHaveBeenCalled();
+    expect(accountStagingDirectories).toHaveBeenCalled();
     expect(
       within(dialog).getByRole("button", { name: "Permanently delete my account" }),
     ).toBeDisabled();
     expect(within(dialog).queryByText("/home/carol/old")).toBeNull();
+  });
+
+  it("deletes no Staging Directory when it could not look for them, even with an earlier list cached", async () => {
+    desktop.value = true;
+    deleteAccount.mockResolvedValue(undefined);
+    const client = testQueryClient();
+    seedEntries(client, 7, [keys.imports.stagingDirectories]);
+    client.setQueryData(routeQueryKey(7, keys.imports.stagingDirectories), ["/home/carol/old"]);
+    accountStagingDirectories.mockRejectedValue(new Error("path_stat failed"));
+    const user = userEvent.setup({ delay: null });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <ProfileDangerZone isDemo={false} username="carol" hasPassword={false} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Danger zone/ }));
+    await user.click(screen.getByRole("button", { name: "Delete account" }));
+    const dialog = screen.getByRole("dialog");
+    expect(await within(dialog).findByText(/so it deletes none/)).toBeInTheDocument();
+    await user.type(within(dialog).getByRole("textbox", { name: /Type your username/ }), "carol");
+    await user.click(within(dialog).getByRole("button", { name: "Permanently delete my account" }));
+
+    await waitFor(() =>
+      expect(logout).toHaveBeenCalledWith({ ask: false, deletedAccountDirectories: [] }),
+    );
   });
 
   it("deletes no folder outside the desktop app", async () => {
@@ -159,9 +187,9 @@ describe("ProfileDangerZone", () => {
     await user.click(within(dialog).getByRole("button", { name: "Permanently delete my account" }));
 
     await waitFor(() =>
-      expect(logout).toHaveBeenCalledWith({ ask: false, deletedAccountFolders: [] }),
+      expect(logout).toHaveBeenCalledWith({ ask: false, deletedAccountDirectories: [] }),
     );
-    expect(accountStagingFolders).not.toHaveBeenCalled();
+    expect(accountStagingDirectories).not.toHaveBeenCalled();
   });
 
   it("tells an account without the delete permission to ask the owner", async () => {

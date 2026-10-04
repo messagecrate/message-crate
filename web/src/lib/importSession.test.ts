@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { accountStagingFolders, buildSourceFingerprint } from "./importSession";
+import { accountStagingDirectories, buildSourceFingerprint } from "./importSession";
 
 const listEveryImport = vi.hoisted(() => vi.fn());
 const invokePathStat = vi.hoisted(() => vi.fn());
@@ -14,7 +14,7 @@ vi.mock("./tauri", async (importOriginal) => ({
   invokePathStat: (...a: unknown[]) => invokePathStat(...a),
 }));
 
-describe("accountStagingFolders", () => {
+describe("accountStagingDirectories", () => {
   // A run's folder is on whichever computer ran it, so a deleted account's
   // folders are named only when they are on this one (#1491).
   it("names each run's folder once, and only when it is on this computer", async () => {
@@ -32,7 +32,7 @@ describe("accountStagingFolders", () => {
       modifiedUnixMs: null,
     }));
 
-    expect(await accountStagingFolders()).toEqual(["/staging/iphone"]);
+    expect(await accountStagingDirectories()).toEqual(["/staging/iphone"]);
     expect(invokePathStat).toHaveBeenCalledTimes(2);
   });
 });
