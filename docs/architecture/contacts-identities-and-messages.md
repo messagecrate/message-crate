@@ -303,13 +303,16 @@ holds, the row names that identity. A contact that holds both readings
 (`+6595550100` and `+16595550100`) refuses the load, naming both keys.
 Otherwise the value is keyed by the phone rule above. The load's `notes` name
 each row read with its `+` back, and each value without `+` that became a new
-identity. Why: a spreadsheet that opens an exported file can save
-`+6595550100` as the number `6595550100` without showing it, and keying that
-value as written made a new identity, which Edit then put on the contact in
-place of the real one (#1196). Only the row's own contact is looked at, so a
-dropped `+` never attaches another person's number to this contact. The notes
-exist because the person cannot see the `+` go, so a wrong reading has to be
-shown before it matters.
+identity. Export writes the number as `'+6595550100`, so a spreadsheet that
+opens the file keeps the `+`, and the load takes the `'` off again
+([A cell a spreadsheet would run](how-contacts-are-made-and-changed.md#a-cell-a-spreadsheet-would-run)).
+This rule covers a file a spreadsheet saved some other way, without the
+`'`. Why: a spreadsheet can save `+6595550100` as the number `6595550100`
+without showing it, and keying that value as written made a new identity,
+which Edit then put on the contact in place of the real one (#1196). Only
+the row's own contact is looked at, so a dropped `+` never attaches another
+person's number to this contact. The notes exist because the person cannot
+see the `+` go, so a wrong reading has to be shown before it matters.
 
 **An identity moves only from a contact the load may change.** When a row
 puts an identity on one contact and the database has it on another, it moves to
