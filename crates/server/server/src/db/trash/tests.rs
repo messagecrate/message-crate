@@ -662,6 +662,74 @@ async fn delete_reports_only_the_files_no_remaining_message_uses() {
     );
 }
 
+/// A Thumbnail goes with the last message that names it, and stays while
+/// another names it as its Thumbnail or as its Preview: both live in the
+/// converted directory, so a file there is reported only when no row names
+/// it as either.
+#[tokio::test]
+async fn delete_reports_a_thumbnail_only_when_no_row_names_it() {
+    let fixture = crate::test_support::test_fixture().await;
+    fixture.account_with_id(ACCOUNT_A, "a").await;
+    let mut conn = fixture.conn().await;
+    let (alone, shared_original) = (sha('b'), sha('e'));
+    let (thumbnail, shared_thumbnail) = (sha('c'), sha('f'));
+
+    let doomed = insert_conversation_on(&mut conn, ACCOUNT_A, "+15550001").await;
+    let m1 = insert_message(&mut conn, ACCOUNT_A, doomed, 0).await;
+    insert_attachment(&mut conn, m1, &alone, None).await;
+    let m2 = insert_message(&mut conn, ACCOUNT_A, doomed, 1).await;
+    insert_attachment(&mut conn, m2, &shared_original, None).await;
+    let kept = insert_conversation_on(&mut conn, ACCOUNT_A, "+15550002").await;
+    let k1 = insert_message(&mut conn, ACCOUNT_A, kept, 0).await;
+    // Another file whose Preview has the very bytes of a Thumbnail of the
+    // conversation deleted.
+    insert_attachment(&mut conn, k1, &sha('g'), Some(&shared_thumbnail)).await;
+    for (original, thumbnail) in [(&alone, &thumbnail), (&shared_original, &shared_thumbnail)] {
+        sqlx::query(
+            "UPDATE attachments
+             SET thumbnail_sha256 = $1, thumbnail_assets_path = $2,
+                 thumbnail_mime_type = 'image/jpeg'
+             WHERE sha256 = $3",
+        )
+        .bind(thumbnail)
+        .bind(format!("{}/{thumbnail}.jpg", &thumbnail[..2]))
+        .bind(original)
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+    }
+
+    move_to_trash(&mut conn, ACCOUNT_A, Trashable::Conversation(doomed))
+        .await
+        .unwrap();
+    let outcome = delete_trashed(
+        &mut conn,
+        ACCOUNT_A,
+        Trashable::Conversation(doomed),
+        AuditActor::Holder,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        outcome,
+        DeleteOutcome::Deleted(vec![
+            OrphanedFile::Original {
+                sha256: alone.clone(),
+                assets_path: format!("bb/{alone}.jpg"),
+            },
+            OrphanedFile::Original {
+                sha256: shared_original.clone(),
+                assets_path: format!("ee/{shared_original}.jpg"),
+            },
+            OrphanedFile::Derived {
+                assets_path: format!("cc/{thumbnail}.jpg"),
+            },
+        ]),
+        "a file another row names as its Preview is not reported"
+    );
+}
+
 /// The account stores one file for every source, so a file a message of
 /// another source still names is not reported, and its Preview stays too.
 #[tokio::test]

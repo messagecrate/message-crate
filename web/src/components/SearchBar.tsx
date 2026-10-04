@@ -34,7 +34,7 @@ import {
   useMarkedWords,
 } from "../lib/searchFields";
 import { removeToken } from "../lib/searchQuery";
-import { popupShadow } from "../lib/uiStyles";
+import { focusRing, popupShadow } from "../lib/uiStyles";
 import { useDismissable } from "../lib/useDismissable";
 import {
   applySuggestionToQuery,
@@ -412,7 +412,7 @@ export default function SearchBar({
                 onSubmit("");
                 inputRef.current?.focus();
               }}
-              className="mr-2 cursor-pointer border-none bg-transparent px-1 text-[1rem] leading-none text-muted outline-none hover:text-text focus-visible:ring-2 focus-visible:ring-accent"
+              className={`mr-2 cursor-pointer border-none bg-transparent px-1 text-[1rem] leading-none text-muted hover:text-text ${focusRing}`}
             >
               ×
             </PlainButton>
@@ -444,7 +444,7 @@ export default function SearchBar({
                   setRecents([]);
                   inputRef.current?.focus();
                 }}
-                className="cursor-pointer border-none bg-transparent text-[0.688rem] text-muted outline-none hover:text-text focus-visible:ring-2 focus-visible:ring-accent"
+                className={`cursor-pointer border-none bg-transparent text-[0.688rem] text-muted hover:text-text ${focusRing}`}
               >
                 Clear all
               </PlainButton>

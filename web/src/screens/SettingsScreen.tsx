@@ -1,5 +1,6 @@
-import { SelectionIndicator, Tab, TabList, TabPanel, Tabs } from "react-aria-components";
+import { TabList, TabPanel, Tabs } from "react-aria-components";
 import { Link, useSearchParams } from "react-router-dom";
+import Tab from "../components/Tab";
 import { canUseConvert } from "../lib/desktopFeatures";
 import { parseSelectKey } from "../lib/selectKey";
 import { isTauri } from "../lib/tauri-check";
@@ -80,13 +81,6 @@ function tabFromSearchParam(raw: string | null, allowed: readonly SettingsTab[])
   return parseSelectKey(raw, allowed) ?? "account";
 }
 
-function tabClassName({ isSelected, isDisabled }: { isSelected: boolean; isDisabled: boolean }) {
-  const tone = isDisabled
-    ? "cursor-default text-muted opacity-50"
-    : `cursor-pointer ${isSelected ? "text-text" : "text-muted hover:text-text"}`;
-  return `relative -mb-px border-none bg-transparent px-3 py-2 text-[0.813rem] font-medium outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-accent ${tone}`;
-}
-
 /** A new account has an Account section to fill in; the rest waits for the account. */
 const NEW_ACCOUNT_DISABLED_TABS: readonly SettingsTab[] = ["profile", "storage", "audit-trail"];
 
@@ -163,9 +157,8 @@ export default function SettingsScreen({
           className="relative mt-5 flex flex-wrap gap-x-1 border-b border-border"
         >
           {tabs.map((id) => (
-            <Tab key={id} id={id} className={tabClassName}>
+            <Tab key={id} id={id} className="text-[0.813rem]">
               {TAB_LABELS[id]}
-              <SelectionIndicator className="absolute bottom-0 left-2 right-2 h-[2px] rounded-full bg-accent transition-[translate,width] duration-200 motion-reduce:transition-none" />
             </Tab>
           ))}
         </TabList>

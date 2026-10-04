@@ -28,6 +28,7 @@ fn base_sms() -> MailMessage {
             subject: None,
             text: "hello from sms".into(),
             attachments: Vec::new(),
+            reactions: Vec::new(),
             imessage: None,
             source: Some(message_ir::IrSource {
                 android_type: Some(1),
@@ -342,7 +343,6 @@ fn caller_id_owner_display_and_imessage_extension_headers() {
     im_mut(&mut msg).num_replies = Some(2);
     im_mut(&mut msg).send_effect = Some("Sent with Balloons".into());
     msg.message.text = "hello\n\nSent with Balloons".into();
-    im_mut(&mut msg).tapbacks = serde_json::from_str(r#"[{"part_index":0,"kind":"loved"}]"#).ok();
     im_mut(&mut msg).parts =
         serde_json::from_str(r#"[{"index":0,"kind":"run","text":"hello"}]"#).ok();
     im_mut(&mut msg).announcement = None;
@@ -616,23 +616,44 @@ fn a_name_that_looks_like_an_encoded_word_reads_back_as_written() {
     );
 }
 
-/// An earlier mail's tapbacks name each reactor `reactor_handle`, which no
-/// reader looks for now, so the mail is refused rather than read with every
-/// reactor gone.
+/// An earlier Message Crate kept a message's reactions in `X-ME-Tapbacks`,
+/// which no reader looks for now, so the mail is refused rather than read
+/// with its reactions gone.
 #[test]
-fn a_mail_whose_tapbacks_say_reactor_handle_is_refused() {
+fn a_mail_that_keeps_reactions_in_x_me_tapbacks_is_refused() {
     let eml = concat!(
         "X-ME-Chat-Identifier: +15555550101\r\n",
         "X-ME-Guid: g1\r\n",
         "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
-        "X-ME-Tapbacks: [{\"part_index\":0,\"kind\":\"loved\",\"is_from_me\":false,\"reactor_handle\":\"+15555550101\"}]\r\n",
+        "X-ME-Tapbacks: [{\"part_index\":0,\"kind\":\"loved\",\"is_from_me\":false,\"reactor_identity\":\"+15555550101\"}]\r\n",
         "\r\n",
         "hello\r\n",
     );
     let err = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap_err();
     assert_eq!(
         format!("{err:#}"),
-        "This mail was written by an earlier Message Crate, which named each address a \
-         handle (X-ME-Tapbacks); export the backup again"
+        "This mail was written by an earlier Message Crate, which kept reactions in \
+         X-ME-Tapbacks; export the backup again"
+    );
+}
+
+/// A reactions header that does not read is refused rather than read as no
+/// reactions.
+#[test]
+fn a_mail_whose_reactions_do_not_read_is_refused() {
+    let eml = concat!(
+        "X-ME-Chat-Identifier: +15555550101\r\n",
+        "X-ME-Guid: g1\r\n",
+        "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
+        "X-ME-Reactions: [{\"part_index\":0}]\r\n",
+        "\r\n",
+        "hello\r\n",
+    );
+    let err = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap_err();
+    assert!(
+        format!("{err:#}").starts_with(
+            "This mail's reactions (X-ME-Reactions) do not read; export the backup again"
+        ),
+        "{err:#}"
     );
 }

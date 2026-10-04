@@ -2,6 +2,7 @@ import { Fragment } from "react";
 import type { ImportSummaryView } from "../../../components/import/ImportSummaryPanel";
 import PlainButton from "../../../components/PlainButton";
 import ScrollingTableCard from "../../../components/ScrollingTableCard";
+import { focusRing } from "../../../lib/uiStyles";
 import ImportDetailPanel from "./ImportDetailPanel";
 import PageControl from "./PageControl";
 import type { AccountImportRun, ListedImportRun } from "./storageUtils";
@@ -84,7 +85,7 @@ export default function ImportHistoryTable({
                             aria-controls={detailId}
                             // React Aria stops the press here, so the row's own click does not toggle it back.
                             onPress={() => onToggle(row.id)}
-                            className="w-full rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            className={`w-full rounded-sm text-left ${focusRing}`}
                           >
                             {formatImportDate(row.finished_at ?? row.started_at)}
                           </PlainButton>

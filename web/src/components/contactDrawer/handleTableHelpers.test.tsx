@@ -4,7 +4,6 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import {
   Cell,
-  ResizableTableContainer,
   Row,
   type SortDescriptor,
   Table,
@@ -22,78 +21,66 @@ afterEach(() => {
 function Harness() {
   const [sortDescriptor, setSortDescriptor] = useState<SortDescriptor | null>(null);
   return (
-    <ResizableTableContainer>
-      <Table
-        aria-label="Contact handles"
-        sortDescriptor={sortDescriptor ?? undefined}
-        onSortChange={setSortDescriptor}
-      >
-        <TableHeader>
-          <SortableColumn id="service" isRowHeader align="left" allowsResizing>
-            Service
-          </SortableColumn>
-          <SortableColumn id="handle" align="left" allowsResizing>
-            Identity
-          </SortableColumn>
-        </TableHeader>
-        <TableBody>
-          <Row id="r1">
-            <Cell>Phone</Cell>
-            <Cell>+15551212</Cell>
-          </Row>
-        </TableBody>
-      </Table>
-    </ResizableTableContainer>
+    <Table
+      aria-label="Contact handles"
+      sortDescriptor={sortDescriptor ?? undefined}
+      onSortChange={setSortDescriptor}
+    >
+      <TableHeader>
+        <SortableColumn id="service" isRowHeader align="left">
+          Service
+        </SortableColumn>
+        <SortableColumn id="handle" align="left">
+          Identity
+        </SortableColumn>
+      </TableHeader>
+      <TableBody>
+        <Row id="r1">
+          <Cell>Phone</Cell>
+          <Cell>+15551212</Cell>
+        </Row>
+      </TableBody>
+    </Table>
   );
 }
 
 describe("SortableColumn", () => {
   it("defaults align to center so callers like CheckedContactsPanel stay unchanged", () => {
     render(
-      <ResizableTableContainer>
-        <Table aria-label="Checked contacts">
-          <TableHeader>
-            <SortableColumn id="start_date">First Seen</SortableColumn>
-          </TableHeader>
-          <TableBody>
-            <Row id="r1">
-              <Cell>2024-01-15</Cell>
-            </Row>
-          </TableBody>
-        </Table>
-      </ResizableTableContainer>,
+      <Table aria-label="Checked contacts">
+        <TableHeader>
+          <SortableColumn id="start_date">First Seen</SortableColumn>
+        </TableHeader>
+        <TableBody>
+          <Row id="r1">
+            <Cell>2024-01-15</Cell>
+          </Row>
+        </TableBody>
+      </Table>,
     );
     const header = screen.getByRole("columnheader", { name: /First Seen/i });
     expect(header.className).toMatch(/text-center/);
     expect(header.className).not.toMatch(/text-left/);
   });
 
-  it("renders left-aligned column headers with visible resizers", () => {
-    const { container } = render(<Harness />);
-    expect(screen.getByRole("grid", { name: "Contact handles" })).toBeTruthy();
+  it("renders left-aligned column headers", () => {
+    render(<Harness />);
     const service = screen.getByRole("columnheader", { name: /Service/i });
     expect(service.className).toMatch(/text-left/);
-    // RAC ColumnResizer uses role="presentation"; identify by resize cursor class.
-    const resizers = container.querySelectorAll(".cursor-col-resize");
-    expect(resizers.length).toBeGreaterThanOrEqual(2);
   });
 
   it("pins the sort caret to the column edge, not the label", () => {
     render(
-      <ResizableTableContainer>
-        <Table aria-label="Contact handles">
-          <TableHeader>
-            <SortableColumn id="service" allowsResizing>
-              Service
-            </SortableColumn>
-          </TableHeader>
-          <TableBody>
-            <Row id="r1">
-              <Cell>Phone</Cell>
-            </Row>
-          </TableBody>
-        </Table>
-      </ResizableTableContainer>,
+      <Table aria-label="Contact handles">
+        <TableHeader>
+          <SortableColumn id="service">Service</SortableColumn>
+        </TableHeader>
+        <TableBody>
+          <Row id="r1">
+            <Cell>Phone</Cell>
+          </Row>
+        </TableBody>
+      </Table>,
     );
     const header = screen.getByRole("columnheader", { name: /Service/i });
     const flexRow = header.querySelector(".relative.flex.w-full");
@@ -116,36 +103,20 @@ describe("SortableColumn", () => {
     expect(label?.contains(caret as Node)).toBe(false);
   });
 
-  it("pins the resizer as the last child of a full-width flex row", () => {
-    render(<Harness />);
-    const service = screen.getByRole("columnheader", { name: /Service/i });
-    const flexRow = service.querySelector(".relative.flex.w-full");
-    expect(flexRow).toBeTruthy();
-    const children = Array.from(flexRow?.children ?? []);
-    expect(children.length).toBeGreaterThanOrEqual(2);
-    const last = children[children.length - 1] as HTMLElement;
-    expect(last.className).toMatch(/cursor-col-resize/);
-    expect(last.className).toMatch(/absolute/);
-    const group = children[0] as HTMLElement;
-    expect(group.className).toMatch(/flex-1/);
-  });
-
   it("keeps right-aligned headers off the edge caret", () => {
     render(
-      <ResizableTableContainer>
-        <Table aria-label="Checked contacts">
-          <TableHeader>
-            <SortableColumn id="conversations" align="right">
-              Threads
-            </SortableColumn>
-          </TableHeader>
-          <TableBody>
-            <Row id="r1">
-              <Cell>12</Cell>
-            </Row>
-          </TableBody>
-        </Table>
-      </ResizableTableContainer>,
+      <Table aria-label="Checked contacts">
+        <TableHeader>
+          <SortableColumn id="conversations" align="right">
+            Threads
+          </SortableColumn>
+        </TableHeader>
+        <TableBody>
+          <Row id="r1">
+            <Cell>12</Cell>
+          </Row>
+        </TableBody>
+      </Table>,
     );
     const header = screen.getByRole("columnheader", { name: /Threads/i });
     const group = header.querySelector(".flex-1");

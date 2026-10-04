@@ -13,12 +13,11 @@ use chrono::{Duration, Utc};
 use message_ir::{
     ConversationHeader, ConversationMeta, ConversationStats, ExportMeta, IrAttachment,
     IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind, IrParticipant,
-    IrService, SCHEMA_VERSION,
+    IrService, Reaction, SCHEMA_VERSION,
 };
 use rand::Rng;
 use rand::RngExt;
 use rand::seq::{IndexedRandom, SliceRandom};
-use serde_json::json;
 
 use crate::assets::{JPG_PHOTOS, OTHER_ATTACHMENTS};
 use crate::config::SeedConfig;
@@ -330,6 +329,7 @@ impl SharedMessage {
             subject: None,
             text: self.text.clone(),
             attachments: vec![],
+            reactions: Vec::new(),
             imessage: None,
             source: None,
         }
@@ -1016,6 +1016,7 @@ impl<R: Rng> Seeder<'_, R> {
             subject: None,
             text,
             attachments: vec![],
+            reactions: Vec::new(),
             imessage: None,
             source: None,
         }
@@ -1318,7 +1319,7 @@ fn tapback_emoji(kind: &str, rng: &mut impl Rng) -> Option<String> {
     Some(emoji.to_string())
 }
 
-/// Add a tapback (heart, thumbs-up, and similar) from `sender` onto `msg`.
+/// Add a reaction (heart, thumbs-up, and similar) from `sender` onto `msg`.
 fn push_tapback(
     msg: &mut IrMessage,
     kind: &str,
@@ -1326,25 +1327,14 @@ fn push_tapback(
     sender: &str,
     from_me: bool,
 ) {
-    let im = msg.imessage.get_or_insert_with(IrImessage::default);
-    let mut taps = match im.tapbacks.take() {
-        Some(serde_json::Value::Array(items)) => items,
-        Some(other) if !other.is_null() => vec![other],
-        _ => Vec::new(),
-    };
-    let sender_value = if from_me {
-        serde_json::Value::Null
-    } else {
-        json!(sender)
-    };
-    taps.push(json!({
-        "part_index": 0,
-        "kind": kind,
-        "emoji": emoji,
-        "is_from_me": from_me,
-        "reactor_identity": sender_value,
-    }));
-    im.tapbacks = Some(serde_json::Value::Array(taps));
+    msg.reactions.push(Reaction {
+        part_index: 0,
+        kind: kind.to_string(),
+        emoji,
+        is_from_me: from_me,
+        reactor_identity: (!from_me).then(|| sender.to_string()),
+        reactor_display_name: None,
+    });
 }
 
 /// Turn a phone or email into a safe file name (`+` becomes `p`, `@` becomes `a`).

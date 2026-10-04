@@ -298,6 +298,8 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
             subject: hooks.subject(msg),
             text: msg.text.clone(),
             attachments,
+            // No source that stages its rows here records reactions yet.
+            reactions: Vec::new(),
             imessage: None,
             source: hooks.source(convo, msg).into_option(),
         });

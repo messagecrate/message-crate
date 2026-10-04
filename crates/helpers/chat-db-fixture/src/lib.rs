@@ -48,6 +48,13 @@ pub const SHRUNK_GROUP_IDENTIFIER: &str = "chat200";
 /// The name the group chat was given.
 pub const GROUP_TITLE: &str = "Weekend plans";
 
+/// The guid of the message two people react to. Apple's guids are 36
+/// characters, and a reaction names its target by that length.
+pub const REACTED_GUID: &str = "00000000-0000-4000-8000-000000000013";
+
+/// The emoji the owner reacts to message 13 with.
+pub const REACTION_EMOJI: &str = "🔥";
+
 /// The bytes of the one attachment on disk.
 pub const PHOTO_BYTES: &[u8] = b"not really a jpeg";
 
@@ -59,7 +66,7 @@ pub fn apple_nanos(seconds_since_2001: i64) -> i64 {
 
 /// Write a Mac `chat.db` into `dir` and return its path.
 ///
-/// The database holds four handles, six chats, twelve messages, and one
+/// The database holds four handles, six chats, fifteen messages, and one
 /// attachment whose file (`photo.jpg`) is written beside the database. The
 /// owner sends from two addresses: the phone ([`OWNER`]) and the email
 /// ([`OWNER_EMAIL`]), each stored the way Apple stores it, `P:`-prefixed and
@@ -108,6 +115,12 @@ pub fn apple_nanos(seconds_since_2001: i64) -> i64 {
 /// - message 11: the same "Note to self" received in chat 6 from the
 ///   owner's handle, the second row Apple writes for a message to oneself
 /// - message 12: incoming "Lost" from [`FRIEND_EMAIL`] in no chat
+/// - message 13: incoming "Pizza?" from [`FRIEND_EMAIL`] in chat 2, whose
+///   guid is [`REACTED_GUID`]
+/// - message 14: [`FRIEND_PHONE`] loves message 13, a tapback
+///   (`associated_message_type` 2000) whose reactor is not the author
+/// - message 15: the owner reacts to message 13 with the emoji
+///   [`REACTION_EMOJI`] (`associated_message_type` 2006)
 ///
 /// The photo message has no `text` and no `attributedBody`. A real row
 /// carries the attachment as a placeholder range inside `attributedBody`;
@@ -179,8 +192,14 @@ pub fn write_chat_db(dir: &Path) -> PathBuf {
             VALUES (11, 'guid-11', 'Note to self', 'iMessage', 4, '{owner}', {d11}, 0, 0, 0);
         INSERT INTO message (ROWID, guid, text, service, handle_id, destination_caller_id, date, is_from_me, item_type, associated_message_type)
             VALUES (12, 'guid-12', 'Lost', 'iMessage', 2, '{owner}', {d12}, 0, 0, 0);
+        INSERT INTO message (ROWID, guid, text, service, handle_id, destination_caller_id, date, is_from_me, item_type, associated_message_type)
+            VALUES (13, '{reacted_guid}', 'Pizza?', 'iMessage', 2, '{owner}', {d13}, 0, 0, 0);
+        INSERT INTO message (ROWID, guid, text, service, handle_id, destination_caller_id, date, is_from_me, item_type, associated_message_type, associated_message_guid)
+            VALUES (14, 'guid-14', 'Loved “Pizza?”', 'iMessage', 1, '{owner}', {d14}, 0, 0, 2000, 'p:0/{reacted_guid}');
+        INSERT INTO message (ROWID, guid, text, service, handle_id, destination_caller_id, date, is_from_me, item_type, associated_message_type, associated_message_guid, associated_message_emoji)
+            VALUES (15, 'guid-15', 'Reacted {reaction_emoji} to “Pizza?”', 'iMessage', 0, '{owner}', {d15}, 1, 0, 2006, 'p:0/{reacted_guid}', '{reaction_emoji}');
         INSERT INTO chat_message_join VALUES (1, 1, {d1}), (1, 2, {d2}), (2, 3, {d3}), (3, 4, {d4}), (1, 5, {d5}), (1, 6, {d6}),
-            (5, 7, {d7}), (4, 8, {d8}), (2, 9, {d9}), (6, 10, {d10}), (6, 11, {d11});
+            (5, 7, {d7}), (4, 8, {d8}), (2, 9, {d9}), (6, 10, {d10}), (6, 11, {d11}), (2, 13, {d13}), (2, 14, {d14}), (2, 15, {d15});
 
         INSERT INTO attachment VALUES (1, 'att-1', '{photo}', 'public.jpeg', 'image/jpeg', 'photo.jpg', {photo_len}, 0, 0, NULL);
         INSERT INTO message_attachment_join VALUES (1, 1);
@@ -206,6 +225,11 @@ pub fn write_chat_db(dir: &Path) -> PathBuf {
         d10 = apple_nanos(600_000_540),
         d11 = apple_nanos(600_000_541),
         d12 = apple_nanos(600_000_600),
+        d13 = apple_nanos(600_000_660),
+        d14 = apple_nanos(600_000_720),
+        d15 = apple_nanos(600_000_780),
+        reacted_guid = REACTED_GUID,
+        reaction_emoji = REACTION_EMOJI,
         photo = photo.display(),
         photo_len = PHOTO_BYTES.len(),
     ))
@@ -226,7 +250,15 @@ mod tests {
         let count = |sql: &str| db.query_row(sql, [], |row| row.get::<_, i64>(0)).unwrap();
         assert_eq!(count("SELECT count(*) FROM chat"), 6);
         assert_eq!(count("SELECT count(*) FROM handle"), 4);
-        assert_eq!(count("SELECT count(*) FROM message"), 12);
+        assert_eq!(count("SELECT count(*) FROM message"), 15);
+        assert_eq!(
+            count(&format!(
+                "SELECT count(*) FROM message WHERE associated_message_guid = 'p:0/{REACTED_GUID}' \
+                 AND associated_message_type IN (2000, 2006)"
+            )),
+            2,
+            "message 13 carries a tapback and an emoji reaction"
+        );
         assert_eq!(
             count("SELECT count(*) FROM handle WHERE person_centric_id = 'person-sam'"),
             2,

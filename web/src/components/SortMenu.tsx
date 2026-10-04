@@ -1,5 +1,5 @@
 import { Header, Menu, MenuItem, MenuSection, MenuTrigger, Popover } from "react-aria-components";
-import { menuItemClass, menuPopoverClass } from "../lib/uiStyles";
+import { focusRing, menuItemClass, menuPopoverClass } from "../lib/uiStyles";
 import PlainButton from "./PlainButton";
 
 export type SortOrder = "asc" | "desc";
@@ -52,7 +52,7 @@ export default function SortMenu<Id extends string>({
       <PlainButton
         aria-label={`Sort ${itemNoun} by ${sortedBy}`}
         title={`Sorted by ${sortedBy}`}
-        className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-border bg-elevated text-muted outline-none hover:text-text focus-visible:ring-2 focus-visible:ring-accent aria-expanded:text-text"
+        className={`flex h-7 w-7 cursor-pointer items-center justify-center rounded-md border border-border bg-elevated text-muted hover:text-text aria-expanded:text-text ${focusRing}`}
       >
         <SortIcon />
       </PlainButton>

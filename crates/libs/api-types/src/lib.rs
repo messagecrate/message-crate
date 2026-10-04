@@ -467,6 +467,11 @@ api_shape! {
         /// preview's bytes are at `/v1/assets/{sha256}/preview`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub preview_mime_type: Option<String>,
+        /// MIME type of the attachment's thumbnail, once the server has made
+        /// it; absent until then. The thumbnail's bytes are at
+        /// `/v1/assets/{sha256}/thumbnail`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub thumbnail_mime_type: Option<String>,
     }
 }
 
@@ -554,6 +559,7 @@ mod tests {
                 transcription: None,
                 missing_reason: None,
                 preview_mime_type: None,
+                thumbnail_mime_type: None,
             }],
             tapbacks: vec![Tapback {
                 part_index: 0,

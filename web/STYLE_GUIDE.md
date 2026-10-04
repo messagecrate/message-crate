@@ -62,13 +62,13 @@ These drive a `color-mix` derivation tree in `theme.css`. Three `data-theme` mod
 - **Focus:** `focusRing` from `src/lib/uiStyles.ts`: `outline-none` (custom) + `focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-accent`, the theme's own `:focus-visible` outline.
   The 1px gap between the element and the ring shows the surface behind it, in every theme.
   A ring with `ring-offset-*` does not, because the offset is a colour of its own, white unless a class sets it, so it drew a white line in the dark theme.
-  `src/styleTokens.test.ts` fails on a `ring-offset-` class anywhere in `src/`, and on an outline class other than `outline-none` outside `src/lib/uiStyles.ts`, so every focus outline comes from there.
   An element that draws its ring inside itself (a table row, a resize grip) uses `ring-2 ring-inset ring-accent`, which has no offset.
+  No other focus ring exists: a `ring-2 ring-accent` without `ring-inset` sits flush against the element, where `focusRing` leaves the 1px gap.
+  `src/styleTokens.test.ts` fails on a `ring-offset-` class anywhere in `src/`; on an outline class other than `outline-none` outside `src/lib/uiStyles.ts`, so every focus outline comes from there; and on a focus ring outside `src/lib/uiStyles.ts` that is not the inset ring: a ring under a focus variant, or with no variant, needs `ring-inset` beside it and `ring-2` as its only width. The test reads one line at a time, so an inset ring's classes go on one line. `StepProgress`'s halo on the current step is a ring that is not a focus ring, and the test names it.
   The variant depends on which element takes focus.
-  A button, a menu item, a table row or a list row takes DOM focus itself, so its ring uses `focus-visible:`.
-  React Aria's `Checkbox`, `Radio` and `ColumnResizer` put focus on a hidden input, which `:focus-visible` cannot style, so their ring uses `data-focus-visible:` on the label React Aria marks (or the `isFocusVisible` render prop).
-  Behind the `isFocusVisible` render prop, the outline is `focusOutline` from `src/lib/uiStyles.ts`, `focusRing`'s classes without the variant.
-  A `data-focus-visible:` form spells out each of those classes with the variant.
+  A button, a menu item, a tab, a table row or a list row takes DOM focus itself, so its ring uses `focus-visible:`.
+  React Aria's `Checkbox` and `Radio` put focus on a hidden input, which `:focus-visible` cannot style, so they show `focusOutline` from `src/lib/uiStyles.ts`, `focusRing`'s classes without the variant, when React Aria's `isFocusVisible` render prop is true.
+  The app's `Checkbox` component draws the same outline on its box from `theme.css`, keyed on `data-focus-visible`.
 - **Current item in a menu or popdown:** `data-focused:bg-hover`. React Aria moves focus to the item under the pointer as well as the one the arrow keys reach, so one item is highlighted at a time.
 - **Disabled:** `disabled:opacity-50` or `disabled:brightness-[0.72]` + `disabled:cursor-not-allowed`
 - **Active/Selected:** `bg-accent text-sent-text`
@@ -80,7 +80,7 @@ Defined as named constants in `src/lib/zLayers.ts`. Use those rather than a bare
 
 | z-index | Constant | Usage |
 |---|---|---|
-| 1 | `Z_LIFT` | One step above siblings in the same stacking context (a row's lead cell, a table's column grip) |
+| 1 | `Z_LIFT` | One step above siblings in the same stacking context (a row's lead cell) |
 | 10 | `Z_RANGE_PILL` | The floating range pill over a list's rows |
 | 20 | `Z_APP_HEADER` | The app header, so its menus paint over the panels below |
 | 30 | `Z_RESIZE_HANDLE` | Column resize handles, below every drawer and panel opened over them |
@@ -98,5 +98,5 @@ Defined as named constants in `src/lib/zLayers.ts`. Use those rather than a bare
 1. **Tokens only.** No hex, `rgb()`/`rgba()` or Tailwind palette color (`text-white`) in component code, shadows included. Use Tailwind utilities that reference theme tokens, and add a token to `theme.css` when none fits. `src/styleTokens.test.ts` fails on a hex, `rgb()`/`hsl()` or palette color, a `z-` class outside `lib/zLayers.ts`, or an inline `zIndex`, written into `src/`. The theme presets in `lib/theme.ts` and the color picker in `components/theme/ThemeColorRow.tsx` may hold hex values, because those are colors a person picks, kept as data.
 2. **No global border-box.** Some controls rely on `content-box`. Converted controls opt in with `box-border`.
 3. **Compact density.** Keep the existing compact visual density — 13–14px body text, tight padding.
-4. **React Aria for interactivity.** All interactive components (buttons, selects, dialogs, tabs, etc.) use `react-aria-components` for accessibility. A button is `Button` (the app's variants and sizes) or `PlainButton` (no look of its own), both React Aria's `Button`, and a button that stays pressed is React Aria's `ToggleButton`. Biome's `noRestrictedElements` refuses a native `<button>` outside tests. A checkbox is `Checkbox`, and a menu is `PopupMenu`.
+4. **React Aria for interactivity.** All interactive components (buttons, selects, dialogs, tabs, etc.) use `react-aria-components` for accessibility. A button is `Button` (the app's variants and sizes) or `PlainButton` (no look of its own), both React Aria's `Button`, and a button that stays pressed is React Aria's `ToggleButton`. Biome's `noRestrictedElements` refuses a native `<button>` outside tests. A checkbox is `Checkbox`, a tab is `Tab` (Biome's `noRestrictedImports` refuses React Aria's `Tab` anywhere else), and a menu is `PopupMenu`.
 5. **Inline styles only for dynamic values.** Layout math (VirtualList), dynamic widths, positions — keep as `style={{}}`. Static values → Tailwind className.

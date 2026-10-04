@@ -12,6 +12,7 @@
     "participants",
     "messages",
     "attachments",
+    "media_queue",
     "tapbacks",
     "staging_conversations",
     "staging_participants",

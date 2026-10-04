@@ -1965,7 +1965,7 @@ mod kind_words {
     ) -> (i64, i64) {
         let path = dir.join(format!("{chat}.jsonl"));
         let header = serde_json::json!({
-            "schema_version": 5,
+            "schema_version": 6,
             "export": {"source": source, "tool": "test", "tool_version": "0",
                        "owner_identity": null, "owner_display_name": null},
             "conversation": {
