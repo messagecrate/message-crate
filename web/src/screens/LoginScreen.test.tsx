@@ -63,7 +63,7 @@ import { getServerState, login as serverLogin } from "../lib/serverApi";
 import { checkServerHealth } from "../lib/serverHealth";
 import type { ServerState } from "../lib/useServerState";
 import { Providers } from "../test/providers";
-import { setupUser } from "../test/user";
+import { fill, setupUser } from "../test/user";
 import LoginScreen from "./LoginScreen";
 
 const checkServerHealthMock = vi.mocked(checkServerHealth);
@@ -257,9 +257,9 @@ describe("LoginScreen", () => {
 
     await screen.findByRole("tab", { name: "Create Account" });
     await user.click(screen.getByRole("tab", { name: "Create Account" }));
-    await user.type(screen.getByRole("textbox", { name: "Username" }), "ada");
-    await user.type(screen.getByLabelText("Password"), "hunter22");
-    await user.type(screen.getByLabelText("Confirm Password"), "hunter23");
+    await fill(user, screen.getByRole("textbox", { name: "Username" }), "ada");
+    await fill(user, screen.getByLabelText("Password"), "hunter22");
+    await fill(user, screen.getByLabelText("Confirm Password"), "hunter23");
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
     expect(await screen.findByText("Passwords do not match.")).toBeInTheDocument();
@@ -364,7 +364,7 @@ describe("LoginScreen", () => {
     await user.click(screen.getByRole("button", { name: "Change server address" }));
     const field = screen.getByRole("textbox", { name: "Address" });
     await user.clear(field);
-    await user.type(field, "http://127.0.0.1:9999");
+    await fill(user, field, "http://127.0.0.1:9999");
     await user.click(screen.getByRole("button", { name: "Use this address" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -390,7 +390,7 @@ describe("LoginScreen", () => {
     // nothing to apply.
     expect(apply()).toBeDisabled();
 
-    await user.type(field, "http://127.0.0.1:8080");
+    await fill(user, field, "http://127.0.0.1:8080");
     expect(apply()).toBeEnabled();
 
     // A field naming no address at all is nothing to apply either.
@@ -400,7 +400,7 @@ describe("LoginScreen", () => {
     // Cancel is unaffected and stays the way out.
     expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
 
-    await user.type(field, "http://127.0.0.1:8080");
+    await fill(user, field, "http://127.0.0.1:8080");
     await user.click(apply());
     await waitFor(() => {
       expect(setServer).toHaveBeenCalledWith("http://127.0.0.1:8080");
@@ -445,7 +445,7 @@ describe("LoginScreen", () => {
     stubNoServer();
     const field = screen.getByRole("textbox", { name: "Address" });
     await user.clear(field);
-    await user.type(field, "http://127.0.0.1:9999");
+    await fill(user, field, "http://127.0.0.1:9999");
     await user.click(screen.getByRole("button", { name: "Test" }));
 
     expect(await screen.findByText("Disconnected")).toBeInTheDocument();
@@ -466,7 +466,7 @@ describe("LoginScreen", () => {
 
     stubNoServer();
     const field = screen.getByRole("textbox", { name: "Address" });
-    await user.type(field, "http://127.0.0.1:9999");
+    await fill(user, field, "http://127.0.0.1:9999");
     // Typed but never tried: the card is still connected behind this screen,
     // but not to what is in the box.
     expect(screen.getByRole("status")).toHaveTextContent("Not tested");
@@ -500,7 +500,7 @@ describe("LoginScreen", () => {
     );
     const field = screen.getByRole("textbox", { name: "Address" });
     await user.clear(field);
-    await user.type(field, "http://127.0.0.1:8080");
+    await fill(user, field, "http://127.0.0.1:8080");
     await user.click(screen.getByRole("button", { name: "Use this address" }));
 
     expect(await screen.findByRole("tab", { name: "Login" })).toBeInTheDocument();
@@ -534,7 +534,7 @@ describe("LoginScreen", () => {
     await user.click(screen.getByRole("button", { name: "Change server address" }));
     const field = screen.getByRole("textbox", { name: "Address" });
     await user.clear(field);
-    await user.type(field, "http://127.0.0.1:8080");
+    await fill(user, field, "http://127.0.0.1:8080");
     await user.click(screen.getByRole("button", { name: "Use this address" }));
 
     await waitFor(() => {
@@ -645,9 +645,9 @@ describe("LoginScreen", () => {
 
     await screen.findByRole("tab", { name: "Create Account" });
     await user.click(screen.getByRole("tab", { name: "Create Account" }));
-    await user.type(screen.getByRole("textbox", { name: "Username" }), "ada");
-    await user.type(screen.getByLabelText("Password"), "hunter22");
-    await user.type(screen.getByLabelText("Confirm Password"), "hunter23");
+    await fill(user, screen.getByRole("textbox", { name: "Username" }), "ada");
+    await fill(user, screen.getByLabelText("Password"), "hunter22");
+    await fill(user, screen.getByLabelText("Confirm Password"), "hunter23");
     await user.click(screen.getByRole("button", { name: "Continue" }));
 
     const message = await screen.findByText("Passwords do not match.");
@@ -684,7 +684,7 @@ describe("LoginScreen", () => {
     await user.click(screen.getByRole("button", { name: "Change server address" }));
     const field = screen.getByRole("textbox");
     await user.clear(field);
-    await user.type(field, "http://crate.example:8080");
+    await fill(user, field, "http://crate.example:8080");
     await user.click(screen.getByRole("button", { name: "Use this address" }));
 
     await waitFor(() => expect(setServer).toHaveBeenCalledWith("http://crate.example:8080"));

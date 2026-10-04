@@ -1,9 +1,9 @@
 /** @vitest-environment jsdom */
 
 import { act, cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setupUser } from "../test/user";
 import AppAccountMenu from "./AppAccountMenu";
 
 const profileState = vi.hoisted(() => ({
@@ -65,7 +65,7 @@ describe("AppAccountMenu", () => {
   });
 
   it("shows the username and preferred name above Settings and Log out", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     profileState.profile = { username: "ada", preferred_name: "Ada Lovelace" };
     renderMenu();
 
@@ -77,7 +77,7 @@ describe("AppAccountMenu", () => {
   });
 
   it("leaves out the preferred name line when none is set", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     profileState.profile = { username: "ada", preferred_name: null };
     renderMenu();
 
@@ -87,7 +87,7 @@ describe("AppAccountMenu", () => {
   });
 
   it("logs out from the Log out item", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     profileState.profile = { username: "ada" };
     renderMenu();
 
@@ -98,7 +98,7 @@ describe("AppAccountMenu", () => {
   });
 
   it("opens from the keyboard and moves to an item by its first letter", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     profileState.profile = { username: "ada" };
     renderMenu();
 

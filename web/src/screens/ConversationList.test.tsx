@@ -14,7 +14,6 @@
  */
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import RightPane from "../components/RightPane";
@@ -23,6 +22,7 @@ import { ApiError } from "../lib/api";
 import { createMessageTag, listConversations, updateMessageTagMembers } from "../lib/serverApi";
 import type { Conversation } from "../lib/types";
 import { mockedAuth, Providers } from "../test/providers";
+import { setupUser } from "../test/user";
 import ConversationList from "./ConversationList";
 
 vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
@@ -176,7 +176,7 @@ describe("ConversationList", () => {
         offset: 0,
       });
       renderList();
-      const user = userEvent.setup({ delay: null });
+      const user = setupUser();
       await user.click(await screen.findByRole("checkbox", { name: "Select Chat 1" }));
       await user.click(screen.getByRole("checkbox", { name: "Select Chat 2" }));
 
@@ -189,7 +189,7 @@ describe("ConversationList", () => {
       serveConversations(120);
       vi.mocked(updateMessageTagMembers).mockResolvedValue({ added: 120, removed: 0 });
       renderList();
-      const user = userEvent.setup({ delay: null });
+      const user = setupUser();
       await screen.findByRole("checkbox", { name: "Select Chat 1" });
 
       const box = screen.getByRole("checkbox", { name: "Select all conversations" });
@@ -213,7 +213,7 @@ describe("ConversationList", () => {
       const longName = "Trips ".repeat(14).trim();
       vi.mocked(createMessageTag).mockRejectedValue(new ApiError(422, refusal));
       renderList();
-      const user = userEvent.setup({ delay: null });
+      const user = setupUser();
 
       await user.click(await screen.findByRole("checkbox", { name: "Select Chat 1" }));
       await user.click(screen.getByRole("button", { name: "Message Tags" }));
@@ -230,7 +230,7 @@ describe("ConversationList", () => {
     it("clears the ticks when the sort changes, so no action reaches part of them", async () => {
       serveConversations(1200);
       renderList();
-      const user = userEvent.setup({ delay: null });
+      const user = setupUser();
       await screen.findByRole("checkbox", { name: "Select Chat 1" });
       const box = screen.getByRole("checkbox", { name: "Select all conversations" });
       await user.click(box);
@@ -248,7 +248,7 @@ describe("ConversationList", () => {
       serveConversations(1200);
       vi.mocked(updateMessageTagMembers).mockResolvedValue({ added: 1200, removed: 0 });
       renderList();
-      const user = userEvent.setup({ delay: null });
+      const user = setupUser();
       await screen.findByRole("checkbox", { name: "Select Chat 1" });
 
       const box = screen.getByRole("checkbox", { name: "Select all conversations" });

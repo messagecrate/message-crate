@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SearchList } from "../lib/searchFields";
@@ -148,7 +147,7 @@ describe("AppLayout", () => {
   it.each(["/contacts?cq=alice", "/trash?tq=bob&tsel=7"])(
     "leaves %s as it was when a Saved Search is opened from it",
     async (entry) => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderLayout(entry);
 
       await user.click(screen.getByRole("button", { name: "Groups" }));
@@ -164,7 +163,7 @@ describe("AppLayout", () => {
     ["a contact's conversations", "?q=with%3A%2342&f=with%3A%2342"],
     ["the Messages list's picked sort", "?q=dentist&sort=date"],
   ])("keeps %s when a conversation in the list is opened", async (_name, search) => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderLayout(`/${search}`);
 
     // A search with a `word:` waits for the lists' words.
@@ -278,7 +277,7 @@ describe("AppLayout on a Contact Group or Message Tag page", () => {
 
   it("keeps a group whose name holds a question mark when the list is searched", async () => {
     sets.groups = ["Why?"];
-    const user = userEvent.setup();
+    const user = setupUser();
     renderLayout(`/group/${encodeURIComponent("Why?")}`);
 
     await user.click(screen.getByRole("button", { name: "Search for ada" }));
@@ -287,7 +286,7 @@ describe("AppLayout on a Contact Group or Message Tag page", () => {
 
   it("keeps a tag whose name holds a number sign when the list is searched", async () => {
     sets.tags = ["#1"];
-    const user = userEvent.setup();
+    const user = setupUser();
     renderLayout(`/tag/${encodeURIComponent("#1")}`);
 
     await user.click(screen.getByRole("button", { name: "Search for ada" }));

@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
@@ -222,7 +221,7 @@ describe("ImportRunView", () => {
   });
 
   it("puts the backup path under the heading and the staging directory in the Staging row", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const staging = "/home/sam/message-crate/staging-iphone";
     renderView({ stagingDir: staging });
 
@@ -237,7 +236,7 @@ describe("ImportRunView", () => {
   });
 
   it("offers no import log until Upload has started, then shows it in the Upload row", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const staging = "/home/sam/message-crate/staging-iphone";
     const view = renderView({ stagingDir: staging });
     expect(
@@ -271,7 +270,7 @@ describe("ImportRunView", () => {
 
   it("offers Pause, not Cancel, inside a running Upload", async () => {
     const onCancel = vi.fn();
-    const user = userEvent.setup();
+    const user = setupUser();
     renderView({
       steps: stepsAt("copy", { Staging: "done", Upload: "active" }),
       onCancel,
@@ -318,7 +317,7 @@ describe("ImportRunView", () => {
   it("waits at the Staging Review with the staged facts, the limit and the decision", async () => {
     const onApprove = vi.fn();
     const onCancelRun = vi.fn();
-    const user = userEvent.setup();
+    const user = setupUser();
     renderView({
       phase: "staging_review",
       running: false,
@@ -397,7 +396,7 @@ describe("ImportRunView", () => {
   });
 
   it("sorts the estimates into three piles when a Media stage is coming", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderView({
       phase: "staging_review",
       running: false,
@@ -520,7 +519,7 @@ describe("ImportRunView", () => {
       contacts_changed: 16,
     });
     const onBack = vi.fn();
-    const user = userEvent.setup();
+    const user = setupUser();
     renderView({
       phase: "done",
       running: false,

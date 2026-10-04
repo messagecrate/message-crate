@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "../../lib/account";
 import { mockedAuth, renderWithProviders as render } from "../../test/providers";
@@ -179,13 +178,13 @@ describe("IdentitiesSection", () => {
   });
 
   it("keeps the dialog open and says why when the server did not add the identity", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     mutateAsync.mockResolvedValue(profile);
     render(<IdentitiesSection profile={profile} />);
 
     await user.click(screen.getByRole("button", { name: "Add identity" }));
     const dialog = await screen.findByRole("dialog", { name: "Add identity" });
-    await user.type(within(dialog).getByRole("textbox", { name: "Identity" }), "+1 555 555 0199");
+    await fill(user, within(dialog).getByRole("textbox", { name: "Identity" }), "+1 555 555 0199");
     await user.click(within(dialog).getByRole("button", { name: "Add" }));
 
     expect(
@@ -195,7 +194,7 @@ describe("IdentitiesSection", () => {
   });
 
   it("asks before removing an identity, and removes it only on Remove", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     mutateAsync.mockResolvedValue({ ...profile, phones: [] });
     render(<IdentitiesSection profile={profile} />);
 
@@ -248,7 +247,7 @@ describe("IdentitiesSection", () => {
   const listed = (items: Identity[]) => items;
 
   it("says the add could not be checked when reading the list again failed", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     listAccountIdentities
       .mockResolvedValueOnce(identities)
       .mockRejectedValue(new Error("Service Unavailable"));
@@ -257,7 +256,7 @@ describe("IdentitiesSection", () => {
 
     await user.click(await screen.findByRole("button", { name: "Add identity" }));
     const dialog = await screen.findByRole("dialog", { name: "Add identity" });
-    await user.type(within(dialog).getByRole("textbox", { name: "Identity" }), "+1 555 555 0199");
+    await fill(user, within(dialog).getByRole("textbox", { name: "Identity" }), "+1 555 555 0199");
     await user.click(within(dialog).getByRole("button", { name: "Add" }));
 
     expect(
@@ -268,7 +267,7 @@ describe("IdentitiesSection", () => {
   });
 
   it("keeps the dialog open when a WhatsApp add of a number on Text Message added nothing", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     // The profile lists the Text Message number in `phones` with no service,
     // so only the identities list can say the WhatsApp one is missing.
     mutateAsync.mockResolvedValue(profile);
@@ -278,7 +277,7 @@ describe("IdentitiesSection", () => {
     const dialog = await screen.findByRole("dialog", { name: "Add identity" });
     await user.click(within(dialog).getByRole("button", { name: /Service/ }));
     await user.click(screen.getByRole("option", { name: "WhatsApp" }));
-    await user.type(within(dialog).getByRole("textbox", { name: "Identity" }), "+15555550100");
+    await fill(user, within(dialog).getByRole("textbox", { name: "Identity" }), "+15555550100");
     await user.click(within(dialog).getByRole("button", { name: "Add" }));
 
     expect(mutateAsync).toHaveBeenCalledWith({
@@ -291,7 +290,7 @@ describe("IdentitiesSection", () => {
   });
 
   it("closes the dialog when the WhatsApp identity of a number also on Text Message is gone", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     listAccountIdentities
       .mockResolvedValueOnce(listed([identities[0], whatsapp]))
       .mockResolvedValue(listed([identities[0]]));
@@ -310,7 +309,7 @@ describe("IdentitiesSection", () => {
   });
 
   it("keeps the dialog open when the server still lists the WhatsApp identity", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     listAccountIdentities
       .mockResolvedValueOnce(listed([identities[0], whatsapp]))
       .mockResolvedValue(listed([whatsapp]));

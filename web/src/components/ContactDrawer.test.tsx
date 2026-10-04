@@ -2,7 +2,6 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render as rtlRender, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import type { ReactElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/api";
@@ -11,6 +10,7 @@ import { keys } from "../lib/queryKeys";
 import { routeQueryKey } from "../lib/routeQueryKey";
 import { focusRing } from "../lib/uiStyles";
 import { inTimeZone } from "../test/timeZone";
+import { fill, setupUser } from "../test/user";
 import ContactDrawer from "./ContactDrawer";
 
 vi.mock("../lib/auth", () => ({ useAuth: () => ({ accountId: 7 }) }));
@@ -259,7 +259,7 @@ describe("ContactDrawer", () => {
   it("says a contact could not be loaded, stops claiming to load, and loads it on Try again", async () => {
     get.mockRejectedValueOnce(new ApiError(500, "The server could not answer."));
     get.mockResolvedValueOnce(detail(26, { name: "Zed" }));
-    const user = userEvent.setup();
+    const user = setupUser();
 
     render(
       <ContactDrawer
@@ -547,7 +547,7 @@ describe("ContactDrawer", () => {
     });
   });
 
-  async function openNameEditor(user: ReturnType<typeof userEvent.setup>) {
+  async function openNameEditor(user: ReturnType<typeof setupUser>) {
     get.mockResolvedValue(detail(1, { name: "Contact a" }));
     render(
       <ContactDrawer
@@ -570,7 +570,7 @@ describe("ContactDrawer", () => {
   }
 
   it("constrains the name editor to at most half of the title slot", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const input = await openNameEditor(user);
     const wrapper = input.parentElement;
     expect(wrapper?.className).toMatch(/max-w-\[50%\]/);
@@ -582,10 +582,10 @@ describe("ContactDrawer", () => {
   });
 
   it("cancels name edit on Escape without saving", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const input = await openNameEditor(user);
     await user.clear(input);
-    await user.type(input, "Renamed");
+    await fill(user, input, "Renamed");
     await user.keyboard("{Escape}");
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Contact a" })).toBeTruthy();
@@ -595,10 +595,10 @@ describe("ContactDrawer", () => {
   });
 
   it("cancels name edit on blur without saving", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const input = await openNameEditor(user);
     await user.clear(input);
-    await user.type(input, "Renamed");
+    await fill(user, input, "Renamed");
     await user.tab();
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Contact a" })).toBeTruthy();
@@ -608,10 +608,10 @@ describe("ContactDrawer", () => {
   });
 
   it("cancels name edit when clicking Contact Groups without saving", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const input = await openNameEditor(user);
     await user.clear(input);
-    await user.type(input, "Renamed");
+    await fill(user, input, "Renamed");
     await user.click(screen.getByText("Contact Groups"));
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Contact a" })).toBeTruthy();
@@ -621,10 +621,10 @@ describe("ContactDrawer", () => {
   });
 
   it("saves the name on Enter even if the field blurs", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const input = await openNameEditor(user);
     await user.clear(input);
-    await user.type(input, "Renamed");
+    await fill(user, input, "Renamed");
     await user.keyboard("{Enter}");
     input.blur();
     await waitFor(() => {
@@ -634,7 +634,7 @@ describe("ContactDrawer", () => {
 
   it("shows why an empty name was refused and keeps the editor open", async () => {
     post.mockRejectedValue(new Error("name must not be empty"));
-    const user = userEvent.setup();
+    const user = setupUser();
     const input = await openNameEditor(user);
     await user.clear(input);
     await user.keyboard("{Enter}");
@@ -732,7 +732,7 @@ describe("ContactDrawer", () => {
 
   it("moves the contact to trash and closes the drawer", async () => {
     get.mockResolvedValue(detail(1));
-    const user = userEvent.setup();
+    const user = setupUser();
     const onClose = vi.fn();
 
     render(
@@ -764,7 +764,7 @@ describe("ContactDrawer", () => {
   it("shows an error and leaves the drawer open when trashing fails", async () => {
     get.mockResolvedValue(detail(1));
     trash.mockRejectedValue(new Error("Could not move this contact."));
-    const user = userEvent.setup();
+    const user = setupUser();
     const onClose = vi.fn();
 
     render(
@@ -794,7 +794,7 @@ describe("ContactDrawer", () => {
   it("does not show a Move to trash error from one contact on the next one opened", async () => {
     get.mockImplementation(async (id: string) => detail(Number(id)));
     trash.mockRejectedValue(new Error("Trash refused."));
-    const user = userEvent.setup();
+    const user = setupUser();
     const onClose = vi.fn();
 
     const { rerender } = render(<ContactDrawer variant="docked" contactId="1" onClose={onClose} />);
@@ -815,7 +815,7 @@ describe("ContactDrawer", () => {
         finishTrash = resolve;
       }),
     );
-    const user = userEvent.setup();
+    const user = setupUser();
     const onClose = vi.fn();
 
     const { rerender } = render(<ContactDrawer variant="docked" contactId="1" onClose={onClose} />);

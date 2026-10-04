@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setupUser } from "../test/user";
 import ListRangeHeader from "./ListRangeHeader";
 
 afterEach(() => {
@@ -25,7 +25,7 @@ describe("ListRangeHeader", () => {
 
   it("toggles select-all from the header checkbox", async () => {
     const onSelectAllChange = vi.fn();
-    const user = userEvent.setup();
+    const user = setupUser();
     render(
       <ListRangeHeader
         rangeLabel="1–20 of 100"
@@ -38,7 +38,7 @@ describe("ListRangeHeader", () => {
 
   it("keeps select-all without a range label", async () => {
     const onSelectAllChange = vi.fn();
-    const user = userEvent.setup();
+    const user = setupUser();
     render(
       <ListRangeHeader
         selectAll={{ onChange: onSelectAllChange, label: "Select all contacts" }}

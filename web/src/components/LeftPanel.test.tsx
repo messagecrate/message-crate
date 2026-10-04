@@ -1,10 +1,10 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockedAuth, Providers } from "../test/providers";
+import { fill, setupUser } from "../test/user";
 import LeftPanel from "./LeftPanel";
 
 const profileState = vi.hoisted(() => ({
@@ -115,7 +115,7 @@ describe("LeftPanel", () => {
     savedSearchState.savedSearches = [
       { id: 1, name: "From Alice", query: "from:alice", kind: "manual" },
     ];
-    const user = userEvent.setup();
+    const user = setupUser();
     renderPanel();
     await user.click(screen.getByRole("button", { name: "Saved search options for From Alice" }));
     expect(screen.getByRole("menuitem", { name: "Rename…" })).toBeTruthy();
@@ -127,11 +127,11 @@ describe("LeftPanel", () => {
     savedSearchActions.create.mockRejectedValue(
       new Error("a saved search named 'From Alice' already exists"),
     );
-    const user = userEvent.setup();
+    const user = setupUser();
     renderPanel();
     await user.click(screen.getByRole("button", { name: "Create saved search" }));
-    await user.type(screen.getByRole("textbox", { name: "Name" }), "From Alice");
-    await user.type(screen.getByRole("textbox", { name: "Query" }), "from:alice");
+    await fill(user, screen.getByRole("textbox", { name: "Name" }), "From Alice");
+    await fill(user, screen.getByRole("textbox", { name: "Query" }), "from:alice");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -143,11 +143,11 @@ describe("LeftPanel", () => {
   });
 
   it("closes the form once a Saved Search is created", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderPanel();
     await user.click(screen.getByRole("button", { name: "Create saved search" }));
-    await user.type(screen.getByRole("textbox", { name: "Name" }), "From Alice");
-    await user.type(screen.getByRole("textbox", { name: "Query" }), "from:alice");
+    await fill(user, screen.getByRole("textbox", { name: "Name" }), "From Alice");
+    await fill(user, screen.getByRole("textbox", { name: "Query" }), "from:alice");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -160,13 +160,13 @@ describe("LeftPanel", () => {
     savedSearchActions.update.mockRejectedValue(
       new Error("a saved search named 'Work' already exists"),
     );
-    const user = userEvent.setup();
+    const user = setupUser();
     renderPanel();
     await user.click(screen.getByRole("button", { name: "Saved search options for From Alice" }));
     await user.click(screen.getByRole("menuitem", { name: "Rename…" }));
     const name = screen.getByRole("textbox", { name: "Name" });
     await user.clear(name);
-    await user.type(name, "Work");
+    await fill(user, name, "Work");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -181,7 +181,7 @@ describe("LeftPanel", () => {
       { id: 1, name: "From Alice", query: "from:alice", kind: "manual" },
     ];
     savedSearchActions.remove.mockRejectedValue(new Error("saved search not found"));
-    const user = userEvent.setup();
+    const user = setupUser();
     renderPanel();
     await user.click(screen.getByRole("button", { name: "Saved search options for From Alice" }));
     await user.click(screen.getByRole("menuitem", { name: "Delete" }));
@@ -254,7 +254,7 @@ describe("LeftPanel", () => {
       // `?q=` and opens in its Search scope with that text. `list` says the
       // query is the Conversations list's: without it Export would read
       // `messages:>100` as a Messages query, which the server refuses (#959).
-      const user = userEvent.setup();
+      const user = setupUser();
       renderPanel(["/?q=messages%3A%3E100"], "messages:>100 tag:Work");
       await user.click(screen.getByRole("button", { name: "Export" }));
       expect(screen.getByTestId("location").textContent).toBe(
@@ -263,14 +263,14 @@ describe("LeftPanel", () => {
     });
 
     it("opens Export plain when no conversation list is showing", async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderPanel(["/contacts?cq=ann"]);
       await user.click(screen.getByRole("button", { name: "Export" }));
       expect(screen.getByTestId("location")).toHaveTextContent("/export");
     });
 
     it("hides Import and Export when the Messages heading collapses", async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderPanel();
       expect(screen.getByRole("button", { name: "Import" })).toBeTruthy();
       expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();

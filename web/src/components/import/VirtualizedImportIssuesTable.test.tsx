@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setupUser } from "../../test/user";
 import type { ImportIssue } from "./ImportSummaryPanel";
 import { estimateExpandedHeight, tableViewportHeight } from "./importIssuesTableLayout";
 import VirtualizedImportIssuesTable from "./VirtualizedImportIssuesTable";
@@ -66,7 +66,7 @@ describe("VirtualizedImportIssuesTable", () => {
   });
 
   it("shows N files for a group and lists names only after expand", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render(
       <VirtualizedImportIssuesTable
         issues={[
@@ -96,7 +96,7 @@ describe("VirtualizedImportIssuesTable", () => {
   });
 
   it("expands a unique row to the reason only", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render(
       <VirtualizedImportIssuesTable
         issues={[issue({ item: "chat.jsonl", reason: "HTTP 500 from server" })]}
@@ -111,7 +111,7 @@ describe("VirtualizedImportIssuesTable", () => {
   });
 
   it("keeps the filename list open when a name is clicked", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render(
       <VirtualizedImportIssuesTable
         issues={[
@@ -131,7 +131,7 @@ describe("VirtualizedImportIssuesTable", () => {
 
 describe("VirtualizedImportIssuesTable keyboard", () => {
   it("moves between rows with the arrow keys and expands the focused row with Enter", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render(
       <VirtualizedImportIssuesTable
         issues={[

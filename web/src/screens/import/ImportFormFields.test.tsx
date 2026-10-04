@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { holdDesktopJob } from "../../lib/desktopJob";
 import { EXPORT_SOURCES } from "../../lib/exportSources";
@@ -14,6 +13,7 @@ import {
   WHATSAPP_METHODS,
   WHATSAPP_SOURCE_ID,
 } from "../../lib/whatsappImport";
+import { setupUser } from "../../test/user";
 import ImportFormFields, { type ImportFormFieldsProps } from "./ImportFormFields";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
@@ -95,7 +95,7 @@ function renderForm(override: Partial<ImportFormFieldsProps> = {}) {
 
 describe("ImportFormFields iMessage methods", () => {
   it("shows one iMessage source and a Platform dropdown without jailbreak", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderForm();
     expect(screen.getByLabelText("Import source")).toBeTruthy();
     expect(screen.getByLabelText("Platform")).toBeTruthy();
@@ -108,7 +108,7 @@ describe("ImportFormFields iMessage methods", () => {
   });
 
   it("keeps jailbreak in Platform when that method is already selected", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderForm({
       source: "imessage-jailbreak",
       backupPath: "/mnt/iphone/sms.db",
@@ -245,7 +245,7 @@ describe("ImportFormFields iMessage methods", () => {
 
   it("passes the iMessage source key through when iMessage is chosen again", async () => {
     const onSourceChange = vi.fn();
-    const user = userEvent.setup();
+    const user = setupUser();
     renderForm({ source: "whatsapp-android", onSourceChange });
     await user.click(screen.getByLabelText("Import source"));
     expect(await screen.findByRole("option", { name: "WhatsApp" })).toBeTruthy();
@@ -255,7 +255,7 @@ describe("ImportFormFields iMessage methods", () => {
 
   it("passes the WhatsApp source key through when WhatsApp is chosen", async () => {
     const onSourceChange = vi.fn();
-    const user = userEvent.setup();
+    const user = setupUser();
     renderForm({ source: "imessage-ios", onSourceChange });
     await user.click(screen.getByLabelText("Import source"));
     expect(await screen.findByRole("option", { name: "Apple Messages" })).toBeTruthy();
@@ -282,7 +282,7 @@ describe("ImportFormFields iMessage methods", () => {
 
 describe("ImportFormFields WhatsApp methods", () => {
   it("shows WhatsApp Platform Android and iPhone with key and attachments", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderForm({ source: "whatsapp-android" });
     expect(screen.getByLabelText("Platform")).toBeTruthy();
     await user.click(screen.getByLabelText("Platform"));
@@ -413,7 +413,7 @@ describe("ImportFormFields WhatsApp methods", () => {
  */
 describe("ImportFormFields Import button", () => {
   it("calls onImport when the form is ready", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onImport = vi.fn();
     renderForm({ onImport });
 
@@ -423,7 +423,7 @@ describe("ImportFormFields Import button", () => {
   });
 
   it("is refused while a run is already going, so a second click cannot start one", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onImport = vi.fn();
     renderForm({ onImport, running: true });
 
@@ -435,7 +435,7 @@ describe("ImportFormFields Import button", () => {
   });
 
   it("is refused with no backup chosen, which is the one thing an import needs", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onImport = vi.fn();
     renderForm({ onImport, backupPath: "" });
 
@@ -451,7 +451,7 @@ describe("ImportFormFields Import button", () => {
    * rather than leaving the caller to read them back out of state.
    */
   it("hands the owner's numbers to onImport for an Android SMS backup", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onImport = vi.fn();
     renderForm({
       onImport,
@@ -515,7 +515,7 @@ describe("ImportFormFields Import button", () => {
   });
 
   it("refuses an Android SMS backup with no owner number", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onImport = vi.fn();
     renderForm({
       onImport,
