@@ -33,8 +33,11 @@
 //! `attachments/` for a file with that stem (any extension) that
 //! `derivative_name` still wants, and re-transcodes it — the recorded
 //! digest/size/path are stale regardless (decision 29), so a heal re-patches
-//! exactly like a fresh conversion. When no such file exists, the attachment
-//! is unrecoverable and is marked `file_missing`.
+//! exactly like a fresh conversion. When no such file exists but another
+//! attachment sharing the original dropped it for size, the note it left
+//! (see Aliasing) makes the attachment record `too_large` with the size.
+//! When neither exists, the attachment is unrecoverable and is marked
+//! `file_missing`.
 //!
 //! ## Aliasing
 //!
@@ -342,15 +345,23 @@ fn pending_in(
                 // nothing is there: the previous run crashed between
                 // patching the conversation file and renaming the
                 // derivative into place.
+                // The original may instead have been dropped for size by
+                // another conversation sharing it, which leaves its note.
                 let orig_stem = &stem[..stem.len() - COMMITTED_SUFFIX.len()];
-                match find_recoverable_original(staging_dir, orig_stem, mode)? {
-                    Some(found) => out.push(PendingWork::HealTranscode {
+                if let Some(found) = find_recoverable_original(staging_dir, orig_stem, mode)? {
+                    out.push(PendingWork::HealTranscode {
                         recorded_rel: rel.to_string(),
                         src: found,
-                    }),
-                    None => out.push(PendingWork::Unrecoverable {
+                    });
+                } else if let Some(size) = find_too_large_note(staging_dir, &abs, mode)? {
+                    out.push(PendingWork::DroppedTooLarge {
                         recorded_rel: rel.to_string(),
-                    }),
+                        size,
+                    });
+                } else {
+                    out.push(PendingWork::Unrecoverable {
+                        recorded_rel: rel.to_string(),
+                    });
                 }
                 continue;
             }
@@ -417,6 +428,48 @@ fn find_recoverable_original(
             && media::derivative_name(&path, mode).is_some()
         {
             return Ok(Some(path));
+        }
+    }
+    Ok(None)
+}
+
+/// The derivative size recorded in the too-large note of the original that
+/// `committed` — a missing `-mv` name — was converted from, or `None` when
+/// `attachments/` holds no such note.
+///
+/// The note is named `{original_name}.too_large`, and the original's
+/// extension is not in the `-mv` name, so the search reads `attachments/`
+/// for a note whose original would get exactly `committed`'s name.
+fn find_too_large_note(
+    staging_dir: &Path,
+    committed: &Path,
+    mode: MediaMode,
+) -> Result<Option<u64>> {
+    let attachments_dir = staging_dir.join("attachments");
+    if !attachments_dir.is_dir() {
+        return Ok(None);
+    }
+    let Some(committed_name) = committed.file_name().and_then(|n| n.to_str()) else {
+        return Ok(None);
+    };
+    for entry in std::fs::read_dir(&attachments_dir)
+        .with_context(|| format!("read {}", attachments_dir.display()))?
+    {
+        let path = entry
+            .with_context(|| format!("read entry in {}", attachments_dir.display()))?
+            .path();
+        let Some(original_name) = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(|n| n.strip_suffix(TOO_LARGE_SUFFIX))
+        else {
+            continue;
+        };
+        let original = attachments_dir.join(original_name);
+        if final_derivative_name_for_missing(&original, mode).as_deref() == Some(committed_name)
+            && let Some(size) = read_too_large_note(&original)
+        {
+            return Ok(Some(size));
         }
     }
     Ok(None)

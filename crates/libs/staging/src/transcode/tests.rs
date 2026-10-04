@@ -1094,3 +1094,59 @@ fn crash_recovery_finds_only_an_original_with_the_same_stem() {
         None
     );
 }
+
+/// A stop after a conversation file was patched to `x-mv.mp4`, while another
+/// conversation sharing `x.mov` dropped it for size: the resume finds the
+/// note the drop left and records `too_large`, not `file_missing`.
+#[test]
+fn a_crash_heal_whose_original_was_dropped_too_large_records_too_large() {
+    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+        return;
+    };
+    let (dir, jsonl, original) = staged_one("x.mov", b"not really a video");
+    let mut doc = read_conversation_jsonl(&jsonl).unwrap();
+    {
+        let att = &mut doc.messages[0].attachments[0];
+        att.path = Some("attachments/x-mv.mp4".into());
+        att.digest_sha256 = Some("cafebabe".repeat(8));
+    }
+    write_conversation_jsonl_to(&jsonl, &doc).unwrap();
+    std::fs::remove_file(&original).unwrap();
+    std::fs::write(too_large_note(&original), "12345").unwrap();
+
+    let report = transcode_staged(
+        dir.path(),
+        &options(MediaMode::Convert, 1),
+        None,
+        &mut |_| {},
+    )
+    .unwrap();
+
+    assert_eq!(report.too_large, 1);
+    assert_eq!(report.missing, 0, "the shared file was dropped, not lost");
+    let doc = read_conversation_jsonl(&jsonl).unwrap();
+    let att = &doc.messages[0].attachments[0];
+    assert_eq!(att.missing_reason.as_deref(), Some("too_large"));
+    assert_eq!(att.size_bytes, Some(12345));
+    assert_eq!(att.path, None);
+    assert_eq!(att.digest_sha256, None);
+}
+
+/// The note must belong to the original `x-mv.mp4` was converted from: same
+/// stem, and an original the mode would convert to that name.
+#[test]
+fn crash_recovery_reads_only_the_too_large_note_of_its_own_original() {
+    let dir = tempfile::tempdir().unwrap();
+    let attachments = dir.path().join("attachments");
+    std::fs::create_dir_all(&attachments).unwrap();
+    for (name, size) in [("y.mov", "1"), ("x.png", "2"), ("x.mov", "3")] {
+        std::fs::write(too_large_note(&attachments.join(name)), size).unwrap();
+    }
+
+    let note = |name: &str| {
+        find_too_large_note(dir.path(), &attachments.join(name), MediaMode::Convert).unwrap()
+    };
+    assert_eq!(note("x-mv.mp4"), Some(3));
+    assert_eq!(note("x-mv.jpg"), Some(2));
+    assert_eq!(note("z-mv.mp4"), None);
+}
