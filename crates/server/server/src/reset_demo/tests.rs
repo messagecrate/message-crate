@@ -1,6 +1,7 @@
 use super::*;
 use crate::config::PathsConfig;
 use crate::imports_api::IMPORT_CONTACT_GROUP_NAME_SQL;
+use crate::test_support::MessageRow;
 use sqlx::SqliteConnection;
 use std::collections::BTreeSet;
 
@@ -388,10 +389,12 @@ async fn reset_check_refuses_a_prepared_database_with_fewer_non_demo_messages() 
     let temp = tempfile::tempdir().expect("create test directory");
     let (active, prepared) = active_and_prepared_reset_databases(temp.path()).await;
     let (pool, mut conn) = test_db(&prepared).await;
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query("DELETE FROM messages WHERE account_id = 9")
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .expect("delete account 9's message");
+    tx.commit().await.unwrap();
     close_test_db(pool, conn).await;
 
     let error = verify_non_demo_state_preserved(&active, &prepared, DEMO_ACCOUNT_ID)
@@ -521,13 +524,15 @@ async fn reset_check_refuses_a_prepared_database_that_dropped_another_accounts_s
     let temp = tempfile::tempdir().expect("create test directory");
     let (active, prepared) = active_and_prepared_reset_databases(temp.path()).await;
     let (pool, mut conn) = test_db(&prepared).await;
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query(
         "DELETE FROM messages_fts
          WHERE rowid IN (SELECT id FROM messages WHERE account_id = 9)",
     )
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await
     .expect("drop account 9's search index entries");
+    tx.commit().await.unwrap();
     close_test_db(pool, conn).await;
 
     let error = verify_non_demo_state_preserved(&active, &prepared, DEMO_ACCOUNT_ID)
@@ -558,16 +563,18 @@ async fn reset_check_refuses_a_prepared_database_whose_search_finds_another_acco
         .fetch_one(&mut *conn)
         .await
         .expect("read account 9's message");
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     for sql in [
         "DELETE FROM messages_fts WHERE rowid = $1",
         "INSERT INTO messages_fts (rowid, body) VALUES ($1, 'lost words')",
     ] {
         sqlx::query(sql)
             .bind(message)
-            .execute(&mut *conn)
+            .execute(&mut *tx)
             .await
             .unwrap_or_else(|error| panic!("{sql}: {error}"));
     }
+    tx.commit().await.unwrap();
     close_test_db(pool, conn).await;
 
     let error = verify_non_demo_state_preserved(&active, &prepared, DEMO_ACCOUNT_ID)
@@ -992,19 +999,20 @@ async fn seed_reset_test_database(path: &Path) {
 
 async fn make_prepared_reset_database_observably_different(path: &Path) {
     let (pool, mut conn) = test_db(path).await;
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query("UPDATE accounts SET username = 'prepared-demo' WHERE id = $1")
         .bind(DEMO_ACCOUNT_ID)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .expect("change prepared demo account");
     sqlx::query("DELETE FROM messages WHERE account_id = $1")
         .bind(DEMO_ACCOUNT_ID)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .expect("delete prepared demo message");
     sqlx::query("UPDATE contacts SET preferred_name = 'Renamed' WHERE account_id = $1")
         .bind(DEMO_ACCOUNT_ID)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .expect("rename the demo contact");
     sqlx::query(
@@ -1012,13 +1020,14 @@ async fn make_prepared_reset_database_observably_different(path: &Path) {
          WHERE contact_id IN (SELECT id FROM contacts WHERE account_id = $1)",
     )
     .bind(DEMO_ACCOUNT_ID)
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await
     .expect("remove the demo contact from its group");
     sqlx::query("DELETE FROM accounts WHERE id = 'non-demo-account'")
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .expect("delete prepared non-demo marker");
+    tx.commit().await.unwrap();
     close_test_db(pool, conn).await;
     checkpoint_and_clean_sidecars(path, "while preparing reset test database")
         .await
@@ -1125,19 +1134,14 @@ async fn seed_reset_test_account(conn: &mut SqliteConnection, account_id: i64, g
     .fetch_one(&mut *conn)
     .await
     .expect("insert reset test conversation");
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp,
-            is_from_me, body, sort_order
-         ) VALUES ($1, $2, 'imessage', $3,
-                   '2026-01-01T00:00:00Z', 0, 'keep me', 0)",
-    )
-    .bind(conversation_id)
-    .bind(account_id)
-    .bind(guid)
-    .execute(&mut *conn)
-    .await
-    .expect("insert reset test message");
+    MessageRow {
+        guid: Some(guid.into()),
+        timestamp: "2026-01-01T00:00:00Z",
+        body: Some("keep me"),
+        ..MessageRow::new(account_id, conversation_id)
+    }
+    .insert(conn)
+    .await;
 }
 
 async fn assert_reset_test_database(path: &Path) {
@@ -1900,18 +1904,15 @@ async fn seed_previous_demo(db: &Path, data_dir: &Path) -> PathBuf {
     .fetch_one(&mut *conn)
     .await
     .expect("insert previous conversation");
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp,
-            is_from_me, body, sort_order
-         ) VALUES ($1, $2, 'whatsapp', 'previous-demo-message',
-                   '2026-01-01T00:00:00Z', 0, 'from the previous demo', 0)",
-    )
-    .bind(conversation_id)
-    .bind(DEMO_ACCOUNT_ID)
-    .execute(&mut *conn)
-    .await
-    .expect("insert previous message");
+    MessageRow {
+        source: "whatsapp",
+        guid: Some("previous-demo-message".into()),
+        timestamp: "2026-01-01T00:00:00Z",
+        body: Some("from the previous demo"),
+        ..MessageRow::new(DEMO_ACCOUNT_ID, conversation_id)
+    }
+    .insert(&mut conn)
+    .await;
     close_test_db(pool, conn).await;
     checkpoint_and_clean_sidecars(db, "while seeding the previous demo")
         .await
@@ -2668,21 +2669,21 @@ async fn seed_bulky_demo(db: &Path) {
     .fetch_one(&mut *conn)
     .await
     .expect("insert the previous conversation");
-    sqlx::query(
-        "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 2000)
-         INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp,
-            is_from_me, body, sort_order
-         )
-         SELECT $1, $2, 'whatsapp', 'previous-' || i, '2026-01-01T00:00:00Z',
-                0, printf('%.1000c', 'x'), i
-         FROM n",
-    )
-    .bind(conversation_id)
-    .bind(DEMO_ACCOUNT_ID)
-    .execute(&mut *conn)
-    .await
-    .expect("insert the previous messages");
+    let body = "x".repeat(1000);
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    for i in 1..=2000 {
+        MessageRow {
+            source: "whatsapp",
+            guid: Some(format!("previous-{i}")),
+            timestamp: "2026-01-01T00:00:00Z",
+            body: Some(&body),
+            sort_order: i,
+            ..MessageRow::new(DEMO_ACCOUNT_ID, conversation_id)
+        }
+        .insert_in(&mut tx)
+        .await;
+    }
+    tx.commit().await.unwrap();
     close_test_db(pool, conn).await;
     checkpoint_and_clean_sidecars(db, "while seeding the previous demo")
         .await
@@ -2817,20 +2818,16 @@ async fn the_wipe_deletes_duplicates_before_the_messages_they_duplicate() {
     .await
     .expect("insert a conversation");
     let mut insert_message = async |guid: &str, duplicate_of: Option<i64>| -> i64 {
-        sqlx::query_scalar(
-            "INSERT INTO messages (
-                conversation_id, account_id, source, guid, timestamp,
-                is_from_me, body, sort_order, duplicate_of
-             ) VALUES ($1, $2, 'sms', $3, '2026-01-01T00:00:00Z', 0, 'hello', 0, $4)
-             RETURNING id",
-        )
-        .bind(conversation_id)
-        .bind(DEMO_ACCOUNT_ID)
-        .bind(guid)
-        .bind(duplicate_of)
-        .fetch_one(&mut *conn)
+        MessageRow {
+            source: "sms",
+            guid: Some(guid.into()),
+            timestamp: "2026-01-01T00:00:00Z",
+            body: Some("hello"),
+            duplicate_of,
+            ..MessageRow::new(DEMO_ACCOUNT_ID, conversation_id)
+        }
+        .insert(&mut conn)
         .await
-        .expect("insert a message")
     };
     let original = insert_message("original", None).await;
     let duplicate = insert_message("duplicate", Some(original)).await;
