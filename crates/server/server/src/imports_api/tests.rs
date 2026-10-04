@@ -336,9 +336,12 @@ fn missing_attachment_json(name: &str) -> String {
     )
 }
 
-/// The `reactions` of a message that `+15555550167` liked.
-const LIKED_BY_0167: &str =
-    r#"[{"part_index":0,"kind":"liked","is_from_me":false,"reactor_identity":"+15555550167"}]"#;
+/// The `reactions` of a message that `reactor` liked.
+fn liked_by(reactor: &str) -> String {
+    format!(
+        r#"[{{"part_index":0,"kind":"liked","is_from_me":false,"reactor_identity":"{reactor}"}}]"#
+    )
+}
 
 fn chunk_boundary_jsonl() -> String {
     let header = r#"{"schema_version":6,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550123","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550123","display_name":null},{"identity":"+15555550167","display_name":null}],"stats":{"message_count":56,"attachment_count":2,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183517000}}}"#;
@@ -353,7 +356,11 @@ fn chunk_boundary_jsonl() -> String {
         } else {
             "[]".to_string()
         };
-        let reactions = if i == 1 { LIKED_BY_0167 } else { "[]" };
+        let reactions = if i == 1 {
+            liked_by("+15555550167")
+        } else {
+            "[]".to_string()
+        };
         lines.push(format!(
             r#"{{"guid":"{guid}","timestamp_unix_ms":{ts},"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"msg {i}","attachments":{attachments},"reactions":{reactions},"imessage":null,"source":null}}"#
         ));
@@ -512,8 +519,9 @@ async fn staging_skips_duplicate_guid_in_same_file_and_keeps_first_attachment() 
         missing_attachment_json("first.bin")
     );
     let second = format!(
-        r#"{{"guid":"g-once","timestamp_unix_ms":1426183463000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"second","attachments":{},"reactions":{LIKED_BY_0167},"imessage":null,"source":null}}"#,
-        missing_attachment_json("second.bin")
+        r#"{{"guid":"g-once","timestamp_unix_ms":1426183463000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"second","attachments":{},"reactions":{},"imessage":null,"source":null}}"#,
+        missing_attachment_json("second.bin"),
+        liked_by("+15555550167")
     );
     let path = write_jsonl(
         tmp.path(),
@@ -2485,7 +2493,7 @@ fn wipe_test_batch(source: &str, guids: &[&str]) -> String {
         source = source,
         n = guids.len(),
     )];
-    let liked = LIKED_BY_0167.replace("+15555550167", "+15555550107");
+    let liked = liked_by("+15555550107");
     for guid in guids {
         let (attachments, reactions) = if *guid == "g-gone" {
             (missing_attachment_json("gone.bin"), liked.as_str())
@@ -4809,7 +4817,7 @@ async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accoun
             )
         };
         // The holder's own reaction to the received copy of a note.
-        let own_tapback = LIKED_BY_0167.replace("+15555550167", "+15555550199");
+        let own_tapback = liked_by("+15555550199");
         // Apple Messages can carry a name the holder gave the chat; the
         // account's name still titles it.
         let self_title = if source == "imessage" {

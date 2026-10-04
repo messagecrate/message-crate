@@ -17,6 +17,7 @@ use std::sync::atomic::AtomicBool;
 
 use httpmock::prelude::*;
 use message_crate_pull::{ExportQueryList, ProgressEvent, PullConfig, PullReport, journal, run};
+use message_ir::Reaction;
 use message_ir_format::{EXPORT_SENTINEL, read_conversation_jsonl};
 use serde_json::{Value, json};
 use tempfile::tempdir;
@@ -1002,10 +1003,26 @@ fn a_pulled_message_keeps_its_reactions_under_each_reactor() {
         "{line}"
     );
     let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
-    assert_eq!(doc.messages[0].reactions.len(), 2);
     assert_eq!(
-        doc.messages[0].reactions[0].reactor_identity.as_deref(),
-        Some("+15555550107")
+        doc.messages[0].reactions,
+        [
+            Reaction {
+                part_index: 0,
+                kind: "loved".into(),
+                emoji: None,
+                is_from_me: false,
+                reactor_identity: Some("+15555550107".into()),
+                reactor_display_name: None,
+            },
+            Reaction {
+                part_index: 0,
+                kind: "emoji".into(),
+                emoji: Some("🔥".into()),
+                is_from_me: true,
+                reactor_identity: None,
+                reactor_display_name: None,
+            },
+        ],
+        "the file reads back as the same reactions"
     );
-    assert!(doc.messages[0].reactions[1].is_from_me);
 }
