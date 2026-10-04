@@ -741,6 +741,43 @@ async fn a_known_id_renames_the_contact() {
     assert_eq!(name_of(&mut conn, kept).await.as_deref(), Some("Cy"));
 }
 
+/// A load applies exactly what the file says, so a name the person typed in
+/// the app gives way to a different name in the file, and an exported file
+/// loaded straight back carries that typed name and changes nothing.
+#[tokio::test]
+async fn a_load_replaces_a_name_the_person_typed() {
+    let (mut conn, _pool, _dir) = account().await;
+    let ada = imported(&mut conn, "ada l", &[("phone", "phone", "+15555550100")]).await;
+    contacts::propose_name(&mut conn, ACCOUNT, ada, "Ada L.", Origin::User)
+        .await
+        .unwrap();
+
+    let exported = export_csv(&mut conn, ACCOUNT, None).await.unwrap().csv;
+    for mode in [LoadMode::Append, LoadMode::Edit] {
+        let counts = loaded(&mut conn, &exported, mode).await;
+        assert_eq!(counts, LoadCounts::default(), "{mode:?}");
+        assert_eq!(
+            name_of(&mut conn, ada).await.as_deref(),
+            Some("Ada L."),
+            "{mode:?}"
+        );
+    }
+
+    let edited = file(&[&format!("{ada},Ada Lovelace,,phone,phone,+15555550100")]);
+    let counts = loaded(&mut conn, &edited, LoadMode::Append).await;
+    assert_eq!(
+        counts,
+        LoadCounts {
+            contacts_updated: 1,
+            ..LoadCounts::default()
+        }
+    );
+    assert_eq!(
+        name_of(&mut conn, ada).await.as_deref(),
+        Some("Ada Lovelace")
+    );
+}
+
 /// A name the load gave is the person's, so a later import that spells it
 /// another way does not take it back.
 #[tokio::test]

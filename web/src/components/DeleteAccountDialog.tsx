@@ -1,13 +1,26 @@
 import { useState } from "react";
 import Button from "./Button";
 import ModalShell, { DialogError } from "./ModalShell";
+import PathList from "./PathList";
 import PlainButton from "./PlainButton";
+
+/** The account's Staging Directories on this computer, as the dialog shows them. */
+export type StagingDirectoriesCheck = {
+  checking: boolean;
+  paths: readonly string[];
+  /** Why they could not be looked for, or empty. */
+  error: string;
+};
 
 /**
  * Confirms an account deleting itself. `hasPassword` is the account's
  * `has_password`: the server checks the current password only when one is
  * set, so the dialog asks for it only then and confirms with none otherwise.
  * `error` is why the last confirm failed; the dialog stays open to retry.
+ *
+ * `stagingDirectories`, in the desktop app, are the account's Staging
+ * Directories on this computer, deleted with the account. The dialog names them before
+ * the person confirms, and holds the confirm while it looks for them.
  *
  * The typed username and password live in `DeleteAccountForm`, which exists
  * only while the dialog is open, so closing the dialog discards them.
@@ -16,6 +29,7 @@ export default function DeleteAccountDialog({
   open,
   username,
   hasPassword,
+  stagingDirectories,
   deleting = false,
   error = "",
   onClose,
@@ -24,6 +38,7 @@ export default function DeleteAccountDialog({
   open: boolean;
   username: string;
   hasPassword: boolean;
+  stagingDirectories?: StagingDirectoriesCheck;
   deleting?: boolean;
   error?: string;
   onClose: () => void;
@@ -41,6 +56,7 @@ export default function DeleteAccountDialog({
       <DeleteAccountForm
         username={username}
         hasPassword={hasPassword}
+        stagingDirectories={stagingDirectories}
         deleting={deleting}
         error={error}
         onClose={onClose}
@@ -53,6 +69,7 @@ export default function DeleteAccountDialog({
 function DeleteAccountForm({
   username,
   hasPassword,
+  stagingDirectories,
   deleting,
   error,
   onClose,
@@ -60,6 +77,7 @@ function DeleteAccountForm({
 }: {
   username: string;
   hasPassword: boolean;
+  stagingDirectories?: StagingDirectoriesCheck;
   deleting: boolean;
   error: string;
   onClose: () => void;
@@ -71,6 +89,7 @@ function DeleteAccountForm({
   const expected = username.trim();
   const matches =
     expected.length > 0 && typedUsername === expected && (!hasPassword || password.length > 0);
+  const checkingDirectories = stagingDirectories?.checking ?? false;
 
   return (
     <>
@@ -89,6 +108,8 @@ function DeleteAccountForm({
         This cannot be undone. Your messages, contacts, group conversations, profile, and
         attachments will be permanently deleted.
       </p>
+
+      {stagingDirectories ? <StagingDirectoriesNote check={stagingDirectories} /> : null}
 
       <label className="mt-5 block">
         <span className="text-[0.875rem] text-text">
@@ -124,13 +145,39 @@ function DeleteAccountForm({
       <div className="mt-5 flex justify-end">
         <Button
           variant="danger"
-          disabled={deleting || !matches}
+          disabled={deleting || !matches || checkingDirectories}
           onClick={() => onConfirm(hasPassword ? password : undefined)}
           className="!px-4 !py-2 !text-[0.813rem]"
         >
           {deleting ? "Deleting…" : "Permanently delete my account"}
         </Button>
       </div>
+    </>
+  );
+}
+
+/** Names the Staging Directories deleted with the account, or says why it cannot. */
+function StagingDirectoriesNote({ check }: { check: StagingDirectoriesCheck }) {
+  const text = "mt-3 text-[0.875rem] leading-relaxed text-muted";
+  if (check.checking) {
+    return (
+      <p className={text}>Looking for this account&apos;s Staging Directories on this computer…</p>
+    );
+  }
+  if (check.error) {
+    return (
+      <p className={text}>
+        {`Message Crate could not look for this account's Staging Directories on this computer, so it deletes none: ${check.error}`}
+      </p>
+    );
+  }
+  if (check.paths.length === 0) return null;
+  return (
+    <>
+      <p className={text}>
+        Deleting the account also deletes its Staging Directories on this computer:
+      </p>
+      <PathList paths={check.paths.map((path) => ({ path }))} />
     </>
   );
 }

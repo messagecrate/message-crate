@@ -1,6 +1,11 @@
-import { discardImport, listImports, setImportStage as setStage } from "./serverApi";
+import {
+  discardImport,
+  listEveryImport,
+  listImports,
+  setImportStage as setStage,
+} from "./serverApi";
 import type { components } from "./serverApi.types";
-import type { PathStat } from "./tauri";
+import { invokePathStat, type PathStat } from "./tauri";
 
 /** Where a running Import Run is: the server's `ImportStage`. */
 export type ImportStage = components["schemas"]["ImportStage"];
@@ -49,6 +54,26 @@ export async function getActiveImportSession(
     device_id: session.device_id ?? null,
     source_fingerprint: session.source_fingerprint as SourceFingerprint | null,
   };
+}
+
+/**
+ * The Staging Directories of the account's Import Runs that are on this
+ * computer, for deleting with the account (#1491).
+ *
+ * The server keeps where each run staged its files, but the folders are on
+ * whichever computer ran it, so each one is looked for here and only the
+ * folders found are named. Desktop app only: it asks the app for each path.
+ */
+export async function accountStagingDirectories(signal?: AbortSignal): Promise<string[]> {
+  const runs = await listEveryImport({ signal });
+  const paths = [...new Set(runs.flatMap((run) => (run.staging_dir ? [run.staging_dir] : [])))];
+  const found = await Promise.all(
+    paths.map(async (path) => {
+      const stat = await invokePathStat(path);
+      return stat.exists && stat.isDirectory ? path : null;
+    }),
+  );
+  return found.filter((path): path is string => path !== null);
 }
 
 /**
