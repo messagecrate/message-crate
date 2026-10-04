@@ -18,11 +18,11 @@ use crate::db::trash;
 ///
 /// Every participant an import meets becomes a contact. ADR-0006: a backup is
 /// an address book the person already curated, so the name it supplies goes on
-/// the contact — on creation, or later if an earlier backup left the contact
-/// nameless. A contact that already has a name is untouched, because the same
-/// number arrives spelled differently across backups and the first spelling is
-/// as good as the second. A contact the person made or an address book loaded
-/// is never renamed by an import.
+/// the contact — on creation, or later if the contact has no name, whatever
+/// made it: an earlier backup, an address book load, or the person. A contact
+/// that already has a name is untouched, because the same number arrives
+/// spelled differently across backups and the first spelling is as good as
+/// the second, and a name the person typed or loaded is theirs.
 ///
 /// A contact in the Trash is the one exception to reuse. ADR-0013: a backup
 /// that still holds someone the person set aside is the person saying they
@@ -48,9 +48,9 @@ pub(super) async fn ensure_contact_for_handle(
     let name = backup_name.and_then(trimmed).unwrap_or("");
     let trashed = match ensure_sibling_contact_link(tx, account_id, import_id, handle_id).await? {
         Some(existing) if !trash::is_contact_trashed(tx, account_id, existing).await? => {
-            // An import names only a contact an earlier import left
-            // nameless; `contacts::propose_name` is where that rule and
-            // its two siblings live.
+            // An import names only a nameless contact, whatever made it;
+            // `contacts::propose_name` is where that rule and its two
+            // siblings live.
             if contacts::propose_name(tx, account_id, existing, name, contacts::Origin::Import)
                 .await?
             {

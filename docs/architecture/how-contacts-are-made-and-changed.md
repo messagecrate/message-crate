@@ -47,7 +47,7 @@ flowchart TD
   D1 --> E
   D -- no --> N["New contact with origin import, holding this identity. It takes the backup's name, or no name."]
   E -- yes --> T["A new contact is made from the backup, holding this identity and the same number on the other service. The trashed contact is discarded. Each other identity it had that a conversation uses goes to a new contact with no name; one nothing uses is deleted."]
-  E -- no --> F{"Does the backup give a name, and is the contact nameless and made by an import?"}
+  E -- no --> F{"Does the backup give a name, and is the contact nameless?"}
   F -- yes --> F1["The contact takes the backup's name"]
   F -- no --> F2["The contact is left as it is"]
 ```
@@ -58,9 +58,9 @@ flowchart TD
 - iMessage, SMS, MMS and RCS are all text messages, so one number is one
   identity with the service `phone`. The same number on WhatsApp is a second
   identity with the service `whatsapp`.
-- An import names a contact only when the contact has no name and an import
-  made it. A name a person typed, or a name a load set, survives every later
-  import.
+- An import names a contact only when the contact has no name, whatever made
+  it: an earlier import, an address book load, or the person. A name a person
+  typed, or a name a load set, survives every later import.
 - A phone number the import cannot key with confidence is stored and flagged
   for review. It does not stop the import.
 
@@ -173,6 +173,11 @@ flowchart TD
 The rows of one contact must give the same `display_name` or leave it blank.
 A loaded name replaces the name of an existing contact whenever it differs,
 whatever set the old name: an import, an earlier load, or a person typing.
+A load applies exactly what the file says and never second-guesses it, so a
+typed name has no protection from a different name in the file (see
+[Contacts, identities and messages](contacts-identities-and-messages.md)).
+An exported file carries the typed name, so a load straight back renames
+nobody.
 A rename by a load does not change the contact's `origin`. A contact a load
 creates has the origin `address_book`.
 
@@ -371,7 +376,7 @@ identity (step 4). Each sentence starts with its row number.
 |---|---|---|
 | What starts it | Each person the backup's messages meet: a participant, the other side of a one-to-one conversation, or a sender | Each row of the CSV |
 | New contact | One for every address no contact holds, named if the backup gives a name, otherwise nameless | One for a blank or unrecognised `contact_id`. It needs a name or an identity |
-| Naming an existing contact | Only when the contact has no name and an import made it | Whenever the file's name differs, whatever set the old one |
+| Naming an existing contact | Only when the contact has no name, whatever made it | Whenever the file's name differs, whatever set the old one |
 | Same number on the other service | Joins the contact that already holds the other one | Stays where it is. Only a row for it moves it, so a file can split a number |
 | Identity already on another contact | Never moved. The import uses that contact | Moved if the holder is nameless or in the file. Otherwise the load is refused |
 | Removing things | Never removes an identity, a membership, or a contact outside the Trash | Edit removes unlisted identities and memberships. An emptied nameless contact is deleted |
@@ -385,6 +390,9 @@ identity (step 4). Each sentence starts with its row number.
 
 - **A typed or loaded name survives every later import.** An import cannot
   rename a contact that has a name.
+- **A nameless contact is an import's to name, whatever made it.** A contact
+  a load made from a row with an identity and a blank name is named by the
+  first later import that knows the number.
 - **A load can rename anything.** It replaces a typed name as readily as an
   imported one.
 - **Edit treats a blank `groups` cell as "no groups".** It does not mean
@@ -394,16 +402,3 @@ identity (step 4). Each sentence starts with its row number.
   number on the other service where it is. An import never splits one.
 - **A contact the file does not list can still be deleted.** A nameless
   contact that gives up its last identity to a file contact is removed.
-
-## Open questions
-
-These are what the code does today. None has been decided as a rule, and
-each has an open issue.
-
-- **Should a load replace a name a person typed?** (#1057) It does. Before the
-  address book became Message Crate's own CSV, a load replaced only an
-  imported name.
-- **Should an import name a nameless contact a load made?** (#1058) It does
-  not. The
-  import's rule needs the contact to be both nameless and of origin
-  `import`.

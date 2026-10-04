@@ -529,11 +529,12 @@ async fn asset_is_referenced(
 }
 
 /// Make `ids`, which the caller has already established are `account_id`'s
-/// trashed contacts, Unknown again: the name goes, the row returns to an
-/// import's ownership so the next import that meets one of its handles may
-/// name it, its Contact Group memberships go, and its trash marker goes. The
-/// handles stay linked, so the conversations the person was in keep showing
-/// them as one participant — by handle now, since the name is blank.
+/// trashed contacts, Unknown again: the name goes, so the next import that
+/// meets one of its handles may name it, the row's origin is set to `import`
+/// (which nothing reads; #1674), its Contact Group memberships go, and its
+/// trash marker goes. The handles stay linked, so the conversations the
+/// person was in keep showing them as one participant — by handle now, since
+/// the name is blank.
 async fn forget_contacts(
     conn: &mut SqliteConnection,
     account_id: i64,
