@@ -952,3 +952,60 @@ fn every_path_a_message_names_exists_after_a_pull() {
         );
     }
 }
+
+/// Export keeps the reactions the server stored: a message whose stored
+/// reactions are a friend's heart and the owner's emoji, as the export route
+/// serializes them, is written with both in its `reactions`, each under the
+/// person who reacted, in the shape an import reads back.
+#[test]
+fn a_pulled_message_keeps_its_reactions_under_each_reactor() {
+    let server = MockServer::start();
+    let _auth = mock_auth(&server);
+    let _run = mock_run(&server);
+    let mut reacted = message(
+        1,
+        "sms-backup-restore",
+        "guid-1",
+        "2015-03-12T18:05:01Z",
+        "Pizza?",
+        json!([]),
+    );
+    reacted["tapbacks"] = json!([
+        { "part_index": 0, "kind": "loved", "is_from_me": false, "sender": "+15555550107" },
+        { "part_index": 0, "kind": "emoji", "emoji": "🔥", "is_from_me": true }
+    ]);
+    let _page = server.mock(|when, then| {
+        when.method(GET)
+            .path(format!("/v1/exports/{EXPORT_ID}/messages"))
+            .query_param("offset", "0");
+        then.status(200).json_body(json!({
+            "items": [reacted],
+            "total": 1,
+            "limit": 2,
+            "offset": 0
+        }));
+    });
+    let dir = tempdir().unwrap();
+    let out = dir.path().join("pulled");
+
+    run(&config(&out, server.base_url()), None).unwrap();
+
+    let written = fs::read_to_string(out.join(CONVERSATION_FILE)).unwrap();
+    let line: Value = serde_json::from_str(written.lines().nth(1).unwrap()).unwrap();
+    assert_eq!(
+        line["reactions"],
+        json!([
+            { "part_index": 0, "kind": "loved", "is_from_me": false,
+              "reactor_identity": "+15555550107" },
+            { "part_index": 0, "kind": "emoji", "emoji": "🔥", "is_from_me": true }
+        ]),
+        "{line}"
+    );
+    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    assert_eq!(doc.messages[0].reactions.len(), 2);
+    assert_eq!(
+        doc.messages[0].reactions[0].reactor_identity.as_deref(),
+        Some("+15555550107")
+    );
+    assert!(doc.messages[0].reactions[1].is_from_me);
+}
