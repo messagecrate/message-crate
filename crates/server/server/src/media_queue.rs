@@ -94,14 +94,20 @@ impl MediaQueue {
         *self.thread.lock().unwrap_or_else(PoisonError::into_inner) = Some(thread);
     }
 
+    /// Tell the pass to stop, without waiting for it: the ffmpeg it runs is
+    /// killed, and it starts nothing more. [`MediaQueue::stop`] waits.
+    pub(crate) fn ask_to_stop(&self) {
+        self.stop.store(true, Ordering::Relaxed);
+        self.wake.notify_one();
+    }
+
     /// Stop the pass and wait for it to end, for a server that is stopping:
     /// the ffmpeg it runs is killed and waited for, the Asset it was working
     /// on stays queued for the next start, and its work directory, with the
     /// part-made file, is removed. Waits for nothing when no pass was
     /// started.
     pub(crate) async fn stop(&self) {
-        self.stop.store(true, Ordering::Relaxed);
-        self.wake.notify_one();
+        self.ask_to_stop();
         let thread = self
             .thread
             .lock()

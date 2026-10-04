@@ -1363,12 +1363,13 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
     eprintln!(
         "  routes: `message-crate-server dump-openapi` lists them all; set [server] openapi_ui = true for /docs"
     );
-    let served = serve_until_shutdown(listener, app).await;
+    let served = serve_until_shutdown(listener, app, media_queue.clone()).await;
     // A Demo Account build the owner started would otherwise end part-way
     // when the process exits (#1215).
     demo_build.stop().await;
     // An ffmpeg the pass started would otherwise go on converting after the
-    // process exits (#1729).
+    // process exits (#1729). The pass was told to stop when the signal came;
+    // this waits for it.
     media_queue.stop().await;
     served?;
     Ok(())
@@ -1376,12 +1377,21 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
 
 /// Serve `app` on `listener` until a shutdown signal arrives, then stop
 /// accepting connections and return once the requests in flight have finished.
+///
+/// The signal stops `media_queue`'s pass at once, before the requests drain:
+/// Ctrl-C in a terminal reaches the ffmpeg the pass runs as well, and a pass
+/// not yet told to stop would read that ffmpeg's exit as a failed conversion,
+/// take the Asset off the queue, and start the next one (#1729).
 async fn serve_until_shutdown(
     listener: tokio::net::TcpListener,
     app: Router,
+    media_queue: crate::media_queue::MediaQueue,
 ) -> std::io::Result<()> {
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(async move {
+            shutdown_signal().await;
+            media_queue.ask_to_stop();
+        })
         .await
 }
 
