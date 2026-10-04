@@ -277,6 +277,30 @@ fn roster(doc: &ConversationDocument) -> Vec<(&str, Option<&str>)> {
         .collect()
 }
 
+/// A message the backup holds twice is kept once, and the copy dropped is
+/// counted, so the run summary can say so. The reader takes only
+/// millisecond dates, so the two copies carry the same one.
+#[test]
+fn a_repeated_message_is_kept_once_and_counted() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("input.xml");
+    let copy =
+        r#"<sms protocol="0" address="+15555550101" date="1400773261123" type="1" body="hi"/>"#;
+    fs::write(
+        &input,
+        format!(
+            r#"<smses>{copy}{copy}<sms protocol="0" address="+15555550101" date="1400773321000" type="2" body="hey"/></smses>"#
+        ),
+    )
+    .unwrap();
+    let owner = vec!["+15555550100".to_string()];
+    let (docs, report) = read_backup(&input, opts(&owner, None, None)).unwrap();
+    let texts: Vec<_> = docs[0].messages.iter().map(|m| m.text.as_str()).collect();
+    assert_eq!(texts, ["hi", "hey"]);
+    assert_eq!(report.sms_seen, 3);
+    assert_eq!(report.duplicates_dropped, 1);
+}
+
 #[test]
 fn a_contact_name_names_the_peer_of_a_direct_conversation() {
     // Only sent messages, which name the peer but carry no sender.

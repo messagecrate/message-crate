@@ -54,6 +54,8 @@ pub struct ReadReport {
     pub skipped_unreadable_part: u64,
     /// Character references dropped because they are not a character.
     pub dropped_character_references: u64,
+    /// Repeated copies of a message dropped, one copy of each kept.
+    pub duplicates_dropped: u64,
     /// Per-file error messages from parsing/staging.
     pub errors: Vec<String>,
 }
@@ -300,8 +302,9 @@ impl PendingMessage {
 }
 
 /// Sort by time and keep one copy of each message
-/// ([`one_copy_per_message`]), each with the time it keeps.
-fn dedupe(messages: &mut Vec<PendingMessage>) {
+/// ([`one_copy_per_message`]), each with the time it keeps. Returns how many
+/// copies it dropped.
+fn dedupe(messages: &mut Vec<PendingMessage>) -> u64 {
     messages.sort_by(|a, b| a.sort_key.total_cmp(&b.sort_key));
     let prepared: Vec<_> = messages
         .iter()
@@ -321,6 +324,7 @@ fn dedupe(messages: &mut Vec<PendingMessage>) {
         })
         .collect();
     let kept = one_copy_per_message(&copies);
+    let before = messages.len();
     let mut kept = kept.into_iter();
     messages.retain_mut(|m| match kept.next().flatten() {
         Some(ms) => {
@@ -331,6 +335,7 @@ fn dedupe(messages: &mut Vec<PendingMessage>) {
         }
         None => false,
     });
+    (before - messages.len()) as u64
 }
 
 /// Display names seen per sender handle across the conversation.
@@ -579,7 +584,7 @@ pub fn read_backup(
     check_cancel(options.cancel)?;
     let mut documents = Vec::new();
     for (id, mut conversation) in conversations {
-        dedupe(&mut conversation.messages);
+        report.duplicates_dropped += dedupe(&mut conversation.messages);
         conversation.messages.retain(|message| {
             let valid = format_local_ts(message.sort_key as i64).is_some();
             if !valid {
