@@ -11962,7 +11962,7 @@
               "string",
               "null"
             ],
-            "description": "Platform service (`phone`, `email`, or `whatsapp`); inferred when omitted."
+            "description": "Platform service, `phone` or `whatsapp` (any other value is read as\n`phone`); the phone service when omitted. It never decides the identity's type, which comes from the\naddress. A new email address on WhatsApp is refused."
           }
         }
       },
@@ -14140,7 +14140,7 @@
           },
           "service": {
             "type": "string",
-            "description": "Platform the address belongs to: `phone`, `email`, or `whatsapp`."
+            "description": "Platform the address belongs to: `phone`, `email` (the phone\nplatform), or `whatsapp`. It never decides the identity's type, which\ncomes from the address; an email address on WhatsApp is refused."
           }
         }
       },
@@ -17178,7 +17178,7 @@
           },
           "service": {
             "type": "string",
-            "description": "Platform the address belongs to: `phone`, `email`, or `whatsapp`."
+            "description": "Platform the address belongs to: `phone`, `email` (the phone\nplatform), or `whatsapp`. It never decides the identity's type, which\ncomes from the address."
           }
         }
       },
@@ -17278,7 +17278,7 @@
               "string",
               "null"
             ],
-            "description": "Platform service of both addresses. When omitted, the previous address\nis looked up on the phone service first and WhatsApp second, and the\nnew address takes the service of the previous one."
+            "description": "Platform service of the new address. The previous address is found on\nits own service whatever this names: on the named service first when\nit is there under more than one, else the phone service, then\nWhatsApp. When omitted, the new address takes the service of the\nprevious one. It never decides the new identity's type, which comes\nfrom the address, and a new email address on WhatsApp is refused."
           }
         }
       },

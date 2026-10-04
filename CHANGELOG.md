@@ -251,6 +251,8 @@ released versions carry their date on the heading.
   but its files could not be read back afterwards, the import ended as
   failed and deleted the converted files. It now goes back to the form,
   and resuming it reads the files again.
+- 2026-10-04 An internal fix to how an upload finishes an Import Run;
+  nothing you see changes.
 - 2026-10-04 **An iMazing import no longer reports a Live Photo choice as an
   error, and leaves WhatsApp chat folders' extra files alone.** When two
   photo rows named one picture, the import gave its Live Photo video to the
@@ -710,6 +712,20 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-04 **One number is one identity however it arrives.** A number
+  written with `tel:` in front, in a backup that gave no type for it, became
+  a separate identity from the same number as a message sender, on a contact
+  of its own. An email address added to a contact under iMessage, or to
+  your own identities under Phone, was saved as a phone number. Every
+  address is now typed by what it is, whatever service it came over or was
+  added under.
+- 2026-10-04 **Changing a contact's identity can move it to another
+  service.** Changing a WhatsApp number to a Text Message number in one edit
+  was refused with "previous address not found on contact". The old
+  identity is now found on its own service. Changing a WhatsApp number to an
+  email address without naming a service saved an email address on
+  WhatsApp; it is now refused with the reason, since WhatsApp carries no
+  email addresses.
 - 2026-10-04 **An Address Book loaded straight back renames nobody.** A
   name cell that started with a tab, written `'` then a tab in the
   spreadsheet, created a contact whose name kept the tab, and loading the
@@ -981,6 +997,12 @@ released versions carry their date on the heading.
   sent one of those times with no value rather than leaving it out. It now
   carries its first and last message times once each, and leaves both out
   when there is no message to date them.
+- 2026-10-04 **Removing or changing messages right after an import no
+  longer fails with "no such table: messages".** It failed now and then
+  when an import had just finished on the same server. On a first start, a
+  Demo Account that failed to build then could not be removed, and its
+  files stayed behind. Now the Demo Account is removed and leaves nothing
+  behind.
 
 ### Upgrading
 

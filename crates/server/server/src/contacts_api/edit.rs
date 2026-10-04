@@ -3,7 +3,7 @@
 //! `db::handles`; this module decides which to run and what to refuse.
 
 use anyhow::Result as AnyResult;
-use message_ir::{HandleService, HandleType};
+use message_ir::HandleService;
 use sqlx::SqliteConnection;
 
 use super::{
@@ -11,21 +11,17 @@ use super::{
     UpdateContactRequest,
 };
 use crate::db::WriteTx;
+use crate::db::contacts::OnService;
 use crate::db::contacts::{self, contact_id_for_handle};
-use crate::db::handles::{self, infer_handle_type_from_shape};
+use crate::db::handles;
 use crate::server::ApiError;
 
-/// Handle type from the service the caller named, falling back to the handle's shape.
-fn infer_handle_type(raw: &str, service: Option<&str>) -> HandleType {
-    let svc = service
-        .map(|s| s.trim().to_ascii_lowercase())
-        .unwrap_or_default();
-    match svc.as_str() {
-        "phone" | "sms" | "imessage" | "whatsapp" => HandleType::Phone,
-        "email" => HandleType::Email,
-        "" => infer_handle_type_from_shape(raw),
-        _ => HandleType::Other,
-    }
+/// The service a request names, if it names one. Any value but WhatsApp's
+/// is the phone service, which carries every text message transport.
+fn named_service(service: Option<&str>) -> Option<HandleService> {
+    service
+        .and_then(message_ir::trimmed)
+        .map(HandleService::parse)
 }
 
 /// Why a contact edit did not happen.
@@ -209,9 +205,8 @@ impl ContactEditor<'_> {
         if raw.is_empty() {
             refuse!("address must not be empty");
         }
-        let handle_id = self
-            .handle_row(raw, add.service.as_deref(), HandleService::Phone)
-            .await?;
+        let platform = named_service(add.service.as_deref()).unwrap_or(HandleService::Phone);
+        let handle_id = self.handle_row(raw, platform).await?;
         match self.claim(handle_id).await? {
             // Already linked: no address-book change.
             Claim::Here => Ok(true),
@@ -232,14 +227,21 @@ impl ContactEditor<'_> {
         if prev.is_empty() || next.is_empty() {
             refuse!("previous_address and address must not be empty");
         }
-        let service = upd.service.as_deref();
-        let Some((old_id, old_service)) = self.linked_handle(prev, service).await? else {
+        let named = named_service(upd.service.as_deref());
+        // The old identity is found on its own service, whatever service the
+        // request names, so one edit can move a contact from WhatsApp to Text
+        // Message. When the address is on the contact under more than one
+        // service, the named one is taken first.
+        let Some((old_id, old_service)) = self
+            .linked_handle(prev, OnService::Preferring(named))
+            .await?
+        else {
             refuse!("previous address not found on contact");
         };
         // With no service named, the new identity stays on the replaced
         // one's service: a WhatsApp number swapped for another is still on
         // WhatsApp, and its conversations still find the contact.
-        let new_id = self.handle_row(next, service, old_service).await?;
+        let new_id = self.handle_row(next, named.unwrap_or(old_service)).await?;
         if old_id == new_id {
             // Both lookups keyed the row on the same platform, so the edit
             // names the handle the contact already has: nothing changes.
@@ -265,7 +267,9 @@ impl ContactEditor<'_> {
         if raw.is_empty() {
             refuse!("address must not be empty");
         }
-        let Some((handle_id, _)) = self.linked_handle(raw, rem.service.as_deref()).await? else {
+        let on = named_service(rem.service.as_deref())
+            .map_or(OnService::Preferring(None), OnService::Only);
+        let Some((handle_id, _)) = self.linked_handle(raw, on).await? else {
             refuse!("identity not found on contact");
         };
         self.take_off(handle_id).await?;
@@ -273,40 +277,47 @@ impl ContactEditor<'_> {
     }
 
     /// Id and service of the handle row for `raw` that is linked to this
-    /// contact, if any.
+    /// contact, if any, picked among its services as `on` says.
     async fn linked_handle(
         &mut self,
         raw: &str,
-        service: Option<&str>,
+        on: OnService,
     ) -> AnyResult<Option<(i64, HandleService)>> {
-        contacts::linked_handle_id(
-            &mut *self.conn,
-            self.account_id,
-            self.contact_id,
-            raw,
-            service,
-        )
-        .await
+        contacts::linked_handle_id(&mut *self.conn, self.account_id, self.contact_id, raw, on).await
     }
 
-    /// Insert or find the handle row for `raw`, typed by `service`, without
+    /// Find or insert the handle row for `raw` on `platform`, without
     /// linking it to the account owner: contact-owned handles must never
-    /// become owner identities. The row is on `service`'s platform, or on
-    /// `unnamed` when the caller named no service.
+    /// become owner identities.
+    ///
+    /// A row the account already holds for the address on `platform` is
+    /// taken as it is, with the type its import gave it: a WhatsApp internal
+    /// id such as `123456789012345@lid` is `other` there, while
+    /// [`handles::handle_type_of`] would call it an email address. A new row
+    /// is typed by the address alone, never by the service (#1432).
+    ///
+    /// # Errors
+    ///
+    /// Refused when `platform` cannot carry a new identity of that type: an
+    /// email address on WhatsApp.
     async fn handle_row(
         &mut self,
         raw: &str,
-        service: Option<&str>,
-        unnamed: HandleService,
-    ) -> AnyResult<i64> {
-        let handle_type = infer_handle_type(raw, service);
-        let platform = service
-            .and_then(message_ir::trimmed)
-            .map_or(unnamed, HandleService::parse);
+        platform: HandleService,
+    ) -> Result<i64, ContactEditError> {
+        let raw = raw.trim();
+        if let Some(id) =
+            handles::existing_handle_id(&mut *self.conn, self.account_id, raw, platform).await?
+        {
+            return Ok(id);
+        }
+        let handle_type = handles::handle_type_of(raw);
+        handles::check_service_carries(raw, platform, handle_type)
+            .map_err(|refusal| ContactEditError::Refused(refusal.to_string()))?;
         let (id, _) = handles::upsert_handle_row(
             &mut *self.conn,
             self.account_id,
-            raw.trim(),
+            raw,
             handle_type,
             Some(platform.as_str()),
         )
