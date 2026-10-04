@@ -30,8 +30,50 @@ pub fn clear_attachments_when_disabled(doc: &mut ConversationDocument, mode: Med
     }
 }
 
-/// Replace every handle, name, and body in the document with stable fake values.
-pub(crate) fn obfuscate_document(doc: &mut ConversationDocument, anon: &mut Obfuscator) {
+/// Each obfuscated message's new `guid`, keyed by the keyed stand-in for its
+/// old one.
+type RenamedGuids = HashMap<String, String>;
+
+/// Replace every handle, name, and body in every document of an export with
+/// stable fake values, and point each reply and tapback at its target's new
+/// `guid`.
+///
+/// Apple Messages can reply or react to a message in another conversation,
+/// and each conversation is its own document, so the targets are rewritten
+/// only once every document has its new `guid`s. A target is looked for in
+/// its own document first, then in the rest of the export. The same source
+/// message can sit in two documents, and its copy in the replying document is
+/// the one the reply meant. A target in no document of the export, such as
+/// one the date range left out, keeps its keyed stand-in, so its original id
+/// does not survive and it points at nothing, as it does in a plain export.
+pub(crate) fn obfuscate_documents(docs: &mut [ConversationDocument], anon: &mut Obfuscator) {
+    let renamed_per_doc: Vec<RenamedGuids> = docs
+        .iter_mut()
+        .map(|doc| obfuscate_document(doc, anon))
+        .collect();
+    let mut export_wide: HashMap<&str, &str> = HashMap::new();
+    for (stand_in, guid) in renamed_per_doc.iter().flatten() {
+        export_wide.entry(stand_in).or_insert(guid);
+    }
+    for (doc, own) in docs.iter_mut().zip(&renamed_per_doc) {
+        for target in reply_and_tapback_targets(doc) {
+            let guid = own
+                .get(target.as_str())
+                .map(String::as_str)
+                .or_else(|| export_wide.get(target.as_str()).copied());
+            if let Some(guid) = guid {
+                *target = guid.to_owned();
+            }
+        }
+    }
+}
+
+/// Replace every handle, name, and body in one document with stable fake
+/// values, and return each message's new `guid`.
+///
+/// Each reply and tapback target is left as the keyed stand-in for the id it
+/// named, for [`obfuscate_documents`] to point at the new `guid`.
+fn obfuscate_document(doc: &mut ConversationDocument, anon: &mut Obfuscator) -> RenamedGuids {
     doc.conversation.chat_identifier = anon.obfuscate_handle(&doc.conversation.chat_identifier);
     // A group title is chosen by people and often names them, so every word
     // goes, not only the addresses in it.
@@ -76,11 +118,12 @@ pub(crate) fn obfuscate_document(doc: &mut ConversationDocument, anon: &mut Obfu
         // goes with it: `direction` already says sent or received.
         msg.source = None;
     }
-    obfuscate_guids(doc, anon);
+    obfuscate_guids(doc, anon)
 }
 
-/// Give every message a new `guid` made from its obfuscated content, and
-/// point each reply and tapback at its target's new `guid`.
+/// Give every message a new `guid` made from its obfuscated content, replace
+/// each reply and tapback target with the keyed stand-in for it, and return
+/// each new `guid`.
 ///
 /// For a source without ids of its own the `guid` is a hash of the chat, the
 /// time, the direction, the sender, the text and the attachments, and the
@@ -89,9 +132,9 @@ pub(crate) fn obfuscate_document(doc: &mut ConversationDocument, anon: &mut Obfu
 /// the obfuscated message, with a keyed stand-in for the old `guid` as its
 /// vendor key: two messages the original told apart stay apart, and nobody
 /// without the obfuscation seed can work back to the original.
-fn obfuscate_guids(doc: &mut ConversationDocument, anon: &Obfuscator) {
+fn obfuscate_guids(doc: &mut ConversationDocument, anon: &Obfuscator) -> RenamedGuids {
+    let mut renamed = RenamedGuids::new();
     let chat = doc.conversation.chat_identifier.clone();
-    let mut renamed: HashMap<String, String> = HashMap::new();
     for msg in &mut doc.messages {
         let stand_in = anon.obfuscate_id(&msg.guid);
         let digests: Vec<String> = msg
@@ -99,7 +142,7 @@ fn obfuscate_guids(doc: &mut ConversationDocument, anon: &Obfuscator) {
             .iter()
             .filter_map(|a| a.digest_sha256.clone())
             .collect();
-        let guid = MessageGuid::new(&MessageIdentity {
+        msg.guid = MessageGuid::new(&MessageIdentity {
             chat: &chat,
             is_from_me: msg.direction == IrDirection::Outgoing,
             sender: msg.sender_handle.as_deref(),
@@ -109,21 +152,21 @@ fn obfuscate_guids(doc: &mut ConversationDocument, anon: &Obfuscator) {
             vendor_key: Some(&stand_in),
         })
         .into_string();
-        renamed.insert(std::mem::replace(&mut msg.guid, guid.clone()), guid);
+        renamed.insert(stand_in, msg.guid.clone());
     }
-    // A target outside this document gets the keyed stand-in, so its
-    // original id does not survive either.
-    for im in doc.messages.iter_mut().filter_map(|m| m.imessage.as_mut()) {
-        for target in [&mut im.in_reply_to_guid, &mut im.associated_guid]
-            .into_iter()
-            .flatten()
-        {
-            *target = renamed
-                .get(target.as_str())
-                .cloned()
-                .unwrap_or_else(|| anon.obfuscate_id(target));
-        }
+    for target in reply_and_tapback_targets(doc) {
+        *target = anon.obfuscate_id(target);
     }
+    renamed
+}
+
+/// Every message id a reply or a tapback in the document names.
+fn reply_and_tapback_targets(doc: &mut ConversationDocument) -> impl Iterator<Item = &mut String> {
+    doc.messages
+        .iter_mut()
+        .filter_map(|m| m.imessage.as_mut())
+        .flat_map(|im| [&mut im.in_reply_to_guid, &mut im.associated_guid])
+        .flatten()
 }
 
 /// Obfuscate the iMessage extension's announcement and tapback reactors.
@@ -224,19 +267,17 @@ pub(crate) fn apply_transforms(
 
     // Convert/compress runs in `run_attachment_jobs` before documents are
     // written. Finish only obfuscates and packages.
-    let mut obfuscated_docs = 0usize;
-    if transforms.obfuscate {
-        materialize_placeholders(output_dir)?;
-        let log_fn = |line: &str| emit_log(transforms.log.as_ref(), line);
-        let mut anon =
-            resolve_obfuscator_with_log(transforms.obfuscate_seed.as_deref(), Some(&log_fn))?;
-        for doc in docs.iter_mut() {
-            obfuscate_document(doc, &mut anon);
-            obfuscated_docs += 1;
-        }
+    if !transforms.obfuscate {
+        return Ok(TransformOutcome { obfuscated_docs: 0 });
     }
-
-    Ok(TransformOutcome { obfuscated_docs })
+    materialize_placeholders(output_dir)?;
+    let log_fn = |line: &str| emit_log(transforms.log.as_ref(), line);
+    let mut anon =
+        resolve_obfuscator_with_log(transforms.obfuscate_seed.as_deref(), Some(&log_fn))?;
+    obfuscate_documents(docs, &mut anon);
+    Ok(TransformOutcome {
+        obfuscated_docs: docs.len(),
+    })
 }
 
 #[cfg(test)]
