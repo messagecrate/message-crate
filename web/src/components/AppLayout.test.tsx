@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockedAuth, Providers } from "../test/providers";
+import { setupUser } from "../test/user";
 import AppLayout from "./AppLayout";
 
 // The lists, the header and the drawers fetch their own data; this file is
@@ -32,12 +33,32 @@ vi.mock("../screens/MessageSearchList", () => ({
     <div data-testid="message-search-list">{`query: ${query}`}</div>
   ),
 }));
-// The header stands in as one button that searches for "ada".
+// The header stands in as the list it was told to search, and two buttons:
+// one types "ada" into the search box, the other searches for it. A screen
+// with nothing to search gets neither button.
 vi.mock("./AppHeader", () => ({
-  default: ({ onSearch }: { onSearch: (q: string) => void }) => (
-    <button type="button" onClick={() => onSearch("ada")}>
-      Search for ada
-    </button>
+  default: ({
+    search,
+    onSearchChange,
+    onSearch,
+  }: {
+    search: { target: string } | null;
+    onSearchChange: (q: string) => void;
+    onSearch: (q: string) => void;
+  }) => (
+    <>
+      <output data-testid="header-search-target">{search?.target ?? "null"}</output>
+      {search !== null && (
+        <>
+          <button type="button" onClick={() => onSearchChange("ada")}>
+            Type ada
+          </button>
+          <button type="button" onClick={() => onSearch("ada")}>
+            Search for ada
+          </button>
+        </>
+      )}
+    </>
   ),
 }));
 vi.mock("./ContactDrawer", () => ({ default: () => null }));
@@ -139,6 +160,36 @@ describe("AppLayout", () => {
 
     await user.click(screen.getByRole("button", { name: "First result" }));
     expect(screen.getByTestId("location").textContent).toBe(`/messages/6${search}`);
+  });
+});
+
+describe("AppLayout's header search on a screen with no list", () => {
+  // The header search searches the list of the section the person is in.
+  // Import, Export and Settings have none, so the header offers no search
+  // there, and nothing typed in the header can reach Export's `?q=`, which is
+  // Export's own scope (#1568).
+  it.each(["/export?q=dentist", "/import", "/settings"])(
+    "gives the header nothing to search on %s, so nothing can type into its address",
+    (entry) => {
+      renderLayout(entry);
+
+      expect(screen.getByTestId("header-search-target").textContent).toBe("null");
+      expect(screen.queryByRole("button", { name: "Type ada" })).toBeNull();
+      expect(screen.getByTestId("location").textContent).toBe(entry);
+    },
+  );
+
+  it.each([
+    ["/?q=dentist", "conversations", "/?q=ada"],
+    ["/contacts", "contacts", "/contacts?cq=ada"],
+    ["/trash", "trash", "/trash?tq=ada"],
+  ])("gives the header the list on %s to search", async (entry, target, typed) => {
+    const user = setupUser();
+    renderLayout(entry);
+
+    expect(screen.getByTestId("header-search-target").textContent).toBe(target);
+    await user.click(screen.getByRole("button", { name: "Type ada" }));
+    expect(screen.getByTestId("location").textContent).toBe(typed);
   });
 });
 

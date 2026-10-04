@@ -35,6 +35,34 @@ async fn import_one_message(conn: &mut SqliteConnection, dir: &std::path::Path, 
     assert_eq!(stats.messages, 1, "the import must insert its message");
 }
 
+/// Promotion reads only rows staging accepted, so a promote that fails is
+/// the server's fault: the import takes its error as internal, never as a
+/// refusal the sender could fix, and the cause survives for the log.
+#[tokio::test]
+async fn a_promote_that_fails_is_an_internal_import_failure() {
+    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    crate::db::schema::ensure_schema(&mut conn).await.unwrap();
+    sqlx::raw_sql("DROP TABLE staging_conversations")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+
+    let err: super::super::ImportError =
+        promote_append(&mut conn, ImportMode::Append, TEST_ACCOUNT, false, &[])
+            .await
+            .expect_err("promote fails")
+            .into();
+
+    match err {
+        super::super::ImportError::Internal(cause) => assert!(
+            format!("{cause:#}").contains("staging_conversations"),
+            "{cause:#}"
+        ),
+        other => panic!("expected an internal failure, got {other:?}"),
+    }
+}
+
 /// The import runs ANALYZE before it opens its transaction, so promote's
 /// guid join has statistics to plan with.
 #[tokio::test]
