@@ -412,6 +412,13 @@ export default function ContactList({
   const localSlice = !advancedActive && !serverQ.trim() && (filterActive || groupActive);
   const rangeTotal = localSlice ? displayContacts.length : total;
 
+  // The desktop list redraws every row when this function changes, so it
+  // changes only with what it reads.
+  const isRowHighlighted = useCallback(
+    (c: Contact) => (checkedIds.size > 0 ? checkedIds.has(c.id) : c.id === selectedId),
+    [checkedIds, selectedId],
+  );
+
   return (
     <InfiniteOffsetList
       items={displayContacts}
@@ -433,7 +440,7 @@ export default function ContactList({
         }
         onSelect(c);
       }}
-      isRowHighlighted={(c) => (checkedIds.size > 0 ? checkedIds.has(c.id) : c.id === selectedId)}
+      isRowHighlighted={isRowHighlighted}
       selectAll={{
         checked: selectAllChecked,
         indeterminate: selectAllIndeterminate,

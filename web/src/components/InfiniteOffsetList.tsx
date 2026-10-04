@@ -11,6 +11,7 @@ import {
 } from "react";
 import { ListBox, ListBoxItem, ListLayout, Virtualizer } from "react-aria-components";
 import { groupByLetter } from "../lib/contactSort";
+import { keepAttribute } from "../lib/keepAttribute";
 import { formatVisibleRange } from "../lib/listPaging";
 import { isTauri } from "../lib/tauri-check";
 import { listRowDividersThin, resizeHandleGutter } from "../lib/tw";
@@ -98,9 +99,15 @@ const ROW_BODY_FOCUS_RING =
 /** Lifts the lead cell above the select button's stretched target, so it still takes its own clicks. */
 const ROW_LEAD = `relative flex shrink-0 self-center ${Z_LIFT}`;
 
-/** A row is either one button, or a container holding the lead cell plus that button. */
+/**
+ * A row is either one button, or a container holding the lead cell plus that button.
+ *
+ * `current` marks the open row for a screen reader with `aria-current`, on the
+ * button the reader activates. The row's fill shows it only to the eye (#1413).
+ */
 function Row({
   lead,
+  current,
   className,
   style,
   onSelect,
@@ -108,15 +115,23 @@ function Row({
   ...rest
 }: {
   lead: ReactNode;
+  current: boolean;
   className: string;
   style?: CSSProperties;
   onSelect: () => void;
   children: ReactNode;
   "data-contact-index"?: number;
 }) {
+  const ariaCurrent = current ? "true" : undefined;
   if (!lead) {
     return (
-      <PlainButton onPress={onSelect} className={className} style={style} {...rest}>
+      <PlainButton
+        onPress={onSelect}
+        aria-current={ariaCurrent}
+        className={className}
+        style={style}
+        {...rest}
+      >
         {children}
       </PlainButton>
     );
@@ -124,7 +139,7 @@ function Row({
   return (
     <div className={`relative ${className} ${ROW_BODY_FOCUS_RING}`} style={style} {...rest}>
       <div className={ROW_LEAD}>{lead}</div>
-      <PlainButton onPress={onSelect} className={ROW_BODY}>
+      <PlainButton onPress={onSelect} aria-current={ariaCurrent} className={ROW_BODY}>
         {children}
       </PlainButton>
     </div>
@@ -275,15 +290,24 @@ function RacVirtualList<T extends object>({
         items={items}
         // No selection mode: with one, React Aria runs a row's onAction only on a
         // double click or Enter, so one click would not open the row (#1245).
-        // The open row is drawn from selectedId instead, as the browser path does.
+        // The open row is drawn from selectedId instead, as the browser path does,
+        // and marked with aria-current for a screen reader (#1413).
+        // The ListBox keeps each row it has drawn until an item changes, so a
+        // newly opened row would keep the old fill and mark without these.
+        dependencies={[selectedId, isRowHighlighted]}
         onScroll={scheduleVisibleRange}
         className={`block min-h-0 flex-1 overflow-auto outline-none ${RANGE_PILL_SCROLL_PAD_CLASS} ${resizeHandleGutter}`}
       >
         {(item) => {
           const id = getId(item);
+          const current = id === selectedId ? "true" : undefined;
           return (
             <ListBoxItem
               id={id}
+              // ListBoxItem drops aria-current, so the ref sets it on the option.
+              ref={(el: HTMLDivElement | null) => {
+                if (el) keepAttribute(el, "aria-current", current);
+              }}
               textValue={getTextValue?.(item) ?? id}
               onAction={() => onSelect(item)}
               className={({ isHovered }) =>
@@ -353,6 +377,7 @@ function TanStackVirtualList<T>({
         return (
           <Row
             lead={renderRowLead?.(item)}
+            current={id === selectedId}
             onSelect={() => onSelect(item)}
             style={{
               height: dynamicSize ? "auto" : "100%",
@@ -511,6 +536,7 @@ function SectionedLetterList<T>({
               <Row
                 key={id}
                 lead={renderRowLead?.(item)}
+                current={id === selectedId}
                 data-contact-index={index}
                 onSelect={() => onSelect(item)}
                 className={rowClass(selected)}

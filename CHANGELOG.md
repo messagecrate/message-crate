@@ -584,6 +584,13 @@ released versions carry their date on the heading.
   conversation list, did nothing when the server refused the name, such as a
   Contact Group name holding `;` or a name over 80 characters. The menu now
   keeps the typed name and shows the reason, as the sidebar already did.
+- 2026-10-04 **A screen reader says which contact is open.** The open
+  contact in the Contacts list was shown only by its highlight, so a screen
+  reader gave no sign of which one was open. The open contact is now
+  announced as the current one, in the browser and in the desktop app, and
+  one click still opens a contact. In the desktop app the highlight also
+  moves to a newly opened or checked contact, where before it could stay
+  where it was first drawn.
 - 2026-10-03 **Adding a WhatsApp identity checks that it was added.** When
   a number was already a Text Message identity, adding it on WhatsApp
   closed the dialog even if the server added nothing. The dialog now stays
