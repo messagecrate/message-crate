@@ -2,8 +2,6 @@
 
 use anyhow::{Context, Result};
 use chrono::{TimeZone, Utc};
-
-use crate::imports_api::ImportFailure;
 use message_ir::{
     ConversationHeader, HandleService, HandleType, IrAttachment, IrDirection, IrImessage,
     IrMessage, IrMessageKind, check_schema_version_in_json,
@@ -11,6 +9,8 @@ use message_ir::{
 use phone::Handle;
 use serde::Deserialize;
 use serde_json::Value;
+
+use crate::imports_api::ImportFailure;
 
 /// One JSONL conversation after IR → database-row mapping.
 #[derive(Debug, Clone)]
@@ -24,6 +24,9 @@ pub enum ExportRecord {
 /// The conversation header of one JSONL conversation.
 #[derive(Debug, Clone)]
 pub struct ConversationRecord {
+    /// The line the header is on in its file or batch, counted from 1 with
+    /// blank lines included, so a refusal of the header names it.
+    pub line: usize,
     /// The conversation's identifier as the export wrote it.
     pub chat_identifier: String,
     /// Platform service, e.g. `imessage`.
@@ -189,7 +192,9 @@ pub fn parse_ir_lines(
                     line: line_no,
                     detail: format!("the conversation header is not valid: {e}"),
                 })?;
-            out.push(ExportRecord::Conversation(conversation_from_ir(&header)));
+            out.push(ExportRecord::Conversation(conversation_from_ir(
+                &header, line_no,
+            )));
             header_owner = header
                 .export
                 .owner_handle
@@ -254,7 +259,7 @@ fn is_ir_header(value: &Value) -> bool {
 }
 
 /// Map a JSON Lines header onto the server's conversation record.
-fn conversation_from_ir(header: &ConversationHeader) -> ConversationRecord {
+fn conversation_from_ir(header: &ConversationHeader, line: usize) -> ConversationRecord {
     let export_source = {
         let s = header.export.source.trim();
         if s.is_empty() {
@@ -264,6 +269,7 @@ fn conversation_from_ir(header: &ConversationHeader) -> ConversationRecord {
         }
     };
     ConversationRecord {
+        line,
         chat_identifier: header.conversation.chat_identifier.clone(),
         // Platform identity for handles (phone | whatsapp), not SMS/iMessage/RCS.
         service: Some(

@@ -299,16 +299,4 @@ mod tests {
             "export/+15555550101.jsonl: Line 2 of the file: boom."
         );
     }
-
-    /// An internal failure keeps every layer of its cause for the command
-    /// line, not only the outermost.
-    #[test]
-    fn a_command_line_prints_the_whole_chain_of_an_internal_failure() {
-        let cause = anyhow::anyhow!("disk full").context("failed to write the asset store");
-        let err = anyhow::Error::from(ImportError::Internal(cause));
-        assert_eq!(
-            format!("{err:#}"),
-            "failed to write the asset store: disk full"
-        );
-    }
 }

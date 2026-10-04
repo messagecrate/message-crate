@@ -286,26 +286,32 @@ impl StagingInserts {
 type StagedParticipant = (String, Option<String>, Option<HandleType>);
 
 /// The source id for a conversation: its header's `export.source` when sources come from the files, else the fixed override.
+///
+/// # Errors
+///
+/// Refuses a header, when sources come from the files, whose
+/// `export.source` is missing or is not a valid source id: the sender's to
+/// fix in the file.
 fn resolve_conversation_source(
     opts: &ImportOptions<'_>,
-    path: &Path,
-    chat_identifier: &str,
-    export_source: Option<&str>,
-) -> Result<String> {
-    if opts.source_from_jsonl {
-        let Some(source) = export_source.and_then(trimmed) else {
-            return Err(anyhow!(
-                "{}: conversation '{}' is missing export.source \
-                 (required for CLI directory import)",
-                path.display(),
-                chat_identifier
-            ));
-        };
-        validate_source_id(source)?;
-        Ok(source.to_string())
-    } else {
-        Ok(opts.source.to_string())
+    conversation: &ConversationRecord,
+) -> Result<String, ImportFailure> {
+    if !opts.source_from_jsonl {
+        return Ok(opts.source.to_string());
     }
+    let refuse = |detail: String| ImportFailure::Invalid {
+        line: conversation.line,
+        detail,
+    };
+    let Some(source) = conversation.export_source.as_deref().and_then(trimmed) else {
+        return Err(refuse(format!(
+            "conversation '{}' has no export.source, which a directory import needs",
+            conversation.chat_identifier
+        )));
+    };
+    validate_source_id(source)
+        .map_err(|err| refuse(format!("export.source '{source}' is not valid: {err:#}")))?;
+    Ok(source.to_string())
 }
 
 /// Messages with no conversation of their own live in `orphaned.jsonl`
@@ -324,9 +330,8 @@ fn is_orphaned_export(path: &Path) -> bool {
 /// # Errors
 ///
 /// Returns [`StagingError::Rejected`] when a line breaks a rule the sender
-/// can fix, and [`StagingError::Internal`] when the file cannot be read, a
-/// conversation's source is missing or invalid, or a file or row cannot be
-/// written.
+/// can fix, and [`StagingError::Internal`] when the file cannot be read or a
+/// file or row cannot be written.
 pub(super) async fn import_file_to_staging(
     tx: &mut SqliteConnection,
     stmts: &mut StagingInserts,
@@ -359,13 +364,7 @@ pub(super) async fn import_file_to_staging(
                 if let Some(header) = pending.take() {
                     staging.stage(header, std::mem::take(&mut messages)).await?;
                 }
-                let source = resolve_conversation_source(
-                    opts,
-                    path,
-                    &c.chat_identifier,
-                    c.export_source.as_deref(),
-                )
-                .map_err(StagingError::Internal)?;
+                let source = resolve_conversation_source(opts, &c)?;
                 pending = Some(StagedConversation::from_record(c, source));
             }
             ExportRecord::Message(m) => messages.push(m),

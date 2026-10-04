@@ -242,6 +242,100 @@ fn an_asset_store_that_cannot_be_written_is_an_internal_failure() {
     );
 }
 
+/// A file the server cannot open is its own fault: the import returns it as
+/// internal, and a command line that prints it shows the whole chain, the
+/// file and the operating system's reason both.
+#[tokio::test]
+async fn a_file_that_cannot_be_opened_is_internal_with_its_whole_cause() {
+    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let tmp = TempDir::new().unwrap();
+    let path = tmp.path().join("gone.jsonl");
+    let assets = tmp.path().join("assets");
+    let opts = ImportOptions::fixed(FixedImportArgs {
+        assets_dir: &assets,
+        asset_root: tmp.path(),
+        mode: ImportMode::Append,
+        source: "imessage",
+        account_id: TEST_ACCOUNT,
+        fill_content_keys: false,
+        import_id: None,
+    });
+
+    let err = import_jsonl_files_on_conn(
+        &mut conn,
+        std::slice::from_ref(&path),
+        &opts,
+        ImportSchemaMode::Ensure,
+    )
+    .await
+    .expect_err("the file is not there");
+
+    assert!(matches!(err, ImportError::Internal(_)), "{err:?}");
+    let printed = format!("{:#}", anyhow::Error::from(err));
+    let reason = std::io::Error::from_raw_os_error(2).to_string();
+    assert_eq!(
+        printed,
+        format!("failed to open {}: {reason}", path.display())
+    );
+}
+
+/// A directory import takes each conversation's source from its header, so
+/// a header with none is the sender's to fix: it is refused on its line,
+/// not answered as a fault of the server.
+#[tokio::test]
+async fn a_directory_import_refuses_a_header_without_a_source() {
+    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let tmp = TempDir::new().unwrap();
+    let header = ORPHANED_HEADER
+        .replace("orphaned", "+15555550154")
+        .replace(r#""source":"imessage""#, r#""source":"  ""#);
+    let path = tmp.path().join("+15555550154.jsonl");
+    std::fs::write(
+        &path,
+        format!("{header}{}", incoming("g-source", "+15555550154")),
+    )
+    .unwrap();
+    let assets = tmp.path().join("assets");
+    let opts = ImportOptions {
+        source_from_jsonl: true,
+        ..ImportOptions::fixed(FixedImportArgs {
+            assets_dir: &assets,
+            asset_root: tmp.path(),
+            mode: ImportMode::Append,
+            source: "",
+            account_id: TEST_ACCOUNT,
+            fill_content_keys: false,
+            import_id: None,
+        })
+    };
+
+    let err = import_jsonl_files_on_conn(
+        &mut conn,
+        std::slice::from_ref(&path),
+        &opts,
+        ImportSchemaMode::Ensure,
+    )
+    .await
+    .expect_err("the header has no source");
+
+    match err {
+        ImportError::Rejected {
+            failure: ImportFailure::Invalid { line, detail },
+            file,
+        } => {
+            assert_eq!(line, 1);
+            assert_eq!(file, path);
+            assert_eq!(
+                detail,
+                "conversation '+15555550154' has no export.source, which a directory import needs"
+            );
+        }
+        other => panic!("expected a rejection, got {other:?}"),
+    }
+}
+
 /// The export says the attachment's bytes hash to one value and the file on
 /// disk hashes to another. That is a damaged or swapped file, so the import
 /// stops: it neither stores the file under either fingerprint nor records the

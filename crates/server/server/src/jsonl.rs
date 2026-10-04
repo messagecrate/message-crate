@@ -17,13 +17,25 @@ pub enum ReadRecordsError {
         path: PathBuf,
         failure: ImportFailure,
     },
-    /// The file cannot be opened or read: nothing the sender can change.
-    #[error("failed to read {}", path.display())]
+    /// The file cannot be opened, or `line` cannot be read: nothing the
+    /// sender can change.
+    #[error("{}", unreadable_message(path, *line))]
     Unreadable {
         path: PathBuf,
+        /// The line the read stopped on, or `None` when the file did not open.
+        line: Option<usize>,
         #[source]
         source: std::io::Error,
     },
+}
+
+/// What [`ReadRecordsError::Unreadable`] says: the file, and the line the
+/// read stopped on when it opened.
+fn unreadable_message(path: &Path, line: Option<usize>) -> String {
+    match line {
+        Some(line) => format!("failed to read line {line} of {}", path.display()),
+        None => format!("failed to open {}", path.display()),
+    }
 }
 
 /// Read a message-ir JSON Lines conversation file (one JSON object per line)
@@ -38,15 +50,16 @@ pub enum ReadRecordsError {
 /// message-ir JSON, and [`ReadRecordsError::Unreadable`] when the file cannot
 /// be opened or a line cannot be read.
 pub fn read_records(path: &Path) -> Result<Vec<ExportRecord>, ReadRecordsError> {
-    let unreadable = |source| ReadRecordsError::Unreadable {
+    let unreadable = |line, source| ReadRecordsError::Unreadable {
         path: path.to_path_buf(),
+        line,
         source,
     };
     let rejected = |failure| ReadRecordsError::Rejected {
         path: path.to_path_buf(),
         failure,
     };
-    let file = File::open(path).map_err(unreadable)?;
+    let file = File::open(path).map_err(|source| unreadable(None, source))?;
     let reader = BufReader::new(file);
     let mut lines = Vec::new();
     for (line_no, line) in reader.lines().enumerate() {
@@ -60,7 +73,7 @@ pub fn read_records(path: &Path) -> Result<Vec<ExportRecord>, ReadRecordsError> 
                     detail: "the line is not valid UTF-8".into(),
                 }));
             }
-            Err(err) => return Err(unreadable(err)),
+            Err(err) => return Err(unreadable(Some(line_no + 1), err)),
         };
         // A blank line is kept: `parse_ir_lines` skips it but still counts
         // it, so a failure names the line as it is numbered in the file.
@@ -115,9 +128,11 @@ mod tests {
         match read_records(&path).unwrap_err() {
             ReadRecordsError::Unreadable {
                 path: named,
+                line,
                 source,
             } => {
                 assert_eq!(named, path);
+                assert_eq!(line, None);
                 assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
             }
             other => panic!("expected Unreadable, got {other:?}"),

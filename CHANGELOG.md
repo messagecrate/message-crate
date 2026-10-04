@@ -256,7 +256,10 @@ released versions carry their date on the heading.
   attachment in.** When an attachment broke a rule, such as a path that
   leaves the export directory or bytes that do not match the fingerprint
   the file states, the `import` command stopped with the line and the rule
-  but not the file. It now names the file first.
+  but not the file. Every refusal now prints the same way: the file, then
+  the line and the rule. A conversation with no source in a directory
+  import is refused on its line too, rather than reported as a fault of
+  the server.
 - 2026-10-04 **Logging out during an Upload waits at most 15 seconds, and
   an Upload whose session ends pauses cleanly.** Logging out during an
   Upload waited for the Upload to pause for as long as that took, and an
