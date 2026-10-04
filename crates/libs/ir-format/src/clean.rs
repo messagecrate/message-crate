@@ -1,10 +1,9 @@
 //! Remove leftover files from a previous export in the same directory.
 
 use anyhow::{Context, Result, bail};
-use mail::clean_previous_mail_output;
 use std::fs;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Sentinel file written into export directories so `clean_previous_ir_output` can
 /// distinguish a real export directory from a person's own folder that was
@@ -12,6 +11,25 @@ use std::path::Path;
 /// archive wrote into the folder ([`record_archive_files`]), which the next
 /// clean removes.
 pub const EXPORT_SENTINEL: &str = ".message-crate-export";
+
+/// Refuse `output_dir` unless it holds the sentinel, which only an export
+/// writes. Every function in this crate that removes files from an output
+/// directory calls this first, so none of them can remove a person's own
+/// files, whoever calls it.
+///
+/// # Errors
+///
+/// Returns an error when the directory has no sentinel.
+pub(crate) fn require_export_directory(output_dir: &Path) -> Result<()> {
+    if output_dir.join(EXPORT_SENTINEL).is_file() {
+        return Ok(());
+    }
+    bail!(
+        "{} has no {EXPORT_SENTINEL} file, so Message Crate did not write it. \
+         Refusing to remove anything in it.",
+        output_dir.display()
+    )
+}
 
 /// Write an empty sentinel marking `output_dir` as an export target, with no
 /// archive files listed. Outside tests, [`mark_export_folder`] calls it after
@@ -108,6 +126,67 @@ pub fn clean_previous_ir_output(output_dir: &Path) -> Result<()> {
     clean_previous_mail_output(output_dir)?;
     // The archive files the sentinel listed are gone, so it starts with no list.
     write_export_sentinel(output_dir)
+}
+
+/// Remove the mail archives an earlier export left in `output_dir`: `.mbox`
+/// files, and directories that hold an `.eml` file. Leaves `attachments/`
+/// alone. Reached only through [`clean_previous_ir_output`], and refuses a
+/// directory without the sentinel itself as well.
+///
+/// # Errors
+///
+/// Returns an error when the directory has no sentinel, a directory cannot
+/// be read, or a file cannot be removed.
+fn clean_previous_mail_output(output_dir: &Path) -> Result<()> {
+    require_export_directory(output_dir)?;
+    for entry in read_dir(output_dir)? {
+        let path = entry?.path();
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if path.is_file()
+            && path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("mbox"))
+        {
+            fs::remove_file(&path).with_context(|| format!("remove {}", path.display()))?;
+            continue;
+        }
+        if path.is_dir() && name != "attachments" {
+            let entries = read_dir(&path)?;
+            if holds_eml(&path, entries.map(|entry| entry.map(|e| e.path())))? {
+                fs::remove_dir_all(&path).with_context(|| format!("remove {}", path.display()))?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Whether `entries`, the paths of `dir`, include an `.eml` file.
+///
+/// An entry that cannot be read fails the check, with `dir` named. Skipping
+/// it could make a directory of an earlier export read as holding no `.eml`,
+/// and that directory would then stay beside the new export. The server's
+/// `import` command and the Upload fail the same way.
+///
+/// # Errors
+///
+/// Returns an error for the first entry that cannot be read before an `.eml`
+/// is found.
+fn holds_eml(
+    dir: &Path,
+    entries: impl IntoIterator<Item = std::io::Result<PathBuf>>,
+) -> Result<bool> {
+    for entry in entries {
+        let path = entry.with_context(|| format!("read an entry of {}", dir.display()))?;
+        if path
+            .extension()
+            .and_then(|x| x.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("eml"))
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn read_dir(dir: &Path) -> Result<fs::ReadDir> {
@@ -335,5 +414,117 @@ mod tests {
         clean_previous_ir_output(tmp.path()).unwrap();
 
         assert_eq!(names(tmp.path()), [".DS_Store", EXPORT_SENTINEL]);
+    }
+
+    /// The clean of earlier mail archives is reached only through
+    /// [`clean_previous_ir_output`], and refuses a directory without the
+    /// sentinel itself as well, so `.mbox` files and directories of `.eml`
+    /// files a person keeps there stay (#1531).
+    #[test]
+    fn the_mail_clean_refuses_a_directory_without_the_sentinel_and_removes_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        fs::write(dir.join("+15555550101.mbox"), "From x\n").unwrap();
+        fs::create_dir(dir.join("+15555550102")).unwrap();
+        fs::write(dir.join("+15555550102/0001.eml"), "Subject: x\n").unwrap();
+
+        assert!(clean_previous_mail_output(dir).is_err());
+
+        assert_eq!(names(dir), ["+15555550101.mbox", "+15555550102"]);
+        assert!(dir.join("+15555550102/0001.eml").is_file());
+    }
+
+    #[test]
+    fn the_mail_clean_removes_only_mail_archives() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        write_export_sentinel(dir).unwrap();
+        fs::write(dir.join("+15555550101.mbox"), "From x\n").unwrap();
+        fs::write(dir.join("Old.MBOX"), "From x\n").unwrap();
+        fs::create_dir(dir.join("+15555550102")).unwrap();
+        fs::write(dir.join("+15555550102/0001.eml"), "Subject: x\n").unwrap();
+        // An email kept as an attachment is not a previous export.
+        fs::create_dir(dir.join("attachments")).unwrap();
+        fs::write(dir.join("attachments/forwarded.eml"), "Subject: x\n").unwrap();
+        fs::create_dir(dir.join("photos")).unwrap();
+        fs::write(dir.join("photos/a.jpg"), "jpg").unwrap();
+        fs::write(dir.join("notes.txt"), "mine").unwrap();
+
+        clean_previous_mail_output(dir).unwrap();
+
+        assert_eq!(
+            names(dir),
+            [EXPORT_SENTINEL, "attachments", "notes.txt", "photos"]
+        );
+        assert!(dir.join("attachments/forwarded.eml").is_file());
+        assert!(dir.join("photos/a.jpg").is_file());
+    }
+
+    /// An entry of a subdirectory that cannot be read fails the clean-up with
+    /// the directory named, rather than reading the directory as holding no
+    /// `.eml` and leaving an earlier export's directory beside the new one
+    /// (#1563).
+    #[test]
+    fn an_entry_that_cannot_be_read_fails_the_eml_check_and_names_the_directory() {
+        let dir = Path::new("/exports/+15555550102");
+        let entries = vec![
+            Ok(dir.join("notes.txt")),
+            Err(std::io::Error::other("stale file handle")),
+            Ok(dir.join("0001.eml")),
+        ];
+
+        let error = holds_eml(dir, entries).unwrap_err();
+
+        let message = format!("{error:#}");
+        assert!(message.contains("/exports/+15555550102"), "{message}");
+        assert!(message.contains("stale file handle"), "{message}");
+    }
+
+    /// Run `f` with the permissions of `dir` set to `mode`, then set them
+    /// back to `0o755` before returning, so the temporary directory can still
+    /// be removed.
+    ///
+    /// `None`, with a line on stderr, when `dir` can still be listed under
+    /// `mode`: a user such as root cannot exercise the failure, so the test
+    /// has nothing to check.
+    #[cfg(unix)]
+    fn with_directory_mode<T>(dir: &Path, mode: u32, f: impl FnOnce() -> T) -> Option<T> {
+        use std::os::unix::fs::PermissionsExt;
+
+        fs::set_permissions(dir, fs::Permissions::from_mode(mode))
+            .expect("set the directory's mode");
+        let result = if fs::read_dir(dir).is_ok() {
+            eprintln!(
+                "skipped: {} can still be listed with mode {mode:o}",
+                dir.display()
+            );
+            None
+        } else {
+            Some(f())
+        };
+        fs::set_permissions(dir, fs::Permissions::from_mode(0o755))
+            .expect("restore the directory's mode");
+        result
+    }
+
+    /// A subdirectory the mail clean cannot list fails it with the
+    /// subdirectory named.
+    #[cfg(unix)]
+    #[test]
+    fn a_subdirectory_that_cannot_be_read_fails_the_mail_clean_and_names_it() {
+        let tmp = tempfile::tempdir().unwrap();
+        write_export_sentinel(tmp.path()).unwrap();
+        let sub = tmp.path().join("+15555550102");
+        fs::create_dir(&sub).unwrap();
+        fs::write(sub.join("0001.eml"), "Subject: x\n").unwrap();
+        let Some(result) =
+            with_directory_mode(&sub, 0o000, || clean_previous_mail_output(tmp.path()))
+        else {
+            return;
+        };
+
+        let message = format!("{:#}", result.unwrap_err());
+        assert!(message.contains("+15555550102"), "{message}");
+        assert!(sub.join("0001.eml").is_file());
     }
 }

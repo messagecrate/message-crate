@@ -12,6 +12,7 @@ mod clean;
 mod export_transforms;
 mod format_sink;
 mod normalize;
+mod placeholders;
 mod read_csv;
 mod read_json;
 mod read_mail;
@@ -36,6 +37,15 @@ pub use write::{
 use normalize::normalize_document_for_compare;
 #[cfg(test)]
 use write::write_conversation_csv;
+
+/// A temporary directory an export marked with the sentinel, for a test
+/// that writes into one.
+#[cfg(test)]
+pub(crate) fn export_dir() -> tempfile::TempDir {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join(EXPORT_SENTINEL), "").expect("sentinel");
+    dir
+}
 
 #[cfg(test)]
 #[path = "lib_tests.rs"]

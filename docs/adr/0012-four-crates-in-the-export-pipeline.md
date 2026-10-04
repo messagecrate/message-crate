@@ -47,11 +47,13 @@ path. Its first step, `message-crate-pull`, writes JSON Lines through
 output folder (`.message-crate-pull-state.jsonl`,
 `crates/libs/pull/src/journal.rs`) that records each attachment already
 downloaded, so a later run skips it. A run that finishes appends
-`backup_complete` and then rewrites the journal for the server and username
-of that run. The rewritten journal holds one line per attachment and one
+`backup_complete` and then rewrites the journal's lines for the server and
+username of that run. Those lines become one line per attachment and one
 `backup_complete` line. That line's counts are zero, because a later run reads
 it only as "the last run finished" and never reads the counts. The rewrite
-drops the lines another server or account wrote into the same output folder.
+keeps every line another server or account wrote into the same output
+directory as it was, so a later run for that server or account still skips
+the attachments it downloaded.
 
 ## Why
 
