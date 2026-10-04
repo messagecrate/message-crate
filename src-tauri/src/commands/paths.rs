@@ -473,64 +473,59 @@ mod tests {
         assert!(err.contains("root of a drive"));
     }
 
-    // The roots in these tests are made under a temporary folder and the
-    // result is compared with the root's canonical form, because a missing
-    // path resolves through its nearest existing ancestor: a made-up path
-    // such as /home/sam/... comes back changed on a machine where /home is
-    // a symbolic link or an automount, such as macOS.
+    /// `base` with each of `parts` joined onto it in turn.
+    fn join_all(base: PathBuf, parts: &[&str]) -> PathBuf {
+        parts.iter().fold(base, |path, part| path.join(part))
+    }
 
-    #[test]
-    fn accepts_path_under_staging_when_missing() {
+    /// Make the folder `existing_dir` under a temporary folder, and take the
+    /// Staging Directory at that folder joined with `root_below`. Check that
+    /// the path `path_below_root` under it is accepted, in the canonical form
+    /// of the made folder. Nothing below the made folder is made.
+    ///
+    /// The expected path is built from the canonical form rather than the
+    /// path passed in, because a missing path resolves through its nearest
+    /// existing ancestor: a made-up path such as /home/sam/... comes back
+    /// changed on a machine where /home is a symbolic link or an automount,
+    /// such as macOS.
+    fn assert_missing_path_resolves(
+        existing_dir: &str,
+        root_below: &[&str],
+        path_below_root: &[&str],
+    ) {
         let temp = tempfile::tempdir().unwrap();
-        let root = temp.path().join("message-crate");
-        fs::create_dir(&root).unwrap();
-        let path = root.join("staging-iphone-ios-260824-180509");
+        let existing = temp.path().join(existing_dir);
+        fs::create_dir(&existing).unwrap();
+        let root = join_all(existing.clone(), root_below);
+        let path = join_all(root.clone(), path_below_root);
 
         let resolved =
             resolve_openable_path(path.to_str().unwrap(), root.to_str().unwrap()).unwrap();
 
-        assert_eq!(
-            resolved,
-            root.canonicalize()
-                .unwrap()
-                .join("staging-iphone-ios-260824-180509")
+        let expected = join_all(
+            join_all(existing.canonicalize().unwrap(), root_below),
+            path_below_root,
         );
+        assert_eq!(resolved, expected);
     }
 
     #[test]
-    fn accepts_path_under_custom_staging_root() {
-        let temp = tempfile::tempdir().unwrap();
-        let root = temp.path().join("data").join("imports");
-        fs::create_dir_all(&root).unwrap();
-        let path = root.join("staging-iphone-ios-260824-180509");
+    fn accepts_path_under_staging_when_missing() {
+        assert_missing_path_resolves("message-crate", &[], &["staging-iphone-ios-260824-180509"]);
+    }
 
-        let resolved =
-            resolve_openable_path(path.to_str().unwrap(), root.to_str().unwrap()).unwrap();
-
-        assert_eq!(
-            resolved,
-            root.canonicalize()
-                .unwrap()
-                .join("staging-iphone-ios-260824-180509")
-        );
+    /// A Staging Directory chosen in Settings and not made yet.
+    #[test]
+    fn accepts_path_under_staging_root_not_made_yet() {
+        assert_missing_path_resolves("data", &["imports"], &["staging-iphone-ios-260824-180509"]);
     }
 
     #[test]
     fn accepts_log_file_under_staging_when_missing() {
-        let temp = tempfile::tempdir().unwrap();
-        let root = temp.path().join("message-crate");
-        fs::create_dir(&root).unwrap();
-        let path = root.join("staging-x").join("message-crate-push.log");
-
-        let resolved =
-            resolve_openable_path(path.to_str().unwrap(), root.to_str().unwrap()).unwrap();
-
-        assert_eq!(
-            resolved,
-            root.canonicalize()
-                .unwrap()
-                .join("staging-x")
-                .join("message-crate-push.log")
+        assert_missing_path_resolves(
+            "message-crate",
+            &[],
+            &["staging-x", "message-crate-push.log"],
         );
     }
 
