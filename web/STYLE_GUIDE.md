@@ -67,7 +67,8 @@ These drive a `color-mix` derivation tree in `theme.css`. Three `data-theme` mod
   The variant depends on which element takes focus.
   A button, a menu item, a table row or a list row takes DOM focus itself, so its ring uses `focus-visible:`.
   React Aria's `Checkbox`, `Radio` and `ColumnResizer` put focus on a hidden input, which `:focus-visible` cannot style, so their ring uses `data-focus-visible:` on the label React Aria marks (or the `isFocusVisible` render prop).
-  Behind the `isFocusVisible` render prop, the outline is `focusOutline` from `src/lib/uiStyles.ts`, `focusRing`'s classes without the variant; a `data-focus-visible:` form spells out each of those classes with the variant.
+  Behind the `isFocusVisible` render prop, the outline is `focusOutline` from `src/lib/uiStyles.ts`, `focusRing`'s classes without the variant.
+  A `data-focus-visible:` form spells out each of those classes with the variant.
 - **Current item in a menu or popdown:** `data-focused:bg-hover`. React Aria moves focus to the item under the pointer as well as the one the arrow keys reach, so one item is highlighted at a time.
 - **Disabled:** `disabled:opacity-50` or `disabled:brightness-[0.72]` + `disabled:cursor-not-allowed`
 - **Active/Selected:** `bg-accent text-sent-text`

@@ -90,14 +90,31 @@ describe("focus rings", () => {
 
   // Every focused outline is the same because every one comes from
   // lib/uiStyles.ts (#1711): `focusRing`, or `focusOutline` behind React Aria's
-  // `isFocusVisible` render prop where focus sits on a hidden input. An outline
-  // class, a bare `outline` variant, an arbitrary `[outline:…]` property and an
-  // inline `outline:` style all count.
+  // `isFocusVisible` render prop where focus sits on a hidden input. In the .ts
+  // and .tsx sources, outside comments, these count: an outline class other
+  // than `outline-none` and `outline-hidden`, which take an outline away; the
+  // bare `outline` class, with or without a variant; an arbitrary
+  // `[outline:…]` property; and an inline outline style with a string or
+  // number value, `outline: none` aside.
   it("no source outside lib/uiStyles.ts writes an outline of its own", () => {
-    const outline = /\boutline-(?!none\b)[\w[]|:outline(?![\w-])|\boutline\s*:/;
+    const outline = new RegExp(
+      [
+        /\boutline-(?!(none|hidden)\b)[\w[]/.source,
+        /(?<![\w-])outline(?=["'`\s]|$)/.source,
+        /\boutline(Width|Style|Color|Offset)?\s*:\s*(?!["']?none\b)["'`\d]/.source,
+        /\.style\.outline/.source,
+      ].join("|"),
+    );
+    // A comment line is blanked, not dropped, so the line numbers stay right.
+    const comment = /^\s*(\/\/|\/\*|\*)/;
+    const code = (text: string) =>
+      text
+        .split("\n")
+        .map((line) => (comment.test(line) ? "" : line))
+        .join("\n");
     const found = sources()
       .filter(([path]) => path !== "lib/uiStyles.ts")
-      .flatMap(([path, text]) => hits(path, text, outline));
+      .flatMap(([path, text]) => hits(path, code(text), outline));
     expect(found).toEqual([]);
   });
 
