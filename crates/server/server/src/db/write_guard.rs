@@ -27,8 +27,9 @@
 //! through the delete that comes straight after the drop of the same table:
 //! the schema rebuild at startup drops every table on a bare connection,
 //! with foreign keys off. With foreign keys on, SQLite also asks about a
-//! second delete of the table and a delete of each table that refers to it,
-//! and the guard refuses those.
+//! second delete of the table and a delete of each table that refers to it;
+//! on a bare connection the guard refuses the second delete, and the delete
+//! of a referring table that is one of the three.
 //!
 //! What the guard does not see:
 //!
@@ -40,7 +41,8 @@
 //!   it. Clippy refuses sqlx's own `begin` (`clippy.toml`), but a `BEGIN`
 //!   statement run by hand would satisfy the guard.
 //! - It is in the library's unit tests only. The integration tests under
-//!   `tests/` start the server binary, which does not have it.
+//!   `tests/` that use a database start the server binary, which does not
+//!   have it.
 
 use std::cell::RefCell;
 use std::ffi::{CStr, c_char, c_int, c_void};
