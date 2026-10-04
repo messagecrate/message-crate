@@ -578,6 +578,13 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-04 **A screen reader says which contact is open.** The open
+  contact in the Contacts list was shown only by its highlight, so a screen
+  reader gave no sign of which one was open. The open contact is now
+  announced as the current one, in the browser and in the desktop app, and
+  one click still opens a contact. In the desktop app the highlight also
+  moves to a newly opened or checked contact, where before it could stay
+  where it was first drawn.
 - 2026-10-03 **Adding a WhatsApp identity checks that it was added.** When
   a number was already a Text Message identity, adding it on WhatsApp
   closed the dialog even if the server added nothing. The dialog now stays
@@ -648,13 +655,6 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
-- 2026-10-04 **A screen reader says which contact is open.** The open
-  contact in the Contacts list was shown only by its highlight, so a screen
-  reader gave no sign of which one was open. The open contact is now
-  announced as the current one, in the browser and in the desktop app, and
-  one click still opens a contact. In the desktop app the highlight also
-  moves to a newly opened contact, where before it could stay on the one
-  opened first.
 - 2026-10-03 **An expired session says to log in again.** When your
   session had expired, or was ended from another window, an Upload or an
   Export said "invalid API key", though the app sends no API key. It now
