@@ -314,14 +314,14 @@ Text, `none`, `any`.
 Text, `none`, `any`. The raw or the normalized form of an identity.
 
 - **Contacts**: one of the contact's identities. `none` is a contact with no address: no identity, or only identities of type `other`, which hold a name the backup gave with no address.
-- **Conversations**: the conversation's own identity or a participant's. The conversation's own identity counts only when it is an address: the `name:` key of a conversation known only by a name, and the `nameless:` key of one that names nobody, are not, as in `with:` (#1592). `none` is a conversation where no participant has an address (every participant's identity is of type `other`); `any` is one where some participant does.
+- **Conversations**: the conversation's own identity or a participant's. The conversation's own identity counts only when it is an address: the `name:` key of a conversation known only by a name, and the `nameless:` key of one that names nobody, are not, as in `with:` (#1592). Why: every name key contains `name:`, so `identity:nam` would find every conversation known only by a name. `none` is a conversation where no participant has an address (every participant's identity is of type `other`); `any` is one where some participant does.
 - **Messages**: the same, for the message's conversation.
 
 ### `with:`
 
 Person, `me`.
 
-- **Conversations**: this person is in the conversation: the conversation's own identity or a participant's identity is theirs, or a participant's name contains the text. A contact `#id` reaches a participant only through the identity the participant takes part as, on the contact it is on now. `me` is a conversation the account holder has with themselves: a one-to-one conversation whose own identity is one of the account's identities. It has no participants, so it is the only conversation `me` finds. Why: the holder is never a participant, so a conversation with themselves is the one place the holder is the other party (#1094).
+- **Conversations**: this person is in the conversation: the conversation's own identity or a participant's identity is theirs, or a participant's name contains the text. The conversation's own identity counts only when it is an address, not the `name:` or `nameless:` key of a conversation known by a name or by nobody, because every name key contains `name:` and `with:nam` would find them all; the person such a conversation is with is found by their participant row. A contact `#id` reaches a participant only through the identity the participant takes part as, on the contact it is on now. `me` is a conversation the account holder has with themselves: a one-to-one conversation whose own identity is one of the account's identities. It has no participants, so it is the only conversation `me` finds. Why: the holder is never a participant, so a conversation with themselves is the one place the holder is the other party (#1094).
 - **Messages**: the same, for the message's conversation.
 
 ### `from:`

@@ -3635,8 +3635,8 @@ mod name_keyed_conversation {
 
     /// `identity:` reads a conversation's own identity only when it is an
     /// address, as `with:` does: the `name:` key every name-keyed
-    /// conversation shares, and the `nameless:` key, are not identities a
-    /// person typed (#1592).
+    /// conversation shares, and the `nameless:` key, are not anybody's
+    /// address (#1592).
     #[tokio::test]
     async fn identity_does_not_match_the_key() {
         let (pool, _dir, _f) = seeded().await;
