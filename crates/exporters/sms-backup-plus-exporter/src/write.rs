@@ -324,6 +324,10 @@ impl<'a> Conversation<'a> {
     fn subject(&self, message: &IrMessage) -> String {
         let sender = self.sender_of(message);
         let named = match message.direction {
+            // The mail of a conversation keyed by a name has no address, so
+            // the importer keys it by the subject's name: every mail of it
+            // names the conversation's name, whoever the source said wrote.
+            _ if self.name_only => self.peers.first().map(|name| (*name).to_string()),
             IrDirection::Incoming => sender.map(|handle| {
                 message
                     .sender_display_name

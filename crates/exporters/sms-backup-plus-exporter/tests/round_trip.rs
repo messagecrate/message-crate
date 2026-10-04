@@ -289,3 +289,42 @@ fn a_conversation_keyed_by_a_name_survives_an_export_and_a_second_import() {
     assert_eq!(ids(&after), ["name:AMAZON"]);
     assert_eq!(shape(&after), shape(&before));
 }
+
+/// Every mail of a conversation keyed by a name names that name, so a
+/// received message whose sender the source named differently stays in the
+/// conversation after an export and a second import.
+#[test]
+fn a_name_keyed_conversation_stays_one_when_its_sender_has_another_name() {
+    let staged = tempfile::tempdir().unwrap();
+    let exported = tempfile::tempdir().unwrap();
+    let second = tempfile::tempdir().unwrap();
+    let mut doc = message_ir::testutil::sample_document("from Mary");
+    doc.conversation.chat_identifier =
+        message_ir::ConversationKey::NameOnly("Mom".into()).chat_id();
+    doc.conversation.participants = vec![message_ir::IrParticipant {
+        handle: None,
+        display_name: Some("Mom".into()),
+        handle_type: None,
+    }];
+    doc.messages[0].direction = IrDirection::Incoming;
+    doc.messages[0].sender_handle = None;
+    doc.messages[0].sender_display_name = Some("Mary".into());
+    let mut sent = doc.messages[0].clone();
+    sent.guid = format!("{:032x}", 2);
+    sent.timestamp_unix_ms += 1000;
+    sent.direction = IrDirection::Outgoing;
+    sent.sender_display_name = None;
+    sent.text = "to Mom".into();
+    doc.messages.push(sent);
+
+    fs::create_dir_all(staged.path().join("attachments")).unwrap();
+    export(vec![doc], staged.path(), exported.path());
+    let after = import(exported.path(), second.path());
+
+    let ids: Vec<&str> = after
+        .iter()
+        .map(|doc| doc.conversation.chat_identifier.as_str())
+        .collect();
+    assert_eq!(ids, ["name:Mom"]);
+    assert_eq!(after[0].messages.len(), 2);
+}
