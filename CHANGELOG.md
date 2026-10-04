@@ -242,6 +242,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **An iMazing import no longer reports a Live Photo choice as an
+  error, and leaves WhatsApp chat folders' extra files alone.** When two
+  photo rows named one picture, the import gave its Live Photo video to the
+  first of them, as it should, but its report listed that as an error. The
+  report now lists it as a note. The import also looked for Live Photo
+  videos and link previews in WhatsApp chat folders, though only iMazing's
+  Messages export holds them. It could attach a video beside a WhatsApp
+  photo to that photo's message. It also counted the folder's other files
+  as left out. It now looks for them in Messages chat folders only.
 - 2026-10-04 **iMazing and Apple Messages imports name a folder they cannot
   read in full.** When an iMazing chat folder held an entry that could not
   be read, the rows whose files were in it came through with no photo or
@@ -540,6 +549,18 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-04 **A conversion can no longer start in the middle of an Import
+  Run or an export.** **Convert** in Settings stayed disabled only while one
+  of the run's Stages was running, so it could be started while an Import
+  Run waited at a Review, or between an export reading the messages and
+  writing them in the chosen format. The run's next part was then refused
+  because another job was running. **Convert** now stays disabled from the
+  start of an Import Run or an export to its end, and **Export** waits
+  through an Import Run's Reviews too. Both are enabled again as soon as the
+  run finishes, fails, is paused, or is cancelled or discarded. A Review holds
+  them back only for the account that started the run, so another account
+  logged in on the same desktop app can still export and convert; the
+  Review's approve button then waits for that job to end.
 - 2026-10-04 **A group text exported to SMS Backup & Restore names the
   people in it, not one sender.** An export to SMS Backup & Restore put the
   name of whoever sent each group message where the app keeps the names of

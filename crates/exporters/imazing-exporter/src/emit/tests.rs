@@ -187,8 +187,9 @@ Bob,2020-01-01 12:00:00,,,,,SMS,Incoming,+15555550100,Bob,Read,,,SMS hi,,,\n",
     write(
         &dir,
         "WhatsApp/chat/WhatsApp - Bob.csv",
-        "Chat Session,Message Date,Sent Date,Type,Sender ID,Sender Name,Status,Forwarded,Replying to,Text,Reactions,Attachment,Attachment type,Attachment info\n\
-Bob,2020-01-01 12:05:00,,Incoming,+15555550100,Bob,Read,,,WA hi,,,,\n",
+        &format!(
+            "{WHATSAPP_ATTACHMENTS_HEADER}Bob,2020-01-01 12:05:00,,Incoming,+15555550100,Bob,Read,,,WA hi,,,,\n"
+        ),
     );
     let out = dir.path().join("out");
     let report = convert(dir.path(), &out).unwrap();
@@ -788,15 +789,25 @@ impl ChatFolderExport {
 /// Convert one chat folder holding `Messages.csv` with `rows` and the named
 /// `files` to JSON.
 fn convert_chat_folder(rows: &str, files: &[(&str, &str)]) -> ChatFolderExport {
+    convert_chat_folder_with(
+        ("Messages.csv", &format!("{MESSAGES_HEADER}{rows}")),
+        files,
+        "+15555550100.json",
+    )
+}
+
+/// Convert one chat folder holding the CSV `(name, contents)` and the named
+/// `files` to JSON, and read back the conversation written to `doc_name`.
+fn convert_chat_folder_with(
+    (csv_name, csv): (&str, &str),
+    files: &[(&str, &str)],
+    doc_name: &str,
+) -> ChatFolderExport {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("in");
     let chat = input.join("2020-01-01 12 00 00 - Bob");
     fs::create_dir_all(&chat).unwrap();
-    fs::write(
-        chat.join("Messages.csv"),
-        format!("{MESSAGES_HEADER}{rows}"),
-    )
-    .unwrap();
+    fs::write(chat.join(csv_name), csv).unwrap();
     for (name, body) in files {
         fs::write(chat.join(name), body).unwrap();
     }
@@ -811,7 +822,7 @@ fn convert_chat_folder(rows: &str, files: &[(&str, &str)]) -> ChatFolderExport {
         resume: false,
     })
     .unwrap();
-    let doc = message_ir_format::read_conversation_json(&out.join("+15555550100.json")).unwrap();
+    let doc = message_ir_format::read_conversation_json(&out.join(doc_name)).unwrap();
     ChatFolderExport {
         report,
         doc,
@@ -878,7 +889,7 @@ Bob,2020-01-01 12:02:00,iMessage,Incoming,+15555550100,Bob,Read,,,See https://ex
 }
 
 /// When two rows name one picture, its Live Photo video goes to the first of
-/// them in CSV order, and the report names the picture. Within one CSV each
+/// them in CSV order, and the report names the picture in a note. Within one CSV each
 /// row has a file of its own, so only rows of two CSVs in one chat folder
 /// name one picture.
 #[test]
@@ -899,15 +910,114 @@ fn a_live_photo_video_of_a_picture_two_rows_name_goes_to_the_first_row() {
     assert_eq!(export.attachment_bodies("first"), vec!["picture", "video"]);
     assert_eq!(export.attachment_bodies("second"), vec!["picture"]);
     assert_eq!(export.report.extra("live_photo_videos"), 1);
+    // The run did what it says it does, so it is a note and not an error (#1414).
+    assert_eq!(export.report.errors, Vec::<String>::new());
     assert!(
         export
             .report
-            .errors
+            .notes
             .iter()
-            .any(|e| e.contains("2020-01-01 12 05 00 - Bob - IMG_0002.jpg")),
+            .any(|n| n.contains("2020-01-01 12 05 00 - Bob - IMG_0002.jpg")),
         "{:?}",
-        export.report.errors
+        export.report.notes
     );
+}
+
+/// The iMazing WhatsApp CSV header with its reply, reaction and attachment
+/// columns.
+const WHATSAPP_ATTACHMENTS_HEADER: &str = "Chat Session,Message Date,Sent Date,Type,Sender ID,Sender Name,Status,Forwarded,Replying to,Text,Reactions,Attachment,Attachment type,Attachment info\n";
+
+/// A WhatsApp photo row and a WhatsApp row with a link, for the folder
+/// files below.
+const WHATSAPP_PHOTO_AND_LINK_ROWS: &str = "Bob,2020-01-01 12:00:00,,Incoming,+15555550100,Bob,Read,,,photo,,IMG_0001.jpg,Image,\n\
+Bob,2020-01-01 12:01:00,,Incoming,+15555550100,Bob,Read,,,See https://example.com/page,,,,\n";
+
+/// Files no row names beside the rows of [`WHATSAPP_PHOTO_AND_LINK_ROWS`]:
+/// what a Messages chat folder's Live Photo video, link preview and stray
+/// file would look like.
+const UNNAMED_FILES_BESIDE_A_WHATSAPP_PHOTO: [(&str, &str); 4] = [
+    ("2020-01-01 12 00 00 - Bob - IMG_0001.jpg", "picture"),
+    ("2020-01-01 12 00 00 - Bob - IMG_0001.mov", "video"),
+    (
+        "2020-01-01 12 01 00 - Bob - Web link.url",
+        "[InternetShortcut]\r\nURL=https://example.com/page\r\n",
+    ),
+    ("2020-01-01 12 02 00 - Bob - stray.bin", "stray"),
+];
+
+/// The photo row's message has its picture alone, and the report counts no
+/// Live Photo video, link preview or file named by no row.
+fn assert_whatsapp_folder_left_alone(export: &ChatFolderExport) {
+    assert_eq!(export.attachment_bodies("photo"), vec!["picture"]);
+    let report = &export.report;
+    assert_eq!(report.attachments_saved, 1);
+    assert_eq!(report.extra("live_photo_videos"), 0);
+    assert_eq!(report.extra("link_previews_already_in_message"), 0);
+    assert_eq!(report.extra("files_named_by_no_row"), 0);
+}
+
+/// The pass over files no row names is for what iMazing writes into a
+/// Messages chat folder. A WhatsApp chat folder's extra files are neither
+/// counted nor attached, and a `.mov` beside a picture there is not a Live
+/// Photo video (#1414).
+#[test]
+fn a_whatsapp_chat_folder_gets_no_live_photo_video_and_no_unnamed_file_count() {
+    let export = convert_chat_folder_with(
+        (
+            "WhatsApp.csv",
+            &format!("{WHATSAPP_ATTACHMENTS_HEADER}{WHATSAPP_PHOTO_AND_LINK_ROWS}"),
+        ),
+        &UNNAMED_FILES_BESIDE_A_WHATSAPP_PHOTO,
+        "+15555550100__whatsapp.json",
+    );
+    assert_whatsapp_folder_left_alone(&export);
+}
+
+/// In a chat folder that holds a Messages CSV and a WhatsApp CSV, a Live
+/// Photo video whose picture a Messages Image row names still joins that
+/// row's message. A file no row names may be WhatsApp's there, so the
+/// WhatsApp photo's `.mov`, the link preview and the stray file are neither
+/// attached nor counted, as in a folder with only the WhatsApp CSV.
+#[test]
+fn a_chat_folder_with_a_whatsapp_and_a_messages_csv_attaches_only_messages_live_photos() {
+    let messages_csv = format!(
+        "{MESSAGES_HEADER}Bob,2020-01-01 12:03:00,iMessage,Incoming,+15555550100,Bob,Read,,,live,,IMG_0009.jpg,Image\n"
+    );
+    let mut files = UNNAMED_FILES_BESIDE_A_WHATSAPP_PHOTO.to_vec();
+    files.extend([
+        ("Messages.csv", messages_csv.as_str()),
+        (
+            "2020-01-01 12 03 00 - Bob - IMG_0009.jpg",
+            "messages picture",
+        ),
+        ("2020-01-01 12 03 00 - Bob - IMG_0009.mov", "messages video"),
+    ]);
+    let export = convert_chat_folder_with(
+        (
+            "WhatsApp.csv",
+            &format!("{WHATSAPP_ATTACHMENTS_HEADER}{WHATSAPP_PHOTO_AND_LINK_ROWS}"),
+        ),
+        &files,
+        "+15555550100__whatsapp.json",
+    );
+    assert_eq!(export.attachment_bodies("photo"), vec!["picture"]);
+    let messages =
+        message_ir_format::read_conversation_json(&export.out.join("+15555550100.json")).unwrap();
+    let live = messages
+        .messages
+        .iter()
+        .find(|m| m.text == "live")
+        .expect("the Messages photo row");
+    let bodies: Vec<String> = live
+        .attachments
+        .iter()
+        .map(|a| fs::read_to_string(export.out.join(a.path.as_deref().unwrap())).unwrap())
+        .collect();
+    assert_eq!(bodies, vec!["messages picture", "messages video"]);
+    let report = &export.report;
+    assert_eq!(report.extra("live_photo_videos"), 1);
+    assert_eq!(report.extra("link_previews_already_in_message"), 0);
+    assert_eq!(report.extra("files_named_by_no_row"), 0);
 }
 
 /// #1080: a group's key is not built from who wrote, so a group in which one

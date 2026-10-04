@@ -7,6 +7,7 @@ import OpenPathButton from "../../components/OpenPathButton";
 import StepProgress, { type Step } from "../../components/StepProgress";
 import { formatBytes } from "../../lib/attachmentProgressCopy";
 import { groupSlug, slugPath } from "../../lib/contactGroups";
+import { desktopJobRunningText, useDesktopJob } from "../../lib/desktopJob";
 import { useRouteQuery } from "../../lib/routeQuery";
 import { getImport } from "../../lib/serverApi";
 import type { AttachmentForecast, StagingSummary } from "../../lib/tauri";
@@ -96,6 +97,12 @@ function ReviewActions({
   /** The server did not record that the run reached this review. */
   error?: string | null;
 }) {
+  // Approving starts the next Stage, which the desktop refuses while another
+  // job runs. Another account logged in on the same app can start one while
+  // this run waits here, since a Review holds the desktop only for the
+  // account that started the run (#1407).
+  const runningJob = useDesktopJob();
+  const blockedBy = runningJob !== null && runningJob !== "Import Run" ? runningJob : null;
   return (
     <>
       {error ? (
@@ -110,7 +117,7 @@ function ReviewActions({
           variant="primary"
           size="wide"
           onClick={onApprove}
-          disabled={busy || approveDisabled}
+          disabled={busy || approveDisabled || blockedBy !== null}
         >
           {approveLabel}
         </Button>
@@ -118,6 +125,11 @@ function ReviewActions({
           Cancel this import
         </Button>
       </div>
+      {blockedBy ? (
+        <p role="status" className="m-0 text-[0.813rem] text-muted">
+          {desktopJobRunningText(blockedBy, approveLabel)}
+        </p>
+      ) : null}
     </>
   );
 }
