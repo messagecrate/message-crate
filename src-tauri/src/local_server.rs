@@ -75,10 +75,10 @@ const OUTPUT_LINES_KEPT: usize = 40;
 
 /// How many more times the address is asked, [`POLL_INTERVAL`] apart, after
 /// the app's server exited with [`OPERATION_LOCK_HELD_EXIT_CODE`]: another
-/// server holds the operation lock of its database, most likely the server of a second window of
-/// this app, started at the same moment.
-/// That server may still be creating the Demo Account, so the app waits for
-/// it as long as for a start of its own: [`START_TIMEOUT`].
+/// server holds the operation lock of its database, most likely the server
+/// of a second window of this app, started at the same moment. That server
+/// may still be creating the Demo Account, so the app waits for it as long
+/// as for a start of its own: [`START_TIMEOUT`].
 const LOCKED_OUT_PROBES: u32 = 1200;
 
 /// What is at an address.
