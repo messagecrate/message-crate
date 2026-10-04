@@ -7885,7 +7885,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page_ImportRun"
+                  "$ref": "#/components/schemas/Page_ImportRunSummary"
                 }
               }
             }
@@ -12124,7 +12124,7 @@
       "AccountImportRuns": {
         "oneOf": [
           {
-            "$ref": "#/components/schemas/Page_ImportRun",
+            "$ref": "#/components/schemas/Page_ImportRunSummary",
             "description": "The account's own runs."
           },
           {
@@ -12132,7 +12132,7 @@
             "description": "Another account's runs, as the owner reads them."
           }
         ],
-        "description": "An account's Import Runs as its reader may see them: in full for the\naccount itself, each an `OwnerImportRun` for the owner."
+        "description": "An account's Import Runs as its reader may see them: each an\n`ImportRunSummary` for the account itself, an `OwnerImportRun` for the\nowner. Neither carries the run's issues."
       },
       "AccountMessages": {
         "type": "object",
@@ -14097,8 +14097,32 @@
         ]
       },
       "ImportRun": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ImportRunSummary",
+            "description": "Everything a list answers for the run: the counts Settings shows,\neverything the desktop app needs to resume a running run, and how\nmany issues it recorded."
+          },
+          {
+            "type": "object",
+            "required": [
+              "issues"
+            ],
+            "properties": {
+              "issues": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ImportIssue"
+                },
+                "description": "Issues the run recorded, oldest first."
+              }
+            }
+          }
+        ],
+        "description": "An Import Run: one per import, the same record wherever the interface\nhands one run out. It is the run as a list answers it, the\n`ImportRunSummary`, with the issues the run recorded."
+      },
+      "ImportRunSummary": {
         "type": "object",
-        "description": "An Import Run: one per import, the same record wherever the interface\nhands one out. It holds the counts Settings shows, everything the desktop\napp needs to resume a running run, and the issues the run recorded.",
+        "description": "An Import Run as a list of runs answers it: every field of the run but\nits issues. A run may record any number of issues, so a page that\ncarried them would have no bound on its size; `GET /v1/imports/{id}`\nanswers them (#1559,\n`docs/architecture/http-api.md`, \"Lists\").",
         "required": [
           "id",
           "source",
@@ -14113,7 +14137,7 @@
           "source_fingerprint",
           "source_identities",
           "summary",
-          "issues",
+          "issue_count",
           "contacts_new",
           "contacts_changed"
         ],
@@ -14182,12 +14206,11 @@
             "format": "int64",
             "description": "Import Run id."
           },
-          "issues": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ImportIssue"
-            },
-            "description": "Issues the run recorded, oldest first."
+          "issue_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many issues the run recorded.",
+            "minimum": 0
           },
           "message_count": {
             "type": "integer",
@@ -16142,7 +16165,7 @@
           }
         }
       },
-      "Page_ImportRun": {
+      "Page_ImportRunSummary": {
         "type": "object",
         "description": "One page of a list.",
         "required": [
@@ -16156,7 +16179,7 @@
             "type": "array",
             "items": {
               "type": "object",
-              "description": "An Import Run: one per import, the same record wherever the interface\nhands one out. It holds the counts Settings shows, everything the desktop\napp needs to resume a running run, and the issues the run recorded.",
+              "description": "An Import Run as a list of runs answers it: every field of the run but\nits issues. A run may record any number of issues, so a page that\ncarried them would have no bound on its size; `GET /v1/imports/{id}`\nanswers them (#1559,\n`docs/architecture/http-api.md`, \"Lists\").",
               "required": [
                 "id",
                 "source",
@@ -16171,7 +16194,7 @@
                 "source_fingerprint",
                 "source_identities",
                 "summary",
-                "issues",
+                "issue_count",
                 "contacts_new",
                 "contacts_changed"
               ],
@@ -16240,12 +16263,11 @@
                   "format": "int64",
                   "description": "Import Run id."
                 },
-                "issues": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ImportIssue"
-                  },
-                  "description": "Issues the run recorded, oldest first."
+                "issue_count": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "How many issues the run recorded.",
+                  "minimum": 0
                 },
                 "message_count": {
                   "type": "integer",

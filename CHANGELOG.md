@@ -960,6 +960,12 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-04 **Import history in Settings → Storage loads quickly however
+  many problems your imports recorded.** The list used to bring every error
+  and skipped item of every import on the page, so a few large WhatsApp
+  imports with thousands of skipped files each could make it slow to open.
+  It now shows how many each import recorded, in a new Issues column, and
+  reads the problems themselves only when you open that import.
 - 2026-10-04 **Deleting your account in the desktop app deletes its
   Staging Directories on this computer.** Deleting your own account during
   or after an import left that import's Staging Directory on disk, with
