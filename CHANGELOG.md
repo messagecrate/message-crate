@@ -889,11 +889,10 @@ released versions carry their date on the heading.
   on from `[server]`, as they always did.
 - 2026-10-04 **Programs using the HTTP API get a conversation's first and
   last message times once each.** A conversation carried its last message's
-  time twice, as `last_message_at` and `date_range_end`, and sent
-  `last_message_at` as `null` for a conversation with no message left once
-  duplicates are set aside. It now carries `first_message_at` and
-  `last_message_at`, and leaves both out when there is no message to date.
-  `date_range_start` is now `first_message_at`, and `date_range_end` is gone.
+  time twice, under two names, and sent an empty value for it when no
+  message was left once duplicates are set aside. It now carries its first
+  and last message times once each, and leaves both out when there is no
+  message to date them.
 
 ### Upgrading
 
@@ -936,6 +935,11 @@ released versions carry their date on the heading.
   3. Import those backups again.
 - The server's `process-assets` command no longer takes `--source`: it
   makes previews for every attachment of each account.
+- If a program of yours reads a conversation from the HTTP API, read its
+  `first_message_at` where it read `date_range_start`, and its
+  `last_message_at` where it read `date_range_end`, because the old names
+  are gone. Expect both to be missing when the conversation has no message
+  left once duplicates are set aside.
 - An Import Run left waiting at a Staging Review or at its Media stage by an
   earlier build can't go on, and says its Staging did not finish. Discard it
   and start the import again. Do the same with a paused Apple Messages run
