@@ -417,10 +417,55 @@ async fn identities_move_from_an_unknown_holding_one_number_on_two_services() {
     );
 }
 
-/// The Unknown keeps what the file did not ask for: taking one of its two
-/// identities is allowed, and it stays, still nameless, with the other.
+/// One number is one person on every service (#1059). The file moves the
+/// number's text-message identity to a contact it names and has no row for
+/// the same number on WhatsApp, so the WhatsApp identity goes with it, in
+/// either mode, and the Unknown, left with nothing, is deleted.
 #[tokio::test]
-async fn an_unknown_holder_keeps_the_identity_the_file_did_not_take() {
+async fn a_moved_identity_takes_the_same_number_on_the_other_service_with_it() {
+    for mode in [LoadMode::Append, LoadMode::Edit] {
+        let (mut conn, _pool, _dir) = account().await;
+        let unknown = imported(
+            &mut conn,
+            "",
+            &[
+                ("phone", "phone", "+15555550100"),
+                ("whatsapp", "phone", "+15555550100"),
+            ],
+        )
+        .await;
+        let text = file(&["ada,Ada,,phone,phone,+15555550100"]);
+        let counts = loaded(&mut conn, &text, mode).await;
+        assert_eq!(
+            counts,
+            LoadCounts {
+                contacts_created: 1,
+                contacts_deleted: 1,
+                identities_moved: 2,
+                ..LoadCounts::default()
+            },
+            "{mode:?}"
+        );
+        assert_eq!(name_of(&mut conn, unknown).await, None, "{mode:?}");
+        assert_eq!(
+            picture(&mut conn).await,
+            vec![(
+                "Ada".to_string(),
+                vec![
+                    "phone/phone/+15555550100".to_string(),
+                    "whatsapp/phone/+15555550100".to_string(),
+                ],
+                vec![],
+            )],
+            "{mode:?}"
+        );
+    }
+}
+
+/// The same rule from the WhatsApp side: a row for the WhatsApp identity
+/// alone takes the text-message identity of the number with it.
+#[tokio::test]
+async fn a_moved_whatsapp_identity_takes_the_text_message_identity_with_it() {
     let (mut conn, _pool, _dir) = account().await;
     let unknown = imported(
         &mut conn,
@@ -431,12 +476,100 @@ async fn an_unknown_holder_keeps_the_identity_the_file_did_not_take() {
         ],
     )
     .await;
+    let text = file(&["ada,Ada,,whatsapp,phone,+15555550100"]);
+    loaded(&mut conn, &text, LoadMode::Append).await;
+    assert_eq!(name_of(&mut conn, unknown).await, None);
+    let ada = contact_named(&mut conn, "Ada").await;
+    assert_eq!(
+        identities_of(&mut conn, ada).await,
+        ["phone/phone/+15555550100", "whatsapp/phone/+15555550100"]
+    );
+}
+
+/// A file that has a row for each of the two identities is followed as
+/// written, so a person can split one number across two contacts on
+/// purpose.
+#[tokio::test]
+async fn a_file_that_lists_both_identities_under_two_contacts_splits_the_number() {
+    for mode in [LoadMode::Append, LoadMode::Edit] {
+        let (mut conn, _pool, _dir) = account().await;
+        imported(
+            &mut conn,
+            "",
+            &[
+                ("phone", "phone", "+15555550100"),
+                ("whatsapp", "phone", "+15555550100"),
+            ],
+        )
+        .await;
+        let text = file(&[
+            "ada,Ada,,phone,phone,+15555550100",
+            "bao,Bao,,whatsapp,phone,+15555550100",
+        ]);
+        loaded(&mut conn, &text, mode).await;
+        let ada = contact_named(&mut conn, "Ada").await;
+        let bao = contact_named(&mut conn, "Bao").await;
+        assert_eq!(
+            identities_of(&mut conn, ada).await,
+            ["phone/phone/+15555550100"],
+            "{mode:?}"
+        );
+        assert_eq!(
+            identities_of(&mut conn, bao).await,
+            ["whatsapp/phone/+15555550100"],
+            "{mode:?}"
+        );
+    }
+}
+
+/// Edit makes a contact hold what its rows list, and a row for one of a
+/// number's two identities speaks for the number: the other identity, with
+/// no row of its own, stays on the contact instead of coming off it.
+#[tokio::test]
+async fn edit_keeps_the_same_number_on_the_other_service_of_an_identity_it_lists() {
+    let (mut conn, _pool, _dir) = account().await;
+    let ada = imported(
+        &mut conn,
+        "Ada",
+        &[
+            ("phone", "phone", "+15555550100"),
+            ("whatsapp", "phone", "+15555550100"),
+        ],
+    )
+    .await;
+    let text = file(&[&format!("{ada},Ada,,phone,phone,+15555550100")]);
+    let counts = loaded(&mut conn, &text, LoadMode::Edit).await;
+    assert_eq!(counts, LoadCounts::default());
+    assert_eq!(
+        identities_of(&mut conn, ada).await,
+        ["phone/phone/+15555550100", "whatsapp/phone/+15555550100"]
+    );
+}
+
+/// The same number on the other service that a named contact outside the
+/// file holds was split from it by hand, and the file does not mention
+/// that contact, so it stays where it is and the load says so.
+#[tokio::test]
+async fn the_same_number_a_named_contact_outside_the_file_holds_stays_with_a_note() {
+    let (mut conn, _pool, _dir) = account().await;
+    imported(&mut conn, "", &[("phone", "phone", "+15555550100")]).await;
+    let bao = imported(&mut conn, "Bao", &[("whatsapp", "phone", "+15555550100")]).await;
     let text = file(&["ada,Ada,,phone,phone,+15555550100"]);
     let counts = loaded(&mut conn, &text, LoadMode::Append).await;
-    assert_eq!(counts.identities_moved, 1);
-    assert_eq!(counts.contacts_deleted, 0);
     assert_eq!(
-        identities_of(&mut conn, unknown).await,
+        counts.notes,
+        [format!(
+            "row 2: +15555550100 on WhatsApp stays with \"Bao\" (contact {bao}), \
+             which is not in the file; add a row for it to move it"
+        )]
+    );
+    let ada = contact_named(&mut conn, "Ada").await;
+    assert_eq!(
+        identities_of(&mut conn, ada).await,
+        ["phone/phone/+15555550100"]
+    );
+    assert_eq!(
+        identities_of(&mut conn, bao).await,
         ["whatsapp/phone/+15555550100"]
     );
 }

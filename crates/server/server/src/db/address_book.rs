@@ -170,6 +170,13 @@ struct FileContact {
     /// gave them. `None` when every row left the column blank.
     groups: Option<(Vec<String>, usize)>,
     identities: Vec<FileIdentity>,
+    /// The `handles` ids of the identities that go with the ones the rows
+    /// list: the same number on the other service, which no row of the file
+    /// lists. See [`siblings_that_follow`].
+    followers: Vec<i64>,
+    /// What the load says about a sibling that stays where it is, by row,
+    /// for [`LoadCounts::notes`].
+    sibling_notes: Vec<(usize, String)>,
 }
 
 impl FileContact {
@@ -631,6 +638,8 @@ fn plan(rows: &[FileRow], snapshot: &Snapshot) -> Result<Vec<FileContact>, Vec<S
                 name: None,
                 groups: None,
                 identities: Vec::new(),
+                followers: Vec::new(),
+                sibling_notes: Vec::new(),
             });
             file.len() - 1
         });
@@ -739,9 +748,81 @@ fn plan(rows: &[FileRow], snapshot: &Snapshot) -> Result<Vec<FileContact>, Vec<S
     }
 
     if errors.is_empty() {
+        siblings_that_follow(&mut file, &listed, &in_file, snapshot);
         Ok(file)
     } else {
         Err(errors)
+    }
+}
+
+/// How a sentence names a `handles.service` value.
+fn service_label(service: &str) -> &'static str {
+    if service == HandleService::Whatsapp.as_str() {
+        "WhatsApp"
+    } else {
+        "Text Message"
+    }
+}
+
+/// One number is one person on every service: each identity a file contact
+/// lists takes its siblings with it, the same normalized value and handle
+/// type on the other service, as [`contacts::contact_id_of_sibling_handle`]
+/// pairs them for an import. A sibling the file has a row for is placed by
+/// that row instead, so a file that lists the two under different contacts
+/// splits the number on purpose.
+///
+/// A sibling follows from the holders a listed identity may move from: a
+/// contact with no name, or one in the file. A sibling no contact holds
+/// joins too. One a named contact outside the file holds was put there by
+/// hand, and the file does not mention that contact, so it stays, with a
+/// note naming it.
+fn siblings_that_follow(
+    file: &mut [FileContact],
+    listed: &HashMap<IdentityKey, (usize, usize)>,
+    in_file: &HashSet<i64>,
+    snapshot: &Snapshot,
+) {
+    let mut by_number: HashMap<(&str, &str), Vec<&IdentityKey>> = HashMap::new();
+    for key in snapshot.handles.keys() {
+        by_number
+            .entry((key.handle_type, key.normalized.as_str()))
+            .or_default()
+            .push(key);
+    }
+    for contact in file.iter_mut() {
+        for identity in &contact.identities {
+            let siblings = by_number
+                .get(&(identity.key.handle_type, identity.key.normalized.as_str()))
+                .into_iter()
+                .flatten()
+                .filter(|key| key.service != identity.key.service && !listed.contains_key(*key));
+            for key in siblings {
+                let (handle_id, holder) = snapshot.handles[*key];
+                match holder {
+                    Some(holder)
+                        if !snapshot.name_of(holder).is_empty() && !in_file.contains(&holder) =>
+                    {
+                        let where_it_is = if snapshot.trashed.contains_key(&holder) {
+                            "is in the Trash"
+                        } else {
+                            "is not in the file"
+                        };
+                        contact.sibling_notes.push((
+                            identity.row,
+                            format!(
+                                "row {}: {} on {} stays with {}, which {where_it_is}; \
+                                 add a row for it to move it",
+                                identity.row,
+                                key.normalized,
+                                service_label(key.service),
+                                snapshot.describe(holder)
+                            ),
+                        ));
+                    }
+                    _ => contact.followers.push(handle_id),
+                }
+            }
+        }
     }
 }
 
@@ -933,7 +1014,8 @@ async fn apply(
     // it took an identity from.
     let mut changed: HashSet<i64> = HashSet::new();
     let mut lost_identity: HashSet<i64> = HashSet::new();
-    // Each file contact's id and the identity rows it lists.
+    // Each file contact's id and the identities it takes: the ones its rows
+    // list and their siblings.
     let mut placed: Vec<(i64, HashSet<i64>)> = Vec::with_capacity(file.len());
 
     // First every contact takes what its rows list. Removal waits until all
@@ -959,7 +1041,8 @@ async fn apply(
             }
         };
 
-        let mut listed: HashSet<i64> = HashSet::new();
+        // The rows' identities, then the siblings that go with them.
+        let mut handle_ids: Vec<i64> = Vec::with_capacity(contact.identities.len());
         for identity in &contact.identities {
             let handle_id = match snapshot.handles.get(&identity.key) {
                 Some(&(handle_id, _)) => handle_id,
@@ -978,6 +1061,14 @@ async fn apply(
                     .await?
                 }
             };
+            handle_ids.push(handle_id);
+        }
+        handle_ids.extend(&contact.followers);
+
+        // Edit keeps a sibling with the identity its row lists: the row
+        // speaks for the number.
+        let mut listed: HashSet<i64> = HashSet::new();
+        for handle_id in handle_ids {
             listed.insert(handle_id);
             match holder_of.insert(handle_id, contact_id) {
                 Some(holder) if holder == contact_id => {}
@@ -1105,8 +1196,13 @@ async fn apply(
     // not be.
     let mut notes: Vec<(usize, &String)> = file
         .iter()
-        .flat_map(|contact| &contact.identities)
-        .filter_map(|identity| identity.note.as_ref().map(|note| (identity.row, note)))
+        .flat_map(|contact| {
+            let read = contact
+                .identities
+                .iter()
+                .filter_map(|identity| identity.note.as_ref().map(|note| (identity.row, note)));
+            read.chain(contact.sibling_notes.iter().map(|(row, note)| (*row, note)))
+        })
         .collect();
     notes.sort_by_key(|&(row, _)| row);
     counts.notes = notes.into_iter().map(|(_, note)| note.clone()).collect();
