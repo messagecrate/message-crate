@@ -18,6 +18,7 @@ pub mod testutil;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result};
 use rand::SeedableRng;
@@ -30,6 +31,35 @@ const IMESSAGE_SOURCE: &str = "imessage";
 const SBR_SOURCE: &str = "sms-backup-restore";
 const WHATSAPP_SOURCE: &str = "whatsapp";
 const GENERATED_PATHS: [&str; 3] = ["staging", "config", "README.md"];
+
+/// The error generation returns when its cancel flag is set: it stopped
+/// part-way, and its temporary directory, with every file it wrote, is
+/// removed.
+///
+/// `message-crate-core` has a `Cancelled` and a `check_cancel` of the same
+/// shape for exporter runs. demo-seed keeps its own because the server, its
+/// only caller that cancels, does not link `message-crate-core` (the export
+/// pipeline's run model, ADR 0012), and the flag is all it needs from it.
+#[derive(Debug)]
+pub struct Cancelled;
+
+impl std::fmt::Display for Cancelled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("demo generation was stopped")
+    }
+}
+
+impl std::error::Error for Cancelled {}
+
+/// Return [`Cancelled`] when `cancel` is set. Generation calls it between
+/// conversations and between files, so a caller that sets the flag waits
+/// for one file at most.
+pub(crate) fn stop_if_cancelled(cancel: &AtomicBool) -> Result<()> {
+    if cancel.load(Ordering::Relaxed) {
+        return Err(Cancelled.into());
+    }
+    Ok(())
+}
 
 /// Turn `total * fraction` into a whole number that still fits in `0..=total`.
 fn rounded_fraction(total: usize, fraction: f64) -> usize {
@@ -49,6 +79,18 @@ fn rounded_fraction(total: usize, fraction: f64) -> usize {
 /// Returns an error if a directory cannot be created, a file cannot be written,
 /// the new files fail a check, or they cannot replace the old ones.
 pub fn generate(cfg: &SeedConfig) -> Result<GenStats> {
+    generate_cancellable(cfg, &AtomicBool::new(false))
+}
+
+/// [`generate`], stopped part-way when `cancel` is set: it returns
+/// [`Cancelled`], the files it wrote are removed, and the previous files at
+/// `cfg.out` stay as they were.
+///
+/// # Errors
+///
+/// Returns [`Cancelled`] when `cancel` is set, and the errors of
+/// [`generate`].
+pub fn generate_cancellable(cfg: &SeedConfig, cancel: &AtomicBool) -> Result<GenStats> {
     let out = Path::new(&cfg.out);
     let parent = output_parent_dir(out);
     fs::create_dir_all(parent)
@@ -62,7 +104,9 @@ pub fn generate(cfg: &SeedConfig) -> Result<GenStats> {
         .prefix(".demo-seed-")
         .tempdir_in(parent)
         .with_context(|| format!("create temporary demo bundle beside {}", out.display()))?;
-    let replacement = prepare_and_replace(out, prepared.path(), |root| generate_into(cfg, root));
+    let replacement = prepare_and_replace(out, prepared.path(), cancel, |root| {
+        generate_into(cfg, root, cancel)
+    });
     let stats = match replacement {
         Ok(stats) => stats,
         Err(error) => return Err(keep_prepared_if_restore_failed(prepared, error)),
@@ -132,7 +176,7 @@ fn keep_prepared_if_restore_failed(
 ///
 /// Returns an error if a directory or file cannot be created, or if a name list
 /// or message-text file cannot be loaded.
-fn generate_into(cfg: &SeedConfig, out: &Path) -> Result<GenStats> {
+fn generate_into(cfg: &SeedConfig, out: &Path, cancel: &AtomicBool) -> Result<GenStats> {
     let mut rng = ChaCha8Rng::seed_from_u64(cfg.seed);
 
     let imessage_staging = out.join("staging").join(IMESSAGE_SOURCE);
@@ -158,8 +202,8 @@ fn generate_into(cfg: &SeedConfig, out: &Path) -> Result<GenStats> {
     let attachment_digests = assets::write_attachment_blobs(&imessage_attachments)?;
     // Copy the same attachment files into the Android and WhatsApp folders so
     // those conversations can point at the same relative paths.
-    copy_dir_files(&imessage_attachments, &sbr_attachments)?;
-    copy_dir_files(&imessage_attachments, &whatsapp_attachments)?;
+    copy_dir_files(&imessage_attachments, &sbr_attachments, cancel)?;
+    copy_dir_files(&imessage_attachments, &whatsapp_attachments, cancel)?;
 
     let roster = personas::build_roster(cfg, &names, &mut rng)?;
     contacts::write_address_book(&config_dir, &roster)?;
@@ -177,6 +221,7 @@ fn generate_into(cfg: &SeedConfig, out: &Path) -> Result<GenStats> {
         &corpus,
         &mut rng,
         &attachment_digests,
+        cancel,
     )?;
 
     write_readme(out, &stats, cfg, corpus.len())?;
@@ -190,7 +235,12 @@ fn generate_into(cfg: &SeedConfig, out: &Path) -> Result<GenStats> {
 ///
 /// Returns an error if the two paths are the same, preparation fails, the new
 /// files are incomplete, or the move cannot finish.
-fn prepare_and_replace<F>(active: &Path, prepared: &Path, prepare: F) -> Result<GenStats>
+fn prepare_and_replace<F>(
+    active: &Path,
+    prepared: &Path,
+    cancel: &AtomicBool,
+    prepare: F,
+) -> Result<GenStats>
 where
     F: FnOnce(&Path) -> Result<GenStats>,
 {
@@ -198,7 +248,7 @@ where
         anyhow::bail!("active and prepared demo roots must differ");
     }
     let stats = prepare(prepared)?;
-    validate_generated_bundle(prepared)?;
+    validate_generated_bundle(prepared, cancel)?;
     replace_generated_paths(active, prepared)?;
     Ok(stats)
 }
@@ -209,7 +259,7 @@ where
 ///
 /// Returns an error if a required folder or file is missing, or if a JSON Lines
 /// file cannot be read as JSON.
-fn validate_generated_bundle(root: &Path) -> Result<()> {
+fn validate_generated_bundle(root: &Path, cancel: &AtomicBool) -> Result<()> {
     for source in [IMESSAGE_SOURCE, SBR_SOURCE, WHATSAPP_SOURCE] {
         let staging = root.join("staging").join(source);
         if !staging.is_dir() {
@@ -226,7 +276,7 @@ fn validate_generated_bundle(root: &Path) -> Result<()> {
             anyhow::bail!("prepared demo bundle is missing {}", path.display());
         }
     }
-    validate_tree_files(root)
+    validate_tree_files(root, cancel)
 }
 
 /// Walk every file under `root`. JSON Lines files must parse as JSON, one object per line.
@@ -235,12 +285,13 @@ fn validate_generated_bundle(root: &Path) -> Result<()> {
 ///
 /// Returns an error if a directory cannot be listed, a file cannot be read, or a
 /// JSON Lines line is not valid JSON.
-fn validate_tree_files(root: &Path) -> Result<()> {
+fn validate_tree_files(root: &Path, cancel: &AtomicBool) -> Result<()> {
     let mut pending = vec![root.to_path_buf()];
     while let Some(directory) = pending.pop() {
         for entry in fs::read_dir(&directory)
             .with_context(|| format!("read prepared directory {}", directory.display()))?
         {
+            stop_if_cancelled(cancel)?;
             let path = entry?.path();
             if path.is_dir() {
                 pending.push(path);
@@ -542,13 +593,15 @@ fn remove_path_if_exists(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Generate the built-in data set of `size` into `out`.
+/// Generate the built-in data set of `size` into `out`, stopped part-way
+/// when `cancel` is set ([`generate_cancellable`]).
 ///
 /// # Errors
 ///
-/// Returns an error if `out` is not valid UTF-8 or generation fails.
-pub fn generate_size_to(size: DemoSize, out: &Path) -> Result<GenStats> {
-    generate_with_out(SeedConfig::for_size(size)?, out)
+/// Returns [`Cancelled`] when `cancel` is set, or an error if `out` is not
+/// valid UTF-8 or generation fails.
+pub fn generate_size_to(size: DemoSize, out: &Path, cancel: &AtomicBool) -> Result<GenStats> {
+    generate_with_out(SeedConfig::for_size(size)?, out, cancel)
 }
 
 /// Load the settings at `seed_file`, then generate into `out`.
@@ -560,25 +613,28 @@ pub fn generate_size_to(size: DemoSize, out: &Path) -> Result<GenStats> {
 /// Returns an error if the settings file cannot be read, `out` is not valid
 /// UTF-8, or generation fails.
 pub fn generate_to(seed_file: &Path, out: &Path) -> Result<GenStats> {
-    generate_with_out(SeedConfig::load(seed_file)?, out)
+    generate_with_out(SeedConfig::load(seed_file)?, out, &AtomicBool::new(false))
 }
 
-/// Point `cfg` at `out` and generate.
-fn generate_with_out(mut cfg: SeedConfig, out: &Path) -> Result<GenStats> {
+/// Point `cfg` at `out` and generate until `cancel` is set.
+fn generate_with_out(mut cfg: SeedConfig, out: &Path, cancel: &AtomicBool) -> Result<GenStats> {
     cfg.out = out
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("demo out path is not UTF-8: {}", out.display()))?
         .to_string();
-    generate(&cfg)
+    generate_cancellable(&cfg, cancel)
 }
 
-/// Copy each file in `from` into `to`. Subdirectories are skipped.
+/// Copy each file in `from` into `to`, until `cancel` is set.
+/// Subdirectories are skipped.
 ///
 /// # Errors
 ///
-/// Returns an error if a directory cannot be listed or a file cannot be copied.
-fn copy_dir_files(from: &Path, to: &Path) -> Result<()> {
+/// Returns [`Cancelled`] when `cancel` is set, or an error if a directory
+/// cannot be listed or a file cannot be copied.
+fn copy_dir_files(from: &Path, to: &Path, cancel: &AtomicBool) -> Result<()> {
     for entry in fs::read_dir(from)? {
+        stop_if_cancelled(cancel)?;
         let entry = entry?;
         let path = entry.path();
         if path.is_file() {
