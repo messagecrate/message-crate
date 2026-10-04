@@ -244,7 +244,7 @@ released versions carry their date on the heading.
   the server doesn't record a run as finished, the staged folder is kept and
   the next visit resumes the run, which then gets its Saved Search and
   Contact Group. A resumed run's report covers every part of the run, not
-  only the last. A Staging or Media stage that fails deletes its staged
+  only the last. A Staging or Media Stage that fails deletes its staged
   folder at once, since nothing can resume it, instead of leaving a full
   unencrypted copy of your messages in the Staging Directory.
 - 2026-10-02 **One desktop job runs at a time.** An export won't start while
@@ -378,7 +378,7 @@ released versions carry their date on the heading.
   own. Such a person also became two contacts on import, one holding their
   name and one with no name; they are now one contact.
 - 2026-10-03 **A video, photo or audio file that cannot be converted says
-  why, briefly.** The error for a file the Media stage of an Import Run
+  why, briefly.** The error for a file the Media Stage of an Import Run
   could not convert held the converter's version, build settings and progress
   lines, with the reason at the end of several kilobytes. It now holds only
   the lines that say why the conversion failed.
@@ -1096,10 +1096,16 @@ released versions carry their date on the heading.
   when there is no message to date them.
 - 2026-10-04 **Removing or changing messages right after an import no
   longer fails with "no such table: messages".** It failed now and then
-  when an import had just finished on the same server. On a first start, a
-  Demo Account that failed to build then could not be removed, and its
-  files stayed behind. Now the Demo Account is removed and leaves nothing
-  behind.
+  when an import had just finished on the same server.
+- 2026-10-04 **A Demo Account that fails to build on a first start is
+  removed and leaves nothing behind.** On a first start, a Demo Account that
+  failed to build then could not be removed, and its files stayed behind.
+- 2026-10-04 **The configuration reference states each request body limit as
+  the server applies it.** It said the attachment size limit was also the
+  limit on every other request body. It limits only an attachment upload.
+  Logging in, creating an account, claiming a Message Crate, an address book
+  load and every other request each have a limit fixed in the server, which
+  the page now lists.
 - 2026-10-04 **A Preview cut short is made again without `--force`.** A
   Preview left part-written by a stopped `process-assets` run was kept and
   shown as it was until someone ran the command with `--force`. Every run
@@ -1162,7 +1168,7 @@ released versions carry their date on the heading.
   `last_message_at` in place of `date_range_end`. The old names are gone.
   Expect both to be missing when the conversation has no message left once
   duplicates are set aside.
-- An Import Run left waiting at a Staging Review or at its Media stage by an
+- An Import Run left waiting at a Staging Review or at its Media Stage by an
   earlier build can't go on, and says its Staging did not finish. Discard it
   and start the import again. Do the same with a paused Apple Messages run
   from an earlier build: its staged files don't say which reactions are

@@ -60,7 +60,7 @@ Every command that loads the file, `serve` included, stops with an error that na
 Why: a misspelt key would otherwise load as its default, and a removed key would sit in the file looking as though it still held.
 
 The attachment size limit is not a config key, and a file that still sets `[server] asset_max_bytes` is refused with a message saying where the limit is set now.
-It is the largest attachment the server accepts, as a single `PUT /v1/assets/{sha256}` body or as the total declared bytes of a multipart upload, and it is also the cap on every other request body.
+It is the largest attachment the server accepts, as a single `PUT /v1/assets/{sha256}` body or as the total declared bytes of a multipart upload.
 It is a Server Setting stored in the database: 512 MiB until the Owner changes it under **Server Settings**, or a program with the Owner's Session sends `PATCH /v1/server/settings` with `asset_max_bytes` in bytes.
 A change holds from the next upload, with no restart.
 A multipart upload already in progress keeps the part size it started with, so lowering the limit does not break it.
@@ -70,6 +70,12 @@ The limit is whatever the Owner set, and a part is never larger than the limit.
 A limit below `asset_part_size` is accepted, and the server then hands out parts the size of the limit.
 The part size is worked out on each upload, so neither a change to the limit nor an edit to `asset_part_size` can leave a server that does not start.
 The server refuses only a limit of zero, or one above 9223372036854775807, with `422 Unprocessable Entity`.
+
+The attachment size limit holds no other request body.
+Each part of a multipart upload is held to the part size the upload was given when it started.
+Every other request body has a cap fixed in the server: 32 KiB for `POST /v1/session`, `POST /v1/accounts` and `POST /v1/server/claim`, 32 MiB for any other JSON body, 8 MiB for an address book loaded with `POST /v1/contacts`, and 512 MiB for an import batch or any other body.
+Why: the Owner's limit must never reach the login, or the settings change that would raise it again.
+A body over its cap is refused with `413 Payload Too Large` and the [`payload-too-large`](/docs/developer/reference/errors/payload-too-large/) problem type.
 
 ### Logging
 
