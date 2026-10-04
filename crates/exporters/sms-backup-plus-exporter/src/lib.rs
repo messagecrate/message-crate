@@ -9,6 +9,7 @@
 
 mod assets;
 mod attachments_emit;
+mod email_numbers;
 mod emit;
 mod flat_eml;
 mod identity;
