@@ -355,12 +355,6 @@ auth_guard!(
     require_export_access
 );
 auth_guard!(
-    /// Logged-in session, or an API token that may export; wraps
-    /// [`require_asset_read_access`].
-    AssetReadAccess,
-    require_asset_read_access
-);
-auth_guard!(
     /// Credential that may import or export, for asset probes; wraps
     /// [`require_import_or_export_access`].
     ImportOrExportAccess,
@@ -405,6 +399,10 @@ pub struct AppState {
     /// Writes the demo bundle a build imports. A test swaps in one that
     /// writes a few conversations.
     pub(crate) demo_bundle_generator: crate::reset_demo::BundleGenerator,
+    /// The key media links are signed with, made when the process starts and
+    /// never written anywhere, so a restart ends every media link
+    /// (`docs/architecture/http-api.md`, "Credentials and reach").
+    pub(crate) media_link_key: crate::assets_api::media_links::MediaLinkKey,
 }
 
 impl AppState {
@@ -421,6 +419,7 @@ impl AppState {
             asset_part_size,
             demo_build: crate::server_api::DemoBuild::default(),
             demo_bundle_generator: crate::reset_demo::generate_bundle,
+            media_link_key: crate::assets_api::media_links::MediaLinkKey::random(),
         }
     }
 
@@ -546,6 +545,16 @@ pub enum ApiError {
     MethodNotAllowed(String),
     /// `406` — `Accept` names nothing the route can produce.
     NotAcceptable(String),
+    /// `401` — the `media_link` in the URL opens nothing here.
+    MediaLinkInvalid(String),
+    /// `416` — the `Range` selects no byte of a file `length` bytes long. The
+    /// answer carries `Content-Range: bytes */<length>`.
+    RangeNotSatisfiable {
+        /// The sentence, naming the range.
+        detail: String,
+        /// The file's length in bytes.
+        length: u64,
+    },
     /// `500` — unexpected failure. The whole context chain goes to the log;
     /// the client sees a fixed sentence and `about:blank`.
     Internal(anyhow::Error),
@@ -583,6 +592,8 @@ impl ApiError {
             Self::NotFound(_) => ProblemType::NotFound,
             Self::MethodNotAllowed(_) => ProblemType::MethodNotAllowed,
             Self::NotAcceptable(_) => ProblemType::NotAcceptable,
+            Self::MediaLinkInvalid(_) => ProblemType::MediaLinkInvalid,
+            Self::RangeNotSatisfiable { .. } => ProblemType::RangeNotSatisfiable,
             Self::Internal(_) => return None,
         })
     }
@@ -650,6 +661,7 @@ impl ApiError {
                 problem.detail = Some(detail.clone());
                 problem.line = Some(*line as u64);
             }
+            Self::RangeNotSatisfiable { detail, .. } => problem.detail = Some(detail.clone()),
             Self::InvalidImportLines { errors, line } => {
                 problem.errors = Some(errors.clone());
                 problem.line = Some(*line as u64);
@@ -670,7 +682,8 @@ impl ApiError {
             | Self::AssetUploadInvalid(m)
             | Self::NotFound(m)
             | Self::MethodNotAllowed(m)
-            | Self::NotAcceptable(m) => problem.detail = Some(m.clone()),
+            | Self::NotAcceptable(m)
+            | Self::MediaLinkInvalid(m) => problem.detail = Some(m.clone()),
             Self::Internal(_) => unreachable!("handled above"),
         }
         problem
@@ -692,9 +705,9 @@ impl std::fmt::Display for ApiError {
                 f,
                 "too many authentication attempts; try again in {retry_after_secs} seconds"
             ),
-            Self::SearchQueryInvalid { detail, .. } | Self::MalformedImportLine { detail, .. } => {
-                f.write_str(detail)
-            }
+            Self::SearchQueryInvalid { detail, .. }
+            | Self::MalformedImportLine { detail, .. }
+            | Self::RangeNotSatisfiable { detail, .. } => f.write_str(detail),
             Self::MalformedBody(m)
             | Self::UnsupportedMediaType(m)
             | Self::PayloadTooLarge(m)
@@ -711,7 +724,8 @@ impl std::fmt::Display for ApiError {
             | Self::AssetUploadInvalid(m)
             | Self::NotFound(m)
             | Self::MethodNotAllowed(m)
-            | Self::NotAcceptable(m) => f.write_str(m),
+            | Self::NotAcceptable(m)
+            | Self::MediaLinkInvalid(m) => f.write_str(m),
         }
     }
 }
@@ -719,6 +733,11 @@ impl std::fmt::Display for ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let problem = self.to_problem();
+        // RFC 9110, section 15.5.17: a `416` says how long the file is.
+        let content_range = match &self {
+            Self::RangeNotSatisfiable { length, .. } => Some(format!("bytes */{length}")),
+            _ => None,
+        };
         let status = StatusCode::from_u16(problem.status).expect("a registered status");
         let mut response = (
             status,
@@ -730,6 +749,12 @@ impl IntoResponse for ApiError {
             response.headers_mut().insert(
                 header::RETRY_AFTER,
                 HeaderValue::from_str(&secs.to_string()).expect("digits are a valid header value"),
+            );
+        }
+        if let Some(content_range) = content_range {
+            response.headers_mut().insert(
+                header::CONTENT_RANGE,
+                HeaderValue::from_str(&content_range).expect("digits are a valid header value"),
             );
         }
         response
@@ -1095,6 +1120,29 @@ fn accepts_json(accept: &str) -> bool {
         })
 }
 
+/// The request's URI as the log line names it: the path and the query, with
+/// the value of a `media_link` hidden. A media link is a credential that
+/// travels in the URL, because a media element can send it nowhere else, and
+/// a credential is never written to the log.
+pub(crate) fn logged_uri(uri: &axum::http::Uri) -> String {
+    let Some(query) = uri.query() else {
+        return uri.path().to_string();
+    };
+    let prefix = format!("{}=", crate::assets_api::media_links::MEDIA_LINK_PARAM);
+    let query = query
+        .split('&')
+        .map(|pair| {
+            if pair.starts_with(&prefix) {
+                format!("{prefix}[hidden]")
+            } else {
+                pair.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("&");
+    format!("{}?{query}", uri.path())
+}
+
 /// Assemble the full router: API routes, auth routes, the optional OpenAPI UI, CORS, and the static web app.
 pub(crate) fn http_app(state: AppState) -> Router {
     let openapi_ui = state.cfg.server.as_ref().is_some_and(|s| s.openapi_ui);
@@ -1176,7 +1224,7 @@ pub(crate) fn http_app(state: AppState) -> Router {
                     tracing::info_span!(
                         "request",
                         method = %request.method(),
-                        uri = %request.uri(),
+                        uri = %logged_uri(request.uri()),
                         request_id = request
                             .headers()
                             .get(crate::request_id::HEADER)

@@ -17,6 +17,7 @@ use axum::http::Method;
 use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use utoipa::openapi::path::{Operation, ParameterIn, PathItem};
+use utoipa::openapi::security::{ApiKey, SecurityScheme};
 use utoipa::openapi::{OpenApi, RefOr};
 
 use crate::server::ApiError;
@@ -29,12 +30,14 @@ pub(crate) struct DeclaredQueries {
 }
 
 impl DeclaredQueries {
-    /// Read every operation's query parameters out of the assembled document.
+    /// Read every operation's query parameters out of the assembled document:
+    /// the ones it declares, and the name of each credential it takes in the
+    /// query (the `media_link` of a media link).
     pub(crate) fn from_spec(spec: &OpenApi) -> Self {
         let mut routes = HashMap::new();
         for (path, item) in &spec.paths.paths {
             for (method, op) in operations(item) {
-                let names = op
+                let mut names: BTreeSet<String> = op
                     .parameters
                     .iter()
                     .flatten()
@@ -48,6 +51,7 @@ impl DeclaredQueries {
                         _ => None,
                     })
                     .collect();
+                names.extend(query_credentials(spec, op));
                 routes.insert((method, path.clone()), names);
             }
         }
@@ -66,6 +70,27 @@ impl DeclaredQueries {
                     .flatten()
             })
     }
+}
+
+/// The query parameter of each credential `op` takes that travels in the
+/// query string.
+fn query_credentials(spec: &OpenApi, op: &Operation) -> Vec<String> {
+    let schemes = spec
+        .components
+        .as_ref()
+        .map(|components| &components.security_schemes);
+    let requirements = serde_json::to_value(&op.security).unwrap_or_default();
+    requirements
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(serde_json::Value::as_object)
+        .flat_map(|requirement| requirement.keys())
+        .filter_map(|scheme| match schemes?.get(scheme)? {
+            RefOr::T(SecurityScheme::ApiKey(ApiKey::Query(value))) => Some(value.name.clone()),
+            _ => None,
+        })
+        .collect()
 }
 
 /// The operations one path item holds, with their methods.

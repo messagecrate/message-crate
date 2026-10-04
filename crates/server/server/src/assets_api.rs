@@ -24,10 +24,15 @@ use axum::response::{IntoResponse, Response};
 use crate::asset_store::sidecar_path;
 use crate::asset_uploads;
 use crate::server::{
-    ApiError, AppState, AssetReadAccess, AuthIdentity, Created, ImportAccess, ImportOrExportAccess,
+    ApiError, AppState, AuthIdentity, Created, ImportAccess, ImportOrExportAccess,
     content_type_base, discard_body, read_body_limited, resolve_import_account,
     stream_body_to_file, upload_content_type,
 };
+
+pub(crate) mod media_links;
+mod ranges;
+
+use media_links::AssetReader;
 
 /// Read/write chunk for hashing and copying files: 1 MiB.
 pub(crate) const COPY_BUFFER_BYTES: usize = 1024 * 1024;
@@ -578,43 +583,24 @@ impl Asset {
     }
 }
 
-enum AssetAccess {
-    /// GET asset bytes — needs export (or full session).
-    Read,
-    /// PUT / multipart upload — needs import (or full session).
-    Write,
-    /// HEAD probe — import or export.
-    Probe,
-}
-
 /// Resolve the account an asset route targets and look the blob up by
 /// sha256 in that account's one assets folder.
+///
+/// The probe and every write decide whether a client may skip sending bytes,
+/// so the stored blob is hashed here, and a truncated or replaced file is
+/// not found. A read looks up without hashing ([`lookup_for_read`]).
 async fn resolve_asset_lookup(
     state: &AppState,
     auth: &AuthIdentity,
     sha256: &Sha256,
-    access: AssetAccess,
 ) -> Result<(i64, Option<StoredAsset>), ApiError> {
-    // The handler's extractor already checked the capability for this access
-    // mode; here the mode only picks the lookup strategy. A download streams
-    // the file itself, so hashing it during lookup would read every byte
-    // twice. Probe and write lookups decide whether a client may skip sending
-    // bytes, so those keep verifying the stored blob.
-    let verify_stored_bytes = match access {
-        AssetAccess::Read => false,
-        AssetAccess::Write | AssetAccess::Probe => true,
-    };
     let account = resolve_import_account(auth);
 
     let cfg = Arc::clone(&state.cfg);
     let sha_lookup = sha256.clone();
     let existing = tokio::task::spawn_blocking(move || {
         let assets_dir = cfg.paths.assets_dir_for_account(account);
-        if verify_stored_bytes {
-            lookup_by_sha256(&assets_dir, &sha_lookup)
-        } else {
-            lookup_by_sha256_unverified(&assets_dir, &sha_lookup)
-        }
+        lookup_by_sha256(&assets_dir, &sha_lookup)
     })
     .await
     .map_err(|e| ApiError::Internal(anyhow::anyhow!("asset lookup task: {e}")))?;
@@ -641,8 +627,7 @@ pub(crate) async fn head_asset(
     ImportOrExportAccess(auth): ImportOrExportAccess,
     AxumPath(sha256): AxumPath<Sha256>,
 ) -> Result<Json<Asset>, ApiError> {
-    let (_account, existing) =
-        resolve_asset_lookup(&state, &auth, &sha256, AssetAccess::Probe).await?;
+    let (_account, existing) = resolve_asset_lookup(&state, &auth, &sha256).await?;
     let Some(stored) = existing else {
         return Err(ApiError::NotFound("asset not found".into()));
     };
@@ -652,35 +637,63 @@ pub(crate) async fn head_asset(
 /// Download a previously stored content-addressed asset (read-only).
 ///
 /// The body streams the stored bytes; the URL is the SHA-256 fingerprint.
+/// A `Range` of one byte range answers `206` with those bytes, so a media
+/// element streams a video and seeks in it; the `ETag` is the fingerprint,
+/// for `If-Range`. A media element, which cannot send the `Authorization`
+/// header, reads with the `media_link` a media link put in the URL
+/// (`POST /v1/assets/{sha256}/media-links`).
 #[utoipa::path(
     get,
     path = "/v1/assets/{sha256}",
     tag = "Assets",
-    security(("session" = []), ("api-token" = ["export"])),
+    security(("session" = []), ("api-token" = ["export"]), ("media-link" = [])),
     params(
-        ("sha256" = String, Path, description = "Content SHA-256 hex")
+        ("sha256" = String, Path, description = "Content SHA-256 hex"),
+        ("Range" = Option<String>, Header, description = "One byte range, `bytes=<first>-<last>`, `bytes=<first>-` or `bytes=-<suffix>`; any other range answers the whole file"),
+        ("If-Range" = Option<String>, Header, description = "The `ETag` the client's copy was read with; a range is served only when it names this file")
     ),
     responses(
         (
             status = 200,
             description = "The asset's bytes, in the media type it was stored with, or `application/octet-stream` when none was stored",
-            content_type = "*/*"
+            content_type = "*/*",
+            headers(
+                ("Accept-Ranges" = String, description = "`bytes`"),
+                ("ETag" = String, description = "The fingerprint, quoted")
+            )
         ),
+        (
+            status = 206,
+            description = "The byte range the `Range` header asked for",
+            content_type = "*/*",
+            headers(
+                ("Content-Range" = String, description = "`bytes <first>-<last>/<length>`"),
+                ("Accept-Ranges" = String, description = "`bytes`"),
+                ("ETag" = String, description = "The fingerprint, quoted")
+            )
+        ),
+        crate::problem::openapi::RangeNotSatisfiable
     )
 )]
 pub(crate) async fn get_asset(
     State(state): State<AppState>,
-    AssetReadAccess(auth): AssetReadAccess,
+    reader: AssetReader,
+    headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
 ) -> Result<Response, ApiError> {
-    let (account, existing) =
-        resolve_asset_lookup(&state, &auth, &sha256, AssetAccess::Read).await?;
-    let Some(stored) = existing else {
+    let account = reader.account_id;
+    let Some(stored) = lookup_for_read(&state, account, &sha256).await? else {
         return Err(ApiError::NotFound("asset not found".into()));
     };
 
     let assets_dir = state.cfg.paths.assets_dir_for_account(account);
-    stream_file(&assets_dir.join(&stored.assets_path), stored.mime_type).await
+    stream_file(
+        &assets_dir.join(&stored.assets_path),
+        stored.mime_type,
+        &headers,
+        Some(format!("\"{sha256}\"")),
+    )
+    .await
 }
 
 /// Download the preview of a stored asset: the JPEG, MP4 or MP3 that
@@ -688,33 +701,48 @@ pub(crate) async fn get_asset(
 ///
 /// The URL is the SHA-256 fingerprint of the original, and the body streams
 /// the preview's bytes in the preview's own media type. An asset with no
-/// preview answers `404`; the original is at `/v1/assets/{sha256}`.
+/// preview answers `404`; the original is at `/v1/assets/{sha256}`. A
+/// `Range` of one byte range answers `206` with those bytes. The preview has
+/// no `ETag`, so a `Range` sent with `If-Range` answers the whole preview. A
+/// media element reads with the `media_link` a media link put in the URL.
 #[utoipa::path(
     get,
     path = "/v1/assets/{sha256}/preview",
     tag = "Assets",
-    security(("session" = []), ("api-token" = ["export"])),
+    security(("session" = []), ("api-token" = ["export"]), ("media-link" = [])),
     params(
-        ("sha256" = String, Path, description = "Content SHA-256 hex of the original")
+        ("sha256" = String, Path, description = "Content SHA-256 hex of the original"),
+        ("Range" = Option<String>, Header, description = "One byte range, `bytes=<first>-<last>`, `bytes=<first>-` or `bytes=-<suffix>`; any other range answers the whole preview")
     ),
     responses(
         (
             status = 200,
             description = "The preview's bytes, in the preview's own media type, or `application/octet-stream` when none is stored",
-            content_type = "*/*"
+            content_type = "*/*",
+            headers(("Accept-Ranges" = String, description = "`bytes`"))
         ),
+        (
+            status = 206,
+            description = "The byte range the `Range` header asked for",
+            content_type = "*/*",
+            headers(
+                ("Content-Range" = String, description = "`bytes <first>-<last>/<length>`"),
+                ("Accept-Ranges" = String, description = "`bytes`")
+            )
+        ),
+        crate::problem::openapi::RangeNotSatisfiable
     )
 )]
 pub(crate) async fn get_asset_preview(
     State(state): State<AppState>,
-    AssetReadAccess(auth): AssetReadAccess,
+    reader: AssetReader,
+    headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
 ) -> Result<Response, ApiError> {
-    // The same lookup as the original: the caller's own store, so another
+    // The same lookup as the original: the reader's own store, so another
     // account's fingerprint names nothing here.
-    let (account, existing) =
-        resolve_asset_lookup(&state, &auth, &sha256, AssetAccess::Read).await?;
-    let Some(stored) = existing else {
+    let account = reader.account_id;
+    let Some(stored) = lookup_for_read(&state, account, &sha256).await? else {
         return Err(ApiError::NotFound("asset not found".into()));
     };
     let mut conn = state.db.acquire().await?;
@@ -727,12 +755,36 @@ pub(crate) async fn get_asset_preview(
     };
 
     let converted_dir = state.cfg.paths.assets_converted_dir_for_account(account);
-    stream_file(&converted_dir.join(preview_path), mime_type).await
+    stream_file(&converted_dir.join(preview_path), mime_type, &headers, None).await
 }
 
-/// Answer the file at `path` as a streamed download in `mime_type`, or
-/// `application/octet-stream` when none is known.
-async fn stream_file(path: &Path, mime_type: Option<String>) -> Result<Response, ApiError> {
+/// Find `sha256` in `account`'s store for a read. A read streams the file
+/// itself, so the lookup does not hash it: that would read every byte twice.
+async fn lookup_for_read(
+    state: &AppState,
+    account: i64,
+    sha256: &Sha256,
+) -> Result<Option<StoredAsset>, ApiError> {
+    let assets_dir = state.cfg.paths.assets_dir_for_account(account);
+    let sha256 = sha256.clone();
+    tokio::task::spawn_blocking(move || lookup_by_sha256_unverified(&assets_dir, &sha256))
+        .await
+        .map_err(|e| ApiError::Internal(anyhow::anyhow!("asset lookup task: {e}")))
+}
+
+/// Answer the file at `path` in `mime_type`, or `application/octet-stream`
+/// when none is known: the whole file, or the one byte range the request's
+/// `Range` selects ([`ranges::select`]). `etag` is the file's strong entity
+/// tag when it has one, which an `If-Range` must name for a range to be
+/// served.
+async fn stream_file(
+    path: &Path,
+    mime_type: Option<String>,
+    request_headers: &HeaderMap,
+    etag: Option<String>,
+) -> Result<Response, ApiError> {
+    use tokio::io::{AsyncReadExt, AsyncSeekExt};
+
     // Reject symlinks / missing files before streaming.
     let meta = tokio::fs::symlink_metadata(path).await.map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
@@ -744,16 +796,38 @@ async fn stream_file(path: &Path, mime_type: Option<String>) -> Result<Response,
     if meta.file_type().is_symlink() || !meta.is_file() {
         return Err(ApiError::NotFound("asset file missing on disk".into()));
     }
+    let length = meta.len();
+    let (status, start, count) = match ranges::select(request_headers, length, etag.as_deref()) {
+        ranges::Selection::Whole => (StatusCode::OK, 0, length),
+        ranges::Selection::Part { start, end } => {
+            (StatusCode::PARTIAL_CONTENT, start, end - start + 1)
+        }
+        ranges::Selection::Unsatisfiable => {
+            let range = request_headers
+                .get(header::RANGE)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or_default();
+            return Err(ApiError::RangeNotSatisfiable {
+                detail: format!("the range {range} selects no byte of a file {length} bytes long"),
+                length,
+            });
+        }
+    };
 
     let mime = mime_type.unwrap_or_else(|| "application/octet-stream".into());
-    let file = tokio::fs::File::open(path)
+    let mut file = tokio::fs::File::open(path)
         .await
         .map_err(|e| ApiError::Internal(anyhow::anyhow!("open {}: {e}", path.display())))?;
-    let stream = tokio_util::io::ReaderStream::new(file);
+    if start > 0 {
+        file.seek(std::io::SeekFrom::Start(start))
+            .await
+            .map_err(|e| ApiError::Internal(anyhow::anyhow!("seek {}: {e}", path.display())))?;
+    }
+    let stream = tokio_util::io::ReaderStream::new(file.take(count));
     let body = axum::body::Body::from_stream(stream);
 
     let mut response = Response::new(body);
-    *response.status_mut() = StatusCode::OK;
+    *response.status_mut() = status;
     let headers_mut = response.headers_mut();
     if let Ok(value) = header::HeaderValue::from_str(&mime) {
         headers_mut.insert(header::CONTENT_TYPE, value);
@@ -768,9 +842,21 @@ async fn stream_file(path: &Path, mime_type: Option<String>) -> Result<Response,
         header::HeaderValue::from_static("attachment; filename=\"asset\""),
     );
     headers_mut.insert(
-        header::CONTENT_LENGTH,
-        header::HeaderValue::from(meta.len()),
+        header::ACCEPT_RANGES,
+        header::HeaderValue::from_static("bytes"),
     );
+    if let Some(value) = etag.and_then(|etag| header::HeaderValue::from_str(&etag).ok()) {
+        headers_mut.insert(header::ETAG, value);
+    }
+    if status == StatusCode::PARTIAL_CONTENT {
+        let end = start + count - 1;
+        headers_mut.insert(
+            header::CONTENT_RANGE,
+            header::HeaderValue::from_str(&format!("bytes {start}-{end}/{length}"))
+                .map_err(|e| ApiError::Internal(anyhow::anyhow!("Content-Range: {e}")))?,
+        );
+    }
+    headers_mut.insert(header::CONTENT_LENGTH, header::HeaderValue::from(count));
     Ok(response)
 }
 
@@ -819,8 +905,7 @@ pub(crate) async fn replace_asset(
     request: Request,
 ) -> Result<Response, ApiError> {
     require_content_type(&headers)?;
-    let (account, existing) =
-        resolve_asset_lookup(&state, &auth, &sha256, AssetAccess::Write).await?;
+    let (account, existing) = resolve_asset_lookup(&state, &auth, &sha256).await?;
 
     let mime = upload_content_type(&headers);
     let max_body_bytes = usize::try_from(state.asset_max_bytes().await?).unwrap_or(usize::MAX);
@@ -950,8 +1035,7 @@ pub(crate) async fn create_asset_upload(
     AxumPath(sha256): AxumPath<Sha256>,
     Json(body): Json<CreateAssetUploadRequest>,
 ) -> Result<Response, ApiError> {
-    let (account, _existing) =
-        resolve_asset_lookup(&state, &auth, &sha256, AssetAccess::Write).await?;
+    let (account, _existing) = resolve_asset_lookup(&state, &auth, &sha256).await?;
     let assets_dir = state.cfg.paths.assets_dir_for_account(account);
     let mime = body.mime.clone();
     let bytes = body.bytes;
@@ -1017,8 +1101,7 @@ pub(crate) async fn replace_asset_upload_part(
     request: Request,
 ) -> Result<Json<ReplaceAssetUploadPartResponse>, ApiError> {
     require_content_type(&headers)?;
-    let (account, _existing) =
-        resolve_asset_lookup(&state, &auth, &sha256, AssetAccess::Write).await?;
+    let (account, _existing) = resolve_asset_lookup(&state, &auth, &sha256).await?;
     if part == 0 {
         return Err(ApiError::validation("part number must be >= 1"));
     }
@@ -1086,8 +1169,7 @@ pub(crate) async fn complete_asset_upload(
     ImportAccess(auth): ImportAccess,
     AxumPath((sha256, upload_id)): AxumPath<(Sha256, String)>,
 ) -> Result<Response, ApiError> {
-    let (account, existing) =
-        resolve_asset_lookup(&state, &auth, &sha256, AssetAccess::Write).await?;
+    let (account, existing) = resolve_asset_lookup(&state, &auth, &sha256).await?;
     if let Some(stored) = existing {
         // Drop staging if a concurrent single-PUT won the race.
         let assets_dir = state.cfg.paths.assets_dir_for_account(account);
@@ -1172,8 +1254,7 @@ pub(crate) async fn get_asset_upload(
     ImportAccess(auth): ImportAccess,
     AxumPath((sha256, upload_id)): AxumPath<(Sha256, String)>,
 ) -> Result<Json<AssetUpload>, ApiError> {
-    let (account, _existing) =
-        resolve_asset_lookup(&state, &auth, &sha256, AssetAccess::Write).await?;
+    let (account, _existing) = resolve_asset_lookup(&state, &auth, &sha256).await?;
     let assets_dir = state.cfg.paths.assets_dir_for_account(account);
     let sha = sha256.clone();
     let uid = upload_id.clone();
@@ -1211,8 +1292,7 @@ pub(crate) async fn delete_asset_upload(
     ImportAccess(auth): ImportAccess,
     AxumPath((sha256, upload_id)): AxumPath<(Sha256, String)>,
 ) -> Result<axum::http::StatusCode, ApiError> {
-    let (account, _existing) =
-        resolve_asset_lookup(&state, &auth, &sha256, AssetAccess::Write).await?;
+    let (account, _existing) = resolve_asset_lookup(&state, &auth, &sha256).await?;
     let assets_dir = state.cfg.paths.assets_dir_for_account(account);
     let sha = sha256.clone();
     let uid = upload_id.clone();

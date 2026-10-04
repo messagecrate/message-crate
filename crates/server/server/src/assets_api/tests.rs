@@ -1389,19 +1389,22 @@ async fn completing_an_upload_for_a_blob_a_put_stored_first_answers_200() {
 
 /// An account's conversation with two stored photos: the first has a preview
 /// that `process-assets` would have written, the second has none.
-struct PreviewFixture {
-    conversation_id: i64,
+pub(crate) struct PreviewFixture {
+    pub(crate) conversation_id: i64,
     /// Fingerprint of the original that has a preview.
-    with_preview: String,
+    pub(crate) with_preview: String,
     /// Fingerprint of the original that has none.
-    without_preview: String,
+    pub(crate) without_preview: String,
 }
 
-const ORIGINAL_BYTES: &[u8] = b"a photo as the phone took it";
-const UNCONVERTED_BYTES: &[u8] = b"a photo with no preview";
-const PREVIEW_BYTES: &[u8] = b"the same photo as a jpeg";
+pub(crate) const ORIGINAL_BYTES: &[u8] = b"a photo as the phone took it";
+pub(crate) const UNCONVERTED_BYTES: &[u8] = b"a photo with no preview";
+pub(crate) const PREVIEW_BYTES: &[u8] = b"the same photo as a jpeg";
 
-async fn seed_attachment_with_preview(state: &AppState, account_id: i64) -> PreviewFixture {
+pub(crate) async fn seed_attachment_with_preview(
+    state: &AppState,
+    account_id: i64,
+) -> PreviewFixture {
     let conversation_id = crate::test_support::seed_conversation(
         state,
         &crate::test_support::SeedConversation {
@@ -1829,4 +1832,173 @@ async fn a_fingerprint_in_capitals_is_stored_under_its_lower_case_name() {
         response.headers()[header::LOCATION],
         format!("/v1/assets/{sha}").as_str()
     );
+}
+
+/// One answer to a GET, read whole: the status, the headers and the body.
+pub(crate) struct Fetched {
+    pub(crate) status: StatusCode,
+    pub(crate) headers: reqwest::header::HeaderMap,
+    pub(crate) body: Vec<u8>,
+}
+
+impl Fetched {
+    pub(crate) fn header(&self, name: &str) -> Option<&str> {
+        self.headers.get(name).and_then(|v| v.to_str().ok())
+    }
+
+    pub(crate) fn text(&self) -> String {
+        String::from_utf8_lossy(&self.body).into_owned()
+    }
+}
+
+/// GET `path` as a media element does: no `Accept` that names JSON, with
+/// `headers` added, and with `token` as the Bearer credential when there is
+/// one.
+pub(crate) async fn fetch(
+    state: &AppState,
+    path: &str,
+    token: Option<&str>,
+    headers: &[(&str, &str)],
+) -> Fetched {
+    let server = crate::test_support::serve(state).await;
+    let mut request = reqwest::Client::new()
+        .get(format!("{}{path}", server.base()))
+        .header(reqwest::header::ACCEPT, "*/*");
+    if let Some(token) = token {
+        request = request.bearer_auth(token);
+    }
+    for (name, value) in headers {
+        request = request.header(*name, *value);
+    }
+    let response = request.send().await.unwrap();
+    let status = response.status();
+    let headers = response.headers().clone();
+    let body = response.bytes().await.unwrap().to_vec();
+    Fetched {
+        status,
+        headers,
+        body,
+    }
+}
+
+/// A video plays from a media element that asks for the file a range at a
+/// time and seeks by asking for another (`docs/architecture/media.md`), so
+/// both routes that answer an attachment's bytes answer a byte range: a
+/// closed one, an open-ended one and a suffix, each as `206` with the bytes
+/// and a `Content-Range` that places them.
+#[tokio::test]
+async fn both_asset_routes_answer_a_byte_range() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let state = &fixture.state;
+    let seeded = seed_attachment_with_preview(state, user.account_id).await;
+    let sha = &seeded.with_preview;
+
+    for (path, bytes) in [
+        (format!("/v1/assets/{sha}"), ORIGINAL_BYTES),
+        (format!("/v1/assets/{sha}/preview"), PREVIEW_BYTES),
+    ] {
+        let len = bytes.len();
+        let whole = fetch(state, &path, Some(&user.token), &[]).await;
+        assert_eq!(whole.status, StatusCode::OK, "{path}: {}", whole.text());
+        assert_eq!(whole.body, bytes, "{path}");
+        assert_eq!(whole.header("accept-ranges"), Some("bytes"), "{path}");
+
+        for (range, start, end) in [
+            ("bytes=2-5", 2, 5),
+            ("bytes=3-", 3, len - 1),
+            ("bytes=-4", len - 4, len - 1),
+            // A last position past the end is cut to the end.
+            ("bytes=1-100000", 1, len - 1),
+        ] {
+            let part = fetch(state, &path, Some(&user.token), &[("range", range)]).await;
+            assert_eq!(
+                part.status,
+                StatusCode::PARTIAL_CONTENT,
+                "{path} {range}: {}",
+                part.text()
+            );
+            assert_eq!(part.body, &bytes[start..=end], "{path} {range}");
+            assert_eq!(
+                part.header("content-range"),
+                Some(format!("bytes {start}-{end}/{len}").as_str()),
+                "{path} {range}"
+            );
+            assert_eq!(
+                part.header("content-length"),
+                Some((end - start + 1).to_string().as_str()),
+                "{path} {range}"
+            );
+            assert_eq!(part.header("accept-ranges"), Some("bytes"), "{path}");
+        }
+    }
+}
+
+/// A range that starts past the end of the file, or a suffix of nothing,
+/// selects no byte: `416` as a problem document, with the `Content-Range`
+/// that tells the client how long the file is.
+#[tokio::test]
+async fn an_unsatisfiable_range_answers_416_with_the_length() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let state = &fixture.state;
+    let seeded = seed_attachment_with_preview(state, user.account_id).await;
+    let sha = &seeded.with_preview;
+
+    for (path, len) in [
+        (format!("/v1/assets/{sha}"), ORIGINAL_BYTES.len()),
+        (format!("/v1/assets/{sha}/preview"), PREVIEW_BYTES.len()),
+    ] {
+        for range in [format!("bytes={len}-"), "bytes=-0".to_string()] {
+            let answer = fetch(state, &path, Some(&user.token), &[("range", &range)]).await;
+            crate::test_support::expect_problem(
+                answer.status,
+                &answer.text(),
+                crate::problem::ProblemType::RangeNotSatisfiable,
+            );
+            assert_eq!(
+                answer.header("content-range"),
+                Some(format!("bytes */{len}").as_str()),
+                "{path} {range}"
+            );
+        }
+    }
+}
+
+/// A `Range` the server does not serve as one range (another unit, several
+/// ranges, a range that ends before it starts) is ignored, as RFC 9110
+/// allows, and the whole file is answered. So is a range under an
+/// `If-Range` that does not name this file: the client holds another
+/// version, and a part of this one would corrupt it.
+#[tokio::test]
+async fn a_range_the_server_does_not_serve_answers_the_whole_file() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let state = &fixture.state;
+    let seeded = seed_attachment_with_preview(state, user.account_id).await;
+    let sha = &seeded.with_preview;
+    let path = format!("/v1/assets/{sha}");
+
+    for headers in [
+        vec![("range", "items=0-3")],
+        vec![("range", "bytes=0-1, 4-5")],
+        vec![("range", "bytes=5-2")],
+        vec![("range", "bytes=0-3"), ("if-range", "\"another-version\"")],
+    ] {
+        let answer = fetch(state, &path, Some(&user.token), &headers).await;
+        assert_eq!(answer.status, StatusCode::OK, "{headers:?}");
+        assert_eq!(answer.body, ORIGINAL_BYTES, "{headers:?}");
+    }
+
+    // The original is named by its fingerprint, so its `ETag` is the
+    // fingerprint, and an `If-Range` naming it gets the range.
+    let whole = fetch(state, &path, Some(&user.token), &[]).await;
+    let etag = format!("\"{sha}\"");
+    assert_eq!(whole.header("etag"), Some(etag.as_str()));
+    let part = fetch(
+        state,
+        &path,
+        Some(&user.token),
+        &[("range", "bytes=0-3"), ("if-range", &etag)],
+    )
+    .await;
+    assert_eq!(part.status, StatusCode::PARTIAL_CONTENT);
+    assert_eq!(part.body, &ORIGINAL_BYTES[..4]);
 }
