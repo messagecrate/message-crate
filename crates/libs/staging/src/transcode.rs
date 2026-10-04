@@ -954,7 +954,7 @@ fn apply_unrecoverable(
             recorded_rel,
             recorded_rel,
             SKIP,
-            "was lost when an earlier Media stage stopped partway, so it was left out",
+            "was lost when an earlier Media Stage stopped partway, so it was left out",
         ),
     );
     patch_all_matching(doc, recorded_rel, |att| {
