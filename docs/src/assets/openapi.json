@@ -8624,7 +8624,7 @@
           "Import"
         ],
         "summary": "Discard a running Import Run, freeing the account's single slot.",
-        "description": "The answer is the run, now `cancelled`.",
+        "description": "The answer is the run, now `cancelled`, with the issues the request carried.",
         "operationId": "discard_import",
         "parameters": [
           {
@@ -8638,6 +8638,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscardImportRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -8648,6 +8658,19 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "[`malformed-body`](https://messagecrate.app/docs/developer/reference/errors/malformed-body): The request could not be read at all: the body is not valid JSON, an import line is not JSON or not UTF-8, or the body failed to arrive.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/malformed-body"
+            ]
           },
           "401": {
             "description": "[`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired.",
@@ -8714,6 +8737,32 @@
             },
             "x-problem-types": [
               "https://messagecrate.app/docs/developer/reference/errors/state-conflict"
+            ]
+          },
+          "413": {
+            "description": "[`payload-too-large`](https://messagecrate.app/docs/developer/reference/errors/payload-too-large): The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/payload-too-large"
+            ]
+          },
+          "415": {
+            "description": "[`unsupported-media-type`](https://messagecrate.app/docs/developer/reference/errors/unsupported-media-type): The request's `Content-Type` is absent or not one this route accepts.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/unsupported-media-type"
             ]
           },
           "422": {
@@ -12413,31 +12462,6 @@
           }
         }
       },
-      "CompleteImportIssueRequest": {
-        "type": "object",
-        "description": "One error or skip a Stage of the Import Run reported.",
-        "required": [
-          "kind",
-          "stage",
-          "item",
-          "reason"
-        ],
-        "properties": {
-          "item": {
-            "type": "string"
-          },
-          "kind": {
-            "type": "string"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "stage": {
-            "$ref": "#/components/schemas/ImportIssueStage",
-            "description": "Stage the issue came from."
-          }
-        }
-      },
       "CompleteImportRequest": {
         "type": "object",
         "description": "Final stats and issues for a running Import Run. The outcome is stated\nonce, as `status`. The run's message and attachment counts are not part\nof it: the server counts what the run holds, since a resumed Upload's\nclient knows only what the resume sent.",
@@ -12469,7 +12493,7 @@
           "issues": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/CompleteImportIssueRequest"
+              "$ref": "#/components/schemas/ImportIssueRequest"
             }
           },
           "parse_ms": {
@@ -13405,6 +13429,18 @@
           "large"
         ]
       },
+      "DiscardImportRequest": {
+        "type": "object",
+        "description": "The Import Errors a discarded run recorded before it was given up. A run\nthat paused and is then discarded never posts `complete`, so its issues\ncome with the discard.",
+        "properties": {
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportIssueRequest"
+            }
+          }
+        }
+      },
       "ExportQueryList": {
         "type": "string",
         "description": "Which list an Export Run's query is for (`docs/architecture/http-api.md`,\n\"Runs\"). The list decides which search words the query may use and what\nthe run hands over.",
@@ -13718,6 +13754,31 @@
       "ImportIssue": {
         "type": "object",
         "description": "One stored import issue.",
+        "required": [
+          "kind",
+          "stage",
+          "item",
+          "reason"
+        ],
+        "properties": {
+          "item": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "stage": {
+            "$ref": "#/components/schemas/ImportIssueStage",
+            "description": "Stage the issue came from."
+          }
+        }
+      },
+      "ImportIssueRequest": {
+        "type": "object",
+        "description": "One error or skip a Stage of the Import Run reported.",
         "required": [
           "kind",
           "stage",

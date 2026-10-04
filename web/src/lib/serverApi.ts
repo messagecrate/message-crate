@@ -847,8 +847,11 @@ export function completeImport(
   return apiClient.post<Schema["ImportRun"]>(`/v1/imports/${id}/complete`, body);
 }
 
-export function discardImport(id: number): Promise<Schema["ImportRun"]> {
-  return apiClient.post<Schema["ImportRun"]>(`/v1/imports/${id}/discard`, {});
+export function discardImport(
+  id: number,
+  body: Schema["DiscardImportRequest"],
+): Promise<Schema["ImportRun"]> {
+  return apiClient.post<Schema["ImportRun"]>(`/v1/imports/${id}/discard`, body);
 }
 
 /** Which page of an Import Run's contacts to read. Absent values are left off the URL. */

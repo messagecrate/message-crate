@@ -4176,6 +4176,76 @@ async fn the_batch_answer_counts_the_contacts_it_created() {
     assert_eq!(answer["participants"], 1, "{text}");
 }
 
+/// A discarded run keeps the Import Errors the desktop app sends with the
+/// discard: a run paused and then given up still has the record of what went
+/// wrong before it stopped (#1479).
+#[tokio::test]
+async fn a_discard_records_the_issues_it_carries() {
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    let (_, created): (String, serde_json::Value) = post_created_json(
+        state,
+        "/v1/imports",
+        token,
+        serde_json::json!({ "source": "imessage" }),
+    )
+    .await;
+    let id = created["id"].as_i64().unwrap();
+
+    let discarded: serde_json::Value = post_json(
+        state,
+        &format!("/v1/imports/{id}/discard"),
+        token,
+        serde_json::json!({
+            "issues": [{ "kind": "skip", "stage": "media", "item": "IMG_0001.heic", "reason": "convert failed" }],
+        }),
+    )
+    .await;
+
+    assert_eq!(discarded["status"], "cancelled", "{discarded}");
+    let issues = discarded["issues"].as_array().expect("issues");
+    assert_eq!(issues.len(), 1, "{discarded}");
+    assert_eq!(issues[0]["kind"], "skip");
+    assert_eq!(issues[0]["stage"], "media");
+    assert_eq!(issues[0]["item"], "IMG_0001.heic");
+    assert_eq!(issues[0]["reason"], "convert failed");
+}
+
+/// A discard's issues are checked the way a completion's are: a kind that is
+/// neither `error` nor `skip` is refused, and the run stays running.
+#[tokio::test]
+async fn a_discard_with_an_unknown_issue_kind_is_refused() {
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    let (_, created): (String, serde_json::Value) = post_created_json(
+        state,
+        "/v1/imports",
+        token,
+        serde_json::json!({ "source": "imessage" }),
+    )
+    .await;
+    let id = created["id"].as_i64().unwrap();
+
+    let (status, text) = crate::test_support::post_raw(
+        state,
+        &format!("/v1/imports/{id}/discard"),
+        token,
+        "application/json",
+        r#"{"issues":[{"kind":"warning","stage":"staging","item":"a.jsonl","reason":"x"}]}"#,
+    )
+    .await;
+
+    crate::test_support::expect_problem(
+        status,
+        &text,
+        crate::problem::ProblemType::ValidationFailed,
+    );
+    let run: serde_json::Value = get_json(state, &format!("/v1/imports/{id}"), token).await;
+    assert_eq!(run["status"], "running", "{run}");
+}
+
 /// An Import Run is one record wherever the interface hands it out: the
 /// answer to `complete` and to `discard`, `GET /v1/imports/{id}`, and the
 /// run's row in `GET /v1/imports` are the same JSON, issues included.

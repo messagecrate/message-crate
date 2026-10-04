@@ -82,14 +82,13 @@ vi.mock("./import/useImportJob", async (importOriginal) => {
       continueAfterIdentityStop: continueAfterIdentityStopMock,
       cancelIdentityStop: cancelIdentityStopMock,
       stagingDeleteFailure: hookState.stagingDeleteFailure,
-      // The real one never throws: a failed delete is kept for the notice.
-      discardStagingFolder: async (stagingDir: string) => {
-        try {
-          await invokeDeleteStagingMock({ staging_dir: stagingDir });
-          return true;
-        } catch {
-          return false;
-        }
+      // The real one never throws: a failed close or delete is kept for the
+      // notice, and its reading of the run record is the hook's own test.
+      discardRun: async (sessionId: number, stagingDir: string | null) => {
+        await Promise.allSettled([
+          discardImportSessionMock(sessionId),
+          stagingDir != null ? invokeDeleteStagingMock({ staging_dir: stagingDir }) : undefined,
+        ]);
       },
       dismissStagingDeleteFailure: dismissStagingDeleteFailureMock,
     }),

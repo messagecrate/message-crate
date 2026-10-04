@@ -611,12 +611,21 @@ pub(crate) struct CompleteImportRequest {
     #[serde(default)]
     pub(crate) summary: Option<serde_json::Value>,
     #[serde(default)]
-    pub(crate) issues: Vec<CompleteImportIssueRequest>,
+    pub(crate) issues: Vec<ImportIssueRequest>,
+}
+
+/// The Import Errors a discarded run recorded before it was given up. A run
+/// that paused and is then discarded never posts `complete`, so its issues
+/// come with the discard.
+#[derive(Debug, Default, Deserialize, utoipa::ToSchema)]
+pub(crate) struct DiscardImportRequest {
+    #[serde(default)]
+    pub(crate) issues: Vec<ImportIssueRequest>,
 }
 
 /// One error or skip a Stage of the Import Run reported.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
-pub(crate) struct CompleteImportIssueRequest {
+pub(crate) struct ImportIssueRequest {
     pub(crate) kind: String,
     /// Stage the issue came from.
     pub(crate) stage: crate::db::imports::ImportIssueStage,
@@ -624,7 +633,7 @@ pub(crate) struct CompleteImportIssueRequest {
     pub(crate) reason: String,
 }
 
-fn validate_complete_import_issues(issues: &[CompleteImportIssueRequest]) -> Result<(), ApiError> {
+fn validate_import_issues(issues: &[ImportIssueRequest]) -> Result<(), ApiError> {
     for issue in issues {
         match issue.kind.as_str() {
             "error" | "skip" => {}
@@ -636,6 +645,16 @@ fn validate_complete_import_issues(issues: &[CompleteImportIssueRequest]) -> Res
         }
     }
     Ok(())
+}
+
+/// One requested issue, as the database records it.
+fn issue_input(issue: ImportIssueRequest) -> crate::db::imports::ImportIssueInput {
+    crate::db::imports::ImportIssueInput {
+        kind: issue.kind,
+        stage: issue.stage,
+        item: issue.item,
+        reason: issue.reason,
+    }
 }
 
 fn validate_import_status(status: &str) -> Result<(), ApiError> {
@@ -1077,7 +1096,7 @@ pub(crate) async fn complete_import(
     Json(body): Json<CompleteImportRequest>,
 ) -> Result<Json<ImportRun>, ApiError> {
     let account = resolve_import_account(&auth);
-    validate_complete_import_issues(&body.issues)?;
+    validate_import_issues(&body.issues)?;
     validate_import_status(&body.status)?;
     let summary_json =
         match body.summary {
@@ -1097,16 +1116,7 @@ pub(crate) async fn complete_import(
         prepare_ms: body.prepare_ms,
         upload_ms: body.upload_ms,
         summary_json,
-        issues: body
-            .issues
-            .into_iter()
-            .map(|issue| crate::db::imports::ImportIssueInput {
-                kind: issue.kind,
-                stage: issue.stage,
-                item: issue.item,
-                reason: issue.reason,
-            })
-            .collect(),
+        issues: body.issues.into_iter().map(issue_input).collect(),
     };
     let mut conn = state.db.acquire().await?;
     let row = complete_run(&mut conn, account, import_id, &args)
@@ -1412,13 +1422,14 @@ pub(crate) async fn update_import(
 }
 
 /// Discard a running Import Run, freeing the account's single slot. The
-/// answer is the run, now `cancelled`.
+/// answer is the run, now `cancelled`, with the issues the request carried.
 #[utoipa::path(
     post,
     path = "/v1/imports/{id}/discard",
     tag = "Import",
     security(("session" = ["import"]), ("api-token" = ["import"])),
     params(("id" = i64, Path, description = "Import Run id")),
+    request_body = DiscardImportRequest,
     responses(
         (status = 200, body = ImportRun),
         crate::problem::openapi::StateConflict
@@ -1428,10 +1439,13 @@ pub(crate) async fn discard_import(
     State(state): State<AppState>,
     ImportAccess(auth): ImportAccess,
     AxumPath(import_id): AxumPath<i64>,
+    Json(body): Json<DiscardImportRequest>,
 ) -> Result<Json<ImportRun>, ApiError> {
     let account = resolve_import_account(&auth);
+    validate_import_issues(&body.issues)?;
+    let issues: Vec<_> = body.issues.into_iter().map(issue_input).collect();
     let mut conn = state.db.acquire().await?;
-    crate::db::imports::discard_import(&mut conn, account, import_id).await?;
+    crate::db::imports::discard_import(&mut conn, account, import_id, &issues).await?;
     let run = full_import_run(&mut conn, account, import_id).await;
     drop(conn);
     crate::asset_store::sweep_after_run(&state.db, &state.cfg.paths, account).await;

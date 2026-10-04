@@ -548,14 +548,18 @@ function beginRun(form: ImportJobFormValues, firstStage: ImportIssueStage): void
 }
 
 /** This part of the run as it stands now. */
-function currentPart(report: PushFinishedReport | null, uploadMs: number | null): RunPart {
+function currentPart(
+  report: PushFinishedReport | null,
+  uploadMs: number | null,
+  run: RunScratch = scratch,
+): RunPart {
   return {
-    issues: scratch.issues,
-    durationMs: performance.now() - scratch.importStartedAt,
-    ...scratch.durations,
+    issues: run.issues,
+    durationMs: performance.now() - run.importStartedAt,
+    ...run.durations,
     uploadMs,
-    filesParsed: scratch.counts.filesParsed,
-    messagesParsed: scratch.counts.messagesParsed,
+    filesParsed: run.counts.filesParsed,
+    messagesParsed: run.counts.messagesParsed,
     report,
   };
 }
@@ -573,6 +577,42 @@ async function loadCarriedRecord(stagingDir: string): Promise<void> {
   }
 }
 
+/** A write of the run record waiting for the one before it to finish. */
+type RecordWrite = { stagingDir: string; build: () => RunRecord };
+
+/** Every write of the run record so far, in order: settles when the last has. */
+let recordWrites: Promise<void> = Promise.resolve();
+
+/** The write queued behind the one in progress, not yet started. */
+let queuedRecordWrite: RecordWrite | null = null;
+
+/**
+ * Write a run record into its staging folder, one write at a time and in the
+ * order they were asked for, so an older record never lands over a newer one.
+ * The record is built when its write starts, from the run as it stands then,
+ * and a write asked for while another waits for the same folder replaces the
+ * waiting one: issues that arrive while a write is in progress all go in the
+ * next. A failed write is not shown: the run goes on, and a resume starts
+ * from the record the folder already held.
+ */
+function writeRunRecord(stagingDir: string, build: () => RunRecord): Promise<void> {
+  if (queuedRecordWrite?.stagingDir === stagingDir) {
+    queuedRecordWrite.build = build;
+    return recordWrites;
+  }
+  const write: RecordWrite = { stagingDir, build };
+  queuedRecordWrite = write;
+  recordWrites = recordWrites.then(async () => {
+    if (queuedRecordWrite === write) queuedRecordWrite = null;
+    try {
+      await invokeSaveImportRunRecord({ staging_dir: write.stagingDir, record: write.build() });
+    } catch {
+      // Nothing to show; see above.
+    }
+  });
+  return recordWrites;
+}
+
 /**
  * Write the run's record so far into its staging folder, for the part that
  * resumes it. Called wherever the run stops with the run still open: at a
@@ -585,15 +625,31 @@ async function saveCarriedRecord(
 ): Promise<void> {
   const { stagingDir } = store.get();
   if (stagingDir == null) return;
-  try {
-    await invokeSaveImportRunRecord({
-      staging_dir: stagingDir,
-      record: recordToCarry(scratch.carried, currentPart(report, uploadMs)),
-    });
-  } catch {
-    // Nothing to show: the run goes on, and a resume starts from the
-    // record the folder already held.
-  }
+  const run = scratch;
+  await writeRunRecord(stagingDir, () =>
+    recordToCarry(run.carried, currentPart(report, uploadMs, run)),
+  );
+}
+
+/**
+ * Write the record again as an issue of Staging or Media arrives, so an app
+ * that closes mid-stage leaves that stage's issues in the folder for the
+ * resume to read. A crash loses only the issues that arrived while the last
+ * write was on its way to disk.
+ *
+ * An Upload's issues wait for the end of the Upload (`saveCarriedRecord`):
+ * the record leaves out the conversations a resumed Upload sends again, and
+ * only the Upload's report says which issues are about those.
+ */
+function saveRecordAsIssuesArrive(): void {
+  const { stagingDir } = store.get();
+  if (stagingDir == null) return;
+  const run = scratch;
+  void writeRunRecord(stagingDir, () => {
+    const part = currentPart(null, null, run);
+    const issues = part.issues.filter((issue) => issue.stage !== "upload");
+    return recordToCarry(run.carried, { ...part, issues });
+  });
 }
 
 function applyProgress(event: ImportProgressEvent): void {
@@ -691,7 +747,9 @@ function progressDetail(event: ImportProgressEvent): string {
 }
 
 function recordIssue(event: ImportIssueEvent): void {
-  scratch.issues = [...scratch.issues, issueFromEvent(event)];
+  const issue = issueFromEvent(event);
+  scratch.issues = [...scratch.issues, issue];
+  if (issue.stage !== "upload") saveRecordAsIssuesArrive();
 }
 
 function recordError(stage: ImportIssueStage, message: string): void {
@@ -936,7 +994,9 @@ async function finishImport(args: {
     // An ended run's folder goes: the staged messages, the push log, journal
     // and report, and the run record. When the delete fails, the folder link
     // stays and the failure is shown, so the person can find what was left
-    // and remove it by hand.
+    // and remove it by hand. A record write still on its way finishes
+    // first, so it cannot land in the folder after the delete.
+    await recordWrites;
     if (stagingDir != null && (await discardStagingFolder(stagingDir))) stagingDir = null;
   } else {
     await saveCarriedRecord(pushReport, uploadMs);
@@ -1094,7 +1154,8 @@ async function uploadAndFinish(
  * recompute the summary against the folder as it now stands (the folder is
  * the truth, not the last estimate) and stop at the Media Review. A
  * failed stage ends the import as failed and deletes its folder, never a
- * silent fall-through to Upload.
+ * silent fall-through to Upload. A failed recompute after a stage that
+ * succeeded returns to the form and keeps the folder.
  *
  * `approvedSummary` is undefined on a resume whose stored plan failed to
  * parse (`parseStoredStagingSummary`): `moveStage` tolerates that absence,
@@ -1176,19 +1237,26 @@ async function runMediaPass(
   });
 
   store.set({ computingSummary: true });
+  await moveStageAtReview(sessionId, "media_review", approvedSummary);
+  // Media's issues and times are only in memory until now, and the run may
+  // be resumed from this Review after the app closes.
+  await saveCarriedRecord();
   try {
     const actual = await summarizeStagingWithProgress({ staging_dir: outputDir });
     store.set({ mediaSummary: actual, mediaFailedCount: transcodeReport?.failed ?? null });
-    await moveStageAtReview(sessionId, "media_review", approvedSummary);
-    await saveCarriedRecord();
     waitAtReview("media_review");
   } catch (e: unknown) {
-    // The stage itself succeeded; only the recompute after it failed. Still
-    // a failed Media stage, not an unhandled rejection on a frozen review:
-    // the run completes as failed and its folder goes.
-    recordError("media", e instanceof Error ? e.message : String(e));
-    store.set({ computingSummary: false });
-    await finishImport({ sessionId, status: "failed", pushReport: null, uploadMs: null });
+    // Media itself succeeded; only reading the folder afterwards failed.
+    // The converted folder is the run's work, so the run is not completed
+    // and its folder stays: back to the form, as after Staging, with the
+    // failure on `resumeError`. The run waits at the Media Review on the
+    // server, and resuming it there reads the folder again.
+    store.set({
+      resumeError: e instanceof Error ? e.message : String(e),
+      computingSummary: false,
+      running: false,
+    });
+    returnToForm();
   }
 }
 
@@ -1441,20 +1509,39 @@ async function runImport(
 }
 
 /**
- * Cancel the run from a review: close the run on the server and delete
- * the staging folder. Both halves run regardless of the other's outcome: a
- * live run with no folder blocks the next import, and a folder with no run
- * is litter nothing will ever clean up.
+ * Discard a run the person gave up on: close it on the server as cancelled,
+ * with the Import Errors its record holds, and delete its staging folder.
+ *
+ * The record is in the folder, so it is read before the folder goes, and a
+ * record that cannot be read discards the run with no Import Errors. The
+ * close and the delete then run regardless of the other's outcome: a live
+ * run with no folder blocks the next import, and a folder with no run is
+ * litter nothing will ever clean up. `stagingDir` is null for a run whose
+ * folder is not on this device. Never throws.
  */
+async function discardRun(sessionId: number | null, stagingDir: string | null): Promise<void> {
+  let issues: ImportIssue[] = [];
+  if (stagingDir != null) {
+    await recordWrites;
+    try {
+      issues = parseRunRecord(await invokeReadImportRunRecord({ staging_dir: stagingDir })).issues;
+    } catch {
+      // Discarded with no Import Errors: the run still has to close.
+    }
+  }
+  await Promise.allSettled([
+    sessionId != null ? discardImportSession(sessionId, issues) : Promise.resolve(),
+    stagingDir != null ? discardStagingFolder(stagingDir) : Promise.resolve(),
+  ]);
+}
+
+/** Cancel the run from a review: discard it (`discardRun`) and go back to the form. */
 async function cancelRun(): Promise<void> {
   if (scratch.reviewAction) return;
   scratch.reviewAction = true;
   try {
     const { importSessionId: sessionId, stagingDir: outputDir } = store.get();
-    await Promise.allSettled([
-      sessionId != null ? discardImportSession(sessionId) : Promise.resolve(),
-      outputDir != null ? discardStagingFolder(outputDir) : Promise.resolve(),
-    ]);
+    await discardRun(sessionId, outputDir);
   } finally {
     scratch.reviewAction = false;
   }
@@ -1774,7 +1861,7 @@ export function useImportJob() {
       state.phase === "done" ? completionTextFor(state.summaryView?.status) : undefined,
     sourceIdentities: state.sourceIdentities,
     stagingDeleteFailure: state.stagingDeleteFailure,
-    discardStagingFolder,
+    discardRun,
     dismissStagingDeleteFailure,
     startImport,
     continueAfterIdentityStop,

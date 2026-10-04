@@ -238,6 +238,9 @@ The Media row then shows the new **Total size** of the attachments, and **Could 
 The run stops again and reads **Awaiting approval**.
 The row shows the **Size limit per file** and the **Files over the limit** as they are now, after Media, by name and size.
 
+When the staged files cannot be read after Media, the screen goes back to the form and says why.
+The run waits at the Media Review with its Staging Directory, and resuming it reads the files again.
+
 **Upload to Message Crate** continues.
 **Cancel this import** ends the run and deletes the Staging Directory.
 
@@ -287,6 +290,7 @@ An Upload is also paused, without asking, when the account is deleted or its ses
 
 When Import is opened and the account already has a run open, the screen shows that run in place of the form.
 Every case offers **Discard this import**, which ends the run.
+The run keeps the Errors it recorded before it was discarded.
 On the computer that staged the run, it also deletes the Staging Directory.
 
 | The run stopped | The screen reads | The button |
@@ -338,6 +342,7 @@ After a success the Message Crate holds the messages, so the staged copy is no l
 After a failed Staging or Media, nothing complete was staged, so there is nothing to upload.
 A run that is cancelled or paused leaves the Staging Directory in place, because the staged files are what a resume reads.
 The Errors of a paused run are kept with its staged files, so the finished run lists the Errors of every part.
+Errors from Staging and Media are kept there as they happen, so a run interrupted by the app closing keeps the Errors up to that moment.
 
 A run that succeeded leads with where to go next:
 

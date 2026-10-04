@@ -792,9 +792,74 @@ describe("useImportJob wiring", () => {
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.cancelRun());
-    expect(discardImportSessionMock).toHaveBeenCalledWith(1);
+    expect(discardImportSessionMock).toHaveBeenCalledWith(1, []);
     expect(invokeDeleteStagingMock).toHaveBeenCalledWith({ staging_dir: "/staging/run-1" });
     expect(result.current.phase).toBe("form");
+  });
+
+  it("sends the run's Import Errors with the cancelled run when a review is cancelled (#1479)", async () => {
+    // The folder goes with the discard, and the run record in it with it, so
+    // the record's Import Errors must reach the server first.
+    const stagingIssue: ImportIssueEvent = {
+      kind: "error",
+      step: "attachments",
+      item: "IMG_2.HEIC",
+      reason: "could not be decrypted",
+    };
+    let stored: unknown = null;
+    saveRunRecordMock.mockImplementation(async ({ record }: { record: unknown }) => {
+      stored = record;
+    });
+    readRunRecordMock.mockImplementation(async () => stored);
+    runMock.mockReset();
+    runMock.mockImplementationOnce(runResultWithIssue(EXTRACT_RESULT, stagingIssue));
+    const { result } = renderHook(() => useImportJob());
+    await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
+    await act(() => result.current.cancelRun());
+
+    expect(discardImportSessionMock).toHaveBeenCalledWith(1, [
+      { kind: "error", stage: "staging", item: "IMG_2.HEIC", reason: "could not be decrypted" },
+    ]);
+    expect(readRunRecordMock.mock.invocationCallOrder.at(-1)).toBeLessThan(
+      invokeDeleteStagingMock.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it("sends a paused run's Import Errors with the cancelled run when it is discarded (#1479)", async () => {
+    const carried = {
+      kind: "skip",
+      stage: "upload",
+      item: "a.jsonl:IMG_1.MOV",
+      reason: "too large",
+    };
+    readRunRecordMock.mockResolvedValue({ issues: [carried] });
+    const { result } = renderHook(() => useImportJob());
+    await act(() => result.current.discardRun(7, "/staging/paused"));
+
+    expect(readRunRecordMock).toHaveBeenCalledWith({ staging_dir: "/staging/paused" });
+    expect(discardImportSessionMock).toHaveBeenCalledWith(7, [carried]);
+    expect(invokeDeleteStagingMock).toHaveBeenCalledWith({ staging_dir: "/staging/paused" });
+    expect(readRunRecordMock.mock.invocationCallOrder[0]).toBeLessThan(
+      invokeDeleteStagingMock.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it("still discards a paused run, with no Import Errors, when its record cannot be read", async () => {
+    readRunRecordMock.mockRejectedValue(new Error("not readable"));
+    const { result } = renderHook(() => useImportJob());
+    await act(() => result.current.discardRun(7, "/staging/paused"));
+
+    expect(discardImportSessionMock).toHaveBeenCalledWith(7, []);
+    expect(invokeDeleteStagingMock).toHaveBeenCalledWith({ staging_dir: "/staging/paused" });
+  });
+
+  it("discards another device's run without reading or deleting a folder here", async () => {
+    const { result } = renderHook(() => useImportJob());
+    await act(() => result.current.discardRun(7, null));
+
+    expect(readRunRecordMock).not.toHaveBeenCalled();
+    expect(discardImportSessionMock).toHaveBeenCalledWith(7, []);
+    expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
   });
 
   it("deletes the folder even when discarding the run fails", async () => {
@@ -818,7 +883,7 @@ describe("useImportJob wiring", () => {
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.cancelRun());
-    expect(discardImportSessionMock).toHaveBeenCalledWith(1);
+    expect(discardImportSessionMock).toHaveBeenCalledWith(1, []);
     expect(result.current.phase).toBe("form");
     // The folder is still on disk, and the screen says so (#1154).
     expect(result.current.stagingDeleteFailure).toEqual({
@@ -839,7 +904,7 @@ describe("useImportJob wiring", () => {
 
     await act(() => result.current.cancelRun());
 
-    expect(discardImportSessionMock).toHaveBeenCalledWith(1);
+    expect(discardImportSessionMock).toHaveBeenCalledWith(1, []);
     expect(invokeDeleteStagingMock).toHaveBeenCalledWith({ staging_dir: "/staging/run-2" });
     expect(result.current.phase).toBe("form");
   });
@@ -1014,6 +1079,84 @@ describe("useImportJob wiring", () => {
     ]);
   });
 
+  it("writes an issue that arrives during Staging into the folder before Staging ends (#1479)", async () => {
+    // An app that crashes mid-stage keeps what the folder holds, so the
+    // record is written as issues arrive, not only at the Review.
+    const stagingIssue: ImportIssueEvent = {
+      kind: "skip",
+      step: "attachments",
+      item: "IMG_3.HEIC",
+      reason: "missing from the backup",
+    };
+    let savedBeforeStageEnded: unknown[] = [];
+    runMock.mockReset();
+    runMock.mockImplementationOnce(
+      async (
+        fn: () => Promise<unknown>,
+        _onLog?: (line: string) => void,
+        _onProgress?: (event: ImportProgressEvent) => void,
+        onIssue?: (event: ImportIssueEvent) => void,
+      ) => {
+        await fn();
+        onIssue?.(stagingIssue);
+        await waitFor(() => expect(saveRunRecordMock).toHaveBeenCalled());
+        savedBeforeStageEnded = saveRunRecordMock.mock.calls.map(([args]) => args);
+        return EXTRACT_RESULT;
+      },
+    );
+    createStagingDirMock.mockResolvedValue("/staging/run-9");
+    const { result } = renderHook(() => useImportJob());
+    await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
+
+    expect(savedBeforeStageEnded).toEqual([
+      {
+        staging_dir: "/staging/run-9",
+        record: expect.objectContaining({
+          issues: [
+            {
+              kind: "skip",
+              stage: "staging",
+              item: "IMG_3.HEIC",
+              reason: "missing from the backup",
+            },
+          ],
+        }),
+      },
+    ]);
+  });
+
+  it("writes an issue that arrives during Media into the folder before Media ends (#1479)", async () => {
+    const mediaIssue: ImportIssueEvent = {
+      kind: "skip",
+      step: "media",
+      item: "IMG_4.MOV",
+      reason: "could not be converted",
+    };
+    let savedBeforeStageEnded: { record: { issues: unknown[] } } | undefined;
+    runMock.mockImplementationOnce(
+      async (
+        fn: () => Promise<unknown>,
+        _onLog?: (line: string) => void,
+        _onProgress?: (event: ImportProgressEvent) => void,
+        onIssue?: (event: ImportIssueEvent) => void,
+      ) => {
+        const before = saveRunRecordMock.mock.calls.length;
+        await fn();
+        onIssue?.(mediaIssue);
+        await waitFor(() => expect(saveRunRecordMock.mock.calls.length).toBeGreaterThan(before));
+        savedBeforeStageEnded = saveRunRecordMock.mock.lastCall?.[0];
+        return { summary: "Transcode finished.", transcode: undefined };
+      },
+    );
+    const { result } = renderHook(() => useImportJob());
+    await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
+    await act(() => result.current.approve());
+
+    expect(savedBeforeStageEnded?.record.issues).toEqual([
+      { kind: "skip", stage: "media", item: "IMG_4.MOV", reason: "could not be converted" },
+    ]);
+  });
+
   it("completes a failed Staging as failed and deletes its folder, since nothing complete exists to upload", async () => {
     createStagingDirMock.mockResolvedValue("/staging/run-6");
     runMock.mockReset();
@@ -1087,7 +1230,7 @@ describe("useImportJob wiring", () => {
 
     // A later delete of the same folder that succeeds clears the notice.
     await act(async () => {
-      await result.current.discardStagingFolder("/staging/run-5");
+      await result.current.discardRun(null, "/staging/run-5");
     });
     expect(result.current.stagingDeleteFailure).toBeNull();
   });
@@ -1482,14 +1625,17 @@ describe("useImportJob wiring", () => {
     expect(completeCall).toBeDefined();
   });
 
-  it("a failed recompute after a successful media pass is a failed import, not an unhandled rejection", async () => {
+  it("returns to the form and keeps the folder when the recompute after a successful Media stage fails (#1479)", async () => {
+    // Media converted every attachment; only reading the folder afterwards
+    // failed. Completing the run would delete the converted folder, so this
+    // lands the way the recompute after Staging does: back to the form, the
+    // run left open at the Media Review for the next visit to offer again.
+    createStagingDirMock.mockResolvedValue("/staging/run-8");
     runMock.mockImplementationOnce(
       runResult({ summary: "Transcode finished.", transcode: undefined }),
     );
-    // The first summarize call is `startImport`'s own, on the way to the Staging Review
-    // — that one must succeed so this pins the *media pass's* recompute
-    // failure specifically (W8 gave the Staging-Review-bound call its own, milder
-    // failure path: see the "does not strand the folder" test above).
+    // The first summarize is the one on the way to the Staging Review; it
+    // succeeds, so this pins the recompute after Media.
     invokeSummarizeStagingMock.mockResolvedValueOnce(stagingSummary({ mediaMode: "convert" }));
     invokeSummarizeStagingMock.mockRejectedValueOnce(new Error("disk full"));
     const { result } = renderHook(() => useImportJob());
@@ -1497,9 +1643,15 @@ describe("useImportJob wiring", () => {
     await act(() => result.current.approve());
 
     expect(invokePushMock).not.toHaveBeenCalled();
-    expect(result.current.phase).toBe("done");
-    expect(result.current.summaryView?.status).toBe("failed");
-    expect(setImportStageMock).not.toHaveBeenCalledWith(1, "media_review", expect.anything());
+    expect(result.current.phase).toBe("form");
+    expect(result.current.resumeError).toBe("disk full");
+    expect(completeImportMock).not.toHaveBeenCalled();
+    expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
+    // The server holds the run at the Media Review, whose resume recomputes
+    // the summary rather than running Media again.
+    expect(setImportStageMock).toHaveBeenLastCalledWith(1, "media_review", expect.anything());
+    const lastSave = saveRunRecordMock.mock.lastCall as [{ staging_dir: string }];
+    expect(lastSave[0].staging_dir).toBe("/staging/run-8");
   });
 
   it("does not run the media pass twice on a double click", async () => {
