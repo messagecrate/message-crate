@@ -17,7 +17,7 @@ async fn reset_for_account_leaves_other_accounts() {
                 chat_handle_id: 1,
                 conversation_type: "individual",
                 group_title: None,
-                exported_at: None,
+                group_title_at: None,
                 source_file: "t.json",
             },
         )

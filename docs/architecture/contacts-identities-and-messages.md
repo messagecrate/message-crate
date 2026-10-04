@@ -141,21 +141,18 @@ second row with the service `whatsapp`. When one of the two is on a contact,
 the other joins the same contact (`contact_id_of_sibling_handle`). Why: the
 rows differ only by service, and splitting them would show one person twice.
 
-An address book load keeps the rule too. When a load puts one of the two on
-a contact, the other goes to the same contact, unless the file has a row for
-it (`siblings_that_follow` in `db/address_book.rs`). In Edit mode a row for
-one of the two keeps the other on the contact rather than taking it off. A
-row for the other one is followed as written, so a file that lists the two
-under different contacts splits the number on purpose. The other one follows
-only from a holder the load may take an identity from: a contact with no
-name, or one in the file. A named contact outside the file keeps it, and the
-load says so in its notes. Why: a file that names a person on one row means
-the person, not one service of theirs, and leaving the other row behind
-would show them twice. A row is the only way the file can say otherwise.
+An import keeps the rule. An address book load is the exception: it moves,
+adds and takes off only the identities its rows list, so a row for one of the
+two leaves the other where it is, and a file that lists the two under
+different contacts splits the number. Why: a load applies exactly what the
+file says and never second-guesses it (below). The file is the person's
+instruction, and a load that moved an identity no row lists would undo a
+split the person made on purpose. Rejected: moving the other one with the
+listed one (#1640, reversed in #1059).
 
-The contact drawer is the exception. Moving or taking off one identity there
-moves only that identity, and can split a number. Why: the person named that
-one identity, and the drawer has no way to ask about the other.
+The contact drawer moves only the identity it is given too, and can split a
+number. Why: the person named that one identity, and the drawer has no way
+to ask about the other.
 
 **A phone number has one key everywhere.** `phone::normalize_typed_handle`
 gives a number its key, and the same key is used by the `handles` row, by the
@@ -249,6 +246,25 @@ a subset (a search, the checked rows), so a file that spoke for the whole
 account would delete everyone it did not mention, and a file that could only
 add would leave a wrongly linked address unfixable from the sheet.
 
+**A load applies exactly what the file says, and never second-guesses it.**
+A load carries out what the rows state: the contacts they name, the names
+they give, and the identities and Contact Group memberships they list, and
+in Edit it takes off what a listed contact's rows leave out. It never
+corrects, infers or protects anything the file does not say to make the
+result closer to what the person may have meant, even when the file looks
+like a mistake. The consequences the rules below spell out are not
+corrections: a nameless contact a load empties is deleted; when Edit takes
+off an identity that a conversation, message or reaction still uses, the
+identity goes to a new contact with no name; and a phone number is read
+with its `+` back when the spreadsheet dropped it without showing, which
+the load's notes say. Where a rule elsewhere in this
+document does more for an import, such as "one number is one person on
+every service", a load does only what its rows say. Why: the person edited
+the file to say what they want, and a load that second-guessed it would
+change things no row shows, which the person can neither see in the sheet
+nor undo from it. A row the load cannot carry out refuses the load (below)
+rather than being guessed at.
+
 **A load is strict, and refuses whole.** A phone is keyed by the one rule
 above, an email is lowercased and must be one `@` with text on both sides,
 an unknown `service` or `identity_type` is an error, and so is a row with more
@@ -310,6 +326,26 @@ reaches every conversation at once. Why: a key that includes an empty column
 matches nothing, so re-importing the same backup added the same person again,
 and a contact column written once at import went stale when the identity
 moved, so search found the conversation under the old contact.
+
+**Two copies of one conversation take the later copy's title.** Two
+conversations on one chat handle are one conversation
+(`UNIQUE (account_id, chat_handle_id)` on `conversations`), so a second backup
+of a group, or one chat id written two ways, merges into the conversation
+already there. The merged conversation keeps the group title of the copy whose
+latest message is later. A copy with no title never clears a title, and when
+both copies' latest messages share one time, the title already stored stays.
+Times are compared to the second, the precision a message's time is stored at.
+The conversation stores the latest message time of the copy that gave its
+title (`group_title_at`), and an incoming copy is compared with that, not with
+the whole conversation: an untitled copy whose messages end last would
+otherwise keep an older title against a newer one. A title of only spaces counts
+as no title. The rule is the same in one batch as across several, in any order.
+Why: a group is renamed over time, so the copy whose messages run later carries
+the name the group has now. An old backup uploaded after a newer one can't bring the old
+name back, because its messages stop earlier. The time a backup was made is not
+recorded by every source, and the time an exporter ran says nothing about the
+backup, so neither decides it
+([#1408](https://github.com/messagecrate/message-crate/issues/1408)).
 
 **A participant's display name has one rule.** The contact's name, else what
 that backup called them in that conversation, else the identity. One loader
@@ -479,6 +515,7 @@ flowchart LR
 | Tables for contacts, identities, Contact Groups, trash | `schema/sql/contacts.sql` |
 | Tables for conversations, participants, messages | `schema/sql/messages.sql` |
 | What an import creates for a conversation and its participants | `crates/server/server/src/imports_api/staging.rs` |
+| Which title two copies of one conversation keep | `insert_conversation` and `upsert_conversations` in `crates/server/server/src/db/staging.rs` |
 | Making, naming, and replacing a contact during import | `crates/server/server/src/imports_api/contact_name.rs` |
 | Linking identities to contacts, sibling identities, the one way an identity leaves a contact (`move_identity`) | `crates/server/server/src/db/contacts.rs` |
 | Writing and loading the address book | `crates/server/server/src/db/address_book.rs` |

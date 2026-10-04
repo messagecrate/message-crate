@@ -10,8 +10,11 @@ CREATE TABLE IF NOT EXISTS staging_conversations (
     conversation_type TEXT NOT NULL,
     -- Group display title; NULL for 1:1 chats.
     group_title TEXT,
-    -- When the source export was produced (if known).
-    exported_at TEXT,
+    -- The latest message time of the copy that gave group_title, in the form
+    -- staging_messages.timestamp holds; NULL with no title, or when that copy had no
+    -- messages. A merge compares an incoming copy's latest message with it
+    -- (docs/architecture/contacts-identities-and-messages.md).
+    group_title_at TEXT,
     -- Path or name of the source file this thread came from.
     source_file TEXT NOT NULL,
     UNIQUE(account_id, chat_handle_id)

@@ -193,9 +193,9 @@ async fn setup_db(conn: &mut SqliteConnection) {
     sqlx::query(
         r"
         INSERT INTO conversations (
-            account_id, chat_handle_id, conversation_type, group_title, exported_at, source_file
+            account_id, chat_handle_id, conversation_type, group_title, source_file
         )
-        VALUES ($1, $2, 'individual', NULL, NULL, 't.json')
+        VALUES ($1, $2, 'individual', NULL, 't.json')
         ",
     )
     .bind(TEST_ACCOUNT_ID)
@@ -996,9 +996,9 @@ async fn conversation(conn: &mut SqliteConnection, chat: &str, kind: &str) -> i6
     sqlx::query_scalar(
         r"
         INSERT INTO conversations (
-            account_id, chat_handle_id, conversation_type, group_title, exported_at, source_file
+            account_id, chat_handle_id, conversation_type, group_title, source_file
         )
-        VALUES ($1, $2, $3, NULL, NULL, 't.json')
+        VALUES ($1, $2, $3, NULL, 't.json')
         RETURNING id
         ",
     )

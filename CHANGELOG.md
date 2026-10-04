@@ -125,10 +125,13 @@ released versions carry their date on the heading.
   Profile tab. **Append** adds and renames and removes nothing. **Edit**
   also makes each contact in the file match its rows, so deleting a row
   takes that identity off the contact. Contacts the file does not mention
-  are left alone. A file with a mistake in it is refused whole, and each row
-  at fault is listed with its reason, so nothing is half loaded. Message
-  Crate no longer reads a phone's vCard file, which put every number on a
-  card into your contacts whether or not a message ever used it.
+  are left alone. A load does exactly what the file says and never corrects
+  it: a row moves only the identity it lists, so to move a number on both
+  Text Message and WhatsApp, give each its own row. A file with a mistake in
+  it is refused whole, and each row at fault is listed with its reason, so
+  nothing is half loaded. Message Crate no longer reads a phone's vCard
+  file, which put every number on a card into your contacts whether or not
+  a message ever used it.
 - 2026-10-01 **The Demo Account has Contact Groups.** Demo Data is now built
   the way your own Message Crate is: its messages are imported first, and an
   Address Book then names the people in them and puts them in Family, Work,
@@ -259,6 +262,14 @@ released versions carry their date on the heading.
 - 2026-10-04 **A received SMS Backup+ group text that doesn't name you shows
   its sender's name.** Such a text is filed under its sender, who showed up
   as a bare address. The sender now gets the name the mail gives them.
+- 2026-10-04 **A group imported from two backups takes its current name,
+  however the backups arrive.** When two copies of one group chat became
+  one conversation, the name it ended with depended on whether they came
+  in one upload or two: one upload kept the first copy's name, and two
+  uploads kept the second's. The conversation now takes the name of the
+  copy whose messages run later, which is the name the group has now. An
+  older backup uploaded afterwards no longer brings back a name the group
+  has dropped, and a copy with no name never clears one.
 - 2026-10-04 **Working files from reading a backup no longer stay behind
   when an import is stopped, and Staging checks for room while it reads
   the backup.** Reading an encrypted iPhone backup decrypts its message
@@ -758,14 +769,6 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
-- 2026-10-04 **An Address Book load keeps a number's Text Message and
-  WhatsApp identities on one contact.** A file that moved a number's Text
-  Message identity to a contact, and had no row for the same number on
-  WhatsApp, left the WhatsApp identity behind, so one person showed as two
-  contacts. The identity on the other service now goes with the one the file
-  moves, in Append and Edit alike, unless the file has a row of its own for
-  it. A named contact the file does not mention keeps it, and the load says
-  so.
 - 2026-10-04 **One number is one identity however it arrives.** A number
   written with `tel:` in front, in a backup that gave no type for it, became
   a separate identity from the same number as a message sender, on a contact
