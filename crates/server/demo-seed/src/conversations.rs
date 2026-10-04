@@ -908,11 +908,16 @@ impl<R: Rng> Seeder<'_, R> {
 
 /// Mark the message Deleted in the source app or Unsent when `i` falls on
 /// either stride. Only Apple Messages records the marks (#1143), so only its
-/// one-to-one conversations call this. An Unsent message keeps nothing, so one
-/// that carries an attachment is left unmarked rather than stripped.
+/// one-to-one conversations call this. An Unsent message keeps nothing, and
+/// only an iMessage can be unsent, so a message with an attachment, one sent as
+/// SMS or RCS, or a reply is left unmarked rather than made into one no backup
+/// holds.
 fn mark_deletion(msg: &mut IrMessage, i: usize, messages: &crate::config::MessagesConfig) {
     let on = |stride: usize| stride > 0 && i > 0 && i.is_multiple_of(stride);
-    if on(messages.unsent_stride) && msg.attachments.is_empty() {
+    let can_be_unsent = msg.attachments.is_empty()
+        && msg.service == IrService::IMessage
+        && msg.imessage.as_ref().is_none_or(|im| !im.is_reply);
+    if on(messages.unsent_stride) && can_be_unsent {
         msg.deletion = Some(Deletion::Unsent);
         msg.text.clear();
         msg.reactions.clear();

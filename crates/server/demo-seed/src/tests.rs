@@ -977,7 +977,7 @@ fn every_message_of_the_medium_set_falls_between_8am_and_11pm_utc_and_not_after_
 /// message keeps nothing: no text, no attachment and no reaction.
 #[test]
 fn the_medium_set_marks_a_few_apple_messages_deleted_in_the_source_app_and_unsent() {
-    use message_ir::Deletion;
+    use message_ir::{Deletion, IrService};
 
     let temp = tempfile::tempdir().expect("create test directory");
     let out = temp.path().join("demo");
@@ -998,6 +998,14 @@ fn the_medium_set_marks_a_few_apple_messages_deleted_in_the_source_app_and_unsen
                     assert!(message.text.is_empty(), "{} keeps text", message.guid);
                     assert!(message.attachments.is_empty(), "{}", message.guid);
                     assert!(message.reactions.is_empty(), "{}", message.guid);
+                    // Only an iMessage can be unsent, and an unsent reply would be
+                    // an empty message threaded under another.
+                    assert_eq!(message.service, IrService::IMessage, "{}", message.guid);
+                    assert!(
+                        message.imessage.as_ref().is_none_or(|im| !im.is_reply),
+                        "{} is an Unsent reply",
+                        message.guid
+                    );
                 }
             }
         }
