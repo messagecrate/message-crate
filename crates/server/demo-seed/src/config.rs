@@ -90,7 +90,6 @@ where
 #[serde(deny_unknown_fields)]
 pub struct ContactsConfig {
     pub count: usize,
-    pub no_name: f64,
     pub first_last: f64,
     pub first_middle_last: f64,
     pub first_only: f64,

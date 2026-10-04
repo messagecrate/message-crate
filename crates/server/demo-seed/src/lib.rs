@@ -177,8 +177,6 @@ fn keep_prepared_if_restore_failed(
 /// Returns an error if a directory or file cannot be created, or if a name list
 /// or message-text file cannot be loaded.
 fn generate_into(cfg: &SeedConfig, out: &Path, cancel: &AtomicBool) -> Result<GenStats> {
-    let mut rng = ChaCha8Rng::seed_from_u64(cfg.seed);
-
     let imessage_staging = out.join("staging").join(IMESSAGE_SOURCE);
     let sbr_staging = out.join("staging").join(SBR_SOURCE);
     let whatsapp_staging = out.join("staging").join(WHATSAPP_SOURCE);
@@ -205,7 +203,7 @@ fn generate_into(cfg: &SeedConfig, out: &Path, cancel: &AtomicBool) -> Result<Ge
     copy_dir_files(&imessage_attachments, &sbr_attachments, cancel)?;
     copy_dir_files(&imessage_attachments, &whatsapp_attachments, cancel)?;
 
-    let roster = personas::build_roster(cfg, &names, &mut rng)?;
+    let (roster, mut rng) = seeded_roster(cfg, &names)?;
     contacts::write_address_book(&config_dir, &roster)?;
     contacts::write_seed_toml(&config_dir)?;
 
@@ -227,6 +225,21 @@ fn generate_into(cfg: &SeedConfig, out: &Path, cancel: &AtomicBool) -> Result<Ge
     write_readme(out, &stats, cfg, corpus.len())?;
 
     Ok(stats)
+}
+
+/// The generator's random sequence for `cfg`, and the roster drawn first from
+/// it. The rest of the bundle draws from the sequence the roster leaves.
+///
+/// # Errors
+///
+/// Returns the errors of [`personas::build_roster`].
+fn seeded_roster(
+    cfg: &SeedConfig,
+    names: &names::NameBank,
+) -> Result<(personas::Roster, ChaCha8Rng)> {
+    let mut rng = ChaCha8Rng::seed_from_u64(cfg.seed);
+    let roster = personas::build_roster(cfg, names, &mut rng)?;
+    Ok((roster, rng))
 }
 
 /// Run `prepare` in `prepared`, check the result, then move it over `active`.

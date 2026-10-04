@@ -21,7 +21,6 @@ reference_time = "2026-08-01T12:00:00Z"
 
 [contacts]
 count = 12
-no_name = 0.1
 first_last = 0.6
 first_middle_last = 0.2
 first_only = 0.2
