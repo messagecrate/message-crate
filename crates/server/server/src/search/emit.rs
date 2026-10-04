@@ -437,7 +437,7 @@ fn emit_text_word(
             Value::Text(_) | Value::Prefix(_) => {
                 o.push(&format!(
                     "EXISTS (SELECT 1 FROM handles h WHERE ((h.id = c.chat_handle_id AND NOT {}) OR EXISTS (SELECT 1 FROM participants p WHERE p.conversation_id = c.id AND p.handle_id = h.id)) AND (",
-                    is_a_key_handle("h.id")
+                    is_a_key("h.raw")
                 ));
                 result = text_match(o, "h.raw", term, v);
                 o.push(" OR ");
@@ -542,10 +542,19 @@ fn conversation_title_text() -> String {
 /// contains `name:` and `with:nam` would find them all; the person a
 /// name-keyed conversation is with is found by their participant row.
 fn is_a_key_handle(handle_id_expr: &str) -> String {
+    format!(
+        "EXISTS (SELECT 1 FROM handles hk WHERE hk.id = {handle_id_expr} AND {})",
+        is_a_key("hk.raw")
+    )
+}
+
+/// SQL that holds when the handle text `raw_col` is a conversation key, for
+/// a query that already holds the handle row (see `is_a_key_handle`).
+fn is_a_key(raw_col: &str) -> String {
     let prefix = message_ir::NAME_CHAT_ID_PREFIX;
     let nameless = message_ir::NAMELESS_CHAT_ID;
     format!(
-        "EXISTS (SELECT 1 FROM handles hk WHERE hk.id = {handle_id_expr} AND (substr(hk.raw, 1, {}) = '{prefix}' OR hk.raw = '{nameless}'))",
+        "(substr({raw_col}, 1, {}) = '{prefix}' OR {raw_col} = '{nameless}')",
         prefix.len()
     )
 }
