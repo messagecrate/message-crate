@@ -9,7 +9,7 @@ import type { ConversationStatus } from "../../lib/types";
  * A run runs in parts when it pauses, or stops at a Review, and resumes
  * later, perhaps after the app closed. The server takes the run's record
  * only with `/complete`, which a paused run never posts, so the window keeps
- * the record of the earlier parts in the staging folder
+ * the record of the earlier parts in the Staging Directory
  * (`read_import_run_record`, `save_import_run_record`) and the completion
  * the last part posts covers the whole run: its Import Errors, timings,
  * bytes and counts.
@@ -86,7 +86,7 @@ function readIssues(value: unknown): ImportIssue[] {
 }
 
 /**
- * Read a record back from the staging folder. The file is the app's own,
+ * Read a record back from the Staging Directory. The file is the app's own,
  * but it is read from disk, so each field is checked: an unreadable field
  * is left out, and anything that is not a record reads as no earlier part.
  */
@@ -174,8 +174,17 @@ function isRunError(issue: ImportIssue): boolean {
  */
 function conversationStatuses(part: RunPart): Map<string, ConversationStatus> {
   const statuses = new Map(part.conversations);
-  for (const result of part.report?.results ?? []) statuses.set(result.file, result.status);
+  for (const result of part.report?.results ?? []) {
+    if (isConversationStatus(result.status)) statuses.set(result.file, result.status);
+  }
   return statuses;
+}
+
+const CONVERSATION_STATUSES: readonly string[] = ["ok", "skipped", "failed", "cancelled"];
+
+/** A report's status for a conversation, as one the record knows. */
+function isConversationStatus(status: string): status is ConversationStatus {
+  return CONVERSATION_STATUSES.includes(status);
 }
 
 /** On the server: sent by this part, or by an earlier one (the journal skipped it). */
@@ -210,12 +219,25 @@ function sortEarlierStop(
   return { promoted, waiting };
 }
 
-/** The whole run so far: the earlier parts' record with this part added. */
+/**
+ * The whole run so far, as a completion posts it: the earlier parts' record
+ * with this part added. Its issues take in every row of an earlier stop
+ * that still stands (`sortEarlierStop`), promoted or waiting, since a run
+ * that completes is never resumed.
+ */
 export function wholeRun(carried: RunRecord, part: RunPart): RunRecord {
+  const { promoted, waiting } = sortEarlierStop(carried, conversationStatuses(part));
+  return combine(carried, part, [...promoted, ...waiting]);
+}
+
+/**
+ * The earlier parts' record with this part added, taking in `earlier`, the
+ * rows of the earlier stop that join `issues`.
+ */
+function combine(carried: RunRecord, part: RunPart, earlier: ImportIssue[]): RunRecord {
   const report = part.report;
-  const { promoted } = sortEarlierStop(carried, conversationStatuses(part));
   return {
-    issues: mergeIssues(carried.issues, mergeIssues(promoted, part.issues)),
+    issues: mergeIssues(carried.issues, mergeIssues(earlier, part.issues)),
     durationMs: sum(carried.durationMs, part.durationMs),
     parseMs: sum(carried.parseMs, part.parseMs),
     attachmentsMs: sum(carried.attachmentsMs, part.attachmentsMs),
@@ -250,9 +272,9 @@ export function recordToCarry(carried: RunRecord, part: RunPart): RunRecord {
   const waits = (issue: ImportIssue) =>
     issue.conversation != null && !isOnServer(statuses.get(issue.conversation));
   const rows = part.issues.filter((issue) => !isRunError(issue));
-  const { waiting } = sortEarlierStop(carried, statuses);
+  const { promoted, waiting } = sortEarlierStop(carried, statuses);
   return {
-    ...wholeRun(carried, { ...part, issues: rows.filter((issue) => !waits(issue)) }),
+    ...combine(carried, { ...part, issues: rows.filter((issue) => !waits(issue)) }, promoted),
     lastStopIssues: [
       ...mergeIssues(waiting, rows.filter(waits)),
       ...part.issues.filter(isRunError),

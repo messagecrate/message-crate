@@ -291,6 +291,14 @@ describe("the record written while a stage runs (#1639)", () => {
     expect(issuesToDiscard(resumed)).toEqual([skip]);
   });
 
+  it("completes with an earlier stop's attachment skip of a conversation that failed again", () => {
+    // A completion is never resumed, so nothing will report the skip again.
+    const earlier: RunRecord = { issues: [], lastStopIssues: [skip] };
+    expect(
+      wholeRun(earlier, part({ conversations: new Map([["a.jsonl", "failed"]]) })).issues,
+    ).toEqual([skip]);
+  });
+
   it("drops a row a later try resolved, wherever the record keeps it", () => {
     const media = { kind: "skip", stage: "media" as const, item: "a.jsonl:IMG.HEIC", reason: "x" };
     const record: RunRecord = { issues: [media], lastStopIssues: [skip] };

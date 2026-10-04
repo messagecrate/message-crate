@@ -134,10 +134,10 @@ function withShownAttachmentMode(form: ImportJobFormValues): ImportJobFormValues
 }
 
 /**
- * The run's form with the attachment mode its staging folder recorded.
+ * The run's form with the attachment mode its Staging Directory recorded.
  *
- * Staging records the run's media settings in the folder, and the summary
- * of the folder carries the mode. From the end of Staging on, the folder is
+ * Staging records the run's media settings in the directory, and the summary
+ * of the directory carries the mode. From the end of Staging on, the directory is
  * the one source of the mode, so whether the run has a Media stage is read
  * from there and never from the stored form. `summary` is absent before
  * Staging has finished, and when a resumed run's stored plan no longer
@@ -153,7 +153,7 @@ function withRecordedMode(
 
 /**
  * `withRecordedMode`, made the run's own form: every later stage, the
- * progress rows and the review screens read the folder's mode from here.
+ * progress rows and the review screens read the directory's mode from here.
  */
 function adoptRecordedMode(
   form: ImportJobFormValues,
@@ -170,7 +170,7 @@ function adoptRecordedMode(
  * The attachment size limit Staging works to, in bytes. A run always has one
  * by the time Staging needs it: a new run reads the server's before Staging,
  * and a resumed Staging reads its own back from the stored form. Upload
- * reads the limit Staging recorded in the folder instead, so it is not
+ * reads the limit Staging recorded in the directory instead, so it is not
  * passed on.
  */
 function assetLimitOf(form: Pick<ImportJobFormValues, "assetMaxBytes">): number {
@@ -278,7 +278,7 @@ export type ImportJobFormValues = {
   assetMaxBytes?: number;
 };
 
-/** A session whose copy was interrupted, and the folder it was writing into. */
+/** A session whose copy was interrupted, and the directory it was writing into. */
 export type ResumeWrite = {
   sessionId: number;
   stagingDir: string;
@@ -289,7 +289,7 @@ export type ResumeWrite = {
   identities?: string[] | null;
 };
 
-/** Pick up a session whose staging folder is already complete. */
+/** Pick up a session whose Staging Directory is already complete. */
 export type ResumePush = {
   sessionId: number;
   stagingDir: string;
@@ -337,7 +337,7 @@ function isOwnerHandleCount(value: unknown): value is OwnerHandleCount {
  *
  * Read only as the *approved baseline* on resume, never shown directly:
  * decision 39 says the summary actually on screen is always recomputed
- * fresh from the folder. Like `restoreFormFromSnapshot`, this value came
+ * fresh from the directory. Like `restoreFormFromSnapshot`, this value came
  * from the database rather than from this session's own state, so its
  * shape is checked field by field rather than trusted; returns `undefined`
  * — not a throw — for anything that doesn't match. A resume with no usable
@@ -415,7 +415,7 @@ type RunScratch = {
    */
   startImport: boolean;
   /**
-   * What the run's earlier parts recorded, read from the staging folder when
+   * What the run's earlier parts recorded, read from the Staging Directory when
    * the run resumes (`runRecord.ts`). Empty for a run that started here.
    */
   carried: RunRecord;
@@ -476,7 +476,7 @@ function asWork(action: () => Promise<void>): Promise<void> {
  * A store already the account's is left as it is. A run another account
  * started is stopped and let settle first, so nothing it does afterwards
  * lands in the new run: its stage is cancelled, which leaves the run open on
- * the server for that account to resume from its staged folder. Then the
+ * the server for that account to resume from its Staging Directory. Then the
  * store goes back to a fresh form, named with `accountId` (#1085).
  */
 async function takeRunFor(accountId: number | null): Promise<void> {
@@ -583,7 +583,7 @@ function currentPart(
 }
 
 /**
- * Pick up what the run's earlier parts recorded, from its staging folder. A
+ * Pick up what the run's earlier parts recorded, from its Staging Directory. A
  * record that cannot be read leaves the run with only what this part
  * records: the resume itself goes ahead.
  */
@@ -605,13 +605,13 @@ let recordWrites: Promise<void> = Promise.resolve();
 let queuedRecordWrite: RecordWrite | null = null;
 
 /**
- * Write a run record into its staging folder, one write at a time and in the
+ * Write a run record into its Staging Directory, one write at a time and in the
  * order they were asked for, so an older record never lands over a newer one.
  * The record is built when its write starts, from the run as it stands then,
- * and a write asked for while another waits for the same folder replaces the
+ * and a write asked for while another waits for the same directory replaces the
  * waiting one: issues that arrive while a write is in progress all go in the
  * next. A failed write is not shown: the run goes on, and a resume starts
- * from the record the folder already held.
+ * from the record the directory already held.
  */
 function writeRunRecord(stagingDir: string, build: () => RunRecord): Promise<void> {
   if (queuedRecordWrite?.stagingDir === stagingDir) {
@@ -808,7 +808,7 @@ function runJob(invokeFn: () => Promise<void>): Promise<TauriJobResult> {
 /**
  * `invokeSummarizeStaging`, with a listener on the same `extract:progress`
  * channel the extract and media passes use. `summarize_staging` (Rust)
- * emits progress on the `check` step while it walks a big folder, and
+ * emits progress on the `check` step while it walks a big directory, and
  * `applyProgress` already knows to draw that on the Staging row, so this
  * only has to make sure the event reaches it.
  */
@@ -896,21 +896,21 @@ function waitAtReview(phase: "staging_review" | "media_review"): void {
 /**
  * Build the run's summary, record it, and end the run or leave it open.
  *
- * A run ends when the server takes `/complete`, and its staging folder is
+ * A run ends when the server takes `/complete`, and its Staging Directory is
  * deleted then: the server holds the record, and nothing will read the
- * folder again (#1233). That covers a finished Upload, and a failed Staging
+ * directory again (#1233). That covers a finished Upload, and a failed Staging
  * or Media stage, which is discarded at once because nothing complete exists
  * to upload; ending it also frees the account to start a new import.
  *
  * Every other way out leaves the run open on the server, at the stage it
- * reached, with its folder and the record of this part in it
+ * reached, with its directory and the record of this part in it
  * (`saveCarriedRecord`), and the next visit to Import offers it again:
  *
  * - `paused`: an Upload that did not send every conversation, by Pause or
  *   by failure (`importOutcome`). It posts no `/complete`.
  * - `skipComplete`: a cancelled Staging or Media stage, and a stage change
  *   the server did not record. Both resume from what is on disk; posting
- *   `/complete` would free the run's slot and strand the folder.
+ *   `/complete` would free the run's slot and strand the directory.
  * - A `/complete` the server refuses: the server still holds the run as
  *   running. A finished Upload then shows as paused, and its resume finds
  *   every message sent and posts `/complete` again.
@@ -1014,15 +1014,15 @@ async function finishImport(args: {
     ];
   }
   // A run with no server record at all (its creation failed) is ended too:
-  // nothing will ever offer its folder again.
+  // nothing will ever offer its directory again.
   const runEnded = sessionId == null || (posts && completeRefused == null);
   let stagingDir = store.get().stagingDir;
   if (runEnded) {
-    // An ended run's folder goes: the staged messages, the push log, journal
+    // An ended run's directory goes: the staged messages, the push log, journal
     // and report, and the run record. When the delete fails, the folder link
     // stays and the failure is shown, so the person can find what was left
     // and remove it by hand. A record write still on its way finishes
-    // first, so it cannot land in the folder after the delete.
+    // first, so it cannot land in the directory after the delete.
     await recordWrites;
     if (stagingDir != null && (await discardStagingFolder(stagingDir))) stagingDir = null;
   } else {
@@ -1034,9 +1034,9 @@ async function finishImport(args: {
 }
 
 /**
- * Delete a staging folder of a run that has ended or been discarded. Never
+ * Delete a Staging Directory of a run that has ended or been discarded. Never
  * throws: a refusal or failed delete is kept on `stagingDeleteFailure` for
- * the screen to show. Returns whether the folder is gone.
+ * the screen to show. Returns whether the directory is gone.
  */
 async function discardStagingFolder(stagingDir: string): Promise<boolean> {
   try {
@@ -1056,7 +1056,7 @@ async function discardStagingFolder(stagingDir: string): Promise<boolean> {
   }
 }
 
-/** The person has read that a staging folder was left behind. */
+/** The person has read that a Staging Directory was left behind. */
 function dismissStagingDeleteFailure(): void {
   store.set({ stagingDeleteFailure: null });
 }
@@ -1160,7 +1160,7 @@ async function uploadAndFinish(
   const uploadMs = performance.now() - uploadStartedAt;
   const report = pushResult?.report ?? null;
   // An Upload that did not send every conversation, paused or failed, is
-  // paused: the run stays at `upload` with its folder, and resuming it
+  // paused: the run stays at `upload` with its directory, and resuming it
   // sends only what the push journal does not list.
   const status = pausedBeforeStart
     ? "paused"
@@ -1186,11 +1186,11 @@ async function uploadAndFinish(
 
 /**
  * Convert or compress the staged files after the Staging Review, then
- * recompute the summary against the folder as it now stands (the folder is
+ * recompute the summary against the directory as it now stands (the directory is
  * the truth, not the last estimate) and stop at the Media Review. A
- * failed stage ends the import as failed and deletes its folder, never a
+ * failed stage ends the import as failed and deletes its directory, never a
  * silent fall-through to Upload. A failed recompute after a stage that
- * succeeded returns to the form and keeps the folder.
+ * succeeded returns to the form and keeps the directory.
  *
  * `approvedSummary` is undefined on a resume whose stored plan failed to
  * parse (`parseStoredStagingSummary`): `moveStage` tolerates that absence,
@@ -1252,8 +1252,8 @@ async function runMediaPass(
     // which is exactly where it got to. A cancellation also skips
     // `/complete` outright (see finishImport), so the run stays running and
     // resumable instead of completing and freeing the slot out from under a
-    // staged folder nobody can reach any more. A failed stage is discarded:
-    // it completes as failed and its folder goes, so a broken ffmpeg does
+    // Staging Directory nobody can reach any more. A failed stage is discarded:
+    // it completes as failed and its directory goes, so a broken ffmpeg does
     // not lock the account out of importing.
     await finishImport({
       sessionId,
@@ -1281,11 +1281,11 @@ async function runMediaPass(
     store.set({ mediaSummary: actual, mediaFailedCount: transcodeReport?.failed ?? null });
     waitAtReview("media_review");
   } catch (e: unknown) {
-    // Media itself succeeded; only reading the folder afterwards failed.
-    // The converted folder is the run's work, so the run is not completed
-    // and its folder stays: back to the form, as after Staging, with the
+    // Media itself succeeded; only reading the directory afterwards failed.
+    // The converted directory is the run's work, so the run is not completed
+    // and its directory stays: back to the form, as after Staging, with the
     // failure on `resumeError`. The run waits at the Media Review on the
-    // server, and resuming it there reads the folder again.
+    // server, and resuming it there reads the directory again.
     store.set({
       resumeError: e instanceof Error ? e.message : String(e),
       computingSummary: false,
@@ -1387,7 +1387,7 @@ async function runImport(
     }
 
     if (resume) {
-      // The staging folder is already complete, so there is nothing to
+      // The Staging Directory is already complete, so there is nothing to
       // resolve, no new run to create (the account already has this one),
       // and no extract to run. resume_push is only ever offered after the
       // last review, so there IS a plan from it: it rides along as
@@ -1396,7 +1396,7 @@ async function runImport(
       const outputDir = resume.stagingDir;
       sessionId = resume.sessionId;
       await loadCarriedRecord(outputDir);
-      // The approved plan was read from the folder at its review, so it
+      // The approved plan was read from the directory at its review, so it
       // carries the mode Staging recorded there.
       form = adoptRecordedMode(form, resume.approved);
       store.set({
@@ -1419,7 +1419,7 @@ async function runImport(
     let outputDir: string;
     if (resumeWrite) {
       // The run already exists and its Staging was interrupted. Reuse it and
-      // its staging folder: the exporter reads the backup again and skips
+      // its Staging Directory: the exporter reads the backup again and skips
       // the conversations already written.
       outputDir = resumeWrite.stagingDir;
       sessionId = resumeWrite.sessionId;
@@ -1493,7 +1493,7 @@ async function runImport(
     // may be resumed from this Review after the app closes.
     await saveCarriedRecord();
     // The extract itself is done and staged: an error from here on is a
-    // failed read of a folder that already holds the staged work, not a run
+    // failed read of a directory that already holds the staged work, not a run
     // that failed. Routing it through the outer catch (below) would post
     // `/complete` and end the run, stranding that work with no way back to
     // it. This mirrors `resumeAtReview`'s landing exactly: return to the form
@@ -1502,7 +1502,7 @@ async function runImport(
     // resume check finds the same run and offers this recompute again.
     try {
       const summary = await summarizeStagingWithProgress({ staging_dir: outputDir });
-      // Staging has finished, so the folder decides the stages from here.
+      // Staging has finished, so the directory decides the stages from here.
       const recorded = adoptRecordedMode(form, summary);
       updateSteps((steps) =>
         stepsFor(recorded.attachmentMedia).map(
@@ -1546,14 +1546,14 @@ async function runImport(
 /**
  * End a run the person gave up on, by a Cancel at a Review or a Discard of a
  * paused run: close it on the server as cancelled, with the Import Errors its
- * record holds (`issuesToDiscard`), and delete its staging folder.
+ * record holds (`issuesToDiscard`), and delete its Staging Directory.
  *
- * The record is in the folder, so it is read before the folder goes, and a
+ * The record is in the directory, so it is read before the directory goes, and a
  * record that cannot be read discards the run with no Import Errors. The
  * close and the delete then run regardless of the other's outcome: a live
- * run with no folder blocks the next import, and a folder with no run is
+ * run with no directory blocks the next import, and a directory with no run is
  * litter nothing will ever clean up. `stagingDir` is null for a run whose
- * folder is not on this device. Never throws.
+ * directory is not on this device. Never throws.
  */
 async function discardRun(sessionId: number | null, stagingDir: string | null): Promise<void> {
   let issues: ImportIssue[] = [];
@@ -1708,7 +1708,7 @@ export function useImportJob() {
       mediaSummary,
       reviewError,
     } = store.get();
-    // What the person is approving: the folder as Media left it at the
+    // What the person is approving: the directory as Media left it at the
     // Media Review, as Staging left it at the Staging Review.
     const approvedSummary = phase === "media_review" ? mediaSummary : stagingSummary;
     if (!form || sessionId == null || outputDir == null || approvedSummary == null) return;
@@ -1753,12 +1753,12 @@ export function useImportJob() {
    * `settings_unreadable`), so this trusts it rather than parsing
    * `session.form` a second time.
    *
-   * The folder is the truth. Every landing recomputes the summary fresh
-   * from the staging folder; the run's stored `summary` is read only as the
+   * The directory is the truth. Every landing recomputes the summary fresh
+   * from the Staging Directory; the run's stored `summary` is read only as the
    * approved plan, for the Staging row on the Media Review and the Media
    * stage's own bookkeeping.
    *
-   * A recompute failing here is a transient read of the staging folder, not
+   * A recompute failing here is a transient read of the Staging Directory, not
    * a run that failed: only an explicit cancel ends a waiting run, so this
    * must not complete it or write a stage. It returns to the form instead
    * (the resume check there re-runs and finds the same run, so the panel
@@ -1791,8 +1791,8 @@ export function useImportJob() {
     const outputDir = session.staging_dir;
     const approved = parseStoredStagingSummary(session.summary);
     // Staging has finished for every stage resumed here, so the mode comes
-    // from the folder: through the plan approved at the Staging Review until
-    // the summary below is recomputed from the folder itself.
+    // from the directory: through the plan approved at the Staging Review until
+    // the summary below is recomputed from the directory itself.
     const known = withRecordedMode(resumedForm, approved);
 
     beginRun(known, session.stage === "media" ? "media" : "staging");
@@ -1812,7 +1812,7 @@ export function useImportJob() {
       sourceIdentities: parseSourceIdentities(session.source_identities),
     });
 
-    /** Recompute the summary from the folder, then land on the given review. */
+    /** Recompute the summary from the directory, then land on the given review. */
     async function landOn(
       review: "staging_review" | "media_review",
       partiallyRan: boolean,
@@ -1837,7 +1837,7 @@ export function useImportJob() {
           });
         } else {
           // The Staging row shows the plan approved before Media, read
-          // back from the run; the Media rows show the folder as it is now.
+          // back from the run; the Media rows show the directory as it is now.
           // Media's own report is gone on a resume, so its failed count is
           // unknown rather than zero.
           store.set({

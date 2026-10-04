@@ -1,6 +1,6 @@
-//! Convert or compress a staged folder, patching the conversation files it wrote.
+//! Convert or compress a Staging Directory, patching the conversation files it wrote.
 //!
-//! This runs after the staging folder is complete and before anything is
+//! This runs after the Staging Directory is complete and before anything is
 //! uploaded, so the import can stop and ask between the two. It commits one
 //! attachment at a time through a rename, which is what makes it resumable
 //! with no progress record: a file under its final derivative name is fully
@@ -79,10 +79,11 @@
 //! attachment: one it could not convert, one whose converted file is over
 //! the size limit, and one an interrupted earlier pass lost. Each row is sent
 //! before the conversation file is written, so a stop between the two leaves
-//! the work pending and the resumed pass reports it again. A file an earlier
-//! pass could not convert is tried again, and the pass first sends a
-//! [`RESOLVED`] row for it: the earlier row no longer holds, whatever the new
-//! try gives.
+//! the work pending and the resumed pass reports it again. A row's item is
+//! the conversation file and the original's staged path, which no other
+//! file in the conversation shares. A file an earlier pass could not convert
+//! is settled again by a later pass, which first sends a [`RESOLVED`] row
+//! for it: the earlier row no longer holds, whatever the later pass does.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -120,7 +121,7 @@ pub(crate) const COMMITTED_SUFFIX: &str = "-mv";
 
 /// What the media pass should do.
 ///
-/// Staging records these in the staging folder
+/// Staging records these in the Staging Directory
 /// ([`write_media_settings`](crate::write_media_settings)), and the summary
 /// and the pass read them back from there, so the whole Import Run works to
 /// one set of values.
@@ -171,13 +172,13 @@ pub struct TranscodeReport {
 
 /// Convert or compress every original still staged under `staging_dir`.
 ///
-/// Safe to call again after an interruption: it re-reads the folder and does
+/// Safe to call again after an interruption: it re-reads the directory and does
 /// whatever is left.
 ///
 /// # Errors
 ///
 /// Returns an error when the pass is cancelled, ffmpeg/ffprobe are
-/// unavailable, or the folder cannot be read, or a conversation file cannot
+/// unavailable, or the directory cannot be read, or a conversation file cannot
 /// be parsed or written. A single attachment ffmpeg cannot process is an
 /// item-level issue, counted in the report and sent to `issues` as it
 /// happens, never an error.
@@ -219,6 +220,23 @@ pub fn transcode_staged(
         let work = pending_in(staging_dir, &doc, options.mode)?;
         for item in work {
             check_cancel(cancel)?;
+            // An earlier pass could not convert this file, and this pass
+            // settles it now, however: the earlier row no longer holds. A
+            // new failure sends a fresh row after this one.
+            let recorded_rel = item.recorded_rel();
+            if had_convert_failure(&doc, recorded_rel) {
+                emit_issue(
+                    issues,
+                    media_issue(
+                        jsonl,
+                        &doc,
+                        recorded_rel,
+                        recorded_rel,
+                        RESOLVED,
+                        "is tried again",
+                    ),
+                );
+            }
             match item {
                 PendingWork::Transcode { recorded_rel, src } => {
                     apply_transcode(
@@ -253,7 +271,15 @@ pub fn transcode_staged(
                     apply_repoint(jsonl, &mut doc, &recorded_rel, &derivative, &mut report)?;
                 }
                 PendingWork::DroppedTooLarge { recorded_rel, size } => {
-                    apply_too_large(jsonl, &mut doc, &recorded_rel, size, issues, &mut report)?;
+                    apply_too_large(
+                        jsonl,
+                        &mut doc,
+                        &recorded_rel,
+                        &recorded_rel,
+                        size,
+                        issues,
+                        &mut report,
+                    )?;
                 }
                 PendingWork::Unrecoverable { recorded_rel } => {
                     apply_unrecoverable(jsonl, &mut doc, &recorded_rel, issues, &mut report)?;
@@ -289,6 +315,19 @@ fn count_remaining(staging_dir: &Path, files: &[PathBuf], mode: MediaMode) -> Re
         total += pending_in(staging_dir, &doc, mode)?.len();
     }
     Ok(total)
+}
+
+impl PendingWork {
+    /// The path the conversation file records for the attachment.
+    fn recorded_rel(&self) -> &str {
+        match self {
+            Self::Transcode { recorded_rel, .. }
+            | Self::HealTranscode { recorded_rel, .. }
+            | Self::Repoint { recorded_rel, .. }
+            | Self::DroppedTooLarge { recorded_rel, .. }
+            | Self::Unrecoverable { recorded_rel } => recorded_rel,
+        }
+    }
 }
 
 /// One deduplicated unit of work found in a document.
@@ -469,7 +508,7 @@ fn find_too_large_note(
 }
 
 /// The first `Some` that `found` returns for an entry of
-/// `staging_dir/attachments`, or `None` when no entry gives one or the folder
+/// `staging_dir/attachments`, or `None` when no entry gives one or the directory
 /// does not exist.
 fn find_in_attachments<T>(
     staging_dir: &Path,
@@ -605,7 +644,7 @@ fn disk_attachment_fields(src: &Path) -> Result<DiskAttachmentFields> {
 
 /// Transcode `src` and commit it, in the order decision 28 fixes: derivative
 /// written, conversation file patched, derivative renamed into its final
-/// name, original deleted. Reversing any pair leaves the folder lying about
+/// name, original deleted. Reversing any pair leaves the directory lying about
 /// itself.
 ///
 /// `is_heal` marks a crash-heal recovery: `recorded_rel` currently points at
@@ -633,18 +672,15 @@ fn apply_transcode(
     let final_path = attachments_dir.join(&name);
     let marker = attachments_dir.join(format!("{name}{IN_PROGRESS_SUFFIX}"));
     let original_len = std::fs::metadata(src).map_or(0, |m| m.len());
+    // A row names the original's staged path: a heal's `recorded_rel` is a
+    // name nothing will ever have, and a failure records the original's.
+    let item_rel = if is_heal {
+        attachment_rel(src)?
+    } else {
+        recorded_rel.to_string()
+    };
 
-    let outcome = media::transcode_file(src, &marker, options.mode, &options.compress);
-    // An earlier pass could not convert this file, and this pass has now
-    // tried it again: the earlier row no longer holds, whatever this try
-    // gives. A failure sends a fresh row after this one.
-    if had_convert_failure(doc, recorded_rel) {
-        emit_issue(
-            issues,
-            media_issue(jsonl, doc, recorded_rel, RESOLVED, "tried again".into()),
-        );
-    }
-    match outcome {
+    match media::transcode_file(src, &marker, options.mode, &options.compress) {
         Err(err) => {
             emit_issue(
                 issues,
@@ -652,8 +688,9 @@ fn apply_transcode(
                     jsonl,
                     doc,
                     recorded_rel,
-                    "skip",
-                    format!("could not be converted, so the original file is kept: {err:#}"),
+                    &item_rel,
+                    SKIP,
+                    &format!("could not be converted, so the original file is kept: {err:#}"),
                 ),
             );
             let reason = format!("convert_failed: {err}");
@@ -720,20 +757,17 @@ fn apply_transcode(
                 let note = too_large_note(src);
                 std::fs::write(&note, produced_len.to_string())
                     .with_context(|| format!("write {}", note.display()))?;
-                emit_issue(
+                apply_too_large(
+                    jsonl,
+                    doc,
+                    recorded_rel,
+                    &item_rel,
+                    produced_len,
                     issues,
-                    too_large_issue(jsonl, doc, recorded_rel, produced_len),
-                );
-                patch_all_matching(doc, recorded_rel, |att| {
-                    att.path = None;
-                    att.digest_sha256 = None;
-                    att.missing_reason = Some("too_large".to_string());
-                    att.size_bytes = Some(produced_len);
-                });
-                write_conversation_jsonl_to(jsonl, doc)?;
+                    report,
+                )?;
                 let _ = std::fs::remove_file(&marker);
                 let _ = std::fs::remove_file(src);
-                report.too_large += 1;
                 return Ok(());
             }
             // Decision 29: read the file on disk. A replayed digest can be
@@ -775,6 +809,10 @@ fn apply_transcode(
     }
 }
 
+/// The `kind` of a row for an attachment the pass left without a converted
+/// file.
+pub const SKIP: &str = "skip";
+
 /// The `kind` of a row that says an earlier row about the same item no
 /// longer holds. The window drops the earlier row and keeps no row for it.
 pub const RESOLVED: &str = "resolved";
@@ -800,26 +838,28 @@ fn had_convert_failure(doc: &ConversationDocument, recorded_rel: &str) -> bool {
     })
 }
 
-/// A Media row about the attachment at `recorded_rel`, naming the
-/// conversation file and the attachment (its original name, or the staged
-/// path when it has none). A row the pass reports again on a resume has the
-/// same `item`.
+/// A Media row about the attachment at `recorded_rel`. Its `item` is the
+/// conversation file and the original's staged path `item_rel`, which no
+/// other file in the conversation shares, and which a row the pass reports
+/// again on a resume has too. Its `reason` opens with the attachment's
+/// original name, when it has one, and goes on with `what`.
 fn media_issue(
     jsonl: &Path,
     doc: &ConversationDocument,
     recorded_rel: &str,
+    item_rel: &str,
     kind: &str,
-    reason: String,
+    what: &str,
 ) -> RunIssue {
     let conversation = jsonl.file_name().and_then(|n| n.to_str()).unwrap_or("?");
-    let attachment = recorded_at(doc, recorded_rel)
+    let name = recorded_at(doc, recorded_rel)
         .find_map(|att| att.original_name.as_deref().and_then(message_ir::trimmed))
-        .unwrap_or(recorded_rel);
+        .unwrap_or("The attachment");
     RunIssue {
         kind: kind.into(),
         step: "media".into(),
-        item: format!("{conversation}:{attachment}"),
-        reason,
+        item: format!("{conversation}:{item_rel}"),
+        reason: format!("{name} {what}"),
     }
 }
 
@@ -829,14 +869,16 @@ fn too_large_issue(
     jsonl: &Path,
     doc: &ConversationDocument,
     recorded_rel: &str,
+    item_rel: &str,
     size: u64,
 ) -> RunIssue {
     media_issue(
         jsonl,
         doc,
         recorded_rel,
-        "skip",
-        format!(
+        item_rel,
+        SKIP,
+        &format!(
             "is {size} bytes ({} MiB) after conversion, over the attachment size limit, so it \
              was left out",
             size / message_ir::MIB
@@ -874,11 +916,15 @@ fn apply_too_large(
     jsonl: &Path,
     doc: &mut ConversationDocument,
     recorded_rel: &str,
+    item_rel: &str,
     size: u64,
     issues: Option<&IssueSink>,
     report: &mut TranscodeReport,
 ) -> Result<()> {
-    emit_issue(issues, too_large_issue(jsonl, doc, recorded_rel, size));
+    emit_issue(
+        issues,
+        too_large_issue(jsonl, doc, recorded_rel, item_rel, size),
+    );
     patch_all_matching(doc, recorded_rel, |att| {
         att.path = None;
         att.digest_sha256 = None;
@@ -906,8 +952,9 @@ fn apply_unrecoverable(
             jsonl,
             doc,
             recorded_rel,
-            "skip",
-            "was lost when an earlier Media pass stopped partway, so it was left out".into(),
+            recorded_rel,
+            SKIP,
+            "was lost when an earlier Media stage stopped partway, so it was left out",
         ),
     );
     patch_all_matching(doc, recorded_rel, |att| {

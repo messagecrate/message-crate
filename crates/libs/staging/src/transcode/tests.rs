@@ -306,17 +306,22 @@ fn a_file_the_pass_cannot_convert_is_sent_as_a_skip_import_error() {
             issues[0].step.as_str(),
             issues[0].item.clone()
         ),
-        ("skip", "media", format!("{conversation}:broken.png"))
+        (
+            "skip",
+            "media",
+            format!("{conversation}:attachments/broken.png")
+        )
     );
     assert!(
         issues[0]
             .reason
-            .starts_with("could not be converted, so the original file is kept: "),
+            .starts_with("broken.png could not be converted, so the original file is kept: "),
         "{}",
         issues[0].reason
     );
     assert!(
-        issues[0].reason.len() > "could not be converted, so the original file is kept: ".len(),
+        issues[0].reason.len()
+            > "broken.png could not be converted, so the original file is kept: ".len(),
         "the reason carries ffmpeg's detail: {}",
         issues[0].reason
     );
@@ -347,7 +352,7 @@ fn a_file_left_out_as_too_large_is_sent_as_a_skip_import_error() {
     assert_eq!(issues.len(), 1, "{issues:?}");
     assert_eq!(
         (issues[0].kind.as_str(), issues[0].item.clone()),
-        ("skip", format!("{conversation}:photo.png"))
+        ("skip", format!("{conversation}:attachments/photo.png"))
     );
     assert!(
         issues[0]
@@ -381,13 +386,50 @@ fn a_file_tried_again_resolves_its_earlier_row_first() {
         .iter()
         .map(|issue| (issue.kind.clone(), issue.item.clone()))
         .collect();
-    let item = format!("{conversation}:broken.png");
+    let item = format!("{conversation}:attachments/broken.png");
     assert_eq!(
         rows,
         [
             (RESOLVED.to_string(), item.clone()),
             ("skip".to_string(), item)
         ]
+    );
+}
+
+/// An attachment an earlier pass could not convert can be settled without a
+/// conversion of its own: here another conversation sharing the file
+/// converted it since, so this one is repointed. Its earlier row is
+/// resolved all the same.
+#[test]
+fn a_failed_file_settled_by_a_repoint_resolves_its_earlier_row() {
+    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+        return;
+    };
+    let png = test_png_bytes();
+    let (dir, _jsonl, _original) = staged_one("photo.png", &png);
+    let jsonl_b = second_document_sharing(dir.path(), "attachments/photo.png", png.len() as u64);
+    let mut doc_b = read_conversation_jsonl(&jsonl_b).unwrap();
+    doc_b.messages[0].attachments[0].missing_reason = Some("convert_failed: earlier".into());
+    write_conversation_jsonl_to(&jsonl_b, &doc_b).unwrap();
+    let opts = options(MediaMode::Convert, u64::MAX);
+    let (sink, issues) = collecting_sink();
+
+    let report = transcode_staged(dir.path(), &opts, None, Some(&sink), &mut |_| {}).unwrap();
+
+    assert_eq!(report.converted + report.repointed, 2, "{report:?}");
+    let conversation_b = jsonl_b.file_name().unwrap().to_str().unwrap();
+    let rows: Vec<(String, String)> = issues
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|issue| (issue.kind.clone(), issue.item.clone()))
+        .collect();
+    assert_eq!(
+        rows,
+        [(
+            RESOLVED.to_string(),
+            format!("{conversation_b}:attachments/photo.png")
+        )]
     );
 }
 
