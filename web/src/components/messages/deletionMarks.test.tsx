@@ -3,6 +3,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import type { ComponentType } from "react";
 import { afterEach, describe, expect, it } from "vitest";
+import { missingAttachmentChipLabel } from "../../lib/missingAttachmentLabel";
 import { TimeZoneContext } from "../../lib/timeZone";
 import type { Message } from "../../lib/types";
 import type { MessageBubbleProps } from "./chatBubbleShared";
@@ -18,8 +19,7 @@ afterEach(() => {
 
 /**
  * Every source's bubble, with the source id it is drawn for and the name the
- * product gives that source. Discord and Instagram have no import of their
- * own, so the mark names their source id as the message carries it.
+ * product gives that source.
  */
 const BUBBLES: {
   name: string;
@@ -54,16 +54,24 @@ const BUBBLES: {
     Bubble: DiscordBubble,
     source: "discord",
     service: "discord",
-    label: "discord",
+    label: "Discord",
   },
   {
     name: "Instagram",
     Bubble: InstagramBubble,
     source: "instagram",
     service: "instagram",
-    label: "instagram",
+    label: "Instagram",
   },
 ];
+
+/** An attachment the import kept without its file, so it draws as a chip and fetches nothing. */
+const ATTACHMENT = {
+  original_name: "notes.pdf",
+  mime_type: "application/pdf",
+  missing_reason: "file_missing",
+};
+const ATTACHMENT_LABEL = missingAttachmentChipLabel(ATTACHMENT);
 
 function message(partial: Partial<Message>): Message {
   return {
@@ -138,6 +146,42 @@ describe.each(BUBBLES)("$name bubble", ({ Bubble, source, service, label }) => {
 
     expect(markedBubble("Unsent")).toHaveTextContent(/^Unsent$/);
     expect(screen.queryByText("See you at noon")).not.toBeInTheDocument();
+  });
+
+  it("draws the attachments of a message Deleted in the source app inside its dashed outline, with no text", () => {
+    renderInUtc(
+      Bubble,
+      message({
+        source,
+        service,
+        text: "",
+        attachments: [ATTACHMENT],
+        deletion: "deleted_in_source_app",
+      }),
+    );
+
+    expect(markedBubble(ATTACHMENT_LABEL)).toHaveClass("text-muted");
+    expect(screen.getByText(`· Deleted in ${label}`)).toBeInTheDocument();
+  });
+
+  it("draws an Unsent message as the empty bubble alone, leaving out attachments and reactions", () => {
+    renderInUtc(
+      Bubble,
+      message({
+        source,
+        service,
+        text: "",
+        attachments: [ATTACHMENT],
+        tapbacks: [
+          { emoji: null, is_from_me: false, kind: "loved", part_index: 0, sender: "+15555550100" },
+        ],
+        deletion: "unsent",
+      }),
+    );
+
+    expect(markedBubble("Unsent")).toHaveTextContent(/^Unsent$/);
+    expect(screen.queryByText(ATTACHMENT_LABEL)).not.toBeInTheDocument();
+    expect(screen.queryByText(/❤️/)).not.toBeInTheDocument();
   });
 
   it("draws an unmarked message with no dashed outline and no note", () => {

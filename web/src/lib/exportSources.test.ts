@@ -20,9 +20,11 @@ describe("EXPORT_SOURCES", () => {
 });
 
 describe("sourceLabel", () => {
-  it("names a source as Import lists it, and keeps the id of one Import does not offer", () => {
+  it("names a source as the product does, and keeps the id of one it does not know", () => {
     expect(sourceLabel(IMESSAGE_SOURCE_ID)).toBe("Apple Messages");
     expect(sourceLabel("sms-backup-plus")).toBe("SMS Backup+");
-    expect(sourceLabel("discord")).toBe("discord");
+    expect(sourceLabel("discord")).toBe("Discord");
+    expect(sourceLabel("instagram")).toBe("Instagram");
+    expect(sourceLabel("telegram")).toBe("telegram");
   });
 });

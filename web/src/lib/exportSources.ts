@@ -16,9 +16,20 @@ export const EXPORT_SOURCES: { id: string; label: string }[] = [
 ];
 
 /**
- * The name the product gives a message's import source, as Import lists it:
- * "Apple Messages" for `imessage`. A source Import does not offer keeps its id.
+ * Sources the conversation draws a bubble for that Import does not offer, by
+ * the name the product gives them.
+ */
+const OTHER_SOURCE_LABELS: Record<string, string> = {
+  discord: "Discord",
+  instagram: "Instagram",
+};
+
+/**
+ * The name the product gives a message's import source: "Apple Messages" for
+ * `imessage`, as Import lists it. A source the product does not know keeps its id.
  */
 export function sourceLabel(source: string): string {
-  return EXPORT_SOURCES.find((s) => s.id === source)?.label ?? source;
+  return (
+    EXPORT_SOURCES.find((s) => s.id === source)?.label ?? OTHER_SOURCE_LABELS[source] ?? source
+  );
 }

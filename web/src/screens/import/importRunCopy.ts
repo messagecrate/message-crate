@@ -1,5 +1,5 @@
 import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
-import { EXPORT_SOURCES } from "../../lib/exportSources";
+import { sourceLabel } from "../../lib/exportSources";
 import { IMESSAGE_METHODS, isImessageMethod } from "../../lib/imessageImport";
 import { isWhatsappMethod, WHATSAPP_METHODS } from "../../lib/whatsappImport";
 import { ATTACHMENT_OPTIONS } from "./ImportFormUi";
@@ -19,7 +19,7 @@ export function sourceDisplayName(source: string): string {
     const method = WHATSAPP_METHODS.find((m) => m.id === source)?.label;
     return method ? `WhatsApp · ${method}` : "WhatsApp";
   }
-  return EXPORT_SOURCES.find((s) => s.id === source)?.label ?? source;
+  return sourceLabel(source);
 }
 
 /** The attachments line of "what you asked for", in the form's own words, settings included when they apply. */

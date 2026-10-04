@@ -121,14 +121,39 @@ export function tapbackGroups(m: Message): TapbackGroup[] {
   return [...groups.values()];
 }
 
-/**
- * How a marked message is drawn, in the chat bubble and the flat row alike: no
- * fill, a dashed outline and muted text, from the theme (#1143).
- */
-const MARKED_CLASSES = "border border-dashed border-muted bg-transparent text-muted";
+/** A chat bubble's corners: round, with the tail corner on the author's side. */
+function bubbleRadius(mine: boolean): string {
+  return mine ? "rounded-[18px] rounded-br-[4px]" : "rounded-[18px] rounded-bl-[4px]";
+}
 
-/** What an Unsent message reads in place of its text, which the backup no longer holds. */
-const UNSENT_TEXT = "Unsent";
+/**
+ * The bubble of a marked message, which `ChatBubbleRow` and
+ * `ServiceBubbleShell` both draw, so every source shows the marks alike
+ * (#1143): no fill, a dashed outline and muted text, from the theme.
+ *
+ * A message Deleted in the source app keeps `children`: its text, its
+ * attachments and its reactions. An Unsent message is the empty bubble that
+ * reads "Unsent" and nothing else, because its sender took all of it back.
+ */
+function MarkedBubble({
+  deletion,
+  mine,
+  children,
+}: {
+  deletion: Deletion;
+  mine: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <div
+      className={`${bubbleRadius(mine)} w-fit max-w-[min(78%,34rem)] whitespace-pre-wrap break-words border border-dashed border-muted bg-transparent px-[0.7rem] py-[0.45rem] text-[0.9375rem] leading-[1.35] text-muted ${
+        mine ? "ml-auto" : ""
+      }`}
+    >
+      {deletion === "unsent" ? "Unsent" : children}
+    </div>
+  );
+}
 
 /**
  * The note beside the time of a message Deleted in the source app, naming the
@@ -158,9 +183,8 @@ function senderColorClass(palette: BubblePalette): string {
 /**
  * Chat-row chrome: aligned bubble, optional sender label, timestamp under bubble.
  *
- * A message Deleted in the source app keeps its text in a muted, dashed bubble,
- * and its time reads "<time> · Deleted in <source>". An Unsent message is an
- * empty muted, dashed bubble that reads "Unsent", whatever `children` holds.
+ * A marked message is a `MarkedBubble` holding `children` and `footer`, and the
+ * time of one Deleted in the source app reads "<time> · Deleted in <source>".
  */
 export function ChatBubbleRow({
   messageId,
@@ -191,12 +215,7 @@ export function ChatBubbleRow({
   children?: ReactNode;
   footer?: ReactNode;
 }) {
-  const radius = mine ? "rounded-[18px] rounded-br-[4px]" : "rounded-[18px] rounded-bl-[4px]";
-  const content = deletion === "unsent" ? UNSENT_TEXT : children;
-  const hasBubble = content != null && content !== false && content !== "";
-  const colors = deletion
-    ? MARKED_CLASSES
-    : `${bubbleColorClasses(palette, mine)} ${mine ? "" : "shadow-bubble"}`;
+  const hasBubble = children != null && children !== false && children !== "";
 
   return (
     <div
@@ -213,15 +232,24 @@ export function ChatBubbleRow({
         </div>
       ) : null}
 
-      {hasBubble ? (
+      {deletion ? (
+        <MarkedBubble deletion={deletion} mine={mine}>
+          {children}
+          {footer ? <div className={hasBubble ? "mt-[0.2rem]" : "mt-0"}>{footer}</div> : null}
+        </MarkedBubble>
+      ) : null}
+
+      {!deletion && hasBubble ? (
         <div
-          className={`${radius} ${colors} max-w-[min(78%,34rem)] whitespace-pre-wrap break-words px-[0.7rem] py-[0.45rem] text-[0.9375rem] leading-[1.35]`}
+          className={`${bubbleRadius(mine)} ${bubbleColorClasses(palette, mine)} max-w-[min(78%,34rem)] whitespace-pre-wrap break-words px-[0.7rem] py-[0.45rem] text-[0.9375rem] leading-[1.35] ${
+            mine ? "" : "shadow-bubble"
+          }`}
         >
-          {content}
+          {children}
         </div>
       ) : null}
 
-      {footer ? (
+      {!deletion && footer ? (
         <div
           className={`max-w-[min(78%,34rem)] ${
             hasBubble ? "mt-[0.2rem]" : "mt-0"
@@ -266,11 +294,8 @@ export function ServiceRow({
  * Shared branded-service row: ServiceRow + sender/time header.
  * Color and header alignment stay per-service; body is `children`.
  *
- * A marked message is drawn as `ChatBubbleRow` draws it: a message Deleted in
- * the source app keeps its body in a muted, dashed outline with "· Deleted in
- * <source>" after its time, and an Unsent message is an empty muted, dashed
- * outline that reads "Unsent" in place of the body, as the chat bubble reads
- * "Unsent" in place of its text.
+ * A marked message's body is a `MarkedBubble`, as in `ChatBubbleRow`, and the
+ * time of one Deleted in the source app reads "<time> · Deleted in <source>".
  */
 export function ServiceBubbleShell({
   message,
@@ -293,7 +318,6 @@ export function ServiceBubbleShell({
   const mine = message.is_from_me;
   const zone = useTimeZone();
   const deletion = message.deletion;
-  const marked = `w-fit max-w-full rounded-[6px] px-2 py-1 ${MARKED_CLASSES} ${mine ? "ml-auto" : ""}`;
   return (
     <ServiceRow messageId={String(message.id)} isActive={isActive}>
       <div
@@ -312,10 +336,10 @@ export function ServiceBubbleShell({
           <DeletionNote deletion={deletion} source={message.source} />
         </span>
       </div>
-      {deletion === "unsent" ? (
-        <div className={`${marked} text-[0.875rem] leading-[1.5]`}>{UNSENT_TEXT}</div>
-      ) : deletion ? (
-        <div className={marked}>{children}</div>
+      {deletion ? (
+        <MarkedBubble deletion={deletion} mine={mine}>
+          {children}
+        </MarkedBubble>
       ) : (
         <div className="text-text">{children}</div>
       )}
