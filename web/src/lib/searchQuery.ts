@@ -137,6 +137,110 @@ export function replaceLastToken(query: string, text: string): string {
   return query.slice(0, lastToken(query).start) + text;
 }
 
+/**
+ * A `word:value` token of a query: its word, lower-cased as the server reads
+ * it, and where the token starts (its minus included) and ends.
+ */
+export type FieldToken = { word: string; start: number; end: number };
+
+/**
+ * Every `word:value` token of `query`, in order, as `searchTokens` reads them:
+ * a word of letters and hyphens starting with a letter, then a colon whose
+ * value does not start with `/`. A `word:` with no value yet counts, so a
+ * word being typed is one too. A colon inside a quoted phrase does not.
+ */
+export function fieldTokens(query: string): FieldToken[] {
+  const tokens: FieldToken[] = [];
+  for (const token of searchTokens(query)) {
+    if (token.kind !== "text") continue;
+    const match = /^-?([A-Za-z][A-Za-z-]*):(?!\/)/.exec(query.slice(token.start, token.end));
+    if (match) tokens.push({ word: match[1].toLowerCase(), start: token.start, end: token.end });
+  }
+  return tokens;
+}
+
+/** `or`, `and` or `not` as the language's operator: bare, without a minus, in any case. */
+function operator(text: string): "binary" | "not" | null {
+  const word = text.toLowerCase();
+  if (word === "or" || word === "and") return "binary";
+  return word === "not" ? "not" : null;
+}
+
+/**
+ * `query` without the tokens in `drop`, which are tokens of `query` named by
+ * where they start. A `not` right before a dropped token goes with it, since
+ * it negated that token and nothing else. Whatever they leave with nothing to
+ * join is dropped too: an `or` or `and` with nothing on one side, and a pair
+ * of parentheses left empty, with any `not` before it. So `from:me or hello` without
+ * `from:me` is `hello`, which the server reads, rather than `or hello`, which
+ * it refuses. Everything else stays as typed, spaces included, and the space
+ * before a dropped token goes with it.
+ */
+export function dropTokens(query: string, drop: readonly { start: number }[]): string {
+  const tokens = searchTokens(query);
+  const starts = new Set(drop.map((d) => d.start));
+  const gone = tokens.map(() => false);
+  const text = (i: number) => query.slice(tokens[i].start, tokens[i].end);
+  /** Drop token `i`, and the `not`s before it, which negated it and nothing else. */
+  const dropAt = (i: number) => {
+    gone[i] = true;
+    for (let j = i - 1; j >= 0 && (gone[j] || operator(text(j)) === "not"); j -= 1) {
+      if (tokens[j].kind === "text") gone[j] = true;
+    }
+  };
+  tokens.forEach((t, i) => {
+    if (starts.has(t.start)) dropAt(i);
+  });
+  if (!gone.some(Boolean)) return query;
+  // One token, or one empty pair of parentheses, at a time, until nothing is
+  // left with nothing to join.
+  for (;;) {
+    const live = tokens.flatMap((_, i) => (gone[i] ? [] : [i]));
+    const orphan = live.findIndex((i, at) => {
+      const before = at > 0 ? live[at - 1] : null;
+      const after = at + 1 < live.length ? live[at + 1] : null;
+      if (tokens[i].kind === "open") return after !== null && tokens[after].kind === "close";
+      if (tokens[i].kind === "close") return false;
+      const op = operator(text(i));
+      if (op === null) return false;
+      const nothingAfter =
+        after === null || tokens[after].kind === "close" || operator(text(after)) === "binary";
+      if (op === "not") return nothingAfter;
+      const nothingBefore =
+        before === null || tokens[before].kind === "open" || operator(text(before)) !== null;
+      return nothingBefore || nothingAfter;
+    });
+    if (orphan < 0) break;
+    if (tokens[live[orphan]].kind === "open") {
+      gone[live[orphan + 1]] = true;
+      dropAt(live[orphan]);
+    } else {
+      gone[live[orphan]] = true;
+    }
+  }
+  let out = "";
+  let from = 0;
+  tokens.forEach((token, i) => {
+    if (!gone[i]) return;
+    const kept = trimEndSpaces(query.slice(from, token.start));
+    out += kept;
+    from = token.end;
+    // The space before the token goes with it. With nothing before it but
+    // the start or a `(`, the space after it goes instead.
+    if (out === "" || out.endsWith("(")) {
+      while (from < query.length && isSpace(query[from])) from += 1;
+    }
+  });
+  return out + query.slice(from);
+}
+
+/** `text` without the spaces at its end, as the lexer reads spaces. */
+function trimEndSpaces(text: string): string {
+  let end = text.length;
+  while (end > 0 && isSpace(text[end - 1])) end -= 1;
+  return text.slice(0, end);
+}
+
 /** True when every `)` in `query` closes a `(` before it, and none is left open. */
 function parenthesesPair(query: string): boolean {
   let depth = 0;

@@ -40,7 +40,11 @@ Each rule holds on every list, and each has its reason.
   a word on that list is within two edits. Nothing is searched as text or
   dropped. The language keeps no table of spellings it used to have. Why: a
   silently ignored word returns rows the person did not ask for, and they
-  cannot see why.
+  cannot see why. The Messages screen's search box serves two lists through
+  one switch, so the web app marks a word only the other list takes (`from:`
+  while Conversations is picked) with a wavy underline in the box, and sends
+  the list the query without it (#1561). The server still refuses the word;
+  the person sees it is left out, so it is not ignored silently.
 - **A query only narrows.** Sort order is a request parameter (`sort`), never
   a word.
   Why: a Saved Search then holds only what to find, so it means the same thing

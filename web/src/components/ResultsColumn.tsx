@@ -11,6 +11,8 @@ import {
   resultsView,
   VIEW_PARAM,
 } from "../lib/resultsView";
+import { useMarkedWords } from "../lib/searchFields";
+import { dropTokens } from "../lib/searchQuery";
 import type { Conversation } from "../lib/types";
 import { focusRing } from "../lib/uiStyles";
 import ConversationList from "../screens/ConversationList";
@@ -59,6 +61,11 @@ export function ResultsViewSwitch({
  * both. Which one, the sort picked in the Messages list, and the message a
  * result opened at all ride in the address, so opening a result keeps the
  * list as it was.
+ *
+ * A word only the other list takes, such as `from:` while Conversations is
+ * picked, stays in the box, marked there, and each list searches with the
+ * words it takes (#1561). Opening a result carries the search as typed, so
+ * switching back finds the word again.
  */
 export default function ResultsColumn({
   query,
@@ -80,6 +87,12 @@ export default function ResultsColumn({
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const view = resultsView(searchParams);
+  const { marked, ready } = useMarkedWords(
+    query,
+    view,
+    view === "messages" ? "conversations" : "messages",
+  );
+  const listQuery = dropTokens(query, marked);
 
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams(searchParams);
@@ -94,9 +107,15 @@ export default function ResultsColumn({
         view={view}
         onChange={(next) => setParam(VIEW_PARAM, next === "messages" ? "messages" : "")}
       />
-      {view === "messages" ? (
+      {!ready ? (
+        // Until both lists' words are known, a word the list does not take
+        // cannot be told apart from one it does, and the server would refuse it.
+        <div role="status" className="p-4 text-[0.813rem] text-muted">
+          Loading…
+        </div>
+      ) : view === "messages" ? (
         <MessageSearchList
-          query={searchTyped ? query : ""}
+          query={searchTyped ? listQuery : ""}
           sortPick={pickedMessageSort(searchParams)}
           onSortPick={(next) => setParam(MESSAGE_SORT_PARAM, messageSortParam(next))}
           selectedId={openedAt(searchParams)}
@@ -115,7 +134,7 @@ export default function ResultsColumn({
         <ConversationList
           selectedId={selectedConversationId}
           onSelect={onSelectConversation}
-          query={query}
+          query={listQuery}
         />
       )}
     </>

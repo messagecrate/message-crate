@@ -4,9 +4,11 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SearchList } from "../lib/searchFields";
 import { getConversation, listConversationMessages, trashConversation } from "../lib/serverApi";
 import type { Conversation, Message } from "../lib/types";
 import { mockedAuth, Providers } from "../test/providers";
+import { searchFieldsFor } from "../test/searchFields";
 import MessageRoute from "./MessageRoute";
 import { RightToolbarProvider } from "./RightToolbarContext";
 
@@ -21,6 +23,7 @@ vi.mock("../lib/serverApi", async (importOriginal) => ({
   getConversation: vi.fn(),
   listConversationMessages: vi.fn(),
   trashConversation: vi.fn(),
+  listSearchFields: vi.fn(async (list: SearchList) => searchFieldsFor(list)),
 }));
 
 // The real list virtualizes its rows, and jsdom lays out none. This stand-in
@@ -271,7 +274,8 @@ describe("MessageRoute", () => {
     const user = userEvent.setup();
 
     renderAt(`/messages/5${search}`);
-    expect(screen.getByTestId("list-query").textContent).toBe(query);
+    // A search with a `word:` waits for the lists' words.
+    expect((await screen.findByTestId("list-query")).textContent).toBe(query);
 
     await user.click(screen.getByRole("button", { name: "Second result" }));
     expect(screen.getByTestId("location").textContent).toBe(`/messages/6${search}`);

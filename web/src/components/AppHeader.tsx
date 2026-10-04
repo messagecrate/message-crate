@@ -30,6 +30,8 @@ const SEARCH_TARGETS: Record<
   {
     scope: SearchScope;
     list: SearchList | null;
+    /** The list whose words the box marks rather than sends (#1561); see `SearchBar`. */
+    otherList: SearchList | null;
     placeholder: string;
     advancedMode: AdvancedSearchMode | null;
   }
@@ -38,33 +40,39 @@ const SEARCH_TARGETS: Record<
   accounts: {
     scope: "account",
     list: null,
+    otherList: null,
     placeholder: "Search accounts",
     advancedMode: null,
   },
   contacts: {
     scope: "contact",
     list: "contacts",
+    otherList: null,
     placeholder: "Search contacts",
     advancedMode: "contacts",
   },
   // The Messages screen's two result lists (#313): one search box, whose
   // words and wording follow the list the switch shows. Both keep one set
-  // of recent searches, because one box serves both.
+  // of recent searches, because one box serves both. A word only the other
+  // list takes is marked in the box, so switching keeps it for later.
   conversations: {
     scope: "message",
     list: "conversations",
+    otherList: "messages",
     placeholder: "Search conversations",
     advancedMode: "messages",
   },
   messages: {
     scope: "message",
     list: "messages",
+    otherList: "conversations",
     placeholder: "Search messages",
     advancedMode: "messages",
   },
   trash: {
     scope: "trash",
     list: "conversations",
+    otherList: null,
     placeholder: "Search Trash",
     // Trash sends one query to both the contacts and the conversations
     // list; the contacts form offers only words both lists accept.
@@ -125,6 +133,7 @@ export default function AppHeader({
                 value={search.query}
                 scope={target.scope}
                 list={target.list}
+                otherList={target.otherList}
                 placeholder={target.placeholder}
                 advancedMode={target.advancedMode}
                 onChange={onSearchChange}

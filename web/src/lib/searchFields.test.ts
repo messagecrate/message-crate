@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { hasFieldToken, stripFieldTokens } from "./searchFields";
+import { searchFieldsFor } from "../test/searchFields";
+import { hasFieldToken, markedWords, stripFieldTokens } from "./searchFields";
 
 describe("hasFieldToken", () => {
   it("is true for any word: token, negated or not", () => {
@@ -26,5 +27,25 @@ describe("stripFieldTokens", () => {
   });
   it("drops a token a bracket opens too", () => {
     expect(stripFieldTokens("(kind:group or kind:direct)")).toBe("or");
+  });
+});
+
+describe("markedWords", () => {
+  const marked = (q: string, list: "conversations" | "messages") => {
+    const other = list === "messages" ? "conversations" : "messages";
+    return markedWords(q, searchFieldsFor(list), { list: other, fields: searchFieldsFor(other) });
+  };
+
+  it("marks a word only the other list takes, with the list it works in", () => {
+    expect(marked("from:ann hello", "conversations")).toEqual([
+      { word: "from", start: 0, end: 8, worksIn: "messages" },
+    ]);
+    expect(marked("hello messages:>5", "messages")).toEqual([
+      { word: "messages", start: 6, end: 17, worksIn: "conversations" },
+    ]);
+  });
+
+  it("leaves a word the list takes, and one no list has, to the server", () => {
+    expect(marked("body:x tag:Work note:x", "conversations")).toEqual([]);
   });
 });

@@ -5,6 +5,8 @@ import {
   advancedContacts,
   advancedMessages,
   type ContactsQueryInput,
+  dropTokens,
+  fieldTokens,
   forGroup,
   forHandle,
   forPerson,
@@ -599,5 +601,72 @@ describe("the web-queries fixture", () => {
         "searchQuery.ts.\nRegenerate with: (cd web && UPDATE_FIXTURES=1 npx vitest run " +
         "src/lib/searchQuery.test.ts)",
     ).toBe(want);
+  });
+});
+
+describe("fieldTokens", () => {
+  it("finds each word: token, its minus included, and lower-cases the word", () => {
+    const q = 'from:me -In:#3 hello to:"Ann Lee"';
+    expect(fieldTokens(q)).toEqual([
+      { word: "from", start: 0, end: 7 },
+      { word: "in", start: 8, end: 14 },
+      { word: "to", start: 21, end: 33 },
+    ]);
+  });
+
+  it("counts a word with no value yet, and not a colon in a phrase or a pasted address", () => {
+    expect(fieldTokens('"re: dinner" http://example.com with:').map((t) => t.word)).toEqual([
+      "with",
+    ]);
+  });
+
+  it("finds a token a bracket opens", () => {
+    expect(fieldTokens("(from:me or b)")).toEqual([{ word: "from", start: 1, end: 8 }]);
+  });
+});
+
+describe("dropTokens", () => {
+  const drop = (q: string, word: string) =>
+    dropTokens(
+      q,
+      fieldTokens(q).filter((t) => t.word === word),
+    );
+
+  it("drops the token and the space before it, and keeps the rest as typed", () => {
+    expect(drop("hello from:me world", "from")).toBe("hello world");
+    expect(drop("a  b from:me", "from")).toBe("a  b");
+    expect(drop('from:"Ann Lee" hi', "from")).toBe("hi");
+    expect(drop("from:me hello", "from")).toBe("hello");
+    expect(drop("-from:me hello -to:x", "from")).toBe("hello -to:x");
+  });
+
+  it("drops every token it is given", () => {
+    expect(drop("from:a hello from:b", "from")).toBe("hello");
+  });
+
+  it("drops an or, and or not the token leaves with nothing to join", () => {
+    expect(drop("from:me or hello", "from")).toBe("hello");
+    expect(drop("hello or from:me", "from")).toBe("hello");
+    expect(drop("hello and from:me", "from")).toBe("hello");
+    expect(drop("not from:me hello", "from")).toBe("hello");
+    expect(drop("a or not from:me", "from")).toBe("a");
+    expect(drop("a OR from:me OR b", "from")).toBe("a OR b");
+    expect(drop("not not from:me hello", "from")).toBe("hello");
+    expect(drop("not -(from:me) hello", "from")).toBe("hello");
+  });
+
+  it("drops parentheses the token leaves empty, and keeps a group that still holds a word", () => {
+    expect(drop("a (from:me or b)", "from")).toBe("a (b)");
+    expect(drop("a -(from:me)", "from")).toBe("a");
+    expect(drop("(from:me) or b", "from")).toBe("b");
+    expect(drop("((from:me)) b", "from")).toBe("b");
+  });
+
+  it("keeps an or, a quoted or and a negated or that still join something", () => {
+    expect(drop('a or b "or" -or from:me', "from")).toBe('a or b "or" -or');
+  });
+
+  it("returns the query unchanged when there is nothing to drop, a dangling or included", () => {
+    expect(drop("hello or", "from")).toBe("hello or");
   });
 });
