@@ -912,6 +912,7 @@ async fn insert_message_rows(
             thread_originator_guid: row.msg.thread_originator_guid.as_deref(),
             thread_originator_part: row.msg.thread_originator_part,
             num_replies: row.msg.num_replies,
+            deletion: row.msg.deletion,
             sort_order: row.sort_order,
             import_id: stmts.import_id,
         })

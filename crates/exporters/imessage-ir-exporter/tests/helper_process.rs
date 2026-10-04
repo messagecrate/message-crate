@@ -16,12 +16,13 @@ use std::{
 };
 
 use chat_db_fixture::{
-    FRIEND_EMAIL, FRIEND_PHONE, GROUP_CHAT_IDENTIFIER, OWNER, OWNER_EMAIL, PHOTO_BYTES,
-    REACTED_GUID, REACTION_EMOJI, write_chat_db,
+    DELETED_GUID, DELETED_TEXT, FRIEND_EMAIL, FRIEND_PHONE, GROUP_CHAT_IDENTIFIER, OWNER,
+    OWNER_EMAIL, PARTLY_UNSENT_GUID, PARTLY_UNSENT_TEXT, PHOTO_BYTES, REACTED_GUID, REACTION_EMOJI,
+    UNSENT_GUID, write_chat_db,
 };
 use common::{config, helper_binary};
 use message_crate_core::{ExporterConfig, OutputFormat};
-use message_ir::{ConversationDocument, IrDirection, IrMessage};
+use message_ir::{ConversationDocument, Deletion, IrDirection, IrMessage};
 use message_ir_format::{
     read_conversation_csv, read_conversation_eml_dir, read_conversation_jsonl,
     read_conversation_mbox,
@@ -229,6 +230,42 @@ fn a_tapback_and_an_emoji_reaction_are_the_messages_reactions() {
     );
 }
 
+/// A message the owner deleted in Messages, one unsent whole, and one only
+/// partly unsent reach the conversation file as `deleted_in_source_app`
+/// with its text, `unsent` with none, and no mark with the text left.
+#[test]
+fn a_deleted_and_an_unsent_message_carry_their_mark_in_the_file() {
+    helper_binary();
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = write_chat_db(dir.path());
+    let output = dir.path().join("out");
+
+    imessage_ir_exporter::run(&config(&db_path, &output, None)).unwrap();
+
+    // Read the lines as written, so the test checks the file's own shape.
+    let chat = jsonl_files(&output)
+        .into_iter()
+        .map(|path| fs::read_to_string(path).unwrap())
+        .find(|text| text.contains(DELETED_GUID))
+        .expect("the conversation file holding the deleted message");
+    let line = |guid: &str| {
+        chat.lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .find(|line| line["guid"] == guid)
+            .unwrap_or_else(|| panic!("no line for {guid}"))
+    };
+    let deleted = line(DELETED_GUID);
+    assert_eq!(deleted["deletion"], "deleted_in_source_app", "{deleted}");
+    assert_eq!(deleted["text"], DELETED_TEXT, "{deleted}");
+    let unsent = line(UNSENT_GUID);
+    assert_eq!(unsent["deletion"], "unsent", "{unsent}");
+    assert_eq!(unsent["text"], "", "{unsent}");
+    assert_eq!(unsent["message_kind"], "imessage", "{unsent}");
+    let partly = line(PARTLY_UNSENT_GUID);
+    assert!(partly.get("deletion").is_none(), "{partly}");
+    assert_eq!(partly["text"], PARTLY_UNSENT_TEXT, "{partly}");
+}
+
 /// The exporter's config for `format` rather than JSON Lines.
 fn config_for(db_path: &Path, output: &Path, format: OutputFormat) -> ExporterConfig {
     ExporterConfig {
@@ -291,7 +328,17 @@ fn a_csv_export_writes_each_conversation_and_copies_the_photo() {
     assert_eq!(fs::read(&staged[0]).unwrap(), PHOTO_BYTES);
 
     let phone_chat = read_conversation_csv(&output.join(format!("{FRIEND_PHONE}.csv"))).unwrap();
-    assert_eq!(phone_chat.messages.len(), 4);
+    assert_eq!(phone_chat.messages.len(), 7);
+    assert_eq!(
+        message(&phone_chat, DELETED_GUID).deletion,
+        Some(Deletion::DeletedInSourceApp),
+        "the CSV keeps the mark"
+    );
+    assert_eq!(
+        message(&phone_chat, UNSENT_GUID).deletion,
+        Some(Deletion::Unsent)
+    );
+    assert_eq!(message(&phone_chat, PARTLY_UNSENT_GUID).deletion, None);
     let photo = message(&phone_chat, "guid-1");
     assert_eq!(photo.attachments.len(), 1);
     let path = photo.attachments[0]

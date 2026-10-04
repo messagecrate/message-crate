@@ -305,6 +305,7 @@ fn emit_one(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result
         }
         "date" | "first-message" | "last-message" | "messages" | "conversations" | "groups"
         | "participants" | "attachments" => emit_measure_word(ctx, out, term, v),
+        "deleted" => emit_deleted_word(ctx, out, term, v),
         other => Err(QueryError::new(
             QueryErrorKind::BadValue,
             term.span.clone(),
@@ -1044,6 +1045,29 @@ fn emit_kind_word(
             Ok(())
         }
         _ => Err(bad_value(term, "needs a value this word accepts.")),
+    }
+}
+
+/// `deleted:`, a Messages word: `yes` is a message marked Deleted in the
+/// source app or Unsent, `no` one with neither mark. It reads the base row's
+/// own `m.deletion`, so it needs no bridge, and a NULL column is `no`, which
+/// keeps `deleted:yes` and `-deleted:yes` a split of the list.
+fn emit_deleted_word(
+    ctx: &ListCtx,
+    out: &mut Sql,
+    term: &FieldTerm,
+    v: &Value,
+) -> Result<(), QueryError> {
+    match (ctx.list, v) {
+        (ListKind::Messages, Value::Choice("yes")) => {
+            out.push("m.deletion IS NOT NULL");
+            Ok(())
+        }
+        (ListKind::Messages, Value::Choice("no")) => {
+            out.push("m.deletion IS NULL");
+            Ok(())
+        }
+        _ => Err(bad_value(term, "needs yes or no.")),
     }
 }
 

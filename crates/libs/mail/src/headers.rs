@@ -31,6 +31,13 @@ pub(crate) const PARTICIPANTS: &str = "X-ME-Participants";
 pub(crate) const SENDER_IDENTITY: &str = "X-ME-Sender-Identity";
 /// The message's reactions as JSON, a list of `message_ir::Reaction`.
 pub(crate) const REACTIONS: &str = "X-ME-Reactions";
+/// Why the message's content is gone in the source app:
+/// `deleted_in_source_app` or `unsent`, as `message_ir::Deletion` writes it.
+pub(crate) const DELETION: &str = "X-ME-Deletion";
+/// The header an earlier Message Crate kept the Apple Messages deleted mark
+/// in. The reader refuses a mail that carries it: nothing reads it, so the
+/// mail would lose its mark.
+pub(crate) const EARLIER_IS_DELETED: &str = "X-ME-Is-Deleted";
 /// The headers an earlier Message Crate wrote for the sender and the owner,
 /// when it named each address a handle. The reader refuses a mail that
 /// carries one: nothing reads them, so the mail would lose its sender.
@@ -62,8 +69,6 @@ pub(crate) const THREAD_ORIGINATOR_GUID: &str = "X-ME-Thread-Originator-Guid";
 pub(crate) const THREAD_ORIGINATOR_PART: &str = "X-ME-Thread-Originator-Part";
 /// Reply count.
 pub(crate) const NUM_REPLIES: &str = "X-ME-Num-Replies";
-/// iMessage deleted flag.
-pub(crate) const IS_DELETED: &str = "X-ME-Is-Deleted";
 /// Send effect name.
 pub(crate) const SEND_EFFECT: &str = "X-ME-Send-Effect";
 /// Shared location payload.

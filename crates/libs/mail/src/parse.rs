@@ -5,7 +5,7 @@ use crate::{MailAttachment, MailMessage, Participant};
 use anyhow::{Context, Result, bail};
 use mailparse::{MailHeader, MailHeaderMap, ParsedMail};
 use message_ir::{
-    IrDirection, IrImessage, IrMessage, IrMessageKind, IrService, IrSource, Reaction,
+    Deletion, IrDirection, IrImessage, IrMessage, IrMessageKind, IrService, IrSource, Reaction,
 };
 use serde::Deserialize;
 use std::fs;
@@ -51,6 +51,13 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             hn::EARLIER_TAPBACKS
         );
     }
+    if headers.get_first_header(hn::EARLIER_IS_DELETED).is_some() {
+        bail!(
+            "This mail was written by an earlier Message Crate, which kept the deleted mark in {}; \
+             export the backup again",
+            hn::EARLIER_IS_DELETED
+        );
+    }
 
     let chat_identifier = required_header(headers, hn::CHAT_IDENTIFIER)?;
     let conversation_type = header_or(headers, hn::CONVERSATION_TYPE, "individual");
@@ -81,6 +88,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     let text = extract_text_body(&mail).unwrap_or_default();
     let attachments = merge_attachments(&mail, headers);
     let reactions = parse_reactions(headers)?;
+    let deletion = parse_deletion(headers)?;
 
     let source = {
         let android_type =
@@ -105,7 +113,6 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             in_reply_to_guid: optional_header(headers, hn::THREAD_ORIGINATOR_GUID),
             thread_originator_part: header_u32(headers, hn::THREAD_ORIGINATOR_PART),
             num_replies: header_u32(headers, hn::NUM_REPLIES),
-            is_deleted: header_bool(headers, hn::IS_DELETED),
             send_effect: optional_header(headers, hn::SEND_EFFECT),
             shared_location: optional_header(headers, hn::SHARED_LOCATION),
             announcement: optional_header(headers, hn::ANNOUNCEMENT),
@@ -150,6 +157,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             // that build IR fill this list from there.
             attachments: Vec::new(),
             reactions,
+            deletion,
             imessage,
             source,
         },
@@ -254,6 +262,15 @@ fn header_bool(headers: &[MailHeader<'_>], name: &str) -> bool {
 /// A header value parsed as a number.
 fn header_u32(headers: &[MailHeader<'_>], name: &str) -> Option<u32> {
     optional_header(headers, name)?.parse().ok()
+}
+
+/// The message's mark from `X-ME-Deletion`, or none when the header is
+/// absent. A value that names neither mark is refused rather than dropped.
+fn parse_deletion(headers: &[MailHeader<'_>]) -> Result<Option<Deletion>> {
+    let Some(raw) = optional_header(headers, hn::DELETION) else {
+        return Ok(None);
+    };
+    message_ir::parse_deletion(&raw).with_context(|| format!("This mail's {} header", hn::DELETION))
 }
 
 /// The message's reactions from `X-ME-Reactions`, or none when the header is
@@ -417,6 +434,7 @@ mod tests {
                 text: "hello roundtrip".into(),
                 attachments: Vec::new(),
                 reactions: Vec::new(),
+                deletion: None,
                 imessage: None,
                 source: Some(IrSource {
                     android_type: Some(2),
@@ -472,7 +490,6 @@ mod tests {
             in_reply_to_guid: Some("parent-guid-1111".into()),
             thread_originator_part: Some(1),
             num_replies: Some(3),
-            is_deleted: true,
             send_effect: Some("Sent with Balloons".into()),
             shared_location: Some("Cupertino".into()),
             announcement: Some("named the conversation".into()),
@@ -521,6 +538,7 @@ mod tests {
                 text: "full bag".into(),
                 attachments: Vec::new(),
                 reactions: reactions.clone(),
+                deletion: Some(message_ir::Deletion::Unsent),
                 imessage: Some(imessage.clone()),
                 source: Some(IrSource {
                     android_type: Some(1),
@@ -575,6 +593,7 @@ mod tests {
             parsed.message.reactions, reactions,
             "each reaction keeps its reactor, even a name that looks like an encoded word"
         );
+        assert_eq!(parsed.message.deletion, Some(message_ir::Deletion::Unsent));
 
         // The whole extension bag must survive field for field.
         let parsed_bag = parsed.message.imessage.as_ref().expect("imessage bag");
@@ -638,6 +657,7 @@ mod tests {
                 text: "the message text".into(),
                 attachments: Vec::new(),
                 reactions: Vec::new(),
+                deletion: None,
                 imessage: None,
                 source: None,
             },

@@ -222,6 +222,10 @@ impl Promote<'_> {
         ));
         staging::write_message_map(self.tx, self.account_id, &msg_map).await?;
         self.done(phase, "message id map written");
+
+        let phase = Self::begin("marking messages deleted in the source app or unsent…");
+        let marked = staging::promote_deletion_marks(self.tx).await?;
+        self.done(phase, format!("deletion marks done (changed={marked})"));
         Ok(messages_before)
     }
 

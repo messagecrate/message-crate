@@ -280,7 +280,7 @@ mod tests {
         let fixture = FixtureDb::write();
         let session = fixture.session();
         let messages = FixtureDb::messages(&session);
-        assert_eq!(messages.len(), 15);
+        assert_eq!(messages.len(), 18);
 
         let rowid = |index: usize| session.conversation(&messages[index]).map(|c| c.rowid);
         assert_eq!(rowid(0), Some(1));

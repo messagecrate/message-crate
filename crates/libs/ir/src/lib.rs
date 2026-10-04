@@ -52,8 +52,52 @@ pub use schema_version::{
 /// (`docs/adr/0014-gpl-code-only-behind-a-process-boundary.md`).
 pub use imessage_reader_protocol::Reaction;
 
-/// Schema version written into every [`ConversationDocument`] (currently 6).
-pub const SCHEMA_VERSION: u32 = 6;
+/// Why a message's content is gone in the app it came from: Deleted in the
+/// source app, or Unsent. Serialized `deleted_in_source_app` / `unsent`.
+///
+/// Defined in `imessage-reader-protocol` beside [`Reaction`], for the same
+/// reason: the Apple Messages Reader writes it in the shape the conversation
+/// file carries.
+pub use imessage_reader_protocol::Deletion;
+
+/// The mark a text field holds, as the CSV `deletion` cell and the
+/// `X-ME-Deletion` mail header write it: blank for no mark, else
+/// [`Deletion::as_str`]'s text.
+///
+/// # Errors
+///
+/// Returns [`UnknownDeletion`] for any other text, so a reader refuses it
+/// rather than read it as no mark.
+pub fn parse_deletion(text: &str) -> Result<Option<Deletion>, UnknownDeletion> {
+    let text = text.trim();
+    if text.is_empty() {
+        return Ok(None);
+    }
+    Deletion::ALL
+        .into_iter()
+        .find(|d| d.as_str() == text)
+        .map(Some)
+        .ok_or_else(|| UnknownDeletion(text.to_string()))
+}
+
+/// Text that names neither mark of [`Deletion`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownDeletion(pub String);
+
+impl std::fmt::Display for UnknownDeletion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:?} is neither deleted_in_source_app nor unsent",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for UnknownDeletion {}
+
+/// Schema version written into every [`ConversationDocument`] (currently 7).
+pub const SCHEMA_VERSION: u32 = 7;
 
 /// One exported chat: export metadata, conversation roster and stats, and messages.
 ///
@@ -398,6 +442,10 @@ pub struct IrMessage {
     /// of the file, when the message has none or the source records none.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub reactions: Vec<Reaction>,
+    /// Deleted in the source app, or Unsent; `None`, and left out of the
+    /// file, for a message that is neither or a source that records neither.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deletion: Option<Deletion>,
     /// Apple extensions; `None` for non-iMessage messages.
     pub imessage: Option<IrImessage>,
     /// Vendor leftovers (Android type code and raw fields).
@@ -545,8 +593,6 @@ pub struct IrImessage {
     pub thread_originator_part: Option<u32>,
     /// Number of replies under this message.
     pub num_replies: Option<u32>,
-    /// Sender deleted the message.
-    pub is_deleted: bool,
     /// iMessage send effect (e.g. `slam`).
     pub send_effect: Option<String>,
     /// Shared-location payload.
@@ -584,7 +630,6 @@ impl IrImessage {
             && self.in_reply_to_guid.is_none()
             && self.thread_originator_part.is_none()
             && self.num_replies.is_none()
-            && !self.is_deleted
             && self.send_effect.is_none()
             && self.shared_location.is_none()
             && self.announcement.is_none()

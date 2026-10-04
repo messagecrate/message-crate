@@ -5,7 +5,9 @@ use anyhow::{Context, Result, bail};
 use mail::{MailAttachment, MailMessage, MailPackage, Participant, write_mail_package};
 use message_crate_core::OutputFormat;
 use message_csv::{AttachmentCell, ParticipantCell, format_local_ts, json_cell};
-use message_ir::{ConversationDocument, ConversationHeader, IrImessage, IrMessage, IrMessageKind};
+use message_ir::{
+    ConversationDocument, ConversationHeader, Deletion, IrImessage, IrMessage, IrMessageKind,
+};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
@@ -33,6 +35,7 @@ pub const CSV_HEADERS: &[&str] = &[
     "text",
     "attachments_json",
     "reactions_json",
+    "deletion",
     "message_kind",
     "export_source",
     "export_tool",
@@ -43,7 +46,6 @@ pub const CSV_HEADERS: &[&str] = &[
     "android_type",
     "source_fields_json",
     "read_receipt",
-    "is_deleted",
     "send_effect",
     "shared_location",
     "is_announcement",
@@ -296,7 +298,6 @@ impl MessageCells {
 #[derive(Default)]
 struct ImessageCells {
     read_receipt: String,
-    is_deleted: bool,
     send_effect: String,
     shared_location: String,
     announcement: String,
@@ -328,7 +329,6 @@ impl ImessageCells {
         };
         Self {
             read_receipt: text_cell(im.read_receipt_rfc3339.as_deref()),
-            is_deleted: im.is_deleted,
             send_effect: text_cell(im.send_effect.as_deref()),
             shared_location: text_cell(im.shared_location.as_deref()),
             announcement: text_cell(im.announcement.as_deref()),
@@ -392,6 +392,7 @@ fn csv_record<'a>(
         msg.text.as_str(),
         cells.attachments_json.as_str(),
         cells.reactions_json.as_str(),
+        msg.deletion.map_or("", Deletion::as_str),
         msg.message_kind.as_str(),
         doc.export.source.as_str(),
         doc.export.tool.as_str(),
@@ -402,7 +403,6 @@ fn csv_record<'a>(
         cells.android_type.as_str(),
         cells.source_fields_json.as_str(),
         im.read_receipt.as_str(),
-        bool_cell(im.is_deleted),
         im.send_effect.as_str(),
         im.shared_location.as_str(),
         bool_cell(msg.message_kind == IrMessageKind::Announcement),

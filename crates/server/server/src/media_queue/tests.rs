@@ -55,7 +55,7 @@ fn batch(files: &[(&str, &str)], shas: &[String]) -> String {
     );
     let count = files.len();
     let header = format!(
-        r#"{{"schema_version":6,"export":{{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"+15555550123","conversation_type":"individual","group_title":null,"participants":[{{"identity":"+15555550123","display_name":null}}],"stats":{{"message_count":1,"attachment_count":{count},"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
+        r#"{{"schema_version":7,"export":{{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"+15555550123","conversation_type":"individual","group_title":null,"participants":[{{"identity":"+15555550123","display_name":null}}],"stats":{{"message_count":1,"attachment_count":{count},"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
     );
     format!("{header}\n{message}\n")
 }

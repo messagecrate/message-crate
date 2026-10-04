@@ -18,7 +18,7 @@ fn writes_json_csv_jsonl_and_eml() {
     assert!(json_path.ends_with("+15555550101.json"));
     let raw = fs::read_to_string(&json_path).unwrap();
     let parsed: ConversationDocument = serde_json::from_str(&raw).unwrap();
-    assert_eq!(parsed.schema_version, 6);
+    assert_eq!(parsed.schema_version, 7);
     assert_eq!(parsed.messages[0].text, "hello ir");
     assert!(parsed.messages[0].attachments.is_empty());
     assert_eq!(
@@ -49,7 +49,7 @@ fn writes_json_csv_jsonl_and_eml() {
     let jsonl = fs::read_to_string(&jsonl_path).unwrap();
     let mut lines = jsonl.lines();
     let header: Value = serde_json::from_str(lines.next().unwrap()).unwrap();
-    assert_eq!(header["schema_version"], 6);
+    assert_eq!(header["schema_version"], 7);
     assert!(header.get("messages").is_none());
     assert_eq!(header["conversation"]["stats"]["message_count"], 1);
     let msg_line: Value = serde_json::from_str(lines.next().unwrap()).unwrap();
@@ -209,6 +209,28 @@ fn roundtrip_csv_sms_and_imessage() {
     }
 }
 
+/// A `deletion` cell that names neither mark is refused rather than read as
+/// a message with no mark.
+#[test]
+fn csv_refuses_a_deletion_that_names_no_mark() {
+    let tmp = tempfile::tempdir().unwrap();
+    let doc = message_ir::testutil::sample_imessage_document();
+    let csv_path = write_conversation_csv(tmp.path(), &doc).unwrap();
+    let csv = fs::read_to_string(&csv_path).unwrap();
+    assert!(csv.contains(",deleted_in_source_app,"), "{csv}");
+    fs::write(
+        &csv_path,
+        csv.replace(",deleted_in_source_app,", ",trashed,"),
+    )
+    .unwrap();
+    let err = read_conversation_csv(&csv_path).unwrap_err();
+    assert!(
+        format!("{err:#}")
+            .contains(r#"bad deletion: "trashed" is neither deleted_in_source_app nor unsent"#),
+        "{err:#}"
+    );
+}
+
 #[test]
 fn csv_omits_trivial_parts_json_keeps_rich_parts() {
     let tmp = tempfile::tempdir().unwrap();
@@ -228,6 +250,7 @@ fn csv_omits_trivial_parts_json_keeps_rich_parts() {
         text: "hello".into(),
         attachments: vec![],
         reactions: vec![],
+        deletion: None,
         imessage: Some(IrImessage {
             parts: Some(json!([
                 {"index": 0, "kind": "run", "text": "hello"},
@@ -388,7 +411,7 @@ fn json_refuses_a_version_3_file_by_name() {
     assert_eq!(refusal.found, 3);
     assert_eq!(
         refusal.to_string(),
-        "This file is schema version 3; Message Crate reads version 6"
+        "This file is schema version 3; Message Crate reads version 7"
     );
 }
 
@@ -409,22 +432,23 @@ fn jsonl_refuses_a_version_3_file_by_name() {
     assert!(format!("{err:#}").contains("schema version 3"), "{err:#}");
 }
 
-/// A version-5 file keeps a message's reactions in `imessage.tapbacks`;
-/// version 6 keeps them in the message's `reactions`. The reader refuses it
-/// by its version rather than reading the message with its reactions gone.
+/// A version-6 file keeps the Apple Messages deleted mark in
+/// `imessage.is_deleted`; version 7 keeps it in the message's `deletion`.
+/// The reader refuses it by its version rather than reading the message with
+/// its mark gone.
 #[test]
-fn jsonl_refuses_a_version_5_file_by_name() {
+fn jsonl_refuses_a_version_6_file_by_name() {
     let tmp = tempfile::tempdir().unwrap();
-    let path = tmp.path().join("v5.jsonl");
+    let path = tmp.path().join("v6.jsonl");
     fs::write(
         &path,
         concat!(
-            r#"{"schema_version":5,"export":{"source":"imessage","tool":"t","tool_version":"1","owner_identity":"+15555550100","owner_display_name":null},"#,
+            r#"{"schema_version":6,"export":{"source":"imessage","tool":"t","tool_version":"1","owner_identity":"+15555550100","owner_display_name":null},"#,
             r#""conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Sam","identity_type":"phone"}],"#,
             r#""stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#,
             "\n",
             r#"{"guid":"g1","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hi","attachments":[],"#,
-            r#""imessage":{"is_reply":false,"is_deleted":false,"tapbacks":[{"part_index":0,"kind":"loved","is_from_me":true}]},"source":null}"#,
+            r#""imessage":{"is_reply":false,"is_deleted":true},"source":null}"#,
             "\n",
         ),
     )
@@ -433,10 +457,10 @@ fn jsonl_refuses_a_version_5_file_by_name() {
     let refusal = err
         .downcast_ref::<message_ir::UnsupportedSchemaVersion>()
         .expect("typed refusal");
-    assert_eq!(refusal.found, 5);
+    assert_eq!(refusal.found, 6);
     assert_eq!(
         refusal.to_string(),
-        "This file is schema version 5; Message Crate reads version 6"
+        "This file is schema version 6; Message Crate reads version 7"
     );
 }
 

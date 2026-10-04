@@ -87,7 +87,7 @@ mod tests {
     use super::{ReadRecordsError, read_records};
     use crate::imports_api::ImportFailure;
 
-    const HEADER: &str = r#"{"schema_version":6,"export":{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Sam"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#;
+    const HEADER: &str = r#"{"schema_version":7,"export":{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Sam"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#;
 
     fn message(guid: &str) -> String {
         format!(

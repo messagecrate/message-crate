@@ -330,6 +330,7 @@ impl SharedMessage {
             text: self.text.clone(),
             attachments: vec![],
             reactions: Vec::new(),
+            deletion: None,
             imessage: None,
             source: None,
         }
@@ -1017,6 +1018,7 @@ impl<R: Rng> Seeder<'_, R> {
             text,
             attachments: vec![],
             reactions: Vec::new(),
+            deletion: None,
             imessage: None,
             source: None,
         }

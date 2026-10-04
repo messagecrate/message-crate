@@ -8,7 +8,7 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, NaiveDateTime};
 use message_ir::{
-    ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IrAttachment,
+    ConversationDocument, ConversationMeta, ConversationStats, Deletion, ExportMeta, IrAttachment,
     IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind, IrParticipant,
     IrService, IrSource, Reaction, SCHEMA_VERSION,
 };
@@ -130,6 +130,7 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
         text: msg.text.clone().unwrap_or_default(),
         attachments,
         reactions: msg.tapbacks.iter().filter_map(reaction_from_row).collect(),
+        deletion: msg.deletion.map(deletion_from_api),
         imessage: imessage.into_option(),
         source: IrSource {
             android_type: None,
@@ -137,6 +138,14 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
         }
         .into_option(),
     })
+}
+
+/// The mark a server message carries, as the conversation file writes it.
+fn deletion_from_api(deletion: message_crate_api_types::Deletion) -> Deletion {
+    match deletion {
+        message_crate_api_types::Deletion::DeletedInSourceApp => Deletion::DeletedInSourceApp,
+        message_crate_api_types::Deletion::Unsent => Deletion::Unsent,
+    }
 }
 
 /// The owner address every message of a conversation carries, when they all
@@ -661,11 +670,53 @@ mod tests {
             },
             attachments: vec![],
             tapbacks: vec![],
+            deletion: None,
         };
         let ir = to_ir_message(&msg, false).unwrap();
         assert_eq!(ir.guid, "g1");
         assert_eq!(ir.text, "hi");
         assert_eq!(ir.service, IrService::IMessage);
+    }
+
+    /// The server's mark and the conversation file's are two types, one per
+    /// crate, so each mark of either must have a counterpart in the other
+    /// spelled the same, or a new one would be dropped on the way through.
+    #[test]
+    fn every_mark_has_a_counterpart_spelled_the_same() {
+        for mark in Deletion::ALL {
+            let api = message_crate_api_types::Deletion::parse(mark.as_str())
+                .unwrap_or_else(|| panic!("the server has no mark {:?}", mark.as_str()));
+            assert_eq!(deletion_from_api(api), mark);
+        }
+        for api in message_crate_api_types::Deletion::ALL {
+            assert_eq!(deletion_from_api(api).as_str(), api.as_str());
+        }
+    }
+
+    /// Each mark the server returns is written on the exported message as
+    /// the same mark, and a message with none carries none.
+    #[test]
+    fn a_deletion_mark_is_exported_as_the_same_mark() {
+        let mut msg = seed_message_with_participant(Participant {
+            identity: Some("+1".into()),
+            name: "Sam".into(),
+            service: None,
+            contact_id: None,
+        });
+        assert_eq!(to_ir_message(&msg, false).unwrap().deletion, None);
+        for (api, ir) in [
+            (
+                message_crate_api_types::Deletion::DeletedInSourceApp,
+                message_ir::Deletion::DeletedInSourceApp,
+            ),
+            (
+                message_crate_api_types::Deletion::Unsent,
+                message_ir::Deletion::Unsent,
+            ),
+        ] {
+            msg.deletion = Some(api);
+            assert_eq!(to_ir_message(&msg, false).unwrap().deletion, Some(ir));
+        }
     }
 
     /// A participant `name` distinct from the handle carries through as the
@@ -728,6 +779,7 @@ mod tests {
             },
             attachments: vec![],
             tapbacks: vec![],
+            deletion: None,
         }
     }
 }

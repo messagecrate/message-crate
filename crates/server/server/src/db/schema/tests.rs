@@ -392,6 +392,37 @@ async fn a_message_without_a_guid_is_refused() {
     }
 }
 
+/// `messages.deletion` holds one of the two marks or NULL; any other text,
+/// such as the Trash's own word, is refused, so a mark the server does not
+/// know can never be stored and returned as no mark.
+#[tokio::test]
+async fn a_message_deletion_is_one_of_the_two_marks_or_none() {
+    use message_ir::Deletion;
+    let (pool, _fixture) = seeded_schema_fixture().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let conv = conversation_id(&mut conn, A1).await;
+    let mut ids = Vec::new();
+    for deletion in [
+        None,
+        Some(Deletion::DeletedInSourceApp),
+        Some(Deletion::Unsent),
+    ] {
+        let id = MessageRow {
+            deletion,
+            ..MessageRow::new(A1, conv)
+        }
+        .insert(&mut conn)
+        .await;
+        ids.push(id);
+    }
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    let refused = sqlx::query("UPDATE messages SET deletion = 'trashed' WHERE id = $1")
+        .bind(ids[0])
+        .execute(&mut *tx)
+        .await;
+    assert!(refused.is_err(), "deletion 'trashed' was accepted");
+}
+
 #[tokio::test]
 async fn old_database_rebuilds_empty_at_current_version() {
     let (pool, _dir) = test_pool().await;

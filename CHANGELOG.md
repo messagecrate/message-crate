@@ -21,6 +21,17 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-04 **A message deleted in Apple Messages, or unsent, is kept and
+  marked.** A message deleted in Apple Messages that its recently deleted
+  list still holds is imported with its text and marked Deleted in the
+  source app. A message its sender unsent is imported as Unsent, rather than
+  as a line saying someone unsent a message. A message only partly unsent
+  keeps what is left and has no mark. Search finds marked messages like any
+  other, and `deleted:yes` or `deleted:no` on Messages narrows to them or
+  away from them. Nothing is hidden. A later import of the same message
+  that carries the mark adds it to the message already there. Export keeps
+  the mark, so a conversation exported and imported again keeps it too. The
+  conversation shows the mark in a coming release.
 - 2026-10-04 **A long conversation scrolls without downloading its photos,
   and videos and voice notes play in place.** A photo or video shows as a
   small thumbnail, loaded only when its message scrolls near the screen,
@@ -1407,6 +1418,12 @@ released versions carry their date on the heading.
 - Message files exported before reactions moved onto the message they react
   to are refused when you import or convert them, rather than read with their
   Apple Messages reactions lost. This holds for JSON, JSONL, CSV, EML and mbox
+  exports, and for an Import Run an earlier build left paused. Export the
+  backup again with this build, then import or convert the new files; discard
+  a paused run and start the import again.
+- Message files exported before a message could be marked Deleted in the
+  source app or Unsent are refused when you import or convert them, rather
+  than read with the mark lost. This holds for JSON, JSONL, CSV, EML and mbox
   exports, and for an Import Run an earlier build left paused. Export the
   backup again with this build, then import or convert the new files; discard
   a paused run and start the import again.

@@ -852,6 +852,8 @@ pub struct MessageRow<'a> {
     pub thread_originator_part: Option<i64>,
     /// `messages.num_replies`.
     pub num_replies: i64,
+    /// `messages.deletion`.
+    pub deletion: Option<message_ir::Deletion>,
     /// `messages.sort_order`.
     pub sort_order: i64,
     /// `messages.content_key`.
@@ -884,6 +886,7 @@ impl MessageRow<'_> {
             thread_originator_guid: None,
             thread_originator_part: None,
             num_replies: 0,
+            deletion: None,
             sort_order: 0,
             content_key: None,
             duplicate_of: None,
@@ -918,10 +921,10 @@ impl MessageRow<'_> {
                 id, conversation_id, account_id, source, guid, timestamp, is_from_me,
                 sender_handle_id, owner_handle_id, service, subject, body,
                 is_announcement, is_reply, thread_originator_guid, thread_originator_part,
-                num_replies, sort_order, content_key, duplicate_of, import_id
+                num_replies, deletion, sort_order, content_key, duplicate_of, import_id
              ) VALUES (
                 $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                $13, $14, $15, $16, $17, $18, $19, $20, $21
+                $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
              ) RETURNING id",
         )
         .bind(self.id)
@@ -941,6 +944,7 @@ impl MessageRow<'_> {
         .bind(self.thread_originator_guid)
         .bind(self.thread_originator_part)
         .bind(self.num_replies)
+        .bind(self.deletion.map(message_ir::Deletion::as_str))
         .bind(self.sort_order)
         .bind(self.content_key)
         .bind(self.duplicate_of)
