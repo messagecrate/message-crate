@@ -237,12 +237,8 @@ released versions carry their date on the heading.
 
 #### Importing
 
-- 2026-10-04 **A resumed Upload no longer reports conversations it already
-  sent as skipped.** When an Upload resumed, the conversations an earlier
-  part of the Import Run had sent were each reported as skipped, and the
-  import screen removed those rows again before it listed the run's Import
-  Errors. They are no longer reported at all, since each one is already in
-  Message Crate. The Import Errors list is the same as before.
+- 2026-10-04 The way a resumed Upload records the conversations an earlier
+  part of the Import Run already sent was reworked, with nothing visible.
 - 2026-10-04 **An attachment too large after conversion says so when an
   interrupted Media Stage resumes.** When two conversations shared one
   attachment whose converted copy came out over the size limit, an Import
