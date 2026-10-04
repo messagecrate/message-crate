@@ -35,15 +35,27 @@ function clearBodyDragStyles(): void {
 }
 
 /**
- * On-screen width of the column that owns the resize handle.
+ * Width of the column that owns the resize handle, as its `width` style
+ * counts it, so a narrow window that squeezes the column is seen. The left
+ * panel and the list column are content-box with a 1px right border, which the
+ * browser paints outside that width, so the border and any padding come off
+ * the painted width rather than adding 1px to every resize.
  * Falls back to preferredWidth when the parent is missing (tests / detached nodes).
  */
 export function measureColumnWidth(handle: HTMLElement, preferredWidth: number): number {
   const parent = handle.parentElement;
   if (!parent) return preferredWidth;
-  const measured = parent.getBoundingClientRect().width;
-  if (!Number.isFinite(measured) || measured <= 0) return preferredWidth;
-  return measured;
+  const painted = parent.getBoundingClientRect().width;
+  if (!Number.isFinite(painted) || painted <= 0) return preferredWidth;
+  const style = getComputedStyle(parent);
+  if (style.boxSizing === "border-box") return painted;
+  const px = (value: string) => Number.parseFloat(value) || 0;
+  const outside =
+    px(style.borderLeftWidth) +
+    px(style.borderRightWidth) +
+    px(style.paddingLeft) +
+    px(style.paddingRight);
+  return painted - outside;
 }
 
 /** Drag and keyboard resize for a vertical column, with localStorage persistence. */
@@ -95,7 +107,7 @@ export function useColumnResize({
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     startXRef.current = e.clientX;
-    // Use the painted width so a flex-shrunk column does not jump to preferred.
+    // Use the width on screen so a flex-shrunk column does not jump to preferred.
     startWidthRef.current = measureColumnWidth(e.currentTarget, widthRef.current);
     setDraggingState(true);
     document.body.style.userSelect = "none";
@@ -121,7 +133,7 @@ export function useColumnResize({
     const step = e.shiftKey ? 24 : 8;
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
-      // Start from the painted width, as a drag does, so a flex-shrunk column
+      // Start from the width on screen, as a drag does, so a flex-shrunk column
       // moves on the first key press.
       const from = measureColumnWidth(e.currentTarget, widthRef.current);
       const next = clampWidth(

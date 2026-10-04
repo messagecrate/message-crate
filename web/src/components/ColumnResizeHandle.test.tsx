@@ -176,4 +176,43 @@ describe("ColumnResizeHandle", () => {
     expect(getByRole("separator", { name: "Resize list" })).toHaveAttribute("aria-valuenow", "250");
     column.remove();
   });
+
+  /**
+   * The panels are content-box with a 1px right border, which the browser
+   * paints outside their width; the grip reported 221 for a 220px panel.
+   */
+  it("reports the panel's width, not the width plus the border painted outside it", () => {
+    const column = document.createElement("div");
+    column.setAttribute("style", "box-sizing: content-box; border-right: 1px solid");
+    document.body.appendChild(column);
+    vi.spyOn(column, "getBoundingClientRect").mockReturnValue({
+      width: 221,
+      height: 100,
+      top: 0,
+      left: 0,
+      bottom: 100,
+      right: 221,
+      x: 0,
+      y: 0,
+      toJSON: () => ({}),
+    });
+    const { getByRole } = render(
+      <ColumnResizeHandle
+        ariaLabel="Resize navigation panel"
+        width={220}
+        minWidth={160}
+        maxWidth={520}
+        dragging={false}
+        handleHover={false}
+        handleProps={props}
+      />,
+      { container: column },
+    );
+
+    expect(getByRole("separator", { name: "Resize navigation panel" })).toHaveAttribute(
+      "aria-valuenow",
+      "220",
+    );
+    column.remove();
+  });
 });
