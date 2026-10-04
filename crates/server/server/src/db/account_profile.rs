@@ -653,6 +653,33 @@ pub async fn count_accounts(conn: &mut SqliteConnection) -> Result<i64> {
         .await?)
 }
 
+/// Every account's id, lowest first.
+///
+/// # Errors
+///
+/// Returns an error when the statement fails.
+pub async fn account_ids(conn: &mut SqliteConnection) -> Result<Vec<i64>> {
+    Ok(sqlx::query_scalar("SELECT id FROM accounts ORDER BY id")
+        .fetch_all(&mut *conn)
+        .await?)
+}
+
+/// Whether the account `account_id` exists.
+///
+/// # Errors
+///
+/// Returns an error when the statement fails.
+pub async fn account_exists(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+) -> Result<bool, sqlx::Error> {
+    Ok(sqlx::query("SELECT 1 FROM accounts WHERE id = $1")
+        .bind(account_id)
+        .fetch_optional(&mut *conn)
+        .await?
+        .is_some())
+}
+
 /// One page of account ids: the owner's first, then the rest by
 /// username.
 ///

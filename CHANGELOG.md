@@ -1202,6 +1202,12 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-04 **Stopping the server stops the conversion it was running.** A
+  server stopped with Ctrl-C or `docker stop` while it made a browser copy
+  of a video left that conversion running after the server had stopped,
+  using the computer for nothing. It now stops the conversion, removes the
+  part-made copy, and makes the copy again when it next starts. Stopping
+  the command that rebuilds the copies does the same.
 - 2026-10-04 **A video's browser copy plays in every browser.** The copy
   the server made of a HEVC video, the format an iPhone records in, was HEVC
   as well, which most browsers cannot play. It is now H.264, which they all

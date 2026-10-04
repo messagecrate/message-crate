@@ -37,9 +37,10 @@ fn fixture_bytes(name: &str) -> Vec<u8> {
     std::fs::read(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
 }
 
-/// One batch of one message with the three files attached.
-fn batch(shas: &[String]) -> String {
-    let attachments: Vec<String> = FILES
+/// One batch of one message with `files`, each a name and a media type,
+/// attached under the fingerprints `shas`.
+fn batch(files: &[(&str, &str)], shas: &[String]) -> String {
+    let attachments: Vec<String> = files
         .iter()
         .zip(shas)
         .map(|((name, mime), sha)| {
@@ -49,18 +50,40 @@ fn batch(shas: &[String]) -> String {
         })
         .collect();
     let message = format!(
-        r#"{{"guid":"g-media","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"three files","attachments":[{}],"imessage":null,"source":null}}"#,
+        r#"{{"guid":"g-media","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"some files","attachments":[{}],"imessage":null,"source":null}}"#,
         attachments.join(",")
     );
-    format!(
-        "{}\n{message}\n",
-        r#"{"schema_version":6,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550123","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550123","display_name":null}],"stats":{"message_count":1,"attachment_count":3,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}"#,
-    )
+    let count = files.len();
+    let header = format!(
+        r#"{{"schema_version":6,"export":{{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"+15555550123","conversation_type":"individual","group_title":null,"participants":[{{"identity":"+15555550123","display_name":null}}],"stats":{{"message_count":1,"attachment_count":{count},"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
+    );
+    format!("{header}\n{message}\n")
 }
 
 /// Import the three files as an Upload does: start an Import Run, upload
 /// each file, send the batch that names them, and complete the run.
 async fn import_three(fixture: &TestFixture, alice: &RegisteredAccount) -> Imported {
+    let files: Vec<(&str, &str, Vec<u8>)> = FILES
+        .iter()
+        .map(|(name, mime)| (*name, *mime, fixture_bytes(name)))
+        .collect();
+    let (shas, conversation_id) = import_files(fixture, alice, &files).await;
+    let [photo, h264, hevc]: [String; 3] = shas.try_into().unwrap();
+    Imported {
+        photo,
+        h264,
+        hevc,
+        conversation_id,
+    }
+}
+
+/// Import `files`, each a name, a media type and its bytes, as an Upload
+/// does, and answer their fingerprints and the conversation that holds them.
+async fn import_files(
+    fixture: &TestFixture,
+    alice: &RegisteredAccount,
+    files: &[(&str, &str, Vec<u8>)],
+) -> (Vec<String>, i64) {
     let state = &fixture.state;
     let (_, run): (String, serde_json::Value) = crate::test_support::post_created_json(
         state,
@@ -71,26 +94,26 @@ async fn import_three(fixture: &TestFixture, alice: &RegisteredAccount) -> Impor
     .await;
     let run = run["id"].as_i64().unwrap();
     let mut shas = Vec::new();
-    for (name, mime) in FILES {
-        let bytes = fixture_bytes(name);
-        let sha = crate::assets_api::sha256_hex(&bytes);
+    for (name, mime, bytes) in files {
+        let sha = crate::assets_api::sha256_hex(bytes);
         let (status, text) = crate::test_support::put_raw(
             state,
             &format!("/v1/assets/{sha}"),
             &alice.token,
             mime,
-            bytes,
+            bytes.clone(),
         )
         .await;
         assert!(status.is_success(), "upload {name}: {status} {text}");
         shas.push(sha);
     }
+    let names: Vec<(&str, &str)> = files.iter().map(|(name, mime, _)| (*name, *mime)).collect();
     let (status, text) = crate::test_support::post_raw(
         state,
         &format!("/v1/imports/{run}/batches"),
         &alice.token,
         "application/jsonl",
-        batch(&shas),
+        batch(&names, &shas),
     )
     .await;
     assert!(status.is_success(), "batch: {status} {text}");
@@ -109,13 +132,7 @@ async fn import_three(fixture: &TestFixture, alice: &RegisteredAccount) -> Impor
             .fetch_one(&mut *fixture.conn().await)
             .await
             .unwrap();
-    let [photo, h264, hevc]: [String; 3] = shas.try_into().unwrap();
-    Imported {
-        photo,
-        h264,
-        hevc,
-        conversation_id,
-    }
+    (shas, conversation_id)
 }
 
 /// The attachments of the one message, as the conversation answers them.
@@ -222,7 +239,9 @@ fn the_pass_makes_a_thumbnail_of_each_image_and_video_and_a_preview_only_for_hev
         let state = &fixture.state;
         let imported = import_three(&fixture, &alice).await;
 
-        let made = work_through(&state.db, &state.cfg).await.unwrap();
+        let made = work_through(&state.db, &state.cfg, &AtomicBool::new(false))
+            .await
+            .unwrap();
 
         assert_eq!(
             (made.thumbnails, made.derived, made.errors),
@@ -333,7 +352,7 @@ fn without_ffmpeg_the_queue_waits() {
     let made = {
         let _hidden = media::testutil::hide_ffmpeg();
         runtime
-            .block_on(work_through(&state.db, &state.cfg))
+            .block_on(work_through(&state.db, &state.cfg, &AtomicBool::new(false)))
             .unwrap()
     };
 
@@ -372,4 +391,106 @@ async fn an_asset_queued_again_while_it_is_worked_on_stays_queued() {
         3,
         "the Asset queued again is still queued"
     );
+}
+
+/// A video that takes ffmpeg seconds to convert: the HEVC fixture played
+/// 8000 times over, copied rather than encoded, so it is made in an instant.
+fn long_video() -> Vec<u8> {
+    let ffmpeg = media::probe_ffmpeg_tools(None)
+        .ffmpeg_path
+        .expect("ffmpeg, which the guard found");
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("long.mov");
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/media/hevc.mov");
+    let status = std::process::Command::new(ffmpeg)
+        .args(["-v", "error", "-y", "-stream_loop", "7999", "-i"])
+        .arg(&source)
+        .args(["-c", "copy"])
+        .arg(&out)
+        .status()
+        .unwrap();
+    assert!(status.success(), "make the long video: {status}");
+    std::fs::read(&out).unwrap()
+}
+
+/// The ids of the processes making a Preview into a work directory under
+/// `work`: the ffmpeg runs whose command line names a `Preview-` file there.
+#[cfg(target_os = "linux")]
+fn making_a_preview_in(work: &Path) -> Vec<u32> {
+    let work = work.to_string_lossy();
+    std::fs::read_dir("/proc")
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| {
+            let pid: u32 = entry.file_name().to_str()?.parse().ok()?;
+            let cmdline = std::fs::read(entry.path().join("cmdline")).ok()?;
+            let names_preview = cmdline
+                .split(|byte| *byte == 0)
+                .map(String::from_utf8_lossy)
+                .any(|arg| arg.starts_with(work.as_ref()) && arg.contains("/Preview-"));
+            names_preview.then_some(pid)
+        })
+        .collect()
+}
+
+/// Every file under `dir`, at any depth.
+fn files_under(dir: &Path) -> Vec<std::path::PathBuf> {
+    let mut files = Vec::new();
+    let mut dirs = vec![dir.to_path_buf()];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir).into_iter().flatten().flatten() {
+            if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                dirs.push(entry.path());
+            } else {
+                files.push(entry.path());
+            }
+        }
+    }
+    files
+}
+
+/// A server that stops while the pass converts a video stops ffmpeg with
+/// it: no ffmpeg is left converting, the Asset stays queued for the next
+/// start, and the part-made Preview is removed (#1729).
+#[cfg(target_os = "linux")]
+#[test]
+fn stopping_the_pass_stops_its_conversion_and_leaves_the_asset_queued() {
+    with_real_ffmpeg(async {
+        let (fixture, alice) = fixture_with_account().await;
+        let state = &fixture.state;
+        import_files(
+            &fixture,
+            &alice,
+            &[("long.mov", "video/quicktime", long_video())],
+        )
+        .await;
+        assert_eq!(queued(state).await, 1);
+        let work = state.cfg.paths.data_dir.join(".media-work");
+
+        state
+            .media_queue
+            .start(state.db.clone(), Arc::clone(&state.cfg));
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(120);
+        while making_a_preview_in(&work).is_empty() || files_under(&work).is_empty() {
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "the pass did not start making the Preview"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        state.media_queue.stop().await;
+
+        assert_eq!(
+            making_a_preview_in(&work),
+            Vec::<u32>::new(),
+            "ffmpeg stops with the pass"
+        );
+        assert_eq!(queued(state).await, 1, "the Asset stays queued");
+        assert_eq!(
+            files_under(&work),
+            Vec::<std::path::PathBuf>::new(),
+            "the part-made Preview is removed"
+        );
+    });
 }

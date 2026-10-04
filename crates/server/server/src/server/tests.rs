@@ -1777,7 +1777,7 @@ async fn sigterm_drains_the_request_in_flight_then_stops_the_server() {
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-    let mut server = tokio::spawn(serve_until_shutdown(listener, app));
+    let mut server = tokio::spawn(serve_until_shutdown(listener, app, || {}));
 
     let request = tokio::spawn(async move {
         reqwest::Client::new()
