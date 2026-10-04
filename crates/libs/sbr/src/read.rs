@@ -640,8 +640,9 @@ fn parse_mms(
 
 /// An address as a [`Handle`], classified from the value as written. `None`
 /// for a blank value and for the placeholder the phone writes where its own
-/// number goes.
-fn address_handle(raw: &str) -> Option<Handle> {
+/// number goes. The writer counts a group's participants with it, so that it
+/// counts them as this reader does.
+pub fn address_handle(raw: &str) -> Option<Handle> {
     if raw.trim().eq_ignore_ascii_case(INSERT_ADDRESS_TOKEN) {
         return None;
     }

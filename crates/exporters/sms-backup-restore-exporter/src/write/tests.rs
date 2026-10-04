@@ -92,6 +92,16 @@ fn part_payloads(msg: &IrMessage) -> Vec<(String, Option<Vec<u8>>)> {
         .collect()
 }
 
+/// The element attributes the message was written with.
+fn attrs(msg: &IrMessage) -> &Value {
+    &msg.source.as_ref().unwrap().fields["attrs"]
+}
+
+/// The `contact_name` attribute the message was written with, if any.
+fn contact_name(msg: &IrMessage) -> Option<&str> {
+    attrs(msg).get("contact_name").and_then(|v| v.as_str())
+}
+
 fn ir_attachment(name: &str, bytes: &[u8]) -> IrAttachment {
     IrAttachment {
         path: None,
@@ -153,8 +163,9 @@ fn a_group_mms_keeps_its_addresses_and_attachment() {
     assert_eq!(incoming.direction, IrDirection::Incoming);
     assert_eq!(incoming.text, "look");
     assert_eq!(incoming.sender_handle.as_deref(), Some("+15555550102"));
-    // A group MMS's `contact_name` names the group, so the reader takes no
-    // sender name from it.
+    // A group's `contact_name` holds the participants' names, as SMS Backup
+    // & Restore writes it, so it names the group and not the sender.
+    assert_eq!(contact_name(incoming), Some("Ana, Lee"));
     assert_eq!(incoming.sender_display_name, None);
     assert_eq!(
         addrs(incoming),
@@ -174,6 +185,7 @@ fn a_group_mms_keeps_its_addresses_and_attachment() {
 
     assert_eq!(outgoing.direction, IrDirection::Outgoing);
     assert_eq!(outgoing.text, "nice");
+    assert_eq!(contact_name(outgoing), Some("Ana, Lee"));
     assert_eq!(
         addrs(outgoing),
         [
@@ -207,6 +219,7 @@ fn an_incoming_sms_keeps_its_sender_and_contact_name() {
     );
     assert_eq!(msg.direction, IrDirection::Incoming);
     assert_eq!(msg.sender_handle.as_deref(), Some("+15555550101"));
+    assert_eq!(contact_name(msg), Some("Sam"));
     assert_eq!(msg.text, "hello ir");
 }
 
@@ -293,15 +306,74 @@ fn a_text_only_group_message_from_another_app_stays_in_its_group() {
     };
     assert_eq!(incoming.direction, IrDirection::Incoming);
     assert_eq!(incoming.sender_handle.as_deref(), Some("+15555550102"));
+    assert_eq!(contact_name(incoming), Some("Sam, Lee"));
     assert_eq!(incoming.sender_display_name, None);
     assert_eq!(incoming.text, "who is in?");
     assert!(incoming.attachments.is_empty());
     assert_eq!(outgoing.direction, IrDirection::Outgoing);
     assert_eq!(outgoing.text, "me");
+    assert_eq!(contact_name(outgoing), Some("Sam, Lee"));
+    assert_eq!(attrs(outgoing)["address"], "+15555550101~+15555550102");
+}
+
+/// A group conversation in which one participant has an identity is written
+/// with that one identity and reads back as one-to-one, so its `contact_name`
+/// is the one-to-one value and not every participant's name.
+#[test]
+fn a_group_with_one_identified_participant_is_named_as_one_to_one() {
+    let mut doc = message_ir::testutil::sample_document("hi");
+    doc.conversation.chat_identifier = "chat-group".into();
+    doc.conversation.conversation_type = IrConversationType::Group;
+    doc.conversation
+        .participants
+        .push(message_ir::IrParticipant {
+            handle: None,
+            display_name: Some("Lee".into()),
+            handle_type: None,
+        });
+    doc.messages[0].source = None;
+
+    let read = round_trip(&[doc]);
+    assert_eq!(read.len(), 1);
     assert_eq!(
-        outgoing.source.as_ref().unwrap().fields["attrs"]["address"],
-        "+15555550101~+15555550102"
+        read[0].conversation.conversation_type,
+        IrConversationType::Individual
     );
+    let msg = &read[0].messages[0];
+    assert_eq!(contact_name(msg), Some("Sam"));
+    assert_eq!(msg.sender_display_name.as_deref(), Some("Sam"));
+}
+
+/// Two participants with one identity written two ways, or the owner listed
+/// as a participant, are one peer to the reader. A group conversation of Sam
+/// and either of those reads back as one-to-one with Sam, so its
+/// `contact_name` is Sam's name and not a list.
+#[test]
+fn a_group_the_reader_finds_one_peer_in_is_named_as_one_to_one() {
+    for (handle, name) in [("555-555-0101", "Sam (work)"), (OWNER, "Me")] {
+        let mut doc = message_ir::testutil::sample_document("hi");
+        doc.conversation.chat_identifier = "chat-group".into();
+        doc.conversation.conversation_type = IrConversationType::Group;
+        doc.conversation
+            .participants
+            .push(message_ir::IrParticipant {
+                handle: Some(handle.into()),
+                display_name: Some(name.into()),
+                handle_type: Some(message_ir::HandleType::Phone),
+            });
+        doc.messages[0].source = None;
+
+        let read = round_trip(&[doc]);
+        assert_eq!(read.len(), 1, "{handle}");
+        assert_eq!(
+            read[0].conversation.conversation_type,
+            IrConversationType::Individual,
+            "{handle}"
+        );
+        let msg = &read[0].messages[0];
+        assert_eq!(contact_name(msg), Some("Sam"), "{handle}");
+        assert_eq!(msg.sender_display_name.as_deref(), Some("Sam"), "{handle}");
+    }
 }
 
 /// Apps other than SMS Backup & Restore put the owner's own address on a
