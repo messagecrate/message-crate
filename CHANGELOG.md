@@ -251,6 +251,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **Logging out during an Upload waits at most 15 seconds, and
+  an Upload whose session ends pauses cleanly.** Logging out during an
+  Upload waited for the Upload to pause for as long as that took, and an
+  Upload that did not stop kept you logged in. Logout now waits at most 15
+  seconds, with a **Log out now** button, and then logs out anyway and
+  says the Upload resumes from what it had sent. When your session ended
+  while an Upload ran and nothing else noticed, the Upload kept going and
+  recorded every remaining conversation as failed. It now pauses at once,
+  records none of them as failed, and logs you out.
 - 2026-10-04 **A group imported from two backups takes its current name,
   however the backups arrive.** When two copies of one group chat became
   one conversation, the name it ended with depended on whether they came
@@ -857,6 +866,13 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-04 **Deleting your account in the desktop app deletes its
+  Staging Directories on this computer.** Deleting your own account during
+  or after an import left that import's Staging Directory on disk, with
+  nothing to offer it again. The delete dialog now names the account's
+  Staging Directories on this computer, deleting the account deletes them,
+  and one that cannot be deleted is named afterwards so you can remove it
+  by hand.
 - 2026-10-03 **An expired session says to log in again.** When your
   session had expired, or was ended from another window, an Upload or an
   Export said "invalid API key", though the app sends no API key. It now

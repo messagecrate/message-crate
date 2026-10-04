@@ -9,13 +9,15 @@ import {
   useRef,
   useState,
 } from "react";
-import ConfirmDialog from "../components/ConfirmDialog";
+import LogoutDialog, { type LogoutDialogState } from "../components/LogoutDialog";
+import PathList from "../components/PathList";
 import { ApiError, getToken, setAccountId, setBaseUrl, setToken } from "./api";
 import { parsePersistedAuth } from "./authGuards";
 import { createQueryClient } from "./routeQuery";
-import { isUploadRunning, pauseRunningUpload } from "./runningUpload";
+import { isUploadRunning, onUploadSessionRefused, pauseRunningUpload } from "./runningUpload";
 import { getSession, logout as serverLogout } from "./serverApi";
 import { readPref, removePref, writePref } from "./storage";
+import { invokeDeleteStaging } from "./tauri";
 import { isTauri } from "./tauri-check";
 import { fetchAccountProfileFor } from "./useAccountProfile";
 
@@ -34,11 +36,20 @@ interface AuthContextValue extends AuthState {
    * Revoke the server session (best-effort) and clear the saved login.
    *
    * An Upload that is running is paused first, and the session is revoked
-   * only once the pause is recorded: the push sends this session's token.
-   * Unless `ask` is false, logout first asks whether to pause it, and does
-   * nothing when the person goes back.
+   * once the pause is recorded: the push sends this session's token. Unless
+   * `ask` is false, logout first asks whether to pause it, and does nothing
+   * when the person goes back. It waits at most {@link UPLOAD_PAUSE_LIMIT_MS}
+   * for the pause, less when the person presses **Log out now**, and then
+   * revokes the session anyway and says the Upload resumes from what it sent.
+   *
+   * `deletedAccountDirectories` is given when the account has just been deleted:
+   * its Staging Directories on this computer, deleted once the session is
+   * revoked. One that cannot be deleted is named in a notice.
    */
-  logout: (options?: { ask?: boolean }) => Promise<void>;
+  logout: (options?: {
+    ask?: boolean;
+    deletedAccountDirectories?: readonly string[];
+  }) => Promise<void>;
   setServer: (url: string) => void;
   /**
    * Check the saved login again, after a startup check the server never
@@ -53,8 +64,15 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 const STORAGE_KEY = "message-crate-auth";
 
-const UPLOAD_RUNNING_PROMPT =
-  "An Upload is running. Logging out pauses it; you can resume it after you log in.";
+/**
+ * How long logout waits for a running Upload to pause before it revokes the
+ * session anyway (#1491). A push that does not stop must not keep the person
+ * logged in; the Upload then resumes from what its journal recorded as sent.
+ */
+export const UPLOAD_PAUSE_LIMIT_MS = 15_000;
+
+const UPLOAD_NOT_PAUSED =
+  "You were logged out before the Upload had paused. When you log in again, it resumes from what it had sent.";
 
 /** Max time to wait for the server logout request before clearing local state. */
 const LOGOUT_TIMEOUT_MS = 2000;
@@ -311,28 +329,81 @@ function SessionProvider({
     clearSession();
   }, [clearSession]);
 
-  // The question logout asks while an Upload runs: open, and then pausing
-  // once the person chose to log out. `answer` settles the logout waiting on it.
-  const [uploadPrompt, setUploadPrompt] = useState<"asking" | "pausing" | null>(null);
+  // What logout shows: the question it asks while an Upload runs, the wait
+  // while that Upload pauses, and a notice once logged out. `answer` settles
+  // the logout waiting on the question; `logOutNow` ends the wait.
+  const [dialog, setDialog] = useState<LogoutDialogState | null>(null);
   const answer = useRef<(logOut: boolean) => void>(() => {});
+  const logOutNow = useRef<() => void>(() => {});
+
+  /**
+   * Pause the running Upload. `paused` resolves to whether it paused before
+   * the limit and before the person pressed **Log out now**; `ended` once it
+   * has ended, however long that takes. A pause that fails counts as done:
+   * the session is revoked either way.
+   */
+  const pauseWithinLimit = useCallback(() => {
+    const ended = pauseRunningUpload().catch(() => {});
+    const paused = new Promise<boolean>((resolve) => {
+      const settle = (done: boolean) => {
+        clearTimeout(timer);
+        logOutNow.current = () => {};
+        resolve(done);
+      };
+      const timer = setTimeout(() => settle(false), UPLOAD_PAUSE_LIMIT_MS);
+      logOutNow.current = () => settle(false);
+      void ended.then(() => settle(true));
+    });
+    return { paused, ended };
+  }, []);
 
   const logout = useCallback(
-    async ({ ask = true }: { ask?: boolean } = {}) => {
-      if (ask && isUploadRunning()) {
+    async ({
+      ask = true,
+      deletedAccountDirectories,
+    }: {
+      ask?: boolean;
+      deletedAccountDirectories?: readonly string[];
+    } = {}) => {
+      const uploadRunning = isUploadRunning();
+      if (ask && uploadRunning) {
         const logOut = await new Promise<boolean>((resolve) => {
           answer.current = resolve;
-          setUploadPrompt("asking");
+          setDialog({ kind: "asking" });
         });
         if (!logOut) return;
       }
+      if (uploadRunning) {
+        setDialog({ kind: "pausing", accountDeleted: deletedAccountDirectories !== undefined });
+      }
+      const pause = pauseWithinLimit();
+      let paused = true;
       try {
-        await pauseRunningUpload();
+        paused = await pause.paused;
         await revokeSession();
       } finally {
-        setUploadPrompt(null);
+        setDialog(null);
+      }
+      if (deletedAccountDirectories) {
+        // The run went with the account, so nothing resumes; its folders go
+        // too, and one that stays is named rather than left without a word.
+        // An Upload that did not pause in time may still write into its
+        // folder, so the folders go once it has ended. The deleted account's
+        // token is refused, so that is soon.
+        await pause.ended;
+        const undeleted = await deleteStagingDirectories(deletedAccountDirectories);
+        if (undeleted.length > 0) {
+          setDialog({
+            kind: "notice",
+            title: "Staging Directories left on this computer",
+            body: <UndeletedDirectories directories={undeleted} />,
+          });
+        }
+      } else if (!paused) {
+        setDialog({ kind: "notice", title: "Logged out", body: UPLOAD_NOT_PAUSED_BODY });
       }
     },
-    [revokeSession],
+    [revokeSession, pauseWithinLimit],
   );
 
   // The server has refused the token, so the session is already over there
@@ -341,12 +412,18 @@ function SessionProvider({
   // An Upload that is running is paused all the same: its push sends the
   // same token, so it would only record every remaining conversation as
   // failed, and the run stays resumable.
+  // A push the server refused its session to ends the session the same way,
+  // unless a later login has replaced the token the push sent: a push that
+  // outlived a logout says nothing about the session after it.
   useEffect(() => {
-    sessionEnded.current = () => {
-      if (!getToken()) return;
+    const end = (refusedToken?: string) => {
+      const token = getToken();
+      if (!token || (refusedToken !== undefined && refusedToken !== token)) return;
       void pauseRunningUpload();
       clearSession();
     };
+    sessionEnded.current = () => end();
+    return onUploadSessionRefused(end);
   }, [sessionEnded, clearSession]);
 
   // Desktop only: on window close, revoke the session then quit.
@@ -394,24 +471,52 @@ function SessionProvider({
       value={{ ...state, login, logout, updateToken, setServer, retrySavedLogin }}
     >
       {children}
-      <ConfirmDialog
-        open={uploadPrompt !== null}
-        title="Log out"
-        body={UPLOAD_RUNNING_PROMPT}
-        confirmLabel="Log out"
-        cancelLabel="Go back"
-        busy={uploadPrompt === "pausing"}
-        busyLabel="Pausing…"
-        onConfirm={() => {
-          setUploadPrompt("pausing");
-          answer.current(true);
-        }}
-        onClose={() => {
-          setUploadPrompt(null);
+      <LogoutDialog
+        state={dialog}
+        onLogOut={() => answer.current(true)}
+        onGoBack={() => {
+          setDialog(null);
           answer.current(false);
         }}
+        onLogOutNow={() => logOutNow.current()}
+        onDismiss={() => setDialog(null)}
       />
     </AuthContext.Provider>
+  );
+}
+
+const UPLOAD_NOT_PAUSED_BODY = (
+  <p className="mt-3 text-[0.875rem] leading-relaxed text-muted">{UPLOAD_NOT_PAUSED}</p>
+);
+
+/** A Staging Directory that could not be deleted, and why. */
+type UndeletedDirectory = { path: string; reason: string };
+
+/** Delete each directory, and return the ones that could not be deleted. */
+async function deleteStagingDirectories(
+  directories: readonly string[],
+): Promise<UndeletedDirectory[]> {
+  const undeleted: UndeletedDirectory[] = [];
+  for (const path of directories) {
+    try {
+      await invokeDeleteStaging({ staging_dir: path });
+    } catch (e) {
+      undeleted.push({ path, reason: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  return undeleted;
+}
+
+/** Names each Staging Directory a deleted account left behind, and why. */
+function UndeletedDirectories({ directories }: { directories: readonly UndeletedDirectory[] }) {
+  return (
+    <>
+      <p className="mt-3 text-[0.875rem] leading-relaxed text-muted">
+        Message Crate could not delete these Staging Directories of the deleted account. Delete them
+        by hand to free the space they take:
+      </p>
+      <PathList paths={directories.map(({ path, reason }) => ({ path, note: reason }))} />
+    </>
   );
 }
 

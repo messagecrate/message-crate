@@ -190,17 +190,20 @@ struct ImportHttpOutcome {
     response: Result<http::CreateImportBatchResponse, BatchError>,
 }
 
-/// Why a batch failed: the sentence to show, and the line of the batch the
-/// server could not read, when it named one.
+/// Why a batch failed: the sentence to show, the line of the batch the
+/// server could not read, when it named one, and whether the server refused
+/// the session rather than the batch.
 struct BatchError {
     message: String,
     refused_line: Option<u64>,
+    session_refused: bool,
 }
 
 impl BatchError {
     fn new(error: &anyhow::Error) -> Self {
         Self {
             message: error.to_string(),
+            session_refused: message_crate_http::is_session_refused(error),
             refused_line: error
                 .downcast_ref::<HttpError>()
                 .and_then(HttpError::problem)
@@ -409,9 +412,9 @@ impl<'a> ImportPipeline<'a> {
 
     /// Flush, then say whether the run may keep going.
     ///
-    /// A failed request stops the run only when the run was cancelled.
-    /// Otherwise the failure is recorded against the conversations in that
-    /// batch and the run moves on.
+    /// A failed request stops the run only when the run was cancelled, which
+    /// includes a session the server refused. Otherwise the failure is
+    /// recorded against the conversations in that batch and the run moves on.
     ///
     /// # Errors
     ///
@@ -471,10 +474,11 @@ impl<'a> ImportPipeline<'a> {
             let request_started = Instant::now();
             let body_bytes = batch.body.len();
             let message_count = batch.messages.len();
-            let response = message_crate_http::with_retries(max_retries, || {
-                session.post_import(import_id, batch.body.clone())
-            })
-            .map_err(|error| BatchError::new(&error));
+            let response = session
+                .request(max_retries, |session| {
+                    session.post_import(import_id, batch.body.clone())
+                })
+                .map_err(|error| BatchError::new(&error));
             let request_ms = elapsed_ms(request_started);
             let seconds = request_started.elapsed().as_secs_f64().max(0.001);
             ImportHttpOutcome {
@@ -510,7 +514,9 @@ impl<'a> ImportPipeline<'a> {
     /// Update journal + per-file trackers after one import HTTP request finishes.
     ///
     /// On success: record each message id so a later push can skip them.
-    /// On failure: mark every conversation that contributed to this batch as failed.
+    /// On failure: mark every conversation that contributed to this batch as
+    /// failed, unless the server refused the session: that stops the run,
+    /// and the batch's conversations are left for the next push.
     ///
     /// # Errors
     ///
@@ -521,6 +527,15 @@ impl<'a> ImportPipeline<'a> {
         journal: &mut RunJournal,
         out: &mut Reporter<'_, '_>,
     ) -> Result<bool> {
+        if let Err(error) = &outcome.response
+            && error.session_refused
+        {
+            out.log(&format!(
+                "IMPORT_REQUEST refused source={} messages={} error={}",
+                outcome.batch.source, outcome.message_count, error.message
+            ));
+            return Ok(false);
+        }
         let represented = outcome.batch.file_indexes();
         self.accounting.attempted = self
             .accounting

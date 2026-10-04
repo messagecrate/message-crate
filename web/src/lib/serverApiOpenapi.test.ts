@@ -259,6 +259,7 @@ const EXERCISED: Record<string, () => unknown> = {
     serverApi.listImports(
       every<serverApi.ImportListParams>({ status: "completed", limit: 50, offset: 0 }),
     ),
+  listEveryImport: () => serverApi.listEveryImport(),
   getImport: () => serverApi.getImport(4),
   createImport: () => serverApi.createImport({ source: "iPhone" }),
   setImportStage: () => serverApi.setImportStage(4, { stage: "media" }),

@@ -21,7 +21,7 @@ export default function StagingDeleteFailureNotice({
       role="alert"
     >
       <p className="m-0 text-[0.813rem] text-danger">
-        Message Crate could not delete the staging folder{" "}
+        Message Crate could not delete the Staging Directory{" "}
         <code className="font-mono text-[0.75rem] break-all">{failure.path}</code>
         {`: ${failure.reason}. Delete it by hand to free the space it takes.`}
       </p>

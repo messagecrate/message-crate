@@ -181,6 +181,7 @@ function failedReport(): PushFinishedReport {
   return {
     ok: false,
     cancelled: false,
+    session_refused: false,
     messages_attempted: 8_000,
     messages_inserted: 0,
     messages_deduped: 0,
@@ -200,6 +201,7 @@ function okReport(overrides: Partial<PushFinishedReport> = {}): PushFinishedRepo
   return {
     ok: true,
     cancelled: false,
+    session_refused: false,
     messages_attempted: 10,
     messages_inserted: 10,
     messages_deduped: 0,
