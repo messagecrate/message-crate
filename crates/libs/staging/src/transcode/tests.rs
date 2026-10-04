@@ -38,6 +38,14 @@ fn staged_one(name: &str, bytes: &[u8]) -> (tempfile::TempDir, PathBuf, PathBuf)
     (dir, jsonl, original)
 }
 
+/// An issue sink, and the rows it receives in the order the pass sent them.
+fn collecting_sink() -> (IssueSink, std::sync::Arc<std::sync::Mutex<Vec<RunIssue>>>) {
+    let issues = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let sink_issues = std::sync::Arc::clone(&issues);
+    let sink = IssueSink::new(move |issue| sink_issues.lock().unwrap().push(issue));
+    (sink, issues)
+}
+
 fn options(mode: MediaMode, limit: u64) -> TranscodeOptions {
     TranscodeOptions {
         mode,
@@ -277,9 +285,7 @@ fn a_file_the_pass_cannot_convert_is_sent_as_a_skip_import_error() {
         return;
     };
     let (dir, jsonl, _original) = staged_one("broken.png", b"not a png at all");
-    let issues = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
-    let sink_issues = std::sync::Arc::clone(&issues);
-    let sink = IssueSink::new(move |issue| sink_issues.lock().unwrap().push(issue));
+    let (sink, issues) = collecting_sink();
 
     let report = transcode_staged(
         dir.path(),
@@ -313,6 +319,75 @@ fn a_file_the_pass_cannot_convert_is_sent_as_a_skip_import_error() {
         issues[0].reason.len() > "could not be converted, so the original file is kept: ".len(),
         "the reason carries ffmpeg's detail: {}",
         issues[0].reason
+    );
+}
+
+/// An attachment whose converted file is over the limit is left out, and
+/// the pass says so as a `skip` row. The Upload sends no row for it, since
+/// the conversation file records why it has no file.
+#[test]
+fn a_file_left_out_as_too_large_is_sent_as_a_skip_import_error() {
+    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+        return;
+    };
+    let (dir, jsonl, _original) = staged_one("photo.png", &test_png_bytes());
+    let (sink, issues) = collecting_sink();
+
+    transcode_staged(
+        dir.path(),
+        &options(MediaMode::Convert, 1),
+        None,
+        Some(&sink),
+        &mut |_| {},
+    )
+    .unwrap();
+
+    let issues = issues.lock().unwrap();
+    let conversation = jsonl.file_name().unwrap().to_str().unwrap();
+    assert_eq!(issues.len(), 1, "{issues:?}");
+    assert_eq!(
+        (issues[0].kind.as_str(), issues[0].item.clone()),
+        ("skip", format!("{conversation}:photo.png"))
+    );
+    assert!(
+        issues[0]
+            .reason
+            .ends_with("over the attachment size limit, so it was left out"),
+        "{}",
+        issues[0].reason
+    );
+}
+
+/// A resumed pass tries a file again that an earlier pass could not
+/// convert. It says first that the earlier row no longer holds, then
+/// reports the new outcome, so a file converted on the second try keeps no
+/// row.
+#[test]
+fn a_file_tried_again_resolves_its_earlier_row_first() {
+    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+        return;
+    };
+    let (dir, jsonl, _original) = staged_one("broken.png", b"not a png at all");
+    let opts = options(MediaMode::Convert, u64::MAX);
+    transcode_staged(dir.path(), &opts, None, None, &mut |_| {}).unwrap();
+    let (sink, issues) = collecting_sink();
+
+    transcode_staged(dir.path(), &opts, None, Some(&sink), &mut |_| {}).unwrap();
+
+    let conversation = jsonl.file_name().unwrap().to_str().unwrap();
+    let rows: Vec<(String, String)> = issues
+        .lock()
+        .unwrap()
+        .iter()
+        .map(|issue| (issue.kind.clone(), issue.item.clone()))
+        .collect();
+    let item = format!("{conversation}:broken.png");
+    assert_eq!(
+        rows,
+        [
+            (RESOLVED.to_string(), item.clone()),
+            ("skip".to_string(), item)
+        ]
     );
 }
 

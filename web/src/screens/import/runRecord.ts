@@ -1,6 +1,7 @@
 import type { ImportIssue } from "../../components/import/ImportSummaryPanel";
 import { isIssueStage } from "../../components/import/importIssueStage";
 import type { PushFinishedReport } from "../../lib/tauri";
+import type { ConversationStatus } from "../../lib/types";
 
 /**
  * What an Import Run has recorded so far, across every part it ran in.
@@ -115,7 +116,7 @@ export type RunPart = {
    * What this part's Upload said of each conversation file it finished so
    * far (`extract:file-done`), by file: `ok`, `skipped` or `failed`.
    */
-  conversations: ReadonlyMap<string, string>;
+  conversations: ReadonlyMap<string, ConversationStatus>;
   /** This part's push report, when it ran an Upload that reported. */
   report: PushFinishedReport | null;
 };
@@ -171,37 +172,38 @@ function isRunError(issue: ImportIssue): boolean {
  * as they finished, and every file its report lists, which adds the ones a
  * stop left unsent (`cancelled`).
  */
-function conversationStatuses(part: RunPart): Map<string, string> {
+function conversationStatuses(part: RunPart): Map<string, ConversationStatus> {
   const statuses = new Map(part.conversations);
   for (const result of part.report?.results ?? []) statuses.set(result.file, result.status);
   return statuses;
 }
 
 /** On the server: sent by this part, or by an earlier one (the journal skipped it). */
-function isOnServer(status: string | undefined): boolean {
+function isOnServer(status: ConversationStatus | undefined): boolean {
   return status === "ok" || status === "skipped";
 }
 
 /**
  * Sort an earlier stop's rows by what this part's Upload said of their
- * conversation. A conversation this Upload read again (`ok`, `failed`) was
- * reported afresh, so its earlier rows go. A row about a whole conversation
- * this Upload reported on (also `skipped`, `cancelled`) is stale, and goes.
- * The other rows of a conversation an earlier part sent (`skipped`) are
- * true and final, and are promoted. The rest still wait.
+ * conversation. A row about a whole conversation this Upload reported on is
+ * stale, and goes: this Upload reports that conversation itself. A
+ * conversation this Upload sent (`ok`) was read again, so its other earlier
+ * rows were reported afresh, and go. Those of a conversation an earlier
+ * part sent (`skipped`) are true and final, and are promoted. The rest
+ * still wait: a `failed` conversation may have failed before it was read,
+ * and rows this part reported again are merged with them (`mergeIssues`).
  */
 function sortEarlierStop(
   carried: RunRecord,
-  statuses: ReadonlyMap<string, string>,
+  statuses: ReadonlyMap<string, ConversationStatus>,
 ): { promoted: ImportIssue[]; waiting: ImportIssue[] } {
   const promoted: ImportIssue[] = [];
   const waiting: ImportIssue[] = [];
   for (const issue of carried.lastStopIssues ?? []) {
     if (isRunError(issue)) continue;
     const status = issue.conversation == null ? undefined : statuses.get(issue.conversation);
-    if (status === "ok" || status === "failed") continue;
     const wholeConversation = issue.item === issue.conversation;
-    if (wholeConversation && status != null) continue;
+    if (status === "ok" || (wholeConversation && status != null)) continue;
     if (status === "skipped") promoted.push(issue);
     else waiting.push(issue);
   }
@@ -233,7 +235,7 @@ export function wholeRun(carried: RunRecord, part: RunPart): RunRecord {
 /**
  * The record for the next part of the run, as the run stands now: written
  * when a part stops, and while a stage runs, as each issue arrives, so an
- * app that closes mid-stage leaves it in the folder.
+ * app that closes mid-stage leaves it in the Staging Directory.
  *
  * Two kinds of issue are left out of its `issues`, and kept in
  * `lastStopIssues` for a Discard instead. An Upload's row about a
@@ -259,12 +261,26 @@ export function recordToCarry(carried: RunRecord, part: RunPart): RunRecord {
 }
 
 /**
- * The record once a Media pass has run to its end. The pass tries again
- * every file an earlier part's pass could not convert, and reports each one
- * that still fails, so the earlier parts' Media rows give way to its own.
+ * `rows` without those `resolved` says no longer hold: the rows with its
+ * stage and item.
  */
-export function afterMediaPass(carried: RunRecord): RunRecord {
-  return { ...carried, issues: carried.issues.filter((issue) => issue.stage !== "media") };
+export function withoutResolved(
+  rows: readonly ImportIssue[],
+  resolved: Pick<ImportIssue, "stage" | "item">,
+): ImportIssue[] {
+  return rows.filter((row) => row.stage !== resolved.stage || row.item !== resolved.item);
+}
+
+/** `record` without the rows `resolved` says no longer hold (`withoutResolved`). */
+export function resolveInRecord(
+  record: RunRecord,
+  resolved: Pick<ImportIssue, "stage" | "item">,
+): RunRecord {
+  const next: RunRecord = { ...record, issues: withoutResolved(record.issues, resolved) };
+  if (record.lastStopIssues != null) {
+    next.lastStopIssues = withoutResolved(record.lastStopIssues, resolved);
+  }
+  return next;
 }
 
 /**

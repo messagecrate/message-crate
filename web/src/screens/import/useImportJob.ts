@@ -50,6 +50,7 @@ import {
 import { isTauri } from "../../lib/tauri-check";
 import type {
   AttachmentMediaMode,
+  ConversationStatus,
   ImportFileDoneEvent,
   ImportIssueEvent,
   ImportProgressEvent,
@@ -85,7 +86,6 @@ import {
   useImportRunState,
 } from "./importRunStore";
 import {
-  afterMediaPass,
   EMPTY_RUN_RECORD,
   filesSkippedOverRun,
   issueRequests,
@@ -95,7 +95,9 @@ import {
   type RunPart,
   type RunRecord,
   recordToCarry,
+  resolveInRecord,
   wholeRun,
+  withoutResolved,
 } from "./runRecord";
 
 export type { ImportPhase, ImportStep } from "./importProgressState";
@@ -384,7 +386,7 @@ type RunScratch = {
    * What this part's Upload said of each conversation file it finished so
    * far (`extract:file-done`): `ok`, `skipped` or `failed`, by file.
    */
-  conversations: Map<string, string>;
+  conversations: Map<string, ConversationStatus>;
   counts: { filesParsed?: number; messagesParsed?: number };
   timing: StageTiming;
   durations: ExtractDurations;
@@ -630,11 +632,20 @@ function writeRunRecord(stagingDir: string, build: () => RunRecord): Promise<voi
 }
 
 /**
- * Write the run's record so far into its staging folder, for the part that
- * resumes it. Called wherever the run stops with the run still open (at a
- * Review, and when `finishImport` leaves the run open) and while a stage
- * runs (`saveRecordAsIssuesArrive`). A failed write loses only this part's
- * record; the run itself is unaffected.
+ * Write the run's record so far into its Staging Directory, for the part
+ * that resumes it. Called wherever the run stops with the run still open (at
+ * a Review, and when `finishImport` leaves the run open), and while a stage
+ * runs, as each issue arrives (`recordIssue`, `recordFileDone`). A failed
+ * write loses only this part's record; the run itself is unaffected.
+ *
+ * While a stage runs, the write leaves in the Staging Directory every issue
+ * the window had received: each stage sends its issues the moment it
+ * records them, and the Upload says when it has sent each conversation, so
+ * a crash loses only what arrived while the last write was on its way to
+ * disk. The record is the one a stop now would leave (`recordToCarry`): an
+ * Upload's rows about a conversation not yet on the server wait apart, and
+ * an earlier stop's rows about a conversation this Upload has since sent
+ * go.
  */
 async function saveCarriedRecord(
   report: PushFinishedReport | null = null,
@@ -646,20 +657,6 @@ async function saveCarriedRecord(
   await writeRunRecord(stagingDir, () =>
     recordToCarry(run.carried, currentPart(report, uploadMs, run)),
   );
-}
-
-/**
- * Write the record again while a stage runs, so an app that closes mid-stage
- * leaves in the folder every issue the window had received. Each stage sends
- * its issues the moment it records them, and the Upload says when it has
- * sent each conversation, so a crash loses only what arrived while the last
- * write was on its way to disk. The record is the one a stop now would
- * leave (`recordToCarry`): an Upload's rows about a conversation not yet on
- * the server wait apart, and an earlier stop's rows about a conversation
- * this Upload has since sent go.
- */
-function saveRecordAsIssuesArrive(): void {
-  void saveCarriedRecord();
 }
 
 function applyProgress(event: ImportProgressEvent): void {
@@ -757,8 +754,15 @@ function progressDetail(event: ImportProgressEvent): string {
 }
 
 function recordIssue(event: ImportIssueEvent): void {
-  scratch.issues = [...scratch.issues, issueFromEvent(event)];
-  saveRecordAsIssuesArrive();
+  if (event.kind === "resolved") {
+    // An earlier row no longer holds: it goes, and nothing replaces it.
+    const resolved = { stage: stageForStep(event.step), item: event.item };
+    scratch.issues = withoutResolved(scratch.issues, resolved);
+    scratch.carried = resolveInRecord(scratch.carried, resolved);
+  } else {
+    scratch.issues = [...scratch.issues, issueFromEvent(event)];
+  }
+  void saveCarriedRecord();
 }
 
 /**
@@ -770,7 +774,7 @@ function recordFileDone(event: ImportFileDoneEvent): void {
   scratch.conversations.set(event.file, event.status);
   const about = (issue: ImportIssue) => issue.conversation === event.file;
   if (scratch.issues.some(about) || (scratch.carried.lastStopIssues ?? []).some(about)) {
-    saveRecordAsIssuesArrive();
+    void saveCarriedRecord();
   }
 }
 
@@ -1269,9 +1273,6 @@ async function runMediaPass(
 
   store.set({ computingSummary: true });
   await moveStageAtReview(sessionId, "media_review", approvedSummary);
-  // This pass tried again every file an earlier part's pass could not
-  // convert, and reported each that still failed.
-  scratch.carried = afterMediaPass(scratch.carried);
   // Media's times are only in memory until now, and the run may be resumed
   // from this Review after the app closes.
   await saveCarriedRecord();

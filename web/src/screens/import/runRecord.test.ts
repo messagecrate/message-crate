@@ -9,6 +9,7 @@ import {
   type RunPart,
   type RunRecord,
   recordToCarry,
+  resolveInRecord,
   wholeRun,
 } from "./runRecord";
 
@@ -278,6 +279,25 @@ describe("the record written while a stage runs (#1639)", () => {
     expect(
       wholeRun(earlier, part({ conversations: new Map([["a.jsonl", "skipped"]]) })).issues,
     ).toEqual([skip]);
+  });
+
+  it("keeps an earlier stop's attachment skip when the conversation failed before it was read", () => {
+    // Part 2's prepare of a.jsonl failed, so it reported none of its skips.
+    const earlier: RunRecord = { issues: [], lastStopIssues: [skip] };
+    const resumed = recordToCarry(
+      earlier,
+      part({ conversations: new Map([["a.jsonl", "failed"]]) }),
+    );
+    expect(issuesToDiscard(resumed)).toEqual([skip]);
+  });
+
+  it("drops a row a later try resolved, wherever the record keeps it", () => {
+    const media = { kind: "skip", stage: "media" as const, item: "a.jsonl:IMG.HEIC", reason: "x" };
+    const record: RunRecord = { issues: [media], lastStopIssues: [skip] };
+    expect(resolveInRecord(record, { stage: "media", item: "a.jsonl:IMG.HEIC" })).toEqual({
+      issues: [],
+      lastStopIssues: [skip],
+    });
   });
 
   it("keeps once a row that a resumed stage reports again", () => {

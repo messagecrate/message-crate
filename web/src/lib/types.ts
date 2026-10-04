@@ -96,7 +96,12 @@ export interface ImportProgressEvent {
  * stage records it.
  */
 export interface ImportIssueEvent {
-  kind: "error" | "skip";
+  /**
+   * `skip` when the item was left out, `error` when it failed. `resolved`
+   * is not a row: it says an earlier row with the same stage and item no
+   * longer holds, as when Media converts a file on a later try.
+   */
+  kind: "error" | "skip" | "resolved";
   step: "parse" | "attachments" | "prepare" | "media" | "upload";
   item: string;
   reason: string;
@@ -118,3 +123,9 @@ export interface ImportFileDoneEvent {
   file: string;
   status: "ok" | "skipped" | "failed";
 }
+
+/**
+ * What an Upload said of one conversation: an `ImportFileDoneEvent` status,
+ * or `cancelled` from its report, for one a stop left unsent.
+ */
+export type ConversationStatus = ImportFileDoneEvent["status"] | "cancelled";

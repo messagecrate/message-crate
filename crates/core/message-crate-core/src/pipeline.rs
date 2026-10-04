@@ -88,7 +88,8 @@ impl RunResult {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunIssue {
     /// What the row is: `skip` when the item was left out, `error` when it
-    /// failed.
+    /// failed. `resolved` says an earlier row with the same step and item no
+    /// longer holds, as when Media converts a file on a later try.
     pub kind: String,
     /// The step that raised it, such as `attachments`.
     pub step: String,

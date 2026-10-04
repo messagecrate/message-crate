@@ -70,10 +70,19 @@
 //! item-level issue: `missing_reason` gets `convert_failed: <detail>` and the
 //! original — still on disk, untouched — keeps its `path` and
 //! `digest_sha256` so a resume retries it rather than treating a transient
-//! failure as permanent loss. The failure also goes to the issue sink as a
-//! `skip` row naming the conversation file and the attachment, before the
-//! conversation file is written: a stop between the two leaves the original
-//! pending, and the resumed pass reports it again.
+//! failure as permanent loss.
+//!
+//! ## Issues
+//!
+//! Every attachment the pass leaves without a converted file goes to the
+//! issue sink as a `skip` row naming the conversation file and the
+//! attachment: one it could not convert, one whose converted file is over
+//! the size limit, and one an interrupted earlier pass lost. Each row is sent
+//! before the conversation file is written, so a stop between the two leaves
+//! the work pending and the resumed pass reports it again. A file an earlier
+//! pass could not convert is tried again, and the pass first sends a
+//! [`RESOLVED`] row for it: the earlier row no longer holds, whatever the new
+//! try gives.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -244,10 +253,10 @@ pub fn transcode_staged(
                     apply_repoint(jsonl, &mut doc, &recorded_rel, &derivative, &mut report)?;
                 }
                 PendingWork::DroppedTooLarge { recorded_rel, size } => {
-                    apply_too_large(jsonl, &mut doc, &recorded_rel, size, &mut report)?;
+                    apply_too_large(jsonl, &mut doc, &recorded_rel, size, issues, &mut report)?;
                 }
                 PendingWork::Unrecoverable { recorded_rel } => {
-                    apply_unrecoverable(jsonl, &mut doc, &recorded_rel, &mut report)?;
+                    apply_unrecoverable(jsonl, &mut doc, &recorded_rel, issues, &mut report)?;
                 }
             }
             done += 1;
@@ -625,9 +634,28 @@ fn apply_transcode(
     let marker = attachments_dir.join(format!("{name}{IN_PROGRESS_SUFFIX}"));
     let original_len = std::fs::metadata(src).map_or(0, |m| m.len());
 
-    match media::transcode_file(src, &marker, options.mode, &options.compress) {
+    let outcome = media::transcode_file(src, &marker, options.mode, &options.compress);
+    // An earlier pass could not convert this file, and this pass has now
+    // tried it again: the earlier row no longer holds, whatever this try
+    // gives. A failure sends a fresh row after this one.
+    if had_convert_failure(doc, recorded_rel) {
+        emit_issue(
+            issues,
+            media_issue(jsonl, doc, recorded_rel, RESOLVED, "tried again".into()),
+        );
+    }
+    match outcome {
         Err(err) => {
-            emit_issue(issues, convert_failed_issue(jsonl, doc, recorded_rel, &err));
+            emit_issue(
+                issues,
+                media_issue(
+                    jsonl,
+                    doc,
+                    recorded_rel,
+                    "skip",
+                    format!("could not be converted, so the original file is kept: {err:#}"),
+                ),
+            );
             let reason = format!("convert_failed: {err}");
             if is_heal {
                 // `recorded_rel` is the phantom `-mv` name a crashed prior
@@ -692,6 +720,10 @@ fn apply_transcode(
                 let note = too_large_note(src);
                 std::fs::write(&note, produced_len.to_string())
                     .with_context(|| format!("write {}", note.display()))?;
+                emit_issue(
+                    issues,
+                    too_large_issue(jsonl, doc, recorded_rel, produced_len),
+                );
                 patch_all_matching(doc, recorded_rel, |att| {
                     att.path = None;
                     att.digest_sha256 = None;
@@ -743,31 +775,73 @@ fn apply_transcode(
     }
 }
 
-/// The Import Errors row for an attachment the pass could not convert: a
-/// `skip`, since the attachment keeps its original file, naming the
+/// The `kind` of a row that says an earlier row about the same item no
+/// longer holds. The window drops the earlier row and keeps no row for it.
+pub const RESOLVED: &str = "resolved";
+
+/// The attachments in `doc` recorded at `recorded_rel`.
+fn recorded_at<'a>(
+    doc: &'a ConversationDocument,
+    recorded_rel: &'a str,
+) -> impl Iterator<Item = &'a IrAttachment> + 'a {
+    doc.messages
+        .iter()
+        .flat_map(|msg| &msg.attachments)
+        .filter(move |att| att.path.as_deref() == Some(recorded_rel))
+}
+
+/// True when an earlier pass recorded that it could not convert the file at
+/// `recorded_rel`.
+fn had_convert_failure(doc: &ConversationDocument, recorded_rel: &str) -> bool {
+    recorded_at(doc, recorded_rel).any(|att| {
+        att.missing_reason
+            .as_deref()
+            .is_some_and(|reason| reason.starts_with("convert_failed"))
+    })
+}
+
+/// A Media row about the attachment at `recorded_rel`, naming the
 /// conversation file and the attachment (its original name, or the staged
-/// path when it has none).
-fn convert_failed_issue(
+/// path when it has none). A row the pass reports again on a resume has the
+/// same `item`.
+fn media_issue(
     jsonl: &Path,
     doc: &ConversationDocument,
     recorded_rel: &str,
-    err: &anyhow::Error,
+    kind: &str,
+    reason: String,
 ) -> RunIssue {
     let conversation = jsonl.file_name().and_then(|n| n.to_str()).unwrap_or("?");
-    let attachment = doc
-        .messages
-        .iter()
-        .flat_map(|msg| &msg.attachments)
-        .find(|att| att.path.as_deref() == Some(recorded_rel))
-        .and_then(|att| att.original_name.as_deref())
-        .and_then(message_ir::trimmed)
+    let attachment = recorded_at(doc, recorded_rel)
+        .find_map(|att| att.original_name.as_deref().and_then(message_ir::trimmed))
         .unwrap_or(recorded_rel);
     RunIssue {
-        kind: "skip".into(),
+        kind: kind.into(),
         step: "media".into(),
         item: format!("{conversation}:{attachment}"),
-        reason: format!("could not be converted, so the original file is kept: {err:#}"),
+        reason,
     }
+}
+
+/// The row for an attachment the pass left out because its converted file is
+/// `size` bytes, over the server's attachment size limit.
+fn too_large_issue(
+    jsonl: &Path,
+    doc: &ConversationDocument,
+    recorded_rel: &str,
+    size: u64,
+) -> RunIssue {
+    media_issue(
+        jsonl,
+        doc,
+        recorded_rel,
+        "skip",
+        format!(
+            "is {size} bytes ({} MiB) after conversion, over the attachment size limit, so it \
+             was left out",
+            size / message_ir::MIB
+        ),
+    )
 }
 
 /// Repoint every attachment recorded at `recorded_rel` to `derivative`,
@@ -801,8 +875,10 @@ fn apply_too_large(
     doc: &mut ConversationDocument,
     recorded_rel: &str,
     size: u64,
+    issues: Option<&IssueSink>,
     report: &mut TranscodeReport,
 ) -> Result<()> {
+    emit_issue(issues, too_large_issue(jsonl, doc, recorded_rel, size));
     patch_all_matching(doc, recorded_rel, |att| {
         att.path = None;
         att.digest_sha256 = None;
@@ -821,8 +897,19 @@ fn apply_unrecoverable(
     jsonl: &Path,
     doc: &mut ConversationDocument,
     recorded_rel: &str,
+    issues: Option<&IssueSink>,
     report: &mut TranscodeReport,
 ) -> Result<()> {
+    emit_issue(
+        issues,
+        media_issue(
+            jsonl,
+            doc,
+            recorded_rel,
+            "skip",
+            "was lost when an earlier Media pass stopped partway, so it was left out".into(),
+        ),
+    );
     patch_all_matching(doc, recorded_rel, |att| {
         att.path = None;
         att.digest_sha256 = None;

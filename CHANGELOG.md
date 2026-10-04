@@ -256,9 +256,11 @@ released versions carry their date on the heading.
   found so far.** Staging reported its Errors only when it finished, Media
   reported none, and an Upload's skipped attachments waited for the end of
   the Upload, so an app that closed partway lost them. Every Error now
-  reaches the run the moment it is found. A file Media could not convert is
-  listed as an Error with the file and the reason, and keeps its original.
-  A resumed run lists an Error it finds again once. Discarding a run after
+  reaches the run the moment it is found. A file Media could not convert,
+  or left out because it was still too large after converting, is listed
+  as an Error with the file and the reason; one it could not convert keeps
+  its original, and its Error goes when a resumed Media converts it. A
+  resumed run lists an Error it finds again once. Discarding a run after
   a crash during a resumed Upload no longer records a conversation as
   failed when that Upload had already sent it.
 - 2026-10-04 **Logging out during an Upload waits at most 15 seconds, and

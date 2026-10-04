@@ -2352,7 +2352,7 @@ describe("useImportJob resume path", () => {
 
   /**
    * A push that stands in for `awaitTauriJob`: it calls the invoke function,
-   * sends `events` to the job's listeners, and returns what the folder held
+   * sends `events` to the job's listeners, and returns what the Staging Directory held
    * once the window wrote the record they lead to. That is what an app that
    * closed at that moment, before the Upload ended, would leave.
    */
@@ -2387,7 +2387,7 @@ describe("useImportJob resume path", () => {
     };
   }
 
-  it("writes an Upload issue into the folder before the Upload ends (#1639)", async () => {
+  it("writes an Upload issue into the Staging Directory before the Upload ends (#1639)", async () => {
     const skip: ImportIssueEvent = {
       kind: "skip",
       step: "upload",
@@ -2425,7 +2425,7 @@ describe("useImportJob resume path", () => {
 
   it("does not send with a Discard a failure the resumed Upload undid before the app closed (#1639)", async () => {
     // Pause 1 left a.jsonl failed. The resumed Upload sends it, and the app
-    // closes before that Upload ends, so the folder keeps the record written
+    // closes before that Upload ends, so the Staging Directory keeps the record written
     // while it ran.
     const failed = {
       kind: "error",
@@ -2697,6 +2697,45 @@ describe("useImportJob resumeAtReview", () => {
     // plan stored at the last gate.
     expect(setImportStageMock).toHaveBeenCalledWith(1, "media", approved);
     expect(setImportStageMock).toHaveBeenCalledWith(1, "media_review", approved);
+  });
+
+  it("drops an earlier part's Media row once the resumed pass converts that file (#1639)", async () => {
+    // Part 1's pass could not convert IMG_4.MOV. The resumed pass converts
+    // it, and the app may close before that pass ends.
+    const earlier = {
+      kind: "skip",
+      stage: "media",
+      item: "a.jsonl:IMG_4.MOV",
+      reason: "could not be converted",
+    };
+    readRunRecordMock.mockResolvedValue({ issues: [earlier] });
+    const seen: { record?: { issues: unknown[] } } = {};
+    runMock.mockImplementationOnce(
+      async (
+        fn: () => Promise<unknown>,
+        _onLog?: (line: string) => void,
+        _onProgress?: (event: ImportProgressEvent) => void,
+        onIssue?: (event: ImportIssueEvent) => void,
+      ) => {
+        const before = saveRunRecordMock.mock.calls.length;
+        await fn();
+        onIssue?.({ kind: "resolved", step: "media", item: "a.jsonl:IMG_4.MOV", reason: "" });
+        await waitFor(() => expect(saveRunRecordMock.mock.calls.length).toBeGreaterThan(before));
+        seen.record = saveRunRecordMock.mock.lastCall?.[0].record;
+        return { summary: "Transcode finished.", transcode: undefined };
+      },
+    );
+    const approved = stagingSummary({ mediaMode: "convert", conversations: 7 });
+    invokeSummarizeStagingMock.mockResolvedValueOnce(approved);
+    const { result } = renderHook(() => useImportJob());
+    await act(async () => {
+      await result.current.resumeAtReview(
+        activeSession({ stage: "media", summary: approved }),
+        form({ attachmentMedia: "convert" }),
+      );
+    });
+
+    expect(seen.record?.issues).toEqual([]);
   });
 
   it("shows a 3-row list with the Media row active while the pass re-runs on a media resume", async () => {
