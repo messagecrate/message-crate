@@ -88,11 +88,13 @@ describe("focus rings", () => {
     expect(found).toEqual([]);
   });
 
-  // Every focused control draws the same ring because every one takes it from
+  // Every focused outline is the same because every one comes from
   // lib/uiStyles.ts (#1711): `focusRing`, or `focusOutline` behind React Aria's
-  // `data-focus-visible:` or `isFocusVisible` where focus sits on a hidden input.
+  // `isFocusVisible` render prop where focus sits on a hidden input. An outline
+  // class, a bare `outline` variant, an arbitrary `[outline:…]` property and an
+  // inline `outline:` style all count.
   it("no source outside lib/uiStyles.ts writes an outline of its own", () => {
-    const outline = /\boutline-(?!none\b)[\w[]|:outline(?![\w-])/;
+    const outline = /\boutline-(?!none\b)[\w[]|:outline(?![\w-])|\boutline\s*:/;
     const found = sources()
       .filter(([path]) => path !== "lib/uiStyles.ts")
       .flatMap(([path, text]) => hits(path, text, outline));
