@@ -9,13 +9,13 @@ use message_crate_core::{
 };
 use message_ir::{ConversationDocument, IrMessage};
 use message_ir_format::{
-    CSV_HEADERS, FormatSink, MergedArchive, clean_previous_ir_output, read_conversation_csv,
-    read_conversation_eml_dir, read_conversation_json, read_conversation_jsonl,
-    read_conversation_mbox,
+    CSV_HEADERS, FormatSink, MergedArchive, clean_previous_ir_output, mark_export_folder,
+    read_conversation_csv, read_conversation_eml_dir, read_conversation_json,
+    read_conversation_jsonl, read_conversation_mbox,
 };
 use message_staging::AttachmentSpool;
 use sms_backup_plus_exporter::SmsBackupPlusArchive;
-use sms_backup_restore_exporter::{ReadOptions, SbrArchive, read_backup};
+use sms_backup_restore_exporter::{ReadOptions, SbrArchive, read_backup, stage_read_attachments};
 use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
@@ -89,34 +89,32 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
     .unwrap_or_else(chrono::Utc::now);
     // The output is cleaned below, so one that is or holds the input is
     // refused before anything is written.
-    prepare_outputs(&[input_dir.to_path_buf()], &config.output)?;
+    let (inputs, output) = prepare_outputs(&[input_dir.to_path_buf()], &config.output)?;
 
     let detected = detect_ir_export(input_dir)?;
     let transforms = ExportTransforms::from_config(config);
     let copy_attachments = transforms.copies_attachments();
 
-    // Conversation files are read before the output is cleaned, so a file
-    // the read refuses, such as one of another schema version, stops the
-    // run with the previous output left as it was. An SMS backup is read
-    // after: its read stages attachments into the output.
-    let read_first = if detected.format == OutputFormat::Xml {
-        None
+    // The input is read before the output is cleaned, so an input the read
+    // refuses, such as a file of another schema version or a broken SMS
+    // backup, stops the run with the previous output left as it was.
+    let (mut documents, sms_backup) = if detected.format == OutputFormat::Xml {
+        let backup = SmsBackupRead::open(&inputs[0], output, copy_attachments)?;
+        (backup.read(config)?, Some(backup))
     } else {
-        Some(read_conversation_files(input_dir, detected.format)?)
+        (read_conversation_files(input_dir, detected.format)?, None)
     };
+    if documents.is_empty() {
+        bail!("no conversations loaded from {}", input_dir.display());
+    }
 
     clean_previous_ir_output(&config.output)?;
 
     if copy_attachments {
         copy_attachments_dir(input_dir, &config.output)?;
     }
-
-    let mut documents = match read_first {
-        Some(documents) => documents,
-        None => read_sms_backup(input_dir, config, copy_attachments)?,
-    };
-    if documents.is_empty() {
-        bail!("no conversations loaded from {}", input_dir.display());
+    if let Some(backup) = sms_backup {
+        backup.stage(&mut documents, config)?;
     }
     let mut report = ExportReport::default();
     // A mail export's reader holds the attachments in memory, and the
@@ -251,30 +249,54 @@ fn apply_reexport_convert(
     Ok(())
 }
 
-/// Read every conversation in an SMS Backup & Restore export, staging its
-/// attachments into the output when `copy_attachments` is set.
-fn read_sms_backup(
-    input_dir: &Path,
-    config: &ExporterConfig,
-    copy_attachments: bool,
-) -> Result<Vec<ConversationDocument>> {
-    let attachments_dir = config.output.join("attachments");
-    // Each payload goes to disk as its record is read, so the backup's
-    // attachments are never all in memory; the spool is removed when
-    // the read has staged them.
-    let spool = if copy_attachments {
-        Some(AttachmentSpool::open(&config.output)?)
-    } else {
-        None
-    };
-    let (documents, report) = read_backup(
-        input_dir,
+/// An SMS Backup & Restore read whose attachments wait in the spool until
+/// the output has been cleaned.
+struct SmsBackupRead {
+    /// The backup's folder, resolved.
+    input: PathBuf,
+    /// The output folder, resolved. The read leaves it out, since it may
+    /// sit inside the backup's folder and hold a backup an earlier run wrote.
+    output: PathBuf,
+    /// The output's `attachments/`, where the spooled attachments are staged.
+    attachments_dir: PathBuf,
+    /// The payloads the read spooled; `None` when the run does not copy
+    /// attachments. The spool is removed when this is dropped.
+    spool: Option<AttachmentSpool>,
+}
+
+impl SmsBackupRead {
+    /// Prepare to read the backup in `input` for a conversion into
+    /// `output`, both resolved by `prepare_outputs`.
+    fn open(input: &Path, output: PathBuf, copy_attachments: bool) -> Result<Self> {
+        // Each payload goes to disk as its record is read, so the backup's
+        // attachments are never all in memory. The spool lives under the
+        // output, so the output is marked as an export's folder first: a
+        // folder the person owns is refused before the spool is written
+        // into it, and the clean then leaves the spool alone rather than
+        // refusing a folder that is no longer empty.
+        let spool = if copy_attachments {
+            mark_export_folder(&output)?;
+            Some(AttachmentSpool::open(&output)?)
+        } else {
+            None
+        };
+        Ok(Self {
+            input: input.to_path_buf(),
+            attachments_dir: output.join("attachments"),
+            output,
+            spool,
+        })
+    }
+
+    /// The options the read and the staging share. The read leaves the
+    /// attachments in the spool, for [`SmsBackupRead::stage`].
+    fn options<'a>(&'a self, config: &'a ExporterConfig) -> ReadOptions<'a> {
         ReadOptions {
             owner_phones: &[],
-            attachments_dir: Some(&attachments_dir),
-            spool: spool.as_ref(),
-            stage_attachments: true,
-            media: if copy_attachments {
+            attachments_dir: Some(&self.attachments_dir),
+            spool: self.spool.as_ref(),
+            exclude_dir: Some(&self.output),
+            media: if self.spool.is_some() {
                 MediaMode::Clone
             } else {
                 MediaMode::Disabled
@@ -283,12 +305,23 @@ fn read_sms_backup(
             log: None,
             progress: None,
             cancel: config.cancel.as_ref(),
-        },
-    )?;
-    for error in report.errors.iter().take(5) {
-        config.emit_log(format!("xml warning: {error}"));
+        }
     }
-    Ok(documents)
+
+    /// Read every conversation in the backup without writing to the output
+    /// outside the spool.
+    fn read(&self, config: &ExporterConfig) -> Result<Vec<ConversationDocument>> {
+        let (documents, report) = read_backup(&self.input, self.options(config))?;
+        for error in report.errors.iter().take(5) {
+            config.emit_log(format!("xml warning: {error}"));
+        }
+        Ok(documents)
+    }
+
+    /// Stage the spooled attachments into the output's `attachments/`.
+    fn stage(self, documents: &mut [ConversationDocument], config: &ExporterConfig) -> Result<()> {
+        stage_read_attachments(documents, &self.options(config))
+    }
 }
 
 /// Read every conversation file or EML folder of `format` in `input_dir`.
