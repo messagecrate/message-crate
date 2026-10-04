@@ -71,7 +71,7 @@ A limit below `asset_part_size` is accepted, and the server then hands out parts
 The part size is worked out on each upload, so neither a change to the limit nor an edit to `asset_part_size` can leave a server that does not start.
 The server refuses only a limit of zero, or one above 9223372036854775807, with `422 Unprocessable Entity`.
 
-The attachment size limit holds no other request body.
+No other request body is held to the attachment size limit.
 Each part of a multipart upload is held to the part size the upload was given when it started.
 Every other request body has a cap fixed in the server: 32 KiB for `POST /v1/session`, `POST /v1/accounts` and `POST /v1/server/claim`, 32 MiB for any other JSON body, 8 MiB for an address book loaded with `POST /v1/contacts`, and 512 MiB for an import batch or any other body.
 Why: the Owner's limit must never reach the login, or the settings change that would raise it again.

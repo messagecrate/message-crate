@@ -241,11 +241,11 @@ released versions carry their date on the heading.
   reads Paused. Logging out during an Upload asks first, then pauses the
   Upload before the session ends, so the same account can resume it after
   logging in; before, every conversation left was recorded as failed. When
-  the server doesn't record a run as finished, the staged folder is kept and
+  the server doesn't record a run as finished, the staged files are kept and
   the next visit resumes the run, which then gets its Saved Search and
   Contact Group. A resumed run's report covers every part of the run, not
   only the last. A Staging or Media Stage that fails deletes its staged
-  folder at once, since nothing can resume it, instead of leaving a full
+  files at once, since nothing can resume it, instead of leaving a full
   unencrypted copy of your messages in the Staging Directory.
 - 2026-10-02 **One desktop job runs at a time.** An export won't start while
   an Import Run's job runs, and the reverse, and the screen says why. Before,
