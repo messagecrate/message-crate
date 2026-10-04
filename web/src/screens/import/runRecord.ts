@@ -1,4 +1,4 @@
-import type { ImportIssue } from "../../components/import/ImportSummaryPanel";
+import type { ImportIssue, ImportNote } from "../../components/import/ImportSummaryPanel";
 import { isIssueStage } from "../../components/import/importIssueStage";
 import type { PushFinishedReport } from "../../lib/tauri";
 import type { ConversationStatus } from "../../lib/types";
@@ -28,6 +28,12 @@ export type RunRecord = {
    * since a discarded run is never resumed (`issuesToDiscard`).
    */
   lastStopIssues?: ImportIssue[];
+  /**
+   * The run's notes, apart from its Import Errors; absent when it noted
+   * nothing. A note is about an item a stage read, never about whether a
+   * conversation reached the server, so every part's notes are kept.
+   */
+  notes?: ImportNote[];
   durationMs?: number;
   parseMs?: number;
   attachmentsMs?: number;
@@ -85,6 +91,16 @@ function readIssues(value: unknown): ImportIssue[] {
   return value.flatMap((entry) => readIssue(entry) ?? []);
 }
 
+/** One note read back from disk, or `undefined` when it is not one. */
+function readNote(value: unknown): ImportNote | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const r = value as Record<string, unknown>;
+  if (!isIssueStage(r.stage) || typeof r.item !== "string" || typeof r.text !== "string") {
+    return undefined;
+  }
+  return { stage: r.stage, item: r.item, text: r.text };
+}
+
 /**
  * Read a record back from the Staging Directory. The file is the app's own,
  * but it is read from disk, so each field is checked: an unreadable field
@@ -95,6 +111,7 @@ export function parseRunRecord(raw: unknown): RunRecord {
   const r = raw as Record<string, unknown>;
   const record: RunRecord = { issues: readIssues(r.issues) };
   if (Array.isArray(r.lastStopIssues)) record.lastStopIssues = readIssues(r.lastStopIssues);
+  if (Array.isArray(r.notes)) record.notes = r.notes.flatMap((entry) => readNote(entry) ?? []);
   for (const field of COUNT_FIELDS) {
     const value = r[field];
     if (typeof value === "number" && Number.isFinite(value)) record[field] = value;
@@ -105,6 +122,8 @@ export function parseRunRecord(raw: unknown): RunRecord {
 /** The part of the run on screen now, as the window measured it. */
 export type RunPart = {
   issues: readonly ImportIssue[];
+  /** The notes this part's stages sent; absent when they sent none. */
+  notes?: readonly ImportNote[];
   durationMs: number;
   parseMs: number | null;
   attachmentsMs: number | null;
@@ -135,29 +154,51 @@ function issueKey(issue: ImportIssue): string {
   return JSON.stringify([issue.kind, issue.stage, issue.item, issue.reason, issue.conversation]);
 }
 
+/** Two notes are one row when every field matches. */
+function noteKey(note: ImportNote): string {
+  return JSON.stringify([note.stage, note.item, note.text]);
+}
+
+/**
+ * `earlier`, then the rows of `later` that are not already in it, as `keyOf`
+ * tells rows apart. Counted, so a row `earlier` holds twice absorbs two of
+ * `later`'s and no more.
+ */
+function mergeOnce<T>(earlier: readonly T[], later: readonly T[], keyOf: (row: T) => string): T[] {
+  const unmatched = new Map<string, number>();
+  for (const row of earlier) {
+    const key = keyOf(row);
+    unmatched.set(key, (unmatched.get(key) ?? 0) + 1);
+  }
+  const merged = [...earlier];
+  for (const row of later) {
+    const key = keyOf(row);
+    const count = unmatched.get(key) ?? 0;
+    if (count > 0) unmatched.set(key, count - 1);
+    else merged.push(row);
+  }
+  return merged;
+}
+
 /**
  * `earlier`, then the rows of `later` that are not already in it. A stage
  * that resumes reads again what it had not finished, and reports the same
- * rows again: each is kept once. Counted, so a row `earlier` holds twice
- * absorbs two of `later`'s and no more.
+ * rows again: each is kept once.
  */
 export function mergeIssues(
   earlier: readonly ImportIssue[],
   later: readonly ImportIssue[],
 ): ImportIssue[] {
-  const unmatched = new Map<string, number>();
-  for (const issue of earlier) {
-    const key = issueKey(issue);
-    unmatched.set(key, (unmatched.get(key) ?? 0) + 1);
-  }
-  const merged = [...earlier];
-  for (const issue of later) {
-    const key = issueKey(issue);
-    const count = unmatched.get(key) ?? 0;
-    if (count > 0) unmatched.set(key, count - 1);
-    else merged.push(issue);
-  }
-  return merged;
+  return mergeOnce(earlier, later, issueKey);
+}
+
+/** `earlier`, then the notes of `later` it does not already hold (`mergeIssues`). */
+function mergeNotes(
+  earlier: readonly ImportNote[] | undefined,
+  later: readonly ImportNote[] | undefined,
+): ImportNote[] | undefined {
+  const merged = mergeOnce(earlier ?? [], later ?? [], noteKey);
+  return merged.length > 0 ? merged : undefined;
 }
 
 /** The `item` of the error a stage records about the run as a whole. */
@@ -236,8 +277,10 @@ export function wholeRun(carried: RunRecord, part: RunPart): RunRecord {
  */
 function combine(carried: RunRecord, part: RunPart, earlier: ImportIssue[]): RunRecord {
   const report = part.report;
+  const notes = mergeNotes(carried.notes, part.notes);
   return {
     issues: mergeIssues(carried.issues, mergeIssues(earlier, part.issues)),
+    ...(notes ? { notes } : {}),
     durationMs: sum(carried.durationMs, part.durationMs),
     parseMs: sum(carried.parseMs, part.parseMs),
     attachmentsMs: sum(carried.attachmentsMs, part.attachmentsMs),
@@ -311,6 +354,11 @@ export function resolveInRecord(
  */
 export function issuesToDiscard(record: RunRecord): ImportIssue[] {
   return mergeIssues(record.issues, record.lastStopIssues ?? []);
+}
+
+/** The notes a Discard sends with the cancelled run: every part's. */
+export function notesToDiscard(record: RunRecord): ImportNote[] {
+  return record.notes ?? [];
 }
 
 /**

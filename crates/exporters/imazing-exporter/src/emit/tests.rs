@@ -22,6 +22,7 @@ fn convert(input: &std::path::Path, output: &std::path::Path) -> Result<ExportRe
         output_format: OutputFormat::Csv,
         cancel: None,
         resume: false,
+        issues: None,
     })
 }
 
@@ -270,6 +271,7 @@ Bob,2026-03-08 02:30:00,SMS,Incoming,+15555550100,Bob,Read,,,Gap,,,\n",
         output_format: OutputFormat::Jsonl,
         cancel: None,
         resume: false,
+        issues: None,
     })
     .unwrap();
     assert_eq!(report.messages, 1);
@@ -431,6 +433,7 @@ fn convert_files(files: &[(&str, &str)]) -> Vec<message_ir::ConversationDocument
         output_format: OutputFormat::Json,
         cancel: None,
         resume: false,
+        issues: None,
     })
     .unwrap();
     let mut documents: Vec<_> = fs::read_dir(&out)
@@ -693,6 +696,7 @@ fn a_same_named_file_in_two_chat_folders_goes_to_its_own_chat() {
         output_format: OutputFormat::Json,
         cancel: None,
         resume: false,
+        issues: None,
     })
     .unwrap();
     for (number, bytes) in [
@@ -820,6 +824,7 @@ fn convert_chat_folder_with(
         output_format: OutputFormat::Json,
         cancel: None,
         resume: false,
+        issues: None,
     })
     .unwrap();
     let doc = message_ir_format::read_conversation_json(&out.join(doc_name)).unwrap();
@@ -1171,6 +1176,7 @@ Book Club,2021-01-01 12:01:00,iMessage,Incoming,+15555550122,Bob,Read,,,Yes,,,\n
         output_format: OutputFormat::Json,
         cancel: None,
         resume: false,
+        issues: None,
     })
     .unwrap();
     assert_eq!(report.conversations, 2);
@@ -1428,6 +1434,7 @@ fn each_row_gets_the_file_imazing_wrote_for_it_in_its_own_folder() {
         output_format: OutputFormat::Json,
         cancel: None,
         resume: false,
+        issues: None,
     })
     .unwrap();
     let doc = message_ir_format::read_conversation_json(&out.join("+15555550101.json")).unwrap();

@@ -23,6 +23,7 @@ fn convert(
         output_format,
         cancel: None,
         resume: false,
+        issues: None,
     })
 }
 
@@ -243,6 +244,7 @@ fn cancel_during_the_write_phase_stops_the_export() {
         output_format: OutputFormat::Csv,
         cancel: Some(&cancel),
         resume: false,
+        issues: None,
     })
     .expect_err("cancel must be honored during the write phase");
     assert!(
@@ -414,6 +416,7 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
             output_format: OutputFormat::Jsonl,
             cancel: None,
             resume,
+            issues: None,
         })
     });
 }

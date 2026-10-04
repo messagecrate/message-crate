@@ -396,6 +396,7 @@ async fn imports_complete_and_detail_surface_timings_and_issues() {
                 reason: "upload failed".into(),
             },
         ],
+        notes: Vec::new(),
     };
 
     let response = complete_import(
@@ -453,6 +454,7 @@ async fn imports_complete_stores_completed_with_issues_status() {
         upload_ms: None,
         summary: None,
         issues: Vec::new(),
+        notes: Vec::new(),
     };
     let response = complete_import(
         State(state.clone()),
@@ -478,6 +480,7 @@ async fn imports_complete_rejects_unknown_status() {
         upload_ms: None,
         summary: None,
         issues: Vec::new(),
+        notes: Vec::new(),
     };
     let err = complete_import(
         State(state.clone()),
@@ -517,6 +520,7 @@ async fn imports_complete_rejects_invalid_issue_kind_before_db_write() {
             item: "archive.zip".into(),
             reason: "not allowed".into(),
         }],
+        notes: Vec::new(),
     };
 
     let err = complete_import(
@@ -584,7 +588,10 @@ async fn active_session_is_empty_then_reports_the_live_one() {
         State(state.clone()),
         import_access(&state, &token).await,
         AxumPath(import_id),
-        Json(DiscardImportRequest { issues: Vec::new() }),
+        Json(DiscardImportRequest {
+            issues: Vec::new(),
+            notes: Vec::new(),
+        }),
     )
     .await
     .unwrap();
@@ -619,7 +626,10 @@ async fn a_stored_form_snapshot_drops_credentials() {
         State(state.clone()),
         import_access(&state, &token).await,
         AxumPath(import_id),
-        Json(DiscardImportRequest { issues: Vec::new() }),
+        Json(DiscardImportRequest {
+            issues: Vec::new(),
+            notes: Vec::new(),
+        }),
     )
     .await
     .unwrap();
@@ -677,7 +687,10 @@ async fn imports_create_stores_source_identities() {
         State(state.clone()),
         import_access(&state, &token).await,
         AxumPath(import_id),
-        Json(DiscardImportRequest { issues: Vec::new() }),
+        Json(DiscardImportRequest {
+            issues: Vec::new(),
+            notes: Vec::new(),
+        }),
     )
     .await
     .unwrap();
@@ -773,7 +786,10 @@ async fn discard_frees_the_slot() {
         State(state.clone()),
         import_access(&state, &token).await,
         AxumPath(import_id),
-        Json(DiscardImportRequest { issues: Vec::new() }),
+        Json(DiscardImportRequest {
+            issues: Vec::new(),
+            notes: Vec::new(),
+        }),
     )
     .await
     .unwrap();

@@ -93,13 +93,15 @@ export async function setImportStage(
 
 /**
  * Close a session the user gave up on, freeing the account's slot. The run is
- * recorded as cancelled with `issues`, the Import Errors it recorded before.
+ * recorded as cancelled with `issues`, the Import Errors it recorded before,
+ * and `notes`.
  */
 export async function discardImportSession(
   id: number,
   issues: components["schemas"]["ImportIssueRequest"][],
+  notes: components["schemas"]["ImportNoteRequest"][],
 ): Promise<void> {
-  await discardImport(id, { issues });
+  await discardImport(id, { issues, notes });
 }
 
 /**

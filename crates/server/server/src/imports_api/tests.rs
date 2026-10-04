@@ -2186,7 +2186,7 @@ async fn a_batch_into_a_run_that_is_not_running_is_a_state_conflict() {
         &state,
         &format!("/v1/imports/{id}/discard"),
         &token,
-        serde_json::json!({ "issues": [] }),
+        serde_json::json!({ "issues": [], "notes": [] }),
     )
     .await;
 
@@ -2716,7 +2716,7 @@ async fn every_route_on_another_accounts_run_is_not_found_and_changes_nothing() 
                 &format!("{run}/discard"),
                 token,
                 "application/json",
-                r#"{"issues":[]}"#,
+                r#"{"issues":[],"notes":[]}"#,
             )
             .await,
         ),
@@ -4359,6 +4359,7 @@ async fn a_discard_records_the_issues_it_carries() {
         token,
         serde_json::json!({
             "issues": [{ "kind": "skip", "stage": "media", "item": "IMG_0001.heic", "reason": "convert failed" }],
+            "notes": [],
         }),
     )
     .await;
@@ -4370,6 +4371,81 @@ async fn a_discard_records_the_issues_it_carries() {
     assert_eq!(issues[0]["stage"], "media");
     assert_eq!(issues[0]["item"], "IMG_0001.heic");
     assert_eq!(issues[0]["reason"], "convert failed");
+}
+
+/// A completion records the notes the desktop app sends apart from its
+/// Import Errors: a note is something the run did that is worth knowing, so
+/// the run reads back with it in `notes` and its `issues` stay empty
+/// (#1626).
+#[tokio::test]
+async fn a_completion_records_the_notes_it_carries_apart_from_its_issues() {
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    let (_, created): (String, serde_json::Value) = post_created_json(
+        state,
+        "/v1/imports",
+        token,
+        serde_json::json!({ "source": "imazing" }),
+    )
+    .await;
+    let id = created["id"].as_i64().unwrap();
+    let note = serde_json::json!({
+        "stage": "staging",
+        "item": "Messages/IMG_0002.jpg",
+        "text": "2 rows name this picture; its Live Photo video goes to the first of them in the CSV",
+    });
+
+    let completed: serde_json::Value = post_json(
+        state,
+        &format!("/v1/imports/{id}/complete"),
+        token,
+        serde_json::json!({ "status": "completed", "notes": [note] }),
+    )
+    .await;
+
+    assert_eq!(completed["status"], "completed", "{completed}");
+    assert_eq!(completed["notes"], serde_json::json!([note]), "{completed}");
+    assert_eq!(completed["note_count"], 1, "{completed}");
+    assert_eq!(completed["issues"], serde_json::json!([]), "{completed}");
+    let page: serde_json::Value = get_json(state, "/v1/imports", token).await;
+    assert_eq!(page["items"][0]["note_count"], 1, "{page}");
+    assert!(page["items"][0].get("notes").is_none(), "{page}");
+    let run: serde_json::Value = get_json(state, &format!("/v1/imports/{id}"), token).await;
+    assert_eq!(run["notes"], serde_json::json!([note]), "{run}");
+}
+
+/// A discarded run keeps the notes the desktop app sends with the discard,
+/// as it keeps its Import Errors (#1626).
+#[tokio::test]
+async fn a_discard_records_the_notes_it_carries() {
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    let (_, created): (String, serde_json::Value) = post_created_json(
+        state,
+        "/v1/imports",
+        token,
+        serde_json::json!({ "source": "sms-backup-plus" }),
+    )
+    .await;
+    let id = created["id"].as_i64().unwrap();
+    let note = serde_json::json!({
+        "stage": "staging",
+        "item": "1.eml",
+        "text": "This message records no phone number or email address for the other person.",
+    });
+
+    let discarded: serde_json::Value = post_json(
+        state,
+        &format!("/v1/imports/{id}/discard"),
+        token,
+        serde_json::json!({ "issues": [], "notes": [note] }),
+    )
+    .await;
+
+    assert_eq!(discarded["status"], "cancelled", "{discarded}");
+    assert_eq!(discarded["notes"], serde_json::json!([note]), "{discarded}");
 }
 
 /// A discard's issues are checked the way a completion's are: a kind that is
@@ -4393,7 +4469,7 @@ async fn a_discard_with_an_unknown_issue_kind_is_refused() {
         &format!("/v1/imports/{id}/discard"),
         token,
         "application/json",
-        r#"{"issues":[{"kind":"warning","stage":"staging","item":"a.jsonl","reason":"x"}]}"#,
+        r#"{"issues":[{"kind":"warning","stage":"staging","item":"a.jsonl","reason":"x"}],"notes":[]}"#,
     )
     .await;
 
@@ -4448,7 +4524,7 @@ async fn an_import_run_reads_the_same_from_every_route() {
         state,
         &format!("/v1/imports/{discarded_id}/discard"),
         token,
-        serde_json::json!({ "issues": [] }),
+        serde_json::json!({ "issues": [], "notes": [] }),
     )
     .await;
     assert_eq!(discarded["status"], "cancelled", "{discarded}");
@@ -4470,6 +4546,14 @@ async fn an_import_run_reads_the_same_from_every_route() {
             .remove("issues")
             .expect("the run carries its issues");
         assert_eq!(summary["issue_count"], issues.as_array().unwrap().len());
+        // The list leaves out the notes too, and counts them: one run
+        // answers them.
+        let notes = summary
+            .as_object_mut()
+            .unwrap()
+            .remove("notes")
+            .expect("the run carries its notes");
+        assert_eq!(summary["note_count"], notes.as_array().unwrap().len());
         assert_eq!(listed, &summary, "GET /v1/imports, run {id}");
     }
 }

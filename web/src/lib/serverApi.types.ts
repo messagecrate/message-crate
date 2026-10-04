@@ -1827,6 +1827,11 @@ export interface components {
             /** Format: int64 */
             duration_ms?: number | null;
             issues?: components["schemas"]["ImportIssueRequest"][];
+            /**
+             * @description The run's notes, apart from its Import Errors. A note never makes a
+             *     run `completed_with_issues`.
+             */
+            notes?: components["schemas"]["ImportNoteRequest"][];
             /** Format: int64 */
             parse_ms?: number | null;
             /** Format: int64 */
@@ -2307,7 +2312,7 @@ export interface components {
         /**
          * @description The Import Errors a discarded run recorded before it was given up. A run
          *     that paused and is then discarded never posts `complete`, so its issues
-         *     come with the discard.
+         *     and notes come with the discard.
          */
         DiscardImportRequest: {
             /**
@@ -2315,6 +2320,8 @@ export interface components {
              *     recorded none.
              */
             issues: components["schemas"]["ImportIssueRequest"][];
+            /** @description The run's notes so far. The list is empty when the run recorded none. */
+            notes: components["schemas"]["ImportNoteRequest"][];
         };
         /**
          * @description Which list an Export Run's query is for (`docs/architecture/http-api.md`,
@@ -2542,18 +2549,45 @@ export interface components {
          */
         ImportMode: "replace" | "append";
         /**
+         * @description One stored import note: something the run did with an item that is worth
+         *     knowing but did not fail.
+         */
+        ImportNote: {
+            /** @description The file, message or address the note is about. */
+            item: string;
+            /** @description Stage the note came from. */
+            stage: components["schemas"]["ImportIssueStage"];
+            /** @description What the run did with it. */
+            text: string;
+        };
+        /**
+         * @description One note a Stage of the Import Run recorded: something it did with an
+         *     item that is worth knowing but did not fail, such as a message it kept
+         *     with a caveat.
+         */
+        ImportNoteRequest: {
+            /** @description The file, message or address the note is about. */
+            item: string;
+            /** @description Stage the note came from. */
+            stage: components["schemas"]["ImportIssueStage"];
+            /** @description What the run did with it, in one sentence. */
+            text: string;
+        };
+        /**
          * @description An Import Run: one per import, the same record wherever the interface
          *     hands one run out. It is the run as a list answers it, the
-         *     `ImportRunSummary`, with the issues the run recorded.
+         *     `ImportRunSummary`, with the issues and the notes the run recorded.
          */
         ImportRun: components["schemas"]["ImportRunSummary"] & {
             /** @description Issues the run recorded, oldest first. */
             issues: components["schemas"]["ImportIssue"][];
+            /** @description Notes the run recorded, oldest first, apart from its issues. */
+            notes: components["schemas"]["ImportNote"][];
         };
         /**
          * @description An Import Run as a list of runs answers it: every field of the run but
-         *     its issues. A run may record any number of issues, so a page that
-         *     carried them would have no bound on its size; `GET /v1/imports/{id}`
+         *     its issues and notes. A run may record any number of either, so a page
+         *     that carried them would have no bound on its size; `GET /v1/imports/{id}`
          *     answers them (#1559,
          *     `docs/architecture/http-api.md`, "Lists").
          */
@@ -2613,6 +2647,11 @@ export interface components {
             message_count: number;
             /** @description Import mode (`replace` or `append`). */
             mode: string;
+            /**
+             * Format: int64
+             * @description How many notes the run recorded.
+             */
+            note_count: number;
             /**
              * Format: int64
              * @description Time spent parsing, when finished.
@@ -2956,9 +2995,9 @@ export interface components {
          * @description An Import Run as the owner reads it under another account: its source,
          *     mode, times, outcome and counts, and nothing of what the backup held
          *     (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may
-         *     see"). The run's summary, its issues and its form say whom the account
-         *     talks to, so they stay out, and a field reaches the owner only by being
-         *     added here.
+         *     see"). The run's summary, its issues, its notes and its form say whom the
+         *     account talks to, so they stay out, and a field reaches the owner only by
+         *     being added here.
          */
         OwnerImportRun: {
             /**
@@ -3019,6 +3058,12 @@ export interface components {
             message_count: number;
             /** @description Import mode (`replace` or `append`). */
             mode: string;
+            /**
+             * Format: int64
+             * @description Notes the run recorded. Each names a file or an address, so the owner
+             *     reads how many and not which.
+             */
+            note_count: number;
             /**
              * Format: int64
              * @description Time spent parsing, when finished.
@@ -3699,6 +3744,11 @@ export interface components {
                 mode: string;
                 /**
                  * Format: int64
+                 * @description How many notes the run recorded.
+                 */
+                note_count: number;
+                /**
+                 * Format: int64
                  * @description Time spent parsing, when finished.
                  */
                 parse_ms?: number | null;
@@ -3958,6 +4008,12 @@ export interface components {
                 message_count: number;
                 /** @description Import mode (`replace` or `append`). */
                 mode: string;
+                /**
+                 * Format: int64
+                 * @description Notes the run recorded. Each names a file or an address, so the owner
+                 *     reads how many and not which.
+                 */
+                note_count: number;
                 /**
                  * Format: int64
                  * @description Time spent parsing, when finished.

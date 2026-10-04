@@ -249,15 +249,15 @@ a page. Why: a page can only count its own rows, and a field beside `items`
 that counts something else is a second shape.
 
 A list's row carries nothing that grows without bound. Where a resource
-holds such a collection, as an Import Run holds its issues, the list answers
-how many in a count (`issue_count`) and the resource's own `GET` answers the
-collection. `GET /v1/imports` and an account's own
-`GET /v1/accounts/{id}/imports` answer each run as an `ImportRunSummary`,
-with `issue_count` and without the issues. The owner's
-`GET /v1/accounts/{id}/imports` answers each as an `OwnerImportRun`, which
-also counts the issues and never carries them. `GET /v1/imports/{id}`
-answers the issues. The count is read in the list's own statement, never by
-a statement per row. Why: `limit` bounds a page's rows and nothing else, so a collection
+holds such a collection, as an Import Run holds its issues and its notes,
+the list answers how many in a count (`issue_count`, `note_count`) and the
+resource's own `GET` answers the collection. `GET /v1/imports` and an
+account's own `GET /v1/accounts/{id}/imports` answer each run as an
+`ImportRunSummary`, with the counts and without the issues or notes. The
+owner's `GET /v1/accounts/{id}/imports` answers each as an
+`OwnerImportRun`, which also counts them and never carries them.
+`GET /v1/imports/{id}` answers the issues and the notes. Each count is
+read in the list's own statement, never by a statement per row. Why: `limit` bounds a page's rows and nothing else, so a collection
 inside each row left a page's size to whatever the runs recorded. Forty
 WhatsApp runs of 20,000 skipped files each made one page of Settings →
 Storage carry about 800,000 issues, and one statement per row made a page of
@@ -528,7 +528,8 @@ What each reaches:
   outcome and counts, with the counts an import's summary reported and how
   many issues it recorded, and for an export only which form its scope took.
   Why: a staging summary lists the addresses of everyone in the backup, an
-  issue names its conversation's file, and an export's query is a search over
+  issue names its conversation's file, a note names a file or an address, and
+  an export's query is a search over
   the account's messages, all content under
   `docs/adr/0008-the-owner-holds-no-messages.md`. The owner's view is a type
   of its own rather than the account's with fields removed, so a field added
@@ -717,9 +718,9 @@ from the name:
   whole does not belong, is the thing's name with one word that says which
   part, and is written down here with its reason. `Summary` is the thing as
   a list answers it: `ContactSummary` is a contact's row in the Contacts
-  list, and `ImportRunSummary` is an Import Run without its issues, which
-  `ImportRun` adds to it ([Lists](#lists)). `Owner` is the thing as the
-  owner reads it under another account: `OwnerImportRun` and
+  list, and `ImportRunSummary` is an Import Run without its issues and
+  notes, which `ImportRun` adds to it ([Lists](#lists)). `Owner` is the
+  thing as the owner reads it under another account: `OwnerImportRun` and
   `OwnerExportRun` ([Credentials and reach](#credentials-and-reach)).
 - An action's input and output are named for the action:
   `VerbNounRequest` for a body sent in, `VerbNounResponse` for an answer that
