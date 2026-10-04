@@ -9,6 +9,7 @@ import { ApiError } from "../lib/api";
 import type { ContactDetail } from "../lib/contactDetail";
 import { keys } from "../lib/queryKeys";
 import { routeQueryKey } from "../lib/routeQueryKey";
+import { focusRing } from "../lib/uiStyles";
 import { inTimeZone } from "../test/timeZone";
 import ContactDrawer from "./ContactDrawer";
 
@@ -295,15 +296,13 @@ describe("ContactDrawer", () => {
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
   });
 
-  // The app's own :focus-visible outline loses to the outline-none utility, so
-  // each close button draws the style guide's ring itself.
+  // Each close button sets `outline-none`, which removes the app's own
+  // :focus-visible outline, so it sets the outline back with `focusRing`.
   it("draws the focus ring on the close button and sortable headers of a loaded contact", async () => {
     seed(detail(6, { name: "Grace", groups: [] }));
     render(<ContactDrawer variant="docked" contactId="6" preview={null} onClose={() => {}} />);
     await screen.findByRole("heading", { name: "Grace" });
-    expect(screen.getByRole("button", { name: "Close" }).className).toContain(
-      "focus-visible:ring-2 focus-visible:ring-accent",
-    );
+    expect(screen.getByRole("button", { name: "Close" }).className).toContain(focusRing);
     const sortable = screen
       .getAllByRole("columnheader")
       .filter((header) => header.hasAttribute("aria-sort"));
@@ -317,9 +316,7 @@ describe("ContactDrawer", () => {
     get.mockRejectedValue(new ApiError(404, "No contact with id 26."));
     render(<ContactDrawer variant="overlay" contactId="26" preview={null} onClose={() => {}} />);
     await screen.findByRole("alert");
-    expect(screen.getByRole("button", { name: "Close" }).className).toContain(
-      "focus-visible:ring-2 focus-visible:ring-accent",
-    );
+    expect(screen.getByRole("button", { name: "Close" }).className).toContain(focusRing);
   });
 
   it("stubs one handle row when preview lists raw and normalized forms of the same identity", async () => {

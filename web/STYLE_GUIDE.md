@@ -59,7 +59,11 @@ These drive a `color-mix` derivation tree in `theme.css`. Three `data-theme` mod
 ## Interaction Patterns
 
 - **Hover:** `hover:bg-hover` or `hover:brightness-*`
-- **Focus:** `outline-none` (custom) + `focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1`.
+- **Focus:** `focusRing` from `src/lib/uiStyles.ts`: `outline-none` (custom) + `focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-accent`, the theme's own `:focus-visible` outline.
+  The 1px gap between the element and the ring shows the surface behind it, in every theme.
+  A ring with `ring-offset-*` does not, because the offset is a colour of its own, white unless a class sets it, so it drew a white line in the dark theme.
+  `src/styleTokens.test.ts` fails on a `ring-offset-` class anywhere in `src/`.
+  An element that draws its ring inside itself (a table row, a resize grip) uses `ring-2 ring-inset ring-accent`, which has no offset.
   The variant depends on which element takes focus.
   A button, a menu item, a table row or a list row takes DOM focus itself, so its ring uses `focus-visible:`.
   React Aria's `Checkbox`, `Radio` and `ColumnResizer` put focus on a hidden input, which `:focus-visible` cannot style, so their ring uses `data-focus-visible:` on the label React Aria marks (or the `isFocusVisible` render prop).
