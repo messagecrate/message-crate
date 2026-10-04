@@ -4,15 +4,16 @@ use anyhow::{Context, Result};
 use message_crate_core::{ExportReport, NOT_SMS_OR_MMS_LEFT_OUT};
 use message_ir::{
     ConversationDocument, IrAttachment, IrConversationType, IrDirection, IrMessage, IrMessageKind,
-    nonempty,
+    IrParticipant, nonempty, trimmed,
 };
 use message_ir_format::{MergedArchive, load_attachment_bytes};
+use phone::OwnerHandleSet;
 use sbr::{
     SbrBackupWriter, SbrMessage, SourceFields, default_backup_path, encode_part_data, ensure_attr,
     set_attr,
 };
 use serde_json::Value;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -196,12 +197,12 @@ fn synthesize_sbr(
     if use_mms {
         synthesize_mms(doc, msg, owner, output_dir)
     } else {
-        Ok(synthesize_sms(doc, msg))
+        Ok(synthesize_sms(doc, msg, owner))
     }
 }
 
 /// A minimal `<sms>` for a text-only message.
-fn synthesize_sms(doc: &ConversationDocument, msg: &IrMessage) -> SbrMessage {
+fn synthesize_sms(doc: &ConversationDocument, msg: &IrMessage, owner: &str) -> SbrMessage {
     let peer = peer_address(doc, msg);
     let mut attrs = BTreeMap::new();
     set_attr(&mut attrs, "protocol", "0");
@@ -226,7 +227,7 @@ fn synthesize_sms(doc: &ConversationDocument, msg: &IrMessage) -> SbrMessage {
     set_attr(&mut attrs, "service_center", "null");
     set_attr(&mut attrs, "read", "1");
     set_attr(&mut attrs, "status", "-1");
-    if let Some(name) = contact_name_alias(doc, msg) {
+    if let Some(name) = contact_name_alias(doc, msg, owner) {
         set_attr(&mut attrs, "contact_name", name);
     }
     SbrMessage::sms(attrs)
@@ -252,7 +253,7 @@ fn synthesize_mms(
     );
     set_attr(&mut attrs, "address", address);
     set_attr(&mut attrs, "read", "1");
-    if let Some(name) = contact_name_alias(doc, msg) {
+    if let Some(name) = contact_name_alias(doc, msg, owner) {
         set_attr(&mut attrs, "contact_name", name);
     }
     if let Some(subj) = msg.subject.as_deref().filter(|s| !s.is_empty()) {
@@ -397,18 +398,56 @@ fn mms_address_field(doc: &ConversationDocument) -> String {
     }
 }
 
-/// The `contact_name` value: the sender's display name for incoming messages, else the peer's.
-fn contact_name_alias(doc: &ConversationDocument, msg: &IrMessage) -> Option<String> {
+/// The `contact_name` value. In a group conversation it is the names of the
+/// participants the reader will find, joined by `, `, as SMS Backup & Restore
+/// writes it, on every message in either direction. A participant with no
+/// name is left out, and a group conversation with no named participant gets
+/// no value. A group conversation the reader will find fewer than two
+/// participants in reads back as one-to-one, so it takes the one-to-one
+/// value: the sender's display name for an incoming message, else the peer's.
+fn contact_name_alias(doc: &ConversationDocument, msg: &IrMessage, owner: &str) -> Option<String> {
+    if doc.conversation.conversation_type == IrConversationType::Group {
+        let participants = participants_read_back(doc, owner);
+        if participants.len() > 1 {
+            let names: Vec<&str> = participants
+                .iter()
+                .filter_map(|p| p.display_name.as_deref().and_then(trimmed))
+                .collect();
+            return (!names.is_empty()).then(|| names.join(", "));
+        }
+    }
     if msg.direction == IrDirection::Incoming
-        && let Some(n) = msg.sender_display_name.as_deref().filter(|s| !s.is_empty())
+        && let Some(n) = msg.sender_display_name.as_deref().and_then(trimmed)
     {
         return Some(n.to_string());
     }
     doc.conversation
         .participants
         .first()
-        .and_then(|p| p.display_name.clone())
-        .filter(|s| !s.is_empty())
+        .and_then(|p| p.display_name.as_deref().and_then(trimmed))
+        .map(str::to_string)
+}
+
+/// The participants of a group conversation that the reader finds in the
+/// written `address`: those with an identity it can read, other than the
+/// owner's, one per identity, in roster order.
+fn participants_read_back<'a>(
+    doc: &'a ConversationDocument,
+    owner: &str,
+) -> Vec<&'a IrParticipant> {
+    let owners = trimmed(owner).and_then(|o| OwnerHandleSet::from_phones(&[o.to_string()]).ok());
+    let mut seen = HashSet::new();
+    doc.conversation
+        .participants
+        .iter()
+        .filter(|p| {
+            let Some(handle) = p.handle.as_deref().and_then(sbr::address_handle) else {
+                return false;
+            };
+            !owners.as_ref().is_some_and(|o| o.is_owner(&handle))
+                && seen.insert(handle.key().to_string())
+        })
+        .collect()
 }
 
 /// Rehydrate base64 `data` on MMS parts whose payloads were staged as files.

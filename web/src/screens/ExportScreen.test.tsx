@@ -4,7 +4,9 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { currentDesktopJob } from "../lib/desktopJob";
 import ExportScreen from "./ExportScreen";
+import { ConvertSection } from "./settings/ConvertSection";
 
 const invokePull = vi.hoisted(() => vi.fn());
 const invokeFormat = vi.hoisted(() => vi.fn());
@@ -185,6 +187,68 @@ describe("ExportScreen", () => {
 
     await waitFor(() => expect(invokeDeleteStaging).toHaveBeenCalledWith({ staging_dir: staging }));
     expect(invokeFormat).not.toHaveBeenCalled();
+  });
+
+  it("keeps Convert off between the pull and the format step, and lets it start once the export ends", async () => {
+    // Each job holds the desktop only while it runs; between the pull and the
+    // format step the desktop has nothing running, so a Convert started there
+    // would make it refuse the format step (#1407).
+    let releaseFormat: () => void = () => {};
+    const formatHeld = new Promise<void>((resolve) => {
+      releaseFormat = resolve;
+    });
+    awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
+      await invokeFn();
+      return { summary: "pulled" };
+    });
+    awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
+      await formatHeld;
+      await invokeFn();
+      return { summary: "converted" };
+    });
+
+    const user = userEvent.setup();
+    render(
+      <MemoryRouter initialEntries={["/export"]}>
+        <ExportScreen />
+        <ConvertSection />
+      </MemoryRouter>,
+    );
+    await user.type(screen.getByLabelText("Input folder"), "/home/demo/export-json");
+    await user.type(screen.getByLabelText("Output folder"), "/home/demo/export-csv");
+    const convert = screen.getByRole("button", { name: "Convert" });
+    expect(convert).toBeEnabled();
+
+    await user.type(screen.getByPlaceholderText("Choose folder…"), "/home/demo/out");
+    // The Export screen's Format comes before Convert's Output format.
+    const [exportFormat] = screen.getAllByRole("button", { name: /Format/ });
+    if (!exportFormat) throw new Error("no Format select");
+    await user.click(exportFormat);
+    await user.click(await screen.findByRole("option", { name: "CSV (.csv)" }));
+    await user.click(screen.getByRole("button", { name: "Export" }));
+
+    // The pull has ended and the format step has not started.
+    await waitFor(() => expect(awaitTauriJob).toHaveBeenCalledTimes(2));
+    expect(invokePull).toHaveBeenCalledTimes(1);
+    expect(invokeFormat).not.toHaveBeenCalled();
+    expect(currentDesktopJob()).toBe("Export");
+    expect(convert).toBeDisabled();
+
+    releaseFormat();
+    await waitFor(() => expect(invokeDeleteStaging).toHaveBeenCalled());
+    await waitFor(() => expect(convert).toBeEnabled());
+    expect(currentDesktopJob()).toBeNull();
+  });
+
+  it("lets the desktop job go when the export fails", async () => {
+    awaitTauriJob.mockImplementationOnce(async () => {
+      throw new Error("server unreachable");
+    });
+
+    await exportAs("/home/demo/out", "CSV (.csv)");
+
+    expect(await screen.findByText("server unreachable")).toBeTruthy();
+    expect(currentDesktopJob()).toBeNull();
   });
 
   it("ignores a second Export while one is already under way", async () => {

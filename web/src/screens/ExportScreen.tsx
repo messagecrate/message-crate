@@ -9,6 +9,7 @@ import TextField from "../components/TextField";
 import { useTauriJob } from "../hooks/useTauriJob";
 import { getBaseUrl } from "../lib/api";
 import { useAuth } from "../lib/auth";
+import { holdDesktopJob } from "../lib/desktopJob";
 import { createRunCancel, type RunCancel } from "../lib/runCancel";
 import { parseSelectKey } from "../lib/selectKey";
 import {
@@ -128,6 +129,11 @@ export default function ExportScreen() {
       return;
     }
     setBusy(true);
+    // The export holds the desktop from its pull to the end of its format
+    // step. Each job holds it too, but only while it runs, which would leave
+    // a gap between the two where Settings → Convert could start a job the
+    // desktop then runs instead of the format step (#1407).
+    const releaseDesktop = holdDesktopJob("Export");
     setError("");
     setLog([]);
     const exportCancel = createRunCancel();
@@ -191,6 +197,7 @@ export default function ExportScreen() {
         appendLog(`Error: ${message}`);
         setError(message);
       } finally {
+        releaseDesktop();
         setBusy(false);
       }
     })();
