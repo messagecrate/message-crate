@@ -818,15 +818,22 @@ export type ImportListParams = {
 export function listImports(
   params: ImportListParams = {},
   opts?: RequestOptions,
-): Promise<Schema["Page_ImportRun"]> {
-  return apiClient.get<Schema["Page_ImportRun"]>(withQuery("/v1/imports", query(params)), opts);
+): Promise<Schema["Page_ImportRunSummary"]> {
+  return apiClient.get<Schema["Page_ImportRunSummary"]>(
+    withQuery("/v1/imports", query(params)),
+    opts,
+  );
 }
 
-/** Every Import Run of the account, newest first, read page by page. */
-export function listEveryImport(opts?: RequestOptions): Promise<Schema["ImportRun"][]> {
-  return readEveryPage<Schema["Page_ImportRun"]>("/v1/imports", opts);
+/**
+ * Every Import Run of the account, newest first, read page by page. Each run
+ * carries how many issues it recorded; {@link getImport} reads the issues.
+ */
+export function listEveryImport(opts?: RequestOptions): Promise<Schema["ImportRunSummary"][]> {
+  return readEveryPage<Schema["Page_ImportRunSummary"]>("/v1/imports", opts);
 }
 
+/** One Import Run with every issue it recorded. */
 export function getImport(id: number, opts?: RequestOptions): Promise<Schema["ImportRun"]> {
   return apiClient.get<Schema["ImportRun"]>(`/v1/imports/${id}`, opts);
 }

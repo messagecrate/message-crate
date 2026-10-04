@@ -184,7 +184,10 @@ fn auth_headers(token: &str) -> HeaderMap {
 
 /// The account's running Import Run through `GET /v1/imports?status=running`,
 /// as the desktop app finds it.
-async fn running_import(state: &AppState, token: &str) -> Option<crate::imports_api::ImportRun> {
+async fn running_import(
+    state: &AppState,
+    token: &str,
+) -> Option<crate::imports_api::ImportRunSummary> {
     list_imports(
         State(state.clone()),
         import_access(state, token).await,
@@ -403,11 +406,11 @@ async fn imports_complete_and_detail_surface_timings_and_issues() {
     )
     .await
     .unwrap();
-    assert_eq!(response.0.status.as_str(), "completed");
+    assert_eq!(response.0.run.status.as_str(), "completed");
     // Counted from what the run holds, which is nothing here.
-    assert_eq!(response.0.message_count, 0);
-    assert_eq!(response.0.attachment_count, 0);
-    assert_eq!(response.0.bytes_uploaded, 100);
+    assert_eq!(response.0.run.message_count, 0);
+    assert_eq!(response.0.run.attachment_count, 0);
+    assert_eq!(response.0.run.bytes_uploaded, 100);
 
     let detail = get_import(
         State(state.clone()),
@@ -417,13 +420,13 @@ async fn imports_complete_and_detail_surface_timings_and_issues() {
     .await
     .unwrap();
     let value = detail.0;
-    assert_eq!(value.id, import_id);
-    assert_eq!(value.duration_ms, Some(48_000));
-    assert_eq!(value.parse_ms, Some(18_000));
-    assert_eq!(value.attachments_ms, Some(22_000));
-    assert_eq!(value.prepare_ms, Some(4_000));
-    assert_eq!(value.upload_ms, Some(8_000));
-    assert_eq!(value.summary["parse"]["messages"], 10);
+    assert_eq!(value.run.id, import_id);
+    assert_eq!(value.run.duration_ms, Some(48_000));
+    assert_eq!(value.run.parse_ms, Some(18_000));
+    assert_eq!(value.run.attachments_ms, Some(22_000));
+    assert_eq!(value.run.prepare_ms, Some(4_000));
+    assert_eq!(value.run.upload_ms, Some(8_000));
+    assert_eq!(value.run.summary["parse"]["messages"], 10);
     assert_eq!(value.issues.len(), 2);
     assert_eq!(value.issues[0].kind, "skip");
     assert_eq!(
@@ -459,7 +462,7 @@ async fn imports_complete_stores_completed_with_issues_status() {
     )
     .await
     .unwrap();
-    assert_eq!(response.0.status.as_str(), "completed_with_issues");
+    assert_eq!(response.0.run.status.as_str(), "completed_with_issues");
 }
 
 #[tokio::test]

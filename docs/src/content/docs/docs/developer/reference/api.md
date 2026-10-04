@@ -43,7 +43,7 @@ Every import is an Import Run, and there is no import without one. A run takes f
 
 Between those steps, `PATCH /v1/imports/{id}` moves a live run to another stage, carrying the plan approved at the gate it just passed in `summary` when there is one. The desktop app uses the stage to resume an import after a restart. The stage is a field of the run, so it is written with a `PATCH` rather than posted to a `stage` sub-resource. The answer is the run, the same record `GET /v1/imports/{id}` returns.
 
-`GET /v1/imports` is a page of every run, newest first (`sort=started_at` for oldest first), narrowed by `status` to one of `running`, `completed`, `completed_with_issues`, `failed`, `cancelled`. `GET /v1/imports/{id}/contacts` lists the contacts a run created or changed. Messages promoted in a run store its id in `messages.import_id`, which is what the `import:` search word matches.
+`GET /v1/imports` is a page of every run, newest first (`sort=started_at` for oldest first), narrowed by `status` to one of `running`, `completed`, `completed_with_issues`, `failed`, `cancelled`. Each run on the page carries `issue_count`, how many issues it recorded, in place of the issues, so a page stays small however many a run recorded; `GET /v1/imports/{id}` answers them all. `GET /v1/imports/{id}/contacts` lists the contacts a run created or changed. Messages promoted in a run store its id in `messages.import_id`, which is what the `import:` search word matches.
 
 ### Import body
 

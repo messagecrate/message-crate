@@ -65,6 +65,7 @@ export default function ImportHistoryTable({
                   <th className={`${thStyle} text-right`}>Messages</th>
                   <th className={`${thStyle} text-right`}>Attachments</th>
                   <th className={`${thStyle} text-right`}>Uploaded size</th>
+                  <th className={`${thStyle} text-right`}>Issues</th>
                 </tr>
               </thead>
               <tbody>
@@ -98,10 +99,13 @@ export default function ImportHistoryTable({
                         <td className={`${tdStyle} text-right tabular-nums`}>
                           {formatBytes(row.bytes_uploaded)}
                         </td>
+                        <td className={`${tdStyle} text-right tabular-nums`}>
+                          {row.issue_count.toLocaleString()}
+                        </td>
                       </tr>
                       {isSelected ? (
                         <tr>
-                          <td colSpan={5} className="border-b border-border p-0">
+                          <td colSpan={6} className="border-b border-border p-0">
                             <ImportDetailPanel
                               detailId={detailId}
                               selectedImport={selectedImport}
