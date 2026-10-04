@@ -59,13 +59,10 @@ still gets a Preview, because a list that holds a type most browsers show
 would fail in the one that does not, and an MP3 copy of a voice note costs
 little.
 
-The web app reads the rule in `fullVersion` (`web/src/lib/attachmentMedia.ts`):
-the Preview when the attachment has one (`preview_mime_type`), the original
-when its type is one of the six above, and neither otherwise. It reads the
-type the import declared, then the extension of the file's name, because the
-stored file's extension is not part of an attachment. It cannot read an
-MP4's codec, so a HEVC MP4 plays its original until its Preview is made, and
-its Preview after.
+The web app reads the rule in `fullVersion` (`web/src/lib/attachmentMedia.ts`).
+It opens the Preview when the attachment has one (`preview_mime_type`), the original when its type is one of the six above, and neither otherwise.
+It reads the type in the server's order for a stored original, which is named by its fingerprint alone and has no extension: the type the import declared, then the extension of the export's name for the file, then of its path in the export.
+It cannot read an MP4's codec, so a HEVC MP4 plays its original until its Preview is made, and its Preview after.
 
 Why: the viewer used to fetch the original and fall back to the Preview only
 when the browser failed to show it. The result depended on the browser, so a

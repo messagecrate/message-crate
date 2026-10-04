@@ -25,6 +25,15 @@ describe("fullVersion", () => {
     expect(fullVersion({ mime_type: "Audio/MP3; codecs=mp3", sha256: "a" })).toBe("original");
   });
 
+  it("reads the declared type first, as the server does for a stored original", () => {
+    // A stored original has no extension, so the server types it by what
+    // the import declared, octet-stream included, and makes nothing of it.
+    expect(fullVersion({ path: "a/IMG_1.jpg", mime_type: "image/heic", sha256: "a" })).toBe("none");
+    expect(
+      attachmentKind({ original_name: "IMG_1.jpg", mime_type: "application/octet-stream" }),
+    ).toBe("file");
+  });
+
   it("reads the type from the file name when the import named none", () => {
     expect(fullVersion({ original_name: "IMG_1.JPG", sha256: "a" })).toBe("original");
     expect(fullVersion({ original_name: "IMG_1.HEIC", sha256: "a" })).toBe("none");
