@@ -1239,7 +1239,7 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
     let listener = tokio::net::TcpListener::bind(&bind).await?;
     eprintln!(
         "{}http://{bind}",
-        message_crate_api_types::serve::LISTENING_LINE
+        message_crate_serve_protocol::LISTENING_LINE
     );
     eprintln!(
         "  routes: `message-crate-server dump-openapi` lists them all; set [server] openapi_ui = true for /docs"

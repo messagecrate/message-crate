@@ -323,17 +323,17 @@ pub async fn run(cli: Cli) -> Result<()> {
 
 /// The exit code for an error [`run`] returned: what the program that started
 /// the server reads, so it never has to match the error's text (#1416).
-/// [`DATA_FOLDER_IN_USE_EXIT_CODE`] when another server, or reset-demo, holds
+/// [`OPERATION_LOCK_HELD_EXIT_CODE`] when another server, or reset-demo, holds
 /// the database `serve` was asked to open; 1 for every other failure.
 ///
-/// [`DATA_FOLDER_IN_USE_EXIT_CODE`]: message_crate_api_types::serve::DATA_FOLDER_IN_USE_EXIT_CODE
+/// [`OPERATION_LOCK_HELD_EXIT_CODE`]: message_crate_serve_protocol::OPERATION_LOCK_HELD_EXIT_CODE
 #[must_use]
 pub fn exit_code(error: &anyhow::Error) -> u8 {
     if error
-        .downcast_ref::<crate::operation_lock::DataFolderInUse>()
+        .downcast_ref::<crate::operation_lock::OperationLockHeld>()
         .is_some()
     {
-        message_crate_api_types::serve::DATA_FOLDER_IN_USE_EXIT_CODE
+        message_crate_serve_protocol::OPERATION_LOCK_HELD_EXIT_CODE
     } else {
         1
     }

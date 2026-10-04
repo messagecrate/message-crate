@@ -263,7 +263,7 @@ fn only_the_apps_own_server_saying_it_listens_makes_the_start_its_own() {
         starting.clone(),
         Event::ChildExited {
             output: "any words at all".into(),
-            code: Some(i32::from(DATA_FOLDER_IN_USE_EXIT_CODE)),
+            code: Some(i32::from(OPERATION_LOCK_HELD_EXIT_CODE)),
         },
     );
     let (state, actions) = step(state, Event::Probed(Probe::Free));
@@ -501,12 +501,12 @@ mod with_a_script {
     }
 
     #[test]
-    fn a_server_locked_out_of_its_data_folder_waits_for_the_other_server() {
+    fn a_server_refused_the_operation_lock_waits_for_the_other_server() {
         let dir = tempfile::tempdir().unwrap();
         // Told apart by its exit code alone, whatever it wrote.
         let program = script(
             dir.path(),
-            &format!("echo 'any words at all' >&2\nexit {DATA_FOLDER_IN_USE_EXIT_CODE}"),
+            &format!("echo 'any words at all' >&2\nexit {OPERATION_LOCK_HELD_EXIT_CODE}"),
         );
         let launch = launch_at(free_address(), &program, dir.path());
 

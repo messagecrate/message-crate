@@ -27,11 +27,6 @@
 //! The `schema` feature adds `utoipa::ToSchema`, so the same structs describe
 //! themselves in the OpenAPI document. The server turns it on; a client crate
 //! leaves it off and never builds utoipa.
-//!
-//! [`serve`] holds the one interface that is not HTTP: how the `serve`
-//! command reports its start to the desktop app that runs it.
-
-pub mod serve;
 
 use serde::{Deserialize, Serialize};
 

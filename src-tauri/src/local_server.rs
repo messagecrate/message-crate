@@ -9,7 +9,7 @@
 //! - nothing answers: the app starts the server and waits for it to listen;
 //! - something else answers: the port is taken, and the app says so.
 //!
-//! The server is given its data folder, its address and the website files on
+//! The server is given its Data Directory, its address and the website files on
 //! its command line, so there is no config file. A database that does not
 //! exist yet is created with the Demo Account before the server listens,
 //! which is why a first start takes a few seconds longer.
@@ -31,7 +31,7 @@
 //! happened. [`LocalServer`] holds that state with the processes and does
 //! what [`step`] asks.
 
-use message_crate_api_types::serve::{DATA_FOLDER_IN_USE_EXIT_CODE, LISTENING_LINE};
+use message_crate_serve_protocol::{LISTENING_LINE, OPERATION_LOCK_HELD_EXIT_CODE};
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read};
@@ -50,7 +50,7 @@ pub const OWN_ADDRESS: &str = "127.0.0.1:8080";
 /// The server program's name, without the platform's suffix.
 const SERVER_NAME: &str = "message-crate-server";
 
-/// The database file the server keeps in its data folder. It is missing
+/// The database file the server keeps in its Data Directory. It is missing
 /// before the first start.
 const DATABASE_FILE: &str = "messagecrate.db";
 
@@ -74,8 +74,8 @@ const ANSWER_TIMEOUT: Duration = Duration::from_secs(15);
 const OUTPUT_LINES_KEPT: usize = 40;
 
 /// How many more times the address is asked, [`POLL_INTERVAL`] apart, after
-/// the app's server exited with [`DATA_FOLDER_IN_USE_EXIT_CODE`]: another
-/// server holds its data folder, most likely the server of a second window of
+/// the app's server exited with [`OPERATION_LOCK_HELD_EXIT_CODE`]: another
+/// server holds the operation lock of its database, most likely the server of a second window of
 /// this app, started at the same moment.
 /// That server may still be creating the Demo Account, so the app waits for
 /// it as long as for a start of its own: [`START_TIMEOUT`].
@@ -384,7 +384,7 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
             // Another Message Crate may have taken the port first; it is
             // used if it answers.
             Phase::Starting { .. } => {
-                let probes_left = if code == Some(i32::from(DATA_FOLDER_IN_USE_EXIT_CODE)) {
+                let probes_left = if code == Some(i32::from(OPERATION_LOCK_HELD_EXIT_CODE)) {
                     LOCKED_OUT_PROBES
                 } else {
                     0

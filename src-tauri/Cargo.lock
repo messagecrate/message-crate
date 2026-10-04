@@ -2302,11 +2302,11 @@ dependencies = [
  "imessage-ir-exporter",
  "ios-backup",
  "media",
- "message-crate-api-types",
  "message-crate-core",
  "message-crate-http",
  "message-crate-pull",
  "message-crate-push",
+ "message-crate-serve-protocol",
  "message-ir",
  "message-ir-format",
  "message-reexport",
@@ -2375,6 +2375,10 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
 ]
+
+[[package]]
+name = "message-crate-serve-protocol"
+version = "0.1.0"
 
 [[package]]
 name = "message-csv"

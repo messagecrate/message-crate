@@ -20,25 +20,25 @@ pub(crate) struct OperationLock {
 
 /// Another server, or reset-demo, holds the operation lock of the database
 /// `serve` was asked to open. `main` exits with
-/// [`DATA_FOLDER_IN_USE_EXIT_CODE`](message_crate_api_types::serve::DATA_FOLDER_IN_USE_EXIT_CODE)
+/// [`OPERATION_LOCK_HELD_EXIT_CODE`](message_crate_serve_protocol::OPERATION_LOCK_HELD_EXIT_CODE)
 /// when a command fails with it, which is how the desktop app tells the
 /// server of a second window from a failed start (#1416).
 #[derive(Debug, thiserror::Error)]
 #[error("cannot start serve for {} while reset-demo or another server is active", .db.display())]
-pub(crate) struct DataFolderInUse {
+pub(crate) struct OperationLockHeld {
     db: PathBuf,
 }
 
-/// Take the lock for the HTTP server. Fails with [`DataFolderInUse`] if
+/// Take the lock for the HTTP server. Fails with [`OperationLockHeld`] if
 /// reset-demo or another server already holds it.
 ///
 /// # Errors
 ///
-/// Returns [`DataFolderInUse`] when the lock is held, and another error when
+/// Returns [`OperationLockHeld`] when the lock is held, and another error when
 /// the lock file cannot be created or locked.
 pub(crate) fn acquire_for_serve(db: &Path) -> Result<OperationLock> {
     acquire(db)?.ok_or_else(|| {
-        DataFolderInUse {
+        OperationLockHeld {
             db: db.to_path_buf(),
         }
         .into()

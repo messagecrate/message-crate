@@ -1,7 +1,7 @@
 //! What `serve` tells the program that started it, read the way the desktop
 //! app reads it (`src-tauri/src/local_server.rs`): the listening line from its
-//! output, and the exit code when another server holds the data folder. Both
-//! values come from `message_crate_api_types::serve`, which the app reads
+//! output, and the exit code when another server holds the operation lock. Both
+//! values come from `message_crate_serve_protocol`, which the app reads
 //! too, so a server that stops giving them fails here (#1416).
 
 use std::io::{BufRead, BufReader};
@@ -11,7 +11,7 @@ use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use message_crate_api_types::serve::{DATA_FOLDER_IN_USE_EXIT_CODE, LISTENING_LINE};
+use message_crate_serve_protocol::{LISTENING_LINE, OPERATION_LOCK_HELD_EXIT_CODE};
 
 /// How long a server on an empty database may take to listen or to exit.
 const WAIT: Duration = Duration::from_secs(60);
@@ -83,7 +83,7 @@ fn exit_status(child: &mut Child) -> ExitStatus {
 }
 
 #[test]
-fn serve_says_it_listens_and_a_second_serve_exits_with_the_in_use_code() {
+fn serve_says_it_listens_and_a_second_serve_exits_with_the_lock_held_code() {
     let root = tempfile::tempdir().unwrap();
     let data_dir = root.path().join("data");
     let static_dir = root.path().join("static");
@@ -120,20 +120,20 @@ fn serve_says_it_listens_and_a_second_serve_exits_with_the_in_use_code() {
         }
     }
 
-    // The first server holds the data folder, so the second cannot start.
+    // The first server holds the operation lock, so the second cannot start.
     let mut second = Running(serve(&data_dir, &static_dir).spawn().unwrap());
     let status = exit_status(&mut second.0);
     assert_eq!(
         status.code(),
-        Some(i32::from(DATA_FOLDER_IN_USE_EXIT_CODE)),
+        Some(i32::from(OPERATION_LOCK_HELD_EXIT_CODE)),
         "{status}"
     );
 }
 
 #[test]
-fn any_other_failure_to_serve_is_not_the_in_use_code() {
+fn any_other_failure_to_serve_is_not_the_lock_held_code() {
     let root = tempfile::tempdir().unwrap();
-    // A file where the data folder should be: the start fails for a reason
+    // A file where the Data Directory should be: the start fails for a reason
     // that is not another server.
     let data_dir = root.path().join("data");
     std::fs::write(&data_dir, b"not a folder").unwrap();
@@ -143,7 +143,7 @@ fn any_other_failure_to_serve_is_not_the_in_use_code() {
     assert!(!status.success(), "{status}");
     assert_ne!(
         status.code(),
-        Some(i32::from(DATA_FOLDER_IN_USE_EXIT_CODE)),
+        Some(i32::from(OPERATION_LOCK_HELD_EXIT_CODE)),
         "{status}"
     );
 }
