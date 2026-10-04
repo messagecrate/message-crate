@@ -174,12 +174,12 @@ fn participants_for(session: &MailSession, chatroom: &Chat) -> (Vec<Participant>
         let address = address.trim();
         if address.is_empty()
             || session.is_owner(address)
-            || records.iter().any(|p| p.handle == address)
+            || records.iter().any(|p| p.identity == address)
         {
             return;
         }
         records.push(Participant {
-            handle: address.to_string(),
+            identity: address.to_string(),
             display_name,
         });
     };
@@ -319,7 +319,7 @@ fn build_parent_tapbacks(session: &MailSession, message: &Message) -> Option<Val
                 continue;
             }
             let (kind, emoji) = tapback_kind(kind);
-            let (reactor_handle, reactor_display_name) = if tapback.is_from_me() {
+            let (reactor_identity, reactor_display_name) = if tapback.is_from_me() {
                 (
                     None,
                     Some(owner_display_name(session, tapback).unwrap_or_else(|| ME.to_string())),
@@ -341,7 +341,7 @@ fn build_parent_tapbacks(session: &MailSession, message: &Message) -> Option<Val
                     kind,
                     emoji,
                     is_from_me: tapback.is_from_me(),
-                    reactor_handle,
+                    reactor_identity,
                     reactor_display_name,
                 },
             ));
@@ -359,7 +359,7 @@ fn build_parent_tapbacks(session: &MailSession, message: &Message) -> Option<Val
 struct RowContext {
     conversation: ConversationRecord,
     is_from_me: bool,
-    sender_handle: Option<String>,
+    sender_identity: Option<String>,
     sender_display_name: Option<String>,
     service: String,
 }
@@ -394,7 +394,7 @@ fn resolve_context(session: &MailSession, message: &Message) -> RowContext {
     };
 
     let is_from_me = message.is_from_me();
-    let (sender_handle, sender_display_name) = if is_from_me {
+    let (sender_identity, sender_display_name) = if is_from_me {
         (None, None)
     } else if let Some(handle_id) = message.handle_id {
         (
@@ -413,7 +413,7 @@ fn resolve_context(session: &MailSession, message: &Message) -> RowContext {
     RowContext {
         conversation,
         is_from_me,
-        sender_handle,
+        sender_identity,
         sender_display_name,
         service,
     }
@@ -442,11 +442,11 @@ fn build_record(
         outgoing: context.is_from_me,
         service: context.service,
         message_kind: kind.to_string(),
-        sender_handle: context.sender_handle,
+        sender_identity: context.sender_identity,
         sender_display_name: context.sender_display_name,
         subject: message.subject.clone().filter(|s| !s.is_empty()),
         text,
-        owner_handle: owner_address(message).unwrap_or_default(),
+        owner_identity: owner_address(message).unwrap_or_default(),
         owner_display_name: owner_display_name(session, message),
         imessage: (!is_empty(&imessage)).then_some(imessage),
         attachments,
@@ -719,7 +719,7 @@ mod tests {
 
     /// The handles of a roster, in roster order.
     fn handles_of(participants: &[Participant]) -> Vec<&str> {
-        participants.iter().map(|p| p.handle.as_str()).collect()
+        participants.iter().map(|p| p.identity.as_str()).collect()
     }
 
     #[test]
@@ -878,9 +878,9 @@ mod tests {
         assert!(!photo.outgoing);
         assert_eq!(photo.message_kind, "imessage");
         assert_eq!(photo.service, "iMessage");
-        assert_eq!(photo.sender_handle.as_deref(), Some(FRIEND_PHONE));
+        assert_eq!(photo.sender_identity.as_deref(), Some(FRIEND_PHONE));
         assert_eq!(photo.sender_display_name.as_deref(), Some("Sam Example"));
-        assert_eq!(photo.owner_handle, OWNER);
+        assert_eq!(photo.owner_identity, OWNER);
         assert_eq!(photo.owner_display_name.as_deref(), Some(OWNER));
         assert_eq!(photo.attachments.len(), 1);
         assert_eq!(
@@ -899,7 +899,7 @@ mod tests {
         let (_, reply) = build_record(&session, &messages[1]).unwrap();
         assert!(reply.outgoing);
         assert_eq!(reply.text, "Nice");
-        assert_eq!(reply.sender_handle, None);
+        assert_eq!(reply.sender_identity, None);
         let fields = reply.imessage.expect("the parsed body is one part");
         assert_eq!(
             fields.parts,
@@ -917,7 +917,7 @@ mod tests {
         let mut handles: Vec<_> = group
             .participants
             .iter()
-            .map(|p| p.handle.as_str())
+            .map(|p| p.identity.as_str())
             .collect();
         handles.sort_unstable();
         assert_eq!(handles, vec![FRIEND_PHONE, FRIEND_EMAIL]);
@@ -989,10 +989,10 @@ mod tests {
 
         let (direct, photo) = build_record(&session, &messages[0]).unwrap();
         assert_eq!(handles_of(&direct.participants), vec![FRIEND_PHONE]);
-        assert_eq!(photo.sender_handle.as_deref(), Some(FRIEND_PHONE));
+        assert_eq!(photo.sender_identity.as_deref(), Some(FRIEND_PHONE));
         let (_, new_address) = build_record(&session, &messages[6]).unwrap();
         assert_eq!(
-            new_address.sender_handle.as_deref(),
+            new_address.sender_identity.as_deref(),
             Some(FRIEND_PHONE_EMAIL)
         );
 
@@ -1004,7 +1004,7 @@ mod tests {
             HashMap::from([(0usize, vec![heart])]),
         );
         let cells = build_parent_tapbacks(&session, &messages[1]).unwrap();
-        assert_eq!(cells[0]["reactor_handle"], FRIEND_PHONE_EMAIL);
+        assert_eq!(cells[0]["reactor_identity"], FRIEND_PHONE_EMAIL);
         assert_eq!(cells[0]["reactor_display_name"], "Sam Example");
     }
 
@@ -1020,13 +1020,13 @@ mod tests {
         let (_, in_group) = build_record(&session, &messages[8]).unwrap();
         assert_eq!(in_group.text, "No sender");
         assert!(!in_group.outgoing);
-        assert_eq!(in_group.sender_handle, None);
+        assert_eq!(in_group.sender_identity, None);
         assert_eq!(in_group.sender_display_name, None);
 
         let mut in_direct = FixtureDb::messages(&session).remove(0);
         in_direct.handle_id = Some(0);
         let (_, record) = build_record(&session, &in_direct).unwrap();
-        assert_eq!(record.sender_handle, None, "not inferred from the chat");
+        assert_eq!(record.sender_identity, None, "not inferred from the chat");
         assert_eq!(record.sender_display_name, None);
     }
 
@@ -1066,7 +1066,7 @@ mod tests {
 
         let (lost, record) = build_record(&session, &messages[11]).unwrap();
         assert_eq!(lost.chat_identifier, ORPHANED);
-        assert_eq!(record.sender_handle.as_deref(), Some(FRIEND_EMAIL));
+        assert_eq!(record.sender_identity.as_deref(), Some(FRIEND_EMAIL));
 
         // A group with no handle rows lists nobody; its sender is still named.
         rusqlite::Connection::open(&fixture.db_path)
@@ -1078,7 +1078,7 @@ mod tests {
         assert_eq!(shrunk.chat_identifier, SHRUNK_GROUP_IDENTIFIER);
         assert_eq!(shrunk.conversation_type, "group");
         assert!(shrunk.participants.is_empty());
-        assert_eq!(record.sender_handle.as_deref(), Some(FRIEND_EMAIL));
+        assert_eq!(record.sender_identity.as_deref(), Some(FRIEND_EMAIL));
     }
 
     /// The owner's chat with the owner's own number keeps that identifier
@@ -1151,7 +1151,7 @@ mod tests {
         let handles: Vec<_> = conversation
             .participants
             .iter()
-            .map(|p| p.handle.as_str())
+            .map(|p| p.identity.as_str())
             .collect();
         assert_eq!(
             handles,
@@ -1160,16 +1160,16 @@ mod tests {
         );
         assert!(from_mac.outgoing);
         assert_eq!(from_mac.text, "From my Mac");
-        assert_eq!(from_mac.sender_handle, None);
-        assert_eq!(from_mac.owner_handle, OWNER_EMAIL);
+        assert_eq!(from_mac.sender_identity, None);
+        assert_eq!(from_mac.owner_identity, OWNER_EMAIL);
         assert_eq!(from_mac.owner_display_name.as_deref(), Some(OWNER_EMAIL));
 
         let (conversation, still_me) = build_record(&session, &messages[4]).unwrap();
         assert_eq!(conversation.chat_identifier, FRIEND_PHONE);
         assert!(still_me.outgoing);
         assert_eq!(still_me.text, "Still me");
-        assert_eq!(still_me.sender_handle, None);
-        assert_eq!(still_me.owner_handle, "", "NULL comes through as empty");
+        assert_eq!(still_me.sender_identity, None);
+        assert_eq!(still_me.owner_identity, "", "NULL comes through as empty");
         assert_eq!(still_me.owner_display_name.as_deref(), Some(ME));
     }
 
@@ -1187,7 +1187,7 @@ mod tests {
         assert_eq!(conversation.chat_identifier, FRIEND_PHONE);
         assert!(from_the_car.outgoing);
         assert_eq!(from_the_car.text, "From the car");
-        assert_eq!(from_the_car.owner_handle, OWNER);
+        assert_eq!(from_the_car.owner_identity, OWNER);
         assert_eq!(from_the_car.owner_display_name.as_deref(), Some(OWNER));
     }
 
@@ -1345,7 +1345,7 @@ mod tests {
         assert_eq!(cells[0]["reactor_display_name"], OWNER);
         assert_eq!(cells[0]["is_from_me"], true);
         assert_eq!(cells[1]["kind"], "loved");
-        assert_eq!(cells[1]["reactor_handle"], FRIEND_PHONE);
+        assert_eq!(cells[1]["reactor_identity"], FRIEND_PHONE);
         assert_eq!(cells[1]["is_from_me"], false);
         assert_eq!(cells[1]["reactor_display_name"], "Sam Example");
 

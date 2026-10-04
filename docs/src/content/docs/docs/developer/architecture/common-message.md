@@ -30,25 +30,27 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
 
 - **Common-message path** (`ConversationDocument` → `message_ir_format::FormatSink`, one of json/jsonl/csv/eml/mbox/xml): all exporters, including iMessage (`imessage-ir-exporter`). Per-chat formats also accept `write_format`; XML uses a single `smses.xml` via the sink.
 - **Media + obfuscate** run inside `FormatSink::finish` for every format (`message_crate_core::ExportTransforms`: none / copy / convert / compress, plus optional obfuscate). When obfuscate is on, exporters skip staging real attachment bytes and convert/compress is not run — only placeholder files are written. Exporters pass transforms from `ExporterConfig.media` / `.obfuscate`; there is no CSV-only post-step. EML / MBOX / XML embed media and drop the staged `attachments/` directory afterward.
-- **Schema version 4 only** (breaking). Version 3 is refused, never upgraded. Typed enums/bags, filled outgoing identity, conversation stats, stable null/`[]` keys. Older common-message JSON is not read — regenerate exports after schema changes.
+- **Schema version 5 only** (breaking). Version 5 names every address an identity (`identity`, `identity_type`, `owner_identity`, `sender_identity`, `reactor_identity`) where version 4 said `handle`, `handle_type`, `owner_handle`, `sender_handle` and `reactor_handle`. Version 4 and older are refused, never upgraded. Typed enums/bags, filled outgoing identity, conversation stats, stable null/`[]` keys. Older common-message JSON is not read — regenerate exports after schema changes.
 
-## Document schema (`schema_version: 4`)
+## Document schema (`schema_version: 5`)
 
 ```json
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "export": {
     "source": "sms-backup-restore",
     "tool": "SMS Backup & Restore",
     "tool_version": "10.26.003",
-    "owner_handle": "+15555550100",
+    "owner_identity": "+15555550100",
     "owner_display_name": "Me"
   },
   "conversation": {
     "chat_identifier": "+15555550101",
     "conversation_type": "individual",
     "group_title": null,
-    "participants": [{ "handle": "+15555550101", "display_name": "Sam" }],
+    "participants": [
+      { "identity": "+15555550101", "display_name": "Sam", "identity_type": "phone" }
+    ],
     "stats": {
       "message_count": 1,
       "attachment_count": 0,
@@ -63,7 +65,7 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
       "direction": "outgoing",
       "service": "sms",
       "message_kind": "sms",
-      "sender_handle": "+15555550100",
+      "sender_identity": "+15555550100",
       "sender_display_name": "Me",
       "subject": null,
       "text": "Hello",
@@ -86,9 +88,9 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
 
 ### Identity
 
-- Outgoing rows set `sender_handle` / `sender_display_name` from `export.owner_*` (display defaults to `"Me"` when a handle is known).
+- Outgoing rows set `sender_identity` / `sender_display_name` from `export.owner_*` (display defaults to `"Me"` when an identity is known).
 - Incoming rows use the peer identity.
-- `owner_handle` on a message is the owner's own address on it: the one it was sent from, or the one it was received at. Only sources that record the owner per message write it (iMessage, from `destination_caller_id`); everywhere else it is omitted and `export.owner_handle` stands for every message. An iMessage outgoing row keeps the address it was sent from, and takes `export.owner_handle` only when the database recorded none.
+- `owner_identity` on a message is the owner's own address on it: the one it was sent from, or the one it was received at. Only sources that record the owner per message write it (iMessage, from `destination_caller_id`); everywhere else it is omitted and `export.owner_identity` stands for every message. An iMessage outgoing row keeps the address it was sent from, and takes `export.owner_identity` only when the database recorded none.
 - Display names are not duplicated under `source`.
 - `guid` is Apple's own id for Apple Messages. Every other source's `guid` is a `MessageGuid`: SHA-256 of the chat id, the direction, the sender of an incoming message, the UTC instant in milliseconds, the text with whitespace collapsed, the sorted attachment digests, and the source's own key where it has one (WhatsApp's `key_id`). It reads no time zone and no display format, so one backup gives the same ids on any computer. The server refuses a message whose `guid` is empty.
 - Two records a backup cannot tell apart are one message, and the exporter keeps one (`message_ir::one_copy_per_message`). The server's content key, which matches one message across sources, is the same identity at whole seconds.
@@ -116,7 +118,7 @@ Attachment **bytes** are never stored in JSON/JSONL (`#[serde(skip)]`). Paths + 
 ## JSONL layout
 
 ```text
-{"schema_version":4,"export":{…},"conversation":{…}}
+{"schema_version":5,"export":{…},"conversation":{…}}
 {"guid":"…","timestamp_unix_ms":…, …}
 …
 ```

@@ -16,7 +16,7 @@ fn doc_with_image_attachment() -> ConversationDocument {
             source: "test".into(),
             tool: "test".into(),
             tool_version: "0".into(),
-            owner_handle: None,
+            owner_identity: None,
             owner_display_name: None,
         },
         conversation: ConversationMeta {
@@ -24,9 +24,9 @@ fn doc_with_image_attachment() -> ConversationDocument {
             conversation_type: IrConversationType::Individual,
             group_title: None,
             participants: vec![IrParticipant {
-                handle: Some("+15555550101".into()),
+                identity: Some("+15555550101".into()),
                 display_name: Some("Sam".into()),
-                handle_type: None,
+                identity_type: None,
             }],
             stats: ConversationStats::default(),
         },
@@ -36,9 +36,9 @@ fn doc_with_image_attachment() -> ConversationDocument {
             direction: IrDirection::Incoming,
             service: IrService::Sms,
             message_kind: IrMessageKind::Sms,
-            sender_handle: Some("+15555550101".into()),
+            sender_identity: Some("+15555550101".into()),
             sender_display_name: Some("Sam".into()),
-            owner_handle: None,
+            owner_identity: None,
             subject: None,
             text: "hi".into(),
             attachments: vec![IrAttachment {
@@ -80,14 +80,14 @@ fn obfuscate_drops_the_vendor_bag() {
 #[test]
 fn obfuscate_replaces_the_owner_address_on_each_message() {
     let mut doc = message_ir::testutil::sample_document("secret");
-    doc.messages[0].owner_handle = Some("+15555550100".into());
+    doc.messages[0].owner_identity = Some("+15555550100".into());
     let mut anon = Obfuscator::new([7u8; 32]);
     obfuscate_one(&mut doc, &mut anon);
-    let owner = doc.messages[0].owner_handle.as_deref();
+    let owner = doc.messages[0].owner_identity.as_deref();
     assert_ne!(owner, Some("+15555550100"));
     assert_eq!(
         owner,
-        doc.export.owner_handle.as_deref(),
+        doc.export.owner_identity.as_deref(),
         "one address becomes one fake address wherever it appears"
     );
 }
@@ -212,7 +212,7 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
             source: "sms-backup-restore".into(),
             tool: "SMS Backup & Restore".into(),
             tool_version: "10.20".into(),
-            owner_handle: Some("LEAK-01".into()),
+            owner_identity: Some("LEAK-01".into()),
             owner_display_name: Some("LEAK-02".into()),
         },
         conversation: ConversationMeta {
@@ -220,9 +220,9 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
             conversation_type: IrConversationType::Group,
             group_title: Some("LEAK-04".into()),
             participants: vec![IrParticipant {
-                handle: Some("LEAK-05".into()),
+                identity: Some("LEAK-05".into()),
                 display_name: Some("LEAK-06".into()),
-                handle_type: Some(HandleType::Phone),
+                identity_type: Some(HandleType::Phone),
             }],
             stats: ConversationStats {
                 message_count: 1,
@@ -237,9 +237,9 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
             direction: IrDirection::Incoming,
             service: IrService::IMessage,
             message_kind: IrMessageKind::IMessage,
-            sender_handle: Some("LEAK-07".into()),
+            sender_identity: Some("LEAK-07".into()),
             sender_display_name: Some("LEAK-08".into()),
-            owner_handle: Some("LEAK-09".into()),
+            owner_identity: Some("LEAK-09".into()),
             subject: Some("LEAK-10".into()),
             text: "LEAK-11".into(),
             attachments: vec![IrAttachment {
@@ -271,7 +271,7 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
                     "kind": "emoji",
                     "emoji": "👍",
                     "is_from_me": false,
-                    "reactor_handle": "LEAK-20",
+                    "reactor_identity": "LEAK-20",
                     "reactor_display_name": "LEAK-21",
                     "sender": "LEAK-22",
                     "unknown_key": "LEAK-23",
@@ -304,7 +304,7 @@ const KEPT_AS_IS: &[(&str, &str)] = &[
         "names the backup tool, not the person",
     ),
     ("conversation.conversation_type", "enum value"),
-    ("conversation.participants[].handle_type", "enum value"),
+    ("conversation.participants[].identity_type", "enum value"),
     ("messages[].direction", "enum value"),
     ("messages[].service", "enum value"),
     ("messages[].message_kind", "enum value"),
@@ -436,11 +436,14 @@ fn obfuscate_keeps_each_tapback_and_replaces_only_who_reacted() {
     assert_eq!(tapback["kind"], json!("emoji"));
     assert_eq!(tapback["emoji"], json!("👍"));
     assert_eq!(tapback["is_from_me"], json!(false));
-    let reactor = tapback["reactor_handle"]
+    let reactor = tapback["reactor_identity"]
         .as_str()
-        .expect("reactor_handle is kept as a string");
+        .expect("reactor_identity is kept as a string");
     assert!(!reactor.is_empty());
-    assert!(!reactor.contains("LEAK-"), "reactor_handle kept {reactor}");
+    assert!(
+        !reactor.contains("LEAK-"),
+        "reactor_identity kept {reactor}"
+    );
     // `sender` is not a tapback key, so it goes with the other unknown keys.
     assert!(tapback.get("sender").is_none(), "{tapback}");
 }

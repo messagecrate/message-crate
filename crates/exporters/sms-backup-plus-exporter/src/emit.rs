@@ -125,7 +125,7 @@ fn pending_from_parsed(msg: ParsedMessage, pending_atts: Vec<PendingAttachment>)
     PendingMessage {
         sort_key: msg.timestamp_secs as i64,
         is_from_me: msg.is_from_me,
-        sender_handle: msg.sender.map(Handle::into_key).unwrap_or_default(),
+        sender_identity: msg.sender.map(Handle::into_key).unwrap_or_default(),
         sender_display_name: msg.name_alias,
         text: msg.text,
         attachments: pending_atts,
@@ -204,8 +204,8 @@ impl ProjectionHooks for SbpProjection {
     fn participants(&self, chat_id: &str, convo: &PendingConversation) -> Vec<IrParticipant> {
         let mut participants = default_participants(chat_id, convo, &str::to_string);
         for p in &mut participants {
-            if let Some(handle) = p.handle.as_deref().and_then(Handle::parse) {
-                p.handle_type = Some(handle.kind());
+            if let Some(handle) = p.identity.as_deref().and_then(Handle::parse) {
+                p.identity_type = Some(handle.kind());
             }
         }
         participants
@@ -298,7 +298,7 @@ fn project_and_count(
                  nobody.",
             );
         }
-        if is_group && msg.direction == IrDirection::Incoming && msg.sender_handle.is_none() {
+        if is_group && msg.direction == IrDirection::Incoming && msg.sender_identity.is_none() {
             report.bump(GROUP_MESSAGES_WITHOUT_SENDER, 1);
             emit_issue(report.issues.as_ref(), RunIssue {
                 kind: "skip".into(),
@@ -416,7 +416,7 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
         log,
     };
     let owner = Owner::new(OwnerHandleSet::from_phones(owner_phones)?, owner_emails);
-    let owner_handle = owner
+    let owner_identity = owner
         .primary_handle()
         .expect("from_phones guarantees a phone owner handle");
     verbose.line(format!("owner phones: {}", owner_phones.len()));
@@ -456,7 +456,7 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
             EXPORT_SOURCE,
             EXPORT_TOOL,
             EXPORT_TOOL_VERSION,
-            Some(owner_handle),
+            Some(owner_identity),
             None,
         ),
     };
@@ -784,7 +784,7 @@ mod tests {
                 source: String::new(),
                 tool: String::new(),
                 tool_version: String::new(),
-                owner_handle: None,
+                owner_identity: None,
                 owner_display_name: None,
             },
             conversation: ConversationMeta {
@@ -800,9 +800,9 @@ mod tests {
                 direction: IrDirection::Incoming,
                 service: IrService::Sms,
                 message_kind: IrMessageKind::Mms,
-                sender_handle: None,
+                sender_identity: None,
                 sender_display_name: None,
-                owner_handle: None,
+                owner_identity: None,
                 subject: None,
                 text: "hi".into(),
                 attachments: std::mem::take(&mut atts),

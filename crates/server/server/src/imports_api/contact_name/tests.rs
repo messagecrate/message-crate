@@ -259,14 +259,14 @@ async fn a_fresh_contact_takes_the_number_on_every_service() {
 /// A conversation header line. `participants` is the JSON array body.
 fn header(chat: &str, kind: &str, participants: &str) -> String {
     format!(
-        r#"{{"schema_version":4,"export":{{"source":"imessage","tool":"test","tool_version":"0","owner_handle":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{chat}","conversation_type":"{kind}","group_title":null,"participants":[{participants}],"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
+        r#"{{"schema_version":5,"export":{{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{chat}","conversation_type":"{kind}","group_title":null,"participants":[{participants}],"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
     )
 }
 
 /// An incoming message line from `sender`.
 fn incoming(guid: &str, sender: &str) -> String {
     format!(
-        r#"{{"guid":"{guid}","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_handle":"{sender}","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}}"#
+        r#"{{"guid":"{guid}","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"{sender}","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}}"#
     )
 }
 
@@ -359,7 +359,7 @@ async fn a_sender_no_header_names_still_gets_a_contact() {
                 header(
                     "chat1000000701",
                     "group",
-                    r#"{"handle":"+15555550123","display_name":null}"#,
+                    r#"{"identity":"+15555550123","display_name":null}"#,
                 ) + "\n"
                     + &incoming("g-group", "+15555550156")
                     + "\n",
@@ -463,7 +463,7 @@ async fn a_one_to_one_chat_first_met_as_a_sender_gets_a_contact() {
                 header(
                     "chat1000000704",
                     "group",
-                    r#"{"handle":"+15555550123","display_name":null}"#,
+                    r#"{"identity":"+15555550123","display_name":null}"#,
                 ) + "\n"
                     + &incoming("g-group", "+15555550158")
                     + "\n",

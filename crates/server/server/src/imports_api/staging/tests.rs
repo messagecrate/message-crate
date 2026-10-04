@@ -15,13 +15,13 @@ const TEST_ACCOUNT: i64 = 7;
 
 /// The header demo-seed writes for `orphaned.jsonl`: an `individual`
 /// conversation whose chat id is `orphaned` and which names nobody.
-const ORPHANED_HEADER: &str = r#"{"schema_version":4,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"orphaned","conversation_type":"individual","group_title":null,"participants":[],"stats":{"message_count":2,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}
+const ORPHANED_HEADER: &str = r#"{"schema_version":5,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"orphaned","conversation_type":"individual","group_title":null,"participants":[],"stats":{"message_count":2,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}
 "#;
 
 /// An incoming iMessage line from `sender`.
 fn incoming(guid: &str, sender: &str) -> String {
     format!(
-        r#"{{"guid":"{guid}","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_handle":"{sender}","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}}"#
+        r#"{{"guid":"{guid}","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"{sender}","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}}"#
     ) + "\n"
 }
 
@@ -333,7 +333,7 @@ async fn a_file_that_does_not_match_its_claimed_sha256_fails_the_import_and_is_n
     let claimed_sha = assets_api::Sha256::of_bytes(b"the bytes the export saw");
     let header = ORPHANED_HEADER.replace("orphaned", "+15555550154");
     let message = format!(
-        r#"{{"guid":"g-mismatch","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_handle":"+15555550154","sender_display_name":null,"subject":null,"text":"hi","attachments":[{{"path":"photo.bin","original_name":"photo.bin","mime_type":"application/octet-stream","digest_sha256":"{claimed_sha}","is_sticker":false,"transcription":null,"sticker_effect":null}}],"imessage":null,"source":null}}"#
+        r#"{{"guid":"g-mismatch","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550154","sender_display_name":null,"subject":null,"text":"hi","attachments":[{{"path":"photo.bin","original_name":"photo.bin","mime_type":"application/octet-stream","digest_sha256":"{claimed_sha}","is_sticker":false,"transcription":null,"sticker_effect":null}}],"imessage":null,"source":null}}"#
     );
     let path = tmp.path().join("mismatch.jsonl");
     std::fs::write(&path, format!("{header}{message}\n")).unwrap();
@@ -445,7 +445,7 @@ async fn a_file_with_neither_header_nor_messages_is_refused() {
 /// participants JSON array `participants`.
 fn whatsapp_header(chat_identifier: &str, kind: &str, participants: &str) -> String {
     format!(
-        r#"{{"schema_version":4,"export":{{"source":"whatsapp","tool":"test","tool_version":"0","owner_handle":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{chat_identifier}","conversation_type":"{kind}","group_title":null,"participants":{participants},"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
+        r#"{{"schema_version":5,"export":{{"source":"whatsapp","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{chat_identifier}","conversation_type":"{kind}","group_title":null,"participants":{participants},"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
     ) + "\n"
 }
 
@@ -476,7 +476,7 @@ async fn a_group_chat_id_is_stored_as_other_whatever_its_shape() {
     let body = whatsapp_header(
         "120363042@g.us",
         "group",
-        r#"[{"handle":"+15555550156","display_name":null,"handle_type":"phone"}]"#,
+        r#"[{"identity":"+15555550156","display_name":null,"identity_type":"phone"}]"#,
     ) + &incoming_whatsapp("g-group-1", "+15555550156");
     import_one(&mut conn, "120363042@g.us.jsonl", &body)
         .await
@@ -502,7 +502,7 @@ async fn an_individual_chat_id_takes_the_type_its_participant_has_in_the_header(
     let body = whatsapp_header(
         "123456@lid",
         "individual",
-        r#"[{"handle":"123456@lid","display_name":null,"handle_type":"other"}]"#,
+        r#"[{"identity":"123456@lid","display_name":null,"identity_type":"other"}]"#,
     ) + &incoming_whatsapp("g-lid-1", "123456@lid");
     import_one(&mut conn, "123456@lid.jsonl", &body)
         .await
@@ -548,7 +548,7 @@ async fn a_participants_message_on_an_unknown_service_is_from_the_participant() 
     let body = imessage_header(
         "+15555550101",
         "individual",
-        r#"[{"handle":"+15555550101","display_name":"Sam","handle_type":"phone"}]"#,
+        r#"[{"identity":"+15555550101","display_name":"Sam","identity_type":"phone"}]"#,
     ) + &incoming("g-sat-1", "+15555550101")
         + &incoming_unknown_service("g-sat-2", "+15555550101");
     import_one(&mut conn, "+15555550101.jsonl", &body)
@@ -581,7 +581,7 @@ async fn a_number_is_one_type_as_a_sender_and_as_an_untyped_participant() {
     let body = imessage_header(
         "chat1000000006",
         "group",
-        r#"[{"handle":"tel:+15555550157","display_name":null,"handle_type":null}]"#,
+        r#"[{"identity":"tel:+15555550157","display_name":null,"identity_type":null}]"#,
     ) + &incoming("g-tel-1", "+15555550157");
     import_one(&mut conn, "chat1000000006.jsonl", &body)
         .await
@@ -611,7 +611,7 @@ async fn a_sender_who_is_not_a_participant_is_typed_by_the_address_not_the_servi
     let body = imessage_header(
         "chat1000000005",
         "group",
-        r#"[{"handle":"+15555550156","display_name":null,"handle_type":"phone"}]"#,
+        r#"[{"identity":"+15555550156","display_name":null,"identity_type":"phone"}]"#,
     ) + &incoming_unknown_service("g-sat-3", "+15555550199");
     import_one(&mut conn, "chat1000000005.jsonl", &body)
         .await

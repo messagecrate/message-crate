@@ -20,9 +20,9 @@ describe("BackupIdentityList", () => {
         onAdd={vi.fn()}
         messageCounts={[
           // Two spellings of one number count under the same identity.
-          { handle: "+15555550110", sent: 1200, received: 900 },
-          { handle: "(555) 555-0110", sent: 34, received: 1 },
-          { handle: "owner@example.com", sent: 0, received: 7 },
+          { identity: "+15555550110", sent: 1200, received: 900 },
+          { identity: "(555) 555-0110", sent: 34, received: 1 },
+          { identity: "owner@example.com", sent: 0, received: 7 },
         ]}
       />,
     );

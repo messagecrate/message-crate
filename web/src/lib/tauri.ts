@@ -105,9 +105,9 @@ export interface AttachmentForecast {
   verdict: SizeVerdict;
 }
 
-/** How many messages one of the owner's handles sent and received. */
-export interface OwnerHandleCount {
-  handle: string;
+/** How many messages one of the owner's identities sent and received. */
+export interface OwnerIdentityCount {
+  identity: string;
   sent: number;
   received: number;
 }
@@ -117,8 +117,8 @@ export interface StagingSummary {
   conversations: number;
   messages: number;
   contactIdentifiers: string[];
-  /** Messages under the owner handle each was sent from or received at. */
-  ownerHandles: OwnerHandleCount[];
+  /** Messages under the owner identity each was sent from or received at. */
+  ownerIdentities: OwnerIdentityCount[];
   attachments: number;
   attachmentBytes: number;
   forecasts: AttachmentForecast[];

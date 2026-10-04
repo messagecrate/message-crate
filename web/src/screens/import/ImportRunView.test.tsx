@@ -68,7 +68,7 @@ function staged(overrides: Partial<StagingSummary> = {}): StagingSummary {
     conversations: 312,
     messages: 48205,
     contactIdentifiers: [],
-    ownerHandles: [],
+    ownerIdentities: [],
     attachments: 6118,
     attachmentBytes: 9.4 * 1024 * 1024 * 1024,
     forecasts: [],

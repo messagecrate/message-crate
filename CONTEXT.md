@@ -201,7 +201,8 @@ incomplete, and a contact whose only identities are of that type is Unknown.
 Every identity a conversation or a message uses is on a contact; one taken
 off its contact goes to a new contact with no name.
 
-Handle is the word in the code and the database for the same thing.
+Handle is the word in the database and the server code over it for the same
+thing; the conversation file and the HTTP API say identity.
 _Avoid_: Handle, Address, Number
 
 **Participant**:

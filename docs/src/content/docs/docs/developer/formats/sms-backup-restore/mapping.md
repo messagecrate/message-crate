@@ -18,21 +18,21 @@ In CSV form: one file per conversation. Decoded MMS media under `attachments/` w
 
 | Shared field | SMS / MMS source |
 |---------------|------------------|
-| `chat_identifier` | Peer's handle key, or `chat-group-…` for groups |
+| `chat_identifier` | Peer's identity key, or `chat-group-…` for groups |
 | `conversation_type` | `individual` / `group` |
 | `group_title` | Derived for groups; empty for 1:1 |
-| `participants_json` | Peer handles from SMS address / MMS `<addr>` list |
+| `participants_json` | Peer identities from SMS address / MMS `<addr>` list |
 | `guid` | SHA-256 of the message identity (`MessageGuid`): chat id, direction, sender, UTC milliseconds, collapsed text, sorted attachment digests |
 | `timestamp` / `timestamp_utc` / `timestamp_display` / `timestamp_unix_ms` | From `date` (Unix epoch milliseconds, UTC) |
 | `direction` | `incoming` / `outgoing` from SMS `type` or MMS `msg_box` / From addr |
 | `service` | Always `sms` |
-| `sender_handle` / `sender_display_name` | Incoming peer; outgoing uses export owner (`owner_*`) |
+| `sender_identity` / `sender_display_name` | Incoming peer; outgoing uses export owner (`owner_*`) |
 | `subject` | SMS `subject`, or MMS `sub` |
 | `text` | SMS `body`, or MMS text/plain parts (HTML entities decoded) |
 | `attachments_json` | Extracted MMS media paths |
 | `message_kind` | `sms` or `mms` |
 | `export_source` / `export_tool` / `export_tool_version` | `sms-backup-restore` / `SMS Backup & Restore` / `10.26.003` |
-| `owner_handle` / `owner_display_name` | Export owner |
+| `owner_identity` / `owner_display_name` | Export owner |
 | `android_type` | SMS `type`, or MMS `msg_box` |
 | `source_fields_json` | Full fidelity JSON (below) |
 

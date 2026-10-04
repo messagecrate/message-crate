@@ -2,7 +2,7 @@
 
 use crate::headers as hn;
 use crate::{MailAttachment, MailMessage, Participant};
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use mailparse::{MailHeader, MailHeaderMap, ParsedMail};
 use message_ir::{IrDirection, IrImessage, IrMessage, IrMessageKind, IrService, IrSource};
 use serde::Deserialize;
@@ -26,16 +26,33 @@ struct AttachmentMetaCell {
 ///
 /// # Errors
 ///
-/// Returns an error when the bytes are not a valid email or a required
-/// `X-ME-*` header is missing.
+/// Returns an error when the bytes are not a valid email, a required
+/// `X-ME-*` header is missing, the roster in `X-ME-Participants` does not
+/// read, or the mail names its addresses with the handle headers an earlier
+/// Message Crate wrote.
 pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     let mail = mailparse::parse_mail(bytes).context("parse eml bytes")?;
     let headers = &mail.headers;
+    let earlier = hn::EARLIER_HANDLE_HEADERS
+        .iter()
+        .find(|name| headers.get_first_header(name).is_some())
+        .copied()
+        .or_else(|| {
+            optional_header(headers, hn::TAPBACKS)
+                .is_some_and(|raw| raw.contains("\"reactor_handle\""))
+                .then_some(hn::TAPBACKS)
+        });
+    if let Some(earlier) = earlier {
+        bail!(
+            "This mail was written by an earlier Message Crate, which named each address a \
+             handle ({earlier}); export the backup again"
+        );
+    }
 
     let chat_identifier = required_header(headers, hn::CHAT_IDENTIFIER)?;
     let conversation_type = header_or(headers, hn::CONVERSATION_TYPE, "individual");
     let group_title = optional_header(headers, hn::GROUP_TITLE);
-    let participants = parse_participants(headers);
+    let participants = parse_participants(headers)?;
     let guid = required_header(headers, hn::GUID)?;
     let timestamp_unix_ms = required_header(headers, hn::TIMESTAMP_UNIX_MS)?
         .parse::<i64>()
@@ -49,9 +66,9 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     };
     let service = IrService::parse(&header_or(headers, hn::SERVICE, "sms"));
     let message_kind = IrMessageKind::parse(&header_or(headers, hn::MESSAGE_KIND, "sms"));
-    let sender_handle = optional_header(headers, hn::SENDER_HANDLE);
+    let sender_identity = optional_header(headers, hn::SENDER_IDENTITY);
     let sender_display_name = optional_header(headers, hn::SENDER_DISPLAY_NAME);
-    let owner_handle = optional_header(headers, hn::OWNER_HANDLE).unwrap_or_default();
+    let owner_identity = optional_header(headers, hn::OWNER_IDENTITY).unwrap_or_default();
     let owner_display_name = optional_header(headers, hn::OWNER_DISPLAY_NAME);
     let subject = optional_header(headers, hn::SUBJECT);
     let export_source = header_or(headers, hn::EXPORT_SOURCE, "");
@@ -109,7 +126,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
         conversation_type,
         group_title,
         participants,
-        owner_handle,
+        owner_identity,
         owner_display_name,
         export_source,
         export_tool,
@@ -121,9 +138,9 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             direction,
             service,
             message_kind,
-            sender_handle,
+            sender_identity,
             sender_display_name,
-            owner_handle: optional_header(headers, hn::MESSAGE_OWNER_HANDLE),
+            owner_identity: optional_header(headers, hn::MESSAGE_OWNER_IDENTITY),
             subject,
             text,
             // Attachment payloads live in `MailMessage::attachments`; readers
@@ -235,12 +252,19 @@ fn header_u32(headers: &[MailHeader<'_>], name: &str) -> Option<u32> {
     optional_header(headers, name)?.parse().ok()
 }
 
-/// Participants from the JSON header, or none when absent or malformed.
-fn parse_participants(headers: &[MailHeader<'_>]) -> Vec<Participant> {
+/// Participants from the JSON header, or none when it is absent.
+///
+/// A roster that does not read is refused rather than read as nobody: an
+/// earlier Message Crate wrote `handle` where this one reads `identity`, and
+/// read as empty such a conversation would lose everyone in it.
+fn parse_participants(headers: &[MailHeader<'_>]) -> Result<Vec<Participant>> {
     let Some(raw) = optional_header(headers, hn::PARTICIPANTS) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    serde_json::from_str(&raw).unwrap_or_default()
+    serde_json::from_str(&raw).context(
+        "This mail's roster (X-ME-Participants) does not read; it may have been written by an \
+         earlier Message Crate, so export the backup again",
+    )
 }
 
 /// The message text: the body of a simple mail, or the first `text/plain` part.
@@ -353,10 +377,10 @@ mod tests {
             conversation_type: "individual".into(),
             group_title: None,
             participants: vec![Participant {
-                handle: "+15555550101".into(),
+                identity: "+15555550101".into(),
                 display_name: Some("Sam".into()),
             }],
-            owner_handle: "+15555550100".into(),
+            owner_identity: "+15555550100".into(),
             owner_display_name: Some("Me".into()),
             export_source: "sms-backup-restore".into(),
             export_tool: "SMS Backup & Restore".into(),
@@ -368,9 +392,9 @@ mod tests {
                 direction: IrDirection::Outgoing,
                 service: IrService::Sms,
                 message_kind: IrMessageKind::Sms,
-                sender_handle: Some("+15555550100".into()),
+                sender_identity: Some("+15555550100".into()),
                 sender_display_name: Some("Me".into()),
-                owner_handle: None,
+                owner_identity: None,
                 subject: None,
                 text: "hello roundtrip".into(),
                 attachments: Vec::new(),
@@ -390,10 +414,10 @@ mod tests {
         assert_eq!(parsed.message.text, "hello roundtrip");
         assert_eq!(parsed.message.direction, IrDirection::Outgoing);
         assert_eq!(
-            parsed.message.sender_handle.as_deref(),
+            parsed.message.sender_identity.as_deref(),
             Some("+15555550100")
         );
-        assert_eq!(parsed.owner_handle, "+15555550100");
+        assert_eq!(parsed.owner_identity, "+15555550100");
         assert_eq!(parsed.owner_display_name.as_deref(), Some("Me"));
         assert_eq!(
             parsed.message.source.as_ref().and_then(|s| s.android_type),
@@ -434,15 +458,15 @@ mod tests {
             group_title: Some("Family".into()),
             participants: vec![
                 Participant {
-                    handle: "+15555550101".into(),
+                    identity: "+15555550101".into(),
                     display_name: Some("Sam".into()),
                 },
                 Participant {
-                    handle: "+15555550102".into(),
+                    identity: "+15555550102".into(),
                     display_name: None,
                 },
             ],
-            owner_handle: "+15555550100".into(),
+            owner_identity: "+15555550100".into(),
             owner_display_name: Some("Me".into()),
             export_source: "imessage".into(),
             export_tool: "imessage-exporter".into(),
@@ -454,9 +478,9 @@ mod tests {
                 direction: IrDirection::Incoming,
                 service: IrService::IMessage,
                 message_kind: IrMessageKind::IMessage,
-                sender_handle: Some("+15555550101".into()),
+                sender_identity: Some("+15555550101".into()),
                 sender_display_name: Some("Sam".into()),
-                owner_handle: None,
+                owner_identity: None,
                 subject: Some("MMS subject".into()),
                 text: "full bag".into(),
                 attachments: Vec::new(),
@@ -491,7 +515,7 @@ mod tests {
         assert_eq!(parsed.conversation_type, "group");
         assert_eq!(parsed.group_title.as_deref(), Some("Family"));
         assert_eq!(parsed.participants.len(), 2);
-        assert_eq!(parsed.participants[0].handle, "+15555550101");
+        assert_eq!(parsed.participants[0].identity, "+15555550101");
         assert_eq!(parsed.participants[0].display_name.as_deref(), Some("Sam"));
         assert_eq!(parsed.participants[1].display_name, None);
         assert_eq!(parsed.message.sender_display_name.as_deref(), Some("Sam"));
@@ -550,10 +574,10 @@ mod tests {
             conversation_type: "individual".into(),
             group_title: None,
             participants: vec![Participant {
-                handle: "+15555550101".into(),
+                identity: "+15555550101".into(),
                 display_name: Some("Sam".into()),
             }],
-            owner_handle: "+15555550100".into(),
+            owner_identity: "+15555550100".into(),
             owner_display_name: None,
             export_source: "imessage".into(),
             export_tool: "imessage-exporter".into(),
@@ -565,9 +589,9 @@ mod tests {
                 direction: IrDirection::Incoming,
                 service: IrService::IMessage,
                 message_kind: IrMessageKind::IMessage,
-                sender_handle: Some("+15555550101".into()),
+                sender_identity: Some("+15555550101".into()),
                 sender_display_name: Some("Sam".into()),
-                owner_handle: None,
+                owner_identity: None,
                 subject: None,
                 text: "the message text".into(),
                 attachments: Vec::new(),

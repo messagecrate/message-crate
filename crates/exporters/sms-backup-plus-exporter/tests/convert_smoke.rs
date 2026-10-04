@@ -72,7 +72,7 @@ fn convert_smoke_writes_csv_not_json() {
             "timestamp_unix_ms",
             "android_type",
             "source_fields_json",
-            "owner_handle",
+            "owner_identity",
             "participants_json",
             "read_receipt", // unified header; empty for SMS
             "tapbacks_json",

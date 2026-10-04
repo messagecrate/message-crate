@@ -79,7 +79,7 @@ fn header_from_row(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> Conv
             source: get("export_source").to_string(),
             tool: get("export_tool").to_string(),
             tool_version: get("export_tool_version").to_string(),
-            owner_handle: nonempty(get("owner_handle")),
+            owner_identity: nonempty(get("owner_identity")),
             owner_display_name: nonempty(get("owner_display_name")),
         },
         conversation: ConversationMeta {
@@ -151,9 +151,9 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
         direction,
         service: IrService::parse(get("service")),
         message_kind: IrMessageKind::parse(get("message_kind")),
-        sender_handle: nonempty(get("sender_handle")),
+        sender_identity: nonempty(get("sender_identity")),
         sender_display_name: nonempty(get("sender_display_name")),
-        owner_handle: nonempty(get("message_owner_handle")),
+        owner_identity: nonempty(get("message_owner_identity")),
         subject: nonempty(get("subject")),
         text: get("text").to_string(),
         attachments,
@@ -202,17 +202,17 @@ fn parse_participants(raw: &str) -> Vec<IrParticipant> {
     cells
         .into_iter()
         .map(|p| IrParticipant {
-            handle: if p.handle.is_empty() {
+            identity: if p.identity.is_empty() {
                 None
             } else {
-                Some(p.handle)
+                Some(p.identity)
             },
             display_name: if p.display_name.is_empty() {
                 None
             } else {
                 Some(p.display_name)
             },
-            handle_type: p.handle_type,
+            identity_type: p.identity_type,
         })
         .collect()
 }

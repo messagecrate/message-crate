@@ -54,19 +54,19 @@ impl From<AttachmentCell> for message_ir::IrAttachment {
 /// `participants_json` cell.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ParticipantCell {
-    /// Raw handle (phone, email, or other identifier).
-    pub handle: String,
+    /// Raw identity (phone, email, or other identifier).
+    pub identity: String,
     /// Display name; empty string when unknown.
     #[serde(default)]
     pub display_name: String,
     /// Explicit `null` → `None`; any string is parsed leniently via
     /// [`message_ir::HandleType::parse`]. The writer always writes the field.
-    #[serde(deserialize_with = "deserialize_handle_type")]
-    pub handle_type: Option<message_ir::HandleType>,
+    #[serde(deserialize_with = "deserialize_identity_type")]
+    pub identity_type: Option<message_ir::HandleType>,
 }
 
-/// Parse a handle type cell, accepting `null`.
-fn deserialize_handle_type<'de, D>(de: D) -> Result<Option<message_ir::HandleType>, D::Error>
+/// Parse an identity type cell, accepting `null`.
+fn deserialize_identity_type<'de, D>(de: D) -> Result<Option<message_ir::HandleType>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
@@ -171,33 +171,33 @@ mod tests {
         assert_eq!(json_cell(&vec!["a", "b"]), r#"["a","b"]"#);
     }
 
-    fn handle_type_of(json: &str) -> Option<HandleType> {
+    fn identity_type_of(json: &str) -> Option<HandleType> {
         serde_json::from_str::<ParticipantCell>(json)
             .unwrap()
-            .handle_type
+            .identity_type
     }
 
     #[test]
-    fn a_participant_cell_with_a_null_handle_type_has_none() {
+    fn a_participant_cell_with_a_null_identity_type_has_none() {
         assert_eq!(
-            handle_type_of(r#"{"handle": "+15555550101", "handle_type": null}"#),
+            identity_type_of(r#"{"identity": "+15555550101", "identity_type": null}"#),
             None
         );
     }
 
     #[test]
-    fn a_participant_cell_handle_type_is_parsed_leniently() {
+    fn a_participant_cell_identity_type_is_parsed_leniently() {
         assert_eq!(
-            handle_type_of(r#"{"handle": "+15555550101", "handle_type": "Phone"}"#),
+            identity_type_of(r#"{"identity": "+15555550101", "identity_type": "Phone"}"#),
             Some(HandleType::Phone)
         );
     }
 
     #[test]
-    fn a_participant_cell_without_a_handle_type_is_refused() {
+    fn a_participant_cell_without_an_identity_type_is_refused() {
         // The writer always writes the field, so a cell without it is not
         // one Message Crate wrote.
-        let parsed = serde_json::from_str::<ParticipantCell>(r#"{"handle": "+15555550101"}"#);
+        let parsed = serde_json::from_str::<ParticipantCell>(r#"{"identity": "+15555550101"}"#);
         assert!(parsed.is_err(), "{parsed:?}");
     }
 }

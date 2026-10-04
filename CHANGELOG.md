@@ -1336,6 +1336,12 @@ released versions carry their date on the heading.
 - An Address Book exported by an earlier build calls its fifth column
   `handle_type`, and loading it is refused. Rename that column to
   `identity_type` in the file, or export the Address Book again.
+- Message files exported by an earlier build are refused when you import
+  or convert them: each phone number and email address in them is now
+  written as an identity, and the old files say "handle". This holds for
+  JSON, JSONL, CSV, EML and mbox exports, and for an Import Run an earlier
+  build left paused. Export the backup again with this build, then import
+  or convert the new files; discard a paused run and start the import again.
 - `reset-demo` no longer writes a configuration file, and reads the one given
   with `--config`. If an earlier `reset-demo` replaced your configuration
   file, the server stops at startup with a missing `[server]` section: put

@@ -83,17 +83,17 @@ fn obfuscate_document(doc: &mut ConversationDocument, anon: &mut Obfuscator) -> 
     for p in &mut doc.conversation.participants {
         obfuscate_participant(p, anon);
     }
-    if let Some(h) = doc.export.owner_handle.as_mut() {
+    if let Some(h) = doc.export.owner_identity.as_mut() {
         *h = anon.obfuscate_handle(h);
     }
     if let Some(n) = doc.export.owner_display_name.as_mut() {
         *n = anon.obfuscate_display_name(n);
     }
     for msg in &mut doc.messages {
-        if let Some(h) = msg.sender_handle.as_mut() {
+        if let Some(h) = msg.sender_identity.as_mut() {
             *h = anon.obfuscate_handle(h);
         }
-        if let Some(h) = msg.owner_handle.as_mut() {
+        if let Some(h) = msg.owner_identity.as_mut() {
             *h = anon.obfuscate_handle(h);
         }
         if let Some(n) = msg.sender_display_name.as_mut() {
@@ -145,7 +145,7 @@ fn obfuscate_guids(doc: &mut ConversationDocument, anon: &Obfuscator) -> Renamed
         msg.guid = MessageGuid::new(&MessageIdentity {
             chat: &chat,
             is_from_me: msg.direction == IrDirection::Outgoing,
-            sender: msg.sender_handle.as_deref(),
+            sender: msg.sender_identity.as_deref(),
             timestamp_unix_ms: msg.timestamp_unix_ms,
             text: &msg.text,
             attachment_digests: &digests,
@@ -203,7 +203,7 @@ fn obfuscate_tapback(fields: &mut Map<String, Value>, anon: &mut Obfuscator) {
     fields.retain(|key, value| {
         match (key.as_str(), value) {
             ("part_index" | "kind" | "emoji" | "is_from_me", _) => {}
-            ("reactor_handle", Value::String(h)) => *h = anon.obfuscate_handle(h),
+            ("reactor_identity", Value::String(h)) => *h = anon.obfuscate_handle(h),
             ("reactor_display_name", Value::String(n)) if n != "Me" => {
                 *n = anon.obfuscate_display_name(n);
             }
@@ -214,9 +214,9 @@ fn obfuscate_tapback(fields: &mut Map<String, Value>, anon: &mut Obfuscator) {
     });
 }
 
-/// Obfuscate one participant's handle and display name.
+/// Obfuscate one participant's identity and display name.
 fn obfuscate_participant(p: &mut IrParticipant, anon: &mut Obfuscator) {
-    if let Some(handle) = p.handle.as_mut() {
+    if let Some(handle) = p.identity.as_mut() {
         *handle = anon.obfuscate_handle(handle);
     }
     if let Some(n) = p.display_name.as_mut() {

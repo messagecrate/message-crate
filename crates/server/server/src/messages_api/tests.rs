@@ -301,7 +301,7 @@ fn ir_message(
         "direction": "incoming",
         "service": "imessage",
         "message_kind": "imessage",
-        "sender_handle": "+15555550123",
+        "sender_identity": "+15555550123",
         "sender_display_name": null,
         "subject": null,
         "text": text,
@@ -327,17 +327,17 @@ fn ir_message(
 /// carrying a single tapback object, and a plain message with none of these.
 async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
     let header = serde_json::json!({
-        "schema_version": 4,
+        "schema_version": 5,
         "export": {"source": "imessage", "tool": "test", "tool_version": "0",
-                   "owner_handle": null, "owner_display_name": null},
+                   "owner_identity": null, "owner_display_name": null},
         "conversation": {
             "chat_identifier": "chat-reactions",
             "conversation_type": "group",
             "group_title": "Reactions",
             "participants": [
-                {"handle": "+15555550123", "display_name": null},
-                {"handle": "+15555550167", "display_name": null},
-                {"handle": "+15555550161", "display_name": null}
+                {"identity": "+15555550123", "display_name": null},
+                {"identity": "+15555550167", "display_name": null},
+                {"identity": "+15555550161", "display_name": null}
             ],
             "stats": {"message_count": 3, "attachment_count": 3,
                       "first_timestamp_unix_ms": 1426183462000_i64,
@@ -354,9 +354,9 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
             "is_deleted": false,
             "tapbacks": [
                 {"kind": "liked", "emoji": null, "part_index": 0,
-                 "is_from_me": false, "reactor_handle": "+15555550167"},
+                 "is_from_me": false, "reactor_identity": "+15555550167"},
                 {"kind": "emoji", "emoji": "🎉", "part_index": 1,
-                 "is_from_me": false, "reactor_handle": "+15555550161"}
+                 "is_from_me": false, "reactor_identity": "+15555550161"}
             ]
         }),
     );
@@ -370,7 +370,7 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
             "is_deleted": false,
             "announcement": "named the conversation Reactions",
             "tapbacks": {"kind": "loved", "emoji": null, "part_index": 2,
-                         "is_from_me": false, "reactor_handle": "+15555550167"}
+                         "is_from_me": false, "reactor_identity": "+15555550167"}
         }),
     );
     let plain = ir_message(

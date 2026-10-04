@@ -64,7 +64,7 @@ fn run_writes_the_conversation_and_counts_the_bad_date_rows() {
         result.messages
     );
     // No owner was given, so the header records none.
-    assert!(written.contains(r#""owner_handle":null"#), "{written}");
+    assert!(written.contains(r#""owner_identity":null"#), "{written}");
 }
 
 /// The number from the form is stamped on the export header, under the
@@ -100,11 +100,11 @@ fn run_records_the_form_owner_on_the_header() {
 
     let written = assert_run_wrote_jsonl(&result, &output, 1);
     assert!(
-        written.contains(r#""owner_handle":"+15555550100""#),
+        written.contains(r#""owner_identity":"+15555550100""#),
         "{written}"
     );
     let header = written.lines().next().unwrap();
-    assert!(!header.contains(r#""handle":"+15555550100""#), "{header}");
+    assert!(!header.contains(r#""identity":"+15555550100""#), "{header}");
 }
 
 /// A message whose media file is not in the backup is kept without it, and
