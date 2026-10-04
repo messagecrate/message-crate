@@ -32,10 +32,11 @@ password when the backup is encrypted.
 
 What comes back, one JSON object per line, in this order:
 
-1. `{"event":"source","protocol_version":5,"encrypted":false}` once.
+1. `{"event":"source","protocol_version":8,"encrypted":false}` once.
 2. Any number of `log`, `progress`, `conversation`, and `message` lines,
    interleaved. Each `conversation` names a chat and its participants; each
-   `message` is one already-classified message with its attachments listed.
+   `message` is one already-classified message with its attachments and the
+   reactions that stand on it listed.
 3. `{"event":"export_done","messages_seen":N,"failures":N}`, or
    `{"event":"error","message":"..."}` if the run failed.
 

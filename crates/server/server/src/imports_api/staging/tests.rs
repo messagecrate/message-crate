@@ -15,7 +15,7 @@ const TEST_ACCOUNT: i64 = 7;
 
 /// The header demo-seed writes for `orphaned.jsonl`: an `individual`
 /// conversation whose chat id is `orphaned` and which names nobody.
-const ORPHANED_HEADER: &str = r#"{"schema_version":5,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"orphaned","conversation_type":"individual","group_title":null,"participants":[],"stats":{"message_count":2,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}
+const ORPHANED_HEADER: &str = r#"{"schema_version":6,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"orphaned","conversation_type":"individual","group_title":null,"participants":[],"stats":{"message_count":2,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}
 "#;
 
 /// An incoming iMessage line from `sender`.
@@ -445,7 +445,7 @@ async fn a_file_with_neither_header_nor_messages_is_refused() {
 /// participants JSON array `participants`.
 fn whatsapp_header(chat_identifier: &str, kind: &str, participants: &str) -> String {
     format!(
-        r#"{{"schema_version":5,"export":{{"source":"whatsapp","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{chat_identifier}","conversation_type":"{kind}","group_title":null,"participants":{participants},"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
+        r#"{{"schema_version":6,"export":{{"source":"whatsapp","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{chat_identifier}","conversation_type":"{kind}","group_title":null,"participants":{participants},"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
     ) + "\n"
 }
 

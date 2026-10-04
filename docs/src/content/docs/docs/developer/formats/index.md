@@ -9,7 +9,7 @@ What each converter writes (and where it falls short). Marks: **yes** / **partia
 
 ## Shared model
 
-All converters build a **common message** per conversation (`ConversationDocument`, schema version 5 in [`message-ir`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir)), then project the user-picked format via `FormatSink` in [`message-ir-format`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir-format) (default **JSON**). When packaging is CSV, columns follow [`CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs). Across the board:
+All converters build a **common message** per conversation (`ConversationDocument`, schema version 6 in [`message-ir`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir)), then project the user-picked format via `FormatSink` in [`message-ir-format`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir-format) (default **JSON**). When packaging is CSV, columns follow [`CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs). Across the board:
 
 - The peer is `chat_identifier` — there is **no** dedicated receiver-phone column
 - Every participant is a **typed identity**: `identity_type` (`phone` / `email` / `username` / `other`) on each JSON/JSONL participant and inside `participants_json`; the CSV `identity_type` column carries the sender's type, inferred from the identity when the source doesn't supply it
@@ -60,7 +60,7 @@ The rule "The address book is a file for editing contacts, not a source of them"
 | **Telegram** | no | no | no | no | no | no | no |
 | **Slack** | no | no | no | no | no | no | no |
 | **`participants_json`** | yes (unified CSV) | yes | yes | yes | yes | yes | yes |
-| **Reactions / tapbacks** | no | no | no | no | free-text in `source_fields_json` | reactions in `source_fields_json` | structured `tapbacks_json` |
+| **Reactions / tapbacks** | no | no | no | no | free-text in `source_fields_json` | reactions in `source_fields_json` | each message's `reactions` (`reactions_json` in CSV) |
 | **Edits / replies** | no | no | no | no | raw dates / free-text | reply in `source_fields_json` | `edits_json` / thread GUIDs |
 | **Source extras** | `pdu_*` (in `source_fields_json`) | `subject`, `message_kind`, `source_fields_json` | `smssync_id`, `eml_path` (in `source_fields_json`) | `source_kind`, `has_attachments` (in `source_fields_json`) | vendor cols (in `source_fields_json`) | `jid` / `key_id` (in `source_fields_json`) | `parts_json`, `app_json`, … |
 | **Timezone** | XML/PDU epoch | XML epoch | EML dates | vendor `Date` | naive, zone from the Import form | epoch from wtsexporter | DB epoch + offset |

@@ -255,7 +255,7 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     .await;
     assert!(status.is_success(), "{status} {answer}");
     let header = json!({
-        "schema_version": 5,
+        "schema_version": message_ir::SCHEMA_VERSION,
         "export": { "source": "whatsapp", "tool": "t", "tool_version": "0",
                     "owner_identity": "+15555550106", "owner_display_name": "Me" },
         "conversation": {

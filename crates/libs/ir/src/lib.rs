@@ -44,8 +44,16 @@ pub use schema_version::{
     UnsupportedSchemaVersion, check_schema_version, check_schema_version_in_json,
 };
 
-/// Schema version written into every [`ConversationDocument`] (currently 5).
-pub const SCHEMA_VERSION: u32 = 5;
+/// One reaction on a message, the same shape for every source.
+///
+/// It is defined in `imessage-reader-protocol`, the one crate the GPL Apple
+/// Messages Reader and the rest of Message Crate may both link, so the reader
+/// writes reactions in the shape the conversation file carries
+/// (`docs/adr/0014-gpl-code-only-behind-a-process-boundary.md`).
+pub use imessage_reader_protocol::Reaction;
+
+/// Schema version written into every [`ConversationDocument`] (currently 6).
+pub const SCHEMA_VERSION: u32 = 6;
 
 /// One exported chat: export metadata, conversation roster and stats, and messages.
 ///
@@ -53,7 +61,7 @@ pub const SCHEMA_VERSION: u32 = 5;
 /// parses. See the [common message](https://messagecrate.app/docs/developer/architecture/common-message/) page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationDocument {
-    /// Schema version written into this document (currently 5).
+    /// Schema version written into this document (currently 6).
     pub schema_version: u32,
     /// Where and how this export was produced.
     pub export: ExportMeta,
@@ -385,6 +393,11 @@ pub struct IrMessage {
     pub text: String,
     /// Attachment metadata in order; bytes live on disk or in `bytes`.
     pub attachments: Vec<IrAttachment>,
+    /// The reactions that stand on this message, each naming the person who
+    /// reacted. Removed reactions are already left out. Empty, and left out
+    /// of the file, when the message has none or the source records none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reactions: Vec<Reaction>,
     /// Apple extensions; `None` for non-iMessage messages.
     pub imessage: Option<IrImessage>,
     /// Vendor leftovers (Android type code and raw fields).
@@ -546,11 +559,6 @@ pub struct IrImessage {
     pub parts: Option<Value>,
     /// Apple `edits` blob as a JSON value.
     pub edits: Option<Value>,
-    /// Apple `tapbacks` blob as a JSON value: a list of reactions, each with
-    /// `part_index`, `kind`, `emoji`, `is_from_me`, `reactor_identity` and
-    /// `reactor_display_name`. Each entry names its own reactor, who is
-    /// rarely the author of the message.
-    pub tapbacks: Option<Value>,
     /// Apple `app` blob as a JSON value.
     pub app: Option<Value>,
     /// Digital Touch balloon bundle id.
@@ -583,7 +591,6 @@ impl IrImessage {
             && self.read_receipt_rfc3339.is_none()
             && self.parts.is_none()
             && self.edits.is_none()
-            && self.tapbacks.is_none()
             && self.app.is_none()
             && self.balloon_bundle_id.is_none()
             && self.balloon_kind.is_none()

@@ -3,10 +3,11 @@
 //! Every reader of a [`ConversationDocument`](crate::ConversationDocument) or
 //! its JSON Lines header — the format reader, the push client, the server's
 //! import — refuses a version other than [`SCHEMA_VERSION`] with the same
-//! words, and refuses it before parsing the rest of the file: a version-4
-//! file is not expected to match the version-5 field shapes (version 4 named
-//! every identity a `handle`), and the person should read "schema version 4",
-//! not whichever field failed first.
+//! words, and refuses it before parsing the rest of the file: a version-5
+//! file is not expected to match the version-6 field shapes (version 5 kept
+//! Apple Messages reactions in `imessage.tapbacks`, where nothing reads them
+//! now), and the person should read "schema version 5", not whichever field
+//! failed first or a conversation whose reactions are quietly gone.
 
 use crate::SCHEMA_VERSION;
 use serde::Deserialize;
@@ -74,22 +75,22 @@ mod tests {
     fn names_the_version_found_and_the_version_read() {
         assert_eq!(
             check_schema_version(3).unwrap_err().to_string(),
-            "This file is schema version 3; Message Crate reads version 5"
+            "This file is schema version 3; Message Crate reads version 6"
         );
         assert_eq!(check_schema_version(SCHEMA_VERSION), Ok(()));
     }
 
-    /// Version 4 named an identity a `handle`; version 5 says `identity`.
-    /// A version-4 file is refused by its version, never read or upgraded.
+    /// Version 5 kept a message's reactions in `imessage.tapbacks`;
+    /// version 6 keeps them in the message's own `reactions`. A version-5
+    /// file is refused by its version, never read with its reactions dropped
+    /// or upgraded.
     #[test]
-    fn refuses_a_version_4_file_by_name() {
+    fn refuses_a_version_5_file_by_name() {
         assert_eq!(
-            check_schema_version_in_json(
-                r#"{"schema_version":4,"export":{"owner_handle":"+15555550100"}}"#
-            )
-            .unwrap_err()
-            .to_string(),
-            "This file is schema version 4; Message Crate reads version 5"
+            check_schema_version_in_json(r#"{"schema_version":5,"export":{}}"#)
+                .unwrap_err()
+                .to_string(),
+            "This file is schema version 5; Message Crate reads version 6"
         );
     }
 
@@ -100,7 +101,7 @@ mod tests {
             Err(UnsupportedSchemaVersion { found: 3 })
         );
         assert_eq!(
-            check_schema_version_in_json(r#"{"schema_version":5,"export":{}}"#),
+            check_schema_version_in_json(r#"{"schema_version":6,"export":{}}"#),
             Ok(())
         );
         assert_eq!(check_schema_version_in_json(r#"{"export":{}}"#), Ok(()));
