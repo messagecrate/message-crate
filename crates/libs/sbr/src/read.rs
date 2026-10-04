@@ -1347,8 +1347,8 @@ mod tests {
 
     #[test]
     fn a_number_with_its_country_keeps_it() {
-        // Singapore reserves no numbers for fiction, and no Singapore number
-        // starts with 5, so +65 5555 0100 is no one's.
+        // +65 5555 0100 is no one's number. The note on `mod tests` in
+        // `crates/libs/phone/src/lib.rs` says why.
         let xml = br#"<smses><sms protocol="0" address="+6555550100" date="1" type="1" body="hi"/></smses>"#;
         let (records, _) = parse_reader(xml.as_slice(), None).unwrap();
         assert_eq!(records[0].chat_key, "+6555550100");

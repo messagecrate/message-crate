@@ -84,11 +84,8 @@ mod tests {
     fn jid_to_e164_cases() {
         let cases: &[(&str, Option<&str>)] = &[
             // Singapore, Norway, Denmark: 10 digits that US rules misread.
-            // Norway's is in 68 05 xx xx, which Nkom reserves for film and
-            // TV. Singapore and Denmark reserve no numbers for fiction, so
-            // theirs start with a digit no number there starts with: 5 in
-            // Singapore (unassigned in IMDA's plan) and 0 in Denmark.
-            // The UK one is in Ofcom's drama range 07700 900xxx.
+            // These numbers and the UK one are no one's. The note on
+            // `mod tests` in `crates/libs/phone/src/lib.rs` says why.
             ("6555550100@s.whatsapp.net", Some("+6555550100")),
             ("4768051234@s.whatsapp.net", Some("+4768051234")),
             ("4501234567@s.whatsapp.net", Some("+4501234567")),

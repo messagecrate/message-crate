@@ -514,6 +514,22 @@ fn group_id_slug(digits: &[String]) -> String {
         .join("_")
 }
 
+/// Non-US test numbers, here and in every other crate, are no one's.
+/// Each comes from a range its regulator reserves for fiction. Where a
+/// country reserves none, the number starts with a digit no number there
+/// starts with.
+///
+/// - UK: 020 7946 0xxx and 07700 900xxx, Ofcom's drama numbers
+///   (<https://www.ofcom.org.uk/phones-and-broadband/phone-numbers/numbers-for-drama>).
+/// - France: 06 39 98 xx xx, ARCEP's numbers for audiovisual works.
+/// - Norway: 68 05 00 00 to 68 05 99 99, Nkom's series for film and TV
+///   (<https://nkom.no/telefoni-og-telefonnummer/telefonnummer-og-den-norske-nummerplan/alle-nummerserier-for-norske-telefonnumre>).
+/// - Denmark reserves no numbers for fiction. No Danish number starts
+///   with 0, so the tests use +45 0123 4567.
+/// - Singapore reserves no numbers for fiction. IMDA's National Numbering
+///   Plan leaves numbers starting with 5 unassigned, so the tests use
+///   +65 5555 0100. Read as a US number without its `+`, it is still in
+///   555-0100.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -882,8 +898,7 @@ mod tests {
 
     #[test]
     fn a_number_written_with_plus_keeps_its_country() {
-        // Singapore reserves no numbers for fiction, and no Singapore number
-        // starts with 5, so +65 5555 0100 is no one's.
+        // +65 5555 0100 is no one's number: see the note on `mod tests`.
         assert_eq!(
             parsed("+6555550100"),
             (HandleType::Phone, "+6555550100".into())
