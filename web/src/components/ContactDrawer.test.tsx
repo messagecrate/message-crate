@@ -9,6 +9,7 @@ import { ApiError } from "../lib/api";
 import type { ContactDetail } from "../lib/contactDetail";
 import { keys } from "../lib/queryKeys";
 import { routeQueryKey } from "../lib/routeQueryKey";
+import { inTimeZone } from "../test/timeZone";
 import ContactDrawer from "./ContactDrawer";
 
 vi.mock("../lib/auth", () => ({ useAuth: () => ({ accountId: 7 }) }));
@@ -717,7 +718,7 @@ describe("ContactDrawer", () => {
         total_messages: 4,
       }),
     );
-    render(<ContactDrawer variant="docked" contactId="1" onClose={() => {}} />);
+    render(inTimeZone("UTC", <ContactDrawer variant="docked" contactId="1" onClose={() => {}} />));
 
     const summary = (await screen.findByText("Summary")).closest("[role=row]");
     const cells = within(summary as HTMLElement).getAllByRole("gridcell");
