@@ -38,8 +38,8 @@ const GENERATED_PATHS: [&str; 3] = ["staging", "config", "README.md"];
 ///
 /// `message-crate-core` has a `Cancelled` and a `check_cancel` of the same
 /// shape for exporter runs. demo-seed keeps its own because the server, its
-/// only caller that cancels, does not link `message-crate-core` (the desktop
-/// app's run model, ADR 0012), and the flag is all it needs from it.
+/// only caller that cancels, does not link `message-crate-core` (the export
+/// pipeline's run model, ADR 0012), and the flag is all it needs from it.
 #[derive(Debug)]
 pub struct Cancelled;
 

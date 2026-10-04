@@ -455,11 +455,13 @@ fn a_cancelled_generation_stops_and_leaves_no_temporary_directory() {
     assert!(left.is_empty(), "temporary directories left: {left:?}");
 }
 
-/// The first conversation file under a `.demo-seed-*` folder in `parent`,
-/// once generation has written one.
-fn first_prepared_conversation(parent: &Path) -> Option<PathBuf> {
-    fs::read_dir(parent)
-        .ok()?
+/// How many conversation files the `.demo-seed-*` folders in `parent` hold
+/// so far, across the three backup sources.
+fn prepared_conversations(parent: &Path) -> usize {
+    let Ok(entries) = fs::read_dir(parent) else {
+        return 0;
+    };
+    entries
         .filter_map(Result::ok)
         .filter(|entry| {
             entry
@@ -467,57 +469,65 @@ fn first_prepared_conversation(parent: &Path) -> Option<PathBuf> {
                 .to_string_lossy()
                 .starts_with(".demo-seed-")
         })
-        .filter_map(|entry| fs::read_dir(entry.path().join("staging").join(IMESSAGE_SOURCE)).ok())
+        .flat_map(|entry| {
+            [IMESSAGE_SOURCE, SBR_SOURCE, WHATSAPP_SOURCE]
+                .map(|source| entry.path().join("staging").join(source))
+        })
+        .filter_map(|staging| fs::read_dir(staging).ok())
         .flatten()
         .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .find(|path| is_jsonl_file(path))
+        .filter(|entry| is_jsonl_file(&entry.path()))
+        .count()
 }
 
 /// The large data set, cancelled once its first conversation is written,
-/// stops part-way rather than at the end, and removes its temporary
-/// directory. The checks between conversations are what stop it: a check
-/// at the start alone would let the whole set be written (#1431).
+/// stops part-way and removes its temporary directory. The count of files
+/// it wrote is the guard: with a check at the start and in the final
+/// validation walk alone, the run would still end `Cancelled`, but only
+/// after writing every conversation, far more than a quarter of the
+/// contacts (#1431).
 #[test]
 fn a_large_generation_cancelled_part_way_stops_and_leaves_no_temporary_directory() {
     let temp = tempfile::tempdir().expect("create test directory");
     let out = temp.path().join("demo");
+    let contacts = SeedConfig::for_size(DemoSize::Large)
+        .expect("large settings")
+        .contacts
+        .count;
     let cancel = AtomicBool::new(false);
     let finished = AtomicBool::new(false);
 
-    let (generated, waited) = std::thread::scope(|scope| {
+    let (generated, most_written) = std::thread::scope(|scope| {
         let generating = scope.spawn(|| {
             let generated = generate_size_to(DemoSize::Large, &out, &cancel);
             finished.store(true, Ordering::Relaxed);
             generated
         });
-        let mut found = None;
-        while found.is_none() && !finished.load(Ordering::Relaxed) {
-            found = first_prepared_conversation(temp.path());
+        while prepared_conversations(temp.path()) == 0 && !finished.load(Ordering::Relaxed) {
             std::thread::sleep(std::time::Duration::from_millis(1));
         }
         cancel.store(true, Ordering::Relaxed);
-        let stopping = std::time::Instant::now();
+        let mut most_written = 0;
+        while !finished.load(Ordering::Relaxed) {
+            most_written = most_written.max(prepared_conversations(temp.path()));
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
         let generated = generating.join().expect("the generator does not panic");
-        assert!(found.is_some(), "a conversation was written before the end");
-        (generated, stopping.elapsed())
+        (generated, most_written)
     });
 
     let error = generated.expect_err("a run cancelled part-way fails");
     assert!(error.downcast_ref::<Cancelled>().is_some(), "{error:#}");
     assert!(
-        waited < std::time::Duration::from_secs(2),
-        "the generator took {waited:?} to stop"
+        most_written < contacts / 4,
+        "{most_written} conversations were written after the stop"
     );
     assert!(!out.exists(), "no bundle is put in place");
-    assert!(
-        first_prepared_conversation(temp.path()).is_none()
-            && fs::read_dir(temp.path())
-                .expect("list the output parent")
-                .next()
-                .is_none(),
-        "the temporary directory is removed"
-    );
+    let left: Vec<_> = fs::read_dir(temp.path())
+        .expect("list the output parent")
+        .map(|entry| entry.expect("read entry").file_name())
+        .collect();
+    assert!(left.is_empty(), "temporary directories left: {left:?}");
 }
 
 #[test]

@@ -807,7 +807,8 @@ released versions carry their date on the heading.
   accounts' changes go through in between. Only `reset-demo`, which runs
   while the server is stopped, still compacts the file; a new Message Crate
   also starts listening sooner.
-- 2026-10-04 **The server stops at once during a Demo Account build.**
+- 2026-10-04 **Stopping the server during a Demo Account build no longer
+  waits for all its Demo Data.**
   Stopped while a build was still making up its Demo Data, the server waited
   until all of it was written, which on the large set is the longest part of
   the build, and could leave a folder of part-written Demo Data behind. It
