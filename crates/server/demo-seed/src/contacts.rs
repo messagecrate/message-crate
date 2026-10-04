@@ -93,69 +93,28 @@ username = "demo"
 
 #[cfg(test)]
 mod tests {
-    use rand::SeedableRng;
-    use rand_chacha::ChaCha8Rng;
-
-    use super::*;
     use crate::config::{DemoSize, SeedConfig};
     use crate::names::NameBank;
-    use crate::personas::build_roster;
-
-    /// The fields of one address book row, quoted fields unquoted.
-    fn csv_row(line: &str) -> Vec<String> {
-        let mut fields = vec![String::new()];
-        let mut quoted = false;
-        let mut chars = line.chars().peekable();
-        while let Some(c) = chars.next() {
-            match (c, quoted) {
-                ('"', true) if chars.peek() == Some(&'"') => {
-                    chars.next();
-                    fields.last_mut().expect("a field").push('"');
-                }
-                ('"', _) => quoted = !quoted,
-                (',', false) => fields.push(String::new()),
-                (c, _) => fields.last_mut().expect("a field").push(c),
-            }
-        }
-        fields
-    }
-
-    #[test]
-    fn csv_row_reads_a_quoted_field_with_a_comma_and_a_quote() {
-        let line = format!("demo-1,{},Family", csv_field("Ann \"Nan\", Lee"));
-        assert_eq!(csv_row(&line), ["demo-1", "Ann \"Nan\", Lee", "Family"]);
-    }
+    use crate::seeded_roster;
 
     /// The server's load names an Unknown only with the name its row gives,
     /// so a row with a blank name names nobody and leaves its number on an
-    /// Unknown, where the Unassigned handles already put numbers nobody
-    /// named (#1557).
+    /// Unknown, where the unassigned handles already put numbers nobody
+    /// named (#1557). `write_address_book` writes each contact's
+    /// `display_hint` as the name of every row it has.
     #[test]
     fn every_contact_in_the_medium_and_large_address_books_has_a_name() {
         let names = NameBank::load_default().expect("load the name lists");
         for size in [DemoSize::Medium, DemoSize::Large] {
             let cfg = SeedConfig::for_size(size).expect("load the settings");
-            // The roster is the first thing the generator draws from its
-            // seed, so this is the roster the bundle's address book holds.
-            let mut rng = ChaCha8Rng::seed_from_u64(cfg.seed);
-            let roster = build_roster(&cfg, &names, &mut rng).expect("build the roster");
-            let temp = tempfile::tempdir().expect("create test directory");
-            write_address_book(temp.path(), &roster).expect("write the address book");
-
-            let text = fs::read_to_string(temp.path().join("contacts.csv"))
-                .expect("read the address book");
-            let mut lines = text.lines();
-            assert_eq!(lines.next(), Some(ADDRESS_BOOK_HEADER));
-            let rows: Vec<Vec<String>> = lines.map(csv_row).collect();
-            assert!(
-                !rows.is_empty(),
-                "the {} address book has rows",
-                size.as_str()
-            );
-            let blank: Vec<&str> = rows
+            let (roster, _) = seeded_roster(&cfg, &names).expect("build the roster");
+            assert_eq!(roster.contacts.len(), cfg.contacts.count);
+            let blank: Vec<String> = roster
+                .contacts
                 .iter()
-                .filter(|row| row[1].trim().is_empty())
-                .map(|row| row[0].as_str())
+                .enumerate()
+                .filter(|(_, c)| c.display_hint().trim().is_empty())
+                .map(|(index, _)| format!("demo-{}", index + 1))
                 .collect();
             assert!(
                 blank.is_empty(),
