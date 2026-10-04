@@ -8,7 +8,6 @@
 mod names;
 
 use std::collections::HashMap;
-use std::fs;
 use std::io::Write;
 use std::path::Path;
 use std::sync::LazyLock;
@@ -31,6 +30,16 @@ const PLACEHOLDER_BIN: &[u8] = include_bytes!("../assets/placeholder.bin");
 const REL_IMAGE: &str = "attachments/placeholder.jpg";
 const REL_VIDEO: &str = "attachments/placeholder.mp4";
 const REL_OTHER: &str = "attachments/placeholder.bin";
+
+/// The three files an obfuscated export ships in place of its real media,
+/// as (path under the output directory, bytes). `message-ir-format` writes
+/// them, since it owns the output directory and the check that an export
+/// wrote it.
+pub const PLACEHOLDER_FILES: [(&str, &[u8]); 3] = [
+    (REL_IMAGE, PLACEHOLDER_JPG),
+    (REL_VIDEO, PLACEHOLDER_MP4),
+    (REL_OTHER, PLACEHOLDER_BIN),
+];
 
 static EMAIL_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}").expect("email re")
@@ -444,83 +453,6 @@ pub fn placeholder_rel_path(class: MediaClass) -> &'static str {
         MediaClass::Video => REL_VIDEO,
         MediaClass::Other => REL_OTHER,
     }
-}
-
-/// Delete everything under `output_dir/attachments/`, in subfolders too,
-/// and write the three shared placeholder files there.
-///
-/// Each entry's type is read without following a symlink. A folder is
-/// emptied one entry at a time and then removed, so a failure names the
-/// file that stayed. A symlink is removed, never followed, so a link to a
-/// folder outside the export leaves that folder alone, and a link with a
-/// placeholder's name cannot carry the placeholder out of the export. The
-/// placeholders are written afresh each time.
-///
-/// # Errors
-///
-/// Returns an error when the directory cannot be created or read, an entry
-/// cannot be removed, or a placeholder cannot be written. Each names its
-/// path.
-pub fn materialize_placeholders(output_dir: &Path) -> Result<()> {
-    let dir = output_dir.join("attachments");
-    fs::create_dir_all(&dir).with_context(|| format!("could not create {}", dir.display()))?;
-    // Anything left behind is content the obfuscated export exists to leave
-    // out, so a failed delete fails the pass.
-    remove_folder_contents(&dir)?;
-    for (rel, bytes) in [
-        (REL_IMAGE, PLACEHOLDER_JPG),
-        (REL_VIDEO, PLACEHOLDER_MP4),
-        (REL_OTHER, PLACEHOLDER_BIN),
-    ] {
-        let path = output_dir.join(rel);
-        fs::write(&path, bytes).with_context(|| format!("could not write {}", path.display()))?;
-    }
-    Ok(())
-}
-
-/// Remove every entry of `dir`, which stays, reading each type without
-/// following a symlink.
-fn remove_folder_contents(dir: &Path) -> Result<()> {
-    for entry in fs::read_dir(dir).with_context(|| format!("could not read {}", dir.display()))? {
-        let entry = entry.with_context(|| format!("could not read {}", dir.display()))?;
-        let path = entry.path();
-        let file_type = entry
-            .file_type()
-            .with_context(|| format!("could not read {}", path.display()))?;
-        if file_type.is_dir() {
-            remove_folder_contents(&path)?;
-            fs::remove_dir(&path)
-        } else if file_type.is_symlink() {
-            remove_symlink(&path, file_type)
-        } else {
-            fs::remove_file(&path)
-        }
-        .with_context(|| {
-            format!(
-                "could not remove {} from the obfuscated export",
-                path.display()
-            )
-        })?;
-    }
-    Ok(())
-}
-
-/// Remove the symlink at `path` itself. Windows removes a link to a folder
-/// (or a junction) as a folder, and any other link as a file.
-#[cfg(windows)]
-fn remove_symlink(path: &Path, file_type: fs::FileType) -> std::io::Result<()> {
-    use std::os::windows::fs::FileTypeExt;
-    if file_type.is_symlink_dir() {
-        fs::remove_dir(path)
-    } else {
-        fs::remove_file(path)
-    }
-}
-
-/// Remove the symlink at `path` itself. Unix removes every link as a file.
-#[cfg(not(windows))]
-fn remove_symlink(path: &Path, _file_type: fs::FileType) -> std::io::Result<()> {
-    fs::remove_file(path)
 }
 
 /// Seed length: 32 bytes → 64 hex characters (2^256 key space).

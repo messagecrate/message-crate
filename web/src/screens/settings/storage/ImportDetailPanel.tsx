@@ -98,13 +98,10 @@ export default function ImportDetailPanel({
               <dt className="text-muted">Bytes uploaded</dt>
               <dd className="mt-1">{formatBytes(selectedImport.bytes_uploaded)}</dd>
             </div>
-            {"issue_count" in selectedImport ? (
-              // The owner reads how many issues, not what each was about.
-              <div>
-                <dt className="text-muted">Issues</dt>
-                <dd className="mt-1">{selectedImport.issue_count.toLocaleString()}</dd>
-              </div>
-            ) : null}
+            <div>
+              <dt className="text-muted">Issues</dt>
+              <dd className="mt-1">{selectedImport.issue_count.toLocaleString()}</dd>
+            </div>
           </dl>
           <ImportSummaryPanel summary={selectedImportSummary} />
           <div className="mt-4">

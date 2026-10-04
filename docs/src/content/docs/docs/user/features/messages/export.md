@@ -86,8 +86,8 @@ The JSON Lines layout is described in [Export structure](/docs/developer/referen
 ## The folder an export writes into
 
 A JSON Lines export writes straight into the **Save to** folder.
-It also keeps a file named `.message-crate-pull-state.jsonl` there, which records the attachments already downloaded.
-A later JSON Lines export into the same folder skips those attachments.
+It also keeps a file named `.message-crate-pull-state.jsonl` there, which records the attachments already downloaded from each server and account.
+A later JSON Lines export into the same folder, from the same server and account, skips those attachments.
 
 An export in any other format first deletes the files of an earlier export from the **Save to** folder.
 It refuses a folder that holds other files and no export, so that nothing unrelated is deleted.
