@@ -8,6 +8,7 @@ import { ApiError } from "../lib/api";
 import { APP_BUILD } from "../lib/build";
 import { productVersionOf } from "../lib/buildFormat";
 import { ThemeProvider } from "../lib/ThemeProvider";
+import { fill } from "../test/fill";
 import { Providers } from "../test/providers";
 import OwnerHome from "./OwnerHome";
 
@@ -601,7 +602,7 @@ describe("OwnerHome", () => {
     expect(screen.queryByRole("button", { name: "Add" })).not.toBeInTheDocument();
   });
 
-  it("sets an account's display name and identities from its Profile, as its holder does", async () => {
+  it("sets an account's display name from its Profile, as its holder does", async () => {
     const user = userEvent.setup({ delay: null });
     renderHome(["/owner/accounts/101"]);
 
@@ -616,11 +617,19 @@ describe("OwnerHome", () => {
 
     updateAccount.mockResolvedValue({ ...anAccount, preferred_name: "Robert" });
     await user.clear(name);
-    await user.type(name, "Robert");
+    await fill(user, name, "Robert");
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
       expect(updateAccount).toHaveBeenCalledWith(101, { preferred_name: "Robert" }),
     );
+  });
+
+  it("removes an identity from an account's Profile once the owner agrees", async () => {
+    const user = userEvent.setup({ delay: null });
+    renderHome(["/owner/accounts/101"]);
+
+    await user.click(await screen.findByRole("tab", { name: "Profile" }));
+    expect(await screen.findByText("+15555550100")).toBeInTheDocument();
 
     updateAccount.mockResolvedValue({ ...anAccount, phones: [] });
     getAccount.mockResolvedValue({ ...anAccount, phones: [] });

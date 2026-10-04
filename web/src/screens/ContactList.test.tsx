@@ -424,7 +424,11 @@ describe("ContactList", () => {
 
       const box = screen.getByRole("checkbox", { name: "Select all contacts" });
       fireEvent.click(box);
-      await waitFor(() => expect(box).toBeChecked());
+      // The box is ticked once Select all has read the 80 contacts past the
+      // first page and drawn 120 ticks, in a transition. That is about 230 ms
+      // on an idle machine and 1.5 s at a load average near 100, past
+      // `waitFor`'s 1000 ms default (#1594).
+      await waitFor(() => expect(box).toBeChecked(), { timeout: 3000 });
 
       fireEvent.click(screen.getByRole("button", { name: "Export" }));
       await waitFor(() => expect(exportMock).toHaveBeenCalled());

@@ -104,7 +104,10 @@ describe("NavEntityList navigation", () => {
     await user.type(input, "Fam");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(await screen.findByTestId("location")).toHaveTextContent("/group/Fam");
+    // The page moves once the rename is written and the cache has read the
+    // lists again, a few renders after Save; the location is on screen all
+    // along, so wait for its text rather than for the element.
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/group/Fam"));
   });
 
   it("falls back to the group collection's home route after deleting the group being viewed", async () => {
@@ -131,7 +134,7 @@ describe("NavEntityList navigation", () => {
     await user.type(input, "Vacation");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
-    expect(await screen.findByTestId("location")).toHaveTextContent("/tag/Vacation");
+    await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/tag/Vacation"));
   });
 
   it("falls back to the tag collection's home route after deleting the tag being viewed", async () => {

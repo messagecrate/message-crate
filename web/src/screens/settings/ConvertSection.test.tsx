@@ -4,6 +4,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { holdDesktopJob } from "../../lib/desktopJob";
+import { fill } from "../../test/fill";
 import { ConvertSection } from "./ConvertSection";
 
 const tauriState = vi.hoisted(() => ({ isTauri: true }));
@@ -49,10 +50,10 @@ const convertButton = () => screen.getByRole("button", { name: "Convert" });
 
 /** Fill both folders; the format stays at its default unless `formatLabel` is given. */
 async function fillFolders(input: string, output: string, formatLabel?: string) {
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
   render(<ConvertSection />);
-  await user.type(screen.getByLabelText("Input folder"), input);
-  await user.type(screen.getByLabelText("Output folder"), output);
+  await fill(user, screen.getByLabelText("Input folder"), input);
+  await fill(user, screen.getByLabelText("Output folder"), output);
   if (formatLabel) {
     await user.click(screen.getByRole("button", { name: /Output format/ }));
     await user.click(await screen.findByRole("option", { name: formatLabel }));
@@ -83,14 +84,14 @@ describe("ConvertSection", () => {
   });
 
   it("keeps Convert disabled until both folders are filled", async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(<ConvertSection />);
     expect(convertButton()).toBeDisabled();
 
-    await user.type(screen.getByLabelText("Input folder"), "/home/demo/export-json");
+    await fill(user, screen.getByLabelText("Input folder"), "/home/demo/export-json");
     expect(convertButton()).toBeDisabled();
 
-    await user.type(screen.getByLabelText("Output folder"), "/home/demo/export-csv");
+    await fill(user, screen.getByLabelText("Output folder"), "/home/demo/export-csv");
     expect(convertButton()).toBeEnabled();
   });
 
@@ -153,7 +154,7 @@ describe("ConvertSection", () => {
 
     const field = screen.getByLabelText("Output folder");
     await user.clear(field);
-    await user.type(field, "/b");
+    await fill(user, field, "/b");
     await user.click(screen.getByRole("button", { name: /Output format/ }));
     await user.click(await screen.findByRole("option", { name: "JSON Lines (.jsonl)" }));
 

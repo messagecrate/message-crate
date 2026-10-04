@@ -1,10 +1,11 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { currentDesktopJob } from "../lib/desktopJob";
+import { fill } from "../test/fill";
 import ExportScreen from "./ExportScreen";
 import { ConvertSection } from "./settings/ConvertSection";
 
@@ -76,18 +77,18 @@ function renderScreen(query?: string) {
 
 /** Fill the save folder and press Export. */
 async function exportTo(folder: string) {
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
   renderScreen();
-  await user.type(screen.getByPlaceholderText("Choose folder…"), folder);
+  await fill(user, screen.getByPlaceholderText("Choose folder…"), folder);
   await user.click(screen.getByRole("button", { name: "Export" }));
   return user;
 }
 
 /** Pick a format from the Format select, then press Export. */
 async function exportAs(folder: string, formatLabel: string) {
-  const user = userEvent.setup();
+  const user = userEvent.setup({ delay: null });
   renderScreen();
-  await user.type(screen.getByPlaceholderText("Choose folder…"), folder);
+  await fill(user, screen.getByPlaceholderText("Choose folder…"), folder);
   await user.click(screen.getByRole("button", { name: /Format/ }));
   await user.click(await screen.findByRole("option", { name: formatLabel }));
   await user.click(screen.getByRole("button", { name: "Export" }));
@@ -207,19 +208,19 @@ describe("ExportScreen", () => {
       return { summary: "converted" };
     });
 
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     render(
       <MemoryRouter initialEntries={["/export"]}>
         <ExportScreen />
         <ConvertSection />
       </MemoryRouter>,
     );
-    await user.type(screen.getByLabelText("Input folder"), "/home/demo/export-json");
-    await user.type(screen.getByLabelText("Output folder"), "/home/demo/export-csv");
+    await fill(user, screen.getByLabelText("Input folder"), "/home/demo/export-json");
+    await fill(user, screen.getByLabelText("Output folder"), "/home/demo/export-csv");
     const convert = screen.getByRole("button", { name: "Convert" });
     expect(convert).toBeEnabled();
 
-    await user.type(screen.getByPlaceholderText("Choose folder…"), "/home/demo/out");
+    await fill(user, screen.getByPlaceholderText("Choose folder…"), "/home/demo/out");
     // The Export screen's Format comes before Convert's Output format.
     const [exportFormat] = screen.getAllByRole("button", { name: /Format/ });
     if (!exportFormat) throw new Error("no Format select");
@@ -264,16 +265,20 @@ describe("ExportScreen", () => {
       return "/home/demo/message-crate/staging-export-260831-120000";
     });
 
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderScreen();
-    await user.type(screen.getByPlaceholderText("Choose folder…"), "/home/demo/out");
+    await fill(user, screen.getByPlaceholderText("Choose folder…"), "/home/demo/out");
     await user.click(screen.getByRole("button", { name: /Format/ }));
     await user.click(await screen.findByRole("option", { name: "CSV (.csv)" }));
 
     const exportButton = screen.getByRole("button", { name: "Export" });
     await user.click(exportButton);
     // Still resolving the staging path: the button must already be inert.
-    await user.click(exportButton).catch(() => {});
+    // `fireEvent`, not `user.click`: on a disabled button user-event sends the
+    // pointer events and not the click, and React Aria then clicks the button
+    // itself 80 ms later. On a busy machine that lands after the first export
+    // has ended and the button is live again, and starts a second one.
+    fireEvent.click(exportButton);
     releasePull();
 
     await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
@@ -282,7 +287,7 @@ describe("ExportScreen", () => {
   });
 
   it("opens in Everything with no query box, and offers the box under Search", async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderScreen();
     expect(screen.getByRole("button", { name: /Scope/ })).toHaveTextContent("Everything");
     expect(screen.queryByRole("textbox", { name: "Search" })).toBeNull();
@@ -293,12 +298,12 @@ describe("ExportScreen", () => {
   });
 
   it("sends the query typed under Search", async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderScreen();
-    await user.type(screen.getByPlaceholderText("Choose folder…"), "/home/demo/out");
+    await fill(user, screen.getByPlaceholderText("Choose folder…"), "/home/demo/out");
     await user.click(screen.getByRole("button", { name: /Scope/ }));
     await user.click(await screen.findByRole("option", { name: "Search" }));
-    await user.type(screen.getByRole("textbox", { name: "Search" }), " in:#19,#22 ");
+    await fill(user, screen.getByRole("textbox", { name: "Search" }), " in:#19,#22 ");
     await user.click(screen.getByRole("button", { name: "Export" }));
 
     await waitFor(() => expect(invokePull).toHaveBeenCalledTimes(1));
@@ -310,7 +315,7 @@ describe("ExportScreen", () => {
   it("opens in Search with the query it was given, and sends it", async () => {
     // LeftPanel hands over the conversation list's query as `?q=`, so the
     // person sees what "the current view" means before exporting it.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderScreen("messages:>100 tag:Work");
     expect(screen.getByRole("button", { name: /Scope/ })).toHaveTextContent("Search");
     expect(screen.getByRole("textbox", { name: "Search" })).toHaveValue("messages:>100 tag:Work");
@@ -321,7 +326,7 @@ describe("ExportScreen", () => {
       screen.getByText(/holds every message of each conversation this search finds/),
     ).toBeTruthy();
 
-    await user.type(screen.getByPlaceholderText("Choose folder…"), "/home/demo/out");
+    await fill(user, screen.getByPlaceholderText("Choose folder…"), "/home/demo/out");
     await user.click(screen.getByRole("button", { name: "Export" }));
 
     await waitFor(() => expect(invokePull).toHaveBeenCalledTimes(1));
@@ -333,13 +338,13 @@ describe("ExportScreen", () => {
   });
 
   it("exports only the matching messages once the search is switched to Messages", async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderScreen("tag:Work");
     await user.click(screen.getByRole("button", { name: /Search in/ }));
     await user.click(await screen.findByRole("option", { name: "Messages" }));
     expect(screen.getByText(/holds only the messages this search finds/)).toBeTruthy();
 
-    await user.type(screen.getByPlaceholderText("Choose folder…"), "/home/demo/out");
+    await fill(user, screen.getByPlaceholderText("Choose folder…"), "/home/demo/out");
     await user.click(screen.getByRole("button", { name: "Export" }));
 
     await waitFor(() => expect(invokePull).toHaveBeenCalledTimes(1));
@@ -349,9 +354,9 @@ describe("ExportScreen", () => {
   it("will not export a Search scope with a blank query", async () => {
     // message-crate-pull reads a blank query as the whole account, which is not what
     // someone who chose Search and left the box empty asked for.
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     renderScreen("from:me");
-    await user.type(screen.getByPlaceholderText("Choose folder…"), "/home/demo/out");
+    await fill(user, screen.getByPlaceholderText("Choose folder…"), "/home/demo/out");
     await user.clear(screen.getByRole("textbox", { name: "Search" }));
     expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
 
@@ -376,7 +381,7 @@ describe("ExportScreen", () => {
     await screen.findByText(/Export complete/);
     const field = screen.getByPlaceholderText("Choose folder…");
     await user.clear(field);
-    await user.type(field, "/b");
+    await fill(user, field, "/b");
     await user.click(screen.getByRole("button", { name: /Format/ }));
     await user.click(await screen.findByRole("option", { name: "CSV (.csv)" }));
 

@@ -4,6 +4,7 @@ import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "../../lib/account";
+import { fill } from "../../test/fill";
 import { mockedAuth, renderWithProviders as render } from "../../test/providers";
 import { ProfileSettingsPanel } from "./ProfileSettingsPanel";
 
@@ -56,15 +57,15 @@ function zoneField() {
 
 describe("ProfileSettingsPanel", () => {
   it("keeps a typed, unsaved display name when the time zone changes", async () => {
+    const user = userEvent.setup({ delay: null });
     render(<ProfileSettingsPanel />);
     await waitFor(() => expect(nameField().value).toBe("Stored Name"));
 
-    await userEvent.clear(nameField());
-    await userEvent.type(nameField(), "Typed Name");
+    await user.clear(nameField());
+    await fill(user, nameField(), "Typed Name");
 
-    await userEvent.click(zoneField());
-    await userEvent.keyboard("dallas");
-    await userEvent.click(within(screen.getByRole("listbox")).getAllByRole("option")[0]);
+    await fill(user, zoneField(), "dallas");
+    await user.click(within(screen.getByRole("listbox")).getAllByRole("option")[0]);
     expect(updateAccountProfile).toHaveBeenCalledWith({ time_zone: "America/Chicago" });
     // The server's answer has reached the profile entry the panel reads.
     await waitFor(() => expect(zoneField().value).toMatch(/Central Time/));
@@ -73,11 +74,12 @@ describe("ProfileSettingsPanel", () => {
   });
 
   it("clears the display name when an emptied field is saved", async () => {
+    const user = userEvent.setup({ delay: null });
     render(<ProfileSettingsPanel />);
     await waitFor(() => expect(nameField().value).toBe("Stored Name"));
 
-    await userEvent.clear(nameField());
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await user.clear(nameField());
+    await user.click(screen.getByRole("button", { name: "Save" }));
 
     // The server clears the name on `null`; leaving the field out keeps it.
     expect(updateAccountProfile).toHaveBeenCalledWith({ preferred_name: null });
