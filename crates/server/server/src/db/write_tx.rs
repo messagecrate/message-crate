@@ -40,9 +40,9 @@ pub struct WriteTx<'c>(Transaction<'c, Sqlite>);
 /// connects to `messages_fts` while that statement is being prepared, and
 /// cannot reload the schema until it is prepared: the connection to
 /// `messages_fts` fails, and the statement with it, as "no such table"
-/// (#1600). [`SCHEMA_CHECK_SQL`] reads the schema table, which makes SQLite
-/// compare its copy with the file and reload it. Nothing can change the
-/// schema after that while the write lock is held.
+/// (#1600). [`SCHEMA_CHECK_SQL`] reads the schema table (`sqlite_master`),
+/// which makes SQLite compare its copy with the file and reload it. Nothing
+/// can change the schema after that while the write lock is held.
 ///
 /// # Errors
 ///
@@ -56,7 +56,7 @@ pub async fn begin_write(conn: &mut SqliteConnection) -> sqlx::Result<WriteTx<'_
 
 /// A statement that reads the schema table and nothing else, so running it
 /// reloads a connection's copy of the schema when the file's is newer.
-const SCHEMA_CHECK_SQL: &str = "SELECT 1 FROM sqlite_schema LIMIT 1";
+const SCHEMA_CHECK_SQL: &str = "SELECT 1 FROM sqlite_master LIMIT 1";
 
 impl WriteTx<'_> {
     /// Commit the transaction and release the write lock.
@@ -108,8 +108,10 @@ mod tests {
     use crate::db::schema;
 
     /// A connection that sat idle while another changed the schema begins a
-    /// write transaction and deletes a message, which fires the full-text
-    /// search trigger. The delete goes through (#1600).
+    /// write transaction and runs the delete `wipe_demo_account` runs first
+    /// (`delete_account_messages_batch`). Preparing it loads the full-text
+    /// search trigger on `messages`, which connects to `messages_fts`; no
+    /// row needs to match. The delete goes through (#1600).
     #[tokio::test]
     async fn a_write_after_another_connection_changed_the_schema_sees_the_new_schema() {
         let (pool, _dir) = crate::db::engine::test_pool().await;
@@ -137,7 +139,7 @@ mod tests {
 
         let mut tx = begin_write(&mut stale).await.expect("begin on the second");
         sqlx::query(
-            "DELETE FROM messages WHERE id IN (SELECT id FROM messages WHERE account_id = 1)",
+            "DELETE FROM messages WHERE id IN (SELECT id FROM messages WHERE account_id = 1 LIMIT 500)",
         )
         .execute(&mut *tx)
         .await

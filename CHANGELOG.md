@@ -944,13 +944,11 @@ released versions carry their date on the heading.
   sent one of those times with no value rather than leaving it out. It now
   carries its first and last message times once each, and leaves both out
   when there is no message to date them.
-- 2026-10-04 **A change to messages right after an import no longer fails
-  with "no such table: messages".** An import changes the database's
-  layout while it adds messages. A change on another connection that had
-  not caught up with that layout, such as removing a Demo Account that
-  failed to build on a first start, could fail, and the failed first start
-  then left the Demo Account's files behind. Every change now catches up
-  first.
+- 2026-10-04 **Removing or changing messages right after an import no
+  longer fails with "no such table: messages".** It failed now and then on
+  a busy server. On a first start, a Demo Account that failed to build
+  could not be removed this way, and its files stayed behind. Removing it
+  now succeeds and leaves nothing behind.
 
 ### Upgrading
 
