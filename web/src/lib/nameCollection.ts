@@ -1,5 +1,6 @@
 import { type InfiniteData, type UseMutationResult, useMutation } from "@tanstack/react-query";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
+import { ApiError } from "./api";
 import {
   type OffsetPage,
   type RouteCacheEntries,
@@ -322,10 +323,16 @@ export function useNameCollectionActions(collection: NameCollection): NameCollec
   );
   const error = latest.error;
 
+  // Creates `ensure` has sent and the server has not answered, by lowercased
+  // name, so a second `ensure` for the same name waits for the first rather
+  // than reading a list the first create has not reached yet.
+  const ensuring = useRef(new Map<string, Promise<NamedSet>>());
+
   // Memoised on the mutation objects' own stable `mutateAsync` identities,
-  // the cache and the collection only: `pending` and `error` change on every keystroke of a write, and a
-  // caller that lists this object's methods in a `useEffect` dependency
-  // array (as `ContactList.tsx` does) must not see a new function each time.
+  // the cache and the collection only: `pending` and `error` change on every
+  // keystroke of a write, and a caller that lists this object's methods in a
+  // `useEffect` dependency array (as `ContactList.tsx` does) must not see a
+  // new function each time.
   const callbacks = useMemo(
     () => ({
       create: async (name: string) => (await create(name)).name,
@@ -334,11 +341,37 @@ export function useNameCollectionActions(collection: NameCollection): NameCollec
       // after "Family" finds the set instead of sending a second create.
       ensure: async (name: string) => {
         const wanted = name.trim().toLowerCase();
-        const sets = await cache.fetch<NamedSet[]>(collection.key, (signal) =>
-          fetchSets(collection, signal),
-        );
-        const found = sets.find((set) => set.name.toLowerCase() === wanted);
-        return found ? found.name : (await create(name)).name;
+        const listed = async () => {
+          const sets = await cache.fetch<NamedSet[]>(collection.key, (signal) =>
+            fetchSets(collection, signal),
+          );
+          return sets.find((set) => set.name.toLowerCase() === wanted)?.name;
+        };
+        const inFlight = ensuring.current.get(wanted);
+        if (inFlight) {
+          const settled = await inFlight.then(
+            (set) => set.name,
+            () => undefined,
+          );
+          if (settled !== undefined) return settled;
+        }
+        const found = await listed();
+        if (found !== undefined) return found;
+        const created = create(name);
+        ensuring.current.set(wanted, created);
+        try {
+          return (await created).name;
+        } catch (err) {
+          // Another tab or window created the name between the list and
+          // the create: the set exists, which is what was asked for.
+          if (err instanceof ApiError && err.type === "name-taken") {
+            const taken = await listed();
+            if (taken !== undefined) return taken;
+          }
+          throw err;
+        } finally {
+          if (ensuring.current.get(wanted) === created) ensuring.current.delete(wanted);
+        }
       },
       rename: async (from: string, to: string) => (await rename({ from, to })).name,
       remove: (name: string) => remove(name),

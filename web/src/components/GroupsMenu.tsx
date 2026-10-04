@@ -66,7 +66,7 @@ export default function GroupsMenu({
   // Counts the forms the menu has shown. A create that settles after its form
   // was closed (dismissed, cancelled, or replaced by a new one) leaves the
   // form on screen alone, so its result can't erase or mislabel a new name.
-  const formRef = useRef(0);
+  const formCountRef = useRef(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -78,7 +78,7 @@ export default function GroupsMenu({
   useDismissable(open, rootRef, dismiss);
 
   useEffect(() => {
-    formRef.current += 1;
+    formCountRef.current += 1;
     setCreating(false);
     if (!open) return;
     if (mode === "list") {
@@ -111,18 +111,18 @@ export default function GroupsMenu({
     // The name can be refused (reserved, too long, or holding a character
     // the server keeps for itself), so the menu stays on the form with the
     // typed name and the reason until the create succeeds.
-    const form = formRef.current;
+    const formCount = formCountRef.current;
     setCreateError(null);
     setCreating(true);
     try {
       await onCreate(name);
     } catch (err) {
-      if (formRef.current !== form) return;
+      if (formCountRef.current !== formCount) return;
       setCreating(false);
       setCreateError(apiErrorMessage(err, copy.createError));
       return;
     }
-    if (formRef.current !== form) return;
+    if (formCountRef.current !== formCount) return;
     setCreating(false);
     setNewName("");
     setMode("list");
