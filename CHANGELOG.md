@@ -722,6 +722,11 @@ released versions carry their date on the heading.
 
 #### Search
 
+- 2026-10-04 **Import, Export and Settings show no search box.** The search
+  at the top searches the list of the section you are in, and these screens
+  have no list yet, so the box there searched nothing. On Export, typing in it
+  changed which conversations Export would export. The box is gone
+  from these three screens and comes back when you return to a list.
 - 2026-10-03 **A search pasted and run at once is the search that runs.**
   Pasting a search and pressing Enter straight away searched for nothing.
   Typing very fast lost letters, and the search ran on the last letter
