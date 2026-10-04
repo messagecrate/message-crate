@@ -2483,11 +2483,13 @@ async fn unknown_group_collects_contacts_missing_a_name_or_an_identity() {
 
     // Naming the nameless one takes it out of Unknown, because membership
     // is computed rather than stored.
-    sqlx::query("UPDATE contacts SET preferred_name = 'Ben' WHERE account_id = $1 AND trim(preferred_name) = ''")
-        .bind(account)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
+    sqlx::query(
+        "UPDATE contacts SET preferred_name = 'Ben' WHERE account_id = $1 AND preferred_name = ''",
+    )
+    .bind(account)
+    .execute(&mut *conn)
+    .await
+    .unwrap();
     let after = list_contacts_sorted(
         &mut conn,
         account,
@@ -3327,7 +3329,7 @@ async fn an_identity_removed_from_one_contact_can_be_added_to_another() {
         ["Ada Lovelace"]
     );
     let nameless: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM contacts WHERE account_id = $1 AND trim(preferred_name) = ''",
+        "SELECT COUNT(*) FROM contacts WHERE account_id = $1 AND preferred_name = ''",
     )
     .bind(account)
     .fetch_one(&mut *conn)

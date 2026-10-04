@@ -122,7 +122,7 @@ async fn backup_name_shows_when_the_contact_has_none() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let (conversation_id, handle_id) = seed(&mut conn, "+15555550135", Some("Bobby")).await;
-    link(&mut conn, handle_id, "   ").await;
+    link(&mut conn, handle_id, "").await;
 
     let loaded = load_for_conversations(&mut conn, &[conversation_id])
         .await

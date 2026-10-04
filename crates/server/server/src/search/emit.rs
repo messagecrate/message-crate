@@ -203,7 +203,7 @@ fn free_text_match(out: &mut Sql, column: &str, term: &TextTerm) {
 /// contact. Shared by free text and `name:` so there is one copy of what
 /// "this participant's name" means.
 const PARTICIPANT_NAME: &str =
-    "coalesce(NULLIF(trim(pct.preferred_name), ''), NULLIF(trim(p.name_alias), ''), '')";
+    "coalesce(NULLIF(pct.preferred_name, ''), NULLIF(trim(p.name_alias), ''), '')";
 
 /// FROM clause binding `p` to a participants row and `pct` to the Contact its
 /// handle is on, scoped to conversation `c`'s account.
