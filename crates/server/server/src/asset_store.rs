@@ -82,41 +82,84 @@ fn removing_dir(paths: &PathsConfig, account_id: i64) -> PathBuf {
     account_dir(paths, account_id).join(".removing")
 }
 
-/// A new, empty `.removing/<id>/` directory for one removal, or `None`, logged,
-/// when it cannot be made. The removal then removes its files in place.
-fn new_removal_dir(paths: &PathsConfig, account_id: i64) -> Option<PathBuf> {
-    let root = removing_dir(paths, account_id);
-    let made = std::fs::create_dir_all(&root)
-        .and_then(|()| tempfile::tempdir_in(&root))
-        .map(tempfile::TempDir::keep);
-    match made {
-        Ok(dir) => Some(dir),
-        Err(error) => {
-            tracing::warn!(
-                account_id,
-                path = %root.display(),
-                %error,
-                "a directory for removed files could not be made; they are removed in place"
-            );
-            None
+/// One removal's `.removing/<id>/` directory, made when the first file is
+/// moved into it, so a removal that moves nothing leaves nothing on disk.
+struct RemovalDir {
+    account_id: i64,
+    root: PathBuf,
+    dir: Option<PathBuf>,
+    unusable: bool,
+}
+
+impl RemovalDir {
+    fn new(paths: &PathsConfig, account_id: i64) -> Self {
+        Self {
+            account_id,
+            root: removing_dir(paths, account_id),
+            dir: None,
+            unusable: false,
         }
+    }
+
+    /// The directory, made now if this is the first file to go into it, or
+    /// `None` when it cannot be made; the removal then removes its files in
+    /// place. `.removing/` is made with `create_dir`, never
+    /// `create_dir_all`: a missing account directory belongs to an account
+    /// that was deleted, and must not come back.
+    fn get(&mut self) -> Option<&Path> {
+        if self.dir.is_none() && !self.unusable {
+            let made = match std::fs::create_dir(&self.root) {
+                Err(error) if error.kind() != io::ErrorKind::AlreadyExists => Err(error),
+                _ => tempfile::tempdir_in(&self.root).map(tempfile::TempDir::keep),
+            };
+            match made {
+                Ok(dir) => self.dir = Some(dir),
+                Err(error) => {
+                    self.unusable = true;
+                    tracing::warn!(
+                        account_id = self.account_id,
+                        path = %self.root.display(),
+                        %error,
+                        "a directory for removed files could not be made; they are removed in place"
+                    );
+                }
+            }
+        }
+        self.dir.as_deref()
+    }
+
+    /// The directory, if any file was moved into it.
+    fn into_dir(self) -> Option<PathBuf> {
+        self.dir
     }
 }
 
-/// Take `path` out of its store: move it into `removal_dir`, which is one
-/// rename whatever its size, or, without `removal_dir` or when the move
+/// Take `path` out of its store: move it into `removal`'s directory, which
+/// is one rename whatever its size, or, without `removal` or when the move
 /// fails, remove it in place with `remove`. True when it is gone from its
 /// place, and a failure is logged.
 fn take_out(
     account_id: i64,
     path: &Path,
-    removal_dir: Option<&Path>,
+    removal: Option<&mut RemovalDir>,
     remove: fn(&Path) -> io::Result<()>,
 ) -> bool {
-    if let (Some(dir), Some(name)) = (removal_dir, path.file_name())
-        && gone_is_ok(std::fs::rename(path, dir.join(name))).is_ok()
-    {
-        return true;
+    if let Some(removal) = removal {
+        if std::fs::symlink_metadata(path).is_err_and(|e| e.kind() == io::ErrorKind::NotFound) {
+            return true;
+        }
+        if let (Some(dir), Some(name)) = (removal.get(), path.file_name()) {
+            match gone_is_ok(std::fs::rename(path, dir.join(name))) {
+                Ok(()) => return true,
+                Err(error) => tracing::warn!(
+                    account_id,
+                    path = %path.display(),
+                    %error,
+                    "a stored file or directory could not be moved out of the store; \
+                     it is removed in place while the database write lock is held"
+                ),
+            }
+        }
     }
     match remove(path) {
         Ok(()) => true,
@@ -132,22 +175,27 @@ fn take_out(
     }
 }
 
-/// Delete `path`, a directory under `.removing/` or anything else found
-/// there, and log a failure: the next [`sweep_unreferenced`] tries again.
-fn delete_removed(account_id: i64, path: &Path) {
-    let is_dir = std::fs::symlink_metadata(path).is_ok_and(|meta| meta.is_dir());
-    let result = if is_dir {
-        remove_tree(path)
-    } else {
-        remove_file(path)
-    };
-    if let Err(error) = result {
-        tracing::warn!(
-            account_id,
-            path = %path.display(),
-            %error,
-            "removed files could not be deleted; the sweep at the next Import Run's end will try again"
-        );
+/// Delete each of `paths`, directories under `.removing/` or anything else
+/// found there, and log a failure: the next [`sweep_unreferenced`] tries
+/// again. A sweep can list a directory that the removal which made it is
+/// deleting at the same time, so a path or a file inside it that is already
+/// gone counts as deleted.
+fn delete_removed(account_id: i64, paths: Vec<PathBuf>) {
+    for path in paths {
+        let is_dir = std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.is_dir());
+        let result = if is_dir {
+            remove_tree(&path)
+        } else {
+            remove_file(&path)
+        };
+        if let Err(error) = result {
+            tracing::warn!(
+                account_id,
+                path = %path.display(),
+                %error,
+                "removed files could not be deleted; the sweep at the next Import Run's end will try again"
+            );
+        }
     }
 }
 
@@ -221,8 +269,8 @@ pub(crate) async fn remove_unreferenced(
     }
     if !originals.is_empty() {
         let paths = paths_of_all(&cfg.paths, account_id, &originals);
-        unless_import_running(pool, &cfg.paths, account_id, move |removal_dir| {
-            remove_each(account_id, &paths, removal_dir);
+        unless_import_running(pool, &cfg.paths, account_id, move |removal| {
+            remove_each(account_id, &paths, Some(removal));
         })
         .await;
     }
@@ -238,9 +286,9 @@ fn paths_of_all(paths: &PathsConfig, account_id: i64, files: &[OrphanedFile]) ->
 
 /// Take each of `paths` out of its store (see [`take_out`]), logging any
 /// that cannot be removed.
-fn remove_each(account_id: i64, paths: &[PathBuf], removal_dir: Option<&Path>) {
+fn remove_each(account_id: i64, paths: &[PathBuf], mut removal: Option<&mut RemovalDir>) {
     for path in paths {
-        take_out(account_id, path, removal_dir, remove_file);
+        take_out(account_id, path, removal.as_deref_mut(), remove_file);
     }
 }
 
@@ -289,21 +337,21 @@ pub(crate) async fn remove_all_attachment_files(
     })
     .await;
     let originals = cfg.paths.assets_dir_for_account(account_id);
-    unless_import_running(pool, &cfg.paths, account_id, move |removal_dir| {
-        take_out(account_id, &originals, removal_dir, remove_tree);
+    unless_import_running(pool, &cfg.paths, account_id, move |removal| {
+        take_out(account_id, &originals, Some(removal), remove_tree);
     })
     .await;
 }
 
-/// Run `take_out` on the blocking pool while a connection from `pool`
+/// Run `move_out` on the blocking pool while a connection from `pool`
 /// holds the database write lock, unless `account_id` has a running Import
-/// Run, then delete what it moved once the lock is let go. `take_out` gets
-/// a new `.removing/<id>/` directory to move files into, or `None` when
-/// none could be made (see the module notes). Starting a run writes its
-/// row, so no run can start until `take_out` has finished. Every other
-/// writer waits for `take_out` too, which is why it only moves files.
+/// Run, then delete what it moved once the lock is let go. `move_out` gets
+/// the removal's `.removing/<id>/` directory to move files into (see the
+/// module notes). Starting a run writes its row, so no run can start until
+/// `move_out` has finished. Every other writer waits for `move_out` too,
+/// which is why it only moves files.
 ///
-/// The lock, the check, `take_out` and the deletion run in a task of their
+/// The lock, the check, `move_out` and the deletion run in a task of their
 /// own that owns its connection. A request dropped part way, such as a
 /// closed tab, then cannot let go of the lock while files are still being
 /// moved, or leave the moved files behind. The caller must hold no
@@ -317,25 +365,25 @@ async fn unless_import_running<F>(
     pool: &SqlitePool,
     paths: &PathsConfig,
     account_id: i64,
-    take_out: F,
+    move_out: F,
 ) where
-    F: FnOnce(Option<&Path>) + Send + 'static,
+    F: FnOnce(&mut RemovalDir) + Send + 'static,
 {
-    unless_import_running_then(pool, paths, account_id, take_out, delete_removed).await;
+    unless_import_running_then(pool, paths, account_id, move_out, delete_removed).await;
 }
 
 /// [`unless_import_running`], with `delete` for the deletion of the
-/// `.removing/<id>/` directory once the lock is let go, so a test can act
-/// while the deletion runs.
+/// `.removing/<id>/` directory once the lock is let go. It is a parameter
+/// only so a test can hold the deletion open and write meanwhile.
 async fn unless_import_running_then<F, D>(
     pool: &SqlitePool,
     paths: &PathsConfig,
     account_id: i64,
-    take_out: F,
+    move_out: F,
     delete: D,
 ) where
-    F: FnOnce(Option<&Path>) + Send + 'static,
-    D: FnOnce(i64, &Path) + Send + 'static,
+    F: FnOnce(&mut RemovalDir) + Send + 'static,
+    D: FnOnce(i64, Vec<PathBuf>) + Send + 'static,
 {
     let pool = pool.clone();
     let paths = paths.clone();
@@ -346,18 +394,18 @@ async fn unless_import_running_then<F, D>(
             return Ok(());
         }
         let removal_dir = tokio::task::spawn_blocking(move || {
-            let removal_dir = new_removal_dir(&paths, account_id);
-            take_out(removal_dir.as_deref());
-            removal_dir
+            let mut removal = RemovalDir::new(&paths, account_id);
+            move_out(&mut removal);
+            removal.into_dir()
         })
         .await
-        .context("removing files stopped")?;
+        .context("moving files out of the store stopped")?;
         tx.commit().await?;
         drop(conn);
         if let Some(dir) = removal_dir {
-            tokio::task::spawn_blocking(move || delete(account_id, &dir))
+            tokio::task::spawn_blocking(move || delete(account_id, vec![dir]))
                 .await
-                .context("removing files stopped")?;
+                .context("deleting removed files stopped")?;
         }
         anyhow::Ok(())
     });
@@ -403,7 +451,7 @@ pub(crate) fn remove_account_dir(paths: &PathsConfig, account_id: i64) -> io::Re
 /// can start and no batch can name a file between them. The transaction
 /// writes nothing, but it holds the database write lock for the whole walk
 /// of the account's store, so every writer on the server waits for the
-/// walk. The walk reads folders and moves each unnamed file into a new
+/// walk. The walk reads directories and moves each unnamed file into a new
 /// `.removing/<id>/` directory and does nothing else; that directory, and
 /// every other one `.removing/` held when the walk began, is deleted after
 /// the commit with no lock held (see the module notes). Like
@@ -429,19 +477,32 @@ pub(crate) async fn sweep_unreferenced(
     paths: &PathsConfig,
     account_id: i64,
 ) -> anyhow::Result<u64> {
+    sweep_unreferenced_then(pool, paths, account_id, delete_removed).await
+}
+
+/// [`sweep_unreferenced`], with `delete` for the deletion of what it moved
+/// once the lock is let go. It is a parameter only so a test can hold the
+/// deletion open and write meanwhile.
+async fn sweep_unreferenced_then<D>(
+    pool: &SqlitePool,
+    paths: &PathsConfig,
+    account_id: i64,
+    delete: D,
+) -> anyhow::Result<u64>
+where
+    D: FnOnce(i64, Vec<PathBuf>) + Send + 'static,
+{
     let pool = pool.clone();
     let paths = paths.clone();
     tokio::spawn(async move {
         let mut conn = pool.acquire().await?;
         let (removed, to_delete) = take_out_unnamed(&mut conn, paths, account_id).await?;
         drop(conn);
-        tokio::task::spawn_blocking(move || {
-            for path in &to_delete {
-                delete_removed(account_id, path);
-            }
-        })
-        .await
-        .context("sweep of unreferenced files")?;
+        if !to_delete.is_empty() {
+            tokio::task::spawn_blocking(move || delete(account_id, to_delete))
+                .await
+                .context("deleting swept files stopped")?;
+        }
         Ok(removed)
     })
     .await
@@ -454,7 +515,8 @@ pub(crate) async fn sweep_unreferenced(
 /// directories under `.removing/` to delete once the lock is let go: the
 /// new one, and every one that was there before it. A removal moves files
 /// only while it holds the lock, so no directory there before is still
-/// being filled.
+/// being filled. One may still be being deleted by the removal that made
+/// it, which [`delete_removed`] allows for.
 async fn take_out_unnamed(
     conn: &mut SqliteConnection,
     paths: PathsConfig,
@@ -469,25 +531,25 @@ async fn take_out_unnamed(
         let mut to_delete: Vec<PathBuf> = std::fs::read_dir(removing_dir(&paths, account_id))
             .map(|entries| entries.filter_map(Result::ok).map(|e| e.path()).collect())
             .unwrap_or_default();
-        let removal_dir = new_removal_dir(&paths, account_id);
+        let mut removal = RemovalDir::new(&paths, account_id);
         let removed = sweep_store_dir(
             account_id,
             &paths.assets_dir_for_account(account_id),
             &named,
             0,
-            removal_dir.as_deref(),
+            Some(&mut removal),
         ) + sweep_store_dir(
             account_id,
             &paths.assets_converted_dir_for_account(account_id),
             &named,
             PREVIEW_GRACE_SECS,
-            removal_dir.as_deref(),
+            Some(&mut removal),
         );
-        to_delete.extend(removal_dir);
+        to_delete.extend(removal.into_dir());
         (removed, to_delete)
     })
     .await
-    .context("sweep of unreferenced files")?;
+    .context("moving unreferenced files out of the store stopped")?;
     tx.commit().await?;
     Ok(taken_out)
 }
@@ -571,17 +633,17 @@ pub(crate) fn fingerprint_of(name: &str) -> Option<String> {
         .then(|| stem.to_ascii_lowercase())
 }
 
-/// Take out each file in the shard folders of `store_dir` whose
+/// Take out each file in the shard directories of `store_dir` whose
 /// fingerprint `named` lacks and that is at least `grace_secs` old, moving
-/// it into `removal_dir` (see [`take_out`]), and return how many went.
-/// Folders starting with a dot, `.incoming/` among them, are not shards and
-/// are left alone.
+/// it into `removal`'s directory (see [`take_out`]), and return how many
+/// went. Directories starting with a dot, `.incoming/` among them, are not
+/// shards and are left alone.
 fn sweep_store_dir(
     account_id: i64,
     store_dir: &Path,
     named: &HashSet<String>,
     grace_secs: u64,
-    removal_dir: Option<&Path>,
+    mut removal: Option<&mut RemovalDir>,
 ) -> u64 {
     let now = SystemTime::now();
     let Ok(shards) = std::fs::read_dir(store_dir) else {
@@ -612,7 +674,7 @@ fn sweep_store_dir(
             if grace_secs > 0 && !modified_at_least(&path, now, grace_secs).unwrap_or(false) {
                 continue;
             }
-            if take_out(account_id, &path, removal_dir, remove_file) {
+            if take_out(account_id, &path, removal.as_deref_mut(), remove_file) {
                 removed += 1;
             }
         }
