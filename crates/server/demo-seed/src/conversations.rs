@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
@@ -27,6 +28,7 @@ use crate::personas::{
     OWNER_EMAIL, OWNER_PHONE, Roster, Unassigned,
 };
 use crate::phones;
+use crate::stop_if_cancelled;
 
 const IMESSAGE_SOURCE: &str = "imessage";
 const SBR_SOURCE: &str = "sms-backup-restore";
@@ -105,7 +107,9 @@ pub struct StagingDirs<'a> {
 ///
 /// # Errors
 ///
-/// Returns an error if a conversation file cannot be created or written.
+/// Returns [`crate::Cancelled`] when `cancel` is set, checked before each
+/// conversation, or an error if a conversation file cannot be created or
+/// written.
 pub fn write_all<R: Rng>(
     staging: &StagingDirs<'_>,
     roster: &Roster,
@@ -113,6 +117,7 @@ pub fn write_all<R: Rng>(
     corpus: &Corpus,
     rng: &mut R,
     attachment_digests: &HashMap<String, (String, u64)>,
+    cancel: &AtomicBool,
 ) -> Result<GenStats> {
     clear_jsonl(staging.imessage)?;
     clear_jsonl(staging.sbr)?;
@@ -122,6 +127,7 @@ pub fn write_all<R: Rng>(
         corpus,
         rng,
         attachment_digests,
+        cancel,
         stats: GenStats {
             contacts: roster.contacts.len(),
             groups: roster.groups.len(),
@@ -133,13 +139,14 @@ pub fn write_all<R: Rng>(
 }
 
 /// Everything the writers share: the config, the corpus, the random source,
-/// the attachment fingerprints, and the running counts. One value per run;
-/// every writer is a method on it.
+/// the attachment fingerprints, the cancel flag, and the running counts. One
+/// value per run; every writer is a method on it.
 struct Seeder<'a, R: Rng> {
     cfg: &'a SeedConfig,
     corpus: &'a Corpus,
     rng: &'a mut R,
     attachment_digests: &'a HashMap<String, (String, u64)>,
+    cancel: &'a AtomicBool,
     stats: GenStats,
 }
 
@@ -156,23 +163,29 @@ impl<R: Rng> Seeder<'_, R> {
         let (android_only, imessage_only) = rest.split_at(android_only_count);
 
         for contact in imessage_only {
+            stop_if_cancelled(self.cancel)?;
             let spec = Individual::for_contact(contact, SourceFlavor::IMessage);
             self.individual(staging.imessage, &spec)?;
         }
         for contact in android_only {
+            stop_if_cancelled(self.cancel)?;
             let spec = Individual::for_contact(contact, SourceFlavor::SmsBackupRestore);
             self.individual(staging.sbr, &spec)?;
         }
         for contact in overlap {
+            stop_if_cancelled(self.cancel)?;
             self.overlap_individual(staging, contact)?;
         }
         for ua in &roster.unassigned {
+            stop_if_cancelled(self.cancel)?;
             let count = self.rng.random_range(4..16);
             self.unassigned(staging.imessage, ua, count)?;
         }
         for group in &roster.groups {
+            stop_if_cancelled(self.cancel)?;
             self.group(staging.imessage, roster, group)?;
         }
+        stop_if_cancelled(self.cancel)?;
         self.orphaned(staging.imessage)?;
 
         if self.cfg.edge_cases.empty_individual {
@@ -199,6 +212,7 @@ impl<R: Rng> Seeder<'_, R> {
         // WhatsApp threads reuse the contact's phone number. Import treats them as
         // a separate platform on the same person.
         for contact in roster.contacts.iter().filter(|c| c.has_whatsapp) {
+            stop_if_cancelled(self.cancel)?;
             let spec = Individual::for_contact(contact, SourceFlavor::Whatsapp);
             self.individual(staging.whatsapp, &spec)?;
         }
