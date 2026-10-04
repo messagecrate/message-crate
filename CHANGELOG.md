@@ -994,6 +994,12 @@ released versions carry their date on the heading.
   Demo Account that failed to build then could not be removed, and its
   files stayed behind. Now the Demo Account is removed and leaves nothing
   behind.
+- 2026-10-04 **A Preview cut short is made again without `--force`.** A
+  Preview left part-written by a stopped `process-assets` run was kept and
+  shown as it was until someone ran the command with `--force`. Every run
+  now checks each Preview against its contents and makes a damaged one
+  again, and removes the part-written files a stopped run or import left in
+  the attachment folders.
 
 ### Upgrading
 

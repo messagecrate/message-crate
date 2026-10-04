@@ -25,7 +25,7 @@ fn row(assets_path: &str) -> AssetRow {
 /// The original is on disk and no preview exists: the state a fresh import leaves.
 const FRESH: OnDisk = OnDisk {
     original_exists: true,
-    derived_exists: false,
+    preview: PreviewFile::Missing,
 };
 
 /// A pass over `assets_dir` for account 7.
@@ -67,7 +67,7 @@ fn a_part_path_is_removed_and_never_converted() {
     // deals with an absent file.
     let gone = OnDisk {
         original_exists: false,
-        derived_exists: false,
+        preview: PreviewFile::Missing,
     };
     assert_eq!(plan(&part, &opts, gone).unwrap(), Plan::RemoveIncomplete);
 }
@@ -201,7 +201,7 @@ fn skip_audio_turns_off_audio_and_nothing_else() {
 fn an_existing_preview_is_kept_unless_force_is_given() {
     let derived = OnDisk {
         original_exists: true,
-        derived_exists: true,
+        preview: PreviewFile::Intact,
     };
     let mut photo = row("aa/photo.jpg");
     photo.derived_assets_path = Some(format!("ab/{SHA}.jpg"));
@@ -217,6 +217,15 @@ fn an_existing_preview_is_kept_unless_force_is_given() {
         plan(&photo, &force, derived).unwrap(),
         Plan::Derive(Kind::Image)
     );
+    let damaged = OnDisk {
+        original_exists: true,
+        preview: PreviewFile::Damaged,
+    };
+    assert_eq!(
+        plan(&photo, &ProcessAssetsOptions::default(), damaged).unwrap(),
+        Plan::Derive(Kind::Image),
+        "a damaged Preview is converted again without --force"
+    );
 }
 
 #[test]
@@ -227,7 +236,7 @@ fn a_disabled_kind_is_reported_before_an_existing_preview() {
     };
     let derived = OnDisk {
         original_exists: true,
-        derived_exists: true,
+        preview: PreviewFile::Intact,
     };
     assert_eq!(
         plan(&row("aa/photo.jpg"), &opts, derived).unwrap(),
@@ -240,14 +249,14 @@ fn a_missing_original_is_an_error_only_when_a_conversion_is_wanted() {
     let opts = ProcessAssetsOptions::default();
     let missing = OnDisk {
         original_exists: false,
-        derived_exists: false,
+        preview: PreviewFile::Missing,
     };
     let err = plan(&row("aa/photo.jpg"), &opts, missing).unwrap_err();
     assert_eq!(err.to_string(), "missing original");
     // A preview already on disk, or a kind nobody wants, needs no original.
     let missing_but_derived = OnDisk {
         original_exists: false,
-        derived_exists: true,
+        preview: PreviewFile::Intact,
     };
     assert_eq!(
         plan(&row("aa/photo.jpg"), &opts, missing_but_derived).unwrap(),
@@ -260,16 +269,40 @@ fn a_missing_original_is_an_error_only_when_a_conversion_is_wanted() {
 }
 
 #[test]
-fn derived_file_exists_reads_the_converted_folder() {
+fn preview_file_hashes_the_preview_against_its_name() {
     let dir = tempfile::tempdir().unwrap();
-    let rel = "ab/deadbeef.jpg";
-    let dest = dir.path().join(rel);
+    let bytes = b"jpeg-bytes";
+    let sha = crate::assets_api::sha256_hex(bytes);
+    let rel = format!("{}/{sha}.jpg", &sha[..2]);
+    let dest = dir.path().join(&rel);
     fs::create_dir_all(dest.parent().unwrap()).unwrap();
-    fs::write(&dest, b"x").unwrap();
-    assert!(derived_file_exists(Some(rel), dir.path()));
-    assert!(!derived_file_exists(Some("missing.jpg"), dir.path()));
-    assert!(!derived_file_exists(Some(""), dir.path()));
-    assert!(!derived_file_exists(None, dir.path()));
+    fs::write(&dest, bytes).unwrap();
+    assert_eq!(preview_file(Some(&rel), dir.path()), PreviewFile::Intact);
+
+    fs::write(&dest, &bytes[..4]).unwrap();
+    assert_eq!(
+        preview_file(Some(&rel), dir.path()),
+        PreviewFile::Damaged,
+        "a Preview cut short does not hash to its name"
+    );
+
+    let unnamed = "ab/preview.jpg";
+    fs::create_dir_all(dir.path().join("ab")).unwrap();
+    fs::write(dir.path().join(unnamed), bytes).unwrap();
+    assert_eq!(
+        preview_file(Some(unnamed), dir.path()),
+        PreviewFile::Damaged
+    );
+    assert_eq!(
+        preview_file(Some("missing.jpg"), dir.path()),
+        PreviewFile::Missing
+    );
+    assert_eq!(
+        preview_file(Some("../escape.jpg"), dir.path()),
+        PreviewFile::Missing
+    );
+    assert_eq!(preview_file(Some(""), dir.path()), PreviewFile::Missing);
+    assert_eq!(preview_file(None, dir.path()), PreviewFile::Missing);
 }
 
 #[test]
@@ -661,6 +694,68 @@ fn a_dry_run_counts_the_preview_it_would_write_and_writes_nothing() {
     });
 }
 
+/// The Preview of the one attachment in `opened`, read from the row that
+/// names it: its fingerprint and its path on disk.
+async fn preview_on_disk(opened: &OpenDb, attachment_id: i64) -> (String, PathBuf) {
+    let mut conn = opened.conn().await.unwrap();
+    let (sha, rel, _) = derived_of(&mut conn, attachment_id)
+        .await
+        .expect("the row points at its preview");
+    let path = opened
+        .cfg
+        .paths
+        .assets_converted_dir_for_account(ACCOUNT)
+        .join(rel);
+    (sha, path)
+}
+
+/// A Preview cut short by a killed run no longer hashes to the fingerprint
+/// in its name. A plain run, without `--force`, converts it again, so the
+/// file served is whole.
+#[test]
+fn a_plain_run_converts_again_a_preview_cut_short() {
+    with_real_ffmpeg(async {
+        let (opened, _dir, attachment_id) = fixture_with_png("imessage").await;
+        let opts = ProcessAssetsOptions::default();
+        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 1, 0, 0));
+        let (sha, preview) = preview_on_disk(&opened, attachment_id).await;
+        let whole = fs::read(&preview).unwrap();
+        fs::write(&preview, &whole[..whole.len() / 2]).unwrap();
+
+        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 1, 0, 0));
+
+        let (sha_after, preview_after) = preview_on_disk(&opened, attachment_id).await;
+        let bytes = fs::read(&preview_after).unwrap();
+        assert_eq!(crate::assets_api::sha256_hex(&bytes), sha_after);
+        assert_eq!(
+            (sha_after, preview_after),
+            (sha, preview),
+            "the same original converts to the same Preview"
+        );
+    });
+}
+
+/// A Preview whose bytes hash to the fingerprint in its name is left as it
+/// is by a plain run: not converted, not rewritten.
+#[test]
+fn a_plain_run_skips_a_preview_that_hashes_to_its_name() {
+    with_real_ffmpeg(async {
+        let (opened, _dir, attachment_id) = fixture_with_png("imessage").await;
+        let opts = ProcessAssetsOptions::default();
+        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 1, 0, 0));
+        let (_, preview) = preview_on_disk(&opened, attachment_id).await;
+        let written = fs::metadata(&preview).unwrap().modified().unwrap();
+
+        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 0, 1, 0));
+
+        assert_eq!(
+            fs::metadata(&preview).unwrap().modified().unwrap(),
+            written,
+            "the Preview is not written again"
+        );
+    });
+}
+
 /// A file imported again from a second source after its Preview was made:
 /// the new rows name no Preview yet. The next run finds the Preview on disk
 /// and does not convert again, but it points the new rows at that Preview,
@@ -862,8 +957,71 @@ async fn opening_an_account_makes_its_converted_folder_and_cleans_its_incoming_t
     assert!(live_part.exists(), "a live upload's temp is kept on open");
 }
 
+/// A run killed between creating a temporary file in a shard folder and
+/// renaming it over its fingerprint leaves the temporary file behind. The
+/// next run removes it from the originals and the Preview folders alike,
+/// and leaves a young one, which a running import or run may still be
+/// writing, alone.
+#[tokio::test]
+async fn opening_an_account_removes_temporary_files_a_killed_run_left_in_the_shards() {
+    let (opened, _dir) = open_db().await;
+    let opts = ProcessAssetsOptions::default();
+    let work = tempfile::tempdir().unwrap();
+    let assets = opened.cfg.paths.assets_dir_for_account(ACCOUNT);
+    let converted = opened.cfg.paths.assets_converted_dir_for_account(ACCOUNT);
+    let left_original = assets.join("ab").join(".tmpA1b2C3");
+    let left_preview = converted.join("cd").join(".tmpD4e5F6");
+    let live_preview = converted.join("cd").join(".tmpG7h8I9");
+    let original = assets.join("ab").join(SHA);
+    for path in [&left_original, &left_preview, &live_preview, &original] {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, b"half").unwrap();
+    }
+    for path in [&left_original, &left_preview, &original] {
+        make_abandoned(path);
+    }
+
+    AccountPass::open(&opened.cfg, &opts, work.path(), ACCOUNT)
+        .unwrap()
+        .expect("an account with an assets folder is processed");
+
+    assert!(
+        !left_original.exists(),
+        "an originals shard temp is removed"
+    );
+    assert!(!left_preview.exists(), "a Preview shard temp is removed");
+    assert!(live_preview.exists(), "a temp still being written is kept");
+    assert!(original.exists(), "a stored original is never a temp");
+}
+
+/// A dry run says which temporary files it would remove and removes none.
+#[tokio::test]
+async fn a_dry_run_leaves_temporary_files_in_the_shards() {
+    let (opened, _dir) = open_db().await;
+    let opts = ProcessAssetsOptions {
+        dry_run: true,
+        ..Default::default()
+    };
+    let work = tempfile::tempdir().unwrap();
+    let left = opened
+        .cfg
+        .paths
+        .assets_dir_for_account(ACCOUNT)
+        .join("ab")
+        .join(".tmpA1b2C3");
+    fs::create_dir_all(left.parent().unwrap()).unwrap();
+    fs::write(&left, b"half").unwrap();
+    make_abandoned(&left);
+
+    AccountPass::open(&opened.cfg, &opts, work.path(), ACCOUNT)
+        .unwrap()
+        .expect("an account with an assets folder is processed");
+
+    assert!(left.exists());
+}
+
 /// A preview left cut short by an interrupted run is written again when the
-/// same bytes are stored, so `--force` repairs it.
+/// same bytes are stored, which is how a run repairs it.
 #[test]
 fn a_truncated_derived_file_is_rewritten() {
     let dir = tempfile::tempdir().unwrap();
