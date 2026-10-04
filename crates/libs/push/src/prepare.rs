@@ -426,7 +426,12 @@ fn build_import_chunks(
             // Rewrite attachment fields to uploaded digests or missing placeholders.
             project::message_line(msg, &projections[i])?
         };
-        if !ctx.cfg.force && ctx.lock_journal().journal.has_message(name, &guid) {
+        // A blank guid is no resume key: such a message is sent every time,
+        // and the server refuses it.
+        if !ctx.cfg.force
+            && !guid.trim().is_empty()
+            && ctx.lock_journal().journal.has_message(name, &guid)
+        {
             // Already imported this message id on a previous successful push.
             continue;
         }

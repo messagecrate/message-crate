@@ -653,6 +653,50 @@ fn resumes_message_batches_from_compacted_journal() {
     assert_eq!(import.calls(), 1);
 }
 
+/// A blank guid is no resume key. The server can accept a row with a blank
+/// guid that it skips (a tapback), so a blank guid can reach the journal;
+/// a later message with a blank guid must still be sent, so the server
+/// refuses it, rather than be left out as already sent.
+#[test]
+fn a_message_with_a_blank_guid_is_sent_again_on_resume() {
+    let server = MockServer::start();
+    let _auth = server.mock(|when, then| {
+        when.method(GET).path("/v1/session");
+        then.status(200).json_body(json!({
+            "account_id": 1,
+            "username": "alice",
+        }));
+    });
+    let _run = mock_import_run(&server, 7);
+    let import = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/7/batches");
+        then.status(200).json_body(json!({
+            "messages": 1,
+            "messages_appended": 1,
+            "conversations": 1
+        }));
+    });
+
+    let dir = tempdir().unwrap();
+    write_jsonl(dir.path(), &sample_doc_for("+15555550101", " "));
+    let cfg = text_only_config(dir.path(), server.base_url());
+    run(&cfg, None).unwrap();
+    assert_eq!(import.calls(), 1);
+
+    let journal_path = dir.path().join(".import-state.jsonl");
+    let without_file_success = fs::read_to_string(&journal_path)
+        .unwrap()
+        .lines()
+        .filter(|line| !line.contains("\"event\":\"file_ok\""))
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(&journal_path, format!("{without_file_success}\n")).unwrap();
+
+    let resumed = run(&cfg, None).unwrap();
+    assert_eq!(resumed.messages_attempted, 1);
+    assert_eq!(import.calls(), 2);
+}
+
 /// A replace push wipes the source on the server, so it ignores the journal
 /// even without `force`: every message already sent goes out again.
 /// Otherwise the journaled messages would be skipped and the wipe would
