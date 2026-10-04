@@ -176,15 +176,6 @@ whatever set the old name: an import, an earlier load, or a person typing.
 A rename by a load does not change the contact's `origin`. A contact a load
 creates has the origin `address_book`.
 
-A contact name is stored without the spaces, tabs and line breaks at its
-start and end, on every path that writes one: an import, a load, and a person
-typing.
-So the name cell `'` then a tab then `Tab` creates a contact named `Tab`, and
-a file loaded straight back renames nobody, because the name it compares
-against was trimmed the same way.
-The code is `create_contact` and `propose_name` in
-`crates/server/server/src/db/contacts.rs`.
-
 ```mermaid
 flowchart TD
   A["display_name cells of one contact's rows"] --> B{"Do the filled cells all hold the same name?"}
@@ -199,6 +190,16 @@ flowchart TD
   F -- yes --> R2{{"Refused: a new contact needs a display_name or an identity"}}
   F -- no --> G["Contact created with the name, or with no name. Counts as contacts_created."]
 ```
+
+A contact name is stored without the whitespace at its start and end
+(spaces, tabs, line breaks and the like), on every path that writes one: an
+import, a load, and a person typing.
+So the name cell `'` then a tab then `Tab` creates a contact named `Tab`, and
+a file loaded straight back renames nobody, because the name it compares
+against was trimmed the same way.
+A query reads and compares a stored name as it is, without trimming it again.
+The code is `create_contact` and `propose_name` in
+`crates/server/server/src/db/contacts.rs`.
 
 ### 4. Each identity: is the row valid?
 
