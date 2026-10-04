@@ -19,7 +19,7 @@ export function ColorRow({
   }
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex flex-wrap items-center gap-3">
       <label htmlFor={colorId} className="w-[7rem] shrink-0 text-[0.813rem] text-muted">
         {label}
       </label>
@@ -47,7 +47,7 @@ export function ColorRow({
             (e.target as HTMLInputElement).blur();
           }
         }}
-        className="min-w-0 flex-1 rounded-md border border-border bg-bg px-2.5 py-1.5 font-mono text-[0.813rem] text-text outline-none focus:border-accent"
+        className="min-w-[6rem] flex-1 rounded-md border border-border bg-bg px-2.5 py-1.5 font-mono text-[0.813rem] text-text outline-none focus:border-accent"
       />
     </div>
   );

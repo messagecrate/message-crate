@@ -21,7 +21,7 @@ export default function PageControl({
   const pageCount = Math.ceil(total / pageSize);
 
   return (
-    <div className="flex items-center justify-between gap-3">
+    <div className="flex flex-wrap items-center justify-between gap-3">
       <span className="text-[0.75rem] text-muted">
         Page {page + 1} of {pageCount}
       </span>
