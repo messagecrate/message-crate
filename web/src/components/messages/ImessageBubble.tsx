@@ -4,8 +4,8 @@ import MessageAttachments from "../MessageAttachments";
 import {
   bubbleBody,
   ChatBubbleRow,
-  isGroupConversation,
   type MessageBubbleProps,
+  namesSender,
   senderName,
   tapbackGroups,
 } from "./chatBubbleShared";
@@ -19,7 +19,7 @@ export default function ImessageBubble({
 }: MessageBubbleProps) {
   const time = formatClockTime(message.timestamp, useTimeZone());
   const mine = message.is_from_me;
-  const group = isGroupConversation(message);
+  const nameSender = namesSender(message);
   const body = (message.text || "").trim();
   const hasAttachments = message.attachments.length > 0;
   const tapbacks = tapbackGroups(message);
@@ -51,7 +51,7 @@ export default function ImessageBubble({
       mine={mine}
       isActive={isActive}
       palette="imessage"
-      showSender={!mine && (showSender ?? group)}
+      showSender={!mine && (showSender ?? nameSender)}
       senderLabel={senderName(message)}
       timeLabel={time}
       footer={footer}

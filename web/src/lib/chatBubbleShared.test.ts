@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   bubbleBody,
   formatMessageTime,
-  isGroupConversation,
+  namesSender,
   senderName,
   tapbackGroups,
 } from "../components/messages/chatBubbleShared";
@@ -61,7 +61,7 @@ describe("bubbleBody", () => {
   });
 });
 
-describe("senderName / isGroupConversation", () => {
+describe("senderName / namesSender", () => {
   beforeEach(() => {
     window.localStorage.clear();
   });
@@ -111,7 +111,7 @@ describe("senderName / isGroupConversation", () => {
         participants: [{ identity: "a", name: "A", contact_id: null }],
       },
     });
-    expect(isGroupConversation(one)).toBe(false);
+    expect(namesSender(one)).toBe(false);
 
     const typed = message({
       conversation: {
@@ -120,13 +120,13 @@ describe("senderName / isGroupConversation", () => {
         is_group: true,
       },
     });
-    expect(isGroupConversation(typed)).toBe(true);
+    expect(namesSender(typed)).toBe(true);
 
     // The server says which conversations are groups; the type is not read again.
     const told = message({
       conversation: { ...one.conversation, conversation_type: "chat", is_group: true },
     });
-    expect(isGroupConversation(told)).toBe(true);
+    expect(namesSender(told)).toBe(true);
 
     const many = message({
       conversation: {
@@ -141,7 +141,7 @@ describe("senderName / isGroupConversation", () => {
         ],
       },
     });
-    expect(isGroupConversation(many)).toBe(true);
+    expect(namesSender(many)).toBe(true);
   });
 });
 
