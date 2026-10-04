@@ -14027,7 +14027,7 @@
           },
           "guid": {
             "type": "string",
-            "description": "Export GUID for replies and grouping. Every message has one: the\nimport refuses a message without."
+            "description": "Export GUID for replies and grouping. Every message has one,\nbecause the import refuses a message without one."
           },
           "id": {
             "type": "integer",
@@ -15822,7 +15822,7 @@
                 },
                 "guid": {
                   "type": "string",
-                  "description": "Export GUID for replies and grouping. Every message has one: the\nimport refuses a message without."
+                  "description": "Export GUID for replies and grouping. Every message has one,\nbecause the import refuses a message without one."
                 },
                 "id": {
                   "type": "integer",

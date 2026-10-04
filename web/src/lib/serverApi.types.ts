@@ -2666,8 +2666,8 @@ export interface components {
             /** @description The conversation this message belongs to. */
             conversation: components["schemas"]["MessageConversation"];
             /**
-             * @description Export GUID for replies and grouping. Every message has one: the
-             *     import refuses a message without.
+             * @description Export GUID for replies and grouping. Every message has one,
+             *     because the import refuses a message without one.
              */
             guid: string;
             /**
@@ -3564,8 +3564,8 @@ export interface components {
                 /** @description The conversation this message belongs to. */
                 conversation: components["schemas"]["MessageConversation"];
                 /**
-                 * @description Export GUID for replies and grouping. Every message has one: the
-                 *     import refuses a message without.
+                 * @description Export GUID for replies and grouping. Every message has one,
+                 *     because the import refuses a message without one.
                  */
                 guid: string;
                 /**

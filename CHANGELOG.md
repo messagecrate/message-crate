@@ -232,6 +232,8 @@ released versions carry their date on the heading.
 - 2026-10-03 **Convert reads JSON Lines files only when they end in
   `.jsonl`,** the name Message Crate gives them. A file ending in `.ndjson`
   is no longer taken for one.
+- 2026-10-04 Handling for messages without an id, which an import already
+  refuses, was removed, with nothing visible.
 
 ### Fixes
 
@@ -513,10 +515,6 @@ released versions carry their date on the heading.
   how many, as it does for GO SMS Pro, SMS Backup+, iMazing and OpenExtract.
 - 2026-10-04 The way a resumed Upload records the conversations an earlier
   part of the Import Run already sent was reworked, with nothing visible.
-- 2026-10-04 Every message carries its own id since an import refuses one
-  without, so what was left for a message without an id was removed, with
-  nothing visible. The database now refuses such a message too, and a
-  message read back from the server always has its id.
 
 #### Exporting and converting
 

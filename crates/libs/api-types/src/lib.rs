@@ -370,8 +370,8 @@ api_shape! {
         /// message, never on the conversation.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub service: Option<String>,
-        /// Export GUID for replies and grouping. Every message has one: the
-        /// import refuses a message without.
+        /// Export GUID for replies and grouping. Every message has one,
+        /// because the import refuses a message without one.
         pub guid: String,
         /// The instant the message was sent: RFC 3339 in UTC with a `Z`
         /// suffix. A caller shows it in the account's time zone
