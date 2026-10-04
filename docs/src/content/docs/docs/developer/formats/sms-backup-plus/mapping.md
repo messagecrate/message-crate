@@ -24,7 +24,7 @@ In CSV form: one file per conversation (header + one row per message after dedup
 
 | Shared field | EML source |
 |---------------|------------|
-| `chat_identifier` | Peer's handle key (a number, an email address or a sender name, classified by `phone::Handle::parse`) or `chat-group-…` |
+| `chat_identifier` | Peer's handle key (a number, an email address or a sender name, classified by `phone::Handle::parse`), `chat-group-…`, or `name:` and the trimmed name in the subject when the mail records no address |
 | `conversation_type` | `group` when two or more other participants are named, else `individual`. A mail whose `To` names two or more addresses (in practice an MMS) takes its participants from `To`, plus `From` when it was received, leaving out the owner (a received one only when `To` names the owner); any other mail takes them from `X-smssync-address`. See the `From` / `To` row in [format](/docs/developer/formats/sms-backup-plus/format/) for why |
 | `group_title` | Derived for groups (empty for 1:1) |
 | `participants_json` | Peer handles for the conversation |

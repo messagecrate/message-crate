@@ -245,7 +245,8 @@ released versions carry their date on the heading.
   "Ana.Lee". A person named "AMAZON" shared the conversation of the sender
   AMAZON, and a person named "unknown" shared the conversation of sent
   messages that name nobody. Each person now keeps a conversation of their
-  own.
+  own. Such a person also became two contacts on import, one holding their
+  name and one with no name; they are now one contact.
 - 2026-10-03 **An attachment with a blank file name is refused.** An
   import that gave an attachment a blank file name, empty or only spaces,
   stored that blank name when the server already held the file. The import

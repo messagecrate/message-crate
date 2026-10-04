@@ -13,11 +13,14 @@ use message_ir::{ConversationKey, NAMELESS_CHAT_ID};
 /// keyed by that name through [`ConversationKey::NameOnly`], so each person
 /// gets their own conversation. Collapsing them all into one chat would
 /// merge unrelated people; the server resolves the name against contacts on
-/// import. A mail that names nobody is keyed [`NAMELESS_CHAT_ID`]. Both keys
-/// carry a prefix no address has, so a person named "unknown" or "AMAZON"
-/// never shares the chat of the mails that name nobody or of the sender
-/// `AMAZON`. The file name is made from this key later, by
-/// `ConversationDocument::filename_stem`.
+/// import. The name key carries a prefix no address has, so a person named
+/// "AMAZON" never shares the chat of the sender `AMAZON`. The file name is
+/// made from this key later, by `ConversationDocument::filename_stem`.
+///
+/// A mail that names nobody never gets here: the parser skips it and counts
+/// it as a parse error. Should one arrive, it is keyed [`NAMELESS_CHAT_ID`],
+/// the key every exporter gives the conversation that names nobody, so it
+/// can never take a person's key.
 pub(crate) fn chat_id_for(msg: &ParsedMessage) -> String {
     if msg.is_group() {
         format!("chat-{}", msg.chat_key)
@@ -31,7 +34,7 @@ pub(crate) fn chat_id_for(msg: &ParsedMessage) -> String {
 /// The key of a chat with a peer the mail named and recorded no address
 /// for. `None` when the mail is a group's, records an address, or has no
 /// usable name either.
-pub(crate) fn name_only_key(msg: &ParsedMessage) -> Option<ConversationKey> {
+fn name_only_key(msg: &ParsedMessage) -> Option<ConversationKey> {
     if msg.is_group() || !msg.chat_key.is_empty() {
         return None;
     }
