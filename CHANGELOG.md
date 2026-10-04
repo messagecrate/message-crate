@@ -233,7 +233,7 @@ released versions carry their date on the heading.
   Upload's button now pauses the Import Run and keeps what it staged, and
   the next visit to Import offers to resume it, sending only the
   conversations not yet sent. Before, the run was recorded as completed, the
-  staged folder was deleted, and the conversations it had not reached were
+  staged files were deleted, and the conversations it had not reached were
   never imported. The run's report now puts every conversation in exactly
   one count, and names the ones the stop left unsent. An Upload that fails,
   or sends some conversations and fails the rest, is paused the same way
@@ -241,11 +241,11 @@ released versions carry their date on the heading.
   reads Paused. Logging out during an Upload asks first, then pauses the
   Upload before the session ends, so the same account can resume it after
   logging in; before, every conversation left was recorded as failed. When
-  the server doesn't record a run as finished, the staged folder is kept and
+  the server doesn't record a run as finished, the staged files are kept and
   the next visit resumes the run, which then gets its Saved Search and
   Contact Group. A resumed run's report covers every part of the run, not
-  only the last. A Staging or Media stage that fails deletes its staged
-  folder at once, since nothing can resume it, instead of leaving a full
+  only the last. A Staging or Media Stage that fails deletes its staged
+  files at once, since nothing can resume it, instead of leaving a full
   unencrypted copy of your messages in the Staging Directory.
 - 2026-10-02 **One desktop job runs at a time.** An export won't start while
   an Import Run's job runs, and the reverse, and the screen says why. Before,
@@ -273,6 +273,12 @@ released versions carry their date on the heading.
   resumed run lists an Error it finds again once. Discarding a run after
   a crash during a resumed Upload no longer records a conversation as
   failed when that Upload had already sent it.
+- 2026-10-04 **The server's `import` command names the file it refuses an
+  attachment in.** When an attachment broke a rule, such as a path that
+  leaves the export directory or bytes that do not match the fingerprint
+  the file states, the `import` command stopped with the line and the rule
+  but not the file. Every refusal now prints the same way: the file, then
+  the line and the rule.
 - 2026-10-04 **A group text from an SMS Backup+ archive stays one
   conversation when a member's contact gained an email address.** SMS
   Backup+ names a person by their email address when their contact on the
@@ -389,7 +395,7 @@ released versions carry their date on the heading.
   own. Such a person also became two contacts on import, one holding their
   name and one with no name; they are now one contact.
 - 2026-10-03 **A video, photo or audio file that cannot be converted says
-  why, briefly.** The error for a file the Media stage of an Import Run
+  why, briefly.** The error for a file the Media Stage of an Import Run
   could not convert held the converter's version, build settings and progress
   lines, with the reason at the end of several kilobytes. It now holds only
   the lines that say why the conversion failed.
@@ -733,6 +739,11 @@ released versions carry their date on the heading.
 
 #### Search
 
+- 2026-10-04 **Import, Export and Settings show no search box.** The search
+  at the top searches the list of the section you are in, and these screens
+  have no list yet, so the box there searched nothing. On Export, typing in it
+  changed which conversations Export would export. The box is gone
+  from these three screens and comes back when you return to a list.
 - 2026-10-03 **A search pasted and run at once is the search that runs.**
   Pasting a search and pressing Enter straight away searched for nothing.
   Typing very fast lost letters, and the search ran on the last letter
@@ -1107,10 +1118,16 @@ released versions carry their date on the heading.
   when there is no message to date them.
 - 2026-10-04 **Removing or changing messages right after an import no
   longer fails with "no such table: messages".** It failed now and then
-  when an import had just finished on the same server. On a first start, a
-  Demo Account that failed to build then could not be removed, and its
-  files stayed behind. Now the Demo Account is removed and leaves nothing
-  behind.
+  when an import had just finished on the same server.
+- 2026-10-04 **A Demo Account that fails to build on a first start is
+  removed and leaves nothing behind.** On a first start, a Demo Account that
+  failed to build then could not be removed, and its files stayed behind.
+- 2026-10-04 **The configuration reference states each request body limit as
+  the server applies it.** It said the attachment size limit was also the
+  limit on every other request body. It limits only an attachment upload.
+  Logging in, creating an account, claiming a Message Crate, an address book
+  load and every other request each have a limit fixed in the server, which
+  the page now lists.
 - 2026-10-04 **A Preview cut short is made again without `--force`.** A
   Preview left part-written by a stopped `process-assets` run was kept and
   shown as it was until someone ran the command with `--force`. Every run
@@ -1173,7 +1190,7 @@ released versions carry their date on the heading.
   `last_message_at` in place of `date_range_end`. The old names are gone.
   Expect both to be missing when the conversation has no message left once
   duplicates are set aside.
-- An Import Run left waiting at a Staging Review or at its Media stage by an
+- An Import Run left waiting at a Staging Review or at its Media Stage by an
   earlier build can't go on, and says its Staging did not finish. Discard it
   and start the import again. Do the same with a paused Apple Messages run
   from an earlier build: its staged files don't say which reactions are
