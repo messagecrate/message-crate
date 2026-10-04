@@ -15,6 +15,7 @@ function message(over: Partial<Message> = {}): Message {
   return {
     id: 10,
     source: "imessage",
+    guid: "g10",
     // 03:30 UTC on 2 January is still 1 January in New York.
     timestamp: "2024-01-02T03:30:00Z",
     sort_order: 0,

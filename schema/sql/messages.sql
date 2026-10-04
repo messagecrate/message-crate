@@ -50,8 +50,9 @@ CREATE TABLE IF NOT EXISTS messages (
     account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
     -- Backup/source family that produced this row (for example imessage, whatsapp).
     source TEXT NOT NULL,
-    -- Source-native message id when available; used for exact dedupe with source.
-    guid TEXT,
+    -- Source-native message id; used for exact dedupe with source. The import
+    -- refuses a message without one.
+    guid TEXT NOT NULL CHECK (guid != ''),
     -- The instant the message was sent, RFC 3339 in UTC with a Z suffix. Shown, searched
     -- and filed by day and year in the account's time zone (accounts.time_zone).
     timestamp TEXT NOT NULL,
@@ -104,8 +105,7 @@ CREATE INDEX IF NOT EXISTS ix_messages_account_timestamp
 CREATE INDEX IF NOT EXISTS ix_messages_sender_timestamp
     ON messages (sender_handle_id, timestamp);
 CREATE UNIQUE INDEX IF NOT EXISTS ix_messages_account_source_guid
-    ON messages (account_id, source, guid)
-    WHERE guid IS NOT NULL AND guid != '';
+    ON messages (account_id, source, guid);
 CREATE INDEX IF NOT EXISTS ix_messages_content_key
     ON messages (content_key)
     WHERE content_key IS NOT NULL AND content_key != '';

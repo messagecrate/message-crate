@@ -157,9 +157,9 @@ async fn seeded_export_fixture() -> (TestFixture, i64, i64) {
 
     let mut conn = fixture.conn().await;
     sqlx::query(
-        "INSERT INTO messages (id, conversation_id, account_id, source, service, timestamp, is_from_me, sort_order, body)
-         VALUES (1, $1, 101, 'sms', 'sms', '2020-01-01T00:00:00Z', 0, 0, 'hello one'),
-                (2, $2, 101, 'sms', 'sms', '2020-01-02T00:00:00Z', 0, 0, 'hello two')",
+        "INSERT INTO messages (id, conversation_id, account_id, source, guid, service, timestamp, is_from_me, sort_order, body)
+         VALUES (1, $1, 101, 'sms', 'msg-5', 'sms', '2020-01-01T00:00:00Z', 0, 0, 'hello one'),
+                (2, $2, 101, 'sms', 'msg-6', 'sms', '2020-01-02T00:00:00Z', 0, 0, 'hello two')",
     )
     .bind(conv1)
     .bind(conv2)
@@ -175,14 +175,15 @@ async fn seeded_export_fixture() -> (TestFixture, i64, i64) {
 async fn add_message(conn: &mut SqliteConnection, id: i64, conversation: i64, day: u8, body: &str) {
     sqlx::query(
         "INSERT INTO messages (
-            id, conversation_id, account_id, source, service, timestamp,
+            id, conversation_id, account_id, source, guid, service, timestamp,
             is_from_me, sort_order, body
-         ) VALUES ($1, $2, 101, 'sms', 'sms', $3, 0, 0, $4)",
+         ) VALUES ($1, $2, 101, 'sms', $5, 'sms', $3, 0, 0, $4)",
     )
     .bind(id)
     .bind(conversation)
     .bind(format!("2020-01-{day:02}T00:00:00Z"))
     .bind(body)
+    .bind(crate::test_support::unique_guid())
     .execute(&mut *conn)
     .await
     .unwrap();
@@ -284,8 +285,8 @@ async fn a_conversations_query_hides_what_the_conversations_list_hides() {
     .await;
     let mut conn = fixture.conn().await;
     sqlx::query(
-        "INSERT INTO messages (id, conversation_id, account_id, source, service, timestamp, is_from_me, sort_order, body)
-         VALUES (9, $1, 202, 'sms', 'sms', '2020-01-05T00:00:00Z', 0, 0, 'hello bob')",
+        "INSERT INTO messages (id, conversation_id, account_id, source, guid, service, timestamp, is_from_me, sort_order, body)
+         VALUES (9, $1, 202, 'sms', 'msg-3', 'sms', '2020-01-05T00:00:00Z', 0, 0, 'hello bob')",
     )
     .bind(bobs)
     .execute(&mut *conn)
@@ -389,8 +390,8 @@ async fn a_selection_refuses_ids_the_account_does_not_hold_naming_them() {
     .await
     .unwrap();
     sqlx::query(
-        "INSERT INTO messages (id, conversation_id, account_id, source, service, timestamp, is_from_me, sort_order, body)
-         VALUES (99, 99, 102, 'sms', 'sms', '2020-02-01T00:00:00Z', 0, 0, 'bob secret')",
+        "INSERT INTO messages (id, conversation_id, account_id, source, guid, service, timestamp, is_from_me, sort_order, body)
+         VALUES (99, 99, 102, 'sms', 'msg-2', 'sms', '2020-02-01T00:00:00Z', 0, 0, 'bob secret')",
     )
     .execute(&mut *conn)
     .await
@@ -1340,15 +1341,16 @@ async fn insert_message(
     let mut conn = fixture.conn().await;
     sqlx::query_scalar(
         "INSERT INTO messages (
-            conversation_id, account_id, source, service, timestamp,
+            conversation_id, account_id, source, guid, service, timestamp,
             is_from_me, sort_order, body, import_id
-         ) VALUES ($1, $2, 'imessage', 'imessage', $3, 0, 0, 'arrived', $4)
+         ) VALUES ($1, $2, 'imessage', $5, 'imessage', $3, 0, 0, 'arrived', $4)
          RETURNING id",
     )
     .bind(conversation)
     .bind(account)
     .bind(timestamp)
     .bind(import_id)
+    .bind(crate::test_support::unique_guid())
     .fetch_one(&mut *conn)
     .await
     .unwrap()

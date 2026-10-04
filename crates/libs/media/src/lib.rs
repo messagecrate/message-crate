@@ -13,7 +13,6 @@ mod estimate;
 mod mime;
 mod probe;
 mod process;
-mod size;
 #[cfg(any(test, feature = "testutil"))]
 pub mod testutil;
 mod tools;
@@ -26,7 +25,6 @@ pub use process::{
     derivative_name_for_missing, format_bytes, kind_of, process_attachment_files, transcode_file,
     transcode_file_as,
 };
-use size::parse_size;
 pub use tools::{FfmpegToolsProbe, ffmpeg_available, probe_ffmpeg_tools, set_tools_dir, tools_dir};
 
 use std::fmt;
@@ -185,23 +183,54 @@ impl FromStr for MaxResolution {
 }
 
 /// Build [`CompressOptions`] from the export form's values: the resolution cap,
-/// the frame-rate cap, the minimum size as the person typed it (`20M`, `2g`),
-/// and whether already-efficient videos are skipped.
+/// the frame-rate cap as the person typed it (`30`), the minimum video size as
+/// the whole number of megabytes the person typed (`20` is 20 MiB), and
+/// whether already-efficient videos are skipped.
+///
+/// The Import form labels the size field in megabytes, so the number carries
+/// no unit: `20M` or `20MB` is refused rather than read a second way. The
+/// errors name the form's fields by their labels, Max FPS and Minimum Video
+/// File Size, and say what to type, because the desktop app and the export
+/// form show them to the person as they are.
 ///
 /// # Errors
 ///
-/// Returns an error when `min_size` is not a size with an optional unit
-/// (`20M`, `2g`, `512`).
+/// Returns an error when `max_fps` is empty or is not a number above 0, or
+/// when `min_size` is empty or is not a whole number such as `20`.
 pub fn compress_options_from_form(
     max_resolution: MaxResolution,
-    max_fps: f32,
+    max_fps: &str,
     min_size: &str,
     skip_efficient: bool,
 ) -> anyhow::Result<CompressOptions> {
+    let typed = max_fps.trim();
+    if typed.is_empty() {
+        anyhow::bail!("Max FPS is empty. It must be a number of frames per second, such as 30.");
+    }
+    let max_fps = typed
+        .parse::<f32>()
+        .ok()
+        .filter(|fps| fps.is_finite() && *fps > 0.0)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Max FPS must be a number of frames per second above 0, such as 30, not '{typed}'."
+            )
+        })?;
+    let typed = min_size.trim();
+    if typed.is_empty() {
+        anyhow::bail!(
+            "Minimum Video File Size is empty. It must be a number of megabytes, such as 20."
+        );
+    }
+    let megabytes: u64 = typed.parse().map_err(|_| {
+        anyhow::anyhow!(
+            "Minimum Video File Size must be a number of megabytes, such as 20, not '{typed}'."
+        )
+    })?;
     Ok(CompressOptions {
         max_resolution,
         max_fps,
-        min_size_bytes: parse_size(min_size)?,
+        min_size_bytes: megabytes.saturating_mul(1024 * 1024),
         skip_efficient,
     })
 }
@@ -273,15 +302,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_size_units() {
-        assert_eq!(parse_size("20M").unwrap(), 20 * 1024 * 1024);
-        assert_eq!(parse_size("512k").unwrap(), 512 * 1024);
-        assert_eq!(parse_size("100").unwrap(), 100);
-        assert_eq!(parse_size("2g").unwrap(), 2 * 1024 * 1024 * 1024);
-        assert_eq!(parse_size("2G").unwrap(), 2 * 1024 * 1024 * 1024);
-    }
-
-    #[test]
     fn every_mode_alias_maps_to_its_mode() {
         for (alias, mode) in [
             ("disabled", MediaMode::Disabled),
@@ -343,7 +363,7 @@ mod tests {
 
     #[test]
     fn compress_options_from_form_reads_every_field() {
-        let options = compress_options_from_form(MaxResolution::P720, 24.0, "2g", false).unwrap();
+        let options = compress_options_from_form(MaxResolution::P720, "24", "2048", false).unwrap();
         assert_eq!(
             options,
             CompressOptions {
@@ -353,6 +373,59 @@ mod tests {
                 skip_efficient: false,
             }
         );
-        assert!(compress_options_from_form(MaxResolution::P720, 24.0, "lots", false).is_err());
+        assert!(compress_options_from_form(MaxResolution::P720, "24", "lots", false).is_err());
+    }
+
+    /// #1153: Max FPS is free text, and a value that is not a frame rate
+    /// is refused in a sentence that names the field and what was typed.
+    #[test]
+    fn the_max_fps_is_a_number_above_zero() {
+        let max_fps = |raw: &str| {
+            compress_options_from_form(MaxResolution::P720, raw, "20", true).map(|o| o.max_fps)
+        };
+        assert_eq!(max_fps(" 24 ").unwrap(), 24.0);
+        assert_eq!(max_fps("29.97").unwrap(), 29.97);
+        for raw in ["fast", "0", "-5", "NaN", "inf"] {
+            assert_eq!(
+                format!("{:#}", max_fps(raw).unwrap_err()),
+                format!(
+                    "Max FPS must be a number of frames per second above 0, such as 30, not '{raw}'."
+                )
+            );
+        }
+        for raw in ["", "  "] {
+            assert_eq!(
+                format!("{:#}", max_fps(raw).unwrap_err()),
+                "Max FPS is empty. It must be a number of frames per second, such as 30."
+            );
+        }
+    }
+
+    /// #1469: the Import form labels the field in megabytes, so `20` is
+    /// 20 MiB and a unit typed after it is refused, not read as bytes or
+    /// as a second unit.
+    #[test]
+    fn the_minimum_size_is_a_whole_number_of_megabytes() {
+        let min_size = |raw: &str| {
+            compress_options_from_form(MaxResolution::P720, "30", raw, true)
+                .map(|o| o.min_size_bytes)
+        };
+        assert_eq!(min_size("20").unwrap(), 20 * 1024 * 1024);
+        assert_eq!(min_size(" 5 ").unwrap(), 5 * 1024 * 1024);
+        assert_eq!(min_size("0").unwrap(), 0);
+        for raw in ["20M", "20MB", "20m", "512k", "2g", "1.5", "-1"] {
+            assert_eq!(
+                format!("{:#}", min_size(raw).unwrap_err()),
+                format!(
+                    "Minimum Video File Size must be a number of megabytes, such as 20, not '{raw}'."
+                )
+            );
+        }
+        for raw in ["", "  "] {
+            assert_eq!(
+                format!("{:#}", min_size(raw).unwrap_err()),
+                "Minimum Video File Size is empty. It must be a number of megabytes, such as 20."
+            );
+        }
     }
 }

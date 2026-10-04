@@ -56,16 +56,12 @@ pub enum AttachmentProjection {
 
 /// One JSON Lines message row, with attachment fingerprints or missing placeholders.
 ///
-/// `index` is the message's position in the conversation file. It keeps resume
-/// keys unique when two rows share a timestamp and have an empty guid.
-///
 /// # Errors
 ///
 /// Returns an error when the message cannot be serialized.
 pub fn message_line(
     msg: &IrMessage,
     projections: &[AttachmentProjection],
-    index: usize,
 ) -> Result<(Vec<u8>, String)> {
     let mut msg = msg.clone();
     for proj in projections {
@@ -96,7 +92,7 @@ pub fn message_line(
             }
         }
     }
-    serialize_message(&msg, index)
+    serialize_message(&msg)
 }
 
 /// One JSON Lines message row with attachments removed (text-only import).
@@ -104,32 +100,24 @@ pub fn message_line(
 /// # Errors
 ///
 /// Returns an error when the message cannot be serialized.
-pub fn message_line_without_attachments(
-    msg: &IrMessage,
-    index: usize,
-) -> Result<(Vec<u8>, String)> {
+pub fn message_line_without_attachments(msg: &IrMessage) -> Result<(Vec<u8>, String)> {
     let mut msg = msg.clone();
     msg.attachments.clear();
-    serialize_message(&msg, index)
+    serialize_message(&msg)
 }
 
-/// Serialize one message and return `(line_bytes, resume_guid)`.
+/// Serialize one message and return `(line_bytes, guid)`.
 ///
-/// Empty guids become `unguided:{timestamp}:{index}` so a later run can skip
-/// the same row.
+/// The guid is the message's own. The server refuses a message without one,
+/// so it is not checked here.
 ///
 /// # Errors
 ///
 /// Returns an error when JSON serialization fails.
-fn serialize_message(msg: &IrMessage, index: usize) -> Result<(Vec<u8>, String)> {
+fn serialize_message(msg: &IrMessage) -> Result<(Vec<u8>, String)> {
     let mut out = serde_json::to_vec(msg).context("serialize message-ir message")?;
     out.push(b'\n');
-    let guid = if msg.guid.trim().is_empty() {
-        format!("unguided:{}:{index}", msg.timestamp_unix_ms)
-    } else {
-        msg.guid.clone()
-    };
-    Ok((out, guid))
+    Ok((out, msg.guid.clone()))
 }
 
 #[cfg(test)]
@@ -185,34 +173,11 @@ mod tests {
             imessage: None,
             source: None,
         };
-        let (line, guid) = message_line(&msg, &[], 0).unwrap();
+        let (line, guid) = message_line(&msg, &[]).unwrap();
         assert_eq!(guid, "g1");
         let s = String::from_utf8(line).unwrap();
         assert!(s.contains(r#""direction":"incoming""#));
         assert!(!s.contains(r#""record":"message""#));
-    }
-
-    #[test]
-    fn unguided_keys_include_message_index() {
-        let msg = IrMessage {
-            guid: "  ".into(),
-            timestamp_unix_ms: 42,
-            direction: IrDirection::Incoming,
-            service: IrService::Sms,
-            message_kind: IrMessageKind::Sms,
-            sender_handle: None,
-            sender_display_name: None,
-            owner_handle: None,
-            subject: None,
-            text: "x".into(),
-            attachments: vec![],
-            imessage: None,
-            source: None,
-        };
-        let (_, g0) = message_line(&msg, &[], 0).unwrap();
-        let (_, g1) = message_line(&msg, &[], 1).unwrap();
-        assert_eq!(g0, "unguided:42:0");
-        assert_eq!(g1, "unguided:42:1");
     }
 
     #[test]
@@ -250,7 +215,6 @@ mod tests {
                 reason: "too_large".into(),
                 size: Some(5_000_000),
             }],
-            0,
         )
         .unwrap();
         let parsed: IrMessage = serde_json::from_slice(&line).unwrap();

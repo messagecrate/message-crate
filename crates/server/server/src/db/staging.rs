@@ -694,8 +694,7 @@ pub async fn promote_messages_in_range(
 
 /// Insert the staged messages with an id in `lo + 1..=hi` (append mode),
 /// skipping any whose guid production already holds through the unique index
-/// `ix_messages_account_source_guid` with `ON CONFLICT DO NOTHING`. Every
-/// staged message has a guid, because the import refuses one without.
+/// `ix_messages_account_source_guid` with `ON CONFLICT DO NOTHING`.
 /// (Correlated NOT EXISTS / JOIN anti-joins mis-plan onto
 /// `ix_messages_source` and scan the whole source, 10s+ at 50k rows.)
 /// Returns how many were inserted.
@@ -703,7 +702,7 @@ pub async fn promote_messages_in_range(
 /// # Errors
 ///
 /// Returns an error when the insert fails.
-pub async fn promote_guid_messages_in_range(
+pub async fn promote_new_messages_in_range(
     conn: &mut SqliteConnection,
     account_id: i64,
     lo: i64,

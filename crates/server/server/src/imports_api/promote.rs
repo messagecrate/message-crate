@@ -266,7 +266,7 @@ impl Promote<'_> {
     }
 
     /// Append mode: rows production already has are skipped by the guid
-    /// index (`staging::promote_guid_messages_in_range`), so a batch sent
+    /// index (`staging::promote_new_messages_in_range`), so a batch sent
     /// again adds nothing. The map stays empty: every row, new or skipped,
     /// is mapped by the guid join in `staging::write_message_map`.
     async fn insert_messages_append(
@@ -282,7 +282,7 @@ impl Promote<'_> {
                 lo + 1
             ));
             let inserted =
-                staging::promote_guid_messages_in_range(self.tx, self.account_id, lo, hi).await?;
+                staging::promote_new_messages_in_range(self.tx, self.account_id, lo, hi).await?;
             inserted_total += inserted;
             self.done(
                 phase,

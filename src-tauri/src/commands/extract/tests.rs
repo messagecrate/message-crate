@@ -11,7 +11,7 @@ fn test_options(owner_phones: Vec<String>) -> ExtractOptions {
         attachment_media: AttachmentMedia::default(),
         media_max_resolution: MaxResolution::default(),
         media_max_fps: "30".into(),
-        media_min_size: "20M".into(),
+        media_min_size: "20".into(),
         obfuscate: false,
         timezone: String::new(),
         owner_phones,
@@ -101,6 +101,49 @@ fn compress_validates_the_minimum_size_before_staging() {
 }
 
 #[test]
+fn compress_reads_the_minimum_size_as_megabytes() {
+    // #1469: the field is labelled in megabytes, and the web app sends the
+    // number as typed.
+    let mut options = test_options(Vec::new());
+    options.attachment_media = AttachmentMedia::Compress;
+    options.media_min_size = "20".into();
+    let settings = media_settings_for(&options, ASSET_MAX_BYTES).unwrap();
+    assert_eq!(settings.compress.min_size_bytes, 20 * 1024 * 1024);
+}
+
+#[test]
+fn compress_refuses_a_minimum_size_with_a_unit_saying_what_to_type() {
+    // #1469: `20MB` used to reach the parser as `20MBM` and fail with "is
+    // not a size", naming a value the person never typed.
+    for typed in ["20MB", "20M", "1.5"] {
+        let mut options = test_options(Vec::new());
+        options.attachment_media = AttachmentMedia::Compress;
+        options.media_min_size = typed.into();
+        let err = media_settings_for(&options, ASSET_MAX_BYTES).unwrap_err();
+        assert_eq!(
+            err,
+            format!(
+                "Minimum Video File Size must be a number of megabytes, such as 20, not '{typed}'."
+            )
+        );
+    }
+}
+
+#[test]
+fn compress_refuses_an_empty_minimum_size_in_its_own_words() {
+    for typed in ["", "  "] {
+        let mut options = test_options(Vec::new());
+        options.attachment_media = AttachmentMedia::Compress;
+        options.media_min_size = typed.into();
+        let err = media_settings_for(&options, ASSET_MAX_BYTES).unwrap_err();
+        assert_eq!(
+            err,
+            "Minimum Video File Size is empty. It must be a number of megabytes, such as 20."
+        );
+    }
+}
+
+#[test]
 fn compress_with_an_empty_max_fps_is_refused_naming_the_field() {
     // #1153: the form's Max FPS is free text, and a cleared field used to
     // fail only after hours of Staging, at the summary.
@@ -135,7 +178,7 @@ fn the_media_settings_carry_the_mode_the_fields_and_the_limit() {
     options.attachment_media = AttachmentMedia::Compress;
     options.media_max_resolution = MaxResolution::P720;
     options.media_max_fps = "24".into();
-    options.media_min_size = "5M".into();
+    options.media_min_size = "5".into();
 
     let settings = media_settings_for(&options, 123_456_789).unwrap();
 
