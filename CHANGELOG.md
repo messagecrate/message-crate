@@ -944,6 +944,12 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-04 **Opening an import in Settings → Storage → Import history
+  keeps the list inside the page.** Opening any import made the Import
+  history table about a million pixels wide, and an import with errors made
+  it wider every moment it stayed open, so every column but Date sat far off
+  to the side. The import's details now open below its row at the table's
+  own width, and its errors scroll inside their own box.
 - 2026-10-04 **Import history in Settings → Storage loads quickly however
   many problems your imports recorded.** The list used to bring every error
   and skipped item of every import on the page, so a few large WhatsApp
