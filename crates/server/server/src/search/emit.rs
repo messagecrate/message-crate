@@ -438,7 +438,7 @@ fn emit_text_word(
             Value::Text(_) | Value::Prefix(_) => {
                 o.push(&format!(
                     "EXISTS (SELECT 1 FROM handles h WHERE ((h.id = c.chat_handle_id AND NOT {}) OR EXISTS (SELECT 1 FROM participants p WHERE p.conversation_id = c.id AND p.handle_id = h.id)) AND (",
-                    chat_handle_is_a_key("h.raw")
+                    chat_handle_is_a_key("c", "h.raw")
                 ));
                 result = text_match(o, "h.raw", term, v);
                 o.push(" OR ");
@@ -555,22 +555,22 @@ fn conversation_identity_text() -> String {
            ELSE hc.raw END FROM handles hc WHERE hc.id = c.chat_handle_id), '')",
         is_a_name_key("hc.raw"),
         message_ir::NAME_CHAT_ID_PREFIX.len() + 1,
-        chat_handle_is_a_key("hc.raw")
+        chat_handle_is_a_key("c", "hc.raw")
     )
 }
 
-/// SQL that holds when conversation `c`'s chat handle, whose text is
-/// `raw_col`, is a conversation key rather than anybody's address: the id
-/// of a group conversation, whatever its shape, or a key of a shape
+/// SQL that holds when the chat handle of the conversation row `conv`, whose
+/// text is `raw_col`, is a conversation key rather than anybody's address:
+/// the id of a group conversation, whatever its shape, or a key of a shape
 /// [`is_a_key_raw`] knows. Such a chat handle is never matched as a person
 /// or read as text, because every key of one shape would match the same
 /// words: `with:nam` every name key, `with:g.us` every WhatsApp group
 /// conversation. The people in such a conversation are found by their
 /// participant rows. Not every exporter writes a group conversation's id
 /// with the `group:` prefix, so the conversation's type decides too.
-fn chat_handle_is_a_key(raw_col: &str) -> String {
+fn chat_handle_is_a_key(conv: &str, raw_col: &str) -> String {
     format!(
-        "(c.conversation_type = 'group' OR {})",
+        "({conv}.conversation_type = 'group' OR {})",
         is_a_key_raw(raw_col)
     )
 }
@@ -624,7 +624,7 @@ fn with_person(
     ctx.conversation(out, |o| {
         o.push(&format!(
             "(((NOT EXISTS (SELECT 1 FROM handles hk WHERE hk.id = c.chat_handle_id AND {})) AND ",
-            chat_handle_is_a_key("hk.raw")
+            chat_handle_is_a_key("c", "hk.raw")
         ));
         result = person_matches(ctx, o, "c.chat_handle_id", term, v);
         o.push(&format!(
