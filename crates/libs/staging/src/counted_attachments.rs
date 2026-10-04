@@ -131,8 +131,6 @@ impl<'a> CountedAttachments<'a> {
 mod tests {
     use super::*;
     use crate::load_attachment_source;
-    use message_crate_core::ProgressEvent;
-    use std::sync::{Arc, Mutex};
 
     fn attachment(size: u64) -> IrAttachment {
         IrAttachment {
@@ -162,9 +160,7 @@ mod tests {
             AttachmentSource::Bytes(Vec::new()),
         ]
         .into_iter();
-        let seen = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
-        let sink_seen = Arc::clone(&seen);
-        let progress = ProgressSink::unpaced(move |event| sink_seen.lock().unwrap().push(event));
+        let (progress, totals) = message_crate_core::testutil::attachment_totals();
 
         let counted = CountedAttachments::new(
             doc.messages.iter_mut(),
@@ -184,20 +180,7 @@ mod tests {
             )
             .unwrap();
 
-        let totals = seen
-            .lock()
-            .unwrap()
-            .iter()
-            .filter_map(|event| match *event {
-                ProgressEvent::Attachments {
-                    done,
-                    bytes_done,
-                    bytes_total,
-                    ..
-                } => Some((done, bytes_done, bytes_total)),
-                _ => None,
-            })
-            .collect();
+        let totals = totals.lock().unwrap().clone();
         (totals, needed)
     }
 

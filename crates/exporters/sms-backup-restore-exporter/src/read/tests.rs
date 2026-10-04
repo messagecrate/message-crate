@@ -473,8 +473,7 @@ fn verify_e1_4_two_group_senders_in_one_second_get_two_guids() {
 /// event and never drops mid-run (#1727).
 #[test]
 fn the_byte_total_stays_the_same_when_the_spool_holds_no_file() {
-    use message_crate_core::{ProgressEvent, ProgressSink};
-    use std::sync::{Arc, Mutex};
+    use message_crate_core::testutil::attachment_totals;
 
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("input.xml");
@@ -487,9 +486,7 @@ fn the_byte_total_stays_the_same_when_the_spool_holds_no_file() {
     unspooled.digest_sha256 = Some("0".repeat(64));
     unspooled.size_bytes = Some(700);
     docs[0].messages[0].attachments.push(unspooled);
-    let seen = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
-    let sink_seen = Arc::clone(&seen);
-    let progress = ProgressSink::unpaced(move |event| sink_seen.lock().unwrap().push(event));
+    let (progress, totals) = attachment_totals();
 
     stage_read_attachments(
         &mut docs,
@@ -500,20 +497,7 @@ fn the_byte_total_stays_the_same_when_the_spool_holds_no_file() {
     )
     .unwrap();
 
-    let totals: Vec<(usize, u64, u64)> = seen
-        .lock()
-        .unwrap()
-        .iter()
-        .filter_map(|event| match *event {
-            ProgressEvent::Attachments {
-                done,
-                bytes_done,
-                bytes_total,
-                ..
-            } => Some((done, bytes_done, bytes_total)),
-            _ => None,
-        })
-        .collect();
+    let totals = totals.lock().unwrap().clone();
     assert!(totals.len() > 1, "{totals:?}");
     assert!(
         totals.iter().all(|&(_, _, bytes_total)| bytes_total == 5),

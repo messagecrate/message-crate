@@ -1,7 +1,5 @@
 use super::*;
-use message_crate_core::{
-    FormatConfig, LogSink, MediaConfig, ObfuscateConfig, ProgressEvent, ProgressSink, SourceConfig,
-};
+use message_crate_core::{FormatConfig, LogSink, MediaConfig, ObfuscateConfig, SourceConfig};
 use message_ir::IrAttachment;
 use message_ir_format::{read_conversation_csv, read_conversation_json};
 use std::sync::{Arc, Mutex};
@@ -1573,12 +1571,9 @@ fn an_earlier_conversion_s_attachments_count_as_free() {
 #[test]
 fn the_byte_total_of_a_conversion_stays_the_same_when_a_file_is_gone() {
     let output = tempfile::tempdir().unwrap();
-    let seen = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
-    let sink_seen = Arc::clone(&seen);
+    let (progress, totals) = message_crate_core::testutil::attachment_totals();
     let mut config = config(output.path(), output.path(), OutputFormat::Mbox);
-    config.progress = Some(ProgressSink::unpaced(move |event| {
-        sink_seen.lock().unwrap().push(event);
-    }));
+    config.progress = Some(progress);
     let sized = |name: &str, path: Option<&str>, size: u64, bytes: Option<&[u8]>| IrAttachment {
         size_bytes: Some(size),
         bytes: bytes.map(<[u8]>::to_vec),
@@ -1602,20 +1597,7 @@ fn the_byte_total_of_a_conversion_stays_the_same_when_a_file_is_gone() {
     )
     .unwrap();
 
-    let totals: Vec<(usize, u64, u64)> = seen
-        .lock()
-        .unwrap()
-        .iter()
-        .filter_map(|event| match *event {
-            ProgressEvent::Attachments {
-                done,
-                bytes_done,
-                bytes_total,
-                ..
-            } => Some((done, bytes_done, bytes_total)),
-            _ => None,
-        })
-        .collect();
+    let totals = totals.lock().unwrap().clone();
     assert!(totals.len() > 1, "{totals:?}");
     assert!(
         totals.iter().all(|&(_, _, bytes_total)| bytes_total == 5),
