@@ -108,8 +108,7 @@ export default function OwnerHome() {
   return (
     <div className="flex h-screen flex-col bg-bg font-sans text-text">
       <AppHeader
-        searchQuery={accountSearch}
-        searchTarget="accounts"
+        search={{ target: "accounts", query: accountSearch }}
         onSearchChange={handleSearchChange}
         onSearch={handleSearchChange}
       />

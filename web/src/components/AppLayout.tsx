@@ -11,7 +11,7 @@ import { useContactGroups } from "../lib/useContactGroups";
 import { useMessageTags } from "../lib/useMessageTags";
 import ContactList from "../screens/ContactList";
 import ConversationList from "../screens/ConversationList";
-import AppHeader, { type HeaderSearchTarget } from "./AppHeader";
+import AppHeader, { type HeaderSearch } from "./AppHeader";
 import CheckedContactsPanel from "./CheckedContactsPanel";
 import { ColumnResizeProvider } from "./ColumnResizeContext";
 import ContactDrawer from "./ContactDrawer";
@@ -148,7 +148,7 @@ export default function AppLayout() {
   // The full-screen routes have no list, so the header offers no search there:
   // Export carries `?q=` for its own scope box, which typing in the header
   // must never change.
-  const headerSearch: { target: HeaderSearchTarget; query: string } | null = isFullScreen
+  const headerSearch: HeaderSearch | null = isFullScreen
     ? null
     : trashMode
       ? { target: "trash", query: trashSearch }
@@ -284,8 +284,7 @@ export default function AppLayout() {
     <RightToolbarProvider>
       <div className="flex h-screen flex-col bg-bg font-sans text-text">
         <AppHeader
-          searchQuery={headerSearch?.query ?? ""}
-          searchTarget={headerSearch?.target ?? null}
+          search={headerSearch}
           onSearchChange={handleSearchChange}
           onSearch={handleSearch}
         />

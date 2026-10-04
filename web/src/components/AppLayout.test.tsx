@@ -38,17 +38,17 @@ vi.mock("../screens/MessageSearchList", () => ({
 // with nothing to search gets neither button.
 vi.mock("./AppHeader", () => ({
   default: ({
-    searchTarget,
+    search,
     onSearchChange,
     onSearch,
   }: {
-    searchTarget: string | null;
+    search: { target: string } | null;
     onSearchChange: (q: string) => void;
     onSearch: (q: string) => void;
   }) => (
     <>
-      <output data-testid="header-search-target">{String(searchTarget)}</output>
-      {searchTarget !== null && (
+      <output data-testid="header-search-target">{search?.target ?? "null"}</output>
+      {search !== null && (
         <>
           <button type="button" onClick={() => onSearchChange("ada")}>
             Type ada

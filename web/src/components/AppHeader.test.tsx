@@ -15,8 +15,7 @@ vi.mock("../lib/useSearchSuggestions", async (importOriginal) => ({
 afterEach(cleanup);
 
 const props = {
-  searchQuery: "",
-  searchTarget: "conversations" as const,
+  search: { target: "conversations" as const, query: "" },
   onSearchChange: vi.fn(),
   onSearch: vi.fn(),
 };
@@ -24,7 +23,7 @@ const props = {
 describe("AppHeader", () => {
   it("shows no search box on a screen with nothing to search", () => {
     // Import, Export and Settings have no list (#1568).
-    render(<AppHeader {...props} searchTarget={null} />);
+    render(<AppHeader {...props} search={null} />);
 
     expect(screen.getByText("Message Crate")).toBeTruthy();
     expect(screen.queryByRole("combobox")).toBeNull();
@@ -37,7 +36,7 @@ describe("AppHeader", () => {
     const { rerender } = render(<AppHeader {...props} />);
     await fill(user, screen.getByRole("combobox", { name: "Search conversations" }), "foo");
 
-    rerender(<AppHeader {...props} searchTarget={null} />);
+    rerender(<AppHeader {...props} search={null} />);
     rerender(<AppHeader {...props} />);
 
     expect(screen.getByRole("combobox", { name: "Search conversations" })).toHaveValue("");

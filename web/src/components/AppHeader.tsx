@@ -73,24 +73,25 @@ const SEARCH_TARGETS: Record<
 };
 
 /** Full-width bar: app name on the left, search in the middle, the account button on the far right. */
+/** What the header searches: a list, and that list's search so far. */
+export type HeaderSearch = { target: HeaderSearchTarget; query: string };
+
 export default function AppHeader({
-  searchQuery,
-  searchTarget,
+  search,
   onSearchChange,
   onSearch,
 }: {
-  searchQuery: string;
   /**
    * The list the search box searches: the one in the section the person is
    * in. `null` on a screen with no list (Import, Export, Settings), which
    * shows no box; a box that comes back starts from its list's search rather
    * than from text typed before.
    */
-  searchTarget: HeaderSearchTarget | null;
+  search: HeaderSearch | null;
   onSearchChange: (v: string) => void;
   onSearch: (q: string) => void;
 }) {
-  const target = searchTarget === null ? null : SEARCH_TARGETS[searchTarget];
+  const target = search === null ? null : SEARCH_TARGETS[search.target];
   // Same key as LeftPanel so a stored width does not flash at the default.
   const [brandWidth] = useState(() =>
     loadWidth(
@@ -117,11 +118,11 @@ export default function AppHeader({
             box, so a screen with no box keeps the same header and the name and
             the account button do not move. */}
         <div className="flex min-w-0 flex-1 items-center justify-center px-3">
-          {target && (
+          {search && target && (
             <div className="w-full max-w-xl">
               <SearchBar
-                key={searchTarget}
-                value={searchQuery}
+                key={search.target}
+                value={search.query}
                 scope={target.scope}
                 list={target.list}
                 placeholder={target.placeholder}
