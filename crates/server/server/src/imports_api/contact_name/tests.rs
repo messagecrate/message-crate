@@ -3,14 +3,25 @@ use crate::db::schema;
 
 const TEST_ACCOUNT: i64 = 7;
 
-#[tokio::test]
-async fn an_import_creates_the_contact_with_the_backup_name() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
+/// A database with the schema and one account, and a connection to it. The
+/// pool and the directory are returned so they outlive the test body.
+async fn account() -> (
+    sqlx::pool::PoolConnection<sqlx::Sqlite>,
+    sqlx::SqlitePool,
+    tempfile::TempDir,
+) {
+    let (pool, dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     schema::ensure_schema(&mut conn).await.unwrap();
     crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
         .await
         .unwrap();
+    (conn, pool, dir)
+}
+
+#[tokio::test]
+async fn an_import_creates_the_contact_with_the_backup_name() {
+    let (mut conn, _pool, _dir) = account().await;
     let handle_id: i64 = sqlx::query_scalar(
         "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
          VALUES ($1, '+15555550153', '+15555550153', 'phone', 'imessage') RETURNING id",
@@ -44,12 +55,7 @@ async fn an_import_creates_the_contact_with_the_backup_name() {
 
 #[tokio::test]
 async fn a_later_backup_names_a_contact_an_earlier_one_left_nameless() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
-    let mut conn = pool.acquire().await.unwrap();
-    schema::ensure_schema(&mut conn).await.unwrap();
-    crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
+    let (mut conn, _pool, _dir) = account().await;
     let handle_id: i64 = sqlx::query_scalar(
         "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
          VALUES ($1, '+15555550160', '+15555550160', 'phone', 'imessage') RETURNING id",
@@ -76,11 +82,7 @@ async fn a_later_backup_names_a_contact_an_earlier_one_left_nameless() {
     .unwrap();
     assert_eq!(first, second, "the same handle keeps the same contact");
 
-    let name: String = sqlx::query_scalar("SELECT preferred_name FROM contacts WHERE id = $1")
-        .bind(first)
-        .fetch_one(&mut *conn)
-        .await
-        .unwrap();
+    let name = name_of(&mut conn, first).await;
     assert_eq!(name, "Ada");
 }
 
@@ -92,12 +94,7 @@ async fn a_later_backup_names_a_contact_an_earlier_one_left_nameless() {
 /// afterwards.
 #[tokio::test]
 async fn an_import_replaces_a_trashed_contact_with_a_fresh_one() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
-    let mut conn = pool.acquire().await.unwrap();
-    schema::ensure_schema(&mut conn).await.unwrap();
-    crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
+    let (mut conn, _pool, _dir) = account().await;
     let met = insert_handle(&mut conn, "+15555550163", "imessage").await;
     let unmentioned = insert_handle(&mut conn, "+15555550164", "imessage").await;
     let mut stats = ImportStats::default();
@@ -206,12 +203,7 @@ async fn an_import_replaces_a_trashed_contact_with_a_fresh_one() {
 /// contact had — comes along, rather than turning Unknown.
 #[tokio::test]
 async fn a_fresh_contact_takes_the_number_on_every_service() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
-    let mut conn = pool.acquire().await.unwrap();
-    schema::ensure_schema(&mut conn).await.unwrap();
-    crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
+    let (mut conn, _pool, _dir) = account().await;
     let on_whatsapp = insert_handle(&mut conn, "+15555550165", "whatsapp").await;
     let on_phone = insert_handle(&mut conn, "+15555550165", "phone").await;
     let mut stats = ImportStats::default();
@@ -411,12 +403,7 @@ async fn the_orphaned_conversation_is_not_a_person() {
 /// replaces the trashed contact instead.
 #[tokio::test]
 async fn a_sender_is_never_linked_to_a_trashed_contact() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
-    let mut conn = pool.acquire().await.unwrap();
-    schema::ensure_schema(&mut conn).await.unwrap();
-    crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
+    let (mut conn, _pool, _dir) = account().await;
     let on_whatsapp = insert_handle(&mut conn, "+15555550157", "whatsapp").await;
     let mut stats = ImportStats::default();
     let trashed = ensure_contact_for_handle(
@@ -515,12 +502,7 @@ async fn count(conn: &mut sqlx::SqliteConnection, sql: &str, id: i64) -> i64 {
 
 #[tokio::test]
 async fn a_second_spelling_does_not_rename_anyone() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
-    let mut conn = pool.acquire().await.unwrap();
-    schema::ensure_schema(&mut conn).await.unwrap();
-    crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
+    let (mut conn, _pool, _dir) = account().await;
     let handle_id: i64 = sqlx::query_scalar(
         "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
          VALUES ($1, '+15555550162', '+15555550162', 'phone', 'imessage') RETURNING id",
@@ -552,11 +534,7 @@ async fn a_second_spelling_does_not_rename_anyone() {
     .await
     .unwrap();
 
-    let name: String = sqlx::query_scalar("SELECT preferred_name FROM contacts WHERE id = $1")
-        .bind(contact_id)
-        .fetch_one(&mut *conn)
-        .await
-        .unwrap();
+    let name = name_of(&mut conn, contact_id).await;
     assert_eq!(name, "Ada Lovelace", "first backup wins");
 }
 
@@ -588,12 +566,7 @@ async fn name_of(conn: &mut sqlx::SqliteConnection, contact_id: i64) -> String {
 /// run.
 #[tokio::test]
 async fn an_import_does_not_overwrite_a_name_the_person_typed() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
-    let mut conn = pool.acquire().await.unwrap();
-    schema::ensure_schema(&mut conn).await.unwrap();
-    crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
+    let (mut conn, _pool, _dir) = account().await;
     let handle_id = insert_handle(&mut conn, "+15555550168", "imessage").await;
     let contact_id = made_by_the_person(&mut conn, handle_id, "Ada Lovelace").await;
 
@@ -616,12 +589,7 @@ async fn an_import_does_not_overwrite_a_name_the_person_typed() {
 /// contact whatever made it: here the person, with no name.
 #[tokio::test]
 async fn an_import_names_a_nameless_contact_the_person_made() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
-    let mut conn = pool.acquire().await.unwrap();
-    schema::ensure_schema(&mut conn).await.unwrap();
-    crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
+    let (mut conn, _pool, _dir) = account().await;
     let handle_id = insert_handle(&mut conn, "+15555550169", "imessage").await;
     let contact_id = made_by_the_person(&mut conn, handle_id, "").await;
 
@@ -647,12 +615,7 @@ async fn an_import_names_a_nameless_contact_the_person_made() {
 #[tokio::test]
 async fn an_import_names_a_nameless_contact_a_load_made() {
     use crate::db::address_book::{LoadMode, load};
-    let (pool, _dir) = crate::db::engine::test_pool().await;
-    let mut conn = pool.acquire().await.unwrap();
-    schema::ensure_schema(&mut conn).await.unwrap();
-    crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
+    let (mut conn, _pool, _dir) = account().await;
     let text = "contact_id,display_name,groups,service,identity_type,identity\n\
                 ,,,phone,phone,+15555550170\n";
     load(&mut conn, TEST_ACCOUNT, text, LoadMode::Append)
@@ -689,12 +652,7 @@ async fn an_import_names_a_nameless_contact_a_load_made() {
 
 #[tokio::test]
 async fn sibling_contact_link_bumps_last_modified_only_on_insert() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
-    let mut conn = pool.acquire().await.unwrap();
-    schema::ensure_schema(&mut conn).await.unwrap();
-    crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
-        .await
-        .unwrap();
+    let (mut conn, _pool, _dir) = account().await;
 
     let contact_id: i64 = sqlx::query_scalar(
         "INSERT INTO contacts (account_id, preferred_name) VALUES ($1, 'Pat') RETURNING id",
