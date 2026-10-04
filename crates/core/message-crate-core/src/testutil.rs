@@ -15,7 +15,7 @@ pub fn names_in(dir: &Path) -> Vec<String> {
     let mut names: Vec<String> = fs::read_dir(dir)
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .filter(|name| name != ".lock")
+        .filter(|name| name != crate::scratch::LOCK)
         .collect();
     names.sort();
     names

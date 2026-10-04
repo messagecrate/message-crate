@@ -41,7 +41,7 @@ pub const ATTACHMENT_SPOOL_FOLDER: &str = "attachment-spool";
 const SCRATCH_FOLDERS: [&str; 2] = [IMESSAGE_READER_FOLDER, ATTACHMENT_SPOOL_FOLDER];
 
 /// The lock file, in the root and in each request's folder.
-const LOCK: &str = ".lock";
+pub(crate) const LOCK: &str = ".lock";
 
 /// Delete what killed runs left in every scratch folder under `cache_dir`,
 /// keeping the folders of requests still running. The desktop app calls it

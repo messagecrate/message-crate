@@ -47,6 +47,8 @@ struct SpoolState {
     folder: Option<ScratchDir>,
     /// Size of each spooled payload by its SHA-256, for the progress totals.
     sizes: HashMap<String, u64>,
+    /// The sum of `sizes`.
+    spooled_bytes: u64,
 }
 
 impl SpoolState {
@@ -62,19 +64,24 @@ impl SpoolState {
 impl AttachmentSpool {
     /// A spool whose folder goes under `cache_dir`, the app's cache folder.
     /// Nothing is made on disk until the first payload arrives.
-    ///
-    /// `copy_dir` is the folder the payloads will be copied into once the
-    /// backup is read. When it is given, each payload also checks that the
-    /// disk holding it still has room for the copy of everything spooled so
-    /// far, so a run that will not fit stops while the backup is read, not
-    /// after. When the cache folder is on that same disk, the spool has
-    /// already taken its share of what is free.
-    pub fn new(cache_dir: &Path, copy_dir: Option<&Path>) -> Self {
+    pub fn new(cache_dir: &Path) -> Self {
         Self {
             root: cache_dir.join(ATTACHMENT_SPOOL_FOLDER),
-            copy_dir: copy_dir.map(Path::to_path_buf),
+            copy_dir: None,
             state: Mutex::new(SpoolState::default()),
         }
+    }
+
+    /// Name `copy_dir`, the folder the payloads are copied into once the
+    /// backup is read. Each payload then also checks that the disk holding
+    /// it still has room for the copy of everything spooled so far, so a
+    /// run that will not fit stops while the backup is read, not after.
+    /// When the cache folder is on that same disk, the spool has already
+    /// taken its share of what is free.
+    #[must_use]
+    pub fn with_copy_dir(mut self, copy_dir: &Path) -> Self {
+        self.copy_dir = Some(copy_dir.to_path_buf());
+        self
     }
 
     /// Write `bytes` to the spool and return their lowercase hex SHA-256.
@@ -105,12 +112,7 @@ impl AttachmentSpool {
         };
         check_headroom(&folder, bytes.len() as u64, Disk::Cache)?;
         if let Some(copy_dir) = &self.copy_dir {
-            let copied = state
-                .sizes
-                .values()
-                .fold(bytes.len() as u64, |total, size| {
-                    total.saturating_add(*size)
-                });
+            let copied = state.spooled_bytes.saturating_add(bytes.len() as u64);
             check_headroom(copy_dir, copied, Disk::Staging)?;
         }
         let path = folder.join(&digest);
@@ -120,6 +122,7 @@ impl AttachmentSpool {
         fs::write(&tmp, bytes).with_context(|| format!("write {}", tmp.display()))?;
         fs::rename(&tmp, &path).with_context(|| format!("rename {}", path.display()))?;
         state.sizes.insert(digest.clone(), bytes.len() as u64);
+        state.spooled_bytes = state.spooled_bytes.saturating_add(bytes.len() as u64);
         Ok(digest)
     }
 
@@ -155,7 +158,7 @@ mod tests {
     #[test]
     fn a_payload_is_on_disk_under_its_digest_until_the_spool_is_dropped() {
         let cache = tempfile::tempdir().unwrap();
-        let spool = AttachmentSpool::new(cache.path(), None);
+        let spool = AttachmentSpool::new(cache.path());
         let digest = spool.put(b"hello").unwrap();
         assert_eq!(
             digest,
@@ -175,7 +178,7 @@ mod tests {
     #[test]
     fn an_unused_spool_makes_no_folder() {
         let cache = tempfile::tempdir().unwrap();
-        drop(AttachmentSpool::new(cache.path(), None));
+        drop(AttachmentSpool::new(cache.path()));
         assert!(names_in(cache.path()).is_empty());
     }
 
@@ -184,7 +187,7 @@ mod tests {
     #[test]
     fn a_new_spool_deletes_a_killed_run_s_and_keeps_a_running_one() {
         let cache = tempfile::tempdir().unwrap();
-        let running = AttachmentSpool::new(cache.path(), None);
+        let running = AttachmentSpool::new(cache.path());
         let kept = running.put(b"kept").unwrap();
         let killed = cache
             .path()
@@ -194,7 +197,7 @@ mod tests {
         fs::write(killed.join(".lock"), b"").unwrap();
         fs::write(killed.join("stale"), b"x").unwrap();
 
-        let spool = AttachmentSpool::new(cache.path(), None);
+        let spool = AttachmentSpool::new(cache.path());
         spool.put(b"new").unwrap();
         assert!(!killed.exists());
         assert!(running.path(&kept).unwrap().exists());
@@ -203,7 +206,7 @@ mod tests {
     #[test]
     fn a_spooled_attachment_is_read_from_its_file() {
         let cache = tempfile::tempdir().unwrap();
-        let spool = AttachmentSpool::new(cache.path(), None);
+        let spool = AttachmentSpool::new(cache.path());
         let digest = spool.put(b"photo").unwrap();
         let mut att = IrAttachment {
             path: None,

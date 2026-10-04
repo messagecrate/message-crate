@@ -31,7 +31,7 @@ mod transcode;
 mod write_queue;
 
 pub use export_writer::{ExportWriter, ExportWriterParts};
-pub use headroom::{Disk, bytes_to_copy, check_headroom};
+pub use headroom::{Disk, bytes_embedded, bytes_to_copy, bytes_to_write, check_headroom};
 pub use media_settings::{MEDIA_SETTINGS_FILE, read_media_settings, write_media_settings};
 pub use spool::AttachmentSpool;
 pub use staging_summary::{AttachmentForecast, StagingSummary, SummaryProgress, summarize_staging};

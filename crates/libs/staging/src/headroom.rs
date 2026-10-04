@@ -12,6 +12,7 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::Result;
+use message_crate_core::OutputFormat;
 
 /// Slack above the measured need, for the derivative a convert holds in
 /// flight and for whatever else shares the disk.
@@ -37,6 +38,38 @@ pub fn bytes_to_copy<'a>(attachments: impl IntoIterator<Item = (Option<&'a str>,
         .into_iter()
         .filter(|(digest, _)| digest.is_none_or(|digest| seen.insert(digest)))
         .fold(0, |total, (_, size)| total.saturating_add(size))
+}
+
+/// The bytes a file holds when `attachments` are embedded in it, as a mail
+/// archive or a merged archive does: every message carries its own copy,
+/// base64-encoded, so each occurrence counts, at four thirds of its size.
+pub fn bytes_embedded<'a>(attachments: impl IntoIterator<Item = (Option<&'a str>, u64)>) -> u64 {
+    let raw = attachments
+        .into_iter()
+        .fold(0u64, |total, (_, size)| total.saturating_add(size));
+    raw.saturating_add(raw / 3)
+}
+
+/// The bytes a run writing `format` puts in the output for `attachments`:
+/// the staged copy under `attachments/`, plus, for a format that embeds
+/// them (EML, MBOX, and the merged archives), every embedded copy. The
+/// staged copy of an embedding format is deleted only after the archive is
+/// written, so both are on the disk at once.
+pub fn bytes_to_write(format: OutputFormat, attachments: &[(Option<&str>, u64)]) -> u64 {
+    let staged = bytes_to_copy(attachments.iter().copied());
+    if embeds_attachments(format) {
+        staged.saturating_add(bytes_embedded(attachments.iter().copied()))
+    } else {
+        staged
+    }
+}
+
+/// Whether `format` writes attachment bytes into its files.
+pub fn embeds_attachments(format: OutputFormat) -> bool {
+    matches!(
+        format,
+        OutputFormat::Eml | OutputFormat::Mbox | OutputFormat::Xml | OutputFormat::SmsBackupPlus
+    )
 }
 
 /// Refuse a write of `needed` bytes into `dir` that its disk plainly cannot
@@ -105,6 +138,16 @@ mod tests {
             (None, 3),
         ];
         assert_eq!(bytes_to_copy(items), 5 + 7 + 3 + 3);
+    }
+
+    /// A format that embeds its attachments writes every occurrence, base64,
+    /// beside the staged copy; one that keeps files writes each digest once.
+    #[test]
+    fn bytes_to_write_counts_every_embedded_copy() {
+        let items = [(Some("a"), 30), (Some("a"), 30)];
+        assert_eq!(bytes_to_write(OutputFormat::Csv, &items), 30);
+        assert_eq!(bytes_to_write(OutputFormat::Mbox, &items), 30 + 80);
+        assert_eq!(bytes_to_write(OutputFormat::Xml, &items), 30 + 80);
     }
 
     /// A short cache disk is named as the cache folder's, not the staging

@@ -1,7 +1,7 @@
 //! The shared write tail every exporter used to copy: sink opening, the
 //! queue-or-sink decision, and both drain arms.
 
-use crate::headroom::{Disk, bytes_to_copy, check_headroom};
+use crate::headroom::{Disk, bytes_to_write, check_headroom};
 use crate::spool::AttachmentSpool;
 use crate::write_queue::{
     AttachmentSource, ConversationUnit, WriteQueueOptions, drain_units, load_attachment_source,
@@ -29,6 +29,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug)]
 pub struct ExportWriter {
     output_dir: PathBuf,
+    format: OutputFormat,
     sink: FormatSink,
     attachments_dir: PathBuf,
     media_mode: MediaMode,
@@ -105,6 +106,7 @@ impl ExportWriter {
         }?;
         Ok(Self {
             output_dir: output_dir.to_path_buf(),
+            format,
             sink,
             attachments_dir,
             media_mode,
@@ -123,7 +125,7 @@ impl ExportWriter {
     #[must_use]
     pub fn with_spool(mut self, cache_dir: &Path) -> Self {
         if self.copy_attachments {
-            self.spool = Some(AttachmentSpool::new(cache_dir, Some(&self.output_dir)));
+            self.spool = Some(AttachmentSpool::new(cache_dir).with_copy_dir(&self.output_dir));
         }
         self
     }
@@ -268,14 +270,15 @@ impl ExportWriter {
                 }
             }
         }
-        let needed = bytes_to_copy(
-            sizes
-                .iter()
-                .map(|(digest, size)| (digest.as_deref(), *size)),
-        );
+        let sizes: Vec<(Option<&str>, u64)> = sizes
+            .iter()
+            .map(|(digest, size)| (digest.as_deref(), *size))
+            .collect();
+        let needed = bytes_to_write(self.format, &sizes);
         // The same check the queue arm makes, before anything is written:
-        // the copies need room on the disk that holds the output. A spool
-        // on that disk has already taken its share of what is free.
+        // the staged copies, and for a mail or merged archive every
+        // embedded copy too, need room on the disk that holds the output. A
+        // spool on that disk has already taken its share of what is free.
         if self.media_mode != MediaMode::Disabled {
             check_headroom(&self.output_dir, needed, Disk::Staging)?;
         }

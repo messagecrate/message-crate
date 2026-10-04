@@ -243,8 +243,8 @@ released versions carry their date on the heading.
 #### Importing
 
 - 2026-10-04 **Working files from reading a backup no longer stay behind
-  when an import is stopped, and every output format checks for room
-  first.** Reading an encrypted iPhone backup decrypts its message
+  when an import is stopped, and Staging checks for room while it reads
+  the backup.** Reading an encrypted iPhone backup decrypts its message
   database, and reading an SMS Backup & Restore, GO SMS Pro or SMS Backup+
   file sets its attachments aside, both as plain copies. These working
   files used to sit in the Staging Directory, and an app closed or stopped

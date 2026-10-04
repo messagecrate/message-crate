@@ -33,7 +33,7 @@ use message_ir::{
 use message_ir_format::FormatSink;
 use message_staging::{
     AttachmentSource, ConversationUnit, Disk, ExportWriter, ExportWriterParts, WriteQueueOptions,
-    bytes_to_copy, check_headroom,
+    bytes_embedded, bytes_to_write, check_headroom,
 };
 
 use crate::run::{AttachmentEmbed, ExportOptions};
@@ -153,7 +153,7 @@ pub(crate) fn export(
     if !use_queue && (embeds || stages_attachment_files(options)) {
         check_headroom(
             &options.export_path,
-            attachment_bytes(&collected),
+            attachment_bytes(&collected, format),
             Disk::Staging,
         )?;
     }
@@ -194,21 +194,26 @@ pub(crate) fn export(
     Ok(report)
 }
 
-/// The bytes of every attachment collected, as far as the program could
-/// say: what a staging step or a mail archive writes.
-/// None of them has a digest before it is read, so each is counted.
-fn attachment_bytes(collected: &Collected) -> u64 {
-    bytes_to_copy(
-        collected
-            .conversations
-            .values()
-            .flat_map(|convo| convo.attachment_loads.iter())
-            .map(|load| match load {
-                AttachmentLoad::Path { size_hint, .. } => (None, size_hint.unwrap_or(0)),
-                AttachmentLoad::Bytes(bytes) => (None, bytes.len() as u64),
-                AttachmentLoad::Missing => (None, 0),
-            }),
-    )
+/// The bytes the output gets for every attachment collected: one copy each
+/// under `attachments/`, or one base64 copy per message in a mail archive.
+/// None has a digest before it is read, so each occurrence is counted.
+fn attachment_bytes(collected: &Collected, format: OutputFormat) -> u64 {
+    let sizes: Vec<(Option<&str>, u64)> = collected
+        .conversations
+        .values()
+        .flat_map(|convo| convo.attachment_loads.iter())
+        .map(|load| match load {
+            AttachmentLoad::Path { size_hint, .. } => (None, size_hint.unwrap_or(0)),
+            AttachmentLoad::Bytes(bytes) => (None, bytes.len() as u64),
+            AttachmentLoad::Missing => (None, 0),
+        })
+        .collect();
+    if format.is_mail_archive() {
+        // A mail archive embeds the bytes and stages no files.
+        bytes_embedded(sizes)
+    } else {
+        bytes_to_write(format, &sizes)
+    }
 }
 
 /// Formats whose attachments are files under `attachments/` rather than
