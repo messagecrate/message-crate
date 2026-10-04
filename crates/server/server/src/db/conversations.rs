@@ -97,7 +97,7 @@ pub struct ConversationSummary {
 struct RawConversation {
     id: i64,
     conversation_type: String,
-    title: Option<String>,
+    label: Option<String>,
     message_count: i64,
     first_message_at: Option<String>,
     last_message_at: Option<String>,
@@ -228,7 +228,7 @@ fn conversation_row_select() -> String {
     format!(
         "SELECT c.id,
                 c.conversation_type,
-                {title} AS title,
+                {label} AS label,
                 (SELECT COUNT(*) FROM messages m
                  WHERE m.conversation_id = c.id AND m.duplicate_of IS NULL) AS message_count,
                 (SELECT MIN(m.timestamp) FROM messages m
@@ -236,7 +236,7 @@ fn conversation_row_select() -> String {
                 (SELECT MAX(m.timestamp) FROM messages m
                  WHERE m.conversation_id = c.id AND m.duplicate_of IS NULL) AS last_message_at
          FROM conversations c",
-        title = conversation_title_sql("c")
+        label = conversation_title_sql("c")
     )
 }
 
@@ -256,11 +256,11 @@ async fn load_conversation_rows(
     let rows: Vec<RawConversation> = rows
         .into_iter()
         .map(
-            |(id, conversation_type, title, message_count, first_message_at, last_message_at)| {
+            |(id, conversation_type, label, message_count, first_message_at, last_message_at)| {
                 RawConversation {
                     id,
                     conversation_type,
-                    title,
+                    label,
                     message_count,
                     first_message_at,
                     last_message_at,
@@ -300,7 +300,7 @@ async fn load_conversation_rows(
             service,
             is_group,
             label: row
-                .title
+                .label
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
             tags: tag_sets.remove(&row.id).unwrap_or_default(),

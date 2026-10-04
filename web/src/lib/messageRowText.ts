@@ -4,7 +4,7 @@ import type { Message, MessageConversation } from "./types";
 /**
  * A conversation's name as the conversation list shows it ({@link conversationName}).
  * `label` is the title the server computes, as it does on the list: the
- * export's title, or the account's name for a conversation with yourself.
+ * account's name for a conversation with yourself, else the export's title.
  */
 export function messageConversationName(conversation: MessageConversation): string {
   return conversationName({

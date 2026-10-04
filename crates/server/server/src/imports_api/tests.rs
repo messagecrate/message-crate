@@ -4592,8 +4592,9 @@ async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accoun
             "conversation {id} keeps both rows, and the received one has no sender"
         );
     }
-    let tapback_senders: Vec<Option<i64>> = sqlx::query_scalar(
-        "SELECT t.sender_handle_id FROM tapbacks t JOIN messages m ON m.id = t.message_id
+    let tapback_senders: Vec<(i64, Option<i64>)> = sqlx::query_as(
+        "SELECT t.is_from_me, t.sender_handle_id FROM tapbacks t
+         JOIN messages m ON m.id = t.message_id
          WHERE m.conversation_id = $1",
     )
     .bind(self_conversations[0])
@@ -4602,8 +4603,8 @@ async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accoun
     .unwrap();
     assert_eq!(
         tapback_senders,
-        [None],
-        "the holder's reaction in a conversation with yourself has no sender either"
+        [(1, None)],
+        "the holder's reaction in a conversation with yourself is theirs, with no sender"
     );
     drop(conn);
 

@@ -522,12 +522,14 @@ impl FileStaging<'_> {
             .await?;
         }
 
-        // The received copy of a note to yourself, and a reaction to one,
-        // came from the holder, who is nobody's sender here.
+        // The received copy of a note to yourself came from the holder, who
+        // is nobody's sender here. A reaction in it is the holder's own, so
+        // it is marked as theirs, as a reaction they sent anywhere is.
         if with_yourself {
             for (msg, _) in &mut prepared_messages {
                 msg.sender = None;
                 for tapback in &mut msg.tapbacks {
+                    tapback.is_from_me = true;
                     tapback.sender = None;
                 }
             }
