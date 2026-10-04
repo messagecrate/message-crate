@@ -242,8 +242,8 @@ released versions carry their date on the heading.
   be read, the rows whose files were in it came through with no photo or
   file, and a Live Photo video in it was dropped, without a word. On a Mac,
   a Contacts account folder that could not be read left that account's
-  names out of an Apple Messages import with no message, and one Address
-  Book that could not be opened left out every account's names. The iMazing
+  names out of an Apple Messages import with no message, and one Contacts
+  account whose database could not be read left out every account's names. The iMazing
   import now stops and names the folder. The Apple Messages import now
   names each Contacts account it cannot read in its log and keeps the names
   from the others.

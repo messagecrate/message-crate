@@ -526,9 +526,9 @@ mod tests {
                 sources.path().join("icloud/AddressBook-v22.abcddb"),
             ]
         );
-        assert!(
-            find_macos_addressbook_db_paths(&sources.path().join("missing")).unwrap()
-                == SourcesScan::default()
+        assert_eq!(
+            find_macos_addressbook_db_paths(&sources.path().join("missing")).unwrap(),
+            SourcesScan::default()
         );
     }
 
@@ -591,10 +591,10 @@ mod tests {
         );
     }
 
-    /// An account whose Address Book is not a database is named, and the
-    /// other accounts' names are still in the index.
+    /// An account whose Contacts database file is not SQLite is named, and
+    /// the other accounts' names are still in the index.
     #[test]
-    fn an_address_book_that_cannot_be_queried_is_named_and_the_others_names_kept() {
+    fn a_contacts_database_that_cannot_be_queried_is_named_and_the_others_names_kept() {
         let sources = tempfile::tempdir().unwrap();
         let icloud = sources.path().join("icloud");
         fs::create_dir(&icloud).unwrap();

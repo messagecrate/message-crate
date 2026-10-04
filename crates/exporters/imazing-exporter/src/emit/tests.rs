@@ -331,7 +331,7 @@ Bob Sample,2020-01-01 12:00:00,,,,,SMS,Incoming,+15555550100,Bob,Read,,,Hi,,imag
     )
     .unwrap();
     // Write and search but no read: the CSV opens, the listing does not.
-    let Some(result) = crate::chat_folder::with_folder_mode(&chat, 0o300, || {
+    let Some(result) = crate::test_support::with_folder_mode(&chat, 0o300, || {
         convert(&csv, &dir.path().join("out"))
     }) else {
         return;

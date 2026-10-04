@@ -172,7 +172,7 @@ mod tests {
             texts_at: &texts_at,
         };
         let Some(result) =
-            crate::chat_folder::with_folder_mode(&chat, 0o000, || unnamed_files(&chat, &rows))
+            crate::test_support::with_folder_mode(&chat, 0o000, || unnamed_files(&chat, &rows))
         else {
             return;
         };
