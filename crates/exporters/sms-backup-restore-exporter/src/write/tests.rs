@@ -163,8 +163,8 @@ fn a_group_mms_keeps_its_addresses_and_attachment() {
     assert_eq!(incoming.direction, IrDirection::Incoming);
     assert_eq!(incoming.text, "look");
     assert_eq!(incoming.sender_handle.as_deref(), Some("+15555550102"));
-    // A group's `contact_name` holds the members' names, as SMS Backup &
-    // Restore writes it, so it names the group and not the sender.
+    // A group's `contact_name` holds the participants' names, as SMS Backup
+    // & Restore writes it, so it names the group and not the sender.
     assert_eq!(contact_name(incoming), Some("Ana, Lee"));
     assert_eq!(incoming.sender_display_name, None);
     assert_eq!(
@@ -316,11 +316,11 @@ fn a_text_only_group_message_from_another_app_stays_in_its_group() {
     assert_eq!(attrs(outgoing)["address"], "+15555550101~+15555550102");
 }
 
-/// A group conversation with one member who has an address is written with
-/// that one address and reads back as one-to-one, so its `contact_name` is
-/// the one-to-one value and not every member's name.
+/// A group conversation in which one participant has an identity is written
+/// with that one identity and reads back as one-to-one, so its `contact_name`
+/// is the one-to-one value and not every participant's name.
 #[test]
-fn a_group_with_one_addressed_member_is_named_as_one_to_one() {
+fn a_group_with_one_identified_participant_is_named_as_one_to_one() {
     let mut doc = message_ir::testutil::sample_document("hi");
     doc.conversation.chat_identifier = "chat-group".into();
     doc.conversation.conversation_type = IrConversationType::Group;
@@ -342,6 +342,38 @@ fn a_group_with_one_addressed_member_is_named_as_one_to_one() {
     let msg = &read[0].messages[0];
     assert_eq!(contact_name(msg), Some("Sam"));
     assert_eq!(msg.sender_display_name.as_deref(), Some("Sam"));
+}
+
+/// Two participants with one identity written two ways, or the owner listed
+/// as a participant, are one peer to the reader. A group conversation of Sam
+/// and either of those reads back as one-to-one with Sam, so its
+/// `contact_name` is Sam's name and not a list.
+#[test]
+fn a_group_the_reader_finds_one_peer_in_is_named_as_one_to_one() {
+    for (handle, name) in [("555-555-0101", "Sam (work)"), (OWNER, "Me")] {
+        let mut doc = message_ir::testutil::sample_document("hi");
+        doc.conversation.chat_identifier = "chat-group".into();
+        doc.conversation.conversation_type = IrConversationType::Group;
+        doc.conversation
+            .participants
+            .push(message_ir::IrParticipant {
+                handle: Some(handle.into()),
+                display_name: Some(name.into()),
+                handle_type: Some(message_ir::HandleType::Phone),
+            });
+        doc.messages[0].source = None;
+
+        let read = round_trip(&[doc]);
+        assert_eq!(read.len(), 1, "{handle}");
+        assert_eq!(
+            read[0].conversation.conversation_type,
+            IrConversationType::Individual,
+            "{handle}"
+        );
+        let msg = &read[0].messages[0];
+        assert_eq!(contact_name(msg), Some("Sam"), "{handle}");
+        assert_eq!(msg.sender_display_name.as_deref(), Some("Sam"), "{handle}");
+    }
 }
 
 /// Apps other than SMS Backup & Restore put the owner's own address on a

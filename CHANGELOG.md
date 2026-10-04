@@ -540,13 +540,13 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
-- 2026-10-04 **A group text exported to SMS Backup & Restore names its
-  members, not one sender.** An export to SMS Backup & Restore put the name
-  of whoever sent each group message where the app keeps the names of the
-  group's members, so the file held a name the app would not write there,
-  and reading it back lost that name anyway. Each group message now carries
-  the members' names, as SMS Backup & Restore writes them. One-to-one
-  messages are unchanged.
+- 2026-10-04 **A group text exported to SMS Backup & Restore names the
+  people in it, not one sender.** An export to SMS Backup & Restore put the
+  name of whoever sent each group message where the app keeps the names of
+  everyone in the group, so the file held a name the app would not write
+  there, and reading it back lost that name anyway. Each group message now
+  carries the names of the people in the group, as SMS Backup & Restore
+  writes them. One-to-one messages are unchanged.
 - 2026-10-04 **An export stops when it cannot read an earlier export's
   email folder.** An export or conversion written into a folder an earlier
   one used first removes the earlier one's email conversation folders. A
