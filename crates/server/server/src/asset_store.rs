@@ -38,6 +38,8 @@
 //! - [`sweep_unreferenced`]: every unnamed Asset of an account, when a run
 //!   ends.
 //! - [`sweep_incoming`]: abandoned upload temps, by age.
+//! - [`sweep_shard_temps`]: temporary files a killed write left in the
+//!   shard folders, by age.
 //!
 //! Upload and `process-assets` still remove their own temporary and
 //! replaced files. Those are never an Asset a row names.
@@ -440,7 +442,7 @@ async fn named_fingerprints(
 /// The 64-hex fingerprint a stored file's name starts with, lowercased:
 /// `<sha256><ext>` for a file, `.<sha256>.mime` for a sidecar. `None` for
 /// any other name, such as a temporary file.
-fn fingerprint_of(name: &str) -> Option<String> {
+pub(crate) fn fingerprint_of(name: &str) -> Option<String> {
     let stem = match name.strip_prefix('.') {
         Some(rest) => rest.strip_suffix(".mime")?,
         None => name.split('.').next()?,
@@ -538,6 +540,70 @@ pub(crate) fn sweep_incoming(originals_dir: &Path, dry_run: bool) -> u64 {
     let mut removed = remove_stale_parts(&parts, now, dry_run);
     for sha_dir in &sha_dirs {
         removed += remove_stale_sessions(sha_dir, now, dry_run);
+    }
+    removed
+}
+
+/// Age after which a temporary file in a shard folder counts as left by a
+/// killed write. A file being installed is written without a pause and
+/// renamed as soon as it is whole, so one untouched this long is not being
+/// written.
+pub(crate) const STALE_TEMP_SECS: u64 = 60 * 60;
+
+/// Remove the temporary files at least [`STALE_TEMP_SECS`] old in the shard
+/// folders of `store_dir`, and return how many it removed (or would remove,
+/// in a dry run). An original, its sidecar and a Preview are each written
+/// to a `.tmp*` file in their shard folder and renamed over their name, so
+/// a write killed between the two leaves that file behind, and nothing
+/// else ever removes it. Folders starting with a dot, `.incoming/` among
+/// them, are not shards and are left alone.
+///
+/// A file that is gone by the time the sweep reaches it is passed over, and
+/// any other failure is logged and the sweep goes on.
+pub(crate) fn sweep_shard_temps(store_dir: &Path, dry_run: bool) -> u64 {
+    let Ok(shards) = std::fs::read_dir(store_dir) else {
+        return 0;
+    };
+    let now = SystemTime::now();
+    let mut removed = 0u64;
+    for shard in shards.filter_map(Result::ok) {
+        let is_shard = shard.file_type().is_ok_and(|t| t.is_dir())
+            && !shard.file_name().to_string_lossy().starts_with('.');
+        if !is_shard {
+            continue;
+        }
+        let files = match std::fs::read_dir(shard.path()) {
+            Ok(files) => files,
+            Err(err) => {
+                log_sweep_error("read", &shard.path(), &err);
+                continue;
+            }
+        };
+        for file in files.filter_map(Result::ok) {
+            let is_temp = file.file_type().is_ok_and(|t| t.is_file())
+                && file.file_name().to_string_lossy().starts_with(".tmp");
+            if !is_temp {
+                continue;
+            }
+            let path = file.path();
+            match modified_at_least(&path, now, STALE_TEMP_SECS) {
+                Ok(true) => {}
+                Ok(false) => continue,
+                Err(err) => {
+                    log_sweep_error("read", &path, &err);
+                    continue;
+                }
+            }
+            if dry_run {
+                println!("[dry-run] would remove {}", path.display());
+                removed += 1;
+                continue;
+            }
+            match remove_file(&path) {
+                Ok(()) => removed += 1,
+                Err(err) => log_sweep_error("remove leftover", &path, &err),
+            }
+        }
     }
     removed
 }
@@ -653,12 +719,12 @@ fn modified_at_least(path: &Path, now: SystemTime, secs: u64) -> io::Result<bool
     Ok(age.as_secs() >= secs)
 }
 
-/// Log a failed step of the `.incoming/` sweep. A path that no longer
-/// exists is not logged, because the server removes its own temps when an
-/// upload finishes, and that is the outcome the sweep wanted.
+/// Log a failed step of a sweep of temporary files. A path that no longer
+/// exists is not logged, because the server removes its own temps when a
+/// write finishes, and that is the outcome the sweep wanted.
 fn log_sweep_error(action: &str, path: &Path, err: &io::Error) {
     if err.kind() != io::ErrorKind::NotFound {
-        tracing::warn!(path = %path.display(), error = %err, "could not {action} an upload temp");
+        tracing::warn!(path = %path.display(), error = %err, "could not {action} a temporary file");
     }
 }
 

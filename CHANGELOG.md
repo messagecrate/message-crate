@@ -951,6 +951,12 @@ released versions carry their date on the heading.
   sent one of those times with no value rather than leaving it out. It now
   carries its first and last message times once each, and leaves both out
   when there is no message to date them.
+- 2026-10-04 **A Preview cut short is made again without `--force`.** A
+  Preview left part-written by a stopped `process-assets` run was kept and
+  shown as it was until someone ran the command with `--force`. Every run
+  now checks each Preview against its contents and makes a damaged one
+  again, and removes the part-written files a stopped run or import left in
+  the attachment folders.
 
 ### Upgrading
 
