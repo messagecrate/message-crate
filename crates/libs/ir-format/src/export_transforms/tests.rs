@@ -60,12 +60,17 @@ fn doc_with_image_attachment() -> ConversationDocument {
     }
 }
 
+/// Obfuscate one document as an export of it alone.
+fn obfuscate_one(doc: &mut ConversationDocument, anon: &mut Obfuscator) {
+    obfuscate_documents(std::slice::from_mut(doc), anon);
+}
+
 #[test]
 fn obfuscate_drops_the_vendor_bag() {
     let mut doc = message_ir::testutil::sample_document("secret");
     assert!(doc.messages[0].source.is_some());
     let mut anon = Obfuscator::new([7u8; 32]);
-    obfuscate_documents(std::slice::from_mut(&mut doc), &mut anon);
+    obfuscate_one(&mut doc, &mut anon);
     assert!(
         doc.messages[0].source.is_none(),
         "obfuscated output must not carry vendor fields"
@@ -77,7 +82,7 @@ fn obfuscate_replaces_the_owner_address_on_each_message() {
     let mut doc = message_ir::testutil::sample_document("secret");
     doc.messages[0].owner_handle = Some("+15555550100".into());
     let mut anon = Obfuscator::new([7u8; 32]);
-    obfuscate_documents(std::slice::from_mut(&mut doc), &mut anon);
+    obfuscate_one(&mut doc, &mut anon);
     let owner = doc.messages[0].owner_handle.as_deref();
     assert_ne!(owner, Some("+15555550100"));
     assert_eq!(
@@ -100,7 +105,7 @@ fn obfuscate_keeps_me_on_a_sent_message_and_replaces_a_real_name() {
     doc.messages = vec![labelled, named];
 
     let mut anon = Obfuscator::new([7u8; 32]);
-    obfuscate_documents(std::slice::from_mut(&mut doc), &mut anon);
+    obfuscate_one(&mut doc, &mut anon);
 
     assert_eq!(doc.messages[0].sender_display_name.as_deref(), Some("Me"));
     let replaced = doc.messages[1].sender_display_name.as_deref().unwrap();
@@ -415,7 +420,7 @@ fn obfuscated_export_keeps_no_string_from_the_source() {
 fn obfuscate_keeps_each_tapback_and_replaces_only_who_reacted() {
     let mut doc = doc_with_a_marker_in_every_field();
     let mut anon = Obfuscator::new([7u8; 32]);
-    obfuscate_documents(std::slice::from_mut(&mut doc), &mut anon);
+    obfuscate_one(&mut doc, &mut anon);
 
     let tapbacks = doc.messages[0]
         .imessage
@@ -498,10 +503,7 @@ fn obfuscate_makes_each_guid_again_and_keeps_replies_pointing_at_their_target() 
 
     let obfuscated = |doc: &ConversationDocument| {
         let mut doc = doc.clone();
-        obfuscate_documents(
-            std::slice::from_mut(&mut doc),
-            &mut Obfuscator::new([7u8; 32]),
-        );
+        obfuscate_one(&mut doc, &mut Obfuscator::new([7u8; 32]));
         doc
     };
     let after = obfuscated(&doc);
@@ -526,10 +528,7 @@ fn obfuscate_makes_each_guid_again_and_keeps_replies_pointing_at_their_target() 
         "one seed gives one guid"
     );
     let mut other_seed = doc.clone();
-    obfuscate_documents(
-        std::slice::from_mut(&mut other_seed),
-        &mut Obfuscator::new([8u8; 32]),
-    );
+    obfuscate_one(&mut other_seed, &mut Obfuscator::new([8u8; 32]));
     assert_ne!(other_seed.messages[0].guid, after.messages[0].guid);
 }
 
@@ -561,7 +560,7 @@ fn obfuscate_all(docs: &mut [ConversationDocument]) {
 }
 
 /// A reply (`in_reply_to_guid`) or a tapback (`associated_guid`).
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 enum Link {
     Reply,
     Tapback,
@@ -602,11 +601,11 @@ fn obfuscate_points_a_reply_or_tapback_at_its_target_in_another_conversation() {
     for link in [Link::Reply, Link::Tapback] {
         let mut docs = two_conversations(|target| link.to(&target));
         obfuscate_all(&mut docs);
-        assert_ne!(docs[0].messages[0].guid, "a-target");
+        assert_ne!(docs[0].messages[0].guid, "a-target", "{link:?}");
         assert_eq!(
             link.target(&docs[1].messages[0]),
             Some(docs[0].messages[0].guid.as_str()),
-            "the link points at its target's new guid"
+            "{link:?} points at its target's new guid"
         );
     }
 }
@@ -627,15 +626,20 @@ fn obfuscate_points_a_reply_or_tapback_at_the_copy_in_its_own_conversation() {
                 docs.reverse();
             }
             obfuscate_all(&mut docs);
-            let b = &docs[usize::from(!linking_first)];
+            let (linking, other) = if linking_first {
+                (&docs[0], &docs[1])
+            } else {
+                (&docs[1], &docs[0])
+            };
+            let case = format!("{link:?}, linking_first={linking_first}");
             assert_ne!(
-                b.messages[0].guid,
-                docs[usize::from(linking_first)].messages[0].guid
+                linking.messages[0].guid, other.messages[0].guid,
+                "{case}: each copy gets its own guid"
             );
             assert_eq!(
-                link.target(&b.messages[1]),
-                Some(b.messages[0].guid.as_str()),
-                "the link points at the copy in its own conversation"
+                link.target(&linking.messages[1]),
+                Some(linking.messages[0].guid.as_str()),
+                "{case}: the link points at the copy in its own conversation"
             );
         }
     }
