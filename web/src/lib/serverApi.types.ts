@@ -2665,8 +2665,11 @@ export interface components {
             attachments: components["schemas"]["Attachment"][];
             /** @description The conversation this message belongs to. */
             conversation: components["schemas"]["MessageConversation"];
-            /** @description Export GUID for replies and grouping. */
-            guid?: string | null;
+            /**
+             * @description Export GUID for replies and grouping. Every message has one,
+             *     because the import refuses a message without one.
+             */
+            guid: string;
             /**
              * Format: int64
              * @description Message row id.
@@ -3560,8 +3563,11 @@ export interface components {
                 attachments: components["schemas"]["Attachment"][];
                 /** @description The conversation this message belongs to. */
                 conversation: components["schemas"]["MessageConversation"];
-                /** @description Export GUID for replies and grouping. */
-                guid?: string | null;
+                /**
+                 * @description Export GUID for replies and grouping. Every message has one,
+                 *     because the import refuses a message without one.
+                 */
+                guid: string;
                 /**
                  * Format: int64
                  * @description Message row id.

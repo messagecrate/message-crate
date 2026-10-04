@@ -14002,6 +14002,7 @@
         "required": [
           "id",
           "source",
+          "guid",
           "timestamp",
           "sort_order",
           "is_from_me",
@@ -14025,11 +14026,8 @@
             "description": "The conversation this message belongs to."
           },
           "guid": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Export GUID for replies and grouping."
+            "type": "string",
+            "description": "Export GUID for replies and grouping. Every message has one,\nbecause the import refuses a message without one."
           },
           "id": {
             "type": "integer",
@@ -15799,6 +15797,7 @@
               "required": [
                 "id",
                 "source",
+                "guid",
                 "timestamp",
                 "sort_order",
                 "is_from_me",
@@ -15822,11 +15821,8 @@
                   "description": "The conversation this message belongs to."
                 },
                 "guid": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "description": "Export GUID for replies and grouping."
+                  "type": "string",
+                  "description": "Export GUID for replies and grouping. Every message has one,\nbecause the import refuses a message without one."
                 },
                 "id": {
                   "type": "integer",

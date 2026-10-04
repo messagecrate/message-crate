@@ -358,6 +358,30 @@ async fn same_source_guid_allowed_across_accounts() {
     assert_eq!(count, 2);
 }
 
+/// The import refuses a message without a guid, so the table refuses one
+/// too: a NULL guid and an empty one both fail the insert.
+#[tokio::test]
+async fn a_message_without_a_guid_is_refused() {
+    let (pool, _fixture) = seeded_schema_fixture().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let conv = conversation_id(&mut conn, A1).await;
+    for guid in [None, Some("")] {
+        let inserted = sqlx::query(
+            r"
+            INSERT INTO messages (
+                conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order
+            ) VALUES ($1, $2, 'sms', $3, '2020-01-01T00:00:00Z', 0, 0)
+            ",
+        )
+        .bind(conv)
+        .bind(A1)
+        .bind(guid)
+        .execute(&mut *conn)
+        .await;
+        assert!(inserted.is_err(), "guid {guid:?} was accepted");
+    }
+}
+
 #[tokio::test]
 async fn old_database_rebuilds_empty_at_current_version() {
     let (pool, _dir) = test_pool().await;

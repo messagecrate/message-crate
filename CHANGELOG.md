@@ -520,6 +520,8 @@ released versions carry their date on the heading.
   how many, as it does for GO SMS Pro, SMS Backup+, iMazing and OpenExtract.
 - 2026-10-04 The way a resumed Upload records the conversations an earlier
   part of the Import Run already sent was reworked, with nothing visible.
+- 2026-10-04 Handling for messages without an id, which an import already
+  refuses, was removed, with nothing visible.
 
 #### Exporting and converting
 

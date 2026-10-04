@@ -250,10 +250,16 @@ impl RunJournal {
     }
 
     /// True when this message id was imported on an earlier run.
+    ///
+    /// A blank guid is never one: the server accepts and skips a tapback row
+    /// with a blank guid, so one can be recorded, but a message with a blank
+    /// guid must be sent every time so the server refuses it.
     pub fn has_message(&self, file: &str, guid: &str) -> bool {
-        self.state
-            .messages
-            .contains(&JournalState::message_key(file, guid))
+        !guid.trim().is_empty()
+            && self
+                .state
+                .messages
+                .contains(&JournalState::message_key(file, guid))
     }
 
     /// True when this attachment fingerprint was uploaded on an earlier run.
