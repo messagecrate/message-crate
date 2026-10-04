@@ -8,8 +8,8 @@ use crate::db::engine;
 const SHA: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
 
 /// A row for a stored blob named `assets_path`, with nothing else known.
-fn row(assets_path: &str) -> AssetRow {
-    AssetRow {
+fn row(assets_path: &str) -> StoredOriginal {
+    StoredOriginal {
         sha256: SHA.to_string(),
         assets_path: assets_path.to_string(),
         mime_type: None,
@@ -1261,11 +1261,12 @@ fn storing_a_derived_file_leaves_only_the_file() {
 }
 
 /// The Trash is emptied while the pass makes a Thumbnail: the rows that
-/// named the original are gone before the Thumbnail is recorded, and no
-/// delete can report a file that did not exist yet. The pass removes it, so
-/// nothing of a deleted attachment stays on disk.
+/// named the original are gone before the Thumbnail is recorded. The pass
+/// counts nothing made and names nothing, and leaves the file to the sweep
+/// at the next Import Run's end, because the same bytes may be the version
+/// of another original a concurrent pass is about to record.
 #[test]
-fn a_version_made_after_its_rows_were_deleted_is_not_kept() {
+fn a_version_made_after_its_rows_were_deleted_is_left_for_the_sweep() {
     with_real_ffmpeg(async {
         let (opened, _dir, _) = fixture_with("imessage", ".png", PNG_1X1_RGB).await;
         let rows = versions_db::stored_originals(&mut opened.conn().await.unwrap(), ACCOUNT, None)
@@ -1285,10 +1286,42 @@ fn a_version_made_after_its_rows_were_deleted_is_not_kept() {
 
         assert_eq!(made, stats(1, 0, 0, 1, 0));
         let converted = opened.cfg.paths.assets_converted_dir_for_account(ACCOUNT);
-        let left: Vec<_> = walk(&converted);
+        assert_eq!(
+            walk(&converted).len(),
+            1,
+            "the Thumbnail waits for the sweep"
+        );
+    });
+}
+
+/// A deleted account's directory is gone, so the pass stores nothing for it
+/// and never makes the directory again.
+#[test]
+fn nothing_is_stored_once_the_account_directory_is_gone() {
+    with_real_ffmpeg(async {
+        let (opened, _dir, _) = fixture_with("imessage", ".png", PNG_1X1_RGB).await;
+        let rows = versions_db::stored_originals(&mut opened.conn().await.unwrap(), ACCOUNT, None)
+            .await
+            .unwrap();
+        let opts = ProcessAssetsOptions::default();
+        let work = tempfile::tempdir().unwrap();
+        let pass = AccountPass::new(&opened.cfg, &opts, work.path(), ACCOUNT, Log::Print)
+            .unwrap()
+            .unwrap();
+        let account_dir = opened.cfg.paths.data_dir.join(ACCOUNT.to_string());
+        let source = pass.assets_dir.join(&rows[0].assets_path);
+        let kept = work.path().join("original.png");
+        fs::copy(&source, &kept).unwrap();
+        fs::remove_dir_all(&account_dir).unwrap();
+
+        let made = pass
+            .derive(Version::Thumbnail, Kind::Image, &kept, &rows[0])
+            .map(|_| ());
+
+        assert!(made.is_err(), "nothing is stored for a deleted account");
         assert!(
-            left.is_empty(),
-            "nothing of the deleted attachment stays: {left:?}"
+            !account_dir.exists(),
+            "the account directory is not made again"
         );
     });
 }
@@ -1330,4 +1363,33 @@ fn a_work_directory_a_stopped_pass_left_is_removed_by_the_next() {
     assert!(!stale.exists(), "the stopped pass's directory is removed");
     assert!(live.exists(), "a young directory is left alone");
     assert!(work.path().starts_with(&root));
+}
+
+/// A pass that works for more than a day on originals that need nothing
+/// writes no file, so its work directory would look stopped. It touches the
+/// directory before each original, so another pass leaves it alone.
+#[tokio::test]
+async fn a_live_pass_keeps_its_work_directory_young() {
+    let (opened, dir, _) = fixture_with("imessage", ".txt", b"notes").await;
+    let rows = versions_db::stored_originals(&mut opened.conn().await.unwrap(), ACCOUNT, None)
+        .await
+        .unwrap();
+    let work = work_dir(dir.path()).unwrap();
+    let two_days_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 86_400);
+    fs::File::open(work.path())
+        .unwrap()
+        .set_modified(two_days_ago)
+        .unwrap();
+    let opts = ProcessAssetsOptions::default();
+    let pass = AccountPass::new(&opened.cfg, &opts, work.path(), ACCOUNT, Log::Print)
+        .unwrap()
+        .unwrap();
+
+    pass.process_rows(&opened.db, &rows).await;
+
+    let _other = work_dir(dir.path()).unwrap();
+    assert!(
+        work.path().is_dir(),
+        "another pass leaves a live directory alone"
+    );
 }

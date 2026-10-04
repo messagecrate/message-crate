@@ -24,9 +24,7 @@ use sqlx::{SqliteConnection, SqlitePool};
 use tempfile::TempDir;
 
 use crate::config::Config;
-use crate::db::attachment_versions::{
-    self as versions_db, StoredOriginal as AssetRow, Version, VersionFile,
-};
+use crate::db::attachment_versions::{self as versions_db, StoredOriginal, Version, VersionFile};
 use crate::db::schema;
 use crate::open_db::OpenDb;
 use media::Kind;
@@ -119,6 +117,15 @@ impl Log {
             Self::Trace => tracing::warn!("{line}"),
         }
     }
+}
+
+/// The original's media type, from everything its rows know about it.
+fn media_type(row: &StoredOriginal) -> Option<String> {
+    media::media_type_of(
+        Path::new(&row.assets_path),
+        row.mime_type.as_deref(),
+        &row.name_hints(),
+    )
 }
 
 /// Make the versions of every stored original of the account `opts` names,
@@ -342,14 +349,18 @@ impl<'a> AccountPass<'a> {
     }
 
     /// `account/path`: how log lines name an attachment.
-    fn label(&self, row: &AssetRow) -> String {
+    fn label(&self, row: &StoredOriginal) -> String {
         format!("{}/{}", self.account_id, row.assets_path)
     }
 
     /// Process each of `rows` and count what happened, logging each failure.
-    async fn process_rows(&self, db: &SqlitePool, rows: &[AssetRow]) -> ProcessAssetsStats {
+    async fn process_rows(&self, db: &SqlitePool, rows: &[StoredOriginal]) -> ProcessAssetsStats {
         let mut stats = ProcessAssetsStats::default();
         for row in rows {
+            // A work directory whose time is a day old counts as left by a
+            // stopped pass, so a live one is touched before each original.
+            let _ = fs::File::open(self.work_dir)
+                .and_then(|dir| dir.set_modified(std::time::SystemTime::now()));
             let outcome = self.process(db, row).await;
             if let Some(err) = &outcome.error {
                 self.log
@@ -365,7 +376,7 @@ impl<'a> AccountPass<'a> {
     /// Reads the facts only the disk can supply, lets [`plan`] decide, then
     /// does what the plan says. An existing version is hashed, so one cut
     /// short by a killed run is made again.
-    async fn process(&self, db: &SqlitePool, row: &AssetRow) -> Outcome {
+    async fn process(&self, db: &SqlitePool, row: &StoredOriginal) -> Outcome {
         let source_path = self.assets_dir.join(&row.assets_path);
         let state = |version: Version| {
             preview_file(
@@ -377,7 +388,7 @@ impl<'a> AccountPass<'a> {
             original_exists: source_path.is_file(),
             preview: state(Version::Preview),
             thumbnail: state(Version::Thumbnail),
-            browser_shows: media::browser_shows(&source_path, row.media_type().as_deref()),
+            browser_shows: media::browser_shows(&source_path, media_type(row).as_deref()),
         };
         let versions = match plan(row, self.opts, on_disk) {
             Plan::RemoveIncomplete => {
@@ -437,7 +448,7 @@ impl<'a> AccountPass<'a> {
     async fn make(
         &self,
         db: &SqlitePool,
-        row: &AssetRow,
+        row: &StoredOriginal,
         version: Version,
         kind: Kind,
         source_path: &Path,
@@ -453,23 +464,22 @@ impl<'a> AccountPass<'a> {
             Derived::DryRun => return Ok(true),
             Derived::Stored(blob) => blob,
         };
-        let mut conn = db.acquire().await?;
-        let named =
-            versions_db::record(&mut conn, version, self.account_id, &row.sha256, &blob).await?;
+        let named = versions_db::record(
+            &mut *db.acquire().await?,
+            version,
+            self.account_id,
+            &row.sha256,
+            &blob,
+        )
+        .await?;
         if named == 0 {
             // Every row of the original was deleted while the version was
-            // made, so the delete could not report the file. Remove it here,
-            // unless another row names the same bytes.
-            if !versions_db::converted_file_is_named(&mut conn, self.account_id, &blob.sha256)
-                .await?
-                && let Some(path) =
-                    crate::asset_store::join_under(&self.converted_dir, &blob.assets_path)
-            {
-                crate::asset_store::remove_file(&path)
-                    .with_context(|| format!("remove unnamed {version} {}", path.display()))?;
-            }
+            // made, so the delete could not report the file. It is left for
+            // the sweep at the next Import Run's end, which keeps a young
+            // file: the same bytes may be the version of another original
+            // that a concurrent pass is about to record.
             self.log.say(format!(
-                "{}: deleted while its {version} was made; the {version} is not kept",
+                "{}: deleted while its {version} was made; the {version} is left for the sweep",
                 self.label(row)
             ));
             return Ok(false);
@@ -494,7 +504,7 @@ impl<'a> AccountPass<'a> {
     async fn share_existing(
         &self,
         db: &SqlitePool,
-        row: &AssetRow,
+        row: &StoredOriginal,
         version: Version,
     ) -> Result<()> {
         let named = row.named(version);
@@ -545,7 +555,12 @@ impl<'a> AccountPass<'a> {
     ///
     /// Returns an error when the rows cannot be updated or the file cannot
     /// be deleted.
-    async fn drop_damaged(&self, db: &SqlitePool, row: &AssetRow, version: Version) -> Result<()> {
+    async fn drop_damaged(
+        &self,
+        db: &SqlitePool,
+        row: &StoredOriginal,
+        version: Version,
+    ) -> Result<()> {
         let Some(rel) = row.named(version).assets_path else {
             return Ok(());
         };
@@ -573,7 +588,7 @@ impl<'a> AccountPass<'a> {
 
     /// Delete a `.part` left by an interrupted upload, or say so in a dry
     /// run.
-    fn remove_incomplete(&self, row: &AssetRow, source_path: &Path) -> Result<()> {
+    fn remove_incomplete(&self, row: &StoredOriginal, source_path: &Path) -> Result<()> {
         if source_path.is_file() {
             if self.opts.dry_run {
                 self.log.say(format!(
@@ -597,7 +612,7 @@ impl<'a> AccountPass<'a> {
         version: Version,
         kind: Kind,
         source_path: &Path,
-        row: &AssetRow,
+        row: &StoredOriginal,
     ) -> Result<Derived> {
         let ext = match version {
             Version::Thumbnail => ".jpg",
@@ -623,7 +638,7 @@ impl<'a> AccountPass<'a> {
         out: &Path,
         version: Version,
         ext: &str,
-        row: &AssetRow,
+        row: &StoredOriginal,
     ) -> Result<Derived> {
         if self.opts.dry_run {
             self.log
@@ -751,7 +766,7 @@ enum PreviewFile {
 
 /// Decide what one original needs from the row, the options and what is on
 /// disk. No IO happens here: `on_disk` carries the facts the caller read.
-fn plan(row: &AssetRow, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> Plan {
+fn plan(row: &StoredOriginal, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> Plan {
     if is_part_path(&row.assets_path) {
         return Plan::RemoveIncomplete;
     }
@@ -762,7 +777,7 @@ fn plan(row: &AssetRow, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> Plan {
         row.mime_type.as_deref(),
         &row.name_hints(),
     );
-    let is_gif = row.media_type().as_deref() == Some("image/gif");
+    let is_gif = media_type(row).as_deref() == Some("image/gif");
     let Some(kind) = preview_kind.or(is_gif.then_some(Kind::Image)) else {
         return Plan::Skip(SkipReason::NotMedia);
     };

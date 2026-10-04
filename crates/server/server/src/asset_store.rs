@@ -613,10 +613,30 @@ async fn named_fingerprints(
         crate::db::attachment_versions::named_files(conn, account_id)
             .await?
             .into_iter()
-            .flat_map(crate::db::attachment_versions::NamedFiles::fingerprints)
+            .flat_map(fingerprints)
             .map(|fingerprint| fingerprint.to_ascii_lowercase())
             .collect(),
     )
+}
+
+/// Every fingerprint one attachment row names: of its original and of each
+/// version, by the fingerprint column and by the name of the file a path
+/// points at.
+fn fingerprints(row: crate::db::attachment_versions::NamedFiles) -> impl Iterator<Item = String> {
+    let paths = [
+        row.assets_path,
+        row.derived_assets_path,
+        row.thumbnail_assets_path,
+    ];
+    [row.sha256, row.derived_sha256, row.thumbnail_sha256]
+        .into_iter()
+        .flatten()
+        .chain(paths.into_iter().flatten().filter_map(|path| {
+            Path::new(&path)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .and_then(fingerprint_of)
+        }))
 }
 
 /// The 64-hex fingerprint a stored file's name starts with, lowercased:

@@ -89,7 +89,7 @@ pub(crate) async fn queue_import_run(
     import_id: i64,
 ) {
     let queued = match pool.acquire().await {
-        Ok(mut conn) => queue_import_run_on(&mut conn, account_id, import_id).await,
+        Ok(mut conn) => queue_without_waking(&mut conn, account_id, import_id).await,
         Err(error) => {
             log_not_queued(account_id, import_id, &error);
             0
@@ -104,7 +104,7 @@ pub(crate) async fn queue_import_run(
 /// `conn`, without waking a pass: the `import` command runs none, and the
 /// next `serve` works on them. Answers how many were queued; a failure is
 /// logged and answers none.
-pub(crate) async fn queue_import_run_on(
+pub(crate) async fn queue_without_waking(
     conn: &mut sqlx::SqliteConnection,
     account_id: i64,
     import_id: i64,

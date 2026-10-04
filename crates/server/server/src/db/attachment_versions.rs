@@ -4,8 +4,6 @@
 //! row of the account that names the original carries the same versions.
 //! The column names live here and nowhere else.
 
-use std::path::Path;
-
 use sqlx::SqliteConnection;
 
 /// One of the two versions the server makes of an original.
@@ -88,15 +86,6 @@ impl StoredOriginal {
     /// Extension sources to fall back on when the stored blob has none.
     pub(crate) fn name_hints(&self) -> [Option<&str>; 2] {
         [self.original_name.as_deref(), self.source_path.as_deref()]
-    }
-
-    /// The original's media type, from everything known about it.
-    pub(crate) fn media_type(&self) -> Option<String> {
-        media::media_type_of(
-            Path::new(&self.assets_path),
-            self.mime_type.as_deref(),
-            &self.name_hints(),
-        )
     }
 
     /// What the rows say about `version`.
@@ -186,7 +175,7 @@ pub async fn stored_originals(
 
 /// Point every attachment row of `account_id` for the original
 /// `original_sha` at `file` as its `version`, and answer how many rows now
-/// name it. None when every row of the original was deleted meanwhile.
+/// name it. 0 when every row of the original was deleted meanwhile.
 ///
 /// # Errors
 ///
@@ -350,28 +339,4 @@ pub struct NamedFiles {
     pub derived_assets_path: Option<String>,
     pub thumbnail_sha256: Option<String>,
     pub thumbnail_assets_path: Option<String>,
-}
-
-impl NamedFiles {
-    /// Every fingerprint the row names.
-    pub fn fingerprints(self) -> impl Iterator<Item = String> {
-        [self.sha256, self.derived_sha256, self.thumbnail_sha256]
-            .into_iter()
-            .flatten()
-            .chain(
-                [
-                    self.assets_path,
-                    self.derived_assets_path,
-                    self.thumbnail_assets_path,
-                ]
-                .into_iter()
-                .flatten()
-                .filter_map(|path| {
-                    std::path::Path::new(&path)
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .and_then(crate::asset_store::fingerprint_of)
-                }),
-            )
-    }
 }
