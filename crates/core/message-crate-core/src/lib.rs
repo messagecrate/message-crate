@@ -11,7 +11,8 @@ mod pipeline;
 mod process;
 mod progress;
 mod run;
-#[cfg(feature = "testutil")]
+mod scratch;
+#[cfg(any(test, feature = "testutil"))]
 pub mod testutil;
 mod transforms;
 
@@ -40,4 +41,5 @@ pub use process::{
 };
 pub use progress::{ProgressEvent, ProgressSink, emit_progress};
 pub use run::{finish_run, run_pipeline};
+pub use scratch::{ATTACHMENT_SPOOL_FOLDER, IMESSAGE_READER_FOLDER, ScratchDir, sweep_scratch};
 pub use transforms::ExportTransforms;

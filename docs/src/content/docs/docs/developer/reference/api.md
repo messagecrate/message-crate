@@ -86,7 +86,7 @@ Every export route takes the `export` scope on a session or an API token. A prog
 - `body:`, `subject:` — text, `none`, `any`, restricted to that one field.
 - `name:`, `identity:` — a participant's name or identity; text, `none`, `any`.
 - `title:` — the conversation's title; text, `none`, `any`.
-- `with:` — a participant, by name, identity, `pre*` prefix, or `#id`.
+- `with:` — a participant, by name, identity, `pre*` prefix, or `#id`; `me` is a conversation with yourself, whose own identity is one of the account's.
 - `from:`, `to:` — who sent it or who it went to; `me`, name, identity, `pre*` prefix, or `#id`.
 - `in:` — this one conversation; title, handle, `pre*` prefix, or `#id`.
 - `group:` — this Contact Group, on the contact or on a participant; name, `pre*` prefix, `#id`, `none`, `unknown`.

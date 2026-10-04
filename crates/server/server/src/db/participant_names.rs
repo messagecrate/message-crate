@@ -111,7 +111,9 @@ async fn load_participant_rows(
 /// (`docs/architecture/contacts-identities-and-messages.md`, "A group
 /// conversation is not a person"). Any other conversation type is left out,
 /// so it has no participants. The type is compared without case, as the import
-/// compares it when it decides whether the chat handle gets a contact.
+/// compares it when it decides whether the chat handle gets a contact. A
+/// conversation with yourself is left out too: its chat handle is one of the
+/// account's identities, and the holder is never a participant (#1094).
 ///
 /// Same rule, one clause shorter: with no participants row there is no
 /// per-conversation backup name, so it is the Contact's name, else the handle.
@@ -144,7 +146,9 @@ async fn load_from_chat_handle(
                    ON c.id = ch.contact_id AND c.account_id = conv.account_id
                   AND {NOT_TRASHED}
                  WHERE conv.id IN ({placeholders})
-                   AND conv.conversation_type = 'individual' COLLATE NOCASE"
+                   AND conv.conversation_type = 'individual' COLLATE NOCASE
+                   AND NOT {with_yourself}",
+                with_yourself = crate::db::conversations::is_with_yourself_sql("conv")
             )
         },
         participant_row,

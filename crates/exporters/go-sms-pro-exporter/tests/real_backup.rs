@@ -25,9 +25,11 @@ fn real_backup_exports_clean_conversations() {
     let tmp = tempfile::tempdir().unwrap();
     let output =
         std::env::var("GO_SMS_PRO_OUT").map_or_else(|_| tmp.path().to_path_buf(), PathBuf::from);
+    let cache = tempfile::tempdir().unwrap();
     let report = convert_export(ConvertExportArgs {
         input_dir: &input,
         output_dir: &output,
+        cache_dir: cache.path(),
         owner_phones: &[owner],
         transforms: ExportTransforms::none(),
         output_format: OutputFormat::Csv,

@@ -20,9 +20,11 @@ fn fixture() -> PathBuf {
 /// Import SMS Backup+ mail under `input` as JSON Lines into `output`, and
 /// read the conversations back.
 fn import(input: &Path, output: &Path) -> Vec<ConversationDocument> {
+    let cache = tempfile::tempdir().unwrap();
     convert_export(ConvertExportArgs {
         inputs: &[input.to_path_buf()],
         output_dir: output,
+        cache_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,

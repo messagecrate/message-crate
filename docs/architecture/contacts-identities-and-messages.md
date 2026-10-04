@@ -141,21 +141,18 @@ second row with the service `whatsapp`. When one of the two is on a contact,
 the other joins the same contact (`contact_id_of_sibling_handle`). Why: the
 rows differ only by service, and splitting them would show one person twice.
 
-An address book load keeps the rule too. When a load puts one of the two on
-a contact, the other goes to the same contact, unless the file has a row for
-it (`siblings_that_follow` in `db/address_book.rs`). In Edit mode a row for
-one of the two keeps the other on the contact rather than taking it off. A
-row for the other one is followed as written, so a file that lists the two
-under different contacts splits the number on purpose. The other one follows
-only from a holder the load may take an identity from: a contact with no
-name, or one in the file. A named contact outside the file keeps it, and the
-load says so in its notes. Why: a file that names a person on one row means
-the person, not one service of theirs, and leaving the other row behind
-would show them twice. A row is the only way the file can say otherwise.
+An import keeps the rule. An address book load is the exception: it moves,
+adds and takes off only the identities its rows list, so a row for one of the
+two leaves the other where it is, and a file that lists the two under
+different contacts splits the number. Why: a load applies exactly what the
+file says and never second-guesses it (below). The file is the person's
+instruction, and a load that moved an identity no row lists would undo a
+split the person made on purpose. Rejected: moving the other one with the
+listed one (#1640, reversed in #1059).
 
-The contact drawer is the exception. Moving or taking off one identity there
-moves only that identity, and can split a number. Why: the person named that
-one identity, and the drawer has no way to ask about the other.
+The contact drawer moves only the identity it is given too, and can split a
+number. Why: the person named that one identity, and the drawer has no way
+to ask about the other.
 
 **A phone number has one key everywhere.** `phone::normalize_typed_handle`
 gives a number its key, and the same key is used by the `handles` row, by the
@@ -248,6 +245,25 @@ group name that matches no Contact Group creates one. Why: the export can be
 a subset (a search, the checked rows), so a file that spoke for the whole
 account would delete everyone it did not mention, and a file that could only
 add would leave a wrongly linked address unfixable from the sheet.
+
+**A load applies exactly what the file says, and never second-guesses it.**
+A load carries out what the rows state: the contacts they name, the names
+they give, and the identities and Contact Group memberships they list, and
+in Edit it takes off what a listed contact's rows leave out. It never
+corrects, infers or protects anything the file does not say to make the
+result closer to what the person may have meant, even when the file looks
+like a mistake. The consequences the rules below spell out are not
+corrections: a nameless contact a load empties is deleted; when Edit takes
+off an identity that a conversation, message or reaction still uses, the
+identity goes to a new contact with no name; and a phone number is read
+with its `+` back when the spreadsheet dropped it without showing, which
+the load's notes say. Where a rule elsewhere in this
+document does more for an import, such as "one number is one person on
+every service", a load does only what its rows say. Why: the person edited
+the file to say what they want, and a load that second-guessed it would
+change things no row shows, which the person can neither see in the sheet
+nor undo from it. A row the load cannot carry out refuses the load (below)
+rather than being guessed at.
 
 **A load is strict, and refuses whole.** A phone is keyed by the one rule
 above, an email is lowercased and must be one `@` with text on both sides,
@@ -356,11 +372,24 @@ imported after does not; without this their messages would not pair.
 their own address are a conversation whose chat handle is one of the holder's
 identities. It has no participants and makes no contact. Both rows of each note
 are kept, the sent and the received, and the received row has no sender. Its
-title is the account's display name, or the address when there is none, computed
-when it is shown. `with:me` finds it. Why: the other person in it is the holder,
-and the holder is never a participant. A contact for the holder would be a
-second record of the account. Not built yet:
-[#1094](https://github.com/messagecrate/message-crate/issues/1094).
+title is the account's display name, or the address when there is none,
+computed when it is shown, even when the backup gave the chat a name. `with:me`
+finds it. Why: the other person in it is the holder, and the holder is never a
+participant. A contact for the holder would be a second record of the account.
+
+Import decides it by the chat's own identity, against the identities it loads
+once per run: a one-to-one chat whose identifier is one of them gets no contact
+for that identifier, drops the senders of its received rows, and marks a
+reaction in it as the holder's own (`imports_api/staging.rs`,
+`FileStaging::stage`). The header's participant, if the source lists the holder
+as one (WhatsApp's "Message yourself" does), is dropped as any account identity
+is. A read asks the same question of the identities the account has now
+(`db/conversations.rs`, `is_with_yourself_sql`): the conversation list and the
+conversation page do not read its chat handle back as a participant
+(`db/participant_names.rs`), and the title (`conversation_title_sql`) is the
+one expression the conversation list, the conversation page, the Messages list,
+`title:`, `in:` and plain text all read
+([#1094](https://github.com/messagecrate/message-crate/issues/1094)).
 
 **Orphaned messages sit in conversations of their own kind.** A backup can hold
 a message without recording which conversation it was said in. The ones one

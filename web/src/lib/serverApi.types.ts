@@ -1972,7 +1972,13 @@ export interface components {
             id: number;
             /** @description True for group conversations. */
             is_group: boolean;
-            /** @description Group label from the export, when present. */
+            /**
+             * @description The title the conversation is shown by: for a conversation the account
+             *     holder has with themselves, the account's display name or, without
+             *     one, the conversation's own address; for any other, the export's
+             *     title. Left out when there is none, and the conversation goes by its
+             *     participants.
+             */
             label?: string | null;
             /**
              * @description Timestamp of the conversation's last message. Left out when every
@@ -2796,13 +2802,22 @@ export interface components {
             chat_identifier: string;
             /** @description `individual` or `group`. */
             conversation_type: string;
-            /** @description Group label, when set. */
+            /** @description The title the export gave the conversation, when it gave one. */
             group_title?: string | null;
             /**
              * Format: int64
              * @description Conversation row id.
              */
             id: number;
+            /**
+             * @description The title the conversation is shown by, as the conversation list's
+             *     `label` gives it: for a conversation the account holder has with
+             *     themselves, the account's display name or, without one, the
+             *     conversation's own address; for any other, the export's title.
+             *     Left out when there is none, and the conversation goes by its
+             *     participants.
+             */
+            label?: string | null;
             /** @description Participants of the conversation. */
             participants: components["schemas"]["Participant"][];
         };
@@ -3325,7 +3340,13 @@ export interface components {
                 id: number;
                 /** @description True for group conversations. */
                 is_group: boolean;
-                /** @description Group label from the export, when present. */
+                /**
+                 * @description The title the conversation is shown by: for a conversation the account
+                 *     holder has with themselves, the account's display name or, without
+                 *     one, the conversation's own address; for any other, the export's
+                 *     title. Left out when there is none, and the conversation goes by its
+                 *     participants.
+                 */
                 label?: string | null;
                 /**
                  * @description Timestamp of the conversation's last message. Left out when every

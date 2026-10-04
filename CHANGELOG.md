@@ -21,6 +21,12 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-04 **Notes you sent to yourself are their own conversation.** A chat
+  with your own number or email, such as Apple Messages to yourself or
+  WhatsApp's "Message yourself", imports with no one else in it and no
+  longer adds you to Contacts. It goes by your display name, or by the
+  address when you have none, and changes when your display name does.
+  Search `with:me` to list exactly those conversations.
 - 2026-10-04 **The Audit Trail narrows to a deleted account.** Owner Home's
   Account picker lists deleted accounts below the live ones, each by its
   old username and when it was deleted. Picking one shows only what
@@ -119,10 +125,13 @@ released versions carry their date on the heading.
   Profile tab. **Append** adds and renames and removes nothing. **Edit**
   also makes each contact in the file match its rows, so deleting a row
   takes that identity off the contact. Contacts the file does not mention
-  are left alone. A file with a mistake in it is refused whole, and each row
-  at fault is listed with its reason, so nothing is half loaded. Message
-  Crate no longer reads a phone's vCard file, which put every number on a
-  card into your contacts whether or not a message ever used it.
+  are left alone. A load does exactly what the file says and never corrects
+  it: a row moves only the identity it lists, so to move a number on both
+  Text Message and WhatsApp, give each its own row. A file with a mistake in
+  it is refused whole, and each row at fault is listed with its reason, so
+  nothing is half loaded. Message Crate no longer reads a phone's vCard
+  file, which put every number on a card into your contacts whether or not
+  a message ever used it.
 - 2026-10-01 **The Demo Account has Contact Groups.** Demo Data is now built
   the way your own Message Crate is: its messages are imported first, and an
   Address Book then names the people in them and puts them in Family, Work,
@@ -251,6 +260,18 @@ released versions carry their date on the heading.
   while an Upload ran and nothing else noticed, the Upload kept going and
   recorded every remaining conversation as failed. It now pauses at once,
   records none of them as failed, and logs you out.
+- 2026-10-04 **Working files from reading a backup no longer stay behind
+  when an import is stopped, and Staging checks for room while it reads
+  the backup.** Reading an encrypted iPhone backup decrypts its message
+  database, and reading an SMS Backup & Restore, GO SMS Pro or SMS Backup+
+  file sets its attachments aside, both as plain copies. These working
+  files used to sit in the Staging Directory, and an app closed or stopped
+  mid-run left them there until a later run used the same folder. They now
+  sit in the app's cache folder, are deleted when the run ends, whether it
+  finished or failed, and are deleted when the app next starts if it was
+  stopped. Before it writes, Staging now checks that the disk holding the
+  Staging Directory and the disk holding the cache folder have room, and
+  stops with the space it needs while it reads the backup, not after.
 - 2026-10-04 **A discarded import keeps its errors, and an import keeps its
   converted files when they cannot be read back.** Discarding an import,
   or cancelling it at a Review, recorded it with no errors, though it had
@@ -568,6 +589,13 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-04 **Every format checks for room before it writes.** Only an
+  import to the server used to check for free disk space; writing CSV,
+  JSON, EML, MBOX or SMS Backup & Restore XML, and **Convert** in
+  Settings, failed part-way with a write error when the disk filled. They
+  now check first and stop with the space they need. **Convert** from an
+  SMS Backup & Restore backup also sets the backup's attachments aside in
+  the app's cache folder, not in the folder it writes to.
 - 2026-10-04 **A conversion can no longer start in the middle of an Import
   Run or an export.** **Convert** in Settings stayed disabled only while one
   of the run's Stages was running, so it could be started while an Import
@@ -720,14 +748,6 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
-- 2026-10-04 **An Address Book load keeps a number's Text Message and
-  WhatsApp identities on one contact.** A file that moved a number's Text
-  Message identity to a contact, and had no row for the same number on
-  WhatsApp, left the WhatsApp identity behind, so one person showed as two
-  contacts. The identity on the other service now goes with the one the file
-  moves, in Append and Edit alike, unless the file has a row of its own for
-  it. A named contact the file does not mention keeps it, and the load says
-  so.
 - 2026-10-04 **One number is one identity however it arrives.** A number
   written with `tel:` in front, in a backup that gave no type for it, became
   a separate identity from the same number as a message sender, on a contact
@@ -1034,6 +1054,13 @@ released versions carry their date on the heading.
   the attachment folders.
 - 2026-10-04 **How the desktop app checks that its server started was
   reworked, with nothing visible.**
+- 2026-10-04 **The server's `reset-demo` command checks more of what it
+  must leave alone.** Before it puts the rebuilt Demo Account in place, it
+  checks that nothing else changed. That check now also covers the Audit
+  Trail of deleted accounts, what a search finds in other accounts'
+  messages, and the files in other accounts' folders. The reset stops if any
+  of them changed. On a database of about 1.3 million messages the check
+  takes about 14 seconds.
 
 ### Upgrading
 

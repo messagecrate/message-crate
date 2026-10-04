@@ -14,9 +14,10 @@
 //! crate is under the Fair Core License, so that work happens in a separate
 //! program: `imessage-reader` (`crates/helpers/imessage-reader`). [`Helper`]
 //! finds that program, starts it, and reads its answer over the wire types
-//! of `imessage-reader-protocol`; [`ScratchDir`] is the folder one request
-//! decrypts into. `imessage-ir-exporter` starts the program through the same
-//! two types for an export. Why: `docs/adr/0014-gpl-code-only-behind-a-process-boundary.md`.
+//! of `imessage-reader-protocol`; `message_crate_core::ScratchDir` is the
+//! folder one request decrypts into, under the app's cache folder.
+//! `imessage-ir-exporter` starts the program through the same two types for
+//! an export. Why: `docs/adr/0014-gpl-code-only-behind-a-process-boundary.md`.
 
 mod backup;
 mod backup_domain;
@@ -24,7 +25,6 @@ mod helper;
 mod identity;
 #[cfg(any(test, feature = "testutil"))]
 pub mod reader_build;
-mod scratch;
 #[cfg(all(unix, any(test, feature = "testutil")))]
 pub mod testutil;
 
@@ -32,4 +32,3 @@ pub use backup::ios_backup_encrypted_flag;
 pub use backup_domain::{DecryptedDomain, decrypt_ios_backup_domain};
 pub use helper::Helper;
 pub use identity::{backup_identities, ios_backup_phone_number};
-pub use scratch::ScratchDir;

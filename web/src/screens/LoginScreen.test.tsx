@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -64,6 +63,7 @@ import { getServerState, login as serverLogin } from "../lib/serverApi";
 import { checkServerHealth } from "../lib/serverHealth";
 import type { ServerState } from "../lib/useServerState";
 import { Providers } from "../test/providers";
+import { setupUser } from "../test/user";
 import LoginScreen from "./LoginScreen";
 
 const checkServerHealthMock = vi.mocked(checkServerHealth);
@@ -127,13 +127,11 @@ function renderScreen() {
   );
 }
 
-// user-event's default per-keystroke delay is a real setTimeout(0). Under a
-// loaded machine that delay is scheduled, not skipped, so an address typed a
-// character at a time can take much longer than the card's own 400ms health
-// re-probe debounce — long enough for the background probe to race the
-// explicit reconnect this screen triggers. `delay: null` fires every
-// keystroke synchronously, closing that window regardless of machine load.
-const setupUser = () => userEvent.setup({ delay: null });
+// `setupUser` fires every keystroke without a timer between them. With
+// user-event's default delay, an address typed a character at a time on a
+// loaded machine can take longer than the card's own 400ms health re-probe
+// debounce. That is long enough for the background probe to race the explicit
+// reconnect this screen triggers.
 
 describe("LoginScreen", () => {
   beforeEach(() => {
