@@ -5,7 +5,8 @@ import { groupFromSlug, slugFromPath, slugPath } from "../lib/contactGroups";
 import { asMessagesLocationState } from "../lib/messagesLocationState";
 import { tagFromSlug, tagListQuery } from "../lib/messageTags";
 import { MESSAGE_SORT_PARAM, messagesSearch, resultsView, VIEW_PARAM } from "../lib/resultsView";
-import { trashed } from "../lib/searchQuery";
+import { useMarkedWords } from "../lib/searchFields";
+import { dropTokens, trashed } from "../lib/searchQuery";
 import type { Conversation } from "../lib/types";
 import { useContactGroups } from "../lib/useContactGroups";
 import { useMessageTags } from "../lib/useMessageTags";
@@ -278,7 +279,12 @@ export default function AppLayout() {
   // What Export starts from: the conversation list's query, tag filter
   // included, and nothing when the person is on contacts, Trash, or a
   // full-screen route. A tag page with no list has nothing to export.
-  const browseQuery = mode === "conversations" && tagPage === null ? threadListQuery : "";
+  // Export runs on the Conversations list, so a word only Messages takes,
+  // marked in the box, is left out of it as the Conversations list leaves it
+  // out (#1561).
+  const exportMarks = useMarkedWords(threadListQuery, "conversations", "messages").marked;
+  const browseQuery =
+    mode === "conversations" && tagPage === null ? dropTokens(threadListQuery, exportMarks) : "";
 
   return (
     <RightToolbarProvider>

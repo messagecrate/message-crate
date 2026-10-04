@@ -67,8 +67,10 @@ vi.mock("./ContactDrawer", () => ({ default: () => null }));
 vi.mock("./CheckedContactsPanel", () => ({ default: () => null }));
 
 vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
+// The desktop app with a profile shows Export in the left panel.
+const desktop = vi.hoisted(() => ({ on: false }));
 vi.mock("../lib/useAccountProfile", () => ({
-  useAccountProfile: () => ({ profile: null }),
+  useAccountProfile: () => ({ profile: desktop.on ? {} : null }),
 }));
 const sets = vi.hoisted(() => ({
   groups: [] as string[],
@@ -82,7 +84,7 @@ vi.mock("../lib/useContactGroups", () => ({
 vi.mock("../lib/useMessageTags", () => ({
   useMessageTags: () => ({ tags: sets.tags, loading: sets.tagsLoading }),
 }));
-vi.mock("../lib/tauri-check", () => ({ isTauri: () => false }));
+vi.mock("../lib/tauri-check", () => ({ isTauri: () => desktop.on }));
 vi.mock("../lib/serverApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/serverApi")>()),
   listSearchFields: vi.fn(async (list: SearchList) => searchFieldsFor(list)),
@@ -106,6 +108,7 @@ vi.mock("../lib/savedSearches", () => ({
 
 afterEach(() => {
   cleanup();
+  desktop.on = false;
   sets.groups = [];
   sets.groupsLoading = false;
   sets.tags = [];
@@ -187,6 +190,24 @@ describe("AppLayout's Conversations / Messages switch", () => {
     expect((await screen.findByTestId("message-search-list")).textContent).toBe(
       "query: from:ann hello",
     );
+  });
+
+  it("says why Messages lists nothing when every word works only in Conversations", async () => {
+    renderLayout("/?q=messages%3A%3E5&view=messages");
+    expect(
+      await screen.findByText(/Every word of this search works only in Conversations/),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("message-search-list")).toBeNull();
+  });
+
+  it("exports the conversations the list shows, without a word only Messages takes", async () => {
+    desktop.on = true;
+    const user = setupUser();
+    renderLayout("/?q=from%3Aann+hello");
+    await screen.findByTestId("conversation-list");
+
+    await user.click(screen.getByRole("button", { name: "Export" }));
+    expect(screen.getByTestId("location").textContent).toBe("/export?q=hello&list=conversations");
   });
 });
 

@@ -6,12 +6,13 @@ import {
   MESSAGE_SORT_PARAM,
   messagesSearch,
   openedAt,
+  otherResultsView,
   pickedMessageSort,
   type ResultsView,
   resultsView,
   VIEW_PARAM,
 } from "../lib/resultsView";
-import { useMarkedWords } from "../lib/searchFields";
+import { SEARCH_LIST_NAMES, useMarkedWords } from "../lib/searchFields";
 import { dropTokens } from "../lib/searchQuery";
 import type { Conversation } from "../lib/types";
 import { focusRing } from "../lib/uiStyles";
@@ -87,11 +88,7 @@ export default function ResultsColumn({
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const view = resultsView(searchParams);
-  const { marked, ready } = useMarkedWords(
-    query,
-    view,
-    view === "messages" ? "conversations" : "messages",
-  );
+  const { marked, ready } = useMarkedWords(query, view, otherResultsView(view));
   const listQuery = dropTokens(query, marked);
 
   const setParam = (key: string, value: string) => {
@@ -112,6 +109,13 @@ export default function ResultsColumn({
         // cannot be told apart from one it does, and the server would refuse it.
         <div role="status" className="p-4 text-[0.813rem] text-muted">
           Loading…
+        </div>
+      ) : view === "messages" && searchTyped && marked.length > 0 && listQuery.trim() === "" ? (
+        // Every word was left out. The Messages list would ask for a search
+        // the box already holds, so say why there is nothing to list.
+        <div role="status" className="p-4 text-[0.813rem] text-muted">
+          Every word of this search works only in {SEARCH_LIST_NAMES[otherResultsView(view)]}, so
+          there is nothing to search here.
         </div>
       ) : view === "messages" ? (
         <MessageSearchList

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { SearchScope } from "../lib/recentSearches";
+import { otherResultsView } from "../lib/resultsView";
 import type { SearchList } from "../lib/searchFields";
 import { Z_APP_HEADER } from "../lib/zLayers";
 import type { AdvancedSearchMode } from "./AdvancedSearchForm";
@@ -58,14 +59,14 @@ const SEARCH_TARGETS: Record<
   conversations: {
     scope: "message",
     list: "conversations",
-    otherList: "messages",
+    otherList: otherResultsView("conversations"),
     placeholder: "Search conversations",
     advancedMode: "messages",
   },
   messages: {
     scope: "message",
     list: "messages",
-    otherList: "conversations",
+    otherList: otherResultsView("messages"),
     placeholder: "Search messages",
     advancedMode: "messages",
   },
