@@ -218,8 +218,9 @@ impl RunPaths {
 ///
 /// # Errors
 ///
-/// Returns an error when setup fails, a worker disconnects, or the report cannot
-/// be written. A conversation that fails is recorded in the report and the
+/// Returns an error when setup fails, a worker disconnects, the report cannot
+/// be written, or the server refuses to complete the Import Run this push
+/// started. A conversation that fails is recorded in the report and the
 /// run goes on to the next one.
 pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<PushReport> {
     let run_started = Instant::now();
@@ -292,7 +293,7 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
     };
     write_report(&paths.report, &report)?;
     if cfg.import_id.is_none() {
-        complete_import_session(&session, import_id, &report, aborted, &mut out);
+        complete_import_session(&session, import_id, &report, aborted, &mut out)?;
     }
     out.log("");
     out.log(&format_push_summary(&report));
@@ -564,26 +565,29 @@ fn write_report(path: &Path, report: &PushReport) -> Result<()> {
     .with_context(|| format!("write report {}", path.display()))
 }
 
-/// Tell the server how the import session ended. Best effort: a failure here
-/// is logged, not returned, because the data is already on the server.
+/// Tell the server how the Import Run this push started ended.
+///
+/// # Errors
+///
+/// Returns an error when the server refuses to complete the run. The server
+/// then still holds the run as running, so the caller keeps the staged folder
+/// and resumes rather than treating the push as done.
 fn complete_import_session(
     session: &Session,
     import_id: i64,
     report: &PushReport,
     aborted: bool,
     out: &mut Reporter<'_, '_>,
-) {
-    let completed = session.complete_import(
-        import_id,
-        &ImportOutcome {
-            status: outcome_status(report, aborted),
-            bytes_uploaded: report.assets_bytes,
-        },
-    );
-    match completed {
-        Ok(()) => out.log(&format!("import session {import_id} completed")),
-        Err(error) => out.log(&format!(
-            "warning: could not complete import session {import_id}: {error}"
-        )),
-    }
+) -> Result<()> {
+    session
+        .complete_import(
+            import_id,
+            &ImportOutcome {
+                status: outcome_status(report, aborted),
+                bytes_uploaded: report.assets_bytes,
+            },
+        )
+        .with_context(|| format!("complete import run {import_id}"))?;
+    out.log(&format!("import session {import_id} completed"));
+    Ok(())
 }

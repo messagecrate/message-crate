@@ -91,14 +91,26 @@ fn write_jsonl(dir: &Path, doc: &ConversationDocument) {
 
 /// The server's answer to `POST /v1/imports`: an Import Run with `id`. Every
 /// push starts one, so every test mocks it; the batches then go to
-/// `/v1/imports/{id}/batches`.
-fn mock_import_run(server: &MockServer, id: i64) -> httpmock::Mock<'_> {
+/// `/v1/imports/{id}/batches`. A test that checks how the push completes the
+/// run mocks `/v1/imports/{id}/complete` itself.
+fn mock_import_start(server: &MockServer, id: i64) -> httpmock::Mock<'_> {
     server.mock(|when, then| {
         when.method(POST).path("/v1/imports");
         then.status(201)
             .header("Location", format!("/v1/imports/{id}"))
             .json_body(json!({ "id": id }));
     })
+}
+
+/// An Import Run with `id` that the server starts and, at the end of the
+/// push, completes. A push that started its own run fails when the server
+/// refuses to complete it, so every such test needs the completion too.
+fn mock_import_run(server: &MockServer, id: i64) -> httpmock::Mock<'_> {
+    server.mock(|when, then| {
+        when.method(POST).path(format!("/v1/imports/{id}/complete"));
+        then.status(200).json_body(json!({ "id": id }));
+    });
+    mock_import_start(server, id)
 }
 
 /// Push config with no retries, pointed at a mock server URL. Attachments are
@@ -268,7 +280,7 @@ fn a_push_completes_its_import_run_with_the_bytes_it_sent() {
     const PHOTO: &[u8] = b"photo bytes";
     let server = MockServer::start();
     let _auth = mock_session(&server);
-    let _run = mock_import_run(&server, 42);
+    let _run = mock_import_start(&server, 42);
     let digest = hex::encode(Sha256::digest(PHOTO));
     let _head = server.mock(|when, then| {
         when.method("HEAD").path(format!("/v1/assets/{digest}"));
@@ -316,7 +328,7 @@ fn a_push_completes_its_import_run_with_the_bytes_it_sent() {
 fn a_push_where_nothing_lands_completes_its_import_run_as_failed() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
-    let _run = mock_import_run(&server, 42);
+    let _run = mock_import_start(&server, 42);
     let _import = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/42/batches");
         then.status(500).json_body(json!({
@@ -339,6 +351,50 @@ fn a_push_where_nothing_lands_completes_its_import_run_as_failed() {
 
     assert!(!report.ok);
     assert_eq!(complete.calls(), 1, "the Import Run is completed as failed");
+}
+
+/// A push that started its own Import Run returns an error when the server
+/// refuses to complete it, rather than a report that says it succeeded: the
+/// server still holds the run as running, so the caller keeps the staged
+/// folder and resumes.
+#[test]
+fn a_refused_completion_is_an_error_the_push_returns() {
+    let server = MockServer::start();
+    let _auth = mock_session(&server);
+    let _run = mock_import_start(&server, 42);
+    let _import = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/42/batches");
+        then.status(200).json_body(json!({
+            "messages": 1,
+            "messages_appended": 1,
+            "conversations": 1
+        }));
+    });
+    let complete = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/42/complete");
+        then.status(500).json_body(json!({
+            "type": "about:blank",
+            "title": "Internal server error",
+            "status": 500,
+            "detail": "intentional completion failure"
+        }));
+    });
+
+    let dir = tempdir().unwrap();
+    write_jsonl(dir.path(), &sample_doc());
+    let error = run(&text_only_config(dir.path(), server.base_url()), None)
+        .expect_err("a refused completion fails the push");
+
+    assert_eq!(
+        complete.calls(),
+        1,
+        "the push asks to complete the run once"
+    );
+    let message = format!("{error:#}");
+    assert!(
+        message.contains("import run 42") && message.contains("intentional completion failure"),
+        "{message}"
+    );
 }
 
 #[test]
@@ -2621,7 +2677,7 @@ fn an_unreadable_2xx_answer_is_not_retried() {
 /// A server that answers each request on its own connection and closes it.
 /// The batch POST gets a `200 OK` whose headers promise a body the server
 /// never sends, so the client fails while reading it; the other routes a
-/// push calls get their usual answers. Returns the base URL and a count of
+/// push calls, the run's completion among them, get their usual answers. Returns the base URL and a count of
 /// batch POSTs.
 fn serve_a_200_that_drops_the_batch_body() -> (String, Arc<AtomicUsize>) {
     use std::io::{BufRead, BufReader, Read};
@@ -2666,6 +2722,8 @@ fn serve_a_200_that_drops_the_batch_body() -> (String, Arc<AtomicUsize>) {
             } else if request_line.starts_with("POST /v1/imports/7/batches ") {
                 counted.fetch_add(1, Ordering::SeqCst);
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 4096\r\nConnection: close\r\n\r\n{\"messages\":".to_string()
+            } else if request_line.starts_with("POST /v1/imports/7/complete ") {
+                answer("200 OK", r#"{"id":7}"#)
             } else {
                 answer("404 Not Found", "{}")
             };
