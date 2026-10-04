@@ -791,7 +791,8 @@ pub struct SeedConversation<'a> {
 
 /// A message guid no earlier call returned. `messages.guid` is required and
 /// unique per account and source, so a helper that inserts a message each
-/// time it is called needs a fresh one every time.
+/// time it is called takes a fresh one from here every time. A statement that
+/// runs once in one test gives a literal guid instead.
 pub fn unique_guid() -> String {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     format!(
@@ -841,7 +842,7 @@ pub async fn seed_conversation(state: &AppState, c: &SeedConversation<'_>) -> i6
         .bind(conversation_id)
         .bind(c.account_id)
         .bind(message.source)
-        .bind(format!("seed-{conversation_id}-{index}"))
+        .bind(unique_guid())
         .bind(message.timestamp)
         .bind(i64::from(message.is_from_me))
         .bind(index as i64)

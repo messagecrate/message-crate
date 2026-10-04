@@ -2207,8 +2207,10 @@ async fn conversation_messages_page_and_total_is_the_whole_count() {
 }
 
 /// Seed `count` messages into one conversation in a single statement, body
-/// `msg{n}`, guid `{conversation_id}-{n}` and `sort_order` `n` from 0, all at
-/// one timestamp, so the conversation's order is `n`.
+/// `msg{n}`, guid `{prefix}-{n}` from one [`unique_guid`] and `sort_order` `n`
+/// from 0, all at one timestamp, so the conversation's order is `n`.
+///
+/// [`unique_guid`]: crate::test_support::unique_guid
 async fn insert_many_messages(
     conn: &mut SqliteConnection,
     conversation_id: i64,
@@ -2220,12 +2222,13 @@ async fn insert_many_messages(
          INSERT INTO messages (
             conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
          )
-         SELECT $1, $2, 'imessage', $1 || '-' || i, '2024-01-01T00:00:00Z', 1, i, 'msg' || i
+         SELECT $1, $2, 'imessage', $4 || '-' || i, '2024-01-01T00:00:00Z', 1, i, 'msg' || i
          FROM n",
     )
     .bind(conversation_id)
     .bind(account_id)
     .bind(count)
+    .bind(crate::test_support::unique_guid())
     .execute(&mut *conn)
     .await
     .unwrap();
