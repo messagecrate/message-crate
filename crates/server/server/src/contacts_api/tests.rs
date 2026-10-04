@@ -1477,6 +1477,64 @@ async fn a_whatsapp_internal_id_an_import_stored_is_added_as_that_identity() {
     );
 }
 
+/// Naming a linked number again on the phone service, by a swap to itself
+/// and by a second add, changes nothing: the number stays one row on `phone`,
+/// so the next import or edit that names it finds that row rather than adding
+/// a second one.
+#[tokio::test]
+async fn naming_a_handle_again_on_its_service_keeps_one_row() {
+    let fixture = test_fixture().await;
+    let account = fixture.account_with_id(101, "alice").await;
+    let mut conn = fixture.conn().await;
+    let contact_id = insert_contact_with_handle(&mut conn, account, "Sam", "+15555550100").await;
+    add_identity(
+        &mut conn,
+        account,
+        contact_id,
+        "+15555550143",
+        Some(IdentityService::Phone),
+    )
+    .await;
+
+    assert!(
+        mutate_committed(
+            &mut conn,
+            account,
+            contact_id,
+            &UpdateContactRequest {
+                name: None,
+                add_identity: None,
+                update_identity: Some(UpdateContactIdentityRequest {
+                    previous_address: "+15555550143".into(),
+                    address: "+15555550143".into(),
+                    service: Some(IdentityService::Phone),
+                }),
+                remove_identity: None,
+            },
+        )
+        .await
+        .unwrap()
+    );
+    add_identity(
+        &mut conn,
+        account,
+        contact_id,
+        "+15555550143",
+        Some(IdentityService::Phone),
+    )
+    .await;
+
+    let rows: Vec<(String, Option<String>)> = sqlx::query_as(
+        "SELECT handle_type, service FROM handles WHERE account_id = $1 AND raw = $2",
+    )
+    .bind(account)
+    .bind("+15555550143")
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(rows, [("phone".to_string(), Some("phone".to_string()))]);
+}
+
 /// A contact holding only `+15555550100` on WhatsApp.
 async fn contact_on_whatsapp(conn: &mut SqliteConnection, account: i64) -> i64 {
     let contact_id: i64 = sqlx::query_scalar(
