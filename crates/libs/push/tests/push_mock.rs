@@ -91,14 +91,26 @@ fn write_jsonl(dir: &Path, doc: &ConversationDocument) {
 
 /// The server's answer to `POST /v1/imports`: an Import Run with `id`. Every
 /// push starts one, so every test mocks it; the batches then go to
-/// `/v1/imports/{id}/batches`.
-fn mock_import_run(server: &MockServer, id: i64) -> httpmock::Mock<'_> {
+/// `/v1/imports/{id}/batches`. A test that checks how the push completes the
+/// run mocks `/v1/imports/{id}/complete` itself.
+fn mock_import_start(server: &MockServer, id: i64) -> httpmock::Mock<'_> {
     server.mock(|when, then| {
         when.method(POST).path("/v1/imports");
         then.status(201)
             .header("Location", format!("/v1/imports/{id}"))
             .json_body(json!({ "id": id }));
     })
+}
+
+/// An Import Run with `id` that the server starts and, at the end of the
+/// push, completes. A push that started its own run fails when the server
+/// refuses to complete it, so every such test needs the completion too.
+fn mock_import_start_and_complete(server: &MockServer, id: i64) -> httpmock::Mock<'_> {
+    server.mock(|when, then| {
+        when.method(POST).path(format!("/v1/imports/{id}/complete"));
+        then.status(200).json_body(json!({ "id": id }));
+    });
+    mock_import_start(server, id)
 }
 
 /// Push config with no retries, pointed at a mock server URL. Attachments are
@@ -268,7 +280,7 @@ fn a_push_completes_its_import_run_with_the_bytes_it_sent() {
     const PHOTO: &[u8] = b"photo bytes";
     let server = MockServer::start();
     let _auth = mock_session(&server);
-    let _run = mock_import_run(&server, 42);
+    let _run = mock_import_start(&server, 42);
     let digest = hex::encode(Sha256::digest(PHOTO));
     let _head = server.mock(|when, then| {
         when.method("HEAD").path(format!("/v1/assets/{digest}"));
@@ -316,7 +328,7 @@ fn a_push_completes_its_import_run_with_the_bytes_it_sent() {
 fn a_push_where_nothing_lands_completes_its_import_run_as_failed() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
-    let _run = mock_import_run(&server, 42);
+    let _run = mock_import_start(&server, 42);
     let _import = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/42/batches");
         then.status(500).json_body(json!({
@@ -341,6 +353,99 @@ fn a_push_where_nothing_lands_completes_its_import_run_as_failed() {
     assert_eq!(complete.calls(), 1, "the Import Run is completed as failed");
 }
 
+/// A push that started its own Import Run returns an error when the server
+/// refuses to complete it, and the report it leaves on disk is not `ok`:
+/// the server still holds the run as running, so nothing may report the
+/// push as a success.
+#[test]
+fn a_refused_completion_is_an_error_the_push_returns() {
+    let server = MockServer::start();
+    let _auth = mock_session(&server);
+    let _run = mock_import_start(&server, 42);
+    let _import = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/42/batches");
+        then.status(200).json_body(json!({
+            "messages": 1,
+            "messages_appended": 1,
+            "conversations": 1
+        }));
+    });
+    let complete = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/42/complete");
+        then.status(500).json_body(json!({
+            "type": "about:blank",
+            "title": "Internal server error",
+            "status": 500,
+            "detail": "intentional completion failure"
+        }));
+    });
+
+    let dir = tempdir().unwrap();
+    write_jsonl(dir.path(), &sample_doc());
+    let error = run(&text_only_config(dir.path(), server.base_url()), None)
+        .expect_err("a refused completion fails the push");
+
+    assert_eq!(
+        complete.calls(),
+        1,
+        "the push asks to complete the run once"
+    );
+    let message = format!("{error:#}");
+    assert!(
+        message.contains("import run 42") && message.contains("intentional completion failure"),
+        "{message}"
+    );
+    let written: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(dir.path().join("message-crate-push-report.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        written["ok"], false,
+        "the report on disk does not call the push a success"
+    );
+}
+
+/// When the completion is refused and the report cannot be written either,
+/// the push returns the refusal: the run the server still holds is what the
+/// caller must hear about.
+#[test]
+fn a_refused_completion_outranks_a_report_that_cannot_be_written() {
+    let server = MockServer::start();
+    let _auth = mock_session(&server);
+    let _run = mock_import_start(&server, 42);
+    let _import = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/42/batches");
+        then.status(200).json_body(json!({
+            "messages": 1,
+            "messages_appended": 1,
+            "conversations": 1
+        }));
+    });
+    let _complete = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/42/complete");
+        then.status(500).json_body(json!({
+            "type": "about:blank",
+            "title": "Internal server error",
+            "status": 500,
+            "detail": "intentional completion failure"
+        }));
+    });
+
+    let dir = tempdir().unwrap();
+    write_jsonl(dir.path(), &sample_doc());
+    // A folder where the report file should be makes the write fail.
+    let report_path = dir.path().join("report-is-a-folder");
+    fs::create_dir(&report_path).unwrap();
+    let cfg = PushConfig {
+        report_path: Some(report_path),
+        ..text_only_config(dir.path(), server.base_url())
+    };
+    let error = run(&cfg, None).expect_err("a refused completion fails the push");
+
+    let message = format!("{error:#}");
+    assert!(message.contains("import run 42"), "{message}");
+}
+
 #[test]
 fn aggregates_multiple_conversations_into_one_import_request() {
     let server = MockServer::start();
@@ -351,7 +456,7 @@ fn aggregates_multiple_conversations_into_one_import_request() {
             "username": "alice",
         }));
     });
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")
@@ -399,7 +504,7 @@ fn flushes_at_message_limit_across_two_batches_of_one_run() {
             "username": "alice",
         }));
     });
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let replace = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")
@@ -448,7 +553,7 @@ fn failed_combined_request_only_fails_its_files() {
             "username": "alice",
         }));
     });
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let failed = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")
@@ -512,7 +617,7 @@ fn failed_combined_request_only_fails_its_files() {
 fn a_refused_line_of_a_batch_is_reported_as_the_line_of_its_staged_file() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let refused = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/7/batches");
         then.status(400)
@@ -586,7 +691,7 @@ fn folder_with_a_bad_middle_file(dir: &Path) {
 fn a_push_imports_the_files_after_a_bad_one() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")
@@ -620,7 +725,7 @@ fn resumes_message_batches_from_compacted_journal() {
             "username": "alice",
         }));
     });
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/7/batches");
         then.status(200).json_body(json!({
@@ -654,7 +759,7 @@ fn resumes_message_batches_from_compacted_journal() {
 fn a_message_with_a_blank_guid_is_sent_again_on_resume() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/7/batches");
         then.status(200).json_body(json!({
@@ -692,7 +797,7 @@ fn a_replace_push_ignores_the_journal_and_sends_every_message_again() {
             "username": "alice",
         }));
     });
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")
@@ -738,7 +843,7 @@ fn profiles_attachment_upload_phases() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let digest = hex::encode(Sha256::digest(ASSET_BYTES));
     let head = server.mock(|when, then| {
         when.method("HEAD").path(format!("/v1/assets/{digest}"));
@@ -896,7 +1001,7 @@ fn puts_two_new_assets_after_one_preflight_head() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let dir = tempdir().unwrap();
     let (digest_a, digest_b) = two_attachment_docs(dir.path(), "a.txt", A, "b.txt", B);
     let head_a = server.mock(|when, then| {
@@ -972,7 +1077,7 @@ fn heads_later_assets_after_put_reports_already_present() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let dir = tempdir().unwrap();
     let (digest_a, digest_b) =
         two_attachment_docs(dir.path(), "first.txt", FIRST, "second.txt", SECOND);
@@ -1043,7 +1148,7 @@ fn preflight_head_skips_puts_when_first_asset_already_present() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let dir = tempdir().unwrap();
     let (digest_a, digest_b) = two_attachment_docs(dir.path(), "a.txt", A, "b.txt", B);
     let head_a = server.mock(|when, then| {
@@ -1102,7 +1207,7 @@ fn multipart_upload_when_over_proxy_threshold() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let digest = hex::encode(Sha256::digest(ASSET_BYTES));
     let head = server.mock(|when, then| {
         when.method("HEAD").path(format!("/v1/assets/{digest}"));
@@ -1218,7 +1323,7 @@ fn multipart_aborts_on_hash_mismatch_complete() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let digest = hex::encode(Sha256::digest(ASSET_BYTES));
     let _head = server.mock(|when, then| {
         when.method("HEAD").path(format!("/v1/assets/{digest}"));
@@ -1343,7 +1448,7 @@ fn verify_digests_fails_on_mismatch() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let put = server.mock(|when, then| {
         when.method(PUT).path_includes("/v1/assets/");
         then.status(200)
@@ -1391,7 +1496,7 @@ fn shared_attachment_uploaded_once_across_conversations() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let head = server.mock(|when, then| {
         when.method("HEAD").path(format!("/v1/assets/{digest}"));
         then.status(404).json_body(json!({
@@ -1728,7 +1833,7 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let small_digest = hex::encode(Sha256::digest(SMALL));
     let big_digest = hex::encode(Sha256::digest(BIG));
     let _small_head = server.mock(|when, then| {
@@ -1845,7 +1950,7 @@ fn skips_missing_attachment_file_keeps_conversation_ok() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let small_digest = hex::encode(Sha256::digest(SMALL));
     let _small_head = server.mock(|when, then| {
         when.method("HEAD")
@@ -1946,7 +2051,7 @@ fn keeps_conversation_ok_when_skipped_attachment_has_no_path() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")
@@ -2016,7 +2121,7 @@ fn reports_pathless_attachment_without_reason_as_no_path() {
             "sources": ["sms-backup-restore"]
         }));
     });
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")
@@ -2078,7 +2183,7 @@ fn reports_pathless_attachment_without_reason_as_no_path() {
 fn a_push_that_skips_attachments_sends_text_and_uploads_nothing() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let assets = server.mock(|when, then| {
         when.path_prefix("/v1/assets");
         then.status(500);
@@ -2125,7 +2230,7 @@ fn a_push_that_skips_attachments_sends_text_and_uploads_nothing() {
 fn conversations_from_two_sources_go_out_in_separate_requests() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let sms = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")
@@ -2219,7 +2324,7 @@ fn mock_session(server: &MockServer) -> httpmock::Mock<'_> {
 fn a_batch_retried_after_a_503_is_counted_and_journaled_once() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let mut busy = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/7/batches");
         then.status(503).json_body(json!({
@@ -2286,7 +2391,7 @@ fn a_batch_retried_after_a_503_is_counted_and_journaled_once() {
 fn a_cancelled_push_sends_no_further_batch_and_resumes_later() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let mut import = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/7/batches");
         then.status(200).json_body(json!({
@@ -2360,7 +2465,7 @@ fn a_cancelled_push_sends_no_further_batch_and_resumes_later() {
 fn a_cancelled_push_reports_every_conversation_in_one_category() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let _import = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/7/batches");
         then.status(200).json_body(json!({
@@ -2431,7 +2536,7 @@ fn a_cancelled_push_reports_every_conversation_in_one_category() {
 fn a_conversation_cut_off_mid_way_by_a_cancel_is_counted_as_cancelled() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     // The delay keeps the first batch in flight long enough to cancel while
     // the second message of the same conversation waits to be sent.
     let first_batch = server.mock(|when, then| {
@@ -2503,7 +2608,7 @@ fn a_conversation_cut_off_mid_way_by_a_cancel_is_counted_as_cancelled() {
 fn a_second_push_sends_only_the_conversation_whose_batch_failed() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let mut failing = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")
@@ -2592,7 +2697,7 @@ fn a_second_push_sends_only_the_conversation_whose_batch_failed() {
 fn an_unreadable_2xx_answer_is_not_retried() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/7/batches");
         then.status(200).body("<html>not the server</html>");
@@ -2621,8 +2726,8 @@ fn an_unreadable_2xx_answer_is_not_retried() {
 /// A server that answers each request on its own connection and closes it.
 /// The batch POST gets a `200 OK` whose headers promise a body the server
 /// never sends, so the client fails while reading it; the other routes a
-/// push calls get their usual answers. Returns the base URL and a count of
-/// batch POSTs.
+/// push calls, the run's completion among them, get their usual answers.
+/// Returns the base URL and a count of batch POSTs.
 fn serve_a_200_that_drops_the_batch_body() -> (String, Arc<AtomicUsize>) {
     use std::io::{BufRead, BufReader, Read};
     use std::net::TcpListener;
@@ -2666,6 +2771,8 @@ fn serve_a_200_that_drops_the_batch_body() -> (String, Arc<AtomicUsize>) {
             } else if request_line.starts_with("POST /v1/imports/7/batches ") {
                 counted.fetch_add(1, Ordering::SeqCst);
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 4096\r\nConnection: close\r\n\r\n{\"messages\":".to_string()
+            } else if request_line.starts_with("POST /v1/imports/7/complete ") {
+                answer("200 OK", r#"{"id":7}"#)
             } else {
                 answer("404 Not Found", "{}")
             };
@@ -2718,7 +2825,7 @@ fn a_2xx_answer_whose_body_is_cut_off_is_not_retried() {
 fn a_chunk_that_overflows_the_pending_batch_is_sent_in_the_next_one() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let first = server.mock(|when, then| {
         when.method(POST)
             .path("/v1/imports/7/batches")
@@ -2776,7 +2883,7 @@ fn a_chunk_that_overflows_the_pending_batch_is_sent_in_the_next_one() {
 fn a_push_with_no_journal_path_keeps_its_journal_in_the_export_folder() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/7/batches");
         then.status(200).json_body(json!({
@@ -2806,7 +2913,7 @@ fn a_push_with_no_journal_path_keeps_its_journal_in_the_export_folder() {
 fn a_push_goes_on_after_sending_a_large_batch_early() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let import = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/7/batches");
         then.status(200).json_body(json!({
@@ -2854,7 +2961,7 @@ fn a_push_with_the_default_size_limit_uploads_a_photo_of_two_mebibytes() {
 
     let server = MockServer::start();
     let _auth = mock_session(&server);
-    let _run = mock_import_run(&server, 7);
+    let _run = mock_import_start_and_complete(&server, 7);
     let _head = server.mock(|when, then| {
         when.method("HEAD").path(format!("/v1/assets/{digest}"));
         then.status(404);

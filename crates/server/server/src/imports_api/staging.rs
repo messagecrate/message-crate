@@ -10,8 +10,7 @@ use sqlx::SqliteConnection;
 use crate::assets_api::{self, AssetError, AssetStats, StoredAsset};
 use crate::config::validate_source_id;
 use crate::db::handles::{
-    HandleIdCache, infer_handle_type_from_shape as infer_handle_type, upsert_handle_row,
-    upsert_handle_row_cached,
+    HandleIdCache, handle_type_of, upsert_handle_row, upsert_handle_row_cached,
 };
 use crate::db::staging::{
     self as db_staging, StagingAttachment, StagingConversation, StagingMessage, StagingTapback,
@@ -422,8 +421,8 @@ impl FileStaging<'_> {
         )?;
 
         // What the header says each participant's address is. The exporter
-        // knows its source's ids, and the shape of an address does not: a
-        // WhatsApp `123456@lid` has an `@` and is no email address.
+        // knows its source's ids, and `Handle::parse` does not: a WhatsApp
+        // `123456@lid` has an `@` and is no email address.
         let header_types = header_handle_types(&conversation.participants);
         let individual = conversation
             .conversation_type
@@ -431,13 +430,13 @@ impl FileStaging<'_> {
         // Conversation identity: the chat handle. A group's id is the group's
         // key and nobody's address, so it is `Other` whatever its shape (a
         // WhatsApp `…@g.us` has an `@`). A one-to-one chat's id takes the type
-        // the header gives the participant with the same address, and its
-        // shape only when no participant has it.
+        // the header gives the participant with the same address, and
+        // `Handle::parse`'s only when no participant has it.
         let chat_handle_type = if individual {
             header_types
                 .get(conversation.chat_identifier.trim())
                 .copied()
-                .unwrap_or_else(|| infer_handle_type(&conversation.chat_identifier))
+                .unwrap_or_else(|| handle_type_of(&conversation.chat_identifier))
         } else {
             HandleType::Other
         };
@@ -606,8 +605,8 @@ async fn insert_participant(
     platform: HandleService,
     stats: &mut ImportStats,
 ) -> Result<()> {
-    // Prefer the source-provided type; fall back to shape inference.
-    let handle_type = handle_type.unwrap_or_else(|| infer_handle_type(&handle));
+    // Prefer the source-provided type; fall back to `Handle::parse`.
+    let handle_type = handle_type.unwrap_or_else(|| handle_type_of(&handle));
     // The account holder is never a participant: a member at one of the
     // account's identities gets no handle, contact or participant row. The
     // exporters drop the addresses their backup names as the owner's; this
@@ -739,7 +738,7 @@ async fn resolve_owner_handle(
         tx,
         stmts.account_id,
         address,
-        infer_handle_type(address),
+        handle_type_of(address),
         Some(platform),
     )
     .await?;

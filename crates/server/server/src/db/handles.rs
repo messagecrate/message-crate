@@ -1,4 +1,5 @@
-//! Shared handle identity helpers (same format for matching + infer type from shape).
+//! Shared handle identity helpers: one key for matching, and one type for an
+//! address the source did not type.
 
 use std::collections::HashMap;
 
@@ -23,24 +24,72 @@ pub fn normalize_handle(raw: &str, handle_type: HandleType) -> (String, Option<S
     phone::normalize_typed_handle(raw, handle_type)
 }
 
-/// Infer a handle type from the handle's shape when the source does not say.
+/// The type of an address the source did not type: [`phone::Handle::parse`],
+/// the one rule for what an address is. It reads the address alone and never
+/// the service, so one address has one type wherever it arrives (#1432). A
+/// blank address is `Other`.
+pub fn handle_type_of(address: &str) -> HandleType {
+    phone::Handle::parse(address).map_or(HandleType::Other, |handle| handle.kind())
+}
+
+/// A new identity refused because its service cannot carry its type: an
+/// email address on WhatsApp, the one pair refused. WhatsApp reaches a person
+/// by phone number, and keeps an internal id for one it knows by no number as
+/// `other`, so it carries no email address. The phone service carries every
+/// type: iMessage reaches an email address too.
+#[derive(Debug, thiserror::Error)]
+#[error("{address} is an email address, and WhatsApp carries no email addresses")]
+pub struct EmailOnWhatsapp {
+    /// The address as the request gave it.
+    pub address: String,
+}
+
+/// Refuse a new identity of `handle_type` on `service` when the service
+/// cannot carry it.
 ///
-/// Mirrors the shared rule in message-ir-format: `@` → Email; digit-heavy
-/// phone-shaped strings → Phone (covers SMS/iMessage/WhatsApp numbers);
-/// anything else (Discord usernames, group chat ids) → Other.
-pub fn infer_handle_type_from_shape(handle: &str) -> HandleType {
-    let h = handle.trim();
-    if h.contains('@') {
-        return HandleType::Email;
+/// # Errors
+///
+/// [`EmailOnWhatsapp`] for an email address on WhatsApp.
+pub fn check_service_carries(
+    address: &str,
+    service: HandleService,
+    handle_type: HandleType,
+) -> std::result::Result<(), EmailOnWhatsapp> {
+    match (service, handle_type) {
+        (HandleService::Whatsapp, HandleType::Email) => Err(EmailOnWhatsapp {
+            address: address.to_string(),
+        }),
+        _ => Ok(()),
     }
-    let has_digit = h.bytes().any(|b| b.is_ascii_digit());
-    let all_phone_chars = h.bytes().all(|b| {
-        b.is_ascii_digit() || matches!(b, b'+' | b'-' | b' ' | b'(' | b')' | b'.' | b'#' | b'*')
-    });
-    if !h.is_empty() && has_digit && all_phone_chars {
-        return HandleType::Phone;
-    }
-    HandleType::Other
+}
+
+/// The id of the `handles` row the account already holds for `raw` on
+/// `service`, matched by the address as written or by its key, if any.
+///
+/// # Errors
+///
+/// Returns an error when the statement fails.
+pub async fn existing_handle_id(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    raw: &str,
+    service: HandleService,
+) -> Result<Option<i64>> {
+    let raw = raw.trim();
+    let key = phone::Handle::parse(raw).map_or_else(|| raw.to_string(), phone::Handle::into_key);
+    let id = sqlx::query_scalar(
+        "SELECT id FROM handles
+         WHERE account_id = $1 AND service = $2 AND (raw = $3 OR normalized = $4)
+         ORDER BY id
+         LIMIT 1",
+    )
+    .bind(account_id)
+    .bind(service.as_str())
+    .bind(raw)
+    .bind(key.as_str())
+    .fetch_optional(&mut *conn)
+    .await?;
+    Ok(id)
 }
 
 /// Insert or reuse a `handles` row. Returns the id and whether this call newly
@@ -248,21 +297,6 @@ mod tests {
     use crate::db::schema;
 
     const TEST_ACCOUNT: i64 = 7;
-
-    #[test]
-    fn a_handle_with_letters_or_without_a_digit_is_not_a_phone_number() {
-        for handle in ["chat123456", "user123", "", "+"] {
-            assert_eq!(
-                infer_handle_type_from_shape(handle),
-                HandleType::Other,
-                "{handle:?}"
-            );
-        }
-        assert_eq!(
-            infer_handle_type_from_shape("+1 (555) 555-0100"),
-            HandleType::Phone
-        );
-    }
 
     /// The count of numbers that need a look takes one for each identity the
     /// call both created and flagged, so a plain new number and a flagged
