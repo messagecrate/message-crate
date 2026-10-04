@@ -108,7 +108,7 @@ fn a_video_that_stays_over_the_limit_says_so() {
 #[test]
 fn an_estimate_just_under_the_limit_still_reads_as_too_big() {
     // The 80% margin: a near miss must not read as a promise.
-    let p = probe("h264", 1920, 1080, Some(30.0), 0);
+    let p = probe("h264", 1280, 720, Some(30.0), 0);
     let size = 60 * 1024 * 1024;
     let estimate = estimate_bytes(
         size,
@@ -142,7 +142,7 @@ fn efficient_hevc_is_skipped_by_compress_so_it_stays_too_big() {
     // = 38.5 MB, under the 40 MB margin — and promises `LikelyFits` for
     // a file the pass will not actually touch. It stays 55 MB, over the
     // 50 MB limit: `ProbablyTooBig`.
-    let p = probe("hevc", 1920, 1080, Some(30.0), 9_000_000);
+    let p = probe("hevc", 1280, 720, Some(30.0), 9_000_000);
     assert_eq!(
         classify_probed(
             55 * 1024 * 1024,

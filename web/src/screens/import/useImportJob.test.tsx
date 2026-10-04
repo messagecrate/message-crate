@@ -209,8 +209,20 @@ function stagingSummary(overrides: Partial<StagingSummary> = {}): StagingSummary
     attachmentBytes: 0,
     forecasts: [],
     assetMaxBytes: 50 * 1024 * 1024,
+    mediaMode: "copy",
     ...overrides,
   };
+}
+
+/**
+ * The mode Staging records in the folder for the last extract: what the
+ * real summary of that folder would carry. Copy when extract was given none.
+ */
+function stagedMode(): AttachmentMediaMode {
+  const args = invokeExtractMock.mock.calls.at(-1)?.[0] as
+    | { attachment_media?: AttachmentMediaMode }
+    | undefined;
+  return args?.attachment_media ?? "copy";
 }
 
 const MIB = 1024 * 1024;
@@ -283,7 +295,9 @@ describe("useImportJob wiring", () => {
     readRunRecordMock.mockReset();
     saveRunRecordMock.mockReset();
     invokeSummarizeStagingMock.mockReset();
-    invokeSummarizeStagingMock.mockResolvedValue(stagingSummary());
+    invokeSummarizeStagingMock.mockImplementation(async () =>
+      stagingSummary({ mediaMode: stagedMode() }),
+    );
     invokeTranscodeStagingMock.mockReset();
     invokeDeleteStagingMock.mockReset();
     invokeDeleteStagingMock.mockResolvedValue(undefined);
@@ -306,7 +320,7 @@ describe("useImportJob wiring", () => {
     completeImportMock.mockResolvedValue({});
   });
 
-  it("reads the server's attachment size limit before Staging and works to it through Upload", async () => {
+  it("reads the server's attachment size limit before Staging and leaves Upload to read it from the folder", async () => {
     getServerStateMock.mockResolvedValue({ asset_max_bytes: 100 * MIB });
     runMock.mockImplementationOnce(runResult({ summary: "Push finished.", report: okReport() }));
     const { result } = renderHook(() => useImportJob());
@@ -325,10 +339,11 @@ describe("useImportJob wiring", () => {
       expect.objectContaining({ asset_max_bytes: 100 * MIB }),
     );
 
+    // Upload reads the limit Staging recorded in the folder, so it is
+    // given none of its own that could disagree with it.
     await act(() => result.current.approve());
-    expect(invokePushMock).toHaveBeenCalledWith(
-      expect.objectContaining({ asset_max_bytes: 100 * MIB }),
-    );
+    expect(invokePushMock).toHaveBeenCalledTimes(1);
+    expect(invokePushMock.mock.calls[0]?.[0]).not.toHaveProperty("asset_max_bytes");
   });
 
   it("gives Staging the media settings once and the later stages only the folder", async () => {
@@ -383,9 +398,10 @@ describe("useImportJob wiring", () => {
     }
   });
 
-  it("resumes an Upload with the limit stored on the Import Run, not the server's current one", async () => {
+  it("resumes an Upload without reading the server's current limit, since the folder holds the run's own", async () => {
     // The owner changed the limit after this run was staged and reviewed.
-    // The files the person approved were measured against 7 MiB.
+    // The files the person approved were measured against 7 MiB, the
+    // number Staging recorded in the folder, which is where Upload reads it.
     getServerStateMock.mockResolvedValue({ asset_max_bytes: 100 * MIB });
     runMock.mockReset();
     runMock.mockImplementationOnce(runResult({ summary: "Push finished.", report: okReport() }));
@@ -398,9 +414,8 @@ describe("useImportJob wiring", () => {
     );
 
     expect(getServerStateMock).not.toHaveBeenCalled();
-    expect(invokePushMock).toHaveBeenCalledWith(
-      expect.objectContaining({ asset_max_bytes: 7 * MIB, import_id: 9 }),
-    );
+    expect(invokePushMock).toHaveBeenCalledWith(expect.objectContaining({ import_id: 9 }));
+    expect(invokePushMock.mock.calls[0]?.[0]).not.toHaveProperty("asset_max_bytes");
   });
 
   it("resumes an interrupted Staging with the limit stored on the Import Run", async () => {
@@ -560,7 +575,7 @@ describe("useImportJob wiring", () => {
     runMock.mockImplementationOnce(
       runResult({ summary: "Transcode finished.", transcode: undefined }),
     );
-    const approved = stagingSummary({ conversations: 5 });
+    const approved = stagingSummary({ mediaMode: "convert", conversations: 5 });
     invokeSummarizeStagingMock.mockResolvedValueOnce(approved);
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
@@ -745,7 +760,7 @@ describe("useImportJob wiring", () => {
     runMock.mockImplementationOnce(
       runResult({ summary: "Transcode finished.", transcode: undefined }),
     );
-    const approved = stagingSummary({ conversations: 5 });
+    const approved = stagingSummary({ mediaMode: "convert", conversations: 5 });
     invokeSummarizeStagingMock.mockResolvedValueOnce(approved);
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
@@ -1069,8 +1084,8 @@ describe("useImportJob wiring", () => {
       runResult({ summary: "Transcode finished.", transcode: undefined }),
     );
     runMock.mockImplementationOnce(runResult({ summary: "Push finished.", report: okReport() }));
-    const gate1Approved = stagingSummary({ conversations: 1 });
-    const recomputed = stagingSummary({ conversations: 1, attachments: 4 });
+    const gate1Approved = stagingSummary({ mediaMode: "convert", conversations: 1 });
+    const recomputed = stagingSummary({ mediaMode: "convert", conversations: 1, attachments: 4 });
     invokeSummarizeStagingMock.mockResolvedValueOnce(gate1Approved);
     invokeSummarizeStagingMock.mockResolvedValueOnce(recomputed);
 
@@ -1101,8 +1116,12 @@ describe("useImportJob wiring", () => {
         },
       }),
     );
-    const staged = stagingSummary({ conversations: 1, attachmentBytes: 100 });
-    const afterMedia = stagingSummary({ conversations: 1, attachmentBytes: 40 });
+    const staged = stagingSummary({ mediaMode: "convert", conversations: 1, attachmentBytes: 100 });
+    const afterMedia = stagingSummary({
+      mediaMode: "convert",
+      conversations: 1,
+      attachmentBytes: 40,
+    });
     invokeSummarizeStagingMock.mockResolvedValueOnce(staged);
     invokeSummarizeStagingMock.mockResolvedValueOnce(afterMedia);
 
@@ -1454,7 +1473,7 @@ describe("useImportJob wiring", () => {
     // — that one must succeed so this pins the *media pass's* recompute
     // failure specifically (W8 gave the Staging-Review-bound call its own, milder
     // failure path: see the "does not strand the folder" test above).
-    invokeSummarizeStagingMock.mockResolvedValueOnce(stagingSummary());
+    invokeSummarizeStagingMock.mockResolvedValueOnce(stagingSummary({ mediaMode: "convert" }));
     invokeSummarizeStagingMock.mockRejectedValueOnce(new Error("disk full"));
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
@@ -1915,6 +1934,23 @@ describe("useImportJob resume path", () => {
     expect(result.current.steps[1]).toMatchObject({ label: "Upload" });
   });
 
+  it("resumed push: the rows follow the mode the approved plan carries, not the form's", async () => {
+    // The plan was read from the folder at the Media Review, so it carries
+    // the compress mode Staging recorded; the stored form says copy.
+    const { result } = renderHook(() => useImportJob());
+
+    await act(async () => {
+      await result.current.startImport(baseForm, {
+        sessionId: 99,
+        stagingDir: "/home/u/message-crate/staging-260830",
+        approved: stagingSummary({ mediaMode: "compress" }),
+      });
+    });
+
+    expect(result.current.steps.map((s) => s.label)).toEqual(["Staging", "Media", "Upload"]);
+    expect(result.current.form?.attachmentMedia).toBe("compress");
+  });
+
   it("resumed push: a skip matching the stored plan's forecast completes clean", async () => {
     // B3: `resume.approved` — the plan parsed from the run's stored
     // `summary` — must reach `runPush`/`finishImport` on the resume path, or
@@ -2210,7 +2246,9 @@ describe("useImportJob resumeAtReview", () => {
   });
 
   it("rebuilds a 3-row step list for a convert-mode session resuming at the Staging Review, Media pending", async () => {
-    invokeSummarizeStagingMock.mockResolvedValueOnce(stagingSummary({ conversations: 9 }));
+    invokeSummarizeStagingMock.mockResolvedValueOnce(
+      stagingSummary({ mediaMode: "convert", conversations: 9 }),
+    );
     const { result } = renderHook(() => useImportJob());
 
     await act(async () => {
@@ -2226,14 +2264,8 @@ describe("useImportJob resumeAtReview", () => {
   });
 
   it("resumes at the Media Review showing the STORED plan for Staging and a RECOMPUTED summary for Media", async () => {
-    const approved = stagingSummary({
-      conversations: 3,
-      attachments: 5,
-    });
-    const actual = stagingSummary({
-      conversations: 3,
-      attachments: 2,
-    });
+    const approved = stagingSummary({ mediaMode: "convert", conversations: 3, attachments: 5 });
+    const actual = stagingSummary({ mediaMode: "convert", conversations: 3, attachments: 2 });
     invokeSummarizeStagingMock.mockResolvedValueOnce(actual);
 
     const { result } = renderHook(() => useImportJob());
@@ -2265,8 +2297,10 @@ describe("useImportJob resumeAtReview", () => {
     runMock.mockImplementationOnce(
       runResult({ summary: "Transcode finished.", transcode: undefined }),
     );
-    const approved = stagingSummary({ conversations: 7 });
-    invokeSummarizeStagingMock.mockResolvedValueOnce(stagingSummary({ conversations: 7 }));
+    const approved = stagingSummary({ mediaMode: "convert", conversations: 7 });
+    invokeSummarizeStagingMock.mockResolvedValueOnce(
+      stagingSummary({ mediaMode: "convert", conversations: 7 }),
+    );
 
     const { result } = renderHook(() => useImportJob());
     await act(async () => {
@@ -2329,7 +2363,9 @@ describe("useImportJob resumeAtReview", () => {
       ffprobe_path: null,
       error: "ffmpeg not found",
     });
-    invokeSummarizeStagingMock.mockResolvedValueOnce(stagingSummary({ conversations: 7 }));
+    invokeSummarizeStagingMock.mockResolvedValueOnce(
+      stagingSummary({ mediaMode: "convert", conversations: 7 }),
+    );
 
     const { result } = renderHook(() => useImportJob());
     await act(async () => {
@@ -2346,6 +2382,61 @@ describe("useImportJob resumeAtReview", () => {
     // The Staging Review's "has not run yet" copy would be wrong here.
     expect(result.current.mediaPartiallyRan).toBe(true);
     expect(result.current.steps.map((s) => s.status)).toEqual(["done", "pending", "pending"]);
+  });
+
+  it("shows the Media stage on a resume at the Staging Review when the folder says compress and the form says copy", async () => {
+    // Staging recorded compress in the folder; the stored form says copy.
+    // After Staging the folder is the one source, so the run has a Media
+    // stage and approving runs it.
+    invokeSummarizeStagingMock.mockResolvedValueOnce(stagingSummary({ mediaMode: "compress" }));
+    runMock.mockImplementationOnce(
+      runResult({ summary: "Transcode finished.", transcode: undefined }),
+    );
+    const { result } = renderHook(() => useImportJob());
+
+    await act(async () => {
+      await result.current.resumeAtReview(
+        activeSession({ stage: "staging_review" }),
+        form({ attachmentMedia: "copy" }),
+      );
+    });
+
+    expect(result.current.phase).toBe("staging_review");
+    expect(result.current.steps.map((s) => s.label)).toEqual(["Staging", "Media", "Upload"]);
+    expect(result.current.form?.attachmentMedia).toBe("compress");
+    // compress needs ffmpeg, so the tools are checked, as for a run whose
+    // form said compress.
+    expect(probeFfmpegToolsMock).toHaveBeenCalled();
+
+    await act(() => result.current.approve());
+    expect(invokeTranscodeStagingMock).toHaveBeenCalled();
+    expect(invokePushMock).not.toHaveBeenCalled();
+  });
+
+  it("re-runs the Media stage on a resume at media under the mode the approved plan carries, not the form's", async () => {
+    const approved = stagingSummary({ mediaMode: "compress", conversations: 7 });
+    invokeSummarizeStagingMock.mockResolvedValueOnce(
+      stagingSummary({ mediaMode: "compress", conversations: 7 }),
+    );
+    runMock.mockImplementationOnce(
+      runResult({ summary: "Transcode finished.", transcode: undefined }),
+    );
+    const { result } = renderHook(() => useImportJob());
+
+    await act(async () => {
+      await result.current.resumeAtReview(
+        activeSession({ stage: "media", summary: approved }),
+        form({ attachmentMedia: "copy" }),
+      );
+    });
+
+    expect(invokeTranscodeStagingMock).toHaveBeenCalled();
+    expect(result.current.phase).toBe("media_review");
+    expect(result.current.steps[1]).toMatchObject({
+      label: "Media",
+      status: "done",
+      detail: "Compression complete",
+    });
   });
 
   it("a malformed stored summary does not block a resume — it proceeds with no approved plan", async () => {
@@ -2460,6 +2551,17 @@ describe("parseStoredStagingSummary", () => {
     const valid = stagingSummary();
     const { attachmentBytes: _attachmentBytes, ...missingAttachmentBytes } = valid;
     expect(parseStoredStagingSummary(missingAttachmentBytes)).toBeUndefined();
+  });
+
+  it("returns undefined without an attachment mode the form offers", () => {
+    // The plan stands in for the folder's mode on a resume, so a plan with
+    // no mode, or one the form does not offer, is no plan at all.
+    const { mediaMode: _mediaMode, ...missingMode } = stagingSummary();
+    expect(parseStoredStagingSummary(missingMode)).toBeUndefined();
+    expect(parseStoredStagingSummary({ ...stagingSummary(), mediaMode: "clone" })).toBeUndefined();
+    expect(
+      parseStoredStagingSummary({ ...stagingSummary(), mediaMode: "toString" }),
+    ).toBeUndefined();
   });
 
   it("returns undefined when a forecasts row is malformed", () => {

@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { type DesktopJobName, holdDesktopJob } from "./desktopJob";
 import type { components } from "./serverApi.types";
 import type {
+  AttachmentMediaMode,
   ExtractConfig,
   ExtractErrorEvent,
   ImportIssueEvent,
@@ -122,6 +123,8 @@ export interface StagingSummary {
   forecasts: AttachmentForecast[];
   /** Largest single attachment the upload accepts; what the verdicts were measured against. */
   assetMaxBytes: number;
+  /** The attachment mode Staging recorded in the folder, under the form's name for it. */
+  mediaMode: AttachmentMediaMode;
 }
 
 /** Recompute what a staged folder holds, for the first review. */
@@ -184,8 +187,6 @@ export interface PushConfig {
   skip_attachments: boolean;
   trust_export: boolean;
   import_id?: number;
-  /** The server's attachment size limit, in bytes: Upload leaves out a larger file. */
-  asset_max_bytes: number;
 }
 
 export interface PushFinishedReport {
@@ -253,7 +254,6 @@ export async function invokePush(config: PushConfig): Promise<void> {
       skipAttachments: config.skip_attachments,
       trustExport: config.trust_export,
       importId: config.import_id ?? null,
-      assetMaxBytes: config.asset_max_bytes,
     },
   });
 }

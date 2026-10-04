@@ -54,6 +54,12 @@ const ATTACHMENT_MEDIA_MODES: readonly AttachmentMediaMode[] = [
   "compress",
   "skip",
 ];
+
+/** True for one of the attachment modes the Import form offers. */
+export function isAttachmentMediaMode(value: unknown): value is AttachmentMediaMode {
+  return typeof value === "string" && ATTACHMENT_MEDIA_MODES.includes(value as AttachmentMediaMode);
+}
+
 /** True for an array whose every element is a string. */
 export function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
@@ -77,10 +83,7 @@ export function restoreFormFromSnapshot(raw: unknown): ImportJobFormValues | nul
   const r = raw as Record<string, unknown>;
   if (typeof r.source !== "string") return null;
   if (typeof r.backupPath !== "string") return null;
-  if (
-    typeof r.attachmentMedia !== "string" ||
-    !ATTACHMENT_MEDIA_MODES.includes(r.attachmentMedia as AttachmentMediaMode)
-  ) {
+  if (!isAttachmentMediaMode(r.attachmentMedia)) {
     return null;
   }
   if (typeof r.maxResolution !== "string") return null;

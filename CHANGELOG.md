@@ -237,6 +237,14 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **A resumed Import Run follows the attachment setting Staging
+  recorded.** An Import Run resumed after the app closed decided from its
+  saved form whether it had a Media Stage, and its Upload took the size
+  limit per file from the saved form too, not from what Staging recorded
+  when it prepared the files. Nothing kept the two in agreement. A resumed
+  run now reads both from what Staging recorded, so it converts or
+  compresses exactly what Staging prepared for, and Upload holds each file
+  to the limit the Staging Review showed.
 - 2026-10-04 **An Import Run's progress no longer steps back or stops
   short during Staging.** While the Staging Stage copied attachments, two
   conversations finishing at the same moment could send their counts out of

@@ -104,6 +104,21 @@ pub struct StagingSummary {
     /// every verdict above was measured against, carried so the screen shows
     /// the same number the verdicts used.
     pub asset_max_bytes: u64,
+    /// The attachment mode Staging recorded for the run. The screen decides
+    /// from it whether the run has a Media stage, so after Staging that
+    /// choice comes from the folder and not from the form the run started
+    /// with. Sent under the form's name for it ([`MediaMode::form_name`]),
+    /// because that is the screen's vocabulary.
+    #[serde(serialize_with = "serialize_form_name")]
+    pub media_mode: MediaMode,
+}
+
+/// Write a [`MediaMode`] under the Import form's name for it.
+fn serialize_form_name<S: serde::Serializer>(
+    mode: &MediaMode,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serializer.serialize_str(mode.form_name())
 }
 
 /// How far [`summarize_staging`] has got, reported over attachments.
@@ -170,6 +185,7 @@ pub fn summarize_staging(
 
     let mut summary = StagingSummary {
         asset_max_bytes: options.asset_max_bytes,
+        media_mode: options.mode,
         ..StagingSummary::default()
     };
     let mut contacts = BTreeSet::new();
