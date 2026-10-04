@@ -336,6 +336,26 @@ matches nothing, so re-importing the same backup added the same person again,
 and a contact column written once at import went stale when the identity
 moved, so search found the conversation under the old contact.
 
+**Two copies of one conversation take the later copy's title.** Two
+conversations on one chat handle are one conversation
+(`UNIQUE (account_id, chat_handle_id)` on `conversations`), so a second backup
+of a group, or one chat id written two ways, merges into the conversation
+already there. The merged conversation keeps the group title of the copy whose
+latest message is later. A copy with no title never clears a title, and when
+both copies' latest messages share one time, the title already stored stays.
+Times are compared to the second, the precision a message's time is stored at.
+The conversation stores the latest message time of the copy that gave its
+title (`group_title_at`), and an incoming copy is compared with that, not with
+the whole conversation: an untitled copy whose messages end last would
+otherwise keep an older title against a newer one. A title of only spaces counts
+as no title. The rule is the same in one batch as across several, in any order.
+Why: a group is renamed over time, so the copy whose messages run later carries
+the name the group has now. An old backup uploaded after a newer one can't bring the old
+name back, because its messages stop earlier. The time a backup was made is not
+recorded by every source, and the time an exporter ran says nothing about the
+backup, so neither decides it
+([#1408](https://github.com/messagecrate/message-crate/issues/1408)).
+
 **A participant's display name has one rule.** The contact's name, else what
 that backup called them in that conversation, else the identity. One loader
 applies it for the conversation list, the message pane, and Export.
@@ -504,6 +524,7 @@ flowchart LR
 | Tables for contacts, identities, Contact Groups, trash | `schema/sql/contacts.sql` |
 | Tables for conversations, participants, messages | `schema/sql/messages.sql` |
 | What an import creates for a conversation and its participants | `crates/server/server/src/imports_api/staging.rs` |
+| Which title two copies of one conversation keep | `insert_conversation` and `upsert_conversations` in `crates/server/server/src/db/staging.rs` |
 | Making, naming, and replacing a contact during import | `crates/server/server/src/imports_api/contact_name.rs` |
 | Linking identities to contacts, sibling identities, the one way an identity leaves a contact (`move_identity`) | `crates/server/server/src/db/contacts.rs` |
 | Writing and loading the address book | `crates/server/server/src/db/address_book.rs` |
