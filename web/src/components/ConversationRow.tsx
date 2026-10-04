@@ -100,8 +100,8 @@ export default function ConversationRow({
   const isGroup = conversation.is_group;
   const wraps = isGroup && !conversation.label && !columnResizing;
   const dateSpan = formatDateSpan(
-    conversation.date_range_start,
-    conversation.last_message_at || conversation.date_range_end,
+    conversation.first_message_at,
+    conversation.last_message_at,
     useTimeZone(),
   );
   const bottomLeft = conversationServiceLabel(conversation);

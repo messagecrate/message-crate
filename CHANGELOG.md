@@ -881,6 +881,13 @@ released versions carry their date on the heading.
   and changing them changed nothing. The database and the data folder come
   from `[paths]` in the configuration, and the address the server listens
   on from `[server]`, as they always did.
+- 2026-10-04 **Programs using the HTTP API get a conversation's first and
+  last message times once each.** A conversation carried its last message's
+  time twice, as `last_message_at` and `date_range_end`, and sent
+  `last_message_at` as `null` for a conversation with no message left once
+  duplicates are set aside. It now carries `first_message_at` and
+  `last_message_at`, and leaves both out when there is no message to date.
+  `date_range_start` is now `first_message_at`, and `date_range_end` is gone.
 
 ### Upgrading
 
