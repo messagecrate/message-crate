@@ -294,9 +294,11 @@ struct Ingest {
     conversations: BTreeMap<ConvoKey, Conversation>,
     /// Every row matched to a file, in the order the rows were read.
     claims: Vec<FileClaim>,
-    /// Each chat folder's row texts, keyed by the row's `Message Date` as
-    /// iMazing writes it into a file name. A chat folder is one that holds a
-    /// CSV.
+    /// Each Messages chat folder's row texts, keyed by the row's
+    /// `Message Date` as iMazing writes it into a file name. A chat folder is
+    /// one that holds a CSV. A WhatsApp chat folder is left out, because the
+    /// files iMazing writes there without a row (Live Photo videos, link
+    /// previews) are a Messages export's.
     folder_texts: BTreeMap<PathBuf, HashMap<String, Vec<String>>>,
     report: ExportReport,
 }
@@ -357,13 +359,15 @@ impl Ingest {
         } else {
             vec![None; rows.len()]
         };
-        let texts = self.folder_texts.entry(folder).or_default();
+        // Only a run that copies attachments looks at the folder's files
+        // (`attach_unnamed_files`), and only in a Messages chat folder, so
+        // only they need the texts.
+        let mut texts = (self.copy_attachments && discovered.kind == SourceKind::Messages)
+            .then(|| self.folder_texts.entry(folder).or_default());
         let mut by_session: BTreeMap<String, Vec<(usize, &RawRow)>> = BTreeMap::new();
         for (row_index, row) in rows.iter().enumerate() {
-            // Only a run that copies attachments looks at the folder's files
-            // (`attach_unnamed_files`), so only it needs the texts.
             if let Some(second) = &seconds[row_index]
-                && self.copy_attachments
+                && let Some(texts) = texts.as_mut()
                 && !row.text.is_empty()
             {
                 texts
@@ -521,7 +525,7 @@ impl Ingest {
         })
     }
 
-    /// Deal with the files in each chat folder that no row names: attach a
+    /// Deal with the files in each Messages chat folder that no row names: attach a
     /// Live Photo's video to the message of the row that names its picture,
     /// and count link previews and every other such file in the report.
     ///
@@ -537,7 +541,7 @@ impl Ingest {
         // Each picture an Image row names, with those rows in CSV order.
         let mut pictures: HashMap<PathBuf, Vec<usize>> = HashMap::new();
         for (index, claim) in self.claims.iter().enumerate() {
-            if claim.is_image {
+            if claim.is_image && claim.convo_key.family == TransportFamily::Messages {
                 pictures
                     .entry(claim.source.clone())
                     .or_default()
@@ -573,11 +577,11 @@ impl Ingest {
     /// Add `video` to the message of the first of `rows`, the claims of the
     /// Image rows that name `picture` in CSV order. When more than one row
     /// names it, the report says which picture and that the first row took
-    /// the video.
+    /// the video, as a note: the run did what it says, so it is no error.
     fn attach_live_photo_video(&mut self, video: &Path, picture: &Path, rows: &[usize]) {
         let first = &self.claims[rows[0]];
         if rows.len() > 1 {
-            self.report.errors.push(format!(
+            self.report.notes.push(format!(
                 "{}: {} rows name this picture; its Live Photo video goes to the first of them in the CSV",
                 picture.display(),
                 rows.len()

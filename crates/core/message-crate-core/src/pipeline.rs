@@ -126,8 +126,12 @@ pub struct ExportReport {
     pub media: MediaReport,
     /// Documents whose handles, names and bodies were obfuscated.
     pub obfuscated_docs: u64,
-    /// Human-readable error/warning lines (capped by each exporter).
+    /// Human-readable lines about what failed (capped by each exporter).
     pub errors: Vec<String>,
+    /// Human-readable lines about what the run did that is worth knowing
+    /// but did not fail, such as a choice it made between two rows. Shown
+    /// apart from `errors`, so a note never reads as a failure.
+    pub notes: Vec<String>,
     /// Items the run could not finish, one row each, for the Import Run's
     /// list of issues. Unlike `errors`, not capped: the list counts them.
     pub issues: Vec<RunIssue>,
@@ -199,7 +203,7 @@ impl ExportReport {
 
     /// Append the summary lines to `out`: where the export went, then each
     /// resume, skip, duplicate, attachment, and extension count that is not
-    /// zero, then the errors.
+    /// zero, then the notes, then the errors.
     pub fn summary_lines(
         &self,
         format: OutputFormat,
@@ -240,6 +244,9 @@ impl ExportReport {
         }
         for (key, count) in &self.extra {
             out.push(format!("  {key}: {count}"));
+        }
+        for note in &self.notes {
+            out.push(format!("  note: {note}"));
         }
         for err in &self.errors {
             out.push(format!("  error: {err}"));
@@ -381,6 +388,27 @@ mod tests {
                 "Left out 3 message(s) that are not SMS or MMS, because SMS Backup+ holds only \
                  SMS and MMS"
             )
+        );
+    }
+
+    /// A note is printed as a note, apart from the errors, so a run that did
+    /// what it says never reads as a failure (#1414).
+    #[test]
+    fn summary_lines_print_notes_apart_from_errors() {
+        let report = ExportReport {
+            notes: vec!["a.jpg: 2 rows name this picture".into()],
+            errors: vec!["b.csv: unreadable".into()],
+            ..ExportReport::default()
+        };
+        let mut lines = Vec::new();
+        report.summary_lines(OutputFormat::Jsonl, Path::new("out"), &mut lines);
+        assert_eq!(
+            lines,
+            [
+                "Wrote jsonl export under out",
+                "  note: a.jpg: 2 rows name this picture",
+                "  error: b.csv: unreadable",
+            ]
         );
     }
 

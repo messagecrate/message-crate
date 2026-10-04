@@ -788,15 +788,25 @@ impl ChatFolderExport {
 /// Convert one chat folder holding `Messages.csv` with `rows` and the named
 /// `files` to JSON.
 fn convert_chat_folder(rows: &str, files: &[(&str, &str)]) -> ChatFolderExport {
+    convert_chat_folder_with(
+        ("Messages.csv", &format!("{MESSAGES_HEADER}{rows}")),
+        files,
+        "+15555550100.json",
+    )
+}
+
+/// Convert one chat folder holding the CSV `(name, contents)` and the named
+/// `files` to JSON, and read back the conversation written to `doc_name`.
+fn convert_chat_folder_with(
+    (csv_name, csv): (&str, &str),
+    files: &[(&str, &str)],
+    doc_name: &str,
+) -> ChatFolderExport {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("in");
     let chat = input.join("2020-01-01 12 00 00 - Bob");
     fs::create_dir_all(&chat).unwrap();
-    fs::write(
-        chat.join("Messages.csv"),
-        format!("{MESSAGES_HEADER}{rows}"),
-    )
-    .unwrap();
+    fs::write(chat.join(csv_name), csv).unwrap();
     for (name, body) in files {
         fs::write(chat.join(name), body).unwrap();
     }
@@ -811,7 +821,7 @@ fn convert_chat_folder(rows: &str, files: &[(&str, &str)]) -> ChatFolderExport {
         resume: false,
     })
     .unwrap();
-    let doc = message_ir_format::read_conversation_json(&out.join("+15555550100.json")).unwrap();
+    let doc = message_ir_format::read_conversation_json(&out.join(doc_name)).unwrap();
     ChatFolderExport {
         report,
         doc,
@@ -878,7 +888,7 @@ Bob,2020-01-01 12:02:00,iMessage,Incoming,+15555550100,Bob,Read,,,See https://ex
 }
 
 /// When two rows name one picture, its Live Photo video goes to the first of
-/// them in CSV order, and the report names the picture. Within one CSV each
+/// them in CSV order, and the report names the picture in a note. Within one CSV each
 /// row has a file of its own, so only rows of two CSVs in one chat folder
 /// name one picture.
 #[test]
@@ -899,15 +909,49 @@ fn a_live_photo_video_of_a_picture_two_rows_name_goes_to_the_first_row() {
     assert_eq!(export.attachment_bodies("first"), vec!["picture", "video"]);
     assert_eq!(export.attachment_bodies("second"), vec!["picture"]);
     assert_eq!(export.report.extra("live_photo_videos"), 1);
+    // The run did what it says it does, so it is a note and not an error (#1414).
+    assert_eq!(export.report.errors, Vec::<String>::new());
     assert!(
         export
             .report
-            .errors
+            .notes
             .iter()
-            .any(|e| e.contains("2020-01-01 12 05 00 - Bob - IMG_0002.jpg")),
+            .any(|n| n.contains("2020-01-01 12 05 00 - Bob - IMG_0002.jpg")),
         "{:?}",
-        export.report.errors
+        export.report.notes
     );
+}
+
+/// The pass over files no row names is for what iMazing writes into a
+/// Messages chat folder. A WhatsApp chat folder's extra files are neither
+/// counted nor attached, and a `.mov` beside a picture there is not a Live
+/// Photo video (#1414).
+#[test]
+fn a_whatsapp_chat_folder_gets_no_live_photo_video_and_no_unnamed_file_count() {
+    let export = convert_chat_folder_with(
+        (
+            "WhatsApp.csv",
+            "Chat Session,Message Date,Sent Date,Type,Sender ID,Sender Name,Status,Forwarded,Replying to,Text,Reactions,Attachment,Attachment type,Attachment info\n\
+Bob,2020-01-01 12:00:00,,Incoming,+15555550100,Bob,Read,,,photo,,IMG_0001.jpg,Image,\n\
+Bob,2020-01-01 12:01:00,,Incoming,+15555550100,Bob,Read,,,See https://example.com/page,,,,\n",
+        ),
+        &[
+            ("2020-01-01 12 00 00 - Bob - IMG_0001.jpg", "picture"),
+            ("2020-01-01 12 00 00 - Bob - IMG_0001.mov", "video"),
+            (
+                "2020-01-01 12 01 00 - Bob - Web link.url",
+                "[InternetShortcut]\r\nURL=https://example.com/page\r\n",
+            ),
+            ("2020-01-01 12 02 00 - Bob - stray.bin", "stray"),
+        ],
+        "+15555550100__whatsapp.json",
+    );
+    assert_eq!(export.attachment_bodies("photo"), vec!["picture"]);
+    let report = &export.report;
+    assert_eq!(report.attachments_saved, 1);
+    assert_eq!(report.extra("live_photo_videos"), 0);
+    assert_eq!(report.extra("link_previews_already_in_message"), 0);
+    assert_eq!(report.extra("files_named_by_no_row"), 0);
 }
 
 /// #1080: a group's key is not built from who wrote, so a group in which one
