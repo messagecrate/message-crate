@@ -12,9 +12,8 @@ function conversation(overrides: Partial<Conversation> = {}): Conversation {
     id: 3,
     participants: [{ name: "Ada Lovelace" }],
     message_count: 1,
+    first_message_at: "2024-06-01T12:00:00Z",
     last_message_at: "2024-06-01T12:00:00Z",
-    date_range_start: "2024-06-01T12:00:00Z",
-    date_range_end: "2024-06-01T12:00:00Z",
     service: "imessage",
     is_group: false,
     label: null,
@@ -34,20 +33,14 @@ describe("ConversationRow", () => {
   });
 
   it("shows no date for a conversation whose messages are all duplicates", () => {
-    // The server sends `last_message_at: null` and no date range when no
-    // message is left once duplicates are set aside (issue #1206).
-    render(
-      <ConversationRow
-        conversation={conversation({
-          message_count: 0,
-          last_message_at: null,
-          date_range_start: undefined,
-          date_range_end: undefined,
-        })}
-        isSelected={false}
-        onClick={() => {}}
-      />,
-    );
+    // The server leaves out `first_message_at` and `last_message_at` when no
+    // message is left once duplicates are set aside (issues #1206, #1484).
+    const {
+      first_message_at: _first,
+      last_message_at: _last,
+      ...undated
+    } = conversation({ message_count: 0 });
+    render(<ConversationRow conversation={undated} isSelected={false} onClick={() => {}} />);
     const row = screen.getByRole("button");
     expect(row.textContent).toBe("Ada LovelaceText Message");
   });

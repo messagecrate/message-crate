@@ -7,7 +7,9 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use media::{CompressOptions, Kind, MediaMode, TranscodeOutcome};
+use media::{Kind, MediaMode, TranscodeOutcome};
+
+use crate::media_options::server_compress_options;
 
 /// The file to store for one attachment, after the mode's transformation.
 #[derive(Debug)]
@@ -70,7 +72,7 @@ fn transform(
     };
     let out = work_dir.join(format!("{tag}-{}.{target}", stem_token(source_path)));
     let outcome =
-        media::transcode_file_as(source_path, kind, &out, mode, &CompressOptions::default())
+        media::transcode_file_as(source_path, kind, &out, mode, &server_compress_options())
             .with_context(|| format!("convert {}", source_path.display()))?;
     Ok(Some(match outcome {
         TranscodeOutcome::Produced => ResolvedMedia {

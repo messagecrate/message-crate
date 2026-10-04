@@ -34,8 +34,8 @@ use std::str::FromStr;
 
 /// Attachment media handling after export.
 ///
-/// Serialized under the names [`MediaMode::as_str`] gives, so the media
-/// settings a staging folder records read the same as the form's values.
+/// Serialized under the names [`MediaMode::as_str`] gives. The Import form
+/// names two modes differently ([`MediaMode::form_name`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MediaMode {
@@ -51,6 +51,9 @@ pub enum MediaMode {
 }
 
 impl MediaMode {
+    /// Every mode, so a check over all of them covers one added later.
+    pub const ALL: [Self; 4] = [Self::Disabled, Self::Clone, Self::Convert, Self::Compress];
+
     /// Canonical lowercase name (`disabled` / `clone` / `convert` / `compress`),
     /// the value the export form and the desktop commands pass as text.
     pub fn as_str(self) -> &'static str {
@@ -71,6 +74,20 @@ impl MediaMode {
             "convert" => Some(Self::Convert),
             "compress" => Some(Self::Compress),
             _ => None,
+        }
+    }
+
+    /// The name the Import form gives the mode (`skip` / `copy` / `convert` /
+    /// `compress`): the inverse of the `skip` and `copy` aliases [`parse`]
+    /// accepts, kept beside them so the two vocabularies meet in one place.
+    ///
+    /// [`parse`]: Self::parse
+    pub fn form_name(self) -> &'static str {
+        match self {
+            Self::Disabled => "skip",
+            Self::Clone => "copy",
+            Self::Convert => "convert",
+            Self::Compress => "compress",
         }
     }
 
@@ -108,11 +125,12 @@ impl FromStr for MediaMode {
 /// Serialized under the names [`MaxResolution::as_str`] gives.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 pub enum MaxResolution {
-    /// Cap the video long edge at 1280 px.
+    /// Cap the video long edge at 1280 px; the default, as on the Import
+    /// form.
+    #[default]
     #[serde(rename = "720p")]
     P720,
-    /// Cap the video long edge at 1920 px; the default.
-    #[default]
+    /// Cap the video long edge at 1920 px.
     #[serde(rename = "1080p")]
     P1080,
     /// Cap the video long edge at 3840 px.
@@ -204,7 +222,7 @@ pub struct CompressOptions {
 impl Default for CompressOptions {
     fn default() -> Self {
         Self {
-            max_resolution: MaxResolution::P1080,
+            max_resolution: MaxResolution::P720,
             max_fps: 30.0,
             min_size_bytes: 20 * 1024 * 1024,
             skip_efficient: true,
@@ -234,6 +252,24 @@ mod tests {
         assert_eq!(MediaMode::parse("Convert"), Some(MediaMode::Convert));
         assert_eq!(MaxResolution::parse("4k"), Some(MaxResolution::P4k));
         assert_eq!(MaxResolution::P720.max_long_edge(), 1280);
+    }
+
+    #[test]
+    fn every_form_name_parses_back_to_its_mode() {
+        for mode in MediaMode::ALL {
+            assert_eq!(MediaMode::parse(mode.form_name()), Some(mode));
+        }
+    }
+
+    /// The Import form starts at 720p and the user guide says 720, so a
+    /// caller that leaves the resolution out gets the same cap.
+    #[test]
+    fn the_default_resolution_is_the_import_forms_720p() {
+        assert_eq!(MaxResolution::default(), MaxResolution::P720);
+        assert_eq!(
+            CompressOptions::default().max_resolution,
+            MaxResolution::P720
+        );
     }
 
     #[test]

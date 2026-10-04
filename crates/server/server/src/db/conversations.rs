@@ -71,16 +71,14 @@ pub struct ConversationSummary {
     pub participants: Vec<Participant>,
     /// Messages in the conversation (excluding hidden duplicates).
     pub message_count: u64,
-    /// Timestamp of the last message; `null` when every message in the
-    /// conversation is a duplicate, so none is left to date it.
-    #[schema(required = true)]
+    /// Timestamp of the conversation's first message. Left out when every
+    /// message in the conversation is a duplicate, so none is left to date it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_message_at: Option<String>,
+    /// Timestamp of the conversation's last message. Left out when every
+    /// message in the conversation is a duplicate, so none is left to date it.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub last_message_at: Option<String>,
-    /// Timestamp of the conversation's first message.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub date_range_start: Option<String>,
-    /// Timestamp of the conversation's last message.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub date_range_end: Option<String>,
     /// Platform service of the conversation, e.g. `imessage`.
     pub service: String,
     /// True for group conversations.
@@ -97,9 +95,8 @@ struct RawConversation {
     conversation_type: String,
     group_title: Option<String>,
     message_count: i64,
+    first_message_at: Option<String>,
     last_message_at: Option<String>,
-    date_range_start: Option<String>,
-    date_range_end: Option<String>,
 }
 
 type RawConversationRow = (
@@ -107,7 +104,6 @@ type RawConversationRow = (
     String,
     Option<String>,
     i64,
-    Option<String>,
     Option<String>,
     Option<String>,
 );
@@ -191,12 +187,10 @@ const CONVERSATION_ROW_SELECT: &str = "SELECT c.id,
                 c.group_title,
                 (SELECT COUNT(*) FROM messages m
                  WHERE m.conversation_id = c.id AND m.duplicate_of IS NULL) AS message_count,
-                (SELECT MAX(m.timestamp) FROM messages m
-                 WHERE m.conversation_id = c.id AND m.duplicate_of IS NULL) AS last_message_at,
                 (SELECT MIN(m.timestamp) FROM messages m
-                 WHERE m.conversation_id = c.id AND m.duplicate_of IS NULL) AS date_range_start,
+                 WHERE m.conversation_id = c.id AND m.duplicate_of IS NULL) AS first_message_at,
                 (SELECT MAX(m.timestamp) FROM messages m
-                 WHERE m.conversation_id = c.id AND m.duplicate_of IS NULL) AS date_range_end
+                 WHERE m.conversation_id = c.id AND m.duplicate_of IS NULL) AS last_message_at
          FROM conversations c";
 
 /// Run a `CONVERSATION_ROW_SELECT`-shaped query and assemble
@@ -220,17 +214,15 @@ async fn load_conversation_rows(
                 conversation_type,
                 group_title,
                 message_count,
+                first_message_at,
                 last_message_at,
-                date_range_start,
-                date_range_end,
             )| RawConversation {
                 id,
                 conversation_type,
                 group_title,
                 message_count,
+                first_message_at,
                 last_message_at,
-                date_range_start,
-                date_range_end,
             },
         )
         .collect();
@@ -261,9 +253,8 @@ async fn load_conversation_rows(
             id: row.id,
             participants: parts,
             message_count: row.message_count.max(0) as u64,
+            first_message_at: row.first_message_at,
             last_message_at: row.last_message_at,
-            date_range_start: row.date_range_start,
-            date_range_end: row.date_range_end,
             service,
             is_group,
             label: row

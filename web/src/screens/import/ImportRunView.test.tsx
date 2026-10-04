@@ -72,6 +72,7 @@ function staged(overrides: Partial<StagingSummary> = {}): StagingSummary {
     attachmentBytes: 9.4 * 1024 * 1024 * 1024,
     forecasts: [],
     assetMaxBytes: 50 * 1024 * 1024,
+    mediaMode: "copy",
     ...overrides,
   };
 }

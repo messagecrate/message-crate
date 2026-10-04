@@ -1082,8 +1082,9 @@ async fn duplicate_only_threads_have_no_last_message_date_and_sort_last() {
         "and stays last when the direction flips"
     );
 
-    // With no surviving message there is no last-message date to report: the
-    // list and the single-conversation read both send `null`, not the epoch.
+    // With no surviving message there is no first or last message to date:
+    // the list and the single-conversation read both leave the two fields
+    // out, rather than sending `null` or the epoch.
     let mut conn = pool.acquire().await.unwrap();
     let listed = list_conversations_sorted(
         &mut conn,
@@ -1106,7 +1107,63 @@ async fn duplicate_only_threads_have_no_last_message_date_and_sort_last() {
         .expect("conversation 3 exists");
     for summary in [listed, read] {
         let json = serde_json::to_value(&summary).unwrap();
-        assert_eq!(json["last_message_at"], serde_json::Value::Null, "{json}");
+        assert!(json.get("first_message_at").is_none(), "{json}");
+        assert!(json.get("last_message_at").is_none(), "{json}");
+    }
+}
+
+/// A conversation's first and last message times each arrive once, under
+/// `first_message_at` and `last_message_at`, in the list and in the
+/// single-conversation read. The old `date_range_start` and `date_range_end`
+/// names are gone, so a client has one field per fact.
+#[tokio::test]
+async fn a_conversation_carries_its_first_and_last_message_times_once() {
+    use crate::test_support::{SeedConversation, SeedMessage, get_json, seed_conversation};
+
+    let (fixture, user) = fixture_with_account().await;
+    let message = |timestamp| SeedMessage {
+        source: "imessage",
+        timestamp,
+        is_from_me: false,
+        body: "hi",
+    };
+    // Seeded out of time order, so the fields cannot be the first and last
+    // rows by insertion.
+    let messages = [
+        message("2024-03-01T09:00:00Z"),
+        message("2023-01-15T08:30:00Z"),
+        message("2025-07-04T20:15:00Z"),
+    ];
+    let id = seed_conversation(
+        &fixture.state,
+        &SeedConversation {
+            account_id: user.account_id,
+            handle: "+15555550161",
+            conversation_type: "individual",
+            group_title: None,
+            source_file: "t.jsonl",
+            messages: &messages,
+        },
+    )
+    .await;
+
+    let page: serde_json::Value = get_json(&fixture.state, "/v1/conversations", &user.token).await;
+    let listed = page["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["id"].as_i64() == Some(id))
+        .expect("the conversation is listed")
+        .clone();
+    let read: serde_json::Value = get_json(
+        &fixture.state,
+        &format!("/v1/conversations/{id}"),
+        &user.token,
+    )
+    .await;
+    for json in [listed, read] {
+        assert_eq!(json["first_message_at"], "2023-01-15T08:30:00Z", "{json}");
+        assert_eq!(json["last_message_at"], "2025-07-04T20:15:00Z", "{json}");
         assert!(json.get("date_range_start").is_none(), "{json}");
         assert!(json.get("date_range_end").is_none(), "{json}");
     }
