@@ -1,9 +1,10 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/api";
+import { CONTACT_GROUP_MENU_COPY, MESSAGE_TAG_MENU_COPY } from "../lib/namedSetCopy";
 import GroupsMenu from "./GroupsMenu";
 
 afterEach(() => {
@@ -19,11 +20,7 @@ function renderMenu(labeled = true) {
       allGroups={[...GROUPS]}
       checks={{ College: "on", Family: "off", Work: "off" }}
       labeled={labeled}
-      ariaLabel={labeled ? "Contact Groups" : "Message Tags"}
-      title={labeled ? "Contact Groups" : "Message Tags"}
-      searchPlaceholder={labeled ? "Search Contact Groups…" : "Search Message Tags…"}
-      emptyText={labeled ? "No Contact Groups" : "No Message Tags"}
-      noMatchText={labeled ? "No matching Contact Groups" : "No matching Message Tags"}
+      copy={labeled ? CONTACT_GROUP_MENU_COPY : MESSAGE_TAG_MENU_COPY}
     />,
   );
 }
@@ -67,15 +64,7 @@ describe("GroupsMenu", () => {
 
   it("shows no groups on the same row when the catalog is empty", async () => {
     const user = userEvent.setup();
-    render(
-      <GroupsMenu
-        allGroups={[]}
-        checks={{}}
-        labeled
-        ariaLabel="Contact Groups"
-        title="Contact Groups"
-      />,
-    );
+    render(<GroupsMenu allGroups={[]} checks={{}} labeled />);
 
     await user.click(screen.getByRole("button", { name: "Contact Groups" }));
     const empty = screen.getByRole("status");
@@ -102,15 +91,7 @@ describe("GroupsMenu", () => {
     const refusal =
       'name can\'t hold ";", because the address book separates Contact Group names with it';
     const onCreate = vi.fn().mockRejectedValue(new ApiError(422, refusal));
-    render(
-      <GroupsMenu
-        allGroups={[...GROUPS]}
-        checks={{}}
-        onCreate={onCreate}
-        ariaLabel="Contact Groups"
-        title="Contact Groups"
-      />,
-    );
+    render(<GroupsMenu allGroups={[...GROUPS]} checks={{}} onCreate={onCreate} />);
 
     await user.click(screen.getByRole("button", { name: "Contact Groups" }));
     await user.click(screen.getByRole("button", { name: /Create Contact Group$/ }));
@@ -125,15 +106,7 @@ describe("GroupsMenu", () => {
   it("returns to the list once the new name is created", async () => {
     const user = userEvent.setup();
     const onCreate = vi.fn().mockResolvedValue(undefined);
-    render(
-      <GroupsMenu
-        allGroups={[...GROUPS]}
-        checks={{}}
-        onCreate={onCreate}
-        ariaLabel="Contact Groups"
-        title="Contact Groups"
-      />,
-    );
+    render(<GroupsMenu allGroups={[...GROUPS]} checks={{}} onCreate={onCreate} />);
 
     await user.click(screen.getByRole("button", { name: "Contact Groups" }));
     await user.click(screen.getByRole("button", { name: /Create Contact Group$/ }));
@@ -142,5 +115,36 @@ describe("GroupsMenu", () => {
     expect(onCreate).toHaveBeenCalledWith("Friends");
     expect(await screen.findByRole("searchbox", { name: "Search Contact Groups…" })).toBeTruthy();
     expect(screen.queryByPlaceholderText("Contact Group name")).toBeNull();
+  });
+
+  it("leaves a new form alone when a create from a closed form settles", async () => {
+    const user = userEvent.setup();
+    let refuse!: (error: Error) => void;
+    const onCreate = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((_, reject) => {
+            refuse = reject;
+          }),
+      )
+      .mockResolvedValue(undefined);
+    render(<GroupsMenu allGroups={[...GROUPS]} checks={{}} onCreate={onCreate} />);
+
+    // "A" goes out, then the menu is dismissed before the server answers.
+    await user.click(screen.getByRole("button", { name: "Contact Groups" }));
+    await user.click(screen.getByRole("button", { name: /Create Contact Group$/ }));
+    await user.type(screen.getByPlaceholderText("Contact Group name"), "A{Enter}");
+    await user.keyboard("{Escape}");
+
+    // A new form, with "B" typed and Create ready to press.
+    await user.click(screen.getByRole("button", { name: "Contact Groups" }));
+    await user.click(screen.getByRole("button", { name: /Create Contact Group$/ }));
+    await user.type(screen.getByPlaceholderText("Contact Group name"), "B");
+    expect(screen.getByRole("button", { name: "Create" })).toBeEnabled();
+
+    await act(async () => refuse(new ApiError(422, "name must be at most 80 characters")));
+    expect(screen.queryByText("name must be at most 80 characters")).toBeNull();
+    expect(screen.getByPlaceholderText("Contact Group name")).toHaveValue("B");
   });
 });

@@ -86,6 +86,23 @@ describe("contact groups are wired to the lists that show a group name", () => {
     expect(fresh).toEqual([]);
   });
 
+  it("finds a group the server already has under another letter case instead of creating it", async () => {
+    const { result } = renderHook(() => useNameCollectionActions(contactGroups), { wrapper });
+    // What a screen last rendered predates "Family", which the server has.
+    client.setQueryData(scoped(keys.contactGroups.all), []);
+    vi.mocked(serverApi.listContactGroups).mockResolvedValueOnce([{ id: 12, name: "Family" }]);
+
+    await expect(result.current.ensure("family")).resolves.toBe("Family");
+    expect(vi.mocked(serverApi.createContactGroup)).not.toHaveBeenCalled();
+  });
+
+  it("creates a group the server does not have", async () => {
+    const { result } = renderHook(() => useNameCollectionActions(contactGroups), { wrapper });
+
+    await expect(result.current.ensure("Work")).resolves.toBe("Work");
+    expect(vi.mocked(serverApi.createContactGroup)).toHaveBeenCalledWith({ name: "Work" });
+  });
+
   it("marks the same lists stale after a rename, which is what changes on screen", async () => {
     const { result } = renderHook(() => useNameCollectionActions(contactGroups), { wrapper });
 

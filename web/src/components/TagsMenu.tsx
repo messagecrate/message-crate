@@ -1,5 +1,5 @@
 import type { MembershipCheckState } from "../lib/membershipChecks";
-import { isReservedTagName, reservedTagError } from "../lib/messageTags";
+import { MESSAGE_TAG_MENU_COPY } from "../lib/namedSetCopy";
 import GroupsMenu from "./GroupsMenu";
 import { TagIcon } from "./icons";
 
@@ -27,17 +27,7 @@ export default function TagsMenu({
       onCreate={onCreate}
       onClearAll={onClearAll}
       disabled={disabled}
-      ariaLabel="Message Tags"
-      title="Message Tags"
-      searchPlaceholder="Search Message Tags…"
-      emptyText="No Message Tags"
-      noMatchText="No matching Message Tags"
-      createButtonLabel="Create Message Tag"
-      createTitle="Create Message Tag"
-      createPlaceholder="Message Tag name"
-      createFailedText="Could not create Message Tag"
-      isReserved={isReservedTagName}
-      reservedError={reservedTagError}
+      copy={MESSAGE_TAG_MENU_COPY}
       icon={<TagIcon size={16} />}
       labeled={false}
     />

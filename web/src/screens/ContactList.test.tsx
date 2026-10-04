@@ -158,6 +158,29 @@ describe("ContactList", () => {
     expect(updateMembersMock).not.toHaveBeenCalled();
   });
 
+  it("refuses a reserved Contact Group name from the Groups menu without asking the server to create it", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <Providers>
+        <RightToolbarProvider>
+          <RightPane>
+            <ContactList onSelect={() => {}} />
+          </RightPane>
+        </RightToolbarProvider>
+      </Providers>,
+    );
+
+    await user.click(await screen.findByRole("checkbox", { name: "Select Alice" }));
+    await user.click(screen.getByRole("button", { name: "Contact Groups" }));
+    await user.click(screen.getByRole("button", { name: /Create Contact Group$/ }));
+    await user.type(screen.getByPlaceholderText("Contact Group name"), "Trash{Enter}");
+
+    expect(await screen.findByText("Trash is a reserved Contact Group")).toBeInTheDocument();
+    expect(createGroupMock).not.toHaveBeenCalled();
+    expect(updateMembersMock).not.toHaveBeenCalled();
+  });
+
   it("exports the group the list shows, or the checked rows when there are any", async () => {
     exportMock.mockResolvedValue("contact_id,display_name,groups,service,identity_type,identity\n");
     render(

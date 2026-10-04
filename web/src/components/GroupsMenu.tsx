@@ -1,7 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
-import { isReservedGroupName, reservedGroupError } from "../lib/contactGroups";
 import type { MembershipCheckState } from "../lib/membershipChecks";
+import { CONTACT_GROUP_MENU_COPY, type GroupsMenuCopy } from "../lib/namedSetCopy";
 import { popupShadow } from "../lib/uiStyles";
 import { useDismissable } from "../lib/useDismissable";
 import { Z_POPOVER } from "../lib/zLayers";
@@ -22,19 +22,9 @@ export default function GroupsMenu({
   onCreate,
   onClearAll,
   disabled = false,
-  ariaLabel = "Contact Groups",
-  title = "Contact Groups",
-  searchPlaceholder = "Search Contact Groups…",
-  emptyText = "No Contact Groups",
-  noMatchText = "No matching Contact Groups",
-  createButtonLabel = "Create Contact Group",
-  createTitle = "Create Contact Group",
-  createPlaceholder = "Contact Group name",
-  createFailedText = "Could not create Contact Group",
-  isReserved = isReservedGroupName,
-  reservedError = reservedGroupError,
+  copy = CONTACT_GROUP_MENU_COPY,
   icon,
-  /** Show `title` plus the assign-groups icon. Off for icon-only tags. */
+  /** Show the title plus the assign-groups icon. Off for icon-only tags. */
   labeled = true,
   open: openProp,
   onOpenChange,
@@ -44,22 +34,14 @@ export default function GroupsMenu({
   allGroups: string[];
   checks: Record<string, GroupCheckState>;
   onToggle?: (name: string) => void;
-  /** Resolves once the name is created; a rejection's message is shown in the menu. */
+  /**
+   * Resolves once the name is created and applied. A rejection's message is
+   * shown in the menu, which is how a reserved or refused name is reported.
+   */
   onCreate?: (name: string) => Promise<void>;
   onClearAll?: () => void;
   disabled?: boolean;
-  ariaLabel?: string;
-  title?: string;
-  searchPlaceholder?: string;
-  emptyText?: string;
-  noMatchText?: string;
-  createButtonLabel?: string;
-  createTitle?: string;
-  createPlaceholder?: string;
-  /** Shown when `onCreate` rejects with something that carries no message of its own. */
-  createFailedText?: string;
-  isReserved?: (name: string) => boolean;
-  reservedError?: (name: string) => string;
+  copy?: GroupsMenuCopy;
   icon?: ReactNode;
   labeled?: boolean;
   open?: boolean;
@@ -81,6 +63,10 @@ export default function GroupsMenu({
   const [newName, setNewName] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  // Counts the forms the menu has shown. A create that settles after its form
+  // was closed (dismissed, cancelled, or replaced by a new one) leaves the
+  // form on screen alone, so its result can't erase or mislabel a new name.
+  const formRef = useRef(0);
   const rootRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -92,6 +78,8 @@ export default function GroupsMenu({
   useDismissable(open, rootRef, dismiss);
 
   useEffect(() => {
+    formRef.current += 1;
+    setCreating(false);
     if (!open) return;
     if (mode === "list") {
       setQuery("");
@@ -112,7 +100,7 @@ export default function GroupsMenu({
   const hasAnyMembership = Object.values(checks).some(
     (state) => state === "on" || state === "mixed",
   );
-  const listEmptyText = query.trim() ? noMatchText : emptyText;
+  const listEmptyText = query.trim() ? copy.noMatchText : copy.emptyText;
   const toneClass = open ? "text-accent" : "text-muted";
   const popoverClass = `absolute top-full left-0 mt-1 w-64 rounded-xl border border-border bg-popover ${Z_POPOVER} ${popupShadow}`;
 
@@ -120,23 +108,22 @@ export default function GroupsMenu({
     if (disabled || creating || !onCreate) return;
     const name = newName.trim();
     if (!name) return;
-    if (isReserved(name)) {
-      setCreateError(reservedError(name));
-      return;
-    }
-    // The server can refuse the name (too long, or holding a character it
-    // keeps for itself), so the menu stays on the form with the typed name
-    // and the server's sentence until the create succeeds.
+    // The name can be refused (reserved, too long, or holding a character
+    // the server keeps for itself), so the menu stays on the form with the
+    // typed name and the reason until the create succeeds.
+    const form = formRef.current;
     setCreateError(null);
     setCreating(true);
     try {
       await onCreate(name);
     } catch (err) {
-      setCreateError(apiErrorMessage(err, createFailedText));
-      return;
-    } finally {
+      if (formRef.current !== form) return;
       setCreating(false);
+      setCreateError(apiErrorMessage(err, copy.createError));
+      return;
     }
+    if (formRef.current !== form) return;
+    setCreating(false);
     setNewName("");
     setMode("list");
   };
@@ -144,10 +131,10 @@ export default function GroupsMenu({
   return (
     <div ref={rootRef} className="relative">
       <PlainButton
-        aria-label={ariaLabel}
+        aria-label={copy.title}
         aria-expanded={open}
         isDisabled={disabled}
-        title={title}
+        title={copy.title}
         onPress={() => {
           if (disabled) return;
           setOpen(!open);
@@ -160,7 +147,7 @@ export default function GroupsMenu({
         }
       >
         {icon ?? <PeopleGroupIcon size={16} />}
-        {labeled ? <span>{title}</span> : null}
+        {labeled ? <span>{copy.title}</span> : null}
         {labeled ? (
           <ChevronDownIcon
             size={12}
@@ -176,8 +163,8 @@ export default function GroupsMenu({
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder={searchPlaceholder}
-              aria-label={searchPlaceholder}
+              placeholder={copy.searchPlaceholder}
+              aria-label={copy.searchPlaceholder}
               className="box-border w-full rounded border border-border bg-elevated px-2 py-1.5 text-[0.813rem] text-text outline-none focus:border-accent"
             />
           </div>
@@ -212,7 +199,7 @@ export default function GroupsMenu({
               className="flex w-full cursor-pointer items-center gap-2 border-none bg-transparent px-3 py-1.5 text-left text-[0.813rem] text-text hover:bg-hover disabled:opacity-50"
             >
               <span className="text-muted">+</span>
-              {createButtonLabel}
+              {copy.addLabel}
             </PlainButton>
             {onClearAll ? (
               <PlainButton
@@ -228,7 +215,7 @@ export default function GroupsMenu({
       ) : null}
       {open && mode === "create" ? (
         <div data-mc-overlay="" className={`${popoverClass} p-3`}>
-          <h3 className="text-[0.875rem] font-semibold text-text">{createTitle}</h3>
+          <h3 className="text-[0.875rem] font-semibold text-text">{copy.createTitle}</h3>
           <input
             ref={nameRef}
             type="text"
@@ -240,7 +227,7 @@ export default function GroupsMenu({
                 void saveNew();
               }
             }}
-            placeholder={createPlaceholder}
+            placeholder={copy.namePlaceholder}
             disabled={disabled}
             className="mt-2 box-border w-full rounded border border-border bg-elevated px-2 py-1.5 text-[0.813rem] text-text"
           />

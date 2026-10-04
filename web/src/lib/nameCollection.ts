@@ -278,6 +278,11 @@ export function useSetNamedSetMembers(
 /** What a screen or the sidebar does to one of these collections. */
 export type NameCollectionActions = {
   create: (name: string) => Promise<string>;
+  /**
+   * The name of the set called `name` in any letter case, as the server
+   * spells it, after creating it when the account has none by that name.
+   */
+  ensure: (name: string) => Promise<string>;
   rename: (from: string, to: string) => Promise<string>;
   remove: (name: string) => Promise<void>;
   setMembers: (name: string, patch: MembersPatch) => Promise<MembersChanged>;
@@ -294,6 +299,7 @@ export type NameCollectionActions = {
  * the invalidation all belong to the mutations above.
  */
 export function useNameCollectionActions(collection: NameCollection): NameCollectionActions {
+  const cache = useRouteCache();
   const createSet = useCreateNamedSet(collection);
   const renameSet = useRenameNamedSet(collection);
   const deleteSet = useDeleteNamedSet(collection);
@@ -316,18 +322,29 @@ export function useNameCollectionActions(collection: NameCollection): NameCollec
   );
   const error = latest.error;
 
-  // Memoised on the mutation objects' own stable `mutateAsync` identities
-  // only: `pending` and `error` change on every keystroke of a write, and a
+  // Memoised on the mutation objects' own stable `mutateAsync` identities,
+  // the cache and the collection only: `pending` and `error` change on every keystroke of a write, and a
   // caller that lists this object's methods in a `useEffect` dependency
   // array (as `ContactList.tsx` does) must not see a new function each time.
   const callbacks = useMemo(
     () => ({
       create: async (name: string) => (await create(name)).name,
+      // Asks the server for the list rather than reading what a screen last
+      // rendered, which can predate a create still settling: "family" right
+      // after "Family" finds the set instead of sending a second create.
+      ensure: async (name: string) => {
+        const wanted = name.trim().toLowerCase();
+        const sets = await cache.fetch<NamedSet[]>(collection.key, (signal) =>
+          fetchSets(collection, signal),
+        );
+        const found = sets.find((set) => set.name.toLowerCase() === wanted);
+        return found ? found.name : (await create(name)).name;
+      },
       rename: async (from: string, to: string) => (await rename({ from, to })).name,
       remove: (name: string) => remove(name),
       setMembers: (name: string, patch: MembersPatch) => setMembers({ name, patch }),
     }),
-    [create, rename, remove, setMembers],
+    [cache, collection, create, rename, remove, setMembers],
   );
 
   return { ...callbacks, pending, error };
