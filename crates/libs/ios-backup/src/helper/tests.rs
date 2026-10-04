@@ -209,6 +209,83 @@ mod faults {
         );
     }
 
+    /// A request to a program that has already exited says it stopped, with
+    /// its status, whether the request line still fit in the pipe or the
+    /// pipe was already closed (#1442). The second request always meets a
+    /// closed pipe, which before read as a bare "Broken pipe" that did not
+    /// say the program had stopped.
+    #[test]
+    fn a_request_to_a_helper_that_has_exited_says_it_stopped() {
+        let dir = tempfile::tempdir().unwrap();
+        let body = format!("{}\nexit 3", source_line(PROTOCOL_VERSION));
+        let path = fake_helper(dir.path(), &body);
+        let mut helper = spawn_fake(&path, &identities_request());
+
+        assert!(matches!(helper.next_event().unwrap(), Event::Source { .. }));
+        for attempt in 1..=2 {
+            let err = helper
+                .decrypt_attachment(std::path::Path::new("/backup/IMG_0001.JPG"))
+                .unwrap_err();
+            assert_eq!(
+                format!("{err:#}"),
+                "imessage-reader stopped before finishing (exit status: 3)",
+                "request {attempt}"
+            );
+        }
+    }
+
+    /// A program that fails between two requests says why on stdout and
+    /// exits. The request that then meets its closed pipe reports that
+    /// reason after the "stopped" error, rather than the status alone. The
+    /// script closes its stdin before it answers, so the request meets a
+    /// closed pipe, unless another test's child, forked but not yet started,
+    /// still holds a copy of that pipe; the write then lands and the error
+    /// event is read as the answer. Either way the reason is in the error.
+    #[test]
+    fn a_request_to_a_helper_that_failed_carries_its_reason() {
+        use std::sync::{Arc, Mutex};
+
+        let dir = tempfile::tempdir().unwrap();
+        let body = format!(
+            "exec 0<&-\n{}\necho '{{\"event\":\"log\",\"line\":\"opening Manifest.db\"}}'\n\
+             echo '{{\"event\":\"error\",\"message\":\"could not read a request: bad\"}}'\nexit 1",
+            source_line(PROTOCOL_VERSION)
+        );
+        let path = fake_helper(dir.path(), &body);
+        let logged = Arc::new(Mutex::new(Vec::<String>::new()));
+        let log = {
+            let logged = Arc::clone(&logged);
+            message_crate_core::LogSink::new(move |line| logged.lock().unwrap().push(line.into()))
+        };
+        // Retried while another test thread's fork still holds the script
+        // open for writing (`ETXTBSY`), as `spawn_fake` does.
+        let mut helper = (0..50)
+            .find_map(|_| {
+                match crate::Helper::spawn_at(&path, &identities_request(), Some(log.clone()), None)
+                {
+                    Ok(helper) => Some(helper),
+                    Err(_) => {
+                        std::thread::sleep(std::time::Duration::from_millis(20));
+                        None
+                    }
+                }
+            })
+            .expect("start the fake helper");
+
+        assert!(matches!(helper.next_event().unwrap(), Event::Source { .. }));
+        let err = helper
+            .decrypt_attachment(std::path::Path::new("/backup/IMG_0001.JPG"))
+            .unwrap_err();
+        let text = format!("{err:#}");
+        assert!(
+            text == "imessage-reader stopped before finishing (exit status: 1): \
+                     could not read a request: bad"
+                || text == "could not read a request: bad",
+            "{text}"
+        );
+        assert_eq!(*logged.lock().unwrap(), ["opening Manifest.db"]);
+    }
+
     #[test]
     fn a_helper_that_fails_after_answering_reports_its_status_on_finish() {
         let dir = tempfile::tempdir().unwrap();

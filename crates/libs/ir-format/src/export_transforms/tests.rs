@@ -157,6 +157,25 @@ fn obfuscate_keeps_mime_when_media_disabled() {
     );
 }
 
+/// The real file's size describes the file an obfuscated export leaves
+/// out, as its digest does, so it goes with the digest (#1564).
+#[test]
+fn obfuscate_drops_the_real_files_size() {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut docs = vec![doc_with_image_attachment()];
+    docs[0].messages[0].attachments[0].size_bytes = Some(5);
+    let transforms = ExportTransforms {
+        media: MediaMode::Disabled,
+        obfuscate: true,
+        obfuscate_seed: Some(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
+        ),
+        ..ExportTransforms::none()
+    };
+    apply_transforms(&mut docs, tmp.path(), &transforms).unwrap();
+    assert_eq!(docs[0].messages[0].attachments[0].size_bytes, None);
+}
+
 #[test]
 fn convert_at_finish_leaves_cloned_file() {
     let tmp = tempfile::tempdir().unwrap();

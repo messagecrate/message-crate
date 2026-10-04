@@ -22,7 +22,7 @@ use imessage_reader_protocol::{
 };
 use ios_backup::Helper;
 use message_crate_core::{
-    ExportReport, MediaConfig, OutputFormat, ProgressEvent, RunIssue,
+    ExportReport, LoadError, MediaConfig, OutputFormat, ProgressEvent, RunIssue,
     stage_conversation_attachments,
 };
 use message_ir::{
@@ -461,17 +461,23 @@ impl NotDecrypted {
 /// straight from disk otherwise. Empty bytes mean the file is not there, and
 /// the reason is already on the log; an attachment the program could not
 /// decrypt is also noted in `not_decrypted`.
+///
+/// # Errors
+///
+/// Returns [`LoadError::Fatal`] when `imessage-reader` itself fails, for
+/// example because it stopped: every later attachment would fail the same
+/// way, so the run stops rather than recording them all missing (#1442).
 fn read_attachment(
     helper: &mut Helper,
     options: &ExportOptions,
     encrypted: bool,
     path: &Path,
     not_decrypted: &mut NotDecrypted,
-) -> Result<Vec<u8>, String> {
+) -> Result<Vec<u8>, LoadError> {
     if encrypted {
         let temp = match helper
             .decrypt_attachment(path)
-            .map_err(|e| format!("{e:#}"))?
+            .map_err(|e| LoadError::Fatal(format!("attachment {}: {e:#}", path.display())))?
         {
             AttachmentFile::Ready { path } => path,
             AttachmentFile::Missing => return Ok(Vec::new()),
@@ -527,8 +533,7 @@ fn embed_attachment_bytes(
                 options.check_cancel()?;
                 let bytes = match loads.next() {
                     Some(AttachmentLoad::Path { path, .. }) => {
-                        read_attachment(helper, options, encrypted, &path, not_decrypted)
-                            .map_err(|e| anyhow!("attachment {}: {e}", path.display()))?
+                        read_attachment(helper, options, encrypted, &path, not_decrypted)?
                     }
                     Some(AttachmentLoad::Bytes(bytes)) => bytes,
                     Some(AttachmentLoad::Missing) | None => Vec::new(),
@@ -675,16 +680,7 @@ fn drain_conversations(
         // parallelized well anyway.
         let mut load = |source: &mut AttachmentSource| match source {
             AttachmentSource::Path(path) => {
-                let bytes =
-                    read_attachment(helper, options, true, path, not_decrypted).map_err(|e| {
-                        // Say why before it becomes a chip: a systemic failure
-                        // otherwise reads as a run's worth of unexplained gaps.
-                        options.emit_log(format!(
-                            "warning: attachment {} could not be read: {e}",
-                            path.display()
-                        ));
-                        e
-                    })?;
+                let bytes = read_attachment(helper, options, true, path, not_decrypted)?;
                 Ok((!bytes.is_empty()).then_some(bytes))
             }
             other => message_staging::load_attachment_source(other),
@@ -754,18 +750,7 @@ fn stage_attachments(
                     encrypted,
                     path,
                     not_decrypted,
-                )
-                .map_err(|e| {
-                    // The shared step turns any Err other than "cancelled" into a
-                    // file_missing attachment and moves on. Log the real reason here
-                    // first, or a systemic failure (a revoked Full Disk Access, a
-                    // failing disk) degrades into a run's worth of unexplained chips.
-                    options.emit_log(format!(
-                        "warning: attachment {} could not be read: {e}",
-                        path.display()
-                    ));
-                    e
-                })?;
+                )?;
                 Ok((!bytes.is_empty()).then_some(bytes))
             }
             Some(AttachmentLoad::Bytes(bytes)) => Ok(Some(bytes.clone())),

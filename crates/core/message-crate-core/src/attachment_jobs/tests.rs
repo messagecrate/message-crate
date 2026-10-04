@@ -202,7 +202,7 @@ fn read_error_marks_file_missing_and_continues() {
             &media_cfg(MediaMode::Clone),
             |i| {
                 if i == 0 {
-                    Err("permission denied".into())
+                    Err(LoadError::Unreadable("permission denied".into()))
                 } else {
                     Ok(Some(b"data".to_vec()))
                 }
@@ -217,30 +217,55 @@ fn read_error_marks_file_missing_and_continues() {
     assert!(b.path.is_some());
 }
 
+/// A loader that can read nothing more stops the run (#1442). Before, the
+/// run recorded the failing attachment and every one after it
+/// `file_missing`, so a run whose `imessage-reader` had died ended looking
+/// like a finished run with many missing attachments.
 #[test]
-fn cancelled_error_from_the_loader_still_aborts() {
+fn a_fatal_load_error_stops_the_run_and_marks_nothing_missing() {
     let dir = tempfile::tempdir().unwrap();
     let att_dir = dir.path().join("attachments");
-    std::fs::create_dir_all(&att_dir).unwrap();
-    let mut a = empty_att("a.jpg");
+    let mut atts: Vec<IrAttachment> = ["a.jpg", "b.jpg", "c.jpg", "d.jpg"]
+        .into_iter()
+        .map(empty_att)
+        .collect();
+    let mut asked = Vec::new();
     let err = {
-        let mut jobs = [AttachmentJob {
-            attachment: &mut a,
-            timestamp_unix_ms: 0,
-            size_hint: Some(1),
-        }];
+        let mut jobs: Vec<AttachmentJob<'_>> = atts
+            .iter_mut()
+            .map(|attachment| AttachmentJob {
+                attachment,
+                timestamp_unix_ms: 0,
+                size_hint: Some(1),
+            })
+            .collect();
         run_attachment_jobs(
             &mut jobs,
             &att_dir,
             &media_cfg(MediaMode::Clone),
-            |_| Err("cancelled".into()),
+            |i| {
+                asked.push(i);
+                if i == 1 {
+                    Err(LoadError::Fatal(
+                        "imessage-reader stopped before finishing".into(),
+                    ))
+                } else {
+                    Ok(Some(b"x".to_vec()))
+                }
+            },
             |_| {},
             None,
             None,
         )
         .unwrap_err()
     };
-    assert_eq!(err, "cancelled");
+    assert_eq!(err, "imessage-reader stopped before finishing");
+    assert_eq!(asked, [0, 1], "nothing is loaded after the fatal error");
+    assert!(atts[0].path.is_some(), "the job before it was staged");
+    for att in &atts[1..] {
+        assert_eq!(att.missing_reason, None, "{:?}", att.original_name);
+        assert_eq!(att.path, None, "{:?}", att.original_name);
+    }
 }
 
 #[test]
@@ -419,11 +444,13 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
     // test pins.
     const FIRST: &[u8] = b"first attachment bytes";
     const SECOND: &[u8] = b"second attachment bytes";
-    let load = |i: usize| -> Result<Option<Vec<u8>>, String> {
+    let load = |i: usize| -> Result<Option<Vec<u8>>, LoadError> {
         match i {
             0 => Ok(Some(FIRST.to_vec())),
             1 => Ok(Some(SECOND.to_vec())),
-            other => Err(format!("unexpected attachment index {other}")),
+            other => Err(LoadError::Fatal(format!(
+                "unexpected attachment index {other}"
+            ))),
         }
     };
 

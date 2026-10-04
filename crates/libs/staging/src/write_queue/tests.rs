@@ -139,7 +139,7 @@ fn resume_skips_a_unit_whose_conversation_file_exists() {
     };
     drain(&out, build(), &options(MediaMode::Clone, false)).unwrap();
 
-    let mut never = |_: &mut AttachmentSource| -> Result<Option<Vec<u8>>, String> {
+    let mut never = |_: &mut AttachmentSource| -> Result<Option<Vec<u8>>, LoadError> {
         panic!("a skipped unit must not load anything")
     };
     let report = drain_write_queue_with_loader(

@@ -237,6 +237,20 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **An attachment too large after conversion says so when an
+  interrupted Media Stage resumes.** When two conversations shared one
+  attachment whose converted copy came out over the size limit, an Import
+  Run resumed after the app closed during its Media Stage could record the
+  attachment as missing in one conversation instead of too large. It now
+  records it as too large, with the converted size.
+- 2026-10-04 **An Apple Messages import stops when the Apple Messages
+  reader stops.** The Apple Messages reader (imessage-reader) could stop
+  while an encrypted iPhone backup's attachments were being copied. Every
+  attachment still to come was then recorded missing, with one log line
+  each. The Import Run ended looking like a run with many missing
+  attachments. It now stops at that point with an error that says the
+  reader stopped and why. No attachment is recorded missing because of it,
+  so the import can be run again once the cause is gone.
 - 2026-10-04 **A person known only by name keeps a conversation of their
   own.** SMS Backup+, iMazing and OpenExtract backups sometimes name a person
   without recording a number or address. That person's conversation could
@@ -479,9 +493,21 @@ released versions carry their date on the heading.
   you can find.** The server's `import` command counted only the lines that
   were not blank, so the number pointed at the wrong line. An Upload named a
   line of its own batch; it now names the staged file and the line in it.
+- 2026-10-04 **An SMS Backup & Restore import counts the repeated messages
+  it drops.** A message the backup held twice was kept once, as it should
+  be, but the import's summary never said a copy was dropped. It now says
+  how many, as it does for GO SMS Pro, SMS Backup+, iMazing and OpenExtract.
 
 #### Exporting and converting
 
+- 2026-10-04 **GO SMS Pro and SMS Backup+ attachments keep their size when
+  their files are left out.** A run with Attachments set to Skip wrote each
+  GO SMS Pro and SMS Backup+ attachment without its size. Each one now
+  carries its size, as SMS Backup & Restore attachments already did.
+- 2026-10-04 **An obfuscated export no longer records the real size of each
+  photo or file.** Obfuscate replaces every attachment with a placeholder,
+  but the attachment kept the size of the real file, which can be enough
+  to recognise it. An obfuscated attachment now carries no size.
 - 2026-10-04 **Convert keeps the previous output when an Android XML backup
   can't be read.** Converting a broken `smses.xml` into a folder an earlier
   conversion wrote removed that conversion's files before the backup was

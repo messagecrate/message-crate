@@ -106,20 +106,10 @@ pub trait ProjectionHooks {
     }
 
     /// Map one queued attachment onto the shared [`IrAttachment`] shape.
-    /// The default carries metadata only (no path, no bytes).
+    /// The default is [`PendingAttachment::to_ir`]: metadata only (no path,
+    /// no bytes), with the size when the exporter recorded one.
     fn attachment_to_ir(&self, att: &PendingAttachment, _msg: &PendingMessage) -> IrAttachment {
-        IrAttachment {
-            path: None,
-            original_name: att.name_hint.clone(),
-            mime_type: att.mime_type(),
-            digest_sha256: att.digest_sha256.clone(),
-            is_sticker: false,
-            transcription: None,
-            sticker_effect: None,
-            size_bytes: None,
-            missing_reason: None,
-            bytes: None,
-        }
+        att.to_ir()
     }
 
     /// Classify one message. The default maps `is_from_me` to
@@ -666,6 +656,7 @@ mod tests {
             content_type: "image/jpeg".into(),
             digest_sha256: Some("a".repeat(64)),
             name_hint: None,
+            size_bytes: None,
         }];
         for order in [vec![xml.clone(), pdu.clone()], vec![pdu, xml]] {
             let mut convo = PendingConversation::new("+15555550122", false, None, Vec::new());
@@ -688,6 +679,7 @@ mod tests {
                 content_type: "image/jpeg".into(),
                 digest_sha256: Some(digest.to_string()),
                 name_hint: None,
+                size_bytes: None,
             }];
             m
         };

@@ -473,28 +473,60 @@ mod tests {
         assert!(err.contains("root of a drive"));
     }
 
-    #[test]
-    fn accepts_path_under_staging_when_missing() {
-        let root = "/home/sam/message-crate";
-        let path = "/home/sam/message-crate/staging-iphone-ios-260824-180509";
-        let resolved = resolve_openable_path(path, root).unwrap();
-        assert_eq!(resolved, PathBuf::from(path));
+    /// `base` with each of `parts` joined onto it in turn.
+    fn join_all(base: PathBuf, parts: &[&str]) -> PathBuf {
+        parts.iter().fold(base, |path, part| path.join(part))
+    }
+
+    /// Make the folder `existing_dir` under a temporary folder, and take the
+    /// Staging Directory at that folder joined with `root_below`. Check that
+    /// the path `path_below_root` under it is accepted, in the canonical form
+    /// of the made folder. Nothing below the made folder is made.
+    ///
+    /// The expected path is built from the canonical form rather than the
+    /// path passed in, because a missing path resolves through its nearest
+    /// existing ancestor: a made-up path such as /home/sam/... comes back
+    /// changed on a machine where /home is a symbolic link or an automount,
+    /// such as macOS.
+    fn assert_missing_path_resolves(
+        existing_dir: &str,
+        root_below: &[&str],
+        path_below_root: &[&str],
+    ) {
+        let temp = tempfile::tempdir().unwrap();
+        let existing = temp.path().join(existing_dir);
+        fs::create_dir(&existing).unwrap();
+        let root = join_all(existing.clone(), root_below);
+        let path = join_all(root.clone(), path_below_root);
+
+        let resolved =
+            resolve_openable_path(path.to_str().unwrap(), root.to_str().unwrap()).unwrap();
+
+        let expected = join_all(
+            join_all(existing.canonicalize().unwrap(), root_below),
+            path_below_root,
+        );
+        assert_eq!(resolved, expected);
     }
 
     #[test]
-    fn accepts_path_under_custom_staging_root() {
-        let root = "/data/imports";
-        let path = "/data/imports/staging-iphone-ios-260824-180509";
-        let resolved = resolve_openable_path(path, root).unwrap();
-        assert_eq!(resolved, PathBuf::from(path));
+    fn accepts_path_under_staging_when_missing() {
+        assert_missing_path_resolves("message-crate", &[], &["staging-iphone-ios-260824-180509"]);
+    }
+
+    /// A Staging Directory chosen in Settings and not made yet.
+    #[test]
+    fn accepts_path_under_staging_root_not_made_yet() {
+        assert_missing_path_resolves("data", &["imports"], &["staging-iphone-ios-260824-180509"]);
     }
 
     #[test]
     fn accepts_log_file_under_staging_when_missing() {
-        let root = "/home/sam/message-crate";
-        let path = "/home/sam/message-crate/staging-x/message-crate-push.log";
-        let resolved = resolve_openable_path(path, root).unwrap();
-        assert_eq!(resolved, PathBuf::from(path));
+        assert_missing_path_resolves(
+            "message-crate",
+            &[],
+            &["staging-x", "message-crate-push.log"],
+        );
     }
 
     #[test]
