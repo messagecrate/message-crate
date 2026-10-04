@@ -91,9 +91,30 @@ export interface ImportProgressEvent {
   status?: string;
 }
 
+/**
+ * One row for the Import Errors list (`extract:issue`), sent the moment the
+ * stage records it.
+ */
 export interface ImportIssueEvent {
   kind: "error" | "skip";
   step: "parse" | "attachments" | "prepare" | "media" | "upload";
   item: string;
   reason: string;
+  /**
+   * The conversation file an Upload row is about; it is the `item` too when
+   * the row is about the whole conversation. A resumed Upload reads again
+   * only the conversations not yet on the server, so this says which rows a
+   * resume reports again. Absent on the other stages' rows.
+   */
+  conversation?: string;
+}
+
+/**
+ * The Upload finished with one conversation file (`extract:file-done`):
+ * `ok` sent it now, `skipped` found an earlier part of the run had sent it,
+ * `failed` could not send it.
+ */
+export interface ImportFileDoneEvent {
+  file: string;
+  status: "ok" | "skipped" | "failed";
 }

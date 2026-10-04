@@ -545,7 +545,7 @@ fn run_media_post_pass(
     };
     // The desktop never runs this branch (it stages with Clone and converts
     // on its own after the gate); the events are for any other consumer.
-    let report = transcode_staged(output_dir, &transcode_options, cancel, &mut |p| {
+    let report = transcode_staged(output_dir, &transcode_options, cancel, None, &mut |p| {
         let due = emit_progress(
             progress,
             ProgressEvent::Media {

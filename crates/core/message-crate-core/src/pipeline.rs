@@ -11,8 +11,10 @@ use message_ir::{
     ConversationDocument, PendingConversation, ProjectionHooks, ProjectionTally,
     pending_to_document, prepare_conversation,
 };
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// Recursively walk `root`, collecting files that match `predicate`.
 /// Skips symlinks (both files and directories). Directories are
@@ -67,27 +69,26 @@ pub struct RunResult {
     pub conversations: u64,
     /// Messages exported, as [`ExportReport::messages`] counted them.
     pub message_count: u64,
-    /// Items the run could not finish, as [`ExportReport::issues`] listed them.
-    pub issues: Vec<RunIssue>,
 }
 
 impl RunResult {
-    /// The log lines `messages` with the counts and issues of `report`.
+    /// The log lines `messages` with the counts of `report`.
     pub fn new(messages: Vec<String>, report: &ExportReport) -> Self {
         Self {
             messages,
             conversations: report.conversations,
             message_count: report.messages,
-            issues: report.issues.clone(),
         }
     }
 }
 
-/// One item a run could not finish, for the Import Run's list of issues.
-/// The fields are the ones the upload reports its own issues with.
+/// One row a run reports for its Import Run's record, sent through an
+/// [`IssueSink`] as the run records it. The fields are the ones the upload
+/// reports its own issues with.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunIssue {
-    /// `skip` when the item was left out, `error` when it failed.
+    /// What the row is: `skip` when the item was left out, `error` when it
+    /// failed.
     pub kind: String,
     /// The step that raised it, such as `attachments`.
     pub step: String,
@@ -95,6 +96,44 @@ pub struct RunIssue {
     pub item: String,
     /// Why, in one sentence.
     pub reason: String,
+}
+
+/// Callback that receives each [`RunIssue`] the moment a run records it.
+///
+/// The desktop app sets one and sends each row on to its window, which
+/// writes it into the Import Run's record at once: an app that closes
+/// mid-run keeps every row that had arrived. A row's `kind` says what it
+/// is, so a new kind of row travels through the same sink. A run without a
+/// sink reports its rows nowhere but the log lines it writes beside them.
+#[derive(Clone)]
+pub struct IssueSink(Arc<dyn Fn(RunIssue) + Send + Sync>);
+
+impl IssueSink {
+    /// Wrap a callback that receives one row at a time.
+    pub fn new<F>(f: F) -> Self
+    where
+        F: Fn(RunIssue) + Send + Sync + 'static,
+    {
+        Self(Arc::new(f))
+    }
+
+    /// Send one row to the callback.
+    pub fn emit(&self, issue: RunIssue) {
+        (self.0)(issue);
+    }
+}
+
+impl fmt::Debug for IssueSink {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("IssueSink")
+    }
+}
+
+/// Send `issue` to `sink` when one is set.
+pub fn emit_issue(sink: Option<&IssueSink>, issue: RunIssue) {
+    if let Some(sink) = sink {
+        sink.emit(issue);
+    }
 }
 
 /// Export run statistics: what was counted while parsing and what the
@@ -132,9 +171,6 @@ pub struct ExportReport {
     /// but did not fail, such as a choice it made between two rows. Shown
     /// apart from `errors`, so a note never reads as a failure.
     pub notes: Vec<String>,
-    /// Items the run could not finish, one row each, for the Import Run's
-    /// list of issues. Unlike `errors`, not capped: the list counts them.
-    pub issues: Vec<RunIssue>,
     /// Per-exporter extension counters keyed by name.
     pub extra: std::collections::BTreeMap<String, u64>,
 }

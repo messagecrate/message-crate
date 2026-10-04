@@ -48,7 +48,12 @@ import {
   type TranscodeFinishedReport,
 } from "../../lib/tauri";
 import { isTauri } from "../../lib/tauri-check";
-import type { AttachmentMediaMode, ImportIssueEvent, ImportProgressEvent } from "../../lib/types";
+import type {
+  AttachmentMediaMode,
+  ImportFileDoneEvent,
+  ImportIssueEvent,
+  ImportProgressEvent,
+} from "../../lib/types";
 import { useFetchAccountProfile } from "../../lib/useAccountProfile";
 import { whatsappExtractFields } from "../../lib/whatsappExtractFields";
 import { isWhatsappMethod } from "../../lib/whatsappImport";
@@ -80,8 +85,10 @@ import {
   useImportRunState,
 } from "./importRunStore";
 import {
+  afterMediaPass,
   EMPTY_RUN_RECORD,
   filesSkippedOverRun,
+  issueRequests,
   issuesToDiscard,
   parseRunRecord,
   RUN_ERROR_ITEM,
@@ -373,6 +380,11 @@ type RunScratch = {
   pendingIdentityForm: ImportJobFormValues | null;
   activeStage: ImportIssueStage;
   issues: ImportIssue[];
+  /**
+   * What this part's Upload said of each conversation file it finished so
+   * far (`extract:file-done`): `ok`, `skipped` or `failed`, by file.
+   */
+  conversations: Map<string, string>;
   counts: { filesParsed?: number; messagesParsed?: number };
   timing: StageTiming;
   durations: ExtractDurations;
@@ -412,6 +424,7 @@ function freshScratch(): RunScratch {
     pendingIdentityForm: null,
     activeStage: "staging",
     issues: [],
+    conversations: new Map(),
     counts: {},
     timing: { ...EMPTY_TIMING },
     durations: { ...EMPTY_DURATIONS },
@@ -537,6 +550,7 @@ function beginRun(form: ImportJobFormValues, firstStage: ImportIssueStage): void
   scratch.importStartedAt = performance.now();
   scratch.activeStage = firstStage;
   scratch.issues = [];
+  scratch.conversations = new Map();
   scratch.counts = {};
   scratch.timing = { ...EMPTY_TIMING };
   scratch.durations = { ...EMPTY_DURATIONS };
@@ -561,6 +575,7 @@ function currentPart(
     uploadMs,
     filesParsed: run.counts.filesParsed,
     messagesParsed: run.counts.messagesParsed,
+    conversations: run.conversations,
     report,
   };
 }
@@ -616,9 +631,10 @@ function writeRunRecord(stagingDir: string, build: () => RunRecord): Promise<voi
 
 /**
  * Write the run's record so far into its staging folder, for the part that
- * resumes it. Called wherever the run stops with the run still open: at a
- * Review, and when `finishImport` leaves the run open. A failed write loses
- * only this part's record; the run itself is unaffected.
+ * resumes it. Called wherever the run stops with the run still open (at a
+ * Review, and when `finishImport` leaves the run open) and while a stage
+ * runs (`saveRecordAsIssuesArrive`). A failed write loses only this part's
+ * record; the run itself is unaffected.
  */
 async function saveCarriedRecord(
   report: PushFinishedReport | null = null,
@@ -633,26 +649,17 @@ async function saveCarriedRecord(
 }
 
 /**
- * Write the record again as an issue of Staging or Media arrives, so an app
- * that closes mid-stage leaves the issues the window has received in the
- * folder for the resume to read. A crash loses only the issues that arrived
- * while the last write was on its way to disk. The extract still sends its
- * issues only when Staging ends, and Media sends none, so until they send
- * each one as it happens a crash mid-stage still loses them (#1639).
- *
- * An Upload's issues wait for the end of the Upload (`saveCarriedRecord`):
- * the record leaves out the conversations a resumed Upload sends again, and
- * only the Upload's report says which issues are about those.
+ * Write the record again while a stage runs, so an app that closes mid-stage
+ * leaves in the folder every issue the window had received. Each stage sends
+ * its issues the moment it records them, and the Upload says when it has
+ * sent each conversation, so a crash loses only what arrived while the last
+ * write was on its way to disk. The record is the one a stop now would
+ * leave (`recordToCarry`): an Upload's rows about a conversation not yet on
+ * the server wait apart, and an earlier stop's rows about a conversation
+ * this Upload has since sent go.
  */
 function saveRecordAsIssuesArrive(): void {
-  const { stagingDir } = store.get();
-  if (stagingDir == null) return;
-  const run = scratch;
-  void writeRunRecord(stagingDir, () => {
-    const part = currentPart(null, null, run);
-    const issues = part.issues.filter((issue) => issue.stage !== "upload");
-    return recordToCarry(run.carried, { ...part, issues });
-  });
+  void saveCarriedRecord();
 }
 
 function applyProgress(event: ImportProgressEvent): void {
@@ -750,9 +757,21 @@ function progressDetail(event: ImportProgressEvent): string {
 }
 
 function recordIssue(event: ImportIssueEvent): void {
-  const issue = issueFromEvent(event);
-  scratch.issues = [...scratch.issues, issue];
-  if (issue.stage !== "upload") saveRecordAsIssuesArrive();
+  scratch.issues = [...scratch.issues, issueFromEvent(event)];
+  saveRecordAsIssuesArrive();
+}
+
+/**
+ * Note what the Upload did with one conversation. The record changes only
+ * when some row is about that conversation, so it is written again only
+ * then.
+ */
+function recordFileDone(event: ImportFileDoneEvent): void {
+  scratch.conversations.set(event.file, event.status);
+  const about = (issue: ImportIssue) => issue.conversation === event.file;
+  if (scratch.issues.some(about) || (scratch.carried.lastStopIssues ?? []).some(about)) {
+    saveRecordAsIssuesArrive();
+  }
 }
 
 function recordError(stage: ImportIssueStage, message: string): void {
@@ -778,6 +797,7 @@ function runJob(invokeFn: () => Promise<void>): Promise<TauriJobResult> {
     undefined,
     applyProgress,
     recordIssue,
+    recordFileDone,
   );
 }
 
@@ -966,7 +986,7 @@ async function finishImport(args: {
           messages_deduped: finalSummary.messagesDeduped,
           messages_failed: finalSummary.messagesFailed,
         },
-        issues: finalSummary.issues,
+        issues: issueRequests(finalSummary.issues),
       });
     } catch (e: unknown) {
       completeRefused = e instanceof Error ? e.message : String(e);
@@ -1249,8 +1269,11 @@ async function runMediaPass(
 
   store.set({ computingSummary: true });
   await moveStageAtReview(sessionId, "media_review", approvedSummary);
-  // Media's issues and times are only in memory until now, and the run may
-  // be resumed from this Review after the app closes.
+  // This pass tried again every file an earlier part's pass could not
+  // convert, and reported each that still failed.
+  scratch.carried = afterMediaPass(scratch.carried);
+  // Media's times are only in memory until now, and the run may be resumed
+  // from this Review after the app closes.
   await saveCarriedRecord();
   try {
     const actual = await summarizeStagingWithProgress({ staging_dir: outputDir });
@@ -1544,7 +1567,7 @@ async function discardRun(sessionId: number | null, stagingDir: string | null): 
     }
   }
   await Promise.allSettled([
-    sessionId != null ? discardImportSession(sessionId, issues) : Promise.resolve(),
+    sessionId != null ? discardImportSession(sessionId, issueRequests(issues)) : Promise.resolve(),
     stagingDir != null ? discardStagingFolder(stagingDir) : Promise.resolve(),
   ]);
 }

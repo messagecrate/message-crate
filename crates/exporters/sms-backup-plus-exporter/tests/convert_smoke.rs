@@ -24,6 +24,7 @@ fn convert(inputs: &[&Path], output_dir: &Path) -> Result<ExportReport> {
         output_format: OutputFormat::Csv,
         cancel: None,
         log: None,
+        issues: None,
         resume: false,
     })
 }
@@ -239,6 +240,7 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
             output_format: OutputFormat::Jsonl,
             cancel: None,
             log: None,
+            issues: None,
             resume,
         })
     });
@@ -361,6 +363,7 @@ fn a_run_that_copies_no_attachments_still_records_their_size() {
         output_format: OutputFormat::Jsonl,
         cancel: None,
         log: None,
+        issues: None,
         resume: false,
     })
     .unwrap();

@@ -70,14 +70,17 @@
 //! item-level issue: `missing_reason` gets `convert_failed: <detail>` and the
 //! original — still on disk, untouched — keeps its `path` and
 //! `digest_sha256` so a resume retries it rather than treating a transient
-//! failure as permanent loss.
+//! failure as permanent loss. The failure also goes to the issue sink as a
+//! `skip` row naming the conversation file and the attachment, before the
+//! conversation file is written: a stop between the two leaves the original
+//! pending, and the resumed pass reports it again.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use media::{CompressOptions, MediaMode, TranscodeOutcome};
-use message_crate_core::{CancelFlag, check_cancel, mime_for_rel};
+use message_crate_core::{CancelFlag, IssueSink, RunIssue, check_cancel, emit_issue, mime_for_rel};
 use message_ir::{ConversationDocument, IrAttachment};
 
 use message_ir_format::read_conversation_jsonl;
@@ -167,11 +170,13 @@ pub struct TranscodeReport {
 /// Returns an error when the pass is cancelled, ffmpeg/ffprobe are
 /// unavailable, or the folder cannot be read, or a conversation file cannot
 /// be parsed or written. A single attachment ffmpeg cannot process is an
-/// item-level issue recorded in the report, never an error.
+/// item-level issue, counted in the report and sent to `issues` as it
+/// happens, never an error.
 pub fn transcode_staged(
     staging_dir: &Path,
     options: &TranscodeOptions,
     cancel: Option<&CancelFlag>,
+    issues: Option<&IssueSink>,
     on_progress: &mut dyn FnMut(TranscodeProgress),
 ) -> Result<TranscodeReport> {
     if matches!(options.mode, MediaMode::Clone | MediaMode::Disabled) {
@@ -215,6 +220,7 @@ pub fn transcode_staged(
                         &src,
                         false,
                         options,
+                        issues,
                         &mut report,
                     )?;
                 }
@@ -227,6 +233,7 @@ pub fn transcode_staged(
                         &src,
                         true,
                         options,
+                        issues,
                         &mut report,
                     )?;
                 }
@@ -606,6 +613,7 @@ fn apply_transcode(
     src: &Path,
     is_heal: bool,
     options: &TranscodeOptions,
+    issues: Option<&IssueSink>,
     report: &mut TranscodeReport,
 ) -> Result<()> {
     let Some(name) = final_derivative_name(src, options.mode) else {
@@ -619,6 +627,7 @@ fn apply_transcode(
 
     match media::transcode_file(src, &marker, options.mode, &options.compress) {
         Err(err) => {
+            emit_issue(issues, convert_failed_issue(jsonl, doc, recorded_rel, &err));
             let reason = format!("convert_failed: {err}");
             if is_heal {
                 // `recorded_rel` is the phantom `-mv` name a crashed prior
@@ -731,6 +740,33 @@ fn apply_transcode(
             report.bytes_after += produced_len;
             Ok(())
         }
+    }
+}
+
+/// The Import Errors row for an attachment the pass could not convert: a
+/// `skip`, since the attachment keeps its original file, naming the
+/// conversation file and the attachment (its original name, or the staged
+/// path when it has none).
+fn convert_failed_issue(
+    jsonl: &Path,
+    doc: &ConversationDocument,
+    recorded_rel: &str,
+    err: &anyhow::Error,
+) -> RunIssue {
+    let conversation = jsonl.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+    let attachment = doc
+        .messages
+        .iter()
+        .flat_map(|msg| &msg.attachments)
+        .find(|att| att.path.as_deref() == Some(recorded_rel))
+        .and_then(|att| att.original_name.as_deref())
+        .and_then(message_ir::trimmed)
+        .unwrap_or(recorded_rel);
+    RunIssue {
+        kind: "skip".into(),
+        step: "media".into(),
+        item: format!("{conversation}:{attachment}"),
+        reason: format!("could not be converted, so the original file is kept: {err:#}"),
     }
 }
 

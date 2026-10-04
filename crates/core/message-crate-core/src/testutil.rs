@@ -1,9 +1,21 @@
 //! Shared scaffolding for exporter `convert_smoke` tests (behind `testutil`).
 
-use crate::ExportReport;
+use crate::{ExportReport, ExporterConfig, IssueSink, RunIssue};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
+/// Give `config` an issue sink, and return the rows it receives, in the
+/// order the run sent them.
+pub fn collect_issues(config: &mut ExporterConfig) -> Arc<Mutex<Vec<RunIssue>>> {
+    let issues = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&issues);
+    config.issues = Some(IssueSink::new(move |issue| {
+        sink.lock().unwrap().push(issue);
+    }));
+    issues
+}
 
 /// The names in `dir`, sorted, without the `.lock` files a scratch folder
 /// keeps: what a test asserts is the data a folder holds.
@@ -295,6 +307,7 @@ pub fn jsonl_run_config(
         cancel: None,
         log: None,
         progress: None,
+        issues: None,
         output_format: crate::OutputFormat::Jsonl,
         resume: false,
         source,

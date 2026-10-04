@@ -8,8 +8,8 @@ use crate::parse_emit::{ParsedEmlKind, collect_eml_paths, parse_one_eml};
 use crate::types::ParsedMessage;
 use anyhow::{Result, bail};
 use message_crate_core::{
-    CancelFlag, ExportReport, ExportTransforms, LogSink, OutputFormat, RunIssue, emit_log,
-    prepare_outputs, project_conversation,
+    CancelFlag, ExportReport, ExportTransforms, IssueSink, LogSink, OutputFormat, RunIssue,
+    emit_issue, emit_log, prepare_outputs, project_conversation,
 };
 use message_ir::{
     ConversationDocument, ExportMeta, IrConversationType, IrDirection, IrParticipant, IrService,
@@ -226,13 +226,15 @@ impl ProjectionHooks for SbpProjection {
 
 /// Project one conversation, then count the messages it kept that did not
 /// name the owner, and the group messages it kept with no sender, from the
-/// messages written: copies dropped by the projection are not counted.
+/// messages written: copies dropped by the projection are not counted. Each
+/// group message with no sender is sent to `issues` as it is counted.
 fn project_and_count(
     chat_id: &str,
     convo: &mut PendingConversation,
     hooks: &SbpProjection,
     owner_not_named: &HashSet<String>,
     report: &mut ExportReport,
+    issues: Option<&IssueSink>,
 ) -> Option<ConversationDocument> {
     let doc = project_conversation(chat_id, convo, hooks, report)?;
     let is_group = doc.conversation.conversation_type == IrConversationType::Group;
@@ -248,7 +250,7 @@ fn project_and_count(
         }
         if is_group && msg.direction == IrDirection::Incoming && msg.sender_handle.is_none() {
             report.bump(GROUP_MESSAGES_WITHOUT_SENDER, 1);
-            report.issues.push(RunIssue {
+            emit_issue(issues, RunIssue {
                 kind: "skip".into(),
                 step: "parse".into(),
                 item: format!("{eml_path} (sender)"),
@@ -318,6 +320,8 @@ pub(crate) struct ConvertExportArgs<'a, P: AsRef<Path>> {
     pub output_format: OutputFormat,
     pub cancel: Option<&'a CancelFlag>,
     pub log: Option<&'a LogSink>,
+    /// Where each row for the Import Run's record goes as it is recorded.
+    pub issues: Option<&'a IssueSink>,
     /// Continue an interrupted export: keep previous output and skip the
     /// conversations already written.
     pub resume: bool,
@@ -350,6 +354,7 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
         output_format,
         cancel,
         log,
+        issues,
         resume,
     } = args;
     // Checked before the output folder is cleaned, so a refused run leaves it.
@@ -407,9 +412,14 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
     let mut documents = Vec::new();
     for (chat_id, mut convo) in conversations {
         message_crate_core::check_cancel(cancel)?;
-        if let Some(doc) =
-            project_and_count(&chat_id, &mut convo, &hooks, &owner_not_named, &mut report)
-        {
+        if let Some(doc) = project_and_count(
+            &chat_id,
+            &mut convo,
+            &hooks,
+            &owner_not_named,
+            &mut report,
+            issues,
+        ) {
             documents.push(doc);
         }
     }
@@ -726,9 +736,14 @@ mod tests {
         let mut conversations: Vec<_> = ingest.conversations.into_iter().collect();
         conversations.sort_by(|a, b| a.0.cmp(&b.0));
         for (chat_id, mut convo) in conversations {
-            if let Some(doc) =
-                project_and_count(&chat_id, &mut convo, &hooks, &owner_not_named, &mut report)
-            {
+            if let Some(doc) = project_and_count(
+                &chat_id,
+                &mut convo,
+                &hooks,
+                &owner_not_named,
+                &mut report,
+                None,
+            ) {
                 messages.extend(doc.messages);
             }
         }

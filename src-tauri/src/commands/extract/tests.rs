@@ -1,5 +1,6 @@
 use super::*;
 use media::MediaMode;
+use message_crate_core::IssueSink;
 use std::fs;
 
 /// An attachment size limit for tests that do not look at it.
@@ -238,6 +239,63 @@ fn staging_records_the_media_settings_in_the_folder() {
     assert_eq!(
         message_staging::read_media_settings(&output).unwrap(),
         settings
+    );
+}
+
+/// Each issue reaches the issue sink, which the command forwards to the
+/// window as `extract:issue`, while Staging is still running: the window
+/// writes it into the run record at once, so an app that closes before
+/// Staging ends keeps it. Before, the issues went out only after the
+/// exporter returned (#1639).
+#[test]
+fn a_staging_issue_reaches_the_issue_sink_before_staging_ends() {
+    let tmp = tempfile::tempdir().unwrap();
+    let backup = tmp.path().join("backup");
+    fs::create_dir_all(&backup).unwrap();
+    // A received group message whose sender cannot be read.
+    fs::write(
+        backup.join("1.eml"),
+        "From: Bob <bob@example.org>\n\
+         To: me@example.com\n\
+         Subject: SMS with group\n\
+         X-smssync-type: 132\n\
+         X-smssync-address: 4075550150~4075550108\n\
+         X-smssync-date: 1609459200000\n\
+         Content-Type: text/plain; charset=utf-8\n\
+         \n\
+         Hello group\n",
+    )
+    .unwrap();
+    let output = tmp.path().join("out");
+    let mut options = test_options(vec!["+15555550100".into()]);
+    options.owner_emails = vec!["me@example.com".into()];
+    let mut config = build_exporter_config(
+        &tmp.path().join("cache"),
+        "sms-backup-plus",
+        backup.to_str().unwrap(),
+        output.to_str().unwrap(),
+        &options,
+    )
+    .unwrap();
+    // Staging ends by recording the run's media settings, so an issue that
+    // arrives while they are not yet in the folder arrived mid-Staging.
+    let arrived = Arc::new(Mutex::new(Vec::new()));
+    let sink_arrived = Arc::clone(&arrived);
+    let sink_output = output.clone();
+    config.issues = Some(IssueSink::new(move |issue| {
+        let staging_ended = message_staging::read_media_settings(&sink_output).is_ok();
+        sink_arrived
+            .lock()
+            .unwrap()
+            .push((issue.item, staging_ended));
+    }));
+    let settings = media_settings_for(&options, ASSET_MAX_BYTES).unwrap();
+
+    run_staging(&config, &output, &settings).unwrap();
+
+    assert_eq!(
+        *arrived.lock().unwrap(),
+        [("1.eml (sender)".to_string(), false)]
     );
 }
 

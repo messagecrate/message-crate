@@ -251,6 +251,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **An import whose app closes or crashes keeps every Error
+  found so far.** Staging reported its Errors only when it finished, Media
+  reported none, and an Upload's skipped attachments waited for the end of
+  the Upload, so an app that closed partway lost them. Every Error now
+  reaches the run the moment it is found. A file Media could not convert is
+  listed as an Error with the file and the reason, and keeps its original.
+  A resumed run lists an Error it finds again once. Discarding a run after
+  a crash during a resumed Upload no longer records a conversation as
+  failed when that Upload had already sent it.
 - 2026-10-04 **Logging out during an Upload waits at most 15 seconds, and
   an Upload whose session ends pauses cleanly.** Logging out during an
   Upload waited for the Upload to pause for as long as that took, and an

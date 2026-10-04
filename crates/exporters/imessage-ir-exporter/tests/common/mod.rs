@@ -30,6 +30,7 @@ pub fn config(db_path: &Path, output: &Path, cancel: Option<Arc<AtomicBool>>) ->
         cancel,
         log: None,
         progress: None,
+        issues: None,
         output_format: OutputFormat::Jsonl,
         resume: false,
         source: SourceConfig::Apple(AppleConfig {

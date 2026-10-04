@@ -190,22 +190,29 @@ fn forward_push_event(app: &tauri::AppHandle, event: ProgressEvent) {
         }
         ProgressEvent::FileDone { file, status } => {
             events::emit(app, events::LOG, format!("Done: {file} ({status})"));
+            events::emit(
+                app,
+                events::FILE_DONE,
+                events::ExtractFileDoneEvent { file, status },
+            );
         }
         ProgressEvent::Issue {
             kind,
             step,
             item,
             reason,
+            conversation,
         } => {
             events::emit(
                 app,
                 events::ISSUE,
-                serde_json::json!({
-                    "kind": kind,
-                    "step": step,
-                    "item": item,
-                    "reason": reason,
-                }),
+                events::ExtractIssueEvent {
+                    kind,
+                    step,
+                    item,
+                    reason,
+                    conversation: Some(conversation),
+                },
             );
         }
         ProgressEvent::Finished(report) => {

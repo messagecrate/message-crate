@@ -1905,12 +1905,18 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
     cfg.asset_max_bytes = 16; // BIG exceeds; SMALL does not
 
     let mut issues = Vec::new();
+    let mut conversations = Vec::new();
     let report = {
         let mut progress = |event: ProgressEvent| {
             if let ProgressEvent::Issue {
-                kind, item, reason, ..
+                kind,
+                item,
+                reason,
+                conversation,
+                ..
             } = event
             {
+                conversations.push((item.clone(), conversation));
                 issues.push((kind, item, reason));
             }
         };
@@ -1934,6 +1940,15 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
                 && reason.contains("over the configured asset max")
         }),
         "expected skip issue for oversized attachment, got {issues:?}"
+    );
+    // The row names the conversation it is about, which tells the window
+    // whether a resumed Upload reads that conversation again (#1639).
+    assert_eq!(
+        conversations,
+        [(
+            "+15555550101.jsonl:attachments/big.bin".to_string(),
+            "+15555550101.jsonl".to_string()
+        )]
     );
 }
 

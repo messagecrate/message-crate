@@ -2,7 +2,7 @@
 //! shows. The smoke tests call `convert_export` directly, so a `run()` that
 //! wrote nothing, or dropped its summary, passed them.
 
-use message_crate_core::testutil::{assert_run_wrote_jsonl, jsonl_run_config};
+use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_run_config};
 use message_crate_core::{SmsBackupPlusConfig, SourceConfig};
 use std::fs;
 use std::path::Path;
@@ -143,8 +143,10 @@ fn a_group_message_with_no_readable_sender_is_kept_and_counted_once() {
     fs::write(input.join("1.eml"), mail).unwrap();
     fs::write(input.join("2.eml"), mail).unwrap();
     let output = tmp.path().join("out");
+    let mut config = jsonl_run_config(&[&input], &output, source(true));
+    let issues = collect_issues(&mut config);
 
-    let result = crate::run(&jsonl_run_config(&[&input], &output, source(true))).expect("run");
+    let result = crate::run(&config).expect("run");
 
     let written = assert_run_wrote_jsonl(&result, &output, 1);
     assert!(written.contains("Hello group"), "{written}");
@@ -156,8 +158,9 @@ fn a_group_message_with_no_readable_sender_is_kept_and_counted_once() {
         "{:?}",
         result.messages
     );
-    assert_eq!(result.issues.len(), 1, "{:?}", result.issues);
-    let issue = &result.issues[0];
+    let issues = issues.lock().unwrap();
+    assert_eq!(issues.len(), 1, "{issues:?}");
+    let issue = &issues[0];
     assert_eq!(
         (
             issue.kind.as_str(),
@@ -191,8 +194,10 @@ fn a_group_message_not_naming_the_owner_is_counted_once() {
     fs::write(input.join("1.eml"), mail).unwrap();
     fs::write(input.join("2.eml"), mail).unwrap();
     let output = tmp.path().join("out");
+    let mut config = jsonl_run_config(&[&input], &output, source(true));
+    let issues = collect_issues(&mut config);
 
-    let result = crate::run(&jsonl_run_config(&[&input], &output, source(true))).expect("run");
+    let result = crate::run(&config).expect("run");
 
     let written = assert_run_wrote_jsonl(&result, &output, 1);
     assert!(written.contains("Hello from Carol"), "{written}");
@@ -204,5 +209,6 @@ fn a_group_message_not_naming_the_owner_is_counted_once() {
         "{:?}",
         result.messages
     );
-    assert!(result.issues.is_empty(), "{:?}", result.issues);
+    let issues = issues.lock().unwrap();
+    assert!(issues.is_empty(), "{issues:?}");
 }
