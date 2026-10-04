@@ -360,10 +360,11 @@ export interface paths {
         /**
          * Make a media link: URLs that read one asset with no `Authorization` header, for a media element's `src`.
          * @description A media element cannot send the Session's header, so the web app asks for
-         *     a link and loads the URLs it answers. The link opens this asset and its
-         *     Preview, in this account's store, for an hour, and stops sooner when the
-         *     Session that made it ends. Its URLs take `Range` like any read of the
-         *     asset. Only a Session makes one: a program sends its token in the header.
+         *     a link and loads the URLs it answers. The link opens this asset, its
+         *     Preview and its Thumbnail, in this account's store, for an hour, and
+         *     stops sooner when the Session that made it ends. Its URLs take `Range`
+         *     like any read of the asset. Only a Session makes one: a program sends its
+         *     token in the header.
          */
         post: operations["create_media_link"];
         delete?: never;
@@ -380,7 +381,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Download the preview of a stored asset: the JPEG, MP4 or MP3 that `process-assets` made from it for a browser to show.
+         * Download the preview of a stored asset: the JPEG, MP4 or MP3 the server made from it for a browser to show.
          * @description The URL is the SHA-256 fingerprint of the original, and the body streams
          *     the preview's bytes in the preview's own media type. An asset with no
          *     preview answers `404 Not Found`; the original is at `/v1/assets/{sha256}`. A
@@ -389,6 +390,33 @@ export interface paths {
          *     media element reads with the `media_link` a media link put in the URL.
          */
         get: operations["get_asset_preview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/assets/{sha256}/thumbnail": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download the thumbnail of a stored image or video: a JPEG at most 560 pixels on its long side, the image scaled down or the video's first frame.
+         * @description The server makes it in the background after the Import Run that brought
+         *     the asset, and `process-assets` makes any that are missing. The URL is
+         *     the SHA-256 fingerprint of the original. An asset with no thumbnail yet
+         *     answers `404 Not Found`; the attachment's `thumbnail_mime_type` says
+         *     whether it has one. A `Range` of one byte range answers
+         *     `206 Partial Content` with those bytes. The thumbnail has no `ETag`, so a
+         *     `Range` sent with `If-Range` answers the whole thumbnail. A media element
+         *     reads with the `media_link` a media link put in the URL.
+         */
+        get: operations["get_asset_thumbnail"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1755,6 +1783,12 @@ export interface components {
             preview_mime_type?: string | null;
             /** @description Content fingerprint of the stored bytes. */
             sha256?: string | null;
+            /**
+             * @description MIME type of the attachment's thumbnail, once the server has made
+             *     it; absent until then. The thumbnail's bytes are at
+             *     `/v1/assets/{sha256}/thumbnail`.
+             */
+            thumbnail_mime_type?: string | null;
             /** @description OCR/ASR transcription, when processed. */
             transcription?: string | null;
         };
@@ -2963,6 +2997,12 @@ export interface components {
              *     `preview_mime_type` says whether it has one).
              */
             preview_url: string;
+            /**
+             * @description `/v1/assets/{sha256}/thumbnail?media_link=…`: the asset's Thumbnail,
+             *     which answers `404 Not Found` until the server has made one (the
+             *     attachment's `thumbnail_mime_type` says whether it has one).
+             */
+            thumbnail_url: string;
             /** @description `/v1/assets/{sha256}?media_link=…`: the asset's own bytes. */
             url: string;
         };
@@ -6754,6 +6794,102 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description The preview's bytes, in the preview's own media type, or `application/octet-stream` when none is stored */
+            200: {
+                headers: {
+                    /** @description `bytes` */
+                    "Accept-Ranges"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": unknown;
+                };
+            };
+            /** @description The byte range the `Range` header asked for */
+            206: {
+                headers: {
+                    /** @description `bytes` */
+                    "Accept-Ranges"?: string;
+                    /** @description `bytes <first>-<last>/<length>` */
+                    "Content-Range"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": unknown;
+                };
+            };
+            /**
+             * @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired.
+             *
+             *     [`media-link-invalid`](https://messagecrate.app/docs/developer/reference/errors/media-link-invalid): The `media_link` in the URL opens nothing here: it is not a media link, it was made for another asset or another account, it expired, or the Session that made it has ended.
+             */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /**
+             * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
+             *
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`not-found`](https://messagecrate.app/docs/developer/reference/errors/not-found): No resource at that address exists for this account. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`range-not-satisfiable`](https://messagecrate.app/docs/developer/reference/errors/range-not-satisfiable): The request's `Range` selects no byte of the file: it starts at or past the end, or asks for a suffix of no bytes. */
+            416: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_asset_thumbnail: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description One byte range, `bytes=<first>-<last>`, `bytes=<first>-` or `bytes=-<suffix>`; any other range answers the whole thumbnail */
+                Range?: string | null;
+                /** @description Never names a Thumbnail, which has no `ETag`: a `Range` sent with it answers the whole thumbnail */
+                "If-Range"?: string | null;
+            };
+            path: {
+                /** @description Content SHA-256 hex of the original */
+                sha256: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The thumbnail's bytes, in the thumbnail's own media type */
             200: {
                 headers: {
                     /** @description `bytes` */

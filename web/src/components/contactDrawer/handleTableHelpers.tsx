@@ -1,30 +1,18 @@
 import type { ReactNode } from "react";
-import { Column, ColumnResizer, Group } from "react-aria-components";
-import {
-  columnResizerClass,
-  mutedClass,
-  thClass,
-  thLeftClass,
-  thRightClass,
-} from "./handleTableStyles";
+import { Column, Group } from "react-aria-components";
+import { mutedClass, thClass, thLeftClass, thRightClass } from "./handleTableStyles";
 
 export function SortableColumn({
   id,
   widthClass = "",
   align = "center",
   isRowHeader,
-  allowsResizing = false,
-  defaultWidth,
-  minWidth,
   children,
 }: {
   id: string;
   widthClass?: string;
   align?: "left" | "center" | "right";
   isRowHeader?: boolean;
-  allowsResizing?: boolean;
-  defaultWidth?: number | `${number}%` | `${number}fr`;
-  minWidth?: number;
   children: ReactNode;
 }) {
   const justify =
@@ -32,15 +20,12 @@ export function SortableColumn({
   const textAlign =
     align === "right" ? "text-right" : align === "left" ? "text-left" : "text-center";
   const headerAlign = align === "right" ? thRightClass : align === "left" ? thLeftClass : thClass;
-  const resolvedMinWidth = minWidth;
 
   return (
     <Column
       id={id}
       isRowHeader={isRowHeader}
       allowsSorting
-      defaultWidth={defaultWidth}
-      minWidth={resolvedMinWidth}
       className={`${headerAlign} ${widthClass}`.trim()}
     >
       {({ sortDirection }) => (
@@ -66,7 +51,6 @@ export function SortableColumn({
           >
             {sortDirection === "descending" ? "▼" : "▲"}
           </span>
-          {allowsResizing ? <ColumnResizer className={columnResizerClass} /> : null}
         </div>
       )}
     </Column>

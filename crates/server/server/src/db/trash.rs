@@ -275,7 +275,7 @@ pub enum OrphanedFile {
     /// directory, plus the `.<sha256>.mime` sidecar beside it when one was
     /// written.
     Original { sha256: String, assets_path: String },
-    /// A browser derivative: `assets_path` under the account's converted
+    /// A Preview or a Thumbnail: `assets_path` under the account's converted
     /// directory.
     Derived { assets_path: String },
 }
@@ -401,8 +401,11 @@ pub struct EmptiedTrash {
 
 /// One attachment's stored files, read before its message is deleted so the
 /// reference check afterwards knows what to look for: sha256, assets_path,
-/// derived_sha256, derived_assets_path.
+/// derived_sha256, derived_assets_path, thumbnail_sha256,
+/// thumbnail_assets_path.
 type AttachmentFilesRow = (
+    Option<String>,
+    Option<String>,
     Option<String>,
     Option<String>,
     Option<String>,
@@ -430,11 +433,13 @@ async fn delete_conversations(
         let placeholders = in_placeholders(1, chunk.len());
         let sql = format!(
             "SELECT DISTINCT a.sha256, a.assets_path,
-                    a.derived_sha256, a.derived_assets_path
+                    a.derived_sha256, a.derived_assets_path,
+                    a.thumbnail_sha256, a.thumbnail_assets_path
              FROM attachments a
              JOIN messages m ON m.id = a.message_id
              WHERE m.conversation_id IN ({placeholders})
-               AND (a.sha256 IS NOT NULL OR a.derived_sha256 IS NOT NULL)"
+               AND (a.sha256 IS NOT NULL OR a.derived_sha256 IS NOT NULL
+                    OR a.thumbnail_sha256 IS NOT NULL)"
         );
         let mut q = sqlx::query_as::<_, AttachmentFilesRow>(&sql);
         for id in chunk {
@@ -479,19 +484,35 @@ async fn orphaned_files(
     candidates: Vec<AttachmentFilesRow>,
 ) -> Result<Vec<OrphanedFile>, sqlx::Error> {
     let mut out = Vec::new();
-    for (sha256, assets_path, derived_sha256, derived_assets_path) in candidates {
+    for (
+        sha256,
+        assets_path,
+        derived_sha256,
+        derived_assets_path,
+        thumbnail_sha256,
+        thumbnail_path,
+    ) in candidates
+    {
         if let (Some(sha256), Some(assets_path)) = (sha256, assets_path)
-            && !asset_is_referenced(conn, account_id, "sha256", &sha256).await?
+            && !original_is_referenced(conn, account_id, &sha256).await?
         {
             out.push(OrphanedFile::Original {
                 sha256,
                 assets_path,
             });
         }
-        if let (Some(derived_sha256), Some(assets_path)) = (derived_sha256, derived_assets_path)
-            && !asset_is_referenced(conn, account_id, "derived_sha256", &derived_sha256).await?
-        {
-            out.push(OrphanedFile::Derived { assets_path });
+        // A Preview and a Thumbnail share the converted directory, so a file
+        // there goes only when no row names it as either.
+        for (sha256, assets_path) in [
+            (derived_sha256, derived_assets_path),
+            (thumbnail_sha256, thumbnail_path),
+        ] {
+            if let (Some(sha256), Some(assets_path)) = (sha256, assets_path)
+                && !super::attachment_versions::converted_file_is_named(conn, account_id, &sha256)
+                    .await?
+            {
+                out.push(OrphanedFile::Derived { assets_path });
+            }
         }
     }
     out.sort();
@@ -500,27 +521,23 @@ async fn orphaned_files(
 }
 
 /// True when any attachment of `account_id`, from any source, promoted or in
-/// staging, still carries `sha256` in `column` — `sha256` or
-/// `derived_sha256`, a literal chosen by the caller. Staging is included so
-/// an import that has already uploaded a file it is about to promote does
-/// not lose it.
-async fn asset_is_referenced(
+/// staging, still names the original `sha256`. Staging is included so an
+/// import that has already uploaded a file it is about to promote does not
+/// lose it.
+async fn original_is_referenced(
     conn: &mut SqliteConnection,
     account_id: i64,
-    column: &'static str,
     sha256: &str,
 ) -> Result<bool, sqlx::Error> {
-    let sql = format!(
-        "SELECT 1 FROM attachments a
+    let sql = "SELECT 1 FROM attachments a
          JOIN messages m ON m.id = a.message_id
-         WHERE m.account_id = $1 AND a.{column} = $2
+         WHERE m.account_id = $1 AND a.sha256 = $2
          UNION ALL
          SELECT 1 FROM staging_attachments sa
          JOIN staging_messages sm ON sm.id = sa.message_id
-         WHERE sm.account_id = $1 AND sa.{column} = $2
-         LIMIT 1"
-    );
-    let found: Option<i64> = sqlx::query_scalar(&sql)
+         WHERE sm.account_id = $1 AND sa.sha256 = $2
+         LIMIT 1";
+    let found: Option<i64> = sqlx::query_scalar(sql)
         .bind(account_id)
         .bind(sha256)
         .fetch_optional(&mut *conn)

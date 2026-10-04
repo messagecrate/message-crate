@@ -44,7 +44,7 @@ Import and view messages in SQLite
 * `dump-openapi` — Write the OpenAPI document (JSON) to stdout or --output. Does not open the database
 * `dump-cli-docs` — Write this CLI's docs-site reference page (Markdown) to stdout or --output. Does not open the database
 * `dump-error-docs` — Write one docs-site page per HTTP problem type (Markdown) into the --output directory, or all of them to stdout. Does not open the database
-* `process-assets` — Convert media under assets/ into browser previews under `assets_converted/`
+* `process-assets` — Make the Thumbnails and browser Previews of stored attachments under `assets_converted/`, for rebuilding and repair
 * `create-owner` — Claim an unclaimed Message Crate by creating its owner. Refuses one that already has an owner
 * `reset-owner-password` — Set a new password for the owner, ending their sessions. Refuses a Message Crate that has no owner yet
 
@@ -220,7 +220,7 @@ Write one docs-site page per HTTP problem type (Markdown) into the --output dire
 
 ## `message-crate-server process-assets`
 
-Convert media under assets/ into browser previews under `assets_converted/`
+Make the Thumbnails and browser Previews of stored attachments under `assets_converted/`, for rebuilding and repair
 
 **Usage:** `message-crate-server process-assets [OPTIONS]`
 
@@ -229,7 +229,7 @@ Convert media under assets/ into browser previews under `assets_converted/`
 * `--config <CONFIG>` — Path to config.toml
 
   Default value: `config/config.toml`
-* `--force` — Re-convert even when a browser preview already exists
+* `--force` — Make every Thumbnail and Preview again, even ones that already exist
 * `--dry-run` — Convert and log without writing files or updating the DB
 * `--skip-image` — Skip image conversion
 * `--skip-video` — Skip video conversion

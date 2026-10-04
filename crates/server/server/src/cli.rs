@@ -64,7 +64,7 @@ pub enum Commands {
     /// --output directory, or all of them to stdout. Does not open the database.
     DumpErrorDocs(DumpArgs),
 
-    /// Convert media under assets/ into browser previews under `assets_converted/`
+    /// Make the Thumbnails and browser Previews of stored attachments under `assets_converted/`, for rebuilding and repair
     ProcessAssets(ProcessAssetsArgs),
 
     /// Claim an unclaimed Message Crate by creating its owner. Refuses one
@@ -265,7 +265,7 @@ pub struct ProcessAssetsArgs {
     #[arg(long, default_value = "config/config.toml")]
     pub config: PathBuf,
 
-    /// Re-convert even when a browser preview already exists
+    /// Make every Thumbnail and Preview again, even ones that already exist
     #[arg(long)]
     pub force: bool,
 
@@ -648,7 +648,7 @@ fn serve_config(args: ServeArgs) -> Result<Config> {
     Ok(cfg.with_serve_overrides(&root, args.bind, args.static_dir, args.cors_origins))
 }
 
-/// Convert stored media into browser previews.
+/// Make the Thumbnails and browser Previews of stored attachments.
 ///
 /// # Errors
 ///
@@ -672,7 +672,7 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
     opened.close().await;
     if stats.errors > 0 {
         bail!(
-            "{} conversion(s) failed; those originals stay without a browser preview",
+            "{} conversion(s) failed; those originals stay without a Thumbnail or a browser preview",
             stats.errors
         );
     }

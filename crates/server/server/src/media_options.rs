@@ -1,6 +1,6 @@
-//! The compress options the server applies to the media it converts itself:
-//! a browser preview (`process_assets`), and an import's media rewrite
-//! (`import_media`).
+//! The compress options the server applies to an import's media rewrite
+//! (`import_media`). A Preview is not compressed this way: it has a recipe
+//! of its own, which every browser plays ([`media::make_preview`]).
 
 use media::{CompressOptions, MaxResolution};
 

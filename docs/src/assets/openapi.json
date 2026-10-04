@@ -2990,7 +2990,7 @@
           "Assets"
         ],
         "summary": "Make a media link: URLs that read one asset with no `Authorization` header, for a media element's `src`.",
-        "description": "A media element cannot send the Session's header, so the web app asks for\na link and loads the URLs it answers. The link opens this asset and its\nPreview, in this account's store, for an hour, and stops sooner when the\nSession that made it ends. Its URLs take `Range` like any read of the\nasset. Only a Session makes one: a program sends its token in the header.",
+        "description": "A media element cannot send the Session's header, so the web app asks for\na link and loads the URLs it answers. The link opens this asset, its\nPreview and its Thumbnail, in this account's store, for an hour, and\nstops sooner when the Session that made it ends. Its URLs take `Range`\nlike any read of the asset. Only a Session makes one: a program sends its\ntoken in the header.",
         "operationId": "create_media_link",
         "parameters": [
           {
@@ -3101,7 +3101,7 @@
         "tags": [
           "Assets"
         ],
-        "summary": "Download the preview of a stored asset: the JPEG, MP4 or MP3 that `process-assets` made from it for a browser to show.",
+        "summary": "Download the preview of a stored asset: the JPEG, MP4 or MP3 the server made from it for a browser to show.",
         "description": "The URL is the SHA-256 fingerprint of the original, and the body streams\nthe preview's bytes in the preview's own media type. An asset with no\npreview answers `404 Not Found`; the original is at `/v1/assets/{sha256}`. A\n`Range` of one byte range answers `206 Partial Content` with those bytes. The preview has\nno `ETag`, so a `Range` sent with `If-Range` answers the whole preview. A\nmedia element reads with the `media_link` a media link put in the URL.",
         "operationId": "get_asset_preview",
         "parameters": [
@@ -3142,6 +3142,167 @@
         "responses": {
           "200": {
             "description": "The preview's bytes, in the preview's own media type, or `application/octet-stream` when none is stored",
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`bytes`"
+              }
+            },
+            "content": {
+              "*/*": {}
+            }
+          },
+          "206": {
+            "description": "The byte range the `Range` header asked for",
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`bytes`"
+              },
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`bytes <first>-<last>/<length>`"
+              }
+            },
+            "content": {
+              "*/*": {}
+            }
+          },
+          "401": {
+            "description": "[`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired.\n\n[`media-link-invalid`](https://messagecrate.app/docs/developer/reference/errors/media-link-invalid): The `media_link` in the URL opens nothing here: it is not a media link, it was made for another asset or another account, it expired, or the Session that made it has ended.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/authentication-required",
+              "https://messagecrate.app/docs/developer/reference/errors/media-link-invalid"
+            ]
+          },
+          "403": {
+            "description": "[`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.\n\n[`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/insufficient-scope",
+              "https://messagecrate.app/docs/developer/reference/errors/account-disabled"
+            ]
+          },
+          "404": {
+            "description": "[`not-found`](https://messagecrate.app/docs/developer/reference/errors/not-found): No resource at that address exists for this account.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/not-found"
+            ]
+          },
+          "416": {
+            "description": "[`range-not-satisfiable`](https://messagecrate.app/docs/developer/reference/errors/range-not-satisfiable): The request's `Range` selects no byte of the file: it starts at or past the end, or asks for a suffix of no bytes.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/range-not-satisfiable"
+            ]
+          },
+          "422": {
+            "description": "[`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/validation-failed"
+            ]
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api-token": [
+              "export"
+            ]
+          },
+          {
+            "media-link": []
+          }
+        ]
+      }
+    },
+    "/v1/assets/{sha256}/thumbnail": {
+      "get": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Download the thumbnail of a stored image or video: a JPEG at most 560 pixels on its long side, the image scaled down or the video's first frame.",
+        "description": "The server makes it in the background after the Import Run that brought\nthe asset, and `process-assets` makes any that are missing. The URL is\nthe SHA-256 fingerprint of the original. An asset with no thumbnail yet\nanswers `404 Not Found`; the attachment's `thumbnail_mime_type` says\nwhether it has one. A `Range` of one byte range answers\n`206 Partial Content` with those bytes. The thumbnail has no `ETag`, so a\n`Range` sent with `If-Range` answers the whole thumbnail. A media element\nreads with the `media_link` a media link put in the URL.",
+        "operationId": "get_asset_thumbnail",
+        "parameters": [
+          {
+            "name": "sha256",
+            "in": "path",
+            "description": "Content SHA-256 hex of the original",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Range",
+            "in": "header",
+            "description": "One byte range, `bytes=<first>-<last>`, `bytes=<first>-` or `bytes=-<suffix>`; any other range answers the whole thumbnail",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "If-Range",
+            "in": "header",
+            "description": "Never names a Thumbnail, which has no `ETag`: a `Range` sent with it answers the whole thumbnail",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The thumbnail's bytes, in the thumbnail's own media type",
             "headers": {
               "Accept-Ranges": {
                 "schema": {
@@ -12741,6 +12902,13 @@
             ],
             "description": "Content fingerprint of the stored bytes."
           },
+          "thumbnail_mime_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "MIME type of the attachment's thumbnail, once the server has made\nit; absent until then. The thumbnail's bytes are at\n`/v1/assets/{sha256}/thumbnail`."
+          },
           "transcription": {
             "type": [
               "string",
@@ -15008,6 +15176,7 @@
         "required": [
           "url",
           "preview_url",
+          "thumbnail_url",
           "expires_at"
         ],
         "properties": {
@@ -15018,6 +15187,10 @@
           "preview_url": {
             "type": "string",
             "description": "`/v1/assets/{sha256}/preview?media_link=…`: the asset's Preview, which\nanswers `404 Not Found` when the asset has none (the attachment's\n`preview_mime_type` says whether it has one)."
+          },
+          "thumbnail_url": {
+            "type": "string",
+            "description": "`/v1/assets/{sha256}/thumbnail?media_link=…`: the asset's Thumbnail,\nwhich answers `404 Not Found` until the server has made one (the\nattachment's `thumbnail_mime_type` says whether it has one)."
           },
           "url": {
             "type": "string",
