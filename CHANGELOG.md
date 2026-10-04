@@ -679,6 +679,13 @@ released versions carry their date on the heading.
 
 #### Search
 
+- 2026-10-04 **A conversation opened from a tag page keeps the search box
+  as it was.** Opening a conversation from a Message Tag page put
+  `tag:Holiday` into the search box, as though it had been typed, and the
+  Messages list then showed every message with that tag instead of asking
+  for a search. The tag now stays out of the box: the box shows only what
+  was typed, and the lists are the same in the conversation as on the tag
+  page.
 - 2026-10-03 **A search pasted and run at once is the search that runs.**
   Pasting a search and pressing Enter straight away searched for nothing.
   Typing very fast lost letters, and the search ran on the last letter
@@ -857,6 +864,11 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-04 **Panels, menus and drawers stand out on the dark theme.**
+  Their shadows were tuned for the light theme and all but vanished on the
+  dark theme's dark surfaces. The dark theme now has its own, darker
+  shadows, and the drawer that slides in from the right has a thin light
+  edge.
 - 2026-10-03 **An expired session says to log in again.** When your
   session had expired, or was ended from another window, an Upload or an
   Export said "invalid API key", though the app sends no API key. It now
