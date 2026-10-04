@@ -104,6 +104,11 @@ pub struct StagingSummary {
     /// every verdict above was measured against, carried so the screen shows
     /// the same number the verdicts used.
     pub asset_max_bytes: u64,
+    /// The attachment mode Staging recorded for the run. The screen decides
+    /// from it whether the run has a Media stage, so after Staging that
+    /// choice comes from the folder and not from the form the run started
+    /// with.
+    pub media_mode: MediaMode,
 }
 
 /// How far [`summarize_staging`] has got, reported over attachments.
@@ -170,6 +175,7 @@ pub fn summarize_staging(
 
     let mut summary = StagingSummary {
         asset_max_bytes: options.asset_max_bytes,
+        media_mode: options.mode,
         ..StagingSummary::default()
     };
     let mut contacts = BTreeSet::new();

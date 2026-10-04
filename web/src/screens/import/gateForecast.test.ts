@@ -29,6 +29,7 @@ function summary(forecasts: AttachmentForecast[]): StagingSummary {
     attachmentBytes: 0,
     forecasts,
     assetMaxBytes: 50 * MB,
+    mediaMode: "clone",
   };
 }
 

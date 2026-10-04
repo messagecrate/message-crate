@@ -41,6 +41,7 @@ import {
   onExtractEvents,
   type PushFinishedReport,
   probeFfmpegTools,
+  type RecordedMediaMode,
   type SizeVerdict,
   type StagingConfig,
   type StagingSummary,
@@ -123,10 +124,53 @@ function withShownAttachmentMode(form: ImportJobFormValues): ImportJobFormValues
   return showsAttachmentOptions(form.source) ? form : { ...form, attachmentMedia: "copy" };
 }
 
+/** The form's name for each attachment mode a staging folder records. */
+const FORM_MODE_OF: Record<RecordedMediaMode, AttachmentMediaMode> = {
+  disabled: "skip",
+  clone: "copy",
+  convert: "convert",
+  compress: "compress",
+};
+
 /**
- * The attachment size limit this Import Run works to, in bytes. A run always
- * has one by the time a stage needs it: a new run reads the server's before
- * Staging, and a resumed run reads its own back from the stored form.
+ * The run's form with the attachment mode its staging folder recorded.
+ *
+ * Staging records the run's media settings in the folder, and the summary
+ * of the folder carries the mode. From the end of Staging on, the folder is
+ * the one source of the mode, so whether the run has a Media stage is read
+ * from there and never from the stored form. `summary` is absent before
+ * Staging has finished, and when a resumed run's stored plan no longer
+ * parses; the form's own mode stands then, because nothing else holds one.
+ */
+function withRecordedMode(
+  form: ImportJobFormValues,
+  summary: StagingSummary | null | undefined,
+): ImportJobFormValues {
+  if (!summary) return form;
+  return { ...form, attachmentMedia: FORM_MODE_OF[summary.mediaMode] };
+}
+
+/**
+ * `withRecordedMode`, made the run's own form: every later stage, the
+ * progress rows and the review screens read the folder's mode from here.
+ */
+function adoptRecordedMode(
+  form: ImportJobFormValues,
+  summary: StagingSummary | null | undefined,
+): ImportJobFormValues {
+  const recorded = withRecordedMode(form, summary);
+  scratch.form = recorded;
+  scratch.attachmentMode = recorded.attachmentMedia;
+  store.set({ form: recorded });
+  return recorded;
+}
+
+/**
+ * The attachment size limit Staging works to, in bytes. A run always has one
+ * by the time Staging needs it: a new run reads the server's before Staging,
+ * and a resumed Staging reads its own back from the stored form. Upload
+ * reads the limit Staging recorded in the folder instead, so it is not
+ * passed on.
  */
 function assetLimitOf(form: Pick<ImportJobFormValues, "assetMaxBytes">): number {
   if (typeof form.assetMaxBytes !== "number") {
@@ -312,6 +356,9 @@ export function parseStoredStagingSummary(raw: unknown): StagingSummary | undefi
   if (typeof r.attachmentBytes !== "number") return undefined;
   if (!Array.isArray(r.forecasts) || !r.forecasts.every(isAttachmentForecast)) return undefined;
   if (typeof r.assetMaxBytes !== "number") return undefined;
+  if (typeof r.mediaMode !== "string" || !Object.hasOwn(FORM_MODE_OF, r.mediaMode)) {
+    return undefined;
+  }
 
   return {
     conversations: r.conversations,
@@ -322,6 +369,7 @@ export function parseStoredStagingSummary(raw: unknown): StagingSummary | undefi
     attachmentBytes: r.attachmentBytes,
     forecasts: r.forecasts,
     assetMaxBytes: r.assetMaxBytes,
+    mediaMode: r.mediaMode as RecordedMediaMode,
   };
 }
 
@@ -946,7 +994,6 @@ function dismissStagingDeleteFailure(): void {
  */
 async function runPush(
   token: string | null,
-  form: ImportJobFormValues,
   sessionId: number,
   outputDir: string,
   approvedPlan?: StagingSummary,
@@ -954,7 +1001,7 @@ async function runPush(
   // Logging out pauses this Upload before it ends the session the push
   // sends (`lib/runningUpload.ts`), and waits until the pause is recorded.
   const runCancel = scratch.runCancel;
-  const upload = uploadAndFinish(token, form, sessionId, outputDir, approvedPlan);
+  const upload = uploadAndFinish(token, sessionId, outputDir, approvedPlan);
   const pause = async () => {
     await runCancel.cancel();
     await upload;
@@ -970,7 +1017,6 @@ async function runPush(
 /** `runPush` without the registration that lets logging out pause it. */
 async function uploadAndFinish(
   token: string | null,
-  form: ImportJobFormValues,
   sessionId: number,
   outputDir: string,
   approvedPlan?: StagingSummary,
@@ -1015,7 +1061,6 @@ async function uploadAndFinish(
         // size_bytes lets message-crate-push skip a second full-file hash.
         trust_export: true,
         import_id: sessionId,
-        asset_max_bytes: assetLimitOf(form),
       }),
     );
   } catch (e: unknown) {
@@ -1259,6 +1304,9 @@ async function runImport(
       const outputDir = resume.stagingDir;
       sessionId = resume.sessionId;
       await loadCarriedRecord(outputDir);
+      // The approved plan was read from the folder at its review, so it
+      // carries the mode Staging recorded there.
+      form = adoptRecordedMode(form, resume.approved);
       store.set({
         stagingDir: outputDir,
         importSessionId: sessionId,
@@ -1268,7 +1316,7 @@ async function runImport(
             : { ...step, status: "done", detail: "Already staged" },
         ),
       });
-      await runPush(token, form, sessionId, outputDir, resume.approved);
+      await runPush(token, sessionId, outputDir, resume.approved);
       return;
     }
 
@@ -1362,7 +1410,14 @@ async function runImport(
     // resume check finds the same run and offers this recompute again.
     try {
       const summary = await summarizeStagingWithProgress({ staging_dir: outputDir });
-      const toolsMissing = await mediaToolsMissingFor(form.attachmentMedia);
+      // Staging has finished, so the folder decides the stages from here.
+      const recorded = adoptRecordedMode(form, summary);
+      updateSteps((steps) =>
+        stepsFor(recorded.attachmentMedia).map(
+          (step) => steps.find((row) => row.label === step.label) ?? step,
+        ),
+      );
+      const toolsMissing = await mediaToolsMissingFor(recorded.attachmentMedia);
       store.set({ stagingSummary: summary, mediaToolsMissing: toolsMissing });
       waitAtReview("staging_review");
     } catch (e: unknown) {
@@ -1561,7 +1616,7 @@ export function useImportJob() {
         if (phase === "staging_review" && mediaJobVerb(form.attachmentMedia) !== null) {
           await runMediaPass(form, sessionId, outputDir, approvedSummary);
         } else {
-          await runPush(token, form, sessionId, outputDir, approvedSummary);
+          await runPush(token, sessionId, outputDir, approvedSummary);
         }
       } finally {
         approving.reviewAction = false;
@@ -1621,13 +1676,17 @@ export function useImportJob() {
     const sessionId = session.id;
     const outputDir = session.staging_dir;
     const approved = parseStoredStagingSummary(session.summary);
+    // Staging has finished for every stage resumed here, so the mode comes
+    // from the folder: through the plan approved at the Staging Review until
+    // the summary below is recomputed from the folder itself.
+    const known = withRecordedMode(resumedForm, approved);
 
-    beginRun(resumedForm, session.stage === "media" ? "media" : "staging");
+    beginRun(known, session.stage === "media" ? "media" : "staging");
     await loadCarriedRecord(outputDir);
     store.set({
       resumeError: null,
       reviewError: null,
-      form: resumedForm,
+      form: known,
       summaryView: null,
       stagingDir: outputDir,
       importSessionId: sessionId,
@@ -1644,16 +1703,19 @@ export function useImportJob() {
       review: "staging_review" | "media_review",
       partiallyRan: boolean,
     ): Promise<void> {
+      const mediaDone = review === "media_review";
       store.set({
-        steps: resumeSteps(resumedForm.attachmentMedia, review === "media_review"),
+        steps: resumeSteps(known.attachmentMedia, mediaDone),
         computingSummary: true,
         phase: "running",
         running: true,
       });
       try {
         const actual = await summarizeStagingWithProgress({ staging_dir: outputDir });
+        const recorded = adoptRecordedMode(known, actual);
+        store.set({ steps: resumeSteps(recorded.attachmentMedia, mediaDone) });
         if (review === "staging_review") {
-          const missing = await mediaToolsMissingFor(resumedForm.attachmentMedia);
+          const missing = await mediaToolsMissingFor(recorded.attachmentMedia);
           store.set({
             stagingSummary: actual,
             mediaToolsMissing: missing,
@@ -1695,12 +1757,12 @@ export function useImportJob() {
     // ffmpeg missing falls back to the Staging Review's recomputed
     // summary instead of starting a job that can only fail, using the same
     // `mediaToolsMissing` gate the normal flow shows there.
-    if (await mediaToolsMissingFor(resumedForm.attachmentMedia)) {
+    if (await mediaToolsMissingFor(known.attachmentMedia)) {
       await landOn("staging_review", true);
       return;
     }
-    store.set({ steps: resumeSteps(resumedForm.attachmentMedia, false) });
-    await runMediaPass(resumedForm, sessionId, outputDir, approved);
+    store.set({ steps: resumeSteps(known.attachmentMedia, false) });
+    await runMediaPass(known, sessionId, outputDir, approved);
   }
 
   return {

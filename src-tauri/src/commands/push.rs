@@ -81,11 +81,6 @@ pub struct PushArgs {
     pub trust_export: bool,
     /// Import id of an earlier import to resume, when set.
     pub import_id: Option<i64>,
-    /// The server's attachment size limit, in bytes: Upload leaves out a
-    /// larger file as too large. The app reads it from `GET /v1/server`
-    /// before Staging and stores it with the Import Run, so this is the
-    /// number the Staging Review forecast against.
-    pub asset_max_bytes: u64,
 }
 
 /// Ask this process to upload extracted conversations to a server.
@@ -108,7 +103,7 @@ pub fn push(
     let cancel = job.cancel_flag();
     let app_handle = app.clone();
     spawn_job(app, job, move || {
-        let mut cfg = push_config(args);
+        let mut cfg = push_config(args)?;
         cfg.cancel = Some(cancel);
         let mut progress = |event: ProgressEvent| forward_push_event(&app_handle, event);
         let report = run_push(&cfg, Some(&mut progress))?;
@@ -120,9 +115,21 @@ pub fn push(
 /// The push settings the desktop app uses. They differ from the
 /// `message_crate_push::DEFAULT_*` constants because desktop imports are many
 /// small files over a local network; each number says why.
-fn push_config(args: PushArgs) -> PushConfig {
-    PushConfig {
-        input: PathBuf::from(&args.input_dir),
+///
+/// The attachment size limit comes from the media settings Staging recorded
+/// in the folder ([`message_staging::read_media_settings`]): the number the
+/// Staging Review forecast against, read from the one place that holds it
+/// after Staging.
+///
+/// # Errors
+///
+/// Returns an error when the folder holds no readable media settings,
+/// because its Staging never finished.
+fn push_config(args: PushArgs) -> anyhow::Result<PushConfig> {
+    let input = PathBuf::from(&args.input_dir);
+    let recorded = message_staging::read_media_settings(&input)?;
+    Ok(PushConfig {
+        input,
         base_url: args.base_url,
         username: args.username,
         token: args.token,
@@ -146,16 +153,16 @@ fn push_config(args: PushArgs) -> PushConfig {
         // desktop uploads switch to multipart sooner so a large attachment
         // moves in small parts instead of one long PUT.
         asset_multipart_threshold: 5 * 1024 * 1024,
-        // Per-file attachment cap, the server's own. JSONL import batches use
-        // MAX_IMPORT_BODY_BYTES.
-        asset_max_bytes: args.asset_max_bytes,
+        // Per-file attachment cap, the server's own as the run recorded it.
+        // JSONL import batches use MAX_IMPORT_BODY_BYTES.
+        asset_max_bytes: recorded.asset_max_bytes,
         report_path: None,
         log_path: None,
         // The journal stays in the staging folder, beside the files it tracks.
         journal_path: None,
         cancel: None,
         import_id: args.import_id,
-    }
+    })
 }
 
 /// Relay one push progress event to the window as `extract:*` events.
@@ -219,40 +226,62 @@ mod tests {
     };
     use serde_json::json;
 
-    /// Upload holds a file to the limit the app read from the server, not to
-    /// a number of the desktop app's own.
+    /// A staging folder with the media settings Staging records, its
+    /// attachment size limit `asset_max_bytes`.
+    fn staged_folder(asset_max_bytes: u64) -> tempfile::TempDir {
+        let staging = tempfile::tempdir().unwrap();
+        message_staging::write_media_settings(
+            staging.path(),
+            &message_staging::TranscodeOptions {
+                mode: media::MediaMode::Clone,
+                compress: media::CompressOptions::default(),
+                asset_max_bytes,
+            },
+        )
+        .unwrap();
+        staging
+    }
+
+    /// Upload holds a file to the limit Staging recorded in the folder, the
+    /// number the Staging Review forecast against. A caller that still sends
+    /// a limit of its own, as the stored form once did, does not move it.
     #[test]
-    fn upload_uses_the_attachment_size_limit_it_is_given() {
+    fn upload_uses_the_attachment_size_limit_the_folder_recorded() {
+        let staging = staged_folder(123_456_789);
         let args: PushArgs = serde_json::from_value(json!({
             "baseUrl": "http://127.0.0.1:8080",
             "username": "",
             "token": "token",
-            "inputDir": "/tmp/staging-root/staging-run",
+            "inputDir": staging.path(),
             "mode": "append",
             "skipAttachments": false,
             "trustExport": true,
             "importId": 7,
-            "assetMaxBytes": 123_456_789,
+            "assetMaxBytes": 512 * 1024 * 1024,
         }))
         .unwrap();
-        assert_eq!(push_config(args).asset_max_bytes, 123_456_789);
+        assert_eq!(push_config(args).unwrap().asset_max_bytes, 123_456_789);
     }
 
-    /// The limit has no default in the desktop app: a call that leaves it out
-    /// is refused, because the app has no number of its own to fall back on.
+    /// The limit has no default in the desktop app: a folder whose Staging
+    /// never recorded one is refused, because the app has no number of its
+    /// own to fall back on.
     #[test]
-    fn upload_without_a_limit_is_refused() {
-        let args = serde_json::from_value::<PushArgs>(json!({
+    fn upload_from_a_folder_with_no_media_settings_is_refused() {
+        let staging = tempfile::tempdir().unwrap();
+        let args: PushArgs = serde_json::from_value(json!({
             "baseUrl": "http://127.0.0.1:8080",
             "username": "",
             "token": "token",
-            "inputDir": "/tmp/staging-root/staging-run",
+            "inputDir": staging.path(),
             "mode": "append",
             "skipAttachments": false,
             "trustExport": true,
             "importId": 7,
-        }));
-        assert!(args.unwrap_err().to_string().contains("assetMaxBytes"));
+        }))
+        .unwrap();
+        let err = push_config(args).unwrap_err();
+        assert!(format!("{err:#}").contains("no media settings"), "{err:#}");
     }
 
     /// A resumed Upload runs over the staging folder the interrupted Upload
@@ -277,7 +306,7 @@ mod tests {
             }));
         });
 
-        let staging = tempfile::tempdir().unwrap();
+        let staging = staged_folder(512 * 1024 * 1024);
         let header = json!({
             "schema_version": SCHEMA_VERSION,
             "export": ExportMeta {
@@ -331,10 +360,9 @@ mod tests {
                 "skipAttachments": false,
                 "trustExport": true,
                 "importId": 7,
-                "assetMaxBytes": 512 * 1024 * 1024,
             }))
             .unwrap();
-            run_push(&push_config(args), None).unwrap()
+            run_push(&push_config(args).unwrap(), None).unwrap()
         };
 
         let first = upload();

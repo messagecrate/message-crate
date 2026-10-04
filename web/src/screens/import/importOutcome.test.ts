@@ -61,6 +61,7 @@ function approvedPlan(counts: { tooLarge?: number } = {}): StagingSummary {
     attachmentBytes: 0,
     forecasts,
     assetMaxBytes: 50 * 1024 * 1024,
+    mediaMode: "clone",
   };
 }
 

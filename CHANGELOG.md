@@ -237,6 +237,14 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **A resumed Import Run follows the attachment setting Staging
+  recorded.** An Import Run resumed after the app closed decided from its
+  saved form whether it had a Media Stage, and its Upload took the size
+  limit per file from the saved form too, not from what Staging recorded
+  when it prepared the files. Nothing kept the two in agreement. A resumed
+  run now reads both from what Staging recorded, so it converts or
+  compresses exactly what Staging prepared for, and Upload holds each file
+  to the limit the Staging Review showed.
 - 2026-10-04 **An attachment too large after conversion says so when an
   interrupted Media Stage resumes.** When two conversations shared one
   attachment whose converted copy came out over the size limit, an Import
@@ -817,6 +825,10 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-04 **Video previews are capped at 720p, like a compressed import.**
+  The previews the server makes for browsers capped a video's longer side
+  at 1920 pixels, while the Import form's **Compress & Convert** starts at
+  720p, a longer side of 1280 pixels. Previews now use 720p too.
 - 2026-10-01 **Docker Compose runs as a real user when UID and GID aren't
   set.** It ran the container with an empty user and printed warnings.
 - 2026-10-02 **Long conversations can be read to the end.** Messages past

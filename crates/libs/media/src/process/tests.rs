@@ -346,7 +346,10 @@ fn clone_with_log_emits_nothing() {
 
 #[test]
 fn is_efficient_accepts_only_hevc_within_the_resolution_and_bitrate_caps() {
-    let opts = CompressOptions::default(); // 1080p: long edge 1920
+    let opts = CompressOptions {
+        max_resolution: crate::MaxResolution::P1080, // long edge 1920
+        ..CompressOptions::default()
+    };
     let cap = 12_000_000;
     assert!(is_efficient("hevc", 1920, 1080, cap, &opts));
     assert!(is_efficient("h265", 1080, 1920, 1_000_000, &opts));

@@ -251,6 +251,23 @@ fn the_summary_carries_the_limit_its_verdicts_were_measured_against() {
 }
 
 #[test]
+fn the_summary_carries_the_attachment_mode_staging_recorded() {
+    // The screen decides from this whether the run has a Media stage, so it
+    // must be the folder's mode, sent under the name the folder records.
+    let dir = staged_fixture();
+    let options = TranscodeOptions {
+        mode: MediaMode::Compress,
+        ..summary_options()
+    };
+    let summary = summarize_staging(dir.path(), &options, &mut |_| {}).unwrap();
+    assert_eq!(summary.media_mode, MediaMode::Compress);
+    assert_eq!(
+        serde_json::to_value(&summary).unwrap()["mediaMode"],
+        "compress"
+    );
+}
+
+#[test]
 fn attachment_bytes_are_measured_on_disk_not_read_from_the_document() {
     // size_bytes in the document is what the writer recorded. The folder is
     // the truth, and a resumed run must not trust a stale field.

@@ -122,7 +122,15 @@ export interface StagingSummary {
   forecasts: AttachmentForecast[];
   /** Largest single attachment the upload accepts; what the verdicts were measured against. */
   assetMaxBytes: number;
+  /** The attachment mode Staging recorded in the folder, under the folder's names. */
+  mediaMode: RecordedMediaMode;
 }
+
+/**
+ * An attachment mode as a staging folder records it. The form names two of
+ * them differently: `disabled` is the form's `skip`, `clone` its `copy`.
+ */
+export type RecordedMediaMode = "disabled" | "clone" | "convert" | "compress";
 
 /** Recompute what a staged folder holds, for the first review. */
 export async function invokeSummarizeStaging(config: StagingConfig): Promise<StagingSummary> {
@@ -184,8 +192,6 @@ export interface PushConfig {
   skip_attachments: boolean;
   trust_export: boolean;
   import_id?: number;
-  /** The server's attachment size limit, in bytes: Upload leaves out a larger file. */
-  asset_max_bytes: number;
 }
 
 export interface PushFinishedReport {
@@ -253,7 +259,6 @@ export async function invokePush(config: PushConfig): Promise<void> {
       skipAttachments: config.skip_attachments,
       trustExport: config.trust_export,
       importId: config.import_id ?? null,
-      assetMaxBytes: config.asset_max_bytes,
     },
   });
 }
