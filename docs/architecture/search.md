@@ -242,7 +242,7 @@ below use these phrases for them:
 | List | Base row | Plain text searches | Defaults | Lifted by |
 |---|---|---|---|---|
 | Contacts | one contact | the contact's name, and the raw and normalized form of each of its identities | a contact in the trash is left out | `trashed:` |
-| Conversations | one conversation | the title, the raw form of the conversation's own identity when it is an address and of each participant's identity, and each participant's name. The `name:` key of a conversation known only by a name, and the `nameless:` key of one that names nobody, are not addresses, as in `with:` (#1696); such a conversation is found by its participant's name | a conversation in the trash is left out; a conversation whose every message is a duplicate is left out | `trashed:` lifts the first; `source:` and `import:` lift the second |
+| Conversations | one conversation | the title, the raw form of the conversation's own identity and of each participant's identity, and each participant's name. For a conversation known only by a name, its own identity is read as the name after the `name:` prefix, and the `nameless:` key of the conversation that names nobody is read as nothing (#1696). Why: every name key contains `name:`, so `nam` would find them all | a conversation in the trash is left out; a conversation whose every message is a duplicate is left out | `trashed:` lifts the first; `source:` and `import:` lift the second |
 | Messages | one message | the full-text index (above) and attachment file names | a message whose conversation is in the trash is left out; a duplicate message is left out | `trashed:` lifts the first; `source:` and `import:` lift the second |
 
 A word lifts its default wherever it appears in the query, negated or inside
@@ -340,7 +340,7 @@ Person, `me`.
 
 Name.
 
-- **Messages**: `#id` is the message's conversation. Text is contained in the conversation's title or in the raw form of its own identity. The conversation's own identity counts only when it is an address, not the `name:` or `nameless:` key of a conversation known by a name or by nobody, as in `with:`: every name key contains `name:`, so `in:nam` would find them all (#1696). Such a conversation is found by its title.
+- **Messages**: `#id` is the message's conversation. Text is contained in the conversation's title or in the raw form of its own identity. For a conversation known only by a name, its own identity is read as the name after the `name:` prefix, so `in:sarah` finds it with no title, and the `nameless:` key of the conversation that names nobody is read as nothing. Why: every name key contains `name:`, so `in:nam` would find them all (#1696).
 
 ### `group:`
 

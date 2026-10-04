@@ -243,18 +243,13 @@ fn emit_text(ctx: &ListCtx, out: &mut Sql, term: &TextTerm) {
         ListKind::Conversations => {
             out.push("(");
             free_text_match(out, &conversation_title_text(), term);
-            // The conversation's own identity counts only when it is an
-            // address, as in `with:` and `identity:` (#1696).
-            out.push(&format!(
-                " OR EXISTS (SELECT 1 FROM handles hc WHERE hc.id = c.chat_handle_id AND NOT {} AND ",
-                is_a_key_raw("hc.raw")
-            ));
-            free_text_match(out, "hc.raw", term);
+            out.push(" OR ");
+            free_text_match(out, &conversation_identity_text(), term);
             // The handle join is a LEFT join: a source may name a participant
             // and record no address for them, and that person is searchable by
             // the name the source gave.
             out.push(&format!(
-                ") OR EXISTS (SELECT 1 FROM {} LEFT JOIN handles ph ON ph.id = p.handle_id WHERE p.conversation_id = c.id AND (",
+                " OR EXISTS (SELECT 1 FROM {} LEFT JOIN handles ph ON ph.id = p.handle_id WHERE p.conversation_id = c.id AND (",
                 participants_with_contact(ctx.trash)
             ));
             free_text_match(out, "coalesce(ph.raw, '')", term);
@@ -541,6 +536,25 @@ fn conversation_title_text() -> String {
     format!("coalesce({}, '')", conversation_title_sql("c"))
 }
 
+/// The text of conversation `c`'s own identity, as plain text on
+/// Conversations and `in:` on Messages read it: an address as it is, the
+/// name a `name:` key holds without the prefix, and nothing for the
+/// `nameless:` key. Every name key contains `name:`, so reading the prefix
+/// would make `nam` or `in:nam` find them all (#1696); the name after it is
+/// the name the conversation is known by, so `in:sarah` still finds Sarah's
+/// conversation when it has no title.
+fn conversation_identity_text() -> String {
+    let prefix = message_ir::NAME_CHAT_ID_PREFIX;
+    let nameless = message_ir::NAMELESS_CHAT_ID;
+    format!(
+        "coalesce((SELECT CASE WHEN hc.raw = '{nameless}' THEN '' \
+           WHEN substr(hc.raw, 1, {len}) = '{prefix}' THEN substr(hc.raw, {after}) \
+           ELSE hc.raw END FROM handles hc WHERE hc.id = c.chat_handle_id), '')",
+        len = prefix.len(),
+        after = prefix.len() + 1
+    )
+}
+
 /// SQL that holds when the handle `handle_id_expr` is a conversation key
 /// rather than anybody's address: `name:` and a name, or `nameless:`. Such a
 /// chat handle is never matched as a person, because every name key
@@ -755,8 +769,8 @@ fn emit_to(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<
 }
 
 /// `in:#id` names a conversation; `in:<text>` matches its title
-/// (`conversation_title_sql`) or its chat handle when that is an address,
-/// never a `name:` or `nameless:` key (#1696).
+/// (`conversation_title_sql`) or its own identity
+/// (`conversation_identity_text`).
 fn emit_in(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<(), QueryError> {
     match v {
         Value::Id(id) => {
@@ -769,12 +783,9 @@ fn emit_in(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<
             ctx.conversation(out, |o| {
                 o.push("(");
                 like_contains(o, &conversation_title_text(), t, prefix);
-                o.push(&format!(
-                    " OR EXISTS (SELECT 1 FROM handles hc WHERE hc.id = c.chat_handle_id AND NOT {} AND ",
-                    is_a_key_raw("hc.raw")
-                ));
-                like_contains(o, "hc.raw", t, prefix);
-                o.push("))");
+                o.push(" OR ");
+                like_contains(o, &conversation_identity_text(), t, prefix);
+                o.push(")");
             });
             Ok(())
         }

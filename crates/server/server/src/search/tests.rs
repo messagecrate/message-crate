@@ -3683,11 +3683,11 @@ mod name_keyed_conversation {
         }
     }
 
-    /// Plain text on Conversations and `in:` on Messages read a
-    /// conversation's own identity only when it is an address, as `with:`
-    /// and `identity:` do: every name key contains `name:`, so `nam` or
-    /// `in:nam` would find them all (#1696). The person is still found by
-    /// their participant row, and the conversation by its title.
+    /// Plain text on Conversations and `in:` on Messages never read the
+    /// `name:` prefix of a conversation's key, nor the `nameless:` key:
+    /// every name key contains `name:`, so `nam` or `in:nam` would find them
+    /// all (#1696). The conversation is still found by the name after the
+    /// prefix, by its participant row, and by its title.
     #[tokio::test]
     async fn plain_text_and_in_do_not_match_the_key() {
         let (pool, _dir, _f) = seeded().await;
@@ -3774,5 +3774,12 @@ mod name_keyed_conversation {
             run(&mut conn, ListKind::Messages, "in:theo").await,
             vec![to_theo]
         );
+        for query in ["in:sarah", "in:val*", "in:\"Sarah Vale\""] {
+            assert_eq!(
+                run(&mut conn, ListKind::Messages, query).await,
+                vec![to_sarah],
+                "{query}"
+            );
+        }
     }
 }
