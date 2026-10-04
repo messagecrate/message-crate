@@ -49,10 +49,6 @@ pub enum ConversationKey {
 
 /// The name a name-only chat id holds: what follows [`NAME_CHAT_ID_PREFIX`].
 /// `None` for any other chat id, [`NAMELESS_CHAT_ID`] included.
-///
-/// A conversation keyed by a name has no address, so the name is the
-/// identity of the person it is with: the projection gives that person no
-/// address, and the server stores the name as an identity of type `other`.
 pub fn name_of_chat_id(chat_id: &str) -> Option<&str> {
     chat_id
         .strip_prefix(NAME_CHAT_ID_PREFIX)

@@ -103,6 +103,17 @@ is a person's address, and only that one gets a contact. Why: the id reaches
 nobody, and a contact made from it shows up in Contacts as a nameless person
 who never existed.
 
+**A conversation keyed by a name, or by nobody, is not a person's address
+either.** A source can name a person and record no address for them. Its
+conversation's chat handle is then `name:` and the name, and the conversation
+of rows that name nobody is `nameless:`. Neither gets a contact. The person a
+name-keyed conversation is with gets their contact from their participant
+record, an identity of type `other` holding the name. Why: the prefix keeps
+the conversation apart from any other, so a person named "AMAZON" is not the
+sender `AMAZON`, and a contact for the key as well as for the name made one
+person two contacts
+([#1541](https://github.com/messagecrate/message-crate/issues/1541)).
+
 **A chat handle's type comes from the header, not its shape.** A group's chat
 handle is stored with the type `other`, whatever it looks like. A one-to-one
 chat handle takes the type the header gives the participant with the same
