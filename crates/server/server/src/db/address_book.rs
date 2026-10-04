@@ -210,7 +210,7 @@ impl Snapshot {
     async fn read(conn: &mut SqliteConnection, account_id: i64) -> Result<Self> {
         let mut snapshot = Self::default();
         let rows: Vec<(i64, String, i64)> = sqlx::query_as(
-            "SELECT ct.id, trim(ct.preferred_name),
+            "SELECT ct.id, ct.preferred_name,
                     EXISTS (SELECT 1 FROM trashed_contacts t
                             WHERE t.account_id = ct.account_id AND t.contact_id = ct.id)
              FROM contacts ct WHERE ct.account_id = $1",
@@ -1147,7 +1147,7 @@ pub async fn export_csv(
     only: Option<&HashSet<i64>>,
 ) -> Result<WrittenAddressBook> {
     let rows: Vec<ExportRow> = sqlx::query_as(
-        "SELECT ct.id, trim(ct.preferred_name), h.service, h.handle_type, h.normalized
+        "SELECT ct.id, ct.preferred_name, h.service, h.handle_type, h.normalized
          FROM contacts ct
          LEFT JOIN contact_handles ch
            ON ch.account_id = ct.account_id AND ch.contact_id = ct.id
@@ -1155,7 +1155,7 @@ pub async fn export_csv(
          WHERE ct.account_id = $1
            AND NOT EXISTS (SELECT 1 FROM trashed_contacts t
                            WHERE t.account_id = ct.account_id AND t.contact_id = ct.id)
-         ORDER BY lower(trim(ct.preferred_name)), ct.id,
+         ORDER BY lower(ct.preferred_name), ct.id,
                   h.handle_type, h.service, h.normalized",
     )
     .bind(account_id)

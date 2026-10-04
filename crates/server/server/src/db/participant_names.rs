@@ -78,7 +78,7 @@ async fn load_participant_rows(
         |placeholders| {
             format!(
                 "SELECT p.conversation_id,
-                        COALESCE(NULLIF(trim(c.preferred_name), ''),
+                        COALESCE(NULLIF(c.preferred_name, ''),
                                  NULLIF(trim(p.name_alias), ''),
                                  h.raw) AS name,
                         h.raw AS handle,
@@ -132,7 +132,7 @@ async fn load_from_chat_handle(
         |placeholders| {
             format!(
                 "SELECT conv.id,
-                        COALESCE(NULLIF(trim(c.preferred_name), ''), h.raw) AS name,
+                        COALESCE(NULLIF(c.preferred_name, ''), h.raw) AS name,
                         h.raw AS handle,
                         COALESCE(NULLIF(trim(h.service), ''), h.handle_type) AS service,
                         c.id AS contact_id
