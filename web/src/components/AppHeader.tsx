@@ -83,9 +83,8 @@ export default function AppHeader({
   /**
    * The list the search box searches: the one in the section the person is
    * in. `null` on a screen with no list (Import, Export, Settings), which
-   * shows no box. The bar keeps its height and the middle stays, empty, so
-   * the name and the account button do not move, and a box that comes back
-   * starts from its list's search rather than from text typed before.
+   * shows no box; a box that comes back starts from its list's search rather
+   * than from text typed before.
    */
   searchTarget: HeaderSearchTarget | null;
   onSearchChange: (v: string) => void;
@@ -105,7 +104,7 @@ export default function AppHeader({
   return (
     <>
       <header
-        className={`relative flex h-14 shrink-0 items-center border-b border-border bg-panel ${Z_APP_HEADER}`}
+        className={`relative flex h-[3.5625rem] shrink-0 items-center border-b border-border bg-panel ${Z_APP_HEADER}`}
       >
         <div
           className="box-border flex h-12 shrink-0 items-center px-3"
@@ -113,8 +112,10 @@ export default function AppHeader({
         >
           <span className="text-[0.875rem] font-bold text-text">Message Crate</span>
         </div>
-        {/* The bar's height is fixed rather than taken from the search box, so
-            a screen with no box keeps the same header. */}
+        {/* The bar's height is fixed (the search box's height plus its
+            padding, as it was when the box set it) rather than taken from the
+            box, so a screen with no box keeps the same header and the name and
+            the account button do not move. */}
         <div className="flex min-w-0 flex-1 items-center justify-center px-3">
           {target && (
             <div className="w-full max-w-xl">
