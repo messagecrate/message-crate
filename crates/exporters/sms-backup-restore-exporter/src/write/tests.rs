@@ -92,6 +92,13 @@ fn part_payloads(msg: &IrMessage) -> Vec<(String, Option<Vec<u8>>)> {
         .collect()
 }
 
+/// The `contact_name` attribute the message was written with, if any.
+fn contact_name(msg: &IrMessage) -> Option<&str> {
+    msg.source.as_ref().unwrap().fields["attrs"]
+        .get("contact_name")
+        .and_then(|v| v.as_str())
+}
+
 fn ir_attachment(name: &str, bytes: &[u8]) -> IrAttachment {
     IrAttachment {
         path: None,
@@ -153,8 +160,9 @@ fn a_group_mms_keeps_its_addresses_and_attachment() {
     assert_eq!(incoming.direction, IrDirection::Incoming);
     assert_eq!(incoming.text, "look");
     assert_eq!(incoming.sender_handle.as_deref(), Some("+15555550102"));
-    // A group MMS's `contact_name` names the group, so the reader takes no
-    // sender name from it.
+    // A group's `contact_name` holds the members' names, as SMS Backup &
+    // Restore writes it, so it names the group and not the sender.
+    assert_eq!(contact_name(incoming), Some("Ana, Lee"));
     assert_eq!(incoming.sender_display_name, None);
     assert_eq!(
         addrs(incoming),
@@ -174,6 +182,7 @@ fn a_group_mms_keeps_its_addresses_and_attachment() {
 
     assert_eq!(outgoing.direction, IrDirection::Outgoing);
     assert_eq!(outgoing.text, "nice");
+    assert_eq!(contact_name(outgoing), Some("Ana, Lee"));
     assert_eq!(
         addrs(outgoing),
         [
@@ -207,6 +216,7 @@ fn an_incoming_sms_keeps_its_sender_and_contact_name() {
     );
     assert_eq!(msg.direction, IrDirection::Incoming);
     assert_eq!(msg.sender_handle.as_deref(), Some("+15555550101"));
+    assert_eq!(contact_name(msg), Some("Sam"));
     assert_eq!(msg.text, "hello ir");
 }
 
@@ -293,11 +303,13 @@ fn a_text_only_group_message_from_another_app_stays_in_its_group() {
     };
     assert_eq!(incoming.direction, IrDirection::Incoming);
     assert_eq!(incoming.sender_handle.as_deref(), Some("+15555550102"));
+    assert_eq!(contact_name(incoming), Some("Sam, Lee"));
     assert_eq!(incoming.sender_display_name, None);
     assert_eq!(incoming.text, "who is in?");
     assert!(incoming.attachments.is_empty());
     assert_eq!(outgoing.direction, IrDirection::Outgoing);
     assert_eq!(outgoing.text, "me");
+    assert_eq!(contact_name(outgoing), Some("Sam, Lee"));
     assert_eq!(
         outgoing.source.as_ref().unwrap().fields["attrs"]["address"],
         "+15555550101~+15555550102"

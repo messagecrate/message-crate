@@ -397,8 +397,22 @@ fn mms_address_field(doc: &ConversationDocument) -> String {
     }
 }
 
-/// The `contact_name` value: the sender's display name for incoming messages, else the peer's.
+/// The `contact_name` value. In a group it is the members' names joined by
+/// `, `, as SMS Backup & Restore writes it, on every message in either
+/// direction; a member with no name is left out, and a group with no named
+/// member gets no value. Else it is the sender's display name for an incoming
+/// message, or the peer's.
 fn contact_name_alias(doc: &ConversationDocument, msg: &IrMessage) -> Option<String> {
+    if doc.conversation.conversation_type == IrConversationType::Group {
+        let names: Vec<&str> = doc
+            .conversation
+            .participants
+            .iter()
+            .filter_map(|p| p.display_name.as_deref())
+            .filter(|s| !s.is_empty())
+            .collect();
+        return (!names.is_empty()).then(|| names.join(", "));
+    }
     if msg.direction == IrDirection::Incoming
         && let Some(n) = msg.sender_display_name.as_deref().filter(|s| !s.is_empty())
     {
