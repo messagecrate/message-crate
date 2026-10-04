@@ -318,7 +318,12 @@ of a group, or one chat id written two ways, merges into the conversation
 already there. The merged conversation keeps the group title of the copy whose
 latest message is later. A copy with no title never clears a title, and when
 both copies' latest messages share one time, the title already stored stays.
-The rule is the same in one batch as across two, in either order. Why: a group
+Times are compared to the second, the precision a message's time is stored at.
+The conversation stores the latest message time of the copy that gave its
+title (`group_title_at`), and an incoming copy is compared with that, not with
+the whole conversation: an untitled copy whose messages end last would
+otherwise keep an older title against a newer one. The rule is the same in one
+batch as across several, in any order. Why: a group
 is renamed over time, so the copy whose messages run later carries the name
 the group has now. An old backup uploaded after a newer one can't bring the old
 name back, because its messages stop earlier. The time a backup was made is not

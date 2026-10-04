@@ -3882,6 +3882,38 @@ async fn a_later_copy_with_no_title_keeps_the_stored_title() {
     }
 }
 
+/// #1408: three copies of one group, "Y" ending first, "Z" ending later,
+/// and an untitled copy ending last, end titled "Z" in every order, in one
+/// batch and in three. The untitled copy's later messages don't stop a newer
+/// title from replacing an older one.
+#[tokio::test]
+async fn an_untitled_copy_ending_last_does_not_keep_an_older_title() {
+    let y = titled_group_copy(Some("Y"), "m-y", 1_426_183_462_000);
+    let z = titled_group_copy(Some("Z"), "m-z", 1_426_269_862_000);
+    let untitled = titled_group_copy(None, "m-x", 1_426_356_262_000);
+    let orders = [
+        [&y, &z, &untitled],
+        [&y, &untitled, &z],
+        [&z, &y, &untitled],
+        [&z, &untitled, &y],
+        [&untitled, &y, &z],
+        [&untitled, &z, &y],
+    ];
+    for (n, order) in orders.iter().enumerate() {
+        let one_batch = vec![order.iter().map(|c| c.as_str()).collect::<String>()];
+        let three_batches = order.iter().map(|c| (*c).clone()).collect::<Vec<_>>();
+        for (arrival, bodies) in [("one batch", one_batch), ("three batches", three_batches)] {
+            let (state, _fixture, token) = importer().await;
+            post_batches_of_one_run(&state, &token, bodies).await;
+            assert_eq!(
+                the_one_group_title(&state).await.as_deref(),
+                Some("Z"),
+                "order {n}, {arrival}"
+            );
+        }
+    }
+}
+
 /// #1408: two copies whose messages end at the same time keep the title
 /// stored first, in one batch and in two.
 #[tokio::test]

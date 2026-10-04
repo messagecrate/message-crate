@@ -47,9 +47,9 @@ pub struct StagingConversation<'a> {
     /// Group label, when set.
     pub group_title: Option<&'a str>,
     /// The latest timestamp among the conversation's messages, in the form
-    /// `staging_messages.timestamp` holds, or `None` when it has none. It
-    /// decides the title when this conversation merges into one already
-    /// staged.
+    /// `staging_messages.timestamp` holds, or `None` when it has none. It is
+    /// the title's time (`group_title_at`), which decides the title when two
+    /// copies of one conversation merge.
     pub latest_message_at: Option<&'a str>,
     /// Name of the file the thread came from.
     pub source_file: &'a str,
@@ -61,8 +61,9 @@ pub struct StagingConversation<'a> {
 /// `+15555550119` and `5555550119`. A conversation on a handle the account
 /// has already staged in this import merges into that row, the way promote
 /// merges into `conversations` on the same key, and the id returned is the
-/// staged row's. The merged row takes the title of whichever side's messages
-/// end later, as [`upsert_conversations`] does
+/// staged row's. The merged row keeps the title of the copy whose latest
+/// message is later; a copy with no title never clears one, and on a tie
+/// the staged title stays, as in [`upsert_conversations`]
 /// (`docs/architecture/contacts-identities-and-messages.md`, "Two copies of
 /// one conversation take the later copy's title").
 ///
@@ -73,26 +74,30 @@ pub async fn insert_conversation(
     conn: &mut SqliteConnection,
     row: &StagingConversation<'_>,
 ) -> Result<i64> {
+    // `group_title_at` is the latest message time of the copy that gave the
+    // title, so a later copy with no title cannot hide a titled one that is
+    // newer than the title held. Both columns take the same condition.
+    // The rule and its reason: docs/architecture/contacts-identities-and-messages.md,
+    // under Two copies of one conversation take the later copy's title.
     Ok(sqlx::query_scalar(
         r"
         INSERT INTO staging_conversations (
-            account_id, chat_handle_id, conversation_type, group_title, source_file
-        ) VALUES ($1, $2, $3, $4, $5)
+            account_id, chat_handle_id, conversation_type, group_title, group_title_at,
+            source_file
+        ) VALUES ($1, $2, $3, $4, CASE WHEN $4 IS NULL THEN NULL ELSE $6 END, $5)
         ON CONFLICT(account_id, chat_handle_id) DO UPDATE SET
-            -- The title of the side whose messages end later. A missing title
-            -- never replaces one, and on a tie the staged title stays. The rule
-            -- and its reason: docs/architecture/contacts-identities-and-messages.md,
-            -- under Two copies of one conversation take the later copy's title.
-            group_title = CASE
-                WHEN excluded.group_title IS NOT NULL
-                 AND (staging_conversations.group_title IS NULL
-                      OR $6 > COALESCE((
-                          SELECT MAX(m.timestamp) FROM staging_messages m
-                          WHERE m.conversation_id = staging_conversations.id
-                      ), ''))
-                THEN excluded.group_title
-                ELSE staging_conversations.group_title
-            END
+            group_title = CASE WHEN
+                excluded.group_title IS NOT NULL
+                AND (staging_conversations.group_title IS NULL
+                     OR COALESCE(excluded.group_title_at, '')
+                        > COALESCE(staging_conversations.group_title_at, ''))
+            THEN excluded.group_title ELSE staging_conversations.group_title END,
+            group_title_at = CASE WHEN
+                excluded.group_title IS NOT NULL
+                AND (staging_conversations.group_title IS NULL
+                     OR COALESCE(excluded.group_title_at, '')
+                        > COALESCE(staging_conversations.group_title_at, ''))
+            THEN excluded.group_title_at ELSE staging_conversations.group_title_at END
         RETURNING id
         ",
     )
@@ -458,8 +463,9 @@ pub async fn max_conversation_id(conn: &mut SqliteConnection) -> Result<i64> {
 
 /// Upsert the account's staged conversations into `conversations`, keyed by
 /// `(account_id, chat_handle_id)`. A row already there takes the staged
-/// title when the staged messages end later than its own, or when it has no
-/// title; a staged row with no title never clears one
+/// title when the copy that gave it ends later than the copy that gave its
+/// own, or when it has no title; a staged row with no title never clears
+/// one, and on a tie the stored title stays, as in [`insert_conversation`]
 /// (`docs/architecture/contacts-identities-and-messages.md`, "Two copies of
 /// one conversation take the later copy's title").
 ///
@@ -467,36 +473,33 @@ pub async fn max_conversation_id(conn: &mut SqliteConnection) -> Result<i64> {
 ///
 /// Returns an error when the statement fails.
 pub async fn upsert_conversations(conn: &mut SqliteConnection, account_id: i64) -> Result<()> {
+    // The rule and its reason: docs/architecture/contacts-identities-and-messages.md,
+    // under Two copies of one conversation take the later copy's title.
     sqlx::query(
         r"
         INSERT INTO conversations (
-            account_id, chat_handle_id, conversation_type, group_title, source_file
+            account_id, chat_handle_id, conversation_type, group_title, group_title_at,
+            source_file
         )
-        SELECT account_id, chat_handle_id, conversation_type, group_title, source_file
+        SELECT
+            account_id, chat_handle_id, conversation_type, group_title, group_title_at,
+            source_file
         FROM staging_conversations
         WHERE account_id = $1
         ON CONFLICT(account_id, chat_handle_id) DO UPDATE SET
             conversation_type = excluded.conversation_type,
-            -- The title of the side whose messages end later. A missing title
-            -- never replaces one, and on a tie the stored title stays. The rule
-            -- and its reason: docs/architecture/contacts-identities-and-messages.md,
-            -- under Two copies of one conversation take the later copy's title.
-            group_title = CASE
-                WHEN excluded.group_title IS NOT NULL
-                 AND (conversations.group_title IS NULL
-                      OR COALESCE((
-                          SELECT MAX(sm.timestamp)
-                          FROM staging_conversations sc
-                          JOIN staging_messages sm ON sm.conversation_id = sc.id
-                          WHERE sc.account_id = excluded.account_id
-                            AND sc.chat_handle_id = excluded.chat_handle_id
-                      ), '') > COALESCE((
-                          SELECT MAX(m.timestamp) FROM messages m
-                          WHERE m.conversation_id = conversations.id
-                      ), ''))
-                THEN excluded.group_title
-                ELSE conversations.group_title
-            END,
+            group_title = CASE WHEN
+                excluded.group_title IS NOT NULL
+                AND (conversations.group_title IS NULL
+                     OR COALESCE(excluded.group_title_at, '')
+                        > COALESCE(conversations.group_title_at, ''))
+            THEN excluded.group_title ELSE conversations.group_title END,
+            group_title_at = CASE WHEN
+                excluded.group_title IS NOT NULL
+                AND (conversations.group_title IS NULL
+                     OR COALESCE(excluded.group_title_at, '')
+                        > COALESCE(conversations.group_title_at, ''))
+            THEN excluded.group_title_at ELSE conversations.group_title_at END,
             source_file = excluded.source_file
         ",
     )

@@ -405,7 +405,11 @@ impl FileStaging<'_> {
         let mut stats = ImportStats::default();
         // Every timestamp has one fixed RFC 3339 form, so the greatest string
         // is the latest instant.
-        let latest_message_at = messages.iter().map(|m| m.timestamp.clone()).max();
+        let latest_message_at = messages
+            .iter()
+            .map(|m| m.timestamp.as_str())
+            .max()
+            .map(str::to_owned);
         let platform = platform_for(
             conversation.platform_service.as_deref(),
             &conversation.source,
