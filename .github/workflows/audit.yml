@@ -2,10 +2,11 @@ name: Audit
 
 # Dependency advisories fail when somebody publishes an advisory, not when
 # somebody writes bad code, so they do not run on every pull request. They
-# run when a change could alter the dependency graph (a lockfile or the deny
-# config moves — which is every Dependabot PR) and on a weekly schedule that
-# catches newly published advisories on main. These checks are deliberately
-# not in the ruleset's required list. Why: docs/adr/0007-ci-is-the-only-gate.md.
+# run when a change could alter the dependency graph (a manifest, a lockfile
+# or the deny config moves — which is every Dependabot PR), when the audit
+# itself changes (this file or scripts/audit-docs.sh), and on a weekly
+# schedule that catches newly published advisories on main. These checks
+# are deliberately not in the ruleset's required list. Why: docs/adr/0007-ci-is-the-only-gate.md.
 #
 # The same trigger runs the licence policy
 # (docs/adr/0014-gpl-code-only-behind-a-process-boundary.md): every

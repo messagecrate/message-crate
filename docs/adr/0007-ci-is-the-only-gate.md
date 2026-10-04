@@ -46,9 +46,9 @@ The dependency audits live in `audit.yml`, not `ci.yml`. That workflow runs
 `scripts/audit-docs.sh` for `docs/`, which fails on any high or critical
 advisory except the ones it lists as having no patched version. It is
 triggered by a pull request that touches a dependency manifest or lockfile
-(`Cargo.toml`, `Cargo.lock`, `deny.toml`, the `src-tauri`, `web/` and `docs/`
-manifests and lockfiles), `audit.yml` itself or `scripts/audit-docs.sh`, and
-by a weekly schedule.
+(`Cargo.toml`, `Cargo.lock`, and the `src-tauri`, `web/` and `docs/`
+manifests and lockfiles), the cargo-deny config `deny.toml`, `audit.yml`
+itself or `scripts/audit-docs.sh`, by a weekly schedule, and by hand.
 
 Test coverage lives in `coverage.yml` for the same reason seen from the other
 side: it is a report that never fails a pull request, so it has no place in a
