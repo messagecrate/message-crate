@@ -636,15 +636,8 @@ fn resumes_message_batches_from_compacted_journal() {
     run(&cfg, None).unwrap();
     assert_eq!(import.calls(), 1);
 
-    let journal_path = dir.path().join(".import-state.jsonl");
-    let compacted = fs::read_to_string(&journal_path).unwrap();
-    assert!(compacted.contains("\"event\":\"message_batch_ok\""));
-    let without_file_success = compacted
-        .lines()
-        .filter(|line| !line.contains("\"event\":\"file_ok\""))
-        .collect::<Vec<_>>()
-        .join("\n");
-    fs::write(&journal_path, format!("{without_file_success}\n")).unwrap();
+    assert!(!journal_events(dir.path(), "message_batch_ok").is_empty());
+    forget_file_success(dir.path());
 
     let resumed = run(&cfg, None).unwrap();
     assert!(resumed.ok);
@@ -660,13 +653,7 @@ fn resumes_message_batches_from_compacted_journal() {
 #[test]
 fn a_message_with_a_blank_guid_is_sent_again_on_resume() {
     let server = MockServer::start();
-    let _auth = server.mock(|when, then| {
-        when.method(GET).path("/v1/session");
-        then.status(200).json_body(json!({
-            "account_id": 1,
-            "username": "alice",
-        }));
-    });
+    let _auth = mock_session(&server);
     let _run = mock_import_run(&server, 7);
     let import = server.mock(|when, then| {
         when.method(POST).path("/v1/imports/7/batches");
@@ -683,14 +670,8 @@ fn a_message_with_a_blank_guid_is_sent_again_on_resume() {
     run(&cfg, None).unwrap();
     assert_eq!(import.calls(), 1);
 
-    let journal_path = dir.path().join(".import-state.jsonl");
-    let without_file_success = fs::read_to_string(&journal_path)
-        .unwrap()
-        .lines()
-        .filter(|line| !line.contains("\"event\":\"file_ok\""))
-        .collect::<Vec<_>>()
-        .join("\n");
-    fs::write(&journal_path, format!("{without_file_success}\n")).unwrap();
+    assert!(journaled_guids(dir.path()).contains(&" ".to_string()));
+    forget_file_success(dir.path());
 
     let resumed = run(&cfg, None).unwrap();
     assert_eq!(resumed.messages_attempted, 1);
@@ -2198,6 +2179,19 @@ fn journaled_guids(dir: &Path) -> Vec<String> {
         .flat_map(|row| row["messages"].as_array().unwrap().clone())
         .map(|message| message["guid"].as_str().unwrap().to_string())
         .collect()
+}
+
+/// Drop the journal's `file_ok` events, so the next run reads every file
+/// again and resumes from the message batches the journal recorded.
+fn forget_file_success(dir: &Path) {
+    let journal_path = dir.join(".import-state.jsonl");
+    let without_file_success = fs::read_to_string(&journal_path)
+        .unwrap()
+        .lines()
+        .filter(|line| !line.contains("\"event\":\"file_ok\""))
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(&journal_path, format!("{without_file_success}\n")).unwrap();
 }
 
 /// A mock server session that accepts the token.
