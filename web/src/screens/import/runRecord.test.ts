@@ -121,21 +121,6 @@ describe("wholeRun", () => {
     });
   });
 
-  it("leaves out the skip rows of conversations an earlier part sent", () => {
-    const whole = wholeRun(
-      EMPTY_RUN_RECORD,
-      part({
-        issues: [
-          { kind: "skip", stage: "upload", item: "a.jsonl", reason: "already imported or skipped" },
-        ],
-        report: report({
-          results: [{ file: "a.jsonl", status: "skipped", messages: 0, attachments: 0 }],
-        }),
-      }),
-    );
-    expect(whole.issues).toEqual([]);
-  });
-
   it("leaves a time no part measured unknown rather than zero", () => {
     expect(wholeRun(EMPTY_RUN_RECORD, part()).uploadMs).toBeUndefined();
   });

@@ -118,22 +118,11 @@ function conversationFiles(
   );
 }
 
-/**
- * The whole run so far: the earlier parts' record with this part added.
- *
- * An Upload's `skipped` row for a conversation is left out. The push
- * journal skips only conversations an earlier part of this same run sent,
- * since every run stages into a folder of its own, so the row says nothing
- * the run's counts do not.
- */
+/** The whole run so far: the earlier parts' record with this part added. */
 export function wholeRun(carried: RunRecord, part: RunPart): RunRecord {
   const report = part.report;
-  const skipped = conversationFiles(report, ["skipped"]);
   return {
-    issues: [
-      ...carried.issues,
-      ...part.issues.filter((issue) => !(issue.stage === "upload" && skipped.has(issue.item))),
-    ],
+    issues: [...carried.issues, ...part.issues],
     durationMs: sum(carried.durationMs, part.durationMs),
     parseMs: sum(carried.parseMs, part.parseMs),
     attachmentsMs: sum(carried.attachmentsMs, part.attachmentsMs),
@@ -157,15 +146,15 @@ export const RUN_ERROR_ITEM = "Import";
  * The record a stopped part leaves for the next one.
  *
  * Two kinds of issue are left out of it. An Upload's row for a whole
- * conversation (failed, skipped, or left unsent) is left out because the
- * resumed Upload sends or skips that conversation again and reports it
- * afresh. The run-level error a stage records when it stops (item `Import`)
- * is left out because it explains the stop, not the run. An Upload's
- * attachment skips are kept, because the resumed Upload does not read those
- * conversations again.
+ * conversation (failed, or left unsent by a stop) is left out because the
+ * resumed Upload sends that conversation again and reports it afresh. The
+ * run-level error a stage records when it stops (item `Import`) is left out
+ * because it explains the stop, not the run. An Upload's attachment skips
+ * are kept, because the resumed Upload does not read those conversations
+ * again.
  */
 export function recordToCarry(carried: RunRecord, part: RunPart): RunRecord {
-  const conversations = conversationFiles(part.report, ["failed", "skipped", "cancelled"]);
+  const conversations = conversationFiles(part.report, ["failed", "cancelled"]);
   const issues = part.issues.filter(
     (issue) =>
       !(issue.kind === "error" && issue.item === RUN_ERROR_ITEM) &&
