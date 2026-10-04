@@ -42,20 +42,23 @@ export async function pauseRunningUpload(): Promise<void> {
   await pauseUpload?.();
 }
 
-let endSession: () => void = () => {};
+let endSession: (token: string) => void = () => {};
 
 /**
  * Record what ends the session when the server refuses the push's session
  * token. Returns what to call once that no longer applies.
  */
-export function onUploadSessionRefused(handler: () => void): () => void {
+export function onUploadSessionRefused(handler: (token: string) => void): () => void {
   endSession = handler;
   return () => {
     if (endSession === handler) endSession = () => {};
   };
 }
 
-/** The server refused the session the push sent: end it here as well. */
-export function uploadSessionRefused(): void {
-  endSession();
+/**
+ * The server refused `token`, the session the push sent: end it here as
+ * well, unless a later login has replaced it.
+ */
+export function uploadSessionRefused(token: string): void {
+  endSession(token);
 }

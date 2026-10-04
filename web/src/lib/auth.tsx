@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import LogoutDialog, { type LogoutDialogState } from "../components/LogoutDialog";
+import PathList from "../components/PathList";
 import { ApiError, getToken, setAccountId, setBaseUrl, setToken } from "./api";
 import { parsePersistedAuth } from "./authGuards";
 import { createQueryClient } from "./routeQuery";
@@ -42,7 +43,7 @@ interface AuthContextValue extends AuthState {
    * revokes the session anyway and says the Upload resumes from what it sent.
    *
    * `deletedAccountFolders` is given when the account has just been deleted:
-   * its staging folders on this computer, deleted once the session is
+   * its Staging Directories on this computer, deleted once the session is
    * revoked. One that cannot be deleted is named in a notice.
    */
   logout: (options?: { ask?: boolean; deletedAccountFolders?: readonly string[] }) => Promise<void>;
@@ -333,27 +334,25 @@ function SessionProvider({
   const logOutNow = useRef<() => void>(() => {});
 
   /**
-   * Pause the running Upload, and resolve to whether it paused before the
-   * limit and before the person pressed **Log out now**. A pause that fails
-   * counts as done: the session is revoked either way.
+   * Pause the running Upload. `paused` resolves to whether it paused before
+   * the limit and before the person pressed **Log out now**; `ended` once it
+   * has ended, however long that takes. A pause that fails counts as done:
+   * the session is revoked either way.
    */
-  const pauseWithinLimit = useCallback(
-    () =>
-      new Promise<boolean>((resolve) => {
-        const settle = (paused: boolean) => {
-          clearTimeout(timer);
-          logOutNow.current = () => {};
-          resolve(paused);
-        };
-        const timer = setTimeout(() => settle(false), UPLOAD_PAUSE_LIMIT_MS);
-        logOutNow.current = () => settle(false);
-        pauseRunningUpload().then(
-          () => settle(true),
-          () => settle(true),
-        );
-      }),
-    [],
-  );
+  const pauseWithinLimit = useCallback(() => {
+    const ended = pauseRunningUpload().catch(() => {});
+    const paused = new Promise<boolean>((resolve) => {
+      const settle = (done: boolean) => {
+        clearTimeout(timer);
+        logOutNow.current = () => {};
+        resolve(done);
+      };
+      const timer = setTimeout(() => settle(false), UPLOAD_PAUSE_LIMIT_MS);
+      logOutNow.current = () => settle(false);
+      void ended.then(() => settle(true));
+    });
+    return { paused, ended };
+  }, []);
 
   const logout = useCallback(
     async ({
@@ -371,10 +370,13 @@ function SessionProvider({
         });
         if (!logOut) return;
       }
-      if (uploadRunning) setDialog({ kind: "pausing" });
+      if (uploadRunning) {
+        setDialog({ kind: "pausing", accountDeleted: deletedAccountFolders !== undefined });
+      }
+      const pause = pauseWithinLimit();
       let paused = true;
       try {
-        paused = await pauseWithinLimit();
+        paused = await pause.paused;
         await revokeSession();
       } finally {
         setDialog(null);
@@ -382,11 +384,15 @@ function SessionProvider({
       if (deletedAccountFolders) {
         // The run went with the account, so nothing resumes; its folders go
         // too, and one that stays is named rather than left without a word.
+        // An Upload that did not pause in time may still write into its
+        // folder, so the folders go once it has ended. The deleted account's
+        // token is refused, so that is soon.
+        await pause.ended;
         const undeleted = await deleteStagingFolders(deletedAccountFolders);
         if (undeleted.length > 0) {
           setDialog({
             kind: "notice",
-            title: "Staging folders left on this computer",
+            title: "Staging Directories left on this computer",
             body: <UndeletedFolders folders={undeleted} />,
           });
         }
@@ -403,14 +409,17 @@ function SessionProvider({
   // An Upload that is running is paused all the same: its push sends the
   // same token, so it would only record every remaining conversation as
   // failed, and the run stays resumable.
-  // A push the server refused its session to ends the session the same way.
+  // A push the server refused its session to ends the session the same way,
+  // unless a later login has replaced the token the push sent: a push that
+  // outlived a logout says nothing about the session after it.
   useEffect(() => {
-    const end = () => {
-      if (!getToken()) return;
+    const end = (refusedToken?: string) => {
+      const token = getToken();
+      if (!token || (refusedToken !== undefined && refusedToken !== token)) return;
       void pauseRunningUpload();
       clearSession();
     };
-    sessionEnded.current = end;
+    sessionEnded.current = () => end();
     return onUploadSessionRefused(end);
   }, [sessionEnded, clearSession]);
 
@@ -477,7 +486,7 @@ const UPLOAD_NOT_PAUSED_BODY = (
   <p className="mt-3 text-[0.875rem] leading-relaxed text-muted">{UPLOAD_NOT_PAUSED}</p>
 );
 
-/** A staging folder that could not be deleted, and why. */
+/** A Staging Directory that could not be deleted, and why. */
 type UndeletedFolder = { path: string; reason: string };
 
 /** Delete each folder, and return the ones that could not be deleted. */
@@ -493,22 +502,15 @@ async function deleteStagingFolders(folders: readonly string[]): Promise<Undelet
   return undeleted;
 }
 
-/** Names each staging folder a deleted account left behind, and why. */
+/** Names each Staging Directory a deleted account left behind, and why. */
 function UndeletedFolders({ folders }: { folders: readonly UndeletedFolder[] }) {
   return (
     <>
       <p className="mt-3 text-[0.875rem] leading-relaxed text-muted">
-        Message Crate could not delete these staging folders of the deleted account. Delete them by
-        hand to free the space they take:
+        Message Crate could not delete these Staging Directories of the deleted account. Delete them
+        by hand to free the space they take:
       </p>
-      <ul className="mt-2 list-disc pl-5 text-[0.813rem] text-text">
-        {folders.map((folder) => (
-          <li key={folder.path} className="break-all">
-            <code className="font-mono text-[0.75rem]">{folder.path}</code>
-            {`: ${folder.reason}`}
-          </li>
-        ))}
-      </ul>
+      <PathList paths={folders.map((folder) => ({ path: folder.path, note: folder.reason }))} />
     </>
   );
 }

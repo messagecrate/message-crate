@@ -1,22 +1,10 @@
 import { useState } from "react";
 import Button from "./Button";
 import ModalShell, { DialogError } from "./ModalShell";
+import PathList from "./PathList";
 import PlainButton from "./PlainButton";
 
-/**
- * Confirms an account deleting itself. `hasPassword` is the account's
- * `has_password`: the server checks the current password only when one is
- * set, so the dialog asks for it only then and confirms with none otherwise.
- * `error` is why the last confirm failed; the dialog stays open to retry.
- *
- * `stagingFolders`, in the desktop app, are the account's staging folders
- * on this computer, deleted with the account. The dialog names them before
- * the person confirms, and holds the confirm while it looks for them.
- *
- * The typed username and password live in `DeleteAccountForm`, which exists
- * only while the dialog is open, so closing the dialog discards them.
- */
-/** The account's staging folders on this computer, as the dialog shows them. */
+/** The account's Staging Directories on this computer, as the dialog shows them. */
 export type StagingFoldersCheck = {
   checking: boolean;
   paths: readonly string[];
@@ -24,6 +12,19 @@ export type StagingFoldersCheck = {
   error: string;
 };
 
+/**
+ * Confirms an account deleting itself. `hasPassword` is the account's
+ * `has_password`: the server checks the current password only when one is
+ * set, so the dialog asks for it only then and confirms with none otherwise.
+ * `error` is why the last confirm failed; the dialog stays open to retry.
+ *
+ * `stagingFolders`, in the desktop app, are the account's Staging
+ * Directories on this computer, deleted with the account. The dialog names them before
+ * the person confirms, and holds the confirm while it looks for them.
+ *
+ * The typed username and password live in `DeleteAccountForm`, which exists
+ * only while the dialog is open, so closing the dialog discards them.
+ */
 export default function DeleteAccountDialog({
   open,
   username,
@@ -155,18 +156,18 @@ function DeleteAccountForm({
   );
 }
 
-/** Names the staging folders deleted with the account, or says why it cannot. */
+/** Names the Staging Directories deleted with the account, or says why it cannot. */
 function StagingFoldersNote({ check }: { check: StagingFoldersCheck }) {
   const text = "mt-3 text-[0.875rem] leading-relaxed text-muted";
   if (check.checking) {
     return (
-      <p className={text}>Looking for this account&apos;s staging folders on this computer…</p>
+      <p className={text}>Looking for this account&apos;s Staging Directories on this computer…</p>
     );
   }
   if (check.error) {
     return (
       <p className={text}>
-        {`Message Crate could not look for this account's staging folders on this computer, so it deletes none: ${check.error}`}
+        {`Message Crate could not look for this account's Staging Directories on this computer, so it deletes none: ${check.error}`}
       </p>
     );
   }
@@ -174,15 +175,9 @@ function StagingFoldersNote({ check }: { check: StagingFoldersCheck }) {
   return (
     <>
       <p className={text}>
-        Deleting the account also deletes its staging folders on this computer:
+        Deleting the account also deletes its Staging Directories on this computer:
       </p>
-      <ul className="mt-2 list-disc pl-5 text-[0.813rem] text-text">
-        {check.paths.map((path) => (
-          <li key={path} className="break-all">
-            <code className="font-mono text-[0.75rem]">{path}</code>
-          </li>
-        ))}
-      </ul>
+      <PathList paths={check.paths.map((path) => ({ path }))} />
     </>
   );
 }

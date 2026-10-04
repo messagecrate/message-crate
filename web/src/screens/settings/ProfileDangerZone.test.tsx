@@ -6,6 +6,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../../lib/queryKeys";
+import { routeQueryKey } from "../../lib/routeQueryKey";
 import { testQueryClient } from "../../test/providers";
 import { freshEntries, seedEntries } from "../../test/staleEntries";
 import { ProfileDangerZone } from "./ProfileDangerZone";
@@ -76,7 +77,7 @@ describe("ProfileDangerZone", () => {
     expect(logout).not.toHaveBeenCalled();
   });
 
-  it("names the account's staging folders on this computer, and deletes them with the account", async () => {
+  it("names the account's Staging Directories on this computer, and deletes them with the account", async () => {
     desktop.value = true;
     accountStagingFolders.mockResolvedValue(["/home/carol/staging/iphone-2026-10-04"]);
     deleteAccount.mockResolvedValue(undefined);
@@ -96,7 +97,7 @@ describe("ProfileDangerZone", () => {
       await within(dialog).findByText("/home/carol/staging/iphone-2026-10-04"),
     ).toBeInTheDocument();
     expect(dialog).toHaveTextContent(
-      "Deleting the account also deletes its staging folders on this computer:",
+      "Deleting the account also deletes its Staging Directories on this computer:",
     );
     await user.type(within(dialog).getByRole("textbox", { name: /Type your username/ }), "carol");
     await user.click(within(dialog).getByRole("button", { name: "Permanently delete my account" }));
@@ -108,6 +109,35 @@ describe("ProfileDangerZone", () => {
       }),
     );
     expect(deleteAccount).toHaveBeenCalledWith({ confirm: true, current_password: undefined });
+  });
+
+  it("holds the confirm while it looks for the folders again, rather than send the last list", async () => {
+    desktop.value = true;
+    // The list from the last time the dialog was open, and a new look that
+    // has not answered yet.
+    const client = testQueryClient();
+    seedEntries(client, 7, [keys.imports.stagingFolders]);
+    client.setQueryData(routeQueryKey(7, keys.imports.stagingFolders), ["/home/carol/old"]);
+    accountStagingFolders.mockReturnValue(new Promise(() => {}));
+    const user = userEvent.setup({ delay: null });
+    render(
+      <QueryClientProvider client={client}>
+        <MemoryRouter>
+          <ProfileDangerZone isDemo={false} username="carol" hasPassword={false} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Danger zone/ }));
+    await user.click(screen.getByRole("button", { name: "Delete account" }));
+    const dialog = screen.getByRole("dialog");
+    await user.type(within(dialog).getByRole("textbox", { name: /Type your username/ }), "carol");
+
+    expect(accountStagingFolders).toHaveBeenCalled();
+    expect(
+      within(dialog).getByRole("button", { name: "Permanently delete my account" }),
+    ).toBeDisabled();
+    expect(within(dialog).queryByText("/home/carol/old")).toBeNull();
   });
 
   it("deletes no folder outside the desktop app", async () => {
@@ -124,7 +154,7 @@ describe("ProfileDangerZone", () => {
     await user.click(screen.getByRole("button", { name: /Danger zone/ }));
     await user.click(screen.getByRole("button", { name: "Delete account" }));
     const dialog = screen.getByRole("dialog");
-    expect(dialog).not.toHaveTextContent(/staging folder/);
+    expect(dialog).not.toHaveTextContent(/Staging Director/);
     await user.type(within(dialog).getByRole("textbox", { name: /Type your username/ }), "carol");
     await user.click(within(dialog).getByRole("button", { name: "Permanently delete my account" }));
 

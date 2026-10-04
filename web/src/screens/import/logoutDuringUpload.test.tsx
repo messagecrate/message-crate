@@ -86,6 +86,8 @@ const { useImportJob, resetImportRun } = await import("./useImportJob");
 const MIB = 1024 * 1024;
 
 const PAUSING = "Pausing the Upload. You are logged out once it has paused, or after 15 seconds.";
+const DELETED_PAUSING =
+  "Your account is deleted. Stopping its Upload before you are logged out, which takes at most 15 seconds.";
 const NOT_PAUSED =
   "You were logged out before the Upload had paused. When you log in again, it resumes from what it had sent.";
 
@@ -336,6 +338,67 @@ describe("logging out during an Upload", () => {
     // The run went with the account: nothing resumes, and nothing says so.
     expect(screen.queryByText(/resumes/)).toBeNull();
     expect(screen.queryByText(/could not delete/)).toBeNull();
+  });
+
+  it("deletes a deleted account's folder only once an Upload that did not pause has ended", async () => {
+    const user = userEvent.setup();
+    const result = await startUpload();
+    // A push that does not stop when asked.
+    cancelMock.mockImplementation(() => {});
+
+    act(() => {
+      void result.current.auth.logout({
+        ask: false,
+        deletedAccountFolders: ["/home/sam/staging-iphone"],
+      });
+    });
+    await user.click(await screen.findByRole("button", { name: "Log out now" }));
+    await waitFor(() => expect(serverLogoutMock).toHaveBeenCalled());
+
+    // The push may still write into its folder: nothing is deleted yet.
+    expect(calls).not.toContain("deleted /home/sam/staging-iphone");
+
+    act(() => {
+      finishPush?.({ summary: "Push", report: { ...pausedReport(), session_refused: true } });
+    });
+
+    await waitFor(() => expect(calls).toContain("deleted /home/sam/staging-iphone"));
+    expect(calls.indexOf("deleted /home/sam/staging-iphone")).toBeGreaterThan(
+      calls.indexOf("pause recorded"),
+    );
+  });
+
+  it("says the account is deleted while its Upload pauses", async () => {
+    const result = await startUpload();
+    cancelMock.mockImplementation(() => {});
+
+    act(() => {
+      void result.current.auth.logout({ ask: false, deletedAccountFolders: [] });
+    });
+
+    expect(await screen.findByText(DELETED_PAUSING)).toBeTruthy();
+    expect(screen.queryByText(PAUSING)).toBeNull();
+  });
+
+  it("leaves a later login alone when an Upload it outlived is refused", async () => {
+    const user = userEvent.setup();
+    const result = await startUpload();
+    cancelMock.mockImplementation(() => {});
+
+    pressLogOut(result);
+    await user.click(await screen.findByRole("button", { name: "Log out" }));
+    await user.click(await screen.findByRole("button", { name: "Log out now" }));
+    await waitFor(() => expect(result.current.auth.isAuthenticated).toBe(false));
+    await act(() => result.current.auth.login("http://127.0.0.1:8080", "next-session-token", 7));
+
+    // The old push meets its revoked session only now.
+    act(() => {
+      finishPush?.({ summary: "Push", report: { ...pausedReport(), session_refused: true } });
+    });
+    await waitFor(() => expect(isUploadRunning()).toBe(false));
+
+    expect(result.current.auth.isAuthenticated).toBe(true);
+    expect(getToken()).toBe("next-session-token");
   });
 
   it("names a deleted account's staging folder it could not delete", async () => {

@@ -22,7 +22,7 @@ const dangerButton = `${dangerButtonClass} !box-border !w-auto !min-w-[10.5rem] 
  *
  * For the logged-in account, deleting the account asks for its password when
  * it has one (`hasPassword`) and logs out. In the desktop app it also deletes
- * the account's staging folders on this computer, which the dialog names
+ * the account's Staging Directories on this computer, which the dialog names
  * first: the server deletes the account's Import Runs with it, so nothing
  * would offer those folders again. Given `managedAccountId`, the owner is deleting someone
  * else's: no password is asked, because the owner does not know it, and the
@@ -245,7 +245,9 @@ export function ProfileDangerZone({
           stagingFolders={
             checkFolders
               ? {
-                  checking: stagingFolders.isPending,
+                  // A look still under way holds the confirm, even with an earlier
+                  // list cached: that list may miss a folder made since.
+                  checking: stagingFolders.isFetching,
                   paths: stagingFolders.data ?? [],
                   error: stagingFolders.error?.message ?? "",
                 }

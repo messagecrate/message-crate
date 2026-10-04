@@ -9,7 +9,8 @@ import ModalShell, { DialogFooter } from "./ModalShell";
  */
 export type LogoutDialogState =
   | { kind: "asking" }
-  | { kind: "pausing" }
+  /** `accountDeleted`: the account was just deleted, so nothing resumes. */
+  | { kind: "pausing"; accountDeleted: boolean }
   | { kind: "notice"; title: string; body: ReactNode };
 
 const UPLOAD_RUNNING_PROMPT =
@@ -17,6 +18,9 @@ const UPLOAD_RUNNING_PROMPT =
 
 const UPLOAD_PAUSING =
   "Pausing the Upload. You are logged out once it has paused, or after 15 seconds.";
+
+const DELETED_ACCOUNT_UPLOAD_PAUSING =
+  "Your account is deleted. Stopping its Upload before you are logged out, which takes at most 15 seconds.";
 
 /**
  * The dialog logout shows, or nothing when `state` is null.
@@ -52,7 +56,9 @@ export default function LogoutDialog({
         title="Log out"
         maxWidth="24rem"
       >
-        <p className="mt-3 text-[0.875rem] leading-relaxed text-muted">{UPLOAD_PAUSING}</p>
+        <p className="mt-3 text-[0.875rem] leading-relaxed text-muted">
+          {state.accountDeleted ? DELETED_ACCOUNT_UPLOAD_PAUSING : UPLOAD_PAUSING}
+        </p>
         <DialogFooter>
           <Button variant="primary" onPress={onLogOutNow}>
             Log out now

@@ -1067,7 +1067,7 @@ async function runPush(
   }
   // The push stopped because the server refused its session: every request
   // with that token is refused now, so the session ends here too (#1491).
-  if (sessionRefused) uploadSessionRefused();
+  if (sessionRefused && token) uploadSessionRefused(token);
 }
 
 /**

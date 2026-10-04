@@ -251,13 +251,6 @@ released versions carry their date on the heading.
   while an Upload ran and nothing else noticed, the Upload kept going and
   recorded every remaining conversation as failed. It now pauses at once,
   records none of them as failed, and logs you out.
-- 2026-10-04 **Deleting your account in the desktop app deletes its
-  staging folders on this computer.** Deleting your own account during or
-  after an import left that import's staging folder on disk, with nothing
-  to offer it again. The delete dialog now names the account's staging
-  folders on this computer, deleting the account deletes them, and a
-  folder that cannot be deleted is named afterwards so you can remove it
-  by hand.
 - 2026-10-04 **A discarded import keeps its errors, and an import keeps its
   converted files when they cannot be read back.** Discarding an import,
   or cancelling it at a Review, recorded it with no errors, though it had
@@ -838,6 +831,13 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-04 **Deleting your account in the desktop app deletes its
+  Staging Directories on this computer.** Deleting your own account during
+  or after an import left that import's Staging Directory on disk, with
+  nothing to offer it again. The delete dialog now names the account's
+  Staging Directories on this computer, deleting the account deletes them,
+  and one that cannot be deleted is named afterwards so you can remove it
+  by hand.
 - 2026-10-03 **An expired session says to log in again.** When your
   session had expired, or was ended from another window, an Upload or an
   Export said "invalid API key", though the app sends no API key. It now
