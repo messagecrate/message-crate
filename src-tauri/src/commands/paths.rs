@@ -473,28 +473,65 @@ mod tests {
         assert!(err.contains("root of a drive"));
     }
 
+    // The roots in these tests are made under a temporary folder and the
+    // result is compared with the root's canonical form, because a missing
+    // path resolves through its nearest existing ancestor: a made-up path
+    // such as /home/sam/... comes back changed on a machine where /home is
+    // a symbolic link or an automount, such as macOS.
+
     #[test]
     fn accepts_path_under_staging_when_missing() {
-        let root = "/home/sam/message-crate";
-        let path = "/home/sam/message-crate/staging-iphone-ios-260824-180509";
-        let resolved = resolve_openable_path(path, root).unwrap();
-        assert_eq!(resolved, PathBuf::from(path));
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("message-crate");
+        fs::create_dir(&root).unwrap();
+        let path = root.join("staging-iphone-ios-260824-180509");
+
+        let resolved =
+            resolve_openable_path(path.to_str().unwrap(), root.to_str().unwrap()).unwrap();
+
+        assert_eq!(
+            resolved,
+            root.canonicalize()
+                .unwrap()
+                .join("staging-iphone-ios-260824-180509")
+        );
     }
 
     #[test]
     fn accepts_path_under_custom_staging_root() {
-        let root = "/data/imports";
-        let path = "/data/imports/staging-iphone-ios-260824-180509";
-        let resolved = resolve_openable_path(path, root).unwrap();
-        assert_eq!(resolved, PathBuf::from(path));
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("data").join("imports");
+        fs::create_dir_all(&root).unwrap();
+        let path = root.join("staging-iphone-ios-260824-180509");
+
+        let resolved =
+            resolve_openable_path(path.to_str().unwrap(), root.to_str().unwrap()).unwrap();
+
+        assert_eq!(
+            resolved,
+            root.canonicalize()
+                .unwrap()
+                .join("staging-iphone-ios-260824-180509")
+        );
     }
 
     #[test]
     fn accepts_log_file_under_staging_when_missing() {
-        let root = "/home/sam/message-crate";
-        let path = "/home/sam/message-crate/staging-x/message-crate-push.log";
-        let resolved = resolve_openable_path(path, root).unwrap();
-        assert_eq!(resolved, PathBuf::from(path));
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().join("message-crate");
+        fs::create_dir(&root).unwrap();
+        let path = root.join("staging-x").join("message-crate-push.log");
+
+        let resolved =
+            resolve_openable_path(path.to_str().unwrap(), root.to_str().unwrap()).unwrap();
+
+        assert_eq!(
+            resolved,
+            root.canonicalize()
+                .unwrap()
+                .join("staging-x")
+                .join("message-crate-push.log")
+        );
     }
 
     #[test]
