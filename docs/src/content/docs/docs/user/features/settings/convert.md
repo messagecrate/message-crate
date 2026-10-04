@@ -27,7 +27,7 @@ The tab holds three fields and two buttons.
 
 **Convert** starts the conversion.
 It stays disabled until both folders are filled in and differ.
-The desktop app runs one job at a time, so **Convert** also stays disabled from the start of an Import Run to its end, its Reviews included, and from the start of an export to its end. The screen names the job it waits for.
+The desktop app runs one job at a time, so **Convert** also stays disabled from the start of an Import Run to its end, its Reviews included, and from the start of an export to its end. A Review holds it back only for the account that started the run; another account logged in on the same desktop app can use it. The screen names the job it waits for.
 **Cancel** stops a running conversion.
 
 A log under the buttons fills in as the conversion runs.

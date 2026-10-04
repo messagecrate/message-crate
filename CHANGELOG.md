@@ -548,7 +548,10 @@ released versions carry their date on the heading.
   because another job was running. **Convert** now stays disabled from the
   start of an Import Run or an export to its end, and **Export** waits
   through an Import Run's Reviews too. Both are enabled again as soon as the
-  run finishes, fails, is paused, or is cancelled or discarded.
+  run finishes, fails, is paused, or is cancelled or discarded. A Review holds
+  them back only for the account that started the run, so another account
+  logged in on the same desktop app can still export and convert; the
+  Review's approve button then waits for that job to end.
 - 2026-10-04 **An export stops when it cannot read an earlier export's
   email folder.** An export or conversion written into a folder an earlier
   one used first removes the earlier one's email conversation folders. A
