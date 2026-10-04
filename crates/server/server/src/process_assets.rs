@@ -256,7 +256,7 @@ impl<'a> AccountPass<'a> {
             Plan::Skip(_) => return Ok(Outcome::Skipped),
             Plan::DropDamagedPreview => {
                 self.drop_damaged_preview(conn, row).await?;
-                bail!("missing original");
+                return Err(missing_original());
             }
             Plan::Derive(kind) => kind,
         };
@@ -629,9 +629,15 @@ fn plan(row: &AssetRow, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> Result<
         if on_disk.preview == PreviewFile::Damaged {
             return Ok(Plan::DropDamagedPreview);
         }
-        bail!("missing original");
+        return Err(missing_original());
     }
     Ok(Plan::Derive(kind))
+}
+
+/// The failure an attachment is counted under when its original is not on
+/// disk, whether or not a damaged Preview was dropped for it.
+fn missing_original() -> anyhow::Error {
+    anyhow::anyhow!("missing original")
 }
 
 /// The state of the Preview `derived_assets_path` names under
