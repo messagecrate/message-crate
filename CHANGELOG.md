@@ -482,6 +482,14 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-04 **GO SMS Pro and SMS Backup+ attachments keep their size when
+  their files are left out.** A run with Attachments set to Skip wrote each
+  GO SMS Pro and SMS Backup+ attachment without its size. Each one now
+  carries its size, as SMS Backup & Restore attachments already did.
+- 2026-10-04 **An obfuscated export no longer records the real size of each
+  photo or file.** Obfuscate replaces every attachment with a placeholder,
+  but the attachment kept the size of the real file, which can be enough
+  to recognise it. An obfuscated attachment now carries no size.
 - 2026-10-04 **Convert keeps the previous output when an Android XML backup
   can't be read.** Converting a broken `smses.xml` into a folder an earlier
   conversion wrote removed that conversion's files before the backup was

@@ -329,3 +329,51 @@ fn two_messages_sharing_an_smssync_id_both_survive() {
         "both same-chat messages must survive the dedupe pass"
     );
 }
+
+/// A run that copies no attachments (media off) still records each
+/// attachment's size from the decoded payload, as SMS Backup & Restore does.
+/// The picture in `flat_mms_jpeg.eml` is 32 base64 characters, 22 bytes.
+#[test]
+fn a_run_that_copies_no_attachments_still_records_their_size() {
+    let input = tempfile::tempdir().unwrap();
+    fs::copy(
+        fixtures().join("flat_mms_jpeg.eml"),
+        input.path().join("flat_mms_jpeg.eml"),
+    )
+    .unwrap();
+    let output = tempfile::tempdir().unwrap();
+    convert_export(ConvertExportArgs {
+        inputs: &[input.path()],
+        output_dir: output.path(),
+        owner_phones: &["+15555550100".into()],
+        owner_emails: &["owner@example.com".into()],
+        verbose: false,
+        transforms: ExportTransforms {
+            media: media::MediaMode::Disabled,
+            ..ExportTransforms::none()
+        },
+        output_format: OutputFormat::Jsonl,
+        cancel: None,
+        log: None,
+        resume: false,
+    })
+    .unwrap();
+
+    let attachments: Vec<message_ir::IrAttachment> = fs::read_dir(output.path())
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.extension().is_some_and(|ext| ext == "jsonl"))
+        .flat_map(|path| {
+            message_ir_format::read_conversation_jsonl(&path)
+                .unwrap()
+                .messages
+        })
+        .flat_map(|message| message.attachments)
+        .collect();
+    let picture = attachments
+        .iter()
+        .find(|att| att.mime_type.as_deref() == Some("image/jpeg"))
+        .expect("the picture is an attachment");
+    assert_eq!(picture.path, None, "nothing was copied");
+    assert_eq!(picture.size_bytes, Some(22));
+}
