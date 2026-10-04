@@ -1,7 +1,11 @@
 import type { CSSProperties, ReactNode } from "react";
+import { sourceLabel } from "../../lib/exportSources";
 import { highlightText } from "../../lib/highlightText";
 import { useTimeZone } from "../../lib/timeZone";
 import type { Message, MessageAttachment, MessageTapback } from "../../lib/types";
+
+/** A message's mark: Deleted in the source app, or Unsent. */
+type Deletion = NonNullable<Message["deletion"]>;
 
 type BubblePalette = "imessage" | "sms";
 
@@ -117,6 +121,25 @@ export function tapbackGroups(m: Message): TapbackGroup[] {
   return [...groups.values()];
 }
 
+/**
+ * How a marked message is drawn, in the chat bubble and the flat row alike: no
+ * fill, a dashed outline and muted text, from the theme (#1143).
+ */
+const MARKED_CLASSES = "border border-dashed border-muted bg-transparent text-muted";
+
+/** What an Unsent message reads in place of its text, which the backup no longer holds. */
+const UNSENT_TEXT = "Unsent";
+
+/**
+ * The note beside the time of a message Deleted in the source app, naming the
+ * source as the product does: "· Deleted in Apple Messages". An Unsent message
+ * says so in its bubble, and an unmarked one carries no note.
+ */
+function DeletionNote({ deletion, source }: { deletion?: Deletion | null; source: string }) {
+  if (deletion !== "deleted_in_source_app") return null;
+  return <span>· Deleted in {sourceLabel(source)}</span>;
+}
+
 /** Bubble fill/text color per palette (theme vars switch with data-theme). */
 function bubbleColorClasses(palette: BubblePalette, mine: boolean): string {
   if (mine) {
@@ -132,7 +155,13 @@ function senderColorClass(palette: BubblePalette): string {
   return palette === "imessage" ? "text-[var(--imessage-sent)]" : "text-[var(--sms-sent)]";
 }
 
-/** Chat-row chrome: aligned bubble, optional sender label, timestamp under bubble. */
+/**
+ * Chat-row chrome: aligned bubble, optional sender label, timestamp under bubble.
+ *
+ * A message Deleted in the source app keeps its text in a muted, dashed bubble,
+ * and its time reads "<time> · Deleted in <source>". An Unsent message is an
+ * empty muted, dashed bubble that reads "Unsent", whatever `children` holds.
+ */
 export function ChatBubbleRow({
   messageId,
   mine,
@@ -141,6 +170,8 @@ export function ChatBubbleRow({
   showSender,
   senderLabel,
   timeLabel,
+  deletion,
+  source,
   meta,
   children,
   footer,
@@ -152,12 +183,20 @@ export function ChatBubbleRow({
   showSender?: boolean;
   senderLabel?: string;
   timeLabel: string;
+  /** The message's mark, which draws the bubble muted and dashed. */
+  deletion?: Deletion | null;
+  /** The message's import source, which the Deleted in the source app note names. */
+  source: string;
   meta?: ReactNode;
   children?: ReactNode;
   footer?: ReactNode;
 }) {
   const radius = mine ? "rounded-[18px] rounded-br-[4px]" : "rounded-[18px] rounded-bl-[4px]";
-  const hasBubble = children != null && children !== false && children !== "";
+  const content = deletion === "unsent" ? UNSENT_TEXT : children;
+  const hasBubble = content != null && content !== false && content !== "";
+  const colors = deletion
+    ? MARKED_CLASSES
+    : `${bubbleColorClasses(palette, mine)} ${mine ? "" : "shadow-bubble"}`;
 
   return (
     <div
@@ -176,11 +215,9 @@ export function ChatBubbleRow({
 
       {hasBubble ? (
         <div
-          className={`${radius} ${bubbleColorClasses(palette, mine)} max-w-[min(78%,34rem)] whitespace-pre-wrap break-words px-[0.7rem] py-[0.45rem] text-[0.9375rem] leading-[1.35] ${
-            mine ? "" : "shadow-bubble"
-          }`}
+          className={`${radius} ${colors} max-w-[min(78%,34rem)] whitespace-pre-wrap break-words px-[0.7rem] py-[0.45rem] text-[0.9375rem] leading-[1.35]`}
         >
-          {children}
+          {content}
         </div>
       ) : null}
 
@@ -196,6 +233,7 @@ export function ChatBubbleRow({
 
       <div className="mt-[0.15rem] flex items-center gap-[0.4rem] px-[0.35rem] text-[0.688rem] text-muted">
         <span>{timeLabel}</span>
+        <DeletionNote deletion={deletion} source={source} />
         {meta}
       </div>
     </div>
@@ -227,6 +265,12 @@ export function ServiceRow({
 /**
  * Shared branded-service row: ServiceRow + sender/time header.
  * Color and header alignment stay per-service; body is `children`.
+ *
+ * A marked message is drawn as `ChatBubbleRow` draws it: a message Deleted in
+ * the source app keeps its body in a muted, dashed outline with "· Deleted in
+ * <source>" after its time, and an Unsent message is an empty muted, dashed
+ * outline that reads "Unsent" in place of the body, as the chat bubble reads
+ * "Unsent" in place of its text.
  */
 export function ServiceBubbleShell({
   message,
@@ -248,6 +292,8 @@ export function ServiceBubbleShell({
 }) {
   const mine = message.is_from_me;
   const zone = useTimeZone();
+  const deletion = message.deletion;
+  const marked = `w-fit max-w-full rounded-[6px] px-2 py-1 ${MARKED_CLASSES} ${mine ? "ml-auto" : ""}`;
   return (
     <ServiceRow messageId={String(message.id)} isActive={isActive}>
       <div
@@ -261,9 +307,18 @@ export function ServiceBubbleShell({
         >
           {senderName(message)}
         </span>
-        <span className={timeClassName}>{formatMessageTime(message.timestamp, zone)}</span>
+        <span className={timeClassName}>
+          {formatMessageTime(message.timestamp, zone)}{" "}
+          <DeletionNote deletion={deletion} source={message.source} />
+        </span>
       </div>
-      {children}
+      {deletion === "unsent" ? (
+        <div className={`${marked} text-[0.875rem] leading-[1.5]`}>{UNSENT_TEXT}</div>
+      ) : deletion ? (
+        <div className={marked}>{children}</div>
+      ) : (
+        <div className="text-text">{children}</div>
+      )}
     </ServiceRow>
   );
 }
@@ -280,7 +335,7 @@ export function ServiceMessageText({
 }) {
   return (
     <div
-      className={`whitespace-pre-wrap text-[0.875rem] leading-[1.5] text-text ${
+      className={`whitespace-pre-wrap text-[0.875rem] leading-[1.5] ${
         mine ? "text-right" : "text-left"
       }`}
     >

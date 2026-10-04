@@ -14,3 +14,11 @@ export const EXPORT_SOURCES: { id: string; label: string }[] = [
   { id: "sms-backup-plus", label: "SMS Backup+" },
   { id: "openextract", label: "OpenExtract" },
 ];
+
+/**
+ * The name the product gives a message's import source, as Import lists it:
+ * "Apple Messages" for `imessage`. A source Import does not offer keeps its id.
+ */
+export function sourceLabel(source: string): string {
+  return EXPORT_SOURCES.find((s) => s.id === source)?.label ?? source;
+}

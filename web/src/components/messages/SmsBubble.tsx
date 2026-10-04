@@ -33,6 +33,8 @@ export default function SmsBubble({
       showSender={!mine && (showSender ?? nameSender)}
       senderLabel={senderName(message)}
       timeLabel={time}
+      deletion={message.deletion}
+      source={message.source}
       meta={service ? <span className="uppercase tracking-[0.04em]">{service}</span> : null}
       footer={
         hasAttachments ? (

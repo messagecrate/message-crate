@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EXPORT_SOURCES } from "./exportSources";
+import { EXPORT_SOURCES, sourceLabel } from "./exportSources";
 import { IMESSAGE_SOURCE_ID } from "./imessageImport";
 import { WHATSAPP_SOURCE_ID } from "./whatsappImport";
 
@@ -16,5 +16,13 @@ describe("EXPORT_SOURCES", () => {
     expect(ids).toContain("sms-backup-restore");
     expect(EXPORT_SOURCES.find((s) => s.id === IMESSAGE_SOURCE_ID)?.label).toBe("Apple Messages");
     expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe("sourceLabel", () => {
+  it("names a source as Import lists it, and keeps the id of one Import does not offer", () => {
+    expect(sourceLabel(IMESSAGE_SOURCE_ID)).toBe("Apple Messages");
+    expect(sourceLabel("sms-backup-plus")).toBe("SMS Backup+");
+    expect(sourceLabel("discord")).toBe("discord");
   });
 });

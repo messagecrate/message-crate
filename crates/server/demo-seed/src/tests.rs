@@ -971,6 +971,44 @@ fn every_message_of_the_medium_set_falls_between_8am_and_11pm_utc_and_not_after_
     );
 }
 
+/// The Demo Account shows both marks, so a person exploring it meets a message
+/// Deleted in the source app and an Unsent one. Only Apple Messages marks
+/// them (#1143), so only the Apple Messages backup carries them. An Unsent
+/// message keeps nothing: no text, no attachment and no reaction.
+#[test]
+fn the_medium_set_marks_a_few_apple_messages_deleted_in_the_source_app_and_unsent() {
+    use message_ir::Deletion;
+
+    let temp = tempfile::tempdir().expect("create test directory");
+    let out = temp.path().join("demo");
+    generate_size_to(DemoSize::Medium, &out, &AtomicBool::new(false))
+        .expect("generate the medium bundle");
+
+    let (mut deleted, mut unsent) = (0, 0);
+    for (source, doc) in read_bundle(&out) {
+        for message in &doc.messages {
+            let Some(deletion) = message.deletion else {
+                continue;
+            };
+            assert_eq!(source, IMESSAGE_SOURCE, "{}", message.guid);
+            match deletion {
+                Deletion::DeletedInSourceApp => deleted += 1,
+                Deletion::Unsent => {
+                    unsent += 1;
+                    assert!(message.text.is_empty(), "{} keeps text", message.guid);
+                    assert!(message.attachments.is_empty(), "{}", message.guid);
+                    assert!(message.reactions.is_empty(), "{}", message.guid);
+                }
+            }
+        }
+    }
+    assert!(
+        (20..=200).contains(&deleted),
+        "{deleted} messages Deleted in the source app"
+    );
+    assert!((3..=30).contains(&unsent), "{unsent} Unsent messages");
+}
+
 /// Whether `phone` is in a range set aside for fiction, so it cannot belong to
 /// anyone: a North American number at 555-0100 to 555-0199 in any area code
 /// (NANPA), or a UK mobile at 07700 900000 to 07700 900999 (Ofcom's range for
