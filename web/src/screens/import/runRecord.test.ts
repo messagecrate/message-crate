@@ -182,13 +182,40 @@ describe("recordToCarry", () => {
     ]);
   });
 
-  it("replaces the left-out issues of an earlier stop, which the resume reported again", () => {
+  it("keeps an earlier stop's failed conversation when the next stop reported nothing on it", () => {
+    // Pause 1 left conversation b.jsonl failed. The resumed Upload was paused
+    // before the push started, so it reported nothing on b.jsonl.
     const earlier = {
       issues: [],
-      lastStopIssues: [{ kind: "error", stage: "upload" as const, item: "b.jsonl", reason: "x" }],
+      lastStopIssues: [
+        { kind: "error", stage: "upload" as const, item: "b.jsonl", reason: "connection refused" },
+        { kind: "error", stage: "upload" as const, item: "Import", reason: "the server went away" },
+      ],
     };
-    const carried = recordToCarry(earlier, part({ issues: [] }));
+    const carried = recordToCarry(earlier, part({ issues: [], report: null }));
+    expect(carried.lastStopIssues).toEqual([
+      { kind: "error", stage: "upload", item: "b.jsonl", reason: "connection refused" },
+    ]);
+  });
+
+  it("drops an earlier stop's failed conversation once a later Upload reported on it", () => {
+    const earlier = {
+      issues: [],
+      lastStopIssues: [
+        { kind: "error", stage: "upload" as const, item: "b.jsonl", reason: "connection refused" },
+      ],
+    };
+    const carried = recordToCarry(
+      earlier,
+      part({
+        issues: [],
+        report: report({
+          results: [{ file: "b.jsonl", status: "ok", messages: 1, attachments: 0 }],
+        }),
+      }),
+    );
     expect(carried.lastStopIssues).toEqual([]);
+    // A completion covers the whole run, and the resume reported these again.
     expect(wholeRun(earlier, part({ issues: [] })).lastStopIssues).toBeUndefined();
   });
 });

@@ -22,7 +22,7 @@ export type RunRecord = {
   /**
    * The issues of the latest stopped part that `issues` leaves out, because
    * a resume reports them again or because they explain the stop
-   * (`recordToCarry`). A resume never carries them; a Discard sends them,
+   * (`recordToCarry`). A resume never carries them. A Discard sends them,
    * since a discarded run is never resumed (`issuesToDiscard`).
    */
   lastStopIssues?: ImportIssue[];
@@ -160,9 +160,17 @@ export function recordToCarry(carried: RunRecord, part: RunPart): RunRecord {
     (issue.kind === "error" && issue.item === RUN_ERROR_ITEM) ||
     (issue.stage === "upload" && sentAgain.has(issue.item));
   const issues = part.issues.filter((issue) => !leftOut(issue));
+  // An earlier stop's conversation rows stand until an Upload reports on
+  // that conversation again: a part that stopped before its push reported
+  // anything says nothing about them. Its run error explained that stop
+  // only, and goes.
+  const reported = new Set((part.report?.results ?? []).map((result) => result.file));
+  const earlier = (carried.lastStopIssues ?? []).filter(
+    (issue) => issue.item !== RUN_ERROR_ITEM && !reported.has(issue.item),
+  );
   return {
     ...wholeRun(carried, { ...part, issues }),
-    lastStopIssues: part.issues.filter(leftOut),
+    lastStopIssues: [...earlier, ...part.issues.filter(leftOut)],
   };
 }
 

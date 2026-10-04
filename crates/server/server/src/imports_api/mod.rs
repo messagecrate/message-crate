@@ -619,7 +619,8 @@ pub(crate) struct CompleteImportRequest {
 /// come with the discard.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct DiscardImportRequest {
-    /// The run's Import Errors so far; empty when it recorded none.
+    /// The run's Import Errors so far. The list is empty when the run
+    /// recorded none.
     pub(crate) issues: Vec<ImportIssueRequest>,
 }
 

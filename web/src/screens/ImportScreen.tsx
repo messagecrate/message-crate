@@ -345,10 +345,10 @@ export default function ImportScreen() {
    * Import Errors its record holds, and its folder goes, so it must not
    * orphan a multi-GB folder. A folder that could not be deleted is shown
    * above the form (`stagingDeleteFailure`), never dropped without a word.
-   * Never touch disk for another device's session -- its files are staged
-   * there, not here -- the same `device_id` check `resumeDecisionFor` uses to
-   * route to `other_device` in the first place. A session with no recorded
-   * device is treated as this install's, matching that check too.
+   * A session staged on another device is never touched on disk here,
+   * because its files are staged on that device. The check is the same
+   * `device_id` check `resumeDecisionFor` uses to route to `other_device`,
+   * and a session with no recorded device counts as this install's there too.
    */
   async function discardSession(session: ActiveImportSession): Promise<void> {
     const thisDevice = !session.device_id || session.device_id === getDeviceId();

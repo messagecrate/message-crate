@@ -2276,7 +2276,10 @@ export interface components {
          *     come with the discard.
          */
         DiscardImportRequest: {
-            /** @description The run's Import Errors so far; empty when it recorded none. */
+            /**
+             * @description The run's Import Errors so far. The list is empty when the run
+             *     recorded none.
+             */
             issues: components["schemas"]["ImportIssueRequest"][];
         };
         /**
