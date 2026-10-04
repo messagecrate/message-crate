@@ -240,8 +240,8 @@ async fn a_blank_name_or_groups_cell_agrees_with_the_rows_that_fill_it() {
 #[tokio::test]
 async fn a_phone_is_stored_under_the_key_an_import_gives_the_same_number() {
     let (mut conn, _pool, _dir) = account().await;
-    // +65 5555 0100 is no one's number. The note on `mod tests` in
-    // `crates/libs/phone/src/lib.rs` says why.
+    // +65 5555 0100 is no one's number. The note on the `phone` crate's `mod
+    // tests` says why.
     let text = file(&[
         "a,Ada,,phone,phone,(555) 555-0100",
         "b,Bao,,phone,phone,+65 5555 0100",

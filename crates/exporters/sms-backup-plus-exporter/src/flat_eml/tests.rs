@@ -268,8 +268,8 @@ fn received_from(address: &str) -> ParsedMessage {
 
 #[test]
 fn an_international_number_keeps_its_country() {
-    // +65 5555 0100 is no one's number. The note on `mod tests` in
-    // `crates/libs/phone/src/lib.rs` says why.
+    // +65 5555 0100 is no one's number. The note on the `phone` crate's `mod
+    // tests` says why.
     let msg = received_from("+6555550100");
     assert_eq!(crate::identity::chat_id_for(&msg), "+6555550100");
 }

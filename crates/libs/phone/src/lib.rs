@@ -514,22 +514,34 @@ fn group_id_slug(digits: &[String]) -> String {
         .join("_")
 }
 
-/// Non-US test numbers, here and in every other crate, are no one's.
-/// Each comes from a range its regulator reserves for fiction. Where a
-/// country reserves none, the number starts with a digit no number there
-/// starts with.
+/// Non-US test numbers are no one's, in this crate and every other one
+/// outside the Demo Data generator (`demo-seed`). Each comes from a range
+/// its regulator reserves for fiction. Where a country reserves none, the
+/// number starts with a digit no number there starts with.
 ///
-/// - UK: 020 7946 0xxx and 07700 900xxx, Ofcom's drama numbers
+/// - UK: 020 7946 0xxx and 07700 900xxx. Source: Ofcom, "Telephone numbers
+///   for use in TV and radio drama programmes"
 ///   (<https://www.ofcom.org.uk/phones-and-broadband/phone-numbers/numbers-for-drama>).
-/// - France: 06 39 98 xx xx, ARCEP's numbers for audiovisual works.
-/// - Norway: 68 05 00 00 to 68 05 99 99, Nkom's series for film and TV
+/// - France: 06 39 98 xx xx. Source: ARCEP decision 2018-0881, Plan
+///   national de numérotation, "Numéros pour œuvres audiovisuelles", page 54
+///   (<https://www.arcep.fr/uploads/tx_gsavis/18-0881.pdf>).
+/// - Norway: 68 05 00 00 to 68 05 99 99. Source: Nkom, "Alle nummerserier
+///   for norske telefonnumre", the series for TV and film production
 ///   (<https://nkom.no/telefoni-og-telefonnummer/telefonnummer-og-den-norske-nummerplan/alle-nummerserier-for-norske-telefonnumre>).
-/// - Denmark reserves no numbers for fiction. No Danish number starts
-///   with 0, so the tests use +45 0123 4567.
-/// - Singapore reserves no numbers for fiction. IMDA's National Numbering
-///   Plan leaves numbers starting with 5 unassigned, so the tests use
-///   +65 5555 0100. Read as a US number without its `+`, it is still in
-///   555-0100.
+/// - Denmark reserves no numbers for fiction, as Energistyrelsen told
+///   Søndag Aften (<https://soendagaften.dk/2020/10/sverige-telefonnumre-reserveres-til-kunst/>).
+///   An eight-digit Danish number starts with 2 to 9, so the tests use
+///   +45 0123 4567. Source: BEK nr. 1883 af 07/12/2020, § 11, stk. 2
+///   (<https://www.retsinformation.dk/eli/lta/2020/1883>).
+/// - Singapore reserves no numbers for fiction. Leading digit 5 is
+///   "Reserved for future use", so the tests use +65 5555 0100. Source:
+///   IMDA, National Numbering Plan, Table 2.1
+///   (<https://www.imda.gov.sg/-/media/imda/files/regulation-licensing-and-consultations/frameworks-and-policies/numbering/national-numbering-plan-and-allocation-process/imda-national-numbering-plan.pdf>).
+///   Read as a US number without its `+`, it is still in 555-0100.
+/// - `+7700900123`, in `an_owner_given_with_plus_matches_its_national_form`,
+///   is the UK drama number 07700 900123 written after `+7` instead of
+///   `+44`. It has nine digits after the 7, one short of any number under
+///   country code 7.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -898,7 +910,7 @@ mod tests {
 
     #[test]
     fn a_number_written_with_plus_keeps_its_country() {
-        // +65 5555 0100 is no one's number: see the note on `mod tests`.
+        // +65 5555 0100 is no one's number: the note on `mod tests` says why.
         assert_eq!(
             parsed("+6555550100"),
             (HandleType::Phone, "+6555550100".into())

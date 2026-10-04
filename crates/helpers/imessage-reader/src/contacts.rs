@@ -485,8 +485,8 @@ mod tests {
 
         // An eleven-digit number is US only when it starts `+1`. A French
         // mobile has eleven digits too, and its last ten would match a US
-        // number that isn't this person's. 06 39 98 xx xx is ARCEP's range
-        // for fiction, so the number is no one's.
+        // number that isn't this person's. The number is no one's: the note
+        // on the `phone` crate's `mod tests` says why.
         let fr = phone_keys("+33 6 39 98 12 34");
         assert_eq!(
             fr,

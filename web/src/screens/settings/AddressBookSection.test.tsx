@@ -116,8 +116,8 @@ describe("AddressBookSection", () => {
   });
 
   it("lists each number the load read with its + back or made a new identity", async () => {
-    // +65 5555 0100 is no one's number. The note on `mod tests` in
-    // `crates/libs/phone/src/lib.rs` says why.
+    // +65 5555 0100 is no one's number. The note on the `phone` crate's `mod
+    // tests` says why.
     const notes = [
       'row 2: 6555550100 has no +, so it was read as +6555550100, which "Ada" (contact 4) holds',
       "row 5: 447700900123 has no +, so it became the new identity 447700900123",

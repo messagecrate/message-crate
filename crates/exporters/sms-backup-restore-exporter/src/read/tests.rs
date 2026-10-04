@@ -406,8 +406,8 @@ fn the_first_owner_number_given_is_the_owner_handle() {
 
 #[test]
 fn an_international_number_keeps_its_country() {
-    // +65 5555 0100 is no one's number. The note on `mod tests` in
-    // `crates/libs/phone/src/lib.rs` says why.
+    // +65 5555 0100 is no one's number. The note on the `phone` crate's `mod
+    // tests` says why.
     let docs = read_xml(
         r#"<sms protocol="0" address="+6555550100" date="1400773261000" type="1" body="hi"/><sms protocol="0" address="+447700900123" date="1400773261000" type="1" body="hi"/>"#,
     );
