@@ -472,18 +472,28 @@ pub(crate) fn hash_file(path: &Path) -> Result<String> {
 /// test looks only for paths under its own temporary directory.
 #[cfg(test)]
 pub(crate) mod hashed {
+    use std::collections::HashMap;
     use std::path::{Path, PathBuf};
-    use std::sync::Mutex;
+    use std::sync::{Mutex, OnceLock};
 
-    static PATHS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+    /// One count per path: the record grows with the distinct files the
+    /// tests hash, not with every hash.
+    fn counts() -> &'static Mutex<HashMap<PathBuf, usize>> {
+        static COUNTS: OnceLock<Mutex<HashMap<PathBuf, usize>>> = OnceLock::new();
+        COUNTS.get_or_init(Mutex::default)
+    }
 
     pub(super) fn record(path: &Path) {
-        PATHS.lock().unwrap().push(path.to_path_buf());
+        *counts()
+            .lock()
+            .unwrap()
+            .entry(path.to_path_buf())
+            .or_default() += 1;
     }
 
     /// How many times `path` has been hashed so far.
     pub(crate) fn count(path: &Path) -> usize {
-        PATHS.lock().unwrap().iter().filter(|p| *p == path).count()
+        counts().lock().unwrap().get(path).copied().unwrap_or(0)
     }
 }
 
