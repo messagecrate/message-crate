@@ -12618,25 +12618,17 @@
           "id",
           "participants",
           "message_count",
-          "last_message_at",
           "service",
           "is_group",
           "tags"
         ],
         "properties": {
-          "date_range_end": {
+          "first_message_at": {
             "type": [
               "string",
               "null"
             ],
-            "description": "Timestamp of the conversation's last message."
-          },
-          "date_range_start": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Timestamp of the conversation's first message."
+            "description": "Timestamp of the conversation's first message. Left out when every\nmessage in the conversation is a duplicate, so none is left to date it."
           },
           "id": {
             "type": "integer",
@@ -12659,7 +12651,7 @@
               "string",
               "null"
             ],
-            "description": "Timestamp of the last message; `null` when every message in the\nconversation is a duplicate, so none is left to date it."
+            "description": "Timestamp of the conversation's last message. Left out when every\nmessage in the conversation is a duplicate, so none is left to date it."
           },
           "message_count": {
             "type": "integer",
@@ -15188,25 +15180,17 @@
                 "id",
                 "participants",
                 "message_count",
-                "last_message_at",
                 "service",
                 "is_group",
                 "tags"
               ],
               "properties": {
-                "date_range_end": {
+                "first_message_at": {
                   "type": [
                     "string",
                     "null"
                   ],
-                  "description": "Timestamp of the conversation's last message."
-                },
-                "date_range_start": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "description": "Timestamp of the conversation's first message."
+                  "description": "Timestamp of the conversation's first message. Left out when every\nmessage in the conversation is a duplicate, so none is left to date it."
                 },
                 "id": {
                   "type": "integer",
@@ -15229,7 +15213,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "Timestamp of the last message; `null` when every message in the\nconversation is a duplicate, so none is left to date it."
+                  "description": "Timestamp of the conversation's last message. Left out when every\nmessage in the conversation is a duplicate, so none is left to date it."
                 },
                 "message_count": {
                   "type": "integer",

@@ -393,11 +393,44 @@ fn parallel_drain_stops_on_the_first_error() {
 }
 
 /// One attachments event's counts.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 struct AttachmentCounts {
     done: usize,
+    total: usize,
     bytes_done: u64,
     bytes_total: u64,
+}
+
+/// The counts of every attachments event in `events`, in order.
+fn attachment_counts(events: &[ProgressEvent]) -> Vec<AttachmentCounts> {
+    events
+        .iter()
+        .filter_map(|event| match *event {
+            ProgressEvent::Attachments {
+                done,
+                total,
+                bytes_done,
+                bytes_total,
+            } => Some(AttachmentCounts {
+                done,
+                total,
+                bytes_done,
+                bytes_total,
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The `(done, total)` of every prepare event in `events`, in order.
+fn prepare_counts(events: &[ProgressEvent]) -> Vec<(usize, usize)> {
+    events
+        .iter()
+        .filter_map(|event| match *event {
+            ProgressEvent::Prepare { done, total } => Some((done, total)),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Every attachments event a drain of `units` reported, in order, from a
@@ -426,22 +459,7 @@ fn attachment_bytes(units: Vec<ConversationUnit>, writer_count: usize) -> Vec<At
         drain_write_queue(&out, units, &options, None, Some(&sink), None).unwrap();
     }
 
-    let seen = seen.lock().unwrap();
-    seen.iter()
-        .filter_map(|event| match event {
-            ProgressEvent::Attachments {
-                done,
-                bytes_done,
-                bytes_total,
-                ..
-            } => Some(AttachmentCounts {
-                done: *done,
-                bytes_done: *bytes_done,
-                bytes_total: *bytes_total,
-            }),
-            _ => None,
-        })
-        .collect()
+    attachment_counts(&seen.lock().unwrap())
 }
 
 /// The last attachment count a run reported, from both kinds of drain.
@@ -505,6 +523,75 @@ fn the_byte_total_leaves_out_an_attachment_with_no_file_from_the_start() {
     }
 }
 
+/// Many writers finishing at once still send counts that belong together
+/// and only move forward, so the bar never steps back and ends on the full
+/// total (#1536). Each source claims 100 bytes for a 5-byte file, so an
+/// attachments event that mixes two moments shows up as bytes that do not
+/// match the attachments done.
+#[test]
+fn parallel_progress_counts_are_snapshots_that_never_go_back() {
+    const UNITS: usize = 64;
+    const PER_UNIT: usize = 3;
+    let units: Vec<_> = (1..=UNITS as u32)
+        .map(|i| {
+            ConversationUnit::from_doc(doc_with(&test_number(i), PER_UNIT), |_, _| {
+                (AttachmentSource::Bytes(b"xxxxx".to_vec()), Some(100))
+            })
+        })
+        .collect();
+    let total = UNITS * PER_UNIT;
+    let hinted = 100 * total as u64;
+    let tmp = tempfile::tempdir().unwrap();
+    let mut options = options(MediaMode::Clone, false);
+    options.writer_count = 8;
+    let seen = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
+    let sink_seen = Arc::clone(&seen);
+    let sink = ProgressSink::unpaced(move |event| sink_seen.lock().unwrap().push(event));
+
+    drain_write_queue(
+        &tmp.path().join("out"),
+        units,
+        &options,
+        None,
+        Some(&sink),
+        None,
+    )
+    .unwrap();
+
+    let seen = seen.lock().unwrap();
+    let attachments = attachment_counts(&seen);
+    for counts in &attachments {
+        let d = counts.done as u64;
+        assert_eq!(
+            (counts.bytes_done, counts.bytes_total),
+            (5 * d, hinted - 95 * d),
+            "an attachments event mixes two moments: {counts:?}"
+        );
+    }
+    for pair in attachments.windows(2) {
+        assert!(
+            pair[1].done > pair[0].done,
+            "attachments went back: {pair:?}"
+        );
+    }
+    let five_each = 5 * total as u64;
+    assert_eq!(
+        attachments.last(),
+        Some(&AttachmentCounts {
+            done: total,
+            total,
+            bytes_done: five_each,
+            bytes_total: five_each,
+        })
+    );
+
+    assert_eq!(
+        prepare_counts(&seen),
+        (0..=UNITS).map(|done| (done, UNITS)).collect::<Vec<_>>(),
+        "prepare events in order"
+    );
+}
+
 #[test]
 fn typed_progress_covers_prepare_and_attachments_across_units() {
     // The desktop's progress bar reads these events and nothing else, so
@@ -536,31 +623,18 @@ fn typed_progress_covers_prepare_and_attachments_across_units() {
         Some(&ProgressEvent::Prepare { done: 0, total: 4 }),
         "the unit count is announced before any file is written"
     );
-    // Two writers report concurrently, so emission order is not count
-    // order; the high-water marks are what must be right.
-    let attachments_high = seen
-        .iter()
-        .filter_map(|event| match event {
-            ProgressEvent::Attachments {
-                done,
-                total,
-                bytes_done,
-                bytes_total,
-            } => Some((*done, *total, *bytes_done, *bytes_total)),
-            _ => None,
+    // Two writers report concurrently, and each event still carries one
+    // moment's counts in count order, so the last one is the full total.
+    assert_eq!(
+        attachment_counts(&seen).last(),
+        Some(&AttachmentCounts {
+            done: 4,
+            total: 4,
+            bytes_done: 4,
+            bytes_total: 4,
         })
-        .max()
-        .unwrap();
-    assert_eq!(attachments_high, (4, 4, 4, 4));
-    let prepared_high = seen
-        .iter()
-        .filter_map(|event| match event {
-            ProgressEvent::Prepare { done, total } => Some((*done, *total)),
-            _ => None,
-        })
-        .max()
-        .unwrap();
-    assert_eq!(prepared_high, (4, 4));
+    );
+    assert_eq!(prepare_counts(&seen).last(), Some(&(4, 4)));
     assert!(
         !seen
             .iter()
@@ -604,16 +678,10 @@ fn sequential_drain_reports_prepare_in_order_and_counts_resumed_units() {
     )
     .unwrap();
 
-    let prepared: Vec<(usize, usize)> = seen
-        .lock()
-        .unwrap()
-        .iter()
-        .filter_map(|event| match event {
-            ProgressEvent::Prepare { done, total } => Some((*done, *total)),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(prepared, [(0, 2), (1, 2), (2, 2)]);
+    assert_eq!(
+        prepare_counts(&seen.lock().unwrap()),
+        [(0, 2), (1, 2), (2, 2)]
+    );
 }
 
 #[test]

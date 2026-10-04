@@ -122,10 +122,10 @@ export default function ConversationHeader({
         <div className="flex min-w-0 flex-wrap gap-x-2.5 text-[0.813rem] text-muted">
           {conversation.is_group ? <span>{conversation.participants.length} people</span> : null}
           {service ? <span>{service}</span> : null}
-          {conversation.date_range_start && conversation.date_range_end ? (
+          {conversation.first_message_at && conversation.last_message_at ? (
             <span>
-              {formatMonthYear(conversation.date_range_start, zone)} –{" "}
-              {formatMonthYear(conversation.date_range_end, zone)}
+              {formatMonthYear(conversation.first_message_at, zone)} –{" "}
+              {formatMonthYear(conversation.last_message_at, zone)}
             </span>
           ) : null}
           <span>{conversation.message_count.toLocaleString()} messages</span>
