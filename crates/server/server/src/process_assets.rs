@@ -390,7 +390,7 @@ impl<'a> AccountPass<'a> {
             let _ = fs::File::open(self.work_dir)
                 .and_then(|dir| dir.set_modified(std::time::SystemTime::now()));
             let outcome = self.process(db, row).await;
-            if self.stop.load(Ordering::Relaxed) {
+            if outcome.error.is_some() && self.stop.load(Ordering::Relaxed) {
                 // A conversion the stop killed is not a failure: it is made
                 // again by the next pass.
                 break;
