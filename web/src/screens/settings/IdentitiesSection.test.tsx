@@ -223,6 +223,24 @@ describe("IdentitiesSection", () => {
     });
   });
 
+  it("removes nothing and says why when the server lists an identity on a service it does not take", async () => {
+    const user = setupUser();
+    listAccountIdentities.mockResolvedValue([{ ...identities[0], service: "sms" }]);
+    render(<IdentitiesSection profile={profile} />);
+
+    await screen.findByText("30");
+    await user.click(screen.getByRole("button", { name: /^Remove \+15555550100/ }));
+    const dialog = await screen.findByRole("dialog", { name: "Remove identity?" });
+    await user.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    expect(
+      await within(dialog).findByText(
+        "The server listed +15555550100 on a service it does not take: sms.",
+      ),
+    ).toBeInTheDocument();
+    expect(mutateAsync).not.toHaveBeenCalled();
+  });
+
   // One number on Text Message and on WhatsApp: the profile's `phones` lists it
   // twice with no service, so only the identities say which one went.
   const both = { ...profile, phones: ["+15555550100", "+15555550100"] } as AccountProfile;

@@ -184,11 +184,11 @@ export default function ImportScreen() {
    * caught here and turned into `identityAddError` rather than an unhandled
    * rejection through the fire-and-forget `void onAdd(...)` call in
    * BackupIdentityList/BackupIdentityStopScreen. */
-  const addIdentityToProfile = async (value: string, service: IdentityType): Promise<void> => {
+  const addIdentityToProfile = async (value: string, type: IdentityType): Promise<void> => {
     setIdentityAddError(null);
     try {
       const updated = await updateProfile.mutateAsync({
-        identities: [{ address: value, service: serverService(service) }],
+        identities: [{ address: value, service: serverService(type) }],
       });
       if (!identityOnProfile(value, updated)) {
         throw new Error("no-op add");

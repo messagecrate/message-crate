@@ -23,7 +23,7 @@ export default function BackupIdentityStopScreen({
 }: {
   identities: string[];
   profile: { phones: string[]; emails: string[] } | null;
-  onAdd: (value: string, service: IdentityType) => Promise<void>;
+  onAdd: (value: string, type: IdentityType) => Promise<void>;
   onContinue: () => void;
   onCancel: () => void;
   busy?: boolean;

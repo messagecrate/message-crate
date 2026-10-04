@@ -4,8 +4,13 @@ import Button from "../../components/Button";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import IdentityTable, { type IdentityRow } from "../../components/IdentityTable";
 import type { AccountProfile } from "../../lib/account";
-import { identityType } from "../../lib/backupIdentity";
-import { type HandleService, listedServerService, serverService } from "../../lib/handleService";
+import {
+  type HandleService,
+  type ListedService,
+  listedServerService,
+  listedService,
+  serverService,
+} from "../../lib/handleService";
 import { phonesMatch } from "../../lib/phoneTokens";
 import { keys } from "../../lib/queryKeys";
 import { useRouteQuery } from "../../lib/routeQuery";
@@ -23,7 +28,7 @@ import { sectionTitleClass } from "./profileStyles";
  * is the `service` the list gives the identity: its service for a number, and
  * `email`, its type, for an email address on any service.
  */
-function listsIdentity(rows: Identity[], address: string, listedAs: string): boolean {
+function listsIdentity(rows: Identity[], address: string, listedAs: ListedService): boolean {
   const needle = address.trim().toLowerCase();
   return rows.some(
     (row) =>
@@ -106,7 +111,7 @@ export function IdentitiesSection({
    */
   const changeAndCheck = async (
     body: Parameters<typeof updateProfile.mutateAsync>[0],
-    { address, listedAs }: { address: string; listedAs: string },
+    { address, listedAs }: { address: string; listedAs: ListedService },
     { listed, notChanged }: { listed: boolean; notChanged: string },
   ) => {
     await updateProfile.mutateAsync(body);
@@ -127,7 +132,7 @@ export function IdentitiesSection({
   const confirmAdd = async ({ address, service }: { address: string; service: HandleService }) => {
     setAddError("");
     const identity = { address, service: serverService(service) };
-    const listedAs = identityType(address) === "email" ? "email" : identity.service;
+    const listedAs = listedService(address, identity.service);
     try {
       await changeAndCheck(
         { identities: [identity] },
@@ -145,16 +150,18 @@ export function IdentitiesSection({
 
   const confirmRemove = async () => {
     if (!removeTarget) return;
-    const { address, service: listedAs } = removeTarget;
+    const { address } = removeTarget;
     setRemoveError("");
     try {
-      const service = listedServerService(listedAs);
+      const service = listedServerService(removeTarget.service);
       if (service === undefined) {
-        throw new Error(`The server listed ${address} on a service it does not take: ${listedAs}.`);
+        throw new Error(
+          `The server listed ${address} on a service it does not take: ${removeTarget.service}.`,
+        );
       }
       await changeAndCheck(
         { remove_identities: [{ address, service }] },
-        { address, listedAs },
+        { address, listedAs: listedService(address, service) },
         {
           listed: false,
           notChanged: "The server did not remove that identity.",

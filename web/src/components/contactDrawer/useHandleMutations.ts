@@ -29,9 +29,12 @@ export function useHandleMutations({ contactId }: { contactId: string }) {
   const confirmRemoveHandle = () => {
     if (!removeTarget || busy) return;
     const address = removeTarget.address;
-    // With no service the server takes, none is named, and the server finds
-    // the identity on the phone service first, then WhatsApp.
-    const service = listedServerService(removeTarget.service);
+    // An email address names no service: the list calls it `email` whatever
+    // service it is on, and an import can store one on WhatsApp. With no
+    // service named, nor one the server takes, the server finds the identity
+    // on the phone service first, then WhatsApp.
+    const service =
+      removeTarget.service === "email" ? undefined : listedServerService(removeTarget.service);
     updateContact.mutate(
       { contactId, body: { remove_identity: { address, service } } },
       { onSuccess: () => setRemoveTarget(null) },

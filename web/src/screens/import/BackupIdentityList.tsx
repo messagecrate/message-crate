@@ -30,7 +30,7 @@ export default function BackupIdentityList({
    * add buttons both need it, so both wait on it: each row shows just the
    * identity value, with no mark and no button, until the profile loads. */
   profile: { phones: string[]; emails: string[] } | null;
-  onAdd: (value: string, service: IdentityType) => Promise<void>;
+  onAdd: (value: string, type: IdentityType) => Promise<void>;
   busy?: boolean;
   /** Set after an "Add to profile" call fails or silently didn't add the
    * address — a short factual line shown under the list, not tied to any
