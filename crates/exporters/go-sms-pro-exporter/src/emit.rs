@@ -811,6 +811,7 @@ mod tests {
                     content_type: "image/jpeg".into(),
                     digest_sha256: Some(d.to_string()),
                     name_hint: None,
+                    size_bytes: None,
                 })
                 .collect(),
             extra,

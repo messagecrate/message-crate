@@ -975,6 +975,10 @@ pub struct PendingAttachment {
     pub digest_sha256: Option<String>,
     /// Optional SMIL/content-location name.
     pub name_hint: Option<String>,
+    /// Length of the decoded payload in bytes; `None` when the exporter
+    /// does not hold the payload. Recorded whether or not the run copies
+    /// the payload, so a run that copies no attachments still writes it.
+    pub size_bytes: Option<u64>,
 }
 
 impl PendingAttachment {
@@ -983,9 +987,10 @@ impl PendingAttachment {
         (!self.content_type.is_empty()).then(|| self.content_type.clone())
     }
 
-    /// The IR attachment for a queued one, with neither a path nor bytes:
-    /// the runner that writes the file reads the payload by its digest and
-    /// fills both the path and the size in.
+    /// The IR attachment for a queued one, with neither a path nor bytes,
+    /// carrying the size when the exporter recorded one: the runner that
+    /// writes the file reads the payload by its digest and fills the path
+    /// in, and the size when it is still unknown.
     pub fn to_ir(&self) -> IrAttachment {
         IrAttachment {
             path: None,
@@ -995,7 +1000,7 @@ impl PendingAttachment {
             is_sticker: false,
             transcription: None,
             sticker_effect: None,
-            size_bytes: None,
+            size_bytes: self.size_bytes,
             missing_reason: None,
             bytes: None,
         }

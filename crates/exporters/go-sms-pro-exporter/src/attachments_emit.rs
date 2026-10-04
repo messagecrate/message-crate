@@ -7,7 +7,8 @@ use message_ir::PendingAttachment;
 use message_staging::AttachmentSpool;
 use sha2::{Digest, Sha256};
 
-/// Queue PDU attachment parts as metadata. With a `spool`, each payload is
+/// Queue PDU attachment parts as metadata, each with its payload's size
+/// whether or not the run copies it. With a `spool`, each payload is
 /// written to it here, so no attachment's bytes stay in memory until the
 /// shared runner writes them. The extension comes from the part's content
 /// type; a type the media table does not know gets `.bin` so the bytes are
@@ -39,6 +40,7 @@ pub(super) fn queue_pdu_attachments(
             content_type: att.content_type.clone(),
             digest_sha256: Some(digest_hex),
             name_hint: att.name.clone().or(Some(name)),
+            size_bytes: Some(att.data.len() as u64),
         });
     }
     Ok(out)

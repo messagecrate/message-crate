@@ -260,3 +260,34 @@ fn a_pdu_that_breaks_the_mms_rules_is_counted_and_named() {
         report.errors[0]
     );
 }
+
+/// A run that copies no attachments (media off) still records each
+/// attachment's size from the decoded payload, as SMS Backup & Restore does.
+#[test]
+fn a_run_that_copies_no_attachments_still_records_their_size() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("backup");
+    write_backup(&input);
+    let output = tmp.path().join("out");
+    convert_export(ConvertExportArgs {
+        input_dir: &input,
+        output_dir: &output,
+        owner_phones: &[OWNER.into()],
+        transforms: ExportTransforms {
+            media: media::MediaMode::Disabled,
+            ..ExportTransforms::none()
+        },
+        output_format: OutputFormat::Csv,
+        cancel: None,
+        resume: false,
+    })
+    .expect("convert_export");
+
+    let rows = rows_by_text(&output);
+    let attachments: Vec<serde_json::Value> =
+        serde_json::from_str(&rows["Look at this"]["attachments_json"]).expect("attachments_json");
+    assert_eq!(attachments.len(), 1, "{attachments:?}");
+    assert!(attachments[0]["path"].is_null(), "nothing was copied");
+    // `BuildPart::jpeg("IMG_1.jpg", 200)` is a 200-byte picture.
+    assert_eq!(attachments[0]["size_bytes"], 200);
+}

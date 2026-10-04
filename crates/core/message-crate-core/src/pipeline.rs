@@ -462,6 +462,7 @@ mod tests {
                     content_type: "image/jpeg".to_string(),
                     digest_sha256: None,
                     name_hint: None,
+                    size_bytes: None,
                 }]
             } else {
                 Vec::new()
