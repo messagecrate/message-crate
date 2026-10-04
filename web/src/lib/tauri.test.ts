@@ -31,6 +31,7 @@ function reportJson(overrides: Partial<PushFinishedReport> = {}): string {
   const report = {
     ok: true,
     cancelled: false,
+    session_refused: false,
     messages_attempted: 10,
     messages_inserted: 10,
     messages_deduped: 0,

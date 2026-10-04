@@ -20,6 +20,7 @@ const completeImportMock = vi.fn();
 const setImportStageMock = vi.fn();
 const saveRunRecordMock = vi.fn();
 const cancelMock = vi.fn();
+const deleteStagingMock = vi.fn();
 
 /** Settles the running push with the report the desktop side sends. */
 let finishPush: ((result: TauriJobResult) => void) | null = null;
@@ -42,7 +43,10 @@ vi.mock("../../lib/tauri", () => ({
     calls.push("pause recorded");
     saveRunRecordMock();
   },
-  invokeDeleteStaging: async () => {},
+  invokeDeleteStaging: async ({ staging_dir }: { staging_dir: string }) => {
+    calls.push(`deleted ${staging_dir}`);
+    await deleteStagingMock(staging_dir);
+  },
 }));
 
 vi.mock("../../lib/serverApi", async (importOriginal) => ({
@@ -81,6 +85,12 @@ const { useImportJob, resetImportRun } = await import("./useImportJob");
 
 const MIB = 1024 * 1024;
 
+const PAUSING = "Pausing the Upload. You are logged out once it has paused, or after 15 seconds.";
+const DELETED_PAUSING =
+  "Your account is deleted. Stopping its Upload before you are logged out, which takes at most 15 seconds.";
+const NOT_PAUSED =
+  "You were logged out before the Upload had paused. When you log in again, it resumes from what it had sent.";
+
 const form = {
   source: "imessage-ios",
   backupPath: "/backups/iphone.tar",
@@ -110,6 +120,7 @@ function pausedReport(): PushFinishedReport {
   return {
     ok: false,
     cancelled: true,
+    session_refused: false,
     messages_attempted: 4_000,
     messages_inserted: 4_000,
     messages_deduped: 0,
@@ -172,6 +183,7 @@ describe("logging out during an Upload", () => {
     setImportStageMock.mockResolvedValue(undefined);
     saveRunRecordMock.mockReset();
     cancelMock.mockReset();
+    deleteStagingMock.mockReset();
     // The push stops when the cancel flag is set, the way `run.rs` does.
     cancelMock.mockImplementation(() => finishPush?.({ summary: "Push", report: pausedReport() }));
   });
@@ -243,6 +255,168 @@ describe("logging out during an Upload", () => {
     await waitFor(() => expect(serverLogoutMock).toHaveBeenCalled());
     expect(screen.queryByText(/An Upload is running/)).toBeNull();
     expect(cancelMock).not.toHaveBeenCalled();
+  });
+
+  it("logs out after 15 seconds when the Upload does not pause, and says it resumes from what it sent", async () => {
+    const result = await startUpload();
+    // A push that does not stop when asked.
+    cancelMock.mockImplementation(() => {});
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      pressLogOut(result);
+      await user.click(await screen.findByRole("button", { name: "Log out" }));
+
+      expect(await screen.findByText(PAUSING)).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Log out now" })).toBeTruthy();
+      await act(() => vi.advanceTimersByTimeAsync(14_000));
+      expect(serverLogoutMock).not.toHaveBeenCalled();
+      expect(result.current.auth.isAuthenticated).toBe(true);
+
+      await act(() => vi.advanceTimersByTimeAsync(1_500));
+
+      await waitFor(() => expect(serverLogoutMock).toHaveBeenCalled());
+      expect(result.current.auth.isAuthenticated).toBe(false);
+      expect(getToken()).toBeNull();
+      expect(await screen.findByText(NOT_PAUSED)).toBeTruthy();
+      expect(calls).not.toContain("pause recorded");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("logs out at once on Log out now, without waiting for the Upload to pause", async () => {
+    const user = userEvent.setup();
+    const result = await startUpload();
+    cancelMock.mockImplementation(() => {});
+
+    pressLogOut(result);
+    await user.click(await screen.findByRole("button", { name: "Log out" }));
+    await user.click(await screen.findByRole("button", { name: "Log out now" }));
+
+    await waitFor(() => expect(serverLogoutMock).toHaveBeenCalled());
+    expect(result.current.auth.isAuthenticated).toBe(false);
+    expect(await screen.findByText(NOT_PAUSED)).toBeTruthy();
+    expect(screen.queryByText(PAUSING)).toBeNull();
+  });
+
+  it("ends the session when the server refuses the push's session, and records no failure", async () => {
+    const result = await startUpload();
+
+    // What run.rs reports when a 401 stops the push after 200 of 681.
+    act(() => {
+      finishPush?.({ summary: "Push", report: { ...pausedReport(), session_refused: true } });
+    });
+
+    await waitFor(() => expect(result.current.auth.isAuthenticated).toBe(false));
+    expect(getToken()).toBeNull();
+    // The server has already ended the session: there is nothing to revoke.
+    expect(serverLogoutMock).not.toHaveBeenCalled();
+    expect(completeImportMock).not.toHaveBeenCalled();
+    await act(() => result.current.auth.login("http://127.0.0.1:8080", "next-session-token", 7));
+    expect(result.current.job.summaryView?.status).toBe("paused");
+    expect(result.current.job.summaryView?.filesFailed).toBe(0);
+  });
+
+  it("deletes a deleted account's Staging Directories once the Upload has paused and the session is revoked", async () => {
+    const result = await startUpload();
+
+    await act(() =>
+      result.current.auth.logout({
+        ask: false,
+        deletedAccountDirectories: ["/home/sam/staging-iphone"],
+      }),
+    );
+
+    expect(calls).toEqual([
+      "push started",
+      "cancel",
+      "pause recorded",
+      "session revoked",
+      "deleted /home/sam/staging-iphone",
+    ]);
+    // The run went with the account: nothing resumes, and nothing says so.
+    expect(screen.queryByText(/resumes/)).toBeNull();
+    expect(screen.queryByText(/could not delete/)).toBeNull();
+  });
+
+  it("deletes a deleted account's folder only once an Upload that did not pause has ended", async () => {
+    const user = userEvent.setup();
+    const result = await startUpload();
+    // A push that does not stop when asked.
+    cancelMock.mockImplementation(() => {});
+
+    act(() => {
+      void result.current.auth.logout({
+        ask: false,
+        deletedAccountDirectories: ["/home/sam/staging-iphone"],
+      });
+    });
+    await user.click(await screen.findByRole("button", { name: "Log out now" }));
+    await waitFor(() => expect(serverLogoutMock).toHaveBeenCalled());
+
+    // The push may still write into its folder: nothing is deleted yet.
+    expect(calls).not.toContain("deleted /home/sam/staging-iphone");
+
+    act(() => {
+      finishPush?.({ summary: "Push", report: { ...pausedReport(), session_refused: true } });
+    });
+
+    await waitFor(() => expect(calls).toContain("deleted /home/sam/staging-iphone"));
+    expect(calls.indexOf("deleted /home/sam/staging-iphone")).toBeGreaterThan(
+      calls.indexOf("pause recorded"),
+    );
+  });
+
+  it("says the account is deleted while its Upload pauses", async () => {
+    const result = await startUpload();
+    cancelMock.mockImplementation(() => {});
+
+    act(() => {
+      void result.current.auth.logout({ ask: false, deletedAccountDirectories: [] });
+    });
+
+    expect(await screen.findByText(DELETED_PAUSING)).toBeTruthy();
+    expect(screen.queryByText(PAUSING)).toBeNull();
+  });
+
+  it("leaves a later login alone when an Upload it outlived is refused", async () => {
+    const user = userEvent.setup();
+    const result = await startUpload();
+    cancelMock.mockImplementation(() => {});
+
+    pressLogOut(result);
+    await user.click(await screen.findByRole("button", { name: "Log out" }));
+    await user.click(await screen.findByRole("button", { name: "Log out now" }));
+    await waitFor(() => expect(result.current.auth.isAuthenticated).toBe(false));
+    await act(() => result.current.auth.login("http://127.0.0.1:8080", "next-session-token", 7));
+
+    // The old push meets its revoked session only now.
+    act(() => {
+      finishPush?.({ summary: "Push", report: { ...pausedReport(), session_refused: true } });
+    });
+    await waitFor(() => expect(isUploadRunning()).toBe(false));
+
+    expect(result.current.auth.isAuthenticated).toBe(true);
+    expect(getToken()).toBe("next-session-token");
+  });
+
+  it("names a deleted account's Staging Directory it could not delete", async () => {
+    deleteStagingMock.mockRejectedValueOnce(new Error("permission denied"));
+    const result = await logIn();
+
+    await act(() =>
+      result.current.auth.logout({
+        ask: false,
+        deletedAccountDirectories: ["/home/sam/staging-iphone", "/home/sam/staging-android"],
+      }),
+    );
+
+    const notice = await screen.findByRole("dialog");
+    expect(notice).toHaveTextContent("Message Crate could not delete");
+    expect(notice).toHaveTextContent("/home/sam/staging-iphone: permission denied");
+    expect(notice).not.toHaveTextContent("/home/sam/staging-android");
+    expect(calls).toContain("deleted /home/sam/staging-android");
   });
 
   it("pauses the Upload without asking when the account was just deleted", async () => {

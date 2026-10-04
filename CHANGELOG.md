@@ -126,12 +126,13 @@ released versions carry their date on the heading.
   also makes each contact in the file match its rows, so deleting a row
   takes that identity off the contact. Contacts the file does not mention
   are left alone. A load does exactly what the file says and never corrects
-  it: a row moves only the identity it lists, so to move a number on both
-  Text Message and WhatsApp, give each its own row. A file with a mistake in
-  it is refused whole, and each row at fault is listed with its reason, so
-  nothing is half loaded. Message Crate no longer reads a phone's vCard
-  file, which put every number on a card into your contacts whether or not
-  a message ever used it.
+  it: a name in the file replaces the contact's name, even one you typed in
+  the app, and a row moves only the identity it lists, so to move a number
+  on both Text Message and WhatsApp, give each its own row. A file with a
+  mistake in it is refused whole, and each row at fault is listed with its
+  reason, so nothing is half loaded. Message Crate no longer reads a phone's
+  vCard file, which put every number on a card into your contacts whether
+  or not a message ever used it.
 - 2026-10-01 **The Demo Account has Contact Groups.** Demo Data is now built
   the way your own Message Crate is: its messages are imported first, and an
   Address Book then names the people in them and puts them in Family, Work,
@@ -261,6 +262,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **Logging out during an Upload waits at most 15 seconds, and
+  an Upload whose session ends pauses cleanly.** Logging out during an
+  Upload waited for the Upload to pause for as long as that took, and an
+  Upload that did not stop kept you logged in. Logout now waits at most 15
+  seconds, with a **Log out now** button, and then logs out anyway and
+  says the Upload resumes from what it had sent. When your session ended
+  while an Upload ran and nothing else noticed, the Upload kept going and
+  recorded every remaining conversation as failed. It now pauses at once,
+  records none of them as failed, and logs you out.
 - 2026-10-04 **A group imported from two backups takes its current name,
   however the backups arrive.** When two copies of one group chat became
   one conversation, the name it ended with depended on whether they came
@@ -757,6 +767,18 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-04 **An import names a nameless contact, whatever made it.** A
+  contact with a number and no name stayed Unknown after an import that knew
+  the number's name, when an Address Book load or you had made it rather
+  than an earlier import. An import now fills in any contact's missing name.
+  It still never changes a name a contact already has.
+- 2026-10-04 **A misspelt service no longer puts an identity on Text
+  Message.** Adding, swapping or removing a contact's identity, or one of your
+  own, takes Text Message or WhatsApp and nothing else. Any other service used
+  to be read as Text Message without a word, so a WhatsApp number with a typo
+  in its service landed on Text Message; now the server refuses it and says
+  which two it takes. An email address is added on Text Message, where
+  iMessage reaches it, as the app already does for you.
 - 2026-10-04 **One number is one identity however it arrives.** A number
   written with `tel:` in front, in a backup that gave no type for it, became
   a separate identity from the same number as a message sender, on a contact
@@ -860,6 +882,13 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-04 **Deleting your account in the desktop app deletes its
+  Staging Directories on this computer.** Deleting your own account during
+  or after an import left that import's Staging Directory on disk, with
+  nothing to offer it again. The delete dialog now names the account's
+  Staging Directories on this computer, deleting the account deletes them,
+  and one that cannot be deleted is named afterwards so you can remove it
+  by hand.
 - 2026-10-03 **An expired session says to log in again.** When your
   session had expired, or was ended from another window, an Upload or an
   Export said "invalid API key", though the app sends no API key. It now

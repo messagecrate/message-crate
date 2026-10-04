@@ -27,7 +27,7 @@ use crate::credentials::{
     require_username_free, require_valid_username,
 };
 use crate::db::audit_trail::{self, AuditAction, AuditActor, Details, NewEntry};
-use crate::db::handles::{self, Identity};
+use crate::db::handles::{self, Identity, IdentityService};
 use crate::db::permissions::Permission;
 use crate::db::storage::{self, Scope};
 use crate::db::{WriteTx, begin_write};
@@ -462,10 +462,10 @@ pub async fn get_account(
 pub struct LinkAccountIdentityRequest {
     /// The address as typed, e.g. `+15555550100` or `alex@example.com`.
     pub address: String,
-    /// Platform the address belongs to: `phone`, `email` (the phone
-    /// platform), or `whatsapp`. It never decides the identity's type, which
-    /// comes from the address; an email address on WhatsApp is refused.
-    pub service: String,
+    /// The service the address is on. It never decides the identity's type,
+    /// which comes from the address: an email address is on the phone
+    /// service, and one on WhatsApp is refused.
+    pub service: IdentityService,
 }
 
 /// One identity to unlink from the account, with its platform service.
@@ -473,10 +473,10 @@ pub struct LinkAccountIdentityRequest {
 pub struct UnlinkAccountIdentityRequest {
     /// The address as typed, e.g. `+15555550100` or `alex@example.com`.
     pub address: String,
-    /// Platform the address belongs to: `phone`, `email` (the phone
-    /// platform), or `whatsapp`. It never decides the identity's type, which
-    /// comes from the address.
-    pub service: String,
+    /// The service the address is on. It never decides the identity's type,
+    /// which comes from the address: an email address is on the phone
+    /// service.
+    pub service: IdentityService,
 }
 
 /// Body for changing an account. Omitted fields are left alone. The name,
@@ -551,9 +551,6 @@ impl UpdateAccountRequest {
 /// Why a profile update was refused.
 #[derive(Debug, thiserror::Error)]
 enum ProfileUpdateError {
-    /// The client named an identity service the profile does not support.
-    #[error("unsupported identity service: {0}")]
-    UnsupportedService(String),
     /// The service cannot carry an identity of the address's type: an email
     /// address on WhatsApp.
     #[error(transparent)]
@@ -575,22 +572,10 @@ impl From<sqlx::Error> for ProfileUpdateError {
 impl From<ProfileUpdateError> for ApiError {
     fn from(e: ProfileUpdateError) -> Self {
         match e {
-            err @ (ProfileUpdateError::UnsupportedService(_)
-            | ProfileUpdateError::ServiceCannotCarry(_)
+            err @ (ProfileUpdateError::ServiceCannotCarry(_)
             | ProfileUpdateError::UnknownTimeZone(_)) => Self::validation(err.to_string()),
             ProfileUpdateError::Db(err) => Self::Internal(err),
         }
-    }
-}
-
-/// The platform a client `service` string names. `email` is the phone
-/// platform, where iMessage reaches an email address. The service never
-/// decides an identity's type, which comes from the address (#1432).
-fn parse_profile_service(service: &str) -> std::result::Result<HandleService, ProfileUpdateError> {
-    match service.trim().to_ascii_lowercase().as_str() {
-        "phone" | "email" => Ok(HandleService::Phone),
-        "whatsapp" => Ok(HandleService::Whatsapp),
-        other => Err(ProfileUpdateError::UnsupportedService(other.to_string())),
     }
 }
 
@@ -619,7 +604,7 @@ async fn apply_profile_update(
         if raw.is_empty() {
             continue;
         }
-        let service = parse_profile_service(&entry.service)?;
+        let service = HandleService::from(entry.service);
         let handle_type = handles::handle_type_of(raw);
         account_profile::unlink_account_handle(conn, account_id, raw, handle_type, service).await?;
     }
@@ -629,7 +614,7 @@ async fn apply_profile_update(
         if raw.is_empty() {
             continue;
         }
-        let service = parse_profile_service(&entry.service)?;
+        let service = HandleService::from(entry.service);
         let handle_type = handles::handle_type_of(raw);
         handles::check_service_carries(raw, service, handle_type)?;
         account_profile::link_account_handle_with_service(

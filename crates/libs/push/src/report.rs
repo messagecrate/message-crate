@@ -92,7 +92,7 @@ pub struct UploadProfile {
 }
 
 /// Final summary of a whole push (also written to disk as the report file).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PushReport {
     /// `true` when no conversation failed and the run was not cancelled.
     pub ok: bool,
@@ -100,8 +100,14 @@ pub struct PushReport {
     /// not finish sending are in `conversations_cancelled`, and the journal
     /// leaves them for the next push. A failed request also stops the run
     /// and leaves `cancelled` rows, but this stays `false`, so a caller can
-    /// tell a pause from a failure.
+    /// tell a pause from a failure. A session the server refused mid-run
+    /// stops the run through the same flag, so it is `true` then too.
     pub cancelled: bool,
+    /// `true` when the server refused the session token during the run (it
+    /// expired or was ended), which stopped the run as for a cancel. The
+    /// requests it refused fail no conversation. The caller ends the session
+    /// on its side as well, since every later request would be refused.
+    pub session_refused: bool,
     /// Account id the token resolved to.
     pub account: i64,
     /// Username the server reports for that account, else the account id.
@@ -306,6 +312,7 @@ mod tests {
         PushReport {
             ok: true,
             cancelled: false,
+            session_refused: false,
             account: 1,
             username: "user".into(),
             mode: ImportMode::Append,

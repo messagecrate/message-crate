@@ -5,7 +5,7 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use message_ir::{HandleService, HandleType};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
 use crate::search::bridge::{TrashScope, contact_sent_messages_from};
@@ -60,6 +60,32 @@ pub fn check_service_carries(
             address: address.to_string(),
         }),
         _ => Ok(()),
+    }
+}
+
+/// The service an identity is on, as a request names it: `phone` or
+/// `whatsapp`. `phone` is Text Message, which carries SMS, MMS, iMessage and
+/// RCS, and reaches an email address through iMessage. The service never
+/// decides the identity's type, which comes from the address.
+//
+// Any other word is refused, naming the two. Read as `phone`, a misspelt
+// `whatsap` put an identity on Text Message without a word (#1630), and
+// `email` lived on as a second name for `phone` (#1631).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum IdentityService {
+    /// Text Message: SMS, MMS, iMessage and RCS.
+    Phone,
+    /// WhatsApp.
+    Whatsapp,
+}
+
+impl From<IdentityService> for HandleService {
+    fn from(service: IdentityService) -> Self {
+        match service {
+            IdentityService::Phone => Self::Phone,
+            IdentityService::Whatsapp => Self::Whatsapp,
+        }
     }
 }
 

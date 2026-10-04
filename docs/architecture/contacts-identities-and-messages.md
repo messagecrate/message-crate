@@ -189,6 +189,16 @@ the same number as a sender as `phone`, and one that read the service typed
 `ada@example.com` added under iMessage as a phone number
 ([#1432](https://github.com/messagecrate/message-crate/issues/1432)).
 
+**A request names a service as `phone` or `whatsapp`, and nothing else.** A
+contact edit and an account's own identities take those two words and refuse
+any other, naming the two. An email address is on `phone`, where iMessage
+reaches it.
+Why: every other word was read as `phone`, so a misspelt `whatsap` put an
+identity on Text Message without a word
+([#1630](https://github.com/messagecrate/message-crate/issues/1630)), and
+once the address decided the type, `email` was only a second name for `phone`
+([#1631](https://github.com/messagecrate/message-crate/issues/1631)).
+
 **Swapping a contact's identity finds the old one on its own service.** The
 edit names the old address and the new one, and may name a service for the
 new one. The old identity is the one on the named service when the address
@@ -204,9 +214,14 @@ edit refuses rather than moving the identity to the phone service, because
 the person did not ask for a service change.
 
 **An import names only a nameless contact.** When the backup knows a name and
-the contact has none, the import sets it and marks it as imported. A name a
-person types or loads from an address book replaces an imported one. A later
-backup with a different spelling does not. See
+the contact has none, the import sets it, whatever made the contact: an
+earlier import, an address book load, or the person. A name a person types
+or loads from an address book replaces an imported one. A later backup with a
+different spelling does not. Why: a blank name has nothing to protect, and a
+nameless contact a load or the person made would otherwise stay Unknown
+though the backup knows who it is. Rejected: naming only a contact an import
+made, a condition from before the address book load existed, when an
+import's contact was the only nameless kind (#1058). See
 [ADR 0006](../adr/0006-an-import-names-the-contact.md).
 
 **The address book is a file for editing contacts, not a source of them.**
@@ -239,8 +254,12 @@ conversations and the person is Unknown for it again, as after a contact
 delete. A contact absent from the file is left alone in both modes, and no
 mode deletes a contact, except one left with neither a name nor an identity,
 which nothing could ever reach. A loaded name replaces the name the contact
-carried, an imported one and a typed one alike, because the file is the
-person typing; a blank name says nothing and leaves the name alone. A
+carried, an imported one and a typed one alike, because a load applies
+exactly what the file says (below) and the file is the person typing; a
+blank name says nothing and leaves the name alone. Rejected: protecting a
+typed name from a load (#1057). An exported file carries the typed name, so
+a load straight back changes nothing either way, and a different name in the
+file is the person saying so. A
 group name that matches no Contact Group creates one. Why: the export can be
 a subset (a search, the checked rows), so a file that spoke for the whole
 account would delete everyone it did not mention, and a file that could only

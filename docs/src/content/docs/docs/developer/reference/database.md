@@ -130,8 +130,9 @@ per handle per account).
 `origin` on both tables records what made the row: `import`, `user`, or
 `address_book`. An address book load writes `address_book` on a contact it
 creates and on every link it makes or moves. A contact a load only renames
-keeps its origin. Nothing reads `origin` to decide what a load may change:
-a load changes the contacts its file names, and no others.
+keeps its origin. Nothing reads `origin` to decide what a load or an
+import may change: a load changes the contacts its file names, and no others,
+and an import names a contact whose name is blank, whatever made it.
 
 ### The address book file
 

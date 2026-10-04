@@ -1,12 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { isAndroidSmsSource, needsOwnerEmails, splitEmails } from "../lib/androidSmsSources";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
-import {
-  type IdentityService,
-  identityOnProfile,
-  parseSourceIdentities,
-} from "../lib/backupIdentity";
+import { type IdentityType, identityOnProfile, parseSourceIdentities } from "../lib/backupIdentity";
 import { getDeviceId } from "../lib/deviceId";
+import { serverService } from "../lib/handleService";
 import {
   emptyImessagePathStats,
   IMESSAGE_DEFAULT_METHOD,
@@ -187,11 +184,11 @@ export default function ImportScreen() {
    * caught here and turned into `identityAddError` rather than an unhandled
    * rejection through the fire-and-forget `void onAdd(...)` call in
    * BackupIdentityList/BackupIdentityStopScreen. */
-  const addIdentityToProfile = async (value: string, service: IdentityService): Promise<void> => {
+  const addIdentityToProfile = async (value: string, type: IdentityType): Promise<void> => {
     setIdentityAddError(null);
     try {
       const updated = await updateProfile.mutateAsync({
-        identities: [{ address: value, service }],
+        identities: [{ address: value, service: serverService(type) }],
       });
       if (!identityOnProfile(value, updated)) {
         throw new Error("no-op add");

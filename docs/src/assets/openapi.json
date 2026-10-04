@@ -12198,7 +12198,7 @@
       },
       "AddContactIdentityRequest": {
         "type": "object",
-        "description": "An address to link plus optional platform service.",
+        "description": "An address to link, and the service to link it on.",
         "required": [
           "address"
         ],
@@ -12208,11 +12208,15 @@
             "description": "The address to link."
           },
           "service": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Platform service, `phone` or `whatsapp` (any other value is read as\n`phone`); the phone service when omitted. It never decides the identity's type, which comes from the\naddress. A new email address on WhatsApp is refused."
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/IdentityService",
+                "description": "The service to link it on; the phone service when omitted. It never\ndecides the identity's type, which comes from the address. A new email\naddress on WhatsApp is refused."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -13981,6 +13985,14 @@
           }
         }
       },
+      "IdentityService": {
+        "type": "string",
+        "description": "The service an identity is on, as a request names it: `phone` or\n`whatsapp`. `phone` is Text Message, which carries SMS, MMS, iMessage and\nRCS, and reaches an email address through iMessage. The service never\ndecides the identity's type, which comes from the address.",
+        "enum": [
+          "phone",
+          "whatsapp"
+        ]
+      },
       "ImportContact": {
         "type": "object",
         "description": "One contact an import run touched, and what the run did to it.",
@@ -14393,8 +14405,8 @@
             "description": "The address as typed, e.g. `+15555550100` or `alex@example.com`."
           },
           "service": {
-            "type": "string",
-            "description": "Platform the address belongs to: `phone`, `email` (the phone\nplatform), or `whatsapp`. It never decides the identity's type, which\ncomes from the address; an email address on WhatsApp is refused."
+            "$ref": "#/components/schemas/IdentityService",
+            "description": "The service the address is on. It never decides the identity's type,\nwhich comes from the address: an email address is on the phone\nservice, and one on WhatsApp is refused."
           }
         }
       },
@@ -17072,11 +17084,15 @@
             "description": "The address to unlink."
           },
           "service": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Platform service, when the identity is linked with one."
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/IdentityService",
+                "description": "The service the identity is on. When omitted, the identity is found on\nthe phone service first, then WhatsApp."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
@@ -17461,8 +17477,8 @@
             "description": "The address as typed, e.g. `+15555550100` or `alex@example.com`."
           },
           "service": {
-            "type": "string",
-            "description": "Platform the address belongs to: `phone`, `email` (the phone\nplatform), or `whatsapp`. It never decides the identity's type, which\ncomes from the address."
+            "$ref": "#/components/schemas/IdentityService",
+            "description": "The service the address is on. It never decides the identity's type,\nwhich comes from the address: an email address is on the phone\nservice."
           }
         }
       },
@@ -17558,11 +17574,15 @@
             "description": "The address currently linked."
           },
           "service": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Platform service of the new address. The previous address is found on\nits own service whatever this names: on the named service first when\nit is there under more than one, else the phone service, then\nWhatsApp. When omitted, the new address takes the service of the\nprevious one. It never decides the new identity's type, which comes\nfrom the address, and a new email address on WhatsApp is refused."
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/IdentityService",
+                "description": "The service of the new address. The previous address is found on\nits own service whatever this names: on the named service first when\nit is there under more than one, else the phone service, then\nWhatsApp. When omitted, the new address takes the service of the\nprevious one. It never decides the new identity's type, which comes\nfrom the address, and a new email address on WhatsApp is refused."
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         }
       },
