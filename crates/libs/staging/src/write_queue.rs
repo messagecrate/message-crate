@@ -109,18 +109,7 @@ impl ConversationUnit {
         for (message_index, msg) in doc.messages.iter_mut().enumerate() {
             let timestamp_unix_ms = msg.timestamp_unix_ms;
             for (attachment_index, att) in msg.attachments.iter_mut().enumerate() {
-                let (source, size_hint) = match source_for(flat, att) {
-                    // No bytes reads as no file, so say so before any total
-                    // is summed rather than when the run reaches it.
-                    (AttachmentSource::Bytes(bytes), _) if bytes.is_empty() => {
-                        (AttachmentSource::Missing, None)
-                    }
-                    // An attachment with no file is never copied, so its hint
-                    // counts toward no byte total: not the progress, not the
-                    // disk check.
-                    (AttachmentSource::Missing, _) => (AttachmentSource::Missing, None),
-                    found => found,
-                };
+                let (source, size_hint) = counted_source(source_for(flat, att));
                 attachments.push(UnitAttachment {
                     message_index,
                     attachment_index,
@@ -375,14 +364,43 @@ fn leave_out_files_that_are_gone(
             continue;
         }
         for attachment in &mut unit.attachments {
-            if let AttachmentSource::Path(path) = &attachment.source
-                && !path.is_file()
-            {
-                emit_log(log, unreadable_attachment_line(path, "no file there"));
-                attachment.source = AttachmentSource::Missing;
-                attachment.size_hint = None;
-            }
+            leave_out_a_gone_file(&mut attachment.source, &mut attachment.size_hint, log);
         }
+    }
+}
+
+/// One attachment's source and size hint as a run counts them: a source
+/// known before the run to have no file, `Missing` or bytes that are empty,
+/// becomes `Missing` with no hint. An attachment with no file is never
+/// copied, so its hint counts toward no byte total, not the progress and
+/// not the disk check, and saying so before any total is summed keeps the
+/// total from dropping when the run reaches it. Both the write queue and
+/// the sink arm of [`ExportWriter::finish`](crate::ExportWriter::finish)
+/// count sources this way.
+pub(crate) fn counted_source(
+    (source, size_hint): (AttachmentSource, Option<u64>),
+) -> (AttachmentSource, Option<u64>) {
+    match source {
+        AttachmentSource::Bytes(bytes) if bytes.is_empty() => (AttachmentSource::Missing, None),
+        AttachmentSource::Missing => (AttachmentSource::Missing, None),
+        found => (found, size_hint),
+    }
+}
+
+/// Make a `Path` source with no file there `Missing`, with no size hint,
+/// and log it as the read would have logged it (#1581). Only for a loader
+/// that reads a path from disk, as [`load_attachment_source`] does.
+pub(crate) fn leave_out_a_gone_file(
+    source: &mut AttachmentSource,
+    size_hint: &mut Option<u64>,
+    log: Option<&LogSink>,
+) {
+    if let AttachmentSource::Path(path) = source
+        && !path.is_file()
+    {
+        emit_log(log, unreadable_attachment_line(path, "no file there"));
+        *source = AttachmentSource::Missing;
+        *size_hint = None;
     }
 }
 

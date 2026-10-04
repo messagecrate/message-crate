@@ -4,7 +4,8 @@
 use crate::headroom::{Disk, bytes_to_write, check_headroom};
 use crate::spool::AttachmentSpool;
 use crate::write_queue::{
-    AttachmentSource, ConversationUnit, WriteQueueOptions, drain_units, load_attachment_source,
+    AttachmentSource, ConversationUnit, WriteQueueOptions, counted_source, drain_units,
+    leave_out_a_gone_file, load_attachment_source,
 };
 use anyhow::Result;
 use media::{CompressOptions, MediaMode};
@@ -256,19 +257,27 @@ impl ExportWriter {
         }
 
         let mut documents = documents;
-        // Gather sources in flat document order; staging loads by that index.
-        let mut sources: Vec<AttachmentSource> = Vec::new();
+        let mut jobs = message_crate_core::attachment_jobs(message_crate_core::document_messages(
+            &mut documents,
+        ));
+        // Gather sources in flat document order; staging loads by that
+        // index. Every attachment known now to have no file is `Missing`
+        // with no hint, so neither the disk check nor the progress total
+        // counts it, and the total never drops when the run reaches it, as
+        // in the queue arm (#1701). With media off nothing is read, so no
+        // path is checked.
+        let mut sources: Vec<AttachmentSource> = Vec::with_capacity(jobs.len());
         let mut sizes: Vec<(Option<String>, u64)> = Vec::new();
-        for doc in &mut documents {
-            for msg in &mut doc.messages {
-                for att in &mut msg.attachments {
-                    let (source, hint) = source_for(att);
-                    if !matches!(source, AttachmentSource::Missing) {
-                        sizes.push((att.digest_sha256.clone(), hint.unwrap_or(0)));
-                    }
-                    sources.push(source);
-                }
+        for job in &mut jobs {
+            let (mut source, mut hint) = counted_source(source_for(job.attachment));
+            if self.media_mode != MediaMode::Disabled {
+                leave_out_a_gone_file(&mut source, &mut hint, self.log.as_ref());
             }
+            if !matches!(source, AttachmentSource::Missing) {
+                sizes.push((job.attachment.digest_sha256.clone(), hint.unwrap_or(0)));
+            }
+            job.size_hint = hint;
+            sources.push(source);
         }
         let sizes: Vec<(Option<&str>, u64)> = sizes
             .iter()
@@ -282,8 +291,8 @@ impl ExportWriter {
         if self.media_mode != MediaMode::Disabled {
             check_headroom(&self.output_dir, needed, Disk::Staging)?;
         }
-        report.attachments_saved += message_crate_core::stage_conversation_attachments(
-            message_crate_core::document_messages(&mut documents),
+        report.attachments_saved += message_crate_core::stage_attachment_jobs(
+            jobs,
             &self.attachments_dir,
             &message_crate_core::MediaConfig {
                 mode: self.media_mode,
@@ -313,8 +322,10 @@ impl ExportWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use message_crate_core::ProgressEvent;
     use message_crate_core::testutil::names_in;
     use std::fs;
+    use std::sync::{Arc, Mutex};
 
     fn transforms(obfuscate: bool) -> ExportTransforms {
         ExportTransforms {
@@ -400,6 +411,79 @@ mod tests {
                 .count();
             assert_eq!(written, 1, "{format:?}: one conversation file");
         }
+    }
+
+    /// An export to a format other than JSON Lines knows before it starts
+    /// which attachments have no file: a path with nothing there and a
+    /// source with no bytes. Its byte total leaves them out from the first
+    /// event and never drops mid-run, as the write queue's does (#1701).
+    #[test]
+    fn the_byte_total_of_a_csv_export_stays_the_same_when_a_file_is_gone() {
+        let tmp = tempfile::tempdir().unwrap();
+        let seen = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
+        let sink_seen = Arc::clone(&seen);
+        let progress = ProgressSink::unpaced(move |event| sink_seen.lock().unwrap().push(event));
+        let writer = ExportWriter::open(
+            &tmp.path().join("out"),
+            OutputFormat::Csv,
+            ExportTransforms {
+                progress: Some(progress),
+                ..transforms(false)
+            },
+            false,
+        )
+        .unwrap();
+        let mut doc = document_with_bytes();
+        let attachment = doc.messages[0].attachments[0].clone();
+        // The real attachment comes first, so the first event is sent before
+        // the run reaches a missing one and could take its size off.
+        doc.messages[0].attachments = [5, 700, 1_000]
+            .map(|size| IrAttachment {
+                size_bytes: Some(size),
+                ..attachment.clone()
+            })
+            .to_vec();
+        let mut sources = vec![
+            AttachmentSource::Bytes(b"xxxxx".to_vec()),
+            AttachmentSource::Bytes(Vec::new()),
+            AttachmentSource::Path(tmp.path().join("gone.jpg")),
+        ]
+        .into_iter();
+
+        writer
+            .finish(
+                vec![doc],
+                &mut |att: &mut IrAttachment| (sources.next().unwrap(), att.size_bytes),
+                None,
+                &mut ExportReport::default(),
+            )
+            .unwrap();
+
+        let totals: Vec<(usize, u64, u64)> = seen
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|event| match *event {
+                ProgressEvent::Attachments {
+                    done,
+                    bytes_done,
+                    bytes_total,
+                    ..
+                } => Some((done, bytes_done, bytes_total)),
+                _ => None,
+            })
+            .collect();
+        assert!(totals.len() > 1, "{totals:?}");
+        assert!(
+            totals.iter().all(|&(_, _, bytes_total)| bytes_total == 5),
+            "every total: {totals:?}"
+        );
+        assert_eq!(
+            totals
+                .last()
+                .map(|&(done, bytes_done, _)| (done, bytes_done)),
+            Some((3, 5))
+        );
     }
 
     /// Every format that is not JSON Lines checks the staging disk for room

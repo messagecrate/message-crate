@@ -679,6 +679,14 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-04 **Converting a backup to a format other than JSON Lines no
+  longer jumps forward when a file the backup names is not there.** The
+  byte total counted such a file's size and took it off only when the
+  conversion reached it, so the percentage leapt ahead partway through, as
+  Staging's did before. A file that is not on disk, and an attachment with
+  no bytes, are now left out of the total, and out of the check for room
+  on the disk, before the conversion starts. A file that is not there is
+  also named in the log now.
 - 2026-10-04 **Converting an SMS Backup & Restore backup says what it
   left out.** The log said nothing about the repeated copies it dropped,
   the messages with an invalid date, a date outside the range, no usable
