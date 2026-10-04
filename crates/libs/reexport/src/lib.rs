@@ -16,9 +16,7 @@ use message_ir_format::{
 };
 use message_staging::{AttachmentSpool, Disk, bytes_to_write, check_headroom};
 use sms_backup_plus_exporter::SmsBackupPlusArchive;
-use sms_backup_restore_exporter::{
-    ReadOptions, ReadReport, SbrArchive, read_backup, stage_read_attachments,
-};
+use sms_backup_restore_exporter::{ReadOptions, SbrArchive, read_backup, stage_read_attachments};
 use std::collections::HashSet;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
@@ -50,9 +48,6 @@ struct ReexportReport {
     /// The name of the format written when it holds only SMS and MMS, for
     /// the line that says how many messages were left out of it.
     sms_only_format: Option<&'static str>,
-    /// What the SMS Backup & Restore reader dropped, skipped and could not
-    /// read, one line each; empty for every other input.
-    read_lines: Vec<String>,
     /// Conversations written, attachments a convert or compress pass
     /// staged, the media pass, and obfuscation.
     report: ExportReport,
@@ -60,11 +55,10 @@ struct ReexportReport {
 
 impl ReexportReport {
     /// Lines for the run's log. The desktop app shows the last line again as
-    /// the run's summary, so the reader's lines and the left-out line come
-    /// before `Conversations:` and never close the log.
+    /// the run's summary, so the left-out line comes before `Conversations:`
+    /// and never closes the log.
     fn log_lines(&self) -> Vec<String> {
         let mut lines = vec![format!("Detected input format: {}", self.detected_format)];
-        lines.extend(self.read_lines.iter().cloned());
         lines.extend(
             self.sms_only_format
                 .and_then(|format| self.report.not_sms_or_mms_line(format)),
@@ -105,13 +99,11 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
     // The input is read before the output is cleaned, so an input the read
     // refuses, such as a file of another schema version or a broken SMS
     // backup, stops the run with the previous output left as it was.
-    let (mut documents, sms_backup, read_lines) = if detected.format == OutputFormat::Xml {
+    let (mut documents, sms_backup) = if detected.format == OutputFormat::Xml {
         let backup = SmsBackupRead::open(&inputs[0], output, &config.cache_dir, copy_attachments);
-        let (documents, read) = backup.read(config)?;
-        (documents, Some(backup), read.log_lines())
+        (backup.read(config)?, Some(backup))
     } else {
-        let documents = read_conversation_files(input_dir, detected.format)?;
-        (documents, None, Vec::new())
+        (read_conversation_files(input_dir, detected.format)?, None)
     };
     if documents.is_empty() {
         bail!("no conversations loaded from {}", input_dir.display());
@@ -174,7 +166,6 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
     Ok(ReexportReport {
         detected_format: detected.format.as_str().to_string(),
         sms_only_format,
-        read_lines,
         report,
     })
 }
@@ -357,9 +348,17 @@ impl SmsBackupRead {
     }
 
     /// Read every conversation in the backup without writing to the output
-    /// outside the spool, with the reader's counts and errors for the log.
-    fn read(&self, config: &ExporterConfig) -> Result<(Vec<ConversationDocument>, ReadReport)> {
-        read_backup(&self.input, self.options(config))
+    /// outside the spool. What the reader dropped, skipped and could not
+    /// read goes to the log the moment the read returns, so a run that then
+    /// fails, such as one that found no conversation, still says why. It
+    /// comes before every line of the run's summary, `Conversations:`
+    /// included.
+    fn read(&self, config: &ExporterConfig) -> Result<Vec<ConversationDocument>> {
+        let (documents, report) = read_backup(&self.input, self.options(config))?;
+        for line in report.log_lines() {
+            config.emit_log(line);
+        }
+        Ok(documents)
     }
 
     /// Stage the spooled attachments into the output's `attachments/`.

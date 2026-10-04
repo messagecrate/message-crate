@@ -273,6 +273,9 @@ released versions carry their date on the heading.
   and took it off only when Staging reached it, so the percentage leapt
   ahead partway through. A file that is not on disk, and an attachment
   with no bytes, are now left out of the total before Staging starts.
+  Apple Messages from an encrypted iPhone backup is the one exception:
+  its files are inside the backup, so one that is missing there is still
+  found only when Staging reaches it.
 - 2026-10-04 **Resuming an import waits while another job runs.** The
   Import screen offered to resume a paused or waiting import while an
   export or a conversion was running, and the desktop app then refused
@@ -658,7 +661,8 @@ released versions carry their date on the heading.
   the messages with an invalid date, no usable address or an unknown
   type, the drafts, or the message parts it could not read, and it named
   only the first five files it could not read. It now lists each count
-  before the conversation count, and names every file it could not read.
+  as soon as the backup is read, even when the conversion then stops, and
+  names every file it could not read.
 - 2026-10-04 **Exporting from a second server or account no longer makes
   the first download every attachment again.** When Export from two
   servers, or two accounts, wrote into one directory, the run that

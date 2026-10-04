@@ -1,7 +1,8 @@
 use super::*;
-use message_crate_core::{FormatConfig, MediaConfig, ObfuscateConfig, SourceConfig};
+use message_crate_core::{FormatConfig, LogSink, MediaConfig, ObfuscateConfig, SourceConfig};
 use message_ir::IrAttachment;
 use message_ir_format::{read_conversation_csv, read_conversation_json};
+use std::sync::{Arc, Mutex};
 
 fn write_fixture(dir: &Path, format: OutputFormat) {
     fs::create_dir_all(dir).unwrap();
@@ -401,68 +402,87 @@ fn run_converts_an_export_and_reports_the_detected_format() {
     );
 }
 
+/// A committed SMS Backup & Restore backup under this crate's
+/// `tests/fixtures/`.
+fn sms_fixture(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name)
+}
+
+/// The config of a Convert from `input`, with every line it logs as it
+/// runs.
+fn logged_config(input: &Path, output: &Path) -> (ExporterConfig, Arc<Mutex<Vec<String>>>) {
+    let lines = Arc::new(Mutex::new(Vec::new()));
+    let sink_lines = Arc::clone(&lines);
+    let mut config = config(input, output, OutputFormat::Csv);
+    config.log = Some(LogSink::new(move |line: &str| {
+        sink_lines.lock().unwrap().push(line.to_string());
+    }));
+    (config, lines)
+}
+
 /// Convert from an SMS Backup & Restore backup says what its reader
 /// dropped and skipped, before the `Conversations:` line the desktop app
 /// shows as the run's summary, and names every file it could not read, not
-/// only the first five (#1603).
+/// only the first five (#1603). The fixture holds one of each kind, and six
+/// files cut off partway.
 #[test]
 fn run_from_an_sms_backup_logs_the_reader_counts_and_every_error() {
-    let source = tempfile::tempdir().unwrap();
-    let kept =
-        r#"<sms protocol="0" address="+15555550101" date="1400773261000" type="1" body="kept"/>"#;
-    fs::write(
-        source.path().join("smses.xml"),
-        format!(
-            r#"<smses>{kept}{kept}<sms address="+15555550101" date="soon" type="1" body="bad date"/><sms address="" date="1400773262000" type="1" body="no address"/><sms address="+15555550101" date="1400773263000" type="9" body="odd type"/><sms address="+15555550101" date="1400773264000" type="3" body="draft"/><mms date="1400773265000" msg_box="1" address="+15555550101"><parts><part ct="text/plain" text="picture"/><part ct="image/jpeg" name="a.jpg" data="@@@not-base64@@@"/></parts><addrs><addr address="+15555550101" type="137"/><addr address="+15555550100" type="151"/></addrs></mms></smses>"#
-        ),
-    )
-    .unwrap();
-    // Six files the reader cannot read to the end, one more than the five
-    // errors the log used to keep.
-    for n in 1..=6 {
-        fs::write(
-            source.path().join(format!("broken-{n}.xml")),
-            format!(r#"<smses><sms address="+1555555011{n}" date="1400773261000" type="1" body="cut"/></broken>"#),
-        )
-        .unwrap();
-    }
     let destination = tempfile::tempdir().unwrap();
+    let (config, logged) = logged_config(&sms_fixture("sms-backup-every-skip"), destination.path());
 
-    let result = run(&config(
-        source.path(),
-        destination.path(),
-        OutputFormat::Csv,
-    ))
-    .unwrap();
+    let result = run(&config).unwrap();
 
-    let lines = &result.messages;
-    let conversations = lines
-        .iter()
-        .position(|line| line.starts_with("Conversations:"))
-        .expect("a Conversations line");
-    let before = &lines[..conversations];
+    let logged = logged.lock().unwrap().clone();
     for expected in [
-        "  dropped 1 duplicate rows",
-        "  skipped 1 invalid-date rows",
-        "  skipped 1 messages with no usable address",
-        "  skipped 1 messages of an unknown type",
-        "  skipped 1 drafts and unsent messages",
-        "  skipped 1 unreadable message parts",
+        "Dropped 1 repeated copy of a message",
+        "Skipped 1 message with an invalid date",
+        "Skipped 1 message with no usable address",
+        "Skipped 1 message of an unknown type",
+        "Skipped 1 draft or unsent message",
+        "Skipped 1 MMS with no participants",
+        "Skipped 1 message part that could not be read",
+        "Dropped 1 character reference that is not a character",
     ] {
         assert!(
-            before.iter().any(|line| line == expected),
-            "{expected:?} before Conversations: {lines:#?}"
+            logged.iter().any(|line| line == expected),
+            "{expected:?} in the log: {logged:#?}"
         );
     }
     for n in 1..=6 {
         let name = format!("broken-{n}.xml");
         assert!(
-            before
+            logged
                 .iter()
-                .any(|line| line.starts_with("  xml warning: ") && line.contains(&name)),
-            "an error for {name} before Conversations: {lines:#?}"
+                .any(|line| line.starts_with("xml warning: ") && line.contains(&name)),
+            "an error for {name} in the log: {logged:#?}"
         );
     }
+    // The run's summary lines follow everything logged as it ran.
+    assert_eq!(
+        result.messages.first().map(String::as_str),
+        Some("Detected input format: xml")
+    );
+}
+
+/// A backup whose every message is skipped stops the run with no
+/// conversation, and the log still says why each was skipped (#1603).
+#[test]
+fn a_convert_that_keeps_no_message_still_logs_why() {
+    let destination = tempfile::tempdir().unwrap();
+    let (config, logged) =
+        logged_config(&sms_fixture("sms-backup-nothing-kept"), destination.path());
+
+    let err = run(&config).unwrap_err().to_string();
+
+    assert!(err.contains("no conversations loaded"), "{err}");
+    let logged = logged.lock().unwrap().clone();
+    assert!(
+        logged.contains(&"Skipped 1 message with no usable address".to_string())
+            && logged.contains(&"Skipped 1 message of an unknown type".to_string()),
+        "{logged:#?}"
+    );
 }
 
 #[test]
@@ -492,7 +512,6 @@ fn log_lines_name_the_detected_format_and_the_conversation_count() {
     let report = ReexportReport {
         detected_format: "mbox".to_string(),
         sms_only_format: None,
-        read_lines: Vec::new(),
         report: ExportReport {
             conversations: 3,
             ..ExportReport::default()
@@ -513,7 +532,6 @@ fn log_lines_append_the_media_lines_after_the_count() {
     let report = ReexportReport {
         detected_format: "json".to_string(),
         sms_only_format: None,
-        read_lines: Vec::new(),
         report: ExportReport {
             conversations: 1,
             attachments_saved: 4,

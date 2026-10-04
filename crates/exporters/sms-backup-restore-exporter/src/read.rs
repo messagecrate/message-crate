@@ -66,47 +66,72 @@ impl ReadReport {
     /// error, so a person can tell what did not come across.
     pub fn log_lines(&self) -> Vec<String> {
         let counts = [
-            (self.duplicates_dropped, "dropped", "duplicate rows"),
-            (self.skipped_invalid_date, "skipped", "invalid-date rows"),
+            (
+                self.duplicates_dropped,
+                "Dropped",
+                "repeated copy of a message",
+                "repeated copies of messages",
+            ),
+            (
+                self.skipped_invalid_date,
+                "Skipped",
+                "message with an invalid date",
+                "messages with an invalid date",
+            ),
+            (
+                self.skipped_out_of_range,
+                "Skipped",
+                "message outside the date range",
+                "messages outside the date range",
+            ),
             (
                 self.skipped_unknown_address,
-                "skipped",
+                "Skipped",
+                "message with no usable address",
                 "messages with no usable address",
             ),
             (
                 self.skipped_unknown_type,
-                "skipped",
+                "Skipped",
+                "message of an unknown type",
                 "messages of an unknown type",
             ),
             (
                 self.skipped_draft_or_outbox,
-                "skipped",
-                "drafts and unsent messages",
+                "Skipped",
+                "draft or unsent message",
+                "drafts or unsent messages",
             ),
             (
                 self.skipped_empty_participants,
-                "skipped",
+                "Skipped",
+                "MMS with no participants",
                 "MMS with no participants",
             ),
             (
                 self.skipped_unreadable_part,
-                "skipped",
-                "unreadable message parts",
+                "Skipped",
+                "message part that could not be read",
+                "message parts that could not be read",
             ),
             (
                 self.dropped_character_references,
-                "dropped",
-                "character references that are not a character",
+                "Dropped",
+                "character reference that is not a character",
+                "character references that are not characters",
             ),
         ];
         counts
             .into_iter()
-            .filter(|(count, _, _)| *count > 0)
-            .map(|(count, verb, what)| format!("  {verb} {count} {what}"))
+            .filter(|(count, ..)| *count > 0)
+            .map(|(count, verb, one, many)| {
+                let what = if count == 1 { one } else { many };
+                format!("{verb} {count} {what}")
+            })
             .chain(
                 self.errors
                     .iter()
-                    .map(|error| format!("  xml warning: {error}")),
+                    .map(|error| format!("xml warning: {error}")),
             )
             .collect()
     }
