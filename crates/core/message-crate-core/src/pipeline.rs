@@ -105,6 +105,15 @@ pub struct RunIssue {
 /// caveat. The Import Run lists notes apart from its Import Errors.
 pub const NOTE: &str = "note";
 
+/// The note an exporter sends for a chat that names its person with no
+/// address, which it keeps under the name alone.
+pub const NAME_ONLY_CHAT_NOTE: &str = "This chat names its person with no phone number or email \
+     address, so the conversation is kept under the name alone.";
+
+/// The reason an exporter gives for a CSV it cannot read, before the
+/// parser's own words.
+pub const CSV_NOT_READ: &str = "This CSV could not be read and was left out";
+
 /// The [`RunIssue::step`] of a row an exporter records while it reads the
 /// backup.
 const READ_STEP: &str = "parse";
@@ -225,11 +234,17 @@ impl ExportReport {
         self.send(NOTE, item, text);
     }
 
-    /// Count one item the run kept with a caveat under `counter`, and send a
-    /// note that names it to `issues`. The log keeps the count, which says
-    /// as much as a line per item would.
-    pub fn caveat(&mut self, counter: &str, item: impl Into<String>, text: impl Into<String>) {
-        self.bump(counter, 1);
+    /// Count `by` under `counter` for one item the run kept with a caveat,
+    /// and send a note that names the item to `issues`. The log keeps the
+    /// count, which says as much as a line per item would.
+    pub fn caveat(
+        &mut self,
+        counter: &str,
+        by: u64,
+        item: impl Into<String>,
+        text: impl Into<String>,
+    ) {
+        self.bump(counter, by);
         self.send(NOTE, item.into(), text.into());
     }
 

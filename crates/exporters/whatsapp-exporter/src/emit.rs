@@ -309,6 +309,7 @@ fn queue_media(
     if src_path.is_none() {
         report.caveat(
             message_crate_core::ATTACHMENTS_MISSING,
+            1,
             src,
             "This attachment's file is not in the backup, so its message is kept without it.",
         );

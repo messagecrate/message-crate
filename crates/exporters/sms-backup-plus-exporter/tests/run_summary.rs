@@ -402,3 +402,43 @@ fn a_group_member_whose_address_has_two_numbers_keeps_the_address() {
         )]
     );
 }
+
+/// A mail kept with a part that could not be decoded is a note naming the
+/// mail, so the person learns which message lost a part (#1535 review).
+#[test]
+fn a_message_kept_without_a_part_it_could_not_read_is_a_note() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("backup");
+    fs::create_dir_all(&input).unwrap();
+    fs::write(
+        input.join("1.eml"),
+        "From: x@unknown.email\nTo: me@example.com\nSubject: SMS with X\nX-smssync-type: 1\n\
+         X-smssync-address: 4075550107\nX-smssync-date: 1609459200000\nMIME-Version: 1.0\n\
+         Content-Type: multipart/mixed; boundary=\"b\"\n\n\
+         --b\nContent-Type: text/plain; charset=utf-8\n\nhi\n\
+         --b\nContent-Type: image/jpeg\nContent-Transfer-Encoding: base64\n\n@@@@\n--b--\n",
+    )
+    .unwrap();
+    let output = tmp.path().join("out");
+    let mut config = jsonl_run_config(&[&input], &output, source(true));
+    let issues = collect_issues(&mut config);
+
+    let result = crate::run(&config).expect("run");
+
+    assert!(
+        result
+            .messages
+            .iter()
+            .any(|l| l == "  skipped_unreadable_part: 1"),
+        "{:?}",
+        result.messages
+    );
+    assert_eq!(
+        *issues.lock().unwrap(),
+        [note(
+            "1.eml",
+            "1 part of this message could not be read and was left out. The message itself is \
+             kept."
+        )]
+    );
+}

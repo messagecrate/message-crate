@@ -161,7 +161,7 @@ impl Ingest {
             Err(e) => {
                 self.report.error(
                     path.display().to_string(),
-                    format!("This CSV could not be read and was left out: {e:#}"),
+                    format!("{}: {e:#}", message_crate_core::CSV_NOT_READ),
                 );
                 return;
             }
@@ -239,9 +239,9 @@ impl Ingest {
                     // Counted once per conversation, not once per row.
                     report.caveat(
                         "name_only_chat",
+                        1,
                         format!("{} ({name})", path.display()),
-                        "This chat names its person with no phone number or email address, so \
-                         the conversation is kept under the name alone.",
+                        message_crate_core::NAME_ONLY_CHAT_NOTE,
                     );
                 }
                 Pending {

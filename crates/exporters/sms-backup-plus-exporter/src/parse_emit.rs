@@ -80,10 +80,20 @@ pub(super) enum ParsedEmlKind {
     /// A call from the phone's call log; Message Crate has no model for a call.
     CallLog,
     NotSms,
-    /// The file could not be read: its path and why.
-    IoError(String, String),
-    /// The file is not a mail: its path and why.
-    ParseError(String, String),
+    /// The file could not be read.
+    IoError {
+        /// The file's path.
+        path: String,
+        /// Why it could not be read.
+        reason: String,
+    },
+    /// The file is not a mail.
+    ParseError {
+        /// The file's path.
+        path: String,
+        /// Why it could not be parsed.
+        reason: String,
+    },
     /// Cooperative cancel observed at the start of a parallel worker.
     Cancelled,
 }
@@ -93,16 +103,19 @@ pub(super) fn parse_one_eml(eml_path: &Path, rel_path: String, owner: &Owner) ->
     let bytes = match std::fs::read(eml_path) {
         Ok(b) => b,
         Err(err) => {
-            return ParsedEmlKind::IoError(eml_path.display().to_string(), err.to_string());
+            return ParsedEmlKind::IoError {
+                path: eml_path.display().to_string(),
+                reason: err.to_string(),
+            };
         }
     };
     let mail = match mailparse::parse_mail(&bytes) {
         Ok(m) => m,
         Err(err) => {
-            return ParsedEmlKind::ParseError(
-                eml_path.display().to_string(),
-                format!("parse EML: {err}"),
-            );
+            return ParsedEmlKind::ParseError {
+                path: eml_path.display().to_string(),
+                reason: format!("parse EML: {err}"),
+            };
         }
     };
     let headers = MailHeaders::from_mail(&mail);

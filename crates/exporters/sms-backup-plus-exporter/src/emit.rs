@@ -282,6 +282,7 @@ fn project_and_count(
         if caveats.owner_not_named.contains(eml_path) {
             report.caveat(
                 GROUP_MESSAGES_OWNER_NOT_NAMED,
+                1,
                 eml_path,
                 "This group message names none of your phone numbers or email addresses, so it \
                  is kept as a one-to-one message from its sender.",
@@ -290,6 +291,7 @@ fn project_and_count(
         if caveats.unknown_chat.contains(eml_path) {
             report.caveat(
                 UNKNOWN_CHAT_MESSAGES,
+                1,
                 eml_path,
                 "This message records no phone number or email address for the other person, \
                  so it is kept in a conversation under the name the message gives, or with \
@@ -601,19 +603,32 @@ impl<'a> EmlIngest<'a> {
             ParsedEmlKind::Flat { msg } => {
                 self.report.bump("flat_eml", 1);
                 if msg.unreadable_parts > 0 {
-                    self.report
-                        .bump("skipped_unreadable_part", msg.unreadable_parts);
+                    let text = match msg.unreadable_parts {
+                        1 => "1 part of this message could not be read and was left out. The \
+                              message itself is kept."
+                            .to_string(),
+                        n => format!(
+                            "{n} parts of this message could not be read and were left out. \
+                             The message itself is kept."
+                        ),
+                    };
+                    self.report.caveat(
+                        "skipped_unreadable_part",
+                        msg.unreadable_parts,
+                        msg.eml_path.as_str(),
+                        text,
+                    );
                 }
                 self.add_parsed(*msg)?;
             }
             ParsedEmlKind::FlatNone => self.report.bump("skipped_parse_error", 1),
             ParsedEmlKind::CallLog => self.report.bump("skipped_call_log", 1),
             ParsedEmlKind::NotSms => self.report.bump("skipped_not_sms_backup_plus", 1),
-            ParsedEmlKind::IoError(path, reason) => self.report.error(
+            ParsedEmlKind::IoError { path, reason } => self.report.error(
                 path,
                 format!("This file could not be read and was left out: {reason}"),
             ),
-            ParsedEmlKind::ParseError(path, reason) => {
+            ParsedEmlKind::ParseError { path, reason } => {
                 self.report.bump("skipped_parse_error", 1);
                 self.report.error(
                     path,
@@ -672,7 +687,7 @@ impl<'a> EmlIngest<'a> {
                 continue;
             }
             for address in &addresses {
-                self.report.caveat(counter, address.as_str(), text);
+                self.report.caveat(counter, 1, address.as_str(), text);
             }
             verbose.line(format!(
                 "group members with {what} in the archive, kept by email address: {}",

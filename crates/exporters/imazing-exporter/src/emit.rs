@@ -357,7 +357,7 @@ impl Ingest {
             Err(e) => {
                 self.report.error(
                     discovered.path.display().to_string(),
-                    format!("This CSV could not be read and was left out: {e:#}"),
+                    format!("{}: {e:#}", message_crate_core::CSV_NOT_READ),
                 );
                 return Ok(());
             }
@@ -422,14 +422,15 @@ impl Ingest {
         if session.key.is_name_only() {
             self.report.caveat(
                 "name_only_chat",
+                1,
                 format!("{csv_path} ({session_name})"),
-                "This chat names its person with no phone number or email address, so the \
-                 conversation is kept under the name alone.",
+                message_crate_core::NAME_ONLY_CHAT_NOTE,
             );
         }
         for label in &session.unresolved_roster_labels {
             self.report.caveat(
                 "unresolved_group_participants",
+                1,
                 format!("{csv_path} ({label})"),
                 "The group's name lists this member, but no message gives their phone number or \
                  email address, so they are kept by name.",
