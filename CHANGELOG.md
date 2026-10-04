@@ -242,6 +242,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **An iMazing import no longer reports a Live Photo choice as an
+  error, and leaves WhatsApp chat folders' extra files alone.** When two
+  photo rows named one picture, the import gave its Live Photo video to the
+  first of them, as it should, but its report listed that as an error. The
+  report now lists it as a note. The import also looked for Live Photo
+  videos and link previews in WhatsApp chat folders, though only iMazing's
+  Messages export holds them. It could attach a video beside a WhatsApp
+  photo to that photo's message. It also counted the folder's other files
+  as left out. It now looks for them in Messages chat folders only.
 - 2026-10-04 **iMazing and Apple Messages imports name a folder they cannot
   read in full.** When an iMazing chat folder held an entry that could not
   be read, the rows whose files were in it came through with no photo or
