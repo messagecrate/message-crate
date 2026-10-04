@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import { canUseConvert } from "../lib/desktopFeatures";
 import { parseSelectKey } from "../lib/selectKey";
 import { isTauri } from "../lib/tauri-check";
+import { focusRing } from "../lib/uiStyles";
 import { useSettingsAccount } from "../lib/useSettingsAccount";
 import { AccountSettingsPanel } from "./settings/AccountSettingsPanel";
 import { AppearanceSection } from "./settings/AppearanceSection";
@@ -84,7 +85,7 @@ function tabClassName({ isSelected, isDisabled }: { isSelected: boolean; isDisab
   const tone = isDisabled
     ? "cursor-default text-muted opacity-50"
     : `cursor-pointer ${isSelected ? "text-text" : "text-muted hover:text-text"}`;
-  return `relative -mb-px border-none bg-transparent px-3 py-2 text-[0.813rem] font-medium outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-accent ${tone}`;
+  return `relative -mb-px border-none bg-transparent px-3 py-2 text-[0.813rem] font-medium transition-colors duration-200 ${focusRing} ${tone}`;
 }
 
 /** A new account has an Account section to fill in; the rest waits for the account. */

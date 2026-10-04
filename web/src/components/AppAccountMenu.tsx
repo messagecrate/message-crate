@@ -1,5 +1,6 @@
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../lib/auth";
+import { focusRing } from "../lib/uiStyles";
 import { useAccountProfile } from "../lib/useAccountProfile";
 import { useIsOwner } from "../lib/useIsOwner";
 import { GearIcon, LogOutIcon, PersonIcon } from "./icons";
@@ -45,7 +46,7 @@ export default function AppAccountMenu() {
           <PlainButton
             aria-label="Account menu"
             title={username || undefined}
-            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-border bg-transparent p-0 text-text outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent aria-expanded:bg-hover"
+            className={`flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-border bg-transparent p-0 text-text hover:bg-hover aria-expanded:bg-hover ${focusRing}`}
           >
             <PersonIcon size={18} />
           </PlainButton>

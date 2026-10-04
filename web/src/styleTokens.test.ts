@@ -79,6 +79,14 @@ describe("colors are theme tokens", () => {
 });
 
 describe("focus rings", () => {
+  // A comment line is blanked, not dropped, so the line numbers stay right.
+  const comment = /^\s*(\/\/|\/\*|\*)/;
+  const code = (text: string) =>
+    text
+      .split("\n")
+      .map((line) => (comment.test(line) ? "" : line))
+      .join("\n");
+
   // A ring offset is a box-shadow in a colour of its own, white unless a class
   // sets it, so it drew a white line round every focused button in the dark
   // theme (#1703). `focusRing` leaves the gap as an outline offset, which shows
@@ -105,16 +113,40 @@ describe("focus rings", () => {
         /\.style\.outline/.source,
       ].join("|"),
     );
-    // A comment line is blanked, not dropped, so the line numbers stay right.
-    const comment = /^\s*(\/\/|\/\*|\*)/;
-    const code = (text: string) =>
-      text
-        .split("\n")
-        .map((line) => (comment.test(line) ? "" : line))
-        .join("\n");
     const found = sources()
       .filter(([path]) => path !== "lib/uiStyles.ts")
       .flatMap(([path, text]) => hits(path, code(text), outline));
+    expect(found).toEqual([]);
+  });
+
+  // A ring drawn flush against the element on focus was a third focus style
+  // beside `focusRing` and the inset ring (#1717). A focus ring outside
+  // lib/uiStyles.ts is the style guide's inset ring, for an element that draws
+  // its ring inside itself (a table row, a resize grip): every ring class under
+  // a variant that names focus (`focus-visible:`, `data-focus-visible:`,
+  // `has-[…:focus-visible]:` and the rest) has `ring-inset` under the same
+  // variant on its line, and a ring on a line that reads React Aria's
+  // `isFocused` or `isFocusVisible` has a bare `ring-inset`. Anything else
+  // takes `focusRing` or `focusOutline`.
+  it("no source outside lib/uiStyles.ts draws a focus ring that is not inset", () => {
+    const ringClass = /(?<=^|[\s"'`])([^\s"'`]*:)?ring-(?!inset\b|offset-)[^\s"'`]+/g;
+    const flushRings = (line: string) => {
+      const classes = new Set(line.split(/[\s"'`]+/));
+      return [...line.matchAll(ringClass)].filter((m) => {
+        const variant = m[1] ?? "";
+        const onFocus = variant.includes("focus") || (variant === "" && /\bisFocus/.test(line));
+        return onFocus && !classes.has(`${variant}ring-inset`);
+      });
+    };
+    const found = sources()
+      .filter(([path]) => path !== "lib/uiStyles.ts")
+      .flatMap(([path, text]) =>
+        code(text)
+          .split("\n")
+          .flatMap((line, i) =>
+            flushRings(line).length > 0 ? [`${path}:${i + 1}: ${line.trim()}`] : [],
+          ),
+      );
     expect(found).toEqual([]);
   });
 

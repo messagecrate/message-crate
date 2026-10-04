@@ -10,7 +10,7 @@
 /**
  * Lifts an element one step above its siblings, inside whatever stacking
  * context they share: a list row's lead cell over the row's stretched select
- * button, a table's column grip over the header cell beside it.
+ * button.
  */
 export const Z_LIFT = "z-[1]";
 
