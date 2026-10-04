@@ -1,6 +1,7 @@
 import { useCallback, useSyncExternalStore } from "react";
 import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
 import { useAuth } from "../../lib/auth";
+import { holdDesktopJob } from "../../lib/desktopJob";
 import type { StagingSummary } from "../../lib/tauri";
 import { type ImportPhase, type ImportStep, stepsFor } from "./importProgressState";
 import type { ImportJobFormValues } from "./useImportJob";
@@ -135,6 +136,33 @@ function createImportRunStore(initial: ImportRunState) {
 
 /** The one store. There is one Import Run per account, and one account logged in. */
 export const importRunStore = createImportRunStore(initialImportRunState([]));
+
+/**
+ * True from the run's first stage to its end: while a stage runs and while
+ * the run waits at a review. Ended (`done`), discarded or never started
+ * (`form`), and the identity stop before any stage, are not.
+ */
+function holdsDesktop(phase: ImportPhase): boolean {
+  return phase === "running" || isReviewPhase(phase);
+}
+
+/**
+ * The run holds the desktop job from its first stage to its end, reviews
+ * included. Each stage's job holds it too, but only while that job runs, so
+ * without this a Convert could start between two stages and the desktop
+ * would refuse the run's next one (#1407). Following the phase releases it
+ * however the run ends: finished, failed, paused, or discarded.
+ */
+let releaseDesktop: (() => void) | null = null;
+importRunStore.subscribe(() => {
+  const holds = holdsDesktop(importRunStore.get().phase);
+  if (holds && releaseDesktop === null) {
+    releaseDesktop = holdDesktopJob("Import Run");
+  } else if (!holds && releaseDesktop !== null) {
+    releaseDesktop();
+    releaseDesktop = null;
+  }
+});
 
 /** The fresh form, as an account that has no run in the store reads it. */
 const FRESH_RUN = initialImportRunState(stepsFor("copy"));

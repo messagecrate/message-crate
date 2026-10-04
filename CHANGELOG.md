@@ -242,6 +242,14 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **A conversion can no longer start in the middle of an Import
+  Run or an export.** **Convert** in Settings stayed disabled only while one
+  of the run's steps was working, so it could be started while an Import Run
+  waited at a review, or between an export's download and its conversion.
+  The run's next step was then refused because another job was running.
+  **Convert** now stays disabled from the start of an Import Run or an export
+  to its end, and is enabled again as soon as the run finishes, fails, is
+  paused or is discarded.
 - 2026-10-04 **iMazing and Apple Messages imports name a folder they cannot
   read in full.** When an iMazing chat folder held an entry that could not
   be read, the rows whose files were in it came through with no photo or

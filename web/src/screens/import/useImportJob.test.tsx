@@ -13,8 +13,10 @@
 // run and deletes the staging folder. Every push assertion below goes
 // through approve first, because there is no other way to reach it.
 
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { currentDesktopJob } from "../../lib/desktopJob";
 import type { ActiveImportSession } from "../../lib/importSession";
 import type {
   FfmpegToolsProbe,
@@ -62,7 +64,10 @@ const onExtractEventsMock = vi.fn(
   },
 );
 
-vi.mock("../../lib/tauri", () => ({
+vi.mock("../../lib/tauri", async (importOriginal) => ({
+  // Settings → Convert, rendered beside the run, reads these.
+  EXPORT_FORMATS: (await importOriginal<typeof import("../../lib/tauri")>()).EXPORT_FORMATS,
+  invokeFormat: vi.fn(),
   // The job's name comes first; the canned results below take what follows it.
   awaitTauriJob: (_job: string, ...args: Parameters<typeof runMock>) => runMock(...args),
   invokeCancel: (...args: unknown[]) => cancelMock(...args),
@@ -125,8 +130,13 @@ vi.mock("../../lib/importSession", async (importOriginal) => {
   };
 });
 
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  open: vi.fn(),
+}));
+
 // Imported after the mocks above so useImportJob picks up the mocked modules.
 const { useImportJob, parseStoredStagingSummary, resetImportRun } = await import("./useImportJob");
+const { ConvertSection } = await import("../settings/ConvertSection");
 
 /**
  * `runMock` stands in for `awaitTauriJob`, which always calls the
@@ -1713,6 +1723,81 @@ describe("useImportJob wiring", () => {
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     expect(result.current.mediaToolsMissing).toBe(true);
+  });
+
+  describe("the desktop job between stages (#1407)", () => {
+    /** Settings → Convert with both folders filled, so only a running job keeps it off. */
+    async function renderConvert() {
+      const user = userEvent.setup();
+      const view = render(<ConvertSection />);
+      await user.type(screen.getByLabelText("Input folder"), "/home/demo/export-json");
+      await user.type(screen.getByLabelText("Output folder"), "/home/demo/export-csv");
+      return { view, convert: screen.getByRole("button", { name: "Convert" }) };
+    }
+
+    it("keeps Convert off while the run waits at the Staging Review and the Media Review", async () => {
+      runMock.mockImplementationOnce(
+        runResult({ summary: "Transcode finished.", transcode: undefined }),
+      );
+      const { view, convert } = await renderConvert();
+      expect(convert).toBeEnabled();
+      const { result } = renderHook(() => useImportJob());
+
+      await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
+      expect(result.current.phase).toBe("staging_review");
+      expect(currentDesktopJob()).toBe("Import Run");
+      expect(convert).toBeDisabled();
+
+      await act(() => result.current.approve());
+      expect(result.current.phase).toBe("media_review");
+      expect(currentDesktopJob()).toBe("Import Run");
+      expect(convert).toBeDisabled();
+      view.unmount();
+    });
+
+    it("lets the desktop job go when the run is discarded at a review", async () => {
+      const { view, convert } = await renderConvert();
+      const { result } = renderHook(() => useImportJob());
+      await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
+      expect(convert).toBeDisabled();
+
+      await act(() => result.current.cancelRun());
+      expect(result.current.phase).toBe("form");
+      expect(currentDesktopJob()).toBeNull();
+      expect(convert).toBeEnabled();
+      view.unmount();
+    });
+
+    it("lets the desktop job go when the Upload is paused", async () => {
+      runMock.mockImplementationOnce(
+        runResult({ summary: "Push finished.", report: failedReport() }),
+      );
+      const { result } = renderHook(() => useImportJob());
+      await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
+      expect(currentDesktopJob()).toBe("Import Run");
+      await act(() => result.current.approve());
+
+      expect(result.current.summaryView?.status).toBe("paused");
+      expect(currentDesktopJob()).toBeNull();
+    });
+
+    it("lets the desktop job go when the run ends or fails", async () => {
+      runMock.mockImplementationOnce(runResult({ summary: "Push finished.", report: okReport() }));
+      const { result } = renderHook(() => useImportJob());
+      await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
+      await act(() => result.current.approve());
+      expect(result.current.phase).toBe("done");
+      expect(currentDesktopJob()).toBeNull();
+
+      resetImportRun();
+      runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
+        await fn();
+        throw new Error("chat.db is not readable");
+      });
+      await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
+      expect(result.current.summaryView?.status).toBe("failed");
+      expect(currentDesktopJob()).toBeNull();
+    });
   });
 
   describe("identity check", () => {
