@@ -12,9 +12,7 @@ fn placeholder_jpg() -> &'static [u8] {
 
 /// The placeholder pass replaces real media with three stand-in files and
 /// deletes everything else, which is the whole point: an obfuscated export
-/// must not ship the photographs. Mutation testing found the two `&&`
-/// guards on the keep-list could each become `||`, which deletes the
-/// placeholders it has just written and keeps nothing.
+/// must not ship the photographs.
 #[test]
 fn materializing_placeholders_removes_the_real_media_and_keeps_the_three() {
     let dir = export_dir();

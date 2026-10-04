@@ -44,7 +44,7 @@ path. Its first step, `message-crate-pull`, writes JSON Lines through
 `message-staging`.
 
 `message-crate-pull` keeps a resumable path of its own, a journal in the
-output folder (`.message-crate-pull-state.jsonl`,
+output directory (`.message-crate-pull-state.jsonl`,
 `crates/libs/pull/src/journal.rs`) that records each attachment already
 downloaded, so a later run skips it. A run that finishes appends
 `backup_complete` and then rewrites the journal's lines for the server and
