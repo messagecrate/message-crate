@@ -8,7 +8,7 @@ use axum::response::{IntoResponse, Response};
 use tokio::io::AsyncReadExt as _;
 
 use crate::extract::{Json, Path, Query};
-use crate::logging::{LogFile, file_name, list_files, log_dir};
+use crate::logging::{LogFile, list_files, log_dir, log_file_path};
 use crate::paging::{DEFAULT_LIST_LIMIT, Page, page_of, page_params};
 use crate::server::{ApiError, AppState, Owner};
 
@@ -37,7 +37,6 @@ pub(crate) struct ListLogFilesQuery {
     ),
     responses(
         (status = 200, body = Page<LogFile>),
-        crate::problem::openapi::NotTheOwner
     )
 )]
 pub(crate) async fn list_log_files(
@@ -47,12 +46,7 @@ pub(crate) async fn list_log_files(
 ) -> Result<Json<Page<LogFile>>, ApiError> {
     let params = page_params(query.limit, query.offset, DEFAULT_LIST_LIMIT, None)?;
     let dir = log_dir(&state.cfg.paths.data_dir);
-    let files = tokio::task::spawn_blocking(move || list_files(&dir))
-        .await
-        .map_err(|error| ApiError::Internal(error.into()))?
-        .map_err(|error| {
-            ApiError::Internal(anyhow::Error::from(error).context("listing the server's log"))
-        })?;
+    let files = super::read_log("listing the server's log", move || list_files(&dir)).await?;
     Ok(Json(page_of(files, params)))
 }
 
@@ -83,12 +77,8 @@ pub(crate) async fn get_log_file(
     Path(id): Path<i64>,
 ) -> Result<Response, ApiError> {
     let not_found = || ApiError::NotFound(format!("the server's log has no file {id}"));
-    let number = u64::try_from(id)
-        .ok()
-        .filter(|n| *n > 0)
-        .ok_or_else(not_found)?;
-    let name = file_name(number);
-    let path = log_dir(&state.cfg.paths.data_dir).join(&name);
+    let (path, name) =
+        log_file_path(&log_dir(&state.cfg.paths.data_dir), id).ok_or_else(not_found)?;
     let file = match tokio::fs::File::open(&path).await {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Err(not_found()),
@@ -122,3 +112,6 @@ pub(crate) async fn get_log_file(
     )
         .into_response())
 }
+
+#[cfg(test)]
+mod tests;

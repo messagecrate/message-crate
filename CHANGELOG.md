@@ -27,7 +27,7 @@ released versions carry their date on the heading.
   failure are still there after a restart. It keeps at most 250 MB, in five
   files of 50 MB, and deletes the oldest file when a new one starts. The owner
   can read it through the server's interface, newest first, narrow it to
-  errors or warnings, search it, and download a whole file; no other account
+  errors or warnings, search it, and download a whole file. No other account
   can. A Logs screen on Owner Home that shows it comes next. The log never
   holds a password, a token, a search, message text, an attachment or a contact's
   name, phone number or email address.

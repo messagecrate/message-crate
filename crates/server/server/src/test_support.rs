@@ -995,6 +995,29 @@ pub async fn assert_every_person_is_on_a_contact(conn: &mut sqlx::SqliteConnecti
     );
 }
 
+/// The server's log in `state`'s Data Directory, in files of 200 bytes, so
+/// a few lines cross from one file into the next.
+pub fn small_log_files(state: &AppState) -> crate::logging::LogFiles {
+    crate::logging::LogFiles::open(
+        &crate::logging::log_dir(&state.cfg.paths.data_dir),
+        crate::logging::LogLimits {
+            file_bytes: 200,
+            files: 50,
+        },
+    )
+    .unwrap()
+}
+
+/// Write line `n` at `level` saying `text` and ending `n=<n>`, as the
+/// server's subscriber writes an event.
+pub fn write_log_line(files: &crate::logging::LogFiles, n: usize, level: &str, text: &str) {
+    let line = format!(
+        "2026-10-04T12:00:{:02}.000000Z {level:>5} {text} n={n}\n",
+        n % 60
+    );
+    files.write_event(line.as_bytes()).unwrap();
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

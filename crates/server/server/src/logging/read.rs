@@ -92,7 +92,8 @@ pub struct LogLinesQuery {
     pub after: Option<i64>,
     /// Only lines at this level or more severe.
     pub level: Option<LogLevel>,
-    /// Only lines that hold this text, ignoring case.
+    /// Only lines whose text, after the time and the level, holds this,
+    /// ignoring case.
     pub text: Option<String>,
     /// The most lines on the page.
     pub limit: usize,
@@ -100,8 +101,8 @@ pub struct LogLinesQuery {
 
 /// The lines `query` asks for from the log in `dir`, newest first, and
 /// whether older lines match too. A line that does not start with a time and
-/// a level is left out: only a write cut short when the server stopped
-/// leaves one, and the downloaded file still has it.
+/// a level is left out. Only a write cut short leaves one, and the
+/// downloaded file still has it.
 ///
 /// # Errors
 ///
@@ -142,7 +143,7 @@ pub fn read_lines(dir: &Path, query: &LogLinesQuery) -> io::Result<(Vec<LogLine>
                 return ControlFlow::Continue(());
             }
             if let Some(needle) = &needle
-                && !raw.to_lowercase().contains(needle.as_str())
+                && !line.text.to_lowercase().contains(needle.as_str())
             {
                 return ControlFlow::Continue(());
             }
@@ -184,6 +185,13 @@ pub fn list_files(dir: &Path) -> io::Result<Vec<LogFile>> {
         });
     }
     Ok(files)
+}
+
+/// The path and name of the log file `id` names in `dir`, or `None` when
+/// `id` cannot name one. The file may not exist.
+pub fn log_file_path(dir: &Path, id: i64) -> Option<(std::path::PathBuf, String)> {
+    let number = u64::try_from(id).ok().filter(|number| *number > 0)?;
+    Some((file_path(dir, number), super::files::file_name(number)))
 }
 
 /// `raw`, found at `offset` in file `number`, as a line, or `None` when it

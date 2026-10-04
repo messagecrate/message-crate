@@ -52,9 +52,12 @@ reading the downloaded file with `grep` gets whole events too.
 ## Trimmed by size only: 5 files of 50 MB
 
 A file is closed and the next one started before a line would carry it past
-50 MB (52,428,800 bytes). At most 5 files are kept, 250 MB in all: when one
+50 MB (50,000,000 bytes). At most 5 files are kept, 250 MB in all: when one
 more starts, the oldest is deleted. A restarted server writes on the end of the
-newest file while it has room. Nothing is deleted for its age.
+newest file while it has room. A file whose last line was cut short, by a full
+disk or a server that stopped mid-write, is not written on again: the next
+line starts a new file, so it is not joined to the half line before it.
+Nothing is deleted for its age.
 
 Why size: the disk is what a log can run out of, and a size limit is the only
 one that bounds it. A Message Crate on a small disk or a Raspberry Pi cannot
@@ -73,7 +76,8 @@ is what lets a line be addressed by where it is (below) while the log grows.
 ## Reading it: newest first, from a line
 
 `GET /v1/server/log-lines` answers the newest lines first, with `level` (that
-level and the more severe ones) and `text` (lines holding it, ignoring case).
+level and the more severe ones) and `text` (lines whose text, after the time
+and the level, holds it, ignoring case).
 A line's `id` is where it starts: its file's number times 2³², plus its byte
 offset in the file, so a larger id is a newer line. `after={id}` reads the
 lines older than that line. `GET /v1/server/log-files` lists the files, and
@@ -84,9 +88,8 @@ Why from a line, and not an offset: the server writes lines while the owner
 reads them, its own answers included, so a count from the newest line moves
 between pages. An id names a line that does not move.
 
-A line that does not start with a time and a level is left out of the lines;
-only a write cut short when the server stopped leaves one, and the downloaded
-file still has it.
+A line that does not start with a time and a level is left out of the lines.
+Only a write cut short leaves one, and the downloaded file still has it.
 
 ## The owner reads it, nobody else
 

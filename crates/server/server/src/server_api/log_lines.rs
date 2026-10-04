@@ -28,7 +28,7 @@ pub(crate) struct ListLogLinesQuery {
 ///
 /// Not a `Page`: the log is written while it is read, so a count and an
 /// offset from the newest line would move under the reader, and counting a
-/// 250 MB log for every page is the cost a cursor saves
+/// 250 MB log for every page is the cost a line's id saves
 /// (`docs/architecture/http-api.md`, "Lists").
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct ListLogLinesResponse {
@@ -46,8 +46,8 @@ pub struct ListLogLinesResponse {
 /// `after` reads the lines older than the line with that id, so the page
 /// after this one starts at the id of its last line, and lines the server
 /// writes in between do not move it. `level` keeps the lines at that level
-/// and the more severe ones; `text` keeps the lines that hold it, ignoring
-/// case. A line never holds a password, a token, message text or a contact's
+/// and the more severe ones. `text` keeps the lines whose text, after the
+/// time and the level, holds it, ignoring case. A line never holds a password, a token, message text or a contact's
 /// name or identities. The owner's alone, because the log is about the whole
 /// installation.
 #[utoipa::path(
@@ -57,13 +57,12 @@ pub struct ListLogLinesResponse {
     security(("session" = ["owner"])),
     params(
         ("level" = Option<LogLevel>, Query, description = "Only lines at this level or more severe: `error`, `warn` (errors too), `info`, `debug`, `trace` (every line)"),
-        ("text" = Option<String>, Query, description = "Only lines that hold this text, ignoring case"),
+        ("text" = Option<String>, Query, description = "Only lines whose text, after the time and the level, holds this, ignoring case"),
         ("after" = Option<i64>, Query, description = "Only lines older than the line with this id: the id of the last line of the page before"),
         ("limit" = Option<usize>, Query, description = "Page size, default 40, at most 500")
     ),
     responses(
         (status = 200, body = ListLogLinesResponse),
-        crate::problem::openapi::NotTheOwner
     )
 )]
 pub(crate) async fn list_log_lines(
@@ -84,15 +83,16 @@ pub(crate) async fn list_log_lines(
         text: query.text,
         limit: params.limit,
     };
-    let (items, has_more) = tokio::task::spawn_blocking(move || read_lines(&dir, &lines_query))
-        .await
-        .map_err(|error| ApiError::Internal(error.into()))?
-        .map_err(|error| {
-            ApiError::Internal(anyhow::Error::from(error).context("reading the server's log"))
-        })?;
+    let (items, has_more) = super::read_log("reading the server's log", move || {
+        read_lines(&dir, &lines_query)
+    })
+    .await?;
     Ok(Json(ListLogLinesResponse {
         items,
         limit: params.limit,
         has_more,
     }))
 }
+
+#[cfg(test)]
+mod tests;

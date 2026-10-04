@@ -28,40 +28,27 @@ fn sizes(dir: &Path) -> Vec<(u64, u64)> {
         .collect()
 }
 
-/// The server's log is 5 files of at most 50 MB: the decision in
-/// `docs/architecture/server-log.md`.
-#[test]
-fn the_server_log_keeps_five_files_of_fifty_megabytes() {
-    assert_eq!(
-        SERVER_LOG_LIMITS,
-        LogLimits {
-            file_bytes: 50 * 1024 * 1024,
-            files: 5
-        }
-    );
-}
-
-/// Writing past 50 MB starts a new file, and the first stays at or under
-/// 50 MB: no line is split between two files.
+/// Writing past 50 MB (50,000,000 bytes) starts a new file, and the first
+/// stays at or under 50 MB: no line is split between two files.
 #[test]
 fn writing_past_fifty_megabytes_starts_a_new_file() {
     let tmp = TempDir::new().unwrap();
     let files = LogFiles::open(tmp.path(), SERVER_LOG_LIMITS).unwrap();
-    // A line of 1 MiB, 50 of which fill the first file exactly.
+    // A line of 1,000,000 bytes, 50 of which fill the first file exactly.
     let mut line = event("INFO", 0).into_bytes();
     line.pop();
-    line.resize(1024 * 1024 - 1, b'x');
+    line.resize(1_000_000 - 1, b'x');
     line.push(b'\n');
     for _ in 0..50 {
         files.write_event(&line).unwrap();
     }
-    assert_eq!(sizes(tmp.path()), [(1, 50 * 1024 * 1024)]);
+    assert_eq!(sizes(tmp.path()), [(1, 50_000_000)]);
 
     files.write_event(event("INFO", 1).as_bytes()).unwrap();
 
     let after = sizes(tmp.path());
     assert_eq!(after.len(), 2, "{after:?}");
-    assert_eq!(after[0], (1, 50 * 1024 * 1024));
+    assert_eq!(after[0], (1, 50_000_000));
     assert_eq!(after[1].0, 2);
 }
 
@@ -70,9 +57,10 @@ fn writing_past_fifty_megabytes_starts_a_new_file() {
 #[test]
 fn rotation_never_keeps_more_than_the_limits_files() {
     let tmp = TempDir::new().unwrap();
+    // The server's own count of files, in files small enough to fill fast.
     let limits = LogLimits {
         file_bytes: 200,
-        files: 5,
+        files: SERVER_LOG_LIMITS.files,
     };
     let files = LogFiles::open(tmp.path(), limits).unwrap();
     for n in 0..400 {
@@ -161,6 +149,26 @@ fn query(limit: usize) -> LogLinesQuery {
         limit,
         ..LogLinesQuery::default()
     }
+}
+
+/// A file whose last line was cut short, by a full disk or a server that
+/// stopped mid-write, is not written on: the next event starts a new file,
+/// so it is a line of its own and is read back.
+#[test]
+fn a_file_cut_short_mid_line_is_not_written_on() {
+    let tmp = TempDir::new().unwrap();
+    std::fs::write(
+        tmp.path().join(file_name(1)),
+        format!("{}2026-10-04T12:00:09.000000Z  INFO half", event("INFO", 0)),
+    )
+    .unwrap();
+
+    let files = LogFiles::open(tmp.path(), SERVER_LOG_LIMITS).unwrap();
+    files.write_event(event("WARN", 1).as_bytes()).unwrap();
+
+    let (lines, _) = read_lines(tmp.path(), &query(10)).unwrap();
+    assert_eq!(numbers(&lines), [1, 0]);
+    assert_eq!(file_numbers(tmp.path()).unwrap(), [1, 2]);
 }
 
 /// Lines `0..count` written across files of 100 bytes, so a page crosses
@@ -278,10 +286,11 @@ fn a_level_keeps_that_level_and_the_more_severe() {
     assert_eq!(read(LogLevel::Trace), [7, 6, 5, 4, 3, 2, 1, 0]);
 }
 
-/// The text filter matches anywhere in the line, ignoring case, and a page
-/// of matches reads past lines that do not match.
+/// The text filter matches anywhere in a line's text, ignoring case, but not
+/// its time or level, and a page of matches reads past lines that do not
+/// match.
 #[test]
-fn text_matches_anywhere_in_the_line_ignoring_case() {
+fn text_matches_anywhere_in_a_lines_text_ignoring_case() {
     let tmp = TempDir::new().unwrap();
     let files = LogFiles::open(tmp.path(), SERVER_LOG_LIMITS).unwrap();
     for (n, text) in ["Import finished", "request done", "import started", "other"]
@@ -313,6 +322,20 @@ fn text_matches_anywhere_in_the_line_ignoring_case() {
     .unwrap();
     assert_eq!(lines[0].text, "Import finished");
     assert!(!more);
+
+    // The time and the level are not text: `info` is not in any of these
+    // lines' text, though every line is at `INFO`.
+    for text in ["info", "2026", ":"] {
+        let (lines, _) = read_lines(
+            tmp.path(),
+            &LogLinesQuery {
+                text: Some(text.to_string()),
+                ..query(10)
+            },
+        )
+        .unwrap();
+        assert!(lines.is_empty(), "{text}: {lines:?}");
+    }
 }
 
 /// A line still being written, with no line break yet, is not read; nor is

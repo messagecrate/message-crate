@@ -1433,8 +1433,8 @@ export interface paths {
          * @description `after` reads the lines older than the line with that id, so the page
          *     after this one starts at the id of its last line, and lines the server
          *     writes in between do not move it. `level` keeps the lines at that level
-         *     and the more severe ones; `text` keeps the lines that hold it, ignoring
-         *     case. A line never holds a password, a token, message text or a contact's
+         *     and the more severe ones. `text` keeps the lines whose text, after the
+         *     time and the level, holds it, ignoring case. A line never holds a password, a token, message text or a contact's
          *     name or identities. The owner's alone, because the log is about the whole
          *     installation.
          */
@@ -2882,7 +2882,7 @@ export interface components {
          *
          *     Not a `Page`: the log is written while it is read, so a count and an
          *     offset from the newest line would move under the reader, and counting a
-         *     250 MB log for every page is the cost a cursor saves
+         *     250 MB log for every page is the cost a line's id saves
          *     (`docs/architecture/http-api.md`, "Lists").
          */
         ListLogLinesResponse: {
@@ -12292,7 +12292,7 @@ export interface operations {
             query?: {
                 /** @description Only lines at this level or more severe: `error`, `warn` (errors too), `info`, `debug`, `trace` (every line) */
                 level?: components["schemas"]["LogLevel"];
-                /** @description Only lines that hold this text, ignoring case */
+                /** @description Only lines whose text, after the time and the level, holds this, ignoring case */
                 text?: string;
                 /** @description Only lines older than the line with this id: the id of the last line of the page before */
                 after?: number;

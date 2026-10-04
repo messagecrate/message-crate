@@ -22,10 +22,10 @@ pub struct LogLimits {
     pub files: usize,
 }
 
-/// The server's log limits: at most 5 files of 50 MB, 250 MB in all
-/// (`docs/architecture/server-log.md`, "Trimmed by size only").
+/// The server's log limits: at most 5 files of 50 MB (50,000,000 bytes),
+/// 250 MB in all (`docs/architecture/server-log.md`, "Trimmed by size only").
 pub const SERVER_LOG_LIMITS: LogLimits = LogLimits {
-    file_bytes: 50 * 1024 * 1024,
+    file_bytes: 50_000_000,
     files: 5,
 };
 
@@ -46,6 +46,9 @@ struct Newest {
     number: u64,
     file: File,
     bytes: u64,
+    /// Its last line was cut short, so the next line starts a new file
+    /// rather than run on from the middle of it.
+    cut_short: bool,
 }
 
 impl LogFiles {
@@ -61,7 +64,9 @@ impl LogFiles {
     pub fn open(dir: &Path, limits: LogLimits) -> io::Result<Self> {
         fs::create_dir_all(dir)?;
         let number = file_numbers(dir)?.last().copied().unwrap_or(1);
-        let file = open_append(&file_path(dir, number))?;
+        let path = file_path(dir, number);
+        let cut_short = ends_mid_line(&path)?;
+        let file = open_append(&path)?;
         let bytes = file.metadata()?.len();
         let files = Self {
             inner: Arc::new(Inner {
@@ -71,6 +76,7 @@ impl LogFiles {
                     number,
                     file,
                     bytes,
+                    cut_short,
                 }),
             }),
         };
@@ -103,14 +109,22 @@ impl LogFiles {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let len = line.len() as u64;
-        if newest.bytes > 0 && newest.bytes + len > self.inner.limits.file_bytes {
+        if newest.cut_short
+            || (newest.bytes > 0 && newest.bytes + len > self.inner.limits.file_bytes)
+        {
             let number = newest.number + 1;
             newest.file = open_append(&file_path(&self.inner.dir, number))?;
             newest.number = number;
             newest.bytes = 0;
+            newest.cut_short = false;
             self.trim()?;
         }
-        newest.file.write_all(&line)?;
+        if let Err(error) = newest.file.write_all(&line) {
+            // Part of the line may be on disk, so the file no longer ends
+            // where a line does.
+            newest.cut_short = true;
+            return Err(error);
+        }
         newest.bytes += len;
         Ok(())
     }
@@ -164,6 +178,25 @@ pub(crate) fn file_numbers(dir: &Path) -> io::Result<Vec<u64>> {
     }
     numbers.sort_unstable();
     Ok(numbers)
+}
+
+/// Whether the file at `path` holds bytes after its last line break: a line
+/// cut short by a full disk or a server that stopped mid-write. A missing or
+/// empty file does not.
+fn ends_mid_line(path: &Path) -> io::Result<bool> {
+    use std::io::{Read as _, Seek as _, SeekFrom};
+    let mut file = match File::open(path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(error) => return Err(error),
+    };
+    if file.metadata()?.len() == 0 {
+        return Ok(false);
+    }
+    file.seek(SeekFrom::End(-1))?;
+    let mut last = [0u8];
+    file.read_exact(&mut last)?;
+    Ok(last[0] != b'\n')
 }
 
 fn open_append(path: &Path) -> io::Result<File> {

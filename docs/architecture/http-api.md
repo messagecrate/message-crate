@@ -300,8 +300,8 @@ Audit Trail and the server's log lines are the only such lists:
 twins under an account, `GET /v1/audit-trail?deleted_account_id=7`, which reads
 one deleted account's entries and runs by the id they keep, and
 `GET /v1/server/log-lines?level=warn&text=import`, where `level` keeps that
-level and the more severe ones and `text` keeps the lines that hold it,
-ignoring case. A log line is text, not a row with fields a search language
+level and the more severe ones and `text` keeps the lines whose text, after
+the time and the level, holds it, ignoring case. A log line is text, not a row with fields a search language
 could name, so `text` is the whole of its search. There is no `fields=`
 selection.
 

@@ -1150,6 +1150,18 @@ const LOGGED_QUERY_VALUES: [&str; 10] = [
     "status",
 ];
 
+/// A query parameter's name, as it is written in the URL, decoded as the
+/// server reads every query; `None` when it cannot be read.
+fn decoded_query_name(raw_name: &str) -> Option<String> {
+    let uri = format!("/?{raw_name}=").parse::<axum::http::Uri>().ok()?;
+    axum::extract::Query::<Vec<(String, String)>>::try_from_uri(&uri)
+        .ok()?
+        .0
+        .into_iter()
+        .next()
+        .map(|(name, _)| name)
+}
+
 /// The request's URI as the log line names it: the path and the query, with
 /// every value hidden but those of [`LOGGED_QUERY_VALUES`]. A `media_link` is
 /// a credential that travels in the URL, because a media element can send it
@@ -1166,7 +1178,7 @@ pub(crate) fn logged_uri(uri: &axum::http::Uri) -> String {
             // The name as the server reads it, percent-decoded, so no
             // spelling of a hidden name the server accepts reaches the log.
             Some((name, _))
-                if !crate::assets_api::media_links::decoded_query_name(name)
+                if !decoded_query_name(name)
                     .is_some_and(|name| LOGGED_QUERY_VALUES.contains(&name.as_str())) =>
             {
                 format!("{name}=[hidden]")
