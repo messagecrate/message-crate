@@ -237,6 +237,12 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **An attachment too large after conversion says so when an
+  interrupted Media Stage resumes.** When two conversations shared one
+  attachment whose converted copy came out over the size limit, an Import
+  Run resumed after the app closed during its Media Stage could record the
+  attachment as missing in one conversation instead of too large. It now
+  records it as too large, with the converted size.
 - 2026-10-04 **An Apple Messages import stops when the Apple Messages
   reader stops.** The Apple Messages reader (imessage-reader) could stop
   while an encrypted iPhone backup's attachments were being copied. Every
