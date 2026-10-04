@@ -657,7 +657,8 @@ fn serve_config(args: ServeArgs) -> Result<Config> {
 /// Returns an error after the summary line when any conversion failed, so a
 /// cron job or script that runs the command sees a non-zero exit status.
 /// Returns an error too when Ctrl-C or SIGTERM stops it, after killing the
-/// ffmpeg that runs and removing what it wrote (#1729).
+/// ffmpeg that runs and removing what it wrote (#1729). A second Ctrl-C or
+/// SIGTERM ends it at once.
 async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
     let cfg = Config::load_with_db(&args.config, args.db)?;
     let opened = OpenDb::open(cfg).await?;
@@ -670,6 +671,10 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
                 "stopping: the conversion that runs is stopped and its part-made file removed"
             );
             stop.store(true, Ordering::Relaxed);
+            // The handlers stay installed, so a second Ctrl-C would do
+            // nothing. It ends the command at once, as Ctrl-C did before.
+            crate::server::stop_requested().await;
+            std::process::exit(130);
         }
     });
     let stats = crate::process_assets::run(
