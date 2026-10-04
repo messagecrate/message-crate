@@ -1482,14 +1482,15 @@ pub(crate) async fn list_account_audit_trail(
     State(state): State<AppState>,
     Path(target): Path<i64>,
     LoggedIn(auth): LoggedIn,
-    Query(query): Query<crate::audit_trail_api::ListAuditTrailQuery>,
+    Query(query): Query<crate::audit_trail_api::ListAccountAuditTrailQuery>,
 ) -> Result<Json<Page<crate::db::audit_trail::AuditEntry>>, ApiError> {
     require_reach(&state, &auth, target).await?;
     crate::audit_trail_api::audit_trail_page(
         &state,
         crate::db::audit_trail::Scope::Account(target),
         auth.account_id,
-        query,
+        query.limit,
+        query.offset,
     )
     .await
 }

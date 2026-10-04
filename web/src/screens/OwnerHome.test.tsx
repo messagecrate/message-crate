@@ -32,6 +32,7 @@ const deleteAccountById = vi.hoisted(() => vi.fn());
 const deleteAccountMessages = vi.hoisted(() => vi.fn());
 const listAuditTrail = vi.hoisted(() => vi.fn());
 const listAccountAuditTrail = vi.hoisted(() => vi.fn());
+const listDeletedAccounts = vi.hoisted(() => vi.fn());
 const listApiTokens = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/auth", () => ({
@@ -61,6 +62,7 @@ vi.mock("../lib/serverApi", async (importOriginal) => ({
   deleteAccountMessages: (...a: unknown[]) => deleteAccountMessages(...a),
   listAuditTrail: (...a: unknown[]) => listAuditTrail(...a),
   listAccountAuditTrail: (...a: unknown[]) => listAccountAuditTrail(...a),
+  listDeletedAccounts: (...a: unknown[]) => listDeletedAccounts(...a),
   listApiTokens: (...a: unknown[]) => listApiTokens(...a),
 }));
 
@@ -123,6 +125,8 @@ beforeEach(() => {
   deleteAccountMessages.mockReset();
   listAuditTrail.mockReset();
   listAccountAuditTrail.mockReset();
+  listDeletedAccounts.mockReset();
+  listDeletedAccounts.mockResolvedValue([]);
   listApiTokens.mockReset();
   listApiTokens.mockResolvedValue([]);
   getAccountProfile.mockResolvedValue(theOwner);
@@ -395,6 +399,94 @@ describe("OwnerHome", () => {
     await waitFor(() =>
       expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2),
     );
+  });
+
+  it("lists each deleted account below the live ones, and narrows the Audit Trail to one", async () => {
+    listAccounts.mockResolvedValue([theOwner, anAccount]);
+    listDeletedAccounts.mockResolvedValue([
+      { id: 31, username: "carol", deleted_at: "2026-10-03T10:00:00+00:00" },
+      { id: 12, username: "carol", deleted_at: "2026-09-01T10:00:00+00:00" },
+    ]);
+    const carolsEntry = {
+      id: 31,
+      action: "account_deleted",
+      at: "2026-10-03T10:00:00+00:00",
+      actor: "owner",
+      account_id: null,
+      username: "carol",
+    };
+    listAuditTrail.mockImplementation(async (params: { deleted_account_id?: number }) => ({
+      items: params.deleted_account_id
+        ? [carolsEntry]
+        : [
+            carolsEntry,
+            {
+              id: 4,
+              action: "logged_in",
+              at: "2026-10-01T09:00:00+00:00",
+              actor: "holder",
+              account_id: 101,
+              username: "bob",
+            },
+          ],
+      total: params.deleted_account_id ? 1 : 2,
+      limit: 50,
+      offset: 0,
+    }));
+    renderHome(["/owner/audit-trail"]);
+    await screen.findByRole("table");
+    await waitFor(() => expect(listDeletedAccounts).toHaveBeenCalled());
+
+    await userEvent.click(await screen.findByRole("button", { name: /Every account/ }));
+    const options = (await screen.findAllByRole("option")).map((option) => option.textContent);
+    expect(options).toHaveLength(5);
+    expect(options.slice(0, 3)).toEqual(["Every account", "root", "bob"]);
+    expect(options[3]).toMatch(/^carol, deleted .*2026/);
+    expect(options[4]).toMatch(/^carol, deleted .*2026/);
+    expect(options[3]).not.toBe(options[4]);
+    expect(screen.getByText("Deleted accounts")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("option", { name: options[3] ?? "" }));
+
+    await waitFor(() =>
+      expect(listAuditTrail).toHaveBeenCalledWith(
+        expect.objectContaining({ deleted_account_id: 31, offset: 0 }),
+        expect.anything(),
+      ),
+    );
+    expect(listAccountAuditTrail).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2),
+    );
+    expect(screen.getByRole("button", { name: /carol, deleted/ })).toBeInTheDocument();
+  });
+
+  it("tells apart two accounts of one username deleted in the same minute", async () => {
+    listAccounts.mockResolvedValue([theOwner]);
+    listDeletedAccounts.mockResolvedValue([
+      { id: 31, username: "demo", deleted_at: "2026-10-03T10:00:30+00:00" },
+      { id: 12, username: "demo", deleted_at: "2026-10-03T10:00:10+00:00" },
+    ]);
+    listAuditTrail.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
+    renderHome(["/owner/audit-trail"]);
+    await waitFor(() => expect(listDeletedAccounts).toHaveBeenCalled());
+
+    await userEvent.click(await screen.findByRole("button", { name: /Every account/ }));
+    await screen.findByText("Deleted accounts");
+    const options = screen.getAllByRole("option").map((option) => option.textContent);
+    expect(options[2]).toMatch(/^demo, deleted .*\(#31\)$/);
+    expect(options[3]).toMatch(/^demo, deleted .*\(#12\)$/);
+  });
+
+  it("offers no Deleted accounts section when no account was deleted", async () => {
+    listAccounts.mockResolvedValue([theOwner, anAccount]);
+    listAuditTrail.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
+    renderHome(["/owner/audit-trail"]);
+    await waitFor(() => expect(listDeletedAccounts).toHaveBeenCalled());
+
+    await userEvent.click(await screen.findByRole("button", { name: /Every account/ }));
+    const options = (await screen.findAllByRole("option")).map((option) => option.textContent);
+    expect(options).toEqual(["Every account", "root", "bob"]);
+    expect(screen.queryByText("Deleted accounts")).not.toBeInTheDocument();
   });
 
   it("has the header every account sees: the product name, a search bar, the account button", () => {

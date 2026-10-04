@@ -3763,9 +3763,19 @@
           "Audit Trail"
         ],
         "summary": "Every account's Audit Trail, newest first: logins, sessions ending, refused logins, Import Runs, Export Runs, and the owner's and holders' changes to accounts, including those of deleted accounts under their old usernames.",
-        "description": "The owner's alone.",
+        "description": "The owner's alone.\n\n`deleted_account_id` narrows the list to one deleted account's entries\nand runs, which no longer carry an account id. The ids are listed by\n`GET /v1/audit-trail/deleted-accounts`; an id that names no deleted\naccount answers an empty page. A live account's entries are read at\n`GET /v1/accounts/{id}/audit-trail`.",
         "operationId": "list_audit_trail",
         "parameters": [
+          {
+            "name": "deleted_account_id",
+            "in": "query",
+            "description": "Only the entries and runs of the deleted account with this id, from `GET /v1/audit-trail/deleted-accounts`",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
           {
             "name": "limit",
             "in": "query",
@@ -3794,6 +3804,111 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Page_AuditEntry"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "[`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/authentication-required"
+            ]
+          },
+          "403": {
+            "description": "[`not-the-owner`](https://messagecrate.app/docs/developer/reference/errors/not-the-owner): This route belongs to the owner: creating accounts, changing server settings, or anything else only the owner may do.\n\n[`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.\n\n[`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/not-the-owner",
+              "https://messagecrate.app/docs/developer/reference/errors/insufficient-scope",
+              "https://messagecrate.app/docs/developer/reference/errors/account-disabled"
+            ]
+          },
+          "406": {
+            "description": "[`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/not-acceptable"
+            ]
+          },
+          "422": {
+            "description": "[`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/validation-failed"
+            ]
+          }
+        },
+        "security": [
+          {
+            "session": [
+              "owner"
+            ]
+          }
+        ]
+      }
+    },
+    "/v1/audit-trail/deleted-accounts": {
+      "get": {
+        "tags": [
+          "Audit Trail"
+        ],
+        "summary": "The deleted accounts whose entries the Audit Trail keeps, by username A to Z, the latest deletion first under one username.",
+        "description": "Each is one account: two accounts deleted under one username are two. Owner Home offers them beside the live accounts, to narrow the Audit Trail to one with `GET /v1/audit-trail?deleted_account_id=`. The owner's alone.",
+        "operationId": "list_deleted_accounts",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, default 40, at most 500",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Rows to skip, at most 50000",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_DeletedAccount"
                 }
               }
             }
@@ -13217,6 +13332,30 @@
           }
         }
       },
+      "DeletedAccount": {
+        "type": "object",
+        "description": "A deleted account as the Audit Trail remembers it: the username its\nentries and runs keep, and when it was deleted.",
+        "required": [
+          "id",
+          "username",
+          "deleted_at"
+        ],
+        "properties": {
+          "deleted_at": {
+            "type": "string",
+            "description": "When it was deleted, RFC 3339 UTC."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The id of its `account_deleted` entry, which every entry and run about\nthe account carries once it is deleted. Two accounts deleted under one\nusername have two ids."
+          },
+          "username": {
+            "type": "string",
+            "description": "The username the account had, which its entries and runs still carry."
+          }
+        }
+      },
       "DemoAccount": {
         "type": "object",
         "description": "The Demo Account, as the owner manages it.",
@@ -15236,6 +15375,62 @@
                     "type": "string"
                   },
                   "description": "Message tags on this conversation."
+                }
+              }
+            },
+            "description": "The rows on this page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Page size used.",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Page offset used.",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Rows matching the query across every page.",
+            "minimum": 0
+          }
+        }
+      },
+      "Page_DeletedAccount": {
+        "type": "object",
+        "description": "One page of a list.",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "A deleted account as the Audit Trail remembers it: the username its\nentries and runs keep, and when it was deleted.",
+              "required": [
+                "id",
+                "username",
+                "deleted_at"
+              ],
+              "properties": {
+                "deleted_at": {
+                  "type": "string",
+                  "description": "When it was deleted, RFC 3339 UTC."
+                },
+                "id": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "The id of its `account_deleted` entry, which every entry and run about\nthe account carries once it is deleted. Two accounts deleted under one\nusername have two ids."
+                },
+                "username": {
+                  "type": "string",
+                  "description": "The username the account had, which its entries and runs still carry."
                 }
               }
             },

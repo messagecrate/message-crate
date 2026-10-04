@@ -782,8 +782,10 @@ pub async fn trim_refused_logins(conn: &mut SqliteConnection) -> Result<u64> {
 /// nothing, when the account does not exist.
 ///
 /// Its live Session ends as `revoked` by `actor`, so the login does not read
-/// as live, then as expired, after the account is gone. Its runs keep its
-/// username and lose what describes the person's messages
+/// as live, then as expired, after the account is gone. Every entry and run
+/// about it is marked with the `account_deleted` entry's id, which is how
+/// the deleted account is read afterwards ([`Scope::DeletedAccount`]). Its
+/// runs keep its username and lose what describes the person's messages
 /// ([`crate::db::imports::detach_from_account`],
 /// [`crate::db::exports::detach_from_account`]). The delete that follows
 /// sets `account_id` NULL on the runs and entries.
@@ -800,14 +802,20 @@ pub async fn prepare_account_deletion(
         return Ok(false);
     };
     crate::db::session_tokens::revoke_account_sessions(tx, account_id, actor).await?;
-    let now = now_text();
-    crate::db::imports::detach_from_account(tx, account_id, &username, &now).await?;
-    crate::db::exports::detach_from_account(tx, account_id, &username, &now).await?;
-    record(
+    let deletion = record(
         tx,
         &NewEntry::about(AuditAction::AccountDeleted, actor, (account_id, &username)),
     )
     .await?;
+    sqlx::query("UPDATE audit_entries SET deletion_entry_id = $2 WHERE account_id = $1")
+        .bind(account_id)
+        .bind(deletion)
+        .execute(&mut **tx)
+        .await
+        .context("mark a deleted account's entries")?;
+    let now = now_text();
+    crate::db::imports::detach_from_account(tx, account_id, &username, deletion, &now).await?;
+    crate::db::exports::detach_from_account(tx, account_id, &username, deletion, &now).await?;
     Ok(true)
 }
 
@@ -818,6 +826,11 @@ pub enum Scope {
     All,
     /// The entries about one account, whoever acted.
     Account(i64),
+    /// The entries and runs of one deleted account, by the id of its
+    /// `account_deleted` entry ([`DeletedAccount::id`]): what it did and
+    /// what was done to it, and nothing of a later account given its
+    /// username, nor the logins refused for that username once it was gone.
+    DeletedAccount(i64),
 }
 
 /// When the Session a `logged_in` entry `l` opened runs out: the latest
@@ -867,23 +880,24 @@ impl Source {
     }
 }
 
-/// The union of the trail's sources as `(src, id, at, account_id)` rows,
-/// `src` being a [`Source`] tag.
+/// The union of the trail's sources as
+/// `(src, id, at, account_id, deletion_entry_id)` rows, `src` being a
+/// [`Source`] tag.
 fn sources_sql() -> String {
     format!(
         "
-    SELECT '{entry}' AS src, id, at, account_id FROM audit_entries
+    SELECT '{entry}' AS src, id, at, account_id, deletion_entry_id FROM audit_entries
     UNION ALL
-    SELECT '{expiry}', id, expires_at, account_id FROM (
-        SELECT l.id, l.account_id, {expires_at} AS expires_at FROM audit_entries l
+    SELECT '{expiry}', id, expires_at, account_id, deletion_entry_id FROM (
+        SELECT l.id, l.account_id, l.deletion_entry_id, {expires_at} AS expires_at FROM audit_entries l
          WHERE l.action = 'logged_in'
            AND NOT EXISTS (SELECT 1 FROM audit_entries e
                             WHERE e.session_entry_id = l.id AND e.action = 'session_ended')
     ) WHERE expires_at <= $1
     UNION ALL
-    SELECT '{import}', id, started_at, account_id FROM imports
+    SELECT '{import}', id, started_at, account_id, deletion_entry_id FROM imports
     UNION ALL
-    SELECT '{export}', id, started_at, account_id FROM exports",
+    SELECT '{export}', id, started_at, account_id, deletion_entry_id FROM exports",
         entry = Source::Entry.tag(),
         expiry = Source::Expiry.tag(),
         import = Source::ImportRun.tag(),
@@ -905,14 +919,15 @@ pub async fn page(
     offset: usize,
 ) -> Result<(Vec<AuditEntry>, u64)> {
     let now = now_text();
-    let (filter, account) = match scope {
+    let (filter, id) = match scope {
         Scope::All => ("", None),
         Scope::Account(id) => ("WHERE account_id = $2", Some(id)),
+        Scope::DeletedAccount(id) => ("WHERE deletion_entry_id = $2", Some(id)),
     };
     let sources = sources_sql();
     let count_sql = format!("SELECT COUNT(*) FROM ({sources}) {filter}");
     let mut count = sqlx::query_scalar::<_, i64>(&count_sql).bind(&now);
-    if let Some(id) = account {
+    if let Some(id) = id {
         count = count.bind(id);
     }
     let total = count.fetch_one(&mut *conn).await?;
@@ -922,7 +937,7 @@ pub async fn page(
          ORDER BY at DESC, src DESC, id DESC LIMIT {limit} OFFSET {offset}"
     );
     let mut rows = sqlx::query_as::<_, (String, i64)>(&page_sql).bind(&now);
-    if let Some(id) = account {
+    if let Some(id) = id {
         rows = rows.bind(id);
     }
     let rows = rows.fetch_all(&mut *conn).await?;
@@ -939,6 +954,56 @@ pub async fn page(
             items.push(item);
         }
     }
+    Ok((items, u64::try_from(total).unwrap_or(0)))
+}
+
+/// A deleted account as the Audit Trail remembers it: the username its
+/// entries and runs keep, and when it was deleted.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+pub struct DeletedAccount {
+    /// The id of its `account_deleted` entry, which every entry and run about
+    /// the account carries once it is deleted. Two accounts deleted under one
+    /// username have two ids.
+    pub id: i64,
+    /// The username the account had, which its entries and runs still carry.
+    pub username: String,
+    /// When it was deleted, RFC 3339 UTC.
+    pub deleted_at: String,
+}
+
+/// One page of the deleted accounts whose entries the Audit Trail keeps, by
+/// username A to Z and the latest deletion first under one username, and how
+/// many there are in all.
+///
+/// # Errors
+///
+/// Returns an error when a statement fails.
+pub async fn deleted_accounts_page(
+    conn: &mut SqliteConnection,
+    limit: usize,
+    offset: usize,
+) -> Result<(Vec<DeletedAccount>, u64)> {
+    const DELETED: &str = "FROM audit_entries
+         WHERE action = 'account_deleted' AND deletion_entry_id = id AND username IS NOT NULL";
+    let total: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) {DELETED}"))
+        .fetch_one(&mut *conn)
+        .await
+        .context("count deleted accounts")?;
+    let rows: Vec<(i64, String, String)> = sqlx::query_as(&format!(
+        "SELECT id, username, at {DELETED}
+         ORDER BY username COLLATE NOCASE, at DESC, id DESC LIMIT {limit} OFFSET {offset}"
+    ))
+    .fetch_all(&mut *conn)
+    .await
+    .context("list deleted accounts")?;
+    let items = rows
+        .into_iter()
+        .map(|(id, username, deleted_at)| DeletedAccount {
+            id,
+            username,
+            deleted_at,
+        })
+        .collect();
     Ok((items, u64::try_from(total).unwrap_or(0)))
 }
 

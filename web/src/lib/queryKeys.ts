@@ -16,6 +16,15 @@
  * its own. See `docs/adr/0002-one-way-to-fetch-data-in-the-web-app.md`.
  */
 
+/**
+ * Whose Audit Trail a page is: every account's (`"all"`, the owner's), the
+ * logged-in account's own (`"own"`), one account the owner has opened
+ * (`"account:<id>"`), or one deleted account's (`"deleted:<id>"`). A live
+ * account and a deleted one with the same number never share a key, because
+ * the kind leads it.
+ */
+export type AuditTrailKey = "all" | "own" | `account:${number}` | `deleted:${number}`;
+
 /** What makes one page of the conversation list its own cache entry. */
 export type ConversationListKey = { q: string; sort: string; order: string };
 
@@ -121,12 +130,11 @@ export const keys = {
     /** The contacts one Import Run created or changed, as a paged list. */
     contacts: (id: number) => ["imports", String(id), "contacts"] as const,
   },
-  /**
-   * Pages of an Audit Trail: every account's (`"all"`, the owner's), the
-   * logged-in account's own (`"own"`), or one account the owner has opened.
-   */
+  /** Pages of an Audit Trail, by whose it is (`AuditTrailKey`). */
   auditTrail: {
-    page: (whose: number | "all" | "own", page: number) => ["audit-trail", whose, page] as const,
+    page: (whose: AuditTrailKey, page: number) => ["audit-trail", whose, page] as const,
+    /** The deleted accounts the owner can narrow the Audit Trail to. */
+    deletedAccounts: ["audit-trail", "deleted-accounts"] as const,
   },
   serverSettings: { all: ["server-settings"] as const },
   /** Where the Demo Account stands, from `GET /v1/server/demo-account`. */

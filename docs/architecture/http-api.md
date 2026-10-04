@@ -259,10 +259,11 @@ descending. Each list declares the keys it accepts, and an unlisted key is
 
 Filtering is the search language in `q`, and nothing else. The one exception
 is a list with no search language, which may take a filter parameter whose
-values are the ones its rows store. The Import Run and Export Run lists are the
-only such lists: `GET /v1/imports?status=running`,
-`GET /v1/exports?status=completed`, and their twins under an account. There is
-no `fields=` selection.
+values are the ones its rows store. The Import Run and Export Run lists and the
+Audit Trail are the only such lists: `GET /v1/imports?status=running`,
+`GET /v1/exports?status=completed` and their twins under an account, and
+`GET /v1/audit-trail?deleted_account_id=7`, which reads one deleted account's
+entries and runs by the id they keep. There is no `fields=` selection.
 
 A query parameter a route does not declare is `validation-failed`, naming the
 parameters the route accepts. Why: a typo (`limt=10`) or a guess at a
@@ -429,6 +430,17 @@ What each reaches:
   Why: an account holder reads what the owner did to their account, and a
   record its subject or the owner could edit would be no check on either
   (`docs/adr/0020-the-audit-trail-outlives-the-account.md`).
+- A deleted account's entries and runs lose its account id, and each keeps
+  the id of the account's `account_deleted` entry, which is the deleted
+  account's id on the wire. `GET /v1/audit-trail/deleted-accounts` lists the
+  deleted accounts with those ids and usernames, and
+  `GET /v1/audit-trail?deleted_account_id=` narrows the owner's list to one.
+  Both are the owner's alone. Why: the account's own id names nothing once it
+  is gone, and the Demo Account is deleted and made again under one id, while
+  a username passes to a later account, deleted or live.
+  Rejected: narrowing by the username the entries keep, which reads two
+  accounts that held one username as one, and takes in the logins refused for
+  the username while no account held it.
 - The account reads its own runs in full. The owner reads each run as an
   `OwnerImportRun` or `OwnerExportRun`: the source, mode, tool, times,
   outcome and counts, with the counts an import's summary reported and how

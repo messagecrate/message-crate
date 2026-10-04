@@ -1,26 +1,57 @@
 import { useState } from "react";
-import Select, { ListBoxItem, selectItemClassName } from "../../components/Select";
+import { Header, ListBoxSection } from "react-aria-components";
+import Select, {
+  ListBoxItem,
+  selectItemClassName,
+  selectSectionHeaderClassName,
+} from "../../components/Select";
+import { formatDateTime } from "../../lib/formatDate";
+import type { DeletedAccount } from "../../lib/serverApi";
 import AuditTrail from "../auditTrail/AuditTrail";
+import {
+  type AuditTrailOf,
+  auditTrailKey,
+  auditTrailOf,
+  useDeletedAccounts,
+} from "../auditTrail/useAuditTrail";
 import { sectionHint } from "../settings/storage/storageUtils";
 import { useOwnerAccounts } from "./useOwnerAccounts";
 
-/** The picker's key for the full list, beside each account's id. */
-const EVERY_ACCOUNT = "all";
-
 const itemClassName = (state: { isFocused: boolean; isSelected: boolean }) =>
   selectItemClassName(state, "sm");
+
+/**
+ * Each deleted account with the line the picker shows for it: its old
+ * username and when it was deleted. Two accounts of one username deleted in
+ * the same minute would read alike, so a line that repeats ends with the
+ * account's number too.
+ */
+function deletedLabels(deleted: DeletedAccount[]) {
+  const lines = deleted.map(
+    (account) => `${account.username}, deleted ${formatDateTime(account.deleted_at)}`,
+  );
+  return deleted.map((account, i) => ({
+    account,
+    label:
+      lines.indexOf(lines[i]) === lines.lastIndexOf(lines[i])
+        ? lines[i]
+        : `${lines[i]} (#${account.id})`,
+  }));
+}
 
 /**
  * Owner Home's Audit Trail: what each user did on this Message Crate, and
  * when, every account's entries and runs in one list, newest first.
  *
  * The account picker narrows the list to one account's entries, the ones
- * its holder reads under Settings. A deleted account is no longer in the
- * picker; its entries stay in the full list under its old username.
+ * its holder reads under Settings. Below the live accounts it lists each
+ * deleted account by its old username and when it was deleted, and picking
+ * one narrows the list to the entries and runs that account left behind.
  */
 export function OwnerAuditTrailPanel() {
-  const [accountId, setAccountId] = useState<number | null>(null);
+  const [of, setOf] = useState<AuditTrailOf>({ kind: "all" });
   const { accounts } = useOwnerAccounts();
+  const deleted = useDeletedAccounts();
 
   return (
     <section>
@@ -31,25 +62,42 @@ export function OwnerAuditTrailPanel() {
           <Select
             aria-label="Account"
             size="sm"
-            className="w-[12rem]"
-            selectedKey={accountId === null ? EVERY_ACCOUNT : String(accountId)}
+            className="w-[16rem]"
+            selectedKey={auditTrailKey(of)}
             onSelectionChange={(key) => {
               if (key == null) return;
-              setAccountId(key === EVERY_ACCOUNT ? null : Number(key));
+              setOf(auditTrailOf(String(key)));
             }}
           >
-            <ListBoxItem id={EVERY_ACCOUNT} className={itemClassName}>
+            <ListBoxItem id={auditTrailKey({ kind: "all" })} className={itemClassName}>
               Every account
             </ListBoxItem>
             {accounts.map((account) => (
               <ListBoxItem
                 key={account.account_id}
-                id={String(account.account_id)}
+                id={auditTrailKey({ kind: "account", id: account.account_id })}
                 className={itemClassName}
               >
                 {account.username}
               </ListBoxItem>
             ))}
+            {deleted.length > 0 && (
+              <ListBoxSection>
+                <Header className={selectSectionHeaderClassName}>Deleted accounts</Header>
+                {deletedLabels(deleted).map(({ account, label }) => {
+                  return (
+                    <ListBoxItem
+                      key={account.id}
+                      id={auditTrailKey({ kind: "deleted", id: account.id })}
+                      textValue={label}
+                      className={itemClassName}
+                    >
+                      {label}
+                    </ListBoxItem>
+                  );
+                })}
+              </ListBoxSection>
+            )}
           </Select>
         </div>
       </div>
@@ -57,10 +105,7 @@ export function OwnerAuditTrailPanel() {
         Logins, imports, exports and every change to an account, newest first. Entries are never
         changed or removed, and stay after an account is deleted.
       </p>
-      <AuditTrail
-        of={accountId === null ? { kind: "all" } : { kind: "account", id: accountId }}
-        showAccount={accountId === null}
-      />
+      <AuditTrail of={of} showAccount={of.kind === "all"} />
     </section>
   );
 }
