@@ -26,8 +26,8 @@ use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use anyhow::{Context, Result};
 use media::{CompressOptions, MediaMode};
 use message_crate_core::{
-    AttachmentJob, CancelFlag, LogSink, MediaConfig, OutputFormat, ProgressEvent, ProgressSink,
-    attachment_size_hint, emit_log, emit_progress, run_attachment_jobs,
+    AttachmentJob, CancelFlag, LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent,
+    ProgressSink, attachment_size_hint, emit_log, emit_progress, run_attachment_jobs,
 };
 use message_ir::{ConversationDocument, IrAttachment, give_each_document_its_own_file};
 
@@ -176,12 +176,13 @@ impl WriteQueueReport {
 ///
 /// # Errors
 ///
-/// Returns the read error when a `Path` source cannot be read.
-pub fn load_attachment_source(source: &mut AttachmentSource) -> Result<Option<Vec<u8>>, String> {
+/// Returns [`LoadError::Unreadable`] with the read error when a `Path`
+/// source cannot be read: one unreadable file is that attachment's problem.
+pub fn load_attachment_source(source: &mut AttachmentSource) -> Result<Option<Vec<u8>>, LoadError> {
     match source {
         AttachmentSource::Path(path) => fs::read(&*path)
             .map(Some)
-            .map_err(|e| format!("read {}: {e}", path.display())),
+            .map_err(|e| LoadError::Unreadable(format!("read {}: {e}", path.display()))),
         AttachmentSource::Bytes(bytes) => Ok(Some(std::mem::take(bytes))),
         AttachmentSource::Missing => Ok(None),
     }
@@ -212,9 +213,11 @@ fn signed(bytes: u64) -> i64 {
     i64::try_from(bytes).unwrap_or(i64::MAX)
 }
 
-/// Loads one attachment's bytes by source; `Ok(None)` marks it missing.
+/// Loads one attachment's bytes by source; `Ok(None)` or
+/// [`LoadError::Unreadable`] marks it missing, and [`LoadError::Fatal`]
+/// stops the drain.
 pub type AttachmentLoader<'a> =
-    dyn FnMut(&mut AttachmentSource) -> Result<Option<Vec<u8>>, String> + 'a;
+    dyn FnMut(&mut AttachmentSource) -> Result<Option<Vec<u8>>, LoadError> + 'a;
 
 /// Drain `units` with a caller-supplied loader.
 ///
