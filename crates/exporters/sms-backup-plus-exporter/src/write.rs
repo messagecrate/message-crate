@@ -245,10 +245,13 @@ impl<'a> Conversation<'a> {
             .filter_map(|p| p.handle.as_deref().and_then(trimmed))
             .filter(|handle| Some(handle_key(handle)) != owner)
             .collect();
+        // A one-to-one conversation whose roster has no address is with the
+        // address its chat id is, or, for a conversation keyed by a name,
+        // with that name: the `name:` prefix is the key's, not the person's.
         if peers.is_empty()
             && let Some(id) = trimmed(&doc.conversation.chat_identifier)
         {
-            peers.push(id);
+            peers.push(message_ir::name_of_chat_id(id).unwrap_or(id));
         }
         let digest = hex::encode(Sha256::digest(doc.conversation.chat_identifier.as_bytes()));
         Self {
