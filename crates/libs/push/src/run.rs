@@ -301,8 +301,14 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
     if completed.is_err() {
         report.ok = false;
     }
-    write_report(&paths.report, &report)?;
+    let written = write_report(&paths.report, &report);
+    // A refused completion is the error that matters: the server still holds
+    // the run. A report that could not be written as well goes to the log.
+    if let (Err(_), Err(write_error)) = (&completed, &written) {
+        out.log(&format!("warning: {write_error:#}"));
+    }
     completed?;
+    written?;
     out.log("");
     out.log(&format_push_summary(&report));
     out.conversation_issues(&report.results);

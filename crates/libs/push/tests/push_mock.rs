@@ -405,6 +405,47 @@ fn a_refused_completion_is_an_error_the_push_returns() {
     );
 }
 
+/// When the completion is refused and the report cannot be written either,
+/// the push returns the refusal: the run the server still holds is what the
+/// caller must hear about.
+#[test]
+fn a_refused_completion_outranks_a_report_that_cannot_be_written() {
+    let server = MockServer::start();
+    let _auth = mock_session(&server);
+    let _run = mock_import_start(&server, 42);
+    let _import = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/42/batches");
+        then.status(200).json_body(json!({
+            "messages": 1,
+            "messages_appended": 1,
+            "conversations": 1
+        }));
+    });
+    let _complete = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/42/complete");
+        then.status(500).json_body(json!({
+            "type": "about:blank",
+            "title": "Internal server error",
+            "status": 500,
+            "detail": "intentional completion failure"
+        }));
+    });
+
+    let dir = tempdir().unwrap();
+    write_jsonl(dir.path(), &sample_doc());
+    // A folder where the report file should be makes the write fail.
+    let report_path = dir.path().join("report-is-a-folder");
+    fs::create_dir(&report_path).unwrap();
+    let cfg = PushConfig {
+        report_path: Some(report_path),
+        ..text_only_config(dir.path(), server.base_url())
+    };
+    let error = run(&cfg, None).expect_err("a refused completion fails the push");
+
+    let message = format!("{error:#}");
+    assert!(message.contains("import run 42"), "{message}");
+}
+
 #[test]
 fn aggregates_multiple_conversations_into_one_import_request() {
     let server = MockServer::start();
