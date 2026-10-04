@@ -124,7 +124,7 @@ export default function SettingsScreen({
   const tab = creating ? "account" : tabFromSearchParam(searchParams.get("tab"), tabs);
 
   return (
-    <div className="max-w-[820px] p-6 text-text">
+    <div className="max-w-[820px] p-4 text-text sm:p-6">
       <header>
         {backToAccounts ? (
           <Link
@@ -161,7 +161,7 @@ export default function SettingsScreen({
       >
         <TabList
           aria-label="Settings sections"
-          className="relative mt-5 flex gap-1 border-b border-border"
+          className="relative mt-5 flex flex-wrap gap-x-1 border-b border-border"
         >
           {tabs.map((id) => (
             <Tab key={id} id={id} className={tabClassName}>

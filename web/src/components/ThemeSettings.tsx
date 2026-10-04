@@ -89,7 +89,7 @@ export default function ThemeSettings() {
           if (mode) setMode(mode);
         }}
         aria-label="Color mode"
-        className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-2"
+        className="mt-4 grid grid-cols-[repeat(auto-fit,minmax(min(10rem,100%),1fr))] gap-2"
       >
         {MODE_OPTIONS.map((opt) => (
           <Radio

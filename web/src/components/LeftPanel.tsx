@@ -8,6 +8,7 @@ import { resizeHandleGutter } from "../lib/tw";
 import { useAccountProfile } from "../lib/useAccountProfile";
 import { useContactGroups } from "../lib/useContactGroups";
 import { useMessageTags } from "../lib/useMessageTags";
+import { useWindowWidth } from "../lib/useWindowWidth";
 import { type ImportAttention, useImportAttention } from "../screens/import/useImportAttention";
 import ColumnResizeHandle from "./ColumnResizeHandle";
 import { useReportColumnResizing } from "./columnResizeState";
@@ -20,6 +21,7 @@ import {
   LEFT_PANEL_MIN_WIDTH,
   LEFT_PANEL_STORAGE_KEY,
   LEFT_PANEL_WIDTH_VAR,
+  leftPanelWindowMaxWidth,
 } from "./leftPanelWidth";
 import MessageTagsNav from "./MessageTagsNav";
 import NavCollapsibleSection from "./NavCollapsibleSection";
@@ -129,11 +131,15 @@ export default function LeftPanel({
   // An account without the import permission has no Import Run to ask the server about.
   const importAttention = useImportAttention(canImport && profile?.can_import === true);
   const onDraggingChange = useReportColumnResizing();
+  // A narrow window caps the panel below its stored width, which comes back
+  // when the window is wide enough again.
+  const windowMaxWidth = leftPanelWindowMaxWidth(useWindowWidth());
   const { width, dragging, handleHover, handleProps } = useColumnResize({
     storageKey: LEFT_PANEL_STORAGE_KEY,
     defaultWidth: LEFT_PANEL_DEFAULT_WIDTH,
     minWidth: LEFT_PANEL_MIN_WIDTH,
     maxWidth: LEFT_PANEL_MAX_WIDTH,
+    windowMaxWidth,
     onDraggingChange,
   });
 
@@ -389,7 +395,7 @@ export default function LeftPanel({
         ariaLabel="Resize navigation panel"
         width={width}
         minWidth={LEFT_PANEL_MIN_WIDTH}
-        maxWidth={LEFT_PANEL_MAX_WIDTH}
+        maxWidth={Math.min(LEFT_PANEL_MAX_WIDTH, windowMaxWidth)}
         dragging={dragging}
         handleHover={handleHover}
         handleProps={handleProps}
