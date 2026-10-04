@@ -8,6 +8,9 @@ import MessageSearchRow from "./MessageSearchRow";
 
 afterEach(cleanup);
 
+/** The account's zone every row here renders in. */
+const ZONE = "America/New_York";
+
 function message(over: Partial<Message> = {}): Message {
   return {
     id: 10,
@@ -40,7 +43,7 @@ function message(over: Partial<Message> = {}): Message {
 function renderRow(m: Message, terms = [{ text: "photo", prefix: false }]) {
   return render(
     inTimeZone(
-      "America/New_York",
+      ZONE,
       <MessageSearchRow message={m} terms={terms} isSelected={false} onClick={() => {}} />,
     ),
   );
@@ -48,14 +51,13 @@ function renderRow(m: Message, terms = [{ text: "photo", prefix: false }]) {
 
 describe("MessageSearchRow", () => {
   it("shows the conversation, the day in the account's zone, the sender, and the matching word in bold", () => {
-    renderRow(message());
+    const m = message();
+    renderRow(m);
     const row = screen.getByRole("button");
     expect(row).toHaveTextContent("Family");
     expect(row).toHaveTextContent(
-      // The message's own instant, as a day in New York, where it is still
-      // 1 January: a row that formatted in UTC would show 2 January.
-      new Date("2024-01-02T03:30:00Z").toLocaleDateString([], {
-        timeZone: "America/New_York",
+      new Date(m.timestamp).toLocaleDateString([], {
+        timeZone: ZONE,
         year: "numeric",
         month: "short",
         day: "numeric",
