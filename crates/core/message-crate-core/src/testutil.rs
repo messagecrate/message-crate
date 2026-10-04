@@ -1,4 +1,6 @@
-//! Shared scaffolding for exporter `convert_smoke` tests (behind `testutil`).
+//! Shared scaffolding for the export crates' tests, such as the exporters'
+//! `convert_smoke` tests and the attachment byte-total tests (behind
+//! `testutil`).
 
 use crate::{ExportReport, ExporterConfig, IssueSink, ProgressEvent, ProgressSink, RunIssue};
 use std::collections::BTreeMap;

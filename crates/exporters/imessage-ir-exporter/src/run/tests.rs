@@ -324,6 +324,7 @@ fn a_run_with_no_skipped_rows_says_nothing_about_them() {
 
 /// The program's script for a Mac export of one message carrying
 /// `attachments`.
+#[cfg(unix)]
 fn one_message_script(attachments: Vec<imessage_reader_protocol::Attachment>) -> String {
     use imessage_reader_protocol::{Conversation, Event, Message, PROTOCOL_VERSION};
     use ios_backup::testutil::source_line;
@@ -369,6 +370,7 @@ fn one_message_script(attachments: Vec<imessage_reader_protocol::Attachment>) ->
 }
 
 /// An attachment from the program with `source`, as a handwriting SVG.
+#[cfg(unix)]
 fn svg_attachment(
     source: imessage_reader_protocol::AttachmentSource,
 ) -> imessage_reader_protocol::Attachment {
@@ -384,6 +386,7 @@ fn svg_attachment(
 
 /// A JSON export of a Mac's messages with `attachments`, run against the
 /// fake program, with `progress` on the run.
+#[cfg(unix)]
 fn run_one_message(
     dir: &Path,
     attachments: Vec<imessage_reader_protocol::Attachment>,
@@ -454,6 +457,7 @@ fn an_unencrypted_path_with_no_file_stays_out_of_the_byte_total() {
     use imessage_reader_protocol::AttachmentSource;
     use message_crate_core::testutil::attachment_totals;
 
+    const SVG: &str = "<svg></svg>";
     let dir = tempfile::tempdir().unwrap();
     let (progress, totals) = attachment_totals();
     run_one_message(
@@ -462,9 +466,7 @@ fn an_unencrypted_path_with_no_file_stays_out_of_the_byte_total() {
             // The real attachment comes first, so the first event is sent
             // before the run reaches the missing one and could take its
             // size off.
-            svg_attachment(AttachmentSource::Inline {
-                text: "<svg></svg>".into(),
-            }),
+            svg_attachment(AttachmentSource::Inline { text: SVG.into() }),
             svg_attachment(AttachmentSource::Path {
                 path: dir.path().join("gone.svg"),
                 size_hint: Some(700),
@@ -476,7 +478,9 @@ fn an_unencrypted_path_with_no_file_stays_out_of_the_byte_total() {
     let totals = totals.lock().unwrap().clone();
     assert!(totals.len() > 1, "{totals:?}");
     assert!(
-        totals.iter().all(|&(_, _, bytes_total)| bytes_total == 11),
+        totals
+            .iter()
+            .all(|&(_, _, bytes_total)| bytes_total == SVG.len() as u64),
         "every total: {totals:?}"
     );
 }

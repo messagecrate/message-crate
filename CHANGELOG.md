@@ -724,9 +724,9 @@ released versions carry their date on the heading.
   the size such an attachment's record gave and took it off only when the
   run reached it, so the total dropped partway through. Every attachment
   known to have no file is now left out of it before the run starts, as
-  Staging already does. The Apple Messages check for room for the files
-  under `attachments/` leaves it out too. Convert's log also names each
-  file it found missing, as Staging's does.
+  Staging already does. The Apple Messages check for room for the
+  attachment files it writes leaves it out too. Convert's log also names
+  each file it found missing, as Staging's does.
 - 2026-10-04 How an exporter writing a format other than JSON Lines counts
   the size of an attachment with no file was reworked to match Staging,
   with nothing visible.
