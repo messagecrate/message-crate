@@ -487,10 +487,11 @@ released versions carry their date on the heading.
   you can find.** The server's `import` command counted only the lines that
   were not blank, so the number pointed at the wrong line. An Upload named a
   line of its own batch; it now names the staged file and the line in it.
-- 2026-10-04 **An SMS Backup & Restore run counts the repeated messages it
-  drops.** A message the backup held twice was kept once, as it should be,
-  but the run summary never said a copy was dropped. It now says how many,
-  as it does for GO SMS Pro, SMS Backup+, iMazing and OpenExtract.
+- 2026-10-04 **An SMS Backup & Restore import or conversion counts the
+  repeated messages it drops.** A message the backup held twice was kept
+  once, as it should be, but the run summary never said a copy was dropped.
+  It now says how many, as it does for GO SMS Pro, SMS Backup+, iMazing and
+  OpenExtract.
 
 #### Exporting and converting
 
