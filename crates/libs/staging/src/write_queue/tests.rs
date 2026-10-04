@@ -523,6 +523,49 @@ fn the_byte_total_leaves_out_an_attachment_with_no_file_from_the_start() {
     }
 }
 
+/// A file the backup names but that is not on disk, and a source with no
+/// bytes, are known to be missing before the run starts, so the byte total
+/// leaves them out from the first event and never drops mid-run (#1581).
+/// The default loader reads a path from disk, so `drain_write_queue` checks
+/// for the file; a caller's own loader decides what a path means, so
+/// `drain_write_queue_with_loader` leaves its paths alone and the sequential
+/// case covers only the empty source.
+#[test]
+fn the_byte_total_stays_the_same_when_a_file_is_gone_or_a_source_is_empty() {
+    let tmp = tempfile::tempdir().unwrap();
+    let gone = tmp.path().join("gone.jpg");
+    let cases = [("parallel", 3, Some(gone)), ("sequential", 1, None)];
+    for (drain, writer_count, gone) in cases {
+        // The real attachment comes first, so the first event is sent before
+        // the run reaches a missing one and could take its hint off.
+        let mut sources = vec![
+            (AttachmentSource::Bytes(b"xxxxx".to_vec()), Some(5)),
+            (AttachmentSource::Bytes(Vec::new()), Some(700)),
+        ];
+        if let Some(gone) = gone {
+            sources.push((AttachmentSource::Path(gone), Some(1_000)));
+        }
+        let count = sources.len();
+        let mut sources = sources.into_iter();
+        let unit = ConversationUnit::from_doc(doc_with(&test_number(8), count), |_, _| {
+            sources.next().unwrap()
+        });
+
+        let bytes = attachment_bytes(vec![unit], writer_count);
+
+        assert!(bytes.len() > 1, "{drain} drain: {bytes:?}");
+        assert!(
+            bytes.iter().all(|counts| counts.bytes_total == 5),
+            "every total, {drain} drain: {bytes:?}"
+        );
+        assert_eq!(
+            bytes.last().map(|counts| (counts.done, counts.bytes_done)),
+            Some((count, 5)),
+            "last event, {drain} drain: {bytes:?}"
+        );
+    }
+}
+
 /// Many writers finishing at once still send counts that belong together
 /// and only move forward, so the bar never steps back and ends on the full
 /// total (#1536). Each source claims 100 bytes for a 5-byte file, so an

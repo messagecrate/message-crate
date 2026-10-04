@@ -268,6 +268,16 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **Staging's progress no longer jumps forward when a file the
+  backup names is not there.** The byte total counted such a file's size
+  and took it off only when Staging reached it, so the percentage leapt
+  ahead partway through. A file that is not on disk, and an attachment
+  with no bytes, are now left out of the total before Staging starts.
+- 2026-10-04 **Resuming an import waits while another job runs.** The
+  Import screen offered to resume a paused or waiting import while an
+  export or a conversion was running, and the desktop app then refused
+  it. The resume button now stays off until that job ends and says which
+  job it is waiting for, as the Import form does.
 - 2026-10-04 **An import whose app closes or crashes keeps every Error
   found so far.** Staging reported its Errors only when it finished, Media
   reported none, and an Upload's skipped attachments waited for the end of
@@ -643,6 +653,12 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-04 **Converting an SMS Backup & Restore backup says what it
+  left out.** The log said nothing about the repeated copies it dropped,
+  the messages with an invalid date, no usable address or an unknown
+  type, the drafts, or the message parts it could not read, and it named
+  only the first five files it could not read. It now lists each count
+  before the conversation count, and names every file it could not read.
 - 2026-10-04 **Exporting from a second server or account no longer makes
   the first download every attachment again.** When Export from two
   servers, or two accounts, wrote into one directory, the run that

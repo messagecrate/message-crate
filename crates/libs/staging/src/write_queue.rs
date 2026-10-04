@@ -76,7 +76,9 @@ pub struct UnitAttachment {
     pub timestamp_unix_ms: i64,
     /// Size from the backup when known; byte totals grow as unhinted files load.
     /// Always `None` for a `Missing` source, which is never copied, even when
-    /// the backup knew its size.
+    /// the backup knew its size. [`ConversationUnit::from_doc`] makes an
+    /// empty `Bytes` source `Missing`, and [`drain_write_queue`] does the same
+    /// for a `Path` with no file there, before either sums a total.
     pub size_hint: Option<u64>,
 }
 
@@ -107,13 +109,17 @@ impl ConversationUnit {
         for (message_index, msg) in doc.messages.iter_mut().enumerate() {
             let timestamp_unix_ms = msg.timestamp_unix_ms;
             for (attachment_index, att) in msg.attachments.iter_mut().enumerate() {
-                let (source, size_hint) = source_for(flat, att);
-                // An attachment with no file is never copied, so its hint
-                // counts toward no byte total: not the progress, not the
-                // disk check.
-                let size_hint = match source {
-                    AttachmentSource::Missing => None,
-                    _ => size_hint,
+                let (source, size_hint) = match source_for(flat, att) {
+                    // No bytes reads as no file, so say so before any total
+                    // is summed rather than when the run reaches it.
+                    (AttachmentSource::Bytes(bytes), _) if bytes.is_empty() => {
+                        (AttachmentSource::Missing, None)
+                    }
+                    // An attachment with no file is never copied, so its hint
+                    // counts toward no byte total: not the progress, not the
+                    // disk check.
+                    (AttachmentSource::Missing, _) => (AttachmentSource::Missing, None),
+                    found => found,
                 };
                 attachments.push(UnitAttachment {
                     message_index,
@@ -346,6 +352,37 @@ pub fn drain_write_queue_with_loader(
     Ok(report)
 }
 
+/// Make every `Path` source with no file there `Missing`, with no size
+/// hint, so the byte totals and the disk check leave it out from the start
+/// rather than drop when the run reaches it (#1581). Each one is logged as
+/// the read would have logged it. With media turned off nothing is read,
+/// so the caller skips this.
+///
+/// Only [`drain_write_queue`] calls this: its loader reads a `Path` from
+/// disk. A caller's own loader in [`drain_write_queue_with_loader`] decides
+/// what a path means (an encrypted iPhone backup's path names a file inside
+/// the backup, not on disk), so those paths are left to it.
+fn leave_out_files_that_are_gone(units: &mut [ConversationUnit], log: Option<&LogSink>) {
+    for attachment in units
+        .iter_mut()
+        .flat_map(|unit| unit.attachments.iter_mut())
+    {
+        if let AttachmentSource::Path(path) = &attachment.source
+            && !path.is_file()
+        {
+            emit_log(
+                log,
+                format!(
+                    "warning: attachment {} could not be read: no file there",
+                    path.display()
+                ),
+            );
+            attachment.source = AttachmentSource::Missing;
+            attachment.size_hint = None;
+        }
+    }
+}
+
 /// Give every unit a file name no other unit in the run has; see
 /// [`give_each_document_its_own_file`].
 fn give_each_unit_its_own_file(units: &mut [ConversationUnit]) -> Result<()> {
@@ -395,6 +432,9 @@ pub fn drain_write_queue(
     cancel: Option<&CancelFlag>,
 ) -> Result<WriteQueueReport> {
     give_each_unit_its_own_file(&mut units)?;
+    if options.media != MediaMode::Disabled {
+        leave_out_files_that_are_gone(&mut units, log);
+    }
     check_units_headroom(output_dir, &units, options.media)?;
 
     let attachments_dir = output_dir.join("attachments");

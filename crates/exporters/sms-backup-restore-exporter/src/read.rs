@@ -60,6 +60,58 @@ pub struct ReadReport {
     pub errors: Vec<String>,
 }
 
+impl ReadReport {
+    /// One log line for each kind of message the read dropped or skipped,
+    /// leaving out the kinds it found none of, then one line for every
+    /// error, so a person can tell what did not come across.
+    pub fn log_lines(&self) -> Vec<String> {
+        let counts = [
+            (self.duplicates_dropped, "dropped", "duplicate rows"),
+            (self.skipped_invalid_date, "skipped", "invalid-date rows"),
+            (
+                self.skipped_unknown_address,
+                "skipped",
+                "messages with no usable address",
+            ),
+            (
+                self.skipped_unknown_type,
+                "skipped",
+                "messages of an unknown type",
+            ),
+            (
+                self.skipped_draft_or_outbox,
+                "skipped",
+                "drafts and unsent messages",
+            ),
+            (
+                self.skipped_empty_participants,
+                "skipped",
+                "MMS with no participants",
+            ),
+            (
+                self.skipped_unreadable_part,
+                "skipped",
+                "unreadable message parts",
+            ),
+            (
+                self.dropped_character_references,
+                "dropped",
+                "character references that are not a character",
+            ),
+        ];
+        counts
+            .into_iter()
+            .filter(|(count, _, _)| *count > 0)
+            .map(|(count, verb, what)| format!("  {verb} {count} {what}"))
+            .chain(
+                self.errors
+                    .iter()
+                    .map(|error| format!("  xml warning: {error}")),
+            )
+            .collect()
+    }
+}
+
 /// Options for [`read_backup`].
 #[derive(Debug)]
 pub struct ReadOptions<'a> {
