@@ -143,6 +143,31 @@ fn parallel_content_keys_match_serial() {
     );
 }
 
+/// A group is read by the rule the conversation lists use, which ignores
+/// case, so a group's message keys the same whatever case its type is in.
+#[test]
+fn a_group_is_keyed_as_a_group_whatever_the_case_of_its_type() {
+    let row = |conversation_type: &str| {
+        (
+            2,
+            11,
+            "chat-group".to_string(),
+            conversation_type.to_string(),
+            0,
+            "2015-03-12T18:04:23Z".to_string(),
+            Some("yo".to_string()),
+            Some("+15555550128".to_string()),
+        )
+    };
+    let mut groups = HashMap::new();
+    groups.insert(11, vec!["+15555550128".into(), "+15555550129".into()]);
+    let shas = HashMap::new();
+    assert_eq!(
+        content_key_for_row(&row("Group"), &groups, &shas),
+        content_key_for_row(&row("group"), &groups, &shas),
+    );
+}
+
 #[test]
 fn content_key_distinguishes_group_senders() {
     let alice = compute_content_key(

@@ -115,6 +115,7 @@ function message(id: number, conversationId: number): Message {
       id: conversationId,
       chat_identifier: "+1",
       conversation_type: "individual",
+      is_group: false,
       participants: [],
     },
     attachments: [],

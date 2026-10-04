@@ -27,7 +27,13 @@ pub fn build_document(
     seed: &Message,
     messages: Vec<IrMessage>,
 ) -> ConversationDocument {
-    let conversation_type = IrConversationType::parse(&seed.conversation.conversation_type);
+    // The server says whether the conversation is a group; the pull does
+    // not read `conversation_type` to decide it again.
+    let conversation_type = if seed.conversation.is_group {
+        IrConversationType::Group
+    } else {
+        IrConversationType::Individual
+    };
     let participants = participants_from_seed(seed);
     let mut attachment_count = 0u64;
     let mut first_ts = None;
@@ -354,6 +360,7 @@ mod tests {
             "id": 9,
             "chat_identifier": "chat9000",
             "conversation_type": "group",
+            "is_group": true,
             "group_title": "Book Club",
             "participants": [
               { "name": "Robert Smith", "identity": "+15555550100", "service": "imessage", "contact_id": 3 },
@@ -551,6 +558,33 @@ mod tests {
         assert_eq!(doc.conversation.stats.message_count, 2);
     }
 
+    /// Whether the conversation is a group comes from the server's
+    /// `is_group`, never from reading `conversation_type` again.
+    #[test]
+    fn a_document_is_a_group_when_the_server_says_so() {
+        let mut seed = seed_message_with_participant(Participant {
+            identity: Some("+1".into()),
+            name: "Sam".into(),
+            service: None,
+            contact_id: None,
+        });
+        seed.conversation.conversation_type = " group ".into();
+        seed.conversation.is_group = false;
+        let doc = build_document("imessage", &seed, vec![]);
+        assert_eq!(
+            doc.conversation.conversation_type,
+            IrConversationType::Individual
+        );
+
+        seed.conversation.conversation_type = "individual".into();
+        seed.conversation.is_group = true;
+        let doc = build_document("imessage", &seed, vec![]);
+        assert_eq!(
+            doc.conversation.conversation_type,
+            IrConversationType::Group
+        );
+    }
+
     /// An announcement keeps its text; one with no text carries nothing.
     #[test]
     fn an_announcement_keeps_its_text() {
@@ -603,6 +637,7 @@ mod tests {
                 id: 9,
                 chat_identifier: "+1".into(),
                 conversation_type: "individual".into(),
+                is_group: false,
                 group_title: None,
                 label: None,
                 participants: vec![Participant {
@@ -674,6 +709,7 @@ mod tests {
                 id: 9,
                 chat_identifier: "+1".into(),
                 conversation_type: "individual".into(),
+                is_group: false,
                 group_title: None,
                 label: None,
                 participants: vec![participant],

@@ -965,6 +965,7 @@ mod asset_ref_tests {
                 "id": 9,
                 "chat_identifier": "+15555550101",
                 "conversation_type": "individual",
+                "is_group": false,
                 "participants": []
             },
             "attachments": attachments,

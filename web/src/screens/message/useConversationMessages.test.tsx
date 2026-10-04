@@ -37,6 +37,7 @@ function message(id: number): Message {
       id: 1,
       chat_identifier: "c",
       conversation_type: "direct",
+      is_group: false,
       group_title: null,
       participants: [],
     },
