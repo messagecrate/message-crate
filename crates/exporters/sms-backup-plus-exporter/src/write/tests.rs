@@ -359,3 +359,34 @@ fn a_sent_group_message_names_no_one_in_its_subject() {
     );
     assert_eq!(subject_of(&["carol@example.org", "dan@example.org"]), "SMS");
 }
+
+/// A conversation known only by a name is written with no address and the
+/// name in its subject, as SMS Backup+ writes a message it has no number
+/// for, so the chat id's `name:` prefix is written nowhere.
+#[test]
+fn a_conversation_keyed_by_a_name_is_written_with_the_bare_name() {
+    let mut doc = sample_document("hi");
+    doc.conversation.chat_identifier =
+        message_ir::ConversationKey::NameOnly("Alice".into()).chat_id();
+    doc.conversation.participants = vec![IrParticipant {
+        handle: None,
+        display_name: Some("Alice".into()),
+        handle_type: None,
+    }];
+    doc.messages[0].sender_handle = None;
+    doc.messages[0].sender_display_name = Some("Alice".into());
+    let tmp = tempfile::tempdir().unwrap();
+    archive()
+        .write(tmp.path(), &[doc.clone()], &mut ExportReport::default())
+        .unwrap();
+
+    let written = mails(tmp.path(), &doc.filename_stem());
+    let raw = &written[0].1;
+    assert_eq!(header(raw, "X-smssync-address").unwrap_or_default(), "");
+    assert_eq!(header(raw, "Subject").unwrap(), "SMS with Alice");
+    assert!(
+        !header(raw, "From").unwrap().contains("name:"),
+        "{:?}",
+        header(raw, "From")
+    );
+}

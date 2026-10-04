@@ -460,7 +460,17 @@ impl FileStaging<'_> {
         // name, not the type, says it is the orphaned conversation. The handle
         // cache is no guide here: it says this run has seen the handle, not
         // that anything gave it a contact.
-        let chat_is_a_person = individual && !is_orphaned_export(Path::new(&self.source_file));
+        //
+        // A chat keyed by a name (`name:Alice`) or by nobody (`nameless:`) is
+        // no address either. The key keeps the conversation apart from any
+        // other, such as the sender `AMAZON` from a person named "AMAZON".
+        // The person a name-keyed chat is with gets their contact from their
+        // participant record, an identity of type `other` holding the name,
+        // so the key giving them a second contact would make one person two.
+        let chat_is_a_person = individual
+            && !is_orphaned_export(Path::new(&self.source_file))
+            && message_ir::name_of_chat_id(&conversation.chat_identifier).is_none()
+            && conversation.chat_identifier != message_ir::NAMELESS_CHAT_ID;
         if chat_is_a_person {
             count_other_identity(chat_handle_type, chat_cached, &mut stats);
             let _ = ensure_contact_for_handle(

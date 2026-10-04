@@ -249,3 +249,82 @@ fn a_group_keeps_who_wrote_what_and_a_text_file_stays_a_file() {
         .expect("the text file is an attachment");
     assert_eq!(file.size_bytes, Some(13));
 }
+
+/// A person known only by a name, here one named like a sender, comes back
+/// from an export and a second import as the same name-keyed conversation,
+/// not as the sender `AMAZON`.
+#[test]
+fn a_conversation_keyed_by_a_name_survives_an_export_and_a_second_import() {
+    let input = tempfile::tempdir().unwrap();
+    let first = tempfile::tempdir().unwrap();
+    let exported = tempfile::tempdir().unwrap();
+    let second = tempfile::tempdir().unwrap();
+    fs::write(
+        input.path().join("named.eml"),
+        "From: amazon@unknown.email\r\n\
+         To: owner@example.com\r\n\
+         Subject: SMS with AMAZON\r\n\
+         X-smssync-type: 1\r\n\
+         X-smssync-address: \r\n\
+         X-smssync-date: 1609459200000\r\n\
+         Content-Type: text/plain; charset=utf-8\r\n\
+         \r\n\
+         From a person\r\n",
+    )
+    .unwrap();
+
+    let before = import(input.path(), first.path());
+    let ids = |documents: &[ConversationDocument]| -> Vec<String> {
+        documents
+            .iter()
+            .map(|doc| doc.conversation.chat_identifier.clone())
+            .collect()
+    };
+    assert_eq!(ids(&before), ["name:AMAZON"]);
+
+    fs::create_dir_all(first.path().join("attachments")).unwrap();
+    export(before.clone(), first.path(), exported.path());
+    let after = import(exported.path(), second.path());
+
+    assert_eq!(ids(&after), ["name:AMAZON"]);
+    assert_eq!(shape(&after), shape(&before));
+}
+
+/// Every mail of a conversation keyed by a name names that name, so a
+/// received message whose sender the source named differently stays in the
+/// conversation after an export and a second import.
+#[test]
+fn a_name_keyed_conversation_stays_one_when_its_sender_has_another_name() {
+    let staged = tempfile::tempdir().unwrap();
+    let exported = tempfile::tempdir().unwrap();
+    let second = tempfile::tempdir().unwrap();
+    let mut doc = message_ir::testutil::sample_document("from Mary");
+    doc.conversation.chat_identifier =
+        message_ir::ConversationKey::NameOnly("Mom".into()).chat_id();
+    doc.conversation.participants = vec![message_ir::IrParticipant {
+        handle: None,
+        display_name: Some("Mom".into()),
+        handle_type: None,
+    }];
+    doc.messages[0].direction = IrDirection::Incoming;
+    doc.messages[0].sender_handle = None;
+    doc.messages[0].sender_display_name = Some("Mary".into());
+    let mut sent = doc.messages[0].clone();
+    sent.guid = format!("{:032x}", 2);
+    sent.timestamp_unix_ms += 1000;
+    sent.direction = IrDirection::Outgoing;
+    sent.sender_display_name = None;
+    sent.text = "to Mom".into();
+    doc.messages.push(sent);
+
+    fs::create_dir_all(staged.path().join("attachments")).unwrap();
+    export(vec![doc], staged.path(), exported.path());
+    let after = import(exported.path(), second.path());
+
+    let ids: Vec<&str> = after
+        .iter()
+        .map(|doc| doc.conversation.chat_identifier.as_str())
+        .collect();
+    assert_eq!(ids, ["name:Mom"]);
+    assert_eq!(after[0].messages.len(), 2);
+}
