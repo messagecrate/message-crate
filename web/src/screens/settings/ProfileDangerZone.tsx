@@ -35,14 +35,18 @@ const dangerButton = `${dangerButtonClass} !box-border !w-auto !min-w-[10.5rem] 
  * either way.
  */
 export function ProfileDangerZone({
-  isDemo,
+  messagesFixed = false,
+  accountFixed = false,
   username,
   hasPassword,
   canDelete = true,
   managedAccountId,
   messageCount = 0,
 }: {
-  isDemo: boolean;
+  /** Nobody deletes the account's messages for good: `fixedSettings(profile).deleteMessages`. */
+  messagesFixed?: boolean;
+  /** The account may not delete itself, and the owner still may: `fixedSettings(profile).deleteOwnAccount`. */
+  accountFixed?: boolean;
   username: string;
   hasPassword: boolean;
   canDelete?: boolean;
@@ -63,10 +67,7 @@ export function ProfileDangerZone({
 
   const managed = managedAccountId !== undefined;
   const busy = deleting || deletingMessages;
-  // The demo lock is the account's own; the owner may delete the demo account.
-  const demoLocked = isDemo && !managed;
-  // Nobody empties the Demo Account: the owner deletes it or resets it.
-  const messagesLocked = isDemo;
+  const accountLocked = accountFixed && !managed;
   // An account the owner barred from deleting asks the owner instead.
   const notPermitted = !canDelete && !managed;
   const count = messageCount.toLocaleString();
@@ -83,7 +84,7 @@ export function ProfileDangerZone({
     checkDirectories && !stagingDirectories.isError ? (stagingDirectories.data ?? []) : [];
 
   const deleteAllMessages = async () => {
-    if (messagesLocked || notPermitted) return;
+    if (messagesFixed || notPermitted) return;
     setDeletingMessages(true);
     setDangerError("");
     try {
@@ -100,7 +101,7 @@ export function ProfileDangerZone({
   };
 
   const performDeleteAccount = async (currentPassword?: string) => {
-    if (demoLocked || notPermitted) return;
+    if (accountLocked || notPermitted) return;
     setDeleting(true);
     setDangerError("");
     try {
@@ -172,12 +173,12 @@ export function ProfileDangerZone({
               <div className="justify-self-end p-px">
                 <Button
                   variant="danger"
-                  disabled={busy || messagesLocked || notPermitted}
+                  disabled={busy || messagesFixed || notPermitted}
                   onClick={() => setConfirmDeleteMessagesOpen(true)}
                   className={dangerButton}
                   title={
-                    messagesLocked
-                      ? "Unavailable on the demo account"
+                    messagesFixed
+                      ? "Unavailable on the Demo Account"
                       : notPermitted
                         ? CANNOT_DELETE
                         : undefined
@@ -199,15 +200,15 @@ export function ProfileDangerZone({
               <div className="justify-self-end p-px">
                 <Button
                   variant="danger"
-                  disabled={busy || demoLocked || notPermitted}
+                  disabled={busy || accountLocked || notPermitted}
                   onClick={() => {
                     setDangerError("");
                     setDeleteDialogOpen(true);
                   }}
                   className={dangerButton}
                   title={
-                    demoLocked
-                      ? "Unavailable on the demo account"
+                    accountLocked
+                      ? "Unavailable on the Demo Account"
                       : notPermitted
                         ? CANNOT_DELETE
                         : undefined

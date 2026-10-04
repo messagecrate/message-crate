@@ -58,7 +58,7 @@ describe("ProfileDangerZone", () => {
     render(
       <QueryClientProvider client={testQueryClient()}>
         <MemoryRouter>
-          <ProfileDangerZone isDemo={false} username="carol" hasPassword />
+          <ProfileDangerZone username="carol" hasPassword />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -85,7 +85,7 @@ describe("ProfileDangerZone", () => {
     render(
       <QueryClientProvider client={testQueryClient()}>
         <MemoryRouter>
-          <ProfileDangerZone isDemo={false} username="carol" hasPassword={false} />
+          <ProfileDangerZone username="carol" hasPassword={false} />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -123,7 +123,7 @@ describe("ProfileDangerZone", () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <ProfileDangerZone isDemo={false} username="carol" hasPassword={false} />
+          <ProfileDangerZone username="carol" hasPassword={false} />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -151,7 +151,7 @@ describe("ProfileDangerZone", () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <ProfileDangerZone isDemo={false} username="carol" hasPassword={false} />
+          <ProfileDangerZone username="carol" hasPassword={false} />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -174,7 +174,7 @@ describe("ProfileDangerZone", () => {
     render(
       <QueryClientProvider client={testQueryClient()}>
         <MemoryRouter>
-          <ProfileDangerZone isDemo={false} username="carol" hasPassword={false} />
+          <ProfileDangerZone username="carol" hasPassword={false} />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -199,7 +199,7 @@ describe("ProfileDangerZone", () => {
     render(
       <QueryClientProvider client={testQueryClient()}>
         <MemoryRouter>
-          <ProfileDangerZone isDemo={false} username="carol" hasPassword canDelete={false} />
+          <ProfileDangerZone username="carol" hasPassword canDelete={false} />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -215,13 +215,7 @@ describe("ProfileDangerZone", () => {
     render(
       <QueryClientProvider client={testQueryClient()}>
         <MemoryRouter>
-          <ProfileDangerZone
-            isDemo={false}
-            username="carol"
-            hasPassword
-            canDelete={false}
-            managedAccountId={7}
-          />
+          <ProfileDangerZone username="carol" hasPassword canDelete={false} managedAccountId={7} />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -250,7 +244,7 @@ describe("ProfileDangerZone", () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <ProfileDangerZone isDemo={false} username="carol" hasPassword />
+          <ProfileDangerZone username="carol" hasPassword />
         </MemoryRouter>
       </QueryClientProvider>,
     );
