@@ -998,9 +998,9 @@ released versions carry their date on the heading.
 - 2026-10-04 **The panel resize grips move by exactly 8 pixels.** Each
   arrow key on the grip of the left panel or the list column moved the
   panel 9 pixels wider or 7 narrower, and pressing the grip without moving
-  it widened the panel by 1 pixel. Arrow keys now move 8 pixels, 24 with
-  Shift, pressing the grip leaves the width as it was, and a screen reader
-  hears the panel's own width.
+  it widened the panel by 1 pixel. Arrow keys now move the panel 8 pixels,
+  or 24 with Shift. Pressing the grip leaves the width as it was. A screen
+  reader hears the panel's own width.
 - 2026-10-04 **Opening an Import Run in Settings → Storage → Import
   history keeps the list inside the page.** Opening any Import Run made the
   Import history table about a million pixels wide. Every column but Date

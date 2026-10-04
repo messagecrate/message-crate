@@ -107,7 +107,8 @@ export function useColumnResize({
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     startXRef.current = e.clientX;
-    // Use the width on screen so a flex-shrunk column does not jump to preferred.
+    // Start from the column's measured width (`measureColumnWidth`), so a
+    // flex-shrunk column does not jump to its preferred width.
     startWidthRef.current = measureColumnWidth(e.currentTarget, widthRef.current);
     setDraggingState(true);
     document.body.style.userSelect = "none";
@@ -133,7 +134,7 @@ export function useColumnResize({
     const step = e.shiftKey ? 24 : 8;
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
-      // Start from the width on screen, as a drag does, so a flex-shrunk column
+      // Start from the column's measured width, as a drag does, so a flex-shrunk column
       // moves on the first key press.
       const from = measureColumnWidth(e.currentTarget, widthRef.current);
       const next = clampWidth(

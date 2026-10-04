@@ -8,8 +8,8 @@ import { CollapsibleSection } from "./ImportFormUi";
 afterEach(cleanup);
 
 describe("CollapsibleSection", () => {
-  // The app's own :focus-visible outline loses to the outline-none utility, so
-  // the disclosure draws the style guide's ring itself.
+  // The disclosure sets `outline-none`, which removes the app's own
+  // :focus-visible outline, so it sets the outline back with `focusRing`.
   it("draws the focus ring on its disclosure button", () => {
     render(
       <CollapsibleSection title="Attachments" open={false} onToggle={() => {}}>

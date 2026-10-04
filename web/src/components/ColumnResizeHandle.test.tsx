@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { fireEvent, render } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { setupUser } from "../test/user";
 import ColumnResizeHandle from "./ColumnResizeHandle";
 
@@ -35,6 +35,49 @@ function renderHandle(
 }
 
 let props: ReturnType<typeof handleProps>;
+
+/**
+ * The grip rendered inside a column with `style`, which the browser has
+ * painted `painted` px wide while its stored width is `stored`.
+ */
+function gripInColumn({
+  stored,
+  painted,
+  style = "",
+}: {
+  stored: number;
+  painted: number;
+  style?: string;
+}): HTMLElement {
+  const column = document.createElement("div");
+  column.setAttribute("style", style);
+  document.body.appendChild(column);
+  onTestFinished(() => column.remove());
+  vi.spyOn(column, "getBoundingClientRect").mockReturnValue({
+    width: painted,
+    height: 100,
+    top: 0,
+    left: 0,
+    bottom: 100,
+    right: painted,
+    x: 0,
+    y: 0,
+    toJSON: () => ({}),
+  });
+  const { getByRole } = render(
+    <ColumnResizeHandle
+      ariaLabel="Resize list"
+      width={stored}
+      minWidth={160}
+      maxWidth={520}
+      dragging={false}
+      handleHover={false}
+      handleProps={props}
+    />,
+    { container: column },
+  );
+  return getByRole("separator", { name: "Resize list" });
+}
 
 beforeEach(() => {
   props = handleProps();
@@ -147,34 +190,9 @@ describe("ColumnResizeHandle", () => {
   });
 
   it("reports the width on screen when the window squeezes the column below its stored width", () => {
-    const column = document.createElement("div");
-    document.body.appendChild(column);
-    vi.spyOn(column, "getBoundingClientRect").mockReturnValue({
-      width: 250,
-      height: 100,
-      top: 0,
-      left: 0,
-      bottom: 100,
-      right: 250,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
-    });
-    const { getByRole } = render(
-      <ColumnResizeHandle
-        ariaLabel="Resize list"
-        width={400}
-        minWidth={160}
-        maxWidth={520}
-        dragging={false}
-        handleHover={false}
-        handleProps={props}
-      />,
-      { container: column },
-    );
+    const grip = gripInColumn({ stored: 400, painted: 250 });
 
-    expect(getByRole("separator", { name: "Resize list" })).toHaveAttribute("aria-valuenow", "250");
-    column.remove();
+    expect(grip).toHaveAttribute("aria-valuenow", "250");
   });
 
   /**
@@ -182,37 +200,12 @@ describe("ColumnResizeHandle", () => {
    * paints outside their width; the grip reported 221 for a 220px panel.
    */
   it("reports the panel's width, not the width plus the border painted outside it", () => {
-    const column = document.createElement("div");
-    column.setAttribute("style", "box-sizing: content-box; border-right: 1px solid");
-    document.body.appendChild(column);
-    vi.spyOn(column, "getBoundingClientRect").mockReturnValue({
-      width: 221,
-      height: 100,
-      top: 0,
-      left: 0,
-      bottom: 100,
-      right: 221,
-      x: 0,
-      y: 0,
-      toJSON: () => ({}),
+    const grip = gripInColumn({
+      stored: 220,
+      painted: 221,
+      style: "box-sizing: content-box; border-right: 1px solid",
     });
-    const { getByRole } = render(
-      <ColumnResizeHandle
-        ariaLabel="Resize navigation panel"
-        width={220}
-        minWidth={160}
-        maxWidth={520}
-        dragging={false}
-        handleHover={false}
-        handleProps={props}
-      />,
-      { container: column },
-    );
 
-    expect(getByRole("separator", { name: "Resize navigation panel" })).toHaveAttribute(
-      "aria-valuenow",
-      "220",
-    );
-    column.remove();
+    expect(grip).toHaveAttribute("aria-valuenow", "220");
   });
 });

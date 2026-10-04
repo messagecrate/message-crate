@@ -296,8 +296,8 @@ describe("ContactDrawer", () => {
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
   });
 
-  // The app's own :focus-visible outline loses to the outline-none utility, so
-  // each close button draws the style guide's ring itself.
+  // Each close button sets `outline-none`, which removes the app's own
+  // :focus-visible outline, so it sets the outline back with `focusRing`.
   it("draws the focus ring on the close button and sortable headers of a loaded contact", async () => {
     seed(detail(6, { name: "Grace", groups: [] }));
     render(<ContactDrawer variant="docked" contactId="6" preview={null} onClose={() => {}} />);

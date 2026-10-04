@@ -8,8 +8,8 @@ import DateField from "./DateField";
 
 afterEach(cleanup);
 
-// The app's own :focus-visible outline loses to the outline-none utility, so
-// each button of the field draws the style guide's ring itself.
+// Each button of the field sets `outline-none`, which removes the app's own
+// :focus-visible outline, so it sets the outline back with `focusRing`.
 describe("DateField", () => {
   it("draws the focus ring on the calendar button and the calendar's month buttons", async () => {
     render(<DateField label="From" value="2024-03-15" onChange={() => {}} />);
