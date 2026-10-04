@@ -1,5 +1,6 @@
 //! Shared parsed message types for SMS Backup+ EML conversion.
 
+use crate::email_numbers::EmailNumber;
 use message_ir::IrConversationType;
 use phone::Handle;
 
@@ -46,7 +47,7 @@ pub(crate) struct ParsedMessage {
     pub owner_not_named: bool,
     /// An email address and the number it stands for, when this is a
     /// one-to-one mail that gives both (`flat_eml::email_and_number`).
-    pub email_number: Option<crate::flat_eml::EmailNumber>,
+    pub email_number: Option<EmailNumber>,
 }
 
 impl ParsedMessage {

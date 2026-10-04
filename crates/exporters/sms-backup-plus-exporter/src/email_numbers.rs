@@ -9,11 +9,20 @@
 //! read first, and each group member it names by an address is then keyed
 //! by the number that address stands for.
 
-use crate::flat_eml::{EmailNumber, group_key, names_a_group};
+use crate::flat_eml::{group_key, names_a_group};
 use crate::types::ParsedMessage;
 use message_ir::{HandleType, IrConversationType};
 use phone::Handle;
 use std::collections::{BTreeSet, HashMap, HashSet};
+
+/// An email address and the number one mail says it stands for.
+#[derive(Debug, Clone)]
+pub(crate) struct EmailNumber {
+    /// The email address's handle key.
+    pub email: String,
+    /// The number in the mail's `X-smssync-address`.
+    pub number: Handle,
+}
 
 /// The numbers the archive gives each email address.
 #[derive(Default)]
@@ -35,14 +44,14 @@ impl EmailNumbers {
     /// number. An address it gives two or more is left out: one contact card
     /// can hold two people's numbers under one address, such as a family's,
     /// and choosing one would credit one person's messages to the other.
-    pub(crate) fn into_numbers(self) -> Numbers {
-        let mut numbers = Numbers::default();
+    pub(crate) fn into_numbers(self) -> NumbersByEmail {
+        let mut numbers = NumbersByEmail::default();
         for (email, by_key) in self.seen {
             if by_key.len() == 1 {
                 let number = by_key.into_values().next().expect("one number");
                 numbers.by_email.insert(email, number);
             } else {
-                numbers.several.insert(email);
+                numbers.with_several_numbers.insert(email);
             }
         }
         numbers
@@ -51,11 +60,11 @@ impl EmailNumbers {
 
 /// What the archive says about each email address.
 #[derive(Default)]
-pub(crate) struct Numbers {
+pub(crate) struct NumbersByEmail {
     /// The one number each of these addresses stands for.
     by_email: HashMap<String, Handle>,
     /// Addresses the archive gives two or more numbers.
-    several: HashSet<String>,
+    with_several_numbers: HashSet<String>,
 }
 
 /// The group members that keep their email address as their key.
@@ -88,7 +97,7 @@ pub(crate) fn names_a_member_by_email(msg: &ParsedMessage) -> bool {
 /// left with a single member is that person's one-to-one conversation.
 pub(crate) fn key_members_by_number(
     msg: &mut ParsedMessage,
-    numbers: &Numbers,
+    numbers: &NumbersByEmail,
     kept: &mut KeptByEmail,
 ) {
     let mut by_number = |handle: &Handle| -> Handle {
@@ -99,7 +108,7 @@ pub(crate) fn key_members_by_number(
             return number.clone();
         }
         let key = handle.key().to_string();
-        if numbers.several.contains(&key) {
+        if numbers.with_several_numbers.contains(&key) {
             kept.several_numbers.insert(key);
         } else {
             kept.without_number.insert(key);
@@ -147,7 +156,7 @@ mod tests {
         }
         let numbers = numbers.into_numbers();
         assert!(numbers.by_email.is_empty());
-        assert!(numbers.several.contains("smiths@example.com"));
+        assert!(numbers.with_several_numbers.contains("smiths@example.com"));
     }
 
     /// Two spellings of one number are one number.

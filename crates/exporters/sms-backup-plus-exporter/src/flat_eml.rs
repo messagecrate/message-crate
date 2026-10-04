@@ -1,6 +1,7 @@
 //! Parse SMS Backup+ EMLs: one text message per `.eml` file.
 
 use crate::assets::extract_body;
+use crate::email_numbers::EmailNumber;
 use crate::types::ParsedMessage;
 use mailparse::{MailHeaderMap, ParsedMail};
 use message_ir::{HandleType, IrConversationType};
@@ -279,14 +280,6 @@ fn from_display_name(from: &str) -> Option<String> {
     };
     let name = info.display_name.as_deref()?.trim();
     (!name.is_empty() && !is_written_like_a_number(name)).then(|| name.to_string())
-}
-
-/// An email address and the number a mail says it stands for.
-#[derive(Debug, Clone)]
-pub(crate) struct EmailNumber {
-    /// The email address's handle key.
-    pub email: String,
-    pub number: Handle,
 }
 
 /// An email address and the number it stands for, from a one-to-one mail

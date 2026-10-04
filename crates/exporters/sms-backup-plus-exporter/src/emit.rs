@@ -47,7 +47,10 @@ const GROUP_MEMBERS_WITHOUT_NUMBER: &str = "group_members_without_number";
 
 /// Report counter: group members whose email address the archive gives two
 /// or more numbers, as a contact card two people share does, so the address
-/// stays their key. Each is counted once.
+/// stays their key. Each is counted once. One number written in national
+/// form in some mails and international form in others (`07700900123`,
+/// `+447700900123`) counts as two, since only a `+` number is read as
+/// international.
 const GROUP_MEMBERS_WITH_SEVERAL_NUMBERS: &str = "group_members_with_several_numbers";
 
 /// The EML's path relative to the input root it was found under, for the vendor `source` bag.

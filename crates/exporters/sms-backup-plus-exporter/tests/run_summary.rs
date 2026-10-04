@@ -266,21 +266,15 @@ fn a_group_member_whose_address_has_two_numbers_keeps_the_address() {
              Hello from {number}\n"
         )
     };
-    fs::write(
-        input.join("1.eml"),
-        one_to_one("4075550111", "1609459100000"),
-    )
-    .unwrap();
-    fs::write(
-        input.join("2.eml"),
-        one_to_one("4075550111", "1609459150000"),
-    )
-    .unwrap();
-    fs::write(
-        input.join("3.eml"),
-        one_to_one("4075550112", "1609459170000"),
-    )
-    .unwrap();
+    // Two mails give Mom's number and one gives Dad's: a majority still
+    // names neither.
+    for (name, number, date) in [
+        ("1.eml", "4075550111", "1609459100000"),
+        ("2.eml", "4075550111", "1609459150000"),
+        ("3.eml", "4075550112", "1609459170000"),
+    ] {
+        fs::write(input.join(name), one_to_one(number, date)).unwrap();
+    }
     fs::write(
         input.join("4.eml"),
         "From: me@example.com\n\
