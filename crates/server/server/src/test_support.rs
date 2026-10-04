@@ -826,8 +826,8 @@ pub struct MessageRow<'a> {
     pub account_id: i64,
     /// `messages.source`, such as `imessage`.
     pub source: &'a str,
-    /// `messages.guid`.
-    pub guid: String,
+    /// `messages.guid`. `None` writes NULL, which the table refuses.
+    pub guid: Option<String>,
     /// RFC 3339 in UTC, as the importer writes it.
     pub timestamp: &'a str,
     /// Whether the account sent it.
@@ -871,7 +871,7 @@ impl MessageRow<'_> {
             conversation_id,
             account_id,
             source: "imessage",
-            guid: unique_guid(),
+            guid: Some(unique_guid()),
             timestamp: "2020-01-01T00:00:00Z",
             is_from_me: false,
             sender_handle_id: None,
@@ -905,6 +905,14 @@ impl MessageRow<'_> {
     /// Insert the row in `tx`, the caller's write transaction, and answer
     /// its `messages.id`.
     pub async fn insert_in(&self, tx: &mut crate::db::WriteTx<'_>) -> i64 {
+        self.try_insert_in(tx)
+            .await
+            .unwrap_or_else(|e| panic!("insert message {:?}: {e}", self.guid))
+    }
+
+    /// Insert the row in `tx`, and answer its `messages.id` or the error the
+    /// table gave, for a test of what the table refuses.
+    pub async fn try_insert_in(&self, tx: &mut crate::db::WriteTx<'_>) -> sqlx::Result<i64> {
         sqlx::query_scalar(
             "INSERT INTO messages (
                 id, conversation_id, account_id, source, guid, timestamp, is_from_me,
@@ -939,7 +947,6 @@ impl MessageRow<'_> {
         .bind(self.import_id)
         .fetch_one(&mut **tx)
         .await
-        .unwrap_or_else(|e| panic!("insert message {}: {e}", self.guid))
     }
 }
 

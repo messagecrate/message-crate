@@ -22,11 +22,17 @@
 //! uses. The server binary does not have it: the guard exists to fail a test
 //! that reaches such a write, not to refuse one in use.
 //!
+//! Dropping a table is not writing to it. SQLite asks about a `DROP TABLE`
+//! as a drop of the table followed by a delete of it, so the guard lets
+//! through the delete that comes straight after the drop of the same table:
+//! the schema rebuild at startup drops every table on a bare connection.
+//!
 //! sqlx keeps prepared statements per connection, and SQLite asks the
 //! authorizer only while preparing. A statement first prepared inside a
 //! transaction and run again later on its own on the same connection is not
 //! asked about again.
 
+use std::cell::RefCell;
 use std::ffi::{CStr, c_char, c_int, c_void};
 use std::sync::Once;
 
@@ -34,6 +40,14 @@ use libsqlite3_sys as ffi;
 
 /// The tables a write to which runs only inside a transaction.
 const GUARDED_TABLES: [&str; 3] = ["messages", "attachments", "messages_fts"];
+
+thread_local! {
+    /// The table whose drop SQLite asked about last on this thread. SQLite
+    /// asks the authorizer on the thread that prepares the statement, and
+    /// asks about the drop and then the delete of the table one after the
+    /// other.
+    static DROPPING: RefCell<Option<String>> = const { RefCell::new(None) };
+}
 
 /// Install the guard on every SQLite connection opened after this call. Safe
 /// to call any number of times; only the first does work.
@@ -65,7 +79,8 @@ unsafe extern "C" fn install_on_connection(
 }
 
 /// The authorizer: deny an insert, update or delete of a guarded table on a
-/// connection in autocommit mode, and allow everything else.
+/// connection in autocommit mode, except the delete a drop of that table
+/// asks about, and allow everything else.
 unsafe extern "C" fn authorize(
     db: *mut c_void,
     action: c_int,
@@ -74,11 +89,7 @@ unsafe extern "C" fn authorize(
     _database: *const c_char,
     _trigger: *const c_char,
 ) -> c_int {
-    if !matches!(
-        action,
-        ffi::SQLITE_INSERT | ffi::SQLITE_UPDATE | ffi::SQLITE_DELETE
-    ) || table.is_null()
-    {
+    if table.is_null() {
         return ffi::SQLITE_OK;
     }
     // SAFETY: SQLite passes the table name as a NUL-terminated string valid
@@ -89,11 +100,128 @@ unsafe extern "C" fn authorize(
             ffi::sqlite3_get_autocommit(db.cast::<ffi::sqlite3>()) != 0,
         )
     };
-    if autocommit && GUARDED_TABLES.contains(&table.as_ref()) {
+    let dropped = DROPPING.with_borrow_mut(|dropping| {
+        let dropped = dropping.take();
+        if matches!(
+            action,
+            ffi::SQLITE_DROP_TABLE | ffi::SQLITE_DROP_TEMP_TABLE | ffi::SQLITE_DROP_VTABLE
+        ) {
+            *dropping = Some(table.to_string());
+        }
+        dropped
+    });
+    let writes = match action {
+        ffi::SQLITE_INSERT | ffi::SQLITE_UPDATE => true,
+        ffi::SQLITE_DELETE => dropped.as_deref() != Some(table.as_ref()),
+        _ => false,
+    };
+    if writes && autocommit && GUARDED_TABLES.contains(&table.as_ref()) {
         eprintln!(
             "a write to `{table}` outside a transaction: run it in crate::db::begin_write (#1628)"
         );
         return ffi::SQLITE_DENY;
     }
     ffi::SQLITE_OK
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::db::{begin_write, schema};
+    use crate::test_support::{MessageRow, SeedConversation, SeedMessage, seed_conversation};
+
+    /// "not authorized" is the error SQLite gives a statement the
+    /// authorizer denies.
+    fn refused(result: sqlx::Result<sqlx::sqlite::SqliteQueryResult>) -> bool {
+        matches!(result, Err(e) if e.to_string().contains("not authorized"))
+    }
+
+    /// A delete of messages, of attachments, and of a conversation (whose
+    /// messages go by `ON DELETE CASCADE`) on a bare connection is refused,
+    /// and the same statements inside `begin_write` run. The first is the
+    /// statement #1628 found failing on a connection with an out-of-date
+    /// schema.
+    #[tokio::test]
+    async fn a_write_to_messages_runs_only_inside_a_write_transaction() {
+        let fixture = crate::test_support::test_fixture().await;
+        let account = fixture.account("guarded").await;
+        let conversation = seed_conversation(
+            &fixture.state,
+            &SeedConversation {
+                account_id: account,
+                handle: "+15555550100",
+                conversation_type: "individual",
+                group_title: None,
+                source_file: "guard.jsonl",
+                messages: &[SeedMessage {
+                    source: "imessage",
+                    timestamp: "2020-01-01T00:00:00Z",
+                    is_from_me: false,
+                    body: "kept",
+                }],
+            },
+        )
+        .await;
+        let mut conn = fixture.conn().await;
+        let statements = [
+            "DELETE FROM attachments WHERE message_id IN (SELECT id FROM messages WHERE account_id = $1)",
+            "DELETE FROM messages WHERE id IN (SELECT id FROM messages WHERE account_id = $1)",
+            "DELETE FROM conversations WHERE account_id = $1",
+        ];
+        for sql in statements {
+            let alone = sqlx::query(sql).bind(account).execute(&mut *conn).await;
+            assert!(refused(alone), "{sql} ran outside a transaction");
+        }
+        MessageRow::new(account, conversation)
+            .insert(&mut conn)
+            .await;
+        let mut tx = begin_write(&mut conn).await.unwrap();
+        for sql in statements {
+            sqlx::query(sql)
+                .bind(account)
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+        }
+        tx.commit().await.unwrap();
+    }
+
+    /// An insert on a bare connection is refused too, while a write to
+    /// another table is not the guard's business.
+    #[tokio::test]
+    async fn an_insert_of_an_attachment_outside_a_transaction_is_refused() {
+        let (pool, _dir) = crate::db::engine::test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        schema::ensure_schema(&mut conn).await.unwrap();
+        sqlx::query("INSERT INTO accounts (id, username) VALUES (1, 'a')")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        let alone = sqlx::query("INSERT INTO attachments (message_id) VALUES (1)")
+            .execute(&mut *conn)
+            .await;
+        assert!(
+            refused(alone),
+            "an insert of an attachment ran outside a transaction"
+        );
+    }
+
+    /// The schema rebuild drops `messages` on a bare connection, and SQLite
+    /// asks about that drop as a delete of the table: the guard lets it
+    /// through.
+    #[tokio::test]
+    async fn dropping_the_messages_table_is_not_a_write_to_it() {
+        let (pool, _dir) = crate::db::engine::test_pool().await;
+        let mut conn = pool.acquire().await.unwrap();
+        schema::ensure_schema(&mut conn).await.unwrap();
+        sqlx::query("PRAGMA foreign_keys = OFF")
+            .execute(&mut *conn)
+            .await
+            .unwrap();
+        for table in ["messages_fts", "attachments", "messages"] {
+            sqlx::query(&format!("DROP TABLE {table}"))
+                .execute(&mut *conn)
+                .await
+                .unwrap_or_else(|e| panic!("drop {table}: {e}"));
+        }
+    }
 }

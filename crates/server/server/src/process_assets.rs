@@ -14,7 +14,7 @@ use sqlx::SqliteConnection;
 use tempfile::TempDir;
 
 use crate::config::Config;
-use crate::db::schema;
+use crate::db::{begin_write, schema};
 use crate::media_options::server_compress_options;
 use crate::open_db::OpenDb;
 use media::{Kind, MediaMode, TranscodeOutcome};
@@ -490,13 +490,15 @@ async fn list_attachments(conn: &mut SqliteConnection, account_id: i64) -> Resul
 }
 
 /// Point every attachment row of the account for `original_sha`, from every
-/// source, at its new derived blob.
+/// source, at its new derived blob, in a write transaction of its own: a
+/// write to `attachments` always runs in one (`crate::db::begin_write`).
 async fn update_derived(
     conn: &mut SqliteConnection,
     account_id: i64,
     original_sha: &str,
     blob: &DerivedBlob,
 ) -> Result<()> {
+    let mut tx = begin_write(conn).await?;
     sqlx::query(
         r"
         UPDATE attachments
@@ -514,18 +516,21 @@ async fn update_derived(
     .bind(&blob.mime_type)
     .bind(original_sha)
     .bind(account_id)
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await?;
+    tx.commit().await?;
     Ok(())
 }
 
 /// Clear the derived columns of every attachment row of the account that
-/// names the Preview at `derived_assets_path`, from every source.
+/// names the Preview at `derived_assets_path`, from every source, in a write
+/// transaction of its own, as [`update_derived`] does.
 async fn clear_derived(
     conn: &mut SqliteConnection,
     account_id: i64,
     derived_assets_path: &str,
 ) -> Result<()> {
+    let mut tx = begin_write(conn).await?;
     sqlx::query(
         r"
         UPDATE attachments
@@ -540,8 +545,9 @@ async fn clear_derived(
     )
     .bind(derived_assets_path)
     .bind(account_id)
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await?;
+    tx.commit().await?;
     Ok(())
 }
 

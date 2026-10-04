@@ -10,7 +10,7 @@ const A2: i64 = 8;
 async fn insert_message(conn: &mut SqliteConnection, id: i64, guid: &str, body: &str) {
     MessageRow {
         id: Some(id),
-        guid: guid.into(),
+        guid: Some(guid.into()),
         body: Some(body),
         ..MessageRow::new(A1, 1)
     }
@@ -82,7 +82,7 @@ async fn promote_fts_indexing_covers_only_rows_inserted_by_this_promotion() {
     drop_messages_fts_triggers(&mut tx).await.unwrap();
     MessageRow {
         id: Some(11),
-        guid: "g-new".into(),
+        guid: Some("g-new".into()),
         body: Some("freshbody"),
         ..MessageRow::new(A1, 1)
     }
@@ -349,7 +349,7 @@ async fn same_source_guid_allowed_across_accounts() {
     ] {
         MessageRow {
             source: "sms",
-            guid: "same-guid".into(),
+            guid: Some("same-guid".into()),
             ..MessageRow::new(account, conv)
         }
         .insert(&mut conn)
@@ -369,25 +369,16 @@ async fn a_message_without_a_guid_is_refused() {
     let (pool, _fixture) = seeded_schema_fixture().await;
     let mut conn = pool.acquire().await.unwrap();
     let conv = conversation_id(&mut conn, A1).await;
-    // `MessageRow` cannot carry a NULL guid, so this test writes its own
-    // insert. It runs in a write transaction, so the guard on writes outside
-    // one is not what refuses it.
-    for guid in [None, Some("")] {
+    for guid in [None, Some(String::new())] {
         let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
-        let inserted = sqlx::query(
-            r"
-            INSERT INTO messages (
-                conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order
-            ) VALUES ($1, $2, 'sms', $3, '2020-01-01T00:00:00Z', 0, 0)
-            ",
-        )
-        .bind(conv)
-        .bind(A1)
-        .bind(guid)
-        .execute(&mut *tx)
+        let inserted = MessageRow {
+            source: "sms",
+            guid: guid.clone(),
+            ..MessageRow::new(A1, conv)
+        }
+        .try_insert_in(&mut tx)
         .await;
         assert!(inserted.is_err(), "guid {guid:?} was accepted");
-        drop(tx);
     }
 }
 
@@ -555,7 +546,7 @@ async fn messages_fts_stays_in_sync() {
     let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     let message_id = MessageRow {
         source: "sms",
-        guid: "g1".into(),
+        guid: Some("g1".into()),
         body: Some("hello there"),
         ..MessageRow::new(A1, conversation_id)
     }
@@ -630,7 +621,7 @@ async fn messages_fts_forgets_attachment_text_that_is_gone() {
     let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     let message_id = MessageRow {
         source: "sms",
-        guid: "g-att".into(),
+        guid: Some("g-att".into()),
         body: Some("zzbody text"),
         ..MessageRow::new(A1, conversation_id)
     }
@@ -695,7 +686,7 @@ async fn messages_fts_forgets_attachment_text_that_is_gone() {
 
     let reused_id = MessageRow {
         source: "sms",
-        guid: "g-next".into(),
+        guid: Some("g-next".into()),
         body: Some("zznext text"),
         ..MessageRow::new(A1, conversation_id)
     }

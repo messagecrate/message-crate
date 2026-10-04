@@ -243,7 +243,7 @@ struct InsertMsgArgs<'a> {
 async fn insert_msg(conn: &mut SqliteConnection, args: InsertMsgArgs<'_>) -> i64 {
     crate::test_support::MessageRow {
         source: args.source,
-        guid: args.guid.into(),
+        guid: Some(args.guid.into()),
         timestamp: args.timestamp,
         is_from_me: args.from_me,
         body: Some(args.body),
@@ -1068,7 +1068,7 @@ struct Msg<'a> {
 async fn message(conn: &mut SqliteConnection, m: Msg<'_>) -> i64 {
     crate::test_support::MessageRow {
         source: m.source,
-        guid: m.guid.into(),
+        guid: Some(m.guid.into()),
         timestamp: m.timestamp,
         is_from_me: m.from_me,
         sender_handle_id: m.sender,
