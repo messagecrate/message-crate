@@ -33,7 +33,7 @@ import {
   type SearchList,
   useMarkedWords,
 } from "../lib/searchFields";
-import { dropTokens } from "../lib/searchQuery";
+import { removeToken } from "../lib/searchQuery";
 import { popupShadow } from "../lib/uiStyles";
 import { useDismissable } from "../lib/useDismissable";
 import {
@@ -129,9 +129,15 @@ type Option = {
  */
 const boxText = "px-2 py-2.5 text-[0.875rem]";
 
-/** What a marked word's note and the box's description say about it. */
-function markNote(mark: MarkedWord): string {
-  return `${mark.word}: works only in ${SEARCH_LIST_NAMES[mark.worksIn]}, so this list searches without it.`;
+/**
+ * What a marked word's note and the box's description say about it: the
+ * word, then the rest of the sentence, so the note can set the word as code.
+ */
+function markNote(mark: MarkedWord): { word: string; rest: string } {
+  return {
+    word: `${mark.word}:`,
+    rest: ` works only in ${SEARCH_LIST_NAMES[mark.worksIn]}, so this list searches without it.`,
+  };
 }
 
 const optionClass =
@@ -266,7 +272,7 @@ export default function SearchBar({
 
   const removeMarked = (mark: MarkedWord) => {
     setNoteAt(null);
-    editText(dropTokens(text, [mark]));
+    editText(removeToken(text, mark));
     inputRef.current?.focus();
   };
 
@@ -413,7 +419,10 @@ export default function SearchBar({
         </Group>
         {marked.length > 0 ? (
           <Text slot="description" className="sr-only">
-            {marked.map(markNote).join(" ")}
+            {marked
+              .map(markNote)
+              .map(({ word, rest }) => word + rest)
+              .join(" ")}
           </Text>
         ) : null}
         <Popover
@@ -484,8 +493,8 @@ export default function SearchBar({
           {note ? (
             <div className="flex flex-col items-start gap-2 text-[0.813rem] text-text">
               <p className="m-0">
-                <code className="font-mono">{note.word}:</code> works only in{" "}
-                {SEARCH_LIST_NAMES[note.worksIn]}, so this list searches without it.
+                <code className="font-mono">{markNote(note).word}</code>
+                {markNote(note).rest}
               </p>
               <Button size="xs" onPress={() => removeMarked(note)}>
                 Remove

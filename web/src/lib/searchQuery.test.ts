@@ -15,6 +15,7 @@ import {
   type MessagesQueryInput,
   narrow,
   quote,
+  removeToken,
   replaceLastToken,
   searchTokens,
   suggestion,
@@ -581,6 +582,24 @@ function buildFixtureLines(): string[] {
     addLines(lines, trashed(advancedContacts(input)), ["contacts", "conversations"]);
   }
 
+  // A Messages search with words only Messages takes, as the Conversations
+  // list sends it once `dropTokens` leaves them out (#1561): what is left
+  // must still parse there.
+  const messagesOnly = new Set(["from", "to", "in", "attachments"]);
+  for (const typed of [
+    "from:me dinner",
+    "dinner -to:me",
+    "from:me or dinner",
+    "dinner or not from:me",
+    "kind:group (from:me or in:#3) dinner",
+    "-(from:me) dinner",
+    "(attachments:>1) or (to:#4 and dinner)",
+    `${narrow(forTag("Book Club"), "from:me")}`,
+  ]) {
+    const marked = fieldTokens(typed).filter((t) => messagesOnly.has(t.word));
+    addLines(lines, dropTokens(typed, marked), ["conversations"]);
+  }
+
   return [...lines].sort();
 }
 
@@ -666,7 +685,19 @@ describe("dropTokens", () => {
     expect(drop('a or b "or" -or from:me', "from")).toBe('a or b "or" -or');
   });
 
+  it("keeps an operator that joined nothing before the drop, so the server still refuses it", () => {
+    expect(drop("from:me or or b", "from")).toBe("or or b");
+    expect(drop("a () from:me", "from")).toBe("a ()");
+  });
+
   it("returns the query unchanged when there is nothing to drop, a dangling or included", () => {
     expect(drop("hello or", "from")).toBe("hello or");
+  });
+});
+
+describe("removeToken", () => {
+  it("cuts only the token and its space, and leaves an or it joined", () => {
+    expect(removeToken("from:me or hello", { start: 0, end: 7 })).toBe("or hello");
+    expect(removeToken("hello from:me world", { start: 6, end: 13 })).toBe("hello world");
   });
 });

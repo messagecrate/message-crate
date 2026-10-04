@@ -168,13 +168,15 @@ function operator(text: string): "binary" | "not" | null {
 
 /**
  * `query` without the tokens in `drop`, which are tokens of `query` named by
- * where they start. A `not` right before a dropped token goes with it, since
- * it negated that token and nothing else. Whatever they leave with nothing to
- * join is dropped too: an `or` or `and` with nothing on one side, and a pair
- * of parentheses left empty, with any `not` before it. So `from:me or hello` without
- * `from:me` is `hello`, which the server reads, rather than `or hello`, which
- * it refuses. Everything else stays as typed, spaces included, and the space
- * before a dropped token goes with it.
+ * where they start: what a list searches when it leaves out words it marks.
+ * A `not` right before a dropped token goes with it, since it negated that
+ * token and nothing else. What the dropped tokens leave with nothing to join
+ * goes too: an `or` or `and` with nothing on one side, and a pair of
+ * parentheses left empty, with any `not` before it. So `from:me or hello`
+ * without `from:me` is `hello`, which the server reads, rather than
+ * `or hello`, which it refuses. An operator or a pair of parentheses that had
+ * nothing to join before anything was dropped stays, so the server refuses
+ * that search as it would have. Everything else stays as typed.
  */
 export function dropTokens(query: string, drop: readonly { start: number }[]): string {
   const tokens = searchTokens(query);
@@ -188,49 +190,71 @@ export function dropTokens(query: string, drop: readonly { start: number }[]): s
       if (tokens[j].kind === "text") gone[j] = true;
     }
   };
+  /** The live token at `live[at]`, when it joins nothing: an operator, or a `(` whose `)` is next. */
+  const joinsNothing = (live: readonly number[], at: number): boolean => {
+    const i = live[at];
+    const before = at > 0 ? live[at - 1] : null;
+    const after = at + 1 < live.length ? live[at + 1] : null;
+    if (tokens[i].kind === "open") return after !== null && tokens[after].kind === "close";
+    if (tokens[i].kind === "close") return false;
+    const op = operator(text(i));
+    if (op === null) return false;
+    const nothingAfter =
+      after === null || tokens[after].kind === "close" || operator(text(after)) === "binary";
+    if (op === "not") return nothingAfter;
+    const nothingBefore =
+      before === null || tokens[before].kind === "open" || operator(text(before)) !== null;
+    return nothingBefore || nothingAfter;
+  };
+  const everyToken = tokens.map((_, i) => i);
+  const alreadyLoose = new Set(everyToken.filter((i) => joinsNothing(everyToken, i)));
   tokens.forEach((t, i) => {
     if (starts.has(t.start)) dropAt(i);
   });
   if (!gone.some(Boolean)) return query;
-  // One token, or one empty pair of parentheses, at a time, until nothing is
-  // left with nothing to join.
+  // One token, or one empty pair of parentheses, at a time, until the drops
+  // leave nothing with nothing to join.
   for (;;) {
-    const live = tokens.flatMap((_, i) => (gone[i] ? [] : [i]));
-    const orphan = live.findIndex((i, at) => {
-      const before = at > 0 ? live[at - 1] : null;
-      const after = at + 1 < live.length ? live[at + 1] : null;
-      if (tokens[i].kind === "open") return after !== null && tokens[after].kind === "close";
-      if (tokens[i].kind === "close") return false;
-      const op = operator(text(i));
-      if (op === null) return false;
-      const nothingAfter =
-        after === null || tokens[after].kind === "close" || operator(text(after)) === "binary";
-      if (op === "not") return nothingAfter;
-      const nothingBefore =
-        before === null || tokens[before].kind === "open" || operator(text(before)) !== null;
-      return nothingBefore || nothingAfter;
-    });
-    if (orphan < 0) break;
-    if (tokens[live[orphan]].kind === "open") {
-      gone[live[orphan + 1]] = true;
-      dropAt(live[orphan]);
+    const live = everyToken.filter((i) => !gone[i]);
+    const at = live.findIndex((i, n) => !alreadyLoose.has(i) && joinsNothing(live, n));
+    if (at < 0) break;
+    if (tokens[live[at]].kind === "open") {
+      gone[live[at + 1]] = true;
+      dropAt(live[at]);
     } else {
-      gone[live[orphan]] = true;
+      gone[live[at]] = true;
     }
   }
+  return cutTokens(
+    query,
+    tokens.filter((_, i) => gone[i]),
+  );
+}
+
+/**
+ * `query` without the one token `token`, and nothing else: what Remove does
+ * to a marked word in the search box. An `or` the word leaves with nothing to
+ * join stays, as typed.
+ */
+export function removeToken(query: string, token: { start: number; end: number }): string {
+  return cutTokens(query, [token]);
+}
+
+/**
+ * `query` with each of `tokens` cut out, in order. The space before a token
+ * goes with it; with nothing before it but the start or a `(`, the space
+ * after it goes instead. Everything else stays as typed.
+ */
+function cutTokens(query: string, tokens: readonly { start: number; end: number }[]): string {
   let out = "";
   let from = 0;
-  tokens.forEach((token, i) => {
-    if (!gone[i]) return;
-    const kept = trimEndSpaces(query.slice(from, token.start));
-    out += kept;
+  for (const token of tokens) {
+    out += trimEndSpaces(query.slice(from, token.start));
     from = token.end;
-    // The space before the token goes with it. With nothing before it but
-    // the start or a `(`, the space after it goes instead.
     if (out === "" || out.endsWith("(")) {
       while (from < query.length && isSpace(query[from])) from += 1;
     }
-  });
+  }
   return out + query.slice(from);
 }
 

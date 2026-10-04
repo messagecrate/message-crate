@@ -519,6 +519,44 @@ describe("SearchBar", () => {
       expect(screen.queryByRole("dialog")).toBeNull();
     });
 
+    it("Remove leaves an or the word joined, as typed", async () => {
+      const user = setupUser();
+      const { input, onChange } = conversationsBox("from:ann or hello");
+
+      await user.pointer({ target: input, offset: 3, keys: "[MouseLeft]" });
+      await user.click(screen.getByRole("button", { name: "Remove" }));
+      expect(onChange).toHaveBeenLastCalledWith("or hello");
+    });
+
+    it("is not marked once the box searches the list that takes it", () => {
+      const props = {
+        value: "from:ann hello",
+        onChange: vi.fn(),
+        onSubmit: vi.fn(),
+        scope: "message",
+        advancedMode: null,
+      } as const;
+      const { rerender } = render(
+        <SearchBar
+          {...props}
+          list="conversations"
+          otherList="messages"
+          placeholder="Search conversations"
+        />,
+      );
+      expect(markedTexts()).toEqual(["from:ann"]);
+
+      rerender(
+        <SearchBar
+          {...props}
+          list="messages"
+          otherList="conversations"
+          placeholder="Search messages"
+        />,
+      );
+      expect(markedTexts()).toEqual([]);
+    });
+
     it("opens no note on a click outside it", async () => {
       const user = setupUser();
       const { input } = conversationsBox("from:ann hello");
