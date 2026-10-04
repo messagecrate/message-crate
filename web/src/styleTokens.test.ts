@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { RANGE_PILL_SCROLL_PAD_CLASS, RangePillSpacer } from "./components/ListRangePill";
 import { AVATAR_COLOR_CLASSES } from "./lib/contactInitials";
+import { focusOutline, focusRing } from "./lib/uiStyles";
 import { Z_CONTACT_DRAWER, Z_DRAWER_SCRIM, Z_MODAL, Z_RESIZE_HANDLE } from "./lib/zLayers";
 
 // The style guide's rules (STYLE_GUIDE.md, "Rules" 1 and "Overlay Z-Index
@@ -85,6 +86,25 @@ describe("focus rings", () => {
   it("no source puts an offset on a ring", () => {
     const found = sources().flatMap(([path, text]) => hits(path, text, /\bring-offset-/));
     expect(found).toEqual([]);
+  });
+
+  // Every focused control draws the same ring because every one takes it from
+  // lib/uiStyles.ts (#1711): `focusRing`, or `focusOutline` behind React Aria's
+  // `data-focus-visible:` or `isFocusVisible` where focus sits on a hidden input.
+  it("no source outside lib/uiStyles.ts writes an outline of its own", () => {
+    const outline = /\boutline-(?!none\b)[\w[]|:outline(?![\w-])/;
+    const found = sources()
+      .filter(([path]) => path !== "lib/uiStyles.ts")
+      .flatMap(([path, text]) => hits(path, text, outline));
+    expect(found).toEqual([]);
+  });
+
+  it("focusRing is focusOutline on focus-visible", () => {
+    const onFocusVisible = focusOutline
+      .split(" ")
+      .map((cls) => `focus-visible:${cls}`)
+      .join(" ");
+    expect(focusRing).toBe(`outline-none ${onFocusVisible}`);
   });
 });
 

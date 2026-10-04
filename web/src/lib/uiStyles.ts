@@ -80,6 +80,15 @@ export const popupShadow = "shadow-popup";
 export const focusRing =
   "outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-accent";
 
+/**
+ * `focusRing`'s outline with no variant, for an element whose focus sits on a
+ * hidden input, such as React Aria's `Radio`: the caller shows it when React
+ * Aria's `isFocusVisible` render prop is true. Tailwind reads class names from
+ * the source as written, so the two strings are spelt out, and
+ * `src/styleTokens.test.ts` checks that they agree.
+ */
+export const focusOutline = "outline-2 outline-solid outline-offset-1 outline-accent";
+
 /** A menu item without its text colour. The focused one (arrow keys or hover) takes the hover background. */
 export const menuItemClass =
   "box-border flex w-full cursor-pointer items-center gap-2 px-3 py-1.5 text-left text-[0.813rem] outline-none data-focused:bg-hover data-disabled:cursor-not-allowed data-disabled:opacity-40";
