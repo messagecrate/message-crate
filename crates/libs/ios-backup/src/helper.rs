@@ -246,6 +246,11 @@ impl Helper {
     }
 
     /// Write one more request line.
+    ///
+    /// A closed pipe means the program has exited, so that failure is the
+    /// same "stopped" error a reply cut short gives, with its exit status and
+    /// stderr, rather than a bare broken pipe. The reason the program gave on
+    /// its way out, if any, follows it.
     fn send(&mut self, request: &Request) -> Result<()> {
         let stdin = self
             .stdin
@@ -253,10 +258,42 @@ impl Helper {
             .ok_or_else(|| anyhow!("imessage-reader's stdin is already closed"))?;
         let mut line = serde_json::to_string(request)?;
         line.push('\n');
-        stdin
+        match stdin
             .write_all(line.as_bytes())
             .and_then(|()| stdin.flush())
-            .context("send a request to imessage-reader")
+        {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Err(self.stopped_unread()),
+            Err(e) => Err(anyhow::Error::new(e).context("send a request to imessage-reader")),
+        }
+    }
+
+    /// The error for a program that exited without reading a request. The
+    /// program reports a failure as an `error` event on stdout before it
+    /// exits, and nothing on stderr, so that event, still unread, is the
+    /// only place the reason is. Log and progress lines before it are
+    /// passed on as [`Helper::next_event`] passes them, since they are often
+    /// what explains the failure.
+    fn stopped_unread(&mut self) -> anyhow::Error {
+        let mut reason = None;
+        for line in self.stdout.by_ref().map_while(Result::ok) {
+            match serde_json::from_str::<Event>(&line) {
+                Ok(Event::Log { line }) => emit_log(self.log.as_ref(), line),
+                Ok(Event::Progress(progress)) => {
+                    emit_progress(self.progress.as_ref(), progress_event(progress));
+                }
+                Ok(Event::Error { message }) => {
+                    reason = Some(message);
+                    break;
+                }
+                _ => {}
+            }
+        }
+        let stopped = self.exited_early();
+        match reason {
+            Some(message) => anyhow!(message).context(stopped.to_string()),
+            None => stopped,
+        }
     }
 
     /// The error for a program that stopped talking before it was done.
