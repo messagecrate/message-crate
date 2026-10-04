@@ -6,8 +6,8 @@ import VirtualizedImportIssuesTable from "../../components/import/VirtualizedImp
 import OpenPathButton from "../../components/OpenPathButton";
 import StepProgress, { type Step } from "../../components/StepProgress";
 import { formatBytes } from "../../lib/attachmentProgressCopy";
-import { desktopJobRunningText, useDesktopJob } from "../../lib/desktopJob";
 import { groupSlug, slugPath } from "../../lib/contactGroups";
+import { desktopJobRunningText, useDesktopJob } from "../../lib/desktopJob";
 import { useRouteQuery } from "../../lib/routeQuery";
 import { getImport } from "../../lib/serverApi";
 import type { AttachmentForecast, StagingSummary } from "../../lib/tauri";
