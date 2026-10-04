@@ -27,7 +27,13 @@ pub fn build_document(
     seed: &Message,
     messages: Vec<IrMessage>,
 ) -> ConversationDocument {
-    let conversation_type = IrConversationType::parse(&seed.conversation.conversation_type);
+    // The server says whether the conversation is a group; the pull does
+    // not read `conversation_type` to decide it again.
+    let conversation_type = if seed.conversation.is_group {
+        IrConversationType::Group
+    } else {
+        IrConversationType::Individual
+    };
     let participants = participants_from_seed(seed);
     let mut attachment_count = 0u64;
     let mut first_ts = None;
