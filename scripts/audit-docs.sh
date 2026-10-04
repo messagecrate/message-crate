@@ -30,7 +30,7 @@ cd "${REPO_ROOT}/docs"
 ACCEPTED=()
 
 if ! command -v jq >/dev/null 2>&1; then
-  echo "audit-docs.sh needs jq to read the npm audit report; AGENTS.md, \"First time setup\", says how to install it." >&2
+  echo "audit-docs.sh needs jq to read the npm audit report. AGENTS.md, \"First time setup\", says how to install it." >&2
   exit 1
 fi
 
