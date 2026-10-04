@@ -181,9 +181,17 @@ fn queue_attachments(
         .collect()
 }
 
-/// Stage the spooled attachments after every conversation is built, reading
-/// one spooled file at a time.
-fn stage_read_attachments(
+/// Stage the attachments a read left in `options.spool` into
+/// `options.attachments_dir`, reading one spooled file at a time.
+/// [`read_backup`] calls it when `options.stage_attachments` is set; a
+/// caller that reads with it unset calls it once the read has succeeded,
+/// so a backup the read refuses writes nothing outside the spool.
+///
+/// # Errors
+///
+/// Returns an error when an attachment cannot be staged or the run is
+/// cancelled.
+pub fn stage_read_attachments(
     documents: &mut [ConversationDocument],
     options: &ReadOptions<'_>,
     report: &mut ReadReport,

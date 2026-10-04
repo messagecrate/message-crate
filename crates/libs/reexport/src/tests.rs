@@ -231,6 +231,70 @@ fn convert_xml_with_ir_reader() {
     );
 }
 
+/// Every file under `dir`, by its path relative to `dir`, with its bytes.
+fn snapshot(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    let mut files = Vec::new();
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(folder) = pending.pop() {
+        for entry in fs::read_dir(&folder).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                pending.push(path);
+            } else {
+                let bytes = fs::read(&path).unwrap();
+                files.push((path.strip_prefix(dir).unwrap().to_path_buf(), bytes));
+            }
+        }
+    }
+    files.sort();
+    files
+}
+
+/// Convert an SMS backup with a picture into `destination`, cut the backup
+/// short, and convert it again into the same folder with `media`. The
+/// second run must fail and leave the first run's output as it was.
+fn assert_broken_backup_keeps_previous_output(media: MediaMode) {
+    let source = tempfile::tempdir().unwrap();
+    let backup = r#"<smses><mms date="1400773400000" msg_box="1" address="+15555550101"><parts><part ct="image/jpeg" name="a.jpg" data="aGVsbG8="/></parts><addrs><addr address="+15555550101" type="137"/><addr address="+15555550100" type="151"/></addrs></mms></smses>"#;
+    fs::write(source.path().join("smses.xml"), backup).unwrap();
+    let destination = tempfile::tempdir().unwrap();
+    let mut config = config(source.path(), destination.path(), OutputFormat::Json);
+    config.media.mode = media;
+    convert_export(source.path(), &config).unwrap();
+    let previous = snapshot(destination.path());
+    assert!(
+        previous
+            .iter()
+            .any(|(path, _)| path.extension().is_some_and(|e| e == "json")),
+        "{media:?}: the first run wrote a conversation: {previous:?}"
+    );
+    if media == MediaMode::Clone {
+        assert!(
+            previous
+                .iter()
+                .any(|(path, _)| path.starts_with("attachments")),
+            "{media:?}: the first run staged the picture: {previous:?}"
+        );
+    }
+
+    fs::write(source.path().join("smses.xml"), &backup[..20]).unwrap();
+    convert_export(source.path(), &config).unwrap_err();
+
+    assert_eq!(
+        snapshot(destination.path()),
+        previous,
+        "{media:?}: the previous output is left as it was"
+    );
+}
+
+/// A backup Convert cannot read stops the run before the output is
+/// cleaned, whether or not the run copies attachments (issue #1439).
+#[test]
+fn a_broken_sms_backup_leaves_the_previous_output_as_it_was() {
+    assert_broken_backup_keeps_previous_output(MediaMode::Clone);
+    assert_broken_backup_keeps_previous_output(MediaMode::Disabled);
+}
+
 #[test]
 fn mixed_formats_error() {
     let source = tempfile::tempdir().unwrap();
