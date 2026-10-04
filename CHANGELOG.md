@@ -583,7 +583,7 @@ released versions carry their date on the heading.
   contacts list, or a Message Tag from the Message Tags menu on the
   conversation list, did nothing when the server refused the name, such as a
   Contact Group name holding `;` or a name over 80 characters. The menu now
-  keeps the name you typed and shows the reason, as the sidebar already did.
+  keeps the typed name and shows the reason, as the sidebar already did.
 - 2026-10-03 **Adding a WhatsApp identity checks that it was added.** When
   a number was already a Text Message identity, adding it on WhatsApp
   closed the dialog even if the server added nothing. The dialog now stays
