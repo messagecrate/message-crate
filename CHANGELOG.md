@@ -791,11 +791,13 @@ released versions carry their date on the heading.
 
 #### Search
 
-- 2026-10-04 **Searching for `group` no longer lists every group
+- 2026-10-04 **Searching for `group` or `g.us` no longer lists every group
   conversation.** Typing `group` on Conversations listed every group
-  conversation, whatever its title; `in:grou` on Messages listed every
-  message in them, and `with:group` and `identity:group` found them too. A
-  group conversation is now found by its title and by the people in it.
+  conversation from iMazing, OpenExtract and SMS Backup+, whatever its
+  title, and `g.us` every WhatsApp group conversation; `in:grou` or
+  `in:g.us` on Messages listed every message in them, and `with:` and
+  `identity:` found them too. A group conversation is now found by its title
+  and by the people in it.
 - 2026-10-04 **Searching Conversations for `name` no longer lists every
   conversation known only by a name.** Typing `name` on Conversations listed
   every conversation whose backup gave a name and no address, and `less` the
