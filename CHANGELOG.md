@@ -1000,6 +1000,8 @@ released versions carry their date on the heading.
   now checks each Preview against its contents and makes a damaged one
   again, and removes the part-written files a stopped run or import left in
   the attachment folders.
+- 2026-10-04 **How the desktop app checks that its server started was
+  reworked, with nothing visible.**
 
 ### Upgrading
 

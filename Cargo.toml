@@ -18,6 +18,7 @@ members = [
     "crates/libs/build-version",
     "crates/libs/http",
     "crates/libs/api-types",
+    "crates/libs/serve-protocol",
     "crates/libs/ios-backup",
     "crates/exporters/go-sms-pro-exporter",
     "crates/exporters/sms-backup-restore-exporter",

@@ -9,7 +9,7 @@
 //! - nothing answers: the app starts the server and waits for it to listen;
 //! - something else answers: the port is taken, and the app says so.
 //!
-//! The server is given its data folder, its address and the website files on
+//! The server is given its Data Directory, its address and the website files on
 //! its command line, so there is no config file. A database that does not
 //! exist yet is created with the Demo Account before the server listens,
 //! which is why a first start takes a few seconds longer.
@@ -31,6 +31,7 @@
 //! happened. [`LocalServer`] holds that state with the processes and does
 //! what [`step`] asks.
 
+use message_crate_serve_protocol::{LISTENING_LINE, OPERATION_LOCK_HELD_EXIT_CODE};
 use serde::Serialize;
 use std::collections::VecDeque;
 use std::io::{BufRead, BufReader, Read};
@@ -49,7 +50,7 @@ pub const OWN_ADDRESS: &str = "127.0.0.1:8080";
 /// The server program's name, without the platform's suffix.
 const SERVER_NAME: &str = "message-crate-server";
 
-/// The database file the server keeps in its data folder. It is missing
+/// The database file the server keeps in its Data Directory. It is missing
 /// before the first start.
 const DATABASE_FILE: &str = "messagecrate.db";
 
@@ -72,21 +73,12 @@ const ANSWER_TIMEOUT: Duration = Duration::from_secs(15);
 /// How many of the server's last output lines are kept for a failure report.
 const OUTPUT_LINES_KEPT: usize = 40;
 
-/// The start of the line the server writes once it holds its address
-/// (`crates/server/server/src/server.rs`). Only the process that bound the
-/// port writes it, so it tells the app's own server from another Message
-/// Crate answering at the same address.
-const LISTENING_LINE: &str = "message-crate-server serve listening on ";
-
-/// What the server writes when it exits because another server holds its
-/// data folder (`crates/server/server/src/operation_lock.rs`): the server of
-/// a second window of this app, started at the same moment.
-const LOCKED_OUT: &str = "while reset-demo or another server is active";
-
 /// How many more times the address is asked, [`POLL_INTERVAL`] apart, after
-/// the app's server exited because another server holds its data folder.
-/// That server may still be creating the Demo Account, so the app waits for
-/// it as long as for a start of its own: [`START_TIMEOUT`].
+/// the app's server exited with [`OPERATION_LOCK_HELD_EXIT_CODE`]: another
+/// server holds the operation lock of its database, most likely the server
+/// of a second window of this app, started at the same moment. That server
+/// may still be creating the Demo Account, so the app waits for it as long
+/// as for a start of its own: [`START_TIMEOUT`].
 const LOCKED_OUT_PROBES: u32 = 1200;
 
 /// What is at an address.
@@ -274,6 +266,9 @@ enum Event {
     ChildExited {
         /// Its last output.
         output: String,
+        /// Its exit code; `None` when a signal ended it or it could not be
+        /// read.
+        code: Option<i32>,
     },
     /// The app's server has not listened within [`START_TIMEOUT`].
     Deadline {
@@ -385,11 +380,11 @@ fn step(mut state: State, event: Event) -> (State, Vec<Action>) {
                 state.phase = Phase::Own { open };
             }
         }
-        Event::ChildExited { output } => match state.phase {
+        Event::ChildExited { output, code } => match state.phase {
             // Another Message Crate may have taken the port first; it is
             // used if it answers.
             Phase::Starting { .. } => {
-                let probes_left = if output.contains(LOCKED_OUT) {
+                let probes_left = if code == Some(i32::from(OPERATION_LOCK_HELD_EXIT_CODE)) {
                     LOCKED_OUT_PROBES
                 } else {
                     0
@@ -808,11 +803,13 @@ impl LocalServer {
                 if inner.generation != generation {
                     return;
                 }
-                let exited = inner
-                    .child
-                    .as_mut()
-                    .is_none_or(|child| !matches!(child.try_wait(), Ok(None)));
-                if exited {
+                // `Some(code)` once the server has exited.
+                let exited = match inner.child.as_mut().map(Child::try_wait) {
+                    Some(Ok(None)) => None,
+                    Some(Ok(Some(status))) => Some(status.code()),
+                    None | Some(Err(_)) => Some(None),
+                };
+                if let Some(code) = exited {
                     inner.child = None;
                     let readers = std::mem::take(&mut inner.readers);
                     let output = Arc::clone(&inner.output);
@@ -825,7 +822,7 @@ impl LocalServer {
                     let mut inner = server.lock();
                     if inner.generation == generation {
                         let output = joined(&output);
-                        server.apply(&mut inner, Event::ChildExited { output });
+                        server.apply(&mut inner, Event::ChildExited { output, code });
                     }
                     return;
                 }
