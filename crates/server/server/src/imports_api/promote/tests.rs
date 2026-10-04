@@ -35,6 +35,57 @@ async fn import_one_message(conn: &mut SqliteConnection, dir: &std::path::Path, 
     assert_eq!(stats.messages, 1, "the import must insert its message");
 }
 
+/// Promotion reads only rows staging accepted, so a promote that fails is
+/// the server's fault: the import returns it as internal, never as a
+/// refusal the sender could fix, and the cause survives for the log.
+#[tokio::test]
+async fn a_promote_that_fails_is_an_internal_failure() {
+    let (pool, dir) = crate::db::engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    crate::db::schema::ensure_schema(&mut conn).await.unwrap();
+    sqlx::raw_sql(
+        "CREATE TRIGGER fail_promote BEFORE INSERT ON messages
+         BEGIN SELECT RAISE(ABORT, 'promote fails on purpose'); END",
+    )
+    .execute(&mut *conn)
+    .await
+    .unwrap();
+    let path = dir.path().join("+15555550143.jsonl");
+    std::fs::write(
+        &path,
+        r#"{"schema_version":4,"export":{"source":"sms-backup-restore","tool":"test","tool_version":"0","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550143","conversation_type":"individual","group_title":null,"participants":[{"handle":"+15555550143","display_name":null}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}
+{"guid":"g-promote","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_handle":"+15555550143","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}
+"#,
+    )
+    .unwrap();
+    let assets = dir.path().join("assets");
+
+    let err = super::super::import_jsonl_files_on_conn(
+        &mut conn,
+        &[path],
+        &super::super::ImportOptions::fixed(super::super::FixedImportArgs {
+            assets_dir: &assets,
+            asset_root: dir.path(),
+            mode: ImportMode::Append,
+            source: "sms-backup-restore",
+            account_id: TEST_ACCOUNT,
+            fill_content_keys: false,
+            import_id: None,
+        }),
+        super::super::ImportSchemaMode::AssumeReady,
+    )
+    .await
+    .expect_err("promote fails");
+
+    match err {
+        super::super::ImportError::Internal(cause) => assert!(
+            format!("{cause:#}").contains("promote fails on purpose"),
+            "{cause:#}"
+        ),
+        other => panic!("expected an internal failure, got {other:?}"),
+    }
+}
+
 /// The import runs ANALYZE before it opens its transaction, so promote's
 /// guid join has statistics to plan with.
 #[tokio::test]

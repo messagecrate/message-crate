@@ -3,11 +3,11 @@ use std::path::Path;
 use sqlx::SqliteConnection;
 use tempfile::TempDir;
 
-use super::{is_orphaned_export, store_claimed_or_path};
+use super::{StagingError, is_orphaned_export, store_claimed_or_path};
 use crate::assets_api::{self, AssetStats};
 use crate::imports_api::{
-    FixedImportArgs, ImportMode, ImportOptions, ImportSchemaMode, ImportStats,
-    import_jsonl_files_on_conn,
+    FixedImportArgs, ImportError, ImportFailure, ImportMode, ImportOptions, ImportSchemaMode,
+    ImportStats, import_jsonl_files_on_conn,
 };
 use crate::models::AttachmentRecord;
 
@@ -143,6 +143,13 @@ fn a_path_that_leaves_the_export_folder_is_refused_whether_or_not_its_fingerprin
 
         let err = store_claimed_or_path(&att, &export_dir, &assets_dir, &mut stats, 2)
             .expect_err("the path is refused");
+        assert!(
+            matches!(
+                err,
+                StagingError::Rejected(ImportFailure::UnsafeAttachmentPath { .. })
+            ),
+            "{err:?}"
+        );
 
         assert_eq!(
             err.to_string(),
@@ -153,6 +160,86 @@ fn a_path_that_leaves_the_export_folder_is_refused_whether_or_not_its_fingerprin
         );
         assert_eq!(stats.deduped, 0);
     }
+}
+
+/// A refusal staging finds is the sender's to fix: the import returns it as
+/// a rejection that names the file it was in, which the HTTP interface
+/// answers with the failure's own status rather than `500`.
+#[tokio::test]
+async fn an_attachment_staging_refuses_is_a_rejection_naming_its_file() {
+    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let tmp = TempDir::new().unwrap();
+    let header = ORPHANED_HEADER.replace("orphaned", "+15555550154");
+    let message = incoming("g-escape", "+15555550154").replace(
+        r#""attachments":[]"#,
+        r#""attachments":[{"path":"../escape.txt","original_name":null,"mime_type":null,"is_sticker":false,"transcription":null,"sticker_effect":null}]"#,
+    );
+    let path = tmp.path().join("+15555550154.jsonl");
+    std::fs::write(&path, format!("{header}{message}")).unwrap();
+    let assets = tmp.path().join("assets");
+    let opts = ImportOptions::fixed(FixedImportArgs {
+        assets_dir: &assets,
+        asset_root: tmp.path(),
+        mode: ImportMode::Append,
+        source: "imessage",
+        account_id: TEST_ACCOUNT,
+        fill_content_keys: false,
+        import_id: None,
+    });
+
+    let err = import_jsonl_files_on_conn(
+        &mut conn,
+        std::slice::from_ref(&path),
+        &opts,
+        ImportSchemaMode::Ensure,
+    )
+    .await
+    .expect_err("the path is refused");
+
+    match err {
+        ImportError::Rejected {
+            failure: ImportFailure::UnsafeAttachmentPath { line, .. },
+            file,
+        } => {
+            assert_eq!(line, 2);
+            assert_eq!(file, path);
+        }
+        other => panic!("expected a rejection, got {other:?}"),
+    }
+}
+
+/// An asset store the server cannot write to is the server's fault, not the
+/// sender's: staging returns it as internal, so it answers `500` however the
+/// attachment was written.
+#[test]
+fn an_asset_store_that_cannot_be_written_is_an_internal_failure() {
+    let tmp = TempDir::new().unwrap();
+    let export_dir = tmp.path().join("export");
+    std::fs::create_dir_all(&export_dir).unwrap();
+    std::fs::write(export_dir.join("photo.png"), b"some bytes").unwrap();
+    // A file where the store's directory should be.
+    let assets_dir = tmp.path().join("assets");
+    std::fs::write(&assets_dir, b"not a directory").unwrap();
+    let att = AttachmentRecord {
+        path: Some("photo.png".to_string()),
+        sha256: None,
+        ..claimed("", None)
+    };
+
+    let err = store_claimed_or_path(
+        &att,
+        &export_dir,
+        &assets_dir,
+        &mut AssetStats::default(),
+        2,
+    )
+    .expect_err("the store cannot be written");
+
+    assert!(
+        matches!(err, StagingError::Internal(_)),
+        "expected an internal failure, got {err:?}"
+    );
 }
 
 /// The export says the attachment's bytes hash to one value and the file on

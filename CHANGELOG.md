@@ -252,6 +252,11 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **The server's `import` command names the file it refuses an
+  attachment in.** When an attachment broke a rule, such as a path that
+  leaves the export directory or bytes that do not match the fingerprint
+  the file states, the `import` command stopped with the line and the rule
+  but not the file. It now names the file first.
 - 2026-10-04 **Logging out during an Upload waits at most 15 seconds, and
   an Upload whose session ends pauses cleanly.** Logging out during an
   Upload waited for the Upload to pause for as long as that took, and an
