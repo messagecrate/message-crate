@@ -119,8 +119,11 @@ released versions carry their date on the heading.
   Profile tab. **Append** adds and renames and removes nothing. **Edit**
   also makes each contact in the file match its rows, so deleting a row
   takes that identity off the contact. Contacts the file does not mention
-  are left alone. A file with a mistake in it is refused whole, and each row
-  at fault is listed with its reason, so nothing is half loaded. Message
+  are left alone. A load does exactly what the file says and never corrects
+  it: a row moves only the identity it lists, so to move a number on both
+  Text Message and WhatsApp, give each its own row. A file with a mistake in
+  it is refused whole, and each row at fault is listed with its reason, so
+  nothing is half loaded. Message
   Crate no longer reads a phone's vCard file, which put every number on a
   card into your contacts whether or not a message ever used it.
 - 2026-10-01 **The Demo Account has Contact Groups.** Demo Data is now built
@@ -730,13 +733,6 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
-- 2026-10-04 **An Address Book load does exactly what the file says.** A
-  row moves only the identity it lists: a file that moves a number's Text
-  Message identity to a contact, with no row for the same number on
-  WhatsApp, leaves the WhatsApp identity where it is, in Append and Edit
-  alike. To move both, give each its own row, and in Edit a contact keeps
-  both only when its rows list both. A load never corrects what looks like a
-  mistake in the file.
 - 2026-10-04 **One number is one identity however it arrives.** A number
   written with `tel:` in front, in a backup that gave no type for it, became
   a separate identity from the same number as a message sender, on a contact
