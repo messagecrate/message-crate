@@ -145,7 +145,7 @@ An import keeps the rule. An address book load is the exception: it moves,
 adds and takes off only the identities its rows list, so a row for one of the
 two leaves the other where it is, and a file that lists the two under
 different contacts splits the number. Why: a load applies exactly what the
-file says and never corrects it (below). The file is the person's
+file says and never second-guesses it (below). The file is the person's
 instruction, and a load that moved an identity no row lists would undo a
 split the person made on purpose. Rejected: moving the other one with the
 listed one (#1640, reversed in #1059).
@@ -246,20 +246,23 @@ a subset (a search, the checked rows), so a file that spoke for the whole
 account would delete everyone it did not mention, and a file that could only
 add would leave a wrongly linked address unfixable from the sheet.
 
-**A load applies exactly what the file says, and never corrects it.** A
-load changes only what the rows state: the contacts they name, the names
+**A load applies exactly what the file says, and never second-guesses it.**
+A load carries out what the rows state: the contacts they name, the names
 they give, and the identities and Contact Group memberships they list, and
-in Edit it takes off what a listed contact's rows leave out. It changes
-nothing else to make the result closer to what the person may have meant,
-even when the file looks like a mistake. Where a rule elsewhere in this
+in Edit it takes off what a listed contact's rows leave out. It never
+corrects, infers or protects anything the file does not say to make the
+result closer to what the person may have meant, even when the file looks
+like a mistake. The consequences the rules below spell out are not
+corrections: a nameless contact a load empties is deleted, an identity Edit
+takes off that something still uses goes to a new contact with no name, and
+a phone number is read with its `+` back when the spreadsheet dropped it
+without showing, which the load's notes say. Where a rule elsewhere in this
 document does more for an import, such as "one number is one person on
 every service", a load does only what its rows say. Why: the person edited
 the file to say what they want, and a load that second-guessed it would
 change things no row shows, which the person can neither see in the sheet
 nor undo from it. A row the load cannot carry out refuses the load (below)
-rather than being guessed at. Reading a phone number with its `+` back
-(below) is not a correction: it reads the value the person wrote, which the
-spreadsheet changed without showing, and the load's notes say so.
+rather than being guessed at.
 
 **A load is strict, and refuses whole.** A phone is keyed by the one rule
 above, an email is lowercased and must be one `@` with text on both sides,

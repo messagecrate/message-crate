@@ -281,7 +281,7 @@ A load takes only the identity the row lists. The same number on the other
 service stays where it is, with the contact that holds it, unless a row
 lists it too, and a file that lists the two under different contacts puts
 each where its row says. A load applies exactly what the file says and
-never corrects it, so an import's rule that one number is one person on
+never second-guesses it, so an import's rule that one number is one person on
 every service does not apply here (see
 [Contacts, identities and messages](contacts-identities-and-messages.md)).
 
