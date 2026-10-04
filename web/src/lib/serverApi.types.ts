@@ -2864,6 +2864,12 @@ export interface components {
              */
             id: number;
             /**
+             * @description True for a group conversation, by the rule the conversation list's
+             *     `is_group` follows, so a client never reads `conversation_type` to
+             *     decide it.
+             */
+            is_group: boolean;
+            /**
              * @description The title the conversation is shown by, as the conversation list's
              *     `label` gives it: for a conversation the account holder has with
              *     themselves, the account's display name or, without one, the

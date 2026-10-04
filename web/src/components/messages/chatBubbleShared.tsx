@@ -55,8 +55,13 @@ export function senderName(m: Message): string {
   return p ? p.name : "Unknown";
 }
 
-export function isGroupConversation(m: Message): boolean {
-  return m.conversation.conversation_type === "group" || m.conversation.participants.length > 1;
+/**
+ * Whether a received bubble names its sender: in a conversation the server
+ * says is a group, and in any conversation with more than one participant,
+ * where the bubble alone does not say who wrote.
+ */
+export function namesSender(m: Message): boolean {
+  return m.conversation.is_group || m.conversation.participants.length > 1;
 }
 
 /**

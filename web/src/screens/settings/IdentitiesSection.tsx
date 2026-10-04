@@ -3,7 +3,7 @@ import AddIdentityDialog from "../../components/AddIdentityDialog";
 import Button from "../../components/Button";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import IdentityTable, { type IdentityRow } from "../../components/IdentityTable";
-import type { AccountProfile } from "../../lib/account";
+import { type AccountProfile, fixedSettings } from "../../lib/account";
 import {
   type HandleService,
   type ListedService,
@@ -69,9 +69,7 @@ export function IdentitiesSection({
   managedAccountId?: number;
 }) {
   const managed = managedAccountId !== undefined;
-  // The Demo Account's identities decide which of its messages read as sent,
-  // so nobody changes them.
-  const fixed = profile.is_demo === true;
+  const fixed = fixedSettings(profile).identities;
   const updateProfile = useUpdateSettingsProfile(managedAccountId);
   const [adding, setAdding] = useState(false);
   const [addError, setAddError] = useState("");
