@@ -882,11 +882,12 @@ pub async fn load(
 /// The file is read as [`load`] reads it, so the identities are matched by
 /// the key the load would give them. A new contact stays new when no
 /// nameless contact holds its identities; when the nameless contact also
-/// holds an identity the contact's rows do not list (an Append load would
-/// then leave the named contact holding it); or when a row would read as
-/// another identity under the nameless contact's id than as a new
-/// contact's. A file the load would refuse comes back as it was, so the load
-/// reports the refusal.
+/// holds an identity the contact neither lists nor takes with one it lists,
+/// as the same number on the other service (an Append load would then leave
+/// the named contact holding it); or when a row would read as another
+/// identity under the nameless contact's id than as a new contact's. A file
+/// the load would refuse comes back as it was, so the load reports the
+/// refusal.
 ///
 /// # Errors
 ///
@@ -914,8 +915,8 @@ pub(crate) async fn rewrite_ids_to_nameless(
 
     // The nameless contact each new contact takes, by its `contact_id` text.
     // No two new contacts can take the same one: it must hold only
-    // identities the contact lists, and the load refuses a file that lists
-    // one identity under two contacts.
+    // identities the contact lists or takes with them, and the load refuses
+    // a file that lists one identity under two contacts.
     let mut nameless_of: HashMap<&str, i64> = HashMap::new();
     for contact in file
         .iter()
@@ -946,10 +947,19 @@ pub(crate) async fn rewrite_ids_to_nameless(
             let &(_, Some(holder)) = snapshot.handles.get(&identity.key)? else {
                 return None;
             };
-            let holds_only_listed = held
+            // A sibling the load takes with a listed identity counts as
+            // listed (see [`siblings_that_follow`]).
+            let takes = |key: &IdentityKey| {
+                listed.contains(key)
+                    || snapshot
+                        .handles
+                        .get(key)
+                        .is_some_and(|&(handle_id, _)| contact.followers.contains(&handle_id))
+            };
+            let holds_only_taken = held
                 .get(&holder)
-                .is_some_and(|keys| keys.iter().all(|key| listed.contains(key)));
-            (is_nameless(holder) && holds_only_listed && reads_the_same(holder)).then_some(holder)
+                .is_some_and(|keys| keys.iter().all(|key| takes(key)));
+            (is_nameless(holder) && holds_only_taken && reads_the_same(holder)).then_some(holder)
         });
         if let Some(nameless) = nameless {
             nameless_of.insert(contact.id_text.as_str(), nameless);
@@ -1203,8 +1213,7 @@ async fn apply(
 
     // The notes in the order of the file's rows, which a contact's rows need
     // not be.
-    let mut notes: Vec<&(usize, String)> =
-        file.iter().flat_map(|contact| &contact.notes).collect();
+    let mut notes: Vec<&(usize, String)> = file.iter().flat_map(|contact| &contact.notes).collect();
     notes.sort_by_key(|&&(row, _)| row);
     counts.notes = notes.into_iter().map(|(_, note)| note.clone()).collect();
     Ok(counts)

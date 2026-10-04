@@ -1725,3 +1725,45 @@ async fn a_new_contact_whose_rows_read_otherwise_under_the_nameless_contacts_id_
         .unwrap();
     assert_eq!(ids_of(&text), ["c1", "c1"]);
 }
+
+/// A nameless contact that holds a number on both services is named in
+/// place by a new contact whose rows list the number on one service only,
+/// because the load takes the other one with it. A new contact would empty
+/// it, and its deletion would drop it from its Import Run's Contact Group.
+#[tokio::test]
+async fn a_new_contact_listing_one_service_of_a_number_names_its_nameless_holder_in_place() {
+    let (mut conn, _pool, _dir) = account().await;
+    let unknown = imported(
+        &mut conn,
+        "",
+        &[
+            ("phone", "phone", "+15555550150"),
+            ("whatsapp", "phone", "+15555550150"),
+        ],
+    )
+    .await;
+
+    let text = rewrite_ids_to_nameless(
+        &mut conn,
+        ACCOUNT,
+        &file(&["abc,Alice,,phone,phone,+15555550150"]),
+    )
+    .await
+    .unwrap();
+    assert_eq!(ids_of(&text), [unknown.to_string()]);
+
+    let counts = loaded(&mut conn, &text, LoadMode::Append).await;
+    assert_eq!(
+        (
+            counts.contacts_updated,
+            counts.contacts_created,
+            counts.contacts_deleted
+        ),
+        (1, 0, 0)
+    );
+    assert_eq!(name_of(&mut conn, unknown).await.as_deref(), Some("Alice"));
+    assert_eq!(
+        identities_of(&mut conn, unknown).await,
+        ["phone/phone/+15555550150", "whatsapp/phone/+15555550150"]
+    );
+}
