@@ -1152,6 +1152,7 @@ fn convert_keeps_the_names_two_groups_with_one_title_were_given() {
 /// mail export of `format` into `dir`. The mail export embeds the bytes,
 /// so `dir` ends with no `attachments/` folder.
 fn write_mail_fixture(dir: &Path, format: OutputFormat, with_unsent: bool) {
+    clean_previous_ir_output(dir).unwrap();
     fs::create_dir_all(dir.join("attachments")).unwrap();
     fs::write(dir.join("attachments/note.txt"), b"hello attachment").unwrap();
     let mut document = message_ir::testutil::sample_document("with a note");
@@ -1307,6 +1308,7 @@ fn converting_a_mail_export_to_mail_keeps_its_attachments_embedded() {
 #[test]
 fn sms_backup_plus_writes_only_sms_and_mms_and_says_what_it_left_out() {
     let source = tempfile::tempdir().unwrap();
+    clean_previous_ir_output(source.path()).unwrap();
     let mut sink =
         FormatSink::open(source.path(), OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
     sink.write_document(message_ir::testutil::sample_document("an sms"))
@@ -1377,6 +1379,7 @@ fn sms_backup_plus_writes_only_sms_and_mms_and_says_what_it_left_out() {
 #[test]
 fn sms_backup_plus_mail_records_the_export_runs_start() {
     let source = tempfile::tempdir().unwrap();
+    clean_previous_ir_output(source.path()).unwrap();
     let mut sink =
         FormatSink::open(source.path(), OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
     sink.write_document(message_ir::testutil::sample_document("an sms"))

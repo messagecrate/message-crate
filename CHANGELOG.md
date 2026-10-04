@@ -643,6 +643,17 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-04 **Exporting from a second server or account no longer makes
+  the first download every attachment again.** When Export from two
+  servers, or two accounts, wrote into one directory, the run that
+  finished last forgot which attachments the other had already
+  downloaded, so the other's next Export downloaded all of them again. Each
+  server and account now keeps its own record.
+- 2026-10-04 **Nothing an export did not write is ever removed.** Every
+  step that removes or replaces files from an earlier export, including
+  the obfuscated export's placeholders, now checks for itself that an
+  export wrote the directory, and refuses one that it did not. Before,
+  three of those steps relied on the step before them to check.
 - 2026-10-04 **Messages sent to nobody survive an export as SMS Backup+
   mail.** OpenExtract keeps sent texts that name no recipient in one
   conversation. Exported as **EML (SMS Backup+)** and imported again, they

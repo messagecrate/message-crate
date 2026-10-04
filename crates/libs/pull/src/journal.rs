@@ -69,24 +69,12 @@ pub fn load(path: &Path, url: &str, username: &str) -> Result<PullJournalState> 
     let mut state = PullJournalState::default();
     let events: Vec<PullJournalEvent> =
         jsonl_journal::load_events("pull journal", path, &mut |_, _| {})?;
-    for event in events {
+    for event in events.into_iter().filter(|e| e.is_for(url, username)) {
         match event {
-            PullJournalEvent::AssetOk {
-                url: u,
-                username: a,
-                sha256,
-                ..
-            } if u == url && a == username => {
+            PullJournalEvent::AssetOk { sha256, .. } => {
                 state.assets.insert(sha256);
             }
-            PullJournalEvent::BackupComplete {
-                url: u,
-                username: a,
-                ..
-            } if u == url && a == username => {
-                state.backup_complete = true;
-            }
-            _ => {}
+            PullJournalEvent::BackupComplete { .. } => state.backup_complete = true,
         }
     }
     Ok(state)
@@ -102,14 +90,22 @@ pub fn append(path: &Path, event: &PullJournalEvent) -> Result<()> {
     jsonl_journal::append("pull journal", path, event)
 }
 
-/// Rewrite the journal from in-memory `state` for one server URL and username.
+/// Rewrite the lines of one server URL and username from in-memory `state`,
+/// and keep every line of every other server URL and username as it was.
+///
+/// One output directory can hold the journal of Export runs from several
+/// servers, or several accounts on one server. Each pair's lines are its own
+/// skip list, so finishing a run for one pair must not drop another's.
 ///
 /// # Errors
 ///
 /// Returns an error when the temporary file cannot be written or the rename fails.
 pub fn compact(path: &Path, url: &str, username: &str, state: &PullJournalState) -> Result<()> {
-    jsonl_journal::compact_with::<PullJournalEvent, _>("pull journal", path, |_events| {
-        let mut events: Vec<PullJournalEvent> = Vec::new();
+    jsonl_journal::compact_with::<PullJournalEvent, _>("pull journal", path, |read| {
+        let mut events: Vec<PullJournalEvent> = read
+            .into_iter()
+            .filter(|event| !event.is_for(url, username))
+            .collect();
         let mut assets: Vec<_> = state.assets.iter().collect();
         assets.sort_unstable();
         for sha in assets {
@@ -131,6 +127,18 @@ pub fn compact(path: &Path, url: &str, username: &str, state: &PullJournalState)
         }
         events
     })
+}
+
+impl PullJournalEvent {
+    /// Whether this line was written by a run against server `url` as `username`.
+    fn is_for(&self, url: &str, username: &str) -> bool {
+        let (u, a) = match self {
+            Self::AssetOk { url, username, .. } | Self::BackupComplete { url, username, .. } => {
+                (url, username)
+            }
+        };
+        u == url && a == username
+    }
 }
 
 #[cfg(test)]
@@ -277,5 +285,54 @@ mod tests {
                 .assets
                 .contains("aaa")
         );
+    }
+
+    /// One output directory used by Export for two servers, or two accounts
+    /// on one server: finishing a run for one rewrites only its own lines,
+    /// so the next run for another still skips what it downloaded (#1532).
+    #[test]
+    fn compact_keeps_the_lines_of_every_other_server_and_account() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(PULL_JOURNAL_NAME);
+        let asset = |url: &str, username: &str, sha256: &str| PullJournalEvent::AssetOk {
+            url: url.into(),
+            username: username.into(),
+            sha256: sha256.into(),
+        };
+        let complete = |url: &str, username: &str| PullJournalEvent::BackupComplete {
+            url: url.into(),
+            username: username.into(),
+            conversations: 1,
+            messages: 1,
+            assets: 1,
+        };
+        for event in [
+            asset("http://server-a", "alice", "aaa"),
+            complete("http://server-a", "alice"),
+            asset("http://server-a", "bob", "bbb"),
+            asset("http://server-b", "alice", "ccc"),
+            asset("http://server-b", "alice", "ccc"),
+        ] {
+            append(&path, &event).unwrap();
+        }
+        let mut state = PullJournalState::default();
+        state.assets.insert("ccc".into());
+        state.assets.insert("ddd".into());
+        state.backup_complete = true;
+
+        compact(&path, "http://server-b", "alice", &state).unwrap();
+
+        let server_a = load(&path, "http://server-a", "alice").unwrap();
+        assert!(server_a.assets.contains("aaa"));
+        assert!(server_a.backup_complete);
+        let other_account = load(&path, "http://server-a", "bob").unwrap();
+        assert!(other_account.assets.contains("bbb"));
+        assert!(!other_account.backup_complete);
+        let server_b = load(&path, "http://server-b", "alice").unwrap();
+        assert_eq!(server_b.assets.len(), 2);
+        assert!(server_b.backup_complete);
+        // Server B's duplicate line is gone: one line per attachment.
+        let text = fs::read_to_string(&path).unwrap();
+        assert_eq!(text.lines().count(), 6, "{text}");
     }
 }

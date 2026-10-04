@@ -1,6 +1,7 @@
 //! Obfuscation, and dropping attachment paths when media is disabled, applied
 //! before writing files.
 
+use crate::placeholders::materialize_placeholders;
 use anyhow::Result;
 use media::MediaMode;
 use message_crate_core::{ExportTransforms, emit_log};
@@ -9,8 +10,7 @@ use message_ir::{
     MessageIdentity,
 };
 use obfuscate::{
-    Obfuscator, classify_attachment, materialize_placeholders, placeholder_rel_path,
-    resolve_obfuscator_with_log,
+    Obfuscator, classify_attachment, placeholder_rel_path, resolve_obfuscator_with_log,
 };
 use serde_json::{Map, Value};
 use std::collections::HashMap;

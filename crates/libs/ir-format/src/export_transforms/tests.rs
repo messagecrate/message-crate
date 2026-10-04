@@ -115,7 +115,7 @@ fn obfuscate_keeps_me_on_a_sent_message_and_replaces_a_real_name() {
 
 #[test]
 fn obfuscate_skips_staged_media_and_writes_placeholders() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::export_dir();
     let att = tmp.path().join("attachments");
     fs::create_dir_all(&att).unwrap();
     // Pretend an exporter staged a real file (should be removed).
@@ -145,7 +145,7 @@ fn obfuscate_skips_staged_media_and_writes_placeholders() {
 
 #[test]
 fn obfuscate_keeps_mime_when_media_disabled() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::export_dir();
     let mut docs = vec![doc_with_image_attachment()];
     let transforms = ExportTransforms {
         media: MediaMode::Disabled,
@@ -166,7 +166,7 @@ fn obfuscate_keeps_mime_when_media_disabled() {
 /// out, as its digest does, so it goes with the digest (#1564).
 #[test]
 fn obfuscate_drops_the_real_files_size() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::export_dir();
     let mut docs = vec![doc_with_image_attachment()];
     docs[0].messages[0].attachments[0].size_bytes = Some(5);
     let transforms = ExportTransforms {
@@ -183,7 +183,7 @@ fn obfuscate_drops_the_real_files_size() {
 
 #[test]
 fn convert_at_finish_leaves_cloned_file() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::export_dir();
     let att = tmp.path().join("attachments");
     fs::create_dir_all(&att).unwrap();
     fs::write(att.join("keep.bin"), b"already-cloned").unwrap();
@@ -382,7 +382,7 @@ fn obfuscated_export_keeps_no_string_from_the_source() {
         );
     }
 
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::export_dir();
     let transforms = ExportTransforms {
         media: MediaMode::Disabled,
         obfuscate: true,
@@ -447,7 +447,7 @@ fn obfuscate_keeps_each_tapback_and_replaces_only_who_reacted() {
 
 #[test]
 fn media_disabled_clears_each_attachment_path_bytes_and_fingerprint() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::export_dir();
     let mut docs = vec![doc_with_image_attachment()];
     let att = &mut docs[0].messages[0].attachments[0];
     att.bytes = Some(vec![1, 2, 3]);
@@ -547,7 +547,7 @@ fn two_conversations(link: impl FnOnce(String) -> IrImessage) -> Vec<Conversatio
 }
 
 fn obfuscate_all(docs: &mut [ConversationDocument]) {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::export_dir();
     let transforms = ExportTransforms {
         media: MediaMode::Disabled,
         obfuscate: true,
