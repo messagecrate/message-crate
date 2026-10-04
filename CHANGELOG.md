@@ -949,6 +949,17 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-04 **A focused button shows no white line in the dark theme.**
+  The keyboard focus ring on buttons, the contact drawer's close button,
+  the date field's calendar buttons and the import form's section headings
+  had a thin white line between the button and the ring. The gap now shows
+  the colour behind the button, in every theme.
+- 2026-10-04 **The panel resize grips move by exactly 8 pixels.** Each
+  arrow key on the grip of the left panel or the list column moved the
+  panel 9 pixels wider or 7 narrower, and pressing the grip without moving
+  it widened the panel by 1 pixel. Arrow keys now move 8 pixels, 24 with
+  Shift, pressing the grip leaves the width as it was, and a screen reader
+  hears the panel's own width.
 - 2026-10-04 **Import history in Settings → Storage loads quickly however
   many problems your imports recorded.** The list used to bring every error
   and skipped item of every import on the page, so a few large WhatsApp

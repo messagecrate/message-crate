@@ -2,6 +2,7 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { focusRing } from "../../lib/uiStyles";
 import { CollapsibleSection } from "./ImportFormUi";
 
 afterEach(cleanup);
@@ -15,8 +16,6 @@ describe("CollapsibleSection", () => {
         <p>Body</p>
       </CollapsibleSection>,
     );
-    expect(screen.getByRole("button", { name: /Attachments/ }).className).toContain(
-      "focus-visible:ring-2 focus-visible:ring-accent",
-    );
+    expect(screen.getByRole("button", { name: /Attachments/ }).className).toContain(focusRing);
   });
 });
