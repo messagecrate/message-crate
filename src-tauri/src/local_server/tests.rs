@@ -249,6 +249,7 @@ fn only_the_apps_own_server_saying_it_listens_makes_the_start_its_own() {
         starting.clone(),
         Event::ChildExited {
             output: "lost".into(),
+            code: Some(1),
         },
     );
     assert_eq!(actions, [Action::Probe]);
@@ -256,19 +257,37 @@ fn only_the_apps_own_server_saying_it_listens_makes_the_start_its_own() {
     assert_eq!(state.phase, Phase::Found { checking: false });
 
     // Locked out by the server of a second window, still being set up: the
-    // address is asked again until it answers.
-    let locked = format!("Error: cannot start serve for /data {LOCKED_OUT}");
-    let (state, _) = step(starting.clone(), Event::ChildExited { output: locked });
+    // address is asked again until it answers. The exit code says so, not
+    // the words.
+    let (state, _) = step(
+        starting.clone(),
+        Event::ChildExited {
+            output: "any words at all".into(),
+            code: Some(i32::from(OPERATION_LOCK_HELD_EXIT_CODE)),
+        },
+    );
     let (state, actions) = step(state, Event::Probed(Probe::Free));
     assert_eq!(actions, [Action::ProbeLater]);
     let (state, _) = step(state, Event::Probed(Probe::MessageCrate));
     assert_eq!(state.phase, Phase::Found { checking: false });
 
-    // Any other exit with nothing answering is a failure.
+    // Any other exit with nothing answering is a failure, even one whose
+    // words say another server is active.
+    let (state, _) = step(
+        starting.clone(),
+        Event::ChildExited {
+            output: "while reset-demo or another server is active".into(),
+            code: Some(1),
+        },
+    );
+    let (state, actions) = step(state, Event::Probed(Probe::Free));
+    assert_eq!(actions, []);
+    assert!(matches!(state.phase, Phase::Failed { .. }), "{state:?}");
     let (state, _) = step(
         starting,
         Event::ChildExited {
             output: "database is locked".into(),
+            code: None,
         },
     );
     let (state, actions) = step(state, Event::Probed(Probe::Free));
@@ -479,6 +498,36 @@ mod with_a_script {
         };
         assert_eq!(reason, FailureReason::StartFailed);
         assert!(details.contains("database is locked"), "{details}");
+    }
+
+    #[test]
+    fn a_server_refused_the_operation_lock_waits_for_the_other_server() {
+        let dir = tempfile::tempdir().unwrap();
+        // Told apart by its exit code alone, whatever it wrote.
+        let program = script(
+            dir.path(),
+            &format!("echo 'any words at all' >&2\nexit {OPERATION_LOCK_HELD_EXIT_CODE}"),
+        );
+        let launch = launch_at(free_address(), &program, dir.path());
+
+        let server = LocalServer::default();
+        server.ensure_started(launch);
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let phase = loop {
+            let phase = server.lock().state.phase.clone();
+            if !matches!(phase, Phase::Probing | Phase::Starting { .. }) {
+                break phase;
+            }
+            assert!(Instant::now() < deadline, "the server never exited");
+            thread::sleep(Duration::from_millis(20));
+        };
+        server.stop();
+
+        // Nothing answers the address, and the app keeps asking it.
+        assert!(
+            matches!(phase, Phase::Lost { probes_left, .. } if probes_left > 0),
+            "{phase:?}"
+        );
     }
 
     #[test]
