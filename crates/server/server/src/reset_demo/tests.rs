@@ -617,7 +617,7 @@ async fn reset_check_refuses_a_virtual_table_it_cannot_compare() {
 /// than leaving them unlinked as deleting an account does, is refused
 /// (ADR 0020).
 #[tokio::test]
-async fn a_reset_that_loses_the_old_demo_accounts_audit_trail_is_refused() {
+async fn reset_check_refuses_a_reset_that_loses_the_old_demo_accounts_audit_trail() {
     let temp = tempfile::tempdir().expect("create test directory");
     let db = temp.path().join("messagecrate.db");
     seed_reset_test_database(&db).await;
@@ -650,7 +650,7 @@ async fn a_reset_that_loses_the_old_demo_accounts_audit_trail_is_refused() {
 
     let error = format!("{:#}", result.err().expect("the reset is refused"));
     assert!(
-        error.ends_with("lost the old Demo Account's Audit Trail in: audit_entries (1 rows)"),
+        error.ends_with("lost the old Demo Account's Audit Trail in: audit_entries (1 row)"),
         "{error}"
     );
     assert_reset_test_database(&db).await;
@@ -675,6 +675,22 @@ fn an_account_folder_linked_from_elsewhere_is_listed() {
         listing.get(Path::new("9/assets/kept.bin")),
         Some(&FolderEntry::File { bytes: 4 })
     );
+}
+
+/// A link to nothing in the data folder that is not an account's folder,
+/// such as a stale backups link, does not stop the listing.
+#[cfg(unix)]
+#[test]
+fn a_broken_link_that_is_not_an_account_folder_is_passed_over() {
+    let temp = tempfile::tempdir().expect("create test directory");
+    let data_dir = temp.path().join("data");
+    fs::create_dir_all(data_dir.join("9")).expect("create account 9's folder");
+    std::os::unix::fs::symlink(temp.path().join("gone"), data_dir.join("backups"))
+        .expect("link to nothing");
+
+    let listing = other_account_folders(&data_dir, DEMO_ACCOUNT_ID).expect("list the folders");
+
+    assert_eq!(listing.get(Path::new("9")), Some(&FolderEntry::Folder));
 }
 
 /// A reset whose rebuild changed another account's folder under the data

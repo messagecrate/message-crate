@@ -1064,7 +1064,7 @@ async fn verify_non_demo_state_preserved(
         };
         let search_terms = sample_search_terms(conn, demo_id).await?;
         let state = non_demo_state_on_conn(conn, demo, &search_terms).await?;
-        let record = outliving_rows(conn, "account_id = $1", demo_id).await?;
+        let record = outliving_rows(conn, OutlivingRows::OfAccount(demo_id)).await?;
         Ok(Some((demo, search_terms, state, record)))
     })
     .await
@@ -1076,8 +1076,7 @@ async fn verify_non_demo_state_preserved(
         let state = non_demo_state_on_conn(conn, demo, &search_terms).await?;
         let unlinked = outliving_rows(
             conn,
-            &format!("deletion_entry_id {}", unlinked_by_reset("$1")),
-            demo.last_entry_before_reset,
+            OutlivingRows::UnlinkedAfter(demo.last_entry_before_reset),
         )
         .await?;
         Ok((state, unlinked))
@@ -1108,7 +1107,8 @@ async fn verify_non_demo_state_preserved(
                 .iter()
                 .filter(|id| !kept.is_some_and(|kept| kept.contains(id)))
                 .count();
-            (missing > 0).then(|| format!("{table} ({missing} rows)"))
+            let rows = if missing == 1 { "row" } else { "rows" };
+            (missing > 0).then(|| format!("{table} ({missing} {rows})"))
         })
         .collect();
     if !lost.is_empty() {
@@ -1179,23 +1179,38 @@ struct DemoRows {
 /// entry in (ADR 0020).
 const DELETION_ENTRY_COLUMN: &str = "deletion_entry_id";
 
-/// `IN` and the `account_deleted` entries written after the entry id bound
-/// to `param`: the entries a reset's deletion of the Demo Account wrote.
-fn unlinked_by_reset(param: &str) -> String {
+/// The SQL condition that the entry id in `column` names an
+/// `account_deleted` entry written after the entry id bound to `param`: one
+/// the reset's deletion of the Demo Account wrote.
+fn unlinked_by_reset_sql(column: &str, param: &str) -> String {
     format!(
-        "IN (SELECT id FROM audit_entries
-             WHERE action = 'account_deleted' AND id > {param})"
+        "{column} IN (SELECT id FROM audit_entries
+                      WHERE action = 'account_deleted' AND id > {param})"
     )
 }
 
-/// The ids of the rows `filter` picks, bound to `value`, in every table whose
-/// rows outlive their account: one with `account_id` and
-/// [`DELETION_ENTRY_COLUMN`].
+/// Which rows [`outliving_rows`] reads.
+#[derive(Debug, Clone, Copy)]
+enum OutlivingRows {
+    /// The rows still linked to this account.
+    OfAccount(i64),
+    /// The rows a reset unlinked, by an `account_deleted` entry written
+    /// after this entry id.
+    UnlinkedAfter(i64),
+}
+
+/// The ids of the rows `which` picks in every table whose rows outlive their
+/// account: one with `account_id` and [`DELETION_ENTRY_COLUMN`].
 async fn outliving_rows(
     conn: &mut sqlx::SqliteConnection,
-    filter: &str,
-    value: i64,
+    which: OutlivingRows,
 ) -> Result<BTreeMap<String, std::collections::BTreeSet<i64>>> {
+    let (filter, value) = match which {
+        OutlivingRows::OfAccount(account) => ("account_id = $1".to_owned(), account),
+        OutlivingRows::UnlinkedAfter(entry) => {
+            (unlinked_by_reset_sql(DELETION_ENTRY_COLUMN, "$1"), entry)
+        }
+    };
     let tables: Vec<String> = sqlx::query_scalar(
         "SELECT m.name FROM sqlite_master m
          WHERE m.type = 'table'
@@ -1309,8 +1324,8 @@ async fn non_demo_state_on_conn(
         let unlinked = owner.as_ref().and_then(|owner| owner.deletion.as_ref());
         let selection = match unlinked {
             Some(deletion) => format!(
-                "{selection} AND NOT COALESCE({deletion} {}, 0)",
-                unlinked_by_reset("$2")
+                "{selection} AND NOT COALESCE({}, 0)",
+                unlinked_by_reset_sql(deletion, "$2")
             ),
             None => selection,
         };
@@ -1400,7 +1415,8 @@ const SEARCH_SAMPLE_MESSAGES: i64 = 16;
 const SEARCH_SAMPLE_TERMS: usize = 32;
 
 /// Up to [`SEARCH_SAMPLE_TERMS`] words from [`SEARCH_SAMPLE_MESSAGES`]
-/// messages outside the Demo Account, picked at random: the searches [`search_sample_digest`] runs on both databases.
+/// messages outside the Demo Account, picked at random: the searches
+/// [`search_sample_digest`] runs on both databases.
 async fn sample_search_terms(
     conn: &mut sqlx::SqliteConnection,
     demo_id: i64,
@@ -1490,10 +1506,14 @@ impl std::fmt::Display for FolderEntry {
 /// Every file and folder in the folders of accounts other than `demo_id`
 /// under `data_dir` (`data_dir/<account>/`), by its path relative to
 /// `data_dir`, with each file's size. A missing `data_dir` lists nothing.
+/// An account folder that is a symbolic link is followed, since an account
+/// moved to another disk is linked back that way; below it, links are listed
+/// and not followed ([`list_folder`]).
 ///
 /// # Errors
 ///
-/// Returns an error when a folder cannot be read.
+/// Returns an error when a folder cannot be read, or an account folder is a
+/// link to nothing.
 fn other_account_folders(data_dir: &Path, demo_id: i64) -> Result<BTreeMap<PathBuf, FolderEntry>> {
     let mut listing = BTreeMap::new();
     let entries = match fs::read_dir(data_dir) {
@@ -1510,12 +1530,13 @@ fn other_account_folders(data_dir: &Path, demo_id: i64) -> Result<BTreeMap<PathB
             .to_str()
             .and_then(|name| name.parse::<i64>().ok())
             .is_some_and(|account| account != demo_id);
-        // Followed, so an account folder moved to another disk and linked
-        // back is listed too.
+        if !is_other_account {
+            continue;
+        }
         let is_folder = fs::metadata(entry.path())
-            .with_context(|| format!("read {}", entry.path().display()))?
+            .with_context(|| format!("read the account folder {}", entry.path().display()))?
             .is_dir();
-        if is_other_account && is_folder {
+        if is_folder {
             list_folder(data_dir, &entry.path(), &mut listing)?;
         }
     }
