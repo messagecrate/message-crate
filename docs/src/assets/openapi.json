@@ -14122,7 +14122,7 @@
       },
       "ImportRunSummary": {
         "type": "object",
-        "description": "An Import Run as a list of runs answers it: the `ImportRun` with how\nmany issues it recorded and not the issues. A run may record any number\nof issues, so a page that carried them would have no bound on its size;\n`GET /v1/imports/{id}` answers them (#1559,\n`docs/architecture/http-api.md`, \"Lists\").",
+        "description": "An Import Run as a list of runs answers it: every field of the run but\nits issues. A run may record any number of issues, so a page that\ncarried them would have no bound on its size; `GET /v1/imports/{id}`\nanswers them (#1559,\n`docs/architecture/http-api.md`, \"Lists\").",
         "required": [
           "id",
           "source",
@@ -14209,7 +14209,7 @@
           "issue_count": {
             "type": "integer",
             "format": "int64",
-            "description": "How many issues the run recorded. `GET /v1/imports/{id}` answers\nthem.",
+            "description": "How many issues the run recorded.",
             "minimum": 0
           },
           "message_count": {
@@ -16174,7 +16174,7 @@
             "type": "array",
             "items": {
               "type": "object",
-              "description": "An Import Run as a list of runs answers it: the `ImportRun` with how\nmany issues it recorded and not the issues. A run may record any number\nof issues, so a page that carried them would have no bound on its size;\n`GET /v1/imports/{id}` answers them (#1559,\n`docs/architecture/http-api.md`, \"Lists\").",
+              "description": "An Import Run as a list of runs answers it: every field of the run but\nits issues. A run may record any number of issues, so a page that\ncarried them would have no bound on its size; `GET /v1/imports/{id}`\nanswers them (#1559,\n`docs/architecture/http-api.md`, \"Lists\").",
               "required": [
                 "id",
                 "source",
@@ -16261,7 +16261,7 @@
                 "issue_count": {
                   "type": "integer",
                   "format": "int64",
-                  "description": "How many issues the run recorded. `GET /v1/imports/{id}` answers\nthem.",
+                  "description": "How many issues the run recorded.",
                   "minimum": 0
                 },
                 "message_count": {

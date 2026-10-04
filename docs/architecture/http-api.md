@@ -253,10 +253,11 @@ holds such a collection, as an Import Run holds its issues, the list answers
 how many in a count (`issue_count`) and the resource's own `GET` answers the
 collection. `GET /v1/imports` and an account's own
 `GET /v1/accounts/{id}/imports` answer each run as an `ImportRunSummary`,
-the owner's `GET /v1/accounts/{id}/imports` as an `OwnerImportRun`, both
-with `issue_count` and neither with the issues, and `GET /v1/imports/{id}`
-answers the issues. The count is read in the list's own statement, never by a statement
-per row. Why: `limit` bounds a page's rows and nothing else, so a collection
+with `issue_count` and without the issues. The owner's
+`GET /v1/accounts/{id}/imports` answers each as an `OwnerImportRun`, which
+also counts the issues and never carries them. `GET /v1/imports/{id}`
+answers the issues. The count is read in the list's own statement, never by
+a statement per row. Why: `limit` bounds a page's rows and nothing else, so a collection
 inside each row left a page's size to whatever the runs recorded. Forty
 WhatsApp runs of 20,000 skipped files each made one page of Settings →
 Storage carry about 800,000 issues, and one statement per row made a page of

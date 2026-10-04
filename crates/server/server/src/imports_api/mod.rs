@@ -766,10 +766,10 @@ pub(crate) struct ImportRun {
     pub(crate) issues: Vec<ImportIssue>,
 }
 
-/// An Import Run as a list of runs answers it: the `ImportRun` with how
-/// many issues it recorded and not the issues. A run may record any number
-/// of issues, so a page that carried them would have no bound on its size;
-/// `GET /v1/imports/{id}` answers them (#1559,
+/// An Import Run as a list of runs answers it: every field of the run but
+/// its issues. A run may record any number of issues, so a page that
+/// carried them would have no bound on its size; `GET /v1/imports/{id}`
+/// answers them (#1559,
 /// `docs/architecture/http-api.md`, "Lists").
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct ImportRunSummary {
@@ -820,8 +820,7 @@ pub(crate) struct ImportRunSummary {
     /// What the person approved at the last Review they passed, or null. The
     /// column `PATCH /v1/imports/{id}` writes with its `summary`.
     pub(crate) summary: serde_json::Value,
-    /// How many issues the run recorded. `GET /v1/imports/{id}` answers
-    /// them.
+    /// How many issues the run recorded.
     pub(crate) issue_count: u64,
     /// Contacts this run created.
     pub(crate) contacts_new: u64,
@@ -921,14 +920,26 @@ pub(crate) async fn owner_import_run(
     row: crate::db::imports::ImportRow,
 ) -> Result<OwnerImportRun, ApiError> {
     let issue_count = crate::db::imports::issue_count(conn, row.id).await?;
+    listed_import(conn, row, issue_count)
+        .await
+        .map(OwnerImportRun::from)
+}
+
+/// One run's row as the list would read it, given its issue count: the
+/// contact tally is read here.
+async fn listed_import(
+    conn: &mut SqliteConnection,
+    row: crate::db::imports::ImportRow,
+    issue_count: u64,
+) -> Result<crate::db::imports::ListedImport, ApiError> {
     let contacts = crate::db::import_contacts::counts(conn, row.id)
         .await
         .map_err(ApiError::Internal)?;
-    Ok(OwnerImportRun::from(crate::db::imports::ListedImport {
+    Ok(crate::db::imports::ListedImport {
         row,
         issue_count,
         contacts,
-    }))
+    })
 }
 
 impl From<crate::db::imports::ListedImport> for OwnerImportRun {
@@ -1410,14 +1421,7 @@ pub(crate) async fn import_run(
             reason: issue.reason,
         })
         .collect();
-    let contacts = crate::db::import_contacts::counts(conn, row.id)
-        .await
-        .map_err(ApiError::Internal)?;
-    let run = ImportRunSummary::from(crate::db::imports::ListedImport {
-        row,
-        issue_count: issues.len() as u64,
-        contacts,
-    });
+    let run = listed_import(conn, row, issues.len() as u64).await?.into();
     Ok(ImportRun { run, issues })
 }
 

@@ -2551,10 +2551,10 @@ export interface components {
             issues: components["schemas"]["ImportIssue"][];
         };
         /**
-         * @description An Import Run as a list of runs answers it: the `ImportRun` with how
-         *     many issues it recorded and not the issues. A run may record any number
-         *     of issues, so a page that carried them would have no bound on its size;
-         *     `GET /v1/imports/{id}` answers them (#1559,
+         * @description An Import Run as a list of runs answers it: every field of the run but
+         *     its issues. A run may record any number of issues, so a page that
+         *     carried them would have no bound on its size; `GET /v1/imports/{id}`
+         *     answers them (#1559,
          *     `docs/architecture/http-api.md`, "Lists").
          */
         ImportRunSummary: {
@@ -2603,8 +2603,7 @@ export interface components {
             id: number;
             /**
              * Format: int64
-             * @description How many issues the run recorded. `GET /v1/imports/{id}` answers
-             *     them.
+             * @description How many issues the run recorded.
              */
             issue_count: number;
             /**
@@ -3682,8 +3681,7 @@ export interface components {
                 id: number;
                 /**
                  * Format: int64
-                 * @description How many issues the run recorded. `GET /v1/imports/{id}` answers
-                 *     them.
+                 * @description How many issues the run recorded.
                  */
                 issue_count: number;
                 /**
