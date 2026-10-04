@@ -213,5 +213,6 @@ export function toImportSummaryView(run: AccountImportRun): ImportSummaryView {
     uploadMs: run.upload_ms,
     durationMs,
     issues: "issues" in run ? run.issues : [],
+    notes: "notes" in run ? run.notes : [],
   };
 }

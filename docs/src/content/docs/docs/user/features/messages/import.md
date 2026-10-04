@@ -261,13 +261,21 @@ The Upload row shows, once the run finishes:
 - **Contacts**: **New** and **Modified**, and a **Contact list** that opens to each contact the run touched.
 - **Import log**: a link to `message-crate-push.log` in the Staging Directory.
 
-### Approved Reviews and errors
+### Approved Reviews, errors and notes
 
 A Review that has been approved folds to one line, **Approved**.
 
 When a finished run reports errors, an **Errors** table sits under the list, with the count beside the heading.
 Identical errors are grouped.
 Its columns are **Parse File**, **Stage**, and **Error Message**, and a row opens to the full message and the files it names.
+A file in the backup that the importer could not read, such as a CSV that is not a chat export, is an error that names the file.
+
+When a finished run kept something with a caveat, a **Notes** table sits under the errors, with the count beside the heading.
+A note is not an error, and a run with notes and no errors still reads as completed.
+Each note names its item and what the import did with it.
+For example, a message that records no phone number for the other person is kept under the name the message gives, and an email address that the backup pairs with two phone numbers keeps the group member by the address.
+Identical notes are grouped.
+Its columns are **Item**, **Stage**, and **Note**, and a row opens to the full note and the items it names.
 
 ## Leaving a run
 
@@ -299,7 +307,7 @@ When the server ends the session during an Upload, the Upload pauses at once, re
 
 When Import is opened and the account already has a run open, the screen shows that run in place of the form.
 Every case offers **Discard this import**, which ends the run.
-The run keeps the Errors it recorded before it was discarded.
+The run keeps the Errors and notes it recorded before it was discarded.
 On the computer that staged the run, it also deletes the Staging Directory.
 
 A run whose app closed or crashed keeps every Error that Staging, Media, or Upload had reported before it stopped, because each Error is written into the Staging Directory the moment its Stage reports it.
@@ -354,7 +362,7 @@ A run that ends deletes its Staging Directory, and the import log and the journa
 After a success the Message Crate holds the messages, so the staged copy is no longer needed.
 After a failed Staging or Media, nothing complete was staged, so there is nothing to upload.
 A run that is cancelled or paused leaves the Staging Directory in place, because the staged files are what a resume reads.
-The Errors of a paused run are kept with its staged files, so the finished run lists the Errors of every part.
+The Errors and notes of a paused run are kept with its staged files, so the finished run lists those of every part.
 
 A run that succeeded leads with where to go next:
 

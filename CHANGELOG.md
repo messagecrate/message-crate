@@ -262,6 +262,19 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **An import lists every backup file it could not read, and
+  notes what it kept with a caveat.** A CSV, XML, mail or MMS file in the
+  backup that the importer could not read, which before showed only in the
+  import log, is now an error in the finished run that names the file.
+  Something the import did with an item that is worth knowing but is not a
+  failure is now a note in a **Notes** list of its own under the errors:
+  an iMazing Live Photo video that two rows claim, a message that records no
+  phone number for the other person, a group message that names none of
+  your numbers, a group member kept by an email address, a chat kept under a
+  name alone, and a WhatsApp attachment whose file is not in the backup,
+  each named. The notes are kept with the run, so Storage shows them later
+  too, and a run with notes and no errors still reads as completed.
+
 - 2026-10-04 **An import whose app closes or crashes keeps every Error
   found so far.** Staging reported its Errors only when it finished, Media
   reported none, and an Upload's skipped attachments waited for the end of
