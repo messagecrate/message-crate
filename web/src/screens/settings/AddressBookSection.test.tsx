@@ -116,8 +116,10 @@ describe("AddressBookSection", () => {
   });
 
   it("lists each number the load read with its + back or made a new identity", async () => {
+    // Singapore reserves no numbers for fiction, and no Singapore number
+    // starts with 5, so +65 5555 0100 is no one's.
     const notes = [
-      'row 2: 6595550100 has no +, so it was read as +6595550100, which "Ada" (contact 4) holds',
+      'row 2: 6555550100 has no +, so it was read as +6555550100, which "Ada" (contact 4) holds',
       "row 5: 447700900123 has no +, so it became the new identity 447700900123",
     ];
     post.mockResolvedValue({ ...NOTHING, notes });

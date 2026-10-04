@@ -764,7 +764,9 @@ mod tests {
 
     #[test]
     fn a_pdu_number_with_its_country_keeps_it() {
-        assert_eq!(chat_ids_for_received_pdu("+6595550100"), ["+6595550100"]);
+        // Singapore reserves no numbers for fiction, and no Singapore number
+        // starts with 5, so +65 5555 0100 is no one's.
+        assert_eq!(chat_ids_for_received_pdu("+6555550100"), ["+6555550100"]);
     }
 
     #[test]

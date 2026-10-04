@@ -1347,9 +1347,11 @@ mod tests {
 
     #[test]
     fn a_number_with_its_country_keeps_it() {
-        let xml = br#"<smses><sms protocol="0" address="+6595550100" date="1" type="1" body="hi"/></smses>"#;
+        // Singapore reserves no numbers for fiction, and no Singapore number
+        // starts with 5, so +65 5555 0100 is no one's.
+        let xml = br#"<smses><sms protocol="0" address="+6555550100" date="1" type="1" body="hi"/></smses>"#;
         let (records, _) = parse_reader(xml.as_slice(), None).unwrap();
-        assert_eq!(records[0].chat_key, "+6595550100");
+        assert_eq!(records[0].chat_key, "+6555550100");
     }
 
     #[test]
@@ -1365,8 +1367,8 @@ mod tests {
     fn an_owner_outside_the_us_is_inferred_with_its_country() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("smses.xml");
-        std::fs::write(&path, r#"<smses><mms msg_box="2"><parts/><addrs><addr address="+447911123456" type="137"/></addrs></mms></smses>"#).unwrap();
-        assert_eq!(infer_owner_phones(&path).unwrap(), vec!["+447911123456"]);
+        std::fs::write(&path, r#"<smses><mms msg_box="2"><parts/><addrs><addr address="+447700900456" type="137"/></addrs></mms></smses>"#).unwrap();
+        assert_eq!(infer_owner_phones(&path).unwrap(), vec!["+447700900456"]);
     }
 
     /// A group MMS's `contact_name` is the members' names joined by ", ", so

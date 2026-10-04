@@ -251,7 +251,7 @@ fn a_call_log_mail_is_not_a_text_message() {
 #[test]
 fn the_owner_in_national_form_is_not_a_peer() {
     let msg = parse(
-        "From: x@unknown.email\nTo: me@example.com\nSubject: MMS with X\nX-smssync-type: 132\nX-smssync-address: 07700900123~+447911123456\nX-smssync-date: 1609459200000\nContent-Type: text/plain; charset=utf-8\n\nhi\n",
+        "From: x@unknown.email\nTo: me@example.com\nSubject: MMS with X\nX-smssync-type: 132\nX-smssync-address: 07700900123~+447700900456\nX-smssync-date: 1609459200000\nContent-Type: text/plain; charset=utf-8\n\nhi\n",
         &["+447700900123"],
     )
     .unwrap();
@@ -268,8 +268,10 @@ fn received_from(address: &str) -> ParsedMessage {
 
 #[test]
 fn an_international_number_keeps_its_country() {
-    let msg = received_from("+6595550100");
-    assert_eq!(crate::identity::chat_id_for(&msg), "+6595550100");
+    // Singapore reserves no numbers for fiction, and no Singapore number
+    // starts with 5, so +65 5555 0100 is no one's.
+    let msg = received_from("+6555550100");
+    assert_eq!(crate::identity::chat_id_for(&msg), "+6555550100");
 }
 
 #[test]
@@ -284,15 +286,15 @@ fn an_email_address_and_a_sender_name_are_not_numbers() {
 }
 
 /// The `From` of a group message names its sender inside the address,
-/// `"Bob" <+447911123456@unknown.email>`.
+/// `"Bob" <+447700900789@unknown.email>`.
 #[test]
 fn a_group_sender_is_read_from_the_from_address() {
     let msg = parse(
-        "From: \"Bob\" <+447911123456@unknown.email>\nTo: me@example.com\nSubject: MMS with X\nX-smssync-type: 132\nX-smssync-address: +447700900456~+447911123456\nX-smssync-date: 1609459200000\nContent-Type: text/plain; charset=utf-8\n\nhi\n",
+        "From: \"Bob\" <+447700900789@unknown.email>\nTo: me@example.com\nSubject: MMS with X\nX-smssync-type: 132\nX-smssync-address: +447700900456~+447700900789\nX-smssync-date: 1609459200000\nContent-Type: text/plain; charset=utf-8\n\nhi\n",
         &["+447700900123"],
     )
     .unwrap();
-    assert_eq!(msg.sender.unwrap().key(), "+447911123456");
+    assert_eq!(msg.sender.unwrap().key(), "+447700900789");
 }
 
 /// A digit in the display name of `From` is not part of the number:

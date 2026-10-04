@@ -478,18 +478,19 @@ mod tests {
 
         // A non-US number keeps its country code and gains no ten-digit form,
         // because the last ten digits of a UK number are not the number.
-        let uk = phone_keys("+44 20 7183 8750");
-        assert!(uk.contains(&"442071838750".to_string()), "{uk:?}");
-        assert!(uk.contains(&"+442071838750".to_string()), "{uk:?}");
+        let uk = phone_keys("+44 20 7946 0750");
+        assert!(uk.contains(&"442079460750".to_string()), "{uk:?}");
+        assert!(uk.contains(&"+442079460750".to_string()), "{uk:?}");
         assert_eq!(uk.len(), 2, "no ten-digit variant for a UK number: {uk:?}");
 
         // An eleven-digit number is US only when it starts `+1`. A French
         // mobile has eleven digits too, and its last ten would match a US
-        // number that isn't this person's.
-        let fr = phone_keys("+33 6 12 34 56 78");
+        // number that isn't this person's. 06 39 98 xx xx is ARCEP's range
+        // for fiction, so the number is no one's.
+        let fr = phone_keys("+33 6 39 98 12 34");
         assert_eq!(
             fr,
-            vec!["33612345678".to_string(), "+33612345678".to_string()]
+            vec!["33639981234".to_string(), "+33639981234".to_string()]
         );
     }
 

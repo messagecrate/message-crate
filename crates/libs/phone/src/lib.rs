@@ -37,7 +37,7 @@ impl fmt::Display for PhoneRegion {
 
 impl PhoneRegion {
     /// Region for a raw value: a value with a `+` before its first digit
-    /// names its country, so international rules apply (`+65 9555 0100`,
+    /// names its country, so international rules apply (`+65 5555 0100`,
     /// `(+44) 7700 900123`, `tel:+447700900123`); anything else is treated
     /// as a US national number (this crate's home region).
     pub fn for_raw(raw: &str) -> Self {
@@ -411,7 +411,7 @@ impl OwnerHandleSet {
     /// Every handle matches by handle key. A phone also matches by its
     /// [`sanitize_number`] digits, for sources that record numbers with the
     /// `+` already gone.
-    /// Without the `+`, `6595550100` could be Singapore or the US; the
+    /// Without the `+`, `6555550100` could be Singapore or the US; the
     /// source has already thrown that information away.
     ///
     /// A value written without `+` also matches an owner number given with
@@ -635,7 +635,7 @@ mod tests {
             normalize_checked("1555-4567", PhoneRegion::Usa).is_err(),
             "too short for USA certainty"
         );
-        assert!(normalize_checked("+442071838750", PhoneRegion::Usa).is_err());
+        assert!(normalize_checked("+442079460750", PhoneRegion::Usa).is_err());
     }
 
     #[test]
@@ -650,8 +650,8 @@ mod tests {
 
     #[test]
     fn guarded_certain_plus_prefixed() {
-        let g = normalize_guarded("+44 20 7183 8750", PhoneRegion::International);
-        assert_eq!(g.normalized, "+442071838750");
+        let g = normalize_guarded("+44 20 7946 0750", PhoneRegion::International);
+        assert_eq!(g.normalized, "+442079460750");
         assert_eq!(g.note, None);
     }
 
@@ -693,7 +693,7 @@ mod tests {
             PhoneRegion::International
         );
         assert_eq!(
-            PhoneRegion::for_raw("  +44 20 7183 8750 "),
+            PhoneRegion::for_raw("  +44 20 7946 0750 "),
             PhoneRegion::International
         );
         assert_eq!(PhoneRegion::for_raw("5555550100"), PhoneRegion::Usa);
@@ -704,10 +704,10 @@ mod tests {
     #[test]
     fn certain_international() {
         assert_eq!(
-            normalize_checked("+44 20 7183 8750", PhoneRegion::International)
+            normalize_checked("+44 20 7946 0750", PhoneRegion::International)
                 .ok()
                 .as_deref(),
-            Some("+442071838750")
+            Some("+442079460750")
         );
         assert!(
             normalize_checked("(542).555-0100", PhoneRegion::International).is_err(),
@@ -744,7 +744,7 @@ mod tests {
     #[test]
     fn lenient_one_arg_matches_guarded_for_raw() {
         assert_eq!(normalize_lenient("(555) 555-0100"), "+15555550100");
-        assert_eq!(normalize_lenient("+44 20 7183 8750"), "+442071838750");
+        assert_eq!(normalize_lenient("+44 20 7946 0750"), "+442079460750");
         assert_eq!(normalize_lenient("020 7946 0000"), "02079460000");
         assert_eq!(normalize_lenient("+02079460000"), "02079460000");
         assert_eq!(normalize_lenient("7535"), "7535");
@@ -882,9 +882,11 @@ mod tests {
 
     #[test]
     fn a_number_written_with_plus_keeps_its_country() {
+        // Singapore reserves no numbers for fiction, and no Singapore number
+        // starts with 5, so +65 5555 0100 is no one's.
         assert_eq!(
-            parsed("+6595550100"),
-            (HandleType::Phone, "+6595550100".into())
+            parsed("+6555550100"),
+            (HandleType::Phone, "+6555550100".into())
         );
         assert_eq!(
             parsed("+447700900123"),
@@ -931,7 +933,7 @@ mod tests {
     #[test]
     fn a_handle_key_parses_to_itself() {
         for raw in [
-            "+6595550100",
+            "+6555550100",
             "5555550100",
             "7535",
             "jo@example.com",
@@ -982,10 +984,10 @@ mod tests {
 
     #[test]
     fn a_group_title_keeps_each_number_s_country() {
-        let others = ["+6595550100".to_string(), "+447700900123".to_string()];
+        let others = ["+6555550100".to_string(), "+447700900123".to_string()];
         assert_eq!(
             group_chat_id("grp-", &others).1,
-            "Group: +447700900123, +6595550100"
+            "Group: +447700900123, +6555550100"
         );
     }
 
