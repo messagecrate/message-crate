@@ -1,6 +1,8 @@
 import { useCallback, useSyncExternalStore } from "react";
 import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
+import { getAccountId, onAccountIdChange } from "../../lib/api";
 import { useAuth } from "../../lib/auth";
+import { holdDesktopJob } from "../../lib/desktopJob";
 import type { StagingSummary } from "../../lib/tauri";
 import { type ImportPhase, type ImportStep, stepsFor } from "./importProgressState";
 import type { ImportJobFormValues } from "./useImportJob";
@@ -135,6 +137,42 @@ function createImportRunStore(initial: ImportRunState) {
 
 /** The one store. There is one Import Run per account, and one account logged in. */
 export const importRunStore = createImportRunStore(initialImportRunState([]));
+
+/**
+ * True from the run's first stage to its end: while a stage runs and while
+ * the run waits at a review. Ended (`done`), cancelled, discarded or never
+ * started (`form`), and the identity stop before any stage, are not.
+ *
+ * A review holds it only for the account that started the run. The desktop
+ * runs nothing at a review, and another account logged in on the same app
+ * can neither see that run nor close it, so holding it there would keep that
+ * account's Export and Convert off for nothing. A stage holds it whoever is
+ * logged in, because the desktop may still be running it.
+ */
+function holdsDesktop(state: ImportRunState): boolean {
+  if (state.phase === "running") return true;
+  return isReviewPhase(state.phase) && state.accountId === getAccountId();
+}
+
+/**
+ * The run holds the desktop job from its first stage to its end, reviews
+ * included. Each stage's job holds it too, but only while that job runs, so
+ * without this a Convert could start between two stages and the desktop
+ * would refuse the run's next one (#1407). Following the run releases it
+ * however the run ends: finished, failed, paused, cancelled or discarded.
+ */
+let releaseDesktop: (() => void) | null = null;
+function followRun(): void {
+  const holds = holdsDesktop(importRunStore.get());
+  if (holds && releaseDesktop === null) {
+    releaseDesktop = holdDesktopJob("Import Run");
+  } else if (!holds && releaseDesktop !== null) {
+    releaseDesktop();
+    releaseDesktop = null;
+  }
+}
+importRunStore.subscribe(followRun);
+onAccountIdChange(followRun);
 
 /** The fresh form, as an account that has no run in the store reads it. */
 const FRESH_RUN = initialImportRunState(stepsFor("copy"));

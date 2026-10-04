@@ -221,6 +221,7 @@ Everything it shows is read from the staged files, not estimated, except the gro
 - **Identities**, for an iMessage source: the addresses the backup's device used, how many messages each one **Sent** and **Received**, whether it is **On your profile**, and **Add to profile** for one that is not.
 
 The approve button says what happens next: **Upload to Message Crate**, **Convert media**, or **Compress media**.
+It stays disabled while an export or a conversion runs, since the desktop app runs one job at a time, and names the job it waits for.
 **Cancel this import** ends the run and deletes the Staging Directory.
 
 When **Convert** or **Compress & Convert** is chosen and ffmpeg can't be found, the approve button is disabled and the row says so.

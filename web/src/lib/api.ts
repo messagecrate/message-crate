@@ -26,7 +26,22 @@ export function getToken(): string | null {
  * belongs to. Pass null to log out.
  */
 export function setAccountId(id: number | null) {
+  if (id === accountId) return;
   accountId = id;
+  for (const listener of accountIdListeners) listener();
+}
+
+const accountIdListeners = new Set<() => void>();
+
+/**
+ * Call `listener` whenever the logged-in account changes, logging out
+ * included. Returns the function that stops it.
+ */
+export function onAccountIdChange(listener: () => void): () => void {
+  accountIdListeners.add(listener);
+  return () => {
+    accountIdListeners.delete(listener);
+  };
 }
 
 /** The logged-in account's id, or null when logged out. */
