@@ -364,7 +364,9 @@ fn leave_out_files_that_are_gone(
             continue;
         }
         for attachment in &mut unit.attachments {
-            leave_out_a_gone_file(&mut attachment.source, &mut attachment.size_hint, log);
+            let source = std::mem::take(&mut attachment.source);
+            (attachment.source, attachment.size_hint) =
+                missing_if_no_file((source, attachment.size_hint), log);
         }
     }
 }
@@ -387,20 +389,20 @@ pub(crate) fn counted_source(
     }
 }
 
-/// Make a `Path` source with no file there `Missing`, with no size hint,
-/// and log it as the read would have logged it (#1581). Only for a loader
-/// that reads a path from disk, as [`load_attachment_source`] does.
-pub(crate) fn leave_out_a_gone_file(
-    source: &mut AttachmentSource,
-    size_hint: &mut Option<u64>,
+/// One attachment's source and size hint, with a `Path` that has no file
+/// there made `Missing` with no hint and logged as the read would have
+/// logged it (#1581). Only for a loader that reads a path from disk, as
+/// [`load_attachment_source`] does.
+pub(crate) fn missing_if_no_file(
+    (source, size_hint): (AttachmentSource, Option<u64>),
     log: Option<&LogSink>,
-) {
-    if let AttachmentSource::Path(path) = source
-        && !path.is_file()
-    {
-        emit_log(log, unreadable_attachment_line(path, "no file there"));
-        *source = AttachmentSource::Missing;
-        *size_hint = None;
+) -> (AttachmentSource, Option<u64>) {
+    match source {
+        AttachmentSource::Path(path) if !path.is_file() => {
+            emit_log(log, unreadable_attachment_line(&path, "no file there"));
+            (AttachmentSource::Missing, None)
+        }
+        found => (found, size_hint),
     }
 }
 

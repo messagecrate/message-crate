@@ -5,7 +5,7 @@ use crate::headroom::{Disk, bytes_to_write, check_headroom};
 use crate::spool::AttachmentSpool;
 use crate::write_queue::{
     AttachmentSource, ConversationUnit, WriteQueueOptions, counted_source, drain_units,
-    leave_out_a_gone_file, load_attachment_source,
+    load_attachment_source, missing_if_no_file,
 };
 use anyhow::Result;
 use media::{CompressOptions, MediaMode};
@@ -269,10 +269,11 @@ impl ExportWriter {
         let mut sources: Vec<AttachmentSource> = Vec::with_capacity(jobs.len());
         let mut sizes: Vec<(Option<String>, u64)> = Vec::new();
         for job in &mut jobs {
-            let (mut source, mut hint) = counted_source(source_for(job.attachment));
+            let mut counted = counted_source(source_for(job.attachment));
             if self.media_mode != MediaMode::Disabled {
-                leave_out_a_gone_file(&mut source, &mut hint, self.log.as_ref());
+                counted = missing_if_no_file(counted, self.log.as_ref());
             }
+            let (source, hint) = counted;
             if !matches!(source, AttachmentSource::Missing) {
                 sizes.push((job.attachment.digest_sha256.clone(), hint.unwrap_or(0)));
             }
@@ -414,8 +415,8 @@ mod tests {
     }
 
     /// An export to a format other than JSON Lines knows before it starts
-    /// which attachments have no file: a path with nothing there and a
-    /// source with no bytes. Its byte total leaves them out from the first
+    /// which attachments have no file: a source that says so, a path with
+    /// nothing there and a source with no bytes. Its byte total leaves them out from the first
     /// event and never drops mid-run, as the write queue's does (#1701).
     #[test]
     fn the_byte_total_of_a_csv_export_stays_the_same_when_a_file_is_gone() {
@@ -437,7 +438,7 @@ mod tests {
         let attachment = doc.messages[0].attachments[0].clone();
         // The real attachment comes first, so the first event is sent before
         // the run reaches a missing one and could take its size off.
-        doc.messages[0].attachments = [5, 700, 1_000]
+        doc.messages[0].attachments = [5, 700, 1_000, 30]
             .map(|size| IrAttachment {
                 size_bytes: Some(size),
                 ..attachment.clone()
@@ -447,6 +448,7 @@ mod tests {
             AttachmentSource::Bytes(b"xxxxx".to_vec()),
             AttachmentSource::Bytes(Vec::new()),
             AttachmentSource::Path(tmp.path().join("gone.jpg")),
+            AttachmentSource::Missing,
         ]
         .into_iter();
 
@@ -482,7 +484,7 @@ mod tests {
             totals
                 .last()
                 .map(|&(done, bytes_done, _)| (done, bytes_done)),
-            Some((3, 5))
+            Some((4, 5))
         );
     }
 
