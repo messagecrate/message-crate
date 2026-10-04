@@ -1454,6 +1454,38 @@ async fn a_quote_before_other_text_is_part_of_the_cell() {
     contact_named(&mut conn, "'=Cy").await;
 }
 
+/// A name cell `'` then a tab reads as a name that starts with a tab. A
+/// contact name is stored trimmed, so the new contact is named without it.
+#[tokio::test]
+async fn a_new_contact_named_with_a_leading_tab_is_stored_trimmed() {
+    let (mut conn, _pool, _dir) = account().await;
+    loaded(
+        &mut conn,
+        &file(&[",'\tTab,,phone,phone,+15555550100"]),
+        LoadMode::Append,
+    )
+    .await;
+    contact_named(&mut conn, "Tab").await;
+}
+
+/// A file that named a contact with a leading tab, exported and loaded back,
+/// renames nobody: the stored name and the loaded one are both trimmed.
+#[tokio::test]
+async fn a_name_loaded_with_a_leading_tab_loads_back_unchanged() {
+    let (mut conn, _pool, _dir) = account().await;
+    loaded(
+        &mut conn,
+        &file(&[",'\tTab,,phone,phone,+15555550100"]),
+        LoadMode::Append,
+    )
+    .await;
+    let text = export_csv(&mut conn, ACCOUNT, None).await.unwrap().csv;
+    for mode in [LoadMode::Append, LoadMode::Edit] {
+        let counts = loaded(&mut conn, &text, mode).await;
+        assert_eq!(counts, LoadCounts::default(), "{mode:?}");
+    }
+}
+
 /// Every character a spreadsheet reads as the start of a formula gets the
 /// `'`, and the load takes exactly that `'` off again.
 #[test]

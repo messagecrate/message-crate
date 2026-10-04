@@ -621,6 +621,12 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-04 **An Address Book loaded straight back renames nobody.** A
+  name cell that started with a tab, written `'` then a tab in the
+  spreadsheet, created a contact whose name kept the tab, and loading the
+  exported file back renamed that contact without it and counted it as
+  updated. A contact's name is now saved without spaces, tabs or line breaks
+  at its start or end, so the file loads back with nothing changed.
 - 2026-10-04 **The Contact Groups and Message Tags menus say why a name is
   refused.** Creating a Contact Group from the Contact Groups menu on the
   contacts list, or a Message Tag from the Message Tags menu on the

@@ -98,7 +98,7 @@ pub async fn propose_name(
         }
         Origin::AddressBook => {
             "UPDATE contacts SET preferred_name = $1
-             WHERE account_id = $2 AND id = $3 AND trim(preferred_name) <> $1"
+             WHERE account_id = $2 AND id = $3 AND preferred_name <> $1"
         }
         Origin::Import => {
             "UPDATE contacts SET preferred_name = $1
@@ -120,7 +120,9 @@ pub async fn propose_name(
     Ok(changed)
 }
 
-/// Create a contact carrying `preferred_name`, which may be empty.
+/// Create a contact carrying `preferred_name`, which may be empty. The name
+/// is stored trimmed of whitespace, tabs and line breaks included, as every
+/// write path stores it, so a comparison in SQL reads the name as it is.
 ///
 /// # Errors
 ///
@@ -135,7 +137,7 @@ pub async fn create_contact(
         "INSERT INTO contacts (account_id, preferred_name, origin) VALUES ($1, $2, $3) RETURNING id",
     )
     .bind(account_id)
-    .bind(preferred_name)
+    .bind(preferred_name.trim())
     .bind(origin.as_str())
     .fetch_one(&mut *conn)
     .await?;
