@@ -270,7 +270,7 @@ describe("MessageRoute", () => {
     ["a search", "?q=dentist", "dentist"],
     ["a tag page's tag", "?tag=Work", "tag:Work"],
     ["a tag page's tag and a search", "?q=dentist&tag=Work", "tag:Work (dentist)"],
-    ["the No Tag page's filter", "?tag=none", "tag:none"],
+    ["the No Message Tag page's filter", "?tag=none", "tag:none"],
     ["a contact's conversations", "?q=with%3A%2342&f=with%3A%2342", "with:#42"],
   ])("keeps %s when another conversation in the list is opened", async (_name, search, query) => {
     getConversationMock.mockImplementation(async (id) => conv(id, `Chat ${id}`));
@@ -324,6 +324,14 @@ describe("MessageRoute", () => {
       expect((await screen.findByTestId("message-list-query")).textContent).toBe(
         "tag:Holiday (ada)",
       );
+    });
+
+    // #1562: the tag is not a typed search, so with nothing typed the Messages
+    // list asks for one, as it does on the tag page itself (#313).
+    it("asks for a search in a conversation opened from a tag page with nothing typed", async () => {
+      getConversationMock.mockImplementation(async (id) => conv(id, `Chat ${id}`));
+      renderAt("/messages/5?tag=Holiday&view=messages");
+      expect((await screen.findByTestId("message-list-query")).textContent).toBe("");
     });
 
     it("keeps a tag page's tag apart from the search when a result is opened", async () => {
