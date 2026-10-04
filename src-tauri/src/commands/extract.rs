@@ -336,18 +336,8 @@ fn parse_compress_options(
                 )
             }
         })?;
-    let min_size = min_size.trim();
-    if min_size.is_empty() {
-        return Err(
-            "Minimum Video File Size is empty. It must be a number of megabytes, such as 20."
-                .to_string(),
-        );
-    }
-    media::compress_options_from_form(max_resolution, fps, min_size, true).map_err(|_| {
-        format!(
-            "Minimum Video File Size must be a number of megabytes, such as 20, not '{min_size}'."
-        )
-    })
+    media::compress_options_from_form(max_resolution, fps, min_size, true)
+        .map_err(|e| format!("{e:#}"))
 }
 
 /// The media settings an Import Run works to, decided once when its Staging

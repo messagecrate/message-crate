@@ -14,7 +14,7 @@ export function mediaExtractFields(args: {
     attachment_media: args.attachmentMedia,
     media_max_resolution: args.maxResolution,
     media_max_fps: args.maxFps,
-    media_min_size: args.minSizeMb.trim() || "20",
+    media_min_size: args.minSizeMb,
   };
 }
 

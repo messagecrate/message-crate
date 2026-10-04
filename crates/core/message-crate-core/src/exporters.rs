@@ -572,14 +572,10 @@ impl Form {
         let fps: f32 = fps
             .parse()
             .map_err(|_| "Max fps must be a number.".to_string())?;
-        let min_size = self.media_min_size.trim();
-        if min_size.is_empty() {
-            return Err("Min size is required for Compress.".into());
-        }
         media::compress_options_from_form(
             self.media_max_resolution,
             fps,
-            min_size,
+            &self.media_min_size,
             self.media_skip_efficient,
         )
         .map_err(|e| format!("{e:#}"))
@@ -1097,7 +1093,7 @@ mod tests {
         );
         assert_eq!(
             form("30", " ").compress_options().unwrap_err(),
-            "Min size is required for Compress."
+            "Minimum Video File Size is empty. It must be a number of megabytes, such as 20."
         );
         assert!(form("30", "lots").compress_options().is_err());
         assert!(form("30", "20M").compress_options().is_err());

@@ -243,6 +243,7 @@ released versions carry their date on the heading.
   nobody typed. The field now takes a whole number of megabytes, such as
   `20`, as its label says. Anything else is refused before Staging with a
   sentence that names what was typed and asks for a number of megabytes.
+  A cleared field is refused too, where before it quietly became 20.
 - 2026-10-04 **A resumed Import Run follows the attachment setting Staging
   recorded.** An Import Run resumed after the app closed decided from its
   saved form whether it had a Media Stage, and its Upload took the size

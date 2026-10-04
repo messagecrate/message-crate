@@ -188,21 +188,31 @@ impl FromStr for MaxResolution {
 /// skipped.
 ///
 /// The Import form labels the field in megabytes, so the number carries no
-/// unit: `20M` or `20MB` is refused rather than read a second way.
+/// unit: `20M` or `20MB` is refused rather than read a second way. The
+/// errors name the form's field and say what to type, because the desktop
+/// app and the export form show them to the person as they are.
 ///
 /// # Errors
 ///
-/// Returns an error when `min_size` is not a whole number such as `20`.
+/// Returns an error when `min_size` is empty or is not a whole number such
+/// as `20`.
 pub fn compress_options_from_form(
     max_resolution: MaxResolution,
     max_fps: f32,
     min_size: &str,
     skip_efficient: bool,
 ) -> anyhow::Result<CompressOptions> {
-    let megabytes: u64 = min_size
-        .trim()
-        .parse()
-        .map_err(|_| anyhow::anyhow!("'{min_size}' is not a whole number of megabytes"))?;
+    let typed = min_size.trim();
+    if typed.is_empty() {
+        anyhow::bail!(
+            "Minimum Video File Size is empty. It must be a number of megabytes, such as 20."
+        );
+    }
+    let megabytes: u64 = typed.parse().map_err(|_| {
+        anyhow::anyhow!(
+            "Minimum Video File Size must be a number of megabytes, such as 20, not '{typed}'."
+        )
+    })?;
     Ok(CompressOptions {
         max_resolution,
         max_fps,
@@ -364,11 +374,18 @@ mod tests {
         assert_eq!(min_size("20").unwrap(), 20 * 1024 * 1024);
         assert_eq!(min_size(" 5 ").unwrap(), 5 * 1024 * 1024);
         assert_eq!(min_size("0").unwrap(), 0);
-        for raw in ["20M", "20MB", "20m", "512k", "2g", "1.5", "-1", ""] {
-            let err = min_size(raw).unwrap_err();
-            assert!(
-                format!("{err:#}").contains(&format!("'{raw}'")),
-                "{raw:?}: {err:#}"
+        for raw in ["20M", "20MB", "20m", "512k", "2g", "1.5", "-1"] {
+            assert_eq!(
+                format!("{:#}", min_size(raw).unwrap_err()),
+                format!(
+                    "Minimum Video File Size must be a number of megabytes, such as 20, not '{raw}'."
+                )
+            );
+        }
+        for raw in ["", "  "] {
+            assert_eq!(
+                format!("{:#}", min_size(raw).unwrap_err()),
+                "Minimum Video File Size is empty. It must be a number of megabytes, such as 20."
             );
         }
     }
