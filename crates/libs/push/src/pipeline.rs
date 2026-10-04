@@ -474,13 +474,11 @@ impl<'a> ImportPipeline<'a> {
             let request_started = Instant::now();
             let body_bytes = batch.body.len();
             let message_count = batch.messages.len();
-            let response = message_crate_http::with_retries(max_retries, || {
-                session.post_import(import_id, batch.body.clone())
-            })
-            .map_err(|error| {
-                session.note_refusal(&error);
-                BatchError::new(&error)
-            });
+            let response = session
+                .request(max_retries, |session| {
+                    session.post_import(import_id, batch.body.clone())
+                })
+                .map_err(|error| BatchError::new(&error));
             let request_ms = elapsed_ms(request_started);
             let seconds = request_started.elapsed().as_secs_f64().max(0.001);
             ImportHttpOutcome {

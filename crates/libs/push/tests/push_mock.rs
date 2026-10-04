@@ -3115,3 +3115,40 @@ fn a_refused_attachment_upload_stops_the_push_and_fails_no_conversation() {
     assert_eq!(report.conversations_cancelled, 1, "{:?}", report.results);
     assert_eq!(batches.calls(), 0);
 }
+
+/// A session that has already ended when the push starts is refused at its
+/// first request. That stops the push as a pause too, with every
+/// conversation left for the next push, rather than failing it (#1491).
+#[test]
+fn a_session_refused_at_login_stops_the_push_as_a_pause() {
+    let server = MockServer::start();
+    let _auth = server.mock(|when, then| {
+        when.method(GET).path("/v1/session");
+        then.status(401).json_body(json!({
+            "type": "about:blank",
+            "title": "Unauthorized",
+            "status": 401
+        }));
+    });
+    let batches = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/7/batches");
+        then.status(200);
+    });
+
+    let dir = tempdir().unwrap();
+    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
+    let cfg = PushConfig {
+        import_id: Some(7),
+        ..text_only_config(dir.path(), server.base_url())
+    };
+
+    let report = run(&cfg, None).unwrap();
+
+    assert!(report.session_refused);
+    assert!(report.cancelled);
+    assert_eq!(report.conversations_failed, 0);
+    assert_eq!(report.conversations_cancelled, 2);
+    assert_eq!(report.conversations_total, 2);
+    assert_eq!(batches.calls(), 0);
+}

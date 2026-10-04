@@ -179,12 +179,28 @@ pub(crate) struct Session {
 }
 
 impl Session {
+    /// Run `op` against the server with retries, and stop the run when the
+    /// server refuses the session token. Every request of the run goes
+    /// through here, so none can miss the refusal.
+    ///
+    /// # Errors
+    ///
+    /// Returns the last error from `op`.
+    pub(crate) fn request<T>(
+        &self,
+        max_retries: u32,
+        mut op: impl FnMut(&Self) -> Result<T>,
+    ) -> Result<T> {
+        message_crate_http::with_retries(max_retries, || op(self))
+            .inspect_err(|error| self.note_refusal(error))
+    }
+
     /// Stop the run when `error` is the server refusing the session token.
     ///
     /// A refused session refuses every later request too, so the run stops
     /// as it would for a cancel, and what it did not send stays for the next
     /// push rather than being recorded as failed.
-    pub(crate) fn note_refusal(&self, error: &anyhow::Error) {
+    fn note_refusal(&self, error: &anyhow::Error) {
         if message_crate_http::is_session_refused(error) {
             self.refused.store(true, Ordering::SeqCst);
             self.stop.store(true, Ordering::SeqCst);
@@ -254,8 +270,9 @@ impl RunPaths {
 pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<PushReport> {
     // A refused session stops the run through the cancel flag, so the run
     // always has one.
+    let stop = cfg.cancel.clone().unwrap_or_default();
     let cfg = &PushConfig {
-        cancel: Some(cfg.cancel.clone().unwrap_or_default()),
+        cancel: Some(stop.clone()),
         ..cfg.clone()
     };
     let run_started = Instant::now();
@@ -264,13 +281,6 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
     let mut out = Reporter::open(&paths.log, progress)?;
 
     check_cancel(cfg.cancel.as_ref())?;
-    let session = login(cfg, &mut out)?;
-    let journal = RunJournal::open(
-        paths.journal.clone(),
-        &session.url,
-        &session.username,
-        cfg.force || cfg.mode == ImportMode::Replace,
-    )?;
     let files = list_jsonl_files(&paths.input, &[&paths.journal, &paths.report, &paths.log])?;
     if files.is_empty() {
         bail!(
@@ -278,6 +288,23 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
             paths.input.display()
         );
     }
+    let session = match login(cfg, stop.clone(), &mut out) {
+        Ok(session) => session,
+        // A session that has already ended is refused at the first request,
+        // and stops the run the same way as one refused later.
+        Err(error) if message_crate_http::is_session_refused(&error) => {
+            stop.store(true, Ordering::SeqCst);
+            let report = refused_at_login(cfg, &files, started_at, run_started);
+            return finish_refused_at_login(&paths, report, &mut out);
+        }
+        Err(error) => return Err(error),
+    };
+    let journal = RunJournal::open(
+        paths.journal.clone(),
+        &session.url,
+        &session.username,
+        cfg.force || cfg.mode == ImportMode::Replace,
+    )?;
     out.expect_files(files.len());
     let import_id = start_import_run(cfg, &session, &paths.input, &mut out)?;
     let batch_size = cfg.batch_size.max(1);
@@ -372,7 +399,7 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
 /// # Errors
 ///
 /// Returns an error when the HTTP client cannot be built or the session token is rejected.
-fn login(cfg: &PushConfig, out: &mut Reporter<'_, '_>) -> Result<Session> {
+fn login(cfg: &PushConfig, stop: CancelFlag, out: &mut Reporter<'_, '_>) -> Result<Session> {
     let url = cfg.base_url.trim_end_matches('/').to_string();
     let http = HttpSession::new()?;
     let auth = http.auth_check(&url, &cfg.token)?;
@@ -402,9 +429,68 @@ fn login(cfg: &PushConfig, out: &mut Reporter<'_, '_>) -> Result<Session> {
         token: cfg.token.clone(),
         username,
         auth,
-        stop: cfg.cancel.clone().unwrap_or_default(),
+        stop,
         refused: Arc::new(AtomicBool::new(false)),
     })
+}
+
+/// The report of a run whose session the server refused at login: nothing
+/// was sent, and every conversation is left for the next push. No account
+/// answered, so `account` is 0 and `username` is empty.
+fn refused_at_login(
+    cfg: &PushConfig,
+    files: &[PathBuf],
+    started_at: String,
+    run_started: Instant,
+) -> PushReport {
+    PushReport {
+        ok: false,
+        cancelled: true,
+        session_refused: true,
+        account: 0,
+        username: String::new(),
+        mode: cfg.mode,
+        started_at,
+        finished_at: now_stamp(),
+        elapsed_ms: elapsed_ms(run_started),
+        conversations_total: files.len() as u64,
+        conversations_ok: 0,
+        conversations_failed: 0,
+        conversations_skipped: 0,
+        conversations_cancelled: files.len() as u64,
+        messages_attempted: 0,
+        messages_inserted: 0,
+        messages_deduped: 0,
+        messages_failed: 0,
+        assets_uploaded: 0,
+        assets_skipped: 0,
+        assets_bytes: 0,
+        results: files
+            .iter()
+            .map(|path| crate::report::FileResult::cancelled(&file_label(path)))
+            .collect(),
+    }
+}
+
+/// Say why a run refused at login stopped, and write its report.
+///
+/// # Errors
+///
+/// Returns an error when the report cannot be written.
+fn finish_refused_at_login(
+    paths: &RunPaths,
+    report: PushReport,
+    out: &mut Reporter<'_, '_>,
+) -> Result<PushReport> {
+    out.show_as(
+        "session refused at login: stopped",
+        "The server no longer accepts this session, so the Upload did not start. \
+         The next push sends every conversation."
+            .into(),
+    );
+    write_report(&paths.report, &report)?;
+    out.event(ProgressEvent::Finished(report.clone()));
+    Ok(report)
 }
 
 /// Create the Import Run every batch is posted into, or reuse the one the

@@ -893,9 +893,7 @@ fn preflight_existing_asset(ctx: &PrepareContext<'_>, digest: &str) -> Result<()
     }
     *done = true;
     let session = ctx.session;
-    let present =
-        message_crate_http::with_retries(ctx.cfg.max_retries, || session.head_asset(digest))
-            .inspect_err(|error| session.note_refusal(error))?;
+    let present = session.request(ctx.cfg.max_retries, |session| session.head_asset(digest))?;
     if present {
         ctx.probe_existing.store(true, Ordering::Relaxed);
     }
@@ -909,7 +907,7 @@ fn preflight_existing_asset(ctx: &PrepareContext<'_>, digest: &str) -> Result<()
 /// Returns the last HTTP error once retries are exhausted.
 fn upload_one_asset(ctx: &PrepareContext<'_>, job: &AssetUploadJob) -> Result<Asset> {
     let session = ctx.session;
-    message_crate_http::with_retries(ctx.cfg.max_retries, || {
+    session.request(ctx.cfg.max_retries, |session| {
         if ctx.probe_existing.load(Ordering::Relaxed) && session.head_asset(&job.digest)? {
             return Ok(Asset {
                 already_present: true,
@@ -926,7 +924,6 @@ fn upload_one_asset(ctx: &PrepareContext<'_>, job: &AssetUploadJob) -> Result<As
         }
         Ok(response)
     })
-    .inspect_err(|error| session.note_refusal(error))
 }
 
 /// One conversation handed to a prepare worker.
