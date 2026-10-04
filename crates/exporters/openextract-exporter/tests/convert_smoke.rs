@@ -163,7 +163,7 @@ fn a_named_chat_is_keyed_by_its_peers_number() {
 
 /// A row with no conversation named, or one named only `Me`, belongs to
 /// its incoming sender. An outgoing row with nothing to say who it went to
-/// lands in the `unknown` chat, which has no roster.
+/// lands in the chat that names nobody, which has no roster.
 #[test]
 fn a_row_without_a_conversation_belongs_to_its_sender_or_to_no_one() {
     let (_, documents) = convert_to_documents(&[(
@@ -174,9 +174,25 @@ fn a_row_without_a_conversation_belongs_to_its_sender_or_to_no_one() {
 2020-01-01T17:02:00+00:00,Me,Received,Cathy Arp,Still here,False,False\n",
     )]);
     let keys: Vec<_> = documents.keys().map(String::as_str).collect();
-    assert_eq!(keys, vec!["+15555550133", "Cathy_Arp", "unknown"]);
+    assert_eq!(keys, vec!["+15555550133", "name:Cathy Arp", "nameless:"]);
     assert_eq!(roster(&documents["+15555550133"]), vec!["+15555550133"]);
-    assert!(documents["unknown"].conversation.participants.is_empty());
+    assert!(documents["nameless:"].conversation.participants.is_empty());
+}
+
+/// A person named "unknown" has a chat of their own, apart from the sent
+/// rows that name nobody.
+#[test]
+fn a_person_named_unknown_is_not_the_chat_that_names_nobody() {
+    let (_, documents) = convert_to_documents(&[(
+        "all_conversations.csv",
+        "Date,Conversation,Direction,Sender,Text,Is From Me,Has Attachments\n\
+2020-01-01T17:01:00+00:00,,Sent,me,To whom,True,False\n\
+2020-01-01T17:02:00+00:00,,Received,unknown,Still here,False,False\n",
+    )]);
+    let keys: Vec<_> = documents.keys().map(String::as_str).collect();
+    assert_eq!(keys, vec!["name:unknown", "nameless:"]);
+    assert_eq!(documents["name:unknown"].messages.len(), 1);
+    assert_eq!(documents["nameless:"].messages.len(), 1);
 }
 
 /// In a per-chat file every row is the one chat, whatever its sender says:
@@ -199,9 +215,9 @@ fn every_row_of_a_per_chat_file_is_the_one_chat() {
         ),
     ]);
     let keys: Vec<_> = documents.keys().map(String::as_str).collect();
-    assert_eq!(keys, vec!["+15555550122", "Cathy_Arp"]);
+    assert_eq!(keys, vec!["+15555550122", "name:Cathy Arp"]);
     assert_eq!(documents["+15555550122"].messages.len(), 2);
-    assert_eq!(documents["Cathy_Arp"].messages.len(), 2);
+    assert_eq!(documents["name:Cathy Arp"].messages.len(), 2);
     assert_eq!(report.conversations, 2);
 }
 

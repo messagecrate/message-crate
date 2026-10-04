@@ -46,7 +46,8 @@ Discovery walks the selected path recursively without following directory symbol
 ## Conversation identity and participants
 
 Each chat session has a `message_ir::ConversationKey`: a one-to-one conversation with an address, a group conversation, or a one-to-one conversation known by a name only.
-The key's chat id is the conversation's `chat_identifier`.
+The key's chat id is the conversation's `chat_identifier`: the address, `group:` and the group's id, or `name:` and the whole trimmed name.
+Each kind other than an address has a prefix of its own, so a name never takes an address's or a group's key.
 The rows of one session in one CSV are one conversation.
 
 ### Group or one-to-one

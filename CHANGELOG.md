@@ -237,6 +237,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **A person known only by name keeps a conversation of their
+  own.** SMS Backup+, iMazing and OpenExtract backups sometimes name a person
+  without recording a number or address. That person's conversation could
+  merge with another's: two names in a script other than Latin, such as
+  "张伟" and "李娜", became one conversation, and so did "Ana Lee" and
+  "Ana.Lee". A person named "AMAZON" shared the conversation of the sender
+  AMAZON, and a person named "unknown" shared the conversation of sent
+  messages that name nobody. Each person now keeps a conversation of their
+  own.
 - 2026-10-03 **An attachment with a blank file name is refused.** An
   import that gave an attachment a blank file name, empty or only spaces,
   stored that blank name when the server already held the file. The import

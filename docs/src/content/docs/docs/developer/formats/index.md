@@ -22,7 +22,7 @@ All converters build a **common message** per conversation (`ConversationDocumen
 | | GO SMS Pro | SMS Backup & Restore | SMS Backup+ | OpenExtract | iMazing | WhatsApp | iMessage |
 |---|---|---|---|---|---|---|---|
 | **Output** | Per-chat CSV / EML / MBOX / JSON(+L) / **XML** | Per-chat CSV / EML / MBOX / JSON(+L) / **XML** | Per-chat CSV / EML / MBOX / JSON(+L) / **XML** | Per-chat CSV / EML / MBOX / JSON(+L) / **XML** | Per-chat CSV / EML / MBOX / JSON(+L) / **XML** (`__whatsapp` for WA) | Per-chat CSV / EML / MBOX / JSON(+L) / **XML** (`__whatsapp`) | Per-chat CSV / EML / MBOX / JSON(+L) / **XML** |
-| **Peer phone** (`chat_identifier`) | yes | yes | yes (or `unknown`) | partial (name stem if unresolved) | partial (name stem if unresolved) | yes (JID → E.164) | yes (Apple chat id) |
+| **Peer phone** (`chat_identifier`) | yes | yes | yes (`name:` and the name when only a name is known) | partial (`name:` and the name if unresolved, `nameless:` for sent rows naming nobody) | partial (`name:` and the name if unresolved) | yes (JID → E.164) | yes (Apple chat id) |
 | **Sender phone** (`sender_handle`, incoming) | yes | yes | yes | yes | yes | yes (groups via sender JID) | yes |
 | **Names** | yes (`<contactName>` in the XML) | yes (`contact_name` in the XML) | yes (mail headers) | partial (the rows; a name-only chat has no address) | yes (`Sender Name` on the rows) | yes (`wa.db` via wtsexporter) | yes (AddressBook) |
 | **Direction** | yes | yes | yes | yes (`Is From Me` / Direction) | yes (`Type`) | yes (`from_me`) | yes (`is_from_me` in DB) |
@@ -44,7 +44,7 @@ The rule "The address book is a file for editing contacts, not a source of them"
 |---|---|
 | **GO SMS Pro** | MMS as WAP-209 `.pdu` files; many empty stub PDUs; SMS attachments not in XML |
 | **SMS Backup & Restore** | Call logs ignored; drafts / failed / queued skipped; encrypted ZIP not supported (unlock first) |
-| **SMS Backup+** | Offline `.eml` only (no IMAP); call-log mails skipped; archive attachment→message pairing is guesswork; unresolved peers → `unknown.csv` |
+| **SMS Backup+** | Offline `.eml` only (no IMAP); call-log mails skipped; archive attachment→message pairing is guesswork; a peer known only by name gets a conversation of its own; a mail naming nobody is skipped and counted as a parse error |
 | **OpenExtract** | No media extraction; a group is known only from two or more people writing in it, so one where only one other person wrote is read as one-to-one; thin source format; a chat the export names by a person's name only is matched to a contact by that name on import, or stays Unknown |
 | **iMazing** | Reactions/replies are free text; WhatsApp groups lack full roster; naive dates are read in the zone chosen in the Import form's **Time zone of the messages** field |
 | **WhatsApp** | Requires external `wtsexporter` (pip or bundled binary); a one-to-one chat whose JID is not a phone number (an `@lid` id) keeps the raw id, written as its participant with `handle_type` `other`; Status updates (`status@broadcast`) and Channel posts (`@newsletter`) are skipped and counted as `skipped_status_updates` and `skipped_channel_posts`; full group roster depends on upstream JSON |

@@ -151,8 +151,8 @@ fn a_named_peer_with_no_address_gets_a_conversation_of_their_own() {
 
     let docs = documents(&out);
     let alice = docs
-        .get("Alice")
-        .unwrap_or_else(|| panic!("keyed by the name, not `unknown`: {:?}", docs.keys()));
+        .get("name:Alice")
+        .unwrap_or_else(|| panic!("keyed by the name: {:?}", docs.keys()));
     let roster: Vec<(Option<&str>, Option<&str>)> = alice
         .conversation
         .participants
@@ -201,7 +201,10 @@ fn people_known_only_by_non_ascii_names_get_a_conversation_each() {
         .collect();
     assert_eq!(
         texts,
-        vec![("张伟", "From the first"), ("李娜", "From the second")]
+        vec![
+            ("name:张伟", "From the first"),
+            ("name:李娜", "From the second")
+        ]
     );
 }
 

@@ -97,8 +97,9 @@ Mystery Person,2020-01-01 12:01:00,SMS,Outgoing,,,Read,,,Hi,,,\n",
     let report = convert(dir.path(), &out).unwrap();
     assert!(report.extra("name_only_chat") >= 1);
     assert_eq!(report.conversations, 1);
-    assert!(out.join("Mystery_Person.csv").is_file());
-    let body = fs::read_to_string(out.join("Mystery_Person.csv")).unwrap();
+    let file = out.join("name_Mystery_Person.csv");
+    assert!(file.is_file());
+    let body = fs::read_to_string(file).unwrap();
     assert!(
         body.contains("Mystery Person"),
         "the name the source gave must survive: {body}"
