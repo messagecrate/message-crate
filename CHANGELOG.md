@@ -242,13 +242,9 @@ released versions carry their date on the heading.
 
 #### Importing
 
-- 2026-10-04 **An upload whose finish the server refuses now fails instead
-  of reporting success.** When an upload started its own import and the
-  server would not record it as finished, the upload noted a warning in its
-  log and said it had succeeded, while the server still showed the import
-  as running. It now stops with an error, so the staged files are kept and
-  the upload can be resumed. The Import screen of the desktop app already
-  worked this way; nothing else you use changes.
+- 2026-10-04 The upload code no longer reports success when the server
+  refuses to finish an Import Run the code started itself. Nothing you see
+  changes: the desktop app starts its Import Runs on its own.
 - 2026-10-04 **An iMazing import no longer reports a Live Photo choice as an
   error, and leaves WhatsApp chat folders' extra files alone.** When two
   photo rows named one picture, the import gave its Live Photo video to the

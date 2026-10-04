@@ -214,7 +214,7 @@ impl RunPaths {
 ///    message chunks into import batches, and sends those batches over HTTP
 ///    ([`ImportPipeline`]). An import can start while prepare workers keep
 ///    working on later chats.
-/// 4. Write the report and close the import session.
+/// 4. Complete the Import Run this push started, then write the report.
 ///
 /// # Errors
 ///
@@ -268,7 +268,7 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
     if counted.failed == 0 && !aborted {
         let _ = journal.compact();
     }
-    let report = PushReport {
+    let mut report = PushReport {
         ok: counted.failed == 0 && !aborted,
         cancelled,
         account: session.auth.account_id,
@@ -291,10 +291,18 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
         assets_bytes: assets.bytes,
         results,
     };
-    write_report(&paths.report, &report)?;
-    if cfg.import_id.is_none() {
-        complete_import_session(&session, import_id, &report, aborted, &mut out)?;
+    // The run is completed before the report is written, so a refused
+    // completion leaves a report that is not `ok` beside the error.
+    let completed = if cfg.import_id.is_none() {
+        complete_import_run(&session, import_id, &report, aborted, &mut out)
+    } else {
+        Ok(())
+    };
+    if completed.is_err() {
+        report.ok = false;
     }
+    write_report(&paths.report, &report)?;
+    completed?;
     out.log("");
     out.log(&format_push_summary(&report));
     out.conversation_issues(&report.results);
@@ -570,9 +578,9 @@ fn write_report(path: &Path, report: &PushReport) -> Result<()> {
 /// # Errors
 ///
 /// Returns an error when the server refuses to complete the run. The server
-/// then still holds the run as running, so the caller keeps the staged folder
-/// and resumes rather than treating the push as done.
-fn complete_import_session(
+/// then still holds the run as running, so the caller must not report the
+/// push as a success.
+fn complete_import_run(
     session: &Session,
     import_id: i64,
     report: &PushReport,
@@ -588,6 +596,6 @@ fn complete_import_session(
             },
         )
         .with_context(|| format!("complete import run {import_id}"))?;
-    out.log(&format!("import session {import_id} completed"));
+    out.log(&format!("import run {import_id} completed"));
     Ok(())
 }
