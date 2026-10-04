@@ -6,11 +6,12 @@
 //! compared. The name is the row's `Attachment` cell as iMazing changed it
 //! when it wrote the file ([`names_on_disk`]).
 
+use crate::chat_folder::regular_files;
 use crate::parse::RawRow;
+use anyhow::Result;
 use chrono::NaiveDateTime;
 use message_csv::AttachmentCell;
 use std::collections::HashMap;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 /// The extensions iMazing converts when it writes a file, each with the one
@@ -63,25 +64,20 @@ struct SecondFiles {
 }
 
 impl FolderFiles {
-    /// Read the regular files directly in `folder`.
+    /// Read the regular files directly in `folder`
+    /// ([`crate::chat_folder::regular_files`]).
     ///
-    /// Symbolic links are skipped, because following one can reach a file
-    /// outside the export. A name that is not UTF-8 is skipped, because no
-    /// CSV cell can name it. A name that does not start with a second and
-    /// ` - ` is skipped, because iMazing wrote it for no row.
-    pub(crate) fn read(folder: &Path) -> Self {
+    /// A name that is not UTF-8 is skipped, because no CSV cell can name it.
+    /// A name that does not start with a second and ` - ` is skipped,
+    /// because iMazing wrote it for no row.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error, with `folder` named, when `folder` or one of its
+    /// entries cannot be read.
+    pub(crate) fn read(folder: &Path) -> Result<Self> {
         let mut by_second: HashMap<String, SecondFiles> = HashMap::new();
-        let Ok(entries) = fs::read_dir(folder) else {
-            return FolderFiles { by_second };
-        };
-        for entry in entries.flatten() {
-            let Ok(file_type) = entry.file_type() else {
-                continue;
-            };
-            if file_type.is_symlink() || !file_type.is_file() {
-                continue;
-            }
-            let path = entry.path();
+        for path in regular_files(folder)? {
             let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
                 continue;
             };
@@ -112,7 +108,7 @@ impl FolderFiles {
             }
             second_files.files.push((path, ends));
         }
-        FolderFiles { by_second }
+        Ok(FolderFiles { by_second })
     }
 
     /// The file iMazing wrote for `row`: a name that starts with the row's
@@ -395,6 +391,7 @@ mod tests {
     use super::*;
     use message_crate_core::{AttachmentJob, MediaConfig, run_attachment_jobs};
     use message_ir::IrAttachment;
+    use std::fs;
 
     /// The attachment-type column names the type when iMazing filled it in;
     /// when it is empty, the file name's extension does, and an extension
@@ -454,7 +451,7 @@ mod tests {
             b"jpeg-bytes",
         )
         .unwrap();
-        let files = FolderFiles::read(&chat);
+        let files = FolderFiles::read(&chat).unwrap();
         let cell = attachment_cell("photo.jpg", "image");
         let source = files.find(&row("photo.jpg"));
         assert!(
@@ -515,7 +512,10 @@ mod tests {
             chat.join("2020-01-01 12 00 00 - Bob - photo.jpg"),
         )
         .unwrap();
-        assert_eq!(FolderFiles::read(&chat).find(&row("photo.jpg")), None);
+        assert_eq!(
+            FolderFiles::read(&chat).unwrap().find(&row("photo.jpg")),
+            None
+        );
     }
 
     fn numbered(csv_name: &str, ordinal: usize) -> NumberedName<'_> {
