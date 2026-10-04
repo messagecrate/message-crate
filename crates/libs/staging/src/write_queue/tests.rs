@@ -505,6 +505,82 @@ fn the_byte_total_leaves_out_an_attachment_with_no_file_from_the_start() {
     }
 }
 
+/// Many writers finishing at once still send counts that belong together
+/// and only move forward, so the bar never steps back and ends on the full
+/// total (#1536). Each source claims 100 bytes for a 5-byte file, so an
+/// attachments event that mixes two moments shows up as bytes that do not
+/// match the attachments done.
+#[test]
+fn parallel_progress_counts_are_snapshots_that_never_go_back() {
+    const UNITS: usize = 64;
+    const PER_UNIT: usize = 3;
+    let units: Vec<_> = (1..=UNITS as u32)
+        .map(|i| {
+            ConversationUnit::from_doc(doc_with(&test_number(i), PER_UNIT), |_, _| {
+                (AttachmentSource::Bytes(b"xxxxx".to_vec()), Some(100))
+            })
+        })
+        .collect();
+    let total = UNITS * PER_UNIT;
+    let hinted = 100 * total as u64;
+    let tmp = tempfile::tempdir().unwrap();
+    let mut options = options(MediaMode::Clone, false);
+    options.writer_count = 8;
+    let seen = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
+    let sink_seen = Arc::clone(&seen);
+    let sink = ProgressSink::unpaced(move |event| sink_seen.lock().unwrap().push(event));
+
+    drain_write_queue(
+        &tmp.path().join("out"),
+        units,
+        &options,
+        None,
+        Some(&sink),
+        None,
+    )
+    .unwrap();
+
+    let seen = seen.lock().unwrap();
+    let attachments: Vec<_> = seen
+        .iter()
+        .filter_map(|event| match event {
+            ProgressEvent::Attachments {
+                done,
+                bytes_done,
+                bytes_total,
+                ..
+            } => Some((*done, *bytes_done, *bytes_total)),
+            _ => None,
+        })
+        .collect();
+    for &(done, bytes_done, bytes_total) in &attachments {
+        let d = done as u64;
+        assert_eq!(
+            (bytes_done, bytes_total),
+            (5 * d, hinted - 95 * d),
+            "an attachments event mixes two moments at {done} done"
+        );
+    }
+    for pair in attachments.windows(2) {
+        assert!(pair[1].0 > pair[0].0, "attachments went back: {pair:?}");
+    }
+    let five_each = 5 * total as u64;
+    assert_eq!(attachments.last(), Some(&(total, five_each, five_each)));
+
+    let prepared: Vec<_> = seen
+        .iter()
+        .filter_map(|event| match event {
+            ProgressEvent::Prepare { done, .. } => Some(*done),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        prepared,
+        (0..=UNITS).collect::<Vec<_>>(),
+        "prepare events in order"
+    );
+}
+
 #[test]
 fn typed_progress_covers_prepare_and_attachments_across_units() {
     // The desktop's progress bar reads these events and nothing else, so
@@ -536,9 +612,9 @@ fn typed_progress_covers_prepare_and_attachments_across_units() {
         Some(&ProgressEvent::Prepare { done: 0, total: 4 }),
         "the unit count is announced before any file is written"
     );
-    // Two writers report concurrently, so emission order is not count
-    // order; the high-water marks are what must be right.
-    let attachments_high = seen
+    // Two writers report concurrently, and each event still carries one
+    // moment's counts in count order, so the last one is the full total.
+    let attachments_last = seen
         .iter()
         .filter_map(|event| match event {
             ProgressEvent::Attachments {
@@ -549,18 +625,18 @@ fn typed_progress_covers_prepare_and_attachments_across_units() {
             } => Some((*done, *total, *bytes_done, *bytes_total)),
             _ => None,
         })
-        .max()
+        .next_back()
         .unwrap();
-    assert_eq!(attachments_high, (4, 4, 4, 4));
-    let prepared_high = seen
+    assert_eq!(attachments_last, (4, 4, 4, 4));
+    let prepared_last = seen
         .iter()
         .filter_map(|event| match event {
             ProgressEvent::Prepare { done, total } => Some((*done, *total)),
             _ => None,
         })
-        .max()
+        .next_back()
         .unwrap();
-    assert_eq!(prepared_high, (4, 4));
+    assert_eq!(prepared_last, (4, 4));
     assert!(
         !seen
             .iter()

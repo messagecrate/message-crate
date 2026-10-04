@@ -237,6 +237,12 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **An import's progress bar no longer steps back or stops
+  short.** While the desktop app copied attachments and wrote conversation
+  files, two files finishing at the same moment could send their counts
+  out of order or mixed together, so the bar could move backwards and end
+  on 3 of 4 attachments when every one had been copied. Each count now
+  follows the one before it, and the bar ends on the full total.
 - 2026-10-04 **An attachment too large after conversion says so when an
   interrupted Media Stage resumes.** When two conversations shared one
   attachment whose converted copy came out over the size limit, an Import
