@@ -105,13 +105,15 @@ pub(crate) async fn commit_during<F: std::future::Future>(other: WriteTx<'_>, op
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::account_profile::{self, MessagesToDelete};
     use crate::db::schema;
 
-    /// A connection that sat idle while another changed the schema begins a
-    /// write transaction and runs the delete `wipe_demo_account` runs first
-    /// (`delete_account_messages_batch`). Preparing it loads the full-text
-    /// search trigger on `messages`, which connects to `messages_fts`; no
-    /// row needs to match. The delete goes through (#1600).
+    /// A connection that sat idle while another changed the schema runs the
+    /// first delete of `wipe_demo_account`: a batch of duplicates, through
+    /// `delete_account_messages_batch`, which begins its own write
+    /// transaction. Preparing the delete loads the full-text search trigger
+    /// on `messages`, which connects to `messages_fts`, so no row needs to
+    /// match. The delete goes through (#1600).
     #[tokio::test]
     async fn a_write_after_another_connection_changed_the_schema_sees_the_new_schema() {
         let (pool, _dir) = crate::db::engine::test_pool().await;
@@ -137,13 +139,13 @@ mod tests {
             .expect("install triggers");
         tx.commit().await.expect("commit the schema change");
 
-        let mut tx = begin_write(&mut stale).await.expect("begin on the second");
-        sqlx::query(
-            "DELETE FROM messages WHERE id IN (SELECT id FROM messages WHERE account_id = 1 LIMIT 500)",
+        account_profile::delete_account_messages_batch(
+            &mut stale,
+            1,
+            MessagesToDelete::Duplicates,
+            std::num::NonZeroU32::new(500).expect("a batch size above zero"),
         )
-        .execute(&mut *tx)
         .await
         .expect("delete after the schema changed");
-        tx.commit().await.expect("commit the delete");
     }
 }
