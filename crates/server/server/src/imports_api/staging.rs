@@ -433,19 +433,28 @@ impl FileStaging<'_> {
         // WhatsApp `…@g.us` has an `@`). A one-to-one chat's id takes the type
         // the header gives the participant with the same address, and its
         // shape only when no participant has it.
-        let chat_handle_type = if individual {
+        //
+        // A one-to-one chat keyed by a name (`name:Alice`) is with a person
+        // the source recorded no address for. Their identity is the name, of
+        // type `other`, the one their participant record gives them, so the
+        // chat and the participant are one identity on one contact.
+        let chat_name = message_ir::name_of_chat_id(&conversation.chat_identifier)
+            .filter(|_| individual)
+            .map(str::trim);
+        let chat_handle = chat_name.unwrap_or(&conversation.chat_identifier);
+        let chat_handle_type = if chat_name.is_some() || !individual {
+            HandleType::Other
+        } else {
             header_types
                 .get(conversation.chat_identifier.trim())
                 .copied()
                 .unwrap_or_else(|| infer_handle_type(&conversation.chat_identifier))
-        } else {
-            HandleType::Other
         };
         let (chat_handle_id, flagged, chat_cached) = upsert_handle_row_cached(
             self.tx,
             &mut self.stmts.handles,
             self.stmts.account_id,
-            &conversation.chat_identifier,
+            chat_handle,
             chat_handle_type,
             Some(platform.as_str()),
         )
@@ -459,8 +468,11 @@ impl FileStaging<'_> {
         // write `orphaned.jsonl` under an `individual` header, so the file
         // name, not the type, says it is the orphaned conversation. The handle
         // cache is no guide here: it says this run has seen the handle, not
-        // that anything gave it a contact.
-        let chat_is_a_person = individual && !is_orphaned_export(Path::new(&self.source_file));
+        // that anything gave it a contact. The conversation whose rows name
+        // nobody (`nameless:`) is no person either.
+        let chat_is_a_person = individual
+            && !is_orphaned_export(Path::new(&self.source_file))
+            && conversation.chat_identifier != message_ir::NAMELESS_CHAT_ID;
         if chat_is_a_person {
             count_other_identity(chat_handle_type, chat_cached, &mut stats);
             let _ = ensure_contact_for_handle(

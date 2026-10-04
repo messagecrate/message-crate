@@ -1216,7 +1216,7 @@ async fn name_only_participant_becomes_an_other_identity_on_a_contact() {
     let path = write_jsonl(
         tmp.path(),
         "name-only.jsonl",
-        r#"{"schema_version":4,"export":{"source":"openextract","tool":"test","tool_version":"0","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"Sarah_Vale","conversation_type":"individual","group_title":null,"participants":[{"display_name":"Sarah Vale"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}
+        r#"{"schema_version":4,"export":{"source":"openextract","tool":"test","tool_version":"0","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"name:Sarah Vale","conversation_type":"individual","group_title":null,"participants":[{"display_name":"Sarah Vale"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}
 {"guid":"g-name-only","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_handle":null,"sender_display_name":"Sarah Vale","subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}
 "#,
     );
@@ -1271,6 +1271,48 @@ async fn name_only_participant_becomes_an_other_identity_on_a_contact() {
     .await
     .unwrap();
     assert!(participant_is_her);
+
+    // The chat keyed by her name is that identity too, so she is one contact
+    // with one identity, and the key's `name:` prefix is stored nowhere.
+    let contacts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM contacts WHERE account_id = $1")
+        .bind(TEST_ACCOUNT)
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(contacts, 1);
+    let handles: Vec<String> =
+        sqlx::query_scalar("SELECT raw FROM handles WHERE account_id = $1 ORDER BY raw")
+            .bind(TEST_ACCOUNT)
+            .fetch_all(&mut *conn)
+            .await
+            .unwrap();
+    assert_eq!(handles, ["Sarah Vale"]);
+}
+
+/// The conversation whose rows name nobody is no person, so its chat id
+/// gives nobody a contact.
+#[tokio::test]
+async fn the_conversation_that_names_nobody_never_becomes_a_contact() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("messagecrate.db");
+    let assets = tmp.path().join("assets");
+    let path = write_jsonl(
+        tmp.path(),
+        "nameless.jsonl",
+        r#"{"schema_version":4,"export":{"source":"openextract","tool":"test","tool_version":"0","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"nameless:","conversation_type":"individual","group_title":null,"participants":[],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}
+{"guid":"g-nameless","timestamp_unix_ms":1426183462000,"direction":"outgoing","service":"sms","message_kind":"sms","sender_handle":null,"sender_display_name":null,"subject":null,"text":"to whom","attachments":[],"imessage":null,"source":null}
+"#,
+    );
+    let opts = replace_opts(&assets, tmp.path(), "openextract");
+    import_jsonl_files(&db, &[path], &opts).await.unwrap();
+
+    let (_pool, mut conn) = open_verify(&db).await;
+    let contacts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM contacts WHERE account_id = $1")
+        .bind(TEST_ACCOUNT)
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(contacts, 0);
 }
 
 /// A group chat's identifier names the conversation, not a person, so only
