@@ -848,31 +848,27 @@ async fn the_same_words_from_two_group_members_are_never_near_duplicates() {
     let group = conversation(&mut conn, "chat-group", "group").await;
     let ann = handle(&mut conn, "+15555550101").await;
     let bo = handle(&mut conn, "+15555550102").await;
-    let from_ann = message(
-        &mut conn,
-        Msg {
-            conversation_id: group,
-            source: "go-sms-pro",
-            guid: "g1",
-            timestamp: "2015-03-12T18:04:22Z",
-            from_me: false,
-            sender: Some(ann),
-            body: "happy birthday!",
-        },
-    )
+    let from_ann = MessageRow {
+        source: "go-sms-pro",
+        guid: Some("g1".into()),
+        timestamp: "2015-03-12T18:04:22Z",
+        is_from_me: false,
+        sender_handle_id: Some(ann),
+        body: Some("happy birthday!"),
+        ..MessageRow::new(TEST_ACCOUNT_ID, group)
+    }
+    .insert(&mut conn)
     .await;
-    let from_bo = message(
-        &mut conn,
-        Msg {
-            conversation_id: group,
-            source: "sms-backup-plus",
-            guid: "g2",
-            timestamp: "2015-03-12T18:04:23Z",
-            from_me: false,
-            sender: Some(bo),
-            body: "happy birthday!",
-        },
-    )
+    let from_bo = MessageRow {
+        source: "sms-backup-plus",
+        guid: Some("g2".into()),
+        timestamp: "2015-03-12T18:04:23Z",
+        is_from_me: false,
+        sender_handle_id: Some(bo),
+        body: Some("happy birthday!"),
+        ..MessageRow::new(TEST_ACCOUNT_ID, group)
+    }
+    .insert(&mut conn)
     .await;
 
     let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
@@ -1011,31 +1007,6 @@ async fn add_attachment(conn: &mut SqliteConnection, message_id: i64, sha: &str)
     tx.commit().await.unwrap();
 }
 
-struct Msg<'a> {
-    conversation_id: i64,
-    source: &'a str,
-    guid: &'a str,
-    timestamp: &'a str,
-    from_me: bool,
-    /// The sender's handle id; `None` for an outgoing message.
-    sender: Option<i64>,
-    body: &'a str,
-}
-
-async fn message(conn: &mut SqliteConnection, m: Msg<'_>) -> i64 {
-    MessageRow {
-        source: m.source,
-        guid: Some(m.guid.into()),
-        timestamp: m.timestamp,
-        is_from_me: m.from_me,
-        sender_handle_id: m.sender,
-        body: Some(m.body),
-        ..MessageRow::new(TEST_ACCOUNT_ID, m.conversation_id)
-    }
-    .insert(conn)
-    .await
-}
-
 async fn setup_account(conn: &mut SqliteConnection) {
     schema::ensure_schema(conn).await.unwrap();
     sqlx::query("INSERT INTO accounts (id, username) VALUES ($1, 'test')")
@@ -1074,18 +1045,16 @@ async fn an_attachment_added_after_the_first_dedupe_changes_the_content_key() {
         add_participant(&mut conn, conv, "+15555550129").await;
     }
 
-    let first = message(
-        &mut conn,
-        Msg {
-            conversation_id: x,
-            source: "imessage",
-            guid: "a-1",
-            timestamp: "2015-03-12T18:04:22Z",
-            from_me: true,
-            sender: None,
-            body: "look",
-        },
-    )
+    let first = MessageRow {
+        source: "imessage",
+        guid: Some("a-1".into()),
+        timestamp: "2015-03-12T18:04:22Z",
+        is_from_me: true,
+        sender_handle_id: None,
+        body: Some("look"),
+        ..MessageRow::new(TEST_ACCOUNT_ID, x)
+    }
+    .insert(&mut conn)
     .await;
     dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
         .await
@@ -1093,18 +1062,16 @@ async fn an_attachment_added_after_the_first_dedupe_changes_the_content_key() {
 
     // The re-import brings the photo; the other exporter had it all along.
     add_attachment(&mut conn, first, "sha-photo").await;
-    let twin = message(
-        &mut conn,
-        Msg {
-            conversation_id: y,
-            source: "sms-backup-plus",
-            guid: "b-1",
-            timestamp: "2015-03-12T18:04:22Z",
-            from_me: true,
-            sender: None,
-            body: "look",
-        },
-    )
+    let twin = MessageRow {
+        source: "sms-backup-plus",
+        guid: Some("b-1".into()),
+        timestamp: "2015-03-12T18:04:22Z",
+        is_from_me: true,
+        sender_handle_id: None,
+        body: Some("look"),
+        ..MessageRow::new(TEST_ACCOUNT_ID, y)
+    }
+    .insert(&mut conn)
     .await;
     add_attachment(&mut conn, twin, "sha-photo").await;
 
@@ -1135,18 +1102,16 @@ async fn a_participant_added_after_the_first_dedupe_changes_the_group_content_ke
     let y = conversation(&mut conn, "chat-y", "group").await;
     // The first export of chat-x named only one of the two people.
     add_participant(&mut conn, x, "+15555550128").await;
-    let first = message(
-        &mut conn,
-        Msg {
-            conversation_id: x,
-            source: "imessage",
-            guid: "a-1",
-            timestamp: "2015-03-12T18:04:22Z",
-            from_me: true,
-            sender: None,
-            body: "dinner at 7?",
-        },
-    )
+    let first = MessageRow {
+        source: "imessage",
+        guid: Some("a-1".into()),
+        timestamp: "2015-03-12T18:04:22Z",
+        is_from_me: true,
+        sender_handle_id: None,
+        body: Some("dinner at 7?"),
+        ..MessageRow::new(TEST_ACCOUNT_ID, x)
+    }
+    .insert(&mut conn)
     .await;
     dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
         .await
@@ -1155,18 +1120,16 @@ async fn a_participant_added_after_the_first_dedupe_changes_the_group_content_ke
     add_participant(&mut conn, x, "+15555550129").await;
     add_participant(&mut conn, y, "+15555550128").await;
     add_participant(&mut conn, y, "+15555550129").await;
-    let twin = message(
-        &mut conn,
-        Msg {
-            conversation_id: y,
-            source: "sms-backup-plus",
-            guid: "b-1",
-            timestamp: "2015-03-12T18:04:22Z",
-            from_me: true,
-            sender: None,
-            body: "dinner at 7?",
-        },
-    )
+    let twin = MessageRow {
+        source: "sms-backup-plus",
+        guid: Some("b-1".into()),
+        timestamp: "2015-03-12T18:04:22Z",
+        is_from_me: true,
+        sender_handle_id: None,
+        body: Some("dinner at 7?"),
+        ..MessageRow::new(TEST_ACCOUNT_ID, y)
+    }
+    .insert(&mut conn)
     .await;
 
     dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
@@ -1199,18 +1162,16 @@ async fn the_holders_own_address_does_not_change_a_groups_content_key() {
     let mut ids = Vec::new();
     for (conversation_id, source, guid) in [(x, "imessage", "a-1"), (y, "sms-backup-plus", "b-1")] {
         ids.push(
-            message(
-                &mut conn,
-                Msg {
-                    conversation_id,
-                    source,
-                    guid,
-                    timestamp: "2015-03-12T18:04:22Z",
-                    from_me: true,
-                    sender: None,
-                    body: "dinner at 7?",
-                },
-            )
+            MessageRow {
+                source,
+                guid: Some(guid.into()),
+                timestamp: "2015-03-12T18:04:22Z",
+                is_from_me: true,
+                sender_handle_id: None,
+                body: Some("dinner at 7?"),
+                ..MessageRow::new(TEST_ACCOUNT_ID, conversation_id)
+            }
+            .insert(&mut conn)
             .await,
         );
     }
@@ -1257,18 +1218,16 @@ async fn a_failed_dedupe_keeps_the_previous_duplicates_hidden() {
             ),
         ] {
             ids.push(
-                message(
-                    &mut conn,
-                    Msg {
-                        conversation_id: peer,
-                        source,
-                        guid,
-                        timestamp,
-                        from_me: true,
-                        sender: None,
-                        body,
-                    },
-                )
+                MessageRow {
+                    source,
+                    guid: Some(guid.into()),
+                    timestamp,
+                    is_from_me: true,
+                    sender_handle_id: None,
+                    body: Some(body),
+                    ..MessageRow::new(TEST_ACCOUNT_ID, peer)
+                }
+                .insert(&mut conn)
                 .await,
             );
         }
@@ -1419,18 +1378,16 @@ async fn generate_database(conn: &mut SqliteConnection, seed: u64) -> Vec<i64> {
                 .to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
             let conversation_id = chat.conversations[rng.below(chat.conversations.len())];
             let source = GEN_SOURCES[rng.below(GEN_SOURCES.len())];
-            let id = message(
-                conn,
-                Msg {
-                    conversation_id,
-                    source,
-                    guid: &format!("g-{guid}"),
-                    timestamp: &timestamp,
-                    from_me,
-                    sender,
-                    body: &copy_body,
-                },
-            )
+            let id = MessageRow {
+                source,
+                guid: Some(format!("g-{guid}")),
+                timestamp: &timestamp,
+                is_from_me: from_me,
+                sender_handle_id: sender,
+                body: Some(&copy_body),
+                ..MessageRow::new(TEST_ACCOUNT_ID, conversation_id)
+            }
+            .insert(conn)
             .await;
             for sha in copy_shas {
                 add_attachment(conn, id, sha).await;
