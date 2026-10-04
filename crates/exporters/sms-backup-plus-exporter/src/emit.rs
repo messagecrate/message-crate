@@ -12,8 +12,8 @@ use message_crate_core::{
     prepare_outputs, project_conversation,
 };
 use message_ir::{
-    ConversationDocument, ExportMeta, IrAttachment, IrConversationType, IrDirection, IrParticipant,
-    IrService, IrSource, PendingAttachment, PendingConversation, PendingMessage, ProjectionHooks,
+    ConversationDocument, ExportMeta, IrConversationType, IrDirection, IrParticipant, IrService,
+    IrSource, PendingAttachment, PendingConversation, PendingMessage, ProjectionHooks,
     default_participants, parse_android_type,
 };
 use message_staging::{AttachmentSource, AttachmentSpool, ExportWriter};
@@ -186,10 +186,6 @@ impl ProjectionHooks for SbpProjection {
             }
         }
         participants
-    }
-
-    fn attachment_to_ir(&self, att: &PendingAttachment, _msg: &PendingMessage) -> IrAttachment {
-        att.to_ir()
     }
 
     /// Of two copies of one message, the dedupe step keeps the first one

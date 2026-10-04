@@ -194,7 +194,10 @@ fn obfuscate_attachment(att: &mut IrAttachment) {
     if att.transcription.as_deref().is_some_and(|s| !s.is_empty()) {
         att.transcription = Some("[redacted]".into());
     }
+    // The digest and the size both describe the real file the export
+    // leaves out.
     att.digest_sha256 = None;
+    att.size_bytes = None;
     att.bytes = None;
 }
 

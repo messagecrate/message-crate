@@ -6,9 +6,10 @@ use anyhow::Result;
 use message_ir::PendingAttachment;
 use message_staging::AttachmentSpool;
 
-/// Queue attachment blobs as metadata. With a `spool`, each payload is
-/// written to it here, so no attachment's bytes stay in memory until the
-/// shared runner writes them.
+/// Queue attachment blobs as metadata, each with its payload's size whether
+/// or not the run copies it. With a `spool`, each payload is written to it
+/// here, so no attachment's bytes stay in memory until the shared runner
+/// writes them.
 ///
 /// # Errors
 ///
@@ -32,6 +33,7 @@ pub(super) fn queue_attachments(
                     .original_name
                     .clone()
                     .or_else(|| Some(blob.filename.clone())),
+                size_bytes: Some(blob.data.len() as u64),
             })
         })
         .collect()

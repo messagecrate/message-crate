@@ -597,6 +597,7 @@ impl Ingest {
             content_type: mime_hint("", &name).unwrap_or_default(),
             digest_sha256: None,
             name_hint: Some(name),
+            size_bytes: None,
         });
         self.report.bump("live_photo_videos", 1);
     }
@@ -624,6 +625,7 @@ fn attachment_for_row(
         content_type: cell.meta.mime_type.clone().unwrap_or_default(),
         digest_sha256: None,
         name_hint: cell.meta.original_name.clone(),
+        size_bytes: None,
     };
     let mut extra = BTreeMap::new();
     extra.insert(

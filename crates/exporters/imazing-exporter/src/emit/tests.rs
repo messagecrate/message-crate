@@ -31,6 +31,7 @@ fn pending_att(rel_path: &str, digest: Option<&str>) -> PendingAttachment {
         content_type: String::new(),
         digest_sha256: digest.map(str::to_string),
         name_hint: None,
+        size_bytes: None,
     }
 }
 

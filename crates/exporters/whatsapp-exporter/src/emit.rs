@@ -297,6 +297,7 @@ fn queue_media(
         content_type: msg.mime.clone().unwrap_or_default(),
         digest_sha256: None,
         name_hint: name,
+        size_bytes: None,
     };
     if !copy_attachments {
         return (vec![pending], None);

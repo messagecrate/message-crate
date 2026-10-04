@@ -10,9 +10,8 @@ use message_crate_core::{
     CancelFlag, ExportReport, ExportTransforms, OutputFormat, prepare_outputs, project_conversation,
 };
 use message_ir::{
-    ExportMeta, IrAttachment, IrParticipant, IrService, IrSource, PendingAttachment,
-    PendingConversation, PendingMessage, ProjectionHooks, default_participants,
-    ensure_conversation, parse_android_type,
+    ExportMeta, IrParticipant, IrService, IrSource, PendingAttachment, PendingConversation,
+    PendingMessage, ProjectionHooks, default_participants, ensure_conversation, parse_android_type,
 };
 use message_staging::{AttachmentSource, AttachmentSpool, ExportWriter};
 use phone::{Handle, OwnerHandleSet};
@@ -303,10 +302,6 @@ impl ProjectionHooks for GoSmsProjection {
             }
         }
         participants
-    }
-
-    fn attachment_to_ir(&self, att: &PendingAttachment, _msg: &PendingMessage) -> IrAttachment {
-        att.to_ir()
     }
 
     fn source(&self, convo: &PendingConversation, msg: &PendingMessage) -> IrSource {
@@ -811,6 +806,7 @@ mod tests {
                     content_type: "image/jpeg".into(),
                     digest_sha256: Some(d.to_string()),
                     name_hint: None,
+                    size_bytes: None,
                 })
                 .collect(),
             extra,
