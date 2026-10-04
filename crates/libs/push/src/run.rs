@@ -37,7 +37,9 @@
 use message_crate_api_types::ImportMode;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
@@ -139,6 +141,8 @@ pub struct PushConfig {
     /// Where the journal lives; `None` puts it beside the input.
     pub journal_path: Option<PathBuf>,
     /// Checked between files and uploads; set it to stop the run early.
+    /// The run sets it itself when the server refuses the session, so a
+    /// refused session stops the run the way a cancel does.
     pub cancel: Option<CancelFlag>,
     /// Existing Import Run to post into when the caller already created one.
     pub import_id: Option<i64>,
@@ -168,6 +172,29 @@ pub(crate) struct Session {
     /// The account the session token resolved to (server-reported name, or the id).
     pub username: String,
     pub auth: AuthInfo,
+    /// The run's cancel flag, which a refused session sets.
+    pub stop: CancelFlag,
+    /// Set once the server refuses the session token.
+    pub refused: Arc<AtomicBool>,
+}
+
+impl Session {
+    /// Stop the run when `error` is the server refusing the session token.
+    ///
+    /// A refused session refuses every later request too, so the run stops
+    /// as it would for a cancel, and what it did not send stays for the next
+    /// push rather than being recorded as failed.
+    pub(crate) fn note_refusal(&self, error: &anyhow::Error) {
+        if message_crate_http::is_session_refused(error) {
+            self.refused.store(true, Ordering::SeqCst);
+            self.stop.store(true, Ordering::SeqCst);
+        }
+    }
+
+    /// True once the server has refused the session token.
+    pub(crate) fn is_refused(&self) -> bool {
+        self.refused.load(Ordering::SeqCst)
+    }
 }
 
 /// Where this run reads from and writes its journal, report, and log.
@@ -221,8 +248,16 @@ impl RunPaths {
 /// Returns an error when setup fails, a worker disconnects, the report cannot
 /// be written, or the server refuses to complete the Import Run this push
 /// started. A conversation that fails is recorded in the report and the
-/// run goes on to the next one.
+/// run goes on to the next one. A session the server stops accepting during
+/// the run is not an error: the run stops as for a cancel, and the report
+/// says so in `session_refused`.
 pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<PushReport> {
+    // A refused session stops the run through the cancel flag, so the run
+    // always has one.
+    let cfg = &PushConfig {
+        cancel: Some(cfg.cancel.clone().unwrap_or_default()),
+        ..cfg.clone()
+    };
     let run_started = Instant::now();
     let started_at = now_stamp();
     let paths = RunPaths::resolve(cfg)?;
@@ -255,6 +290,15 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
 
     let aborted = drive(&ctx, &files, &mut pipeline, &mut assets, &mut out)?;
     let aborted = settle(cfg, &mut pipeline, aborted, &mut out)?;
+    let session_refused = session.is_refused();
+    if session_refused {
+        out.show_as(
+            "session refused: stopped",
+            "The server no longer accepts this session, so the Upload stopped. \
+             The next push sends what this one did not."
+                .into(),
+        );
+    }
     pipeline.record_cancelled(&files, &mut out);
     // A cancel is the one stop the caller resumes from, so the report tells
     // it apart from a failure.
@@ -271,6 +315,7 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
     let mut report = PushReport {
         ok: counted.failed == 0 && !aborted,
         cancelled,
+        session_refused,
         account: session.auth.account_id,
         username: session.username.clone(),
         mode: cfg.mode,
@@ -292,8 +337,10 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
         results,
     };
     // The run is completed before the report is written, so a refused
-    // completion leaves a report that is not `ok` beside the error.
-    let completed = if cfg.import_id.is_none() {
+    // completion leaves a report that is not `ok` beside the error. A
+    // refused session cannot complete it: the run stays open on the server
+    // for the next push.
+    let completed = if cfg.import_id.is_none() && !session_refused {
         complete_import_run(&session, import_id, &report, aborted, &mut out)
     } else {
         Ok(())
@@ -355,6 +402,8 @@ fn login(cfg: &PushConfig, out: &mut Reporter<'_, '_>) -> Result<Session> {
         token: cfg.token.clone(),
         username,
         auth,
+        stop: cfg.cancel.clone().unwrap_or_default(),
+        refused: Arc::new(AtomicBool::new(false)),
     })
 }
 
@@ -506,6 +555,7 @@ fn consume_result(
 ) -> Result<bool> {
     match result.outcome {
         PrepareOutcome::Skipped => Ok(true),
+        PrepareOutcome::Stopped => Ok(false),
         PrepareOutcome::Failed(error) => {
             pipeline.record_prepare_failure(result.idx, &result.name, &error, out);
             Ok(true)

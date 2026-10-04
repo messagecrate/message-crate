@@ -57,6 +57,19 @@ impl HttpError {
     }
 }
 
+/// Whether `error` is the server refusing the session token (`401
+/// Unauthorized`): the session expired or was ended. Asking again with the
+/// same token gets the same answer, so a run that sees one stops.
+pub fn is_session_refused(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<HttpError>()
+        .is_some_and(|http| http.status == 401)
+        || matches!(
+            error.downcast_ref::<AuthError>(),
+            Some(AuthError::Unauthorized)
+        )
+}
+
 /// Classify an error for [`with_retries`].
 ///
 /// Checks, in order: [`HttpError`] (2xx and 4xx permanent), [`AuthError`]
@@ -164,6 +177,23 @@ mod tests {
             "the server did not accept this session",
         ));
         assert!(classified(classify_retry(&e)));
+    }
+
+    #[test]
+    fn only_a_401_is_a_refused_session() {
+        let refused = anyhow::Error::from(crate::session_refused("import batch"));
+        assert!(is_session_refused(&refused));
+        assert!(is_session_refused(
+            &refused.context("POST /v1/imports/7/batches")
+        ));
+        assert!(is_session_refused(&anyhow::Error::from(
+            AuthError::Unauthorized
+        )));
+        assert!(!is_session_refused(&anyhow::Error::from(HttpError::new(
+            403,
+            "the account may not import"
+        ))));
+        assert!(!is_session_refused(&anyhow!("connection reset")));
     }
 
     #[test]

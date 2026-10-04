@@ -41,6 +41,7 @@ fn finished_push_events(
         ),
         "ok": report.ok,
         "cancelled": report.cancelled,
+        "session_refused": report.session_refused,
         "messages_attempted": report.messages_attempted,
         "messages_inserted": report.messages_inserted,
         "messages_deduped": report.messages_deduped,
@@ -378,6 +379,7 @@ mod tests {
         let report = PushReport {
             ok: true,
             cancelled: false,
+            session_refused: false,
             account: 1,
             username: "user".into(),
             mode: ImportMode::Append,
@@ -428,5 +430,7 @@ mod tests {
         assert_eq!(summary["conversations_ok"], 2);
         assert_eq!(summary["conversations_total"], 3);
         assert_eq!(summary["cancelled"], false);
+        // The window ends the session when the push says it was refused.
+        assert_eq!(summary["session_refused"], false);
     }
 }

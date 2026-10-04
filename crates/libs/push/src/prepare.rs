@@ -894,7 +894,8 @@ fn preflight_existing_asset(ctx: &PrepareContext<'_>, digest: &str) -> Result<()
     *done = true;
     let session = ctx.session;
     let present =
-        message_crate_http::with_retries(ctx.cfg.max_retries, || session.head_asset(digest))?;
+        message_crate_http::with_retries(ctx.cfg.max_retries, || session.head_asset(digest))
+            .inspect_err(|error| session.note_refusal(error))?;
     if present {
         ctx.probe_existing.store(true, Ordering::Relaxed);
     }
@@ -925,6 +926,7 @@ fn upload_one_asset(ctx: &PrepareContext<'_>, job: &AssetUploadJob) -> Result<As
         }
         Ok(response)
     })
+    .inspect_err(|error| session.note_refusal(error))
 }
 
 /// One conversation handed to a prepare worker.
@@ -942,6 +944,10 @@ pub(crate) enum PrepareOutcome {
     Prepared(PreparedFile),
     /// Reading, hashing, or uploading failed.
     Failed(String),
+    /// The run was told to stop (a cancel, or a session the server refused)
+    /// before this conversation was ready. It is left for the next push, so
+    /// a request the stop cut short fails no conversation.
+    Stopped,
 }
 
 /// Result coming back from a prepare worker (may finish out of order).
@@ -992,6 +998,9 @@ impl PrepareQueue {
                     };
                     let outcome = match prepare_file(ctx, &job.path, &job.name) {
                         Ok(prepared) => PrepareOutcome::Prepared(prepared),
+                        Err(_) if check_cancel(ctx.cfg.cancel.as_ref()).is_err() => {
+                            PrepareOutcome::Stopped
+                        }
                         Err(error) => PrepareOutcome::Failed(error.to_string()),
                     };
                     let _ = result_tx.send(PrepareResult {
