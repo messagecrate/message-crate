@@ -4,7 +4,13 @@ import Button from "../../components/Button";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import IdentityTable, { type IdentityRow } from "../../components/IdentityTable";
 import type { AccountProfile } from "../../lib/account";
-import type { HandleService } from "../../lib/handleService";
+import {
+  type HandleService,
+  type ListedService,
+  listedServerService,
+  listedService,
+  serverService,
+} from "../../lib/handleService";
 import { phonesMatch } from "../../lib/phoneTokens";
 import { keys } from "../../lib/queryKeys";
 import { useRouteQuery } from "../../lib/routeQuery";
@@ -14,18 +20,20 @@ import { type Identity, removeBody } from "./identities";
 import { sectionTitleClass } from "./profileStyles";
 
 /**
- * Whether `rows` hold `address` on `service`, however the address was typed.
+ * Whether `rows` hold `address` as `listedAs`, however the address was typed.
  *
  * An add and a removal are judged here rather than by `profile.phones`,
  * because one number can be a Text Message identity and a WhatsApp identity
- * at once, and `profile.phones` lists it for each with no service.
+ * at once, and `profile.phones` lists it for each with no service. `listedAs`
+ * is the `service` the list gives the identity: its service for a number, and
+ * `email`, its type, for an email address on any service.
  */
-function listsIdentity(rows: Identity[], address: string, service: string): boolean {
+function listsIdentity(rows: Identity[], address: string, listedAs: ListedService): boolean {
   const needle = address.trim().toLowerCase();
   return rows.some(
     (row) =>
-      row.service === service &&
-      (service === "email"
+      row.service === listedAs &&
+      (listedAs === "email"
         ? row.address.toLowerCase() === needle
         : phonesMatch(address, row.address)),
   );
@@ -92,7 +100,7 @@ export function IdentitiesSection({
 
   /**
    * Send `body`, then read the identities list again and require that it now
-   * holds `address` on `service` (`listed`) or no longer does. The change is
+   * holds `address` as `listedAs` (`listed`) or no longer does. The change is
    * judged by the list, not by the profile the server answered, because the
    * profile names no service for a number.
    *
@@ -103,7 +111,7 @@ export function IdentitiesSection({
    */
   const changeAndCheck = async (
     body: Parameters<typeof updateProfile.mutateAsync>[0],
-    { address, service }: { address: string; service: string },
+    { address, listedAs }: { address: string; listedAs: ListedService },
     { listed, notChanged }: { listed: boolean; notChanged: string },
   ) => {
     await updateProfile.mutateAsync(body);
@@ -116,18 +124,24 @@ export function IdentitiesSection({
         `The server answered, but Identities could not be loaded again to check the change: ${reason}. Try again.`,
       );
     }
-    if (listsIdentity(rows, address, service) !== listed) {
+    if (listsIdentity(rows, address, listedAs) !== listed) {
       throw new Error(notChanged);
     }
   };
 
-  const confirmAdd = async (identity: { address: string; service: HandleService }) => {
+  const confirmAdd = async ({ address, service }: { address: string; service: HandleService }) => {
     setAddError("");
+    const identity = { address, service: serverService(service) };
+    const listedAs = listedService(address, identity.service);
     try {
-      await changeAndCheck({ identities: [identity] }, identity, {
-        listed: true,
-        notChanged: "The server did not add that identity.",
-      });
+      await changeAndCheck(
+        { identities: [identity] },
+        { address, listedAs },
+        {
+          listed: true,
+          notChanged: "The server did not add that identity.",
+        },
+      );
       setAdding(false);
     } catch (e) {
       setAddError(e instanceof Error ? e.message : String(e));
@@ -136,13 +150,23 @@ export function IdentitiesSection({
 
   const confirmRemove = async () => {
     if (!removeTarget) return;
-    const { address, service } = removeTarget;
+    const { address } = removeTarget;
     setRemoveError("");
     try {
-      await changeAndCheck({ remove_identities: [{ address, service }] }, removeTarget, {
-        listed: false,
-        notChanged: "The server did not remove that identity.",
-      });
+      const service = listedServerService(removeTarget.service);
+      if (service === undefined) {
+        throw new Error(
+          `The server listed ${address} on a service it does not take: ${removeTarget.service}.`,
+        );
+      }
+      await changeAndCheck(
+        { remove_identities: [{ address, service }] },
+        { address, listedAs: listedService(address, service) },
+        {
+          listed: false,
+          notChanged: "The server did not remove that identity.",
+        },
+      );
       setRemoveTarget(null);
     } catch (e) {
       setRemoveError(e instanceof Error ? e.message : String(e));

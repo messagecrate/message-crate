@@ -1,3 +1,6 @@
+import { identityType } from "./backupIdentity";
+import type { components } from "./serverApi.types";
+
 /** Messaging service ids used on profiles, setup, and contacts. */
 export type HandleService = "phone" | "email" | "whatsapp";
 
@@ -6,6 +9,47 @@ export const HANDLE_SERVICES = [
   "email",
   "whatsapp",
 ] as const satisfies readonly HandleService[];
+
+/** The service the server takes for an identity: `phone` or `whatsapp`. */
+export type ServerService = components["schemas"]["IdentityService"];
+
+/**
+ * The service the server takes for an identity offered on `service`. An email
+ * address is on the phone service, where iMessage reaches it; the server types
+ * an identity by its address, never by its service, and refuses `email` as a
+ * service.
+ */
+export function serverService(service: HandleService): ServerService {
+  switch (service) {
+    case "phone":
+    case "email":
+      return "phone";
+    case "whatsapp":
+      return "whatsapp";
+  }
+}
+
+/**
+ * The `service` the server's identities list gives `address` on `service`:
+ * `email`, the address's type, for an email address on any service, and the
+ * service for anything else.
+ */
+export function listedService(address: string, service: ServerService): ListedService {
+  return identityType(address) === "email" ? "email" : service;
+}
+
+/** A `service` the server's identities list gives an identity. */
+export type ListedService = ServerService | "email";
+
+/**
+ * The service an identity the server lists is on, or undefined when the list
+ * names none the server takes. The list names an email address `email`, its
+ * type; one a person added is on the phone service.
+ */
+export function listedServerService(service: string | null | undefined): ServerService | undefined {
+  const known = HANDLE_SERVICES.find((candidate) => candidate === service);
+  return known === undefined ? undefined : serverService(known);
+}
 
 /** The example phone number shown in empty fields and in the validation message. */
 export const EXAMPLE_PHONE = "+1 555-555-0119";
