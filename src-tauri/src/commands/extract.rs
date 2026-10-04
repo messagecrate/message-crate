@@ -304,9 +304,9 @@ fn exporter_attachment_media(chosen: AttachmentMedia) -> AttachmentMedia {
 ///
 /// `CompressOptions` only takes effect under [`media::MediaMode::Compress`],
 /// so the real options are built only when `Compress` was chosen and
-/// `CompressOptions::default()` is returned otherwise. The errors name the
-/// form's fields, because the Import Run shows them to the person as they
-/// are.
+/// `CompressOptions::default()` is returned otherwise. The errors are
+/// [`media::compress_options_from_form`]'s, which name the form's fields,
+/// because the Import Run shows them to the person as they are.
 ///
 /// # Errors
 ///
@@ -321,22 +321,7 @@ fn parse_compress_options(
     if !matches!(chosen, AttachmentMedia::Compress) {
         return Ok(CompressOptions::default());
     }
-    let max_fps = max_fps.trim();
-    let fps = max_fps
-        .parse::<f32>()
-        .ok()
-        .filter(|fps| fps.is_finite() && *fps > 0.0)
-        .ok_or_else(|| {
-            if max_fps.is_empty() {
-                "Max FPS is empty. It must be a number of frames per second, such as 30."
-                    .to_string()
-            } else {
-                format!(
-                    "Max FPS must be a number of frames per second above 0, such as 30, not '{max_fps}'."
-                )
-            }
-        })?;
-    media::compress_options_from_form(max_resolution, fps, min_size, true)
+    media::compress_options_from_form(max_resolution, max_fps, min_size, true)
         .map_err(|e| format!("{e:#}"))
 }
 

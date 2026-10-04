@@ -563,18 +563,13 @@ impl Form {
     ///
     /// # Errors
     ///
-    /// Returns an error when fps or min-size cannot be parsed.
+    /// Returns an error when Max FPS is empty or is not a number above 0, or
+    /// when Minimum Video File Size is empty or is not a whole number of
+    /// megabytes, in the words [`media::compress_options_from_form`] gives.
     pub fn compress_options(&self) -> Result<media::CompressOptions, String> {
-        let fps = self.media_max_fps.trim();
-        if fps.is_empty() {
-            return Err("Max fps is required for Compress.".into());
-        }
-        let fps: f32 = fps
-            .parse()
-            .map_err(|_| "Max fps must be a number.".to_string())?;
         media::compress_options_from_form(
             self.media_max_resolution,
-            fps,
+            &self.media_max_fps,
             &self.media_min_size,
             self.media_skip_efficient,
         )
@@ -1085,11 +1080,11 @@ mod tests {
         };
         assert_eq!(
             form("abc", "20").compress_options().unwrap_err(),
-            "Max fps must be a number."
+            "Max FPS must be a number of frames per second above 0, such as 30, not 'abc'."
         );
         assert_eq!(
             form("", "20").compress_options().unwrap_err(),
-            "Max fps is required for Compress."
+            "Max FPS is empty. It must be a number of frames per second, such as 30."
         );
         assert_eq!(
             form("30", " ").compress_options().unwrap_err(),
@@ -1132,6 +1127,12 @@ mod tests {
             ..form
         };
         let err = bad.to_config(Exporter::GoSmsPro).unwrap_err();
-        assert_eq!(err, vec!["Max fps must be a number.".to_string()]);
+        assert_eq!(
+            err,
+            vec![
+                "Max FPS must be a number of frames per second above 0, such as 30, not 'abc'."
+                    .to_string()
+            ]
+        );
     }
 }
