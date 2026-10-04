@@ -162,29 +162,46 @@ pub fn open_path(folders: tauri::State<'_, StagingFolders>, path: String) -> Res
     open::that_detached(&resolved).map_err(|error| format!("Could not open path: {error}"))
 }
 
-/// Show the Save dialog with `file_name` filled in, and write `contents` to
-/// the file the person chose, replacing a file already there.
+/// The header that names the file [`save_file`] saves, percent-encoded as
+/// `encodeURIComponent` writes it, because a header carries ASCII only.
+const FILE_NAME_HEADER: &str = "file-name";
+
+/// Show the Save dialog with the file's name filled in, and write the bytes
+/// the window sent to the file the person chose, replacing a file already
+/// there.
 ///
-/// The window calls this for a file the server answered as text, such as the
-/// address book. A desktop window has no downloads folder of its own, so the
-/// app writes the file where the person asked. The path comes from the
-/// dialog this command shows, never from the window, so a script in the
-/// window cannot name a file for the app to overwrite.
+/// The window calls this for a file the server answered, such as the address
+/// book or an attachment's original. A desktop window has no downloads
+/// directory of its own, so the app writes the file where the person asked.
+/// The bytes are the request's raw body, so an attachment of megabytes is not
+/// written out as a JSON array of numbers, and the name is the `file-name`
+/// header. The path comes from the dialog this command shows, never from the
+/// window, so a script in the window cannot name a file for the app to
+/// overwrite.
 ///
 /// Returns `false` when the person closed the dialog without choosing a
 /// place, and `true` once the file is written.
 ///
 /// # Errors
 ///
-/// Returns an error when the dialog's choice is not a file path, or the file
-/// cannot be written.
+/// Returns an error when the request carries no raw body or no file name,
+/// when the dialog's choice is not a file path, or when the file cannot be
+/// written.
 #[tauri::command]
-pub async fn save_text_file(
-    app: AppHandle,
-    file_name: String,
-    contents: String,
-) -> Result<bool, String> {
+pub async fn save_file(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<bool, String> {
     use tauri_plugin_dialog::DialogExt;
+
+    let tauri::ipc::InvokeBody::Raw(contents) = request.body() else {
+        return Err("The file to save came without its bytes".into());
+    };
+    let file_name = request
+        .headers()
+        .get(FILE_NAME_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(percent_decode)
+        .transpose()?
+        .filter(|name| !name.trim().is_empty())
+        .ok_or("The file to save came without its name")?;
 
     let mut dialog = app.dialog().file().set_file_name(&file_name);
     if let Some(extension) = Path::new(&file_name)
@@ -208,12 +225,32 @@ pub async fn save_text_file(
     let path = chosen
         .into_path()
         .map_err(|e| format!("The place chosen to save to is not a file path: {e}"))?;
-    write_text_file(&path, &contents)?;
+    write_file(&path, contents)?;
     Ok(true)
 }
 
+/// Undo `encodeURIComponent`: each `%XX` is the byte `XX`, and the bytes are
+/// UTF-8.
+fn percent_decode(encoded: &str) -> Result<String, String> {
+    let bad = || format!("The file name {encoded:?} is not percent-encoded UTF-8");
+    let mut bytes = Vec::with_capacity(encoded.len());
+    let mut rest = encoded.as_bytes();
+    while let Some((&first, tail)) = rest.split_first() {
+        if first == b'%' {
+            let hex = tail.get(..2).ok_or_else(bad)?;
+            let hex = std::str::from_utf8(hex).map_err(|_| bad())?;
+            bytes.push(u8::from_str_radix(hex, 16).map_err(|_| bad())?);
+            rest = &tail[2..];
+        } else {
+            bytes.push(first);
+            rest = tail;
+        }
+    }
+    String::from_utf8(bytes).map_err(|_| bad())
+}
+
 /// Write `contents` to `path`, replacing a file already there.
-pub(crate) fn write_text_file(path: &Path, contents: &str) -> Result<(), String> {
+pub(crate) fn write_file(path: &Path, contents: &[u8]) -> Result<(), String> {
     std::fs::write(path, contents)
         .map_err(|error| format!("Could not save {}: {error}", path.display()))
 }
@@ -424,12 +461,12 @@ mod tests {
     }
 
     #[test]
-    fn write_text_file_writes_the_text_and_replaces_what_was_there() {
+    fn write_file_writes_the_bytes_and_replaces_what_was_there() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("address-book.csv");
         fs::write(&path, "old").unwrap();
 
-        write_text_file(&path, "contact_id,display_name\n").unwrap();
+        write_file(&path, b"contact_id,display_name\n").unwrap();
 
         assert_eq!(
             fs::read_to_string(&path).unwrap(),
@@ -438,11 +475,28 @@ mod tests {
     }
 
     #[test]
-    fn write_text_file_reports_a_failed_write() {
+    fn write_file_reports_a_failed_write() {
         let dir = tempfile::tempdir().unwrap();
         let missing = dir.path().join("no-such-folder").join("address-book.csv");
-        let err = write_text_file(&missing, "x").unwrap_err();
+        let err = write_file(&missing, b"x").unwrap_err();
         assert!(err.starts_with("Could not save "), "{err}");
+    }
+
+    #[test]
+    fn percent_decode_reads_what_encode_uri_component_wrote() {
+        // encodeURIComponent("Café photo (1).jpg")
+        assert_eq!(
+            percent_decode("Caf%C3%A9%20photo%20(1).jpg").unwrap(),
+            "Café photo (1).jpg"
+        );
+        assert_eq!(percent_decode("plain.csv").unwrap(), "plain.csv");
+    }
+
+    #[test]
+    fn percent_decode_refuses_a_cut_short_escape_or_bytes_that_are_not_utf8() {
+        assert!(percent_decode("name%2").is_err());
+        assert!(percent_decode("name%zz").is_err());
+        assert!(percent_decode("%FF.jpg").is_err());
     }
 
     #[test]

@@ -2,25 +2,26 @@ import { invoke } from "@tauri-apps/api/core";
 import { isTauri } from "./tauri-check";
 
 /**
- * Save `text` as a file named `fileName`.
+ * Save `contents` as a file named `fileName`.
  *
  * In a browser the file goes to the browser's downloads, as any download
  * does. The desktop app's window has no downloads, so the app shows the Save
  * dialog and writes the file where the person chose. The window passes only
- * the name and the text: the path comes from the dialog, never the window.
+ * the name and the bytes: the path comes from the dialog, never the window.
+ * The bytes go as the request's raw body and the name, percent-encoded, as a
+ * header, so a file of megabytes is not written out as JSON.
  *
  * Returns false when the person closed the desktop app's dialog without
  * choosing a place, and true once the file is on its way.
  */
-export async function saveTextFile(
-  fileName: string,
-  text: string,
-  mediaType: string,
-): Promise<boolean> {
+export async function saveFile(fileName: string, contents: Blob): Promise<boolean> {
   if (isTauri()) {
-    return await invoke<boolean>("save_text_file", { fileName, contents: text });
+    const bytes = new Uint8Array(await contents.arrayBuffer());
+    return await invoke<boolean>("save_file", bytes, {
+      headers: { "file-name": encodeURIComponent(fileName) },
+    });
   }
-  const url = URL.createObjectURL(new Blob([text], { type: mediaType }));
+  const url = URL.createObjectURL(contents);
   const link = document.createElement("a");
   link.href = url;
   link.download = fileName;

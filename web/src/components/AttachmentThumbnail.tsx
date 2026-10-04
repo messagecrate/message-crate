@@ -1,9 +1,31 @@
-import { useAssetObjectUrl } from "../hooks/useAssetObjectUrl";
-import { hasPreview, shownMimeType } from "../lib/attachmentPreview";
-import { missingAttachmentChipLabel } from "../lib/missingAttachmentLabel";
+import { useThumbnail } from "../hooks/useThumbnail";
+import { attachmentName } from "../lib/attachmentMedia";
 import type { MessageAttachment } from "../lib/types";
+import { focusRing } from "../lib/uiStyles";
+import DownloadAttachmentButton from "./DownloadAttachmentButton";
 import PlainButton from "./PlainButton";
 
+/**
+ * Every picture in the conversation is this tall, the Thumbnail and the
+ * placeholder before it alike, so a Thumbnail that loads above the messages
+ * on screen does not push them down.
+ */
+export const TILE_HEIGHT = "h-[200px]";
+
+/** What a tile shows before its Thumbnail, or instead of one: the file's name. */
+export function TilePlaceholder({ name }: { name: string }) {
+  return (
+    <span className="flex h-full w-[200px] items-center justify-center break-all bg-elevated px-3 text-center text-[0.75rem] text-muted">
+      {name}
+    </span>
+  );
+}
+
+/**
+ * A photo in the conversation: its Thumbnail, fetched once its message comes
+ * near the screen, never the original (`docs/architecture/media.md`, rule 5).
+ * Pressing it opens the viewer.
+ */
 export default function AttachmentThumbnail({
   attachment,
   onClick,
@@ -11,62 +33,27 @@ export default function AttachmentThumbnail({
   attachment: MessageAttachment;
   onClick: () => void;
 }) {
-  const isMissing = Boolean(attachment.missing_reason);
-  // Playable videos never reach here — MessageAttachments routes them to VideoPlayer.
-  const isImage = shownMimeType(attachment)?.startsWith("image/");
-  const wantsMedia = Boolean(!isMissing && attachment.sha256 && isImage);
-  const { url, loading, error } = useAssetObjectUrl(
-    wantsMedia ? attachment.sha256 : null,
-    hasPreview(attachment),
-  );
-
-  if (isMissing) {
-    return (
-      <div className="mt-1.5 flex items-center gap-2 rounded bg-elevated px-2 py-2 text-[0.813rem] text-muted">
-        <span>📎</span>
-        <span>{missingAttachmentChipLabel(attachment)}</span>
-      </div>
-    );
-  }
-
-  // No renderable asset (missing digest) or an unknown file type — show a file chip
-  if (!attachment.sha256 || !isImage) {
-    return (
-      <div className="mt-1.5 flex items-center gap-2 rounded bg-elevated px-2 py-2 text-[0.813rem]">
-        <span>📎</span>
-        <span className="text-text">{attachment.original_name || "attachment"}</span>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="mt-1.5 flex items-center gap-2 rounded bg-elevated px-2 py-2 text-[0.813rem] text-muted">
-        <span>📎</span>
-        <span>{attachment.original_name || "attachment"} (failed to load)</span>
-      </div>
-    );
-  }
-
-  if (loading || !url) {
-    return (
-      <div className="mt-1.5 flex h-[120px] max-w-[280px] items-center justify-center rounded-md bg-elevated text-[0.75rem] text-muted">
-        Loading…
-      </div>
-    );
-  }
+  const [ref, thumbnail] = useThumbnail<HTMLDivElement>(attachment);
+  const name = attachmentName(attachment);
 
   return (
-    <PlainButton
-      onPress={onClick}
-      className="mt-1.5 block max-w-[280px] cursor-pointer overflow-hidden rounded-md border border-border bg-transparent p-0 text-left"
-    >
-      <img
-        src={url}
-        alt={attachment.original_name || "attachment"}
-        loading="lazy"
-        className="block h-auto max-h-[280px] w-auto max-w-[280px]"
-      />
-    </PlainButton>
+    <div ref={ref} className={`relative mt-1.5 w-fit max-w-[280px] ${TILE_HEIGHT}`}>
+      <PlainButton
+        onPress={onClick}
+        aria-label={`Open ${name}`}
+        className={`block h-full cursor-pointer overflow-hidden rounded-md border border-border bg-transparent p-0 ${focusRing}`}
+      >
+        {thumbnail.url ? (
+          <img
+            src={thumbnail.url}
+            alt={name}
+            className="block h-full w-auto max-w-[278px] object-cover"
+          />
+        ) : (
+          <TilePlaceholder name={name} />
+        )}
+      </PlainButton>
+      <DownloadAttachmentButton attachment={attachment} look="overlay" />
+    </div>
   );
 }

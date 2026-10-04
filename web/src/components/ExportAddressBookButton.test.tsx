@@ -2,15 +2,15 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { saveTextFile } from "../lib/saveTextFile";
+import { saveFile } from "../lib/saveFile";
 import { exportAddressBook } from "../lib/serverApi";
 import ExportAddressBookButton from "./ExportAddressBookButton";
 
 vi.mock("../lib/serverApi", () => ({ exportAddressBook: vi.fn() }));
-vi.mock("../lib/saveTextFile", () => ({ saveTextFile: vi.fn() }));
+vi.mock("../lib/saveFile", () => ({ saveFile: vi.fn() }));
 
 const exportMock = vi.mocked(exportAddressBook);
-const saveMock = vi.mocked(saveTextFile);
+const saveMock = vi.mocked(saveFile);
 
 const CSV =
   "contact_id,display_name,groups,service,identity_type,identity\n7,,,phone,phone,+15555550100\n";
@@ -32,7 +32,10 @@ describe("ExportAddressBookButton", () => {
 
     await waitFor(() => expect(saveMock).toHaveBeenCalledTimes(1));
     expect(exportMock).toHaveBeenCalledWith({ q: "group:Unknown" });
-    expect(saveMock).toHaveBeenCalledWith("address-book.csv", CSV, "text/csv");
+    const [name, file] = saveMock.mock.calls[0];
+    expect(name).toBe("address-book.csv");
+    expect(file.type).toBe("text/csv");
+    expect(await file.text()).toBe(CSV);
   });
 
   it("exports the checked rows alone when there are any", async () => {

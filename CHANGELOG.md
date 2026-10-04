@@ -21,6 +21,19 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-04 **A long conversation scrolls without downloading its photos,
+  and videos and voice notes play in place.** A photo or video shows as a
+  small thumbnail, loaded only when its message scrolls near the screen,
+  with its file name in its place until the server has made it. A video
+  shows a play button and loads nothing until it is pressed; then it plays
+  in the conversation and seeking loads only the part sought to, where
+  before a video downloaded whole before its first frame. A voice note has a
+  play button of its own. The viewer keeps the thumbnail up while the full
+  photo loads and has the next and previous photos ready. A HEIC photo, a
+  HEVC video or an AMR voice note opens as the copy every browser can show,
+  the same in every browser, and says so when that copy is not made yet.
+  Every attachment has a download button, which always saves the original
+  under its own name; the desktop app asks where to save it.
 - 2026-10-04 **Photos and videos get their browser copies after every
   import, without anyone asking.** Once an import ends, the server makes a
   small thumbnail of every photo and video it brought, and a copy every
@@ -28,8 +41,7 @@ released versions carry their date on the heading.
   browsers often cannot play. It works in the background, so the import
   finishes as soon as its messages are in, and a server stopped part-way
   finishes the rest when it starts again. Until now those copies existed
-  only after someone ran a command on the server. The conversation starts
-  showing the thumbnails in a coming release.
+  only after someone ran a command on the server.
 - 2026-10-04 **The server keeps its log in files the owner can read.** Docker
   and the desktop app's server now write their log to a `logs` directory
   beside the database, as well as to their output, so the lines that explain a

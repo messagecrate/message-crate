@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildAssetPath, buildAssetPreviewPath } from "./assetUrl.ts";
+import { buildAssetPath } from "./assetUrl.ts";
 
 describe("buildAssetPath", () => {
   it("names the asset by its sha alone", () => {
@@ -14,14 +14,10 @@ describe("buildAssetPath", () => {
     expect(() => buildAssetPath("")).toThrow();
     expect(() => buildAssetPath("  ")).toThrow();
   });
-});
 
-describe("buildAssetPreviewPath", () => {
-  it("names the preview under the original's sha", () => {
-    expect(buildAssetPreviewPath("abc123")).toBe("/v1/assets/abc123/preview");
-  });
-
-  it("rejects an empty sha", () => {
-    expect(() => buildAssetPreviewPath("")).toThrow();
+  it("names the preview and the thumbnail under the original's sha", () => {
+    expect(buildAssetPath("abc123", "preview")).toBe("/v1/assets/abc123/preview");
+    expect(buildAssetPath("abc123", "thumbnail")).toBe("/v1/assets/abc123/thumbnail");
+    expect(buildAssetPath("abc123", "original")).toBe("/v1/assets/abc123");
   });
 });
