@@ -32,6 +32,52 @@ pub fn handle_type_of(address: &str) -> HandleType {
     phone::Handle::parse(address).map_or(HandleType::Other, |handle| handle.kind())
 }
 
+/// Why `service` cannot carry an identity of `handle_type`, or `None` when it
+/// can. WhatsApp reaches a person by phone number, and keeps an internal id
+/// for one it knows by no number as `other`, so it carries no email address.
+/// The phone service carries every type: iMessage reaches an email address
+/// too. The reason completes a sentence that starts with the address.
+pub fn why_service_cannot_carry(
+    service: HandleService,
+    handle_type: HandleType,
+) -> Option<&'static str> {
+    match (service, handle_type) {
+        (HandleService::Whatsapp, HandleType::Email) => {
+            Some("is an email address, and WhatsApp carries no email addresses")
+        }
+        _ => None,
+    }
+}
+
+/// The id of the `handles` row the account already holds for `raw` on
+/// `service`, matched by the address as written or by its key, if any.
+///
+/// # Errors
+///
+/// Returns an error when the statement fails.
+pub async fn existing_handle_id(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    raw: &str,
+    service: HandleService,
+) -> Result<Option<i64>> {
+    let raw = raw.trim();
+    let key = phone::Handle::parse(raw).map_or_else(|| raw.to_string(), phone::Handle::into_key);
+    let id = sqlx::query_scalar(
+        "SELECT id FROM handles
+         WHERE account_id = $1 AND service = $2 AND (raw = $3 OR normalized = $4)
+         ORDER BY id
+         LIMIT 1",
+    )
+    .bind(account_id)
+    .bind(service.as_str())
+    .bind(raw)
+    .bind(key.as_str())
+    .fetch_optional(&mut *conn)
+    .await?;
+    Ok(id)
+}
+
 /// Insert or reuse a `handles` row. Returns the id and whether this call newly
 /// inserted a flagged (review-note) row.
 pub async fn upsert_handle_row(

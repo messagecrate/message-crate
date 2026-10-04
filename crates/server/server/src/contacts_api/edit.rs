@@ -3,7 +3,7 @@
 //! `db::handles`; this module decides which to run and what to refuse.
 
 use anyhow::Result as AnyResult;
-use message_ir::{HandleService, HandleType};
+use message_ir::HandleService;
 use sqlx::SqliteConnection;
 
 use super::{
@@ -22,17 +22,6 @@ fn named_service(service: Option<&str>) -> Option<HandleService> {
     service
         .and_then(message_ir::trimmed)
         .map(HandleService::parse)
-}
-
-/// Whether an identity of this type can be on this service. WhatsApp
-/// reaches a person by phone number, and keeps an internal id for one it
-/// knows by no number as `other`, so it carries no email address. The phone
-/// service carries all three: iMessage reaches an email address too.
-fn carries(service: HandleService, handle_type: HandleType) -> bool {
-    match service {
-        HandleService::Whatsapp => handle_type != HandleType::Email,
-        HandleService::Phone => true,
-    }
 }
 
 /// Why a contact edit did not happen.
@@ -241,7 +230,7 @@ impl ContactEditor<'_> {
         let named = named_service(upd.service.as_deref());
         // The old identity is found on its own service, whatever service the
         // request names, so one edit can move a contact from WhatsApp to Text
-        // message. When the address is on the contact under more than one
+        // Message. When the address is on the contact under more than one
         // service, the named one is taken first.
         let Some((old_id, old_service)) = self
             .linked_handle(prev, OnService::Preferring(named))
@@ -297,14 +286,19 @@ impl ContactEditor<'_> {
         contacts::linked_handle_id(&mut *self.conn, self.account_id, self.contact_id, raw, on).await
     }
 
-    /// Insert or find the handle row for `raw` on `platform`, without
+    /// Find or insert the handle row for `raw` on `platform`, without
     /// linking it to the account owner: contact-owned handles must never
-    /// become owner identities. The address alone decides its type
-    /// ([`handles::handle_type_of`]), never the service (#1432).
+    /// become owner identities.
+    ///
+    /// A row the account already holds for the address on `platform` is
+    /// taken as it is, with the type its import gave it: a WhatsApp internal
+    /// id such as `123456789012345@lid` is `other` there, while
+    /// [`handles::handle_type_of`] would call it an email address. A new row
+    /// is typed by the address alone, never by the service (#1432).
     ///
     /// # Errors
     ///
-    /// Refused when `platform` cannot carry an identity of that type: an
+    /// Refused when `platform` cannot carry a new identity of that type: an
     /// email address on WhatsApp.
     async fn handle_row(
         &mut self,
@@ -312,9 +306,14 @@ impl ContactEditor<'_> {
         platform: HandleService,
     ) -> Result<i64, ContactEditError> {
         let raw = raw.trim();
+        if let Some(id) =
+            handles::existing_handle_id(&mut *self.conn, self.account_id, raw, platform).await?
+        {
+            return Ok(id);
+        }
         let handle_type = handles::handle_type_of(raw);
-        if !carries(platform, handle_type) {
-            refuse!("{raw} is an email address, and WhatsApp carries no email addresses");
+        if let Some(reason) = handles::why_service_cannot_carry(platform, handle_type) {
+            refuse!("{raw} {reason}");
         }
         let (id, _) = handles::upsert_handle_row(
             &mut *self.conn,

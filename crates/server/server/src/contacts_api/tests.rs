@@ -1375,6 +1375,50 @@ async fn an_email_address_is_not_added_on_whatsapp() {
     );
 }
 
+/// A WhatsApp internal id the import stored as `other` is linked as that row
+/// when added on WhatsApp. `Handle::parse` alone calls `…@lid` an email
+/// address, which WhatsApp cannot carry, so the edit refused the server's
+/// own identity.
+#[tokio::test]
+async fn a_whatsapp_internal_id_an_import_stored_is_added_as_that_identity() {
+    let fixture = test_fixture().await;
+    let account = fixture.account_with_id(101, "alice").await;
+    let mut conn = fixture.conn().await;
+    let contact_id = insert_contact_with_handle(&mut conn, account, "Sam", "+15555550100").await;
+    let (imported, _) = crate::db::handles::upsert_handle_row(
+        &mut conn,
+        account,
+        "123456789012345@lid",
+        HandleType::Other,
+        Some("whatsapp"),
+    )
+    .await
+    .unwrap();
+
+    add_identity(
+        &mut conn,
+        account,
+        contact_id,
+        "123456789012345@lid",
+        Some("whatsapp"),
+    )
+    .await;
+
+    let linked: Option<i64> = sqlx::query_scalar(
+        "SELECT contact_id FROM contact_handles WHERE account_id = $1 AND handle_id = $2",
+    )
+    .bind(account)
+    .bind(imported)
+    .fetch_optional(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(linked, Some(contact_id));
+    assert_eq!(
+        handle_type_and_service(&mut conn, account, "123456789012345@lid").await,
+        ("other".to_string(), Some("whatsapp".to_string()))
+    );
+}
+
 /// Naming a linked handle again under another transport of the same
 /// platform (`iMessage` for a number added under `sms`) changes nothing: a
 /// handle's service is its platform, `phone` or `whatsapp`, never the
@@ -1441,25 +1485,8 @@ async fn replace_identity(
     contact_id: i64,
     service: Option<&str>,
 ) {
-    assert!(
-        mutate_committed(
-            conn,
-            account,
-            contact_id,
-            &UpdateContactRequest {
-                name: None,
-                add_identity: None,
-                update_identity: Some(UpdateContactIdentityRequest {
-                    previous_address: "+15555550100".into(),
-                    address: "+15555550101".into(),
-                    service: service.map(Into::into),
-                }),
-                remove_identity: None,
-            },
-        )
-        .await
-        .unwrap()
-    );
+    let answer = try_replace_identity(conn, account, contact_id, "+15555550101", service).await;
+    assert!(matches!(answer, Ok(true)), "{answer:?}");
 }
 
 /// Replace the contact's `+15555550100` with `address`, under `service`,
@@ -1556,7 +1583,7 @@ async fn replacing_an_identity_under_a_service_uses_that_service() {
 }
 
 /// The old identity is found on its own service whatever service the
-/// request names, so one edit moves a contact from WhatsApp to Text message.
+/// request names, so one edit moves a contact from WhatsApp to Text Message.
 /// Looked up on the named service, the WhatsApp identity was not found and
 /// the edit was refused with "previous address not found on contact" (#1411).
 #[tokio::test]

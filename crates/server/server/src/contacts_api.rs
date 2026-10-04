@@ -30,10 +30,9 @@ use edit::mutate_contact;
 pub struct AddContactIdentityRequest {
     /// The address to link.
     pub address: String,
-    /// Platform service: `whatsapp`, or any other value for the phone
-    /// service; the phone service when omitted. It never decides the
-    /// identity's type, which comes from the address. An email address on
-    /// WhatsApp is refused.
+    /// Platform service, `phone` or `whatsapp`; the phone service when
+    /// omitted. It never decides the identity's type, which comes from the
+    /// address. A new email address on WhatsApp is refused.
     #[serde(default)]
     pub service: Option<String>,
 }
@@ -50,7 +49,7 @@ pub struct UpdateContactIdentityRequest {
     /// it is there under more than one, else the phone service, then
     /// WhatsApp. When omitted, the new address takes the service of the
     /// previous one. It never decides the new identity's type, which comes
-    /// from the address, and an email address on WhatsApp is refused.
+    /// from the address, and a new email address on WhatsApp is refused.
     #[serde(default)]
     pub service: Option<String>,
 }
