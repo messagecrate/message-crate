@@ -4435,3 +4435,246 @@ async fn an_account_identity_listed_among_a_groups_members_is_not_a_participant(
         "an import never adds an account identity"
     );
 }
+
+/// A one-to-one chat whose identifier is one of the account's identities is a
+/// conversation the holder has with themselves: Apple Messages' chat with the
+/// owner's own number, WhatsApp's "Message yourself". It makes no contact and
+/// no participant; both rows of a note are kept and the received one has no
+/// sender. It is titled with the account's display name, or the address
+/// without one, and `with:me` finds it and nothing else (#1094).
+#[tokio::test]
+async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accounts_name() {
+    let (state, fixture, token) = importer().await;
+    let account_id: i64 = sqlx::query_scalar("SELECT id FROM accounts WHERE username = 'importer'")
+        .fetch_one(&mut *fixture.conn().await)
+        .await
+        .unwrap();
+    let account = format!("/v1/accounts/{account_id}");
+    let _: serde_json::Value = patch_json(
+        &state,
+        &account,
+        &token,
+        serde_json::json!({ "identities": [{ "address": "+15555550199", "service": "phone" }] }),
+    )
+    .await;
+
+    // Apple Messages lists nobody in the chat with the owner's own number;
+    // WhatsApp lists the holder's number as the peer of "Message yourself".
+    // Each source also carries one ordinary chat, which `with:me` must leave out.
+    for (source, self_participants, service) in [
+        ("imessage", "", "imessage"),
+        (
+            "whatsapp",
+            r#"{"handle":"+15555550199","display_name":"Me"}"#,
+            "whatsapp",
+        ),
+    ] {
+        let path = batches_path(&state, &token, source).await;
+        let header = |chat: &str, title: &str, participants: &str| {
+            format!(
+                concat!(
+                    r#"{{"schema_version":4,"export":{{"source":"{source}","tool":"t","tool_version":"1","owner_handle":null,"owner_display_name":null}},"#,
+                    r#""conversation":{{"chat_identifier":"{chat}","conversation_type":"individual","group_title":{title},"participants":[{participants}],"#,
+                    r#""stats":{{"message_count":2,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773262000}}}}}}"#,
+                    "\n"
+                ),
+                source = source,
+                chat = chat,
+                title = title,
+                participants = participants,
+            )
+        };
+        let message = |guid: &str, direction: &str, sender: &str, text: &str, imessage: &str| {
+            format!(
+                concat!(
+                    r#"{{"guid":"{guid}","timestamp_unix_ms":1400773261000,"direction":"{direction}","service":"{service}","message_kind":"unknown","sender_handle":{sender},"sender_display_name":null,"subject":null,"text":"{text}","attachments":[],"imessage":{imessage},"source":null}}"#,
+                    "\n"
+                ),
+                guid = guid,
+                direction = direction,
+                service = service,
+                sender = sender,
+                text = text,
+                imessage = imessage,
+            )
+        };
+        // The holder's own reaction to the received copy of a note.
+        let own_tapback = TAPBACK_IMESSAGE.replace("+15555550167", "+15555550199");
+        // Apple Messages can carry a name the holder gave the chat; the
+        // account's name still titles it.
+        let self_title = if source == "imessage" {
+            r#""Notes""#
+        } else {
+            "null"
+        };
+        let body = [
+            header("+15555550199", self_title, self_participants),
+            message(
+                &format!("{source}-note-sent"),
+                "outgoing",
+                "null",
+                "Note to self",
+                "null",
+            ),
+            message(
+                &format!("{source}-note-received"),
+                "incoming",
+                r#""+15555550199""#,
+                "Note to self",
+                &own_tapback,
+            ),
+            header(
+                "+15555550101",
+                "null",
+                r#"{"handle":"+15555550101","display_name":"Ada"}"#,
+            ),
+            message(
+                &format!("{source}-ada"),
+                "incoming",
+                r#""+15555550101""#,
+                "hi",
+                "null",
+            ),
+        ]
+        .concat();
+        let (status, text) =
+            crate::test_support::post_raw(&state, &path, &token, "application/jsonl", body).await;
+        assert!(status.is_success(), "{source}: {status} {text}");
+        let complete = path.replace("/batches", "/complete");
+        let _: serde_json::Value = post_json(
+            &state,
+            &complete,
+            &token,
+            serde_json::json!({ "status": "completed" }),
+        )
+        .await;
+    }
+
+    let mut conn = fixture.conn().await;
+    let holder_contacts: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM contact_handles ch
+         JOIN handles h ON h.id = ch.handle_id
+         WHERE ch.account_id = $1 AND h.normalized = '+15555550199'",
+    )
+    .bind(account_id)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(holder_contacts, 0, "no contact is made for the holder");
+    let self_conversations: Vec<i64> = sqlx::query_scalar(
+        "SELECT c.id FROM conversations c JOIN handles h ON h.id = c.chat_handle_id
+         WHERE c.account_id = $1 AND h.normalized = '+15555550199' ORDER BY c.id",
+    )
+    .bind(account_id)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(self_conversations.len(), 2, "{self_conversations:?}");
+    for &id in &self_conversations {
+        let participants: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM participants WHERE conversation_id = $1")
+                .bind(id)
+                .fetch_one(&mut *conn)
+                .await
+                .unwrap();
+        assert_eq!(participants, 0, "conversation {id} has no participants");
+        let rows: Vec<(i64, Option<i64>)> = sqlx::query_as(
+            "SELECT is_from_me, sender_handle_id FROM messages
+             WHERE conversation_id = $1 ORDER BY is_from_me",
+        )
+        .bind(id)
+        .fetch_all(&mut *conn)
+        .await
+        .unwrap();
+        assert_eq!(
+            rows,
+            [(0, None), (1, None)],
+            "conversation {id} keeps both rows, and the received one has no sender"
+        );
+    }
+    let tapback_senders: Vec<(i64, Option<i64>)> = sqlx::query_as(
+        "SELECT t.is_from_me, t.sender_handle_id FROM tapbacks t
+         JOIN messages m ON m.id = t.message_id
+         WHERE m.conversation_id = $1",
+    )
+    .bind(self_conversations[0])
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(
+        tapback_senders,
+        [(1, None)],
+        "the holder's reaction in a conversation with yourself is theirs, with no sender"
+    );
+    drop(conn);
+
+    let titles = |page: &serde_json::Value| -> Vec<(i64, String)> {
+        page["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|c| {
+                (
+                    c["id"].as_i64().unwrap(),
+                    c["label"].as_str().unwrap_or_default().to_string(),
+                )
+            })
+            .collect()
+    };
+    let page: serde_json::Value = get_json(&state, "/v1/conversations?q=with%3Ame", &token).await;
+    let mut found = titles(&page);
+    found.sort_unstable();
+    assert_eq!(
+        found,
+        self_conversations
+            .iter()
+            .map(|&id| (id, "+15555550199".to_string()))
+            .collect::<Vec<_>>(),
+        "with:me finds the two conversations with yourself, titled by the address: {page}"
+    );
+    assert!(
+        page["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["participants"] == serde_json::json!([])),
+        "the holder is not read back as a participant from the chat's own identity: {page}"
+    );
+
+    let _: serde_json::Value = patch_json(
+        &state,
+        &account,
+        &token,
+        serde_json::json!({ "preferred_name": "Sam Holder" }),
+    )
+    .await;
+    let page: serde_json::Value = get_json(&state, "/v1/conversations?q=with%3Ame", &token).await;
+    assert!(
+        titles(&page).iter().all(|(_, title)| title == "Sam Holder") && page["total"] == 2,
+        "the title follows the account's display name: {page}"
+    );
+    let page: serde_json::Value = get_json(
+        &state,
+        "/v1/conversations?q=title%3A%22Sam%20Holder%22",
+        &token,
+    )
+    .await;
+    assert_eq!(page["total"], 2, "title: reads the same title: {page}");
+    let page: serde_json::Value = get_json(&state, "/v1/conversations?q=Holder", &token).await;
+    assert_eq!(page["total"], 2, "plain text reads the same title: {page}");
+    let page: serde_json::Value =
+        get_json(&state, "/v1/messages?q=in%3A%22Sam%20Holder%22", &token).await;
+    assert_eq!(page["total"], 4, "in: reads the same title: {page}");
+
+    let page: serde_json::Value = get_json(&state, "/v1/messages?q=with%3Ame", &token).await;
+    let messages = page["items"].as_array().unwrap();
+    assert_eq!(messages.len(), 4, "{page}");
+    for message in messages {
+        assert_eq!(message["text"], "Note to self", "{message}");
+        assert_eq!(message["conversation"]["label"], "Sam Holder", "{message}");
+        assert!(
+            message.get("sender").is_none_or(serde_json::Value::is_null),
+            "{message}"
+        );
+    }
+}

@@ -83,7 +83,11 @@ pub struct ConversationSummary {
     pub service: String,
     /// True for group conversations.
     pub is_group: bool,
-    /// Group label from the export, when present.
+    /// The title the conversation is shown by: for a conversation the account
+    /// holder has with themselves, the account's display name or, without
+    /// one, the conversation's own address; for any other, the export's
+    /// title. Left out when there is none, and the conversation goes by its
+    /// participants.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     /// Message tags on this conversation.
@@ -93,7 +97,7 @@ pub struct ConversationSummary {
 struct RawConversation {
     id: i64,
     conversation_type: String,
-    group_title: Option<String>,
+    label: Option<String>,
     message_count: i64,
     first_message_at: Option<String>,
     last_message_at: Option<String>,
@@ -149,7 +153,7 @@ pub async fn list_conversations_sorted(
     // aliases real columns.
     let sql = format!(
         "SELECT * FROM ({select} WHERE {where_sql}) AS c ORDER BY {order_by} LIMIT ? OFFSET ?",
-        select = CONVERSATION_ROW_SELECT,
+        select = conversation_row_select(),
         order_by = conversation_order_by(order),
     );
     let out = load_conversation_rows(conn, account_id, &sql, &params).await?;
@@ -173,27 +177,70 @@ pub async fn get_conversation_summary(
     account_id: i64,
     conversation_id: i64,
 ) -> Result<Option<ConversationSummary>, ApiError> {
-    let sql = format!("{CONVERSATION_ROW_SELECT} WHERE c.id = ? AND c.account_id = ?");
+    let sql = format!(
+        "{} WHERE c.id = ? AND c.account_id = ?",
+        conversation_row_select()
+    );
     let params = [SqlParam::Int(conversation_id), SqlParam::Int(account_id)];
     let out = load_conversation_rows(conn, account_id, &sql, &params).await?;
     Ok(out.into_iter().next())
 }
 
+/// A SQL condition, true when conversation `c` is one the account holder has
+/// with themselves: a one-to-one conversation whose own identity is one of
+/// the account's identities, such as notes sent to their own number (#1094).
+/// `c` is the alias of a `conversations` row. `with:me` asks this, and
+/// [`conversation_title_sql`] names such a conversation by it.
+#[must_use]
+pub fn is_with_yourself_sql(c: &str) -> String {
+    format!(
+        "(lower({c}.conversation_type) = 'individual'
+          AND EXISTS (SELECT 1 FROM handles hy WHERE hy.id = {c}.chat_handle_id AND {}))",
+        crate::db::account_profile::is_account_identity_sql("hy", &format!("{c}.account_id"))
+    )
+}
+
+/// The title conversation `c` is shown by, as a SQL expression. A
+/// conversation with yourself ([`is_with_yourself_sql`]) goes by the
+/// account's display name, or its own address when the account has none,
+/// whatever title the export gave it. Any other conversation goes by the
+/// export's title, and is NULL without one, going by its participants.
+/// Computed on every read, so it follows a change of the display name. The
+/// list, the single-conversation read, the message rows, `title:`, `in:` and
+/// plain text all read this one expression.
+#[must_use]
+pub fn conversation_title_sql(c: &str) -> String {
+    format!(
+        "CASE WHEN {with_yourself} THEN COALESCE(
+                  (SELECT NULLIF(trim(ay.preferred_name), '') FROM accounts ay
+                   WHERE ay.id = {c}.account_id),
+                  (SELECT hy.raw FROM handles hy WHERE hy.id = {c}.chat_handle_id))
+              ELSE NULLIF(trim({c}.group_title), '') END",
+        with_yourself = is_with_yourself_sql(c)
+    )
+}
+
 /// The row shape shared by the conversation list and the single-conversation
-/// read: id, type, title, and the counts/timestamps computed from `messages`.
-/// Callers append their own `WHERE`, `ORDER BY`, and paging.
-const CONVERSATION_ROW_SELECT: &str = "SELECT c.id,
+/// read: id, type, title ([`conversation_title_sql`]), and the
+/// counts/timestamps computed from `messages`. Callers append their own
+/// `WHERE`, `ORDER BY`, and paging.
+fn conversation_row_select() -> String {
+    format!(
+        "SELECT c.id,
                 c.conversation_type,
-                c.group_title,
+                {label} AS label,
                 (SELECT COUNT(*) FROM messages m
                  WHERE m.conversation_id = c.id AND m.duplicate_of IS NULL) AS message_count,
                 (SELECT MIN(m.timestamp) FROM messages m
                  WHERE m.conversation_id = c.id AND m.duplicate_of IS NULL) AS first_message_at,
                 (SELECT MAX(m.timestamp) FROM messages m
                  WHERE m.conversation_id = c.id AND m.duplicate_of IS NULL) AS last_message_at
-         FROM conversations c";
+         FROM conversations c",
+        label = conversation_title_sql("c")
+    )
+}
 
-/// Run a `CONVERSATION_ROW_SELECT`-shaped query and assemble
+/// Run a [`conversation_row_select`]-shaped query and assemble
 /// [`ConversationSummary`] rows: participants, sources, and tags, exactly as
 /// the list builds them. Shared so the list and the single-conversation read
 /// cannot drift into two different notions of what a conversation summary is.
@@ -209,20 +256,15 @@ async fn load_conversation_rows(
     let rows: Vec<RawConversation> = rows
         .into_iter()
         .map(
-            |(
-                id,
-                conversation_type,
-                group_title,
-                message_count,
-                first_message_at,
-                last_message_at,
-            )| RawConversation {
-                id,
-                conversation_type,
-                group_title,
-                message_count,
-                first_message_at,
-                last_message_at,
+            |(id, conversation_type, label, message_count, first_message_at, last_message_at)| {
+                RawConversation {
+                    id,
+                    conversation_type,
+                    label,
+                    message_count,
+                    first_message_at,
+                    last_message_at,
+                }
             },
         )
         .collect();
@@ -258,7 +300,7 @@ async fn load_conversation_rows(
             service,
             is_group,
             label: row
-                .group_title
+                .label
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
             tags: tag_sets.remove(&row.id).unwrap_or_default(),
