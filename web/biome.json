@@ -54,7 +54,11 @@
           "level": "error",
           "options": {
             "paths": {
-              "@testing-library/user-event": "Use setupUser() and fill() from src/test/user.ts, which say why a test's user fires events without a delay (#1653)."
+              "@testing-library/user-event": "Use setupUser() and fill() from src/test/user.ts, which say why a test's user fires events without a delay (#1653).",
+              "react-aria-components": {
+                "importNames": ["Tab"],
+                "message": "Use Tab from src/components/Tab.tsx, the one tab style (STYLE_GUIDE.md, rule 4)."
+              }
             }
           }
         },
@@ -95,6 +99,23 @@
         "rules": {
           "style": {
             "noRestrictedImports": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/components/Tab.tsx"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@testing-library/user-event": "Use setupUser() and fill() from src/test/user.ts, which say why a test's user fires events without a delay (#1653)."
+                }
+              }
+            }
           }
         }
       }
