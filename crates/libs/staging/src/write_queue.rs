@@ -371,7 +371,7 @@ fn leave_out_files_that_are_gone(
     log: Option<&LogSink>,
 ) {
     for unit in units {
-        if resume && is_complete_file(&conversation_file(output_dir, &unit.doc)) {
+        if written_by_an_earlier_run(output_dir, &unit.doc, resume) {
             continue;
         }
         for attachment in &mut unit.attachments {
@@ -386,10 +386,8 @@ fn leave_out_files_that_are_gone(
     }
 }
 
-/// The log line for an attachment file that could not be read, and why.
-/// It names the file, so a run's worth of missing attachments from one
-/// cause (a revoked permission, a failing disk) can be told apart from
-/// files that are gone.
+/// The log line for an attachment file that could not be read, naming the
+/// file and why.
 fn unreadable_attachment_line(path: &Path, why: impl std::fmt::Display) -> String {
     format!(
         "warning: attachment {} could not be read: {why}",
@@ -400,6 +398,13 @@ fn unreadable_attachment_line(path: &Path, why: impl std::fmt::Display) -> Strin
 /// The conversation file a unit is written to.
 fn conversation_file(output_dir: &Path, doc: &ConversationDocument) -> PathBuf {
     output_dir.join(format!("{}.jsonl", doc.filename_stem()))
+}
+
+/// Whether a resumed run skips this conversation: an earlier run wrote its
+/// file to the end, attachments and all. An empty or cut-off file left by a
+/// power loss is written again.
+fn written_by_an_earlier_run(output_dir: &Path, doc: &ConversationDocument, resume: bool) -> bool {
+    resume && is_complete_file(&conversation_file(output_dir, doc))
 }
 
 /// Give every unit a file name no other unit in the run has; see
@@ -731,9 +736,7 @@ fn write_one_unit(
     let hint_sum: u64 = attachments.iter().filter_map(|a| a.size_hint).sum();
 
     let path = conversation_file(output_dir, &doc);
-    if options.resume && is_complete_file(&path) {
-        // Already written to the end by an earlier run, attachments and all;
-        // an empty or cut-off file left by a power loss is written again.
+    if written_by_an_earlier_run(output_dir, &doc, options.resume) {
         // Count its attachments and their bytes as done — progress describes
         // the whole import, not just this run's share of it — and load
         // nothing.

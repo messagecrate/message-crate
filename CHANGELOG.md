@@ -658,8 +658,10 @@ released versions carry their date on the heading.
 
 - 2026-10-04 **Converting an SMS Backup & Restore backup says what it
   left out.** The log said nothing about the repeated copies it dropped,
-  the messages with an invalid date, no usable address or an unknown
-  type, the drafts, or the message parts it could not read, and it named
+  the messages with an invalid date, a date outside the range, no usable
+  address or an unknown type, the drafts, the picture messages with nobody
+  on them, the message parts it could not read, or the character codes
+  that stand for no character, and it named
   only the first five files it could not read. It now lists each count
   as soon as the backup is read, even when the conversion then stops, and
   names every file it could not read.
