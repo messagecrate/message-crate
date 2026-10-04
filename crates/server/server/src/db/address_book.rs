@@ -118,7 +118,7 @@ impl std::fmt::Display for LoadError {
 /// The key of one identity: the three columns `handles` is unique on.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct IdentityKey {
-    service: &'static str,
+    service: HandleService,
     handle_type: &'static str,
     normalized: String,
 }
@@ -244,7 +244,7 @@ impl Snapshot {
             };
             snapshot.handles.insert(
                 IdentityKey {
-                    service: service.as_str(),
+                    service,
                     handle_type: handle_type.as_str(),
                     normalized,
                 },
@@ -294,6 +294,13 @@ impl Snapshot {
             "" => format!("the contact with no name (contact {contact_id})"),
             name => format!("\"{name}\" (contact {contact_id})"),
         }
+    }
+
+    /// Whether a load may take an identity from `holder` without the file
+    /// naming it: a contact with no name, or one the file speaks for
+    /// (`in_file`).
+    fn may_take_from(&self, holder: i64, in_file: &HashSet<i64>) -> bool {
+        self.name_of(holder).is_empty() || in_file.contains(&holder)
     }
 
     /// Whether `contact_id` holds the identity `key`.
@@ -482,7 +489,7 @@ fn row_identity(
         return Err(format!("row {n}: identity is blank"));
     }
     let key = |normalized: String| IdentityKey {
-        service: service.as_str(),
+        service,
         handle_type: handle_type.as_str(),
         normalized,
     };
@@ -708,10 +715,10 @@ fn plan(rows: &[FileRow], snapshot: &Snapshot) -> Result<Vec<FileContact>, Vec<S
             if contact.target == Target::Known(holder) {
                 continue;
             }
-            let holder_name = snapshot.name_of(holder);
-            if holder_name.is_empty() || in_file.contains(&holder) {
+            if snapshot.may_take_from(holder, &in_file) {
                 continue;
             }
+            let holder_name = snapshot.name_of(holder);
             // A trashed holder cannot be added to the file, because its id
             // reads as unknown text, so the way through is the Trash.
             let (where_it_is, way_through) = if snapshot.trashed.contains_key(&holder) {
@@ -972,7 +979,7 @@ async fn apply(
                     .bind(&identity.written)
                     .bind(&identity.key.normalized)
                     .bind(identity.key.handle_type)
-                    .bind(identity.key.service)
+                    .bind(identity.key.service.as_str())
                     .bind(Origin::AddressBook.as_str())
                     .fetch_one(&mut *conn)
                     .await?
