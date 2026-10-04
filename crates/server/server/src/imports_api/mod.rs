@@ -669,7 +669,7 @@ pub(crate) struct ImportNoteRequest {
 }
 
 /// One requested note, as the database records it.
-fn note_input(note: ImportNoteRequest) -> crate::db::imports::ImportNoteRow {
+fn note_row(note: ImportNoteRequest) -> crate::db::imports::ImportNoteRow {
     crate::db::imports::ImportNoteRow {
         stage: note.stage,
         item: note.item,
@@ -967,8 +967,7 @@ pub(crate) async fn owner_import_run(
     conn: &mut SqliteConnection,
     row: crate::db::imports::ImportRow,
 ) -> Result<OwnerImportRun, ApiError> {
-    let issue_count = crate::db::imports::issue_count(conn, row.id).await?;
-    let note_count = crate::db::imports::note_count(conn, row.id).await?;
+    let (issue_count, note_count) = crate::db::imports::issue_and_note_counts(conn, row.id).await?;
     listed_import(conn, row, issue_count, note_count)
         .await
         .map(OwnerImportRun::from)
@@ -1264,7 +1263,7 @@ pub(crate) async fn complete_import(
         upload_ms: body.upload_ms,
         summary_json,
         issues: body.issues.into_iter().map(issue_input).collect(),
-        notes: body.notes.into_iter().map(note_input).collect(),
+        notes: body.notes.into_iter().map(note_row).collect(),
     };
     let mut conn = state.db.acquire().await?;
     let row = complete_run(&mut conn, account, import_id, &args)
@@ -1573,7 +1572,7 @@ pub(crate) async fn discard_import(
     let account = resolve_import_account(&auth);
     validate_import_issues(&body.issues)?;
     let issues: Vec<_> = body.issues.into_iter().map(issue_input).collect();
-    let notes: Vec<_> = body.notes.into_iter().map(note_input).collect();
+    let notes: Vec<_> = body.notes.into_iter().map(note_row).collect();
     let mut conn = state.db.acquire().await?;
     crate::db::imports::discard_import(&mut conn, account, import_id, &issues, &notes).await?;
     let run = full_import_run(&mut conn, account, import_id).await;

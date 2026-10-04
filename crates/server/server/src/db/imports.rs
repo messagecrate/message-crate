@@ -1016,24 +1016,20 @@ pub async fn list_imports_page(
     Ok((items, total))
 }
 
-/// How many issues the run recorded. The caller has already established
-/// that `import_id` is the account's.
-pub async fn issue_count(conn: &mut SqliteConnection, import_id: i64) -> Result<u64> {
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM import_issues WHERE import_id = $1")
-        .bind(import_id)
-        .fetch_one(&mut *conn)
-        .await?;
-    Ok(count.max(0) as u64)
-}
-
-/// How many notes the run recorded. The caller has already established
-/// that `import_id` is the account's.
-pub async fn note_count(conn: &mut SqliteConnection, import_id: i64) -> Result<u64> {
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM import_notes WHERE import_id = $1")
-        .bind(import_id)
-        .fetch_one(&mut *conn)
-        .await?;
-    Ok(count.max(0) as u64)
+/// How many issues and how many notes the run recorded, in one statement.
+/// The caller has already established that `import_id` is the account's.
+pub async fn issue_and_note_counts(
+    conn: &mut SqliteConnection,
+    import_id: i64,
+) -> Result<(u64, u64)> {
+    let (issues, notes): (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT COUNT(*) FROM import_issues WHERE import_id = $1),
+                (SELECT COUNT(*) FROM import_notes WHERE import_id = $1)",
+    )
+    .bind(import_id)
+    .fetch_one(&mut *conn)
+    .await?;
+    Ok((issues.max(0) as u64, notes.max(0) as u64))
 }
 
 /// Whether the run has stamped any message yet: the first batch of a

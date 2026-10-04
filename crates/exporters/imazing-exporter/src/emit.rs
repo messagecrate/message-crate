@@ -421,7 +421,7 @@ impl Ingest {
         let csv_path = discovered.path.display();
         if session.key.is_name_only() {
             self.report.caveat(
-                "name_only_chat",
+                message_crate_core::NAME_ONLY_CHAT,
                 1,
                 format!("{csv_path} ({session_name})"),
                 message_crate_core::NAME_ONLY_CHAT_NOTE,

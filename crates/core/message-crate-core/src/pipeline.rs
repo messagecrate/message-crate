@@ -105,6 +105,10 @@ pub struct RunIssue {
 /// caveat. The Import Run lists notes apart from its Import Errors.
 pub const NOTE: &str = "note";
 
+/// The report counter for chats that name their person with no address,
+/// each kept under the name alone and sent as a [`NAME_ONLY_CHAT_NOTE`].
+pub const NAME_ONLY_CHAT: &str = "name_only_chat";
+
 /// The note an exporter sends for a chat that names its person with no
 /// address, which it keeps under the name alone.
 pub const NAME_ONLY_CHAT_NOTE: &str = "This chat names its person with no phone number or email \

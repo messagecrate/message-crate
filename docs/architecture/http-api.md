@@ -256,8 +256,8 @@ account's own `GET /v1/accounts/{id}/imports` answer each run as an
 `ImportRunSummary`, with the counts and without the issues or notes. The
 owner's `GET /v1/accounts/{id}/imports` answers each as an
 `OwnerImportRun`, which also counts them and never carries them.
-`GET /v1/imports/{id}` answers the issues and the notes. The count is read in the list's own statement, never by
-a statement per row. Why: `limit` bounds a page's rows and nothing else, so a collection
+`GET /v1/imports/{id}` answers the issues and the notes. Each count is
+read in the list's own statement, never by a statement per row. Why: `limit` bounds a page's rows and nothing else, so a collection
 inside each row left a page's size to whatever the runs recorded. Forty
 WhatsApp runs of 20,000 skipped files each made one page of Settings →
 Storage carry about 800,000 issues, and one statement per row made a page of
@@ -719,8 +719,8 @@ from the name:
   part, and is written down here with its reason. `Summary` is the thing as
   a list answers it: `ContactSummary` is a contact's row in the Contacts
   list, and `ImportRunSummary` is an Import Run without its issues and
-  notes, which `ImportRun` adds to it ([Lists](#lists)). `Owner` is the thing as the
-  owner reads it under another account: `OwnerImportRun` and
+  notes, which `ImportRun` adds to it ([Lists](#lists)). `Owner` is the
+  thing as the owner reads it under another account: `OwnerImportRun` and
   `OwnerExportRun` ([Credentials and reach](#credentials-and-reach)).
 - An action's input and output are named for the action:
   `VerbNounRequest` for a body sent in, `VerbNounResponse` for an answer that

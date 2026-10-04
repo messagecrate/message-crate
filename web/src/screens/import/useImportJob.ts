@@ -791,10 +791,7 @@ function recordFileDone(event: ImportFileDoneEvent): void {
 }
 
 function recordError(stage: ImportIssueStage, message: string): void {
-  scratch.issues = [
-    ...scratch.issues,
-    { kind: "error", stage, item: RUN_ERROR_ITEM, reason: message },
-  ];
+  scratch.issues.push({ kind: "error", stage, item: RUN_ERROR_ITEM, reason: message });
 }
 
 /**

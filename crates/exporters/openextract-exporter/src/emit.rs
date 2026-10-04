@@ -238,7 +238,7 @@ impl Ingest {
                 if let Some(ConversationKey::NameOnly(name)) = &conversation.key {
                     // Counted once per conversation, not once per row.
                     report.caveat(
-                        "name_only_chat",
+                        message_crate_core::NAME_ONLY_CHAT,
                         1,
                         format!("{} ({name})", path.display()),
                         message_crate_core::NAME_ONLY_CHAT_NOTE,
