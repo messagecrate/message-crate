@@ -191,9 +191,11 @@ flowchart TD
   F -- no --> G["Contact created with the name, or with no name. Counts as contacts_created."]
 ```
 
-A contact name is stored without the whitespace at its start and end
-(spaces, tabs, line breaks and the like), on every path that writes one: an
-import, a load, and a person typing.
+A contact name is stored without the whitespace at its start and end, on
+every path that writes one: an import, a load, and a person typing.
+Whitespace here is every character Unicode marks as White_Space, which is
+what Rust's `str::trim` removes: spaces, tabs, line breaks and no-break
+spaces among them.
 So the name cell `'` then a tab then `Tab` creates a contact named `Tab`, and
 a file loaded straight back renames nobody, because the name it compares
 against was trimmed the same way.
