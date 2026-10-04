@@ -356,31 +356,50 @@ pub fn drain_write_queue_with_loader(
 /// hint, so the byte totals and the disk check leave it out from the start
 /// rather than drop when the run reaches it (#1581). Each one is logged as
 /// the read would have logged it. With media turned off nothing is read,
-/// so the caller skips this.
+/// so the caller skips this. A unit a resumed run will skip, because its
+/// conversation file is already written to the end, reads nothing either,
+/// so its paths are not checked or logged again.
 ///
 /// Only [`drain_write_queue`] calls this: its loader reads a `Path` from
 /// disk. A caller's own loader in [`drain_write_queue_with_loader`] decides
 /// what a path means (an encrypted iPhone backup's path names a file inside
 /// the backup, not on disk), so those paths are left to it.
-fn leave_out_files_that_are_gone(units: &mut [ConversationUnit], log: Option<&LogSink>) {
-    for attachment in units
-        .iter_mut()
-        .flat_map(|unit| unit.attachments.iter_mut())
-    {
-        if let AttachmentSource::Path(path) = &attachment.source
-            && !path.is_file()
-        {
-            emit_log(
-                log,
-                format!(
-                    "warning: attachment {} could not be read: no file there",
-                    path.display()
-                ),
-            );
-            attachment.source = AttachmentSource::Missing;
-            attachment.size_hint = None;
+fn leave_out_files_that_are_gone(
+    output_dir: &Path,
+    units: &mut [ConversationUnit],
+    resume: bool,
+    log: Option<&LogSink>,
+) {
+    for unit in units {
+        if resume && is_complete_file(&conversation_file(output_dir, &unit.doc)) {
+            continue;
+        }
+        for attachment in &mut unit.attachments {
+            if let AttachmentSource::Path(path) = &attachment.source
+                && !path.is_file()
+            {
+                emit_log(log, unreadable_attachment_line(path, "no file there"));
+                attachment.source = AttachmentSource::Missing;
+                attachment.size_hint = None;
+            }
         }
     }
+}
+
+/// The log line for an attachment file that could not be read, and why.
+/// It names the file, so a run's worth of missing attachments from one
+/// cause (a revoked permission, a failing disk) can be told apart from
+/// files that are gone.
+fn unreadable_attachment_line(path: &Path, why: impl std::fmt::Display) -> String {
+    format!(
+        "warning: attachment {} could not be read: {why}",
+        path.display()
+    )
+}
+
+/// The conversation file a unit is written to.
+fn conversation_file(output_dir: &Path, doc: &ConversationDocument) -> PathBuf {
+    output_dir.join(format!("{}.jsonl", doc.filename_stem()))
 }
 
 /// Give every unit a file name no other unit in the run has; see
@@ -433,7 +452,7 @@ pub fn drain_write_queue(
 ) -> Result<WriteQueueReport> {
     give_each_unit_its_own_file(&mut units)?;
     if options.media != MediaMode::Disabled {
-        leave_out_files_that_are_gone(&mut units, log);
+        leave_out_files_that_are_gone(output_dir, &mut units, options.resume, log);
     }
     check_units_headroom(output_dir, &units, options.media)?;
 
@@ -488,17 +507,13 @@ pub fn drain_write_queue(
                         // failing disk) reads as a run's worth of unexplained
                         // missing attachments.
                         let named = match source {
-                            AttachmentSource::Path(path) => Some(path.display().to_string()),
+                            AttachmentSource::Path(path) => Some(path.clone()),
                             _ => None,
                         };
-                        load_attachment_source(source).map_err(|e| {
+                        load_attachment_source(source).inspect_err(|e| {
                             if let Some(path) = named {
-                                emit_log(
-                                    log,
-                                    format!("warning: attachment {path} could not be read: {e}"),
-                                );
+                                emit_log(log, unreadable_attachment_line(&path, e));
                             }
-                            e
                         })
                     };
                     match write_one_unit(
@@ -715,7 +730,7 @@ fn write_one_unit(
     let attachment_count = attachments.len();
     let hint_sum: u64 = attachments.iter().filter_map(|a| a.size_hint).sum();
 
-    let path = output_dir.join(format!("{}.jsonl", doc.filename_stem()));
+    let path = conversation_file(output_dir, &doc);
     if options.resume && is_complete_file(&path) {
         // Already written to the end by an earlier run, attachments and all;
         // an empty or cut-off file left by a power loss is written again.

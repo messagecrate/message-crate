@@ -769,6 +769,51 @@ fn an_unreadable_attachment_is_logged_before_it_becomes_a_chip() {
     );
 }
 
+/// A resumed run reads nothing for a conversation already written to the
+/// end, so a file of it that is gone is not reported again (#1581).
+#[test]
+fn a_resumed_run_does_not_report_a_gone_file_of_a_written_conversation_again() {
+    let tmp = tempfile::tempdir().unwrap();
+    let out = tmp.path().join("out");
+    fs::create_dir_all(&out).unwrap();
+    let gone = tmp.path().join("gone.jpg");
+    let build = || {
+        vec![unit_from(
+            doc_with(&test_number(6), 1),
+            vec![AttachmentSource::Path(gone.clone())],
+        )]
+    };
+    drain_write_queue(
+        &out,
+        build(),
+        &options(MediaMode::Clone, false),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let lines = Arc::new(Mutex::new(Vec::<String>::new()));
+    let sink_lines = Arc::clone(&lines);
+    let sink = LogSink::new(move |l: &str| sink_lines.lock().unwrap().push(l.to_string()));
+    let report = drain_write_queue(
+        &out,
+        build(),
+        &options(MediaMode::Clone, true),
+        Some(&sink),
+        None,
+        None,
+    )
+    .unwrap();
+
+    assert_eq!(report.conversations_skipped, 1);
+    let lines = lines.lock().unwrap().clone();
+    assert!(
+        !lines.iter().any(|l| l.starts_with("warning: attachment ")),
+        "nothing was read, so nothing is reported: {lines:?}"
+    );
+}
+
 /// A backup no disk could hold is refused before a single file is written,
 /// by both drains.
 #[test]
