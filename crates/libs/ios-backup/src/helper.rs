@@ -249,7 +249,8 @@ impl Helper {
     ///
     /// A closed pipe means the program has exited, so that failure is the
     /// same "stopped" error a reply cut short gives, with its exit status and
-    /// stderr, rather than a bare broken pipe.
+    /// stderr, rather than a bare broken pipe. The reason the program gave on
+    /// its way out, if any, follows it.
     fn send(&mut self, request: &Request) -> Result<()> {
         let stdin = self
             .stdin
@@ -262,8 +263,27 @@ impl Helper {
             .and_then(|()| stdin.flush())
         {
             Ok(()) => Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Err(self.exited_early()),
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Err(self.stopped_unread()),
             Err(e) => Err(anyhow::Error::new(e).context("send a request to imessage-reader")),
+        }
+    }
+
+    /// The error for a program that exited without reading a request. The
+    /// program reports a failure as an `error` event on stdout before it
+    /// exits, and nothing on stderr, so that event, still unread, is the
+    /// only place the reason is.
+    fn stopped_unread(&mut self) -> anyhow::Error {
+        let reason =
+            self.stdout.by_ref().map_while(Result::ok).find_map(
+                |line| match serde_json::from_str::<Event>(&line) {
+                    Ok(Event::Error { message }) => Some(message),
+                    _ => None,
+                },
+            );
+        let stopped = self.exited_early();
+        match reason {
+            Some(message) => anyhow!(message).context(stopped.to_string()),
+            None => stopped,
         }
     }
 

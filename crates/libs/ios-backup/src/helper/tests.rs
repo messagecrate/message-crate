@@ -234,6 +234,32 @@ mod faults {
         }
     }
 
+    /// A program that fails between two requests says why on stdout and
+    /// exits. The request that then meets its closed pipe reports that
+    /// reason after the "stopped" error, rather than the status alone. The
+    /// script closes its stdin before it answers, so the request always
+    /// meets a closed pipe.
+    #[test]
+    fn a_request_to_a_helper_that_failed_carries_its_reason() {
+        let dir = tempfile::tempdir().unwrap();
+        let body = format!(
+            "exec 0<&-\n{}\necho '{{\"event\":\"error\",\"message\":\"could not read a request: bad\"}}'\nexit 1",
+            source_line(PROTOCOL_VERSION)
+        );
+        let path = fake_helper(dir.path(), &body);
+        let mut helper = spawn_fake(&path, &identities_request());
+
+        assert!(matches!(helper.next_event().unwrap(), Event::Source { .. }));
+        let err = helper
+            .decrypt_attachment(std::path::Path::new("/backup/IMG_0001.JPG"))
+            .unwrap_err();
+        assert_eq!(
+            format!("{err:#}"),
+            "imessage-reader stopped before finishing (exit status: 1): \
+             could not read a request: bad"
+        );
+    }
+
     #[test]
     fn a_helper_that_fails_after_answering_reports_its_status_on_finish() {
         let dir = tempfile::tempdir().unwrap();
