@@ -274,7 +274,8 @@ released versions carry their date on the heading.
   import log, is now an error in the finished run that names the file.
   Something the import did with an item that is worth knowing but is not a
   failure is now a note in a **Notes** list of its own under the errors:
-  an iMazing Live Photo video that two rows claim, a message that records no
+  an iMazing Live Photo video that two rows claim, an SMS Backup+ message
+  that lost a part it could not read, a message that records no
   phone number for the other person, a group message that names none of
   your numbers, a group member kept by an email address, a chat kept under a
   name alone, and a WhatsApp attachment whose file is not in the backup,
