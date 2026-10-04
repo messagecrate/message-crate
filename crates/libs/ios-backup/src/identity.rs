@@ -15,8 +15,9 @@ use std::{collections::HashSet, fs::File, path::Path};
 
 use anyhow::bail;
 use imessage_reader_protocol::{Event, IdentitiesRequest, Platform, Request, Source};
+use message_crate_core::ScratchDir;
 
-use crate::{helper::Helper, scratch::ScratchDir};
+use crate::helper::Helper;
 
 /// `Info.plist` → `Phone Number` from an iOS backup folder.
 ///

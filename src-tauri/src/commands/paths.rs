@@ -6,9 +6,17 @@ use tauri::{AppHandle, Manager};
 
 use crate::staging_folders::StagingFolders;
 
-/// The folder under the app's cache folder that `imessage-reader` decrypts
-/// an encrypted backup into while the Import form reads its identities.
-const IMESSAGE_READER_SCRATCH: &str = "imessage-reader";
+/// The app's cache folder, which every run's scratch folders go under
+/// (`message_crate_core::ScratchDir`).
+///
+/// # Errors
+///
+/// Returns an error when the operating system names no cache folder.
+pub(crate) fn app_cache_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    app.path()
+        .app_cache_dir()
+        .map_err(|e| format!("Could not find the app's cache folder: {e}"))
+}
 
 /// The logged-in user's home folder, plus which OS this process is running on.
 #[derive(Debug, Clone, Serialize)]
@@ -110,11 +118,7 @@ pub async fn imessage_backup_identities(
     ios: bool,
     backup_password: Option<String>,
 ) -> Result<Vec<String>, String> {
-    let scratch_root = app
-        .path()
-        .app_cache_dir()
-        .map_err(|e| format!("Could not find the app's cache folder: {e}"))?
-        .join(IMESSAGE_READER_SCRATCH);
+    let scratch_root = app_cache_dir(&app)?.join(message_crate_core::IMESSAGE_READER_FOLDER);
     tauri::async_runtime::spawn_blocking(move || {
         let password = backup_password.as_deref().and_then(message_ir::trimmed);
         ios_backup::backup_identities(Path::new(path.trim()), ios, password, &scratch_root)

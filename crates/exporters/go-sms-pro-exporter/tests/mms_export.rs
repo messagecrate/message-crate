@@ -54,9 +54,11 @@ fn write_backup(dir: &Path) {
 }
 
 fn convert(input_dir: &Path, output_dir: &Path) -> ExportReport {
+    let cache = tempfile::tempdir().unwrap();
     convert_export(ConvertExportArgs {
         input_dir,
         output_dir,
+        cache_dir: cache.path(),
         owner_phones: &[OWNER.into()],
         transforms: ExportTransforms::none(),
         output_format: OutputFormat::Csv,
@@ -269,9 +271,11 @@ fn a_run_that_copies_no_attachments_still_records_their_size() {
     let input = tmp.path().join("backup");
     write_backup(&input);
     let output = tmp.path().join("out");
+    let cache = tempfile::tempdir().unwrap();
     convert_export(ConvertExportArgs {
         input_dir: &input,
         output_dir: &output,
+        cache_dir: cache.path(),
         owner_phones: &[OWNER.into()],
         transforms: ExportTransforms {
             media: media::MediaMode::Disabled,

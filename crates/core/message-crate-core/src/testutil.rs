@@ -5,6 +5,22 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// The names in `dir`, sorted, without the `.lock` files a scratch folder
+/// keeps: what a test asserts is the data a folder holds.
+///
+/// # Panics
+///
+/// Panics when `dir` cannot be read.
+pub fn names_in(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name != crate::scratch::LOCK)
+        .collect();
+    names.sort();
+    names
+}
+
 /// Sorted `.csv` paths under `root` (the smoke-test file collection block).
 pub fn csv_files(root: &Path) -> Vec<PathBuf> {
     let mut files: Vec<_> = fs::read_dir(root)
@@ -247,9 +263,17 @@ pub fn assert_jsonl_resumes(
     report
 }
 
+/// One cache folder for every test in the process's temporary folder. A
+/// run's scratch folder under it is deleted when the run ends, and two
+/// runs at once each lock their own, so tests can share it.
+pub fn test_cache_dir() -> PathBuf {
+    std::env::temp_dir().join("message-crate-test-cache")
+}
+
 /// The config an exporter's `run()` test passes: read `inputs`, write JSONL
 /// into `output`, copy no attachments and keep every name, so the result
-/// shows only what the exporter itself did.
+/// shows only what the exporter itself did. Scratch data goes under
+/// [`test_cache_dir`].
 pub fn jsonl_run_config(
     inputs: &[&Path],
     output: &Path,
@@ -258,6 +282,7 @@ pub fn jsonl_run_config(
     crate::ExporterConfig {
         inputs: inputs.iter().map(|p| p.to_path_buf()).collect(),
         output: output.to_path_buf(),
+        cache_dir: test_cache_dir(),
         timezone: None,
         obfuscate: crate::ObfuscateConfig {
             enabled: false,

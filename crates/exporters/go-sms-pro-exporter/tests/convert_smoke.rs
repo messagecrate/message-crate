@@ -22,9 +22,11 @@ fn write_backup(dir: &Path) {
 }
 
 fn convert(input_dir: &Path, output_dir: &Path) -> Result<ExportReport> {
+    let cache = tempfile::tempdir().unwrap();
     convert_export(ConvertExportArgs {
         input_dir,
         output_dir,
+        cache_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
         transforms: ExportTransforms::none(),
         output_format: OutputFormat::Csv,
@@ -106,9 +108,11 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
     write_backup(&input);
     let output = tmp.path().join("out");
     assert_jsonl_resumes(&output, |resume| {
+        let cache = tempfile::tempdir().unwrap();
         convert_export(ConvertExportArgs {
             input_dir: &input,
             output_dir: &output,
+            cache_dir: cache.path(),
             owner_phones: &["+15555550100".into()],
             transforms: ExportTransforms::none(),
             output_format: OutputFormat::Jsonl,

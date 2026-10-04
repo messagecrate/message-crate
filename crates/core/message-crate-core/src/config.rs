@@ -74,7 +74,14 @@ pub struct ExporterConfig {
     /// Input paths (usually one). SMS Backup+ may pass several; WhatsApp may leave empty.
     pub inputs: Vec<PathBuf>,
     /// Output directory the export is written to (packaging plus `attachments/`).
+    /// It holds output only.
     pub output: PathBuf,
+    /// The desktop app's cache folder. What a run writes that is not output
+    /// (the attachment spool, the databases `imessage-reader` decrypts) goes
+    /// in a scratch folder under it ([`crate::ScratchDir`]), never under
+    /// [`Self::output`]. The exporter crates do not know the app's folders,
+    /// so the app names it here.
+    pub cache_dir: PathBuf,
     /// Optional zone for timestamps that carry none: a fixed UTC offset
     /// (`UTC-05:00`) or an IANA name (`America/New_York`).
     /// When `None`, dates are interpreted in host-local time.
@@ -300,6 +307,7 @@ mod tests {
         ExporterConfig {
             inputs,
             output: PathBuf::from("out"),
+            cache_dir: PathBuf::from("/cache"),
             timezone: None,
             obfuscate: ObfuscateConfig::default(),
             media: MediaConfig::default(),

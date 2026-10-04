@@ -13,6 +13,7 @@ message-ir = { path = "../../libs/ir" }
 media = { path = "../../libs/media" }
 obfuscate = { path = "../../libs/obfuscate" }
 sha2 = { workspace = true }
+tempfile = { workspace = true }
 thiserror = { workspace = true }
 
 [features]
@@ -20,7 +21,6 @@ testutil = []
 
 [dev-dependencies]
 media = { path = "../../libs/media", features = ["testutil"] }
-tempfile = { workspace = true }
 
 [lints]
 workspace = true

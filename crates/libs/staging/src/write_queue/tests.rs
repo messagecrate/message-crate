@@ -726,15 +726,6 @@ fn an_unreadable_attachment_is_logged_before_it_becomes_a_chip() {
     );
 }
 
-#[test]
-fn headroom_shortfall_speaks_when_space_is_short() {
-    assert!(headroom_shortfall(10 * 1024 * 1024 * 1024, 1024).is_some());
-    assert_eq!(headroom_shortfall(1024, 10 * 1024 * 1024 * 1024), None);
-    let msg = headroom_shortfall(2 * 1024 * 1024 * 1024, 1024).unwrap();
-    assert!(msg.contains("free"), "{msg}");
-    assert!(msg.contains("GB"), "{msg}");
-}
-
 /// A backup no disk could hold is refused before a single file is written,
 /// by both drains.
 #[test]

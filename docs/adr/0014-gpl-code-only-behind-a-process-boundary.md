@@ -152,8 +152,9 @@ dev-dependency only; no shipped binary links it.
 
 `crates/libs/ios-backup` is FCL and is the one crate that starts the reader.
 Its `Helper` finds the program, writes the request, relays progress lines,
-and kills the program when dropped; its `ScratchDir` is the folder one
-request decrypts into. It also holds what is asked of an iPhone backup
+and kills the program when dropped. The folder one request decrypts into
+is a `ScratchDir` from `message-crate-core`, under the desktop app's cache
+folder. It also holds what is asked of an iPhone backup
 itself, which several sources read: whether it is encrypted, the addresses
 its device sent from, and one domain's files decrypted for the WhatsApp
 importer. `cargo tree -p ios-backup` shows no GPL crate.

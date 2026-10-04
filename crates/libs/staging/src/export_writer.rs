@@ -1,6 +1,7 @@
 //! The shared write tail every exporter used to copy: sink opening, the
 //! queue-or-sink decision, and both drain arms.
 
+use crate::headroom::{Disk, bytes_to_write, check_headroom};
 use crate::spool::AttachmentSpool;
 use crate::write_queue::{
     AttachmentSource, ConversationUnit, WriteQueueOptions, drain_units, load_attachment_source,
@@ -28,6 +29,7 @@ use std::path::{Path, PathBuf};
 #[derive(Debug)]
 pub struct ExportWriter {
     output_dir: PathBuf,
+    format: OutputFormat,
     sink: FormatSink,
     attachments_dir: PathBuf,
     media_mode: MediaMode,
@@ -37,7 +39,9 @@ pub struct ExportWriter {
     resume: bool,
     use_queue: bool,
     copy_attachments: bool,
-    spool: AttachmentSpool,
+    /// Set by [`with_spool`](Self::with_spool), for an exporter whose
+    /// attachments arrive as bytes.
+    spool: Option<AttachmentSpool>,
 }
 
 /// The opened sink and the decisions [`ExportWriter::open`] made, for an
@@ -100,9 +104,9 @@ impl ExportWriter {
         } else {
             FormatSink::open_prepared(output_dir, format, transforms)
         }?;
-        let spool = AttachmentSpool::open(output_dir)?;
         Ok(Self {
             output_dir: output_dir.to_path_buf(),
+            format,
             sink,
             attachments_dir,
             media_mode,
@@ -112,8 +116,18 @@ impl ExportWriter {
             resume,
             use_queue,
             copy_attachments,
-            spool,
+            spool: None,
         })
+    }
+
+    /// Give the run an attachment spool under `cache_dir`, the app's cache
+    /// folder, when it copies attachments; see [`spool`](Self::spool).
+    #[must_use]
+    pub fn with_spool(mut self, cache_dir: &Path) -> Self {
+        if self.copy_attachments {
+            self.spool = Some(AttachmentSpool::new(cache_dir).with_copy_dir(&self.output_dir));
+        }
+        self
     }
 
     /// Write the documents through `archive` instead of one file per
@@ -143,13 +157,15 @@ impl ExportWriter {
         self.use_queue
     }
 
-    /// The run's attachment spool, inside the output directory. An exporter
-    /// whose attachments arrive as bytes writes each payload here as it
-    /// parses it, so no payload waits in memory for the write.
-    /// [`finish`](Self::finish) reads every spooled attachment back from its
-    /// file, and the spool is removed when the writer is done.
-    pub fn spool(&self) -> &AttachmentSpool {
-        &self.spool
+    /// The run's attachment spool, under the app's cache folder and never
+    /// in the output directory; `None` when the writer was not given one
+    /// or the run copies no attachments. An exporter whose attachments
+    /// arrive as bytes writes each payload here as it parses it, so no
+    /// payload waits in memory for the write. [`finish`](Self::finish) reads
+    /// every spooled attachment back from its file, and the spool is removed
+    /// when the writer is done, whether the run succeeded or failed.
+    pub fn spool(&self) -> Option<&AttachmentSpool> {
+        self.spool.as_ref()
     }
 
     /// Media mode this run stages with ([`MediaMode::Disabled`] when the
@@ -202,8 +218,9 @@ impl ExportWriter {
     ///
     /// # Errors
     ///
-    /// Returns an error when a write fails, the staging disk is too small,
-    /// or the user cancels.
+    /// Returns an error when a write fails, the staging disk is too small
+    /// for the attachments it copies (checked before anything is written,
+    /// in every format), or the user cancels.
     pub fn finish(
         self,
         documents: Vec<ConversationDocument>,
@@ -211,8 +228,8 @@ impl ExportWriter {
         cancel: Option<&CancelFlag>,
         report: &mut ExportReport,
     ) -> Result<()> {
-        let spool = &self.spool;
-        let mut source_for = |att: &mut IrAttachment| match spool.source(att) {
+        let spool = self.spool.as_ref();
+        let mut source_for = |att: &mut IrAttachment| match spool.and_then(|s| s.source(att)) {
             Some(spooled) => spooled,
             None => source_for(att),
         };
@@ -241,13 +258,29 @@ impl ExportWriter {
         let mut documents = documents;
         // Gather sources in flat document order; staging loads by that index.
         let mut sources: Vec<AttachmentSource> = Vec::new();
+        let mut sizes: Vec<(Option<String>, u64)> = Vec::new();
         for doc in &mut documents {
             for msg in &mut doc.messages {
                 for att in &mut msg.attachments {
-                    let (source, _hint) = source_for(att);
+                    let (source, hint) = source_for(att);
+                    if !matches!(source, AttachmentSource::Missing) {
+                        sizes.push((att.digest_sha256.clone(), hint.unwrap_or(0)));
+                    }
                     sources.push(source);
                 }
             }
+        }
+        let sizes: Vec<(Option<&str>, u64)> = sizes
+            .iter()
+            .map(|(digest, size)| (digest.as_deref(), *size))
+            .collect();
+        let needed = bytes_to_write(self.format, &sizes);
+        // The same check the queue arm makes, before anything is written:
+        // the staged copies, and for a mail or merged archive every
+        // embedded copy too, need room on the disk that holds the output. A
+        // spool on that disk has already taken its share of what is free.
+        if self.media_mode != MediaMode::Disabled {
+            check_headroom(&self.output_dir, needed, Disk::Staging)?;
         }
         report.attachments_saved += message_crate_core::stage_conversation_attachments(
             message_crate_core::document_messages(&mut documents),
@@ -280,6 +313,7 @@ impl ExportWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use message_crate_core::testutil::names_in;
     use std::fs;
 
     fn transforms(obfuscate: bool) -> ExportTransforms {
@@ -366,5 +400,88 @@ mod tests {
                 .count();
             assert_eq!(written, 1, "{format:?}: one conversation file");
         }
+    }
+
+    /// Every format that is not JSON Lines checks the staging disk for room
+    /// before it writes, as the JSON Lines queue does: an attachment no disk
+    /// could hold stops the run with the space it needs, and the output
+    /// folder holds nothing but the export's mark (#1421).
+    #[test]
+    fn every_format_refuses_a_backup_the_staging_disk_cannot_hold_before_writing() {
+        for format in [
+            OutputFormat::Csv,
+            OutputFormat::Json,
+            OutputFormat::Eml,
+            OutputFormat::Mbox,
+        ] {
+            let tmp = tempfile::tempdir().unwrap();
+            let writer = ExportWriter::open(tmp.path(), format, transforms(false), false).unwrap();
+            let mut doc = document_with_bytes();
+            doc.messages[0].attachments[0].size_bytes = Some(u64::MAX / 2);
+
+            let err = writer
+                .finish(
+                    vec![doc],
+                    &mut AttachmentSource::take_bytes,
+                    None,
+                    &mut ExportReport::default(),
+                )
+                .unwrap_err();
+
+            let text = err.to_string();
+            assert!(
+                text.starts_with("Not enough space on the staging disk: this backup needs about "),
+                "{format:?}: {text}"
+            );
+            assert_eq!(
+                names_in(tmp.path()),
+                [".message-crate-export", "attachments"],
+                "{format:?}"
+            );
+            assert!(
+                names_in(&tmp.path().join("attachments")).is_empty(),
+                "{format:?}"
+            );
+        }
+    }
+
+    /// The spool sits under the cache folder the writer is given, never in
+    /// the output folder, and is gone once the run ends (#1421).
+    #[test]
+    fn the_spool_is_under_the_cache_folder_and_never_in_the_output_folder() {
+        let tmp = tempfile::tempdir().unwrap();
+        let out = tmp.path().join("out");
+        let cache = tmp.path().join("cache");
+        let writer = ExportWriter::open(&out, OutputFormat::Csv, transforms(false), false)
+            .unwrap()
+            .with_spool(&cache);
+        let spool = writer
+            .spool()
+            .expect("a run that copies attachments spools");
+        let digest = spool.put(b"\xff\xd8\xffphoto").unwrap();
+        let spooled = spool.path(&digest).unwrap();
+
+        assert!(
+            spooled.starts_with(cache.join(message_crate_core::ATTACHMENT_SPOOL_FOLDER)),
+            "{}",
+            spooled.display()
+        );
+        assert_eq!(names_in(&out), [".message-crate-export", "attachments"]);
+
+        let mut doc = document_with_bytes();
+        let att = &mut doc.messages[0].attachments[0];
+        att.bytes = None;
+        att.digest_sha256 = Some(digest);
+        let mut report = ExportReport::default();
+        writer
+            .finish(
+                vec![doc],
+                &mut AttachmentSource::take_bytes,
+                None,
+                &mut report,
+            )
+            .unwrap();
+        assert_eq!(report.attachments_saved, 1);
+        assert!(!spooled.exists(), "the spool is removed when the run ends");
     }
 }

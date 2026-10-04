@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/api";
@@ -9,6 +8,7 @@ import { APP_BUILD } from "../lib/build";
 import { productVersionOf } from "../lib/buildFormat";
 import { ThemeProvider } from "../lib/ThemeProvider";
 import { Providers } from "../test/providers";
+import { fill, setupUser } from "../test/user";
 import OwnerHome from "./OwnerHome";
 
 const listAccounts = vi.hoisted(() => vi.fn());
@@ -337,6 +337,7 @@ describe("OwnerHome", () => {
   });
 
   it("lists every account's Audit Trail, a deleted account's under its old username, and narrows it to one account", async () => {
+    const user = setupUser();
     listAccounts.mockResolvedValue([theOwner, anAccount]);
     listAuditTrail.mockResolvedValue({
       items: [
@@ -392,8 +393,8 @@ describe("OwnerHome", () => {
       within(rows[2]).getByText("Logged in from the website (0.10.0+aaaa1111)"),
     ).toBeInTheDocument();
 
-    await userEvent.click(await screen.findByRole("button", { name: /Every account/ }));
-    await userEvent.click(await screen.findByRole("option", { name: "bob" }));
+    await user.click(await screen.findByRole("button", { name: /Every account/ }));
+    await user.click(await screen.findByRole("option", { name: "bob" }));
     await waitFor(() => expect(listAccountAuditTrail).toHaveBeenCalled());
     expect(listAccountAuditTrail.mock.calls[0][2]).toBe(101);
     await waitFor(() =>
@@ -402,6 +403,7 @@ describe("OwnerHome", () => {
   });
 
   it("lists each deleted account below the live ones, and narrows the Audit Trail to one", async () => {
+    const user = setupUser();
     listAccounts.mockResolvedValue([theOwner, anAccount]);
     listDeletedAccounts.mockResolvedValue([
       { id: 31, username: "carol", deleted_at: "2026-10-03T10:00:00+00:00" },
@@ -437,7 +439,7 @@ describe("OwnerHome", () => {
     await screen.findByRole("table");
     await waitFor(() => expect(listDeletedAccounts).toHaveBeenCalled());
 
-    await userEvent.click(await screen.findByRole("button", { name: /Every account/ }));
+    await user.click(await screen.findByRole("button", { name: /Every account/ }));
     const options = (await screen.findAllByRole("option")).map((option) => option.textContent);
     expect(options).toHaveLength(5);
     expect(options.slice(0, 3)).toEqual(["Every account", "root", "bob"]);
@@ -445,7 +447,7 @@ describe("OwnerHome", () => {
     expect(options[4]).toMatch(/^carol, deleted .*2026/);
     expect(options[3]).not.toBe(options[4]);
     expect(screen.getByText("Deleted accounts")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("option", { name: options[3] ?? "" }));
+    await user.click(screen.getByRole("option", { name: options[3] ?? "" }));
 
     await waitFor(() =>
       expect(listAuditTrail).toHaveBeenCalledWith(
@@ -461,6 +463,7 @@ describe("OwnerHome", () => {
   });
 
   it("tells apart two accounts of one username deleted in the same minute", async () => {
+    const user = setupUser();
     listAccounts.mockResolvedValue([theOwner]);
     listDeletedAccounts.mockResolvedValue([
       { id: 31, username: "demo", deleted_at: "2026-10-03T10:00:30+00:00" },
@@ -470,7 +473,7 @@ describe("OwnerHome", () => {
     renderHome(["/owner/audit-trail"]);
     await waitFor(() => expect(listDeletedAccounts).toHaveBeenCalled());
 
-    await userEvent.click(await screen.findByRole("button", { name: /Every account/ }));
+    await user.click(await screen.findByRole("button", { name: /Every account/ }));
     await screen.findByText("Deleted accounts");
     const options = screen.getAllByRole("option").map((option) => option.textContent);
     expect(options[2]).toMatch(/^demo, deleted .*\(#31\)$/);
@@ -478,12 +481,13 @@ describe("OwnerHome", () => {
   });
 
   it("offers no Deleted accounts section when no account was deleted", async () => {
+    const user = setupUser();
     listAccounts.mockResolvedValue([theOwner, anAccount]);
     listAuditTrail.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
     renderHome(["/owner/audit-trail"]);
     await waitFor(() => expect(listDeletedAccounts).toHaveBeenCalled());
 
-    await userEvent.click(await screen.findByRole("button", { name: /Every account/ }));
+    await user.click(await screen.findByRole("button", { name: /Every account/ }));
     const options = (await screen.findAllByRole("option")).map((option) => option.textContent);
     expect(options).toEqual(["Every account", "root", "bob"]);
     expect(screen.queryByText("Deleted accounts")).not.toBeInTheDocument();
@@ -509,7 +513,7 @@ describe("OwnerHome", () => {
   });
 
   it("narrows the accounts table to the usernames the search bar matches", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     listAccounts.mockResolvedValue([
       anAccount,
       { ...anAccount, account_id: 102, username: "carol" },
@@ -526,7 +530,7 @@ describe("OwnerHome", () => {
   });
 
   it("searches accounts from another section by going to User Accounts", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderHome(["/owner/settings"]);
 
     await user.type(screen.getByRole("combobox", { name: "Search accounts" }), "b");
@@ -536,7 +540,7 @@ describe("OwnerHome", () => {
   });
 
   it("opens the owner's Settings from the account button", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderHome();
 
     await screen.findByText("bob");
@@ -566,7 +570,7 @@ describe("OwnerHome", () => {
   });
 
   it("shows an account's preferred name under its username, and searches it too", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderHome();
 
     expect(await screen.findByText("Bob Archer")).toBeInTheDocument();
@@ -579,7 +583,7 @@ describe("OwnerHome", () => {
   });
 
   it("opens an account's Settings from the gear in its row, with the account's own tabs", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderHome();
 
     await user.click(await screen.findByRole("button", { name: "Settings for bob" }));
@@ -601,8 +605,8 @@ describe("OwnerHome", () => {
     expect(screen.queryByRole("button", { name: "Add" })).not.toBeInTheDocument();
   });
 
-  it("sets an account's display name and identities from its Profile, as its holder does", async () => {
-    const user = userEvent.setup({ delay: null });
+  it("sets an account's display name from its Profile, as its holder does", async () => {
+    const user = setupUser();
     renderHome(["/owner/accounts/101"]);
 
     await user.click(await screen.findByRole("tab", { name: "Profile" }));
@@ -616,11 +620,19 @@ describe("OwnerHome", () => {
 
     updateAccount.mockResolvedValue({ ...anAccount, preferred_name: "Robert" });
     await user.clear(name);
-    await user.type(name, "Robert");
+    await fill(user, name, "Robert");
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() =>
       expect(updateAccount).toHaveBeenCalledWith(101, { preferred_name: "Robert" }),
     );
+  });
+
+  it("removes an identity from an account's Profile once the owner agrees", async () => {
+    const user = setupUser();
+    renderHome(["/owner/accounts/101"]);
+
+    await user.click(await screen.findByRole("tab", { name: "Profile" }));
+    expect(await screen.findByText("+15555550100")).toBeInTheDocument();
 
     updateAccount.mockResolvedValue({ ...anAccount, phones: [] });
     getAccount.mockResolvedValue({ ...anAccount, phones: [] });
@@ -653,7 +665,7 @@ describe("OwnerHome", () => {
       app: "desktop",
       app_build: "0.9.0+aaaa1111",
     });
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderHome(["/owner/accounts/101"]);
 
     await user.click(await screen.findByRole("tab", { name: "Profile" }));
@@ -666,7 +678,7 @@ describe("OwnerHome", () => {
   });
 
   it("says Never and not connected on Profile for an account that has done neither", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderHome(["/owner/accounts/101"]);
 
     await user.click(await screen.findByRole("tab", { name: "Profile" }));
@@ -677,7 +689,7 @@ describe("OwnerHome", () => {
   });
 
   it("shows the owner an account's Storage as the account sees it", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderHome(["/owner/accounts/101"]);
 
     await user.click(await screen.findByRole("tab", { name: "Storage" }));
@@ -704,7 +716,7 @@ describe("OwnerHome", () => {
         { id: 5, original_name: "big.mov", mime_type: "video/quicktime", size_bytes: 3000 },
       ],
     });
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderHome(["/owner/accounts/101"]);
 
     await user.click(await screen.findByRole("tab", { name: "Storage" }));
@@ -716,7 +728,7 @@ describe("OwnerHome", () => {
   });
 
   it("counts the contacts an import made for the owner, and does not name them", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderHome(["/owner/accounts/101"]);
 
     await user.click(await screen.findByRole("tab", { name: "Storage" }));
@@ -728,7 +740,7 @@ describe("OwnerHome", () => {
   });
 
   it("deletes an account from its Settings and returns to User Accounts", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderHome(["/owner/accounts/101"]);
 
     await user.click(await screen.findByRole("button", { name: /Danger zone/ }));
@@ -743,7 +755,7 @@ describe("OwnerHome", () => {
   });
 
   it("deletes an account's messages from its Settings", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderHome(["/owner/accounts/101"]);
 
     await user.click(await screen.findByRole("button", { name: /Danger zone/ }));
@@ -831,7 +843,7 @@ describe("OwnerHome", () => {
   });
 
   it("sets an account's status from its Settings", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderHome(["/owner/accounts/101"]);
 
     await user.click(await screen.findByRole("button", { name: /Status/ }));
@@ -841,7 +853,7 @@ describe("OwnerHome", () => {
   });
 
   it("sets an account's permissions from its Settings, under Permissions", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderHome(["/owner/accounts/101"]);
 
     expect(await screen.findByRole("heading", { name: "Message Permissions" })).toBeInTheDocument();
@@ -859,7 +871,7 @@ describe("OwnerHome", () => {
   });
 
   it("sets an account's password from its Settings, typed twice the same way", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderHome(["/owner/accounts/101"]);
 
     // The server judges the pair, so a differing one goes to it and its
@@ -888,7 +900,7 @@ describe("OwnerHome", () => {
   });
 
   it("clears a user's password from the account's Settings", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderHome(["/owner/accounts/101"]);
 
     await user.click(await screen.findByRole("button", { name: "Reset password" }));
@@ -909,7 +921,7 @@ describe("OwnerHome", () => {
   });
 
   it("opens a new account's Settings from Add account, in place of the table", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderHome();
 
     await screen.findByText("bob");
@@ -937,7 +949,7 @@ describe("OwnerHome", () => {
   });
 
   it("creates the account once its password is typed twice the same way, then opens it", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     // The answer to Create is written to the cache before its screen mounts.
     renderHome(["/owner/accounts/new"], { keepUnread: true });
 
@@ -983,7 +995,7 @@ describe("OwnerHome", () => {
   });
 
   it("says Invalid username when the username already belongs to an account", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     createAccount.mockRejectedValue(
       new ApiError(409, "username already taken: bob", {
         type: "https://messagecrate.app/docs/developer/reference/errors/username-taken",
@@ -1031,7 +1043,7 @@ describe("OwnerHome", () => {
   });
 
   it("moves between sections from the side panel", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderHome();
 
     await user.click(screen.getByRole("button", { name: "Server Settings" }));
@@ -1042,7 +1054,7 @@ describe("OwnerHome", () => {
   });
 
   it("turns public registration on from Settings", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderHome(["/owner/settings"]);
 
     const box = await screen.findByRole("checkbox", {
