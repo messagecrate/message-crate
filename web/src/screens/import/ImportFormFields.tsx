@@ -212,6 +212,9 @@ function AttachmentFields(props: {
             </Select>
             <p className={hintStyle}>Maximum video resolution; videos are not upscaled.</p>
           </StackedField>
+          {/* The desktop app's refusals name Max FPS and Minimum Video File Size by
+              these labels (media::compress_options_from_form in crates/libs/media), so
+              a renamed label is renamed there too. */}
           <StackedField label="Max FPS">
             <input
               type="text"

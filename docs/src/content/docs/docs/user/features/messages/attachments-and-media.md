@@ -53,10 +53,11 @@ They apply to video only.
 |---|---|---|---|
 | **Target resolution** | `720`, `1080`, `4k` | `720` | Caps the longer side of the picture at 1280, 1920, or 3840 pixels. A smaller video is not enlarged. |
 | **Max FPS** | A number | `30` | Caps the frame rate of the re-encoded video. A video at or below it keeps its frame rate. |
-| **Minimum Video File Size (Megabytes)** | A number | `20` | A video smaller than this is not re-encoded. |
+| **Minimum Video File Size (Megabytes)** | A whole number | `20` | A video smaller than this is not re-encoded. |
 
 An Import Run checks the three settings when it starts, before Staging reads the backup.
 A **Max FPS** that is empty, or is not a number above 0, fails the run there, and the run's issue names the field.
+A **Minimum Video File Size** that is empty, or is not a whole number of megabytes such as `20`, fails the run there too: `20MB` and `1.5` are refused, and the run's issue names the field and what was typed.
 The Staging Review and the **Media** stage work to the settings the run started with, so a later change to the form doesn't reach a run already under way.
 
 A video is re-encoded to H.265.
