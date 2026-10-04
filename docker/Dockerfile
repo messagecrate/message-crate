@@ -80,8 +80,6 @@ RUN chmod +x /usr/local/bin/docker-entrypoint-release.sh \
 
 USER node
 
-ENV HOSTNAME=0.0.0.0
-
 EXPOSE 8080
 VOLUME ["/app/data"]
 
