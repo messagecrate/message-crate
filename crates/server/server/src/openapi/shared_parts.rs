@@ -195,6 +195,10 @@ fn failures(path: &str, op: &mut Operation) {
         if every_needs("import") || every_needs("delete") {
             kinds.push(ProblemType::DemoAccountProtected);
         }
+        // A media link is a credential of its own, refused with its own type.
+        if requirements.iter().any(|r| r.get("media-link").is_some()) {
+            kinds.push(ProblemType::MediaLinkInvalid);
+        }
     }
     if op.request_body.is_some() {
         kinds.extend([

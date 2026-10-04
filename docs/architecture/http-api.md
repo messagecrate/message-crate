@@ -153,7 +153,9 @@ current one, because that account reaches every other.
   database did not hold, and a claim that makes the owner's Session
   (`Location: /v1/session`), both answer `201`. A create that takes a batch
   answers `200 OK` with a summary of what was created, updated and skipped,
-  because no single resource was made.
+  because no single resource was made. A Media Link is made though nothing is
+  stored: `POST /v1/assets/{sha256}/media-links` answers `201 Created` with the link's
+  own URL in `Location`, which the Session that made it can `GET`.
 - A write with nothing to return answers `204 No Content`.
 - A write the server finishes after it answers is `202 Accepted`, with the
   resource in its body and a `status` that says the work is under way. The
@@ -197,6 +199,21 @@ current one, because that account reaches every other.
   caller does not hold breaks a rule rather than completing with an empty
   result.
 - `429 Too Many Requests` carries `Retry-After`.
+- The two routes that answer an asset's bytes, `GET /v1/assets/{sha256}` and
+  `GET /v1/assets/{sha256}/preview`, answer a `Range` of one byte range
+  (`bytes=0-499`, `bytes=500-`, `bytes=-500`) with `206 Partial Content`,
+  those bytes, and `Content-Range: bytes <first>-<last>/<length>`. A range
+  that selects no byte of the file answers `416 Range Not Satisfiable`
+  (`range-not-satisfiable`) with `Content-Range: bytes */<length>`. Any other
+  `Range` answers `200 OK` with the whole file, as RFC 9110 allows: another
+  unit, several ranges, a range that cannot be read, or an `If-Range` that
+  does not name this file. Every answer carries `Accept-Ranges: bytes`. The
+  original's `ETag` is its fingerprint, which `If-Range` may name; a Preview
+  has none, so a `Range` sent with `If-Range` gets the whole Preview.
+  Why: a video plays from a media element that asks for the file a range at
+  a time and seeks by asking for another (`docs/architecture/media.md`).
+  Rejected: answering several ranges as `multipart/byteranges`. No media
+  element sends several, and the whole file is a correct answer to them.
 - An unknown `/v1` path answers `404` as a problem document, and a wrong method
   `405`, never Axum's plain text.
 
@@ -266,7 +283,9 @@ Audit Trail are the only such lists: `GET /v1/imports?status=running`,
 entries and runs by the id they keep. There is no `fields=` selection.
 
 A query parameter a route does not declare is `validation-failed`, naming the
-parameters the route accepts. Why: a typo (`limt=10`) or a guess at a
+parameters the route accepts. The `media_link` of a Media Link is declared by
+its security scheme, an API key in the query, and counts as declared on the
+two routes that take it. Why: a typo (`limt=10`) or a guess at a
 convention this file rejects (`order=`, `fields=`, `year=`) would otherwise be
 answered as though it had been obeyed.
 
@@ -335,8 +354,8 @@ send one, and the rule would refuse the web app on its first request.
 
 ## Credentials and reach
 
-Two credentials exist, and the OpenAPI document declares each as a security
-scheme with its scopes, so every route says which it accepts.
+Three credentials exist, and the OpenAPI document declares each as a
+security scheme with its scopes, so every route says which it accepts.
 
 - A **Session** is one per logged-in account or owner, made by
   `POST /v1/session` and ended by `DELETE /v1/session`. It carries the
@@ -359,6 +378,48 @@ scheme with its scopes, so every route says which it accepts.
   label their work with it. `DELETE /v1/session` refuses a token with `403`,
   because a token is not a Session and a `204` would say something ended when
   nothing did.
+- A **Media Link** reads one asset and its Preview, in the account that made
+  it, with no `Authorization` header. A Session makes it with
+  `POST /v1/assets/{sha256}/media-links`, which answers the URLs to load:
+  `/v1/assets/{sha256}?media_link=…` and its `/preview` twin. It is open for
+  one hour, and ends sooner when the Session that made it ends: by logout, a
+  new login, a password change, or the Session's expiry. A server restart
+  ends every Media Link too. Only `GET /v1/assets/{sha256}` and
+  `GET /v1/assets/{sha256}/preview` take one, and a request that sends
+  `Authorization` is judged by the header alone. A link that does not open
+  the asset answers `401 Unauthorized` with `media-link-invalid`, because its
+  remedy is a new link rather than a new login.
+  Why: a media element (`<img>`, `<video>`, `<audio>`) loads its own `src`
+  and cannot send a header, and a video that streams must be loaded by the
+  element itself (`docs/architecture/media.md`, rule 1).
+  How: the value is `<account_id>.<expires>.<signature>`, an HMAC-SHA256
+  under a key the server makes when it starts and never writes down, over
+  the account, the asset's fingerprint, the expiry and the hash of the
+  Session token that made it. The server stores nothing: it checks a link by
+  signing the same terms with the Session the account holds now, so a link
+  for another asset, another account, a later expiry or an ended Session
+  fails the same check. The server's log shows `media_link=[hidden]`,
+  because a credential is never logged.
+  Why an hour: a phone video is watched and sought in within minutes, and an
+  hour leaves room for a long one; a link copied out of the page stops
+  working soon after. The web app makes a new link whenever it opens an
+  attachment again.
+  Rejected: the Session token in the query string. It would write the
+  credential that reaches every message into URLs, the page and any log on
+  the way, where a Media Link reaches one asset for an hour.
+  Rejected: a cookie. The desktop app's page is served from
+  `tauri://localhost` and its server answers at `http://127.0.0.1:8080`, so
+  every request is cross-site, and a browser sends a cookie on a cross-site
+  request only with `SameSite=None; Secure`, which needs HTTPS. Docker and
+  the desktop app must work one way.
+  Rejected: fetching the file with the header and handing the element a
+  blob. The whole file loads before the first frame, which is what streaming
+  removes.
+  Rejected: a stored link, a row per link. It is a row for every attachment
+  opened and a table to prune, and the check reads the Session row either
+  way.
+  Rejected: one link per account for all its assets. A link copied out of
+  the page would read every attachment the account holds.
 
 What each reaches:
 
@@ -370,8 +431,8 @@ What each reaches:
   `HEAD /v1/assets/{sha256}`, need the `export` scope on either credential. A
   program with an export token reads messages only through an Export Run it
   started, so every read of message data by a program leaves a record.
-- `GET /v1/assets/{sha256}` takes any session, or a token with the `export`
-  scope. Why: a person looking at a photo in their own conversation is not
+- `GET /v1/assets/{sha256}` takes any session, a token with the `export`
+  scope, or a Media Link for that asset. Why: a person looking at a photo in their own conversation is not
   exporting it, so an account whose `export` permission is off still sees its
   attachments, as it still reads its messages. A token has no screen to show
   bytes on; fetching them with one is taking them out, which is what the
@@ -380,6 +441,9 @@ What each reaches:
   it was made from, by the same account and nobody else. Why: a Preview is the
   attachment's content as much as the original is, so a caller who may not
   read one may not read the other, and the owner reads neither.
+- `POST /v1/assets/{sha256}/media-links` takes an account's Session only.
+  Why: only a screen has a media element to put a link in, and a program
+  sends its token in the header. The owner holds no attachment to read.
 - `HEAD /v1/assets/{sha256}` also accepts the `import` scope: a program that
   can only push may ask whether an asset exists, and may not read it.
 - Permanent deletion (`DELETE /v1/conversations/{id}`,
@@ -479,7 +543,9 @@ What each reaches:
   with. Lowering the limit mid-upload otherwise refused every remaining part
   with `413 Payload Too Large`, and the push failed the conversation (#1179).
 
-The credential names the account. No route takes an `account=` parameter.
+The credential names the account. No route takes an `account=` parameter. A
+Media Link is a credential, so its `media_link` parameter names the account
+inside its signed value and is not a parameter of that kind.
 
 Rate limiting guards the three routes that take no credential and make one,
 over a 60-second window; the limit is documented in the developer reference.
@@ -573,7 +639,8 @@ handlers by `message-crate-server dump-openapi` and checked in; a test fails
 when the two differ, and CI checks the web app's generated types against it.
 
 An operation's error responses are built from shared parts, never written out
-by hand. The credential a route accepts brings its `401` and `403`; a request
+by hand. The credential a route accepts brings its `401` and `403`, and a
+Media Link brings `media-link-invalid`; a request
 body brings `400`, `413`, `415` and `422`; an id in the path brings `404` and
 `422`; every `/v1` route brings `422` for a query parameter it does not
 declare; and every `/v1` route that answers JSON brings `406` for an `Accept`

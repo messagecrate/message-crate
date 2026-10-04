@@ -46,3 +46,5 @@ A `500 Internal Server Error` has no page: its `type` is `about:blank`, and its 
 | [`not-found`](./not-found/) | `404 Not Found` | Not found |
 | [`method-not-allowed`](./method-not-allowed/) | `405 Method Not Allowed` | Method not allowed |
 | [`not-acceptable`](./not-acceptable/) | `406 Not Acceptable` | Not acceptable |
+| [`media-link-invalid`](./media-link-invalid/) | `401 Unauthorized` | Media link invalid |
+| [`range-not-satisfiable`](./range-not-satisfiable/) | `416 Range Not Satisfiable` | Range not satisfiable |

@@ -2,6 +2,9 @@
 //! then write the chosen output format via [`ExportWriter`].
 
 use crate::attachments_emit::queue_attachments;
+use crate::email_numbers::{
+    EmailNumbers, KeptByEmail, key_members_by_number, names_a_member_by_email,
+};
 use crate::flat_eml::Owner;
 use crate::identity::{chat_id_for, timestamp_ms};
 use crate::parse_emit::{ParsedEmlKind, collect_eml_paths, parse_one_eml};
@@ -36,6 +39,19 @@ const GROUP_MESSAGES_WITHOUT_SENDER: &str = "group_messages_without_sender";
 /// or under `X-smssync-address` when `From` gives no address. Counted after
 /// copies are reduced to one.
 const GROUP_MESSAGES_OWNER_NOT_NAMED: &str = "group_messages_owner_not_named";
+
+/// Report counter: group members the archive names only by email address,
+/// never with a number, so the address stays their key. Each is counted
+/// once, however many mails name them (#1545).
+const GROUP_MEMBERS_WITHOUT_NUMBER: &str = "group_members_without_number";
+
+/// Report counter: group members whose email address the archive gives two
+/// or more numbers, as a contact card two people share does, so the address
+/// stays their key. Each is counted once. One number written in national
+/// form in some mails and international form in others (`07700900123`,
+/// `+447700900123`) counts as two, since only a `+` number is read as
+/// international.
+const GROUP_MEMBERS_WITH_SEVERAL_NUMBERS: &str = "group_members_with_several_numbers";
 
 /// The EML's path relative to the input root it was found under, for the vendor `source` bag.
 ///
@@ -392,6 +408,7 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
     };
     let mut ingest = EmlIngest::new(writer.spool(), eml_paths.len());
     parse_all_emls(&eml_paths, &parse, cancel, verbose, &mut ingest)?;
+    ingest.add_members_by_number(verbose);
     verbose.line(ingest.parse_summary());
     let EmlIngest {
         conversations,
@@ -521,6 +538,13 @@ struct EmlIngest<'a> {
     /// EML paths of received MMS whose `To` named none of the owner's
     /// addresses, counted once the copies are reduced to one.
     owner_not_named: HashSet<String>,
+    /// The number each email address stands for, from the one-to-one mails
+    /// that give both.
+    email_numbers: EmailNumbers,
+    /// Messages that name a group member by email address, held until the
+    /// whole archive has been read and the member can be keyed by number.
+    /// Their attachments are already queued.
+    by_email: Vec<(ParsedMessage, Vec<PendingAttachment>)>,
 }
 
 impl<'a> EmlIngest<'a> {
@@ -531,6 +555,8 @@ impl<'a> EmlIngest<'a> {
             conversations: HashMap::with_capacity((eml_count / 4).min(50_000)),
             report: ExportReport::default(),
             owner_not_named: HashSet::new(),
+            email_numbers: EmailNumbers::default(),
+            by_email: Vec::new(),
         }
     }
 
@@ -568,16 +594,61 @@ impl<'a> EmlIngest<'a> {
     /// # Errors
     ///
     /// Returns an error when an attachment cannot be written to the spool.
-    fn add_parsed(&mut self, msg: ParsedMessage) -> Result<()> {
+    fn add_parsed(&mut self, mut msg: ParsedMessage) -> Result<()> {
+        let atts = queue_attachments(&std::mem::take(&mut msg.attachments), self.spool)?;
+        if let Some(pair) = msg.email_number.take() {
+            self.email_numbers.record(pair);
+        }
+        if names_a_member_by_email(&msg) {
+            self.by_email.push((msg, atts));
+        } else {
+            self.add_to_conversation(msg, atts);
+        }
+        Ok(())
+    }
+
+    /// Add the messages held for naming a group member by email address,
+    /// each member keyed by the one number the archive gives that address,
+    /// and count the members it gives none, or several.
+    fn add_members_by_number(&mut self, verbose: Verbose<'_>) {
+        let numbers = std::mem::take(&mut self.email_numbers).into_numbers();
+        let mut kept = KeptByEmail::default();
+        for (mut msg, atts) in std::mem::take(&mut self.by_email) {
+            key_members_by_number(&mut msg, &numbers, &mut kept);
+            self.add_to_conversation(msg, atts);
+        }
+        for (counter, addresses, what) in [
+            (
+                GROUP_MEMBERS_WITHOUT_NUMBER,
+                kept.without_number,
+                "no number",
+            ),
+            (
+                GROUP_MEMBERS_WITH_SEVERAL_NUMBERS,
+                kept.several_numbers,
+                "more than one number",
+            ),
+        ] {
+            if addresses.is_empty() {
+                continue;
+            }
+            self.report.bump(counter, addresses.len() as u64);
+            verbose.line(format!(
+                "group members with {what} in the archive, kept by email address: {}",
+                addresses.into_iter().collect::<Vec<_>>().join(", ")
+            ));
+        }
+    }
+
+    /// Count one message and add it to its conversation.
+    fn add_to_conversation(&mut self, msg: ParsedMessage, atts: Vec<PendingAttachment>) {
         if msg.chat_key.is_empty() {
             self.report.bump("unknown_chat_messages", 1);
         }
         if msg.owner_not_named {
             self.owner_not_named.insert(msg.eml_path.clone());
         }
-        let atts = queue_attachments(&msg.attachments, self.spool)?;
         add_message(&mut self.conversations, msg, atts, &mut self.report);
-        Ok(())
     }
 
     /// One line of parse counters for the verbose log.
@@ -769,6 +840,7 @@ mod tests {
             android_type: "1".into(),
             eml_path: eml_path.into(),
             owner_not_named: false,
+            email_number: None,
         }
     }
 

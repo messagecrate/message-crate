@@ -336,3 +336,127 @@ fn a_jpeg_part_is_exactly_one_jpg_attachment_and_a_plain_sms_has_none() {
     assert_eq!(att.missing_reason, None);
     assert!(out.join(path).is_file(), "{path} was written");
 }
+
+/// One SMS Backup+ mail: `headers`, then a plain-text `text`.
+fn mail(headers: &str, text: &str) -> String {
+    format!(
+        "{headers}\nX-smssync-date: 1609459200000\nContent-Type: text/plain; charset=utf-8\n\n{text}\n"
+    )
+}
+
+/// SMS Backup+ names a contact with an email address on the phone by that
+/// address in `From` and `To`, and by number when they had none at backup
+/// time. A one-to-one mail that gives both says Carol's address is her
+/// number, so a group that names her by address and the same group naming
+/// her by number are one conversation, and a reply from her address is from
+/// her number (#1545).
+#[test]
+fn a_group_member_named_by_email_address_is_keyed_by_their_number() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let input = tmp.path().join("in");
+    fs::create_dir_all(&input).expect("input dir");
+    let mails = [
+        (
+            "1.eml",
+            mail(
+                "From: \"Carol\" <carol@example.com>\nTo: owner@example.com\nSubject: SMS with Carol\nX-smssync-type: 1\nX-smssync-address: 4075550111",
+                "Carol alone",
+            ),
+        ),
+        (
+            "2.eml",
+            mail(
+                "From: owner@example.com\nTo: \"Carol\" <carol@example.com>, \"Bob\" <+14075550108@unknown.email>\nSubject: SMS with Bob\nX-smssync-type: 128\nX-smssync-address: 4075550108",
+                "to Carol by address",
+            ),
+        ),
+        (
+            "3.eml",
+            mail(
+                "From: owner@example.com\nTo: <+14075550111@unknown.email>, <+14075550108@unknown.email>\nSubject: SMS with Carol\nX-smssync-type: 128\nX-smssync-address: 4075550111",
+                "to Carol by number",
+            ),
+        ),
+        (
+            "4.eml",
+            mail(
+                "From: \"Carol\" <carol@example.com>\nTo: <+15555550100@unknown.email>, <+14075550108@unknown.email>\nSubject: SMS with Carol\nX-smssync-type: 132\nX-smssync-address: 4075550108",
+                "reply from Carol",
+            ),
+        ),
+    ];
+    for (name, body) in &mails {
+        fs::write(input.join(name), body).expect("write mail");
+    }
+    let out = tmp.path().join("out");
+
+    convert(&input, &out);
+
+    let docs = documents(&out);
+    let groups: Vec<&ConversationDocument> = docs
+        .iter()
+        .filter(|(id, _)| id.starts_with("chat-"))
+        .map(|(_, doc)| doc)
+        .collect();
+    assert_eq!(groups.len(), 1, "{:?}", docs.keys().collect::<Vec<_>>());
+    let group = groups[0];
+    let mut handles: Vec<&str> = group
+        .conversation
+        .participants
+        .iter()
+        .filter_map(|p| p.handle.as_deref())
+        .collect();
+    handles.sort_unstable();
+    assert_eq!(handles, ["+14075550108", "+14075550111"]);
+    assert_eq!(group.messages.len(), 3);
+    let reply = group
+        .messages
+        .iter()
+        .find(|m| m.text.trim() == "reply from Carol")
+        .expect("Carol's reply is in the group");
+    assert_eq!(reply.sender_handle.as_deref(), Some("+14075550111"));
+    assert!(
+        docs.contains_key("+14075550111"),
+        "Carol's own conversation"
+    );
+}
+
+/// A group mail that names one person twice, by email address and by
+/// number, is that person's one-to-one conversation once the address is
+/// keyed by the number (#1545).
+#[test]
+fn a_group_of_one_person_named_twice_is_their_one_to_one_conversation() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let input = tmp.path().join("in");
+    fs::create_dir_all(&input).expect("input dir");
+    let mails = [
+        (
+            "1.eml",
+            mail(
+                "From: \"Carol\" <carol@example.com>\nTo: owner@example.com\nSubject: SMS with Carol\nX-smssync-type: 1\nX-smssync-address: 4075550111",
+                "Carol alone",
+            ),
+        ),
+        (
+            "2.eml",
+            mail(
+                "From: owner@example.com\nTo: \"Carol\" <carol@example.com>, <+14075550111@unknown.email>\nSubject: SMS with Carol\nX-smssync-type: 128\nX-smssync-address: 4075550111",
+                "to Carol twice",
+            ),
+        ),
+    ];
+    for (name, body) in &mails {
+        fs::write(input.join(name), body).expect("write mail");
+    }
+    let out = tmp.path().join("out");
+
+    convert(&input, &out);
+
+    let docs = documents(&out);
+    assert_eq!(
+        docs.keys().collect::<Vec<_>>(),
+        ["+14075550111"],
+        "one conversation, Carol's"
+    );
+    assert_eq!(docs["+14075550111"].messages.len(), 2);
+}

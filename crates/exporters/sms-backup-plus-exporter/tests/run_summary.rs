@@ -212,3 +212,105 @@ fn a_group_message_not_naming_the_owner_is_counted_once() {
     let issues = issues.lock().unwrap();
     assert!(issues.is_empty(), "{issues:?}");
 }
+
+/// A group member the archive names only by email address keeps the address
+/// as their key, and the summary counts them once, however many mails name
+/// them (#1545).
+#[test]
+fn a_group_member_with_no_number_in_the_archive_is_counted_once() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("backup");
+    fs::create_dir_all(&input).unwrap();
+    for (name, date) in [("1.eml", "1609459200000"), ("2.eml", "1609459300000")] {
+        let mail = format!(
+            "From: me@example.com\n\
+             To: \"Dave\" <dave@example.com>, <+14075550108@unknown.email>\n\
+             Subject: SMS with Dave\n\
+             X-smssync-type: 128\n\
+             X-smssync-address: 4075550108\n\
+             X-smssync-date: {date}\n\
+             Content-Type: text/plain; charset=utf-8\n\
+             \n\
+             Hello {name}\n"
+        );
+        fs::write(input.join(name), mail).unwrap();
+    }
+    let output = tmp.path().join("out");
+
+    let result = crate::run(&jsonl_run_config(&[&input], &output, source(true))).expect("run");
+
+    let written = assert_run_wrote_jsonl(&result, &output, 1);
+    assert!(written.contains("dave@example.com"), "{written}");
+    assert!(
+        result
+            .messages
+            .iter()
+            .any(|l| l == "  group_members_without_number: 1"),
+        "{:?}",
+        result.messages
+    );
+}
+
+/// An email address the archive gives two numbers, as a contact card two
+/// people share does, is neither person's: a group member named by it keeps
+/// the address, and the summary counts them (#1545 review).
+#[test]
+fn a_group_member_whose_address_has_two_numbers_keeps_the_address() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("backup");
+    fs::create_dir_all(&input).unwrap();
+    let one_to_one = |number: &str, date: &str| {
+        format!(
+            "From: \"Smiths\" <smiths@example.com>\n\
+             To: me@example.com\n\
+             Subject: SMS with Smiths\n\
+             X-smssync-type: 1\n\
+             X-smssync-address: {number}\n\
+             X-smssync-date: {date}\n\
+             Content-Type: text/plain; charset=utf-8\n\
+             \n\
+             Hello from {number}\n"
+        )
+    };
+    // Two mails give Mom's number and one gives Dad's: a majority still
+    // names neither.
+    for (name, number, date) in [
+        ("1.eml", "4075550111", "1609459100000"),
+        ("2.eml", "4075550111", "1609459150000"),
+        ("3.eml", "4075550112", "1609459170000"),
+    ] {
+        fs::write(input.join(name), one_to_one(number, date)).unwrap();
+    }
+    fs::write(
+        input.join("4.eml"),
+        "From: me@example.com\n\
+         To: <smiths@example.com>, <+14075550108@unknown.email>\n\
+         Subject: SMS with Smiths\n\
+         X-smssync-type: 128\n\
+         X-smssync-address: 4075550108\n\
+         X-smssync-date: 1609459200000\n\
+         Content-Type: text/plain; charset=utf-8\n\
+         \n\
+         Hello group\n",
+    )
+    .unwrap();
+    let output = tmp.path().join("out");
+
+    let result = crate::run(&jsonl_run_config(&[&input], &output, source(true))).expect("run");
+
+    let group = fs::read_dir(&output)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| fs::read_to_string(p).is_ok_and(|t| t.contains("Hello group")))
+        .expect("the group's file");
+    let written = fs::read_to_string(group).unwrap();
+    assert!(written.contains("smiths@example.com"), "{written}");
+    assert!(
+        result
+            .messages
+            .iter()
+            .any(|l| l == "  group_members_with_several_numbers: 1"),
+        "{:?}",
+        result.messages
+    );
+}

@@ -63,13 +63,13 @@ Every mail carries `Subject` (`SMS with <name>`: the sender of a received messag
 | Header | Value |
 |---|---|
 | `X-smssync-datatype` | `SMS`, or `MMS` for an MMS or a message with an attachment |
-| `X-smssync-address` | The other person's address; in a group, every other person's, joined by `~` |
+| `X-smssync-address` | The other person's address; in a group, every other person's, joined by `~`. Empty for a conversation known only by a name, which the subject then names, and for the conversation that names nobody, whose subject is plain `SMS` |
 | `X-smssync-date` | The message time in epoch milliseconds |
 | `X-smssync-type` | `1` received or `2` sent for SMS; `132` received or `128` sent for MMS |
 | `X-smssync-backup-time` | The start of the Export Run that wrote the file, or of the Convert run, in epoch milliseconds |
 
 `From` and `To` name a phone number as `<number>@unknown.email` and an email address as itself, as SMS Backup+ does, so the import reads each handle back as it went out.
-A received group message whose sender is unknown names an address no member has, and comes back with no sender.
+A received group message whose sender is unknown names an address no member has, and comes back with no sender. So does a received message in the conversation that names nobody, which comes back as that conversation, with no participant.
 
 An SMS is `text/plain`. An MMS is `multipart/mixed`: the text, then each stored attachment with its content type and file name.
 Every `text/plain` part of an MMS is message text to the import, as it is on the phone, so a text file attached to a message is written as `application/octet-stream` under its own name, and comes back as a file of that type.
