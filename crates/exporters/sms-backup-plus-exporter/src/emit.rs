@@ -635,7 +635,7 @@ mod tests {
                 data: vec![4, 5, 6],
             },
         ];
-        let spool = AttachmentSpool::new(dir.path());
+        let spool = AttachmentSpool::new(dir.path(), None);
         let queued = queue_attachments(&blobs, Some(&spool)).unwrap();
         assert_eq!(queued.len(), 2);
 

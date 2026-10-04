@@ -9,9 +9,10 @@ one holds a single job.
   locked folder under the desktop app's cache folder that a run writes its
   scratch data into (the attachment spool, the databases `imessage-reader`
   decrypts), because the staging library and the exporters both make one.
-  It also holds the desktop app's form model: `Form`, its labels and its validation, in `src/exporters.rs`. The
-  form's only job is to produce that configuration. Every backup type
-  validates its form the same way before a run starts.
+  It also holds the desktop app's form model: `Form`, its labels and its
+  validation, in `src/exporters.rs`. The form's only job is to produce that
+  configuration. Every backup type validates its form the same way before a
+  run starts.
 - **`message-ir-format`** reads and writes the formats Message Crate itself
   emits — JSON, JSON Lines, CSV, EML, MBOX — and nothing else.
 - **`message-staging`** is the resumable write path: the bounded write queue, the

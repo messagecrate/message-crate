@@ -5,6 +5,22 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// The names in `dir`, sorted, without the `.lock` files a scratch folder
+/// keeps: what a test asserts is the data a folder holds.
+///
+/// # Panics
+///
+/// Panics when `dir` cannot be read.
+pub fn names_in(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|name| name != ".lock")
+        .collect();
+    names.sort();
+    names
+}
+
 /// Sorted `.csv` paths under `root` (the smoke-test file collection block).
 pub fn csv_files(root: &Path) -> Vec<PathBuf> {
     let mut files: Vec<_> = fs::read_dir(root)

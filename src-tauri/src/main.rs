@@ -54,7 +54,7 @@ fn main() {
             // not at the next run of the same kind. A folder a running job
             // holds is kept. On a thread of its own, so a large leftover
             // does not hold up the window.
-            let cache_dir = app.path().app_cache_dir()?;
+            let cache_dir = commands::paths::app_cache_dir(app.handle())?;
             std::thread::spawn(move || message_crate_core::sweep_scratch(&cache_dir));
             Ok(())
         })

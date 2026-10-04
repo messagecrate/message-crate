@@ -1428,8 +1428,9 @@ fn a_missing_attachment_converted_to_sms_backup_plus_is_counted_once() {
 }
 
 /// A conversion whose attachments the output's disk cannot hold stops
-/// before anything is written, with the space it needs, and leaves the
-/// previous output as it was (#1421).
+/// before it writes anything, with the space it needs (#1421). The check
+/// runs after the clean, so what an earlier conversion left in the folder
+/// counts as free, as it will be; the folder is left with only its mark.
 #[test]
 fn a_conversion_the_staging_disk_cannot_hold_is_refused_before_writing() {
     let source = tempfile::tempdir().unwrap();
@@ -1445,7 +1446,6 @@ fn a_conversion_the_staging_disk_cannot_hold_is_refused_before_writing() {
     sink.finish(&mut ExportReport::default()).unwrap();
     let destination = tempfile::tempdir().unwrap();
     write_fixture(destination.path(), OutputFormat::Json);
-    let previous = snapshot(destination.path());
 
     let err = convert_export(
         source.path(),
@@ -1458,5 +1458,8 @@ fn a_conversion_the_staging_disk_cannot_hold_is_refused_before_writing() {
             .starts_with("Not enough space on the staging disk: this backup needs about "),
         "{err}"
     );
-    assert_eq!(snapshot(destination.path()), previous);
+    assert_eq!(
+        snapshot(destination.path()),
+        [(PathBuf::from(".message-crate-export"), Vec::new())]
+    );
 }

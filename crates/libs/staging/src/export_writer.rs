@@ -1,7 +1,7 @@
 //! The shared write tail every exporter used to copy: sink opening, the
 //! queue-or-sink decision, and both drain arms.
 
-use crate::headroom::{Disk, check_headroom};
+use crate::headroom::{Disk, bytes_to_copy, check_headroom};
 use crate::spool::AttachmentSpool;
 use crate::write_queue::{
     AttachmentSource, ConversationUnit, WriteQueueOptions, drain_units, load_attachment_source,
@@ -123,7 +123,7 @@ impl ExportWriter {
     #[must_use]
     pub fn with_spool(mut self, cache_dir: &Path) -> Self {
         if self.copy_attachments {
-            self.spool = Some(AttachmentSpool::new(cache_dir));
+            self.spool = Some(AttachmentSpool::new(cache_dir, Some(&self.output_dir)));
         }
         self
     }
@@ -256,18 +256,23 @@ impl ExportWriter {
         let mut documents = documents;
         // Gather sources in flat document order; staging loads by that index.
         let mut sources: Vec<AttachmentSource> = Vec::new();
-        let mut needed: u64 = 0;
+        let mut sizes: Vec<(Option<String>, u64)> = Vec::new();
         for doc in &mut documents {
             for msg in &mut doc.messages {
                 for att in &mut msg.attachments {
                     let (source, hint) = source_for(att);
                     if !matches!(source, AttachmentSource::Missing) {
-                        needed = needed.saturating_add(hint.unwrap_or(0));
+                        sizes.push((att.digest_sha256.clone(), hint.unwrap_or(0)));
                     }
                     sources.push(source);
                 }
             }
         }
+        let needed = bytes_to_copy(
+            sizes
+                .iter()
+                .map(|(digest, size)| (digest.as_deref(), *size)),
+        );
         // The same check the queue arm makes, before anything is written:
         // the copies need room on the disk that holds the output. A spool
         // on that disk has already taken its share of what is free.
@@ -305,6 +310,7 @@ impl ExportWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use message_crate_core::testutil::names_in;
     use std::fs;
 
     fn transforms(obfuscate: bool) -> ExportTransforms {
@@ -393,16 +399,6 @@ mod tests {
         }
     }
 
-    /// The names in `dir`, sorted.
-    fn names(dir: &Path) -> Vec<String> {
-        let mut names: Vec<String> = fs::read_dir(dir)
-            .unwrap()
-            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-            .collect();
-        names.sort();
-        names
-    }
-
     /// Every format that is not JSON Lines checks the staging disk for room
     /// before it writes, as the JSON Lines queue does: an attachment no disk
     /// could hold stops the run with the space it needs, and the output
@@ -435,12 +431,12 @@ mod tests {
                 "{format:?}: {text}"
             );
             assert_eq!(
-                names(tmp.path()),
+                names_in(tmp.path()),
                 [".message-crate-export", "attachments"],
                 "{format:?}"
             );
             assert!(
-                names(&tmp.path().join("attachments")).is_empty(),
+                names_in(&tmp.path().join("attachments")).is_empty(),
                 "{format:?}"
             );
         }
@@ -467,7 +463,7 @@ mod tests {
             "{}",
             spooled.display()
         );
-        assert_eq!(names(&out), [".message-crate-export", "attachments"]);
+        assert_eq!(names_in(&out), [".message-crate-export", "attachments"]);
 
         let mut doc = document_with_bytes();
         let att = &mut doc.messages[0].attachments[0];

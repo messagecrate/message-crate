@@ -14,7 +14,7 @@ use message_ir_format::{
     read_conversation_eml_dir, read_conversation_json, read_conversation_jsonl,
     read_conversation_mbox,
 };
-use message_staging::{AttachmentSpool, Disk, check_headroom};
+use message_staging::{AttachmentSpool, Disk, bytes_to_copy, check_headroom};
 use sms_backup_plus_exporter::SmsBackupPlusArchive;
 use sms_backup_restore_exporter::{ReadOptions, SbrArchive, read_backup, stage_read_attachments};
 use std::collections::HashSet;
@@ -109,21 +109,23 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
         bail!("no conversations loaded from {}", input_dir.display());
     }
 
+    clean_previous_ir_output(&config.output)?;
+
     // Every attachment the conversion copies is counted against the disk
-    // that holds the output before anything is written there: the files
-    // copied from the input, the spooled ones staged from a backup, and the
-    // bytes a mail export held.
+    // that holds the output before anything is written there, and after the
+    // clean has freed what an earlier conversion left: the files copied
+    // from the input, the spooled ones staged from a backup, and the bytes
+    // a mail export held.
     if copy_attachments {
-        let needed: u64 = documents
-            .iter()
-            .flat_map(|doc| doc.messages.iter())
-            .flat_map(|msg| msg.attachments.iter())
-            .filter_map(attachment_size_hint)
-            .sum();
+        let needed = bytes_to_copy(
+            documents
+                .iter()
+                .flat_map(|doc| doc.messages.iter())
+                .flat_map(|msg| msg.attachments.iter())
+                .filter_map(|att| Some((att.digest_sha256.as_deref(), attachment_size_hint(att)?))),
+        );
         check_headroom(&config.output, needed, Disk::Staging)?;
     }
-
-    clean_previous_ir_output(&config.output)?;
 
     if copy_attachments {
         copy_attachments_dir(input_dir, &config.output)?;
@@ -290,7 +292,9 @@ impl SmsBackupRead {
             input: input.to_path_buf(),
             attachments_dir: output.join("attachments"),
             output,
-            spool: copy_attachments.then(|| AttachmentSpool::new(cache_dir)),
+            // No copy folder: the output still holds an earlier conversion
+            // until it is cleaned, so the copy is checked after the clean.
+            spool: copy_attachments.then(|| AttachmentSpool::new(cache_dir, None)),
         }
     }
 

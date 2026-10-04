@@ -183,18 +183,9 @@ fn restrict_to_owner(_folder: &Path) -> Result<()> {
 mod tests {
     use std::fs;
 
-    use super::{ATTACHMENT_SPOOL_FOLDER, IMESSAGE_READER_FOLDER, LOCK, ScratchDir, sweep_scratch};
+    use crate::testutil::names_in;
 
-    /// The names under `root`, sorted, without the root's lock file.
-    fn entries(root: &std::path::Path) -> Vec<String> {
-        let mut names: Vec<String> = fs::read_dir(root)
-            .unwrap()
-            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-            .filter(|name| name != LOCK)
-            .collect();
-        names.sort();
-        names
-    }
+    use super::{ATTACHMENT_SPOOL_FOLDER, IMESSAGE_READER_FOLDER, LOCK, ScratchDir, sweep_scratch};
 
     /// A request's folder sits under the root and is gone, with what the
     /// reader decrypted into it, once the request ends.
@@ -207,9 +198,9 @@ mod tests {
 
         drop(scratch);
         assert!(
-            entries(root.path()).is_empty(),
+            names_in(root.path()).is_empty(),
             "{:?}",
-            entries(root.path())
+            names_in(root.path())
         );
     }
 
@@ -230,7 +221,7 @@ mod tests {
 
         let scratch = ScratchDir::create(root.path()).unwrap();
         let own = scratch.path().file_name().unwrap().to_string_lossy();
-        assert_eq!(entries(root.path()), vec![own.into_owned()]);
+        assert_eq!(names_in(root.path()), vec![own.into_owned()]);
     }
 
     /// A request still running keeps its folder while another starts.
@@ -303,8 +294,8 @@ mod tests {
                     .into_owned(),
             ]
         };
-        assert_eq!(entries(&spool_root), own(&running_spool));
-        assert_eq!(entries(&reader_root), own(&running_reader));
+        assert_eq!(names_in(&spool_root), own(&running_spool));
+        assert_eq!(names_in(&reader_root), own(&running_reader));
         assert!(running_spool.path().join("e3b0c442").exists());
         assert!(
             cache.path().join("unrelated").exists(),

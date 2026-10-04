@@ -26,7 +26,7 @@ fn read_with_bytes(
     owners: &[String],
 ) -> (Vec<ConversationDocument>, crate::ReadReport) {
     let spool_dir = tempfile::tempdir().unwrap();
-    let spool = AttachmentSpool::new(spool_dir.path());
+    let spool = AttachmentSpool::new(spool_dir.path(), None);
     let (mut docs, report) = crate::read_backup(path, read_options(owners, &spool)).unwrap();
     for att in docs
         .iter_mut()

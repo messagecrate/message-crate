@@ -247,14 +247,13 @@ released versions carry their date on the heading.
   first.** Reading an encrypted iPhone backup decrypts its message
   database, and reading an SMS Backup & Restore, GO SMS Pro or SMS Backup+
   file sets its attachments aside, both as plain copies. These working
-  files used to sit in the output folder, and an app closed or stopped
+  files used to sit in the Staging Directory, and an app closed or stopped
   mid-run left them there until a later run used the same folder. They now
   sit in the app's cache folder, are deleted when the run ends, whether it
   finished or failed, and are deleted when the app next starts if it was
-  stopped. Before it writes, every output format now checks that the disk
-  holding the output and the disk holding the cache folder have room, and
-  stops with the space it needs; before, only an import to the server
-  checked, after the attachments were already set aside.
+  stopped. Before it writes, Staging now checks that the disk holding the
+  Staging Directory and the disk holding the cache folder have room, and
+  stops with the space it needs while it reads the backup, not after.
 - 2026-10-04 **A discarded import keeps its errors, and an import keeps its
   converted files when they cannot be read back.** Discarding an import,
   or cancelling it at a Review, recorded it with no errors, though it had
@@ -572,6 +571,13 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-04 **Every format checks for room before it writes.** Only an
+  import to the server used to check for free disk space; writing CSV,
+  JSON, EML, MBOX or SMS Backup & Restore XML, and **Convert** in
+  Settings, failed part-way with a write error when the disk filled. They
+  now check first and stop with the space they need. **Convert** from an
+  SMS Backup & Restore backup also sets the backup's attachments aside in
+  the app's cache folder, not in the folder it writes to.
 - 2026-10-04 **A conversion can no longer start in the middle of an Import
   Run or an export.** **Convert** in Settings stayed disabled only while one
   of the run's Stages was running, so it could be started while an Import

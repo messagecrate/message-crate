@@ -31,7 +31,7 @@ use message_crate_core::{
 };
 use message_ir::{ConversationDocument, IrAttachment, give_each_document_its_own_file};
 
-use crate::headroom::{Disk, check_headroom};
+use crate::headroom::{Disk, bytes_to_copy, check_headroom};
 use crate::transcode::{TranscodeOptions, transcode_staged};
 use message_ir_format::{is_complete_file, write_format};
 
@@ -606,11 +606,14 @@ fn check_units_headroom(
     // Summed before any resume skip: over-asking on a resumed run is the
     // conservative direction, and such a run usually has most of those bytes
     // on disk already.
-    let needed: u64 = units
-        .iter()
-        .flat_map(|u| u.attachments.iter())
-        .filter_map(|a| a.size_hint)
-        .sum();
+    let needed = bytes_to_copy(units.iter().flat_map(|unit| {
+        unit.attachments.iter().filter_map(|a| {
+            let digest = unit.doc.messages[a.message_index].attachments[a.attachment_index]
+                .digest_sha256
+                .as_deref();
+            Some((digest, a.size_hint?))
+        })
+    }));
     check_headroom(output_dir, needed, Disk::Staging)
 }
 

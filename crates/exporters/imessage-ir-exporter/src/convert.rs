@@ -33,7 +33,7 @@ use message_ir::{
 use message_ir_format::FormatSink;
 use message_staging::{
     AttachmentSource, ConversationUnit, Disk, ExportWriter, ExportWriterParts, WriteQueueOptions,
-    check_headroom,
+    bytes_to_copy, check_headroom,
 };
 
 use crate::run::{AttachmentEmbed, ExportOptions};
@@ -196,17 +196,19 @@ pub(crate) fn export(
 
 /// The bytes of every attachment collected, as far as the program could
 /// say: what a staging step or a mail archive writes.
+/// None of them has a digest before it is read, so each is counted.
 fn attachment_bytes(collected: &Collected) -> u64 {
-    collected
-        .conversations
-        .values()
-        .flat_map(|convo| convo.attachment_loads.iter())
-        .map(|load| match load {
-            AttachmentLoad::Path { size_hint, .. } => size_hint.unwrap_or(0),
-            AttachmentLoad::Bytes(bytes) => bytes.len() as u64,
-            AttachmentLoad::Missing => 0,
-        })
-        .fold(0, u64::saturating_add)
+    bytes_to_copy(
+        collected
+            .conversations
+            .values()
+            .flat_map(|convo| convo.attachment_loads.iter())
+            .map(|load| match load {
+                AttachmentLoad::Path { size_hint, .. } => (None, size_hint.unwrap_or(0)),
+                AttachmentLoad::Bytes(bytes) => (None, bytes.len() as u64),
+                AttachmentLoad::Missing => (None, 0),
+            }),
+    )
 }
 
 /// Formats whose attachments are files under `attachments/` rather than

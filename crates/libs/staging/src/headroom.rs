@@ -8,13 +8,14 @@
 //! disk that fills part-way through fails a run with a bare write error,
 //! often after hours; this check fails it first, with the space it needs.
 
+use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::Result;
 
 /// Slack above the measured need, for the derivative a convert holds in
 /// flight and for whatever else shares the disk.
-pub const DISK_HEADROOM_SLACK: u64 = 64 * 1024 * 1024;
+pub(crate) const DISK_HEADROOM_SLACK: u64 = 64 * 1024 * 1024;
 
 /// Which disk a check is about, for the sentence that names it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -24,6 +25,18 @@ pub enum Disk {
     /// The disk that holds the app's cache folder, where a run's scratch
     /// data goes.
     Cache,
+}
+
+/// The bytes a copy of `attachments` writes: each one's size, given with
+/// its SHA-256 when it is known. Staging writes one file per SHA-256, so an
+/// attachment that appears in many messages is counted once; one with no
+/// digest yet is counted every time, which can only over-ask.
+pub fn bytes_to_copy<'a>(attachments: impl IntoIterator<Item = (Option<&'a str>, u64)>) -> u64 {
+    let mut seen = HashSet::new();
+    attachments
+        .into_iter()
+        .filter(|(digest, _)| digest.is_none_or(|digest| seen.insert(digest)))
+        .fold(0, |total, (_, size)| total.saturating_add(size))
 }
 
 /// Refuse a write of `needed` bytes into `dir` that its disk plainly cannot
@@ -79,6 +92,19 @@ mod tests {
         let msg = headroom_shortfall(2 * 1024 * 1024 * 1024, 1024, Disk::Staging).unwrap();
         assert!(msg.contains("free"), "{msg}");
         assert!(msg.contains("GB"), "{msg}");
+    }
+
+    /// One payload in many messages is written once, so it is counted once.
+    #[test]
+    fn bytes_to_copy_counts_each_digest_once() {
+        let items = [
+            (Some("a"), 5),
+            (Some("a"), 5),
+            (Some("b"), 7),
+            (None, 3),
+            (None, 3),
+        ];
+        assert_eq!(bytes_to_copy(items), 5 + 7 + 3 + 3);
     }
 
     /// A short cache disk is named as the cache folder's, not the staging

@@ -1,4 +1,5 @@
 use super::*;
+use message_crate_core::testutil::names_in;
 use message_crate_core::{AppleConfig, MediaConfig, OutputFormat};
 use std::{fs, path::Path};
 
@@ -715,7 +716,7 @@ fn the_scratch_folder_is_under_the_cache_folder_and_deleted_after() {
         reader_root.display()
     );
     assert!(!sent.scratch_dir.exists());
-    assert_eq!(entries(&reader_root), [".lock"]);
+    assert!(names_in(&reader_root).is_empty());
     let mut left: Vec<String> = fs::read_dir(&config.output)
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
@@ -725,16 +726,6 @@ fn the_scratch_folder_is_under_the_cache_folder_and_deleted_after() {
         left,
         ["+15555550122.jsonl", ".message-crate-export", "attachments"]
     );
-}
-
-/// The names in `dir`, sorted.
-fn entries(dir: &Path) -> Vec<String> {
-    let mut names: Vec<String> = fs::read_dir(dir)
-        .unwrap()
-        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
-        .collect();
-    names.sort();
-    names
 }
 
 /// A run that fails removes its scratch folder, as one that completes
@@ -767,12 +758,12 @@ fn a_failed_run_leaves_no_scratch_folder() {
     assert!(
         !config.output.join(".imessage-reader").exists(),
         "{:?}",
-        entries(&config.output)
+        names_in(&config.output)
     );
     let reader_root = config
         .cache_dir
         .join(message_crate_core::IMESSAGE_READER_FOLDER);
-    assert_eq!(entries(&reader_root), [".lock"]);
+    assert!(names_in(&reader_root).is_empty());
 }
 
 /// The databases the reader decrypts out of an encrypted backup are
@@ -818,7 +809,7 @@ fn a_decrypt_the_cache_disk_cannot_hold_is_refused_before_the_reader_starts() {
     let reader_root = config
         .cache_dir
         .join(message_crate_core::IMESSAGE_READER_FOLDER);
-    assert_eq!(entries(&reader_root), [".lock"]);
+    assert!(names_in(&reader_root).is_empty());
 }
 
 /// Every format the Apple Messages export writes checks the staging disk
@@ -865,12 +856,12 @@ fn every_format_refuses_attachments_the_staging_disk_cannot_hold() {
             "{format:?}: {err:#}"
         );
         assert_eq!(
-            entries(&config.output),
+            names_in(&config.output),
             [".message-crate-export", "attachments"],
             "{format:?}"
         );
         assert!(
-            entries(&config.output.join("attachments")).is_empty(),
+            names_in(&config.output.join("attachments")).is_empty(),
             "{format:?}"
         );
     }

@@ -33,6 +33,9 @@ use crate::write_queue::AttachmentSource;
 pub struct AttachmentSpool {
     /// The spool's scratch root, under the app's cache folder.
     root: PathBuf,
+    /// The folder the spooled payloads are copied into once the backup is
+    /// read, when the spool is told; see [`AttachmentSpool::new`].
+    copy_dir: Option<PathBuf>,
     state: Mutex<SpoolState>,
 }
 
@@ -59,9 +62,17 @@ impl SpoolState {
 impl AttachmentSpool {
     /// A spool whose folder goes under `cache_dir`, the app's cache folder.
     /// Nothing is made on disk until the first payload arrives.
-    pub fn new(cache_dir: &Path) -> Self {
+    ///
+    /// `copy_dir` is the folder the payloads will be copied into once the
+    /// backup is read. When it is given, each payload also checks that the
+    /// disk holding it still has room for the copy of everything spooled so
+    /// far, so a run that will not fit stops while the backup is read, not
+    /// after. When the cache folder is on that same disk, the spool has
+    /// already taken its share of what is free.
+    pub fn new(cache_dir: &Path, copy_dir: Option<&Path>) -> Self {
         Self {
             root: cache_dir.join(ATTACHMENT_SPOOL_FOLDER),
+            copy_dir: copy_dir.map(Path::to_path_buf),
             state: Mutex::new(SpoolState::default()),
         }
     }
@@ -70,8 +81,10 @@ impl AttachmentSpool {
     /// A payload already spooled is not written again.
     ///
     /// The disk that holds the spool is checked for room before each
-    /// payload, so a disk that fills while the backup is read fails the run
-    /// with the space it needs rather than a bare write error.
+    /// payload, and the disk that holds the copy for the copy of every
+    /// payload spooled so far, so a disk that fills while the backup is read
+    /// fails the run with the space it needs rather than a bare write
+    /// error.
     ///
     /// # Errors
     ///
@@ -91,6 +104,15 @@ impl AttachmentSpool {
                 .to_path_buf(),
         };
         check_headroom(&folder, bytes.len() as u64, Disk::Cache)?;
+        if let Some(copy_dir) = &self.copy_dir {
+            let copied = state
+                .sizes
+                .values()
+                .fold(bytes.len() as u64, |total, size| {
+                    total.saturating_add(*size)
+                });
+            check_headroom(copy_dir, copied, Disk::Staging)?;
+        }
         let path = folder.join(&digest);
         // Written under a temporary name first, so a file under a digest is
         // always the whole payload.
@@ -128,22 +150,12 @@ impl AttachmentSpool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// The names under `dir`, sorted, without lock files.
-    fn entries(dir: &Path) -> Vec<String> {
-        let mut names: Vec<String> = fs::read_dir(dir)
-            .unwrap()
-            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
-            .filter(|name| name != ".lock")
-            .collect();
-        names.sort();
-        names
-    }
+    use message_crate_core::testutil::names_in;
 
     #[test]
     fn a_payload_is_on_disk_under_its_digest_until_the_spool_is_dropped() {
         let cache = tempfile::tempdir().unwrap();
-        let spool = AttachmentSpool::new(cache.path());
+        let spool = AttachmentSpool::new(cache.path(), None);
         let digest = spool.put(b"hello").unwrap();
         assert_eq!(
             digest,
@@ -156,15 +168,15 @@ mod tests {
         assert_eq!(spool.size(&digest), Some(5));
         assert!(spool.path("0000").is_none());
         drop(spool);
-        assert!(entries(&cache.path().join(ATTACHMENT_SPOOL_FOLDER)).is_empty());
+        assert!(names_in(&cache.path().join(ATTACHMENT_SPOOL_FOLDER)).is_empty());
     }
 
     /// A spool that is never written to makes nothing on disk.
     #[test]
     fn an_unused_spool_makes_no_folder() {
         let cache = tempfile::tempdir().unwrap();
-        drop(AttachmentSpool::new(cache.path()));
-        assert!(entries(cache.path()).is_empty());
+        drop(AttachmentSpool::new(cache.path(), None));
+        assert!(names_in(cache.path()).is_empty());
     }
 
     /// What a killed run's spool left is deleted when the next spool
@@ -172,7 +184,7 @@ mod tests {
     #[test]
     fn a_new_spool_deletes_a_killed_run_s_and_keeps_a_running_one() {
         let cache = tempfile::tempdir().unwrap();
-        let running = AttachmentSpool::new(cache.path());
+        let running = AttachmentSpool::new(cache.path(), None);
         let kept = running.put(b"kept").unwrap();
         let killed = cache
             .path()
@@ -182,7 +194,7 @@ mod tests {
         fs::write(killed.join(".lock"), b"").unwrap();
         fs::write(killed.join("stale"), b"x").unwrap();
 
-        let spool = AttachmentSpool::new(cache.path());
+        let spool = AttachmentSpool::new(cache.path(), None);
         spool.put(b"new").unwrap();
         assert!(!killed.exists());
         assert!(running.path(&kept).unwrap().exists());
@@ -191,7 +203,7 @@ mod tests {
     #[test]
     fn a_spooled_attachment_is_read_from_its_file() {
         let cache = tempfile::tempdir().unwrap();
-        let spool = AttachmentSpool::new(cache.path());
+        let spool = AttachmentSpool::new(cache.path(), None);
         let digest = spool.put(b"photo").unwrap();
         let mut att = IrAttachment {
             path: None,

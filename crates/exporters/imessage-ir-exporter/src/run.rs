@@ -247,7 +247,8 @@ fn options_from_export_config(config: &ExporterConfig) -> Result<ExportOptions> 
 /// covers. Nothing is decrypted from a Mac database or a backup that is not
 /// encrypted.
 fn decrypted_bytes(source: &Source) -> u64 {
-    if source.platform != Platform::Ios || source.backup_password.is_none() {
+    if source.platform != Platform::Ios || ios_backup_encrypted_flag(&source.db_path) != Some(true)
+    {
         return 0;
     }
     [MESSAGES_DB_IN_IOS_BACKUP, CONTACTS_DB_IN_IOS_BACKUP]

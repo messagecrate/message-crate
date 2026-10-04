@@ -12,7 +12,7 @@ mod process;
 mod progress;
 mod run;
 mod scratch;
-#[cfg(feature = "testutil")]
+#[cfg(any(test, feature = "testutil"))]
 pub mod testutil;
 mod transforms;
 
