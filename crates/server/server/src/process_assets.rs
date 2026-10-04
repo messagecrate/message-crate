@@ -247,13 +247,19 @@ impl<'a> AccountPass<'a> {
                 preview_file(row.derived_assets_path.as_deref(), &self.converted_dir)
             },
         };
-        let kind = match plan(row, self.opts, on_disk)? {
+        let kind = match plan(row, self.opts, on_disk) {
             Plan::RemoveIncomplete => return self.remove_incomplete(row, &source_path),
             Plan::Skip(SkipReason::AlreadyDerived) => {
                 self.share_existing_preview(conn, row).await?;
                 return Ok(Outcome::Skipped);
             }
             Plan::Skip(_) => return Ok(Outcome::Skipped),
+            Plan::MissingOriginal { damaged_preview } => {
+                if damaged_preview {
+                    self.drop_damaged_preview(conn, row).await?;
+                }
+                bail!("missing original");
+            }
             Plan::Derive(kind) => kind,
         };
         if let (PreviewFile::Damaged, Some(rel)) =
@@ -315,6 +321,46 @@ impl<'a> AccountPass<'a> {
             "{} -> {} (existing preview)",
             self.label(row),
             blob.assets_path
+        );
+        Ok(())
+    }
+
+    /// Stop naming the damaged Preview `row` names and delete it, or say so
+    /// in a dry run. Its original is missing, so it cannot be converted
+    /// again, and the rows must not go on naming a Preview the server would
+    /// serve as if whole. Every row of the account that names it is cleared,
+    /// then the file is deleted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the rows cannot be updated or the file cannot
+    /// be deleted.
+    async fn drop_damaged_preview(
+        &self,
+        conn: &mut SqliteConnection,
+        row: &AssetRow,
+    ) -> Result<()> {
+        let Some(rel) = row.derived_assets_path.as_deref() else {
+            return Ok(());
+        };
+        if self.opts.dry_run {
+            println!(
+                "[dry-run] would drop the damaged Preview {rel} of {}: its original is missing",
+                self.label(row)
+            );
+            return Ok(());
+        }
+        clear_derived(conn, self.account_id, rel).await?;
+        if let Some(path) = crate::asset_store::join_under(&self.converted_dir, rel)
+            && path.is_file()
+        {
+            crate::asset_store::remove_file(&path)
+                .with_context(|| format!("remove damaged Preview {}", path.display()))?;
+        }
+        println!(
+            "{}: Preview {rel} does not hash to the fingerprint in its name and the original \
+             is missing; dropped the Preview",
+            self.label(row)
         );
         Ok(())
     }
@@ -473,6 +519,32 @@ async fn update_derived(
     Ok(())
 }
 
+/// Clear the derived columns of every attachment row of the account that
+/// names the Preview at `derived_assets_path`, from every source.
+async fn clear_derived(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    derived_assets_path: &str,
+) -> Result<()> {
+    sqlx::query(
+        r"
+        UPDATE attachments
+        SET derived_sha256 = NULL, derived_assets_path = NULL, derived_mime_type = NULL
+        WHERE derived_assets_path = $1
+          AND message_id IN (
+            SELECT m.id FROM messages m
+            JOIN conversations c ON c.id = m.conversation_id
+            WHERE c.account_id = $2
+          )
+        ",
+    )
+    .bind(derived_assets_path)
+    .bind(account_id)
+    .execute(&mut *conn)
+    .await?;
+    Ok(())
+}
+
 /// Incomplete iMessage/SMS transfers and aborted uploads use a `.part` suffix.
 fn is_part_path(path: &str) -> bool {
     crate::asset_store::has_part_extension(Path::new(path))
@@ -487,6 +559,10 @@ enum Plan {
     Skip(SkipReason),
     /// Convert the original for the browser as this kind of media.
     Derive(Kind),
+    /// A conversion is wanted and the original is missing: count the
+    /// attachment as a failure. When the Preview is damaged it cannot be
+    /// converted again, so stop naming it and delete it first.
+    MissingOriginal { damaged_preview: bool },
 }
 
 /// Why a blob is left as it is.
@@ -516,7 +592,7 @@ enum PreviewFile {
     Missing,
     /// A file is there, but its bytes do not hash to the fingerprint in its
     /// name, such as a Preview cut short by a killed run. It is converted
-    /// again as if missing.
+    /// again as if missing, or dropped when its original is missing.
     Damaged,
     /// A file is there and its bytes hash to the fingerprint in its name.
     Intact,
@@ -524,20 +600,16 @@ enum PreviewFile {
 
 /// Decide what one blob needs from the row, the options and what is on disk.
 /// No IO happens here: `on_disk` carries the facts the caller read.
-///
-/// # Errors
-///
-/// Returns an error when a conversion is wanted and the original is missing.
-fn plan(row: &AssetRow, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> Result<Plan> {
+fn plan(row: &AssetRow, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> Plan {
     if is_part_path(&row.assets_path) {
-        return Ok(Plan::RemoveIncomplete);
+        return Plan::RemoveIncomplete;
     }
     let Some(kind) = media::kind_of(
         Path::new(&row.assets_path),
         row.mime_type.as_deref(),
         &row.name_hints(),
     ) else {
-        return Ok(Plan::Skip(SkipReason::NotMedia));
+        return Plan::Skip(SkipReason::NotMedia);
     };
     let wanted = match kind {
         Kind::Image => !opts.skip_image,
@@ -545,15 +617,17 @@ fn plan(row: &AssetRow, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> Result<
         Kind::Audio => !opts.skip_audio,
     };
     if !wanted {
-        return Ok(Plan::Skip(SkipReason::KindDisabled));
+        return Plan::Skip(SkipReason::KindDisabled);
     }
     if on_disk.preview == PreviewFile::Intact && !opts.force {
-        return Ok(Plan::Skip(SkipReason::AlreadyDerived));
+        return Plan::Skip(SkipReason::AlreadyDerived);
     }
     if !on_disk.original_exists {
-        bail!("missing original");
+        return Plan::MissingOriginal {
+            damaged_preview: on_disk.preview == PreviewFile::Damaged,
+        };
     }
-    Ok(Plan::Derive(kind))
+    Plan::Derive(kind)
 }
 
 /// The state of the Preview `derived_assets_path` names under
