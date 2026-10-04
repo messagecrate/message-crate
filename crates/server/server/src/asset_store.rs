@@ -33,8 +33,14 @@
 //! lock held. Once a file is out of its place in the store, a run that
 //! starts is told it is missing and uploads it again, so deleting the moved
 //! copy later takes nothing a run needs. A file that cannot be moved is
-//! removed in place, under the lock. A `.removing/` directory a
-//! crash left behind is deleted by the next [`sweep_unreferenced`].
+//! removed in place, under the lock. A `.removing/` directory a crash left
+//! behind is deleted by the next [`sweep_unreferenced`].
+//!
+//! A removal moves nothing for an account whose row is gone: deleting the
+//! account removes its whole directory with no lock held, and a file moved
+//! into a new `.removing/` meanwhile would leave that directory behind. For
+//! the same reason `.removing/<id>/` is made only when the first file
+//! moves, and `.removing/` with `create_dir`, never `create_dir_all`.
 //!
 //! A removal that fails is logged and the rest go on. The database rows are
 //! the record, so a request answers for what the database did, and a file
@@ -87,8 +93,15 @@ fn removing_dir(paths: &PathsConfig, account_id: i64) -> PathBuf {
 struct RemovalDir {
     account_id: i64,
     root: PathBuf,
-    dir: Option<PathBuf>,
-    unusable: bool,
+    state: RemovalDirState,
+}
+
+/// Whether a [`RemovalDir`] has been made yet.
+enum RemovalDirState {
+    NotMade,
+    Made(PathBuf),
+    /// It could not be made, so the removal removes its files in place.
+    Unusable,
 }
 
 impl RemovalDir {
@@ -96,8 +109,7 @@ impl RemovalDir {
         Self {
             account_id,
             root: removing_dir(paths, account_id),
-            dir: None,
-            unusable: false,
+            state: RemovalDirState::NotMade,
         }
     }
 
@@ -106,31 +118,37 @@ impl RemovalDir {
     /// place. `.removing/` is made with `create_dir`, never
     /// `create_dir_all`: a missing account directory belongs to an account
     /// that was deleted, and must not come back.
-    fn get(&mut self) -> Option<&Path> {
-        if self.dir.is_none() && !self.unusable {
+    fn make_or_reuse(&mut self) -> Option<&Path> {
+        if matches!(self.state, RemovalDirState::NotMade) {
             let made = match std::fs::create_dir(&self.root) {
                 Err(error) if error.kind() != io::ErrorKind::AlreadyExists => Err(error),
                 _ => tempfile::tempdir_in(&self.root).map(tempfile::TempDir::keep),
             };
-            match made {
-                Ok(dir) => self.dir = Some(dir),
+            self.state = match made {
+                Ok(dir) => RemovalDirState::Made(dir),
                 Err(error) => {
-                    self.unusable = true;
                     tracing::warn!(
                         account_id = self.account_id,
                         path = %self.root.display(),
                         %error,
                         "a directory for removed files could not be made; they are removed in place"
                     );
+                    RemovalDirState::Unusable
                 }
-            }
+            };
         }
-        self.dir.as_deref()
+        match &self.state {
+            RemovalDirState::Made(dir) => Some(dir),
+            _ => None,
+        }
     }
 
     /// The directory, if any file was moved into it.
     fn into_dir(self) -> Option<PathBuf> {
-        self.dir
+        match self.state {
+            RemovalDirState::Made(dir) => Some(dir),
+            _ => None,
+        }
     }
 }
 
@@ -148,7 +166,7 @@ fn take_out(
         if std::fs::symlink_metadata(path).is_err_and(|e| e.kind() == io::ErrorKind::NotFound) {
             return true;
         }
-        if let (Some(dir), Some(name)) = (removal.get(), path.file_name()) {
+        if let (Some(dir), Some(name)) = (removal.make_or_reuse(), path.file_name()) {
             match gone_is_ok(std::fs::rename(path, dir.join(name))) {
                 Ok(()) => return true,
                 Err(error) => tracing::warn!(
@@ -343,9 +361,20 @@ pub(crate) async fn remove_all_attachment_files(
     .await;
 }
 
+/// Whether files of `account_id` may be taken out of its store now: its
+/// account row exists and it has no running Import Run. Call it with the
+/// write lock held (see the module notes).
+async fn may_take_out(conn: &mut SqliteConnection, account_id: i64) -> Result<bool, sqlx::Error> {
+    let exists = sqlx::query("SELECT 1 FROM accounts WHERE id = $1")
+        .bind(account_id)
+        .fetch_optional(&mut *conn)
+        .await?
+        .is_some();
+    Ok(exists && !has_running_import(conn, account_id).await?)
+}
+
 /// Run `move_out` on the blocking pool while a connection from `pool`
-/// holds the database write lock, unless `account_id` has a running Import
-/// Run, then delete what it moved once the lock is let go. `move_out` gets
+/// holds the database write lock, unless [`may_take_out`] says no, then delete what it moved once the lock is let go. `move_out` gets
 /// the removal's `.removing/<id>/` directory to move files into (see the
 /// module notes). Starting a run writes its row, so no run can start until
 /// `move_out` has finished. Every other writer waits for `move_out` too,
@@ -390,7 +419,7 @@ async fn unless_import_running_then<F, D>(
     let task = tokio::spawn(async move {
         let mut conn = pool.acquire().await?;
         let mut tx = begin_write(&mut conn).await?;
-        if has_running_import(&mut tx, account_id).await? {
+        if !may_take_out(&mut tx, account_id).await? {
             return Ok(());
         }
         let removal_dir = tokio::task::spawn_blocking(move || {
@@ -523,7 +552,7 @@ async fn take_out_unnamed(
     account_id: i64,
 ) -> anyhow::Result<(u64, Vec<PathBuf>)> {
     let mut tx = begin_write(conn).await?;
-    if has_running_import(&mut tx, account_id).await? {
+    if !may_take_out(&mut tx, account_id).await? {
         return Ok((0, Vec::new()));
     }
     let named = named_fingerprints(&mut tx, account_id).await?;
@@ -537,13 +566,13 @@ async fn take_out_unnamed(
             &paths.assets_dir_for_account(account_id),
             &named,
             0,
-            Some(&mut removal),
+            &mut removal,
         ) + sweep_store_dir(
             account_id,
             &paths.assets_converted_dir_for_account(account_id),
             &named,
             PREVIEW_GRACE_SECS,
-            Some(&mut removal),
+            &mut removal,
         );
         to_delete.extend(removal.into_dir());
         (removed, to_delete)
@@ -643,7 +672,7 @@ fn sweep_store_dir(
     store_dir: &Path,
     named: &HashSet<String>,
     grace_secs: u64,
-    mut removal: Option<&mut RemovalDir>,
+    removal: &mut RemovalDir,
 ) -> u64 {
     let now = SystemTime::now();
     let Ok(shards) = std::fs::read_dir(store_dir) else {
@@ -674,7 +703,7 @@ fn sweep_store_dir(
             if grace_secs > 0 && !modified_at_least(&path, now, grace_secs).unwrap_or(false) {
                 continue;
             }
-            if take_out(account_id, &path, removal.as_deref_mut(), remove_file) {
+            if take_out(account_id, &path, Some(removal), remove_file) {
                 removed += 1;
             }
         }

@@ -124,16 +124,35 @@ fn the_sweep_leaves_a_fresh_unnamed_preview_for_its_row() {
     }
     make_abandoned(&old);
 
-    let removed = sweep_store_dir(1, dir.path(), &HashSet::new(), PREVIEW_GRACE_SECS, None);
+    let paths = PathsConfig {
+        db: dir.path().join("db"),
+        data_dir: dir.path().join("data"),
+        assets_dir: "assets".to_string(),
+        assets_converted_dir: "assets_converted".to_string(),
+    };
+    let mut removal = RemovalDir::new(&paths, 1);
+    let removed = sweep_store_dir(
+        1,
+        dir.path(),
+        &HashSet::new(),
+        PREVIEW_GRACE_SECS,
+        &mut removal,
+    );
 
     assert_eq!(removed, 1);
     assert!(fresh.is_file(), "a Preview its row may not name yet stays");
     assert!(!old.exists(), "an old unnamed Preview goes");
 }
 
-/// The account the database-backed tests below remove files for. No row
-/// needs it: the removals read the import runs and attachments of an id.
+/// The account the database-backed tests below remove files for.
 const ACCOUNT: i64 = 7;
+
+/// A fixture with [`ACCOUNT`]'s row in it.
+async fn fixture_with_removal_account() -> crate::test_support::TestFixture {
+    let fixture = crate::test_support::test_fixture().await;
+    fixture.account_with_id(ACCOUNT, "removals").await;
+    fixture
+}
 
 /// An unnamed original of [`ACCOUNT`] in its shard, returning its path.
 fn stored_original(paths: &PathsConfig) -> PathBuf {
@@ -185,7 +204,7 @@ async fn writes_promptly(
 /// disk does not make every other writer wait out the busy timeout.
 #[tokio::test]
 async fn another_writer_is_not_blocked_while_removed_files_are_deleted() {
-    let fixture = crate::test_support::test_fixture().await;
+    let fixture = fixture_with_removal_account().await;
     let pool = fixture.state.db.clone();
     let paths = fixture.state.cfg.paths.clone();
     let original = stored_original(&paths);
@@ -223,7 +242,7 @@ async fn another_writer_is_not_blocked_while_removed_files_are_deleted() {
 /// store only after it let go of the write lock.
 #[tokio::test]
 async fn another_writer_is_not_blocked_while_swept_files_are_deleted() {
-    let fixture = crate::test_support::test_fixture().await;
+    let fixture = fixture_with_removal_account().await;
     let pool = fixture.state.db.clone();
     let paths = fixture.state.cfg.paths.clone();
     let original = stored_original(&paths);
@@ -247,11 +266,10 @@ async fn another_writer_is_not_blocked_while_swept_files_are_deleted() {
     assert_eq!(left_in_removing(&paths), Vec::<PathBuf>::new());
 }
 
-/// A removal that finds nothing to move makes no `.removing/` directory,
-/// and so cannot bring back the directory of an account deleted meanwhile.
+/// A removal that finds nothing to move makes no `.removing/` directory.
 #[tokio::test]
 async fn a_removal_with_nothing_to_move_leaves_nothing_on_disk() {
-    let fixture = crate::test_support::test_fixture().await;
+    let fixture = fixture_with_removal_account().await;
     let paths = fixture.state.cfg.paths.clone();
 
     let removed = sweep_unreferenced(&fixture.state.db, &paths, ACCOUNT)
@@ -270,15 +288,39 @@ async fn a_removal_with_nothing_to_move_leaves_nothing_on_disk() {
     assert_eq!(removed, 0);
     assert!(
         !account_dir(&paths, ACCOUNT).exists(),
-        "a missing account directory stays missing"
+        "nothing is made on disk"
     );
+}
+
+/// Deleting an account removes its directory with no lock held, after the
+/// row's delete commits. A removal that gets the lock meanwhile moves
+/// nothing, so it cannot put a `.removing/` directory where that removal
+/// has already looked and leave the account's directory behind.
+#[tokio::test]
+async fn a_removal_for_an_account_whose_row_is_gone_moves_nothing() {
+    let fixture = crate::test_support::test_fixture().await;
+    let paths = fixture.state.cfg.paths.clone();
+    let original = stored_original(&paths);
+
+    let removed = sweep_unreferenced(&fixture.state.db, &paths, ACCOUNT)
+        .await
+        .unwrap();
+    let moved = original.clone();
+    unless_import_running(&fixture.state.db, &paths, ACCOUNT, move |removal| {
+        take_out(ACCOUNT, &moved, Some(removal), remove_file);
+    })
+    .await;
+
+    assert_eq!(removed, 0);
+    assert!(original.is_file(), "the account's own delete removes it");
+    assert!(!removing_dir(&paths, ACCOUNT).exists());
 }
 
 /// #1544: a crash between moving files into `.removing/` and deleting them
 /// leaves them there, and the next sweep deletes them.
 #[tokio::test]
 async fn the_sweep_deletes_a_removing_directory_a_crash_left() {
-    let fixture = crate::test_support::test_fixture().await;
+    let fixture = fixture_with_removal_account().await;
     let paths = fixture.state.cfg.paths.clone();
     let left = removing_dir(&paths, ACCOUNT).join("left-by-a-crash");
     fs::create_dir_all(left.join("inside")).unwrap();
