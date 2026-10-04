@@ -1862,7 +1862,7 @@ async fn a_small_attachment_size_limit_holds_only_the_attachment_uploads() {
     )
     .await;
     let mut batch = String::from(concat!(
-        r#"{"schema_version":6,"export":{"source":"whatsapp","tool":"t","tool_version":"0","owner_identity":"+15555550106","owner_display_name":"Me"},"#,
+        r#"{"schema_version":7,"export":{"source":"whatsapp","tool":"t","tool_version":"0","owner_identity":"+15555550106","owner_display_name":"Me"},"#,
         r#""conversation":{"chat_identifier":"+15555550107","conversation_type":"individual","group_title":null,"#,
         r#""participants":[{"identity":"+15555550107","display_name":null}],"#,
         r#""stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1700000000000,"last_timestamp_unix_ms":1700000000000}}}"#,

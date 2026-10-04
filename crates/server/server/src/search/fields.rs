@@ -22,7 +22,7 @@ pub enum ValueType {
     Count,
     /// A byte size, with comparisons and ranges.
     Size,
-    /// `yes`, `no`, or `any`.
+    /// `yes`, `no`, and `any` where the word lists it.
     Flag,
 }
 
@@ -41,7 +41,7 @@ pub(crate) struct FieldSpec {
 
 const NONE_ANY: &[&str] = &["none", "any"];
 
-/// The twenty-seven words, in the spec's order.
+/// The twenty-eight words, in the spec's order.
 pub(crate) static FIELDS: &[FieldSpec] = &[
     FieldSpec {
         word: "body",
@@ -263,6 +263,14 @@ pub(crate) static FIELDS: &[FieldSpec] = &[
         values: &[],
         help: "how many attachments on the message",
         example: "attachments:>0",
+    },
+    FieldSpec {
+        word: "deleted",
+        value_type: ValueType::Flag,
+        lists: &[M],
+        values: &["yes", "no"],
+        help: "deleted in the source app, or unsent",
+        example: "deleted:yes",
     },
     FieldSpec {
         word: "trashed",

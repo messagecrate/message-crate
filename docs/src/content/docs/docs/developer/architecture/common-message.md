@@ -30,13 +30,13 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
 
 - **Common-message path** (`ConversationDocument` → `message_ir_format::FormatSink`, one of json/jsonl/csv/eml/mbox/xml): all exporters, including iMessage (`imessage-ir-exporter`). Per-chat formats also accept `write_format`; XML uses a single `smses.xml` via the sink.
 - **Media + obfuscate** run inside `FormatSink::finish` for every format (`message_crate_core::ExportTransforms`: none / copy / convert / compress, plus optional obfuscate). When obfuscate is on, exporters skip staging real attachment bytes and convert/compress is not run — only placeholder files are written. Exporters pass transforms from `ExporterConfig.media` / `.obfuscate`; there is no CSV-only post-step. EML / MBOX / XML embed media and drop the staged `attachments/` directory afterward.
-- **Schema version 6 only** (breaking). Version 6 keeps a message's reactions in its own `reactions` list, one shape for every source, where version 5 kept Apple Messages reactions as a JSON value in `imessage.tapbacks`. Version 5 had named every address an identity (`identity`, `identity_type`, `owner_identity`, `sender_identity`, `reactor_identity`) where version 4 said `handle`. Version 5 and older are refused, never upgraded. Typed enums/bags, filled outgoing identity, conversation stats, stable null/`[]` keys. Older common-message JSON is not read — regenerate exports after schema changes.
+- **Schema version 7 only** (breaking). Version 7 keeps a message's mark, Deleted in the source app or Unsent, in its own `deletion`, for every source, where version 6 kept the Apple Messages deleted mark in `imessage.is_deleted`. Version 6 had moved a message's reactions into its own `reactions` list, one shape for every source, where version 5 kept Apple Messages reactions as a JSON value in `imessage.tapbacks`. Version 5 had named every address an identity (`identity`, `identity_type`, `owner_identity`, `sender_identity`, `reactor_identity`) where version 4 said `handle`. Version 6 and older are refused, never upgraded. Typed enums/bags, filled outgoing identity, conversation stats, stable null/`[]` keys. Older common-message JSON is not read — regenerate exports after schema changes.
 
-## Document schema (`schema_version: 6`)
+## Document schema (`schema_version: 7`)
 
 ```json
 {
-  "schema_version": 6,
+  "schema_version": 7,
   "export": {
     "source": "sms-backup-restore",
     "tool": "SMS Backup & Restore",
@@ -114,6 +114,19 @@ Each reaction names its own reactor, who is rarely the author of the message, an
 
 Apple Messages also writes each reaction as a row of its own (`message_kind` `tapback` or `sticker_tapback`), with `imessage.associated_guid`, `tapback_kind` and `tapback_action`. The server reads reactions from `reactions` and skips those rows.
 
+### Deleted in the source app and Unsent
+
+`deletion` says why a message's content is gone in the app it came from:
+
+| Value | Meaning |
+|-------|---------|
+| `deleted_in_source_app` | The person deleted the message in the source app before the backup was made, and the backup still holds it. `text` is whatever text the backup kept. |
+| `unsent` | The sender took the message back for everyone: some part of it was unsent and no part has anything left, so `text` is empty and there are no attachments. |
+
+A message with neither leaves `deletion` out of the file. A message only partly unsent, with text or an attachment left in another part, carries no mark. A marked message is imported, listed and searched like any other; the search word `deleted:` narrows to or away from marked messages.
+
+`Deletion` is defined in `imessage-reader-protocol` beside `Reaction`, for the same reason, and `message_ir::Deletion` is that type. Apple Messages fills it: a message in a chat's recently deleted list is `deleted_in_source_app`, and a message whose every part was unsent is `unsent` rather than an announcement that someone unsent it. Every other source writes none yet.
+
 ### Attachments
 
 Attachment **bytes** are never stored in JSON/JSONL (`#[serde(skip)]`). Paths + digests point at sidecar files under `attachments/`. For EML / MBOX / XML, FormatSink loads those files, embeds the bytes, then removes the staged `attachments/` directory so the output folder is the archive product.
@@ -127,7 +140,7 @@ Attachment **bytes** are never stored in JSON/JSONL (`#[serde(skip)]`). Paths + 
 ### Serialization rules
 
 - Optional strings / bags serialize as `null` when absent (stable keys).
-- Empty `participants` / `attachments` serialize as `[]`. An empty `reactions` list is left out.
+- Empty `participants` / `attachments` serialize as `[]`. An empty `reactions` list and a `deletion` of neither are left out.
 - Packaging stem suffix is not part of the document (internal `packaging_stem_suffix` only).
 
 ### Conversation stats
@@ -137,7 +150,7 @@ Attachment **bytes** are never stored in JSON/JSONL (`#[serde(skip)]`). Paths + 
 ## JSONL layout
 
 ```text
-{"schema_version":6,"export":{…},"conversation":{…}}
+{"schema_version":7,"export":{…},"conversation":{…}}
 {"guid":"…","timestamp_unix_ms":…, …}
 …
 ```

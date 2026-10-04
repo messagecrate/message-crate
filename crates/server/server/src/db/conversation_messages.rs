@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use sqlx::SqliteConnection;
 use sqlx::{Executor, Row};
 
-pub use message_crate_api_types::{Attachment, Message, MessageConversation, Tapback};
+pub use message_crate_api_types::{Attachment, Deletion, Message, MessageConversation, Tapback};
 
 use crate::db::conversations::is_group_type;
 use crate::db::ownership::owns_conversation;
@@ -51,6 +51,7 @@ struct RawRow {
     thread_originator_guid: Option<String>,
     thread_originator_part: Option<i64>,
     num_replies: i64,
+    deletion: Option<String>,
     chat_identifier: String,
     conversation_type: String,
     group_title: Option<String>,
@@ -310,7 +311,7 @@ fn message_page_sql(
                 m.is_announcement, m.is_reply, m.thread_originator_guid,
                 m.thread_originator_part, m.num_replies,
                 hc.raw AS chat_identifier, c.conversation_type, c.group_title,
-                ho.raw AS owner, {label} AS label
+                ho.raw AS owner, {label} AS label, m.deletion
          {from_sql}
          WHERE {where_sql}
          ORDER BY {order_by} LIMIT ? OFFSET ?",
@@ -356,6 +357,7 @@ async fn fetch_message_page(
                 group_title: row.try_get(18)?,
                 owner: row.try_get(19)?,
                 label: row.try_get(20)?,
+                deletion: row.try_get(21)?,
             })
         })
         .collect::<Result<Vec<RawRow>, ApiError>>()?;
@@ -401,9 +403,20 @@ async fn fetch_message_page(
                 },
                 attachments: attachments.get(&r.id).cloned().unwrap_or_default(),
                 tapbacks: tapbacks.get(&r.id).cloned().unwrap_or_default(),
+                deletion: r.deletion.as_deref().and_then(deletion_from_column),
             }
         })
         .collect())
+}
+
+/// The mark a `messages.deletion` value names. The column's CHECK admits
+/// only the two, so `None` here is a NULL column.
+fn deletion_from_column(value: &str) -> Option<Deletion> {
+    match value {
+        "deleted_in_source_app" => Some(Deletion::DeletedInSourceApp),
+        "unsent" => Some(Deletion::Unsent),
+        _ => None,
+    }
 }
 
 /// Attachment rows for these messages, grouped by message id.

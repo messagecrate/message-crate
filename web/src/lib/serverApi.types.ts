@@ -2395,6 +2395,11 @@ export interface components {
             /** @description The username the account had, which its entries and runs still carry. */
             username: string;
         };
+        /**
+         * @description Why a message's content is gone in the app it came from.
+         * @enum {string}
+         */
+        Deletion: "deleted_in_source_app" | "unsent";
         /** @description The Demo Account, as the owner manages it. */
         DemoAccount: {
             /** @description Why the last build failed, while `status` is `failed`. */
@@ -3012,6 +3017,7 @@ export interface components {
             attachments: components["schemas"]["Attachment"][];
             /** @description The conversation this message belongs to. */
             conversation: components["schemas"]["MessageConversation"];
+            deletion?: components["schemas"]["Deletion"] | null;
             /**
              * @description Export GUID for replies and grouping. Every message has one,
              *     because the import refuses a message without one.
@@ -4001,6 +4007,7 @@ export interface components {
                 attachments: components["schemas"]["Attachment"][];
                 /** @description The conversation this message belongs to. */
                 conversation: components["schemas"]["MessageConversation"];
+                deletion?: components["schemas"]["Deletion"] | null;
                 /**
                  * @description Export GUID for replies and grouping. Every message has one,
                  *     because the import refuses a message without one.

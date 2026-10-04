@@ -29,6 +29,7 @@ fn base_sms() -> MailMessage {
             text: "hello from sms".into(),
             attachments: Vec::new(),
             reactions: Vec::new(),
+            deletion: None,
             imessage: None,
             source: Some(message_ir::IrSource {
                 android_type: Some(1),
@@ -655,5 +656,70 @@ fn a_mail_whose_reactions_do_not_read_is_refused() {
             "This mail's reactions (X-ME-Reactions) do not read; export the backup again"
         ),
         "{err:#}"
+    );
+}
+
+/// Each mark a message carries is written in `X-ME-Deletion` and read back
+/// as the same mark; a message with none writes no header.
+#[test]
+fn a_deletion_mark_reads_back_as_written() {
+    for deletion in message_ir::Deletion::ALL {
+        let mut msg = base_sms();
+        msg.message.deletion = Some(deletion);
+        let eml = build_eml(&msg).unwrap();
+        let back = crate::mail_message_from_eml_bytes(&eml).unwrap();
+        assert_eq!(back.message.deletion, Some(deletion));
+    }
+    let eml = build_eml(&base_sms()).unwrap();
+    assert!(
+        !String::from_utf8_lossy(&eml).contains("X-ME-Deletion"),
+        "a message with no mark writes no header"
+    );
+    assert_eq!(
+        crate::mail_message_from_eml_bytes(&eml)
+            .unwrap()
+            .message
+            .deletion,
+        None
+    );
+}
+
+/// An earlier Message Crate kept the Apple Messages deleted mark in
+/// `X-ME-Is-Deleted`, which no reader looks for now, so the mail is refused
+/// rather than read with its mark gone.
+#[test]
+fn a_mail_that_keeps_the_deleted_mark_in_x_me_is_deleted_is_refused() {
+    let eml = concat!(
+        "X-ME-Chat-Identifier: +15555550101\r\n",
+        "X-ME-Guid: g1\r\n",
+        "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
+        "X-ME-Is-Deleted: true\r\n",
+        "\r\n",
+        "hello\r\n",
+    );
+    let err = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap_err();
+    assert_eq!(
+        format!("{err:#}"),
+        "This mail was written by an earlier Message Crate, which kept the deleted mark in \
+         X-ME-Is-Deleted; export the backup again"
+    );
+}
+
+/// A mark that names neither Deleted in the source app nor Unsent is
+/// refused rather than read as no mark.
+#[test]
+fn a_mail_whose_deletion_names_no_mark_is_refused() {
+    let eml = concat!(
+        "X-ME-Chat-Identifier: +15555550101\r\n",
+        "X-ME-Guid: g1\r\n",
+        "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
+        "X-ME-Deletion: trashed\r\n",
+        "\r\n",
+        "hello\r\n",
+    );
+    let err = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap_err();
+    assert_eq!(
+        format!("{err:#}"),
+        "This mail's X-ME-Deletion header (trashed) is neither deleted_in_source_app nor unsent"
     );
 }

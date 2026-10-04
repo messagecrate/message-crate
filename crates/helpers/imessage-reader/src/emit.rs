@@ -9,7 +9,10 @@
 use std::collections::HashSet;
 
 use imessage_database::{
-    message_types::variants::{Announcement, Tapback, TapbackAction, Variant},
+    message_types::{
+        edited::EditStatus,
+        variants::{Announcement, Tapback, TapbackAction, Variant},
+    },
     tables::{
         chat::Chat,
         messages::{
@@ -21,7 +24,7 @@ use imessage_database::{
     util::dates::TIMESTAMP_FACTOR,
 };
 use imessage_reader_protocol::{
-    Conversation as ConversationRecord, Event, Imessage as ImessageRecord,
+    Conversation as ConversationRecord, Deletion, Event, Imessage as ImessageRecord,
     Message as MessageRecord, Participant, Progress, Reaction, bare_address,
 };
 use serde_json::Value;
@@ -432,6 +435,7 @@ fn build_record(
 ) -> Result<(ConversationRecord, MessageRecord), RuntimeError> {
     let context = resolve_context(session, message);
     let (parts, attachments) = collect_parts_and_attachments(session, message)?;
+    let deletion = deletion(message, !attachments.is_empty());
     let mut row = classify_row(session, message, &context.service, !attachments.is_empty());
     let kind = row.kind;
     let text = std::mem::take(&mut row.text);
@@ -455,12 +459,42 @@ fn build_record(
         subject: message.subject.clone().filter(|s| !s.is_empty()),
         text,
         reactions,
+        deletion,
         owner_identity: owner_address(message).unwrap_or_default(),
         owner_display_name: owner_display_name(session, message),
         imessage: (!is_empty(&imessage)).then_some(imessage),
         attachments,
     };
     Ok((context.conversation, record))
+}
+
+/// Deleted in the source app, Unsent, or neither.
+///
+/// A row in a chat's recently deleted list (`chat_recoverable_message_join`)
+/// was deleted in Messages, and keeps whatever text the database still
+/// holds. A row is Unsent when some part of it was unsent and nothing is
+/// left in any part: no text and no attachment. A row only partly unsent
+/// keeps what is left and is not marked. A row both deleted and unsent is
+/// Unsent, which is why nothing of it is left.
+fn deletion(message: &Message, has_attachments: bool) -> Option<Deletion> {
+    let some_part_unsent = message.edited_parts.as_ref().is_some_and(|edited| {
+        edited
+            .parts
+            .iter()
+            .any(|part| matches!(part.status, EditStatus::Unsent))
+    });
+    // U+FFFC stands in for an attachment in the text, so it is not text.
+    let text_left = message
+        .text
+        .as_deref()
+        .is_some_and(|text| text.chars().any(|c| !c.is_whitespace() && c != '\u{FFFC}'));
+    if some_part_unsent && !text_left && !has_attachments {
+        Some(Deletion::Unsent)
+    } else if message.is_deleted() {
+        Some(Deletion::DeletedInSourceApp)
+    } else {
+        None
+    }
 }
 
 /// Which of the message kinds a row is, the text that stands for it, and the
@@ -548,7 +582,9 @@ fn classify_row(
         } else if message.is_shareplay() {
             let text = "SharePlay Message Ended".to_string();
             ("announcement", text.clone(), Some(text), None)
-        } else if message.is_announcement() {
+        } else if message.is_announcement() && !message.is_fully_unsent() {
+            // A message unsent whole is the message itself, marked Unsent
+            // (see `deletion`), not a line saying someone unsent it.
             let text = announcement_text(session, message).unwrap_or_default();
             ("announcement", text.clone(), Some(text), None)
         } else if let Some(location) = shared_location.as_deref() {
@@ -653,7 +689,6 @@ fn imessage_fields(
         in_reply_to_guid: trimmed(thread.in_reply_to_guid),
         thread_originator_part: thread.thread_originator_part,
         num_replies: (message.num_replies > 0).then_some(message.num_replies as u32),
-        is_deleted: message.is_deleted(),
         send_effect: trimmed(row.send_effect),
         shared_location: trimmed(row.shared_location),
         announcement: trimmed(row.announcement),
@@ -677,7 +712,6 @@ fn is_empty(fields: &ImessageRecord) -> bool {
         && fields.in_reply_to_guid.is_none()
         && fields.thread_originator_part.is_none()
         && fields.num_replies.is_none()
-        && !fields.is_deleted
         && fields.send_effect.is_none()
         && fields.shared_location.is_none()
         && fields.announcement.is_none()
@@ -712,8 +746,9 @@ mod tests {
     use super::*;
     use crate::test_support::FixtureDb;
     use chat_db_fixture::{
-        FRIEND_EMAIL, FRIEND_PHONE, FRIEND_PHONE_EMAIL, GROUP_CHAT_IDENTIFIER, GROUP_TITLE, OWNER,
-        OWNER_EMAIL, SHRUNK_GROUP_IDENTIFIER,
+        DELETED_GUID, DELETED_TEXT, FRIEND_EMAIL, FRIEND_PHONE, FRIEND_PHONE_EMAIL,
+        GROUP_CHAT_IDENTIFIER, GROUP_TITLE, OWNER, OWNER_EMAIL, PARTLY_UNSENT_GUID,
+        PARTLY_UNSENT_TEXT, SHRUNK_GROUP_IDENTIFIER, UNSENT_GUID,
     };
     use imessage_reader_protocol::AttachmentSource;
     use std::collections::HashMap;
@@ -742,7 +777,7 @@ mod tests {
     fn empty_fields_are_dropped() {
         assert!(is_empty(&ImessageRecord::default()));
         let fields = ImessageRecord {
-            is_deleted: true,
+            is_reply: true,
             ..ImessageRecord::default()
         };
         assert!(!is_empty(&fields));
@@ -1369,7 +1404,44 @@ mod tests {
         assert!(build_reactions(&session, &messages[0]).is_empty());
     }
 
-    /// The whole stream over the fixture: fifteen rows seen, none skipped.
+    /// A message the owner deleted in Messages is Deleted in the source app,
+    /// in its chat and with the text the database still holds. A message
+    /// unsent whole is Unsent, with no text, and is a message rather than an
+    /// announcement. A message only partly unsent keeps the text left and
+    /// carries no mark.
+    #[test]
+    fn a_deleted_and_an_unsent_message_carry_their_mark_and_a_partly_unsent_one_none() {
+        let fixture = FixtureDb::write();
+        let session = fixture.session();
+        let messages = FixtureDb::messages(&session);
+        let record = |guid: &str| {
+            let message = messages.iter().find(|m| m.guid == guid).unwrap();
+            build_record(&session, message).unwrap().1
+        };
+
+        let deleted = record(DELETED_GUID);
+        assert_eq!(deleted.deletion, Some(Deletion::DeletedInSourceApp));
+        assert_eq!(deleted.text, DELETED_TEXT);
+        assert_eq!(deleted.chat_identifier, FRIEND_PHONE);
+
+        let unsent = record(UNSENT_GUID);
+        assert_eq!(unsent.deletion, Some(Deletion::Unsent));
+        assert_eq!(unsent.text, "");
+        assert_eq!(unsent.message_kind, "imessage");
+        assert!(
+            unsent
+                .imessage
+                .as_ref()
+                .is_none_or(|im| im.announcement.is_none()),
+            "an unsent message is not an announcement"
+        );
+
+        let partly = record(PARTLY_UNSENT_GUID);
+        assert_eq!(partly.deletion, None);
+        assert_eq!(partly.text, PARTLY_UNSENT_TEXT);
+    }
+
+    /// The whole stream over the fixture: eighteen rows seen, none skipped.
     /// Each conversation is announced once, before its first message, and
     /// the stream ends with the full parse count and the done event. The
     /// chat with no handle rows is its own conversation, apart from the
@@ -1413,17 +1485,20 @@ mod tests {
                 r#"message "00000000-0000-4000-8000-000000000013" in "chat100""#,
                 r#"message "guid-14" in "chat100""#,
                 r#"message "guid-15" in "chat100""#,
+                r#"message "guid-16" in "+15555550107""#,
+                r#"message "guid-17" in "+15555550107""#,
+                r#"message "guid-18" in "+15555550107""#,
                 "progress",
                 "export_done",
             ]
         );
         assert_eq!(
-            events[22],
-            serde_json::json!({"event": "progress", "stage": "parse", "done": 15, "total": 15})
+            events[25],
+            serde_json::json!({"event": "progress", "stage": "parse", "done": 18, "total": 18})
         );
         assert_eq!(
-            events[23],
-            serde_json::json!({"event": "export_done", "messages_seen": 15, "failures": 0})
+            events[26],
+            serde_json::json!({"event": "export_done", "messages_seen": 18, "failures": 0})
         );
     }
 

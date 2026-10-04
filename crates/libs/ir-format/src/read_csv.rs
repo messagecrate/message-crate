@@ -5,9 +5,10 @@ use crate::normalize::{imessage_from_parts, source_from_parts};
 use anyhow::{Context, Result, bail};
 use message_csv::{AttachmentCell, ParticipantCell};
 use message_ir::{
-    ConversationDocument, ConversationHeader, ConversationMeta, ConversationStats, ExportMeta,
-    IrAttachment, IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind,
-    IrParticipant, IrService, Reaction, SCHEMA_VERSION, nonempty, parse_android_type,
+    ConversationDocument, ConversationHeader, ConversationMeta, ConversationStats, Deletion,
+    ExportMeta, IrAttachment, IrConversationType, IrDirection, IrImessage, IrMessage,
+    IrMessageKind, IrParticipant, IrService, Reaction, SCHEMA_VERSION, nonempty,
+    parse_android_type,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -110,7 +111,7 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
     );
 
     let is_reply = message_csv::parse_bool(get("is_reply"));
-    let is_deleted = message_csv::parse_bool(get("is_deleted"));
+    let deletion = parse_deletion(get("deletion"))?;
     let thread_originator_part = {
         let s = get("thread_originator_part");
         if s.is_empty() { None } else { s.parse().ok() }
@@ -128,7 +129,6 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
         in_reply_to_guid: nonempty(get("thread_originator_guid")),
         thread_originator_part,
         num_replies,
-        is_deleted,
         send_effect: nonempty(get("send_effect")),
         shared_location: nonempty(get("shared_location")),
         announcement: nonempty(get("announcement")),
@@ -158,9 +158,24 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
         text: get("text").to_string(),
         attachments,
         reactions,
+        deletion,
         imessage,
         source,
     })
+}
+
+/// The mark in a `deletion` cell: blank for none, else
+/// `deleted_in_source_app` or `unsent`. Any other text is refused rather
+/// than read as no mark.
+fn parse_deletion(raw: &str) -> Result<Option<Deletion>> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    match Deletion::parse(raw) {
+        Some(deletion) => Ok(Some(deletion)),
+        None => bail!("bad deletion {raw:?}: expected deleted_in_source_app or unsent"),
+    }
 }
 
 /// Check every required column is present and return the name → index map

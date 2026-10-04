@@ -764,6 +764,10 @@ fn conversation_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> M
                 }),
             ),
             (
+                headers::DELETION,
+                msg.message.deletion.map(|d| d.as_str().to_string()),
+            ),
+            (
                 headers::ANDROID_TYPE,
                 source
                     .and_then(|src| src.android_type)
@@ -801,10 +805,6 @@ fn imessage_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> Messa
                 im.thread_originator_part.map(|p| p.to_string()),
             ),
             (headers::NUM_REPLIES, im.num_replies.map(|n| n.to_string())),
-            (
-                headers::IS_DELETED,
-                im.is_deleted.then(|| "true".to_string()),
-            ),
             (headers::SEND_EFFECT, im.send_effect.clone()),
             (headers::SHARED_LOCATION, im.shared_location.clone()),
             (headers::ANNOUNCEMENT, im.announcement.clone()),

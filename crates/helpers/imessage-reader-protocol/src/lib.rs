@@ -59,7 +59,9 @@ use serde_json::Value;
 /// `owner_handle` and `reactor_handle`).
 /// 8: a message's reactions are [`Message::reactions`], a list of
 /// [`Reaction`], and no longer a JSON value in `Imessage::tapbacks`.
-pub const PROTOCOL_VERSION: u32 = 8;
+/// 9: a message deleted in Messages or unsent by its sender carries
+/// [`Message::deletion`], and `Imessage::is_deleted` is gone.
+pub const PROTOCOL_VERSION: u32 = 9;
 
 /// The owner address behind a raw `chat.account_login` or
 /// `message.destination_caller_id` value, or `None` when nothing is left.
@@ -337,6 +339,9 @@ pub struct Message {
     /// order. A reaction that was later removed is not in the list, and a
     /// tapback row has none of its own.
     pub reactions: Vec<Reaction>,
+    /// Whether the message was deleted in Messages or unsent by its sender;
+    /// `None` for neither.
+    pub deletion: Option<Deletion>,
     /// The owner's address on this row (`destination_caller_id` through
     /// [`bare_address`]), or empty when the row carries none.
     pub owner_identity: String,
@@ -359,8 +364,6 @@ pub struct Imessage {
     pub thread_originator_part: Option<u32>,
     /// How many replies this message has.
     pub num_replies: Option<u32>,
-    /// Deleted in Messages but still in the database.
-    pub is_deleted: bool,
     /// A send effect's label.
     pub send_effect: Option<String>,
     /// A shared-location label.
@@ -415,6 +418,45 @@ pub struct Reaction {
     /// The name of the person who reacted, when the source knows one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reactor_display_name: Option<String>,
+}
+
+/// Why a message's content is gone, or marked as going, in the app it came
+/// from.
+///
+/// Every source writes the same two marks, so the type is defined here, the
+/// one crate the Apple Messages Reader and the rest of Message Crate may both
+/// link, and `message-ir` re-exports it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Deletion {
+    /// The person deleted the message in the source app before the backup
+    /// was made; the backup still holds it, with its text where it kept it.
+    DeletedInSourceApp,
+    /// The sender took the message back for everyone: some part of it was
+    /// unsent and no part has any content left. A message only partly
+    /// unsent is not marked.
+    Unsent,
+}
+
+impl Deletion {
+    /// Both marks, in the order the docs list them.
+    pub const ALL: [Self; 2] = [Self::DeletedInSourceApp, Self::Unsent];
+
+    /// The mark as every format writes it: `deleted_in_source_app` or
+    /// `unsent`, the same text serde writes.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::DeletedInSourceApp => "deleted_in_source_app",
+            Self::Unsent => "unsent",
+        }
+    }
+
+    /// The mark `value` names, or `None` when it names neither.
+    #[must_use]
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|d| d.as_str() == value)
+    }
 }
 
 /// One attachment's metadata and where its bytes are.
@@ -520,6 +562,18 @@ mod tests {
         };
         let line = serde_json::to_string(&source).unwrap();
         assert_eq!(line, r#"{"kind":"inline","text":"<svg/>"}"#);
+    }
+
+    #[test]
+    fn a_deletion_is_written_as_serde_writes_it_and_read_back() {
+        for deletion in Deletion::ALL {
+            assert_eq!(
+                serde_json::to_string(&deletion).unwrap(),
+                format!("\"{}\"", deletion.as_str())
+            );
+            assert_eq!(Deletion::parse(deletion.as_str()), Some(deletion));
+        }
+        assert_eq!(Deletion::parse("deleted"), None);
     }
 
     #[test]

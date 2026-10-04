@@ -33,6 +33,7 @@ CSV output contains one row per message. Conversation and export identity are re
 | `text` | Message body. |
 | `attachments_json` | JSON array with attachment path, original name, media type, and available file fingerprints and media details. An attachment whose file was not copied keeps its `size_bytes` and its `missing_reason` (`file_missing`, `too_large`, `not_copied`, or `convert_failed: <detail>`). |
 | `reactions_json` | JSON array of the message's reactions, each with `part_index`, `kind`, `emoji` for an emoji reaction, `is_from_me`, and the person who reacted (`reactor_identity`, `reactor_display_name`). Empty when the message has none. |
+| `deletion` | `deleted_in_source_app` for a message deleted in the app it came from before the backup, `unsent` for one its sender took back, or empty for neither. A file with any other value is refused. |
 
 ## Source and owner
 
@@ -51,7 +52,7 @@ CSV output contains one row per message. Conversation and export identity are re
 
 The remaining columns hold iMessage features. They are empty or `false` for sources that do not provide those features:
 
-- `read_receipt`, `is_deleted`, `send_effect`, and `shared_location`;
+- `read_receipt`, `send_effect`, and `shared_location`;
 - `is_announcement` and `announcement`;
 - `is_reply`, `thread_originator_guid`, `thread_originator_part`, and `num_replies`;
 - `parts_json`, `edits_json`, and `app_json`;
@@ -62,6 +63,6 @@ The remaining columns hold iMessage features. They are empty or `false` for sour
 
 Nested values use compact JSON. When `source_fields_json`, `reactions_json`, `parts_json`, `edits_json`, or `app_json` has no value, the cell is empty rather than the word `null`.
 
-The boolean columns `is_deleted`, `is_reply`, and `is_announcement` contain `true` or `false`. A simple Apple text part that only repeats the `text` column is omitted from `parts_json`; richer or multi-part bodies keep it.
+The boolean columns `is_reply` and `is_announcement` contain `true` or `false`. A simple Apple text part that only repeats the `text` column is omitted from `parts_json`; richer or multi-part bodies keep it.
 
 Older columns named `date_ms`, `contact_name`, and `xml_fields_json` are not written.

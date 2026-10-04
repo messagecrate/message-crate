@@ -17,7 +17,7 @@ use std::sync::atomic::AtomicBool;
 
 use httpmock::prelude::*;
 use message_crate_pull::{ExportQueryList, ProgressEvent, PullConfig, PullReport, journal, run};
-use message_ir::Reaction;
+use message_ir::{Deletion, Reaction};
 use message_ir_format::{EXPORT_SENTINEL, read_conversation_jsonl};
 use serde_json::{Value, json};
 use tempfile::tempdir;
@@ -1024,5 +1024,90 @@ fn a_pulled_message_keeps_its_reactions_under_each_reactor() {
             },
         ],
         "the file reads back as the same reactions"
+    );
+}
+
+/// Export keeps each message's mark: a message the server returns as
+/// `deleted_in_source_app`, one returned as `unsent`, and one with no mark
+/// are written with `deletion` set to the same mark, and left out for the
+/// last, in the shape an import reads back.
+#[test]
+fn a_pulled_message_keeps_its_deletion_mark() {
+    let server = MockServer::start();
+    let _auth = mock_auth(&server);
+    let _run = mock_run(&server);
+    let mut deleted = message(
+        1,
+        "sms-backup-restore",
+        "guid-16",
+        "2020-01-06T12:14:00Z",
+        "Delete me",
+        json!([]),
+    );
+    deleted["deletion"] = json!("deleted_in_source_app");
+    let mut unsent = message(
+        2,
+        "sms-backup-restore",
+        "guid-17",
+        "2020-01-06T12:15:00Z",
+        "",
+        json!([]),
+    );
+    unsent["deletion"] = json!("unsent");
+    let mut kept = message(
+        3,
+        "sms-backup-restore",
+        "guid-18",
+        "2020-01-06T12:16:00Z",
+        "Still here",
+        json!([]),
+    );
+    kept["deletion"] = Value::Null;
+    let _first = server.mock(|when, then| {
+        when.method(GET)
+            .path(format!("/v1/exports/{EXPORT_ID}/messages"))
+            .query_param("offset", "0");
+        then.status(200).json_body(json!({
+            "items": [deleted, unsent],
+            "total": 3,
+            "limit": 2,
+            "offset": 0
+        }));
+    });
+    let _second = server.mock(|when, then| {
+        when.method(GET)
+            .path(format!("/v1/exports/{EXPORT_ID}/messages"))
+            .query_param("offset", "2");
+        then.status(200).json_body(json!({
+            "items": [kept],
+            "total": 3,
+            "limit": 2,
+            "offset": 2
+        }));
+    });
+    let dir = tempdir().unwrap();
+    let out = dir.path().join("pulled");
+
+    run(&config(&out, server.base_url()), None).unwrap();
+
+    let written = fs::read_to_string(out.join(CONVERSATION_FILE)).unwrap();
+    let lines: Vec<Value> = written
+        .lines()
+        .skip(1)
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(lines[0]["deletion"], "deleted_in_source_app", "{written}");
+    assert_eq!(lines[1]["deletion"], "unsent", "{written}");
+    assert!(lines[2].get("deletion").is_none(), "{written}");
+    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    let marks: Vec<Option<Deletion>> = doc.messages.iter().map(|m| m.deletion).collect();
+    assert_eq!(
+        marks,
+        [
+            Some(Deletion::DeletedInSourceApp),
+            Some(Deletion::Unsent),
+            None
+        ],
+        "the file reads back as the same marks"
     );
 }

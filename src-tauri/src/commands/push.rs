@@ -347,6 +347,7 @@ mod tests {
             text: "hello there".into(),
             attachments: vec![],
             reactions: vec![],
+            deletion: None,
             imessage: None,
             source: None,
         });

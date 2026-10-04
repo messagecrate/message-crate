@@ -42,13 +42,6 @@ fn one_field_set() -> Vec<(&'static str, IrImessage)> {
             },
         ),
         (
-            "is_deleted",
-            IrImessage {
-                is_deleted: true,
-                ..IrImessage::default()
-            },
-        ),
-        (
             "send_effect",
             IrImessage {
                 send_effect: Some("slam".into()),
@@ -168,7 +161,7 @@ fn any_one_imessage_field_makes_it_worth_keeping() {
     let cases = one_field_set();
     assert_eq!(
         cases.len(),
-        19,
+        18,
         "one case per field on IrImessage; add or remove one with the field"
     );
     for (field, value) in cases {

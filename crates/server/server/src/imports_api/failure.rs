@@ -216,7 +216,7 @@ mod tests {
         };
         assert_eq!(
             f.to_string(),
-            "This file is schema version 3; Message Crate reads version 6 (line 1 of the file)."
+            "This file is schema version 3; Message Crate reads version 7 (line 1 of the file)."
         );
     }
 
