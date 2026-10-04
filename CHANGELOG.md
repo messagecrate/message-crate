@@ -233,7 +233,7 @@ released versions carry their date on the heading.
   Upload's button now pauses the Import Run and keeps what it staged, and
   the next visit to Import offers to resume it, sending only the
   conversations not yet sent. Before, the run was recorded as completed, the
-  staged folder was deleted, and the conversations it had not reached were
+  staged files were deleted, and the conversations it had not reached were
   never imported. The run's report now puts every conversation in exactly
   one count, and names the ones the stop left unsent. An Upload that fails,
   or sends some conversations and fails the rest, is paused the same way
