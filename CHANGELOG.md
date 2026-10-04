@@ -242,6 +242,8 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 An internal fix to how an upload finishes an Import Run;
+  nothing you see changes.
 - 2026-10-04 **An iMazing import no longer reports a Live Photo choice as an
   error, and leaves WhatsApp chat folders' extra files alone.** When two
   photo rows named one picture, the import gave its Live Photo video to the
