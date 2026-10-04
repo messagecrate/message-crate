@@ -37,14 +37,24 @@ Each rule holds on every list, and each has its reason.
   reading is wrong.
 - **A word the list does not have is refused.** The query is refused whole,
   with a problem naming the word and the list, and a "did you mean" only when
-  a word on that list is within two edits. Nothing is searched as text or
-  dropped. The language keeps no table of spellings it used to have. Why: a
-  silently ignored word returns rows the person did not ask for, and they
-  cannot see why. The Messages screen's search box serves two lists through
-  one switch, so the web app marks a word only the other list takes (`from:`
-  while Conversations is picked) with a wavy underline in the box, and sends
-  the list the query without it (#1561). The server still refuses the word;
-  the person sees it is left out, so it is not ignored silently.
+  a word on that list is within two edits. The server never searches such a
+  word as text and never drops it. The language keeps no table of spellings
+  it used to have. Why: a silently ignored word returns rows the person did
+  not ask for, and they cannot see why.
+- **On the Messages screen, a word only the other list takes is marked, not
+  sent.** The screen's search box serves the Conversations and the Messages
+  list through one switch. A word the list picked does not take and the other
+  one does (`from:` while Conversations is picked) is underlined in the box,
+  and the web app sends the list the query without it (#1561). It is the only
+  place a word is left out, and the person sees it left out, so it is not
+  ignored silently. Until both lists' words are known, a list with a `word:`
+  in its query waits rather than send a word the server would refuse.
+  Leaving the word out is the one rewrite of a query outside this module:
+  `dropTokens` in `web/src/lib/searchQuery.ts` also drops a `not` that
+  negated the word and an `or`, `and` or pair of parentheses it leaves with
+  nothing to join, and keeps one that joined nothing before. Its results are
+  in `tests/fixtures/search/web-queries.txt`, which the server's tests parse,
+  so a change to the grammar that breaks the rewrite fails a test.
 - **A query only narrows.** Sort order is a request parameter (`sort`), never
   a word.
   Why: a Saved Search then holds only what to find, so it means the same thing
