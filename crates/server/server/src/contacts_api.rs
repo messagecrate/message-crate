@@ -15,7 +15,7 @@ use crate::db::contacts::read::{
     contact_name_and_modified, contact_totals, get_contact_summaries, list_contacts_sorted,
     unknown_contact_identifiers,
 };
-use crate::db::handles::{self, IdentitiesOf, Identity};
+use crate::db::handles::{self, IdentitiesOf, Identity, IdentityService};
 use crate::db::trash::{DeleteOutcome, Trashable, delete_trashed, move_to_trash, restore};
 use crate::paging::{ListRequest, MAX_CONTACT_SUMMARY_IDS, Page, PageQuery, whole_page};
 use crate::server::{ApiError, AppState, FullAccess, FullDeleteAccess};
@@ -25,16 +25,16 @@ mod edit;
 
 use edit::mutate_contact;
 
-/// An address to link plus optional platform service.
+/// An address to link, and the service to link it on.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub struct AddContactIdentityRequest {
     /// The address to link.
     pub address: String,
-    /// Platform service, `phone` or `whatsapp` (any other value is read as
-    /// `phone`); the phone service when omitted. It never decides the identity's type, which comes from the
-    /// address. A new email address on WhatsApp is refused.
+    /// The service to link it on; the phone service when omitted. It never
+    /// decides the identity's type, which comes from the address. A new email
+    /// address on WhatsApp is refused.
     #[serde(default)]
-    pub service: Option<String>,
+    pub service: Option<IdentityService>,
 }
 
 /// The previous and new addresses for a link change.
@@ -44,14 +44,14 @@ pub struct UpdateContactIdentityRequest {
     pub previous_address: String,
     /// The replacement address.
     pub address: String,
-    /// Platform service of the new address. The previous address is found on
+    /// The service of the new address. The previous address is found on
     /// its own service whatever this names: on the named service first when
     /// it is there under more than one, else the phone service, then
     /// WhatsApp. When omitted, the new address takes the service of the
     /// previous one. It never decides the new identity's type, which comes
     /// from the address, and a new email address on WhatsApp is refused.
     #[serde(default)]
-    pub service: Option<String>,
+    pub service: Option<IdentityService>,
 }
 
 /// The identity to unlink.
@@ -59,9 +59,10 @@ pub struct UpdateContactIdentityRequest {
 pub struct RemoveContactIdentityRequest {
     /// The address to unlink.
     pub address: String,
-    /// Platform service, when the identity is linked with one.
+    /// The service the identity is on. When omitted, the identity is found on
+    /// the phone service first, then WhatsApp.
     #[serde(default)]
-    pub service: Option<String>,
+    pub service: Option<IdentityService>,
 }
 
 /// Body for `PATCH /v1/contacts/{id}`. Exactly one mutation field should be set.

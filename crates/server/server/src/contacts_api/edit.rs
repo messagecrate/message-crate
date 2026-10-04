@@ -16,14 +16,6 @@ use crate::db::contacts::{self, contact_id_for_handle};
 use crate::db::handles;
 use crate::server::ApiError;
 
-/// The service a request names, if it names one. Any value but WhatsApp's
-/// is the phone service, which carries every text message transport.
-fn named_service(service: Option<&str>) -> Option<HandleService> {
-    service
-        .and_then(message_ir::trimmed)
-        .map(HandleService::parse)
-}
-
 /// Why a contact edit did not happen.
 ///
 /// The two cases answer with different statuses and the difference is not one
@@ -205,7 +197,9 @@ impl ContactEditor<'_> {
         if raw.is_empty() {
             refuse!("address must not be empty");
         }
-        let platform = named_service(add.service.as_deref()).unwrap_or(HandleService::Phone);
+        let platform = add
+            .service
+            .map_or(HandleService::Phone, HandleService::from);
         let handle_id = self.handle_row(raw, platform).await?;
         match self.claim(handle_id).await? {
             // Already linked: no address-book change.
@@ -227,7 +221,7 @@ impl ContactEditor<'_> {
         if prev.is_empty() || next.is_empty() {
             refuse!("previous_address and address must not be empty");
         }
-        let named = named_service(upd.service.as_deref());
+        let named = upd.service.map(HandleService::from);
         // The old identity is found on its own service, whatever service the
         // request names, so one edit can move a contact from WhatsApp to Text
         // Message. When the address is on the contact under more than one
@@ -267,8 +261,9 @@ impl ContactEditor<'_> {
         if raw.is_empty() {
             refuse!("address must not be empty");
         }
-        let on = named_service(rem.service.as_deref())
-            .map_or(OnService::Preferring(None), OnService::Only);
+        let on = rem
+            .service
+            .map_or(OnService::Preferring(None), |s| OnService::Only(s.into()));
         let Some((handle_id, _)) = self.linked_handle(raw, on).await? else {
             refuse!("identity not found on contact");
         };

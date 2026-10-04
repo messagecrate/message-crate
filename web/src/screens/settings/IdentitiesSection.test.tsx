@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "../../lib/account";
 import { mockedAuth, renderWithProviders as render } from "../../test/providers";
 import { inTimeZone } from "../../test/timeZone";
+import { fill, setupUser } from "../../test/user";
 import { IdentitiesSection } from "./IdentitiesSection";
 import { type Identity, removeBody } from "./identities";
 
@@ -129,8 +130,10 @@ describe("IdentitiesSection", () => {
     expect(screen.getByRole("button", { name: "Add identity" })).toBeEnabled();
   });
 
-  it("adds an identity through the dialog and closes it when the server lists it", async () => {
-    const user = userEvent.setup({ delay: null });
+  it("adds an email address on the phone service and closes the dialog when the server lists it", async () => {
+    const user = setupUser();
+    // The listing names an email address by its type, `email`, whatever
+    // service it was added on.
     const added: Identity = { ...identities[2], address: "new@example.com" };
     listAccountIdentities
       .mockResolvedValueOnce(identities)
@@ -143,13 +146,36 @@ describe("IdentitiesSection", () => {
     const dialog = await screen.findByRole("dialog", { name: "Add identity" });
     await user.click(within(dialog).getByRole("button", { name: /Service/ }));
     await user.click(screen.getByRole("option", { name: "Email" }));
-    await user.type(within(dialog).getByRole("textbox", { name: "Identity" }), "new@example.com");
+    await fill(user, within(dialog).getByRole("textbox", { name: "Identity" }), "new@example.com");
     await user.click(within(dialog).getByRole("button", { name: "Add" }));
 
+    // `email` is no service the server takes: an email address is on the
+    // phone service, and the server types it by the address (#1631).
     expect(mutateAsync).toHaveBeenCalledWith({
-      identities: [{ address: "new@example.com", service: "email" }],
+      identities: [{ address: "new@example.com", service: "phone" }],
     });
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.queryByText("The server did not add that identity.")).not.toBeInTheDocument();
+  });
+
+  it("removes an email address on the phone service and closes the dialog when the server no longer lists it", async () => {
+    const user = setupUser();
+    listAccountIdentities
+      .mockResolvedValueOnce(identities)
+      .mockResolvedValue([identities[0], identities[1]]);
+    mutateAsync.mockResolvedValue({ ...profile, emails: ["bob@example.com"] });
+    render(<IdentitiesSection profile={profile} />);
+
+    await screen.findByText("30");
+    await user.click(screen.getByRole("button", { name: "Remove archer@example.com (Email)" }));
+    const dialog = await screen.findByRole("dialog", { name: "Remove identity?" });
+    await user.click(within(dialog).getByRole("button", { name: "Remove" }));
+
+    expect(mutateAsync).toHaveBeenCalledWith({
+      remove_identities: [{ address: "archer@example.com", service: "phone" }],
+    });
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.queryByText("The server did not remove that identity.")).not.toBeInTheDocument();
   });
 
   it("keeps the dialog open and says why when the server did not add the identity", async () => {

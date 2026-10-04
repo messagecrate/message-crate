@@ -192,6 +192,16 @@ the same number as a sender as `phone`, and one that read the service typed
 `ada@example.com` added under iMessage as a phone number
 ([#1432](https://github.com/messagecrate/message-crate/issues/1432)).
 
+**A request names a service as `phone` or `whatsapp`, and nothing else.** A
+contact edit and an account's own identities take those two words and refuse
+any other, naming the two. An email address is on `phone`, where iMessage
+reaches it.
+Why: every other word was read as `phone`, so a misspelt `whatsap` put an
+identity on Text Message without a word
+([#1630](https://github.com/messagecrate/message-crate/issues/1630)), and
+once the address decided the type, `email` was only a second name for `phone`
+([#1631](https://github.com/messagecrate/message-crate/issues/1631)).
+
 **Swapping a contact's identity finds the old one on its own service.** The
 edit names the old address and the new one, and may name a service for the
 new one. The old identity is the one on the named service when the address

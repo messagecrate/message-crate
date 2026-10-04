@@ -7,6 +7,7 @@ import {
   parseSourceIdentities,
 } from "../lib/backupIdentity";
 import { getDeviceId } from "../lib/deviceId";
+import { serverService } from "../lib/handleService";
 import {
   emptyImessagePathStats,
   IMESSAGE_DEFAULT_METHOD,
@@ -191,7 +192,7 @@ export default function ImportScreen() {
     setIdentityAddError(null);
     try {
       const updated = await updateProfile.mutateAsync({
-        identities: [{ address: value, service }],
+        identities: [{ address: value, service: serverService(service) }],
       });
       if (!identityOnProfile(value, updated)) {
         throw new Error("no-op add");

@@ -229,6 +229,66 @@ async fn a_refused_contact_edit_answers_422_with_the_persons_sentence() {
     assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
 }
 
+/// A contact edit takes `phone` or `whatsapp` as a service and refuses any
+/// other word, naming the two. Every other word was read as `phone`, so a
+/// misspelt `whatsap` put the identity on Text Message without a word (#1630).
+#[tokio::test]
+async fn a_contact_edit_refuses_a_service_other_than_phone_or_whatsapp() {
+    let (fixture, account) = contacts_fixture_with_handles(&[]).await;
+    let mut conn = fixture.state.db.acquire().await.unwrap();
+    let ada =
+        insert_contact_with_handle(&mut conn, account.account_id, "Ada", "+15555550100").await;
+    drop(conn);
+    let path = format!("/v1/contacts/{ada}");
+
+    for service in ["whatsap", "sms", "imessage", "email", "Phone", ""] {
+        for body in [
+            serde_json::json!({
+                "add_identity": { "address": "+15555550135", "service": service }
+            }),
+            serde_json::json!({
+                "update_identity": {
+                    "previous_address": "+15555550100",
+                    "address": "+15555550135",
+                    "service": service
+                }
+            }),
+            serde_json::json!({
+                "remove_identity": { "address": "+15555550100", "service": service }
+            }),
+        ] {
+            let (status, text) =
+                crate::test_support::patch_raw(&fixture.state, &path, &account.token, body).await;
+            let problem = crate::test_support::expect_problem(
+                status,
+                &text,
+                crate::problem::ProblemType::ValidationFailed,
+            );
+            assert!(
+                problem
+                    .sentence()
+                    .contains("expected `phone` or `whatsapp`"),
+                "{service:?}: {text}"
+            );
+        }
+    }
+
+    let detail: serde_json::Value =
+        crate::test_support::get_json(&fixture.state, &path, &account.token).await;
+    let identities: Vec<(&str, &str)> = detail["identities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| {
+            (
+                i["address"].as_str().unwrap(),
+                i["service"].as_str().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(identities, [("+15555550100", "phone")], "{detail}");
+}
+
 /// A contact deleted after the edit found it: the rename updated no row and
 /// answered `500` with "contact missing after mutate". The edit is one write
 /// transaction, so it finds the contact gone and answers `404`.
@@ -1178,7 +1238,7 @@ async fn mutate_contact_add_update_remove_handle_and_rename() {
                 name: None,
                 add_identity: Some(AddContactIdentityRequest {
                     address: "+15555550135".into(),
-                    service: Some("phone".into()),
+                    service: Some(IdentityService::Phone),
                 }),
                 update_identity: None,
                 remove_identity: None,
@@ -1227,7 +1287,7 @@ async fn mutate_contact_add_update_remove_handle_and_rename() {
                 update_identity: Some(UpdateContactIdentityRequest {
                     previous_address: detail.identities[0].address.clone(),
                     address: "sam@example.com".into(),
-                    service: Some("email".into()),
+                    service: Some(IdentityService::Phone),
                 }),
                 remove_identity: None,
             },
@@ -1253,7 +1313,7 @@ async fn mutate_contact_add_update_remove_handle_and_rename() {
                 update_identity: None,
                 remove_identity: Some(RemoveContactIdentityRequest {
                     address: "sam@example.com".into(),
-                    service: Some("phone".into()),
+                    service: Some(IdentityService::Phone),
                 }),
             },
         )
@@ -1273,7 +1333,7 @@ async fn add_identity(
     account: i64,
     contact_id: i64,
     raw: &str,
-    service: Option<&str>,
+    service: Option<IdentityService>,
 ) {
     assert!(
         mutate_committed(
@@ -1284,7 +1344,7 @@ async fn add_identity(
                 name: None,
                 add_identity: Some(AddContactIdentityRequest {
                     address: raw.into(),
-                    service: service.map(Into::into),
+                    service,
                 }),
                 update_identity: None,
                 remove_identity: None,
@@ -1313,7 +1373,7 @@ async fn handle_type_and_service(
 /// the request names: a number is a phone number on any service, an address
 /// with `@` is an email address, and anything else is `other`. Typed by the
 /// service, `ada@example.com` under `imessage` was stored as a phone number
-/// (#1432).
+/// (#1432); `imessage` is no longer a service a request can name (#1630).
 #[tokio::test]
 async fn a_handle_takes_its_type_from_its_address_not_the_service() {
     let fixture = test_fixture().await;
@@ -1322,17 +1382,15 @@ async fn a_handle_takes_its_type_from_its_address_not_the_service() {
     let contact_id = insert_contact_with_handle(&mut conn, account, "Sam", "+15555550100").await;
 
     for (raw, service, expected) in [
-        ("+15555550136", Some("sms"), "phone"),
-        ("+15555550137", Some("imessage"), "phone"),
-        ("+15555550138", Some("whatsapp"), "phone"),
-        ("+15555550139", Some("phone"), "phone"),
+        ("+15555550138", Some(IdentityService::Whatsapp), "phone"),
+        ("+15555550139", Some(IdentityService::Phone), "phone"),
         ("+15555550140", None, "phone"),
-        ("tel:+15555550141", Some("discord"), "phone"),
-        ("ada@example.com", Some("imessage"), "email"),
-        ("sam@example.com", Some("email"), "email"),
+        ("tel:+15555550141", Some(IdentityService::Phone), "phone"),
+        ("ada@example.com", Some(IdentityService::Phone), "email"),
+        ("sam@example.com", None, "email"),
         ("sam", None, "other"),
-        ("sam.lee", Some("sms"), "other"),
-        ("sam#1234", Some("discord"), "other"),
+        ("sam.lee", Some(IdentityService::Phone), "other"),
+        ("sam#1234", Some(IdentityService::Whatsapp), "other"),
     ] {
         add_identity(&mut conn, account, contact_id, raw, service).await;
         assert_eq!(
@@ -1361,7 +1419,7 @@ async fn an_email_address_is_not_added_on_whatsapp() {
             name: None,
             add_identity: Some(AddContactIdentityRequest {
                 address: "ann@example.com".into(),
-                service: Some("whatsapp".into()),
+                service: Some(IdentityService::Whatsapp),
             }),
             update_identity: None,
             remove_identity: None,
@@ -1400,7 +1458,7 @@ async fn a_whatsapp_internal_id_an_import_stored_is_added_as_that_identity() {
         account,
         contact_id,
         "123456789012345@lid",
-        Some("whatsapp"),
+        Some(IdentityService::Whatsapp),
     )
     .await;
 
@@ -1419,52 +1477,6 @@ async fn a_whatsapp_internal_id_an_import_stored_is_added_as_that_identity() {
     );
 }
 
-/// Naming a linked handle again under another transport of the same
-/// platform (`iMessage` for a number added under `sms`) changes nothing: a
-/// handle's service is its platform, `phone` or `whatsapp`, never the
-/// transport. The number stays one row, so the next import or edit that
-/// names it under any phone transport finds that row rather than adding a
-/// second one.
-#[tokio::test]
-async fn naming_a_handle_again_under_another_transport_keeps_one_row() {
-    let fixture = test_fixture().await;
-    let account = fixture.account_with_id(101, "alice").await;
-    let mut conn = fixture.conn().await;
-    let contact_id = insert_contact_with_handle(&mut conn, account, "Sam", "+15555550100").await;
-    add_identity(&mut conn, account, contact_id, "+15555550143", Some("sms")).await;
-
-    assert!(
-        mutate_committed(
-            &mut conn,
-            account,
-            contact_id,
-            &UpdateContactRequest {
-                name: None,
-                add_identity: None,
-                update_identity: Some(UpdateContactIdentityRequest {
-                    previous_address: "+15555550143".into(),
-                    address: "+15555550143".into(),
-                    service: Some("iMessage".into()),
-                }),
-                remove_identity: None,
-            },
-        )
-        .await
-        .unwrap()
-    );
-    add_identity(&mut conn, account, contact_id, "+15555550143", Some("sms")).await;
-
-    let rows: Vec<(String, Option<String>)> = sqlx::query_as(
-        "SELECT handle_type, service FROM handles WHERE account_id = $1 AND raw = $2",
-    )
-    .bind(account)
-    .bind("+15555550143")
-    .fetch_all(&mut *conn)
-    .await
-    .unwrap();
-    assert_eq!(rows, [("phone".to_string(), Some("phone".to_string()))]);
-}
-
 /// A contact holding only `+15555550100` on WhatsApp.
 async fn contact_on_whatsapp(conn: &mut SqliteConnection, account: i64) -> i64 {
     let contact_id: i64 = sqlx::query_scalar(
@@ -1474,7 +1486,14 @@ async fn contact_on_whatsapp(conn: &mut SqliteConnection, account: i64) -> i64 {
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    add_identity(conn, account, contact_id, "+15555550100", Some("whatsapp")).await;
+    add_identity(
+        conn,
+        account,
+        contact_id,
+        "+15555550100",
+        Some(IdentityService::Whatsapp),
+    )
+    .await;
     contact_id
 }
 
@@ -1483,7 +1502,7 @@ async fn replace_identity(
     conn: &mut SqliteConnection,
     account: i64,
     contact_id: i64,
-    service: Option<&str>,
+    service: Option<IdentityService>,
 ) {
     let answer = try_replace_identity(conn, account, contact_id, "+15555550101", service).await;
     assert!(matches!(answer, Ok(true)), "{answer:?}");
@@ -1496,7 +1515,7 @@ async fn try_replace_identity(
     account: i64,
     contact_id: i64,
     address: &str,
-    service: Option<&str>,
+    service: Option<IdentityService>,
 ) -> Result<bool, ContactEditError> {
     mutate_committed(
         conn,
@@ -1508,7 +1527,7 @@ async fn try_replace_identity(
             update_identity: Some(UpdateContactIdentityRequest {
                 previous_address: "+15555550100".into(),
                 address: address.into(),
-                service: service.map(Into::into),
+                service,
             }),
             remove_identity: None,
         },
@@ -1567,11 +1586,17 @@ async fn replacing_an_identity_under_a_service_uses_that_service() {
         account,
         contact_id,
         "+15555550100",
-        Some("phone"),
+        Some(IdentityService::Phone),
     )
     .await;
 
-    replace_identity(&mut conn, account, contact_id, Some("whatsapp")).await;
+    replace_identity(
+        &mut conn,
+        account,
+        contact_id,
+        Some(IdentityService::Whatsapp),
+    )
+    .await;
 
     assert_eq!(
         contact_identities(&mut conn, account, contact_id).await,
@@ -1593,8 +1618,14 @@ async fn replacing_an_identity_under_another_service_moves_it_there() {
     let mut conn = fixture.conn().await;
     let contact_id = contact_on_whatsapp(&mut conn, account).await;
 
-    let answer =
-        try_replace_identity(&mut conn, account, contact_id, "+15555550102", Some("sms")).await;
+    let answer = try_replace_identity(
+        &mut conn,
+        account,
+        contact_id,
+        "+15555550102",
+        Some(IdentityService::Phone),
+    )
+    .await;
 
     assert!(matches!(answer, Ok(true)), "{answer:?}");
     assert_eq!(
@@ -1755,7 +1786,7 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
                 name: None,
                 add_identity: Some(AddContactIdentityRequest {
                     address: "+15555550135".into(),
-                    service: Some("phone".into()),
+                    service: Some(IdentityService::Phone),
                 }),
                 update_identity: None,
                 remove_identity: None,
@@ -1778,7 +1809,7 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
                 name: None,
                 add_identity: Some(AddContactIdentityRequest {
                     address: "+15555550135".into(),
-                    service: Some("phone".into()),
+                    service: Some(IdentityService::Phone),
                 }),
                 update_identity: None,
                 remove_identity: None,
@@ -1804,7 +1835,7 @@ async fn mutate_contact_bumps_last_modified_on_shape_changes() {
                 update_identity: None,
                 remove_identity: Some(RemoveContactIdentityRequest {
                     address: "+15555550135".into(),
-                    service: Some("phone".into()),
+                    service: Some(IdentityService::Phone),
                 }),
             },
         )

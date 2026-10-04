@@ -4,31 +4,34 @@ import Button from "../../components/Button";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import IdentityTable, { type IdentityRow } from "../../components/IdentityTable";
 import type { AccountProfile } from "../../lib/account";
-import type { HandleService } from "../../lib/handleService";
+import { identityService } from "../../lib/backupIdentity";
+import { type HandleService, serverService } from "../../lib/handleService";
 import { phonesMatch } from "../../lib/phoneTokens";
 import { keys } from "../../lib/queryKeys";
 import { useRouteQuery } from "../../lib/routeQuery";
 import { listAccountIdentities } from "../../lib/serverApi";
+import type { components } from "../../lib/serverApi.types";
 import { useUpdateSettingsProfile } from "../../lib/useSettingsAccount";
 import { type Identity, removeBody } from "./identities";
 import { sectionTitleClass } from "./profileStyles";
+
+type IdentityService = components["schemas"]["IdentityService"];
 
 /**
  * Whether `rows` hold `address` on `service`, however the address was typed.
  *
  * An add and a removal are judged here rather than by `profile.phones`,
  * because one number can be a Text Message identity and a WhatsApp identity
- * at once, and `profile.phones` lists it for each with no service.
+ * at once, and `profile.phones` lists it for each with no service. The list
+ * names an email address by its type, `email`, on whatever service it was
+ * sent, so an email address is found by its type and a number by its service.
  */
-function listsIdentity(rows: Identity[], address: string, service: string): boolean {
-  const needle = address.trim().toLowerCase();
-  return rows.some(
-    (row) =>
-      row.service === service &&
-      (service === "email"
-        ? row.address.toLowerCase() === needle
-        : phonesMatch(address, row.address)),
-  );
+function listsIdentity(rows: Identity[], address: string, service: IdentityService): boolean {
+  if (identityService(address) === "email") {
+    const needle = address.trim().toLowerCase();
+    return rows.some((row) => row.service === "email" && row.address.toLowerCase() === needle);
+  }
+  return rows.some((row) => row.service === service && phonesMatch(address, row.address));
 }
 
 /** The profile's own identities as placeholder rows, shown until the server lists them. */
@@ -103,7 +106,7 @@ export function IdentitiesSection({
    */
   const changeAndCheck = async (
     body: Parameters<typeof updateProfile.mutateAsync>[0],
-    { address, service }: { address: string; service: string },
+    { address, service }: { address: string; service: IdentityService },
     { listed, notChanged }: { listed: boolean; notChanged: string },
   ) => {
     await updateProfile.mutateAsync(body);
@@ -121,8 +124,9 @@ export function IdentitiesSection({
     }
   };
 
-  const confirmAdd = async (identity: { address: string; service: HandleService }) => {
+  const confirmAdd = async ({ address, service }: { address: string; service: HandleService }) => {
     setAddError("");
+    const identity = { address, service: serverService(service) };
     try {
       await changeAndCheck({ identities: [identity] }, identity, {
         listed: true,
@@ -136,10 +140,13 @@ export function IdentitiesSection({
 
   const confirmRemove = async () => {
     if (!removeTarget) return;
-    const { address, service } = removeTarget;
+    const identity = {
+      address: removeTarget.address,
+      service: serverService(removeTarget.service),
+    };
     setRemoveError("");
     try {
-      await changeAndCheck({ remove_identities: [{ address, service }] }, removeTarget, {
+      await changeAndCheck({ remove_identities: [identity] }, identity, {
         listed: false,
         notChanged: "The server did not remove that identity.",
       });

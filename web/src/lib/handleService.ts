@@ -1,5 +1,19 @@
+import type { components } from "./serverApi.types";
+
 /** Messaging service ids used on profiles, setup, and contacts. */
 export type HandleService = "phone" | "email" | "whatsapp";
+
+/**
+ * The service the server takes for an identity offered on `service`:
+ * `whatsapp`, or `phone` for anything else. An email address is on the phone
+ * service, where iMessage reaches it; the server types an identity by its
+ * address, never by its service, and refuses `email` as a service.
+ */
+export function serverService(
+  service: string | null | undefined,
+): components["schemas"]["IdentityService"] {
+  return service?.trim().toLowerCase() === "whatsapp" ? "whatsapp" : "phone";
+}
 
 export const HANDLE_SERVICES = [
   "phone",

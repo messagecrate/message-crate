@@ -730,6 +730,14 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-04 **A misspelt service no longer puts an identity on Text
+  Message.** Adding, swapping or removing a contact's identity, or one of your
+  own, takes Text Message or WhatsApp and nothing else. Any other service used
+  to be read as Text Message without a word, so a WhatsApp number with a typo
+  in its service landed on Text Message; now the server refuses it and says
+  which two it takes. An email address is added on Text Message, where
+  iMessage reaches it, as the app already does for you.
+
 - 2026-10-04 **An Address Book load keeps a number's Text Message and
   WhatsApp identities on one contact.** A file that moved a number's Text
   Message identity to a contact, and had no row for the same number on

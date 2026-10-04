@@ -1569,16 +1569,11 @@ export interface components {
              */
             total_bytes: number;
         };
-        /** @description An address to link plus optional platform service. */
+        /** @description An address to link, and the service to link it on. */
         AddContactIdentityRequest: {
             /** @description The address to link. */
             address: string;
-            /**
-             * @description Platform service, `phone` or `whatsapp` (any other value is read as
-             *     `phone`); the phone service when omitted. It never decides the identity's type, which comes from the
-             *     address. A new email address on WhatsApp is refused.
-             */
-            service?: string | null;
+            service?: components["schemas"]["IdentityService"] | null;
         };
         /** @description One named API token as shown in Settings: label, permissions, and masked secret. */
         ApiToken: {
@@ -2452,6 +2447,14 @@ export interface components {
              */
             start_date?: string | null;
         };
+        /**
+         * @description The service an identity is on, as a request names it: `phone` or
+         *     `whatsapp`. `phone` is Text Message, which carries SMS, MMS, iMessage and
+         *     RCS, and reaches an email address through iMessage. The service never
+         *     decides the identity's type, which comes from the address.
+         * @enum {string}
+         */
+        IdentityService: "phone" | "whatsapp";
         /** @description One contact an import run touched, and what the run did to it. */
         ImportContact: {
             /**
@@ -2692,11 +2695,11 @@ export interface components {
             /** @description The address as typed, e.g. `+15555550100` or `alex@example.com`. */
             address: string;
             /**
-             * @description Platform the address belongs to: `phone`, `email` (the phone
-             *     platform), or `whatsapp`. It never decides the identity's type, which
-             *     comes from the address; an email address on WhatsApp is refused.
+             * @description The service the address is on. It never decides the identity's type,
+             *     which comes from the address: an email address is on the phone
+             *     service, and one on WhatsApp is refused.
              */
-            service: string;
+            service: components["schemas"]["IdentityService"];
         };
         /** @description Body for `POST /v1/contacts/summaries`. */
         ListContactSummariesRequest: {
@@ -4054,8 +4057,7 @@ export interface components {
         RemoveContactIdentityRequest: {
             /** @description The address to unlink. */
             address: string;
-            /** @description Platform service, when the identity is linked with one. */
-            service?: string | null;
+            service?: components["schemas"]["IdentityService"] | null;
         };
         /** @description The new password. */
         ReplaceAccountPasswordRequest: {
@@ -4278,11 +4280,11 @@ export interface components {
             /** @description The address as typed, e.g. `+15555550100` or `alex@example.com`. */
             address: string;
             /**
-             * @description Platform the address belongs to: `phone`, `email` (the phone
-             *     platform), or `whatsapp`. It never decides the identity's type, which
-             *     comes from the address.
+             * @description The service the address is on. It never decides the identity's type,
+             *     which comes from the address: an email address is on the phone
+             *     service.
              */
-            service: string;
+            service: components["schemas"]["IdentityService"];
         };
         /**
          * @description Body for changing an account. Omitted fields are left alone. The name,
@@ -4325,15 +4327,7 @@ export interface components {
             address: string;
             /** @description The address currently linked. */
             previous_address: string;
-            /**
-             * @description Platform service of the new address. The previous address is found on
-             *     its own service whatever this names: on the named service first when
-             *     it is there under more than one, else the phone service, then
-             *     WhatsApp. When omitted, the new address takes the service of the
-             *     previous one. It never decides the new identity's type, which comes
-             *     from the address, and a new email address on WhatsApp is refused.
-             */
-            service?: string | null;
+            service?: components["schemas"]["IdentityService"] | null;
         };
         /** @description Body for `PATCH /v1/contacts/{id}`. Exactly one mutation field should be set. */
         UpdateContactRequest: {
