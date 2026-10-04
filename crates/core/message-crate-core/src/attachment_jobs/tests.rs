@@ -425,9 +425,9 @@ fn clone_temp_paths_are_unique_per_call() {
 /// Every test above drives `run_attachment_jobs` directly with a hand-built
 /// job list. `stage_attachment_jobs` over `attachment_jobs` is what the
 /// exporters actually reach, through `message-staging` — it builds the jobs,
-/// runs them, counts what was saved, and drops the in-memory bytes — and
-/// mutation testing found it could be replaced with `Ok(())` in its entirety
-/// with nothing failing.
+/// runs them, counts what was saved, and drops the in-memory bytes. Mutation
+/// testing found that `stage_conversation_attachments`, the step it replaced,
+/// could be replaced with `Ok(())` in its entirety with nothing failing.
 /// An export would then write no attachment files at all and report success.
 #[test]
 fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
