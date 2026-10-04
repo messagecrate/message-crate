@@ -237,6 +237,12 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **Minimum Video File Size takes a number of megabytes.**
+  Compress & Convert added an `M` to whatever was typed in Minimum Video
+  File Size, so `20MB` became `20MBM` and the run was refused over a value
+  nobody typed. The field now takes a whole number of megabytes, such as
+  `20`, as its label says. Anything else is refused before Staging with a
+  sentence that names what was typed and asks for a number of megabytes.
 - 2026-10-04 **A resumed Import Run follows the attachment setting Staging
   recorded.** An Import Run resumed after the app closed decided from its
   saved form whether it had a Media Stage, and its Upload took the size

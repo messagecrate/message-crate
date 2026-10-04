@@ -185,7 +185,8 @@ pub struct Form {
     pub media_max_resolution: MaxResolution,
     /// Compress-only max frame rate.
     pub media_max_fps: String,
-    /// Compress-only minimum video size (e.g. `20M`).
+    /// Compress-only minimum video size, as a whole number of megabytes
+    /// (e.g. `20`).
     pub media_min_size: String,
     /// Compress-only: skip already-efficient HEVC videos.
     pub media_skip_efficient: bool,
@@ -226,7 +227,7 @@ impl Default for Form {
             attachment_media: AttachmentMedia::default(),
             media_max_resolution: MaxResolution::default(),
             media_max_fps: "30".into(),
-            media_min_size: "20M".into(),
+            media_min_size: "20".into(),
             media_skip_efficient: true,
             apple_platform: ApplePlatform::default(),
             whatsapp_platform: WhatsappPlatform::default(),
@@ -1087,11 +1088,11 @@ mod tests {
             ..Form::default()
         };
         assert_eq!(
-            form("abc", "20M").compress_options().unwrap_err(),
+            form("abc", "20").compress_options().unwrap_err(),
             "Max fps must be a number."
         );
         assert_eq!(
-            form("", "20M").compress_options().unwrap_err(),
+            form("", "20").compress_options().unwrap_err(),
             "Max fps is required for Compress."
         );
         assert_eq!(
@@ -1099,6 +1100,7 @@ mod tests {
             "Min size is required for Compress."
         );
         assert!(form("30", "lots").compress_options().is_err());
+        assert!(form("30", "20M").compress_options().is_err());
     }
 
     #[test]
@@ -1112,7 +1114,7 @@ mod tests {
             obfuscate: true,
             media_max_resolution: MaxResolution::P720,
             media_max_fps: "24".into(),
-            media_min_size: "5M".into(),
+            media_min_size: "5".into(),
             media_skip_efficient: false,
             ..Form::default()
         };

@@ -16,7 +16,7 @@ describe("sbrExtractFields", () => {
       attachment_media: "convert",
       media_max_resolution: "1080p",
       media_max_fps: "30",
-      media_min_size: "20M",
+      media_min_size: "20",
       owner_phones: ["+15551111", "+15552222"],
       obfuscate: true,
     });

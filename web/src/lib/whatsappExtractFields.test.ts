@@ -22,7 +22,7 @@ describe("whatsappExtractFields", () => {
       attachment_media: "convert",
       media_max_resolution: "1080p",
       media_max_fps: "30",
-      media_min_size: "20M",
+      media_min_size: "20",
       whatsapp_key: "deadbeef",
       whatsapp_media: "/tmp/WhatsApp",
       whatsapp_db: "/tmp/msgstore.db",
@@ -73,7 +73,7 @@ describe("whatsappExtractFields", () => {
       attachment_media: "copy",
       media_max_resolution: "720p",
       media_max_fps: "30",
-      media_min_size: "20M",
+      media_min_size: "20",
       whatsapp_wa: "/backups/ContactsV2.sqlite",
     });
   });
@@ -124,7 +124,7 @@ describe("whatsappExtractFields", () => {
       attachment_media: "copy",
       media_max_resolution: "720p",
       media_max_fps: "30",
-      media_min_size: "20M",
+      media_min_size: "20",
       whatsapp_wa: "/backups/ContactsV2.sqlite",
       whatsapp_business: true,
     });
