@@ -224,7 +224,9 @@ async fn failed_reset_preserves_existing_demo_account() {
     checkpoint_and_clean_sidecars(&db, "while seeding the previous demo")
         .await
         .expect("checkpoint the previous demo");
-    let every_row_before = non_demo_state(&db, NO_ACCOUNT).await.expect("read rows");
+    let every_row_before = non_demo_state(&db, EVERY_ROW, &[])
+        .await
+        .expect("read rows");
     let bundle = temp.path().join("bundle");
     write_tiny_reset_bundle(&bundle);
     // WhatsApp is imported last, so the wipe and the other two imports have
@@ -249,7 +251,9 @@ async fn failed_reset_preserves_existing_demo_account() {
         "the import of the file failed: {error}"
     );
     assert_eq!(
-        non_demo_state(&db, NO_ACCOUNT).await.expect("read rows"),
+        non_demo_state(&db, EVERY_ROW, &[])
+            .await
+            .expect("read rows"),
         every_row_before,
         "every row of the active database is as it was"
     );
@@ -421,7 +425,7 @@ async fn reset_check_refuses_a_prepared_database_with_more_non_demo_messages() {
 }
 
 /// The check compares every row another account holds, not its message
-/// count, and the Server Settings: each change here leaves the counts of
+/// count, the rows of deleted accounts, and the Server Settings: each change here leaves the counts of
 /// messages as they were and is refused, naming its table (#1225).
 #[tokio::test]
 async fn reset_check_refuses_a_prepared_database_that_changed_another_accounts_rows_or_the_server_settings()
@@ -443,6 +447,12 @@ async fn reset_check_refuses_a_prepared_database_that_changed_another_accounts_r
         (
             "UPDATE server_settings SET public_registration = 1",
             "server_settings (active rows=1, prepared rows=1)",
+        ),
+        // A row whose account was deleted belongs to no account, and is
+        // compared like every other account's (#1450).
+        (
+            "UPDATE imports SET username = 'someone else' WHERE account_id IS NULL",
+            "imports (active rows=1, prepared rows=1)",
         ),
     ];
     for (change, named) in changes {
@@ -500,6 +510,131 @@ async fn a_reset_that_renames_another_accounts_contact_is_refused() {
         name, "Alice",
         "the active database keeps the contact's name"
     );
+}
+
+/// A prepared database whose search index lost another account's message is
+/// refused: the message is still in `messages`, but a search no longer finds
+/// it (#1450).
+#[tokio::test]
+async fn reset_check_refuses_a_prepared_database_that_dropped_another_accounts_search_entries() {
+    let temp = tempfile::tempdir().expect("create test directory");
+    let (active, prepared) = active_and_prepared_reset_databases(temp.path()).await;
+    let (pool, mut conn) = test_db(&prepared).await;
+    sqlx::query(
+        "DELETE FROM messages_fts
+         WHERE rowid IN (SELECT id FROM messages WHERE account_id = 9)",
+    )
+    .execute(&mut *conn)
+    .await
+    .expect("drop account 9's search index entries");
+    close_test_db(pool, conn).await;
+
+    let error = verify_non_demo_state_preserved(&active, &prepared, DEMO_ACCOUNT_ID)
+        .await
+        .expect_err("a reset that dropped another account's search entries must be refused")
+        .to_string();
+
+    assert!(
+        error.ends_with(
+            "outside the Demo Account in: messages_fts (active rows=1, prepared rows=0), \
+             messages_fts searches (active rows=2, prepared rows=0)"
+        ),
+        "the error names the search index alone: {error}"
+    );
+}
+
+/// A prepared database whose search index finds another account's message
+/// by other words is refused, though the index holds the message with as
+/// many terms as before: a search for a word of the message no longer finds
+/// it (#1450).
+#[tokio::test]
+async fn reset_check_refuses_a_prepared_database_whose_search_finds_another_accounts_message_by_other_words()
+ {
+    let temp = tempfile::tempdir().expect("create test directory");
+    let (active, prepared) = active_and_prepared_reset_databases(temp.path()).await;
+    let (pool, mut conn) = test_db(&prepared).await;
+    let message: i64 = sqlx::query_scalar("SELECT id FROM messages WHERE account_id = 9")
+        .fetch_one(&mut *conn)
+        .await
+        .expect("read account 9's message");
+    for sql in [
+        "DELETE FROM messages_fts WHERE rowid = $1",
+        "INSERT INTO messages_fts (rowid, body) VALUES ($1, 'lost words')",
+    ] {
+        sqlx::query(sql)
+            .bind(message)
+            .execute(&mut *conn)
+            .await
+            .unwrap_or_else(|error| panic!("{sql}: {error}"));
+    }
+    close_test_db(pool, conn).await;
+
+    let error = verify_non_demo_state_preserved(&active, &prepared, DEMO_ACCOUNT_ID)
+        .await
+        .expect_err(
+            "a reset whose search finds another account's message by other words must be refused",
+        )
+        .to_string();
+
+    assert!(
+        error.ends_with(
+            "outside the Demo Account in: messages_fts searches (active rows=2, prepared rows=0)"
+        ),
+        "the error names the searches alone: {error}"
+    );
+}
+
+/// A reset whose rebuild changed another account's folder under the data
+/// directory is refused, whether a file grew, went or appeared (#1450).
+#[tokio::test]
+async fn a_reset_that_changes_another_accounts_folder_is_refused() {
+    /// The refusal's last words, and the change to account 9's folder.
+    type FolderChange = (&'static str, fn(&Path));
+    let changes: [FolderChange; 3] = [
+        (
+            "9/assets/kept.bin (before: 4 bytes, after: 9 bytes)",
+            |account| {
+                fs::write(account.join("assets/kept.bin"), b"keep more").expect("grow the file");
+            },
+        ),
+        (
+            "9/assets/kept.bin (before: 4 bytes, after: none)",
+            |account| {
+                fs::remove_file(account.join("assets/kept.bin")).expect("remove the file");
+            },
+        ),
+        (
+            "9/assets/new.bin (before: none, after: 3 bytes)",
+            |account| {
+                fs::write(account.join("assets/new.bin"), b"new").expect("add a file");
+            },
+        ),
+    ];
+    for (named, change) in changes {
+        let temp = tempfile::tempdir().expect("create test directory");
+        let db = temp.path().join("messagecrate.db");
+        seed_reset_test_database(&db).await;
+        let data_dir = temp.path().join("data");
+        let account = data_dir.join("9");
+        fs::create_dir_all(account.join("assets")).expect("create account 9's folder");
+        fs::write(account.join("assets/kept.bin"), b"keep").expect("write account 9's file");
+        let bundle = temp.path().join("bundle");
+        write_tiny_reset_bundle(&bundle);
+        let cfg = test_config(&db, &data_dir);
+
+        let result = reset_prepared_bundle_with(&cfg, &bundle, DEMO_ACCOUNT_ID, async |_| {
+            change(&account);
+            Ok(())
+        })
+        .await;
+
+        let error = format!("{:#}", result.err().expect("the reset is refused"));
+        assert!(
+            error.ends_with(&format!("changed other accounts' folders: {named}")),
+            "the error names the changed file: {error}"
+        );
+        assert_reset_test_database(&db).await;
+    }
 }
 
 /// While a server holds the database, a reset is refused before it reads or
@@ -728,6 +863,15 @@ async fn seed_reset_test_database(path: &Path) {
     crate::db::server_settings::set_asset_max_bytes(&mut conn, 1024)
         .await
         .expect("write the server settings");
+    // An Import Run of a deleted account: its `account_id` is NULL, and it
+    // stays in the Audit Trail.
+    sqlx::query(
+        "INSERT INTO imports (account_id, username, source, mode, status, started_at)
+         VALUES (NULL, 'gone', 'imessage', 'import', 'completed', '2026-01-01T00:00:00Z')",
+    )
+    .execute(&mut *conn)
+    .await
+    .expect("insert a deleted account's import run");
     close_test_db(pool, conn).await;
     // Pool close does not reliably checkpoint WAL sidecars, so an
     // fs::copy of this file would miss everything written to the -wal.
@@ -794,9 +938,12 @@ async fn make_prepared_reset_database_observably_different(path: &Path) {
     close_test_db(pool, conn).await;
 }
 
-/// An account id no row belongs to: [`non_demo_state`] with it reads every
-/// row of the database.
-const NO_ACCOUNT: i64 = -1;
+/// An account id no row belongs to, and no entry after the last:
+/// [`non_demo_state`] with it reads every row of the database.
+const EVERY_ROW: DemoRows = DemoRows {
+    account: -1,
+    entries_before: i64::MAX,
+};
 
 /// Give `account_id` what a person makes beside their messages: a contact in
 /// a Contact Group, and a Saved Search. The group membership has no

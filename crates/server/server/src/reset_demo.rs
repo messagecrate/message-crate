@@ -599,6 +599,7 @@ async fn reset_prepared_bundle_with(
     // install can rename into data_dir/<account>. A work directory on
     // another mount (tmp, a nested bind, a named volume) fails with EXDEV.
     let data_work = reset_account_work_dir(&cfg.paths.data_dir)?;
+    let other_folders = other_account_folders(&cfg.paths.data_dir, account_id)?;
     let prepared_db = db_work.path().join("messagecrate.db");
     checkpoint_and_clean_sidecars(&cfg.paths.db, "before creating the reset snapshot").await?;
     prepare_database_snapshot(&cfg.paths.db, &prepared_db).await?;
@@ -628,6 +629,7 @@ async fn reset_prepared_bundle_with(
     let stats = stats?;
 
     verify_non_demo_state_preserved(&cfg.paths.db, &prepared_db, account_id).await?;
+    verify_other_account_folders_preserved(&cfg.paths.data_dir, account_id, &other_folders)?;
     let active_account = cfg.paths.data_dir.join(account_id.to_string());
     let prepared_account = temporary_cfg.paths.data_dir.join(account_id.to_string());
     let paths = ResetPaths {
@@ -1050,8 +1052,13 @@ async fn verify_non_demo_state_preserved(
         // A database with no accounts holds nothing a reset could lose.
         return Ok(());
     }
-    let active_state = non_demo_state(active, demo_id).await?;
-    let prepared_state = non_demo_state(prepared, demo_id).await?;
+    let demo = DemoRows {
+        account: demo_id,
+        entries_before: last_audit_entry(active).await?,
+    };
+    let search_terms = sample_search_terms(active, demo_id).await?;
+    let active_state = non_demo_state(active, demo, &search_terms).await?;
+    let prepared_state = non_demo_state(prepared, demo, &search_terms).await?;
     let changed: Vec<String> = active_state
         .keys()
         .chain(prepared_state.keys())
@@ -1097,6 +1104,32 @@ async fn has_accounts_table(db: &Path) -> Result<bool> {
     Ok(exists)
 }
 
+/// The id of the last Audit Trail entry in the database at `db`, or 0 when
+/// it has none.
+async fn last_audit_entry(db: &Path) -> Result<i64> {
+    let pool = engine::open_pool_for_path(db)
+        .await
+        .with_context(|| format!("open {} to verify non-demo accounts", db.display()))?;
+    let last: Result<i64> = sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM audit_entries")
+        .fetch_one(&pool)
+        .await
+        .with_context(|| format!("read the last Audit Trail entry of {}", db.display()));
+    pool.close().await;
+    last
+}
+
+/// The rows a reset may change: those of the Demo Account, `account`, and
+/// those its deletion during the reset unlinked from it. A deleted account's
+/// entries and runs keep no account id; they name the `account_deleted`
+/// entry instead (ADR 0020). An `account_deleted` entry after
+/// `entries_before`, the last entry of the active database, is the one the
+/// reset wrote when it deleted the Demo Account.
+#[derive(Debug, Clone, Copy)]
+struct DemoRows {
+    account: i64,
+    entries_before: i64,
+}
+
 /// The rows of one table that a reset must leave as they were: how many, and
 /// a SHA-256 over all of them in a fixed order.
 #[derive(Debug, PartialEq, Eq)]
@@ -1109,15 +1142,25 @@ struct TableDigest {
 /// own record; it is written and removed by the build itself.
 const UNCOMPARED_TABLES: [&str; 1] = ["demo_account_build"];
 
-/// A digest per table of every row that does not belong to the Demo Account:
+/// A digest per table of every row that is not one of `demo`'s:
 /// the rows of every other account, the owner's among them, and the rows that
 /// belong to no account, such as `server_settings`. A row belongs to the
 /// account in its `account_id` column, or, for a table without one, to the
-/// account of the row a `NOT NULL` foreign key points at.
+/// account of the row a `NOT NULL` foreign key points at; a row whose
+/// account column is NULL, such as the Import Run of a deleted account,
+/// belongs to no account and is compared, unless the Demo Account's deletion
+/// during the reset unlinked it ([`DemoRows`]).
 ///
-/// Full-text index tables are left out: the index is contentless, so it has
-/// no rows to read back, and it is written from `messages`, which is compared.
-async fn non_demo_state(db: &Path, demo_id: i64) -> Result<BTreeMap<String, TableDigest>> {
+/// The search index is contentless, so it has no rows to read back. It is
+/// compared by which messages it holds and how many terms each has
+/// ([`search_index_digest`]), and by what `search_terms` find
+/// ([`search_sample_digest`]). Its other shadow tables are left out, because
+/// their bytes differ for the same entries.
+async fn non_demo_state(
+    db: &Path,
+    demo: DemoRows,
+    search_terms: &[String],
+) -> Result<BTreeMap<String, TableDigest>> {
     let pool = engine::open_pool_for_path(db)
         .await
         .with_context(|| format!("open {} to verify non-demo accounts", db.display()))?;
@@ -1125,7 +1168,7 @@ async fn non_demo_state(db: &Path, demo_id: i64) -> Result<BTreeMap<String, Tabl
         .acquire()
         .await
         .with_context(|| format!("open {} to verify non-demo accounts", db.display()))?;
-    let state = non_demo_state_on_conn(&mut conn, demo_id)
+    let state = non_demo_state_on_conn(&mut conn, demo, search_terms)
         .await
         .with_context(|| format!("read the non-demo rows of {}", db.display()));
     conn.close().await?;
@@ -1135,11 +1178,9 @@ async fn non_demo_state(db: &Path, demo_id: i64) -> Result<BTreeMap<String, Tabl
 
 async fn non_demo_state_on_conn(
     conn: &mut sqlx::SqliteConnection,
-    demo_id: i64,
+    demo: DemoRows,
+    search_terms: &[String],
 ) -> Result<BTreeMap<String, TableDigest>> {
-    use futures_util::TryStreamExt;
-    use sha2::{Digest, Sha256};
-
     let tables: Vec<(String, String)> = sqlx::query_as(
         "SELECT name, COALESCE(sql, '') FROM sqlite_master
          WHERE type = 'table' AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\'
@@ -1157,6 +1198,19 @@ async fn non_demo_state_on_conn(
         .map(|(name, _)| name.as_str())
         .collect();
     let mut state = BTreeMap::new();
+    for table in &virtual_tables {
+        if *table != SEARCH_INDEX {
+            bail!("cannot compare the virtual table {table}");
+        }
+        state.insert(
+            (*table).to_owned(),
+            search_index_digest(conn, demo.account).await?,
+        );
+        state.insert(
+            format!("{table} searches"),
+            search_sample_digest(conn, demo.account, search_terms).await?,
+        );
+    }
     for (table, _) in &tables {
         let is_index = virtual_tables
             .iter()
@@ -1172,52 +1226,296 @@ async fn non_demo_state_on_conn(
             .join(" || ',' || ");
         let owner = row_owner(conn, table, &columns).await?;
         let selection = match &owner {
+            // `IS NOT`, so a row whose account is NULL is kept (#1450).
             Some(owner) => format!(
-                "FROM {} t {} WHERE {} != $1",
+                "FROM {} t {} WHERE {} IS NOT $1",
                 quote_ident(table),
                 owner.join,
                 owner.account
             ),
             None => format!("FROM {} t", quote_ident(table)),
         };
+        let unlinked = owner.as_ref().and_then(|owner| owner.deletion.as_ref());
+        let selection = match unlinked {
+            Some(deletion) => format!(
+                "{selection} AND NOT COALESCE({deletion} IN (
+                     SELECT id FROM audit_entries
+                     WHERE action = 'account_deleted' AND id > $2), 0)"
+            ),
+            None => selection,
+        };
         let sql = format!("SELECT {row_text} {selection} ORDER BY 1");
         let query = sqlx::query_scalar::<_, String>(&sql);
         // Only a table whose rows belong to accounts leaves the Demo
         // Account's rows out.
-        let query = match owner {
-            Some(_) => query.bind(demo_id),
-            None => query,
+        let query = match (&owner, unlinked) {
+            (Some(_), Some(_)) => query.bind(demo.account).bind(demo.entries_before),
+            (Some(_), None) => query.bind(demo.account),
+            (None, _) => query,
         };
-        let mut rows = query.fetch(&mut *conn);
-        let mut hasher = Sha256::new();
-        let mut count = 0u64;
-        while let Some(row) = rows
-            .try_next()
+        let digest = digest_rows(query.fetch(&mut *conn))
             .await
-            .with_context(|| format!("read {table}"))?
-        {
-            hasher.update(row.as_bytes());
-            hasher.update(b"\n");
-            count += 1;
-        }
-        drop(rows);
-        state.insert(
-            table.clone(),
-            TableDigest {
-                rows: count,
-                sha256: crate::assets_api::hex_encode(&hasher.finalize()),
-            },
-        );
+            .with_context(|| format!("read {table}"))?;
+        state.insert(table.clone(), digest);
     }
     Ok(state)
 }
 
+/// The count of `rows` and a SHA-256 over them, in the order they come.
+async fn digest_rows(
+    mut rows: impl futures_util::Stream<Item = Result<String, sqlx::Error>> + Unpin,
+) -> Result<TableDigest> {
+    use futures_util::TryStreamExt;
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    let mut count = 0u64;
+    while let Some(row) = rows.try_next().await? {
+        hasher.update(row.as_bytes());
+        hasher.update(b"\n");
+        count += 1;
+    }
+    Ok(TableDigest {
+        rows: count,
+        sha256: crate::assets_api::hex_encode(&hasher.finalize()),
+    })
+}
+
+/// The full-text search index over `messages`, the one virtual table the
+/// schema has.
+const SEARCH_INDEX: &str = "messages_fts";
+
+/// Which messages outside the Demo Account the search index holds, and how
+/// many terms each holds in each column, read from its `_docsize` table. An
+/// entry whose message is gone belongs to no account and is read too.
+/// Deleting a message's entry removes its row there (#1450).
+async fn search_index_digest(
+    conn: &mut sqlx::SqliteConnection,
+    demo_id: i64,
+) -> Result<TableDigest> {
+    let rows = sqlx::query_scalar::<_, String>(
+        "SELECT d.id || ',' || hex(d.sz)
+         FROM messages_fts_docsize d LEFT JOIN messages m ON m.id = d.id
+         WHERE m.account_id IS NOT $1
+         ORDER BY d.id",
+    )
+    .bind(demo_id)
+    .fetch(&mut *conn);
+    digest_rows(rows)
+        .await
+        .with_context(|| format!("read {SEARCH_INDEX}"))
+}
+
+/// How many messages outside the Demo Account [`sample_search_terms`] takes
+/// its terms from, and the most terms it takes.
+const SEARCH_SAMPLE_MESSAGES: i64 = 16;
+const SEARCH_SAMPLE_TERMS: usize = 32;
+
+/// Up to [`SEARCH_SAMPLE_TERMS`] words from [`SEARCH_SAMPLE_MESSAGES`]
+/// messages outside the Demo Account in the database at `db`, picked at
+/// random: the searches [`search_sample_digest`] runs on both databases.
+async fn sample_search_terms(db: &Path, demo_id: i64) -> Result<Vec<String>> {
+    let pool = engine::open_pool_for_path(db)
+        .await
+        .with_context(|| format!("open {} to verify non-demo accounts", db.display()))?;
+    let bodies: Result<Vec<String>> = sqlx::query_scalar(
+        "SELECT body FROM messages
+         WHERE account_id IS NOT $1 AND body IS NOT NULL
+         ORDER BY random() LIMIT $2",
+    )
+    .bind(demo_id)
+    .bind(SEARCH_SAMPLE_MESSAGES)
+    .fetch_all(&pool)
+    .await
+    .with_context(|| format!("pick messages to search in {}", db.display()));
+    pool.close().await;
+    let mut terms = std::collections::BTreeSet::new();
+    for body in bodies? {
+        for word in body.split(|c: char| !c.is_alphanumeric()) {
+            if terms.len() == SEARCH_SAMPLE_TERMS {
+                return Ok(terms.into_iter().collect());
+            }
+            if !word.is_empty() {
+                terms.insert(word.to_lowercase());
+            }
+        }
+    }
+    Ok(terms.into_iter().collect())
+}
+
+/// Every message outside the Demo Account each of `terms` finds in the
+/// search index, as a search runs it. An entry whose message is gone is
+/// found too. Two indexes that hold the same messages with the same term
+/// counts ([`search_index_digest`]) can still find different messages for a
+/// word; this catches that for a sample of words (#1450).
+async fn search_sample_digest(
+    conn: &mut sqlx::SqliteConnection,
+    demo_id: i64,
+    terms: &[String],
+) -> Result<TableDigest> {
+    let mut found = Vec::new();
+    for term in terms {
+        let phrase = format!("\"{}\"", term.replace('"', "\"\""));
+        let messages: Vec<i64> = sqlx::query_scalar(
+            "SELECT f.rowid FROM messages_fts f LEFT JOIN messages m ON m.id = f.rowid
+             WHERE messages_fts MATCH $1 AND m.account_id IS NOT $2
+             ORDER BY f.rowid",
+        )
+        .bind(&phrase)
+        .bind(demo_id)
+        .fetch_all(&mut *conn)
+        .await
+        .with_context(|| format!("search {SEARCH_INDEX} for {phrase}"))?;
+        found.extend(messages.into_iter().map(|id| Ok(format!("{term},{id}"))));
+    }
+    digest_rows(futures_util::stream::iter(found)).await
+}
+
+/// One entry under an account's folder, as [`other_account_folders`] lists
+/// it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FolderEntry {
+    Folder,
+    File {
+        bytes: u64,
+    },
+    /// A symbolic link or anything else that is neither a file nor a folder.
+    Other,
+}
+
+impl std::fmt::Display for FolderEntry {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Folder => f.write_str("folder"),
+            Self::File { bytes } => write!(f, "{bytes} bytes"),
+            Self::Other => f.write_str("not a file or folder"),
+        }
+    }
+}
+
+/// Every file and folder in the folders of accounts other than `demo_id`
+/// under `data_dir` (`data_dir/<account>/`), by its path relative to
+/// `data_dir`, with each file's size. A missing `data_dir` lists nothing.
+///
+/// # Errors
+///
+/// Returns an error when a folder cannot be read.
+fn other_account_folders(data_dir: &Path, demo_id: i64) -> Result<BTreeMap<PathBuf, FolderEntry>> {
+    let mut listing = BTreeMap::new();
+    let entries = match fs::read_dir(data_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(listing),
+        Err(error) => {
+            return Err(error).with_context(|| format!("list {}", data_dir.display()));
+        }
+    };
+    for entry in entries {
+        let entry = entry.with_context(|| format!("list {}", data_dir.display()))?;
+        let name = entry.file_name();
+        let is_other_account = name
+            .to_str()
+            .and_then(|name| name.parse::<i64>().ok())
+            .is_some_and(|account| account != demo_id);
+        let is_folder = entry
+            .file_type()
+            .with_context(|| format!("read {}", entry.path().display()))?
+            .is_dir();
+        if is_other_account && is_folder {
+            list_folder(data_dir, &entry.path(), &mut listing)?;
+        }
+    }
+    Ok(listing)
+}
+
+/// Add `folder` and everything under it to `listing`, by paths relative to
+/// `root`. A symbolic link is listed and not followed.
+fn list_folder(
+    root: &Path,
+    folder: &Path,
+    listing: &mut BTreeMap<PathBuf, FolderEntry>,
+) -> Result<()> {
+    let relative = |path: &Path| path.strip_prefix(root).unwrap_or(path).to_path_buf();
+    listing.insert(relative(folder), FolderEntry::Folder);
+    for entry in fs::read_dir(folder).with_context(|| format!("list {}", folder.display()))? {
+        let entry = entry.with_context(|| format!("list {}", folder.display()))?;
+        let path = entry.path();
+        let metadata =
+            fs::symlink_metadata(&path).with_context(|| format!("read {}", path.display()))?;
+        if metadata.is_dir() {
+            list_folder(root, &path, listing)?;
+        } else if metadata.is_file() {
+            listing.insert(
+                relative(&path),
+                FolderEntry::File {
+                    bytes: metadata.len(),
+                },
+            );
+        } else {
+            listing.insert(relative(&path), FolderEntry::Other);
+        }
+    }
+    Ok(())
+}
+
+/// The most changed paths a refusal names before it counts the rest.
+const CHANGED_PATHS_NAMED: usize = 10;
+
+/// Refuse to install the reset when the folder of any account other than
+/// `demo_id` under `data_dir` no longer lists what `before` lists: a file or
+/// folder added or removed, or a file whose size changed. The reset only
+/// ever replaces the Demo Account's folder (#1450).
+fn verify_other_account_folders_preserved(
+    data_dir: &Path,
+    demo_id: i64,
+    before: &BTreeMap<PathBuf, FolderEntry>,
+) -> Result<()> {
+    let after = other_account_folders(data_dir, demo_id)?;
+    let changed: Vec<String> = before
+        .keys()
+        .chain(after.keys())
+        .collect::<std::collections::BTreeSet<_>>()
+        .into_iter()
+        .filter(|path| before.get(*path) != after.get(*path))
+        .map(|path| {
+            let side = |listing: &BTreeMap<PathBuf, FolderEntry>| {
+                listing
+                    .get(path)
+                    .map_or_else(|| "none".to_owned(), ToString::to_string)
+            };
+            format!(
+                "{} (before: {}, after: {})",
+                path.display(),
+                side(before),
+                side(&after)
+            )
+        })
+        .collect();
+    if changed.is_empty() {
+        return Ok(());
+    }
+    let mut named = changed[..changed.len().min(CHANGED_PATHS_NAMED)].join(", ");
+    if changed.len() > CHANGED_PATHS_NAMED {
+        named.push_str(&format!(
+            " and {} more",
+            changed.len() - CHANGED_PATHS_NAMED
+        ));
+    }
+    bail!("the reset changed other accounts' folders: {named}");
+}
+
 /// How to find the account a row of a table belongs to: a join to add after
-/// the table, aliased `t`, and the expression that names the account.
+/// the table, aliased `t`, the expression that names the account, and, for a
+/// row that outlives its account, the expression that names the
+/// `account_deleted` entry it was unlinked by.
 struct RowOwner {
     join: String,
     account: String,
+    deletion: Option<String>,
 }
+
+/// The column a row that outlives its account names its `account_deleted`
+/// entry in (ADR 0020).
+const DELETION_ENTRY_COLUMN: &str = "deletion_entry_id";
 
 /// The account a row of `table` belongs to, or `None` for a table whose rows
 /// belong to no account (it has no `account_id` and no foreign key).
@@ -1236,12 +1534,20 @@ async fn row_owner(
         return Ok(Some(RowOwner {
             join: String::new(),
             account: "t.id".into(),
+            deletion: None,
         }));
     }
+    let deletion = |alias: &str, columns: &[String]| {
+        columns
+            .iter()
+            .any(|column| column == DELETION_ENTRY_COLUMN)
+            .then(|| format!("{alias}.{DELETION_ENTRY_COLUMN}"))
+    };
     if columns.iter().any(|column| column == "account_id") {
         return Ok(Some(RowOwner {
             join: String::new(),
             account: "t.account_id".into(),
+            deletion: deletion("t", columns),
         }));
     }
     let keys: Vec<(String, String, String)> = sqlx::query_as(
@@ -1255,11 +1561,8 @@ async fn row_owner(
     .fetch_all(&mut *conn)
     .await?;
     for (parent, from, to) in &keys {
-        if table_columns(conn, parent)
-            .await?
-            .iter()
-            .any(|c| c == "account_id")
-        {
+        let parent_columns = table_columns(conn, parent).await?;
+        if parent_columns.iter().any(|c| c == "account_id") {
             return Ok(Some(RowOwner {
                 join: format!(
                     "JOIN {} p ON p.{} = t.{}",
@@ -1268,6 +1571,7 @@ async fn row_owner(
                     quote_ident(from)
                 ),
                 account: "p.account_id".into(),
+                deletion: deletion("p", &parent_columns),
             }));
         }
     }
