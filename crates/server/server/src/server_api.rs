@@ -479,7 +479,7 @@ struct DemoBuildShared {
     /// Set when the server stops, so the ffmpeg a build runs is killed: the
     /// build runs it to its end without an `await`, so cancelling the task
     /// alone waits for the conversion (#1729).
-    stop_conversions: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    conversions_stopped: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Why the build failed, when the server stopped during it.
@@ -593,17 +593,25 @@ impl DemoBuild {
 
     /// The flag that stops the conversions of a build, for
     /// [`crate::reset_demo::build_demo_account`].
-    pub(crate) fn conversion_stop(&self) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
-        std::sync::Arc::clone(&self.0.stop_conversions)
+    pub(crate) fn conversions_stopped(&self) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
+        std::sync::Arc::clone(&self.0.conversions_stopped)
+    }
+
+    /// Kill the ffmpeg a running build runs, and every one it would start,
+    /// without waiting: the server calls this when the stop signal comes,
+    /// before it drains its requests, so a terminal's Ctrl-C reaching that
+    /// ffmpeg is not read as a failed conversion.
+    pub(crate) fn stop_conversions(&self) {
+        self.0
+            .conversions_stopped
+            .store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Stop a running build and wait until it has removed what it wrote.
     /// The server calls this once it has stopped serving, so the build does
     /// not end part-way when the process exits.
     pub(crate) async fn stop(&self) {
-        self.0
-            .stop_conversions
-            .store(true, std::sync::atomic::Ordering::Relaxed);
+        self.stop_conversions();
         self.0.stopping.cancel();
         let task = self
             .0
@@ -737,7 +745,7 @@ pub async fn replace_demo_account(
         state.cfg.clone(),
         req.size.into(),
         state.demo_bundle_generator,
-        state.demo_build.conversion_stop(),
+        state.demo_build.conversions_stopped(),
     );
     state
         .demo_build

@@ -1363,7 +1363,15 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
     eprintln!(
         "  routes: `message-crate-server dump-openapi` lists them all; set [server] openapi_ui = true for /docs"
     );
-    let served = serve_until_shutdown(listener, app, media_queue.clone()).await;
+    let on_signal = {
+        let demo_build = demo_build.clone();
+        let media_queue = media_queue.clone();
+        move || {
+            media_queue.ask_to_stop();
+            demo_build.stop_conversions();
+        }
+    };
+    let served = serve_until_shutdown(listener, app, on_signal).await;
     // A Demo Account build the owner started would otherwise end part-way
     // when the process exits (#1215).
     demo_build.stop().await;
@@ -1378,19 +1386,20 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
 /// Serve `app` on `listener` until a shutdown signal arrives, then stop
 /// accepting connections and return once the requests in flight have finished.
 ///
-/// The signal stops `media_queue`'s pass at once, before the requests drain:
-/// Ctrl-C in a terminal reaches the ffmpeg the pass runs as well, and a pass
-/// not yet told to stop would read that ffmpeg's exit as a failed conversion,
-/// take the Asset off the queue, and start the next one (#1729).
+/// `on_signal` runs as the signal arrives, before the requests drain. The
+/// server stops its conversions there: Ctrl-C in a terminal reaches the
+/// ffmpeg they run as well, and a conversion not yet told to stop would read
+/// that ffmpeg's exit as a failure, take the Asset off the queue, and start
+/// the next one (#1729).
 async fn serve_until_shutdown(
     listener: tokio::net::TcpListener,
     app: Router,
-    media_queue: crate::media_queue::MediaQueue,
+    on_signal: impl FnOnce() + Send + 'static,
 ) -> std::io::Result<()> {
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {
             shutdown_signal().await;
-            media_queue.ask_to_stop();
+            on_signal();
         })
         .await
 }
