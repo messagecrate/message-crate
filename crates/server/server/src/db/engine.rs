@@ -47,9 +47,12 @@ fn connect_options(path: &Path) -> SqliteConnectOptions {
 /// Pool options for SQLite: four connections plus the pragmas. Every
 /// SQLite pool comes through here, so this is also where the server's SQL
 /// functions are registered for the connections the pool will open
-/// ([`crate::db::sqlite_functions`]).
+/// ([`crate::db::sqlite_functions`]), and, in tests, the guard that refuses
+/// a write to messages outside a transaction ([`crate::db::write_guard`]).
 fn sqlite_pool_options() -> SqlitePoolOptions {
     crate::db::sqlite_functions::register();
+    #[cfg(test)]
+    crate::db::write_guard::register();
     with_pragmas(SqlitePoolOptions::new().max_connections(4))
 }
 

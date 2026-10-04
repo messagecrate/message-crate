@@ -790,15 +790,157 @@ pub struct SeedConversation<'a> {
 }
 
 /// A message guid no earlier call returned. `messages.guid` is required and
-/// unique per account and source, so a helper that inserts a message each
-/// time it is called takes a fresh one from here every time. A statement that
-/// runs once in one test gives a literal guid instead.
+/// unique per account and source, so [`MessageRow::new`] takes a fresh one
+/// from here for every row; a test that names its message sets a literal.
 pub fn unique_guid() -> String {
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
     format!(
         "test-{}",
         NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
     )
+}
+
+/// One `messages` row for a test to insert: the one place the server's tests
+/// write a message by hand, so a new required column is one edit here.
+///
+/// [`MessageRow::new`] fills every required column: source `imessage`, a guid
+/// from [`unique_guid`], the first instant of 2020, received, and
+/// `sort_order` 0. A test sets what it cares about with struct update
+/// syntax:
+///
+/// ```ignore
+/// MessageRow { body: Some("hello"), ..MessageRow::new(account_id, conversation_id) }
+///     .insert(&mut conn)
+///     .await;
+/// ```
+///
+/// [`MessageRow::insert`] writes it in a write transaction of its own, as
+/// every write to `messages` must be (`crate::db::write_guard`).
+#[derive(Debug, Clone)]
+pub struct MessageRow<'a> {
+    /// `messages.id`; `None` lets SQLite choose it.
+    pub id: Option<i64>,
+    /// `messages.conversation_id`.
+    pub conversation_id: i64,
+    /// `messages.account_id`.
+    pub account_id: i64,
+    /// `messages.source`, such as `imessage`.
+    pub source: &'a str,
+    /// `messages.guid`.
+    pub guid: String,
+    /// RFC 3339 in UTC, as the importer writes it.
+    pub timestamp: &'a str,
+    /// Whether the account sent it.
+    pub is_from_me: bool,
+    /// `messages.sender_handle_id`.
+    pub sender_handle_id: Option<i64>,
+    /// `messages.owner_handle_id`.
+    pub owner_handle_id: Option<i64>,
+    /// `messages.service`.
+    pub service: Option<&'a str>,
+    /// `messages.subject`.
+    pub subject: Option<&'a str>,
+    /// `messages.body`.
+    pub body: Option<&'a str>,
+    /// `messages.is_announcement`.
+    pub is_announcement: bool,
+    /// `messages.is_reply`.
+    pub is_reply: bool,
+    /// `messages.thread_originator_guid`.
+    pub thread_originator_guid: Option<&'a str>,
+    /// `messages.thread_originator_part`.
+    pub thread_originator_part: Option<i64>,
+    /// `messages.num_replies`.
+    pub num_replies: i64,
+    /// `messages.sort_order`.
+    pub sort_order: i64,
+    /// `messages.content_key`.
+    pub content_key: Option<&'a str>,
+    /// `messages.duplicate_of`.
+    pub duplicate_of: Option<i64>,
+    /// `messages.import_id`.
+    pub import_id: Option<i64>,
+}
+
+impl MessageRow<'_> {
+    /// A received `imessage` message in `conversation_id` of `account_id`,
+    /// with a fresh guid, at 2020-01-01T00:00:00Z, and nothing optional set.
+    pub fn new(account_id: i64, conversation_id: i64) -> Self {
+        Self {
+            id: None,
+            conversation_id,
+            account_id,
+            source: "imessage",
+            guid: unique_guid(),
+            timestamp: "2020-01-01T00:00:00Z",
+            is_from_me: false,
+            sender_handle_id: None,
+            owner_handle_id: None,
+            service: None,
+            subject: None,
+            body: None,
+            is_announcement: false,
+            is_reply: false,
+            thread_originator_guid: None,
+            thread_originator_part: None,
+            num_replies: 0,
+            sort_order: 0,
+            content_key: None,
+            duplicate_of: None,
+            import_id: None,
+        }
+    }
+
+    /// Insert the row in a write transaction of its own on `conn`, and
+    /// answer its `messages.id`.
+    pub async fn insert(&self, conn: &mut sqlx::SqliteConnection) -> i64 {
+        let mut tx = crate::db::begin_write(conn)
+            .await
+            .expect("begin a write to insert a message");
+        let id = self.insert_in(&mut tx).await;
+        tx.commit().await.expect("commit the inserted message");
+        id
+    }
+
+    /// Insert the row in `tx`, the caller's write transaction, and answer
+    /// its `messages.id`.
+    pub async fn insert_in(&self, tx: &mut crate::db::WriteTx<'_>) -> i64 {
+        sqlx::query_scalar(
+            "INSERT INTO messages (
+                id, conversation_id, account_id, source, guid, timestamp, is_from_me,
+                sender_handle_id, owner_handle_id, service, subject, body,
+                is_announcement, is_reply, thread_originator_guid, thread_originator_part,
+                num_replies, sort_order, content_key, duplicate_of, import_id
+             ) VALUES (
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                $13, $14, $15, $16, $17, $18, $19, $20, $21
+             ) RETURNING id",
+        )
+        .bind(self.id)
+        .bind(self.conversation_id)
+        .bind(self.account_id)
+        .bind(self.source)
+        .bind(&self.guid)
+        .bind(self.timestamp)
+        .bind(self.is_from_me)
+        .bind(self.sender_handle_id)
+        .bind(self.owner_handle_id)
+        .bind(self.service)
+        .bind(self.subject)
+        .bind(self.body)
+        .bind(self.is_announcement)
+        .bind(self.is_reply)
+        .bind(self.thread_originator_guid)
+        .bind(self.thread_originator_part)
+        .bind(self.num_replies)
+        .bind(self.sort_order)
+        .bind(self.content_key)
+        .bind(self.duplicate_of)
+        .bind(self.import_id)
+        .fetch_one(&mut **tx)
+        .await
+        .unwrap_or_else(|e| panic!("insert message {}: {e}", self.guid))
+    }
 }
 
 /// Seed one conversation and its messages, returning the new
@@ -834,22 +976,16 @@ pub async fn seed_conversation(state: &AppState, c: &SeedConversation<'_>) -> i6
     .unwrap();
 
     for (index, message) in c.messages.iter().enumerate() {
-        sqlx::query(
-            "INSERT INTO messages (
-                conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
-        )
-        .bind(conversation_id)
-        .bind(c.account_id)
-        .bind(message.source)
-        .bind(unique_guid())
-        .bind(message.timestamp)
-        .bind(i64::from(message.is_from_me))
-        .bind(index as i64)
-        .bind(message.body)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
+        MessageRow {
+            source: message.source,
+            timestamp: message.timestamp,
+            is_from_me: message.is_from_me,
+            sort_order: index as i64,
+            body: Some(message.body),
+            ..MessageRow::new(c.account_id, conversation_id)
+        }
+        .insert(&mut conn)
+        .await;
     }
 
     conversation_id
@@ -889,13 +1025,15 @@ pub async fn attach_stored_file(
     .fetch_one(&mut *conn)
     .await
     .unwrap();
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query("INSERT INTO attachments (message_id, sha256, assets_path) VALUES ($1, $2, $3)")
         .bind(message_id)
         .bind(sha)
         .bind(format!("{}/{sha}.jpg", &sha[..2]))
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
+    tx.commit().await.unwrap();
     path
 }
 
