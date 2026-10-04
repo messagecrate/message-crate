@@ -35,8 +35,8 @@ const dangerButton = `${dangerButtonClass} !box-border !w-auto !min-w-[10.5rem] 
  * either way.
  */
 export function ProfileDangerZone({
-  messagesFixed = false,
-  accountFixed = false,
+  messagesFixed,
+  accountFixed,
   username,
   hasPassword,
   canDelete = true,
@@ -44,9 +44,9 @@ export function ProfileDangerZone({
   messageCount = 0,
 }: {
   /** Nobody deletes the account's messages for good: `fixedSettings(profile).deleteMessages`. */
-  messagesFixed?: boolean;
+  messagesFixed: boolean;
   /** The account may not delete itself, and the owner still may: `fixedSettings(profile).deleteOwnAccount`. */
-  accountFixed?: boolean;
+  accountFixed: boolean;
   username: string;
   hasPassword: boolean;
   canDelete?: boolean;

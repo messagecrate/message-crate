@@ -9,6 +9,7 @@ import { keys } from "../../lib/queryKeys";
 import { routeQueryKey } from "../../lib/routeQueryKey";
 import { testQueryClient } from "../../test/providers";
 import { freshEntries, seedEntries } from "../../test/staleEntries";
+import { setupUser } from "../../test/user";
 import { ProfileDangerZone } from "./ProfileDangerZone";
 
 const deleteAccount = vi.hoisted(() => vi.fn());
@@ -58,7 +59,12 @@ describe("ProfileDangerZone", () => {
     render(
       <QueryClientProvider client={testQueryClient()}>
         <MemoryRouter>
-          <ProfileDangerZone username="carol" hasPassword />
+          <ProfileDangerZone
+            messagesFixed={false}
+            accountFixed={false}
+            username="carol"
+            hasPassword
+          />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -85,7 +91,12 @@ describe("ProfileDangerZone", () => {
     render(
       <QueryClientProvider client={testQueryClient()}>
         <MemoryRouter>
-          <ProfileDangerZone username="carol" hasPassword={false} />
+          <ProfileDangerZone
+            messagesFixed={false}
+            accountFixed={false}
+            username="carol"
+            hasPassword={false}
+          />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -123,7 +134,12 @@ describe("ProfileDangerZone", () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <ProfileDangerZone username="carol" hasPassword={false} />
+          <ProfileDangerZone
+            messagesFixed={false}
+            accountFixed={false}
+            username="carol"
+            hasPassword={false}
+          />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -151,7 +167,12 @@ describe("ProfileDangerZone", () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <ProfileDangerZone username="carol" hasPassword={false} />
+          <ProfileDangerZone
+            messagesFixed={false}
+            accountFixed={false}
+            username="carol"
+            hasPassword={false}
+          />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -174,7 +195,12 @@ describe("ProfileDangerZone", () => {
     render(
       <QueryClientProvider client={testQueryClient()}>
         <MemoryRouter>
-          <ProfileDangerZone username="carol" hasPassword={false} />
+          <ProfileDangerZone
+            messagesFixed={false}
+            accountFixed={false}
+            username="carol"
+            hasPassword={false}
+          />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -199,7 +225,13 @@ describe("ProfileDangerZone", () => {
     render(
       <QueryClientProvider client={testQueryClient()}>
         <MemoryRouter>
-          <ProfileDangerZone username="carol" hasPassword canDelete={false} />
+          <ProfileDangerZone
+            messagesFixed={false}
+            accountFixed={false}
+            username="carol"
+            hasPassword
+            canDelete={false}
+          />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -215,7 +247,14 @@ describe("ProfileDangerZone", () => {
     render(
       <QueryClientProvider client={testQueryClient()}>
         <MemoryRouter>
-          <ProfileDangerZone username="carol" hasPassword canDelete={false} managedAccountId={7} />
+          <ProfileDangerZone
+            messagesFixed={false}
+            accountFixed={false}
+            username="carol"
+            hasPassword
+            canDelete={false}
+            managedAccountId={7}
+          />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -244,7 +283,12 @@ describe("ProfileDangerZone", () => {
     render(
       <QueryClientProvider client={client}>
         <MemoryRouter>
-          <ProfileDangerZone username="carol" hasPassword />
+          <ProfileDangerZone
+            messagesFixed={false}
+            accountFixed={false}
+            username="carol"
+            hasPassword
+          />
         </MemoryRouter>
       </QueryClientProvider>,
     );
@@ -257,5 +301,44 @@ describe("ProfileDangerZone", () => {
 
     expect(deleteAllMessages).toHaveBeenCalledWith({ confirm: true });
     await waitFor(() => expect(freshEntries(client, 7, shown)).toEqual([]));
+  });
+
+  it("offers neither delete when both are fixed for the account itself", async () => {
+    const user = setupUser();
+    render(
+      <QueryClientProvider client={testQueryClient()}>
+        <MemoryRouter>
+          <ProfileDangerZone messagesFixed accountFixed username="demo" hasPassword={false} />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Danger zone/ }));
+    for (const name of ["Delete all messages", "Delete account"]) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toBeDisabled();
+      expect(button).toHaveAttribute("title", "Unavailable on the Demo Account");
+    }
+  });
+
+  it("lets the owner delete an account that may not delete itself, but not empty it", async () => {
+    const user = setupUser();
+    render(
+      <QueryClientProvider client={testQueryClient()}>
+        <MemoryRouter>
+          <ProfileDangerZone
+            messagesFixed
+            accountFixed
+            username="demo"
+            hasPassword={false}
+            managedAccountId={7}
+          />
+        </MemoryRouter>
+      </QueryClientProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: /Danger zone/ }));
+    expect(screen.getByRole("button", { name: "Delete all messages" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Delete account" })).toBeEnabled();
   });
 });
