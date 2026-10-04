@@ -6,7 +6,7 @@ function message(
   id: number,
   timestamp: string,
   from: { me: true } | { sender: string },
-  conversationType = "group",
+  isGroup = true,
 ): Message {
   return {
     id,
@@ -25,7 +25,8 @@ function message(
     conversation: {
       id: 1,
       chat_identifier: "c",
-      conversation_type: conversationType,
+      conversation_type: isGroup ? "group" : "individual",
+      is_group: isGroup,
       group_title: null,
       participants: [],
     },

@@ -73,6 +73,7 @@ describe("senderName / isGroupConversation", () => {
         id: 1,
         chat_identifier: "x",
         conversation_type: "individual",
+        is_group: false,
         group_title: null,
         participants: [{ identity: "+1", name: "Ada", contact_id: null }],
       },
@@ -85,6 +86,7 @@ describe("senderName / isGroupConversation", () => {
       id: 1,
       chat_identifier: "x",
       conversation_type: "individual",
+      is_group: false,
       group_title: null,
       participants: [
         {
@@ -98,12 +100,13 @@ describe("senderName / isGroupConversation", () => {
     expect(senderName(m)).toBe("Ada");
   });
 
-  it("detects groups from type or participant count", () => {
+  it("detects groups from the server's is_group or participant count", () => {
     const one = message({
       conversation: {
         id: 1,
         chat_identifier: "x",
         conversation_type: "individual",
+        is_group: false,
         group_title: null,
         participants: [{ identity: "a", name: "A", contact_id: null }],
       },
@@ -114,15 +117,23 @@ describe("senderName / isGroupConversation", () => {
       conversation: {
         ...one.conversation,
         conversation_type: "group",
+        is_group: true,
       },
     });
     expect(isGroupConversation(typed)).toBe(true);
+
+    // The server says which conversations are groups; the type is not read again.
+    const told = message({
+      conversation: { ...one.conversation, conversation_type: "chat", is_group: true },
+    });
+    expect(isGroupConversation(told)).toBe(true);
 
     const many = message({
       conversation: {
         id: 1,
         chat_identifier: "x",
         conversation_type: "individual",
+        is_group: false,
         group_title: null,
         participants: [
           { identity: "a", name: "A", contact_id: null },
@@ -149,6 +160,7 @@ const conversation = {
   id: 1,
   chat_identifier: "x",
   conversation_type: "group",
+  is_group: true,
   group_title: null,
   participants: [
     { identity: "+1555", name: "Ada", contact_id: null },

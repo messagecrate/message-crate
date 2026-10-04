@@ -139,6 +139,43 @@ async fn a_page_across_two_conversations_names_each_conversations_own_participan
     );
 }
 
+/// A message's conversation says whether it is a group as the conversation
+/// list does, so the browser never reads `conversation_type` to decide it
+/// again and the two lists cannot name one conversation two ways.
+#[tokio::test]
+async fn a_messages_conversation_says_whether_it_is_a_group_as_the_conversation_list_does() {
+    let (fixture, alice, direct, group) = seeded().await;
+    let messages: serde_json::Value = get_json(&fixture.state, "/v1/messages", &alice.token).await;
+    let conversations: serde_json::Value =
+        get_json(&fixture.state, "/v1/conversations", &alice.token).await;
+
+    let from_messages = |id: i64| {
+        messages["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| &item["conversation"])
+            .find(|c| c["id"] == serde_json::json!(id))
+            .unwrap_or_else(|| panic!("conversation {id} is on the Messages list: {messages}"))
+            ["is_group"]
+            .clone()
+    };
+    let from_conversations = |id: i64| {
+        conversations["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["id"] == serde_json::json!(id))
+            .unwrap_or_else(|| panic!("conversation {id} is listed: {conversations}"))["is_group"]
+            .clone()
+    };
+
+    assert_eq!(from_messages(direct), serde_json::json!(false));
+    assert_eq!(from_messages(group), serde_json::json!(true));
+    assert_eq!(from_messages(direct), from_conversations(direct));
+    assert_eq!(from_messages(group), from_conversations(group));
+}
+
 #[tokio::test]
 async fn a_query_narrows_to_matching_messages_and_never_leaks_another_account() {
     let (fixture, alice, _direct, _group) = seeded().await;

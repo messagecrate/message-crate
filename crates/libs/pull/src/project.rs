@@ -354,6 +354,7 @@ mod tests {
             "id": 9,
             "chat_identifier": "chat9000",
             "conversation_type": "group",
+            "is_group": true,
             "group_title": "Book Club",
             "participants": [
               { "name": "Robert Smith", "identity": "+15555550100", "service": "imessage", "contact_id": 3 },
@@ -603,6 +604,7 @@ mod tests {
                 id: 9,
                 chat_identifier: "+1".into(),
                 conversation_type: "individual".into(),
+                is_group: false,
                 group_title: None,
                 label: None,
                 participants: vec![Participant {
@@ -674,6 +676,7 @@ mod tests {
                 id: 9,
                 chat_identifier: "+1".into(),
                 conversation_type: "individual".into(),
+                is_group: false,
                 group_title: None,
                 label: None,
                 participants: vec![participant],

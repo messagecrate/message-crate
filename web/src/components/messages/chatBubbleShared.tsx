@@ -56,7 +56,7 @@ export function senderName(m: Message): string {
 }
 
 export function isGroupConversation(m: Message): boolean {
-  return m.conversation.conversation_type === "group" || m.conversation.participants.length > 1;
+  return m.conversation.is_group || m.conversation.participants.length > 1;
 }
 
 /**
