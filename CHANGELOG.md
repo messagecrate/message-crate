@@ -986,6 +986,12 @@ released versions carry their date on the heading.
   sent one of those times with no value rather than leaving it out. It now
   carries its first and last message times once each, and leaves both out
   when there is no message to date them.
+- 2026-10-04 **Removing or changing messages right after an import no
+  longer fails with "no such table: messages".** It failed now and then
+  when an import had just finished on the same server. On a first start, a
+  Demo Account that failed to build then could not be removed, and its
+  files stayed behind. Now the Demo Account is removed and leaves nothing
+  behind.
 
 ### Upgrading
 
