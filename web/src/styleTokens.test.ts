@@ -22,11 +22,12 @@ function sources(): [string, string][] {
     .map((p) => [p.replaceAll("\\", "/"), readFileSync(new URL(p, SRC), "utf8")]);
 }
 
-/** Lines of `text` matching `re`, as "path:line: text". */
-function hits(path: string, text: string, re: RegExp): string[] {
+/** Lines of `text` matching `re`, or for which `re` returns true, as "path:line: text". */
+function hits(path: string, text: string, re: RegExp | ((line: string) => boolean)): string[] {
+  const match = typeof re === "function" ? re : (line: string) => re.test(line);
   return text
     .split("\n")
-    .flatMap((line, i) => (re.test(line) ? [`${path}:${i + 1}: ${line.trim()}`] : []));
+    .flatMap((line, i) => (match(line) ? [`${path}:${i + 1}: ${line.trim()}`] : []));
 }
 
 // The theme presets and the color picker hold colors as data a person picks,
@@ -79,8 +80,10 @@ describe("colors are theme tokens", () => {
 });
 
 describe("focus rings", () => {
-  // A comment line is blanked, not dropped, so the line numbers stay right.
-  const comment = /^\s*(\/\/|\/\*|\*)/;
+  // A comment line is blanked, not dropped, so the line numbers stay right. A
+  // line opening with `*` counts only when a space, `/` or the line's end
+  // follows, so a class line opening with Tailwind's `*:` variant is still read.
+  const comment = /^\s*(\/\/|\/\*|\*(\s|\/|$))/;
   const code = (text: string) =>
     text
       .split("\n")
@@ -120,33 +123,46 @@ describe("focus rings", () => {
   });
 
   // A ring drawn flush against the element on focus was a third focus style
-  // beside `focusRing` and the inset ring (#1717). A focus ring outside
-  // lib/uiStyles.ts is the style guide's inset ring, for an element that draws
-  // its ring inside itself (a table row, a resize grip): every ring class under
-  // a variant that names focus (`focus-visible:`, `data-focus-visible:`,
-  // `has-[…:focus-visible]:` and the rest) has `ring-inset` under the same
-  // variant on its line, and a ring on a line that reads React Aria's
-  // `isFocused` or `isFocusVisible` has a bare `ring-inset`. Anything else
-  // takes `focusRing` or `focusOutline`.
-  it("no source outside lib/uiStyles.ts draws a focus ring that is not inset", () => {
-    const ringClass = /(?<=^|[\s"'`])([^\s"'`]*:)?ring-(?!inset\b|offset-)[^\s"'`]+/g;
-    const flushRings = (line: string) => {
-      const classes = new Set(line.split(/[\s"'`]+/));
-      return [...line.matchAll(ringClass)].filter((m) => {
-        const variant = m[1] ?? "";
-        const onFocus = variant.includes("focus") || (variant === "" && /\bisFocus/.test(line));
-        return onFocus && !classes.has(`${variant}ring-inset`);
-      });
-    };
+  // beside `focusRing` and the inset ring (#1717). Outside lib/uiStyles.ts a
+  // ring is the style guide's inset ring, `ring-2 ring-inset ring-accent`, for
+  // an element that draws its ring inside itself (a table row, a resize grip).
+  // The check reads one line at a time, so a ring's classes go on one line.
+  // On each line, the ring classes are grouped by variant (`!` aside). A group
+  // whose variant names focus (`focus-visible:`, `data-focus-visible:`,
+  // `has-[…:focus-visible]:` and the rest), and a group with no variant, which
+  // a render prop such as `isFocused` may switch on whatever its name, must
+  // have `ring-inset` under its variant or bare, and a width of 2 only. The
+  // files in RING_HALOS draw a ring that is not a focus ring.
+  const RING_HALOS = new Map([
+    ["components/StepProgress.tsx", "the current step's halo, `ring-4 ring-accent/30`"],
+  ]);
+  const ringClass = /^((?:[^:]*:)*)!?ring(?:-(.+?))?!?$/;
+  const flushRing = (path: string) => (line: string) => {
+    const byVariant = new Map<string, string[]>();
+    for (const token of line.split(/[\s"'`{}()$+?]+/)) {
+      const m = ringClass.exec(token);
+      if (!m) continue;
+      const variant = m[1] ?? "";
+      // A bare `ring` with no variant reads as the word in a sentence.
+      if (variant === "" && m[2] === undefined) continue;
+      byVariant.set(variant, [...(byVariant.get(variant) ?? []), m[2] ?? ""]);
+    }
+    const inset = (variant: string) =>
+      (byVariant.get(variant) ?? []).includes("inset") ||
+      (byVariant.get("") ?? []).includes("inset");
+    return [...byVariant].some(([variant, rests]) => {
+      const ring = rests.filter((rest) => rest !== "inset" && !rest.startsWith("offset-"));
+      if (ring.length === 0) return false;
+      const focus = variant.includes("focus") || (variant === "" && !RING_HALOS.has(path));
+      if (!focus) return false;
+      const widths = ring.filter((rest) => rest === "" || /^(\d+|\[.*\])$/.test(rest));
+      return !inset(variant) || widths.some((width) => width !== "2");
+    });
+  };
+  it("no source outside lib/uiStyles.ts draws a focus ring other than the inset ring", () => {
     const found = sources()
       .filter(([path]) => path !== "lib/uiStyles.ts")
-      .flatMap(([path, text]) =>
-        code(text)
-          .split("\n")
-          .flatMap((line, i) =>
-            flushRings(line).length > 0 ? [`${path}:${i + 1}: ${line.trim()}`] : [],
-          ),
-      );
+      .flatMap(([path, text]) => hits(path, code(text), flushRing(path)));
     expect(found).toEqual([]);
   });
 

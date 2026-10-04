@@ -1027,8 +1027,10 @@ released versions carry their date on the heading.
   the account menu, the phone numbers in a phone field, the theme choices in
   Appearance, the tabs in Settings and on the login card, the buttons above a
   conversation, the Import history dates and the expand buttons in an
-  import's errors drew their keyboard focus ring flush against the edge,
-  unlike every other button. They now leave the same 1-pixel gap.
+  import's errors and notes drew their keyboard focus ring flush against the
+  edge, unlike every other button. They now leave the same 1-pixel gap. The
+  day the date picker's keyboard cursor is on shows a 2-pixel ring inside it,
+  the same as a focused table row, where it showed a 1-pixel one.
 - 2026-10-04 **The panel resize grips move by exactly 8 pixels.** Each
   arrow key on the grip of the left panel or the list column moved the
   panel 9 pixels wider or 7 narrower, and pressing the grip without moving

@@ -96,7 +96,7 @@ export default function ThemeSettings() {
             key={opt.value}
             value={opt.value}
             className={({ isSelected, isFocusVisible }) =>
-              `cursor-pointer overflow-hidden rounded-lg border text-left outline-none
+              `cursor-pointer overflow-hidden rounded-lg border text-left
                ${isFocusVisible ? focusOutline : ""}
                ${isSelected ? "border-accent" : "border-border"}`
             }
@@ -143,7 +143,7 @@ export default function ThemeSettings() {
           else setMode(resolvedMode);
         }}
         className={({ isFocusVisible }) =>
-          `mt-4 flex cursor-pointer items-center gap-2.5 text-[0.875rem] text-text outline-none ${
+          `mt-4 flex cursor-pointer items-center gap-2.5 text-[0.875rem] text-text ${
             isFocusVisible ? focusOutline : ""
           }`
         }

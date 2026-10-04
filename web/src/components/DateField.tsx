@@ -141,7 +141,7 @@ export default function DateField({
                         (isOutsideMonth || isDisabled ? "text-muted opacity-50" : "text-text") +
                         (isHovered || isPressed ? " bg-hover" : "") +
                         (isSelected ? " bg-accent text-sent-text" : "") +
-                        (isFocused ? " ring-1 ring-accent ring-inset" : "")
+                        (isFocused ? " ring-2 ring-inset ring-accent" : "")
                       }
                     />
                   )}
