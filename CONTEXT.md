@@ -442,8 +442,9 @@ app-data directory.
 _Avoid_: Folder, App Data, Home Directory
 
 **Data Directory**:
-The directory a Message Crate keeps everything it stores in: its database
-and each account's attachments. One Message Crate has one Data Directory,
+The directory a Message Crate keeps everything it stores in: its database,
+each account's attachments, and the server's log, in its `logs` directory.
+One Message Crate has one Data Directory,
 and a copy of it is a complete backup. The desktop app's is inside the
 Message Crate Directory; a Docker Message Crate's is the volume given to it.
 _Avoid_: Data Folder, DB Directory, Database Directory

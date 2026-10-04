@@ -16,6 +16,7 @@ document and the code is a bug in one of them.
 | [How contacts are made and changed](how-contacts-are-made-and-changed.md) | The data flow, step by step: what an import of a backup does to contacts and identities, what an address book load does, and how the two differ |
 | [The search language](search.md) | The language typed on the Contacts, Conversations, and Messages lists: its rules, grammar, values, each list's defaults, and what every word means on every list |
 | [Media](media.md) | How an attachment is kept, served and shown: its Thumbnail, Preview and original, when the server makes them, which one a screen loads, and how a video streams to its player |
+| [The server's log](server-log.md) | Where the server keeps its log (rotating files in the Data Directory), how much it keeps (5 files of 50 MB), who reads it (the owner), and what a line never holds |
 | [The HTTP interface](http-api.md) | Every rule the `/v1` routes follow: identifiers, naming, methods, status codes, lists, failures, credentials, runs, the generated reference, and how the server code behind a route is named and layered |
 
 ## What goes where
