@@ -94,11 +94,28 @@
   },
   "overrides": [
     {
-      "includes": ["src/test/user.ts", "src/components/Tab.tsx"],
+      "includes": ["src/test/user.ts"],
       "linter": {
         "rules": {
           "style": {
             "noRestrictedImports": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["src/components/Tab.tsx"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "paths": {
+                  "@testing-library/user-event": "Use setupUser() and fill() from src/test/user.ts, which say why a test's user fires events without a delay (#1653)."
+                }
+              }
+            }
           }
         }
       }
