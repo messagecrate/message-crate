@@ -16,6 +16,12 @@
 //! crate's `Cargo.toml`), so a deferred transaction cannot come back. A
 //! function that reads and then writes takes `&mut WriteTx`, so a caller
 //! cannot reach it from a bare connection.
+//!
+//! Every write to `messages` or `attachments` runs in one too, even a single
+//! statement: [`begin_write`] brings a connection's copy of the schema up to
+//! date first, and a write that fires a full-text search trigger on an
+//! out-of-date copy fails (#1628). In tests, `crate::db::write_guard`
+//! refuses such a write outside a transaction.
 
 use std::ops::{Deref, DerefMut};
 

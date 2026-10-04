@@ -1,5 +1,6 @@
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import MessageBubble from "../../components/MessageBubble";
+import { NearScreenRoot } from "../../hooks/useNearScreen";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
 import { useTimeZone } from "../../lib/timeZone";
 import type { Message, MessageAttachment } from "../../lib/types";
@@ -62,7 +63,14 @@ export default function MessageThread({
 }) {
   const zone = useTimeZone();
   const rows = useMemo(() => threadRows(messages, zone), [messages, zone]);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  // The scroll area, in state as well, so the attachments in it measure
+  // whether they are near the screen against it rather than the window.
+  const [scrollArea, setScrollArea] = useState<HTMLDivElement | null>(null);
+  const attachScrollArea = useCallback((node: HTMLDivElement | null) => {
+    scrollRef.current = node;
+    setScrollArea(node);
+  }, []);
   const contentRef = useRef<HTMLDivElement>(null);
   /** The first message drawn and where it was, to keep it in place when older ones arrive above. */
   const topAnchor = useRef<{ id: number; top: number } | null>(null);
@@ -137,7 +145,7 @@ export default function MessageThread({
 
   return (
     <div
-      ref={scrollRef}
+      ref={attachScrollArea}
       onScroll={() => {
         const el = scrollRef.current;
         if (el) {
@@ -148,51 +156,53 @@ export default function MessageThread({
       }}
       className="min-h-0 flex-1 overflow-auto [overflow-anchor:none]"
     >
-      <div ref={contentRef} className="pb-3">
-        {loading ? (
-          <div className="p-4 text-[0.813rem] text-muted">Loading…</div>
-        ) : error && rows.length === 0 ? (
-          <div className="p-4 text-[0.813rem] text-danger">
-            {apiErrorMessage(error, "Could not load messages.")}
-          </div>
-        ) : rows.length === 0 ? (
-          <div className="p-4 text-[0.813rem] text-muted">No messages in this conversation</div>
-        ) : (
-          <>
-            {hasOlder ? (
-              <div className="pt-2 pb-1 text-center text-[0.75rem] text-muted">
-                {loadingOlder ? "Loading older messages…" : "Scroll up for older messages"}
-              </div>
-            ) : null}
-            {rows.map(({ message, day, startsRun }) => (
-              <div key={message.id} id={`row-${message.id}`}>
-                {day ? (
-                  <div className="mx-4 mt-3.5 mb-1.5 flex items-center gap-2.5 text-[0.75rem] text-muted before:flex-1 before:border-t before:border-border before:content-[''] after:flex-1 after:border-t after:border-border after:content-['']">
-                    <span>{day}</span>
-                  </div>
-                ) : null}
-                <MessageBubble
-                  message={message}
-                  highlight={term}
-                  isActive={highlightId === message.id}
-                  showSender={isGroup && startsRun}
-                  onAttachmentClick={onAttachmentClick}
-                />
-              </div>
-            ))}
-            {hasNewer ? (
-              <div className="pt-1 pb-2 text-center text-[0.75rem] text-muted">
-                {loadingNewer ? "Loading newer messages…" : "Scroll down for newer messages"}
-              </div>
-            ) : null}
-            {error ? (
-              <div className="px-4 py-2 text-[0.813rem] text-danger">
-                {apiErrorMessage(error, "Could not load messages.")}
-              </div>
-            ) : null}
-          </>
-        )}
-      </div>
+      <NearScreenRoot value={scrollArea}>
+        <div ref={contentRef} className="pb-3">
+          {loading ? (
+            <div className="p-4 text-[0.813rem] text-muted">Loading…</div>
+          ) : error && rows.length === 0 ? (
+            <div className="p-4 text-[0.813rem] text-danger">
+              {apiErrorMessage(error, "Could not load messages.")}
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="p-4 text-[0.813rem] text-muted">No messages in this conversation</div>
+          ) : (
+            <>
+              {hasOlder ? (
+                <div className="pt-2 pb-1 text-center text-[0.75rem] text-muted">
+                  {loadingOlder ? "Loading older messages…" : "Scroll up for older messages"}
+                </div>
+              ) : null}
+              {rows.map(({ message, day, startsRun }) => (
+                <div key={message.id} id={`row-${message.id}`}>
+                  {day ? (
+                    <div className="mx-4 mt-3.5 mb-1.5 flex items-center gap-2.5 text-[0.75rem] text-muted before:flex-1 before:border-t before:border-border before:content-[''] after:flex-1 after:border-t after:border-border after:content-['']">
+                      <span>{day}</span>
+                    </div>
+                  ) : null}
+                  <MessageBubble
+                    message={message}
+                    highlight={term}
+                    isActive={highlightId === message.id}
+                    showSender={isGroup && startsRun}
+                    onAttachmentClick={onAttachmentClick}
+                  />
+                </div>
+              ))}
+              {hasNewer ? (
+                <div className="pt-1 pb-2 text-center text-[0.75rem] text-muted">
+                  {loadingNewer ? "Loading newer messages…" : "Scroll down for newer messages"}
+                </div>
+              ) : null}
+              {error ? (
+                <div className="px-4 py-2 text-[0.813rem] text-danger">
+                  {apiErrorMessage(error, "Could not load messages.")}
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+      </NearScreenRoot>
     </div>
   );
 }

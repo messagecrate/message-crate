@@ -17,6 +17,7 @@ import {
   createAccount,
   createApiToken,
   createContactGroup,
+  createMediaLink,
   createMessageTag,
   deleteAccount,
   deleteAccountById,
@@ -26,6 +27,7 @@ import {
   deleteContactGroup,
   deleteMessageTag,
   discardImport,
+  fetchAsset,
   getAccountProfile,
   getAccountStorage,
   getContact,
@@ -68,6 +70,9 @@ vi.mock("./api", () => ({
   },
   // The logged-in account, as `auth.tsx` records it after login.
   getAccountId: () => 7,
+  getBaseUrl: () => "http://127.0.0.1:8080",
+  getToken: () => "mc-user-test",
+  problemFromBody: (status: number, text: string) => new Error(`${status}: ${text}`),
 }));
 
 const get = vi.mocked(apiClient.get);
@@ -318,5 +323,50 @@ describe("accounts are one collection", () => {
     expect(lastPath(get)).toBe("/v1/accounts/12/api-tokens");
     await deleteApiToken(3, 12);
     expect(del).toHaveBeenCalledWith("/v1/accounts/12/api-tokens/3");
+  });
+});
+
+/**
+ * An attachment's versions, and the Media Link a player streams through
+ * (`docs/architecture/media.md`). A Thumbnail asked for at the original's
+ * address would load the whole photo into a conversation that scrolls past
+ * hundreds of them.
+ */
+describe("attachments", () => {
+  it("asks for each version at its own address, with the Session's header", async () => {
+    const fetchMock = vi.fn(async (_url: string, _init: RequestInit) => new Response("bytes"));
+    vi.stubGlobal("fetch", fetchMock);
+    try {
+      await fetchAsset("abc");
+      await fetchAsset("abc", { version: "preview" });
+      await fetchAsset("abc", { version: "thumbnail" });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "http://127.0.0.1:8080/v1/assets/abc",
+      "http://127.0.0.1:8080/v1/assets/abc/preview",
+      "http://127.0.0.1:8080/v1/assets/abc/thumbnail",
+    ]);
+    expect(fetchMock.mock.calls[0][1].headers).toEqual({ Authorization: "Bearer mc-user-test" });
+  });
+
+  it("makes a Media Link and hands back URLs a media element can load from the server", async () => {
+    post.mockResolvedValueOnce({
+      url: "/v1/assets/abc?media_link=7.1.s",
+      preview_url: "/v1/assets/abc/preview?media_link=7.1.s",
+      thumbnail_url: "/v1/assets/abc/thumbnail?media_link=7.1.s",
+      expires_at: "2026-10-04T12:00:00Z",
+    });
+
+    const link = await createMediaLink("abc");
+
+    expect(post).toHaveBeenCalledWith("/v1/assets/abc/media-links");
+    expect(link).toEqual({
+      url: "http://127.0.0.1:8080/v1/assets/abc?media_link=7.1.s",
+      preview_url: "http://127.0.0.1:8080/v1/assets/abc/preview?media_link=7.1.s",
+      thumbnail_url: "http://127.0.0.1:8080/v1/assets/abc/thumbnail?media_link=7.1.s",
+      expires_at: "2026-10-04T12:00:00Z",
+    });
   });
 });

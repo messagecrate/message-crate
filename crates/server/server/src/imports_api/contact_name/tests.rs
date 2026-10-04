@@ -138,8 +138,11 @@ async fn an_import_replaces_a_trashed_contact_with_a_fresh_one() {
         .await
         .unwrap();
 
+    // Discarding the trashed contact reaches `messages` through a foreign
+    // key, so this runs in a write transaction, as it does inside an import.
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     let fresh = ensure_contact_for_handle(
-        &mut conn,
+        &mut tx,
         TEST_ACCOUNT,
         None,
         met,
@@ -148,6 +151,7 @@ async fn an_import_replaces_a_trashed_contact_with_a_fresh_one() {
     )
     .await
     .unwrap();
+    tx.commit().await.unwrap();
 
     // SQLite may hand the fresh row the id the deleted one had, so the ids
     // say nothing; what the row holds does.

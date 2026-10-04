@@ -1533,6 +1533,7 @@ pub(crate) async fn seed_attachment_with_preview(
     fs::create_dir_all(preview.parent().unwrap()).unwrap();
     fs::write(preview, PREVIEW_BYTES).unwrap();
 
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     for (sha, derived) in [(&with_preview, true), (&without_preview, false)] {
         sqlx::query(
             "INSERT INTO attachments (
@@ -1546,10 +1547,11 @@ pub(crate) async fn seed_attachment_with_preview(
         .bind(derived.then_some(preview_sha.as_str()))
         .bind(derived.then_some(preview_path.as_str()))
         .bind(derived.then_some("image/jpeg"))
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
     }
+    tx.commit().await.unwrap();
     PreviewFixture {
         conversation_id,
         with_preview: with_preview.to_string(),

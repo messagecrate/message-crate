@@ -630,12 +630,13 @@ async fn a_message_in_a_trashed_conversation_or_a_duplicate_is_read_by_id() {
     let (fixture, alice, direct, group) = seeded().await;
     {
         let mut conn = fixture.conn().await;
+        let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
         sqlx::query(
             "INSERT INTO trashed_conversations (account_id, conversation_id) VALUES ($1, $2)",
         )
         .bind(alice.account_id)
         .bind(group)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
         // The second message of the direct thread becomes a copy of the first.
@@ -646,9 +647,10 @@ async fn a_message_in_a_trashed_conversation_or_a_duplicate_is_read_by_id() {
              WHERE id = (SELECT MAX(id) FROM messages WHERE conversation_id = $1)",
         )
         .bind(direct)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
+        tx.commit().await.unwrap();
     }
 
     let trashed: serde_json::Value =

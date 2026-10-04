@@ -177,6 +177,7 @@ const EXERCISED: Record<string, () => unknown> = {
     }),
   renameApiToken: () => serverApi.renameApiToken(3, { label: "renamed" }),
   deleteApiToken: () => serverApi.deleteApiToken(3),
+  createMediaLink: () => serverApi.createMediaLink("abc"),
 
   // Browse
   listConversations: () =>
@@ -270,11 +271,11 @@ const EXERCISED: Record<string, () => unknown> = {
 };
 
 /**
- * Not a route function: it builds an asset URL and fetches it directly, so it
- * never reaches `apiClient` and has no single documented path to check. No test
- * covers its own behaviour: the screen tests that use it fake it by name.
+ * Not route functions: they build an asset URL and fetch it directly, so they
+ * never reach `apiClient` and have no single documented path to check here.
+ * `serverApi.test.ts` checks the addresses `fetchAsset` asks for.
  */
-const NOT_ROUTED = new Set(["fetchAssetObjectUrl"]);
+const NOT_ROUTED = new Set(["fetchAsset", "fetchAssetObjectUrl"]);
 
 beforeEach(() => {
   vi.clearAllMocks();

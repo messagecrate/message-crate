@@ -105,7 +105,27 @@ Scrolling up loads older messages, and scrolling down loads newer ones, so every
 A line with the day, such as `Thu, Jul 2`, separates the days; outside the current year it carries the year too, such as `Mon, Nov 29, 2021`.
 Every message has its time under it.
 In a group Conversation, the sender's name is above the first message of each run: a run ends at a new day, a new sender, or a gap of an hour or more.
-A photo is shown at most 280 pixels on its long side, and selecting it opens it full size.
+
+### Photos, videos, and recordings
+
+A photo or a video shows as its thumbnail, a small copy the server makes after each import, 200 pixels tall in the Conversation.
+A thumbnail loads only when its message scrolls near the screen, so a long Conversation never downloads photos nobody scrolls to.
+Until the server has made the thumbnail, the file's name shows in its place.
+
+A video shows its thumbnail with a play button.
+Nothing of the video loads until the button is pressed; then it plays in the Conversation, and seeking loads only the part sought to.
+A recording, such as a voice note, has a play button beside its name, and plays in the Conversation the same way.
+
+Selecting a photo opens the viewer.
+The thumbnail stays on screen until the full photo has loaded, and **‹** and **›**, or the arrow keys, step to the previous and next photo, which the viewer has already loaded.
+A photo in a format every browser shows (JPEG, PNG, GIF, WebP) opens as it is.
+A photo in another format, such as an iPhone's HEIC, opens as the copy the server made of it, and a video or recording in a format browsers often can't play, such as HEVC or AMR, plays as the server's copy too.
+Until that copy is made, the viewer or the player reads that there is no copy a browser can show yet, and offers the download.
+[Copy and the browser](/docs/user/features/messages/attachments-and-media/#copy-and-the-browser) says when the server makes the copies.
+
+Every attachment has a download button, in the Conversation and in the viewer.
+It always saves the original file as it was imported, under its own name, never the server's copy.
+The desktop app asks where to save it; a browser puts it with its other downloads.
 
 **Jump to** lists **Newest** and every year of the Conversation.
 A year jumps to its first message, and scrolling either way keeps loading from there.

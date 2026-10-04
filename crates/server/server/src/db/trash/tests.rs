@@ -344,18 +344,14 @@ async fn insert_message(
     conversation_id: i64,
     sort_order: i64,
 ) -> i64 {
-    sqlx::query_scalar(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
-         ) VALUES ($1, $2, 'imessage', $4, '2020-01-01T00:00:00Z', 1, $3, 'hi') RETURNING id",
-    )
-    .bind(conversation_id)
-    .bind(account_id)
-    .bind(sort_order)
-    .bind(crate::test_support::unique_guid())
-    .fetch_one(&mut *conn)
+    crate::test_support::MessageRow {
+        is_from_me: true,
+        sort_order,
+        body: Some("hi"),
+        ..crate::test_support::MessageRow::new(account_id, conversation_id)
+    }
+    .insert(conn)
     .await
-    .unwrap()
 }
 
 /// Attach a stored file to `message_id`: the original under `sha`, and a
@@ -366,6 +362,7 @@ async fn insert_attachment(
     sha: &str,
     derived: Option<&str>,
 ) {
+    let mut tx = crate::db::begin_write(conn).await.unwrap();
     sqlx::query(
         "INSERT INTO attachments (
             message_id, sha256, assets_path, derived_sha256, derived_assets_path
@@ -376,9 +373,10 @@ async fn insert_attachment(
     .bind(format!("{}/{sha}.jpg", &sha[..2]))
     .bind(derived)
     .bind(derived.map(|d| format!("{}/{d}.jpg", &d[..2])))
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await
     .unwrap();
+    tx.commit().await.unwrap();
 }
 
 async fn count(conn: &mut SqliteConnection, sql: &str, id: i64) -> i64 {
@@ -686,6 +684,7 @@ async fn delete_reports_a_thumbnail_only_when_no_row_names_it() {
     // Another file whose Preview has the very bytes of a Thumbnail of the
     // conversation deleted.
     insert_attachment(&mut conn, k1, &sha('g'), Some(&shared_thumbnail)).await;
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     for (original, thumbnail) in [(&alone, &thumbnail), (&shared_original, &shared_thumbnail)] {
         sqlx::query(
             "UPDATE attachments
@@ -696,10 +695,11 @@ async fn delete_reports_a_thumbnail_only_when_no_row_names_it() {
         .bind(thumbnail)
         .bind(format!("{}/{thumbnail}.jpg", &thumbnail[..2]))
         .bind(original)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
     }
+    tx.commit().await.unwrap();
 
     move_to_trash(&mut conn, ACCOUNT_A, Trashable::Conversation(doomed))
         .await
@@ -749,11 +749,13 @@ async fn delete_keeps_a_file_a_message_of_another_source_still_names() {
     let kept = insert_conversation_on(&mut conn, ACCOUNT_A, "+15550002").await;
     let k1 = insert_message(&mut conn, ACCOUNT_A, kept, 0).await;
     insert_attachment(&mut conn, k1, &shared, Some(&derived)).await;
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query("UPDATE messages SET source = 'sms' WHERE id = $1")
         .bind(k1)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
+    tx.commit().await.unwrap();
 
     move_to_trash(&mut conn, ACCOUNT_A, Trashable::Conversation(doomed))
         .await
