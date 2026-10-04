@@ -7,6 +7,7 @@ import {
   parseRunRecord,
   type RunPart,
   type RunRecord,
+  issuesToDiscard,
   recordToCarry,
   wholeRun,
 } from "./runRecord";
@@ -153,6 +154,42 @@ describe("recordToCarry", () => {
       { kind: "skip", stage: "staging", item: "a.jpg", reason: "missing" },
       { kind: "skip", stage: "upload", item: "a.jsonl:big.mov", reason: "too large" },
     ]);
+  });
+
+  it("keeps what it leaves out apart, for a Discard to send (#1479)", () => {
+    const carried = recordToCarry(
+      EMPTY_RUN_RECORD,
+      part({
+        issues: [
+          { kind: "skip", stage: "staging", item: "a.jpg", reason: "missing" },
+          { kind: "error", stage: "upload", item: "b.jsonl", reason: "connection refused" },
+          { kind: "error", stage: "upload", item: "Import", reason: "the server went away" },
+        ],
+        report: report({
+          ok: false,
+          results: [{ file: "b.jsonl", status: "failed", messages: 0, attachments: 0 }],
+        }),
+      }),
+    );
+    expect(carried.lastStopIssues).toEqual([
+      { kind: "error", stage: "upload", item: "b.jsonl", reason: "connection refused" },
+      { kind: "error", stage: "upload", item: "Import", reason: "the server went away" },
+    ]);
+    expect(issuesToDiscard(parseRunRecord(JSON.parse(JSON.stringify(carried))))).toEqual([
+      { kind: "skip", stage: "staging", item: "a.jpg", reason: "missing" },
+      { kind: "error", stage: "upload", item: "b.jsonl", reason: "connection refused" },
+      { kind: "error", stage: "upload", item: "Import", reason: "the server went away" },
+    ]);
+  });
+
+  it("replaces the left-out issues of an earlier stop, which the resume reported again", () => {
+    const earlier = {
+      issues: [],
+      lastStopIssues: [{ kind: "error", stage: "upload" as const, item: "b.jsonl", reason: "x" }],
+    };
+    const carried = recordToCarry(earlier, part({ issues: [] }));
+    expect(carried.lastStopIssues).toEqual([]);
+    expect(wholeRun(earlier, part({ issues: [] })).lastStopIssues).toBeUndefined();
   });
 });
 

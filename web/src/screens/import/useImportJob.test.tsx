@@ -844,6 +844,16 @@ describe("useImportJob wiring", () => {
     );
   });
 
+  it("sends with a Discard the paused Upload's failed conversations, which the record keeps apart for a resume (#1479)", async () => {
+    const carried = { kind: "skip", stage: "staging", item: "IMG_1.HEIC", reason: "missing" };
+    const failed = { kind: "error", stage: "upload", item: "b.jsonl", reason: "connection refused" };
+    readRunRecordMock.mockResolvedValue({ issues: [carried], lastStopIssues: [failed] });
+    const { result } = renderHook(() => useImportJob());
+    await act(() => result.current.discardRun(7, "/staging/paused"));
+
+    expect(discardImportSessionMock).toHaveBeenCalledWith(7, [carried, failed]);
+  });
+
   it("still discards a paused run, with no Import Errors, when its record cannot be read", async () => {
     readRunRecordMock.mockRejectedValue(new Error("not readable"));
     const { result } = renderHook(() => useImportJob());

@@ -82,6 +82,7 @@ import {
 import {
   EMPTY_RUN_RECORD,
   filesSkippedOverRun,
+  issuesToDiscard,
   parseRunRecord,
   RUN_ERROR_ITEM,
   type RunPart,
@@ -1524,7 +1525,9 @@ async function discardRun(sessionId: number | null, stagingDir: string | null): 
   if (stagingDir != null) {
     await recordWrites;
     try {
-      issues = parseRunRecord(await invokeReadImportRunRecord({ staging_dir: stagingDir })).issues;
+      issues = issuesToDiscard(
+        parseRunRecord(await invokeReadImportRunRecord({ staging_dir: stagingDir })),
+      );
     } catch {
       // Discarded with no Import Errors: the run still has to close.
     }
