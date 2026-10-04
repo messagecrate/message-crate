@@ -58,16 +58,18 @@ impl Origin {
 /// address book the person loaded, and the person typing in the contact
 /// drawer.
 ///
-/// - The person outranks everything. Typing a name is the most deliberate
-///   naming act in the product, so the row becomes theirs (`origin = 'user'`)
-///   and no import renames it.
-/// - An address book is the person typing in a spreadsheet, so its name
-///   replaces whatever the contact carried, an imported name and a typed one
-///   alike. A name equal to the one the contact has changes nothing, so a
-///   file loaded straight back leaves every contact as it was.
-/// - An import names only a contact that has no name. The same number
-///   arrives spelled differently across backups and the first spelling is as
-///   good as the second.
+/// - The person outranks every import. Typing a name is the most deliberate
+///   naming act in the product, so the row becomes theirs (`origin = 'user'`),
+///   and as a name it is one no import replaces.
+/// - An address book is the person typing in a spreadsheet, and a load
+///   applies exactly what the file says, so its name replaces whatever the
+///   contact carried, an imported name and a typed one alike. A name equal to
+///   the one the contact has changes nothing, so a file loaded straight back
+///   leaves every contact as it was.
+/// - An import names only a contact that has no name, whatever made the
+///   contact: a blank name has nothing to protect. The same number arrives
+///   spelled differently across backups and the first spelling is as good as
+///   the second, so a name already there stays.
 ///
 /// An empty `name` says nothing about who someone is, so it never overwrites
 /// anything; only [`create_contact`] stores an empty name, for a contact
@@ -89,8 +91,8 @@ pub async fn propose_name(
     }
     // Each arm is a fixed literal chosen by matching on `by`; the name and the
     // ids are bound. `origin` is only rewritten when the person types the
-    // name; an import never renames a contact that has one, whatever its
-    // origin.
+    // name, and no arm reads it: an import fills in a blank name and never
+    // replaces one, whatever made the contact.
     let sql = match by {
         Origin::User => {
             "UPDATE contacts SET preferred_name = $1, origin = 'user'
@@ -102,8 +104,7 @@ pub async fn propose_name(
         }
         Origin::Import => {
             "UPDATE contacts SET preferred_name = $1
-             WHERE account_id = $2 AND id = $3
-               AND origin = 'import' AND preferred_name = ''"
+             WHERE account_id = $2 AND id = $3 AND preferred_name = ''"
         }
     };
     let changed = sqlx::query(sql)

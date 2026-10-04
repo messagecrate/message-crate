@@ -141,7 +141,7 @@ Three things can name a contact:
 
 1. **A name typed in Edit name.** It replaces whatever name the contact had.
 2. **An Address Book load.** The file is the same person typing in a spreadsheet, so a name in the file replaces whatever name the contact had. A blank name in the file leaves the name alone.
-3. **An import.** It names only a contact that has no name.
+3. **An import.** It names only a contact that has no name, whatever made the contact: an earlier import, an Address Book load, or a person in the app.
 
 Because an import names only a nameless contact, the first backup that knows a name wins.
 A later backup that spells the name differently does not change it.

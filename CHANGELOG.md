@@ -126,12 +126,13 @@ released versions carry their date on the heading.
   also makes each contact in the file match its rows, so deleting a row
   takes that identity off the contact. Contacts the file does not mention
   are left alone. A load does exactly what the file says and never corrects
-  it: a row moves only the identity it lists, so to move a number on both
-  Text Message and WhatsApp, give each its own row. A file with a mistake in
-  it is refused whole, and each row at fault is listed with its reason, so
-  nothing is half loaded. Message Crate no longer reads a phone's vCard
-  file, which put every number on a card into your contacts whether or not
-  a message ever used it.
+  it: a name in the file replaces the contact's name, even one you typed in
+  the app, and a row moves only the identity it lists, so to move a number
+  on both Text Message and WhatsApp, give each its own row. A file with a
+  mistake in it is refused whole, and each row at fault is listed with its
+  reason, so nothing is half loaded. Message Crate no longer reads a phone's
+  vCard file, which put every number on a card into your contacts whether
+  or not a message ever used it.
 - 2026-10-01 **The Demo Account has Contact Groups.** Demo Data is now built
   the way your own Message Crate is: its messages are imported first, and an
   Address Book then names the people in them and puts them in Family, Work,
@@ -756,6 +757,11 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-04 **An import names a nameless contact, whatever made it.** A
+  contact with a number and no name stayed Unknown after an import that knew
+  the number's name, when an Address Book load or you had made it rather
+  than an earlier import. An import now fills in any contact's missing name.
+  It still never changes a name a contact already has.
 - 2026-10-04 **A misspelt service no longer puts an identity on Text
   Message.** Adding, swapping or removing a contact's identity, or one of your
   own, takes Text Message or WhatsApp and nothing else. Any other service used
