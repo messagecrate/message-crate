@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { type DesktopJobName, holdDesktopJob } from "./desktopJob";
 import type { components } from "./serverApi.types";
 import type {
+  AttachmentMediaMode,
   ExtractConfig,
   ExtractErrorEvent,
   ImportIssueEvent,
@@ -122,15 +123,9 @@ export interface StagingSummary {
   forecasts: AttachmentForecast[];
   /** Largest single attachment the upload accepts; what the verdicts were measured against. */
   assetMaxBytes: number;
-  /** The attachment mode Staging recorded in the folder, under the folder's names. */
-  mediaMode: RecordedMediaMode;
+  /** The attachment mode Staging recorded in the folder, under the form's name for it. */
+  mediaMode: AttachmentMediaMode;
 }
-
-/**
- * An attachment mode as a staging folder records it. The form names two of
- * them differently: `disabled` is the form's `skip`, `clone` its `copy`.
- */
-export type RecordedMediaMode = "disabled" | "clone" | "convert" | "compress";
 
 /** Recompute what a staged folder holds, for the first review. */
 export async function invokeSummarizeStaging(config: StagingConfig): Promise<StagingSummary> {

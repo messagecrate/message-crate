@@ -41,7 +41,6 @@ import {
   onExtractEvents,
   type PushFinishedReport,
   probeFfmpegTools,
-  type RecordedMediaMode,
   type SizeVerdict,
   type StagingConfig,
   type StagingSummary,
@@ -53,7 +52,7 @@ import type { AttachmentMediaMode, ImportIssueEvent, ImportProgressEvent } from 
 import { useFetchAccountProfile } from "../../lib/useAccountProfile";
 import { whatsappExtractFields } from "../../lib/whatsappExtractFields";
 import { isWhatsappMethod } from "../../lib/whatsappImport";
-import { formSnapshot, isStringArray } from "./formSnapshot";
+import { formSnapshot, isAttachmentMediaMode, isStringArray } from "./formSnapshot";
 import { mediaJobVerb } from "./gateForecast";
 import { importOutcome } from "./importOutcome";
 import {
@@ -124,14 +123,6 @@ function withShownAttachmentMode(form: ImportJobFormValues): ImportJobFormValues
   return showsAttachmentOptions(form.source) ? form : { ...form, attachmentMedia: "copy" };
 }
 
-/** The form's name for each attachment mode a staging folder records. */
-const FORM_MODE_OF: Record<RecordedMediaMode, AttachmentMediaMode> = {
-  disabled: "skip",
-  clone: "copy",
-  convert: "convert",
-  compress: "compress",
-};
-
 /**
  * The run's form with the attachment mode its staging folder recorded.
  *
@@ -147,7 +138,7 @@ function withRecordedMode(
   summary: StagingSummary | null | undefined,
 ): ImportJobFormValues {
   if (!summary) return form;
-  return { ...form, attachmentMedia: FORM_MODE_OF[summary.mediaMode] };
+  return { ...form, attachmentMedia: summary.mediaMode };
 }
 
 /**
@@ -356,9 +347,7 @@ export function parseStoredStagingSummary(raw: unknown): StagingSummary | undefi
   if (typeof r.attachmentBytes !== "number") return undefined;
   if (!Array.isArray(r.forecasts) || !r.forecasts.every(isAttachmentForecast)) return undefined;
   if (typeof r.assetMaxBytes !== "number") return undefined;
-  if (typeof r.mediaMode !== "string" || !Object.hasOwn(FORM_MODE_OF, r.mediaMode)) {
-    return undefined;
-  }
+  if (!isAttachmentMediaMode(r.mediaMode)) return undefined;
 
   return {
     conversations: r.conversations,
@@ -369,7 +358,7 @@ export function parseStoredStagingSummary(raw: unknown): StagingSummary | undefi
     attachmentBytes: r.attachmentBytes,
     forecasts: r.forecasts,
     assetMaxBytes: r.assetMaxBytes,
-    mediaMode: r.mediaMode as RecordedMediaMode,
+    mediaMode: r.mediaMode,
   };
 }
 

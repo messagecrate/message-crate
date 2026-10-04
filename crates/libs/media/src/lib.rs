@@ -34,8 +34,8 @@ use std::str::FromStr;
 
 /// Attachment media handling after export.
 ///
-/// Serialized under the names [`MediaMode::as_str`] gives, so the media
-/// settings a staging folder records read the same as the form's values.
+/// Serialized under the names [`MediaMode::as_str`] gives. The Import form
+/// names two modes differently ([`MediaMode::form_name`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum MediaMode {
@@ -71,6 +71,20 @@ impl MediaMode {
             "convert" => Some(Self::Convert),
             "compress" => Some(Self::Compress),
             _ => None,
+        }
+    }
+
+    /// The name the Import form gives the mode (`skip` / `copy` / `convert` /
+    /// `compress`): the inverse of the `skip` and `copy` aliases [`parse`]
+    /// accepts, kept beside them so the two vocabularies meet in one place.
+    ///
+    /// [`parse`]: Self::parse
+    pub fn form_name(self) -> &'static str {
+        match self {
+            Self::Disabled => "skip",
+            Self::Clone => "copy",
+            Self::Convert => "convert",
+            Self::Compress => "compress",
         }
     }
 
@@ -235,6 +249,18 @@ mod tests {
         assert_eq!(MediaMode::parse("Convert"), Some(MediaMode::Convert));
         assert_eq!(MaxResolution::parse("4k"), Some(MaxResolution::P4k));
         assert_eq!(MaxResolution::P720.max_long_edge(), 1280);
+    }
+
+    #[test]
+    fn every_form_name_parses_back_to_its_mode() {
+        for mode in [
+            MediaMode::Disabled,
+            MediaMode::Clone,
+            MediaMode::Convert,
+            MediaMode::Compress,
+        ] {
+            assert_eq!(MediaMode::parse(mode.form_name()), Some(mode));
+        }
     }
 
     /// The Import form starts at 720p and the user guide says 720, so a

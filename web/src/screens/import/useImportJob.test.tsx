@@ -19,7 +19,6 @@ import type { ActiveImportSession } from "../../lib/importSession";
 import type {
   FfmpegToolsProbe,
   PushFinishedReport,
-  RecordedMediaMode,
   StagingSummary,
   TauriJobResult,
 } from "../../lib/tauri";
@@ -210,29 +209,20 @@ function stagingSummary(overrides: Partial<StagingSummary> = {}): StagingSummary
     attachmentBytes: 0,
     forecasts: [],
     assetMaxBytes: 50 * 1024 * 1024,
-    mediaMode: "clone",
+    mediaMode: "copy",
     ...overrides,
   };
 }
 
 /**
- * The mode Staging records in the folder for the last extract, under the
- * folder's names: what the real summary of that folder would carry.
+ * The mode Staging records in the folder for the last extract: what the
+ * real summary of that folder would carry. Copy when extract was given none.
  */
-function stagedMode(): RecordedMediaMode {
+function stagedMode(): AttachmentMediaMode {
   const args = invokeExtractMock.mock.calls.at(-1)?.[0] as
     | { attachment_media?: AttachmentMediaMode }
     | undefined;
-  switch (args?.attachment_media) {
-    case "skip":
-      return "disabled";
-    case "convert":
-      return "convert";
-    case "compress":
-      return "compress";
-    default:
-      return "clone";
-  }
+  return args?.attachment_media ?? "copy";
 }
 
 const MIB = 1024 * 1024;
@@ -2600,12 +2590,12 @@ describe("parseStoredStagingSummary", () => {
     expect(parseStoredStagingSummary(missingAttachmentBytes)).toBeUndefined();
   });
 
-  it("returns undefined without an attachment mode the folder could record", () => {
+  it("returns undefined without an attachment mode the form offers", () => {
     // The plan stands in for the folder's mode on a resume, so a plan with
-    // no mode, or one the folder never writes, is no plan at all.
+    // no mode, or one the form does not offer, is no plan at all.
     const { mediaMode: _mediaMode, ...missingMode } = stagingSummary();
     expect(parseStoredStagingSummary(missingMode)).toBeUndefined();
-    expect(parseStoredStagingSummary({ ...stagingSummary(), mediaMode: "copy" })).toBeUndefined();
+    expect(parseStoredStagingSummary({ ...stagingSummary(), mediaMode: "clone" })).toBeUndefined();
     expect(
       parseStoredStagingSummary({ ...stagingSummary(), mediaMode: "toString" }),
     ).toBeUndefined();
