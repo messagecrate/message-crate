@@ -18,7 +18,7 @@ import {
   type PathStat,
   shouldPrefillMacMessagesDb,
 } from "../lib/imessageImport";
-import { discardImportSession, getActiveImportSession } from "../lib/importSession";
+import { type ActiveImportSession, getActiveImportSession } from "../lib/importSession";
 import { keys } from "../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../lib/routeQuery";
 import { unmatchedIdentities } from "../lib/serverApi";
@@ -139,7 +139,7 @@ export default function ImportScreen() {
     continueAfterIdentityStop,
     cancelIdentityStop,
     stagingDeleteFailure,
-    discardStagingFolder,
+    discardRun,
     dismissStagingDeleteFailure,
   } = useImportJob();
   /** Which review the run is waiting at, or null while it is not waiting. */
@@ -340,32 +340,29 @@ export default function ImportScreen() {
     setTimeZoneOverride(restored.timeZone);
   }
 
+  /**
+   * Discard the run the panel offers (`discardRun`): it closes with the
+   * Import Errors its record holds, and its folder goes, so it must not
+   * orphan a multi-GB folder. A folder that could not be deleted is shown
+   * above the form (`stagingDeleteFailure`), never dropped without a word.
+   * A session staged on another device is never touched on disk here,
+   * because its files are staged on that device. The check is the same
+   * `device_id` check `resumeDecisionFor` uses to route to `other_device`,
+   * and a session with no recorded device counts as this install's there too.
+   */
+  async function discardSession(session: ActiveImportSession): Promise<void> {
+    const thisDevice = !session.device_id || session.device_id === getDeviceId();
+    await discardRun(session.id, thisDevice ? session.staging_dir : null);
+  }
+
   async function handleDiscardResume(): Promise<void> {
     const session = resume.session;
     if (!session || discardingRef.current || resumingRef.current) return;
     discardingRef.current = true;
     try {
-      // cancelRun already deletes the staging folder when a review is
-      // cancelled (decision 16); a panel discard is the same operation reached through a
-      // different button, so it must not orphan a multi-GB folder. Both
-      // halves run regardless of the other's outcome, the same
-      // `Promise.allSettled` shape `cancelRun` uses. A folder that could not
-      // be deleted is shown above the form (`discardStagingFolder`), never
-      // dropped without a word. Never touch disk for
-      // another device's session -- its files are staged there, not here --
-      // the same `device_id` check `resumeDecisionFor` uses to route to
-      // `other_device` in the first place. A session with no recorded
-      // device is treated as this install's, matching that check too.
-      const thisDevice = !session.device_id || session.device_id === getDeviceId();
-      await Promise.allSettled([
-        discardImportSession(session.id),
-        thisDevice && session.staging_dir
-          ? discardStagingFolder(session.staging_dir)
-          : Promise.resolve(),
-      ]);
-    } catch {
-      // Best effort -- the panel drops to the form either way; if the
-      // session is still live server-side, the next visit shows it again.
+      // The panel drops to the form either way; if the session is still
+      // live server-side, the next visit shows it again.
+      await discardSession(session);
     } finally {
       discardingRef.current = false;
       setResume(NO_RESUME);
@@ -453,18 +450,9 @@ export default function ImportScreen() {
       // discard round trip. The old folder goes with the session: nothing
       // will ever reach it again, and it can be multiple gigabytes. A failed
       // delete stays on screen through the new run.
-      const thisDevice = !session.device_id || session.device_id === getDeviceId();
-      try {
-        await Promise.allSettled([
-          discardImportSession(session.id),
-          thisDevice && session.staging_dir
-            ? discardStagingFolder(session.staging_dir)
-            : Promise.resolve(),
-        ]);
-      } catch {
-        // Best effort -- if the server is unreachable the create call below
-        // surfaces its own error the same as any other failed import start.
-      }
+      // If the server is unreachable, the create call below surfaces its
+      // own error the same as any other failed import start.
+      await discardSession(session);
       cache.invalidateAccount();
       setResume(NO_RESUME);
       await startImport(restoredForm);

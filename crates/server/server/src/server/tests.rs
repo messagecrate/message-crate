@@ -2,8 +2,9 @@ use super::*;
 use crate::extract::{Json, Path as AxumPath};
 use crate::imports_api::ImportMode;
 use crate::imports_api::{
-    CompleteImportIssueRequest, CompleteImportRequest, CreateImportRequest, UpdateImportRequest,
-    complete_import, create_import, discard_import, get_import, list_imports, update_import,
+    CompleteImportRequest, CreateImportRequest, DiscardImportRequest, ImportIssueRequest,
+    UpdateImportRequest, complete_import, create_import, discard_import, get_import, list_imports,
+    update_import,
 };
 use axum::extract::State;
 use tempfile::TempDir;
@@ -379,13 +380,13 @@ async fn imports_complete_and_detail_surface_timings_and_issues() {
             "convert": { "files": 2 }
         })),
         issues: vec![
-            CompleteImportIssueRequest {
+            ImportIssueRequest {
                 kind: "skip".into(),
                 stage: crate::db::imports::ImportIssueStage::Media,
                 item: "photo.heic".into(),
                 reason: "convert failed".into(),
             },
-            CompleteImportIssueRequest {
+            ImportIssueRequest {
                 kind: "error".into(),
                 stage: crate::db::imports::ImportIssueStage::Upload,
                 item: "archive.zip".into(),
@@ -507,7 +508,7 @@ async fn imports_complete_rejects_invalid_issue_kind_before_db_write() {
         prepare_ms: Some(4_000),
         upload_ms: Some(8_000),
         summary: None,
-        issues: vec![CompleteImportIssueRequest {
+        issues: vec![ImportIssueRequest {
             kind: "warning".into(),
             stage: crate::db::imports::ImportIssueStage::Upload,
             item: "archive.zip".into(),
@@ -580,6 +581,7 @@ async fn active_session_is_empty_then_reports_the_live_one() {
         State(state.clone()),
         import_access(&state, &token).await,
         AxumPath(import_id),
+        Json(DiscardImportRequest { issues: Vec::new() }),
     )
     .await
     .unwrap();
@@ -614,6 +616,7 @@ async fn a_stored_form_snapshot_drops_credentials() {
         State(state.clone()),
         import_access(&state, &token).await,
         AxumPath(import_id),
+        Json(DiscardImportRequest { issues: Vec::new() }),
     )
     .await
     .unwrap();
@@ -671,6 +674,7 @@ async fn imports_create_stores_source_identities() {
         State(state.clone()),
         import_access(&state, &token).await,
         AxumPath(import_id),
+        Json(DiscardImportRequest { issues: Vec::new() }),
     )
     .await
     .unwrap();
@@ -766,6 +770,7 @@ async fn discard_frees_the_slot() {
         State(state.clone()),
         import_access(&state, &token).await,
         AxumPath(import_id),
+        Json(DiscardImportRequest { issues: Vec::new() }),
     )
     .await
     .unwrap();

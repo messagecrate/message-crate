@@ -187,9 +187,10 @@ describe("import session routes", () => {
     expect(patch).toHaveBeenCalledWith("/v1/imports/9", { stage: "parse" });
   });
 
-  it("addresses a discard by session id", async () => {
-    await discardImport(9);
-    expect(post).toHaveBeenCalledWith("/v1/imports/9/discard", {});
+  it("addresses a discard by session id, with the Import Errors it carries", async () => {
+    const issues = [{ kind: "skip", stage: "staging" as const, item: "a.jsonl", reason: "empty" }];
+    await discardImport(9, { issues });
+    expect(post).toHaveBeenCalledWith("/v1/imports/9/discard", { issues });
   });
 
   it("addresses one past run by id", async () => {

@@ -66,9 +66,15 @@ export async function setImportStage(
   await setStage(id, { stage, summary: approvedPlan });
 }
 
-/** Close a session the user gave up on, freeing the account's slot. */
-export async function discardImportSession(id: number): Promise<void> {
-  await discardImport(id);
+/**
+ * Close a session the user gave up on, freeing the account's slot. The run is
+ * recorded as cancelled with `issues`, the Import Errors it recorded before.
+ */
+export async function discardImportSession(
+  id: number,
+  issues: components["schemas"]["ImportIssueRequest"][],
+): Promise<void> {
+  await discardImport(id, { issues });
 }
 
 /**
