@@ -323,6 +323,11 @@ export interface paths {
         /**
          * Download a previously stored content-addressed asset (read-only).
          * @description The body streams the stored bytes; the URL is the SHA-256 fingerprint.
+         *     A `Range` of one byte range answers `206 Partial Content` with those bytes, so a media
+         *     element streams a video and seeks in it; the `ETag` is the fingerprint,
+         *     for `If-Range`. A media element, which cannot send the `Authorization`
+         *     header, reads with the `media_link` a media link put in the URL
+         *     (`POST /v1/assets/{sha256}/media-links`).
          */
         get: operations["get_asset"];
         /**
@@ -343,6 +348,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/assets/{sha256}/media-links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Make a media link: URLs that read one asset with no `Authorization` header, for a media element's `src`.
+         * @description A media element cannot send the Session's header, so the web app asks for
+         *     a link and loads the URLs it answers. The link opens this asset and its
+         *     Preview, in this account's store, for an hour, and stops sooner when the
+         *     Session that made it ends. Its URLs take `Range` like any read of the
+         *     asset. Only a Session makes one: a program sends its token in the header.
+         */
+        post: operations["create_media_link"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/assets/{sha256}/preview": {
         parameters: {
             query?: never;
@@ -354,7 +383,10 @@ export interface paths {
          * Download the preview of a stored asset: the JPEG, MP4 or MP3 that `process-assets` made from it for a browser to show.
          * @description The URL is the SHA-256 fingerprint of the original, and the body streams
          *     the preview's bytes in the preview's own media type. An asset with no
-         *     preview answers `404`; the original is at `/v1/assets/{sha256}`.
+         *     preview answers `404 Not Found`; the original is at `/v1/assets/{sha256}`. A
+         *     `Range` of one byte range answers `206 Partial Content` with those bytes. The preview has
+         *     no `ETag`, so a `Range` sent with `If-Range` answers the whole preview. A
+         *     media element reads with the `media_link` a media link put in the URL.
          */
         get: operations["get_asset_preview"];
         put?: never;
@@ -2731,6 +2763,25 @@ export interface components {
          * @enum {string}
          */
         LoadMode: "append" | "edit";
+        /**
+         * @description A media link: the URLs a media element loads to read one asset with no
+         *     `Authorization` header, and when they stop working.
+         */
+        MediaLink: {
+            /**
+             * @description When the link stops working, RFC 3339 UTC. It stops sooner if the
+             *     Session that made it ends.
+             */
+            expires_at: string;
+            /**
+             * @description `/v1/assets/{sha256}/preview?media_link=…`: the asset's Preview, which
+             *     answers `404 Not Found` when the asset has none (the attachment's
+             *     `preview_mime_type` says whether it has one).
+             */
+            preview_url: string;
+            /** @description `/v1/assets/{sha256}?media_link=…`: the asset's own bytes. */
+            url: string;
+        };
         /** @description One exported message. */
         Message: {
             /** @description Attachments on this message. */
@@ -6083,7 +6134,12 @@ export interface operations {
     get_asset: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                /** @description One byte range, `bytes=<first>-<last>`, `bytes=<first>-` or `bytes=-<suffix>`; any other range answers the whole file */
+                Range?: string | null;
+                /** @description The `ETag` the client's copy was read with; a range is served only when it names this file */
+                "If-Range"?: string | null;
+            };
             path: {
                 /** @description Content SHA-256 hex */
                 sha256: string;
@@ -6095,13 +6151,36 @@ export interface operations {
             /** @description The asset's bytes, in the media type it was stored with, or `application/octet-stream` when none was stored */
             200: {
                 headers: {
+                    /** @description `bytes` */
+                    "Accept-Ranges"?: string;
+                    /** @description The fingerprint, quoted */
+                    ETag?: string;
                     [name: string]: unknown;
                 };
                 content: {
                     "*/*": unknown;
                 };
             };
-            /** @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. */
+            /** @description The byte range the `Range` header asked for */
+            206: {
+                headers: {
+                    /** @description `bytes` */
+                    "Accept-Ranges"?: string;
+                    /** @description `bytes <first>-<last>/<length>` */
+                    "Content-Range"?: string;
+                    /** @description The fingerprint, quoted */
+                    ETag?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": unknown;
+                };
+            };
+            /**
+             * @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired.
+             *
+             *     [`media-link-invalid`](https://messagecrate.app/docs/developer/reference/errors/media-link-invalid): The `media_link` in the URL opens nothing here: it is not a media link, it was made for another asset or another account, it expired, or the Session that made it has ended.
+             */
             401: {
                 headers: {
                     [name: string]: unknown;
@@ -6125,6 +6204,15 @@ export interface operations {
             };
             /** @description [`not-found`](https://messagecrate.app/docs/developer/reference/errors/not-found): No resource at that address exists for this account. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`range-not-satisfiable`](https://messagecrate.app/docs/developer/reference/errors/range-not-satisfiable): The request's `Range` selects no byte of the file: it starts at or past the end, or asks for a suffix of no bytes. */
+            416: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -6334,25 +6422,27 @@ export interface operations {
             };
         };
     };
-    get_asset_preview: {
+    create_media_link: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                /** @description Content SHA-256 hex of the original */
+                /** @description Content SHA-256 hex */
                 sha256: string;
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description The preview's bytes, in the preview's own media type, or `application/octet-stream` when none is stored */
-            200: {
+            /** @description The media link was made */
+            201: {
                 headers: {
+                    /** @description The link's `url`, which reads the asset */
+                    Location?: string;
                     [name: string]: unknown;
                 };
                 content: {
-                    "*/*": unknown;
+                    "application/json": components["schemas"]["MediaLink"];
                 };
             };
             /** @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. */
@@ -6379,6 +6469,111 @@ export interface operations {
             };
             /** @description [`not-found`](https://messagecrate.app/docs/developer/reference/errors/not-found): No resource at that address exists for this account. */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
+            406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_asset_preview: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description One byte range, `bytes=<first>-<last>`, `bytes=<first>-` or `bytes=-<suffix>`; any other range answers the whole preview */
+                Range?: string | null;
+                /** @description Never names a Preview, which has no `ETag`: a `Range` sent with it answers the whole preview */
+                "If-Range"?: string | null;
+            };
+            path: {
+                /** @description Content SHA-256 hex of the original */
+                sha256: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The preview's bytes, in the preview's own media type, or `application/octet-stream` when none is stored */
+            200: {
+                headers: {
+                    /** @description `bytes` */
+                    "Accept-Ranges"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": unknown;
+                };
+            };
+            /** @description The byte range the `Range` header asked for */
+            206: {
+                headers: {
+                    /** @description `bytes` */
+                    "Accept-Ranges"?: string;
+                    /** @description `bytes <first>-<last>/<length>` */
+                    "Content-Range"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "*/*": unknown;
+                };
+            };
+            /**
+             * @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired.
+             *
+             *     [`media-link-invalid`](https://messagecrate.app/docs/developer/reference/errors/media-link-invalid): The `media_link` in the URL opens nothing here: it is not a media link, it was made for another asset or another account, it expired, or the Session that made it has ended.
+             */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /**
+             * @description [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
+             *
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`not-found`](https://messagecrate.app/docs/developer/reference/errors/not-found): No resource at that address exists for this account. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`range-not-satisfiable`](https://messagecrate.app/docs/developer/reference/errors/range-not-satisfiable): The request's `Range` selects no byte of the file: it starts at or past the end, or asks for a suffix of no bytes. */
+            416: {
                 headers: {
                     [name: string]: unknown;
                 };

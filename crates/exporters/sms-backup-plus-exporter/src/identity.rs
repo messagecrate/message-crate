@@ -17,10 +17,11 @@ use message_ir::{ConversationKey, NAMELESS_CHAT_ID};
 /// "AMAZON" never shares the chat of the sender `AMAZON`. The file name is
 /// made from this key later, by `ConversationDocument::filename_stem`.
 ///
-/// A mail that names nobody never gets here: the parser skips it and counts
-/// it as a parse error. Should one arrive, it is keyed [`NAMELESS_CHAT_ID`],
-/// the key every exporter gives the conversation that names nobody, so it
-/// can never take a person's key.
+/// A mail that names nobody, with no address and no name, is keyed
+/// [`NAMELESS_CHAT_ID`], the key every exporter gives the conversation that
+/// names nobody, so it can never take a person's key. The export writes that
+/// conversation's mail with an empty `X-smssync-address` and the subject
+/// `SMS`, so a second import keys it here again (#1591).
 pub(crate) fn chat_id_for(msg: &ParsedMessage) -> String {
     if msg.is_group() {
         format!("chat-{}", msg.chat_key)
@@ -76,6 +77,7 @@ mod tests {
             android_type: String::new(),
             eml_path: String::new(),
             owner_not_named: false,
+            email_number: None,
         }
     }
 
