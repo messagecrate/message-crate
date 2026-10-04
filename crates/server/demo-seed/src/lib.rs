@@ -35,6 +35,11 @@ const GENERATED_PATHS: [&str; 3] = ["staging", "config", "README.md"];
 /// The error generation returns when its cancel flag is set: it stopped
 /// part-way, and its temporary directory, with every file it wrote, is
 /// removed.
+///
+/// `message-crate-core` has a `Cancelled` and a `check_cancel` of the same
+/// shape for exporter runs. demo-seed keeps its own because the server, its
+/// only caller that cancels, does not link `message-crate-core` (the desktop
+/// app's run model, ADR 0012), and the flag is all it needs from it.
 #[derive(Debug)]
 pub struct Cancelled;
 
@@ -74,7 +79,7 @@ fn rounded_fraction(total: usize, fraction: f64) -> usize {
 /// Returns an error if a directory cannot be created, a file cannot be written,
 /// the new files fail a check, or they cannot replace the old ones.
 pub fn generate(cfg: &SeedConfig) -> Result<GenStats> {
-    generate_until(cfg, &AtomicBool::new(false))
+    generate_cancellable(cfg, &AtomicBool::new(false))
 }
 
 /// [`generate`], stopped part-way when `cancel` is set: it returns
@@ -85,7 +90,7 @@ pub fn generate(cfg: &SeedConfig) -> Result<GenStats> {
 ///
 /// Returns [`Cancelled`] when `cancel` is set, and the errors of
 /// [`generate`].
-pub fn generate_until(cfg: &SeedConfig, cancel: &AtomicBool) -> Result<GenStats> {
+pub fn generate_cancellable(cfg: &SeedConfig, cancel: &AtomicBool) -> Result<GenStats> {
     let out = Path::new(&cfg.out);
     let parent = output_parent_dir(out);
     fs::create_dir_all(parent)
@@ -589,7 +594,7 @@ fn remove_path_if_exists(path: &Path) -> Result<()> {
 }
 
 /// Generate the built-in data set of `size` into `out`, stopped part-way
-/// when `cancel` is set ([`generate_until`]).
+/// when `cancel` is set ([`generate_cancellable`]).
 ///
 /// # Errors
 ///
@@ -617,7 +622,7 @@ fn generate_with_out(mut cfg: SeedConfig, out: &Path, cancel: &AtomicBool) -> Re
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("demo out path is not UTF-8: {}", out.display()))?
         .to_string();
-    generate_until(&cfg, cancel)
+    generate_cancellable(&cfg, cancel)
 }
 
 /// Copy each file in `from` into `to`, until `cancel` is set.

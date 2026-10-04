@@ -438,7 +438,8 @@ fn a_cancelled_generation_stops_and_leaves_no_temporary_directory() {
     fs::create_dir_all(out).expect("create the earlier bundle");
     fs::write(out.join("README.md"), b"old readme").expect("write old readme");
 
-    let error = generate_until(&cfg, &AtomicBool::new(true)).expect_err("a cancelled run fails");
+    let error =
+        generate_cancellable(&cfg, &AtomicBool::new(true)).expect_err("a cancelled run fails");
 
     assert!(error.downcast_ref::<Cancelled>().is_some(), "{error:#}");
     assert_eq!(
@@ -452,6 +453,71 @@ fn a_cancelled_generation_stops_and_leaves_no_temporary_directory() {
         .filter(|name| name.to_string_lossy().starts_with(".demo-seed-"))
         .collect();
     assert!(left.is_empty(), "temporary directories left: {left:?}");
+}
+
+/// The first conversation file under a `.demo-seed-*` folder in `parent`,
+/// once generation has written one.
+fn first_prepared_conversation(parent: &Path) -> Option<PathBuf> {
+    fs::read_dir(parent)
+        .ok()?
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".demo-seed-")
+        })
+        .filter_map(|entry| fs::read_dir(entry.path().join("staging").join(IMESSAGE_SOURCE)).ok())
+        .flatten()
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .find(|path| is_jsonl_file(path))
+}
+
+/// The large data set, cancelled once its first conversation is written,
+/// stops part-way rather than at the end, and removes its temporary
+/// directory. The checks between conversations are what stop it: a check
+/// at the start alone would let the whole set be written (#1431).
+#[test]
+fn a_large_generation_cancelled_part_way_stops_and_leaves_no_temporary_directory() {
+    let temp = tempfile::tempdir().expect("create test directory");
+    let out = temp.path().join("demo");
+    let cancel = AtomicBool::new(false);
+    let finished = AtomicBool::new(false);
+
+    let (generated, waited) = std::thread::scope(|scope| {
+        let generating = scope.spawn(|| {
+            let generated = generate_size_to(DemoSize::Large, &out, &cancel);
+            finished.store(true, Ordering::Relaxed);
+            generated
+        });
+        let mut found = None;
+        while found.is_none() && !finished.load(Ordering::Relaxed) {
+            found = first_prepared_conversation(temp.path());
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        cancel.store(true, Ordering::Relaxed);
+        let stopping = std::time::Instant::now();
+        let generated = generating.join().expect("the generator does not panic");
+        assert!(found.is_some(), "a conversation was written before the end");
+        (generated, stopping.elapsed())
+    });
+
+    let error = generated.expect_err("a run cancelled part-way fails");
+    assert!(error.downcast_ref::<Cancelled>().is_some(), "{error:#}");
+    assert!(
+        waited < std::time::Duration::from_secs(2),
+        "the generator took {waited:?} to stop"
+    );
+    assert!(!out.exists(), "no bundle is put in place");
+    assert!(
+        first_prepared_conversation(temp.path()).is_none()
+            && fs::read_dir(temp.path())
+                .expect("list the output parent")
+                .next()
+                .is_none(),
+        "the temporary directory is removed"
+    );
 }
 
 #[test]

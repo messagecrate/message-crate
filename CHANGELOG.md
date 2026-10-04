@@ -811,7 +811,8 @@ released versions carry their date on the heading.
   Stopped while a build was still making up its Demo Data, the server waited
   until all of it was written, which on the large set is the longest part of
   the build, and could leave a folder of part-written Demo Data behind. It
-  now stops within moments and leaves nothing behind.
+  now stops as soon as the conversation it is writing is done, and leaves
+  nothing behind.
 
 ### Upgrading
 
