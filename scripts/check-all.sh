@@ -65,6 +65,6 @@ echo "==> docs check"
 echo "==> docs build"
 (cd docs && npm run build)
 echo "==> docs audit"
-(cd docs && npm audit --audit-level=high)
+"${SCRIPT_DIR}/audit-docs.sh"
 
 echo "All checks passed."

@@ -184,7 +184,7 @@ pub async fn list_contacts_sorted(
     // not asked for the trash (#725).
     let sql = format!(
         "SELECT * FROM (SELECT ct.id,
-                trim(ct.preferred_name) AS name,
+                ct.preferred_name AS name,
                 CASE WHEN {unknown} THEN 1 ELSE 0 END AS is_unknown,
                 (SELECT COUNT(*)
                  FROM contact_handles ch
@@ -337,7 +337,7 @@ pub async fn contact_name_and_modified(
     contact_id: i64,
 ) -> Result<Option<(String, bool, String)>, sqlx::Error> {
     let row: Option<(String, i64, String)> = sqlx::query_as(&format!(
-        "SELECT trim(ct.preferred_name),
+        "SELECT ct.preferred_name,
                 CASE WHEN {unknown} THEN 1 ELSE 0 END,
                 ct.last_modified
          FROM contacts ct
@@ -441,7 +441,7 @@ pub async fn get_contact_summaries(
         "WITH selected AS (
             SELECT ct.id,
                    ct.account_id,
-                   trim(ct.preferred_name) AS name
+                   ct.preferred_name AS name
             FROM contacts ct
             WHERE ct.account_id = $1
               AND ct.id IN ({placeholders})

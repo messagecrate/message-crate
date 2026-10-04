@@ -2,10 +2,11 @@ name: Audit
 
 # Dependency advisories fail when somebody publishes an advisory, not when
 # somebody writes bad code, so they do not run on every pull request. They
-# run when a change could alter the dependency graph (a lockfile or the deny
-# config moves — which is every Dependabot PR) and on a weekly schedule that
-# catches newly published advisories on main. These checks are deliberately
-# not in the ruleset's required list. Why: docs/adr/0007-ci-is-the-only-gate.md.
+# run when a change could alter the dependency graph (a manifest, a lockfile
+# or the deny config moves — which is every Dependabot PR), when the audit
+# itself changes (this file or scripts/audit-docs.sh), and on a weekly
+# schedule that catches newly published advisories on main. These checks
+# are deliberately not in the ruleset's required list. Why: docs/adr/0007-ci-is-the-only-gate.md.
 #
 # The same trigger runs the licence policy
 # (docs/adr/0014-gpl-code-only-behind-a-process-boundary.md): every
@@ -28,6 +29,7 @@ on:
       - "docs/package-lock.json"
       - "docs/package.json"
       - ".github/workflows/audit.yml"
+      - "scripts/audit-docs.sh"
   schedule:
     # Mondays 09:13 UTC. An off-hour minute avoids the on-the-hour spike.
     - cron: "13 9 * * 1"
@@ -81,8 +83,10 @@ jobs:
           npm ci
           npm audit --audit-level=high
 
+      # The script holds the list of advisories accepted with no patched
+      # version, each with its reason, and fails on any other high or
+      # critical one.
       - name: Audit docs site
         run: |
-          cd docs
-          npm ci
-          npm audit --audit-level=high
+          (cd docs && npm ci)
+          ./scripts/audit-docs.sh

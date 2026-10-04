@@ -22,6 +22,7 @@
     "typescript": "^6.0.3"
   },
   "overrides": {
+    "@ai-sdk/provider-utils": "4.0.57",
     "js-yaml": "4.3.2",
     "svgo": "4.1.0"
   }
