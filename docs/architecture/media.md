@@ -126,17 +126,21 @@ so the new run's rows get the versions too. The pass holds no database
 connection while ffmpeg runs, and writes its part-made files in a work
 directory under the data directory. A server that stops, on Ctrl-C or
 SIGTERM, kills the ffmpeg the pass runs and waits for it, removes the work
-directory, and leaves the Asset queued for its next start. `process-assets`
-stopped the same way kills its ffmpeg, removes its work directory and
-fails. A process that is killed does none of this. The next pass removes
-the work directory it left behind.
+directory, and leaves the Asset queued for its next start. A Demo Account
+build the server is running when it stops has its ffmpeg killed the same
+way, and the part-built Demo Account is removed. `process-assets` stopped
+the same way kills its ffmpeg, removes its work directory and fails; a
+second Ctrl-C or SIGTERM ends it at once and leaves its work directory for
+the next pass. A process that is killed does none of this. The next pass
+removes the work directory it left behind. Nothing is stored for an account
+deleted meanwhile. A version made for an attachment deleted meanwhile is
+named by no row, and the sweep at the next Import Run's end removes it once
+it is an hour old, the grace that keeps another pass's file with the same
+bytes.
 
 Why stop the conversion: ffmpeg is a process of its own, and one the server
 does not stop goes on converting after the server has stopped, using the
-computer for work nothing will record. Nothing is stored for an account deleted
-meanwhile. A version made for an attachment deleted meanwhile is named by
-no row, and the sweep at the next Import Run's end removes it once it is an
-hour old, the grace that keeps another pass's file with the same bytes.
+computer for work nothing will record.
 
 Why a table: the queue outlives the process, so a server stopped part-way
 works through what was left when it starts again, with nothing to redo and no
