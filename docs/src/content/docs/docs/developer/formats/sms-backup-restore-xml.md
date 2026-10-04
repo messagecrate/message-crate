@@ -36,7 +36,7 @@ The exporter crate owns the format in both directions; `message-ir-format` knows
 
 - **SMS** when 1:1 and no attachments: `<sms>` with `type` `1`/`2`, `date` = `timestamp_unix_ms`, `body` = text.
 - **MMS** when group and/or attachments (or `message_kind=mms`): `<mms>` with `<parts>` / `<addrs>`; attachment bytes base64 in `data` when available on disk or in memory.
-- **`contact_name`**: in a group, the members' display names joined by a comma and a space (such as `Ana, Lee`), as SMS Backup & Restore writes it, on every message in either direction; a member with no name is left out, and a group with no named member gets none. In a 1:1 chat, the sender's display name on an incoming message, else the peer's.
+- **`contact_name`**: in a group conversation, the display names of the members with an address, joined by a comma and a space (such as `Ana, Lee`), as SMS Backup & Restore writes it, on every message in either direction. A member with no name is left out, and a group conversation with no named member gets no value. That rule is the writer's own: what SMS Backup & Restore writes for a member the phone has no contact for is not known. A group conversation with fewer than two members who have an address reads back as one-to-one, so it takes the one-to-one value. In a one-to-one conversation, the value is the sender's display name on an incoming message, else the peer's.
 - If `source.fields` has `kind: "sms"|"mms"` (as produced by the SBR importer), attrs / parts / addrs are preferred and overlaid with common-message date/direction/body.
 - **Dropped:** entire `imessage` bag (tapbacks, replies, balloons, send effects, edits, announcements, …). Text and media still export as SMS/MMS.
 

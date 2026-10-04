@@ -92,11 +92,14 @@ fn part_payloads(msg: &IrMessage) -> Vec<(String, Option<Vec<u8>>)> {
         .collect()
 }
 
+/// The element attributes the message was written with.
+fn attrs(msg: &IrMessage) -> &Value {
+    &msg.source.as_ref().unwrap().fields["attrs"]
+}
+
 /// The `contact_name` attribute the message was written with, if any.
 fn contact_name(msg: &IrMessage) -> Option<&str> {
-    msg.source.as_ref().unwrap().fields["attrs"]
-        .get("contact_name")
-        .and_then(|v| v.as_str())
+    attrs(msg).get("contact_name").and_then(|v| v.as_str())
 }
 
 fn ir_attachment(name: &str, bytes: &[u8]) -> IrAttachment {
@@ -310,10 +313,35 @@ fn a_text_only_group_message_from_another_app_stays_in_its_group() {
     assert_eq!(outgoing.direction, IrDirection::Outgoing);
     assert_eq!(outgoing.text, "me");
     assert_eq!(contact_name(outgoing), Some("Sam, Lee"));
+    assert_eq!(attrs(outgoing)["address"], "+15555550101~+15555550102");
+}
+
+/// A group conversation with one member who has an address is written with
+/// that one address and reads back as one-to-one, so its `contact_name` is
+/// the one-to-one value and not every member's name.
+#[test]
+fn a_group_with_one_addressed_member_is_named_as_one_to_one() {
+    let mut doc = message_ir::testutil::sample_document("hi");
+    doc.conversation.chat_identifier = "chat-group".into();
+    doc.conversation.conversation_type = IrConversationType::Group;
+    doc.conversation
+        .participants
+        .push(message_ir::IrParticipant {
+            handle: None,
+            display_name: Some("Lee".into()),
+            handle_type: None,
+        });
+    doc.messages[0].source = None;
+
+    let read = round_trip(&[doc]);
+    assert_eq!(read.len(), 1);
     assert_eq!(
-        outgoing.source.as_ref().unwrap().fields["attrs"]["address"],
-        "+15555550101~+15555550102"
+        read[0].conversation.conversation_type,
+        IrConversationType::Individual
     );
+    let msg = &read[0].messages[0];
+    assert_eq!(contact_name(msg), Some("Sam"));
+    assert_eq!(msg.sender_display_name.as_deref(), Some("Sam"));
 }
 
 /// Apps other than SMS Backup & Restore put the owner's own address on a

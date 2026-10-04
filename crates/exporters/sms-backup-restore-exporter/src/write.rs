@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use message_crate_core::{ExportReport, NOT_SMS_OR_MMS_LEFT_OUT};
 use message_ir::{
     ConversationDocument, IrAttachment, IrConversationType, IrDirection, IrMessage, IrMessageKind,
-    nonempty,
+    IrParticipant, nonempty,
 };
 use message_ir_format::{MergedArchive, load_attachment_bytes};
 use sbr::{
@@ -397,21 +397,29 @@ fn mms_address_field(doc: &ConversationDocument) -> String {
     }
 }
 
-/// The `contact_name` value. In a group it is the members' names joined by
-/// `, `, as SMS Backup & Restore writes it, on every message in either
-/// direction; a member with no name is left out, and a group with no named
-/// member gets no value. Else it is the sender's display name for an incoming
-/// message, or the peer's.
+/// The `contact_name` value. In a group conversation it is the members' names
+/// joined by `, `, as SMS Backup & Restore writes it, on every message in
+/// either direction. The members are the participants with an address. A member with no name is left out, and a
+/// group conversation with no named member gets no value. A group conversation
+/// with fewer than two members reads back as one-to-one, so it takes the
+/// one-to-one value: the sender's display name for an incoming message, else
+/// the peer's.
 fn contact_name_alias(doc: &ConversationDocument, msg: &IrMessage) -> Option<String> {
     if doc.conversation.conversation_type == IrConversationType::Group {
-        let names: Vec<&str> = doc
+        let members: Vec<&IrParticipant> = doc
             .conversation
             .participants
             .iter()
-            .filter_map(|p| p.display_name.as_deref())
-            .filter(|s| !s.is_empty())
+            .filter(|p| p.handle.as_deref().is_some_and(|h| !h.is_empty()))
             .collect();
-        return (!names.is_empty()).then(|| names.join(", "));
+        if members.len() > 1 {
+            let names: Vec<&str> = members
+                .iter()
+                .filter_map(|p| p.display_name.as_deref())
+                .filter(|s| !s.is_empty())
+                .collect();
+            return (!names.is_empty()).then(|| names.join(", "));
+        }
     }
     if msg.direction == IrDirection::Incoming
         && let Some(n) = msg.sender_display_name.as_deref().filter(|s| !s.is_empty())
