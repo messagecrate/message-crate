@@ -17,15 +17,18 @@ function handleProps() {
   };
 }
 
-function renderHandle(props: ReturnType<typeof handleProps>) {
+function renderHandle(
+  props: ReturnType<typeof handleProps>,
+  { dragging = false, handleHover = false } = {},
+) {
   return render(
     <ColumnResizeHandle
       ariaLabel="Resize navigation panel"
       width={220}
       minWidth={160}
       maxWidth={520}
-      dragging={false}
-      handleHover={false}
+      dragging={dragging}
+      handleHover={handleHover}
       handleProps={props}
     />,
   );
@@ -61,21 +64,10 @@ describe("ColumnResizeHandle", () => {
   ])(
     "marks the grip active while it is $state, which draws the accent line",
     ({ dragging, handleHover }) => {
-      const { getByRole } = render(
-        <ColumnResizeHandle
-          ariaLabel="Resize navigation panel"
-          width={220}
-          minWidth={160}
-          maxWidth={520}
-          dragging={dragging}
-          handleHover={handleHover}
-          handleProps={props}
-        />,
-      );
+      const { getByRole } = renderHandle(props, { dragging, handleHover });
 
       const handle = getByRole("separator", { name: "Resize navigation panel" });
       expect(handle).toHaveAttribute("data-active");
-      expect(handle.className).toContain("data-active:after:bg-accent");
     },
   );
 

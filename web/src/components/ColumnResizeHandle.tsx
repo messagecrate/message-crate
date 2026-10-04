@@ -55,7 +55,7 @@ export default function ColumnResizeHandle({
       // w-2 matches `resizeHandleGutter`, the inset each resizable panel puts on its
       // scrolling child so this strip does not cover the scrollbar. The accent line
       // is the strip's ::after, drawn on its right edge while it is hovered or dragged.
-      className={`absolute top-0 right-0 m-0 h-full w-2 touch-none cursor-col-resize border-0 bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1 focus-visible:ring-offset-panel after:pointer-events-none after:absolute after:top-0 after:right-0 after:bottom-0 after:w-px after:bg-transparent after:content-[''] data-active:after:bg-accent ${Z_RESIZE_HANDLE}`}
+      className={`absolute top-0 right-0 m-0 h-full w-2 touch-none cursor-col-resize border-0 bg-transparent outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent after:pointer-events-none after:absolute after:top-0 after:right-0 after:bottom-0 after:w-px after:bg-transparent after:content-[''] data-active:after:bg-accent ${Z_RESIZE_HANDLE}`}
     />
   );
 }
