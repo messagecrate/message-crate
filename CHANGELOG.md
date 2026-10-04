@@ -123,9 +123,9 @@ released versions carry their date on the heading.
   it: a row moves only the identity it lists, so to move a number on both
   Text Message and WhatsApp, give each its own row. A file with a mistake in
   it is refused whole, and each row at fault is listed with its reason, so
-  nothing is half loaded. Message
-  Crate no longer reads a phone's vCard file, which put every number on a
-  card into your contacts whether or not a message ever used it.
+  nothing is half loaded. Message Crate no longer reads a phone's vCard
+  file, which put every number on a card into your contacts whether or not
+  a message ever used it.
 - 2026-10-01 **The Demo Account has Contact Groups.** Demo Data is now built
   the way your own Message Crate is: its messages are imported first, and an
   Address Book then names the people in them and puts them in Family, Work,

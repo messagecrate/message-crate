@@ -253,10 +253,11 @@ in Edit it takes off what a listed contact's rows leave out. It never
 corrects, infers or protects anything the file does not say to make the
 result closer to what the person may have meant, even when the file looks
 like a mistake. The consequences the rules below spell out are not
-corrections: a nameless contact a load empties is deleted, an identity Edit
-takes off that something still uses goes to a new contact with no name, and
-a phone number is read with its `+` back when the spreadsheet dropped it
-without showing, which the load's notes say. Where a rule elsewhere in this
+corrections: a nameless contact a load empties is deleted; when Edit takes
+off an identity that a conversation, message or reaction still uses, the
+identity goes to a new contact with no name; and a phone number is read
+with its `+` back when the spreadsheet dropped it without showing, which
+the load's notes say. Where a rule elsewhere in this
 document does more for an import, such as "one number is one person on
 every service", a load does only what its rows say. Why: the person edited
 the file to say what they want, and a load that second-guessed it would
