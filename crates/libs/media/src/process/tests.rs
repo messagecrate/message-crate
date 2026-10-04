@@ -382,20 +382,10 @@ fn write_test_video(path: &Path, codec: &[&str]) {
 /// Write a one-second 320x240 test pattern at `rate` frames per second.
 fn write_test_video_at(path: &Path, codec: &[&str], rate: u32) {
     let source = format!("testsrc=size=320x240:rate={rate}:duration=1");
-    let mut args: Vec<String> = [
-        "-y",
-        "-loglevel",
-        "error",
-        "-f",
-        "lavfi",
-        "-i",
-        &source,
-        "-pix_fmt",
-        "yuv420p",
-    ]
-    .iter()
-    .map(|s| (*s).to_string())
-    .collect();
+    let mut args: Vec<String> = ["-y", "-f", "lavfi", "-i", &source, "-pix_fmt", "yuv420p"]
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect();
     args.extend(codec.iter().map(|s| (*s).to_string()));
     args.push(path_str(path));
     run_ffmpeg(&args).expect("generate test video");
@@ -573,8 +563,6 @@ fn compress_re_encodes_a_large_mp3_when_the_result_is_smaller() {
     let mp3 = attachments.join("song.mp3");
     run_ffmpeg(&[
         "-y".into(),
-        "-loglevel".into(),
-        "error".into(),
         "-f".into(),
         "lavfi".into(),
         "-i".into(),
