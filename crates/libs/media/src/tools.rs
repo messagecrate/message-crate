@@ -490,22 +490,20 @@ mod tests {
 
     /// ffmpeg writes its banner, build configuration, stats lines and
     /// warnings unless told not to, and a failure carried them in front of its
-    /// cause. The mock writes them as ffmpeg does unless it is given the quiet
-    /// flags, and it wants them first, where ffmpeg reads global options
-    /// (#1412).
+    /// cause. The mock writes them all unless its first four arguments are the
+    /// quiet flags, which ffmpeg reads as global options only before the
+    /// first input (#1412).
     #[cfg(unix)]
     #[test]
     fn run_ffmpeg_failure_carries_the_cause_without_the_banner_or_stats() {
         let _guard = tools_test_lock();
         let _restore = RestoreToolsDir::capture();
         let _dir = mock_ffmpeg_dir(concat!(
-            "[ \"$1\" = -hide_banner ] || { ",
+            "[ \"$1 $2 $3 $4\" = '-hide_banner -nostats -loglevel error' ] || { ",
             "echo 'ffmpeg version 6.1.1 Copyright (c) 2000-2023 the FFmpeg developers' >&2; ",
-            "echo '  configuration: --enable-gpl --enable-libx265' >&2; }\n",
-            "case \" $* \" in *' -nostats '*) ;; *) ",
-            "echo 'frame=  12 fps=0.0 q=0.0 size=       0kB time=00:00:00.40' >&2 ;; esac\n",
-            "case \" $* \" in *' -loglevel error '*) ;; *) ",
-            "echo 'Guessed Channel Layout for Input Stream #0.1 : mono' >&2 ;; esac\n",
+            "echo '  configuration: --enable-gpl --enable-libx265' >&2; ",
+            "echo 'frame=  12 fps=0.0 q=0.0 size=       0kB time=00:00:00.40' >&2; ",
+            "echo 'Guessed Channel Layout for Input Stream #0.1 : mono' >&2; }\n",
             "echo 'in.mov: Invalid data found when processing input' >&2\nexit 1",
         ));
 
