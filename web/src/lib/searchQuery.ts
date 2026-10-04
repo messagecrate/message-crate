@@ -178,7 +178,11 @@ function operator(text: string): "binary" | "not" | null {
  * nothing to join before anything was dropped stays, so the server refuses
  * that search as it would have. Everything else stays as typed.
  */
-export function dropTokens(query: string, drop: readonly { start: number }[]): string {
+export function dropTokens(
+  query: string,
+  drop: readonly { start: number }[],
+  { operators = true }: { operators?: boolean } = {},
+): string {
   const tokens = searchTokens(query);
   const starts = new Set(drop.map((d) => d.start));
   const gone = tokens.map(() => false);
@@ -216,7 +220,10 @@ export function dropTokens(query: string, drop: readonly { start: number }[]): s
   // leave nothing with nothing to join.
   for (;;) {
     const live = everyToken.filter((i) => !gone[i]);
-    const at = live.findIndex((i, n) => !alreadyLoose.has(i) && joinsNothing(live, n));
+    const at = live.findIndex(
+      (i, n) =>
+        !alreadyLoose.has(i) && (operators || tokens[i].kind === "open") && joinsNothing(live, n),
+    );
     if (at < 0) break;
     if (tokens[live[at]].kind === "open") {
       gone[live[at + 1]] = true;
@@ -232,12 +239,14 @@ export function dropTokens(query: string, drop: readonly { start: number }[]): s
 }
 
 /**
- * `query` without the one token `token`, and nothing else: what Remove does
- * to a marked word in the search box. An `or` the word leaves with nothing to
- * join stays, as typed.
+ * `query` without the one token `token`: what Remove does to a marked word in
+ * the search box. A `not` that negated it goes with it, and so does a pair of
+ * parentheses that held only it, since either left behind changes what the
+ * search means or makes the server refuse it. An `or` or `and` the word
+ * leaves with nothing to join stays, as typed.
  */
-export function removeToken(query: string, token: { start: number; end: number }): string {
-  return cutTokens(query, [token]);
+export function removeToken(query: string, token: { start: number }): string {
+  return dropTokens(query, [token], { operators: false });
 }
 
 /**

@@ -12,8 +12,7 @@ import {
   resultsView,
   VIEW_PARAM,
 } from "../lib/resultsView";
-import { SEARCH_LIST_NAMES, useMarkedWords } from "../lib/searchFields";
-import { dropTokens } from "../lib/searchQuery";
+import { SEARCH_LIST_NAMES, useListQuery } from "../lib/searchFields";
 import type { Conversation } from "../lib/types";
 import { focusRing } from "../lib/uiStyles";
 import ConversationList from "../screens/ConversationList";
@@ -88,8 +87,7 @@ export default function ResultsColumn({
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const view = resultsView(searchParams);
-  const { marked, ready } = useMarkedWords(query, view, otherResultsView(view));
-  const listQuery = dropTokens(query, marked);
+  const { listQuery, marked, ready } = useListQuery(query, view, otherResultsView(view));
 
   const setParam = (key: string, value: string) => {
     const next = new URLSearchParams(searchParams);

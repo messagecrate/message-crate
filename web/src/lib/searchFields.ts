@@ -12,7 +12,7 @@
 
 import { keys } from "./queryKeys";
 import { useRouteQuery } from "./routeQuery";
-import { type FieldToken, fieldTokens } from "./searchQuery";
+import { dropTokens, type FieldToken, fieldTokens } from "./searchQuery";
 import { listSearchFields, type SearchFieldList } from "./serverApi";
 import type { components } from "./serverApi.types";
 
@@ -46,13 +46,7 @@ export function unsupportedFieldWords(q: string, fields: readonly SearchField[])
 
 /** The free-text words of a query, with every `word:value` token removed. */
 export function stripFieldTokens(q: string): string {
-  let out = "";
-  let from = 0;
-  for (const token of fieldTokens(q)) {
-    out += `${q.slice(from, token.start)} `;
-    from = token.end;
-  }
-  return (out + q.slice(from)).replace(/\s+/g, " ").trim();
+  return dropTokens(q, fieldTokens(q)).replace(/\s+/g, " ").trim();
 }
 
 /**
@@ -103,6 +97,20 @@ export function markedWords(
   return fieldTokens(query)
     .filter((t) => !here.has(t.word) && there.has(t.word))
     .map((t) => ({ ...t, worksIn: other.list }));
+}
+
+/**
+ * `query` as `list` searches it: without the words only `otherList` takes
+ * (#1561). `ready` is `useMarkedWords`'s. The results lists and Export both
+ * read their query through this, so they leave out the same words.
+ */
+export function useListQuery(
+  query: string,
+  list: SearchList,
+  otherList: SearchList,
+): { listQuery: string; marked: MarkedWord[]; ready: boolean } {
+  const { marked, ready } = useMarkedWords(query, list, otherList);
+  return { listQuery: dropTokens(query, marked), marked, ready };
 }
 
 /**

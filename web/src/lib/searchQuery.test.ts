@@ -697,7 +697,14 @@ describe("dropTokens", () => {
 
 describe("removeToken", () => {
   it("cuts only the token and its space, and leaves an or it joined", () => {
-    expect(removeToken("from:me or hello", { start: 0, end: 7 })).toBe("or hello");
-    expect(removeToken("hello from:me world", { start: 6, end: 13 })).toBe("hello world");
+    expect(removeToken("from:me or hello", { start: 0 })).toBe("or hello");
+    expect(removeToken("hello from:me world", { start: 6 })).toBe("hello world");
+  });
+
+  it("takes a not that negated the token, and parentheses that held only it", () => {
+    // Left behind, `not` would negate `dinner`, and `()` is refused.
+    expect(removeToken("not from:me dinner", { start: 4 })).toBe("dinner");
+    expect(removeToken("(from:me) dinner", { start: 1 })).toBe("dinner");
+    expect(removeToken("dinner or -(from:me)", { start: 12 })).toBe("dinner or");
   });
 });

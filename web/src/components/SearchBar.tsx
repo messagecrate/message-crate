@@ -249,6 +249,7 @@ export default function SearchBar({
   /** The marked word whose note is open, found again by where it starts. */
   const [noteAt, setNoteAt] = useState<number | null>(null);
   const note = marked.find((m) => m.start === noteAt) ?? null;
+  const noteText = note ? markNote(note) : null;
   const layerRef = useRef<HTMLDivElement>(null);
   const markRefs = useRef(new Map<number, HTMLSpanElement>());
   const noteAnchorRef = useRef<HTMLSpanElement | null>(null);
@@ -493,8 +494,8 @@ export default function SearchBar({
           {note ? (
             <div className="flex flex-col items-start gap-2 text-[0.813rem] text-text">
               <p className="m-0">
-                <code className="font-mono">{markNote(note).word}</code>
-                {markNote(note).rest}
+                <code className="font-mono">{noteText?.word}</code>
+                {noteText?.rest}
               </p>
               <Button size="xs" onPress={() => removeMarked(note)}>
                 Remove
