@@ -791,6 +791,12 @@ released versions carry their date on the heading.
 
 #### Search
 
+- 2026-10-04 **Searching Conversations for `name` no longer lists every
+  conversation known only by a name.** Typing `name` on Conversations listed
+  every conversation whose backup gave a name and no address, and `less` the
+  conversation that names nobody; `in:nam` on Messages listed every message in
+  them. Each is now found by the name of the person in it or by its title,
+  with plain text on Conversations and with `in:` on Messages.
 - 2026-10-04 **`identity:` no longer lists every conversation known only
   by a name.** `identity:nam` listed every conversation whose backup gave a
   name and no address, and `identity:less` the conversation that names
