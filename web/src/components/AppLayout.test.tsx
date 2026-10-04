@@ -324,7 +324,7 @@ describe("AppLayout on a Contact Group or Message Tag page", () => {
   // from the tag page as on the page itself.
   it.each([
     ["a tag page", "/tag/Holiday", "?tag=Holiday"],
-    ["the No Tag page", "/no-tag", "?tag=none"],
+    ["the No Message Tag page", "/no-tag", "?tag=none"],
   ])("opens a conversation from %s with the header box empty", async (_name, page, search) => {
     sets.tags = ["Holiday"];
     const user = setupUser();

@@ -19,7 +19,7 @@ export const MESSAGE_SORT_PARAM = "sort";
 export const AT_PARAM = "at";
 /**
  * The Message Tag a conversation was opened from: the tag's name, or `none`
- * for the No Tag page (#1562). The tag page names the tag in its path and
+ * for the No Message Tag page (#1562). The tag page names the tag in its path and
  * `/messages/:id` does not, so the tag rides here, apart from `q`, which
  * holds only what the person typed.
  */

@@ -843,8 +843,8 @@ released versions carry their date on the heading.
 
 #### Search
 
-- 2026-10-04 **A conversation opened from a tag page keeps the search box
-  as it was.** Opening a conversation from a Message Tag page put
+- 2026-10-04 **A conversation opened from a Message Tag page keeps the
+  search box as it was.** Opening a conversation from a Message Tag page put
   `tag:Holiday` into the search box, as though it had been typed, and the
   Messages list then showed every message with that tag instead of asking
   for a search. The tag now stays out of the box: the box shows only what
