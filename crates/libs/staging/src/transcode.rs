@@ -347,11 +347,11 @@ fn pending_in(
                 // derivative into place.
                 // The original may instead have been dropped for size by
                 // another attachment sharing it, which leaves its note. The
-                // pass reaches that state only when two conversions of the
-                // one original disagree about the size limit (a derivative
-                // whose size varies right at the limit): the same run's
-                // settings and the sorted order otherwise heal this
-                // attachment before any other attachment touches the original.
+                // pass reaches that state only when a conversation sorted
+                // before this one failed to convert the original in the
+                // interrupted run, and its retry on resume came out over the
+                // limit where this attachment's conversion had not (a
+                // derivative whose size varies right at the limit).
                 let orig_stem = &stem[..stem.len() - COMMITTED_SUFFIX.len()];
                 if let Some(found) = find_recoverable_original(staging_dir, orig_stem, mode)? {
                     out.push(PendingWork::HealTranscode {
