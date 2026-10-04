@@ -20,6 +20,7 @@ import { renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { freshEntries, seedEntries } from "../test/staleEntries";
+import { ApiError } from "./api";
 import { contactGroups } from "./contactGroups";
 import { messageTags } from "./messageTags";
 import { useNameCollectionActions } from "./nameCollection";
@@ -84,6 +85,61 @@ describe("contact groups are wired to the lists that show a group name", () => {
 
     expect(vi.mocked(serverApi.createContactGroup)).toHaveBeenCalledWith({ name: "Work" });
     expect(fresh).toEqual([]);
+  });
+
+  it("finds a group the server already has under another letter case instead of creating it", async () => {
+    const { result } = renderHook(() => useNameCollectionActions(contactGroups), { wrapper });
+    // What a screen last rendered predates "Family", which the server has.
+    client.setQueryData(scoped(keys.contactGroups.all), []);
+    vi.mocked(serverApi.listContactGroups).mockResolvedValueOnce([{ id: 12, name: "Family" }]);
+
+    await expect(result.current.ensure("family")).resolves.toBe("Family");
+    expect(vi.mocked(serverApi.createContactGroup)).not.toHaveBeenCalled();
+  });
+
+  it("creates a group the server does not have", async () => {
+    const { result } = renderHook(() => useNameCollectionActions(contactGroups), { wrapper });
+
+    await expect(result.current.ensure("Work")).resolves.toBe("Work");
+    expect(vi.mocked(serverApi.createContactGroup)).toHaveBeenCalledWith({ name: "Work" });
+  });
+
+  it("sends one create when a second ensure for the name starts before the first is answered", async () => {
+    const { result } = renderHook(() => useNameCollectionActions(contactGroups), { wrapper });
+    let answer!: (set: { id: number; name: string }) => void;
+    vi.mocked(serverApi.createContactGroup).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    );
+
+    // The menu's first form sends "Family"; a new form sends "family" before
+    // the server has answered, while the list still lacks it.
+    const first = result.current.ensure("Family");
+    await vi.waitFor(() => expect(vi.mocked(serverApi.createContactGroup)).toHaveBeenCalled());
+    const second = result.current.ensure("family");
+    answer({ id: 12, name: "Family" });
+
+    await expect(first).resolves.toBe("Family");
+    await expect(second).resolves.toBe("Family");
+    expect(vi.mocked(serverApi.createContactGroup)).toHaveBeenCalledTimes(1);
+  });
+
+  it("finds the group when the server says the name was taken since the list was read", async () => {
+    const { result } = renderHook(() => useNameCollectionActions(contactGroups), { wrapper });
+    vi.mocked(serverApi.listContactGroups)
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([{ id: 12, name: "Family" }]);
+    vi.mocked(serverApi.createContactGroup).mockRejectedValueOnce(
+      new ApiError(409, "Name taken", {
+        type: "https://messagecrate.app/problems/name-taken",
+        title: "Name taken",
+        status: 409,
+      }),
+    );
+
+    await expect(result.current.ensure("family")).resolves.toBe("Family");
   });
 
   it("marks the same lists stale after a rename, which is what changes on screen", async () => {

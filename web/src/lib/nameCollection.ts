@@ -1,5 +1,6 @@
 import { type InfiniteData, type UseMutationResult, useMutation } from "@tanstack/react-query";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useRef } from "react";
+import { ApiError } from "./api";
 import {
   type OffsetPage,
   type RouteCacheEntries,
@@ -278,6 +279,11 @@ export function useSetNamedSetMembers(
 /** What a screen or the sidebar does to one of these collections. */
 export type NameCollectionActions = {
   create: (name: string) => Promise<string>;
+  /**
+   * The name of the set called `name` in any letter case, as the server
+   * spells it, after creating it when the account has none by that name.
+   */
+  ensure: (name: string) => Promise<string>;
   rename: (from: string, to: string) => Promise<string>;
   remove: (name: string) => Promise<void>;
   setMembers: (name: string, patch: MembersPatch) => Promise<MembersChanged>;
@@ -294,6 +300,7 @@ export type NameCollectionActions = {
  * the invalidation all belong to the mutations above.
  */
 export function useNameCollectionActions(collection: NameCollection): NameCollectionActions {
+  const cache = useRouteCache();
   const createSet = useCreateNamedSet(collection);
   const renameSet = useRenameNamedSet(collection);
   const deleteSet = useDeleteNamedSet(collection);
@@ -316,18 +323,61 @@ export function useNameCollectionActions(collection: NameCollection): NameCollec
   );
   const error = latest.error;
 
-  // Memoised on the mutation objects' own stable `mutateAsync` identities
-  // only: `pending` and `error` change on every keystroke of a write, and a
-  // caller that lists this object's methods in a `useEffect` dependency
-  // array (as `ContactList.tsx` does) must not see a new function each time.
+  // Creates `ensure` has sent and the server has not answered, by lowercased
+  // name, so a second `ensure` for the same name waits for the first rather
+  // than reading a list the first create has not reached yet.
+  const ensuring = useRef(new Map<string, Promise<NamedSet>>());
+
+  // Memoised on the mutation objects' own stable `mutateAsync` identities,
+  // the cache and the collection only: `pending` and `error` change on every
+  // keystroke of a write, and a caller that lists this object's methods in a
+  // `useEffect` dependency array (as `ContactList.tsx` does) must not see a
+  // new function each time.
   const callbacks = useMemo(
     () => ({
       create: async (name: string) => (await create(name)).name,
+      // Asks the server for the list rather than reading what a screen last
+      // rendered, which can predate a create still settling: "family" right
+      // after "Family" finds the set instead of sending a second create.
+      ensure: async (name: string) => {
+        const wanted = name.trim().toLowerCase();
+        const listed = async () => {
+          const sets = await cache.fetch<NamedSet[]>(collection.key, (signal) =>
+            fetchSets(collection, signal),
+          );
+          return sets.find((set) => set.name.toLowerCase() === wanted)?.name;
+        };
+        const inFlight = ensuring.current.get(wanted);
+        if (inFlight) {
+          const settled = await inFlight.then(
+            (set) => set.name,
+            () => undefined,
+          );
+          if (settled !== undefined) return settled;
+        }
+        const found = await listed();
+        if (found !== undefined) return found;
+        const created = create(name);
+        ensuring.current.set(wanted, created);
+        try {
+          return (await created).name;
+        } catch (err) {
+          // Another tab or window created the name between the list and
+          // the create: the set exists, which is what was asked for.
+          if (err instanceof ApiError && err.type === "name-taken") {
+            const taken = await listed();
+            if (taken !== undefined) return taken;
+          }
+          throw err;
+        } finally {
+          if (ensuring.current.get(wanted) === created) ensuring.current.delete(wanted);
+        }
+      },
       rename: async (from: string, to: string) => (await rename({ from, to })).name,
       remove: (name: string) => remove(name),
       setMembers: (name: string, patch: MembersPatch) => setMembers({ name, patch }),
     }),
-    [create, rename, remove, setMembers],
+    [cache, collection, create, rename, remove, setMembers],
   );
 
   return { ...callbacks, pending, error };

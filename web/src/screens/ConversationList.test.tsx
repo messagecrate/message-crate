@@ -19,7 +19,8 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import RightPane from "../components/RightPane";
 import { RightToolbarProvider } from "../components/RightToolbarContext";
-import { listConversations, updateMessageTagMembers } from "../lib/serverApi";
+import { ApiError } from "../lib/api";
+import { createMessageTag, listConversations, updateMessageTagMembers } from "../lib/serverApi";
 import type { Conversation } from "../lib/types";
 import { mockedAuth, Providers } from "../test/providers";
 import ConversationList from "./ConversationList";
@@ -205,6 +206,26 @@ describe("ConversationList", () => {
       expect([...(body?.add ?? [])].sort((a, b) => a - b)).toEqual(
         Array.from({ length: 120 }, (_, i) => i + 1),
       );
+    });
+
+    it("shows the server's refusal of a Message Tag created from the Message Tags menu", async () => {
+      serveConversations(2);
+      const refusal = "name must be at most 80 characters";
+      const longName = "Trips ".repeat(14).trim();
+      vi.mocked(createMessageTag).mockRejectedValue(new ApiError(422, refusal));
+      renderList();
+      const user = userEvent.setup({ delay: null });
+
+      await user.click(await screen.findByRole("checkbox", { name: "Select Chat 1" }));
+      await user.click(screen.getByRole("button", { name: "Message Tags" }));
+      await user.click(screen.getByRole("button", { name: /Create Message Tag$/ }));
+      await user.type(screen.getByPlaceholderText("Message Tag name"), `${longName}{Enter}`);
+
+      await waitFor(() =>
+        expect(vi.mocked(createMessageTag)).toHaveBeenCalledWith({ name: longName }),
+      );
+      expect(await screen.findByText(refusal)).toBeInTheDocument();
+      expect(screen.getByPlaceholderText("Message Tag name")).toHaveValue(longName);
     });
 
     it("clears the ticks when the sort changes, so no action reaches part of them", async () => {

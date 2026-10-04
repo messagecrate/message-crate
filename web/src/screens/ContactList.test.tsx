@@ -16,6 +16,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import RightPane from "../components/RightPane";
 import { RightToolbarProvider } from "../components/RightToolbarContext";
+import { ApiError } from "../lib/api";
 import { groupListQuery } from "../lib/contactGroups";
 import { mockedAuth, Providers } from "../test/providers";
 import ContactList from "./ContactList";
@@ -39,6 +40,7 @@ vi.mock("../lib/saveTextFile", () => ({ saveTextFile: vi.fn().mockResolvedValue(
 
 import { saveTextFile } from "../lib/saveTextFile";
 import {
+  createContactGroup,
   exportAddressBook,
   listContactGroups,
   listContacts,
@@ -49,6 +51,7 @@ const listContactsMock = vi.mocked(listContacts);
 const listContactGroupsMock = vi.mocked(listContactGroups);
 const updateMembersMock = vi.mocked(updateContactGroupMembers);
 const exportMock = vi.mocked(exportAddressBook);
+const createGroupMock = vi.mocked(createContactGroup);
 
 /** True once the server has actually dropped Alice's Family membership. */
 let familyRemoved = false;
@@ -126,6 +129,56 @@ describe("ContactList", () => {
       expect(updateMembersMock).toHaveBeenCalledWith(10, { add: [], remove: [1] }),
     );
     await waitFor(() => expect(screen.getByRole("checkbox", { name: "Family" })).not.toBeChecked());
+  });
+
+  it("shows the server's refusal of a Contact Group created from the Groups menu", async () => {
+    const refusal =
+      'name can\'t hold ";", because the address book separates Contact Group names with it';
+    createGroupMock.mockRejectedValue(new ApiError(422, refusal));
+    const user = userEvent.setup();
+
+    render(
+      <Providers>
+        <RightToolbarProvider>
+          <RightPane>
+            <ContactList onSelect={() => {}} />
+          </RightPane>
+        </RightToolbarProvider>
+      </Providers>,
+    );
+
+    await user.click(await screen.findByRole("checkbox", { name: "Select Alice" }));
+    await user.click(screen.getByRole("button", { name: "Contact Groups" }));
+    await user.click(screen.getByRole("button", { name: /Create Contact Group$/ }));
+    await user.type(screen.getByPlaceholderText("Contact Group name"), "Work; 2024{Enter}");
+
+    await waitFor(() => expect(createGroupMock).toHaveBeenCalledWith({ name: "Work; 2024" }));
+    expect(await screen.findByText(refusal)).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Contact Group name")).toHaveValue("Work; 2024");
+    expect(updateMembersMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses a reserved Contact Group name from the Groups menu without asking the server to create it", async () => {
+    const user = userEvent.setup();
+
+    render(
+      <Providers>
+        <RightToolbarProvider>
+          <RightPane>
+            <ContactList onSelect={() => {}} />
+          </RightPane>
+        </RightToolbarProvider>
+      </Providers>,
+    );
+
+    await user.click(await screen.findByRole("checkbox", { name: "Select Alice" }));
+    await user.click(screen.getByRole("button", { name: "Contact Groups" }));
+    await user.click(screen.getByRole("button", { name: /Create Contact Group$/ }));
+    await user.type(screen.getByPlaceholderText("Contact Group name"), "Trash{Enter}");
+
+    expect(await screen.findByText("Trash is a reserved Contact Group")).toBeInTheDocument();
+    expect(createGroupMock).not.toHaveBeenCalled();
+    expect(updateMembersMock).not.toHaveBeenCalled();
   });
 
   it("exports the group the list shows, or the checked rows when there are any", async () => {
