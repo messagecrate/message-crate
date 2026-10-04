@@ -28,6 +28,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
             output_format: config.output_format,
             cancel: config.cancel.as_ref(),
             resume: config.resume,
+            issues: config.issues.as_ref(),
         })
     })
 }

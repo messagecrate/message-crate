@@ -84,7 +84,7 @@ fn document_from_mail_messages(messages: &[MailMessage]) -> Result<ConversationD
         source: first.export_source.clone(),
         tool: first.export_tool.clone(),
         tool_version: first.export_tool_version.clone(),
-        owner_handle: nonempty(&first.owner_handle),
+        owner_identity: nonempty(&first.owner_identity),
         owner_display_name: first.owner_display_name.as_deref().and_then(nonempty),
     };
 
@@ -115,16 +115,16 @@ fn document_from_mail_messages(messages: &[MailMessage]) -> Result<ConversationD
 
 /// Build an [`IrParticipant`] from a mail participant.
 ///
-/// EML and mbox do not store a handle type, so the type is inferred from the
-/// handle string (`@` → email, digit-heavy → phone, else other).
+/// EML and mbox do not store an identity type, so the type is inferred from
+/// the identity string (`@` → email, digit-heavy → phone, else other).
 fn participant_from_mail(p: &mail::Participant) -> IrParticipant {
     IrParticipant {
-        handle: nonempty(&p.handle),
+        identity: nonempty(&p.identity),
         display_name: p.display_name.as_deref().and_then(nonempty),
-        handle_type: if p.handle.trim().is_empty() {
+        identity_type: if p.identity.trim().is_empty() {
             None
         } else {
-            Some(crate::util::infer_handle_type(&p.handle))
+            Some(crate::util::infer_handle_type(&p.identity))
         },
     }
 }

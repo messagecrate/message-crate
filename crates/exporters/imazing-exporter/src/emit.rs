@@ -11,7 +11,8 @@ use crate::parse_emit::{
 use crate::unnamed_files::{FolderRows, UnnamedFile, unnamed_files};
 use anyhow::Result;
 use message_crate_core::{
-    CancelFlag, ExportReport, ExportTransforms, OutputFormat, prepare_outputs, project_conversation,
+    CancelFlag, ExportReport, ExportTransforms, IssueSink, OutputFormat, prepare_outputs,
+    project_conversation,
 };
 use message_csv::Zone;
 use message_ir::{
@@ -44,6 +45,8 @@ pub(crate) struct ConvertExportArgs<'a> {
     /// Continue an interrupted export: keep previous output and skip the
     /// conversations already written.
     pub resume: bool,
+    /// Where each Import Error and note goes as the run records it.
+    pub issues: Option<&'a IssueSink>,
 }
 
 /// Convert iMazing Messages / WhatsApp CSV(s) under `input`.
@@ -66,6 +69,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         output_format,
         cancel,
         resume,
+        issues,
     } = args;
     let tz = Zone::parse(timezone)?;
     let (inputs, output) = prepare_outputs(&[input.to_path_buf()], output)?;
@@ -80,7 +84,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         claims: Vec::new(),
         folder_texts: BTreeMap::new(),
         whatsapp_folders: HashSet::new(),
-        report: ExportReport::default(),
+        report: ExportReport::with_issues(issues.cloned()),
     };
     for (csv_index, discovered) in discover_csv_files(input)?.iter().enumerate() {
         message_crate_core::check_cancel(cancel)?;
@@ -279,7 +283,7 @@ fn merge_group_into(into: &mut Conversation, other: Conversation) {
     {
         for member in other_members {
             let same = |held: &IrParticipant| {
-                held.handle == member.handle && held.display_name == member.display_name
+                held.identity == member.identity && held.display_name == member.display_name
             };
             if !members.iter().any(same) {
                 members.push(member);
@@ -351,9 +355,10 @@ impl Ingest {
         let rows = match parse_csv_file(&discovered.path, discovered.kind) {
             Ok(rows) => rows,
             Err(e) => {
-                self.report
-                    .errors
-                    .push(format!("{}: {e:#}", discovered.path.display()));
+                self.report.error(
+                    discovered.path.display().to_string(),
+                    format!("{}: {e:#}", message_crate_core::CSV_NOT_READ),
+                );
                 return Ok(());
             }
         };
@@ -413,13 +418,24 @@ impl Ingest {
     ) {
         let session_rows: Vec<&RawRow> = rows.iter().map(|(_, row)| *row).collect();
         let session = session_key(discovered.kind, session_name, &session_rows);
+        let csv_path = discovered.path.display();
         if session.key.is_name_only() {
-            self.report.bump("name_only_chat", 1);
+            self.report.caveat(
+                message_crate_core::NAME_ONLY_CHAT,
+                1,
+                format!("{csv_path} ({session_name})"),
+                message_crate_core::NAME_ONLY_CHAT_NOTE,
+            );
         }
-        self.report.bump(
-            "unresolved_group_participants",
-            session.unresolved_roster_labels,
-        );
+        for label in &session.unresolved_roster_labels {
+            self.report.caveat(
+                "unresolved_group_participants",
+                1,
+                format!("{csv_path} ({label})"),
+                "The group's name lists this member, but no message gives their phone number or \
+                 email address, so they are kept by name.",
+            );
+        }
         let chat_id = session.key.chat_id();
         let convo_key = ConvoKey {
             family: TransportFamily::from_kind(discovered.kind),
@@ -490,7 +506,7 @@ impl Ingest {
         };
         let is_notification = is_notification(&row.msg_type);
         let is_from_me = !is_notification && is_outgoing(&row.msg_type);
-        let (sender_handle, sender_display_name) =
+        let (sender_identity, sender_display_name) =
             resolve_sender(row, is_from_me, is_notification, session);
         let (attachments, attachment_extra) =
             attachment_for_row(row, csv.sources[row_index].as_deref());
@@ -527,7 +543,7 @@ impl Ingest {
         Some(PendingMessage {
             sort_key: secs,
             is_from_me,
-            sender_handle,
+            sender_identity,
             sender_display_name: (!sender_display_name.is_empty()).then_some(sender_display_name),
             text: row.text.clone(),
             attachments,
@@ -599,11 +615,13 @@ impl Ingest {
     fn attach_live_photo_video(&mut self, video: &Path, picture: &Path, rows: &[usize]) {
         let first = &self.claims[rows[0]];
         if rows.len() > 1 {
-            self.report.notes.push(format!(
-                "{}: {} rows name this picture; its Live Photo video goes to the first of them in the CSV",
-                picture.display(),
-                rows.len()
-            ));
+            self.report.note(
+                picture.display().to_string(),
+                format!(
+                    "{} rows name this picture; its Live Photo video goes to the first of them in the CSV",
+                    rows.len()
+                ),
+            );
         }
         // The picture's name as the row gives it, with the video's extension:
         // the name the phone gave the video.
@@ -755,14 +773,14 @@ impl ProjectionHooks for ImazingProjection<'_> {
         match self.key {
             ConversationKey::Group { members, .. } => members.clone(),
             ConversationKey::OneToOne(handle) => vec![IrParticipant {
-                handle: Some(handle.clone()),
+                identity: Some(handle.clone()),
                 display_name: convo.first_contact_name(),
-                handle_type: Some(handle_type_for(handle)),
+                identity_type: Some(handle_type_for(handle)),
             }],
             ConversationKey::NameOnly(_) => vec![IrParticipant {
-                handle: None,
+                identity: None,
                 display_name: convo.first_contact_name(),
-                handle_type: None,
+                identity_type: None,
             }],
         }
     }

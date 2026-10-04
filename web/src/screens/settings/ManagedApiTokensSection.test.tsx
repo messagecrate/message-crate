@@ -1,9 +1,9 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockedAuth, Providers } from "../../test/providers";
+import { setupUser } from "../../test/user";
 import { ManagedApiTokensSection } from "./ManagedApiTokensSection";
 
 const apiList = vi.hoisted(() => vi.fn());
@@ -55,7 +55,7 @@ describe("ManagedApiTokensSection", () => {
   });
 
   it("revokes a token of the account it was opened for", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render(<ManagedApiTokensSection accountId={12} />, { wrapper: Providers });
 
     await user.click(await screen.findByRole("button", { name: "Revoke API Token" }));

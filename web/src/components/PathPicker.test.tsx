@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setupUser } from "../test/user";
 import PathPicker from "./PathPicker";
 
 const dialog = vi.hoisted(() => ({ open: vi.fn() }));
@@ -17,7 +17,7 @@ describe("PathPicker", () => {
   it("says the file dialog could not be opened when the dialog plugin rejects", async () => {
     // A Tauri command rejects with the plugin's own string, not an Error.
     dialog.open.mockRejectedValue("dialog unavailable");
-    const user = userEvent.setup();
+    const user = setupUser();
     const onChange = vi.fn();
     render(<PathPicker value="" onChange={onChange} />);
 
@@ -32,7 +32,7 @@ describe("PathPicker", () => {
   it("clears the message once a later Browse opens the dialog", async () => {
     dialog.open.mockRejectedValueOnce(new Error("dialog unavailable"));
     dialog.open.mockResolvedValueOnce("/backups/chat.db");
-    const user = userEvent.setup();
+    const user = setupUser();
     const onChange = vi.fn();
     render(<PathPicker value="" onChange={onChange} />);
 

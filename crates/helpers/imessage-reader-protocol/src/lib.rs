@@ -41,14 +41,18 @@ use serde_json::Value;
 ///
 /// 2: the identities request answers [`Event::Source`] first, as an export
 /// does.
-/// 3: [`Event::Identities`] values and [`Message::owner_handle`] are bare
+/// 3: [`Event::Identities`] values and [`Message::owner_identity`] are bare
 /// addresses ([`bare_address`]); the app no longer strips prefixes itself.
 /// 4: [`Request::BackupDomain`] and [`Event::BackupDomainDone`].
 /// 5: [`Request::Identities`] carries a scratch folder
 /// ([`IdentitiesRequest`]), and [`ExportRequest::scratch_dir`] is required.
 /// 6: [`Event::Attachment`] carries an [`AttachmentFile`], which tells a
 /// file the backup does not hold from one that failed to decrypt.
-pub const PROTOCOL_VERSION: u32 = 6;
+/// 7: every address is named an identity: [`Participant::identity`],
+/// [`Message::sender_identity`], [`Message::owner_identity`] and the
+/// tapbacks' `reactor_identity` (they were `handle`, `sender_handle`,
+/// `owner_handle` and `reactor_handle`).
+pub const PROTOCOL_VERSION: u32 = 7;
 
 /// The owner address behind a raw `chat.account_login` or
 /// `message.destination_caller_id` value, or `None` when nothing is left.
@@ -292,7 +296,7 @@ pub struct Conversation {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Participant {
     /// Phone number or email address as Messages stores it.
-    pub handle: String,
+    pub identity: String,
     /// The contact name, when the address book knows one.
     pub display_name: Option<String>,
 }
@@ -314,7 +318,7 @@ pub struct Message {
     /// `announcement`, `location_share`, or `balloon`.
     pub message_kind: String,
     /// The sender's address, for an incoming message.
-    pub sender_handle: Option<String>,
+    pub sender_identity: Option<String>,
     /// The sender's contact name, for an incoming message.
     pub sender_display_name: Option<String>,
     /// The subject line, when the message has one.
@@ -324,7 +328,7 @@ pub struct Message {
     pub text: String,
     /// The owner's address on this row (`destination_caller_id` through
     /// [`bare_address`]), or empty when the row carries none.
-    pub owner_handle: String,
+    pub owner_identity: String,
     /// The owner's display name, when `use_caller_id` asked for one.
     pub owner_display_name: Option<String>,
     /// Apple-specific fields; `None` when every field is empty.

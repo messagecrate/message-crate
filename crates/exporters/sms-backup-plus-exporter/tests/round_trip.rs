@@ -101,7 +101,7 @@ fn shape(documents: &[ConversationDocument]) -> Vec<MessageShape> {
                     message.guid.clone(),
                     message.timestamp_unix_ms,
                     message.direction,
-                    message.sender_handle.clone(),
+                    message.sender_identity.clone(),
                     message.message_kind.as_str().to_string(),
                     message.text.clone(),
                     message
@@ -197,7 +197,7 @@ fn a_group_keeps_who_wrote_what_and_a_text_file_stays_a_file() {
         }
         for message in &mut document.messages {
             if group && message.direction == IrDirection::Incoming {
-                message.sender_handle = None;
+                message.sender_identity = None;
                 message.sender_display_name = None;
             }
             if message.text.starts_with("Hello from Alice") {
@@ -228,7 +228,7 @@ fn a_group_keeps_who_wrote_what_and_a_text_file_stays_a_file() {
         .iter()
         .find(|message| message.text == "Hello group from Bob")
         .expect("the received group message");
-    assert_eq!(from_bob.sender_handle, None);
+    assert_eq!(from_bob.sender_identity, None);
     assert!(
         after
             .iter()
@@ -306,12 +306,12 @@ fn a_name_keyed_conversation_stays_one_when_its_sender_has_another_name() {
     doc.conversation.chat_identifier =
         message_ir::ConversationKey::NameOnly("Mom".into()).chat_id();
     doc.conversation.participants = vec![message_ir::IrParticipant {
-        handle: None,
+        identity: None,
         display_name: Some("Mom".into()),
-        handle_type: None,
+        identity_type: None,
     }];
     doc.messages[0].direction = IrDirection::Incoming;
-    doc.messages[0].sender_handle = None;
+    doc.messages[0].sender_identity = None;
     doc.messages[0].sender_display_name = Some("Mary".into());
     let mut sent = doc.messages[0].clone();
     sent.guid = format!("{:032x}", 2);
@@ -356,7 +356,7 @@ fn two_way_document(
     let mut doc = message_ir::testutil::sample_document("received");
     doc.conversation.chat_identifier = chat_id;
     doc.conversation.participants = participants;
-    doc.messages[0].sender_handle = None;
+    doc.messages[0].sender_identity = None;
     doc.messages[0].sender_display_name = None;
     let mut sent = doc.messages[0].clone();
     sent.guid = format!("{:032x}", 2);
@@ -414,7 +414,7 @@ fn the_conversation_that_names_nobody_survives_an_export_and_a_second_import() {
         .iter()
         .find(|m| m.direction == IrDirection::Incoming)
         .expect("the received message");
-    assert_eq!(received.sender_handle, None);
+    assert_eq!(received.sender_identity, None);
 }
 
 /// A person known only by a name written like a number comes back from an
@@ -429,9 +429,9 @@ fn a_name_written_like_a_number_survives_an_export_and_a_second_import() {
         let doc = two_way_document(
             message_ir::ConversationKey::NameOnly(name.into()).chat_id(),
             vec![message_ir::IrParticipant {
-                handle: None,
+                identity: None,
                 display_name: Some(name.into()),
-                handle_type: None,
+                identity_type: None,
             }],
         );
 

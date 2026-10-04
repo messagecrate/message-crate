@@ -15,10 +15,11 @@ fn convert_fixture_json_individual_and_group() {
         output: tmp.path(),
         transforms: ExportTransforms::none(),
         media_search_roots: &[],
-        owner_handle: None,
+        owner_identity: None,
         output_format: OutputFormat::Csv,
         cancel: None,
         resume: false,
+        issues: None,
     })
     .expect("convert");
 
@@ -84,10 +85,11 @@ fn copies_ios_style_media_true_data_paths() {
         output: out.path(),
         transforms: ExportTransforms::none(),
         media_search_roots: &[media_root.path().to_path_buf()],
-        owner_handle: None,
+        owner_identity: None,
         output_format: OutputFormat::Csv,
         cancel: None,
         resume: false,
+        issues: None,
     })
     .expect("convert");
 
@@ -127,10 +129,11 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
             output: tmp.path(),
             transforms: ExportTransforms::none(),
             media_search_roots: &[],
-            owner_handle: None,
+            owner_identity: None,
             output_format: OutputFormat::Jsonl,
             cancel: None,
             resume,
+            issues: None,
         })
     });
     assert_eq!(report.conversations, 2, "one individual chat and one group");
@@ -153,10 +156,11 @@ fn convert_to_documents(
         output: &out,
         transforms: ExportTransforms::none(),
         media_search_roots: &[dir.path().to_path_buf()],
-        owner_handle: None,
+        owner_identity: None,
         output_format: OutputFormat::Json,
         cancel: None,
         resume: false,
+        issues: None,
     })
     .expect("convert");
     let documents = fs::read_dir(&out)
@@ -259,7 +263,7 @@ fn senders_and_the_roster_are_the_peers_phones() {
 
     let (_, documents) = convert_to_documents(&json);
     let direct = &documents["+15555550122"].messages[0];
-    assert_eq!(direct.sender_handle.as_deref(), Some("+15555550122"));
+    assert_eq!(direct.sender_identity.as_deref(), Some("+15555550122"));
     assert_eq!(direct.sender_display_name.as_deref(), Some("Sam Example"));
 
     let group = documents
@@ -267,14 +271,14 @@ fn senders_and_the_roster_are_the_peers_phones() {
         .find(|doc| doc.conversation.group_title.as_deref() == Some("Family Chat"))
         .expect("the group");
     assert_eq!(
-        group.messages[0].sender_handle.as_deref(),
+        group.messages[0].sender_identity.as_deref(),
         Some("+15555550133")
     );
     let roster: Vec<_> = group
         .conversation
         .participants
         .iter()
-        .filter_map(|p| p.handle.as_deref())
+        .filter_map(|p| p.identity.as_deref())
         .collect();
     assert_eq!(roster, vec!["+15555550133"]);
 }
@@ -345,10 +349,11 @@ fn a_media_path_in_the_media_field_is_copied() {
         output: &out,
         transforms: ExportTransforms::none(),
         media_search_roots: &[dir.path().to_path_buf()],
-        owner_handle: None,
+        owner_identity: None,
         output_format: OutputFormat::Csv,
         cancel: None,
         resume: false,
+        issues: None,
     })
     .expect("convert");
     assert_eq!(report.attachments_saved, 1);
@@ -394,10 +399,11 @@ fn a_media_file_not_found_is_kept_as_file_missing_and_the_guid_does_not_change()
         output: &out,
         transforms: ExportTransforms::none(),
         media_search_roots: &[dir.path().to_path_buf()],
-        owner_handle: None,
+        owner_identity: None,
         output_format: OutputFormat::Json,
         cancel: None,
         resume: false,
+        issues: None,
     })
     .expect("convert");
     assert_eq!(report.attachments_saved, 1);
@@ -426,13 +432,16 @@ fn a_lid_chat_has_its_id_as_an_other_participant() {
         .conversation
         .participants
         .iter()
-        .map(|p| (p.handle.as_deref(), p.handle_type))
+        .map(|p| (p.identity.as_deref(), p.identity_type))
         .collect();
     assert_eq!(
         participants,
         vec![(Some("123456@lid"), Some(message_ir::HandleType::Other))]
     );
-    assert_eq!(doc.messages[0].sender_handle.as_deref(), Some("123456@lid"));
+    assert_eq!(
+        doc.messages[0].sender_identity.as_deref(),
+        Some("123456@lid")
+    );
 }
 
 /// Status updates (`status@broadcast`) and Channel posts (`@newsletter`) are

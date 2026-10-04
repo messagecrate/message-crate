@@ -35,8 +35,9 @@ export default function ImportDetailPanel({
     // and its content adds nothing to that width. The panel sits in a colSpan cell of the
     // history table, and the table's card is as wide as the table's content. Without it,
     // the card grows to the panel's content. In Chrome the summary's fixed-layout table has
-    // a max-content width of 1,000,000 px. React Aria sizes the issues table to its own box,
-    // so that table then grows every frame.
+    // a max-content width of 1,000,000 px. React Aria sizes the errors and notes tables to
+    // their own box, so they then grow every frame, and since React Aria draws only the
+    // columns inside the box's scroll view, each shows only its first column (#1708).
     <div id={detailId} className="bg-surface p-4 contain-inline-size">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>

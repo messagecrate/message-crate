@@ -238,7 +238,7 @@ impl<'a> Conversation<'a> {
     fn of(doc: &'a ConversationDocument) -> Self {
         let owner = doc
             .export
-            .owner_handle
+            .owner_identity
             .as_deref()
             .and_then(trimmed)
             .map(handle_key);
@@ -246,7 +246,7 @@ impl<'a> Conversation<'a> {
             .conversation
             .participants
             .iter()
-            .filter_map(|p| p.handle.as_deref().and_then(trimmed))
+            .filter_map(|p| p.identity.as_deref().and_then(trimmed))
             .filter(|handle| Some(handle_key(handle)) != owner)
             .collect();
         // A one-to-one conversation whose roster has no address is with the
@@ -295,7 +295,7 @@ impl<'a> Conversation<'a> {
             .conversation
             .participants
             .iter()
-            .find(|p| p.handle.as_deref() == Some(handle))
+            .find(|p| p.identity.as_deref() == Some(handle))
             .and_then(|p| p.display_name.as_deref())
             .and_then(trimmed)
     }
@@ -305,7 +305,7 @@ impl<'a> Conversation<'a> {
     /// group message whose sender is unknown.
     fn sender_of<'m>(&'m self, message: &'m IrMessage) -> Option<&'m str> {
         message
-            .sender_handle
+            .sender_identity
             .as_deref()
             .and_then(trimmed)
             .or_else(|| {
@@ -363,11 +363,11 @@ impl<'a> Conversation<'a> {
     /// `From` and `To`: the sender to the owner for an incoming message,
     /// the owner to the peers for an outgoing one.
     fn envelope(&self, message: &IrMessage) -> (Address<'static>, Address<'static>) {
-        let owner_handle = message
-            .owner_handle
+        let owner_identity = message
+            .owner_identity
             .as_deref()
             .and_then(trimmed)
-            .or_else(|| self.doc.export.owner_handle.as_deref().and_then(trimmed))
+            .or_else(|| self.doc.export.owner_identity.as_deref().and_then(trimmed))
             .unwrap_or("me");
         let owner_name = self
             .doc
@@ -376,7 +376,7 @@ impl<'a> Conversation<'a> {
             .as_deref()
             .and_then(trimmed)
             .unwrap_or("Me");
-        let owner = address(owner_handle, Some(owner_name));
+        let owner = address(owner_identity, Some(owner_name));
         match message.direction {
             IrDirection::Incoming => {
                 // A group message whose sender is unknown keeps it unknown: an

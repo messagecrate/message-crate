@@ -30,6 +30,16 @@ released versions carry their date on the heading.
   finishes the rest when it starts again. Until now those copies existed
   only after someone ran a command on the server. The conversation starts
   showing the thumbnails in a coming release.
+- 2026-10-04 **The server keeps its log in files the owner can read.** Docker
+  and the desktop app's server now write their log to a `logs` directory
+  beside the database, as well as to their output, so the lines that explain a
+  failure are still there after a restart. It keeps at most 250 MB, in five
+  files of 50 MB, and deletes the oldest file when a new one starts. The owner
+  can read it through the server's interface, newest first, narrow it to
+  errors or warnings, search it, and download a whole file. No other account
+  can. A Logs screen on Owner Home that shows it comes next. The log never
+  holds a password, a token, a search, message text, an attachment or a contact's
+  name, phone number or email address.
 - 2026-10-04 **A search word the other list takes stays in the box.**
   Switching between Conversations and Messages with a word only one of them
   takes, such as `from:me` on Conversations, no longer shows an error. The
@@ -277,6 +287,19 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **An import lists every backup file it could not read, and
+  notes what it kept with a caveat.** A CSV, XML, mail or MMS file in the
+  backup that the importer could not read, which before showed only in the
+  import log, is now an error in the finished run that names the file.
+  Something the import did with an item that is worth knowing but is not a
+  failure is now a note in a **Notes** list of its own under the errors:
+  an iMazing Live Photo video that two rows claim, an SMS Backup+ message
+  that lost a part it could not read, a message that records no
+  phone number for the other person, a group message that names none of
+  your numbers, a group member kept by an email address, a chat kept under a
+  name alone, and a WhatsApp attachment whose file is not in the backup,
+  each named. The notes are kept with the run, so Storage shows them later
+  too, and a run with notes and no errors still reads as completed.
 - 2026-10-04 **Staging's progress no longer jumps forward when a file the
   backup names is not there.** The byte total counted such a file's size
   and took it off only when Staging reached it, so the percentage leapt
@@ -787,6 +810,19 @@ released versions carry their date on the heading.
 
 #### Search
 
+- 2026-10-04 **Searching for part of a group conversation's id no longer
+  lists every group conversation.** Each source gives its group
+  conversations ids of one shape, such as `group:…`, `chat-…` or `…@g.us`.
+  So typing `group`, `chat` or `g.us` on Conversations listed every group
+  conversation from that source, whatever its title. `in:`, `with:` and
+  `identity:` found them the same way. A group conversation is now found by
+  its title and by the people in it.
+- 2026-10-04 **Searching Conversations for `name` no longer lists every
+  conversation known only by a name.** Typing `name` on Conversations listed
+  every conversation whose backup gave a name and no address, and `less` the
+  conversation that names nobody; `in:nam` on Messages listed every message in
+  them. Each is now found by the name of the person in it or by its title,
+  with plain text on Conversations and with `in:` on Messages.
 - 2026-10-04 **`identity:` no longer lists every conversation known only
   by a name.** `identity:nam` listed every conversation whose backup gave a
   name and no address, and `identity:less` the conversation that names
@@ -980,13 +1016,30 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-04 **A focused button shows no white line in the dark theme.**
+  The keyboard focus ring on buttons, the contact drawer's close button,
+  the date field's calendar buttons and the import form's section headings
+  had a thin white line between the button and the ring. The gap now shows
+  the colour behind the button, in every theme.
+- 2026-10-04 **The focus ring in an import's results and the contact
+  drawer sits 1 pixel from the edge.** The sections of an import's results
+  and the conversation counts in the contact drawer drew their keyboard
+  focus ring 2 pixels out, further than most buttons draw theirs.
+- 2026-10-04 **The panel resize grips move by exactly 8 pixels.** Each
+  arrow key on the grip of the left panel or the list column moved the
+  panel 9 pixels wider or 7 narrower, and pressing the grip without moving
+  it widened the panel by 1 pixel. Arrow keys now move the panel 8 pixels,
+  or 24 with Shift. Pressing the grip leaves the width as it was. A screen
+  reader hears the panel's own width.
 - 2026-10-04 **Opening an Import Run in Settings → Storage → Import
   history keeps the list inside the page.** Opening any Import Run made the
   Import history table about a million pixels wide. Every column but Date
   sat far off to the side. Opening one that recorded errors or skipped
-  items made the table keep getting wider while it stayed open. The run's
-  details now open below its row at the table's own width, and its errors
-  and skipped items scroll inside their own box.
+  items made the table keep getting wider while it stayed open, and its
+  Import Errors and Notes tables showed only their first column, so no
+  error or note could be read. The run's details now open below its row at
+  the table's own width, and its errors, skipped items and notes show every
+  column and scroll inside their own box.
 - 2026-10-04 **Import history in Settings → Storage loads quickly however
   many problems your imports recorded.** The list used to bring every error
   and skipped item of every import on the page, so a few large WhatsApp
@@ -1297,6 +1350,12 @@ released versions carry their date on the heading.
 - An Address Book exported by an earlier build calls its fifth column
   `handle_type`, and loading it is refused. Rename that column to
   `identity_type` in the file, or export the Address Book again.
+- Message files exported by an earlier build are refused when you import
+  or convert them: each phone number and email address in them is now
+  written as an identity, and the old files say "handle". This holds for
+  JSON, JSONL, CSV, EML and mbox exports, and for an Import Run an earlier
+  build left paused. Export the backup again with this build, then import
+  or convert the new files; discard a paused run and start the import again.
 - `reset-demo` no longer writes a configuration file, and reads the one given
   with `--config`. If an earlier `reset-demo` replaced your configuration
   file, the server stops at startup with a missing `[server]` section: put

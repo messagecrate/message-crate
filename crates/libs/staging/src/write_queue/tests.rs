@@ -26,7 +26,7 @@ fn att(name: &str) -> IrAttachment {
 fn doc_with(who: &str, count: usize) -> ConversationDocument {
     let mut doc = message_ir::testutil::sample_document("hello");
     doc.conversation.chat_identifier = who.into();
-    doc.conversation.participants[0].handle = Some(who.into());
+    doc.conversation.participants[0].identity = Some(who.into());
     doc.messages[0].attachments = (0..count).map(|i| att(&format!("f{i}.jpg"))).collect();
     doc
 }

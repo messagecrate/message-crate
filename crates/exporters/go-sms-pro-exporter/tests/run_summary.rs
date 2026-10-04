@@ -3,7 +3,7 @@
 //! wrote nothing, or a report that dropped a skip count or a file's parse
 //! error, passed them.
 
-use message_crate_core::testutil::{assert_run_wrote_jsonl, jsonl_run_config};
+use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_run_config};
 use message_crate_core::{GoSmsProConfig, SourceConfig};
 use std::fs;
 
@@ -161,4 +161,63 @@ fn run_names_the_first_twenty_bad_address_rows_and_counts_the_rest() {
     assert_eq!(rows.len(), 22, "{skipped}");
     assert!(rows[20].ends_with(",no address 19"), "{}", rows[20]);
     assert_eq!(rows[21], ",,,,,...and 2 more entries not shown");
+}
+
+/// A backup file the run cannot read is an Import Error naming the file, one
+/// per file however many there are, so the Import Run lists every one (#1626).
+#[test]
+fn run_sends_an_import_error_for_each_file_it_cannot_read() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("backup");
+    fs::create_dir_all(&input).unwrap();
+    fs::write(input.join("gosms_sys_1.xml"), SKIPS_XML).unwrap();
+    fs::write(
+        input.join("gosms_sys_2_broken.xml"),
+        "<GoSms><SMS><address>",
+    )
+    .unwrap();
+    // A message type with an unknown header code right after it.
+    for i in 0..21 {
+        fs::write(
+            input.join(format!("I_16094592{i:02}_1_0.pdu")),
+            [0x8c, 0x84, 0xff, 0x00],
+        )
+        .unwrap();
+    }
+    let output = tmp.path().join("out");
+    let mut config = jsonl_run_config(
+        &[&input],
+        &output,
+        SourceConfig::GoSmsPro(GoSmsProConfig {
+            owner_phones: vec!["+15555550100".into()],
+        }),
+    );
+    let issues = collect_issues(&mut config);
+
+    crate::run(&config).expect("run");
+
+    let issues = issues.lock().unwrap();
+    assert_eq!(issues.len(), 22, "{issues:?}");
+    assert!(
+        issues
+            .iter()
+            .all(|i| i.kind == "error" && i.step == "parse")
+    );
+    assert!(
+        issues
+            .iter()
+            .any(|i| i.item == input.join("gosms_sys_2_broken.xml").display().to_string()),
+        "{issues:?}"
+    );
+    let pdu = input.join("I_1609459220_1_0.pdu").display().to_string();
+    let row = issues
+        .iter()
+        .find(|i| i.item == pdu)
+        .expect("the last PDU's row");
+    assert!(
+        row.reason
+            .ends_with("malformed PDU: expected unknown header field code at byte 2"),
+        "{}",
+        row.reason
+    );
 }

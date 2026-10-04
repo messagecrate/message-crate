@@ -1,6 +1,9 @@
+import type { components } from "../../lib/serverApi.types";
 import StepProgress, { type Step, type StepStatus } from "../StepProgress";
 import type { ImportIssueStage } from "./importIssueStage";
-import VirtualizedImportIssuesTable from "./VirtualizedImportIssuesTable";
+import VirtualizedImportIssuesTable, {
+  VirtualizedImportNotesTable,
+} from "./VirtualizedImportIssuesTable";
 
 export type ImportIssue = {
   kind: string;
@@ -14,6 +17,17 @@ export type ImportIssue = {
    */
   conversation?: string;
 };
+
+/**
+ * Something a Stage did with an item that is worth knowing but did not fail,
+ * such as a message it kept with a caveat. Listed apart from the Import
+ * Errors, and never a reason to read the run as finished with issues.
+ */
+export type ImportNote = components["schemas"]["ImportNote"];
+
+/** What the Notes list under a finished run says about itself. */
+export const NOTES_HELP =
+  "Each note says what the import did with an item, and none of them is an error. Identical notes are grouped. Click a row for the full note and the items it names.";
 
 export type ImportSummaryView = {
   /**
@@ -39,6 +53,8 @@ export type ImportSummaryView = {
   uploadMs?: number | null;
   durationMs: number | null;
   issues: ImportIssue[];
+  /** The run's notes; absent when it noted nothing. */
+  notes?: ImportNote[];
 };
 
 type ImportSummaryPanelProps = {
@@ -139,6 +155,7 @@ export default function ImportSummaryPanel({
     summary.messagesAttempted !== attemptedAccounted;
   const parseMismatch = messagesSkipped != null && messagesSkipped < 0;
   const hasIssues = summary.issues.length > 0;
+  const notes = summary.notes ?? [];
 
   const messageRows: MessageRow[] = [
     { key: "parsed", label: "Parsed", value: summary.messagesParsed },
@@ -197,6 +214,14 @@ export default function ImportSummaryPanel({
           </section>
         ) : null}
       </div>
+
+      {notes.length > 0 ? (
+        <section className="mt-4 min-w-0 overflow-hidden">
+          <h2 className="m-0 text-base font-semibold">Notes</h2>
+          <p className="mb-0 mt-1 text-[0.75rem] text-muted">{NOTES_HELP}</p>
+          <VirtualizedImportNotesTable notes={notes} />
+        </section>
+      ) : null}
 
       {attemptMismatch ? (
         <p className="mt-2 text-[0.813rem] text-danger">

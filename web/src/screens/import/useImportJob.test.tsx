@@ -14,7 +14,6 @@
 // through approve first, because there is no other way to reach it.
 
 import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { currentDesktopJob } from "../../lib/desktopJob";
 import type { ActiveImportSession } from "../../lib/importSession";
@@ -30,6 +29,7 @@ import type {
   ImportIssueEvent,
   ImportProgressEvent,
 } from "../../lib/types";
+import { fill, setupUser } from "../../test/user";
 import { restoreFormFromSnapshot, snapshotSecret } from "./formSnapshot";
 import { importRunStore } from "./importRunStore";
 
@@ -228,7 +228,7 @@ function stagingSummary(overrides: Partial<StagingSummary> = {}): StagingSummary
     conversations: 1,
     messages: 10,
     contactIdentifiers: [],
-    ownerHandles: [],
+    ownerIdentities: [],
     attachments: 0,
     attachmentBytes: 0,
     forecasts: [],
@@ -799,7 +799,7 @@ describe("useImportJob wiring", () => {
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.cancelRun());
-    expect(discardImportSessionMock).toHaveBeenCalledWith(1, []);
+    expect(discardImportSessionMock).toHaveBeenCalledWith(1, [], []);
     expect(invokeDeleteStagingMock).toHaveBeenCalledWith({ staging_dir: "/staging/run-1" });
     expect(result.current.phase).toBe("form");
   });
@@ -824,11 +824,62 @@ describe("useImportJob wiring", () => {
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     await act(() => result.current.cancelRun());
 
-    expect(discardImportSessionMock).toHaveBeenCalledWith(1, [
-      { kind: "error", stage: "staging", item: "IMG_2.HEIC", reason: "could not be decrypted" },
-    ]);
+    expect(discardImportSessionMock).toHaveBeenCalledWith(
+      1,
+      [{ kind: "error", stage: "staging", item: "IMG_2.HEIC", reason: "could not be decrypted" }],
+      [],
+    );
     expect(readRunRecordMock.mock.invocationCallOrder.at(-1)).toBeLessThan(
       invokeDeleteStagingMock.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it("lists a Staging note apart from the Import Errors and still completes the run clean (#1626)", async () => {
+    const noteEvent: ImportIssueEvent = {
+      kind: "note",
+      step: "parse",
+      item: "IMG_0002.jpg",
+      reason: "2 rows name this picture; its Live Photo video goes to the first of them in the CSV",
+    };
+    const note = { stage: "staging", item: noteEvent.item, text: noteEvent.reason };
+    runMock.mockReset();
+    runMock.mockImplementationOnce(runResultWithIssue(EXTRACT_RESULT, noteEvent));
+    runMock.mockImplementationOnce(runResult({ summary: "Push finished.", report: okReport() }));
+    const { result } = renderHook(() => useImportJob());
+    await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
+    await act(() => result.current.approve());
+
+    expect(result.current.summaryView?.status).toBe("completed");
+    expect(result.current.summaryView?.issues).toEqual([]);
+    expect(result.current.summaryView?.notes).toEqual([note]);
+    expect(completeImportMock).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ status: "completed", issues: [], notes: [note] }),
+    );
+  });
+
+  it("sends the run's notes with the cancelled run when a review is cancelled (#1626)", async () => {
+    const noteEvent: ImportIssueEvent = {
+      kind: "note",
+      step: "parse",
+      item: "1.eml",
+      reason: "kept as a one-to-one message from its sender",
+    };
+    let stored: unknown = null;
+    saveRunRecordMock.mockImplementation(async ({ record }: { record: unknown }) => {
+      stored = record;
+    });
+    readRunRecordMock.mockImplementation(async () => stored);
+    runMock.mockReset();
+    runMock.mockImplementationOnce(runResultWithIssue(EXTRACT_RESULT, noteEvent));
+    const { result } = renderHook(() => useImportJob());
+    await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
+    await act(() => result.current.cancelRun());
+
+    expect(discardImportSessionMock).toHaveBeenCalledWith(
+      1,
+      [],
+      [{ stage: "staging", item: "1.eml", text: noteEvent.reason }],
     );
   });
 
@@ -844,7 +895,7 @@ describe("useImportJob wiring", () => {
     await act(() => result.current.discardRun(7, "/staging/paused"));
 
     expect(readRunRecordMock).toHaveBeenCalledWith({ staging_dir: "/staging/paused" });
-    expect(discardImportSessionMock).toHaveBeenCalledWith(7, [carried]);
+    expect(discardImportSessionMock).toHaveBeenCalledWith(7, [carried], []);
     expect(invokeDeleteStagingMock).toHaveBeenCalledWith({ staging_dir: "/staging/paused" });
     expect(readRunRecordMock.mock.invocationCallOrder[0]).toBeLessThan(
       invokeDeleteStagingMock.mock.invocationCallOrder[0] ?? 0,
@@ -863,7 +914,7 @@ describe("useImportJob wiring", () => {
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.discardRun(7, "/staging/paused"));
 
-    expect(discardImportSessionMock).toHaveBeenCalledWith(7, [carried, failed]);
+    expect(discardImportSessionMock).toHaveBeenCalledWith(7, [carried, failed], []);
   });
 
   it("still discards a paused run, with no Import Errors, when its record cannot be read", async () => {
@@ -871,7 +922,7 @@ describe("useImportJob wiring", () => {
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.discardRun(7, "/staging/paused"));
 
-    expect(discardImportSessionMock).toHaveBeenCalledWith(7, []);
+    expect(discardImportSessionMock).toHaveBeenCalledWith(7, [], []);
     expect(invokeDeleteStagingMock).toHaveBeenCalledWith({ staging_dir: "/staging/paused" });
   });
 
@@ -880,7 +931,7 @@ describe("useImportJob wiring", () => {
     await act(() => result.current.discardRun(7, null));
 
     expect(readRunRecordMock).not.toHaveBeenCalled();
-    expect(discardImportSessionMock).toHaveBeenCalledWith(7, []);
+    expect(discardImportSessionMock).toHaveBeenCalledWith(7, [], []);
     expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
   });
 
@@ -905,7 +956,7 @@ describe("useImportJob wiring", () => {
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.cancelRun());
-    expect(discardImportSessionMock).toHaveBeenCalledWith(1, []);
+    expect(discardImportSessionMock).toHaveBeenCalledWith(1, [], []);
     expect(result.current.phase).toBe("form");
     // The folder is still on disk, and the screen says so (#1154).
     expect(result.current.stagingDeleteFailure).toEqual({
@@ -926,7 +977,7 @@ describe("useImportJob wiring", () => {
 
     await act(() => result.current.cancelRun());
 
-    expect(discardImportSessionMock).toHaveBeenCalledWith(1, []);
+    expect(discardImportSessionMock).toHaveBeenCalledWith(1, [], []);
     expect(invokeDeleteStagingMock).toHaveBeenCalledWith({ staging_dir: "/staging/run-2" });
     expect(result.current.phase).toBe("form");
   });
@@ -1917,10 +1968,10 @@ describe("useImportJob wiring", () => {
   describe("the desktop job between stages (#1407)", () => {
     /** Settings → Convert with both folders filled, so only a running job keeps it off. */
     async function renderConvert() {
-      const user = userEvent.setup();
+      const user = setupUser();
       const view = render(<ConvertSection />);
-      await user.type(screen.getByLabelText("Input folder"), "/home/demo/export-json");
-      await user.type(screen.getByLabelText("Output folder"), "/home/demo/export-csv");
+      await fill(user, screen.getByLabelText("Input folder"), "/home/demo/export-json");
+      await fill(user, screen.getByLabelText("Output folder"), "/home/demo/export-csv");
       return { view, convert: screen.getByRole("button", { name: "Convert" }) };
     }
 
@@ -2453,7 +2504,7 @@ describe("useImportJob resume path", () => {
 
     await act(() => result.current.discardRun(7, "/staging/paused"));
 
-    expect(discardImportSessionMock).toHaveBeenCalledWith(7, []);
+    expect(discardImportSessionMock).toHaveBeenCalledWith(7, [], []);
   });
 
   it("still posts /complete against the resumed run id", async () => {

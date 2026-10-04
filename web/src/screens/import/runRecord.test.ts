@@ -5,6 +5,7 @@ import {
   EMPTY_RUN_RECORD,
   filesSkippedOverRun,
   issuesToDiscard,
+  notesToDiscard,
   parseRunRecord,
   type RunPart,
   type RunRecord,
@@ -322,6 +323,37 @@ describe("the record written while a stage runs (#1639)", () => {
         part({ issues: [skip], conversations: new Map([["a.jsonl", "failed"]]) }),
       ).lastStopIssues,
     ).toEqual([skip]);
+  });
+});
+
+describe("the run's notes (#1626)", () => {
+  const live = {
+    stage: "staging" as const,
+    item: "IMG_0002.jpg",
+    text: "2 rows name this picture; its Live Photo video goes to the first of them in the CSV",
+  };
+  const kept = { stage: "staging" as const, item: "1.eml", text: "kept with no sender" };
+
+  it("reads the notes back, and a record without them as noting nothing", () => {
+    expect(parseRunRecord({ issues: [], notes: [live, { stage: "staging" }] })).toEqual({
+      issues: [],
+      notes: [live],
+    });
+    expect(parseRunRecord({ issues: [] }).notes).toBeUndefined();
+  });
+
+  it("carries a stopped part's notes apart from its issues, and keeps each once", () => {
+    const carried = recordToCarry(EMPTY_RUN_RECORD, part({ notes: [live] }));
+    expect(carried.notes).toEqual([live]);
+    expect(carried.issues).toEqual([]);
+    // A resumed Staging reads the backup again and notes the picture again.
+    expect(wholeRun(carried, part({ notes: [live, kept] })).notes).toEqual([live, kept]);
+  });
+
+  it("sends a stopped run's notes with a Discard", () => {
+    const carried = recordToCarry(EMPTY_RUN_RECORD, part({ notes: [live] }));
+    expect(notesToDiscard(carried)).toEqual([live]);
+    expect(notesToDiscard(EMPTY_RUN_RECORD)).toEqual([]);
   });
 });
 

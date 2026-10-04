@@ -1,8 +1,10 @@
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import Button from "../../components/Button";
-import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
-import VirtualizedImportIssuesTable from "../../components/import/VirtualizedImportIssuesTable";
+import { type ImportSummaryView, NOTES_HELP } from "../../components/import/ImportSummaryPanel";
+import VirtualizedImportIssuesTable, {
+  VirtualizedImportNotesTable,
+} from "../../components/import/VirtualizedImportIssuesTable";
 import OpenPathButton from "../../components/OpenPathButton";
 import StepProgress, { type Step } from "../../components/StepProgress";
 import { formatBytes } from "../../lib/attachmentProgressCopy";
@@ -549,6 +551,7 @@ export default function ImportRunView({
   }
 
   const hasErrors = done && summaryView != null && summaryView.issues.length > 0;
+  const notes = done ? (summaryView?.notes ?? []) : [];
 
   return (
     <>
@@ -588,6 +591,19 @@ export default function ImportRunView({
             Identical errors are grouped. Click a row for the full message and the files it names.
           </p>
           <VirtualizedImportIssuesTable issues={summaryView.issues} />
+        </section>
+      ) : null}
+
+      {notes.length > 0 ? (
+        <section className="mt-6 min-w-0 overflow-hidden border-t border-border pt-4">
+          <h2 className="m-0 text-[0.875rem] font-semibold text-text">
+            Notes
+            <span className="ml-1.5 font-normal tabular-nums text-muted">
+              {notes.length.toLocaleString()}
+            </span>
+          </h2>
+          <p className="m-0 mt-1 text-[0.75rem] text-muted">{NOTES_HELP}</p>
+          <VirtualizedImportNotesTable notes={notes} />
         </section>
       ) : null}
     </>

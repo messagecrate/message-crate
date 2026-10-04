@@ -37,10 +37,10 @@ export default function BackupIdentityList({
    * one row (the failing identity isn't tracked separately). */
   error?: string | null;
   /**
-   * Messages staged under each owner handle. Given, the identities are a
+   * Messages staged under each owner identity. Given, the identities are a
    * table inside a stage of the run, with Sent and Received columns.
    */
-  messageCounts?: { handle: string; sent: number; received: number }[];
+  messageCounts?: { identity: string; sent: number; received: number }[];
 }) {
   if (identities.length === 0) {
     return (

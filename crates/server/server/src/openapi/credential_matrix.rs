@@ -599,6 +599,10 @@ impl<'a> World<'a> {
             "id" if id("/v1/message-tags/") => self.tag_id.to_string(),
             "id" if id("/v1/messages/") => self.message_id.to_string(),
             "id" if id("/v1/saved-searches/") => self.saved_search_id.to_string(),
+            // The server's first log file. The matrix asks only whether the
+            // credential is let past the guard, so a file that is not there
+            // is a `404 Not Found` past it.
+            "id" if id("/v1/server/log-files/") => "1".to_string(),
             "token_id" => self.spare_token_id.to_string(),
             "import_id" => self.import_id.to_string(),
             "sha256" if path.contains("/uploads") => crate::assets_api::sha256_hex(UPLOAD_BYTES),
@@ -696,7 +700,7 @@ pub(super) fn body_for(op: &Operation, n: usize) -> Option<(&'static str, Vec<u8
         ("patch", "/v1/imports/{id}") => json(json!({ "stage": "parse" })),
         ("post", "/v1/imports/{id}/batches") => Some(("application/x-ndjson", Vec::new())),
         ("post", "/v1/imports/{id}/complete") => json(json!({ "status": "completed" })),
-        ("post", "/v1/imports/{id}/discard") => json(json!({ "issues": [] })),
+        ("post", "/v1/imports/{id}/discard") => json(json!({ "issues": [], "notes": [] })),
         ("post", "/v1/saved-searches") => json(json!({ "name": "Theirs", "query": "from:me" })),
         ("patch", "/v1/saved-searches/{id}") => {
             json(json!({ "name": "Renamed", "query": "from:me" }))

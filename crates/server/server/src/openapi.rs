@@ -149,6 +149,9 @@ pub fn api_openapi() -> OpenApiRouter<AppState> {
         .routes(routes!(crate::accounts_api::list_account_exports))
         .routes(routes!(crate::accounts_api::list_account_audit_trail))
         .routes(routes!(crate::audit_trail_api::list_audit_trail))
+        .routes(routes!(crate::server_api::log_lines::list_log_lines))
+        .routes(routes!(crate::server_api::log_files::list_log_files))
+        .routes(routes!(crate::server_api::log_files::get_log_file))
         .routes(routes!(crate::audit_trail_api::list_deleted_accounts))
         .routes(routes!(
             crate::accounts_api::api_tokens::list_api_tokens,

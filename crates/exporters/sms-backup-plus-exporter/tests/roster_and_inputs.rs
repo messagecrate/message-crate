@@ -83,12 +83,12 @@ fn one_to_one_roster_holds_the_peer_named_from_the_subject() {
         .conversation
         .participants
         .iter()
-        .map(|p| (p.handle.as_deref(), p.display_name.as_deref()))
+        .map(|p| (p.identity.as_deref(), p.display_name.as_deref()))
         .collect();
     assert_eq!(roster, vec![(Some("+14075550107"), Some("Alice"))]);
 
     let msg = &alice.messages[0];
-    assert_eq!(msg.sender_handle.as_deref(), Some("+14075550107"));
+    assert_eq!(msg.sender_identity.as_deref(), Some("+14075550107"));
     assert_eq!(msg.sender_display_name.as_deref(), Some("Alice"));
 }
 
@@ -115,14 +115,14 @@ fn group_roster_holds_both_peers_and_the_sender_is_the_one_in_from() {
         .conversation
         .participants
         .iter()
-        .filter_map(|p| p.handle.as_deref())
+        .filter_map(|p| p.identity.as_deref())
         .collect();
     handles.sort_unstable();
     assert_eq!(handles, vec!["+14075550107", "+14075550108"]);
 
     let msg = &group.messages[0];
     assert_eq!(msg.text.trim(), "Hello group from Bob");
-    assert_eq!(msg.sender_handle.as_deref(), Some("+14075550108"));
+    assert_eq!(msg.sender_identity.as_deref(), Some("+14075550108"));
 }
 
 /// A mail that names the peer but records no address still gets its own
@@ -160,7 +160,7 @@ fn a_named_peer_with_no_address_gets_a_conversation_of_their_own() {
         .conversation
         .participants
         .iter()
-        .map(|p| (p.handle.as_deref(), p.display_name.as_deref()))
+        .map(|p| (p.identity.as_deref(), p.display_name.as_deref()))
         .collect();
     assert_eq!(roster, vec![(None, Some("Alice"))]);
 }
@@ -404,7 +404,7 @@ fn a_group_member_named_by_email_address_is_keyed_by_their_number() {
         .conversation
         .participants
         .iter()
-        .filter_map(|p| p.handle.as_deref())
+        .filter_map(|p| p.identity.as_deref())
         .collect();
     handles.sort_unstable();
     assert_eq!(handles, ["+14075550108", "+14075550111"]);
@@ -414,7 +414,7 @@ fn a_group_member_named_by_email_address_is_keyed_by_their_number() {
         .iter()
         .find(|m| m.text.trim() == "reply from Carol")
         .expect("Carol's reply is in the group");
-    assert_eq!(reply.sender_handle.as_deref(), Some("+14075550111"));
+    assert_eq!(reply.sender_identity.as_deref(), Some("+14075550111"));
     assert!(
         docs.contains_key("+14075550111"),
         "Carol's own conversation"

@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setupUser } from "../../test/user";
 import BackupIdentityList from "./BackupIdentityList";
 
 afterEach(() => {
@@ -20,9 +20,9 @@ describe("BackupIdentityList", () => {
         onAdd={vi.fn()}
         messageCounts={[
           // Two spellings of one number count under the same identity.
-          { handle: "+15555550110", sent: 1200, received: 900 },
-          { handle: "(555) 555-0110", sent: 34, received: 1 },
-          { handle: "owner@example.com", sent: 0, received: 7 },
+          { identity: "+15555550110", sent: 1200, received: 900 },
+          { identity: "(555) 555-0110", sent: 34, received: 1 },
+          { identity: "owner@example.com", sent: 0, received: 7 },
         ]}
       />,
     );
@@ -68,7 +68,8 @@ describe("BackupIdentityList", () => {
     render(
       <BackupIdentityList identities={["owner@example.com"]} profile={profile} onAdd={onAdd} />,
     );
-    await userEvent.click(screen.getByRole("button", { name: "Add to profile" }));
+    const user = setupUser();
+    await user.click(screen.getByRole("button", { name: "Add to profile" }));
     expect(onAdd).toHaveBeenCalledWith("owner@example.com", "email");
   });
 

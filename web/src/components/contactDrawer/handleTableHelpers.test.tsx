@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import {
   Cell,
@@ -13,6 +12,7 @@ import {
   TableHeader,
 } from "react-aria-components";
 import { afterEach, describe, expect, it } from "vitest";
+import { setupUser } from "../../test/user";
 import { SortableColumn } from "./handleTableHelpers";
 
 afterEach(() => {
@@ -154,7 +154,7 @@ describe("SortableColumn", () => {
   });
 
   it("accents the active sort column and flips direction on second click", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render(<Harness />);
     const service = screen.getByRole("columnheader", { name: /Service/i });
     const identity = screen.getByRole("columnheader", { name: /Identity/i });

@@ -30,7 +30,7 @@ fn sample_doc() -> ConversationDocument {
             source: "sms-backup-restore".into(),
             tool: "SMS Backup & Restore".into(),
             tool_version: "10.26.003".into(),
-            owner_handle: Some("+15555550100".into()),
+            owner_identity: Some("+15555550100".into()),
             owner_display_name: Some("Me".into()),
         },
         conversation: ConversationMeta {
@@ -38,9 +38,9 @@ fn sample_doc() -> ConversationDocument {
             conversation_type: IrConversationType::Individual,
             group_title: None,
             participants: vec![IrParticipant {
-                handle: Some("+15555550101".into()),
+                identity: Some("+15555550101".into()),
                 display_name: Some("Sam".into()),
-                handle_type: None,
+                identity_type: None,
             }],
             stats: ConversationStats::default(),
         },
@@ -50,9 +50,9 @@ fn sample_doc() -> ConversationDocument {
             direction: IrDirection::Incoming,
             service: IrService::Sms,
             message_kind: IrMessageKind::Sms,
-            sender_handle: Some("+15555550101".into()),
+            sender_identity: Some("+15555550101".into()),
             sender_display_name: Some("Sam".into()),
-            owner_handle: None,
+            owner_identity: None,
             subject: None,
             text: "hello there".into(),
             attachments: vec![],
@@ -67,9 +67,9 @@ fn sample_doc() -> ConversationDocument {
 fn sample_doc_for(handle: &str, guid: &str) -> ConversationDocument {
     let mut doc = sample_doc();
     doc.conversation.chat_identifier = handle.into();
-    doc.conversation.participants[0].handle = Some(handle.into());
+    doc.conversation.participants[0].identity = Some(handle.into());
     doc.messages[0].guid = guid.into();
-    doc.messages[0].sender_handle = Some(handle.into());
+    doc.messages[0].sender_identity = Some(handle.into());
     doc
 }
 

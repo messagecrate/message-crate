@@ -396,6 +396,7 @@ async fn imports_complete_and_detail_surface_timings_and_issues() {
                 reason: "upload failed".into(),
             },
         ],
+        notes: Vec::new(),
     };
 
     let response = complete_import(
@@ -453,6 +454,7 @@ async fn imports_complete_stores_completed_with_issues_status() {
         upload_ms: None,
         summary: None,
         issues: Vec::new(),
+        notes: Vec::new(),
     };
     let response = complete_import(
         State(state.clone()),
@@ -478,6 +480,7 @@ async fn imports_complete_rejects_unknown_status() {
         upload_ms: None,
         summary: None,
         issues: Vec::new(),
+        notes: Vec::new(),
     };
     let err = complete_import(
         State(state.clone()),
@@ -517,6 +520,7 @@ async fn imports_complete_rejects_invalid_issue_kind_before_db_write() {
             item: "archive.zip".into(),
             reason: "not allowed".into(),
         }],
+        notes: Vec::new(),
     };
 
     let err = complete_import(
@@ -584,7 +588,10 @@ async fn active_session_is_empty_then_reports_the_live_one() {
         State(state.clone()),
         import_access(&state, &token).await,
         AxumPath(import_id),
-        Json(DiscardImportRequest { issues: Vec::new() }),
+        Json(DiscardImportRequest {
+            issues: Vec::new(),
+            notes: Vec::new(),
+        }),
     )
     .await
     .unwrap();
@@ -619,7 +626,10 @@ async fn a_stored_form_snapshot_drops_credentials() {
         State(state.clone()),
         import_access(&state, &token).await,
         AxumPath(import_id),
-        Json(DiscardImportRequest { issues: Vec::new() }),
+        Json(DiscardImportRequest {
+            issues: Vec::new(),
+            notes: Vec::new(),
+        }),
     )
     .await
     .unwrap();
@@ -677,7 +687,10 @@ async fn imports_create_stores_source_identities() {
         State(state.clone()),
         import_access(&state, &token).await,
         AxumPath(import_id),
-        Json(DiscardImportRequest { issues: Vec::new() }),
+        Json(DiscardImportRequest {
+            issues: Vec::new(),
+            notes: Vec::new(),
+        }),
     )
     .await
     .unwrap();
@@ -773,7 +786,10 @@ async fn discard_frees_the_slot() {
         State(state.clone()),
         import_access(&state, &token).await,
         AxumPath(import_id),
-        Json(DiscardImportRequest { issues: Vec::new() }),
+        Json(DiscardImportRequest {
+            issues: Vec::new(),
+            notes: Vec::new(),
+        }),
     )
     .await
     .unwrap();
@@ -1846,14 +1862,14 @@ async fn a_small_attachment_size_limit_holds_only_the_attachment_uploads() {
     )
     .await;
     let mut batch = String::from(concat!(
-        r#"{"schema_version":4,"export":{"source":"whatsapp","tool":"t","tool_version":"0","owner_handle":"+15555550106","owner_display_name":"Me"},"#,
+        r#"{"schema_version":5,"export":{"source":"whatsapp","tool":"t","tool_version":"0","owner_identity":"+15555550106","owner_display_name":"Me"},"#,
         r#""conversation":{"chat_identifier":"+15555550107","conversation_type":"individual","group_title":null,"#,
-        r#""participants":[{"handle":"+15555550107","display_name":null}],"#,
+        r#""participants":[{"identity":"+15555550107","display_name":null}],"#,
         r#""stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1700000000000,"last_timestamp_unix_ms":1700000000000}}}"#,
         "\n",
     ));
     batch.push_str(&format!(
-        r#"{{"guid":"g-1","timestamp_unix_ms":1700000000000,"direction":"incoming","service":"whatsapp","message_kind":"sms","sender_handle":"+15555550107","sender_display_name":null,"subject":null,"text":"{}","attachments":[],"imessage":null,"source":null}}"#,
+        r#"{{"guid":"g-1","timestamp_unix_ms":1700000000000,"direction":"incoming","service":"whatsapp","message_kind":"sms","sender_identity":"+15555550107","sender_display_name":null,"subject":null,"text":"{}","attachments":[],"imessage":null,"source":null}}"#,
         "a".repeat(4096)
     ));
     batch.push('\n');
@@ -2010,28 +2026,61 @@ async fn a_chunked_part_over_its_upload_part_size_is_413() {
 }
 
 /// The server's log names every request, and a media link in a URL is a
-/// credential: the line keeps the path and the other parameters and hides
-/// the link, under any spelling of its name the server reads as
+/// credential: the line keeps the path and the other parameters' names and
+/// hides the link, under any spelling of its name the server reads as
 /// `media_link`.
 #[test]
 fn a_logged_uri_hides_the_media_link() {
     for (uri, logged) in [
         (
-            "/v1/assets/ab?media_link=7.1790000000.deadbeef&x=1",
-            "/v1/assets/ab?media_link=[hidden]&x=1",
+            "/v1/assets/ab?media_link=7.1790000000.deadbeef&limit=1",
+            "/v1/assets/ab?media_link=[hidden]&limit=1",
         ),
         (
-            "/v1/assets/ab?x=1&media%5Flink=7.1790000000.deadbeef",
-            "/v1/assets/ab?x=1&media%5Flink=[hidden]",
+            "/v1/assets/ab?limit=1&media%5Flink=7.1790000000.deadbeef",
+            "/v1/assets/ab?limit=1&media%5Flink=[hidden]",
         ),
         (
             "/v1/assets/ab?media_lin%6B=7.1790000000.deadbeef",
             "/v1/assets/ab?media_lin%6B=[hidden]",
         ),
-        ("/v1/messages?q=hello", "/v1/messages?q=hello"),
         ("/v1/messages", "/v1/messages"),
     ] {
         let uri: axum::http::Uri = uri.parse().unwrap();
         assert_eq!(logged_uri(&uri), logged);
+    }
+}
+
+/// A search is a question about what the messages say, and the log never
+/// holds message text or a contact's name
+/// (`docs/architecture/server-log.md`). So a logged URI keeps the value of a
+/// parameter only when it is a number or a fixed word (`limit`, `offset`,
+/// `sort`, `status` and the like), and hides every other value: `q`, the
+/// `text` filter of the log lines route, and a parameter the server does not
+/// know, under any spelling the server decodes to that name.
+#[test]
+fn a_logged_uri_hides_a_search_and_every_value_that_is_not_a_number_or_a_fixed_word() {
+    for (uri, logged) in [
+        (
+            "/v1/messages?q=from%3AAda%20dinner&limit=40&offset=80&sort=-date",
+            "/v1/messages?q=[hidden]&limit=40&offset=80&sort=-date",
+        ),
+        ("/v1/contacts?%71=Ada", "/v1/contacts?%71=[hidden]"),
+        (
+            "/v1/server/log-lines?level=warn&text=Ada&after=4294967296",
+            "/v1/server/log-lines?level=warn&text=[hidden]&after=4294967296",
+        ),
+        (
+            "/v1/imports?status=running&unknown=secret",
+            "/v1/imports?status=running&unknown=[hidden]",
+        ),
+        (
+            "/v1/conversations/7/messages?around=12",
+            "/v1/conversations/7/messages?around=12",
+        ),
+        ("/v1/messages?q", "/v1/messages?q"),
+    ] {
+        let uri: axum::http::Uri = uri.parse().unwrap();
+        assert_eq!(logged_uri(&uri), logged, "{uri}");
     }
 }

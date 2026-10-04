@@ -60,7 +60,7 @@ fn sms_and_mms_document() -> ConversationDocument {
         m.text = text.into();
         m.attachments = attachments;
         if direction == IrDirection::Outgoing {
-            m.sender_handle = Some("+15555550100".into());
+            m.sender_identity = Some("+15555550100".into());
             m.sender_display_name = Some("Me".into());
         }
         m
@@ -215,11 +215,11 @@ fn a_group_lists_every_peer_and_names_the_sender() {
     doc.conversation.chat_identifier = "chat-group-1".into();
     doc.conversation.conversation_type = IrConversationType::Group;
     doc.conversation.participants.push(IrParticipant {
-        handle: Some("+15555550102".into()),
+        identity: Some("+15555550102".into()),
         display_name: Some("Bo".into()),
-        handle_type: None,
+        identity_type: None,
     });
-    doc.messages[0].sender_handle = Some("+15555550102".into());
+    doc.messages[0].sender_identity = Some("+15555550102".into());
     doc.messages[0].sender_display_name = Some("Bo".into());
     let tmp = tempfile::tempdir().unwrap();
     archive()
@@ -293,11 +293,11 @@ fn a_message_of_unknown_service_and_sms_kind_is_written() {
 #[test]
 fn the_owner_under_another_spelling_is_not_a_peer() {
     let mut doc = sample_document("hello");
-    doc.export.owner_handle = Some("+15555550100".into());
+    doc.export.owner_identity = Some("+15555550100".into());
     doc.conversation.participants.push(IrParticipant {
-        handle: Some("5555550100".into()),
+        identity: Some("5555550100".into()),
         display_name: Some("Me".into()),
-        handle_type: None,
+        identity_type: None,
     });
     let tmp = tempfile::tempdir().unwrap();
     archive()
@@ -339,13 +339,13 @@ fn a_sent_group_message_names_no_one_in_its_subject() {
         doc.conversation.participants = handles
             .iter()
             .map(|handle| IrParticipant {
-                handle: Some((*handle).into()),
+                identity: Some((*handle).into()),
                 display_name: Some("Carol".into()),
-                handle_type: None,
+                identity_type: None,
             })
             .collect();
         doc.messages[0].direction = IrDirection::Outgoing;
-        doc.messages[0].sender_handle = None;
+        doc.messages[0].sender_identity = None;
         let tmp = tempfile::tempdir().unwrap();
         archive()
             .write(tmp.path(), &[doc.clone()], &mut ExportReport::default())
@@ -369,11 +369,11 @@ fn a_conversation_keyed_by_a_name_is_written_with_the_bare_name() {
     doc.conversation.chat_identifier =
         message_ir::ConversationKey::NameOnly("Alice".into()).chat_id();
     doc.conversation.participants = vec![IrParticipant {
-        handle: None,
+        identity: None,
         display_name: Some("Alice".into()),
-        handle_type: None,
+        identity_type: None,
     }];
-    doc.messages[0].sender_handle = None;
+    doc.messages[0].sender_identity = None;
     doc.messages[0].sender_display_name = Some("Alice".into());
     let tmp = tempfile::tempdir().unwrap();
     archive()

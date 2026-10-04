@@ -231,10 +231,11 @@ easier to hold than a line with one.
 ## Lists
 
 Every list route answers a page, `{items, total, limit, offset}`, and takes
-`offset` and `limit`. No exceptions: a list the person curates by hand
-(groups, tags, saved searches, API tokens), a fixed reference list
-(`/v1/search-fields/contacts`), and a `POST` that reads all answer a page. The
-list key is always `items`.
+`offset` and `limit`. A list the person curates by hand (groups, tags, saved
+searches, API tokens), a fixed reference list (`/v1/search-fields/contacts`),
+and a `POST` that reads all answer a page. The one exception is the server's
+log lines, which are written while they are read and page from a line (see
+below). The list key is always `items`.
 Why: the web app has one paged type and one hook, and a second shape is a
 second convention.
 
@@ -252,15 +253,15 @@ a page. Why: a page can only count its own rows, and a field beside `items`
 that counts something else is a second shape.
 
 A list's row carries nothing that grows without bound. Where a resource
-holds such a collection, as an Import Run holds its issues, the list answers
-how many in a count (`issue_count`) and the resource's own `GET` answers the
-collection. `GET /v1/imports` and an account's own
-`GET /v1/accounts/{id}/imports` answer each run as an `ImportRunSummary`,
-with `issue_count` and without the issues. The owner's
-`GET /v1/accounts/{id}/imports` answers each as an `OwnerImportRun`, which
-also counts the issues and never carries them. `GET /v1/imports/{id}`
-answers the issues. The count is read in the list's own statement, never by
-a statement per row. Why: `limit` bounds a page's rows and nothing else, so a collection
+holds such a collection, as an Import Run holds its issues and its notes,
+the list answers how many in a count (`issue_count`, `note_count`) and the
+resource's own `GET` answers the collection. `GET /v1/imports` and an
+account's own `GET /v1/accounts/{id}/imports` answer each run as an
+`ImportRunSummary`, with the counts and without the issues or notes. The
+owner's `GET /v1/accounts/{id}/imports` answers each as an
+`OwnerImportRun`, which also counts them and never carries them.
+`GET /v1/imports/{id}` answers the issues and the notes. Each count is
+read in the list's own statement, never by a statement per row. Why: `limit` bounds a page's rows and nothing else, so a collection
 inside each row left a page's size to whatever the runs recorded. Forty
 WhatsApp runs of 20,000 skipped files each made one page of Settings →
 Storage carry about 800,000 issues, and one statement per row made a page of
@@ -296,11 +297,16 @@ descending. Each list declares the keys it accepts, and an unlisted key is
 
 Filtering is the search language in `q`, and nothing else. The one exception
 is a list with no search language, which may take a filter parameter whose
-values are the ones its rows store. The Import Run and Export Run lists and the
-Audit Trail are the only such lists: `GET /v1/imports?status=running`,
-`GET /v1/exports?status=completed` and their twins under an account, and
-`GET /v1/audit-trail?deleted_account_id=7`, which reads one deleted account's
-entries and runs by the id they keep. There is no `fields=` selection.
+values are the ones its rows store. The Import Run and Export Run lists, the
+Audit Trail and the server's log lines are the only such lists:
+`GET /v1/imports?status=running`, `GET /v1/exports?status=completed` and their
+twins under an account, `GET /v1/audit-trail?deleted_account_id=7`, which reads
+one deleted account's entries and runs by the id they keep, and
+`GET /v1/server/log-lines?level=warn&text=import`, where `level` keeps that
+level and the more severe ones and `text` keeps the lines whose text, after
+the time and the level, holds it, ignoring case. A log line is text, not a
+row with fields a search language could name, so `text` is the whole of its
+search. There is no `fields=` selection.
 
 A query parameter a route does not declare is `validation-failed`, naming the
 parameters the route accepts. The `media_link` of a Media Link is declared by
@@ -312,6 +318,15 @@ answered as though it had been obeyed.
 Rejected: cursor paging. Stable under concurrent inserts, but nothing inserts
 rows under a running read on a self-hosted server, and every screen that shows
 "51–100 of 4,213" needs `total`.
+
+The server's log lines, `GET /v1/server/log-lines`, are the one list that
+pages from a line instead: `{items, limit, has_more}`, newest first, and
+`after={id}` reads the lines older than the line with that id. It takes no
+`offset` and answers no `total`. Why: the server writes lines while the owner
+reads them, its answers to the reading included, so the reason above does not
+hold for it, and a `total` would mean counting up to 250 MB of files for every
+page. The id names a line, as `around`, `before` and `after` name a message,
+and is not an opaque token (`docs/architecture/server-log.md`).
 
 Rejected: a bare `{items}` for small lists. One justified exception is still
 two conventions, and a group's member list has no bound the server enforces.
@@ -364,11 +379,12 @@ member of it matches `application/json`, `application/problem+json`,
 `application/*`, or `*/*`. `application/*` is a media range that matches
 `application/json` (RFC 9110), so refusing it would refuse a client that asks
 for JSON. A missing `Accept` is a request for JSON. The check runs on every `/v1` route
-but the four that answer bytes: `GET /v1/assets/{sha256}`, which streams the
+but the five that answer bytes: `GET /v1/assets/{sha256}`, which streams the
 asset's own contents, `GET /v1/assets/{sha256}/preview` and
 `GET /v1/assets/{sha256}/thumbnail`, which stream its Preview and its
-Thumbnail, and `POST /v1/contacts/address-book`, which answers the address
-book as `text/csv`. Nothing outside `/v1` is checked.
+Thumbnail, `POST /v1/contacts/address-book`, which answers the address book
+as `text/csv`, and `GET /v1/server/log-files/{id}`, which answers a file of
+the server's log as `text/plain`. Nothing outside `/v1` is checked.
 
 Rejected: requiring `Accept: application/json`. None of the server's own clients
 send one, and the rule would refuse the web app on its first request.
@@ -535,7 +551,8 @@ What each reaches:
   outcome and counts, with the counts an import's summary reported and how
   many issues it recorded, and for an export only which form its scope took.
   Why: a staging summary lists the addresses of everyone in the backup, an
-  issue names its conversation's file, and an export's query is a search over
+  issue names its conversation's file, a note names a file or an address, and
+  an export's query is a search over
   the account's messages, all content under
   `docs/adr/0008-the-owner-holds-no-messages.md`. The owner's view is a type
   of its own rather than the account's with fields removed, so a field added
@@ -543,6 +560,11 @@ What each reaches:
 - `GET /v1/server` and `POST /v1/server/claim` take no credential.
   `/v1/server/settings` and `GET /v1/server/storage` are the owner's: the
   storage totals sum every account, and no account holds more than its own.
+- The server's log, `GET /v1/server/log-lines`, `GET /v1/server/log-files`
+  and `GET /v1/server/log-files/{id}`, is the owner's alone. Why: it is every
+  account's requests in one stream, about the installation the owner runs,
+  and a line never holds content, so the owner may read all of it
+  (`docs/architecture/server-log.md`).
 - The attachment size limit is a server setting, `asset_max_bytes` in bytes,
   and the settings row is the only place it lives. The owner reads and
   changes it at `/v1/server/settings`; `GET /v1/server` reports it to any
@@ -724,9 +746,9 @@ from the name:
   whole does not belong, is the thing's name with one word that says which
   part, and is written down here with its reason. `Summary` is the thing as
   a list answers it: `ContactSummary` is a contact's row in the Contacts
-  list, and `ImportRunSummary` is an Import Run without its issues, which
-  `ImportRun` adds to it ([Lists](#lists)). `Owner` is the thing as the
-  owner reads it under another account: `OwnerImportRun` and
+  list, and `ImportRunSummary` is an Import Run without its issues and
+  notes, which `ImportRun` adds to it ([Lists](#lists)). `Owner` is the
+  thing as the owner reads it under another account: `OwnerImportRun` and
   `OwnerExportRun` ([Credentials and reach](#credentials-and-reach)).
 - An action's input and output are named for the action:
   `VerbNounRequest` for a body sent in, `VerbNounResponse` for an answer that

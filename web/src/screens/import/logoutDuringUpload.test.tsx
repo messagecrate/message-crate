@@ -7,10 +7,10 @@
 // to be recorded, and only then revokes the session.
 
 import { act, renderHook, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getToken } from "../../lib/api";
 import type { PushFinishedReport, TauriJobResult } from "../../lib/tauri";
+import { setupUser } from "../../test/user";
 
 /** Every call that matters to the order, in the order it was made. */
 const calls: string[] = [];
@@ -195,7 +195,7 @@ describe("logging out during an Upload", () => {
   });
 
   it("asks first, pauses the Upload, and revokes the session only once the pause is recorded", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const result = await startUpload();
 
     pressLogOut(result);
@@ -228,7 +228,7 @@ describe("logging out during an Upload", () => {
   });
 
   it("leaves the Upload running and the account logged in when the person goes back", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const result = await startUpload();
 
     pressLogOut(result);
@@ -263,7 +263,7 @@ describe("logging out during an Upload", () => {
     cancelMock.mockImplementation(() => {});
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
-      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const user = setupUser();
       pressLogOut(result);
       await user.click(await screen.findByRole("button", { name: "Log out" }));
 
@@ -286,7 +286,7 @@ describe("logging out during an Upload", () => {
   });
 
   it("logs out at once on Log out now, without waiting for the Upload to pause", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const result = await startUpload();
     cancelMock.mockImplementation(() => {});
 
@@ -341,7 +341,7 @@ describe("logging out during an Upload", () => {
   });
 
   it("deletes a deleted account's folder only once an Upload that did not pause has ended", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const result = await startUpload();
     // A push that does not stop when asked.
     cancelMock.mockImplementation(() => {});
@@ -381,7 +381,7 @@ describe("logging out during an Upload", () => {
   });
 
   it("leaves a later login alone when an Upload it outlived is refused", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const result = await startUpload();
     cancelMock.mockImplementation(() => {});
 

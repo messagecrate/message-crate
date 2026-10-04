@@ -56,8 +56,32 @@ pub struct ReadReport {
     pub dropped_character_references: u64,
     /// Repeated copies of a message dropped, one copy of each kept.
     pub duplicates_dropped: u64,
-    /// Per-file error messages from parsing/staging.
-    pub errors: Vec<String>,
+    /// What could not be read, each with the file it was in.
+    pub errors: Vec<ReadError>,
+}
+
+/// Something in one backup file the reader could not read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReadError {
+    /// The file, as a path.
+    pub file: String,
+    /// Why, as the parser said it.
+    pub reason: String,
+}
+
+impl ReadError {
+    fn new(path: &Path, error: &anyhow::Error) -> Self {
+        Self {
+            file: path.display().to_string(),
+            reason: format!("{error:#}"),
+        }
+    }
+}
+
+impl std::fmt::Display for ReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.file, self.reason)
+    }
 }
 
 impl ReadReport {
@@ -445,14 +469,14 @@ fn names_by_handle(conversation: &PendingConversation) -> HashMap<String, String
 fn to_document(
     id: &str,
     conversation: &PendingConversation,
-    owner_handle: Option<&str>,
+    owner_identity: Option<&str>,
     report: &mut ReadReport,
 ) -> ConversationDocument {
     let export = ExportMeta {
         source: EXPORT_SOURCE.into(),
         tool: EXPORT_TOOL.into(),
         tool_version: EXPORT_TOOL_VERSION.into(),
-        owner_handle: owner_handle.map(str::to_string),
+        owner_identity: owner_identity.map(str::to_string),
         owner_display_name: None,
     };
     let owner = owner_sender(&export);
@@ -498,7 +522,7 @@ fn ir_message(
 ) -> IrMessage {
     let (timestamp_unix_ms, _) = message.time();
     let digests = message.attachment_digests();
-    let (sender_handle, sender_display_name) = if message.is_from_me {
+    let (sender_identity, sender_display_name) = if message.is_from_me {
         owner.clone()
     } else {
         (message.sender.clone(), message.sender_display_name.clone())
@@ -522,9 +546,9 @@ fn ir_message(
         },
         service: IrService::Sms,
         message_kind: IrMessageKind::parse(message.message_kind),
-        sender_handle,
+        sender_identity,
         sender_display_name,
-        owner_handle: None,
+        owner_identity: None,
         subject: (!message.subject.is_empty()).then(|| message.subject.clone()),
         text: message.text.clone(),
         attachments: message.attachments.iter().map(ir_attachment).collect(),
@@ -562,9 +586,9 @@ fn ir_participants(conversation: &PendingConversation) -> Vec<IrParticipant> {
         .participants
         .iter()
         .map(|(handle, kind)| IrParticipant {
-            handle: Some(handle.clone()),
+            identity: Some(handle.clone()),
             display_name: names.get(handle).cloned(),
-            handle_type: Some(*kind),
+            identity_type: Some(*kind),
         })
         .collect()
 }
@@ -612,7 +636,7 @@ pub fn read_backup(
         Some(OwnerHandleSet::from_phones(&owner_phones)?)
     };
     // from_phones guarantees at least one phone handle in the set.
-    let owner_handle = owners
+    let owner_identity = owners
         .as_ref()
         .and_then(OwnerHandleSet::primary_owner_handle);
     let mut report = ReadReport::default();
@@ -642,7 +666,7 @@ pub fn read_backup(
                 Err(error) => {
                     // Keep parsing the rest of the file; one bad record
                     // must not abort the whole backup.
-                    report.errors.push(format!("{}: {error:#}", path.display()));
+                    report.errors.push(ReadError::new(&path, &error));
                     Ok(())
                 }
             }
@@ -655,7 +679,7 @@ pub fn read_backup(
             if is_cancelled(options.cancel) || error.to_string() == "cancelled" {
                 return Err(error);
             }
-            report.errors.push(format!("{}: {error:#}", path.display()));
+            report.errors.push(ReadError::new(&path, &error));
         }
     }
     check_cancel(options.cancel)?;
@@ -675,7 +699,7 @@ pub fn read_backup(
         documents.push(to_document(
             &id,
             &conversation,
-            owner_handle.as_deref(),
+            owner_identity.as_deref(),
             &mut report,
         ));
         report.conversations += 1;

@@ -54,7 +54,7 @@ struct PendingConversation {
     group_title: Option<String>,
     participants: Vec<IrParticipant>,
     /// First non-empty `destination_caller_id` seen (used for `From`/`To` mapping).
-    owner_handle: String,
+    owner_identity: String,
     /// First non-empty owner display name (caller-id / Me).
     owner_display_name: Option<String>,
     messages: Vec<IrMessage>,
@@ -260,8 +260,8 @@ fn collect(helper: &mut Helper, options: &ExportOptions) -> Result<Collected> {
                             record.chat_identifier
                         )
                     })?;
-                if convo.owner_handle.is_empty() && !record.owner_handle.is_empty() {
-                    convo.owner_handle.clone_from(&record.owner_handle);
+                if convo.owner_identity.is_empty() && !record.owner_identity.is_empty() {
+                    convo.owner_identity.clone_from(&record.owner_identity);
                 }
                 if convo.owner_display_name.is_none() {
                     convo
@@ -297,12 +297,12 @@ fn pending_from_record(record: ConversationRecord) -> PendingConversation {
             .participants
             .into_iter()
             .map(|p| IrParticipant {
-                handle_type: Some(handle_type_for(&p.handle)),
-                handle: Some(p.handle),
+                identity_type: Some(handle_type_for(&p.identity)),
+                identity: Some(p.identity),
                 display_name: p.display_name,
             })
             .collect(),
-        owner_handle: String::new(),
+        owner_identity: String::new(),
         owner_display_name: None,
         messages: Vec::new(),
         attachment_loads: Vec::new(),
@@ -330,16 +330,17 @@ fn message_to_ir(
     } else {
         IrDirection::Incoming
     };
-    let owner_handle = nonempty(&record.owner_handle);
-    let (sender_handle, sender_display_name) = match direction {
+    let owner_identity = nonempty(&record.owner_identity);
+    let (sender_identity, sender_display_name) = match direction {
         IrDirection::Outgoing => owner_sender(&ExportMeta {
             source: EXPORT_SOURCE.into(),
             tool: EXPORT_TOOL.into(),
             tool_version: env!("CARGO_PKG_VERSION").into(),
-            owner_handle: (!record.owner_handle.is_empty()).then(|| record.owner_handle.clone()),
+            owner_identity: (!record.owner_identity.is_empty())
+                .then(|| record.owner_identity.clone()),
             owner_display_name: record.owner_display_name.clone(),
         }),
-        IrDirection::Incoming => (record.sender_handle, record.sender_display_name),
+        IrDirection::Incoming => (record.sender_identity, record.sender_display_name),
     };
 
     let mut loads = Vec::with_capacity(record.attachments.len());
@@ -359,9 +360,9 @@ fn message_to_ir(
         direction,
         service: IrService::parse(&record.service),
         message_kind: IrMessageKind::parse(&record.message_kind),
-        sender_handle,
+        sender_identity,
         sender_display_name,
-        owner_handle,
+        owner_identity,
         subject: record.subject,
         text: record.text,
         attachments,
@@ -628,18 +629,18 @@ fn pending_to_document(
         source: EXPORT_SOURCE.into(),
         tool: EXPORT_TOOL.into(),
         tool_version: env!("CARGO_PKG_VERSION").into(),
-        owner_handle: (!convo.owner_handle.is_empty()).then(|| convo.owner_handle.clone()),
+        owner_identity: (!convo.owner_identity.is_empty()).then(|| convo.owner_identity.clone()),
         owner_display_name: convo
             .owner_display_name
             .or_else(|| use_caller_id.then(|| "Me".to_string())),
     };
     // Each message keeps the address it was sent from; the conversation's
     // owner fills in only where the database recorded none.
-    let (owner_handle, owner_display_name) = owner_sender(&export);
+    let (owner_identity, owner_display_name) = owner_sender(&export);
     let mut messages = convo.messages;
     for msg in &mut messages {
-        if msg.direction == IrDirection::Outgoing && msg.sender_handle.is_none() {
-            msg.sender_handle.clone_from(&owner_handle);
+        if msg.direction == IrDirection::Outgoing && msg.sender_identity.is_none() {
+            msg.sender_identity.clone_from(&owner_identity);
             msg.sender_display_name.clone_from(&owner_display_name);
         }
     }
@@ -932,11 +933,11 @@ mod tests {
             outgoing,
             service: "iMessage".into(),
             message_kind: "imessage".into(),
-            sender_handle: (!outgoing).then(|| "+15555550122".to_string()),
+            sender_identity: (!outgoing).then(|| "+15555550122".to_string()),
             sender_display_name: None,
             subject: None,
             text: "hi".into(),
-            owner_handle: "+15555550100".into(),
+            owner_identity: "+15555550100".into(),
             owner_display_name: None,
             imessage: None,
             attachments: Vec::new(),
@@ -994,10 +995,10 @@ mod tests {
             true,
         );
         assert_eq!(incoming.direction, IrDirection::Incoming);
-        assert_eq!(incoming.sender_handle.as_deref(), Some("+15555550122"));
+        assert_eq!(incoming.sender_identity.as_deref(), Some("+15555550122"));
         assert_eq!(incoming.service, IrService::IMessage);
         assert_eq!(incoming.message_kind, IrMessageKind::IMessage);
-        assert_eq!(incoming.owner_handle.as_deref(), Some("+15555550100"));
+        assert_eq!(incoming.owner_identity.as_deref(), Some("+15555550100"));
 
         let (outgoing, _) = message_to_ir(
             message_record("+15555550122", "g2", true),
@@ -1005,7 +1006,7 @@ mod tests {
             true,
         );
         assert_eq!(outgoing.direction, IrDirection::Outgoing);
-        assert_eq!(outgoing.sender_handle.as_deref(), Some("+15555550100"));
+        assert_eq!(outgoing.sender_identity.as_deref(), Some("+15555550100"));
         assert_eq!(outgoing.sender_display_name.as_deref(), Some("Me"));
     }
 
@@ -1013,7 +1014,7 @@ mod tests {
     fn outgoing_rows_keep_the_address_each_was_sent_from() {
         let from_email = {
             let mut record = message_record("+15555550122", "g1", true);
-            record.owner_handle = "owner@example.com".into();
+            record.owner_identity = "owner@example.com".into();
             message_to_ir(record, AttachmentEmbed::Embed, true).0
         };
         let from_phone = message_to_ir(
@@ -1024,14 +1025,14 @@ mod tests {
         .0;
         let unrecorded = {
             let mut record = message_record("+15555550122", "g3", true);
-            record.owner_handle = String::new();
+            record.owner_identity = String::new();
             message_to_ir(record, AttachmentEmbed::Embed, true).0
         };
         let convo = PendingConversation {
             conversation_type: IrConversationType::Individual,
             group_title: None,
             participants: Vec::new(),
-            owner_handle: "owner@example.com".into(),
+            owner_identity: "owner@example.com".into(),
             owner_display_name: None,
             messages: vec![from_email, from_phone, unrecorded],
             attachment_loads: Vec::new(),
@@ -1042,7 +1043,7 @@ mod tests {
         let senders: Vec<_> = doc
             .messages
             .iter()
-            .map(|m| m.sender_handle.as_deref())
+            .map(|m| m.sender_identity.as_deref())
             .collect();
         assert_eq!(
             senders,
@@ -1063,9 +1064,9 @@ mod tests {
             direction: IrDirection::Incoming,
             service: IrService::IMessage,
             message_kind: IrMessageKind::IMessage,
-            sender_handle: Some("+15555550101".into()),
+            sender_identity: Some("+15555550101".into()),
             sender_display_name: None,
-            owner_handle: None,
+            owner_identity: None,
             subject: None,
             text: "hi".into(),
             attachments: (0..count)
@@ -1097,7 +1098,7 @@ mod tests {
             conversation_type: IrConversationType::Individual,
             group_title: None,
             participants: Vec::new(),
-            owner_handle: String::new(),
+            owner_identity: String::new(),
             owner_display_name: None,
             messages: vec![msg_with_attachments(1000, 1), msg_with_attachments(2000, 1)],
             attachment_loads: vec![

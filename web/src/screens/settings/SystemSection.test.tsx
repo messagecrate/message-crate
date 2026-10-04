@@ -1,12 +1,12 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setBaseUrl } from "../../lib/api";
 import { APP_BUILD } from "../../lib/build";
 import { getOpenToNetwork } from "../../lib/localServer";
 import { readerLicenseUrl, readerSourceUrl } from "../../lib/thirdPartySoftware";
+import { fill, setupUser } from "../../test/user";
 import { SystemSection } from "./SystemSection";
 
 const tauriState = vi.hoisted(() => ({ isTauri: true }));
@@ -110,14 +110,16 @@ describe("SystemSection", () => {
   it("opens the data folder of the app's own Message Crate", async () => {
     openDataFolder.mockResolvedValue(undefined);
     render(<SystemSection />);
-    await userEvent.click(await screen.findByRole("button", { name: "Open data folder" }));
+    const user = setupUser();
+    await user.click(await screen.findByRole("button", { name: "Open data folder" }));
     expect(openDataFolder).toHaveBeenCalledTimes(1);
   });
 
   it("says why the data folder could not be opened", async () => {
     openDataFolder.mockRejectedValue(new Error("Could not open /data"));
     render(<SystemSection />);
-    await userEvent.click(await screen.findByRole("button", { name: "Open data folder" }));
+    const user = setupUser();
+    await user.click(await screen.findByRole("button", { name: "Open data folder" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not open /data");
   });
 
@@ -134,12 +136,13 @@ describe("SystemSection", () => {
     // The warning is there before the choice, not after it.
     expect(screen.getByText(/plain HTTP/)).toBeInTheDocument();
 
-    await userEvent.click(box);
+    const user = setupUser();
+    await user.click(box);
 
     expect(getOpenToNetwork()).toBe(true);
     expect(setLocalServerOpenToNetwork).toHaveBeenLastCalledWith(true);
 
-    await userEvent.click(box);
+    await user.click(box);
     expect(getOpenToNetwork()).toBe(false);
     expect(setLocalServerOpenToNetwork).toHaveBeenLastCalledWith(false);
     // The setting restarts a server the app runs; it never starts one.
@@ -152,7 +155,8 @@ describe("SystemSection", () => {
     setLocalServerOpenToNetwork.mockReset();
     render(<SystemSection />);
 
-    await userEvent.click(
+    const user = setupUser();
+    await user.click(
       await screen.findByRole("checkbox", { name: /Let other devices on this network connect/ }),
     );
 
@@ -166,7 +170,8 @@ describe("SystemSection", () => {
     setLocalServerOpenToNetwork.mockReset();
     setLocalServerOpenToNetwork.mockResolvedValue({ status: "ready", started_by_app: false });
     render(<SystemSection />);
-    await userEvent.click(
+    const user = setupUser();
+    await user.click(
       await screen.findByRole("checkbox", { name: /Let other devices on this network connect/ }),
     );
     expect(await screen.findByRole("status")).toHaveTextContent("This app did not start");
@@ -196,19 +201,19 @@ describe("SystemSection", () => {
   });
 
   it("stores the staging directory in the desktop process on change", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render(<SystemSection />);
     const stagingInput = await screen.findByDisplayValue("/home/demo/message-crate");
 
     await user.clear(stagingInput);
-    await user.type(stagingInput, "/tmp/my-staging");
+    await fill(user, stagingInput, "/tmp/my-staging");
 
     await waitFor(() => expect(desktopStaging.root).toBe("/tmp/my-staging"));
     expect(setStagingRoot).toHaveBeenLastCalledWith("/tmp/my-staging");
   });
 
   it("says why the desktop process refused a staging directory", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render(<SystemSection />);
     const stagingInput = await screen.findByDisplayValue("/home/demo/message-crate");
     setStagingRoot.mockRejectedValue("Could not save staging.json: disk full");
@@ -219,7 +224,7 @@ describe("SystemSection", () => {
   });
 
   it("shows a folder accepted after a refusal when the field is left before the answer", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render(<SystemSection />);
     const stagingInput = await screen.findByDisplayValue("/home/demo/message-crate");
     await user.type(stagingInput, "x", {
@@ -251,7 +256,7 @@ describe("SystemSection", () => {
   });
 
   it("says why a relative staging directory is not saved, and shows the one in use on blur", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     desktopStaging.root = "/srv/staging";
     render(<SystemSection />);
     const stagingInput = await screen.findByDisplayValue("/srv/staging");
@@ -301,7 +306,7 @@ describe("SystemSection", () => {
   });
 
   it("does not persist an ffmpeg directory when the probe fails", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const missing = {
       ok: false,
       ffmpeg_path: null,
@@ -316,7 +321,7 @@ describe("SystemSection", () => {
     });
 
     const ffmpegInput = screen.getByLabelText("ffmpeg directory");
-    await user.type(ffmpegInput, "/opt/no-ffmpeg");
+    await fill(user, ffmpegInput, "/opt/no-ffmpeg");
     await waitFor(() => {
       expect(probeFfmpegTools).toHaveBeenCalledWith("/opt/no-ffmpeg");
     });
@@ -325,7 +330,7 @@ describe("SystemSection", () => {
   });
 
   it("keeps a previous ffmpeg directory when a later probe fails", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     localStorage.setItem("mc-ffmpeg-path", "/usr/bin");
     render(<SystemSection />);
     await waitFor(() => {

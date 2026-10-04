@@ -80,14 +80,14 @@ const PHOTO_CAPTIONS: &[&str] = &[
 
 const EMOJI_ONLY: &[&str] = &["👍", "😂", "❤️", "🎉", "😊"];
 
-/// Export metadata stamped on a conversation header. `owner_handle` is the
+/// Export metadata stamped on a conversation header. `owner_identity` is the
 /// Demo Account's identity the conversation's messages are held at.
-fn export_meta(source: &str, owner_handle: &str) -> ExportMeta {
+fn export_meta(source: &str, owner_identity: &str) -> ExportMeta {
     ExportMeta {
         source: source.into(),
         tool: "demo-seed".into(),
         tool_version: "0.2.0".into(),
-        owner_handle: Some(owner_handle.into()),
+        owner_identity: Some(owner_identity.into()),
         owner_display_name: Some("Me".into()),
     }
 }
@@ -320,13 +320,13 @@ impl SharedMessage {
             },
             service,
             message_kind,
-            sender_handle: if self.from_me {
+            sender_identity: if self.from_me {
                 None
             } else {
                 Some(chat_id.into())
             },
             sender_display_name: None,
-            owner_handle: None,
+            owner_identity: None,
             subject: None,
             text: self.text.clone(),
             attachments: vec![],
@@ -563,9 +563,9 @@ impl<R: Rng> Seeder<'_, R> {
 /// One participant for a one-to-one conversation: the other person's phone or email.
 fn individual_participants(chat_id: &str, display_name: Option<String>) -> Vec<IrParticipant> {
     vec![IrParticipant {
-        handle: Some(chat_id.into()),
+        identity: Some(chat_id.into()),
         display_name,
-        handle_type: None,
+        identity_type: None,
     }]
 }
 
@@ -603,7 +603,7 @@ impl<R: Rng> Seeder<'_, R> {
         };
         // A correspondent known only by an email address wrote to the Demo
         // Account's email, so that identity has messages too.
-        let owner_handle = if ua.email_only {
+        let owner_identity = if ua.email_only {
             OWNER_EMAIL
         } else {
             OWNER_PHONE
@@ -616,7 +616,7 @@ impl<R: Rng> Seeder<'_, R> {
             None,
             participants,
             msg_count,
-            export_meta(IMESSAGE_SOURCE, owner_handle),
+            export_meta(IMESSAGE_SOURCE, owner_identity),
         )?;
 
         let timestamps = self.timestamps(msg_count, 1.5, sample_direct_day_burst);
@@ -625,7 +625,7 @@ impl<R: Rng> Seeder<'_, R> {
             let guid = format!("unassigned-{chat_id}-{i}");
             let mut msg = self.text_message(&guid, ts, from_me, chat_id, SourceFlavor::IMessage);
             if i == 2 && ua.name_alias.is_some() && !from_me {
-                msg.sender_handle = Some(String::new());
+                msg.sender_identity = Some(String::new());
             }
             if should_attach_jpg(i, msg_count, self.cfg) {
                 self.add_jpg_attachment(&mut msg, i);
@@ -658,7 +658,7 @@ impl<R: Rng> Seeder<'_, R> {
         // nothing to send from.
         let handles: Vec<String> = participants
             .iter()
-            .filter_map(|participant| participant.handle.clone())
+            .filter_map(|participant| participant.identity.clone())
             .collect();
         let msg_count = ((group.msgs_per_year * group.span_years).round() as isize).max(1) as usize;
         let timestamps = self.timestamps(msg_count, group.span_years, sample_group_day_burst);
@@ -712,7 +712,7 @@ impl<R: Rng> Seeder<'_, R> {
             let peer = sender.as_deref().unwrap_or(OWNER_PHONE);
             let mut msg =
                 self.text_message(&guid, timestamps[i], from_me, peer, SourceFlavor::IMessage);
-            msg.sender_handle = sender;
+            msg.sender_identity = sender;
             if should_attach_jpg(i, msg_count, self.cfg) {
                 self.add_jpg_attachment(&mut msg, i + group.index);
             } else if should_attach_other(i, msg_count, self.cfg) {
@@ -759,9 +759,9 @@ fn phone_only_participants(handles: &[String]) -> Vec<IrParticipant> {
     let mut participants = Vec::with_capacity(handles.len());
     for handle in handles {
         participants.push(IrParticipant {
-            handle: Some(handle.clone()),
+            identity: Some(handle.clone()),
             display_name: None,
-            handle_type: None,
+            identity_type: None,
         });
     }
     participants
@@ -776,9 +776,9 @@ fn named_group_participants(roster: &Roster, member_idxs: &[usize]) -> Vec<IrPar
             continue;
         };
         participants.push(IrParticipant {
-            handle: Some(contact.primary_phone().into()),
+            identity: Some(contact.primary_phone().into()),
             display_name: None,
-            handle_type: None,
+            identity_type: None,
         });
     }
     participants
@@ -832,9 +832,9 @@ fn write_header_only(
     let mut participants = Vec::with_capacity(member_phones.len());
     for handle in member_phones {
         participants.push(IrParticipant {
-            handle: Some((*handle).into()),
+            identity: Some((*handle).into()),
             display_name: None,
-            handle_type: None,
+            identity_type: None,
         });
     }
     write_conversation_header(
@@ -1010,9 +1010,9 @@ impl<R: Rng> Seeder<'_, R> {
             },
             service,
             message_kind,
-            sender_handle: if from_me { None } else { Some(peer.into()) },
+            sender_identity: if from_me { None } else { Some(peer.into()) },
             sender_display_name: None,
-            owner_handle: None,
+            owner_identity: None,
             subject: None,
             text,
             attachments: vec![],
@@ -1342,7 +1342,7 @@ fn push_tapback(
         "kind": kind,
         "emoji": emoji,
         "is_from_me": from_me,
-        "reactor_handle": sender_value,
+        "reactor_identity": sender_value,
     }));
     im.tapbacks = Some(serde_json::Value::Array(taps));
 }

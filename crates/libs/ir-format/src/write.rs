@@ -26,9 +26,9 @@ pub const CSV_HEADERS: &[&str] = &[
     "timestamp_unix_ms",
     "direction",
     "service",
-    "sender_handle",
+    "sender_identity",
     "sender_display_name",
-    "handle_type",
+    "identity_type",
     "subject",
     "text",
     "attachments_json",
@@ -36,9 +36,9 @@ pub const CSV_HEADERS: &[&str] = &[
     "export_source",
     "export_tool",
     "export_tool_version",
-    "owner_handle",
+    "owner_identity",
     "owner_display_name",
-    "message_owner_handle",
+    "message_owner_identity",
     "android_type",
     "source_fields_json",
     "read_receipt",
@@ -181,11 +181,11 @@ pub(crate) fn parts_are_trivial_text_duplicate(message_text: &str, parts: Option
     )
 }
 
-/// CSV `handle_type` cell: the sender's handle type, inferred from the sender
-/// handle with the same rules the EML/mbox reader uses on re-import. Empty
-/// when the message has no sender handle.
-fn sender_handle_type_cell(sender_handle: Option<&str>) -> &'static str {
-    match sender_handle {
+/// CSV `identity_type` cell: the sender's identity type, inferred from the
+/// sender identity with the same rules the EML/mbox reader uses on re-import.
+/// Empty when the message has no sender identity.
+fn sender_identity_type_cell(sender_identity: Option<&str>) -> &'static str {
+    match sender_identity {
         Some(handle) => crate::util::infer_handle_type(handle).as_str(),
         None => "",
     }
@@ -207,9 +207,9 @@ pub(crate) fn write_conversation_csv(
             .participants
             .iter()
             .map(|p| ParticipantCell {
-                handle: p.handle.clone().unwrap_or_default(),
+                identity: p.identity.clone().unwrap_or_default(),
                 display_name: p.display_name.clone().unwrap_or_default(),
-                handle_type: p.handle_type,
+                identity_type: p.identity_type,
             })
             .collect::<Vec<_>>(),
     );
@@ -381,9 +381,9 @@ fn csv_record<'a>(
         cells.timestamp_unix_ms.as_str(),
         msg.direction.as_str(),
         msg.service.as_str(),
-        msg.sender_handle.as_deref().unwrap_or(""),
+        msg.sender_identity.as_deref().unwrap_or(""),
         msg.sender_display_name.as_deref().unwrap_or(""),
-        sender_handle_type_cell(msg.sender_handle.as_deref()),
+        sender_identity_type_cell(msg.sender_identity.as_deref()),
         msg.subject.as_deref().unwrap_or(""),
         msg.text.as_str(),
         cells.attachments_json.as_str(),
@@ -391,9 +391,9 @@ fn csv_record<'a>(
         doc.export.source.as_str(),
         doc.export.tool.as_str(),
         doc.export.tool_version.as_str(),
-        doc.export.owner_handle.as_deref().unwrap_or(""),
+        doc.export.owner_identity.as_deref().unwrap_or(""),
         doc.export.owner_display_name.as_deref().unwrap_or(""),
-        msg.owner_handle.as_deref().unwrap_or(""),
+        msg.owner_identity.as_deref().unwrap_or(""),
         cells.android_type.as_str(),
         cells.source_fields_json.as_str(),
         im.read_receipt.as_str(),
@@ -447,7 +447,7 @@ pub fn document_to_mail_messages(
         .participants
         .iter()
         .map(|p| Participant {
-            handle: p.handle.clone().unwrap_or_default(),
+            identity: p.identity.clone().unwrap_or_default(),
             display_name: p.display_name.clone(),
         })
         .collect();
@@ -471,7 +471,7 @@ pub fn document_to_mail_messages(
             conversation_type: doc.conversation.conversation_type.as_str().to_string(),
             group_title: doc.conversation.group_title.clone(),
             participants: participants.clone(),
-            owner_handle: doc.export.owner_handle.clone().unwrap_or_default(),
+            owner_identity: doc.export.owner_identity.clone().unwrap_or_default(),
             owner_display_name: doc.export.owner_display_name.clone(),
             export_source: doc.export.source.clone(),
             export_tool: doc.export.tool.clone(),

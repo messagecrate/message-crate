@@ -23,8 +23,9 @@ type Schema = components["schemas"];
 
 /**
  * One past Import Run, as the imports list returns it: to the account itself
- * everything but its issues, and to the owner without what the run held.
- * Both carry how many issues the run recorded; opening the run reads them.
+ * everything but its issues and notes, and to the owner without what the run
+ * held. Both carry how many issues the run recorded; opening the run reads
+ * them, and its notes.
  */
 export type ListedImportRun = Schema["ImportRunSummary"] | Schema["OwnerImportRun"];
 
@@ -86,7 +87,7 @@ export function describeExportScope(scope: Schema["ExportScope"]): string {
 }
 
 /**
- * One Import Run: in full, with its summary and issues, to the account
+ * One Import Run: in full, with its summary, issues and notes, to the account
  * itself; to the owner with the summary's counts and how many issues.
  */
 export type AccountImportRun = Schema["AccountImportRun"];
@@ -214,5 +215,6 @@ export function toImportSummaryView(run: AccountImportRun): ImportSummaryView {
     uploadMs: run.upload_ms,
     durationMs,
     issues: "issues" in run ? run.issues : [],
+    notes: "notes" in run ? run.notes : [],
   };
 }

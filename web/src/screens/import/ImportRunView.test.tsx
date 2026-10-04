@@ -1,13 +1,13 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
 import { holdDesktopJob } from "../../lib/desktopJob";
 import type { AttachmentForecast, StagingSummary } from "../../lib/tauri";
 import { Providers } from "../../test/providers";
+import { setupUser } from "../../test/user";
 import ImportRunView from "./ImportRunView";
 import { type ImportStep, stepsFor } from "./importProgressState";
 import { attachmentsAsked, runHeading, sourceDisplayName } from "./importRunCopy";
@@ -68,7 +68,7 @@ function staged(overrides: Partial<StagingSummary> = {}): StagingSummary {
     conversations: 312,
     messages: 48205,
     contactIdentifiers: [],
-    ownerHandles: [],
+    ownerIdentities: [],
     attachments: 6118,
     attachmentBytes: 9.4 * 1024 * 1024 * 1024,
     forecasts: [],
@@ -221,7 +221,7 @@ describe("ImportRunView", () => {
   });
 
   it("puts the backup path under the heading and the staging directory in the Staging row", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const staging = "/home/sam/message-crate/staging-iphone";
     renderView({ stagingDir: staging });
 
@@ -236,7 +236,7 @@ describe("ImportRunView", () => {
   });
 
   it("offers no import log until Upload has started, then shows it in the Upload row", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const staging = "/home/sam/message-crate/staging-iphone";
     const view = renderView({ stagingDir: staging });
     expect(
@@ -270,7 +270,7 @@ describe("ImportRunView", () => {
 
   it("offers Pause, not Cancel, inside a running Upload", async () => {
     const onCancel = vi.fn();
-    const user = userEvent.setup();
+    const user = setupUser();
     renderView({
       steps: stepsAt("copy", { Staging: "done", Upload: "active" }),
       onCancel,
@@ -317,7 +317,7 @@ describe("ImportRunView", () => {
   it("waits at the Staging Review with the staged facts, the limit and the decision", async () => {
     const onApprove = vi.fn();
     const onCancelRun = vi.fn();
-    const user = userEvent.setup();
+    const user = setupUser();
     renderView({
       phase: "staging_review",
       running: false,
@@ -396,7 +396,7 @@ describe("ImportRunView", () => {
   });
 
   it("sorts the estimates into three piles when a Media stage is coming", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderView({
       phase: "staging_review",
       running: false,
@@ -519,7 +519,7 @@ describe("ImportRunView", () => {
       contacts_changed: 16,
     });
     const onBack = vi.fn();
-    const user = userEvent.setup();
+    const user = setupUser();
     renderView({
       phase: "done",
       running: false,
@@ -594,5 +594,54 @@ describe("ImportRunView", () => {
   it("has no errors section when the run reported none", () => {
     renderView({ phase: "done", running: false, summaryView: finished() });
     expect(screen.queryByRole("heading", { name: /^Errors/ })).not.toBeInTheDocument();
+  });
+
+  it("lists the run's notes apart from its errors (#1626)", async () => {
+    const user = setupUser();
+    const note = {
+      stage: "staging" as const,
+      item: "Messages/IMG_0002.jpg",
+      text: "2 rows name this picture; its Live Photo video goes to the first of them in the CSV",
+    };
+    renderView({
+      phase: "done",
+      running: false,
+      summaryView: finished({
+        status: "completed_with_issues",
+        issues: [{ kind: "error", stage: "staging", item: "broken.csv", reason: "unreadable" }],
+        notes: [note],
+      }),
+      completionText: "Import completed with issues",
+    });
+
+    expect(screen.getByRole("heading", { name: /^Notes\s*1$/ })).toBeInTheDocument();
+    const notes = screen.getByRole("grid", { name: "Import notes" });
+    expect(within(notes).getByText(note.item)).toBeInTheDocument();
+    expect(within(notes).getByText(note.text)).toBeInTheDocument();
+    const errors = screen.getByRole("grid", { name: "Import errors" });
+    expect(within(errors).queryByText(note.text)).not.toBeInTheDocument();
+    expect(within(errors).getByText("unreadable")).toBeInTheDocument();
+
+    await user.click(within(notes).getByRole("button", { name: `Expand note for ${note.item}` }));
+    expect(
+      within(notes).getByRole("button", { name: `Collapse note for ${note.item}` }),
+    ).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("shows a run's notes when it reported no errors, and keeps it completed", () => {
+    renderView({
+      phase: "done",
+      running: false,
+      summaryView: finished({
+        notes: [{ stage: "staging", item: "dave@example.com", text: "kept by this address" }],
+      }),
+    });
+    expect(screen.getByRole("heading", { name: /^Notes\s*1$/ })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^Errors/ })).not.toBeInTheDocument();
+  });
+
+  it("has no notes section when the run noted nothing", () => {
+    renderView({ phase: "done", running: false, summaryView: finished() });
+    expect(screen.queryByRole("heading", { name: /^Notes/ })).not.toBeInTheDocument();
   });
 });

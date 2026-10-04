@@ -21,20 +21,20 @@ export function identityOnProfile(
 }
 
 /**
- * Messages staged under one backup identity, sent and received. A handle is
- * the same address as the identity when it matches the way a profile entry
- * would, so two spellings of one phone number count together.
+ * Messages staged under one backup identity, sent and received. A staged
+ * identity is the same address as this one when it matches the way a profile
+ * entry would, so two spellings of one phone number count together.
  */
 export function identityMessageCounts(
   identity: string,
-  ownerHandles: { handle: string; sent: number; received: number }[],
+  ownerIdentities: { identity: string; sent: number; received: number }[],
 ): { sent: number; received: number } {
   const address =
     identityType(identity) === "email"
       ? { phones: [], emails: [identity] }
       : { phones: [identity], emails: [] };
-  return ownerHandles
-    .filter(({ handle }) => identityOnProfile(handle, address))
+  return ownerIdentities
+    .filter((staged) => identityOnProfile(staged.identity, address))
     .reduce(
       (total, { sent, received }) => ({
         sent: total.sent + sent,

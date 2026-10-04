@@ -1,9 +1,9 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setupUser } from "../test/user";
 import { AuthGuard } from "./AuthGuard";
 
 const profileState = vi.hoisted(() => ({
@@ -85,7 +85,8 @@ describe("AuthGuard", () => {
     profileState.error = "Internal Server Error";
     renderGuard();
 
-    await userEvent.click(screen.getByRole("button", { name: "Try again" }));
+    const user = setupUser();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
 
     expect(retry).toHaveBeenCalledTimes(1);
   });

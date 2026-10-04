@@ -11,8 +11,9 @@ each decision.
 
 An **identity** is one address a person is reached at: a phone number, an
 email address, or a username on a service. The app and the published
-documentation say identity. The code and the database say **handle**
-(`handles`, `contact_handles`). They are the same thing. This document says
+documentation, the HTTP API and the conversation file say identity. The
+database and the server code over it say **handle** (`handles`,
+`contact_handles`). They are the same thing. This document says
 identity and gives the code name where it helps.
 
 ## The relationships
