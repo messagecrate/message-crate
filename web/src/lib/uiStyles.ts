@@ -72,10 +72,13 @@ export const popupShadow = "shadow-popup";
 
 /**
  * The keyboard focus ring of an element that takes DOM focus itself, such as
- * a button or a list row (`web/STYLE_GUIDE.md`, "Focus").
+ * a button or a list row (`web/STYLE_GUIDE.md`, "Focus"). It is an outline,
+ * like the theme's own `:focus-visible` rule, so the 1px gap between the
+ * element and the ring shows the surface behind it. A ring offset has a colour
+ * of its own, white unless set, which drew a white line in the dark theme.
  */
 export const focusRing =
-  "outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1";
+  "outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-accent";
 
 /** A menu item without its text colour. The focused one (arrow keys or hover) takes the hover background. */
 export const menuItemClass =

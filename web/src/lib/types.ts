@@ -92,16 +92,19 @@ export interface ImportProgressEvent {
 }
 
 /**
- * One row for the Import Errors list (`extract:issue`), sent the moment the
- * stage records it.
+ * One row for the Import Errors list, or the notes list (`extract:issue`),
+ * sent the moment the stage records it.
  */
 export interface ImportIssueEvent {
   /**
-   * `skip` when the item was left out, `error` when it failed. `resolved`
-   * is not a row: it says an earlier row with the same stage and item no
-   * longer holds, as when Media converts a file on a later try.
+   * `skip` when the item was left out, `error` when it failed, `note` when
+   * the stage did something with it worth knowing that is not a failure,
+   * such as keeping a message with a caveat; a note joins the run's notes,
+   * not its Import Errors. `resolved` is not a row: it says an earlier row
+   * with the same stage and item no longer holds, as when Media converts a
+   * file on a later try.
    */
-  kind: "error" | "skip" | "resolved";
+  kind: "error" | "skip" | "note" | "resolved";
   step: "parse" | "attachments" | "prepare" | "media" | "upload";
   item: string;
   reason: string;

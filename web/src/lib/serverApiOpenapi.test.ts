@@ -264,7 +264,7 @@ const EXERCISED: Record<string, () => unknown> = {
   createImport: () => serverApi.createImport({ source: "iPhone" }),
   setImportStage: () => serverApi.setImportStage(4, { stage: "media" }),
   completeImport: () => serverApi.completeImport(4, { status: "completed" }),
-  discardImport: () => serverApi.discardImport(4, { issues: [] }),
+  discardImport: () => serverApi.discardImport(4, { issues: [], notes: [] }),
   getImportContacts: () =>
     serverApi.getImportContacts(4, every<serverApi.ImportContactsParams>({ limit: 50, offset: 0 })),
 };

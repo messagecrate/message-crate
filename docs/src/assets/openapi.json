@@ -13093,6 +13093,13 @@
               "$ref": "#/components/schemas/ImportIssueRequest"
             }
           },
+          "notes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportNoteRequest"
+            },
+            "description": "The run's notes, apart from its Import Errors. A note never makes a\nrun `completed_with_issues`."
+          },
           "parse_ms": {
             "type": [
               "integer",
@@ -14028,9 +14035,10 @@
       },
       "DiscardImportRequest": {
         "type": "object",
-        "description": "The Import Errors a discarded run recorded before it was given up. A run\nthat paused and is then discarded never posts `complete`, so its issues\ncome with the discard.",
+        "description": "The Import Errors a discarded run recorded before it was given up. A run\nthat paused and is then discarded never posts `complete`, so its issues\nand notes come with the discard.",
         "required": [
-          "issues"
+          "issues",
+          "notes"
         ],
         "properties": {
           "issues": {
@@ -14039,6 +14047,13 @@
               "$ref": "#/components/schemas/ImportIssueRequest"
             },
             "description": "The run's Import Errors so far. The list is empty when the run\nrecorded none."
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportNoteRequest"
+            },
+            "description": "The run's notes so far. The list is empty when the run recorded none."
           }
         }
       },
@@ -14427,6 +14442,52 @@
           "append"
         ]
       },
+      "ImportNote": {
+        "type": "object",
+        "description": "One stored import note: something the run did with an item that is worth\nknowing but did not fail.",
+        "required": [
+          "stage",
+          "item",
+          "text"
+        ],
+        "properties": {
+          "item": {
+            "type": "string",
+            "description": "The file, message or address the note is about."
+          },
+          "stage": {
+            "$ref": "#/components/schemas/ImportIssueStage",
+            "description": "Stage the note came from."
+          },
+          "text": {
+            "type": "string",
+            "description": "What the run did with it."
+          }
+        }
+      },
+      "ImportNoteRequest": {
+        "type": "object",
+        "description": "One note a Stage of the Import Run recorded: something it did with an\nitem that is worth knowing but did not fail, such as a message it kept\nwith a caveat.",
+        "required": [
+          "stage",
+          "item",
+          "text"
+        ],
+        "properties": {
+          "item": {
+            "type": "string",
+            "description": "The file, message or address the note is about."
+          },
+          "stage": {
+            "$ref": "#/components/schemas/ImportIssueStage",
+            "description": "Stage the note came from."
+          },
+          "text": {
+            "type": "string",
+            "description": "What the run did with it, in one sentence."
+          }
+        }
+      },
       "ImportRun": {
         "allOf": [
           {
@@ -14436,7 +14497,8 @@
           {
             "type": "object",
             "required": [
-              "issues"
+              "issues",
+              "notes"
             ],
             "properties": {
               "issues": {
@@ -14445,15 +14507,22 @@
                   "$ref": "#/components/schemas/ImportIssue"
                 },
                 "description": "Issues the run recorded, oldest first."
+              },
+              "notes": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ImportNote"
+                },
+                "description": "Notes the run recorded, oldest first, apart from its issues."
               }
             }
           }
         ],
-        "description": "An Import Run: one per import, the same record wherever the interface\nhands one run out. It is the run as a list answers it, the\n`ImportRunSummary`, with the issues the run recorded."
+        "description": "An Import Run: one per import, the same record wherever the interface\nhands one run out. It is the run as a list answers it, the\n`ImportRunSummary`, with the issues and the notes the run recorded."
       },
       "ImportRunSummary": {
         "type": "object",
-        "description": "An Import Run as a list of runs answers it: every field of the run but\nits issues. A run may record any number of issues, so a page that\ncarried them would have no bound on its size; `GET /v1/imports/{id}`\nanswers them (#1559,\n`docs/architecture/http-api.md`, \"Lists\").",
+        "description": "An Import Run as a list of runs answers it: every field of the run but\nits issues and notes. A run may record any number of either, so a page\nthat carried them would have no bound on its size; `GET /v1/imports/{id}`\nanswers them (#1559,\n`docs/architecture/http-api.md`, \"Lists\").",
         "required": [
           "id",
           "source",
@@ -14469,6 +14538,7 @@
           "source_identities",
           "summary",
           "issue_count",
+          "note_count",
           "contacts_new",
           "contacts_changed"
         ],
@@ -14551,6 +14621,12 @@
           "mode": {
             "type": "string",
             "description": "Import mode (`replace` or `append`)."
+          },
+          "note_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many notes the run recorded.",
+            "minimum": 0
           },
           "parse_ms": {
             "type": [
@@ -15219,7 +15295,7 @@
       },
       "OwnerImportRun": {
         "type": "object",
-        "description": "An Import Run as the owner reads it under another account: its source,\nmode, times, outcome and counts, and nothing of what the backup held\n(`docs/adr/0008-the-owner-holds-no-messages.md`, \"What the owner may\nsee\"). The run's summary, its issues and its form say whom the account\ntalks to, so they stay out, and a field reaches the owner only by being\nadded here.",
+        "description": "An Import Run as the owner reads it under another account: its source,\nmode, times, outcome and counts, and nothing of what the backup held\n(`docs/adr/0008-the-owner-holds-no-messages.md`, \"What the owner may\nsee\"). The run's summary, its issues, its notes and its form say whom the\naccount talks to, so they stay out, and a field reaches the owner only by\nbeing added here.",
         "required": [
           "id",
           "source",
@@ -15231,6 +15307,7 @@
           "bytes_uploaded",
           "counts",
           "issue_count",
+          "note_count",
           "contacts_new",
           "contacts_changed"
         ],
@@ -15310,6 +15387,12 @@
           "mode": {
             "type": "string",
             "description": "Import mode (`replace` or `append`)."
+          },
+          "note_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Notes the run recorded. Each names a file or an address, so the owner\nreads how many and not which.",
+            "minimum": 0
           },
           "parse_ms": {
             "type": [
@@ -16608,7 +16691,7 @@
             "type": "array",
             "items": {
               "type": "object",
-              "description": "An Import Run as a list of runs answers it: every field of the run but\nits issues. A run may record any number of issues, so a page that\ncarried them would have no bound on its size; `GET /v1/imports/{id}`\nanswers them (#1559,\n`docs/architecture/http-api.md`, \"Lists\").",
+              "description": "An Import Run as a list of runs answers it: every field of the run but\nits issues and notes. A run may record any number of either, so a page\nthat carried them would have no bound on its size; `GET /v1/imports/{id}`\nanswers them (#1559,\n`docs/architecture/http-api.md`, \"Lists\").",
               "required": [
                 "id",
                 "source",
@@ -16624,6 +16707,7 @@
                 "source_identities",
                 "summary",
                 "issue_count",
+                "note_count",
                 "contacts_new",
                 "contacts_changed"
               ],
@@ -16706,6 +16790,12 @@
                 "mode": {
                   "type": "string",
                   "description": "Import mode (`replace` or `append`)."
+                },
+                "note_count": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "How many notes the run recorded.",
+                  "minimum": 0
                 },
                 "parse_ms": {
                   "type": [
@@ -17189,7 +17279,7 @@
             "type": "array",
             "items": {
               "type": "object",
-              "description": "An Import Run as the owner reads it under another account: its source,\nmode, times, outcome and counts, and nothing of what the backup held\n(`docs/adr/0008-the-owner-holds-no-messages.md`, \"What the owner may\nsee\"). The run's summary, its issues and its form say whom the account\ntalks to, so they stay out, and a field reaches the owner only by being\nadded here.",
+              "description": "An Import Run as the owner reads it under another account: its source,\nmode, times, outcome and counts, and nothing of what the backup held\n(`docs/adr/0008-the-owner-holds-no-messages.md`, \"What the owner may\nsee\"). The run's summary, its issues, its notes and its form say whom the\naccount talks to, so they stay out, and a field reaches the owner only by\nbeing added here.",
               "required": [
                 "id",
                 "source",
@@ -17201,6 +17291,7 @@
                 "bytes_uploaded",
                 "counts",
                 "issue_count",
+                "note_count",
                 "contacts_new",
                 "contacts_changed"
               ],
@@ -17280,6 +17371,12 @@
                 "mode": {
                   "type": "string",
                   "description": "Import mode (`replace` or `append`)."
+                },
+                "note_count": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "Notes the run recorded. Each names a file or an address, so the owner\nreads how many and not which.",
+                  "minimum": 0
                 },
                 "parse_ms": {
                   "type": [

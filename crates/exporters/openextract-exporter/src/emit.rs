@@ -5,7 +5,8 @@ use crate::parse::{RawRow, SourceKind, discover_csv_files, parse_csv_file};
 use anyhow::Result;
 use chrono::DateTime;
 use message_crate_core::{
-    CancelFlag, ExportReport, ExportTransforms, OutputFormat, prepare_outputs, project_conversation,
+    CancelFlag, ExportReport, ExportTransforms, IssueSink, OutputFormat, prepare_outputs,
+    project_conversation,
 };
 use message_ir::{
     ConversationKey, ExportMeta, HandleType, IrParticipant, IrService, IrSource, NAMELESS_CHAT_ID,
@@ -32,6 +33,8 @@ pub(crate) struct ConvertExportArgs<'a> {
     /// Continue an interrupted export: keep previous output and skip the
     /// conversations already written.
     pub resume: bool,
+    /// Where each Import Error and note goes as the run records it.
+    pub issues: Option<&'a IssueSink>,
 }
 
 /// Convert OpenExtract CSV(s) under `input`.
@@ -51,12 +54,16 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         output_format,
         cancel,
         resume,
+        issues,
     } = args;
     let (inputs, output) = prepare_outputs(&[input.to_path_buf()], output)?;
     let input = &inputs[0];
     let writer = ExportWriter::open(&output, output_format, transforms, resume)?;
 
-    let mut ingest = Ingest::default();
+    let mut ingest = Ingest {
+        conversations: BTreeMap::new(),
+        report: ExportReport::with_issues(issues.cloned()),
+    };
     for path in discover_csv_files(input)? {
         message_crate_core::check_cancel(cancel)?;
         ingest.ingest_file(&path);
@@ -97,7 +104,6 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
 }
 
 /// Parse-time state shared across every CSV file in one export.
-#[derive(Default)]
 struct Ingest {
     conversations: BTreeMap<String, Pending>,
     report: ExportReport,
@@ -153,9 +159,10 @@ impl Ingest {
         let rows = match parse_csv_file(path) {
             Ok(rows) => rows,
             Err(e) => {
-                self.report
-                    .errors
-                    .push(format!("{}: {e:#}", path.display()));
+                self.report.error(
+                    path.display().to_string(),
+                    format!("{}: {e:#}", message_crate_core::CSV_NOT_READ),
+                );
                 return;
             }
         };
@@ -178,11 +185,11 @@ impl Ingest {
             .collect();
         for row in rows {
             match conversation_label(&row).and_then(|label| labelled.get(label)) {
-                Some(conversation) => self.ingest_row(row, conversation),
+                Some(conversation) => self.ingest_row(path, row, conversation),
                 None => {
                     let sender = (!resolve_is_from_me(&row)).then_some(row.sender.as_str());
                     let conversation = one_to_one(sender, None);
-                    self.ingest_row(row, &conversation);
+                    self.ingest_row(path, row, &conversation);
                 }
             }
         }
@@ -208,12 +215,13 @@ impl Ingest {
             ),
         };
         for row in rows {
-            self.ingest_row(row, &conversation);
+            self.ingest_row(path, row, &conversation);
         }
     }
 
-    /// Add one row to its conversation, or count why it was dropped.
-    fn ingest_row(&mut self, row: RawRow, conversation: &Conversation) {
+    /// Add one row of the CSV at `path` to its conversation, or count why it
+    /// was dropped.
+    fn ingest_row(&mut self, path: &Path, row: RawRow, conversation: &Conversation) {
         let Some(secs) = parse_timestamp(&row.date) else {
             self.report.skipped_invalid_date += 1;
             return;
@@ -227,13 +235,14 @@ impl Ingest {
             .conversations
             .entry(chat_id.clone())
             .or_insert_with(|| {
-                if conversation
-                    .key
-                    .as_ref()
-                    .is_some_and(ConversationKey::is_name_only)
-                {
+                if let Some(ConversationKey::NameOnly(name)) = &conversation.key {
                     // Counted once per conversation, not once per row.
-                    report.bump("name_only_chat", 1);
+                    report.caveat(
+                        message_crate_core::NAME_ONLY_CHAT,
+                        1,
+                        format!("{} ({name})", path.display()),
+                        message_crate_core::NAME_ONLY_CHAT_NOTE,
+                    );
                 }
                 Pending {
                     key: conversation.key.clone(),
@@ -569,6 +578,7 @@ mod tests {
             output_format: OutputFormat::Csv,
             cancel: None,
             resume: false,
+            issues: None,
         })
     }
 

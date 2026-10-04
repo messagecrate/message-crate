@@ -4,7 +4,7 @@
 //! error, passed them.
 
 use crate::emit::{ConvertExportArgs, convert_export};
-use message_crate_core::testutil::{assert_run_wrote_jsonl, jsonl_run_config};
+use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_run_config};
 use message_crate_core::{ExportTransforms, OutputFormat, SmsBackupRestoreConfig, SourceConfig};
 use std::fs;
 use std::path::Path;
@@ -51,13 +51,14 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
     let tmp = tempfile::tempdir().unwrap();
     let input = backup_folder(tmp.path());
     let output = tmp.path().join("out");
-    let config = jsonl_run_config(
+    let mut config = jsonl_run_config(
         &[&input],
         &output,
         SourceConfig::SmsBackupRestore(SmsBackupRestoreConfig {
             owner_phones: vec!["+15555550100".into()],
         }),
     );
+    let issues = collect_issues(&mut config);
 
     let result = crate::run(&config).expect("run");
 
@@ -89,6 +90,25 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
         .collect();
     assert_eq!(errors.len(), 1, "{:?}", result.messages);
     assert!(errors[0].contains("sms-2-broken.xml"), "{}", errors[0]);
+    // The file it could not read is an Import Error naming it (#1626).
+    let issues = issues.lock().unwrap();
+    assert_eq!(issues.len(), 1, "{issues:?}");
+    assert_eq!(
+        (
+            issues[0].kind.as_str(),
+            issues[0].step.as_str(),
+            issues[0].item.as_str()
+        ),
+        (
+            "error",
+            "parse",
+            input
+                .join("sms-2-broken.xml")
+                .display()
+                .to_string()
+                .as_str()
+        )
+    );
 }
 
 #[test]
@@ -105,6 +125,7 @@ fn the_report_counts_conversations_and_directions() {
         output_format: OutputFormat::Jsonl,
         cancel: None,
         resume: false,
+        issues: None,
     })
     .expect("convert");
 

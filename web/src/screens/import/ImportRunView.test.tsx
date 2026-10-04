@@ -8,6 +8,7 @@ import type { ImportSummaryView } from "../../components/import/ImportSummaryPan
 import { holdDesktopJob } from "../../lib/desktopJob";
 import type { AttachmentForecast, StagingSummary } from "../../lib/tauri";
 import { Providers } from "../../test/providers";
+import { setupUser } from "../../test/user";
 import ImportRunView from "./ImportRunView";
 import { type ImportStep, stepsFor } from "./importProgressState";
 import { attachmentsAsked, runHeading, sourceDisplayName } from "./importRunCopy";
@@ -594,5 +595,54 @@ describe("ImportRunView", () => {
   it("has no errors section when the run reported none", () => {
     renderView({ phase: "done", running: false, summaryView: finished() });
     expect(screen.queryByRole("heading", { name: /^Errors/ })).not.toBeInTheDocument();
+  });
+
+  it("lists the run's notes apart from its errors (#1626)", async () => {
+    const user = setupUser();
+    const note = {
+      stage: "staging" as const,
+      item: "Messages/IMG_0002.jpg",
+      text: "2 rows name this picture; its Live Photo video goes to the first of them in the CSV",
+    };
+    renderView({
+      phase: "done",
+      running: false,
+      summaryView: finished({
+        status: "completed_with_issues",
+        issues: [{ kind: "error", stage: "staging", item: "broken.csv", reason: "unreadable" }],
+        notes: [note],
+      }),
+      completionText: "Import completed with issues",
+    });
+
+    expect(screen.getByRole("heading", { name: /^Notes\s*1$/ })).toBeInTheDocument();
+    const notes = screen.getByRole("grid", { name: "Import notes" });
+    expect(within(notes).getByText(note.item)).toBeInTheDocument();
+    expect(within(notes).getByText(note.text)).toBeInTheDocument();
+    const errors = screen.getByRole("grid", { name: "Import errors" });
+    expect(within(errors).queryByText(note.text)).not.toBeInTheDocument();
+    expect(within(errors).getByText("unreadable")).toBeInTheDocument();
+
+    await user.click(within(notes).getByRole("button", { name: `Expand note for ${note.item}` }));
+    expect(
+      within(notes).getByRole("button", { name: `Collapse note for ${note.item}` }),
+    ).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("shows a run's notes when it reported no errors, and keeps it completed", () => {
+    renderView({
+      phase: "done",
+      running: false,
+      summaryView: finished({
+        notes: [{ stage: "staging", item: "dave@example.com", text: "kept by this address" }],
+      }),
+    });
+    expect(screen.getByRole("heading", { name: /^Notes\s*1$/ })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: /^Errors/ })).not.toBeInTheDocument();
+  });
+
+  it("has no notes section when the run noted nothing", () => {
+    renderView({ phase: "done", running: false, summaryView: finished() });
+    expect(screen.queryByRole("heading", { name: /^Notes/ })).not.toBeInTheDocument();
   });
 });

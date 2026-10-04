@@ -700,7 +700,7 @@ pub(super) fn body_for(op: &Operation, n: usize) -> Option<(&'static str, Vec<u8
         ("patch", "/v1/imports/{id}") => json(json!({ "stage": "parse" })),
         ("post", "/v1/imports/{id}/batches") => Some(("application/x-ndjson", Vec::new())),
         ("post", "/v1/imports/{id}/complete") => json(json!({ "status": "completed" })),
-        ("post", "/v1/imports/{id}/discard") => json(json!({ "issues": [] })),
+        ("post", "/v1/imports/{id}/discard") => json(json!({ "issues": [], "notes": [] })),
         ("post", "/v1/saved-searches") => json(json!({ "name": "Theirs", "query": "from:me" })),
         ("patch", "/v1/saved-searches/{id}") => {
             json(json!({ "name": "Renamed", "query": "from:me" }))

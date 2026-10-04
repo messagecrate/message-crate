@@ -1,6 +1,7 @@
 import {
   completionTextFor,
   type ImportIssue,
+  type ImportNote,
   type ImportSummaryView,
 } from "../../components/import/ImportSummaryPanel";
 import type { ImportIssueStage } from "../../components/import/importIssueStage";
@@ -69,6 +70,7 @@ import {
   isProgressStepComplete,
   issueFromEvent,
   MEDIA_LABEL,
+  noteFromEvent,
   recordStageTime,
   STAGING_LABEL,
   type StageTiming,
@@ -90,6 +92,7 @@ import {
   filesSkippedOverRun,
   issueRequests,
   issuesToDiscard,
+  notesToDiscard,
   parseRunRecord,
   RUN_ERROR_ITEM,
   type RunPart,
@@ -382,6 +385,8 @@ type RunScratch = {
   pendingIdentityForm: ImportJobFormValues | null;
   activeStage: ImportIssueStage;
   issues: ImportIssue[];
+  /** The notes this part's stages sent, apart from its Import Errors. */
+  notes: ImportNote[];
   /**
    * What this part's Upload said of each conversation file it finished so
    * far (`extract:file-done`): `ok`, `skipped` or `failed`, by file.
@@ -426,6 +431,7 @@ function freshScratch(): RunScratch {
     pendingIdentityForm: null,
     activeStage: "staging",
     issues: [],
+    notes: [],
     conversations: new Map(),
     counts: {},
     timing: { ...EMPTY_TIMING },
@@ -552,6 +558,7 @@ function beginRun(form: ImportJobFormValues, firstStage: ImportIssueStage): void
   scratch.importStartedAt = performance.now();
   scratch.activeStage = firstStage;
   scratch.issues = [];
+  scratch.notes = [];
   scratch.conversations = new Map();
   scratch.counts = {};
   scratch.timing = { ...EMPTY_TIMING };
@@ -572,6 +579,7 @@ function currentPart(
 ): RunPart {
   return {
     issues: run.issues,
+    notes: run.notes,
     durationMs: performance.now() - run.importStartedAt,
     ...run.durations,
     uploadMs,
@@ -759,8 +767,12 @@ function recordIssue(event: ImportIssueEvent): void {
     const resolved = { stage: stageForStep(event.step), item: event.item };
     scratch.issues = withoutResolved(scratch.issues, resolved);
     scratch.carried = resolveInRecord(scratch.carried, resolved);
+  } else if (event.kind === "note") {
+    // In place: an exporter may send a row per item, tens of thousands in a
+    // run, and copying the list for each would cost the square of that.
+    scratch.notes.push(noteFromEvent(event));
   } else {
-    scratch.issues = [...scratch.issues, issueFromEvent(event)];
+    scratch.issues.push(issueFromEvent(event));
   }
   void saveCarriedRecord();
 }
@@ -779,10 +791,7 @@ function recordFileDone(event: ImportFileDoneEvent): void {
 }
 
 function recordError(stage: ImportIssueStage, message: string): void {
-  scratch.issues = [
-    ...scratch.issues,
-    { kind: "error", stage, item: RUN_ERROR_ITEM, reason: message },
-  ];
+  scratch.issues.push({ kind: "error", stage, item: RUN_ERROR_ITEM, reason: message });
 }
 
 /**
@@ -946,6 +955,7 @@ async function finishImport(args: {
     uploadMs: whole.uploadMs,
     durationMs: whole.durationMs ?? null,
     issues: whole.issues,
+    notes: whole.notes ?? [],
   };
   // Keyed by label: the Staging row folds reading, attachments and prepare
   // into one duration, and a mode with no Media stage has fewer rows.
@@ -991,6 +1001,7 @@ async function finishImport(args: {
           messages_failed: finalSummary.messagesFailed,
         },
         issues: issueRequests(finalSummary.issues),
+        notes: whole.notes ?? [],
       });
     } catch (e: unknown) {
       completeRefused = e instanceof Error ? e.message : String(e);
@@ -1545,8 +1556,9 @@ async function runImport(
 
 /**
  * End a run the person gave up on, by a Cancel at a Review or a Discard of a
- * paused run: close it on the server as cancelled, with the Import Errors its
- * record holds (`issuesToDiscard`), and delete its Staging Directory.
+ * paused run: close it on the server as cancelled, with the Import Errors and
+ * notes its record holds (`issuesToDiscard`, `notesToDiscard`), and delete
+ * its Staging Directory.
  *
  * The record is in the directory, so it is read before the directory goes, and a
  * record that cannot be read discards the run with no Import Errors. The
@@ -1557,18 +1569,21 @@ async function runImport(
  */
 async function discardRun(sessionId: number | null, stagingDir: string | null): Promise<void> {
   let issues: ImportIssue[] = [];
+  let notes: ImportNote[] = [];
   if (stagingDir != null) {
     await recordWrites;
     try {
-      issues = issuesToDiscard(
-        parseRunRecord(await invokeReadImportRunRecord({ staging_dir: stagingDir })),
-      );
+      const record = parseRunRecord(await invokeReadImportRunRecord({ staging_dir: stagingDir }));
+      issues = issuesToDiscard(record);
+      notes = notesToDiscard(record);
     } catch {
       // Discarded with no Import Errors: the run still has to close.
     }
   }
   await Promise.allSettled([
-    sessionId != null ? discardImportSession(sessionId, issueRequests(issues)) : Promise.resolve(),
+    sessionId != null
+      ? discardImportSession(sessionId, issueRequests(issues), notes)
+      : Promise.resolve(),
     stagingDir != null ? discardStagingFolder(stagingDir) : Promise.resolve(),
   ]);
 }

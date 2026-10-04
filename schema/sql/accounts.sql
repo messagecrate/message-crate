@@ -323,6 +323,28 @@ CREATE TABLE IF NOT EXISTS import_issues (
 CREATE INDEX IF NOT EXISTS ix_import_issues_import
     ON import_issues(import_id);
 
+-- Per-item note recorded during an import run: something the run did that
+-- is worth knowing but did not fail, such as a message it kept with a
+-- caveat. Kept apart from `import_issues`, so a note never reads as an
+-- Import Error or makes a run `completed_with_issues`.
+CREATE TABLE IF NOT EXISTS import_notes (
+    -- Surrogate primary key for this note row.
+    id INTEGER PRIMARY KEY,
+    -- Parent import run (`imports.id`).
+    import_id INTEGER NOT NULL REFERENCES imports(id) ON DELETE CASCADE,
+    -- Stage the note came from: staging, media, or upload.
+    stage TEXT NOT NULL,
+    -- Item identifier (path, address, or similar).
+    item TEXT NOT NULL,
+    -- What the run did with the item, in one sentence.
+    text TEXT NOT NULL,
+    -- When the note was recorded.
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS ix_import_notes_import
+    ON import_notes(import_id);
+
 -- What one import run did to one contact. Written while the run stages, so
 -- the record says what the import decided rather than what timestamps
 -- suggest afterwards. The run's Contact Group and its new/changed counts
