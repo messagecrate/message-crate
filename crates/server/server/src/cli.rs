@@ -671,8 +671,9 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
                 "stopping: the conversion that runs is stopped and its part-made file removed"
             );
             stop.store(true, Ordering::Relaxed);
-            // The handlers stay installed, so a second Ctrl-C would do
-            // nothing. It ends the command at once, as Ctrl-C did before.
+            // The handlers stay installed, so without this a second Ctrl-C
+            // would do nothing. It ends the command at once, with 130, the
+            // status a shell gives a command Ctrl-C ended (128 + SIGINT).
             crate::server::stop_requested().await;
             std::process::exit(130);
         }
