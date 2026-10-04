@@ -1022,6 +1022,15 @@ released versions carry their date on the heading.
   drawer sits 1 pixel from the edge.** The sections of an import's results
   and the conversation counts in the contact drawer drew their keyboard
   focus ring 2 pixels out, further than most buttons draw theirs.
+- 2026-10-04 **Every button and tab draws its focus ring 1 pixel from its
+  edge.** The search box's clear button and its Clear all, the sort button,
+  the account menu, the phone numbers in a phone field, the theme choices in
+  Appearance, the tabs in Settings and on the login card, the buttons above a
+  conversation, the Import history dates and the expand buttons in an
+  import's errors and notes drew their keyboard focus ring flush against the
+  edge, unlike every other button. They now leave the same 1-pixel gap. The
+  day the date picker's keyboard cursor is on shows a 2-pixel ring inside it,
+  the same as a focused table row, where it showed a 1-pixel one.
 - 2026-10-04 **The panel resize grips move by exactly 8 pixels.** Each
   arrow key on the grip of the left panel or the list column moved the
   panel 9 pixels wider or 7 narrower, and pressing the grip without moving

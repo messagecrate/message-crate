@@ -22,11 +22,12 @@ function sources(): [string, string][] {
     .map((p) => [p.replaceAll("\\", "/"), readFileSync(new URL(p, SRC), "utf8")]);
 }
 
-/** Lines of `text` matching `re`, as "path:line: text". */
-function hits(path: string, text: string, re: RegExp): string[] {
+/** Lines of `text` that `test` matches (a pattern, or a check that returns true), as "path:line: text". */
+function hits(path: string, text: string, test: RegExp | ((line: string) => boolean)): string[] {
+  const matches = typeof test === "function" ? test : (line: string) => test.test(line);
   return text
     .split("\n")
-    .flatMap((line, i) => (re.test(line) ? [`${path}:${i + 1}: ${line.trim()}`] : []));
+    .flatMap((line, i) => (matches(line) ? [`${path}:${i + 1}: ${line.trim()}`] : []));
 }
 
 // The theme presets and the color picker hold colors as data a person picks,
@@ -79,6 +80,16 @@ describe("colors are theme tokens", () => {
 });
 
 describe("focus rings", () => {
+  // A comment line is blanked, not dropped, so the line numbers stay right. A
+  // line opening with `*` counts only when a space, `/` or the line's end
+  // follows, so a class line opening with Tailwind's `*:` variant is still read.
+  const comment = /^\s*(\/\/|\/\*|\*(\s|\/|$))/;
+  const code = (text: string) =>
+    text
+      .split("\n")
+      .map((line) => (comment.test(line) ? "" : line))
+      .join("\n");
+
   // A ring offset is a box-shadow in a colour of its own, white unless a class
   // sets it, so it drew a white line round every focused button in the dark
   // theme (#1703). `focusRing` leaves the gap as an outline offset, which shows
@@ -105,16 +116,68 @@ describe("focus rings", () => {
         /\.style\.outline/.source,
       ].join("|"),
     );
-    // A comment line is blanked, not dropped, so the line numbers stay right.
-    const comment = /^\s*(\/\/|\/\*|\*)/;
-    const code = (text: string) =>
-      text
-        .split("\n")
-        .map((line) => (comment.test(line) ? "" : line))
-        .join("\n");
     const found = sources()
       .filter(([path]) => path !== "lib/uiStyles.ts")
       .flatMap(([path, text]) => hits(path, code(text), outline));
+    expect(found).toEqual([]);
+  });
+
+  // A ring drawn flush against the element on focus was a third focus style
+  // beside `focusRing` and the inset ring (#1717). Outside lib/uiStyles.ts a
+  // ring is the style guide's inset ring, `ring-2 ring-inset ring-accent`, for
+  // an element that draws its ring inside itself (a table row, a resize grip).
+  // The check reads one line at a time, so a ring's classes go on one line.
+  // On each line, the ring classes are grouped by variant (`!` aside). A group
+  // whose variant names focus (`focus-visible:`, `data-focus-visible:`,
+  // `has-[…:focus-visible]:` and the rest), and a group with no variant, which
+  // a render prop such as `isFocused` may switch on whatever its name, must
+  // have `ring-inset` under its variant or bare, and a width of 2 only.
+  // `ring-0` takes a ring away, so it is no width. A bare `ring` is a 1px
+  // width under a variant or beside another ring class, and otherwise the
+  // word in a sentence. Tailwind's `inset-ring-*` is a second inset ring, so
+  // it counts on any line. RING_HALOS holds the exact classes of each ring
+  // that is not a focus ring.
+  const RING_HALOS = new Map([["components/StepProgress.tsx", "ring-4 ring-accent/30"]]);
+  const ringClass = /^((?:[^:]*:)*)!?(inset-)?ring(?:-(.+?))?!?$/;
+  /** A token with the brackets of the code around it taken off, its own kept. */
+  const trim = (token: string) => {
+    let t = token;
+    const count = (c: string) => t.split(c).length - 1;
+    while (t.startsWith("(") && count("(") > count(")")) t = t.slice(1);
+    while (t.endsWith(")") && count(")") > count("(")) t = t.slice(0, -1);
+    return t.replace(/[,;]+$/, "");
+  };
+  const isWidth = (rest: string) =>
+    rest === "" || /^(\d+|\[\d+(\.\d+)?(px|rem|em)?\]|\((length:)?--[\w-]+\))$/.test(rest);
+  const flushRing = (path: string) => (line: string) => {
+    const halo = RING_HALOS.get(path);
+    const text = halo !== undefined ? line.replace(halo, "") : line;
+    const byVariant = new Map<string, string[]>();
+    for (const token of text.split(/[\s"'`{}$+?]+/).map(trim)) {
+      const m = ringClass.exec(token);
+      if (!m) continue;
+      if (m[2] !== undefined) return true;
+      const variant = m[1] ?? "";
+      byVariant.set(variant, [...(byVariant.get(variant) ?? []), m[3] ?? ""]);
+    }
+    const bare = byVariant.get("");
+    if (bare?.every((rest) => rest === "")) byVariant.delete("");
+    const inset = (variant: string) =>
+      (byVariant.get(variant) ?? []).includes("inset") ||
+      (byVariant.get("") ?? []).includes("inset");
+    return [...byVariant].some(([variant, rests]) => {
+      if (variant !== "" && !variant.includes("focus")) return false;
+      const ring = rests.filter(
+        (rest) => rest !== "inset" && rest !== "0" && !rest.startsWith("offset-"),
+      );
+      if (ring.length === 0) return false;
+      return !inset(variant) || ring.filter(isWidth).some((width) => width !== "2");
+    });
+  };
+  it("no source outside lib/uiStyles.ts draws a focus ring other than the inset ring", () => {
+    const found = sources()
+      .filter(([path]) => path !== "lib/uiStyles.ts")
+      .flatMap(([path, text]) => hits(path, code(text), flushRing(path)));
     expect(found).toEqual([]);
   });
 

@@ -1,11 +1,12 @@
 import { SelectionIndicator, Tab, TabList, TabPanel, Tabs } from "react-aria-components";
+import { focusRing } from "../../lib/uiStyles";
 import type { ServerState } from "../../lib/useServerState";
 import ClaimForm from "./ClaimForm";
 import CreateAccountForm from "./CreateAccountForm";
 import LoginForm from "./LoginForm";
 
 function tabClassName({ isSelected }: { isSelected: boolean }) {
-  return `relative -mb-px flex-1 cursor-pointer border-none bg-transparent px-3 py-2 text-center text-[0.875rem] font-medium outline-none transition-colors duration-200 focus-visible:ring-2 focus-visible:ring-accent ${
+  return `relative -mb-px flex-1 cursor-pointer border-none bg-transparent px-3 py-2 text-center text-[0.875rem] font-medium transition-colors duration-200 ${focusRing} ${
     isSelected ? "text-text" : "text-muted hover:text-text"
   }`;
 }
