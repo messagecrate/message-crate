@@ -36,10 +36,10 @@ async fn import_one_message(conn: &mut SqliteConnection, dir: &std::path::Path, 
 }
 
 /// Promotion reads only rows staging accepted, so a promote that fails is
-/// the server's fault: its error is internal, the only kind it has, and the
-/// cause survives for the log.
+/// the server's fault: the import takes its error as internal, never as a
+/// refusal the sender could fix, and the cause survives for the log.
 #[tokio::test]
-async fn a_promote_that_fails_is_an_internal_failure() {
+async fn a_promote_that_fails_is_an_internal_import_failure() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     crate::db::schema::ensure_schema(&mut conn).await.unwrap();
@@ -48,15 +48,19 @@ async fn a_promote_that_fails_is_an_internal_failure() {
         .await
         .unwrap();
 
-    let err = promote_append(&mut conn, ImportMode::Append, TEST_ACCOUNT, false, &[])
-        .await
-        .expect_err("promote fails");
+    let err: super::super::ImportError =
+        promote_append(&mut conn, ImportMode::Append, TEST_ACCOUNT, false, &[])
+            .await
+            .expect_err("promote fails")
+            .into();
 
-    let PromoteError::Internal(cause) = err;
-    assert!(
-        format!("{cause:#}").contains("staging_conversations"),
-        "{cause:#}"
-    );
+    match err {
+        super::super::ImportError::Internal(cause) => assert!(
+            format!("{cause:#}").contains("staging_conversations"),
+            "{cause:#}"
+        ),
+        other => panic!("expected an internal failure, got {other:?}"),
+    }
 }
 
 /// The import runs ANALYZE before it opens its transaction, so promote's

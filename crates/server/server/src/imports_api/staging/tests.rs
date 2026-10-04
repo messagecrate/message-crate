@@ -36,16 +36,23 @@ async fn import_one(
     let path = tmp.path().join(name);
     std::fs::write(&path, body).unwrap();
     let assets = tmp.path().join("assets");
-    let opts = ImportOptions::fixed(FixedImportArgs {
-        assets_dir: &assets,
-        asset_root: tmp.path(),
+    let opts = append_opts(&assets, tmp.path(), "sms-backup-restore");
+    Ok(import_jsonl_files_on_conn(conn, &[path], &opts, ImportSchemaMode::Ensure).await?)
+}
+
+/// Append-mode options for one test import into [`TEST_ACCOUNT`] under the
+/// fixed `source`, storing assets in `assets` and reading attachments from
+/// `root`.
+fn append_opts<'a>(assets: &'a Path, root: &'a Path, source: &'a str) -> ImportOptions<'a> {
+    ImportOptions::fixed(FixedImportArgs {
+        assets_dir: assets,
+        asset_root: root,
         mode: ImportMode::Append,
-        source: "sms-backup-restore",
+        source,
         account_id: TEST_ACCOUNT,
         fill_content_keys: false,
         import_id: None,
-    });
-    Ok(import_jsonl_files_on_conn(conn, &[path], &opts, ImportSchemaMode::Ensure).await?)
+    })
 }
 
 /// The reason an import was refused: its error text after the file's temp
@@ -178,15 +185,7 @@ async fn an_attachment_staging_refuses_is_a_rejection_naming_its_file() {
     let path = tmp.path().join("+15555550154.jsonl");
     std::fs::write(&path, format!("{header}{message}")).unwrap();
     let assets = tmp.path().join("assets");
-    let opts = ImportOptions::fixed(FixedImportArgs {
-        assets_dir: &assets,
-        asset_root: tmp.path(),
-        mode: ImportMode::Append,
-        source: "imessage",
-        account_id: TEST_ACCOUNT,
-        fill_content_keys: false,
-        import_id: None,
-    });
+    let opts = append_opts(&assets, tmp.path(), "imessage");
 
     let err = import_jsonl_files_on_conn(
         &mut conn,
@@ -252,15 +251,7 @@ async fn a_file_that_cannot_be_opened_is_internal_with_its_whole_cause() {
     let tmp = TempDir::new().unwrap();
     let path = tmp.path().join("gone.jsonl");
     let assets = tmp.path().join("assets");
-    let opts = ImportOptions::fixed(FixedImportArgs {
-        assets_dir: &assets,
-        asset_root: tmp.path(),
-        mode: ImportMode::Append,
-        source: "imessage",
-        account_id: TEST_ACCOUNT,
-        fill_content_keys: false,
-        import_id: None,
-    });
+    let opts = append_opts(&assets, tmp.path(), "imessage");
 
     let err = import_jsonl_files_on_conn(
         &mut conn,
@@ -273,7 +264,7 @@ async fn a_file_that_cannot_be_opened_is_internal_with_its_whole_cause() {
 
     assert!(matches!(err, ImportError::Internal(_)), "{err:?}");
     let printed = format!("{:#}", anyhow::Error::from(err));
-    let reason = std::io::Error::from_raw_os_error(2).to_string();
+    let reason = std::fs::File::open(&path).unwrap_err().to_string();
     assert_eq!(
         printed,
         format!("failed to open {}: {reason}", path.display())
@@ -300,15 +291,7 @@ async fn a_directory_import_refuses_a_header_without_a_source() {
     let assets = tmp.path().join("assets");
     let opts = ImportOptions {
         source_from_jsonl: true,
-        ..ImportOptions::fixed(FixedImportArgs {
-            assets_dir: &assets,
-            asset_root: tmp.path(),
-            mode: ImportMode::Append,
-            source: "",
-            account_id: TEST_ACCOUNT,
-            fill_content_keys: false,
-            import_id: None,
-        })
+        ..append_opts(&assets, tmp.path(), "")
     };
 
     let err = import_jsonl_files_on_conn(
@@ -354,15 +337,7 @@ async fn a_file_that_does_not_match_its_claimed_sha256_fails_the_import_and_is_n
     );
     let path = tmp.path().join("mismatch.jsonl");
     std::fs::write(&path, format!("{header}{message}\n")).unwrap();
-    let opts = ImportOptions::fixed(FixedImportArgs {
-        assets_dir: &assets,
-        asset_root: tmp.path(),
-        mode: ImportMode::Append,
-        source: "imessage",
-        account_id: TEST_ACCOUNT,
-        fill_content_keys: false,
-        import_id: None,
-    });
+    let opts = append_opts(&assets, tmp.path(), "imessage");
 
     let err = import_jsonl_files_on_conn(&mut conn, &[path], &opts, ImportSchemaMode::Ensure)
         .await
