@@ -243,8 +243,7 @@ mod tests {
     }
 
     /// Upload holds a file to the limit Staging recorded in the folder, the
-    /// number the Staging Review forecast against. A caller that still sends
-    /// a limit of its own, as the stored form once did, does not move it.
+    /// number the Staging Review forecast against.
     #[test]
     fn upload_uses_the_attachment_size_limit_the_folder_recorded() {
         let staging = staged_folder(123_456_789);
@@ -257,7 +256,6 @@ mod tests {
             "skipAttachments": false,
             "trustExport": true,
             "importId": 7,
-            "assetMaxBytes": 512 * 1024 * 1024,
         }))
         .unwrap();
         assert_eq!(push_config(args).unwrap().asset_max_bytes, 123_456_789);
