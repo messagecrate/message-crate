@@ -23,7 +23,7 @@ released versions carry their date on the heading.
 
 - 2026-10-04 **The Audit Trail narrows to a deleted account.** Owner Home's
   Account picker lists deleted accounts below the live ones, each by its
-  old username and the day it was deleted. Picking one shows only what
+  old username and when it was deleted. Picking one shows only what
   that account did and what was done to it. Another account given the same
   username, before or after, keeps its own entries apart.
 - 2026-10-03 **An Audit Trail of what each user did, and when.** Owner Home's

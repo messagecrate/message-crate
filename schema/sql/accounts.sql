@@ -151,7 +151,7 @@ CREATE TABLE IF NOT EXISTS imports (
     -- The `account_deleted` entry (`audit_entries.id`) of the account, written
     -- when it is deleted, so the run reads with that account's other entries
     -- and apart from a later account given the same username.
-    deletion_entry_id INTEGER,
+    deletion_entry_id INTEGER REFERENCES audit_entries(id),
     -- What started the run: 'session' or 'api_token'. NULL for a run the
     -- server started itself (the Demo Account build, the CLI import).
     credential TEXT,
@@ -248,7 +248,7 @@ CREATE TABLE IF NOT EXISTS exports (
     -- The `account_deleted` entry (`audit_entries.id`) of the account, written
     -- when it is deleted, so the run reads with that account's other entries
     -- and apart from a later account given the same username.
-    deletion_entry_id INTEGER,
+    deletion_entry_id INTEGER REFERENCES audit_entries(id),
     -- What started the run: 'session' or 'api_token'. NULL for a run the
     -- server started itself (the Demo Account build, the CLI import).
     credential TEXT,

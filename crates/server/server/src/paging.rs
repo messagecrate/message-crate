@@ -45,17 +45,6 @@ pub fn page_of<T>(rows: Vec<T>, params: PageParams) -> Page<T> {
     }
 }
 
-/// A page read in SQL: the rows `params` asked for and the `total` the query
-/// counted.
-pub fn page_read<T>(items: Vec<T>, total: u64, params: PageParams) -> Page<T> {
-    Page {
-        items,
-        total,
-        limit: params.limit,
-        offset: params.offset,
-    }
-}
-
 /// The whole of a body-bounded read as one page.
 ///
 /// A `POST` that reads the rows its body names — contact summaries, unmatched

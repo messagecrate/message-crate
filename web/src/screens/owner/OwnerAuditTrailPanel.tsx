@@ -6,6 +6,7 @@ import Select, {
   selectSectionHeaderClassName,
 } from "../../components/Select";
 import { formatDateTime } from "../../lib/formatDate";
+import type { DeletedAccount } from "../../lib/serverApi";
 import AuditTrail from "../auditTrail/AuditTrail";
 import {
   type AuditTrailOf,
@@ -18,6 +19,25 @@ import { useOwnerAccounts } from "./useOwnerAccounts";
 
 const itemClassName = (state: { isFocused: boolean; isSelected: boolean }) =>
   selectItemClassName(state, "sm");
+
+/**
+ * Each deleted account with the line the picker shows for it: its old
+ * username and when it was deleted. Two accounts of one username deleted in
+ * the same minute would read alike, so a line that repeats ends with the
+ * account's number too.
+ */
+function deletedLabels(deleted: DeletedAccount[]) {
+  const lines = deleted.map(
+    (account) => `${account.username}, deleted ${formatDateTime(account.deleted_at)}`,
+  );
+  return deleted.map((account, i) => ({
+    account,
+    label:
+      lines.indexOf(lines[i]) === lines.lastIndexOf(lines[i])
+        ? lines[i]
+        : `${lines[i]} (#${account.id})`,
+  }));
+}
 
 /**
  * Owner Home's Audit Trail: what each user did on this Message Crate, and
@@ -64,8 +84,7 @@ export function OwnerAuditTrailPanel() {
             {deleted.length > 0 && (
               <ListBoxSection>
                 <Header className={selectSectionHeaderClassName}>Deleted accounts</Header>
-                {deleted.map((account) => {
-                  const label = `${account.username}, deleted ${formatDateTime(account.deleted_at)}`;
+                {deletedLabels(deleted).map(({ account, label }) => {
                   return (
                     <ListBoxItem
                       key={account.id}

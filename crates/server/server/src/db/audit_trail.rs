@@ -984,12 +984,12 @@ pub async fn deleted_accounts_page(
     offset: usize,
 ) -> Result<(Vec<DeletedAccount>, u64)> {
     const DELETED: &str = "FROM audit_entries
-         WHERE action = 'account_deleted' AND deletion_entry_id = id";
+         WHERE action = 'account_deleted' AND deletion_entry_id = id AND username IS NOT NULL";
     let total: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) {DELETED}"))
         .fetch_one(&mut *conn)
         .await
         .context("count deleted accounts")?;
-    let rows: Vec<(i64, Option<String>, String)> = sqlx::query_as(&format!(
+    let rows: Vec<(i64, String, String)> = sqlx::query_as(&format!(
         "SELECT id, username, at {DELETED}
          ORDER BY username COLLATE NOCASE, at DESC, id DESC LIMIT {limit} OFFSET {offset}"
     ))
@@ -1000,7 +1000,7 @@ pub async fn deleted_accounts_page(
         .into_iter()
         .map(|(id, username, deleted_at)| DeletedAccount {
             id,
-            username: username.unwrap_or_default(),
+            username,
             deleted_at,
         })
         .collect();

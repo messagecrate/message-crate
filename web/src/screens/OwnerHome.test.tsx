@@ -460,6 +460,23 @@ describe("OwnerHome", () => {
     expect(screen.getByRole("button", { name: /carol, deleted/ })).toBeInTheDocument();
   });
 
+  it("tells apart two accounts of one username deleted in the same minute", async () => {
+    listAccounts.mockResolvedValue([theOwner]);
+    listDeletedAccounts.mockResolvedValue([
+      { id: 31, username: "demo", deleted_at: "2026-10-03T10:00:30+00:00" },
+      { id: 12, username: "demo", deleted_at: "2026-10-03T10:00:10+00:00" },
+    ]);
+    listAuditTrail.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
+    renderHome(["/owner/audit-trail"]);
+    await waitFor(() => expect(listDeletedAccounts).toHaveBeenCalled());
+
+    await userEvent.click(await screen.findByRole("button", { name: /Every account/ }));
+    await screen.findByText("Deleted accounts");
+    const options = screen.getAllByRole("option").map((option) => option.textContent);
+    expect(options[2]).toMatch(/^demo, deleted .*\(#31\)$/);
+    expect(options[3]).toMatch(/^demo, deleted .*\(#12\)$/);
+  });
+
   it("offers no Deleted accounts section when no account was deleted", async () => {
     listAccounts.mockResolvedValue([theOwner, anAccount]);
     listAuditTrail.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });

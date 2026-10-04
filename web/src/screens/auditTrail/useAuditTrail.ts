@@ -1,7 +1,7 @@
 import { keepPreviousData } from "@tanstack/react-query";
 import { useState } from "react";
 import { apiErrorMessage } from "../../lib/apiErrorMessage";
-import { keys } from "../../lib/queryKeys";
+import { type AuditTrailKey, keys } from "../../lib/queryKeys";
 import { useRouteQuery } from "../../lib/routeQuery";
 import type { DeletedAccount } from "../../lib/serverApi";
 import {
@@ -25,14 +25,7 @@ export type AuditTrailOf =
   | { kind: "account"; id: number }
   | { kind: "deleted"; id: number };
 
-/**
- * One word for whose trail is read: the cache key's, and the key of the
- * owner's account picker. A live account and a deleted one with the same
- * number never share a key, because the kind leads it.
- */
-export type AuditTrailKey = "all" | "own" | `account:${number}` | `deleted:${number}`;
-
-/** The key that names `of`. */
+/** The key that names `of`: the cache key's word for it, and the owner's account picker's. */
 export function auditTrailKey(of: AuditTrailOf): AuditTrailKey {
   switch (of.kind) {
     case "account":
