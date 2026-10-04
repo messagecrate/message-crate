@@ -277,8 +277,8 @@ makes a new contact (step 2).
 For a holder in the Trash, the refusal says so, and says to restore it and
 add it to the file, or to delete it for good first.
 
-A move takes only the identity the row lists. The same number on the other
-service stays where it is unless the file lists it too.
+A row for one of a number's two identities speaks for the number: the same
+number on the other service goes with it, as the next section says.
 
 ```mermaid
 flowchart TD
@@ -297,6 +297,35 @@ flowchart TD
   E -- yes --> E1["Moved to this contact. Counts as identities_moved."]
 ```
 
+### 5a. The same number on the other service
+
+A phone number's text-message identity (`phone`) and its WhatsApp identity
+(`whatsapp`) are one person, so when a row puts one of them on a contact the
+other goes to the same contact. A row the file has for the other one is
+followed instead, so a file that lists the two under different contacts
+splits the number on purpose. This holds in both modes, and in Edit a row
+for one keeps the other on the contact (step 6). The code is
+`siblings_that_follow` in the same file.
+
+The other one follows only from a holder a row could take it from: a
+contact with no name, or one in the file. A named contact outside the file,
+in Contacts or in the Trash, keeps it, and the load's `notes` say so,
+because the file does not mention that contact and a person split the
+number there by hand. A load never refuses because of the other one.
+
+```mermaid
+flowchart TD
+  A["A row puts an identity on a contact"] --> B{"Does Message Crate hold the same number on the other service?"}
+  B -- no --> Z["Nothing more"]
+  B -- yes --> C{"Does the file have a row for it?"}
+  C -- yes --> C1["Placed by its own row"]
+  C -- no --> D{"Who holds it now?"}
+  D -- "nobody" --> D1["Put on the contact. Counts as identities_added."]
+  D -- "this contact" --> D2["Stays. Edit does not take it off."]
+  D -- "a contact with no name, or one in the file" --> D3["Moved to this contact. Counts as identities_moved."]
+  D -- "a named contact outside the file" --> D4["Stays where it is. A note names the row and the holder."]
+```
+
 ### 6. Contact Groups, and what Edit removes
 
 The rows of one contact must list the same Contact Groups, in any order and
@@ -312,7 +341,8 @@ there. An export loaded straight back lists the same Contact Groups.
 Message Tags are not in the address book and may hold `;`.
 
 Append only adds. Edit makes each contact in the file hold exactly the
-identities and memberships its rows list. In Edit, a contact whose `groups`
+identities and memberships its rows list, and the same number on the other
+service of each identity they list (step 5a). In Edit, a contact whose `groups`
 cell is blank on every row loses all its memberships.
 
 ```mermaid
@@ -321,7 +351,7 @@ flowchart TD
   B --> M{"Mode"}
   M -- Append --> Z["Other memberships and identities stay"]
   M -- Edit --> C["Remove memberships its rows do not list"]
-  C --> D["After every contact is placed: take off each identity the contact holds that its rows do not list. Counts as identities_removed."]
+  C --> D["After every contact is placed: take off each identity the contact holds that its rows do not list, other than one that goes with a listed identity (step 5a). Counts as identities_removed."]
   D --> D1["One a conversation, message or reaction uses goes to a new contact with no name. One nothing uses is deleted."]
   Z --> E
   D1 --> E{"Did any contact lose an identity, by a move or a removal?"}
@@ -339,6 +369,8 @@ flowchart TD
   deleted if that leaves it empty.
 - Identities and memberships of a file contact that its rows do not list, in
   Append mode.
+- The same number on the other service when a named contact outside the
+  file holds it (step 5a).
 - Contacts in the Trash. The file cannot speak for one. A nameless one can
   still give up an identity.
 
@@ -356,7 +388,9 @@ flowchart TD
 
 Beside the counts, `notes` holds one sentence for each phone number written
 without `+` that the load read with its `+` back, or that became a new
-identity (step 4). Each sentence starts with its row number.
+identity (step 4), and one for each identity on the other service that
+stayed with a named contact outside the file (step 5a). Each sentence starts
+with its row number.
 
 ## The two side by side
 
@@ -365,7 +399,7 @@ identity (step 4). Each sentence starts with its row number.
 | What starts it | Each person the backup's messages meet: a participant, the other side of a one-to-one conversation, or a sender | Each row of the CSV |
 | New contact | One for every address no contact holds, named if the backup gives a name, otherwise nameless | One for a blank or unrecognised `contact_id`. It needs a name or an identity |
 | Naming an existing contact | Only when the contact has no name and an import made it | Whenever the file's name differs, whatever set the old one |
-| Same number on the other service | Joins the contact that already holds the other one | Does not follow. The file must list it |
+| Same number on the other service | Joins the contact that already holds the other one | Goes with the identity a row places, unless the file has a row for it or a named contact outside the file holds it |
 | Identity already on another contact | Never moved. The import uses that contact | Moved if the holder is nameless or in the file. Otherwise the load is refused |
 | Removing things | Never removes an identity, a membership, or a contact outside the Trash | Edit removes unlisted identities and memberships. An emptied nameless contact is deleted |
 | Contact in the Trash | Discarded and made new from the backup. Its other identities in conversations go to new contacts with no name | Cannot be addressed. Its id is treated as unknown text |
@@ -397,9 +431,3 @@ each has an open issue.
   not. The
   import's rule needs the contact to be both nameless and of origin
   `import`.
-- **Should a load be able to split one number across two contacts?** (#1059)
-  It can.
-  An import puts a number's text-message identity and its WhatsApp identity
-  on one contact. A load that lists only one of them moves that one and
-  leaves the other behind, which the rule "one number is one person on every
-  service" says should not happen.

@@ -242,6 +242,16 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **A discarded import keeps its errors, and an import keeps its
+  converted files when they cannot be read back.** Discarding an import,
+  or cancelling it at a Review, recorded it with no errors, though it had
+  some. It now keeps the errors it had recorded, including the
+  conversations a paused Upload could not send. When Media finished but
+  its files could not be read back afterwards, the import ended as failed
+  and deleted the converted files. It now goes back to the form, and
+  resuming it reads the files again.
+- 2026-10-04 An internal fix to how an upload finishes an Import Run;
+  nothing you see changes.
 - 2026-10-04 **An iMazing import no longer reports a Live Photo choice as an
   error, and leaves WhatsApp chat folders' extra files alone.** When two
   photo rows named one picture, the import gave its Live Photo video to the
@@ -701,6 +711,14 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-04 **An Address Book load keeps a number's Text Message and
+  WhatsApp identities on one contact.** A file that moved a number's Text
+  Message identity to a contact, and had no row for the same number on
+  WhatsApp, left the WhatsApp identity behind, so one person showed as two
+  contacts. The identity on the other service now goes with the one the file
+  moves, in Append and Edit alike, unless the file has a row of its own for
+  it. A named contact the file does not mention keeps it, and the load says
+  so.
 - 2026-10-04 **One number is one identity however it arrives.** A number
   written with `tel:` in front, in a backup that gave no type for it, became
   a separate identity from the same number as a message sender, on a contact
@@ -986,6 +1004,20 @@ released versions carry their date on the heading.
   sent one of those times with no value rather than leaving it out. It now
   carries its first and last message times once each, and leaves both out
   when there is no message to date them.
+- 2026-10-04 **Removing or changing messages right after an import no
+  longer fails with "no such table: messages".** It failed now and then
+  when an import had just finished on the same server. On a first start, a
+  Demo Account that failed to build then could not be removed, and its
+  files stayed behind. Now the Demo Account is removed and leaves nothing
+  behind.
+- 2026-10-04 **A Preview cut short is made again without `--force`.** A
+  Preview left part-written by a stopped `process-assets` run was kept and
+  shown as it was until someone ran the command with `--force`. Every run
+  now checks each Preview against its contents and makes a damaged one
+  again, and removes the part-written files a stopped run or import left in
+  the attachment folders.
+- 2026-10-04 **How the desktop app checks that its server started was
+  reworked, with nothing visible.**
 
 ### Upgrading
 

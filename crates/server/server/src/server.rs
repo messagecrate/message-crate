@@ -1237,7 +1237,10 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
     let demo_build = state.demo_build.clone();
     let app = http_app(state);
     let listener = tokio::net::TcpListener::bind(&bind).await?;
-    eprintln!("message-crate-server serve listening on http://{bind}");
+    eprintln!(
+        "{}http://{bind}",
+        message_crate_serve_protocol::LISTENING_LINE
+    );
     eprintln!(
         "  routes: `message-crate-server dump-openapi` lists them all; set [server] openapi_ui = true for /docs"
     );

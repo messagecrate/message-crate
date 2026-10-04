@@ -118,7 +118,7 @@ impl std::fmt::Display for LoadError {
 /// The key of one identity: the three columns `handles` is unique on.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct IdentityKey {
-    service: &'static str,
+    service: HandleService,
     handle_type: &'static str,
     normalized: String,
 }
@@ -152,8 +152,8 @@ struct FileIdentity {
     key: IdentityKey,
     /// The identity as the file wrote it, kept as the `raw` of a new row.
     written: String,
-    /// What the load says about how it read this row, for
-    /// [`LoadCounts::notes`].
+    /// What the load says about how it read this row. [`plan`] moves it to
+    /// [`FileContact::notes`].
     note: Option<String>,
 }
 
@@ -170,6 +170,14 @@ struct FileContact {
     /// gave them. `None` when every row left the column blank.
     groups: Option<(Vec<String>, usize)>,
     identities: Vec<FileIdentity>,
+    /// The `handles` ids of the identities that go with the ones the rows
+    /// list: the same number on the other service, which no row of the file
+    /// lists. See [`siblings_that_follow`].
+    followers: Vec<i64>,
+    /// What the load says about its rows, each with its row number, for
+    /// [`LoadCounts::notes`]: how it read an identity, and a sibling that
+    /// stays where it is.
+    notes: Vec<(usize, String)>,
 }
 
 impl FileContact {
@@ -185,6 +193,26 @@ impl FileContact {
                 format!("{name} (a new contact, row {})", self.first_row)
             }
             Target::New => format!("{name} (a new contact, contact_id {})", self.id_text),
+        }
+    }
+}
+
+/// Where a named holder the file cannot speak for is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HolderPlace {
+    /// In the Trash: its id reads as unknown text, so the file cannot list
+    /// it.
+    Trash,
+    /// In Contacts, and not in the file.
+    OutsideFile,
+}
+
+impl HolderPlace {
+    /// The end of a sentence that starts "which …".
+    fn phrase(self) -> &'static str {
+        match self {
+            Self::Trash => "is in the Trash",
+            Self::OutsideFile => "is not in the file",
         }
     }
 }
@@ -244,7 +272,7 @@ impl Snapshot {
             };
             snapshot.handles.insert(
                 IdentityKey {
-                    service: service.as_str(),
+                    service,
                     handle_type: handle_type.as_str(),
                     normalized,
                 },
@@ -293,6 +321,22 @@ impl Snapshot {
         match self.name_of(contact_id) {
             "" => format!("the contact with no name (contact {contact_id})"),
             name => format!("\"{name}\" (contact {contact_id})"),
+        }
+    }
+
+    /// Whether a load may take an identity from `holder` without the file
+    /// naming it: a contact with no name, or one the file speaks for
+    /// (`in_file`).
+    fn may_take_from(&self, holder: i64, in_file: &HashSet<i64>) -> bool {
+        self.name_of(holder).is_empty() || in_file.contains(&holder)
+    }
+
+    /// Why the file cannot speak for `holder`, a named contact outside it.
+    fn place_of(&self, holder: i64) -> HolderPlace {
+        if self.trashed.contains_key(&holder) {
+            HolderPlace::Trash
+        } else {
+            HolderPlace::OutsideFile
         }
     }
 
@@ -482,7 +526,7 @@ fn row_identity(
         return Err(format!("row {n}: identity is blank"));
     }
     let key = |normalized: String| IdentityKey {
-        service: service.as_str(),
+        service,
         handle_type: handle_type.as_str(),
         normalized,
     };
@@ -631,6 +675,8 @@ fn plan(rows: &[FileRow], snapshot: &Snapshot) -> Result<Vec<FileContact>, Vec<S
                 name: None,
                 groups: None,
                 identities: Vec::new(),
+                followers: Vec::new(),
+                notes: Vec::new(),
             });
             file.len() - 1
         });
@@ -670,7 +716,7 @@ fn plan(rows: &[FileRow], snapshot: &Snapshot) -> Result<Vec<FileContact>, Vec<S
         match row_identity(row, known, snapshot) {
             Err(reason) => errors.push(reason),
             Ok(None) => {}
-            Ok(Some(identity)) => match listed.get(&identity.key) {
+            Ok(Some(mut identity)) => match listed.get(&identity.key) {
                 Some(&(other, first)) if other != at => errors.push(format!(
                     "row {n}: {} is also on row {first} under another contact_id; \
                      an identity belongs to one contact",
@@ -680,6 +726,9 @@ fn plan(rows: &[FileRow], snapshot: &Snapshot) -> Result<Vec<FileContact>, Vec<S
                 Some(_) => {}
                 None => {
                     listed.insert(identity.key.clone(), (at, n));
+                    if let Some(note) = identity.note.take() {
+                        contact.notes.push((n, note));
+                    }
                     contact.identities.push(identity);
                 }
             },
@@ -708,25 +757,20 @@ fn plan(rows: &[FileRow], snapshot: &Snapshot) -> Result<Vec<FileContact>, Vec<S
             if contact.target == Target::Known(holder) {
                 continue;
             }
-            let holder_name = snapshot.name_of(holder);
-            if holder_name.is_empty() || in_file.contains(&holder) {
+            if snapshot.may_take_from(holder, &in_file) {
                 continue;
             }
+            let holder_name = snapshot.name_of(holder);
+            let place = snapshot.place_of(holder);
+            let where_it_is = place.phrase();
             // A trashed holder cannot be added to the file, because its id
             // reads as unknown text, so the way through is the Trash.
-            let (where_it_is, way_through) = if snapshot.trashed.contains_key(&holder) {
-                (
-                    "is in the Trash",
-                    format!(
-                        "restore \"{holder_name}\" and add it to the file, \
-                         or delete \"{holder_name}\" for good,"
-                    ),
-                )
-            } else {
-                (
-                    "is not in the file",
-                    format!("add \"{holder_name}\" to the file"),
-                )
+            let way_through = match place {
+                HolderPlace::Trash => format!(
+                    "restore \"{holder_name}\" and add it to the file, \
+                     or delete \"{holder_name}\" for good,"
+                ),
+                HolderPlace::OutsideFile => format!("add \"{holder_name}\" to the file"),
             };
             errors.push(format!(
                 "row {}: {} belongs to \"{holder_name}\" (contact {holder}), which {where_it_is}, \
@@ -739,9 +783,74 @@ fn plan(rows: &[FileRow], snapshot: &Snapshot) -> Result<Vec<FileContact>, Vec<S
     }
 
     if errors.is_empty() {
+        siblings_that_follow(&mut file, &listed, &in_file, snapshot);
         Ok(file)
     } else {
         Err(errors)
+    }
+}
+
+/// How a sentence names a service.
+fn service_label(service: HandleService) -> &'static str {
+    match service {
+        HandleService::Phone => "Text Message",
+        HandleService::Whatsapp => "WhatsApp",
+    }
+}
+
+/// One number is one person on every service: each identity a file contact
+/// lists takes its siblings with it, the same normalized value and handle
+/// type on the other service, as [`contacts::contact_id_of_sibling_handle`]
+/// pairs them for an import. A sibling the file has a row for is placed by
+/// that row instead, so a file that lists the two under different contacts
+/// splits the number on purpose.
+///
+/// A sibling follows from the holders a listed identity may move from: a
+/// contact with no name, or one in the file. A sibling no contact holds
+/// joins too. One a named contact outside the file holds was put there by
+/// hand, and the file does not mention that contact, so it stays, with a
+/// note naming it.
+fn siblings_that_follow(
+    file: &mut [FileContact],
+    listed: &HashMap<IdentityKey, (usize, usize)>,
+    in_file: &HashSet<i64>,
+    snapshot: &Snapshot,
+) {
+    let mut by_number: HashMap<(&str, &str), Vec<&IdentityKey>> = HashMap::new();
+    for key in snapshot.handles.keys() {
+        by_number
+            .entry((key.handle_type, key.normalized.as_str()))
+            .or_default()
+            .push(key);
+    }
+    for contact in file.iter_mut() {
+        for identity in &contact.identities {
+            let siblings = by_number
+                .get(&(identity.key.handle_type, identity.key.normalized.as_str()))
+                .into_iter()
+                .flatten()
+                .filter(|key| key.service != identity.key.service && !listed.contains_key(*key));
+            for key in siblings {
+                let (handle_id, holder) = snapshot.handles[*key];
+                match holder {
+                    Some(holder) if !snapshot.may_take_from(holder, in_file) => {
+                        let where_it_is = snapshot.place_of(holder).phrase();
+                        contact.notes.push((
+                            identity.row,
+                            format!(
+                                "row {}: {} on {} stays with {}, which {where_it_is}; \
+                                 add a row for it to move it",
+                                identity.row,
+                                key.normalized,
+                                service_label(key.service),
+                                snapshot.describe(holder)
+                            ),
+                        ));
+                    }
+                    _ => contact.followers.push(handle_id),
+                }
+            }
+        }
     }
 }
 
@@ -792,11 +901,12 @@ pub async fn load(
 /// The file is read as [`load`] reads it, so the identities are matched by
 /// the key the load would give them. A new contact stays new when no
 /// nameless contact holds its identities; when the nameless contact also
-/// holds an identity the contact's rows do not list (an Append load would
-/// then leave the named contact holding it); or when a row would read as
-/// another identity under the nameless contact's id than as a new
-/// contact's. A file the load would refuse comes back as it was, so the load
-/// reports the refusal.
+/// holds an identity the contact neither lists nor takes with one it lists,
+/// as the same number on the other service (an Append load would then leave
+/// the named contact holding it); or when a row would read as another
+/// identity under the nameless contact's id than as a new contact's. A file
+/// the load would refuse comes back as it was, so the load reports the
+/// refusal.
 ///
 /// # Errors
 ///
@@ -821,17 +931,30 @@ pub(crate) async fn rewrite_ids_to_nameless(
         }
     }
     let is_nameless = |id: i64| snapshot.contacts.get(&id).is_some_and(String::is_empty);
+    let key_of: HashMap<i64, &IdentityKey> = snapshot
+        .handles
+        .iter()
+        .map(|(key, &(handle_id, _))| (handle_id, key))
+        .collect();
 
     // The nameless contact each new contact takes, by its `contact_id` text.
     // No two new contacts can take the same one: it must hold only
-    // identities the contact lists, and the load refuses a file that lists
-    // one identity under two contacts.
+    // identities the contact lists or takes with them, and the load refuses
+    // a file that lists one identity under two contacts.
     let mut nameless_of: HashMap<&str, i64> = HashMap::new();
     for contact in file
         .iter()
         .filter(|c| c.target == Target::New && !c.id_text.is_empty())
     {
         let listed: HashSet<&IdentityKey> = contact.identities.iter().map(|i| &i.key).collect();
+        // What the contact takes: what it lists, and the siblings that go
+        // with those (see [`siblings_that_follow`]).
+        let taken: HashSet<&IdentityKey> = contact
+            .followers
+            .iter()
+            .filter_map(|handle_id| key_of.get(handle_id).copied())
+            .chain(listed.iter().copied())
+            .collect();
         let contact_rows: Vec<&FileRow> = rows
             .iter()
             .filter(|row| row.contact_id == contact.id_text)
@@ -856,10 +979,8 @@ pub(crate) async fn rewrite_ids_to_nameless(
             let &(_, Some(holder)) = snapshot.handles.get(&identity.key)? else {
                 return None;
             };
-            let holds_only_listed = held
-                .get(&holder)
-                .is_some_and(|keys| keys.iter().all(|key| listed.contains(key)));
-            (is_nameless(holder) && holds_only_listed && reads_the_same(holder)).then_some(holder)
+            let holds_only_taken = held.get(&holder).is_some_and(|keys| keys.is_subset(&taken));
+            (is_nameless(holder) && holds_only_taken && reads_the_same(holder)).then_some(holder)
         });
         if let Some(nameless) = nameless {
             nameless_of.insert(contact.id_text.as_str(), nameless);
@@ -933,7 +1054,8 @@ async fn apply(
     // it took an identity from.
     let mut changed: HashSet<i64> = HashSet::new();
     let mut lost_identity: HashSet<i64> = HashSet::new();
-    // Each file contact's id and the identity rows it lists.
+    // Each file contact's id and the identities it takes: the ones its rows
+    // list and their siblings.
     let mut placed: Vec<(i64, HashSet<i64>)> = Vec::with_capacity(file.len());
 
     // First every contact takes what its rows list. Removal waits until all
@@ -959,7 +1081,8 @@ async fn apply(
             }
         };
 
-        let mut listed: HashSet<i64> = HashSet::new();
+        // The rows' identities, then the siblings that go with them.
+        let mut handle_ids: Vec<i64> = Vec::with_capacity(contact.identities.len());
         for identity in &contact.identities {
             let handle_id = match snapshot.handles.get(&identity.key) {
                 Some(&(handle_id, _)) => handle_id,
@@ -972,13 +1095,19 @@ async fn apply(
                     .bind(&identity.written)
                     .bind(&identity.key.normalized)
                     .bind(identity.key.handle_type)
-                    .bind(identity.key.service)
+                    .bind(identity.key.service.as_str())
                     .bind(Origin::AddressBook.as_str())
                     .fetch_one(&mut *conn)
                     .await?
                 }
             };
-            listed.insert(handle_id);
+            handle_ids.push(handle_id);
+        }
+        handle_ids.extend(&contact.followers);
+
+        let mut taken: HashSet<i64> = HashSet::new();
+        for handle_id in handle_ids {
+            taken.insert(handle_id);
             match holder_of.insert(handle_id, contact_id) {
                 Some(holder) if holder == contact_id => {}
                 Some(holder) => {
@@ -1053,18 +1182,20 @@ async fn apply(
                 changed.insert(contact_id);
             }
         }
-        placed.push((contact_id, listed));
+        placed.push((contact_id, taken));
     }
 
-    // Edit: an identity a file contact still holds and no row of it lists
-    // comes off the contact, the one way an identity leaves a contact: one in
-    // a conversation goes to a new contact with no name, so the person is
-    // Unknown for it again, and one nothing uses is deleted.
+    // Edit: an identity a file contact still holds and did not take, by a
+    // row or as the sibling of a row's identity, comes off the contact. A
+    // sibling stays because the row speaks for the number. Taking off is the
+    // one way an identity leaves a contact: one in a conversation goes to a
+    // new contact with no name, so the person is Unknown for it again, and
+    // one nothing uses is deleted.
     if mode == LoadMode::Edit {
-        for (contact_id, listed) in &placed {
+        for (contact_id, taken) in &placed {
             let mut unlisted: Vec<i64> = holder_of
                 .iter()
-                .filter(|&(handle_id, holder)| holder == contact_id && !listed.contains(handle_id))
+                .filter(|&(handle_id, holder)| holder == contact_id && !taken.contains(handle_id))
                 .map(|(&handle_id, _)| handle_id)
                 .collect();
             unlisted.sort_unstable();
@@ -1103,12 +1234,8 @@ async fn apply(
 
     // The notes in the order of the file's rows, which a contact's rows need
     // not be.
-    let mut notes: Vec<(usize, &String)> = file
-        .iter()
-        .flat_map(|contact| &contact.identities)
-        .filter_map(|identity| identity.note.as_ref().map(|note| (identity.row, note)))
-        .collect();
-    notes.sort_by_key(|&(row, _)| row);
+    let mut notes: Vec<&(usize, String)> = file.iter().flat_map(|contact| &contact.notes).collect();
+    notes.sort_by_key(|&&(row, _)| row);
     counts.notes = notes.into_iter().map(|(_, note)| note.clone()).collect();
     Ok(counts)
 }

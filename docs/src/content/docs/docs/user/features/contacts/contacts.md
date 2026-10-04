@@ -224,6 +224,9 @@ The `identity` column should be kept as text, because a spreadsheet that reads `
 - **Put a contact in a Contact Group.** Add the group's name to `groups`. A name that matches no Contact Group creates one.
 - **Give a contact another identity.** Add a row with the same `contact_id`.
 - **Move an identity to another contact.** Change the row's `contact_id` to the other contact's.
+  A phone number on **Text message** and the same number on **WhatsApp** are one person, so a row that moves one of them takes the other with it, unless the file has a row for that one too.
+  To keep the two on different contacts, give each its own row.
+  When a named contact the file does not mention holds the other one, it stays there, and the load says so.
 - **Make a new contact.** Leave `contact_id` blank. To give a new contact several identities, put the same made-up word, such as `new-1`, in `contact_id` on each of its rows.
 - **Leave a contact alone.** Delete its rows from the file. A contact the file does not mention is never changed.
 
@@ -236,7 +239,7 @@ The load is in **Settings**, on the **Profile** tab, under **Address book**.
 **How to load it** has two choices:
 
 - **Append** creates the contacts the file adds, renames the ones it holds, and adds the identities and Contact Groups it lists. It removes nothing.
-- **Edit** does the same, then makes each contact in the file hold exactly the identities and Contact Groups its rows list. A row taken out of the file takes that identity off the contact. The identity stays in its conversations, which show the number again in place of the name.
+- **Edit** does the same, then makes each contact in the file hold exactly the identities and Contact Groups its rows list. A row taken out of the file takes that identity off the contact, unless the same number on the other service still has its row there. The identity stays in its conversations, which show the number again in place of the name.
 
 **Choose a file** takes a `.csv` file of at most 8 MB.
 A larger file is refused with **That file is larger than 8 MB.**

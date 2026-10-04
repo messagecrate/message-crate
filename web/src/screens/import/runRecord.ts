@@ -19,6 +19,13 @@ import type { PushFinishedReport } from "../../lib/tauri";
  */
 export type RunRecord = {
   issues: ImportIssue[];
+  /**
+   * The issues of the latest stopped part that `issues` leaves out, because
+   * a resume reports them again or because they explain the stop
+   * (`recordToCarry`). A resume never carries them. A Discard sends them,
+   * since a discarded run is never resumed (`issuesToDiscard`).
+   */
+  lastStopIssues?: ImportIssue[];
   durationMs?: number;
   parseMs?: number;
   attachmentsMs?: number;
@@ -76,6 +83,7 @@ export function parseRunRecord(raw: unknown): RunRecord {
   const record: RunRecord = {
     issues: Array.isArray(r.issues) ? r.issues.filter(isIssue) : [],
   };
+  if (Array.isArray(r.lastStopIssues)) record.lastStopIssues = r.lastStopIssues.filter(isIssue);
   for (const field of COUNT_FIELDS) {
     const value = r[field];
     if (typeof value === "number" && Number.isFinite(value)) record[field] = value;
@@ -133,7 +141,8 @@ export const RUN_ERROR_ITEM = "Import";
 /**
  * The record a stopped part leaves for the next one.
  *
- * Two kinds of issue are left out of it. An Upload's row for a whole
+ * Two kinds of issue are left out of its `issues`, and kept in
+ * `lastStopIssues` for a Discard instead. An Upload's row for a whole
  * conversation (failed, or left unsent by a stop) is left out because the
  * resumed Upload sends that conversation again and reports it afresh. The
  * run-level error a stage records when it stops (item `Import`) is left out
@@ -147,12 +156,30 @@ export function recordToCarry(carried: RunRecord, part: RunPart): RunRecord {
       .filter((result) => result.status === "failed" || result.status === "cancelled")
       .map((result) => result.file),
   );
-  const issues = part.issues.filter(
-    (issue) =>
-      !(issue.kind === "error" && issue.item === RUN_ERROR_ITEM) &&
-      !(issue.stage === "upload" && sentAgain.has(issue.item)),
+  const leftOut = (issue: ImportIssue) =>
+    (issue.kind === "error" && issue.item === RUN_ERROR_ITEM) ||
+    (issue.stage === "upload" && sentAgain.has(issue.item));
+  const issues = part.issues.filter((issue) => !leftOut(issue));
+  // An earlier stop's conversation rows stand until an Upload reports on
+  // that conversation again: a part that stopped before its push reported
+  // anything says nothing about them. Its run error explained that stop
+  // only, and goes.
+  const reported = new Set((part.report?.results ?? []).map((result) => result.file));
+  const earlier = (carried.lastStopIssues ?? []).filter(
+    (issue) => issue.item !== RUN_ERROR_ITEM && !reported.has(issue.item),
   );
-  return wholeRun(carried, { ...part, issues });
+  return {
+    ...wholeRun(carried, { ...part, issues }),
+    lastStopIssues: [...earlier, ...part.issues.filter(leftOut)],
+  };
+}
+
+/**
+ * The Import Errors a Discard sends with the cancelled run: the whole
+ * record's, with the latest stop's that a resume would have reported again.
+ */
+export function issuesToDiscard(record: RunRecord): ImportIssue[] {
+  return [...record.issues, ...(record.lastStopIssues ?? [])];
 }
 
 /**

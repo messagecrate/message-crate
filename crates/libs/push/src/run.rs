@@ -214,12 +214,13 @@ impl RunPaths {
 ///    message chunks into import batches, and sends those batches over HTTP
 ///    ([`ImportPipeline`]). An import can start while prepare workers keep
 ///    working on later chats.
-/// 4. Write the report and close the import session.
+/// 4. Complete the Import Run this push started, then write the report.
 ///
 /// # Errors
 ///
-/// Returns an error when setup fails, a worker disconnects, or the report cannot
-/// be written. A conversation that fails is recorded in the report and the
+/// Returns an error when setup fails, a worker disconnects, the report cannot
+/// be written, or the server refuses to complete the Import Run this push
+/// started. A conversation that fails is recorded in the report and the
 /// run goes on to the next one.
 pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<PushReport> {
     let run_started = Instant::now();
@@ -267,7 +268,7 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
     if counted.failed == 0 && !aborted {
         let _ = journal.compact();
     }
-    let report = PushReport {
+    let mut report = PushReport {
         ok: counted.failed == 0 && !aborted,
         cancelled,
         account: session.auth.account_id,
@@ -290,10 +291,24 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
         assets_bytes: assets.bytes,
         results,
     };
-    write_report(&paths.report, &report)?;
-    if cfg.import_id.is_none() {
-        complete_import_session(&session, import_id, &report, aborted, &mut out);
+    // The run is completed before the report is written, so a refused
+    // completion leaves a report that is not `ok` beside the error.
+    let completed = if cfg.import_id.is_none() {
+        complete_import_run(&session, import_id, &report, aborted, &mut out)
+    } else {
+        Ok(())
+    };
+    if completed.is_err() {
+        report.ok = false;
     }
+    let written = write_report(&paths.report, &report);
+    // A refused completion is the error that matters: the server still holds
+    // the run. A report that could not be written as well goes to the log.
+    if let (Err(_), Err(write_error)) = (&completed, &written) {
+        out.log(&format!("warning: {write_error:#}"));
+    }
+    completed?;
+    written?;
     out.log("");
     out.log(&format_push_summary(&report));
     out.conversation_issues(&report.results);
@@ -564,26 +579,29 @@ fn write_report(path: &Path, report: &PushReport) -> Result<()> {
     .with_context(|| format!("write report {}", path.display()))
 }
 
-/// Tell the server how the import session ended. Best effort: a failure here
-/// is logged, not returned, because the data is already on the server.
-fn complete_import_session(
+/// Tell the server how the Import Run this push started ended.
+///
+/// # Errors
+///
+/// Returns an error when the server refuses to complete the run. The server
+/// then still holds the run as running, so the caller must not report the
+/// push as a success.
+fn complete_import_run(
     session: &Session,
     import_id: i64,
     report: &PushReport,
     aborted: bool,
     out: &mut Reporter<'_, '_>,
-) {
-    let completed = session.complete_import(
-        import_id,
-        &ImportOutcome {
-            status: outcome_status(report, aborted),
-            bytes_uploaded: report.assets_bytes,
-        },
-    );
-    match completed {
-        Ok(()) => out.log(&format!("import session {import_id} completed")),
-        Err(error) => out.log(&format!(
-            "warning: could not complete import session {import_id}: {error}"
-        )),
-    }
+) -> Result<()> {
+    session
+        .complete_import(
+            import_id,
+            &ImportOutcome {
+                status: outcome_status(report, aborted),
+                bytes_uploaded: report.assets_bytes,
+            },
+        )
+        .with_context(|| format!("complete import run {import_id}"))?;
+    out.log(&format!("import run {import_id} completed"));
+    Ok(())
 }

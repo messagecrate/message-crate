@@ -1,0 +1,9 @@
+[package]
+name = "message-crate-serve-protocol"
+version = "0.1.0"
+edition = "2024"
+description = "How message-crate-server serve reports its start to the desktop app that runs it"
+license = "LicenseRef-FCL-1.0-ALv2"
+
+[lints]
+workspace = true

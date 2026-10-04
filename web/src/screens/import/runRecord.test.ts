@@ -4,6 +4,7 @@ import type { PushFinishedReport } from "../../lib/tauri";
 import {
   EMPTY_RUN_RECORD,
   filesSkippedOverRun,
+  issuesToDiscard,
   parseRunRecord,
   type RunPart,
   type RunRecord,
@@ -153,6 +154,69 @@ describe("recordToCarry", () => {
       { kind: "skip", stage: "staging", item: "a.jpg", reason: "missing" },
       { kind: "skip", stage: "upload", item: "a.jsonl:big.mov", reason: "too large" },
     ]);
+  });
+
+  it("keeps what it leaves out apart, for a Discard to send (#1479)", () => {
+    const carried = recordToCarry(
+      EMPTY_RUN_RECORD,
+      part({
+        issues: [
+          { kind: "skip", stage: "staging", item: "a.jpg", reason: "missing" },
+          { kind: "error", stage: "upload", item: "b.jsonl", reason: "connection refused" },
+          { kind: "error", stage: "upload", item: "Import", reason: "the server went away" },
+        ],
+        report: report({
+          ok: false,
+          results: [{ file: "b.jsonl", status: "failed", messages: 0, attachments: 0 }],
+        }),
+      }),
+    );
+    expect(carried.lastStopIssues).toEqual([
+      { kind: "error", stage: "upload", item: "b.jsonl", reason: "connection refused" },
+      { kind: "error", stage: "upload", item: "Import", reason: "the server went away" },
+    ]);
+    expect(issuesToDiscard(parseRunRecord(JSON.parse(JSON.stringify(carried))))).toEqual([
+      { kind: "skip", stage: "staging", item: "a.jpg", reason: "missing" },
+      { kind: "error", stage: "upload", item: "b.jsonl", reason: "connection refused" },
+      { kind: "error", stage: "upload", item: "Import", reason: "the server went away" },
+    ]);
+  });
+
+  it("keeps an earlier stop's failed conversation when the next stop reported nothing on it", () => {
+    // Pause 1 left conversation b.jsonl failed. The resumed Upload was paused
+    // before the push started, so it reported nothing on b.jsonl.
+    const earlier = {
+      issues: [],
+      lastStopIssues: [
+        { kind: "error", stage: "upload" as const, item: "b.jsonl", reason: "connection refused" },
+        { kind: "error", stage: "upload" as const, item: "Import", reason: "the server went away" },
+      ],
+    };
+    const carried = recordToCarry(earlier, part({ issues: [], report: null }));
+    expect(carried.lastStopIssues).toEqual([
+      { kind: "error", stage: "upload", item: "b.jsonl", reason: "connection refused" },
+    ]);
+  });
+
+  it("drops an earlier stop's failed conversation once a later Upload reported on it", () => {
+    const earlier = {
+      issues: [],
+      lastStopIssues: [
+        { kind: "error", stage: "upload" as const, item: "b.jsonl", reason: "connection refused" },
+      ],
+    };
+    const carried = recordToCarry(
+      earlier,
+      part({
+        issues: [],
+        report: report({
+          results: [{ file: "b.jsonl", status: "ok", messages: 1, attachments: 0 }],
+        }),
+      }),
+    );
+    expect(carried.lastStopIssues).toEqual([]);
+    // A completion covers the whole run, and the resume reported these again.
+    expect(wholeRun(earlier, part({ issues: [] })).lastStopIssues).toBeUndefined();
   });
 });
 

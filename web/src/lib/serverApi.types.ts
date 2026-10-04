@@ -1059,7 +1059,7 @@ export interface paths {
         put?: never;
         /**
          * Discard a running Import Run, freeing the account's single slot.
-         * @description The answer is the run, now `cancelled`.
+         * @description The answer is the run, now `cancelled`, with the issues the request carried.
          */
         post: operations["discard_import"];
         delete?: never;
@@ -1785,14 +1785,6 @@ export interface components {
             /** @description Login username for the owner. */
             username: string;
         };
-        /** @description One error or skip a Stage of the Import Run reported. */
-        CompleteImportIssueRequest: {
-            item: string;
-            kind: string;
-            reason: string;
-            /** @description Stage the issue came from. */
-            stage: components["schemas"]["ImportIssueStage"];
-        };
         /**
          * @description Final stats and issues for a running Import Run. The outcome is stated
          *     once, as `status`. The run's message and attachment counts are not part
@@ -1806,7 +1798,7 @@ export interface components {
             bytes_uploaded?: number | null;
             /** Format: int64 */
             duration_ms?: number | null;
-            issues?: components["schemas"]["CompleteImportIssueRequest"][];
+            issues?: components["schemas"]["ImportIssueRequest"][];
             /** Format: int64 */
             parse_ms?: number | null;
             /** Format: int64 */
@@ -2279,6 +2271,18 @@ export interface components {
          */
         DemoDataSize: "medium" | "large";
         /**
+         * @description The Import Errors a discarded run recorded before it was given up. A run
+         *     that paused and is then discarded never posts `complete`, so its issues
+         *     come with the discard.
+         */
+        DiscardImportRequest: {
+            /**
+             * @description The run's Import Errors so far. The list is empty when the run
+             *     recorded none.
+             */
+            issues: components["schemas"]["ImportIssueRequest"][];
+        };
+        /**
          * @description Which list an Export Run's query is for (`docs/architecture/http-api.md`,
          *     "Runs"). The list decides which search words the query may use and what
          *     the run hands over.
@@ -2469,6 +2473,14 @@ export interface components {
         };
         /** @description One stored import issue. */
         ImportIssue: {
+            item: string;
+            kind: string;
+            reason: string;
+            /** @description Stage the issue came from. */
+            stage: components["schemas"]["ImportIssueStage"];
+        };
+        /** @description One error or skip a Stage of the Import Run reported. */
+        ImportIssueRequest: {
             item: string;
             kind: string;
             reason: string;
@@ -10074,7 +10086,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiscardImportRequest"];
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -10083,6 +10099,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImportRun"];
+                };
+            };
+            /** @description [`malformed-body`](https://messagecrate.app/docs/developer/reference/errors/malformed-body): The request could not be read at all: the body is not valid JSON, an import line is not JSON or not UTF-8, or the body failed to arrive. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
             /** @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. */
@@ -10129,6 +10154,24 @@ export interface operations {
             };
             /** @description [`state-conflict`](https://messagecrate.app/docs/developer/reference/errors/state-conflict): The resource is not in a state that allows the operation: an import that is no longer running or already has a live run, a Message Crate that already has an owner, a delete on something not yet trashed, or an asset upload that another request to it is still writing. */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`payload-too-large`](https://messagecrate.app/docs/developer/reference/errors/payload-too-large): The body is over the server's configured cap, whether announced by `Content-Length` or discovered while reading. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`unsupported-media-type`](https://messagecrate.app/docs/developer/reference/errors/unsupported-media-type): The request's `Content-Type` is absent or not one this route accepts. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
