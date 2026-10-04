@@ -91,9 +91,41 @@ export interface ImportProgressEvent {
   status?: string;
 }
 
+/**
+ * One row for the Import Errors list (`extract:issue`), sent the moment the
+ * stage records it.
+ */
 export interface ImportIssueEvent {
-  kind: "error" | "skip";
+  /**
+   * `skip` when the item was left out, `error` when it failed. `resolved`
+   * is not a row: it says an earlier row with the same stage and item no
+   * longer holds, as when Media converts a file on a later try.
+   */
+  kind: "error" | "skip" | "resolved";
   step: "parse" | "attachments" | "prepare" | "media" | "upload";
   item: string;
   reason: string;
+  /**
+   * The conversation file an Upload row is about; it is the `item` too when
+   * the row is about the whole conversation. A resumed Upload reads again
+   * only the conversations not yet on the server, so this says which rows a
+   * resume reports again. Absent on the other stages' rows.
+   */
+  conversation?: string;
 }
+
+/**
+ * The Upload finished with one conversation file (`extract:file-done`):
+ * `ok` sent it now, `skipped` found an earlier part of the run had sent it,
+ * `failed` could not send it.
+ */
+export interface ImportFileDoneEvent {
+  file: string;
+  status: "ok" | "skipped" | "failed";
+}
+
+/**
+ * What an Upload said of one conversation: an `ImportFileDoneEvent` status,
+ * or `cancelled` from its report, for one a stop left unsent.
+ */
+export type ConversationStatus = ImportFileDoneEvent["status"] | "cancelled";

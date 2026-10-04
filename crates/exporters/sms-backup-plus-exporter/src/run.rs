@@ -40,6 +40,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         output_format: config.output_format,
         cancel: config.cancel.as_ref(),
         log: config.log.as_ref(),
+        issues: config.issues.as_ref(),
         resume: config.resume,
     })?;
     if source.include_summary {
@@ -105,6 +106,7 @@ mod tests {
             output_format: OutputFormat::Jsonl,
             cancel: None,
             log: None,
+            issues: None,
             resume: false,
         })
         .unwrap_err()

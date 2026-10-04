@@ -71,6 +71,7 @@ pub fn format(
             })),
             // Settings → Convert shows a log, not a progress bar.
             progress: None,
+            issues: None,
             output_format: fmt,
             resume: false,
             source: SourceConfig::Format(FormatConfig { run_started }),

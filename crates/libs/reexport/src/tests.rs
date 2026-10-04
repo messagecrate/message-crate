@@ -26,6 +26,7 @@ fn config(input: &Path, output: &Path, output_format: OutputFormat) -> ExporterC
         cancel: None,
         log: None,
         progress: None,
+        issues: None,
         output_format,
         resume: false,
         source: SourceConfig::Format(FormatConfig::default()),

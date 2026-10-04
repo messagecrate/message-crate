@@ -14,6 +14,7 @@ fn apple_cfg(input: &Path, apple: AppleConfig) -> ExporterConfig {
         cancel: None,
         log: None,
         progress: None,
+        issues: None,
         output_format: OutputFormat::Jsonl,
         resume: false,
         source: SourceConfig::Apple(apple),
@@ -570,13 +571,14 @@ fn an_attachment_that_fails_to_decrypt_is_counted_apart_from_missing_ones() {
         r#"echo '{"event":"attachment","outcome":"missing"}'"#,
     );
     let program = fake_helper(dir.path(), &body);
-    let config = apple_cfg(
+    let mut config = apple_cfg(
         &chat,
         AppleConfig {
             platform: Some(ApplePlatform::MacOs),
             ..AppleConfig::default()
         },
     );
+    let issues = message_crate_core::testutil::collect_issues(&mut config);
 
     let result = run_with(&config, |request, _, _| Ok(spawn_fake(&program, request))).unwrap();
     assert!(
@@ -605,7 +607,7 @@ fn an_attachment_that_fails_to_decrypt_is_counted_apart_from_missing_ones() {
     );
     // The Import Run lists the video, and only the video, as an issue.
     assert_eq!(
-        result.issues,
+        *issues.lock().unwrap(),
         [message_crate_core::RunIssue {
             kind: "error".into(),
             step: "attachments".into(),

@@ -7,6 +7,12 @@ export type ImportIssue = {
   stage: ImportIssueStage;
   item: string;
   reason: string;
+  /**
+   * The conversation file an Upload row is about (`ImportIssueEvent`). The
+   * run record keeps it to tell which rows a resumed Upload reports again;
+   * the server is never sent it.
+   */
+  conversation?: string;
 };
 
 export type ImportSummaryView = {

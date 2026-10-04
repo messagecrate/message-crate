@@ -32,6 +32,7 @@ fn import(input: &Path, output: &Path) -> Vec<ConversationDocument> {
         output_format: OutputFormat::Jsonl,
         cancel: None,
         log: None,
+        issues: None,
         resume: false,
     })
     .unwrap();
