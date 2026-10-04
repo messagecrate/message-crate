@@ -16,12 +16,12 @@
 //! across documents and the other formats merge or embed at finish, so those
 //! keep the `FormatSink` path.
 
-use std::cell::Cell;
+use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use anyhow::{Context, Result};
 use media::{CompressOptions, MediaMode};
@@ -190,9 +190,9 @@ pub fn load_attachment_source(source: &mut AttachmentSource) -> Result<Option<Ve
 
 /// What one attachment added to the drain's totals.
 ///
-/// Deltas, not running counts: a parallel drain folds them into shared
-/// atomics, and a sequential one adds them to plain locals. Either way the
-/// per-unit body does not need to know the global picture.
+/// Deltas, not running counts: both drains fold them into one
+/// [`AttachmentTotals`], so the per-unit body does not need to know the
+/// global picture.
 struct UnitProgress {
     done: usize,
     bytes_done: u64,
@@ -201,8 +201,71 @@ struct UnitProgress {
     bytes_total_change: i64,
 }
 
+/// The drain's running attachment counts, which every
+/// [`ProgressEvent::Attachments`] reports.
+///
+/// The counts change together: a parallel drain keeps them behind one lock
+/// and sends each event while it holds it, so every event is one moment's
+/// counts and the events never go back. Three counters updated one at a
+/// time let two writers mix their counts, and the bar could end on 3 of 4
+/// attachments (#1536).
+struct AttachmentTotals {
+    done: usize,
+    total: usize,
+    bytes_done: u64,
+    bytes_total: u64,
+}
+
+impl AttachmentTotals {
+    /// Nothing done yet, out of every attachment in `units` and the sizes
+    /// their sources claim.
+    fn new(units: &[ConversationUnit]) -> Self {
+        let attachments = || units.iter().flat_map(|u| u.attachments.iter());
+        Self {
+            done: 0,
+            total: attachments().count(),
+            bytes_done: 0,
+            bytes_total: attachments().filter_map(|a| a.size_hint).sum(),
+        }
+    }
+
+    /// Fold in what one attachment changed, then report the new counts: a
+    /// log line for people and a [`ProgressEvent::Attachments`] for the bar.
+    fn add_and_report(
+        &mut self,
+        p: UnitProgress,
+        log: Option<&LogSink>,
+        progress: Option<&ProgressSink>,
+    ) {
+        self.done += p.done;
+        self.bytes_done += p.bytes_done;
+        self.bytes_total = self.bytes_total.saturating_add_signed(p.bytes_total_change);
+        let Self {
+            done,
+            total,
+            bytes_done,
+            bytes_total,
+        } = *self;
+        let due = emit_progress(
+            progress,
+            ProgressEvent::Attachments {
+                done,
+                total,
+                bytes_done,
+                bytes_total,
+            },
+        );
+        if due {
+            emit_log(
+                log,
+                format!("  attachments {done}/{total} {bytes_done}/{bytes_total}"),
+            );
+        }
+    }
+}
+
 /// What one unit did. Byte and file counts travel through the progress
-/// callback instead, so both drains can fold them their own way.
+/// callback instead, into the drain's [`AttachmentTotals`].
 struct UnitOutcome {
     written: bool,
     attachments_saved: usize,
@@ -244,34 +307,12 @@ pub fn drain_write_queue_with_loader(
     let mut report = WriteQueueReport::default();
 
     let unit_count = units.len();
-    let total: usize = units.iter().map(|u| u.attachments.len()).sum();
-    let bytes_total_base: u64 = units
-        .iter()
-        .flat_map(|u| u.attachments.iter())
-        .filter_map(|a| a.size_hint)
-        .sum();
+    let totals = RefCell::new(AttachmentTotals::new(&units));
 
     announce_start(log, progress, unit_count);
 
-    let done = Cell::new(0usize);
-    let bytes_done = Cell::new(0u64);
-    let bytes_total = Cell::new(bytes_total_base);
     let report_progress = |p: UnitProgress| {
-        done.set(done.get() + p.done);
-        bytes_done.set(bytes_done.get() + p.bytes_done);
-        bytes_total.set(
-            bytes_total
-                .get()
-                .saturating_add_signed(p.bytes_total_change),
-        );
-        report_attachments(
-            log,
-            progress,
-            done.get(),
-            total,
-            bytes_done.get(),
-            bytes_total.get(),
-        );
+        totals.borrow_mut().add_and_report(p, log, progress);
     };
 
     for unit in units {
@@ -362,38 +403,25 @@ pub fn drain_write_queue(
         .with_context(|| format!("create {}", attachments_dir.display()))?;
 
     let unit_count = units.len();
-    let total: usize = units.iter().map(|u| u.attachments.len()).sum();
-    let bytes_total_base: u64 = units
-        .iter()
-        .flat_map(|u| u.attachments.iter())
-        .filter_map(|a| a.size_hint)
-        .sum();
+    let totals = Mutex::new(AttachmentTotals::new(&units));
 
     announce_start(log, progress, unit_count);
 
-    let done = AtomicUsize::new(0);
-    let bytes_done = AtomicU64::new(0);
-    let bytes_total = AtomicU64::new(bytes_total_base);
     let attachments_saved = AtomicUsize::new(0);
     let written = AtomicUsize::new(0);
     let skipped = AtomicUsize::new(0);
-    let units_done = AtomicUsize::new(0);
+    // Behind a lock for the same reason as `totals`: each prepare event is
+    // sent while it is held, so the count never goes back.
+    let units_done: Mutex<usize> = Mutex::new(0);
     let abort = AtomicBool::new(false);
     let first_error: Mutex<Option<String>> = Mutex::new(None);
     let queue: Mutex<VecDeque<ConversationUnit>> = Mutex::new(VecDeque::from(units));
 
     let report_progress = |p: UnitProgress| {
-        let d = done.fetch_add(p.done, Ordering::Relaxed) + p.done;
-        let bd = bytes_done.fetch_add(p.bytes_done, Ordering::Relaxed) + p.bytes_done;
-        let change = p.bytes_total_change.unsigned_abs();
-        let bt = if p.bytes_total_change >= 0 {
-            bytes_total.fetch_add(change, Ordering::Relaxed) + change
-        } else {
-            bytes_total
-                .fetch_sub(change, Ordering::Relaxed)
-                .saturating_sub(change)
-        };
-        report_attachments(log, progress, d, total, bd, bt);
+        totals
+            .lock()
+            .expect("write queue totals")
+            .add_and_report(p, log, progress);
     };
 
     let writer_count = if options.writer_count == 0 {
@@ -449,11 +477,12 @@ pub fn drain_write_queue(
                             } else {
                                 skipped.fetch_add(1, Ordering::Relaxed);
                             }
-                            let finished = units_done.fetch_add(1, Ordering::Relaxed) + 1;
+                            let mut finished = units_done.lock().expect("write queue units done");
+                            *finished += 1;
                             emit_progress(
                                 progress,
                                 ProgressEvent::Prepare {
-                                    done: finished,
+                                    done: *finished,
                                     total: unit_count,
                                 },
                             );
@@ -616,33 +645,6 @@ fn announce_start(log: Option<&LogSink>, progress: Option<&ProgressSink>, units:
             total: units,
         },
     );
-}
-
-/// Report the queue's running attachment totals: a log line for people and
-/// an [`ProgressEvent::Attachments`] for the bar.
-fn report_attachments(
-    log: Option<&LogSink>,
-    progress: Option<&ProgressSink>,
-    done: usize,
-    total: usize,
-    bytes_done: u64,
-    bytes_total: u64,
-) {
-    let due = emit_progress(
-        progress,
-        ProgressEvent::Attachments {
-            done,
-            total,
-            bytes_done,
-            bytes_total,
-        },
-    );
-    if due {
-        emit_log(
-            log,
-            format!("  attachments {done}/{total} {bytes_done}/{bytes_total}"),
-        );
-    }
 }
 
 /// Log the write queue's totals, noting resumed work.
