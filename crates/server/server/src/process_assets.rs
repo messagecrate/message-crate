@@ -27,7 +27,8 @@ const PREVIEW_MODE: MediaMode = MediaMode::Compress;
 /// Options for one derived-media processing pass.
 #[derive(Debug, Clone, Default)]
 pub struct ProcessAssetsOptions {
-    /// Re-convert even when a browser preview already exists.
+    /// Re-convert even when a browser preview already exists and hashes to
+    /// the fingerprint in its name.
     pub force: bool,
     /// Convert and log without writing files or updating the database.
     pub dry_run: bool,
@@ -170,14 +171,15 @@ enum Derived {
 }
 
 impl<'a> AccountPass<'a> {
-    /// Find the folders, remove abandoned upload temps, and make the
+    /// Find the folders, remove abandoned upload temps and the temporary
+    /// files a killed write left in the shard folders, and make the
     /// converted folder. `None` when the account has no assets folder to
     /// process.
     ///
     /// # Errors
     ///
     /// Returns an error when the converted folder cannot be made. A failed
-    /// removal of an upload temp is logged and does not stop the pass.
+    /// removal of a temporary file is logged and does not stop the pass.
     fn open(
         cfg: &Config,
         opts: &'a ProcessAssetsOptions,
@@ -191,9 +193,21 @@ impl<'a> AccountPass<'a> {
             eprintln!("  skip — assets dir missing");
             return Ok(None);
         }
+        let cleaned_verb = if opts.dry_run {
+            "would clean"
+        } else {
+            "cleaned"
+        };
         let cleaned = crate::asset_store::sweep_incoming(&assets_dir, opts.dry_run);
         if cleaned > 0 {
-            println!("  cleaned {cleaned} abandoned upload temp(s) under .incoming/");
+            println!("  {cleaned_verb} {cleaned} abandoned upload temp(s) under .incoming/");
+        }
+        let left = crate::asset_store::sweep_shard_temps(&assets_dir, opts.dry_run)
+            + crate::asset_store::sweep_shard_temps(&converted_dir, opts.dry_run);
+        if left > 0 {
+            println!(
+                "  {cleaned_verb} {left} temporary file(s) a killed write left in the shard folders"
+            );
         }
         fs::create_dir_all(&converted_dir)
             .with_context(|| format!("create converted dir {}", converted_dir.display()))?;
@@ -214,7 +228,8 @@ impl<'a> AccountPass<'a> {
     /// Derive a browser preview for one stored blob and record it, or report why it was left as-is.
     ///
     /// Reads the two facts only the disk can supply, lets [`plan`] decide,
-    /// then does what the plan says.
+    /// then does what the plan says. An existing Preview is hashed, so one
+    /// cut short by a killed run is converted again.
     ///
     /// # Errors
     ///
@@ -224,10 +239,13 @@ impl<'a> AccountPass<'a> {
         let source_path = self.assets_dir.join(&row.assets_path);
         let on_disk = OnDisk {
             original_exists: source_path.is_file(),
-            derived_exists: derived_file_exists(
-                row.derived_assets_path.as_deref(),
-                &self.converted_dir,
-            ),
+            // `--force` converts again whatever the Preview's state, so it
+            // reads no Preview and counts each as missing.
+            preview: if self.opts.force {
+                PreviewFile::Missing
+            } else {
+                preview_file(row.derived_assets_path.as_deref(), &self.converted_dir)
+            },
         };
         let kind = match plan(row, self.opts, on_disk)? {
             Plan::RemoveIncomplete => return self.remove_incomplete(row, &source_path),
@@ -238,6 +256,14 @@ impl<'a> AccountPass<'a> {
             Plan::Skip(_) => return Ok(Outcome::Skipped),
             Plan::Derive(kind) => kind,
         };
+        if let (PreviewFile::Damaged, Some(rel)) =
+            (on_disk.preview, row.derived_assets_path.as_deref())
+        {
+            println!(
+                "{}: Preview {rel} does not hash to the fingerprint in its name; converting again",
+                self.label(row)
+            );
+        }
         let blob = match self.derive(kind, &source_path, row)? {
             Derived::Skipped => return Ok(Outcome::Skipped),
             Derived::DryRun => return Ok(Outcome::Derived),
@@ -470,7 +496,7 @@ enum SkipReason {
     NotMedia,
     /// The options turn this kind off (`--skip-image` and friends).
     KindDisabled,
-    /// A browser preview already exists and `--force` was not given.
+    /// An intact Preview already exists, and `--force` was not given.
     AlreadyDerived,
 }
 
@@ -479,8 +505,21 @@ enum SkipReason {
 struct OnDisk {
     /// The stored original is present under the assets folder.
     original_exists: bool,
-    /// The preview the row points at is present under the converted folder.
-    derived_exists: bool,
+    /// The state of the Preview the row points at.
+    preview: PreviewFile,
+}
+
+/// The state of the Preview a row points at, under the converted folder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PreviewFile {
+    /// No Preview is named, or no file is at the path named.
+    Missing,
+    /// A file is there, but its bytes do not hash to the fingerprint in its
+    /// name, such as a Preview cut short by a killed run. It is converted
+    /// again as if missing.
+    Damaged,
+    /// A file is there and its bytes hash to the fingerprint in its name.
+    Intact,
 }
 
 /// Decide what one blob needs from the row, the options and what is on disk.
@@ -508,7 +547,7 @@ fn plan(row: &AssetRow, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> Result<
     if !wanted {
         return Ok(Plan::Skip(SkipReason::KindDisabled));
     }
-    if on_disk.derived_exists && !opts.force {
+    if on_disk.preview == PreviewFile::Intact && !opts.force {
         return Ok(Plan::Skip(SkipReason::AlreadyDerived));
     }
     if !on_disk.original_exists {
@@ -517,11 +556,30 @@ fn plan(row: &AssetRow, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> Result<
     Ok(Plan::Derive(kind))
 }
 
-/// True when the preview `derived_assets_path` names is present under `converted_dir`.
-fn derived_file_exists(derived_assets_path: Option<&str>, converted_dir: &Path) -> bool {
-    match derived_assets_path {
-        Some(rel) if !rel.is_empty() => converted_dir.join(rel).is_file(),
-        _ => false,
+/// The state of the Preview `derived_assets_path` names under
+/// `converted_dir`. A path that is empty or leaves `converted_dir` names no
+/// file there, and a name that carries no fingerprint, which the server
+/// never writes, is damaged.
+fn preview_file(derived_assets_path: Option<&str>, converted_dir: &Path) -> PreviewFile {
+    let Some(path) =
+        derived_assets_path.and_then(|rel| crate::asset_store::join_under(converted_dir, rel))
+    else {
+        return PreviewFile::Missing;
+    };
+    if !path.is_file() {
+        return PreviewFile::Missing;
+    }
+    let fingerprint = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .and_then(crate::asset_store::fingerprint_of);
+    let intact = fingerprint.is_some_and(|fingerprint| {
+        crate::assets_api::hash_file(&path).is_ok_and(|actual| actual == fingerprint)
+    });
+    if intact {
+        PreviewFile::Intact
+    } else {
+        PreviewFile::Damaged
     }
 }
 
@@ -552,7 +610,7 @@ fn store_derived_bytes(derived_dir: &Path, buf: &[u8], ext: &str) -> Result<Deri
         .with_context(|| format!("derived path {} has no folder", dest.display()))?;
     fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     if !crate::assets_api::hash_file(&dest).is_ok_and(|actual| actual == sha.as_str()) {
-        let mut temporary = tempfile::NamedTempFile::new_in(parent)
+        let mut temporary = crate::asset_store::shard_temp_file(parent)
             .with_context(|| format!("create temporary preview in {}", parent.display()))?;
         temporary
             .write_all(buf)
