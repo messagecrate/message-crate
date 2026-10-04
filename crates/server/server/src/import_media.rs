@@ -7,7 +7,9 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
-use media::{CompressOptions, Kind, MaxResolution, MediaMode, TranscodeOutcome};
+use media::{Kind, MediaMode, TranscodeOutcome};
+
+use crate::media_options::server_compress_options;
 
 /// The file to store for one attachment, after the mode's transformation.
 #[derive(Debug)]
@@ -47,18 +49,6 @@ pub fn resolve_for_store(
         MediaMode::Disabled => Ok(None),
         MediaMode::Clone => Ok(Some(ResolvedMedia::as_is(source_path, mime))),
         MediaMode::Convert | MediaMode::Compress => transform(source_path, mime, mode, work_dir),
-    }
-}
-
-/// The compress options the server applies to the media it converts itself:
-/// a browser preview, and an import's media rewrite. The server has no Import
-/// form to read them from, so they are named here, with the 1080p cap the
-/// server has always used, rather than taken from the `media` crate's
-/// default, which follows the desktop Import form.
-pub(crate) fn server_compress_options() -> CompressOptions {
-    CompressOptions {
-        max_resolution: MaxResolution::P1080,
-        ..CompressOptions::default()
     }
 }
 

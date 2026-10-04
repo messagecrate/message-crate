@@ -15,12 +15,13 @@ use tempfile::TempDir;
 
 use crate::config::Config;
 use crate::db::schema;
+use crate::media_options::server_compress_options;
 use crate::open_db::OpenDb;
 use media::{Kind, MediaMode, TranscodeOutcome};
 
 /// Browser previews use the `media` crate's compress recipe, with the
 /// options the server names for the media it converts itself
-/// (`import_media::server_compress_options`).
+/// ([`server_compress_options`]).
 const PREVIEW_MODE: MediaMode = MediaMode::Compress;
 
 /// Options for one derived-media processing pass.
@@ -321,7 +322,7 @@ impl<'a> AccountPass<'a> {
             kind,
             &out,
             PREVIEW_MODE,
-            &crate::import_media::server_compress_options(),
+            &server_compress_options(),
         )
         .with_context(|| format!("{what} preview for {}", self.label(row)))?;
         let out = match outcome {

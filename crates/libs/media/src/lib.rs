@@ -51,6 +51,9 @@ pub enum MediaMode {
 }
 
 impl MediaMode {
+    /// Every mode, so a check over all of them covers one added later.
+    pub const ALL: [Self; 4] = [Self::Disabled, Self::Clone, Self::Convert, Self::Compress];
+
     /// Canonical lowercase name (`disabled` / `clone` / `convert` / `compress`),
     /// the value the export form and the desktop commands pass as text.
     pub fn as_str(self) -> &'static str {
@@ -253,12 +256,7 @@ mod tests {
 
     #[test]
     fn every_form_name_parses_back_to_its_mode() {
-        for mode in [
-            MediaMode::Disabled,
-            MediaMode::Clone,
-            MediaMode::Convert,
-            MediaMode::Compress,
-        ] {
+        for mode in MediaMode::ALL {
             assert_eq!(MediaMode::parse(mode.form_name()), Some(mode));
         }
     }
