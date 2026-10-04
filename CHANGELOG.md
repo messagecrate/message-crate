@@ -255,6 +255,14 @@ released versions carry their date on the heading.
   holding the output and the disk holding the cache folder have room, and
   stops with the space it needs; before, only an import to the server
   checked, after the attachments were already set aside.
+- 2026-10-04 **A discarded import keeps its errors, and an import keeps its
+  converted files when they cannot be read back.** Discarding an import,
+  or cancelling it at a Review, recorded it with no errors, though it had
+  some. It now keeps the errors it had recorded, including the
+  conversations a paused Upload could not send. When Media finished but
+  its files could not be read back afterwards, the import ended as failed
+  and deleted the converted files. It now goes back to the form, and
+  resuming it reads the files again.
 - 2026-10-04 An internal fix to how an upload finishes an Import Run;
   nothing you see changes.
 - 2026-10-04 **An iMazing import no longer reports a Live Photo choice as an
@@ -716,6 +724,14 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-04 **An Address Book load keeps a number's Text Message and
+  WhatsApp identities on one contact.** A file that moved a number's Text
+  Message identity to a contact, and had no row for the same number on
+  WhatsApp, left the WhatsApp identity behind, so one person showed as two
+  contacts. The identity on the other service now goes with the one the file
+  moves, in Append and Edit alike, unless the file has a row of its own for
+  it. A named contact the file does not mention keeps it, and the load says
+  so.
 - 2026-10-04 **One number is one identity however it arrives.** A number
   written with `tel:` in front, in a backup that gave no type for it, became
   a separate identity from the same number as a message sender, on a contact
