@@ -8,6 +8,7 @@ import { resizeHandleGutter } from "../lib/tw";
 import { useAccountProfile } from "../lib/useAccountProfile";
 import { useContactGroups } from "../lib/useContactGroups";
 import { useMessageTags } from "../lib/useMessageTags";
+import { useWindowWidth } from "../lib/useWindowWidth";
 import { type ImportAttention, useImportAttention } from "../screens/import/useImportAttention";
 import ColumnResizeHandle from "./ColumnResizeHandle";
 import { useReportColumnResizing } from "./columnResizeState";
@@ -20,6 +21,7 @@ import {
   LEFT_PANEL_MIN_WIDTH,
   LEFT_PANEL_STORAGE_KEY,
   LEFT_PANEL_WIDTH_VAR,
+  leftPanelMaxWidth,
 } from "./leftPanelWidth";
 import MessageTagsNav from "./MessageTagsNav";
 import NavCollapsibleSection from "./NavCollapsibleSection";
@@ -129,13 +131,19 @@ export default function LeftPanel({
   // An account without the import permission has no Import Run to ask the server about.
   const importAttention = useImportAttention(canImport && profile?.can_import === true);
   const onDraggingChange = useReportColumnResizing();
-  const { width, dragging, handleHover, handleProps } = useColumnResize({
+  // A narrow window caps the panel below its stored width, which comes back
+  // when the window is wide enough again.
+  const maxWidth = leftPanelMaxWidth(useWindowWidth());
+  const resize = useColumnResize({
     storageKey: LEFT_PANEL_STORAGE_KEY,
     defaultWidth: LEFT_PANEL_DEFAULT_WIDTH,
     minWidth: LEFT_PANEL_MIN_WIDTH,
     maxWidth: LEFT_PANEL_MAX_WIDTH,
+    windowMaxWidth: maxWidth,
     onDraggingChange,
   });
+  const { dragging, handleHover, handleProps } = resize;
+  const width = Math.min(resize.width, maxWidth);
 
   // Keep the header brand slot aligned with the nav while it resizes.
   useEffect(() => {
@@ -203,7 +211,7 @@ export default function LeftPanel({
   return (
     <div
       style={{ flex: `0 0 ${width}px`, width: `${width}px` }}
-      className="relative flex h-full max-w-[50vw] shrink-0 flex-col overflow-hidden border-r border-border bg-panel text-text"
+      className="relative flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-panel text-text"
     >
       <div className={LIST_TOOLBAR_CLASS} aria-hidden />
       <div className={`min-h-0 flex-1 overflow-auto ${resizeHandleGutter}`}>
@@ -389,7 +397,7 @@ export default function LeftPanel({
         ariaLabel="Resize navigation panel"
         width={width}
         minWidth={LEFT_PANEL_MIN_WIDTH}
-        maxWidth={LEFT_PANEL_MAX_WIDTH}
+        maxWidth={maxWidth}
         dragging={dragging}
         handleHover={handleHover}
         handleProps={handleProps}

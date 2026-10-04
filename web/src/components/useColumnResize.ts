@@ -17,6 +17,12 @@ export type UseColumnResizeOptions = {
   defaultWidth: number;
   minWidth: number;
   maxWidth: number;
+  /**
+   * The widest the column may be in this window, when that is less than
+   * `maxWidth`. A drag or a key stops there, while a stored width wider than
+   * it is kept for a wider window.
+   */
+  windowMaxWidth?: number;
   /** Called when a drag starts (true) or ends (false). */
   onDraggingChange?: (dragging: boolean) => void;
 };
@@ -63,10 +69,14 @@ export function useColumnResize({
   storageKey,
   defaultWidth,
   minWidth,
-  maxWidth,
+  maxWidth: storedMaxWidth,
+  windowMaxWidth,
   onDraggingChange,
 }: UseColumnResizeOptions): UseColumnResizeResult {
-  const [width, setWidth] = useState(() => loadWidth(storageKey, defaultWidth, minWidth, maxWidth));
+  const [width, setWidth] = useState(() =>
+    loadWidth(storageKey, defaultWidth, minWidth, storedMaxWidth),
+  );
+  const maxWidth = Math.min(storedMaxWidth, windowMaxWidth ?? storedMaxWidth);
   const [dragging, setDragging] = useState(false);
   const [handleHover, setHandleHover] = useState(false);
 
