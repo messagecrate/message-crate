@@ -19,8 +19,8 @@ export type UseColumnResizeOptions = {
   maxWidth: number;
   /**
    * The widest the column may be in this window, when that is less than
-   * `maxWidth`. A drag or a key stops there, while a stored width wider than
-   * it is kept for a wider window.
+   * `maxWidth`. The returned `width`, a drag and a key all stop there, while a
+   * stored width wider than it is kept for a wider window.
    */
   windowMaxWidth?: number;
   /** Called when a drag starts (true) or ends (false). */
@@ -69,14 +69,12 @@ export function useColumnResize({
   storageKey,
   defaultWidth,
   minWidth,
-  maxWidth: storedMaxWidth,
+  maxWidth,
   windowMaxWidth,
   onDraggingChange,
 }: UseColumnResizeOptions): UseColumnResizeResult {
-  const [width, setWidth] = useState(() =>
-    loadWidth(storageKey, defaultWidth, minWidth, storedMaxWidth),
-  );
-  const maxWidth = Math.min(storedMaxWidth, windowMaxWidth ?? storedMaxWidth);
+  const [width, setWidth] = useState(() => loadWidth(storageKey, defaultWidth, minWidth, maxWidth));
+  const effectiveMaxWidth = Math.min(maxWidth, windowMaxWidth ?? maxWidth);
   const [dragging, setDragging] = useState(false);
   const [handleHover, setHandleHover] = useState(false);
 
@@ -130,7 +128,7 @@ export function useColumnResize({
     const next = clampWidth(
       startWidthRef.current + (e.clientX - startXRef.current),
       minWidth,
-      maxWidth,
+      effectiveMaxWidth,
     );
     widthRef.current = next;
     setWidth(next);
@@ -150,7 +148,7 @@ export function useColumnResize({
       const next = clampWidth(
         e.key === "ArrowLeft" ? from - step : from + step,
         minWidth,
-        maxWidth,
+        effectiveMaxWidth,
       );
       widthRef.current = next;
       setWidth(next);
@@ -162,14 +160,14 @@ export function useColumnResize({
       saveWidth(storageKey, minWidth);
     } else if (e.key === "End") {
       e.preventDefault();
-      widthRef.current = maxWidth;
-      setWidth(maxWidth);
-      saveWidth(storageKey, maxWidth);
+      widthRef.current = effectiveMaxWidth;
+      setWidth(effectiveMaxWidth);
+      saveWidth(storageKey, effectiveMaxWidth);
     }
   };
 
   return {
-    width,
+    width: Math.min(width, effectiveMaxWidth),
     dragging,
     handleHover,
     handleProps: {

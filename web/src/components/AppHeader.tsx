@@ -13,7 +13,7 @@ import {
   LEFT_PANEL_MIN_WIDTH,
   LEFT_PANEL_STORAGE_KEY,
   LEFT_PANEL_WIDTH_VAR,
-  leftPanelMaxWidth,
+  leftPanelWindowMaxWidth,
 } from "./leftPanelWidth";
 import SearchBar from "./SearchBar";
 import VersionNotice from "./VersionNotice";
@@ -104,8 +104,6 @@ export default function AppHeader({
 }) {
   const target = search === null ? null : SEARCH_TARGETS[search.target];
   // Same key as LeftPanel so a stored width does not flash at the default.
-  // The navigation panel's cap for this window, for a screen with no panel to set the width.
-  const brandMax = leftPanelMaxWidth(useWindowWidth());
   const [brandWidth] = useState(() =>
     loadWidth(
       LEFT_PANEL_STORAGE_KEY,
@@ -114,6 +112,9 @@ export default function AppHeader({
       LEFT_PANEL_MAX_WIDTH,
     ),
   );
+  // Capped for this window as the navigation panel is, for a screen with no
+  // panel to set the width.
+  const brandMax = leftPanelWindowMaxWidth(useWindowWidth());
 
   return (
     <>

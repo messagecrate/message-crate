@@ -21,7 +21,7 @@ import {
   LEFT_PANEL_MIN_WIDTH,
   LEFT_PANEL_STORAGE_KEY,
   LEFT_PANEL_WIDTH_VAR,
-  leftPanelMaxWidth,
+  leftPanelWindowMaxWidth,
 } from "./leftPanelWidth";
 import MessageTagsNav from "./MessageTagsNav";
 import NavCollapsibleSection from "./NavCollapsibleSection";
@@ -133,17 +133,15 @@ export default function LeftPanel({
   const onDraggingChange = useReportColumnResizing();
   // A narrow window caps the panel below its stored width, which comes back
   // when the window is wide enough again.
-  const maxWidth = leftPanelMaxWidth(useWindowWidth());
-  const resize = useColumnResize({
+  const windowMaxWidth = leftPanelWindowMaxWidth(useWindowWidth());
+  const { width, dragging, handleHover, handleProps } = useColumnResize({
     storageKey: LEFT_PANEL_STORAGE_KEY,
     defaultWidth: LEFT_PANEL_DEFAULT_WIDTH,
     minWidth: LEFT_PANEL_MIN_WIDTH,
     maxWidth: LEFT_PANEL_MAX_WIDTH,
-    windowMaxWidth: maxWidth,
+    windowMaxWidth,
     onDraggingChange,
   });
-  const { dragging, handleHover, handleProps } = resize;
-  const width = Math.min(resize.width, maxWidth);
 
   // Keep the header brand slot aligned with the nav while it resizes.
   useEffect(() => {
@@ -397,7 +395,7 @@ export default function LeftPanel({
         ariaLabel="Resize navigation panel"
         width={width}
         minWidth={LEFT_PANEL_MIN_WIDTH}
-        maxWidth={maxWidth}
+        maxWidth={Math.min(LEFT_PANEL_MAX_WIDTH, windowMaxWidth)}
         dragging={dragging}
         handleHover={handleHover}
         handleProps={handleProps}

@@ -15,13 +15,11 @@ export const LEFT_PANEL_WIDTH_VAR = "--left-panel-width";
 export const LEFT_PANEL_WINDOW_SHARE = 0.5;
 
 /**
- * The widest the navigation panel may be in a window `windowWidth` pixels
- * wide: `LEFT_PANEL_MAX_WIDTH`, or the window's share when that is less, and
- * never below `LEFT_PANEL_MIN_WIDTH`.
+ * The widest a window `windowWidth` pixels wide lets the navigation panel be:
+ * the window's share, never below `LEFT_PANEL_MIN_WIDTH`. A width is shown as
+ * the smaller of this and the stored width, which `LEFT_PANEL_MAX_WIDTH`
+ * already bounds.
  */
-export function leftPanelMaxWidth(windowWidth: number): number {
-  return Math.max(
-    LEFT_PANEL_MIN_WIDTH,
-    Math.min(LEFT_PANEL_MAX_WIDTH, Math.floor(windowWidth * LEFT_PANEL_WINDOW_SHARE)),
-  );
+export function leftPanelWindowMaxWidth(windowWidth: number): number {
+  return Math.max(LEFT_PANEL_MIN_WIDTH, Math.floor(windowWidth * LEFT_PANEL_WINDOW_SHARE));
 }
