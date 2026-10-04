@@ -680,6 +680,18 @@ mod tests {
 
     /// Each mark the server returns is written on the exported message as
     /// the same mark, and a message with none carries none.
+    /// The server's mark and the conversation file's are two types, one per
+    /// crate, so every mark the file knows must have a server counterpart
+    /// spelled the same, or a new one would be dropped on the way back.
+    #[test]
+    fn every_file_mark_has_a_server_mark_spelled_the_same() {
+        for mark in Deletion::ALL {
+            let api = message_crate_api_types::Deletion::parse(mark.as_str())
+                .unwrap_or_else(|| panic!("the server has no mark {:?}", mark.as_str()));
+            assert_eq!(deletion_from_api(api), mark);
+        }
+    }
+
     #[test]
     fn a_deletion_mark_is_exported_as_the_same_mark() {
         let mut msg = seed_message_with_participant(Participant {

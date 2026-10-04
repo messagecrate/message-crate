@@ -111,7 +111,8 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
     );
 
     let is_reply = message_csv::parse_bool(get("is_reply"));
-    let deletion = parse_deletion(get("deletion"))?;
+    // A mark the CSV names wrongly is refused rather than read as none.
+    let deletion = Deletion::read(get("deletion")).context("bad deletion")?;
     let thread_originator_part = {
         let s = get("thread_originator_part");
         if s.is_empty() { None } else { s.parse().ok() }
@@ -162,20 +163,6 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
         imessage,
         source,
     })
-}
-
-/// The mark in a `deletion` cell: blank for none, else
-/// `deleted_in_source_app` or `unsent`. Any other text is refused rather
-/// than read as no mark.
-fn parse_deletion(raw: &str) -> Result<Option<Deletion>> {
-    let raw = raw.trim();
-    if raw.is_empty() {
-        return Ok(None);
-    }
-    match Deletion::parse(raw) {
-        Some(deletion) => Ok(Some(deletion)),
-        None => bail!("bad deletion {raw:?}: expected deleted_in_source_app or unsent"),
-    }
 }
 
 /// Check every required column is present and return the name → index map

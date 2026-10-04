@@ -432,9 +432,9 @@ pub enum Deletion {
     /// The person deleted the message in the source app before the backup
     /// was made; the backup still holds it, with its text where it kept it.
     DeletedInSourceApp,
-    /// The sender took the message back for everyone: some part of it was
-    /// unsent and no part has any content left. A message only partly
-    /// unsent is not marked.
+    /// The sender took the message back for everyone: every part of it was
+    /// unsent, or some part was and no part has any content left. A message
+    /// only partly unsent is not marked.
     Unsent,
 }
 
@@ -452,12 +452,41 @@ impl Deletion {
         }
     }
 
-    /// The mark `value` names, or `None` when it names neither.
-    #[must_use]
-    pub fn parse(value: &str) -> Option<Self> {
-        Self::ALL.into_iter().find(|d| d.as_str() == value)
+    /// The mark a text field holds, as the CSV cell and the mail header
+    /// write it: blank for no mark, else [`Self::as_str`]'s text.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`UnknownDeletion`] for any other text, so a reader refuses
+    /// it rather than read it as no mark.
+    pub fn read(text: &str) -> Result<Option<Self>, UnknownDeletion> {
+        let text = text.trim();
+        if text.is_empty() {
+            return Ok(None);
+        }
+        Self::ALL
+            .into_iter()
+            .find(|d| d.as_str() == text)
+            .map(Some)
+            .ok_or_else(|| UnknownDeletion(text.to_string()))
     }
 }
+
+/// Text that names neither mark of [`Deletion`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownDeletion(pub String);
+
+impl std::fmt::Display for UnknownDeletion {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{:?} is neither deleted_in_source_app nor unsent",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for UnknownDeletion {}
 
 /// One attachment's metadata and where its bytes are.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -571,9 +600,13 @@ mod tests {
                 serde_json::to_string(&deletion).unwrap(),
                 format!("\"{}\"", deletion.as_str())
             );
-            assert_eq!(Deletion::parse(deletion.as_str()), Some(deletion));
+            assert_eq!(Deletion::read(deletion.as_str()), Ok(Some(deletion)));
         }
-        assert_eq!(Deletion::parse("deleted"), None);
+        assert_eq!(Deletion::read(" "), Ok(None));
+        assert_eq!(
+            Deletion::read("deleted").unwrap_err().to_string(),
+            r#""deleted" is neither deleted_in_source_app nor unsent"#
+        );
     }
 
     #[test]

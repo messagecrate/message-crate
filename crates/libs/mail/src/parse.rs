@@ -270,13 +270,7 @@ fn parse_deletion(headers: &[MailHeader<'_>]) -> Result<Option<Deletion>> {
     let Some(raw) = optional_header(headers, hn::DELETION) else {
         return Ok(None);
     };
-    match Deletion::parse(raw.trim()) {
-        Some(deletion) => Ok(Some(deletion)),
-        None => bail!(
-            "This mail's {} header ({raw}) is neither deleted_in_source_app nor unsent",
-            hn::DELETION
-        ),
-    }
+    Deletion::read(&raw).with_context(|| format!("This mail's {} header", hn::DELETION))
 }
 
 /// The message's reactions from `X-ME-Reactions`, or none when the header is

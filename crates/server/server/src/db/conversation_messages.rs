@@ -403,20 +403,11 @@ async fn fetch_message_page(
                 },
                 attachments: attachments.get(&r.id).cloned().unwrap_or_default(),
                 tapbacks: tapbacks.get(&r.id).cloned().unwrap_or_default(),
-                deletion: r.deletion.as_deref().and_then(deletion_from_column),
+                // The column's CHECK admits only the two marks or NULL.
+                deletion: r.deletion.as_deref().and_then(Deletion::parse),
             }
         })
         .collect())
-}
-
-/// The mark a `messages.deletion` value names. The column's CHECK admits
-/// only the two, so `None` here is a NULL column.
-fn deletion_from_column(value: &str) -> Option<Deletion> {
-    match value {
-        "deleted_in_source_app" => Some(Deletion::DeletedInSourceApp),
-        "unsent" => Some(Deletion::Unsent),
-        _ => None,
-    }
 }
 
 /// Attachment rows for these messages, grouped by message id.

@@ -720,6 +720,6 @@ fn a_mail_whose_deletion_names_no_mark_is_refused() {
     let err = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap_err();
     assert_eq!(
         format!("{err:#}"),
-        "This mail's X-ME-Deletion header (trashed) is neither deleted_in_source_app nor unsent"
+        "This mail's X-ME-Deletion header: \"trashed\" is neither deleted_in_source_app nor unsent"
     );
 }

@@ -226,7 +226,7 @@ fn csv_refuses_a_deletion_that_names_no_mark() {
     let err = read_conversation_csv(&csv_path).unwrap_err();
     assert!(
         format!("{err:#}")
-            .contains(r#"bad deletion "trashed": expected deleted_in_source_app or unsent"#),
+            .contains(r#"bad deletion: "trashed" is neither deleted_in_source_app nor unsent"#),
         "{err:#}"
     );
 }

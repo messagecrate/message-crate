@@ -852,8 +852,8 @@ pub struct MessageRow<'a> {
     pub thread_originator_part: Option<i64>,
     /// `messages.num_replies`.
     pub num_replies: i64,
-    /// `messages.deletion`: `deleted_in_source_app`, `unsent`, or `None`.
-    pub deletion: Option<&'a str>,
+    /// `messages.deletion`.
+    pub deletion: Option<message_ir::Deletion>,
     /// `messages.sort_order`.
     pub sort_order: i64,
     /// `messages.content_key`.
@@ -944,7 +944,7 @@ impl MessageRow<'_> {
         .bind(self.thread_originator_guid)
         .bind(self.thread_originator_part)
         .bind(self.num_replies)
-        .bind(self.deletion)
+        .bind(self.deletion.map(message_ir::Deletion::as_str))
         .bind(self.sort_order)
         .bind(self.content_key)
         .bind(self.duplicate_of)

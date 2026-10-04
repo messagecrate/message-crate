@@ -429,6 +429,23 @@ pub enum Deletion {
     Unsent,
 }
 
+impl Deletion {
+    /// The mark as the wire and the database spell it.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::DeletedInSourceApp => "deleted_in_source_app",
+            Self::Unsent => "unsent",
+        }
+    }
+
+    /// Read a sent or stored value; anything else names no mark.
+    pub fn parse(value: &str) -> Option<Self> {
+        [Self::DeletedInSourceApp, Self::Unsent]
+            .into_iter()
+            .find(|d| d.as_str() == value)
+    }
+}
+
 api_shape! {
     /// The conversation a message belongs to.
     pub struct MessageConversation {
