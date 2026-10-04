@@ -279,6 +279,46 @@ describe("ContactList", () => {
     }
   });
 
+  it("marks only the open contact as current while other contacts are checked", async () => {
+    listContactsMock.mockResolvedValue({
+      items: ["Alice", "Bob", "Carol"].map((name, i) => ({
+        id: i + 1,
+        name,
+        identity_count: 1,
+        addresses: [],
+        groups: [],
+      })),
+      total: 3,
+      limit: 200,
+      offset: 0,
+    } as unknown as Awaited<ReturnType<typeof listContacts>>);
+
+    render(
+      <Providers>
+        <RightToolbarProvider>
+          <RightPane>
+            <ContactList selectedId="1" onSelect={() => {}} />
+          </RightPane>
+        </RightToolbarProvider>
+      </Providers>,
+    );
+
+    const current = () =>
+      screen
+        .getAllByRole("button")
+        .filter((el) => el.hasAttribute("aria-current"))
+        .map((el) => el.textContent);
+
+    const bob = await screen.findByRole("checkbox", { name: "Select Bob" });
+    expect(current()).toEqual(["Alice"]);
+
+    // Checking Bob draws the checked rows highlighted, not the open one,
+    // but the open contact is still Alice.
+    fireEvent.click(bob);
+    await waitFor(() => expect(bob).toBeChecked());
+    expect(current()).toEqual(["Alice"]);
+  });
+
   describe("Select all over more contacts than the first page", () => {
     const everyone = Array.from({ length: 120 }, (_, i) => ({
       id: i + 1,
