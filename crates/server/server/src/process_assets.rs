@@ -239,7 +239,13 @@ impl<'a> AccountPass<'a> {
         let source_path = self.assets_dir.join(&row.assets_path);
         let on_disk = OnDisk {
             original_exists: source_path.is_file(),
-            preview: preview_file(row.derived_assets_path.as_deref(), &self.converted_dir),
+            // `--force` converts again whatever the Preview's state, so it
+            // reads no Preview and counts each as missing.
+            preview: if self.opts.force {
+                PreviewFile::Missing
+            } else {
+                preview_file(row.derived_assets_path.as_deref(), &self.converted_dir)
+            },
         };
         let kind = match plan(row, self.opts, on_disk)? {
             Plan::RemoveIncomplete => return self.remove_incomplete(row, &source_path),
@@ -250,11 +256,12 @@ impl<'a> AccountPass<'a> {
             Plan::Skip(_) => return Ok(Outcome::Skipped),
             Plan::Derive(kind) => kind,
         };
-        if on_disk.preview == PreviewFile::Damaged {
+        if let (PreviewFile::Damaged, Some(rel)) =
+            (on_disk.preview, row.derived_assets_path.as_deref())
+        {
             println!(
-                "{}: Preview {} does not hash to the fingerprint in its name; converting again",
-                self.label(row),
-                row.derived_assets_path.as_deref().unwrap_or_default()
+                "{}: Preview {rel} does not hash to the fingerprint in its name; converting again",
+                self.label(row)
             );
         }
         let blob = match self.derive(kind, &source_path, row)? {
