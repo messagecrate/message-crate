@@ -338,7 +338,7 @@ pub async fn live_contact_exists(
 }
 
 /// Which of an address's rows on a contact [`linked_handle_id`] takes. One
-/// address can be on a contact once per service: a number on Text message
+/// address can be on a contact once per service: a number on Text Message
 /// and the same number on WhatsApp.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OnService {

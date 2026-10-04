@@ -526,9 +526,9 @@ type ContactSelectionRow = (
 /// this count promises.
 ///
 /// Matches on the same normalized form the import pipeline stores in
-/// `handles.normalized` (the key [`phone::Handle::parse`] gives), so an export spelling like
-/// `+1 555 0100` is recognized against a contact stored as
-/// `+15550100`. Blanks are dropped; duplicates are collapsed by *normalized*
+/// `handles.normalized` (the key [`phone::Handle::parse`] gives), so an
+/// export spelling like `+1 555 0100` is recognized against a contact stored
+/// as `+15550100`. Blanks are dropped; duplicates are collapsed by *normalized*
 /// form (two spellings of the same person must not both count as "new"),
 /// keeping the first-seen raw (trimmed) spelling and first-seen order.
 ///
