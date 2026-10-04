@@ -6,11 +6,11 @@
 // can't answer falls through to the form rather than blocking it.
 
 import { act, cleanup, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ActiveImportSession } from "../lib/importSession";
 import type { StagingSummary } from "../lib/tauri";
 import { mockedAuth, renderWithProviders } from "../test/providers";
+import { setupUser } from "../test/user";
 import type { StagingDeleteFailure } from "./import/importRunStore";
 import type { ResumeDecision } from "./import/resumeDecision";
 
@@ -189,7 +189,7 @@ function stagingSummary(overrides: Partial<StagingSummary> = {}): StagingSummary
     conversations: 1,
     messages: 1,
     contactIdentifiers: [],
-    ownerHandles: [],
+    ownerIdentities: [],
     attachments: 0,
     attachmentBytes: 0,
     forecasts: [],
@@ -351,7 +351,7 @@ describe("ImportScreen entering Import", () => {
   });
 
   it("discards the session and drops through to the form", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     getActiveImportSessionMock.mockResolvedValue(session({ stage: "upload" }));
     renderWithProviders(<ImportScreen />);
 
@@ -366,7 +366,7 @@ describe("ImportScreen entering Import", () => {
     // A run left waiting at the Staging Review before the app was closed is
     // only on the server, so the badge reads it from there. Discard ends it,
     // and the badge must go at once rather than on a later refetch.
-    const user = userEvent.setup();
+    const user = setupUser();
     let running: ActiveImportSession | null = session({ stage: "staging_review" });
     getActiveImportSessionMock.mockImplementation(async () => running);
     listImportsMock.mockImplementation(async () => ({
@@ -402,7 +402,7 @@ describe("ImportScreen entering Import", () => {
     // cancelled (decision 16) -- a panel discard is the same operation reached
     // through a different button, and used to only call
     // discardImportSession, orphaning a potentially multi-GB folder.
-    const user = userEvent.setup();
+    const user = setupUser();
     getActiveImportSessionMock.mockResolvedValue(
       session({
         stage: "upload",
@@ -425,7 +425,7 @@ describe("ImportScreen entering Import", () => {
   it("says which staging folder could not be deleted, until dismissed", async () => {
     // A discard used to drop a refused delete without a word, leaving a
     // folder of several gigabytes on disk (#1154).
-    const user = userEvent.setup();
+    const user = setupUser();
     getActiveImportSessionMock.mockResolvedValue(null);
     hookState.stagingDeleteFailure = {
       path: "/home/u/message-crate/staging-260830",
@@ -444,7 +444,7 @@ describe("ImportScreen entering Import", () => {
     // resumeDecisionFor routes an other-device session to "other_device",
     // whose files are staged on that other install, not here -- deleting a
     // local path with the same name would be wrong, or a no-op at best.
-    const user = userEvent.setup();
+    const user = setupUser();
     getActiveImportSessionMock.mockResolvedValue(
       session({
         stage: "upload",
@@ -464,7 +464,7 @@ describe("ImportScreen entering Import", () => {
   });
 
   it("resumes the push against the existing session without creating a new one", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     getActiveImportSessionMock.mockResolvedValue(
       session({
         stage: "upload",
@@ -537,7 +537,7 @@ describe("ImportScreen entering Import", () => {
   ] as const)(
     "routes a session at %s through resumeAtReview, not startImport or discard",
     async (stage, kind) => {
-      const user = userEvent.setup();
+      const user = setupUser();
       getActiveImportSessionMock.mockResolvedValue(
         session({
           stage,
@@ -602,7 +602,7 @@ describe("ImportScreen entering Import", () => {
   });
 
   it("discards the old session before restarting when the extract never finished", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     getActiveImportSessionMock.mockResolvedValue(
       session({
         stage: "parse",
@@ -650,7 +650,7 @@ describe("ImportScreen entering Import", () => {
   });
 
   it("picks up an interrupted copy in the folder it was already writing into", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     getActiveImportSessionMock.mockResolvedValue(
       session({
         stage: "write",
@@ -776,7 +776,7 @@ describe("ImportScreen entering Import", () => {
   });
 
   it("runs one restart when the resume action is double-clicked", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     getActiveImportSessionMock.mockResolvedValue(
       session({
         stage: "parse",
@@ -828,7 +828,7 @@ describe("ImportScreen entering Import", () => {
   });
 
   it("falls back to a settings-unreadable panel when the stored form snapshot is malformed", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     getActiveImportSessionMock.mockResolvedValue(
       session({ stage: "upload", form: { nonsense: true } }),
     );
@@ -843,7 +843,7 @@ describe("ImportScreen entering Import", () => {
   });
 
   it("still drops to the form when discarding from the panel fails server-side", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     getActiveImportSessionMock.mockResolvedValue(session({ stage: "upload" }));
     discardImportSessionMock.mockRejectedValue(new Error("network down"));
     renderWithProviders(<ImportScreen />);
@@ -856,7 +856,7 @@ describe("ImportScreen entering Import", () => {
   });
 
   it("still restarts when discarding the old session before a restart fails server-side", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     getActiveImportSessionMock.mockResolvedValue(
       session({
         stage: "parse",
@@ -899,7 +899,7 @@ describe("ImportScreen entering Import", () => {
   });
 
   it("asks for the backup password again when a resumed Staging will read an encrypted backup", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     getActiveImportSessionMock.mockResolvedValue(
       session({ stage: "write", form: storedForm({ backupPasswordGiven: true }) }),
     );
@@ -923,7 +923,7 @@ describe("ImportScreen entering Import", () => {
   });
 
   it("asks for the backup password again when a restart will read an encrypted backup", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     getActiveImportSessionMock.mockResolvedValue(
       session({ stage: "parse", form: storedForm({ backupPasswordGiven: true }) }),
     );
@@ -953,7 +953,7 @@ describe("ImportScreen entering Import", () => {
   ] as const)(
     "asks for the WhatsApp key again when %s will read the backup",
     async (_label, stage, kind) => {
-      const user = userEvent.setup();
+      const user = setupUser();
       getActiveImportSessionMock.mockResolvedValue(
         session({
           source: "whatsapp",
@@ -980,7 +980,7 @@ describe("ImportScreen entering Import", () => {
   );
 
   it("asks for nothing when the stored Import Run had no password or key", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     getActiveImportSessionMock.mockResolvedValue(session({ stage: "write", form: storedForm() }));
     renderWithProviders(<ImportScreen />);
 
@@ -995,7 +995,7 @@ describe("ImportScreen entering Import", () => {
   });
 
   it("asks for nothing on a resume into Upload, which reads no backup", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     getActiveImportSessionMock.mockResolvedValue(
       session({ stage: "upload", form: storedForm({ backupPasswordGiven: true }) }),
     );
@@ -1058,7 +1058,7 @@ describe("ImportScreen gates", () => {
     hookState.phase = "staging_review";
     hookState.stagingSummary = stagingSummary({ contactIdentifiers: ["+15555550119"] });
     hookState.sourceIdentities = ["+15555550110"];
-    const user = userEvent.setup();
+    const user = setupUser();
     renderWithProviders(<ImportScreen />);
 
     expect(await screen.findByTestId("import-run")).toBeInTheDocument();
@@ -1078,7 +1078,7 @@ describe("ImportScreen gates", () => {
     hookState.stagingSummary = stagingSummary();
     hookState.mediaSummary = stagingSummary();
     hookState.sourceIdentities = ["+15555550110"];
-    const user = userEvent.setup();
+    const user = setupUser();
     renderWithProviders(<ImportScreen />);
 
     expect(await screen.findByTestId("import-run")).toBeInTheDocument();
@@ -1094,7 +1094,7 @@ describe("ImportScreen gates", () => {
 
   it("returns to the form when the person goes back from a finished run", async () => {
     hookState.phase = "done";
-    const user = userEvent.setup();
+    const user = setupUser();
     renderWithProviders(<ImportScreen />);
 
     await user.click(await screen.findByText("run-back"));
@@ -1181,7 +1181,7 @@ describe("ImportScreen gates", () => {
     hookState.phase = "identity_stop";
     hookState.sourceIdentities = ["+15555550110"];
     apiPostMock.mockRejectedValue(new Error("network down"));
-    const user = userEvent.setup();
+    const user = setupUser();
     renderWithProviders(<ImportScreen />);
 
     await user.click(await screen.findByText("Add to profile"));

@@ -11,6 +11,7 @@ import {
 import { formatIsoDateOnly } from "../lib/formatDate";
 import { formatHandleServiceLabel } from "../lib/handleService";
 import { useTimeZone } from "../lib/timeZone";
+import { focusRing } from "../lib/uiStyles";
 import Button from "./Button";
 import { TrashIcon } from "./icons";
 import { type IdentityRow, identityTotals, sortIdentityRows } from "./identityRows";
@@ -26,8 +27,7 @@ const numberCellClass = `${cellClass} whitespace-nowrap text-right tabular-nums`
 const headerClass =
   "px-2 py-1.5 text-[0.688rem] font-semibold uppercase tracking-[0.04em] text-muted outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-inset cursor-pointer hover:text-accent data-hovered:text-accent whitespace-nowrap";
 const mutedClass = "text-muted";
-const linkClass =
-  "border-none bg-transparent p-0 text-[0.813rem] font-semibold leading-snug text-accent underline decoration-accent/80 underline-offset-2 cursor-pointer outline-none hover:decoration-accent focus-visible:rounded-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent";
+const linkClass = `border-none bg-transparent p-0 text-[0.813rem] font-semibold leading-snug text-accent underline decoration-accent/80 underline-offset-2 cursor-pointer hover:decoration-accent focus-visible:rounded-sm ${focusRing}`;
 
 function Dash() {
   return <span className={mutedClass}>—</span>;

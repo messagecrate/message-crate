@@ -27,15 +27,23 @@ pub(crate) const EXPORT_TOOL_VERSION: &str = "X-ME-Export-Tool-Version";
 pub(crate) const GROUP_TITLE: &str = "X-ME-Group-Title";
 /// Conversation roster as JSON.
 pub(crate) const PARTICIPANTS: &str = "X-ME-Participants";
-/// Sender handle.
-pub(crate) const SENDER_HANDLE: &str = "X-ME-Sender-Handle";
+/// Sender identity.
+pub(crate) const SENDER_IDENTITY: &str = "X-ME-Sender-Identity";
+/// The headers an earlier Message Crate wrote for the sender and the owner,
+/// when it named each address a handle. The reader refuses a mail that
+/// carries one: nothing reads them, so the mail would lose its sender.
+pub(crate) const EARLIER_HANDLE_HEADERS: &[&str] = &[
+    "X-ME-Sender-Handle",
+    "X-ME-Owner-Handle",
+    "X-ME-Message-Owner-Handle",
+];
 /// Sender display name.
 pub(crate) const SENDER_DISPLAY_NAME: &str = "X-ME-Sender-Display-Name";
-/// The conversation's owner handle.
-pub(crate) const OWNER_HANDLE: &str = "X-ME-Owner-Handle";
-/// The owner handle this one message was sent from or received at, when the
+/// The conversation's owner identity.
+pub(crate) const OWNER_IDENTITY: &str = "X-ME-Owner-Identity";
+/// The owner identity this one message was sent from or received at, when the
 /// source records one per message (Apple Messages does).
-pub(crate) const MESSAGE_OWNER_HANDLE: &str = "X-ME-Message-Owner-Handle";
+pub(crate) const MESSAGE_OWNER_IDENTITY: &str = "X-ME-Message-Owner-Identity";
 /// Owner display name.
 pub(crate) const OWNER_DISPLAY_NAME: &str = "X-ME-Owner-Display-Name";
 /// SMS/MMS subject.

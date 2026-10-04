@@ -25,11 +25,11 @@ pub(crate) fn normalize_document_for_compare(doc: &mut ConversationDocument) {
         for att in &mut msg.attachments {
             clear_attachment_ephemera(att);
         }
-        empty_to_none(&mut msg.sender_handle);
+        empty_to_none(&mut msg.sender_identity);
         empty_to_none(&mut msg.sender_display_name);
         empty_to_none(&mut msg.subject);
     }
-    empty_to_none(&mut doc.export.owner_handle);
+    empty_to_none(&mut doc.export.owner_identity);
     empty_to_none(&mut doc.export.owner_display_name);
     empty_to_none(&mut doc.conversation.group_title);
     for p in &mut doc.conversation.participants {

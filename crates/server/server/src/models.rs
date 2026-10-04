@@ -197,7 +197,7 @@ pub fn parse_ir_lines(
             )));
             header_owner = header
                 .export
-                .owner_handle
+                .owner_identity
                 .as_deref()
                 .and_then(message_ir::nonempty);
             saw_header = true;
@@ -323,7 +323,7 @@ fn message_from_ir(
         None
     } else {
         sender_identity(
-            msg.sender_handle.as_deref(),
+            msg.sender_identity.as_deref(),
             msg.sender_display_name.as_deref(),
         )
     };
@@ -336,7 +336,7 @@ fn message_from_ir(
         sender: sender.as_ref().map(|(value, _)| value.clone()),
         sender_handle_type: sender.and_then(|(_, kind)| kind),
         owner: msg
-            .owner_handle
+            .owner_identity
             .as_deref()
             .and_then(message_ir::nonempty)
             .or_else(|| header_owner.map(str::to_string)),
@@ -364,11 +364,11 @@ fn message_from_ir(
 /// (`docs/architecture/contacts-identities-and-messages.md`).
 fn participant_from_ir(p: &message_ir::IrParticipant) -> Option<ParticipantRecord> {
     let name_alias = p.display_name.clone();
-    if let Some(handle) = p.handle.as_deref().and_then(message_ir::nonempty) {
+    if let Some(handle) = p.identity.as_deref().and_then(message_ir::nonempty) {
         return Some(ParticipantRecord {
             handle,
             name_alias,
-            handle_type: p.handle_type,
+            handle_type: p.identity_type,
         });
     }
     let name = p.display_name.as_deref().and_then(message_ir::nonempty)?;
@@ -404,8 +404,8 @@ fn sender_identity(
 /// read the message's service: a contact's number is a phone number on a
 /// service the model does not know too, such as a message Apple Messages sent
 /// by satellite (#1144).
-fn sender_handle_type(sender_handle: Option<&str>) -> Option<HandleType> {
-    sender_handle.and_then(Handle::parse).map(|h| h.kind())
+fn sender_handle_type(sender_identity: Option<&str>) -> Option<HandleType> {
+    sender_identity.and_then(Handle::parse).map(|h| h.kind())
 }
 
 /// Map one IR attachment onto the server's attachment record.
@@ -423,7 +423,7 @@ fn attachment_from_ir(a: &IrAttachment) -> AttachmentRecord {
 }
 
 /// Tapback rows from the iMessage extension. Each entry names its own
-/// reactor: `is_from_me` when the owner reacted, `reactor_handle` otherwise.
+/// reactor: `is_from_me` when the owner reacted, `reactor_identity` otherwise.
 /// An entry is never given the author or the direction of the message it
 /// reacts to, because the reactor is rarely the author.
 fn tapbacks_from_im(im: Option<&IrImessage>) -> Vec<TapbackRecord> {
@@ -444,7 +444,11 @@ fn tapbacks_from_im(im: Option<&IrImessage>) -> Vec<TapbackRecord> {
                 kind: t.kind,
                 emoji: t.emoji,
                 is_from_me: t.is_from_me,
-                sender: if t.is_from_me { None } else { t.reactor_handle },
+                sender: if t.is_from_me {
+                    None
+                } else {
+                    t.reactor_identity
+                },
             })
         })
         .collect()
@@ -462,7 +466,7 @@ struct WireTapback {
     #[serde(default)]
     is_from_me: bool,
     #[serde(default)]
-    reactor_handle: Option<String>,
+    reactor_identity: Option<String>,
 }
 
 /// The UTC RFC 3339 string (`Z` suffix) for a Unix timestamp, or `None` when
@@ -483,8 +487,8 @@ mod tests {
     #[test]
     fn parses_ir_sms_without_imessage_bag() {
         let lines = [
-            r#"{"schema_version":4,"export":{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"handle":"+15555550101","display_name":"Sam"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#.to_string(),
-            r#"{"guid":"g1","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"sms","message_kind":"sms","sender_handle":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}"#.to_string(),
+            r#"{"schema_version":5,"export":{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Sam"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#.to_string(),
+            r#"{"guid":"g1","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}"#.to_string(),
         ];
         let records = parse_ir_lines(lines).unwrap();
         assert_eq!(records.len(), 2);
@@ -505,9 +509,9 @@ mod tests {
     /// The header and one incoming iMessage whose `subject` and `imessage`
     /// fields are the JSON given.
     fn message_with(subject: &str, imessage: &str) -> MessageRecord {
-        let header = r#"{"schema_version":4,"export":{"source":"imessage","tool":"t","tool_version":"1","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"handle":"+15555550101","display_name":"Sam"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#.to_string();
+        let header = r#"{"schema_version":5,"export":{"source":"imessage","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Sam"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#.to_string();
         let message = format!(
-            r#"{{"guid":"g1","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_handle":"+15555550101","sender_display_name":"Sam","subject":{subject},"text":"hello","attachments":[],"imessage":{imessage},"source":null}}"#
+            r#"{{"guid":"g1","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550101","sender_display_name":"Sam","subject":{subject},"text":"hello","attachments":[],"imessage":{imessage},"source":null}}"#
         );
         let mut records = parse_ir_lines([header, message]).unwrap();
         match records.pop() {
@@ -529,14 +533,14 @@ mod tests {
     }
 
     /// A reaction the Apple Messages reader writes names its reactor in
-    /// `reactor_handle` and says in `is_from_me` whether the owner reacted.
+    /// `reactor_identity` and says in `is_from_me` whether the owner reacted.
     /// Neither is taken from the message reacted to (#1213).
     #[test]
     fn a_reaction_keeps_the_reactor_the_reader_wrote() {
         let im = message_ir::IrImessage {
             tapbacks: Some(serde_json::json!([
                 {"part_index": 0, "kind": "loved", "is_from_me": false,
-                 "reactor_handle": "+15555550110", "reactor_display_name": "Sam"},
+                 "reactor_identity": "+15555550110", "reactor_display_name": "Sam"},
                 {"part_index": 0, "kind": "liked", "is_from_me": true,
                  "reactor_display_name": "Me"}
             ])),
@@ -566,11 +570,11 @@ mod tests {
     /// not a message, and it carries no reaction of its own (#1213).
     #[test]
     fn a_reaction_row_is_not_a_message() {
-        let header = r#"{"schema_version":4,"export":{"source":"imessage","tool":"t","tool_version":"1","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"handle":"+15555550101","display_name":"Sam"}],"stats":{"message_count":3,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773263000}}}"#.to_string();
-        let target = r#"{"guid":"g-hi","timestamp_unix_ms":1400773261000,"direction":"outgoing","service":"imessage","message_kind":"imessage","sender_handle":null,"sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}"#.to_string();
+        let header = r#"{"schema_version":5,"export":{"source":"imessage","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Sam"}],"stats":{"message_count":3,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773263000}}}"#.to_string();
+        let target = r#"{"guid":"g-hi","timestamp_unix_ms":1400773261000,"direction":"outgoing","service":"imessage","message_kind":"imessage","sender_identity":null,"sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}"#.to_string();
         let row = |guid: &str, kind: &str, text: &str, action: &str| {
             format!(
-                r#"{{"guid":"{guid}","timestamp_unix_ms":1400773262000,"direction":"incoming","service":"imessage","message_kind":"{kind}","sender_handle":"+15555550101","sender_display_name":"Sam","subject":null,"text":"{text}","attachments":[],"imessage":{{"is_reply":false,"is_deleted":false,"associated_guid":"g-hi","associated_part":0,"tapback_kind":"loved","tapback_action":"{action}"}},"source":null}}"#
+                r#"{{"guid":"{guid}","timestamp_unix_ms":1400773262000,"direction":"incoming","service":"imessage","message_kind":"{kind}","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"{text}","attachments":[],"imessage":{{"is_reply":false,"is_deleted":false,"associated_guid":"g-hi","associated_part":0,"tapback_kind":"loved","tapback_action":"{action}"}},"source":null}}"#
             )
         };
         let records = parse_ir_lines([
@@ -602,12 +606,12 @@ mod tests {
     fn parses_concatenated_ir_conversations() {
         let header = |chat: &str| {
             format!(
-                r#"{{"schema_version":4,"export":{{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_handle":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{chat}","conversation_type":"individual","group_title":null,"participants":[{{"handle":"{chat}","display_name":null}}],"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}}}}"#
+                r#"{{"schema_version":5,"export":{{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{chat}","conversation_type":"individual","group_title":null,"participants":[{{"identity":"{chat}","display_name":null}}],"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}}}}"#
             )
         };
         let msg = |guid: &str, handle: &str| {
             format!(
-                r#"{{"guid":"{guid}","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"sms","message_kind":"sms","sender_handle":"{handle}","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}}"#
+                r#"{{"guid":"{guid}","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"{handle}","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}}"#
             )
         };
         let records = parse_ir_lines([
@@ -645,7 +649,7 @@ mod tests {
 
     #[test]
     fn parse_ir_lines_refuses_schema_3_as_a_failure() {
-        let header = r#"{"schema_version":3,"export":{"source":"whatsapp","tool":"t","owner_handle":"+1","owner_display_name":"Me"},"conversation":{"chat_identifier":"+2","conversation_type":"individual","participants":[]}}"#;
+        let header = r#"{"schema_version":3,"export":{"source":"whatsapp","tool":"t","owner_identity":"+1","owner_display_name":"Me"},"conversation":{"chat_identifier":"+2","conversation_type":"individual","participants":[]}}"#;
         let failure = parse_ir_lines([header]).unwrap_err();
         assert_eq!(
             failure,
@@ -682,8 +686,8 @@ mod tests {
 
     #[test]
     fn parse_ir_lines_reports_a_message_with_an_impossible_timestamp_as_a_failure() {
-        let header = r#"{"schema_version":4,"export":{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"handle":"+15555550101","display_name":"Sam"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#;
-        let msg = r#"{"guid":"g1","timestamp_unix_ms":9223372036854775807,"direction":"incoming","service":"sms","message_kind":"sms","sender_handle":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}"#;
+        let header = r#"{"schema_version":5,"export":{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Sam"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#;
+        let msg = r#"{"guid":"g1","timestamp_unix_ms":9223372036854775807,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}"#;
         let failure = parse_ir_lines([header, msg]).unwrap_err();
         match failure {
             crate::imports_api::ImportFailure::Invalid { line, .. } => assert_eq!(line, 2),
@@ -695,10 +699,10 @@ mod tests {
     /// line that has no guid, before anything is staged.
     #[test]
     fn parse_ir_lines_refuses_messages_without_a_guid_naming_every_line() {
-        let header = r#"{"schema_version":4,"export":{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"handle":"+15555550101","display_name":"Sam"}],"stats":{"message_count":3,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#;
+        let header = r#"{"schema_version":5,"export":{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Sam"}],"stats":{"message_count":3,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#;
         let msg = |guid: &str| {
             format!(
-                r#"{{"guid":"{guid}","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"sms","message_kind":"sms","sender_handle":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}}"#
+                r#"{{"guid":"{guid}","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}}"#
             )
         };
         let lines = [header.to_string(), msg("g1"), msg(""), msg("   ")];

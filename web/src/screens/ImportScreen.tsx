@@ -854,7 +854,7 @@ export default function ImportScreen() {
                 onAdd={addIdentityToProfile}
                 busy={running || identityAddBusy}
                 error={identityAddError}
-                messageCounts={stagingSummary?.ownerHandles}
+                messageCounts={stagingSummary?.ownerIdentities}
               />
             ) : undefined
           }

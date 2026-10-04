@@ -2,13 +2,13 @@
 
 import { QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render as rtlRender, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ContactDetail } from "../lib/contactDetail";
 import { keys } from "../lib/queryKeys";
 import { routeQueryKey } from "../lib/routeQueryKey";
 import { mockedAuth, renderWithProviders as render, testQueryClient } from "../test/providers";
 import { inTimeZone } from "../test/timeZone";
+import { setupUser } from "../test/user";
 import CheckedContactsPanel from "./CheckedContactsPanel";
 
 vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
@@ -97,7 +97,7 @@ describe("CheckedContactsPanel", () => {
         },
       ],
     });
-    const user = userEvent.setup();
+    const user = setupUser();
 
     render(<CheckedContactsPanel contacts={[{ id: "1", name: "Ada" }]} onClear={() => {}} />);
 

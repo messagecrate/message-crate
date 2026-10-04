@@ -21,6 +21,16 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-04 **The server keeps its log in files the owner can read.** Docker
+  and the desktop app's server now write their log to a `logs` directory
+  beside the database, as well as to their output, so the lines that explain a
+  failure are still there after a restart. It keeps at most 250 MB, in five
+  files of 50 MB, and deletes the oldest file when a new one starts. The owner
+  can read it through the server's interface, newest first, narrow it to
+  errors or warnings, search it, and download a whole file. No other account
+  can. A Logs screen on Owner Home that shows it comes next. The log never
+  holds a password, a token, a search, message text, an attachment or a contact's
+  name, phone number or email address.
 - 2026-10-04 **A search word the other list takes stays in the box.**
   Switching between Conversations and Messages with a word only one of them
   takes, such as `from:me` on Conversations, no longer shows an error. The
@@ -1008,6 +1018,10 @@ released versions carry their date on the heading.
   the date field's calendar buttons and the import form's section headings
   had a thin white line between the button and the ring. The gap now shows
   the colour behind the button, in every theme.
+- 2026-10-04 **The focus ring in an import's results and the contact
+  drawer sits 1 pixel from the edge.** The sections of an import's results
+  and the conversation counts in the contact drawer drew their keyboard
+  focus ring 2 pixels out, further than most buttons draw theirs.
 - 2026-10-04 **The panel resize grips move by exactly 8 pixels.** Each
   arrow key on the grip of the left panel or the list column moved the
   panel 9 pixels wider or 7 narrower, and pressing the grip without moving
@@ -1328,6 +1342,12 @@ released versions carry their date on the heading.
 - An Address Book exported by an earlier build calls its fifth column
   `handle_type`, and loading it is refused. Rename that column to
   `identity_type` in the file, or export the Address Book again.
+- Message files exported by an earlier build are refused when you import
+  or convert them: each phone number and email address in them is now
+  written as an identity, and the old files say "handle". This holds for
+  JSON, JSONL, CSV, EML and mbox exports, and for an Import Run an earlier
+  build left paused. Export the backup again with this build, then import
+  or convert the new files; discard a paused run and start the import again.
 - `reset-demo` no longer writes a configuration file, and reads the one given
   with `--config`. If an earlier `reset-demo` replaced your configuration
   file, the server stops at startup with a missing `[server]` section: put

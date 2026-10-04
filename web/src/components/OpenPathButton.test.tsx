@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { setupUser } from "../test/user";
 import OpenPathButton from "./OpenPathButton";
 
 const openPathInExplorer = vi.fn();
@@ -21,7 +21,7 @@ describe("OpenPathButton", () => {
   });
 
   it("opens the path when clicked", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     openPathInExplorer.mockResolvedValue(undefined);
     render(<OpenPathButton path="/home/sam/message-crate/staging">Open</OpenPathButton>);
     await user.click(screen.getByRole("button", { name: "Open" }));
@@ -30,7 +30,7 @@ describe("OpenPathButton", () => {
   });
 
   it("shows an alert when opening fails", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     openPathInExplorer.mockRejectedValue(new Error("Path is outside the import staging folder"));
     render(<OpenPathButton path="/tmp/nope">Open</OpenPathButton>);
     await user.click(screen.getByRole("button", { name: "Open" }));

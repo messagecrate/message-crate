@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setupUser } from "../test/user";
 import PlainButton from "./PlainButton";
 
 afterEach(cleanup);
@@ -24,7 +24,7 @@ describe("PlainButton", () => {
   });
 
   it("marks keyboard focus, and runs onPress from the keyboard", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onPress = vi.fn();
     render(<PlainButton onPress={onPress}>Export</PlainButton>);
     const button = screen.getByRole("button", { name: "Export" });
@@ -37,7 +37,7 @@ describe("PlainButton", () => {
   });
 
   it("does not let a press reach a click handler around it", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onRowClick = vi.fn();
     const onPress = vi.fn();
     // As in the import history, the row toggles on a click and the button in it does too.

@@ -141,7 +141,7 @@ fn a_received_pdu_names_its_sender_and_a_sent_pdu_names_the_owner() {
     let rows = rows_by_text(&output);
     let received = &rows["Look at this"];
     assert_eq!(received["direction"], "incoming");
-    assert_eq!(received["sender_handle"], PEER);
+    assert_eq!(received["sender_identity"], PEER);
     assert_eq!(received["chat_identifier"], PEER);
     assert_eq!(received["timestamp_unix_ms"], "1609459300000");
     assert_eq!(received["message_kind"], "mms");
@@ -155,7 +155,7 @@ fn a_received_pdu_names_its_sender_and_a_sent_pdu_names_the_owner() {
 
     let sent = &rows["Sent from me"];
     assert_eq!(sent["direction"], "outgoing");
-    assert_eq!(sent["sender_handle"], OWNER);
+    assert_eq!(sent["sender_identity"], OWNER);
     assert_eq!(sent["chat_identifier"], PEER);
     assert_eq!(sent["timestamp_unix_ms"], "1609459400000");
 }
@@ -176,7 +176,7 @@ fn a_stub_pdu_is_counted_as_skipped_and_writes_no_message() {
     let bare = &rows[""];
     assert_eq!(bare["timestamp_unix_ms"], "1609459600000");
     assert_eq!(bare["direction"], "incoming");
-    assert_eq!(bare["sender_handle"], PEER);
+    assert_eq!(bare["sender_identity"], PEER);
     assert_ne!(bare["attachments_json"], "[]");
     let skipped = fs::read_to_string(output.join("skipped_empty_pdu.csv")).unwrap();
     assert_eq!(

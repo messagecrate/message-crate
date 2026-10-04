@@ -17,7 +17,7 @@ pub fn sample_document(text: &str) -> ConversationDocument {
             source: "sms-backup-restore".into(),
             tool: "SMS Backup & Restore".into(),
             tool_version: "10.26.003".into(),
-            owner_handle: Some("+15555550100".into()),
+            owner_identity: Some("+15555550100".into()),
             owner_display_name: Some("Me".into()),
         },
         conversation: ConversationMeta {
@@ -25,9 +25,9 @@ pub fn sample_document(text: &str) -> ConversationDocument {
             conversation_type: IrConversationType::Individual,
             group_title: None,
             participants: vec![IrParticipant {
-                handle: Some("+15555550101".into()),
+                identity: Some("+15555550101".into()),
                 display_name: Some("Sam".into()),
-                handle_type: Some(crate::HandleType::Phone),
+                identity_type: Some(crate::HandleType::Phone),
             }],
             stats: ConversationStats::default(),
         },
@@ -37,9 +37,9 @@ pub fn sample_document(text: &str) -> ConversationDocument {
             direction: IrDirection::Incoming,
             service: IrService::Sms,
             message_kind: IrMessageKind::Sms,
-            sender_handle: Some("+15555550101".into()),
+            sender_identity: Some("+15555550101".into()),
             sender_display_name: Some("Sam".into()),
-            owner_handle: None,
+            owner_identity: None,
             subject: None,
             text: text.into(),
             attachments: vec![],
@@ -66,12 +66,12 @@ pub fn sample_whatsapp_document(text: &str) -> ConversationDocument {
     let mut doc = sample_document(text);
     doc.export.source = "whatsapp".into();
     doc.conversation.chat_identifier = "+15555550102".into();
-    doc.conversation.participants[0].handle = Some("+15555550102".into());
+    doc.conversation.participants[0].identity = Some("+15555550102".into());
     for msg in &mut doc.messages {
         msg.guid = "ffeeddccbbaa99887766554433221100".into();
         msg.service = IrService::Whatsapp;
         msg.message_kind = IrMessageKind::Unknown;
-        msg.sender_handle = Some("+15555550102".into());
+        msg.sender_identity = Some("+15555550102".into());
         msg.source = None;
     }
     doc
@@ -88,7 +88,7 @@ pub fn sample_imessage_document() -> ConversationDocument {
             source: "imessage".into(),
             tool: "imessage-ir-exporter".into(),
             tool_version: "0.1.0".into(),
-            owner_handle: Some("+15555550100".into()),
+            owner_identity: Some("+15555550100".into()),
             owner_display_name: Some("Me".into()),
         },
         conversation: ConversationMeta {
@@ -96,9 +96,9 @@ pub fn sample_imessage_document() -> ConversationDocument {
             conversation_type: IrConversationType::Individual,
             group_title: None,
             participants: vec![IrParticipant {
-                handle: Some("+15555550101".into()),
+                identity: Some("+15555550101".into()),
                 display_name: Some("Sam".into()),
-                handle_type: Some(HandleType::Phone),
+                identity_type: Some(HandleType::Phone),
             }],
             stats: ConversationStats::default(),
         },
@@ -109,9 +109,9 @@ pub fn sample_imessage_document() -> ConversationDocument {
                 direction: IrDirection::Incoming,
                 service: IrService::IMessage,
                 message_kind: IrMessageKind::IMessage,
-                sender_handle: Some("+15555550101".into()),
+                sender_identity: Some("+15555550101".into()),
                 sender_display_name: Some("Sam".into()),
-                owner_handle: None,
+                owner_identity: None,
                 subject: None,
                 text: "hello imessage".into(),
                 attachments: vec![],
@@ -133,9 +133,9 @@ pub fn sample_imessage_document() -> ConversationDocument {
                 direction: IrDirection::Outgoing,
                 service: IrService::IMessage,
                 message_kind: IrMessageKind::Tapback,
-                sender_handle: Some("+15555550100".into()),
+                sender_identity: Some("+15555550100".into()),
                 sender_display_name: Some("Me".into()),
-                owner_handle: None,
+                owner_identity: None,
                 subject: None,
                 text: "Loved a message".into(),
                 attachments: vec![],

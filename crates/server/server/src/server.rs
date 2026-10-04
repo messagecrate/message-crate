@@ -1032,14 +1032,18 @@ async fn limit_request_body(
 ///
 /// Applied to the `/v1` routes only, through `route_layer`; the static app,
 /// `/health` and the OpenAPI UI are mounted outside it, so they keep
-/// producing what they produce. Three routes answer bytes, not JSON, and are
+/// producing what they produce. Four routes answer bytes, not JSON, and are
 /// let through here by path: the asset download and its preview stream the
-/// file's own bytes, and the address book export answers `text/csv`.
+/// file's own bytes, the address book export answers `text/csv`, and a
+/// file of the server's log downloads as `text/plain`.
 async fn require_json_acceptable(
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
-    if is_asset_download(&request) || is_address_book_export(&request) {
+    if is_asset_download(&request)
+        || is_address_book_export(&request)
+        || is_log_file_download(&request)
+    {
         return next.run(request).await;
     }
     if let Some(accept) = request
@@ -1106,6 +1110,16 @@ fn is_address_book_export(request: &axum::extract::Request) -> bool {
         && request.uri().path() == "/v1/contacts/address-book"
 }
 
+/// `GET /v1/server/log-files/{id}`: one file of the server's log as `text/plain`.
+fn is_log_file_download(request: &axum::extract::Request) -> bool {
+    request.method() == axum::http::Method::GET
+        && request
+            .uri()
+            .path()
+            .strip_prefix("/v1/server/log-files/")
+            .is_some_and(|id| !id.is_empty() && !id.contains('/'))
+}
+
 /// Whether an `Accept` header admits a JSON answer.
 fn accepts_json(accept: &str) -> bool {
     accept
@@ -1120,10 +1134,40 @@ fn accepts_json(accept: &str) -> bool {
         })
 }
 
+/// The query parameters whose values a log line keeps: each is a number, an
+/// id or a fixed word, so none can carry a credential, message text or a
+/// contact's name.
+const LOGGED_QUERY_VALUES: [&str; 10] = [
+    "after",
+    "around",
+    "before",
+    "deleted_account_id",
+    "level",
+    "limit",
+    "mode",
+    "offset",
+    "sort",
+    "status",
+];
+
+/// A query parameter's name, as it is written in the URL, decoded as the
+/// server reads every query. `None` when it cannot be read.
+fn decoded_query_name(raw_name: &str) -> Option<String> {
+    let uri = format!("/?{raw_name}=").parse::<axum::http::Uri>().ok()?;
+    axum::extract::Query::<Vec<(String, String)>>::try_from_uri(&uri)
+        .ok()?
+        .0
+        .into_iter()
+        .next()
+        .map(|(name, _)| name)
+}
+
 /// The request's URI as the log line names it: the path and the query, with
-/// the value of a `media_link` hidden. A media link is a credential that
-/// travels in the URL, because a media element can send it nowhere else, and
-/// a credential is never written to the log.
+/// every value hidden but those of [`LOGGED_QUERY_VALUES`]. A `media_link` is
+/// a credential that travels in the URL, because a media element can send it
+/// nowhere else, and `q` is a search over what the messages say; the log
+/// holds neither (`docs/architecture/server-log.md`). A parameter added
+/// later is hidden until it is added to the list.
 pub(crate) fn logged_uri(uri: &axum::http::Uri) -> String {
     let Some(query) = uri.query() else {
         return uri.path().to_string();
@@ -1132,8 +1176,11 @@ pub(crate) fn logged_uri(uri: &axum::http::Uri) -> String {
         .split('&')
         .map(|pair| match pair.split_once('=') {
             // The name as the server reads it, percent-decoded, so no
-            // spelling of `media_link` the server accepts reaches the log.
-            Some((name, _)) if crate::assets_api::media_links::names_a_media_link(name) => {
+            // spelling of a hidden name the server accepts reaches the log.
+            Some((name, _))
+                if !decoded_query_name(name)
+                    .is_some_and(|name| LOGGED_QUERY_VALUES.contains(&name.as_str())) =>
+            {
                 format!("{name}=[hidden]")
             }
             _ => pair.to_string(),
@@ -1249,6 +1296,15 @@ pub(crate) fn http_app(state: AppState) -> Router {
 pub async fn run(cfg: Config) -> anyhow::Result<()> {
     let server = cfg.require_server()?.clone();
     let bind = server.bind.clone();
+    // Before the database is opened, so a database that fails to open is in
+    // the server's log as well as on stderr.
+    let log = crate::logging::write_files_in(&cfg.paths.data_dir).map_err(|error| {
+        anyhow::Error::from(error).context(format!(
+            "could not open the server's log in {}",
+            crate::logging::log_dir(&cfg.paths.data_dir).display()
+        ))
+    })?;
+    eprintln!("  log:  {}", log.dir().display());
     let _operation_lock = crate::operation_lock::acquire_for_serve(&cfg.paths.db)?;
 
     // Every new Message Crate starts with the Demo Account: seed first, then

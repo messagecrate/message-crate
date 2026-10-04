@@ -9,10 +9,10 @@
  */
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockedAuth, Providers } from "../test/providers";
+import { fill, setupUser } from "../test/user";
 import GroupsNav from "./GroupsNav";
 import MessageTagsNav from "./MessageTagsNav";
 
@@ -77,7 +77,7 @@ function renderTags(path: string, tags: string[]) {
 
 describe("NavEntityList row menu", () => {
   it("closes the row menu when its options button is clicked again", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderGroups("/contacts", ["Family"]);
 
     const options = screen.getByRole("button", { name: "Contact Group options for Family" });
@@ -94,14 +94,14 @@ describe("NavEntityList row menu", () => {
 describe("NavEntityList navigation", () => {
   it("follows a renamed group to its new slug when viewing that group's page", async () => {
     routes.updateContactGroup.mockResolvedValue({ id: 1, name: "Fam" });
-    const user = userEvent.setup();
+    const user = setupUser();
     renderGroups("/group/Family", ["Family"]);
 
     await user.click(screen.getByRole("button", { name: "Contact Group options for Family" }));
     await user.click(screen.getByRole("menuitem", { name: "Rename…" }));
     const input = screen.getByPlaceholderText("Contact Group name");
     await user.clear(input);
-    await user.type(input, "Fam");
+    await fill(user, input, "Fam");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     // The page moves once the rename is written and the cache has read the
@@ -112,7 +112,7 @@ describe("NavEntityList navigation", () => {
 
   it("falls back to the group collection's home route after deleting the group being viewed", async () => {
     routes.deleteContactGroup.mockResolvedValue(undefined);
-    const user = userEvent.setup();
+    const user = setupUser();
     renderGroups("/group/Family", ["Family"]);
 
     await user.click(screen.getByRole("button", { name: "Contact Group options for Family" }));
@@ -124,14 +124,14 @@ describe("NavEntityList navigation", () => {
 
   it("follows a renamed tag to its new slug when viewing that tag's page", async () => {
     routes.updateMessageTag.mockResolvedValue({ id: 1, name: "Vacation" });
-    const user = userEvent.setup();
+    const user = setupUser();
     renderTags("/tag/Holiday", ["Holiday"]);
 
     await user.click(screen.getByRole("button", { name: "Message Tag options for Holiday" }));
     await user.click(screen.getByRole("menuitem", { name: "Rename…" }));
     const input = screen.getByPlaceholderText("Message Tag name");
     await user.clear(input);
-    await user.type(input, "Vacation");
+    await fill(user, input, "Vacation");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/tag/Vacation"));
@@ -139,7 +139,7 @@ describe("NavEntityList navigation", () => {
 
   it("falls back to the tag collection's home route after deleting the tag being viewed", async () => {
     routes.deleteMessageTag.mockResolvedValue(undefined);
-    const user = userEvent.setup();
+    const user = setupUser();
     renderTags("/tag/Holiday", ["Holiday"]);
 
     await user.click(screen.getByRole("button", { name: "Message Tag options for Holiday" }));
@@ -150,7 +150,7 @@ describe("NavEntityList navigation", () => {
   });
 
   it("asks before deleting a group, and says what goes and what stays", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderGroups("/group/Family", ["Family"]);
 
     await user.click(screen.getByRole("button", { name: "Contact Group options for Family" }));
@@ -164,7 +164,7 @@ describe("NavEntityList navigation", () => {
   });
 
   it("deletes nothing when the confirmation is cancelled", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderTags("/tag/Holiday", ["Holiday"]);
 
     await user.click(screen.getByRole("button", { name: "Message Tag options for Holiday" }));
@@ -181,7 +181,7 @@ describe("NavEntityList navigation", () => {
 
   it("deletes the group once the confirmation is confirmed", async () => {
     routes.deleteContactGroup.mockResolvedValue(undefined);
-    const user = userEvent.setup();
+    const user = setupUser();
     renderGroups("/contacts", ["Family"]);
 
     await user.click(screen.getByRole("button", { name: "Contact Group options for Family" }));
@@ -194,7 +194,7 @@ describe("NavEntityList navigation", () => {
 
   it("keeps the confirmation open with the server's message when the delete is refused", async () => {
     routes.deleteContactGroup.mockRejectedValue(new Error("group not found"));
-    const user = userEvent.setup();
+    const user = setupUser();
     renderGroups("/group/Family", ["Family"]);
 
     await user.click(screen.getByRole("button", { name: "Contact Group options for Family" }));
@@ -207,7 +207,7 @@ describe("NavEntityList navigation", () => {
   });
 
   it("links each group by its whole name, so names that differ only in punctuation open their own page", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderGroups("/contacts", ["A&B", "A B", "家族"]);
 
     await user.click(screen.getByRole("button", { name: "A B" }));
@@ -220,7 +220,7 @@ describe("NavEntityList navigation", () => {
 
   it("follows a renamed group whose name holds a space when viewing that group's page", async () => {
     routes.updateContactGroup.mockResolvedValue({ id: 1, name: "Old Friends" });
-    const user = userEvent.setup();
+    const user = setupUser();
     renderGroups("/group/Work%20Friends", ["Work Friends"]);
 
     await user.click(
@@ -229,7 +229,7 @@ describe("NavEntityList navigation", () => {
     await user.click(screen.getByRole("menuitem", { name: "Rename…" }));
     const input = screen.getByPlaceholderText("Contact Group name");
     await user.clear(input);
-    await user.type(input, "Old Friends");
+    await fill(user, input, "Old Friends");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>

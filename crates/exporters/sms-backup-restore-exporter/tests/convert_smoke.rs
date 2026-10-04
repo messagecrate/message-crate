@@ -57,7 +57,7 @@ fn convert_export_smoke_on_sample_fixture() {
             "message_kind",
             "timestamp_unix_ms",
             "source_fields_json",
-            "owner_handle",
+            "owner_identity",
             "participants_json",
             "subject",
         ],
@@ -344,7 +344,7 @@ fn convert_export_json_and_jsonl_use_pristine_v4() {
         .expect("expected .json");
     let raw = fs::read_to_string(&json_path).unwrap();
     let doc: serde_json::Value = serde_json::from_str(&raw).unwrap();
-    assert_eq!(doc["schema_version"], 4);
+    assert_eq!(doc["schema_version"], 5);
     assert!(
         doc["conversation"]["stats"]["message_count"]
             .as_u64()
@@ -366,7 +366,7 @@ fn convert_export_json_and_jsonl_use_pristine_v4() {
         "MMS must not fragment into a group chat"
     );
     let has_outgoing = doc["messages"].as_array().unwrap().iter().any(|m| {
-        m["direction"] == "outgoing" && m["sender_handle"].as_str() == Some("+15555550100")
+        m["direction"] == "outgoing" && m["sender_identity"].as_str() == Some("+15555550100")
     });
     assert!(has_outgoing, "expected outgoing message with owner sender");
 
@@ -389,7 +389,7 @@ fn convert_export_json_and_jsonl_use_pristine_v4() {
     let body = fs::read_to_string(&jsonl_path).unwrap();
     let mut lines = body.lines();
     let header: serde_json::Value = serde_json::from_str(lines.next().unwrap()).unwrap();
-    assert_eq!(header["schema_version"], 4);
+    assert_eq!(header["schema_version"], 5);
     assert!(header.get("messages").is_none());
     assert!(
         header["conversation"]["stats"]["message_count"]

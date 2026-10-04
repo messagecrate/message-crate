@@ -75,7 +75,7 @@ fn add_xml_messages(
         convo.messages.push(PendingMessage {
             sort_key: msg.timestamp_secs as i64,
             is_from_me: msg.is_from_me,
-            sender_handle: if msg.is_from_me {
+            sender_identity: if msg.is_from_me {
                 String::new()
             } else {
                 msg.other.into_key()
@@ -232,7 +232,7 @@ fn pdu_pending_message(
 ) -> PendingMessage {
     // The projection names the owner as the sender of every outgoing message
     // itself, so only a received PDU carries its sender here.
-    let sender_handle = match sender {
+    let sender_identity = match sender {
         Some(sender) if !parsed.is_sent => sender.into_key(),
         _ => String::new(),
     };
@@ -251,7 +251,7 @@ fn pdu_pending_message(
     PendingMessage {
         sort_key: parsed.timestamp,
         is_from_me: parsed.is_sent,
-        sender_handle,
+        sender_identity,
         sender_display_name: None,
         text: parsed.body,
         attachments,
@@ -298,8 +298,8 @@ impl ProjectionHooks for GoSmsProjection {
     fn participants(&self, chat_id: &str, convo: &PendingConversation) -> Vec<IrParticipant> {
         let mut participants = default_participants(chat_id, convo, &str::to_string);
         for p in &mut participants {
-            if let Some(handle) = p.handle.as_deref().and_then(Handle::parse) {
-                p.handle_type = Some(handle.kind());
+            if let Some(handle) = p.identity.as_deref().and_then(Handle::parse) {
+                p.identity_type = Some(handle.kind());
             }
         }
         participants
@@ -391,7 +391,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     let (inputs, output_dir) = prepare_outputs(&[input_dir.to_path_buf()], output_dir)?;
     let input_dir = &inputs[0];
     let owners = OwnerHandleSet::from_phones(owner_phones)?;
-    let owner_handle = owners
+    let owner_identity = owners
         .primary_owner_handle()
         .expect("from_phones guarantees a phone owner handle");
 
@@ -426,7 +426,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
             EXPORT_SOURCE,
             EXPORT_TOOL,
             EXPORT_TOOL_VERSION,
-            Some(owner_handle),
+            Some(owner_identity),
             None,
         ),
     };
@@ -804,7 +804,7 @@ mod tests {
         PendingMessage {
             sort_key: 1_609_459_200,
             is_from_me: true,
-            sender_handle: String::new(),
+            sender_identity: String::new(),
             sender_display_name: None,
             text: text.into(),
             attachments: digests

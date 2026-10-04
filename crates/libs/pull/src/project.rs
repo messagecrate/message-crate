@@ -50,7 +50,7 @@ pub fn build_document(
             source: source.to_string(),
             tool: "message-crate".into(),
             tool_version: env!("CARGO_PKG_VERSION").into(),
-            owner_handle: shared_owner(&messages),
+            owner_identity: shared_owner(&messages),
             owner_display_name: Some("Me".into()),
         },
         conversation: ConversationMeta {
@@ -124,9 +124,9 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
         direction,
         service,
         message_kind,
-        sender_handle: msg.sender.clone(),
+        sender_identity: msg.sender.clone(),
         sender_display_name: None,
-        owner_handle: msg.owner.clone().filter(|o| !o.trim().is_empty()),
+        owner_identity: msg.owner.clone().filter(|o| !o.trim().is_empty()),
         subject: msg.subject.clone(),
         text: msg.text.clone().unwrap_or_default(),
         attachments,
@@ -144,10 +144,10 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
 /// keeps its own address either way, so a conversation held at two of the
 /// holder's addresses keeps the split.
 fn shared_owner(messages: &[IrMessage]) -> Option<String> {
-    let first = messages.first()?.owner_handle.as_deref()?;
+    let first = messages.first()?.owner_identity.as_deref()?;
     messages
         .iter()
-        .all(|m| m.owner_handle.as_deref() == Some(first))
+        .all(|m| m.owner_identity.as_deref() == Some(first))
         .then(|| first.to_string())
 }
 
@@ -156,7 +156,7 @@ fn participants_from_seed(seed: &Message) -> Vec<IrParticipant> {
     let mut participants = Vec::with_capacity(seed.conversation.participants.len());
     for p in &seed.conversation.participants {
         participants.push(IrParticipant {
-            handle: p.identity.clone(),
+            identity: p.identity.clone(),
             // `name` falls back to the raw handle when nothing names the
             // person (ADR-0006). Carrying a bare handle through as a display
             // name would let a later import write it onto a Contact as that
@@ -165,7 +165,7 @@ fn participants_from_seed(seed: &Message) -> Vec<IrParticipant> {
             // counts as a display name here. A participant with no handle at
             // all has nothing to be identical to, so their name always counts.
             display_name: (p.identity.as_deref() != Some(p.name.as_str())).then(|| p.name.clone()),
-            handle_type: None,
+            identity_type: None,
         });
     }
     participants
@@ -247,7 +247,7 @@ fn tapbacks_json(tapbacks: &[Tapback]) -> Option<Value> {
             "kind": t.kind,
             "emoji": t.emoji,
             "is_from_me": t.is_from_me,
-            "reactor_handle": t.sender,
+            "reactor_identity": t.sender,
         }));
     }
     Some(Value::Array(items))
@@ -397,17 +397,17 @@ mod tests {
 
         let participants = participants_from_seed(&page.items[0]);
         assert_eq!(participants.len(), 3);
-        assert_eq!(participants[0].handle.as_deref(), Some("+15555550100"));
+        assert_eq!(participants[0].identity.as_deref(), Some("+15555550100"));
         assert_eq!(
             participants[0].display_name.as_deref(),
             Some("Robert Smith")
         );
         // No address at all: the name is all the server has for this person, so
         // it carries through as their display name.
-        assert_eq!(participants[1].handle, None);
+        assert_eq!(participants[1].identity, None);
         assert_eq!(participants[1].display_name.as_deref(), Some("Sarah Vale"));
         // A name that is only the handle is still not a display name.
-        assert_eq!(participants[2].handle.as_deref(), Some("+15555550135"));
+        assert_eq!(participants[2].identity.as_deref(), Some("+15555550135"));
         assert_eq!(participants[2].display_name, None);
     }
 
@@ -453,13 +453,13 @@ mod tests {
         assert_eq!(
             messages
                 .iter()
-                .map(|m| m.owner_handle.as_deref())
+                .map(|m| m.owner_identity.as_deref())
                 .collect::<Vec<_>>(),
             [Some("+15555550100"), Some("me@example.com"), None]
         );
 
         let doc = build_document("imessage", &by_phone, messages);
-        assert_eq!(doc.export.owner_handle, None);
+        assert_eq!(doc.export.owner_identity, None);
     }
 
     /// RFC 3339, whole seconds and milliseconds all land on the same instant,
@@ -528,8 +528,8 @@ mod tests {
         assert_eq!(
             imessage.tapbacks,
             Some(json!([
-                { "part_index": 0, "kind": "loved", "emoji": null, "is_from_me": true, "reactor_handle": null },
-                { "part_index": 1, "kind": "emoji", "emoji": "🎉", "is_from_me": false, "reactor_handle": "+2" },
+                { "part_index": 0, "kind": "loved", "emoji": null, "is_from_me": true, "reactor_identity": null },
+                { "part_index": 1, "kind": "emoji", "emoji": "🎉", "is_from_me": false, "reactor_identity": "+2" },
             ]))
         );
     }
@@ -667,7 +667,7 @@ mod tests {
             contact_id: None,
         });
         let participants = participants_from_seed(&seed);
-        assert_eq!(participants[0].handle.as_deref(), Some("+1"));
+        assert_eq!(participants[0].identity.as_deref(), Some("+1"));
         assert_eq!(participants[0].display_name.as_deref(), Some("Sam"));
     }
 

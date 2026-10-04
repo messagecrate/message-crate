@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setupUser } from "../../test/user";
 import ServerSettingsScreen from "./ServerSettingsScreen";
 import type { ServerConnection } from "./ServerStatus";
 
@@ -49,7 +49,7 @@ describe("ServerSettingsScreen", () => {
   });
 
   it("tests the typed address on the button and on Enter", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const props = renderScreen();
 
     await user.click(screen.getByRole("button", { name: "Test" }));
@@ -60,7 +60,7 @@ describe("ServerSettingsScreen", () => {
   });
 
   it("keeps applying the address available without testing first", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const props = renderScreen();
 
     const apply = screen.getByRole("button", { name: "Use this address" });
@@ -70,7 +70,7 @@ describe("ServerSettingsScreen", () => {
   });
 
   it("does not offer a change the caller says is not a change", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const props = renderScreen({ canSubmit: false });
 
     const apply = screen.getByRole("button", { name: "Use this address" });
@@ -83,7 +83,7 @@ describe("ServerSettingsScreen", () => {
   });
 
   it("offers a way out that changes nothing", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const props = renderScreen();
 
     await user.click(screen.getByRole("button", { name: "Cancel" }));

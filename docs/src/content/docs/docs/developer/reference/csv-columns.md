@@ -9,10 +9,10 @@ CSV output contains one row per message. Conversation and export identity are re
 
 | Column | Meaning |
 | --- | --- |
-| `chat_identifier` | Identifier for the conversation, usually a peer handle or group identifier. |
+| `chat_identifier` | Identifier for the conversation, usually a peer identity or group identifier. |
 | `conversation_type` | `individual` or `group`. |
 | `group_title` | Group name, or empty when none is known. |
-| `participants_json` | JSON array of participant handles and display names. |
+| `participants_json` | JSON array of participant identities and display names. |
 | `guid` | Stable message identifier. |
 | `message_kind` | Kind such as `sms`, `mms`, `imessage`, or `tapback`. |
 
@@ -26,8 +26,9 @@ CSV output contains one row per message. Conversation and export identity are re
 | `timestamp_unix_ms` | Unix time in milliseconds. |
 | `direction` | `incoming` or `outgoing`. |
 | `service` | `sms`, `imessage`, `whatsapp`, `rcs`, `discord`, `signal`, `telegram`, `slack`, or `unknown`. |
-| `sender_handle` | Sender phone number, email, or other handle. Outgoing rows use the export owner when known. |
-| `sender_display_name` | Sender name. Outgoing rows default to `Me` when an owner handle is known. |
+| `sender_identity` | Sender phone number, email, or other identity. Outgoing rows use the export owner when known. |
+| `identity_type` | The sender identity's type: `phone`, `email`, `username`, or `other`, inferred from `sender_identity`. Empty when the message has no sender identity. |
+| `sender_display_name` | Sender name. Outgoing rows default to `Me` when an owner identity is known. |
 | `subject` | Message subject when present. |
 | `text` | Message body. |
 | `attachments_json` | JSON array with attachment path, original name, media type, and available file fingerprints and media details. An attachment whose file was not copied keeps its `size_bytes` and its `missing_reason` (`file_missing`, `too_large`, `not_copied`, or `convert_failed: <detail>`). |
@@ -39,9 +40,9 @@ CSV output contains one row per message. Conversation and export identity are re
 | `export_source` | Source family used for the import. |
 | `export_tool` | Name of the source tool or format. |
 | `export_tool_version` | Source version recorded by the importer. |
-| `owner_handle` | Phone number or email for the person whose backup was exported. |
+| `owner_identity` | Phone number or email for the person whose backup was exported. |
 | `owner_display_name` | Display name for the owner. |
-| `message_owner_handle` | The owner's own address on this message: the one it was sent from or received at. Apple Messages records it per message, so one conversation can hold rows from a phone number and an Apple ID. Empty when the source records no owner per message, and `owner_handle` then stands for the row. |
+| `message_owner_identity` | The owner's own address on this message: the one it was sent from or received at. Apple Messages records it per message, so one conversation can hold rows from a phone number and an Apple ID. Empty when the source records no owner per message, and `owner_identity` then stands for the row. |
 | `android_type` | Original Android SMS type or MMS box number, or empty for other sources. |
 | `source_fields_json` | Compact JSON containing source-specific fields that do not have shared columns. |
 

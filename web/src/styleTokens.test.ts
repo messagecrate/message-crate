@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { RANGE_PILL_SCROLL_PAD_CLASS, RangePillSpacer } from "./components/ListRangePill";
 import { AVATAR_COLOR_CLASSES } from "./lib/contactInitials";
+import { focusOutline, focusRing } from "./lib/uiStyles";
 import { Z_CONTACT_DRAWER, Z_DRAWER_SCRIM, Z_MODAL, Z_RESIZE_HANDLE } from "./lib/zLayers";
 
 // The style guide's rules (STYLE_GUIDE.md, "Rules" 1 and "Overlay Z-Index
@@ -85,6 +86,44 @@ describe("focus rings", () => {
   it("no source puts an offset on a ring", () => {
     const found = sources().flatMap(([path, text]) => hits(path, text, /\bring-offset-/));
     expect(found).toEqual([]);
+  });
+
+  // Every focused outline is the same because every one comes from
+  // lib/uiStyles.ts (#1711): `focusRing`, or `focusOutline` behind React Aria's
+  // `isFocusVisible` render prop where focus sits on a hidden input. In the .ts
+  // and .tsx sources, outside comments, these count: an outline class other
+  // than `outline-none` and `outline-hidden`, which take an outline away; the
+  // bare `outline` class, with or without a variant; an arbitrary
+  // `[outline:…]` property; and an inline outline style with a string or
+  // number value, `outline: none` aside.
+  it("no source outside lib/uiStyles.ts writes an outline of its own", () => {
+    const outline = new RegExp(
+      [
+        /\boutline-(?!(none|hidden)\b)[\w[]/.source,
+        /(?<![\w-])outline(?=["'`\s]|$)/.source,
+        /\boutline(Width|Style|Color|Offset)?\s*:\s*(?!["']?none\b)["'`\d]/.source,
+        /\.style\.outline/.source,
+      ].join("|"),
+    );
+    // A comment line is blanked, not dropped, so the line numbers stay right.
+    const comment = /^\s*(\/\/|\/\*|\*)/;
+    const code = (text: string) =>
+      text
+        .split("\n")
+        .map((line) => (comment.test(line) ? "" : line))
+        .join("\n");
+    const found = sources()
+      .filter(([path]) => path !== "lib/uiStyles.ts")
+      .flatMap(([path, text]) => hits(path, code(text), outline));
+    expect(found).toEqual([]);
+  });
+
+  it("focusRing is focusOutline on focus-visible", () => {
+    const onFocusVisible = focusOutline
+      .split(" ")
+      .map((cls) => `focus-visible:${cls}`)
+      .join(" ");
+    expect(focusRing).toBe(`outline-none ${onFocusVisible}`);
   });
 });
 

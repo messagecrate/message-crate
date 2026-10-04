@@ -445,7 +445,7 @@ impl OwnerHandleSet {
     }
 
     /// The handle key of the first owner phone given, for callers that need
-    /// a single owner value (e.g. `owner_handle` in export metadata).
+    /// a single owner value (e.g. `owner_identity` in export metadata).
     ///
     /// `None` only when the set holds no phone-typed handles. A set built
     /// with [`OwnerHandleSet::from_phones`] always returns `Some`: that

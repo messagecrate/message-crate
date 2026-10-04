@@ -1,10 +1,10 @@
 /** @vitest-environment jsdom */
 
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockedAuth, Providers } from "../test/providers";
+import { setupUser } from "../test/user";
 import GroupsNav from "./GroupsNav";
 
 vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
@@ -59,7 +59,7 @@ describe("GroupsNav", () => {
   });
 
   it("closes the group options menu on Escape", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderNav("/contacts");
     await user.click(screen.getByRole("button", { name: "Contact Group options for College" }));
     expect(screen.getByRole("menuitem", { name: "Rename…" })).toBeTruthy();
@@ -68,7 +68,7 @@ describe("GroupsNav", () => {
   });
 
   it("exposes the options popup as a menu, not a bare div of buttons", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderNav("/contacts");
     await user.click(screen.getByRole("button", { name: "Contact Group options for College" }));
     expect(screen.getByRole("menu", { name: "Contact Group options for College" })).toBeTruthy();
@@ -76,7 +76,7 @@ describe("GroupsNav", () => {
   });
 
   it("moves focus into the menu and walks it with arrow keys", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderNav("/contacts");
     act(() => screen.getByRole("button", { name: "Contact Group options for College" }).focus());
     await user.keyboard("{Enter}");
@@ -95,7 +95,7 @@ describe("GroupsNav", () => {
   });
 
   it("walks a menu opened with the pointer from its first item", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderNav("/contacts");
     await user.click(screen.getByRole("button", { name: "Contact Group options for College" }));
 
@@ -108,7 +108,7 @@ describe("GroupsNav", () => {
   });
 
   it("returns focus to the trigger when the menu closes", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderNav("/contacts");
     const trigger = screen.getByRole("button", { name: "Contact Group options for College" });
     await user.click(trigger);

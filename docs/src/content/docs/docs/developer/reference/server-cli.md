@@ -36,7 +36,7 @@ Import and view messages in SQLite
 ###### **Subcommands:**
 
 * `import` — Import a message-ir JSONL folder, one Import Run per source (source from export.source unless --source)
-* `imports` — Work on an account's import sessions (`discard` clears a stranded one)
+* `imports` — Work on an account's Import Runs (`discard` clears a stranded one)
 * `dedupe-cross-source` — Soft-hide the same SMS when it appears under more than one import source
 * `reset-demo` — Rebuild the Demo Account: generate Demo Data, clear the account, import, and process assets. Adds the account when it is not there
 * `create-database` — Create an empty database, with no Demo Account. `serve` adds the Demo Account only to a database that does not exist yet, so this is how a Message Crate starts empty
@@ -81,19 +81,19 @@ Import a message-ir JSONL folder, one Import Run per source (source from export.
 
 ## `message-crate-server imports`
 
-Work on an account's import sessions (`discard` clears a stranded one)
+Work on an account's Import Runs (`discard` clears a stranded one)
 
 **Usage:** `message-crate-server imports <COMMAND>`
 
 ###### **Subcommands:**
 
-* `discard` — Discard the account's active import session, if it has one. A killed `import` leaves its session open, and no later import can start until it is discarded
+* `discard` — Discard the account's running Import Run, if it has one. A killed `import` leaves its Import Run running, and no later import can start until it is discarded
 
 
 
 ## `message-crate-server imports discard`
 
-Discard the account's active import session, if it has one. A killed `import` leaves its session open, and no later import can start until it is discarded
+Discard the account's running Import Run, if it has one. A killed `import` leaves its Import Run running, and no later import can start until it is discarded
 
 **Usage:** `message-crate-server imports discard [OPTIONS] --account <ACCOUNT>`
 
@@ -103,7 +103,7 @@ Discard the account's active import session, if it has one. A killed `import` le
 
   Default value: `config/config.toml`
 * `--db <DB>` — Output SQLite database path (overrides config)
-* `--account <ACCOUNT>` — Account username or id whose active session is discarded
+* `--account <ACCOUNT>` — Account username or id whose running Import Run is discarded
 
 
 

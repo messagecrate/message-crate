@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setupUser } from "../test/user";
 import ApiTokenRevealDialog from "./ApiTokenRevealDialog";
 
 function setClipboard(value: unknown) {
@@ -47,15 +47,15 @@ describe("ApiTokenRevealDialog", () => {
   it.each([
     [
       "Escape",
-      (user: ReturnType<typeof userEvent.setup>) => {
+      (user: ReturnType<typeof setupUser>) => {
         screen.getByRole("dialog").focus();
         return user.keyboard("{Escape}");
       },
     ],
-    ["a click outside it", (user: ReturnType<typeof userEvent.setup>) => user.click(document.body)],
+    ["a click outside it", (user: ReturnType<typeof setupUser>) => user.click(document.body)],
   ])("stays open on %s", async (_name, dismiss) => {
     const onClose = vi.fn();
-    const user = userEvent.setup();
+    const user = setupUser();
     render(<ApiTokenRevealDialog open label="laptop" token="mc-pat-abc123" onClose={onClose} />);
 
     await dismiss(user);
@@ -66,7 +66,7 @@ describe("ApiTokenRevealDialog", () => {
 
   it("closes from its own two buttons", async () => {
     const onClose = vi.fn();
-    const user = userEvent.setup();
+    const user = setupUser();
     render(<ApiTokenRevealDialog open label="laptop" token="mc-pat-abc123" onClose={onClose} />);
 
     await user.click(screen.getByRole("button", { name: "Close" }));

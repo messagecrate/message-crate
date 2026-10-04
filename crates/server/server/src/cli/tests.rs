@@ -13,7 +13,7 @@ const ALICE: i64 = 7;
 
 /// A one-conversation JSON Lines export with no messages, enough for the
 /// import to record a conversation under source `imessage`.
-const CONVERSATION_JSONL: &str = r#"{"schema_version":4,"export":{"source":"imessage","tool":"t","tool_version":"0","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550118","conversation_type":"individual","group_title":null,"participants":[],"stats":{"message_count":0,"attachment_count":0,"first_timestamp_unix_ms":null,"last_timestamp_unix_ms":null}}}
+const CONVERSATION_JSONL: &str = r#"{"schema_version":5,"export":{"source":"imessage","tool":"t","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550118","conversation_type":"individual","group_title":null,"participants":[],"stats":{"message_count":0,"attachment_count":0,"first_timestamp_unix_ms":null,"last_timestamp_unix_ms":null}}}
 "#;
 
 /// A database under `dir`: its config file on disk, the way an operator has
@@ -268,7 +268,7 @@ fn imports_discard_args(config: &Path) -> Cli {
 }
 
 #[tokio::test]
-async fn imports_discard_clears_a_stranded_session_so_the_next_import_runs() {
+async fn imports_discard_clears_a_stranded_import_run_so_the_next_import_runs() {
     let dir = tempfile::tempdir().unwrap();
     let config = server_config(dir.path());
     with_alice(&config).await;
@@ -276,7 +276,7 @@ async fn imports_discard_clears_a_stranded_session_so_the_next_import_runs() {
     fs::create_dir_all(&input).unwrap();
     fs::write(input.join("chat.jsonl"), CONVERSATION_JSONL).unwrap();
 
-    // A session the way a killed `import` leaves it: running, never finished.
+    // An Import Run the way a killed `import` leaves it: running, never finished.
     let stranded = {
         let opened = open(&config).await;
         let mut conn = opened.conn().await.unwrap();
@@ -344,7 +344,7 @@ async fn imports_discard_clears_a_stranded_session_so_the_next_import_runs() {
 }
 
 #[tokio::test]
-async fn imports_discard_with_no_session_changes_nothing() {
+async fn imports_discard_with_no_import_run_changes_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let config = server_config(dir.path());
     with_alice(&config).await;
@@ -355,7 +355,7 @@ async fn imports_discard_with_no_session_changes_nothing() {
 }
 
 #[test]
-fn imports_discard_prints_the_session_or_that_there_was_none() {
+fn imports_discard_prints_the_import_run_or_that_there_was_none() {
     let row = crate::db::imports::ImportRow {
         id: 12,
         account_id: ALICE,
@@ -384,11 +384,11 @@ fn imports_discard_prints_the_session_or_that_there_was_none() {
     };
     assert_eq!(
         format_discarded_import("alice", Some(&row)),
-        "Discarded import session 12 for account alice (source imessage, replace mode, started 2026-09-21T10:00:00+00:00, stage parse).\n"
+        "Discarded Import Run 12 for account alice (source imessage, replace mode, started 2026-09-21T10:00:00+00:00, stage parse).\n"
     );
     assert_eq!(
         format_discarded_import("alice", None),
-        "Account alice has no active import session.\n"
+        "Account alice has no running Import Run.\n"
     );
 }
 

@@ -66,7 +66,7 @@ pub(crate) struct TapbackCell {
     /// the message reacted to.
     pub is_from_me: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub reactor_handle: Option<String>,
+    pub reactor_identity: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reactor_display_name: Option<String>,
 }

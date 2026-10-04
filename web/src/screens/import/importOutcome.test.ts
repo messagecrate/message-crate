@@ -57,7 +57,7 @@ function approvedPlan(counts: { tooLarge?: number } = {}): StagingSummary {
     conversations: 1,
     messages: 1,
     contactIdentifiers: [],
-    ownerHandles: [],
+    ownerIdentities: [],
     attachments: forecasts.length,
     attachmentBytes: 0,
     forecasts,

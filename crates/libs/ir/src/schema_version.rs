@@ -3,9 +3,10 @@
 //! Every reader of a [`ConversationDocument`](crate::ConversationDocument) or
 //! its JSON Lines header — the format reader, the push client, the server's
 //! import — refuses a version other than [`SCHEMA_VERSION`] with the same
-//! words, and refuses it before parsing the rest of the file: a version-3
-//! file is not expected to match the version-4 field shapes, and the person
-//! should read "schema version 3", not whichever field failed first.
+//! words, and refuses it before parsing the rest of the file: a version-4
+//! file is not expected to match the version-5 field shapes (version 4 named
+//! every identity a `handle`), and the person should read "schema version 4",
+//! not whichever field failed first.
 
 use crate::SCHEMA_VERSION;
 use serde::Deserialize;
@@ -73,9 +74,23 @@ mod tests {
     fn names_the_version_found_and_the_version_read() {
         assert_eq!(
             check_schema_version(3).unwrap_err().to_string(),
-            "This file is schema version 3; Message Crate reads version 4"
+            "This file is schema version 3; Message Crate reads version 5"
         );
         assert_eq!(check_schema_version(SCHEMA_VERSION), Ok(()));
+    }
+
+    /// Version 4 named an identity a `handle`; version 5 says `identity`.
+    /// A version-4 file is refused by its version, never read or upgraded.
+    #[test]
+    fn refuses_a_version_4_file_by_name() {
+        assert_eq!(
+            check_schema_version_in_json(
+                r#"{"schema_version":4,"export":{"owner_handle":"+15555550100"}}"#
+            )
+            .unwrap_err()
+            .to_string(),
+            "This file is schema version 4; Message Crate reads version 5"
+        );
     }
 
     #[test]
@@ -85,7 +100,7 @@ mod tests {
             Err(UnsupportedSchemaVersion { found: 3 })
         );
         assert_eq!(
-            check_schema_version_in_json(r#"{"schema_version":4,"export":{}}"#),
+            check_schema_version_in_json(r#"{"schema_version":5,"export":{}}"#),
             Ok(())
         );
         assert_eq!(check_schema_version_in_json(r#"{"export":{}}"#), Ok(()));

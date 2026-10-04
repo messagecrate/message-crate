@@ -1,13 +1,13 @@
 /** @vitest-environment jsdom */
 
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
+import { setupUser } from "../test/user";
 import Button from "./Button";
 
 describe("Button", () => {
   it("invokes onPress when clicked", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onPress = vi.fn();
     render(
       <Button variant="primary" onPress={onPress}>

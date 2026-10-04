@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SearchList } from "../lib/searchFields";
@@ -9,6 +8,7 @@ import { getConversation, listConversationMessages, trashConversation } from "..
 import type { Conversation, Message } from "../lib/types";
 import { mockedAuth, Providers } from "../test/providers";
 import { searchFieldsFor } from "../test/searchFields";
+import { setupUser } from "../test/user";
 import MessageRoute from "./MessageRoute";
 import { RightToolbarProvider } from "./RightToolbarContext";
 
@@ -223,7 +223,7 @@ describe("MessageRoute", () => {
   it("does not show a Move to trash error from one conversation on the next one opened", async () => {
     getConversationMock.mockImplementation(async (id) => conv(id, `Chat ${id}`));
     trashConversationMock.mockRejectedValue(new Error("Trash refused."));
-    const user = userEvent.setup();
+    const user = setupUser();
 
     renderAt("/messages/7");
     await screen.findByText("Chat 7");
@@ -244,7 +244,7 @@ describe("MessageRoute", () => {
         finishTrash = resolve;
       }),
     );
-    const user = userEvent.setup();
+    const user = setupUser();
 
     renderAt("/messages/7");
     await screen.findByText("Chat 7");
@@ -272,7 +272,7 @@ describe("MessageRoute", () => {
     ["a contact's conversations", "?q=with%3A%2342&f=with%3A%2342", "with:#42"],
   ])("keeps %s when another conversation in the list is opened", async (_name, search, query) => {
     getConversationMock.mockImplementation(async (id) => conv(id, `Chat ${id}`));
-    const user = userEvent.setup();
+    const user = setupUser();
 
     renderAt(`/messages/5${search}`);
     // A search with a `word:` waits for the lists' words.
@@ -294,7 +294,7 @@ describe("MessageRoute", () => {
 
     it("opens a result's conversation at that message, keeping the list", async () => {
       getConversationMock.mockImplementation(async (id) => conv(id, `Chat ${id}`));
-      const user = userEvent.setup();
+      const user = setupUser();
 
       renderAt("/messages/5?q=photo&view=messages&sort=-date");
       await user.click(screen.getByRole("button", { name: "Message result" }));
@@ -316,7 +316,7 @@ describe("MessageRoute", () => {
 
     it("drops the result's message when the switch goes back to Conversations and one is opened", async () => {
       getConversationMock.mockImplementation(async (id) => conv(id, `Chat ${id}`));
-      const user = userEvent.setup();
+      const user = setupUser();
 
       renderAt("/messages/5?q=photo&view=messages&at=77");
       await user.click(screen.getByRole("radio", { name: "Conversations" }));

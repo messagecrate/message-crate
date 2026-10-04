@@ -65,7 +65,7 @@ fn convert_all_conversations_keys_the_chat_by_its_number() {
         &[
             ("text", "Hello from Sam"),
             ("direction", "incoming"),
-            ("sender_handle", "+15555550122"),
+            ("sender_identity", "+15555550122"),
             // 2020-01-01T17:00:00+00:00 in the source.
             ("timestamp_unix_ms", "1577898000000"),
         ],
@@ -142,7 +142,7 @@ fn roster(doc: &message_ir::ConversationDocument) -> Vec<&str> {
     doc.conversation
         .participants
         .iter()
-        .filter_map(|p| p.handle.as_deref())
+        .filter_map(|p| p.identity.as_deref())
         .collect()
 }
 
@@ -259,7 +259,7 @@ fn an_attachments_csv_is_not_read_as_a_conversation() {
 fn senders(doc: &message_ir::ConversationDocument) -> Vec<Option<&str>> {
     doc.messages
         .iter()
-        .map(|m| m.sender_handle.as_deref().filter(|h| !h.is_empty()))
+        .map(|m| m.sender_identity.as_deref().filter(|h| !h.is_empty()))
         .collect()
 }
 
@@ -414,7 +414,7 @@ fn a_number_and_an_email_are_two_people() {
         .conversation
         .participants
         .iter()
-        .map(|p| (p.handle.as_deref(), p.handle_type))
+        .map(|p| (p.identity.as_deref(), p.identity_type))
         .collect();
     assert_eq!(
         members,

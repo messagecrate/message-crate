@@ -477,14 +477,14 @@ pub fn export_meta(
     source: &str,
     tool: &str,
     tool_version: &str,
-    owner_handle: Option<String>,
+    owner_identity: Option<String>,
     owner_display_name: Option<String>,
 ) -> message_ir::ExportMeta {
     message_ir::ExportMeta {
         source: source.to_string(),
         tool: tool.to_string(),
         tool_version: tool_version.to_string(),
-        owner_handle,
+        owner_identity,
         owner_display_name,
     }
 }
@@ -597,7 +597,7 @@ mod tests {
         message_ir::PendingMessage {
             sort_key,
             is_from_me: false,
-            sender_handle: "+15555550100".to_string(),
+            sender_identity: "+15555550100".to_string(),
             sender_display_name: None,
             text: "hi".to_string(),
             attachments: if attachment {
