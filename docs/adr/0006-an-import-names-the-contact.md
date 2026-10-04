@@ -30,8 +30,8 @@ refresh replaces only what the address book owns and a typed name still wins.
 Since #270 the address book is Message Crate's own CSV, exported, edited and
 loaded back, and a name in the file replaces a typed one too, because the
 file is the person typing. The rule for an import, which this record
-decides, is unchanged, except that it names any Contact with no name, not
-only one an import made (#1058): the condition dated from before the address
+decides, changed once (#1058): it names any Contact with no name, not only
+one an import made. The narrower condition dated from before the address
 book load, when an import's Contact was the only nameless kind, and a blank
 name has nothing to protect. See `docs/architecture/contacts-identities-and-messages.md`.
 
