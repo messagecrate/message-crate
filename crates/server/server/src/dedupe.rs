@@ -11,6 +11,7 @@ use sqlx::SqliteConnection;
 
 use crate::db::{WriteTx, begin_write};
 
+use crate::db::conversations::is_group_type;
 use crate::db::schema;
 use crate::db::sql::SQLITE_IN_CHUNK;
 
@@ -107,7 +108,7 @@ fn content_key_for_row(
     let (id, conversation_id, chat_id, conversation_type, is_from_me, ts, body, sender_norm) = row;
     let empty: &[String] = &[];
     let shas = shas_by_msg.get(id).map_or(empty, Vec::as_slice);
-    let group_identity = if conversation_type == "group" {
+    let group_identity = if is_group_type(conversation_type) {
         Some(chat_identity_for_content_key(
             chat_id,
             group_handles.get(conversation_id).map(Vec::as_slice),
