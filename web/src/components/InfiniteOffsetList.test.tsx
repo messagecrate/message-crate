@@ -1,9 +1,9 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Z_LIFT } from "../lib/zLayers";
+import { setupUser } from "../test/user";
 import InfiniteOffsetList from "./InfiniteOffsetList";
 
 const tauriMock = vi.hoisted(() => ({ current: false }));
@@ -57,7 +57,8 @@ describe("InfiniteOffsetList in the desktop app", () => {
         ],
         { onSelect, sectioned: false },
       );
-      await userEvent.click(await screen.findByText("Grace"));
+      const user = setupUser();
+      await user.click(await screen.findByText("Grace"));
       expect(onSelect).toHaveBeenCalledTimes(1);
       expect(onSelect).toHaveBeenCalledWith({ id: "2", name: "Grace" });
     }),
@@ -401,7 +402,7 @@ function layOutViewport() {
 
 describe("InfiniteOffsetList choosing a row", () => {
   it("hands the item back when its row is clicked", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onSelect = vi.fn();
     renderList(
       [
@@ -465,7 +466,7 @@ describe("InfiniteOffsetList choosing a row", () => {
   );
 
   it("selects from the row and not from the lead cell", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onSelect = vi.fn();
     renderList([{ id: "1", name: "Alice" }], { onSelect, lead: true });
 
@@ -521,7 +522,8 @@ describe("InfiniteOffsetList marking the open row", () => {
       it("opens a closed row on one click while another row is open", async () => {
         const onSelect = vi.fn();
         renderList(people, { sectioned: false, lead, selectedId: "2", onSelect });
-        await userEvent.click(screen.getByRole("button", { name: "Carol" }));
+        const user = setupUser();
+        await user.click(screen.getByRole("button", { name: "Carol" }));
         expect(onSelect).toHaveBeenCalledTimes(1);
         expect(onSelect).toHaveBeenCalledWith({ id: "3", name: "Carol" });
       });
@@ -594,7 +596,8 @@ describe("InfiniteOffsetList marking the open row", () => {
       inDesktopViewport(async () => {
         const onSelect = vi.fn();
         renderList(people, { sectioned: false, selectedId: "2", onSelect });
-        await userEvent.click(await screen.findByText("Carol"));
+        const user = setupUser();
+        await user.click(await screen.findByText("Carol"));
         expect(onSelect).toHaveBeenCalledTimes(1);
         expect(onSelect).toHaveBeenCalledWith({ id: "3", name: "Carol" });
       }),

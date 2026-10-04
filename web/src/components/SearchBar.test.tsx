@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { type ComponentProps, useRef, useState } from "react";
 import { MemoryRouter, useLocation, useSearchParams } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -185,7 +184,7 @@ describe("SearchBar", () => {
   });
 
   it("walks the recent searches with arrow keys and reports the active row", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { input } = renderSearch();
 
     await user.click(input);
@@ -203,7 +202,7 @@ describe("SearchBar", () => {
   });
 
   it("submits the highlighted recent search on Enter", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { input, onSubmit } = renderSearch();
 
     await user.click(input);
@@ -213,7 +212,7 @@ describe("SearchBar", () => {
   });
 
   it("runs the query the box shows when Enter is pressed a second time", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onSubmit = vi.fn();
     function Controlled() {
       const [value, setValue] = useState("");
@@ -242,7 +241,7 @@ describe("SearchBar", () => {
   });
 
   it("runs a search typed after a row was clicked on the first Enter", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onSubmit = vi.fn();
     function Controlled() {
       const [value, setValue] = useState("");
@@ -272,7 +271,7 @@ describe("SearchBar", () => {
   });
 
   it("submits the typed text when no row is highlighted", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { input, onSubmit } = renderSearch({ value: "typed" });
 
     await user.click(input);
@@ -282,7 +281,7 @@ describe("SearchBar", () => {
   });
 
   it("reaches the advanced-search row by keyboard", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { input } = renderSearch();
 
     await user.click(input);
@@ -293,7 +292,7 @@ describe("SearchBar", () => {
   });
 
   it("keeps the advanced panel open, with no popdown over it, when the box is focused again", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { input } = renderSearch();
 
     await user.click(input);
@@ -308,7 +307,7 @@ describe("SearchBar", () => {
   });
 
   it("wraps from the last row back to the first", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { input } = renderSearch();
 
     await user.click(input);
@@ -320,7 +319,7 @@ describe("SearchBar", () => {
   });
 
   it("opens on the last row with the up arrow", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { input } = renderSearch();
 
     await user.click(input);
@@ -334,7 +333,7 @@ describe("SearchBar", () => {
   });
 
   it("closes the popdown on Escape", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { input } = renderSearch();
 
     await user.click(input);
@@ -350,7 +349,7 @@ describe("SearchBar", () => {
   });
 
   it("namespaces row ids per scope so two bars never collide", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { input } = renderSearch({ scope: "message", placeholder: "Search messages" });
 
     await user.click(input);
@@ -361,7 +360,7 @@ describe("SearchBar", () => {
 
   it("shows word autocomplete instead of recents while a token is being typed", async () => {
     suggestionsMock.current = [{ id: "identity:", label: "identity:", insert: "identity: " }];
-    const user = userEvent.setup();
+    const user = setupUser();
     const { input } = renderSearch({
       value: "ide",
       scope: "message",
@@ -376,7 +375,7 @@ describe("SearchBar", () => {
 
   it("inserts a suggestion into the query without running the search", async () => {
     suggestionsMock.current = [{ id: "identity:", label: "identity:", insert: "identity: " }];
-    const user = userEvent.setup();
+    const user = setupUser();
     const { input, onChange, onSubmit } = renderSearch({
       value: "ide",
       scope: "message",
@@ -397,7 +396,7 @@ describe("SearchBar", () => {
     });
 
     it("searches for a paste followed at once by Enter", async () => {
-      const user = userEvent.setup({ delay: null });
+      const user = setupUser();
       const { onSubmit, input } = renderLateSearch(LaggingSearch);
 
       await user.click(input);
@@ -412,7 +411,7 @@ describe("SearchBar", () => {
     });
 
     it("keeps every key of text typed with no delay", async () => {
-      const user = userEvent.setup({ delay: null });
+      const user = setupUser();
       const { input } = renderLateSearch(LaggingSearch);
 
       await user.type(input, "attachment:any");
@@ -424,7 +423,7 @@ describe("SearchBar", () => {
     });
 
     it("shows a search set from outside the box, such as a Saved Search", async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       const { input } = renderLateSearch(LaggingSearch);
 
       await user.type(input, "ada");
@@ -438,7 +437,7 @@ describe("SearchBar", () => {
       // The router can apply several changes as one: `a` then Backspace
       // leaves the address at "" and nothing is echoed. A Saved Search for
       // `a` afterwards is the person's choice, not an echo of the `a` typed.
-      const user = userEvent.setup({ delay: null });
+      const user = setupUser();
       const { input } = renderLateSearch(MergingSearch);
 
       await user.type(input, "a{Backspace}");
@@ -450,7 +449,7 @@ describe("SearchBar", () => {
   });
 
   it("writes a paste run at once into the address the box reads from", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onSubmit = vi.fn();
     render(
       <MemoryRouter initialEntries={["/"]}>

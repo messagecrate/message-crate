@@ -50,6 +50,14 @@
         }
       },
       "style": {
+        "noRestrictedImports": {
+          "level": "error",
+          "options": {
+            "paths": {
+              "@testing-library/user-event": "Use setupUser() and fill() from src/test/user.ts, which say why a test's user fires events without a delay (#1653)."
+            }
+          }
+        },
         "useComponentExportOnlyModules": {
           "level": "error",
           "options": {
@@ -81,6 +89,16 @@
     }
   },
   "overrides": [
+    {
+      "includes": ["src/test/user.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": "off"
+          }
+        }
+      }
+    },
     {
       "includes": ["**/*.test.tsx"],
       "linter": {

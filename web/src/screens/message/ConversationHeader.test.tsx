@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -13,6 +12,7 @@ import {
 } from "../../lib/serverApi";
 import type { Conversation } from "../../lib/types";
 import { mockedAuth, Providers } from "../../test/providers";
+import { setupUser } from "../../test/user";
 import ConversationHeader from "./ConversationHeader";
 
 vi.mock("../../lib/auth", () => ({ useAuth: () => mockedAuth }));
@@ -128,7 +128,7 @@ function renderHeader(
  * Open the ⋯ menu and choose an item, opening the menu again until the item
  * is there: an item that waits on a fetch appears once it lands.
  */
-async function openMenuItem(user: ReturnType<typeof userEvent.setup>, name: string) {
+async function openMenuItem(user: ReturnType<typeof setupUser>, name: string) {
   await waitFor(async () => {
     if (!screen.queryByRole("menu")) {
       await user.click(screen.getByRole("button", { name: "More for this conversation" }));
@@ -159,7 +159,7 @@ describe("ConversationHeader", () => {
 
   describe("Make a Contact Group", () => {
     it("is offered on a group chat and not on a direct conversation", async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderHeader(conversation());
       await user.click(screen.getByRole("button", { name: "More for this conversation" }));
       expect(screen.queryByRole("menuitem", { name: "Make a Contact Group" })).toBeNull();
@@ -182,7 +182,7 @@ describe("ConversationHeader", () => {
         return set;
       });
       updateContactGroupMembersMock.mockResolvedValue({ added: 2, removed: 0 });
-      const user = userEvent.setup();
+      const user = setupUser();
       renderHeader(groupChat());
 
       await openMenuItem(user, "Make a Contact Group");
@@ -207,7 +207,7 @@ describe("ConversationHeader", () => {
     it("adds to an existing group of that name instead of creating a second one", async () => {
       listContactGroupsMock.mockResolvedValue([{ id: 4, name: "Readers" }]);
       updateContactGroupMembersMock.mockResolvedValue({ added: 2, removed: 0 });
-      const user = userEvent.setup();
+      const user = setupUser();
       renderHeader(groupChat());
 
       await openMenuItem(user, "Make a Contact Group");
@@ -238,7 +238,7 @@ describe("ConversationHeader", () => {
   it("offers Newest and every year, newest first, under Jump to", async () => {
     const onJumpToNewest = vi.fn();
     const onJumpToYear = vi.fn();
-    const user = userEvent.setup();
+    const user = setupUser();
     renderHeader(conversation(), { years: [2021, 2022, 2023], onJumpToNewest, onJumpToYear });
 
     await user.click(screen.getByRole("button", { name: "Jump to ▾" }));
@@ -258,7 +258,7 @@ describe("ConversationHeader", () => {
 
   it("lists a person named like a fixed row beside that row, and opens them", async () => {
     const onOpenContact = vi.fn();
-    const user = userEvent.setup();
+    const user = setupUser();
     renderHeader(conversation(), {
       displayParticipants: [{ label: "Sources", contact_id: "7" }],
       onOpenContact,
@@ -274,7 +274,7 @@ describe("ConversationHeader", () => {
 
   it("moves the conversation to trash and navigates back to the conversations list", async () => {
     trashConversationMock.mockResolvedValue(undefined);
-    const user = userEvent.setup();
+    const user = setupUser();
     renderHeader(conversation());
 
     await openMenuItem(user, "Move to trash");
@@ -287,7 +287,7 @@ describe("ConversationHeader", () => {
 
   it("shows an error and stays put when trashing fails", async () => {
     trashConversationMock.mockRejectedValue(new Error("Could not move this conversation."));
-    const user = userEvent.setup();
+    const user = setupUser();
     renderHeader(conversation());
 
     await openMenuItem(user, "Move to trash");

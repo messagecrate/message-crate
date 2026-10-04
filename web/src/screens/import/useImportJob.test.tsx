@@ -14,7 +14,6 @@
 // through approve first, because there is no other way to reach it.
 
 import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { currentDesktopJob } from "../../lib/desktopJob";
 import type { ActiveImportSession } from "../../lib/importSession";
@@ -30,6 +29,7 @@ import type {
   ImportIssueEvent,
   ImportProgressEvent,
 } from "../../lib/types";
+import { setupUser } from "../../test/user";
 import { restoreFormFromSnapshot, snapshotSecret } from "./formSnapshot";
 import { importRunStore } from "./importRunStore";
 
@@ -1968,7 +1968,7 @@ describe("useImportJob wiring", () => {
   describe("the desktop job between stages (#1407)", () => {
     /** Settings → Convert with both folders filled, so only a running job keeps it off. */
     async function renderConvert() {
-      const user = userEvent.setup();
+      const user = setupUser();
       const view = render(<ConvertSection />);
       await user.type(screen.getByLabelText("Input folder"), "/home/demo/export-json");
       await user.type(screen.getByLabelText("Output folder"), "/home/demo/export-csv");

@@ -1,10 +1,10 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/api";
 import { Providers } from "../../test/providers";
+import { setupUser } from "../../test/user";
 import { ServerSettingsPanel } from "./ServerSettingsPanel";
 
 const getServerSettings = vi.hoisted(() => vi.fn());
@@ -69,9 +69,10 @@ describe("ServerSettingsPanel attachment size limit", () => {
     // can show the new limit.
     getServerSettings.mockReturnValue(new Promise(() => {}));
 
-    await userEvent.clear(field);
-    await userEvent.type(field, "100");
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    const user = setupUser();
+    await user.clear(field);
+    await user.type(field, "100");
+    await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(updateServerSettings).toHaveBeenCalledWith({ asset_max_bytes: 100 * MIB });
     await waitFor(() => expect(screen.getByRole("button", { name: "Save" })).toBeDisabled());
@@ -82,9 +83,10 @@ describe("ServerSettingsPanel attachment size limit", () => {
     renderPanel();
     const field = await screen.findByLabelText("Attachment size limit");
 
-    await userEvent.clear(field);
+    const user = setupUser();
+    await user.clear(field);
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-    await userEvent.type(field, "0");
+    await user.type(field, "0");
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     expect(updateServerSettings).not.toHaveBeenCalled();
   });
@@ -96,9 +98,10 @@ describe("ServerSettingsPanel attachment size limit", () => {
     renderPanel();
     const field = await screen.findByLabelText("Attachment size limit");
 
-    await userEvent.clear(field);
-    await userEvent.type(field, "99999999999999");
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    const user = setupUser();
+    await user.clear(field);
+    await user.type(field, "99999999999999");
+    await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "asset_max_bytes must be at most 9223372036854775807",

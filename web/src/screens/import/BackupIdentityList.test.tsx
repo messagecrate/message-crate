@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setupUser } from "../../test/user";
 import BackupIdentityList from "./BackupIdentityList";
 
 afterEach(() => {
@@ -68,7 +68,8 @@ describe("BackupIdentityList", () => {
     render(
       <BackupIdentityList identities={["owner@example.com"]} profile={profile} onAdd={onAdd} />,
     );
-    await userEvent.click(screen.getByRole("button", { name: "Add to profile" }));
+    const user = setupUser();
+    await user.click(screen.getByRole("button", { name: "Add to profile" }));
     expect(onAdd).toHaveBeenCalledWith("owner@example.com", "email");
   });
 

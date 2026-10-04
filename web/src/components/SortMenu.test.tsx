@@ -1,15 +1,15 @@
 /** @vitest-environment jsdom */
 
 import { act, cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setupUser } from "../test/user";
 import SortMenu from "./SortMenu";
 
 afterEach(cleanup);
 
 describe("SortMenu", () => {
   it("closes its menu when the sort button is clicked again", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render(
       <SortMenu
         fields={[{ id: "name", label: "Name" }]}
@@ -28,7 +28,7 @@ describe("SortMenu", () => {
   });
 
   it("offers no order for a field that has none, and names none", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render(
       <SortMenu
         fields={[
@@ -50,7 +50,7 @@ describe("SortMenu", () => {
   });
 
   it("opens from the keyboard and picks an order by its first letter", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onChange = vi.fn();
     render(
       <SortMenu

@@ -1,15 +1,15 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setupUser } from "../test/user";
 import AddIdentityDialog from "./AddIdentityDialog";
 
 afterEach(cleanup);
 
 describe("AddIdentityDialog", () => {
   it("offers Text Message, Email and WhatsApp, and hands back the service picked", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     const onConfirm = vi.fn();
     render(<AddIdentityDialog open onClose={() => {}} onConfirm={onConfirm} />);
 
@@ -30,7 +30,7 @@ describe("AddIdentityDialog", () => {
   });
 
   it("refuses a value that is not a number or an address, before asking anyone", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     const onConfirm = vi.fn();
     render(<AddIdentityDialog open onClose={() => {}} onConfirm={onConfirm} />);
 
@@ -53,7 +53,7 @@ describe("AddIdentityDialog", () => {
   });
 
   it("refuses an identity already in the list, on the same service only", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     const onConfirm = vi.fn();
     render(
       <AddIdentityDialog

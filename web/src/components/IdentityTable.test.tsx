@@ -1,9 +1,9 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { inTimeZone } from "../test/timeZone";
+import { setupUser } from "../test/user";
 import IdentityTable, { type IdentityRow } from "./IdentityTable";
 
 afterEach(cleanup);
@@ -77,7 +77,7 @@ describe("IdentityTable", () => {
   });
 
   it("puts the sort arrow right after the label and shows it only on the sorted column", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     render(<IdentityTable {...dates} rows={rows} onRemove={() => {}} />);
 
     const identity = screen.getByRole("columnheader", { name: /^Identity/ });
@@ -118,7 +118,7 @@ describe("IdentityTable", () => {
   });
 
   it("ends every row with an always visible Remove named after the identity and its service", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     const onRemove = vi.fn();
     render(<IdentityTable {...dates} rows={rows} onRemove={onRemove} />);
 
@@ -143,7 +143,7 @@ describe("IdentityTable", () => {
   });
 
   it("makes the conversation count a link only when given somewhere to browse to", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     const { unmount } = render(<IdentityTable {...dates} rows={rows} onRemove={() => {}} />);
     expect(screen.queryByRole("button", { name: /Open 2 conversations/ })).not.toBeInTheDocument();
     unmount();

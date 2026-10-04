@@ -1,10 +1,10 @@
 /** @vitest-environment jsdom */
 
 import { act, cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/api";
 import { CONTACT_GROUP_MENU_COPY, MESSAGE_TAG_MENU_COPY } from "../lib/namedSetCopy";
+import { setupUser } from "../test/user";
 import GroupsMenu from "./GroupsMenu";
 
 afterEach(() => {
@@ -27,7 +27,7 @@ function renderMenu(labeled = true) {
 
 describe("GroupsMenu", () => {
   it("filters labeled group names as the user types", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderMenu();
 
     await user.click(screen.getByRole("button", { name: "Contact Groups" }));
@@ -42,7 +42,7 @@ describe("GroupsMenu", () => {
   });
 
   it("keeps the empty message on the same row metrics as a group row", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderMenu();
 
     await user.click(screen.getByRole("button", { name: "Contact Groups" }));
@@ -63,7 +63,7 @@ describe("GroupsMenu", () => {
   });
 
   it("shows no groups on the same row when the catalog is empty", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render(<GroupsMenu allGroups={[]} checks={{}} labeled />);
 
     await user.click(screen.getByRole("button", { name: "Contact Groups" }));
@@ -76,7 +76,7 @@ describe("GroupsMenu", () => {
   });
 
   it("filters the icon-only tags menu", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderMenu(false);
 
     await user.click(screen.getByRole("button", { name: "Message Tags" }));
@@ -87,7 +87,7 @@ describe("GroupsMenu", () => {
   });
 
   it("shows the server's refusal of a new name and keeps the typed name", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const refusal =
       'name can\'t hold ";", because the address book separates Contact Group names with it';
     const onCreate = vi.fn().mockRejectedValue(new ApiError(422, refusal));
@@ -104,7 +104,7 @@ describe("GroupsMenu", () => {
   });
 
   it("returns to the list once the new name is created", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onCreate = vi.fn().mockResolvedValue(undefined);
     render(<GroupsMenu allGroups={[...GROUPS]} checks={{}} onCreate={onCreate} />);
 
@@ -118,7 +118,7 @@ describe("GroupsMenu", () => {
   });
 
   it("leaves a new form alone when a create from a closed form settles", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     let refuse!: (error: Error) => void;
     const onCreate = vi
       .fn()

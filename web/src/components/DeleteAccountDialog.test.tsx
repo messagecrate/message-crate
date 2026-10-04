@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setupUser } from "../test/user";
 import DeleteAccountDialog from "./DeleteAccountDialog";
 
 afterEach(cleanup);
@@ -11,7 +11,7 @@ const deleteButton = () => screen.getByRole("button", { name: "Permanently delet
 
 describe("DeleteAccountDialog", () => {
   it("asks an account with no password for its username only", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     const onConfirm = vi.fn();
     render(
       <DeleteAccountDialog
@@ -33,7 +33,7 @@ describe("DeleteAccountDialog", () => {
   });
 
   it("requires the current password from an account that has one", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     const onConfirm = vi.fn();
     render(
       <DeleteAccountDialog
@@ -60,7 +60,7 @@ describe("DeleteAccountDialog", () => {
    * password, even before an effect clears it, is recorded in the DOM.
    */
   it("forgets the typed password when it closes", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     const dialog = (open: boolean) => (
       <DeleteAccountDialog
         open={open}

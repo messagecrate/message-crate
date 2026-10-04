@@ -1,10 +1,10 @@
 /** @vitest-environment jsdom */
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fetchAssetObjectUrl } from "../lib/serverApi";
 import type { MessageAttachment } from "../lib/types";
+import { setupUser } from "../test/user";
 import AttachmentLightbox from "./AttachmentLightbox";
 
 vi.mock("../lib/serverApi", () => ({
@@ -96,7 +96,7 @@ describe("AttachmentLightbox", () => {
  */
 describe("AttachmentLightbox buttons", () => {
   it("moves forward and back with the on-screen arrows", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const spies = open(0);
     await screen.findByRole("img", { name: "first.png" });
 
@@ -110,7 +110,7 @@ describe("AttachmentLightbox buttons", () => {
   });
 
   it("closes on the close button", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const spies = open(0);
     await screen.findByRole("img", { name: "first.png" });
 
