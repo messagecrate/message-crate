@@ -791,6 +791,13 @@ released versions carry their date on the heading.
 
 #### Search
 
+- 2026-10-04 **Searching for part of a group conversation's id no longer
+  lists every group conversation.** Each source gives its group
+  conversations ids of one shape, such as `group:…`, `chat-…` or `…@g.us`.
+  So typing `group`, `chat` or `g.us` on Conversations listed every group
+  conversation from that source, whatever its title. `in:`, `with:` and
+  `identity:` found them the same way. A group conversation is now found by
+  its title and by the people in it.
 - 2026-10-04 **Searching Conversations for `name` no longer lists every
   conversation known only by a name.** Typing `name` on Conversations listed
   every conversation whose backup gave a name and no address, and `less` the
@@ -1009,9 +1016,11 @@ released versions carry their date on the heading.
   history keeps the list inside the page.** Opening any Import Run made the
   Import history table about a million pixels wide. Every column but Date
   sat far off to the side. Opening one that recorded errors or skipped
-  items made the table keep getting wider while it stayed open. The run's
-  details now open below its row at the table's own width, and its errors
-  and skipped items scroll inside their own box.
+  items made the table keep getting wider while it stayed open, and its
+  Import Errors and Notes tables showed only their first column, so no
+  error or note could be read. The run's details now open below its row at
+  the table's own width, and its errors, skipped items and notes show every
+  column and scroll inside their own box.
 - 2026-10-04 **Import history in Settings → Storage loads quickly however
   many problems your imports recorded.** The list used to bring every error
   and skipped item of every import on the page, so a few large WhatsApp
