@@ -249,3 +249,43 @@ fn a_group_keeps_who_wrote_what_and_a_text_file_stays_a_file() {
         .expect("the text file is an attachment");
     assert_eq!(file.size_bytes, Some(13));
 }
+
+/// A person known only by a name, here one named like a sender, comes back
+/// from an export and a second import as the same name-keyed conversation,
+/// not as the sender `AMAZON`.
+#[test]
+fn a_conversation_keyed_by_a_name_survives_an_export_and_a_second_import() {
+    let input = tempfile::tempdir().unwrap();
+    let first = tempfile::tempdir().unwrap();
+    let exported = tempfile::tempdir().unwrap();
+    let second = tempfile::tempdir().unwrap();
+    fs::write(
+        input.path().join("named.eml"),
+        "From: amazon@unknown.email\r\n\
+         To: owner@example.com\r\n\
+         Subject: SMS with AMAZON\r\n\
+         X-smssync-type: 1\r\n\
+         X-smssync-address: \r\n\
+         X-smssync-date: 1609459200000\r\n\
+         Content-Type: text/plain; charset=utf-8\r\n\
+         \r\n\
+         From a person\r\n",
+    )
+    .unwrap();
+
+    let before = import(input.path(), first.path());
+    let ids = |documents: &[ConversationDocument]| -> Vec<String> {
+        documents
+            .iter()
+            .map(|doc| doc.conversation.chat_identifier.clone())
+            .collect()
+    };
+    assert_eq!(ids(&before), ["name:AMAZON"]);
+
+    fs::create_dir_all(first.path().join("attachments")).unwrap();
+    export(before.clone(), first.path(), exported.path());
+    let after = import(exported.path(), second.path());
+
+    assert_eq!(ids(&after), ["name:AMAZON"]);
+    assert_eq!(shape(&after), shape(&before));
+}
