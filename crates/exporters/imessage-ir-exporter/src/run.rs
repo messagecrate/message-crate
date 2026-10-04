@@ -14,8 +14,8 @@ use imessage_reader_protocol::{ExportRequest, Platform, Request, Source};
 use ios_backup::{Helper, ios_backup_encrypted_flag};
 use message_crate_core::{
     AppleConfig, ApplePlatform, CancelFlag, ExportTransforms, ExporterConfig,
-    IMESSAGE_READER_FOLDER, LogSink, OutputFormat, ProgressEvent, ProgressSink, RunResult,
-    ScratchDir, SourceConfig, emit_progress, prepare_outputs,
+    IMESSAGE_READER_FOLDER, IssueSink, LogSink, OutputFormat, ProgressEvent, ProgressSink,
+    RunIssue, RunResult, ScratchDir, SourceConfig, emit_progress, prepare_outputs,
 };
 use message_staging::{Disk, check_headroom};
 
@@ -93,6 +93,8 @@ pub(crate) struct ExportOptions {
     pub log: Option<LogSink>,
     /// Typed progress events for the desktop's progress bar.
     pub progress: Option<ProgressSink>,
+    /// Rows for the Import Run's record, sent as they are recorded.
+    pub issues: Option<IssueSink>,
     /// Cooperative cancel flag, checked between events and before every write.
     pub cancel: Option<CancelFlag>,
     /// Continue an interrupted export: keep previous output and skip the
@@ -120,6 +122,12 @@ impl ExportOptions {
     /// Send one typed progress event when a progress sink is configured.
     pub fn emit_progress(&self, event: ProgressEvent) {
         emit_progress(self.progress.as_ref(), event);
+    }
+
+    /// Send one row for the Import Run's record when an issue sink is
+    /// configured.
+    pub fn emit_issue(&self, issue: RunIssue) {
+        message_crate_core::emit_issue(self.issues.as_ref(), issue);
     }
 
     /// The shared cancel check.
@@ -235,6 +243,7 @@ fn options_from_export_config(config: &ExporterConfig) -> Result<ExportOptions> 
         output_format: config.output_format,
         log: config.log.clone(),
         progress: config.progress.clone(),
+        issues: config.issues.clone(),
         cancel: config.cancel.clone(),
         resume: config.resume,
     })

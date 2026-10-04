@@ -262,9 +262,8 @@ pub enum ImportSchemaMode {
 
 /// Test helper: open a configured database and run one import.
 ///
-/// Production paths run on their own connection: HTTP serve through
-/// [`import_jsonl_files_on_conn`], and the `import` command and the Demo
-/// Account build through [`import_on_conn`].
+/// Production paths run [`import_jsonl_files_on_conn`] on their own
+/// connection: HTTP serve, the `import` command and the Demo Account build.
 #[cfg(test)]
 pub(crate) async fn import_jsonl_files(
     db_path: &Path,
@@ -284,10 +283,15 @@ pub(crate) async fn import_jsonl_files(
     let mut conn = pool.acquire().await?;
     println!("  sql:      opened {}", db_path.display());
     let _ = io::stdout().flush();
-    import_on_conn(&mut conn, paths, opts, ImportSchemaMode::Ensure).await
+    Ok(import_jsonl_files_on_conn(&mut conn, paths, opts, ImportSchemaMode::Ensure).await?)
 }
 
-/// Import onto an existing connection (warm serve path or tests).
+/// Import onto an existing connection: HTTP serve, the `import` command, the
+/// Demo Account build, and tests.
+///
+/// A command line that reports the error turns it into an `anyhow::Error`
+/// and prints it with `{:#}`, which names the file a refusal was in and the
+/// whole chain of an internal failure.
 ///
 /// # Errors
 ///
@@ -301,32 +305,9 @@ pub async fn import_jsonl_files_on_conn(
     opts: &ImportOptions<'_>,
     schema_mode: ImportSchemaMode,
 ) -> Result<ImportStats, ImportError> {
-    Ok(import_on_conn(conn, paths, opts, schema_mode).await?)
-}
-
-/// [`import_jsonl_files_on_conn`], with every failure still inside `anyhow`,
-/// for the callers that only report it: the `import` command, `reset-demo`
-/// and [`import_jsonl_files`].
-pub(crate) async fn import_on_conn(
-    conn: &mut SqliteConnection,
-    paths: &[PathBuf],
-    opts: &ImportOptions<'_>,
-    schema_mode: ImportSchemaMode,
-) -> Result<ImportStats> {
-    fs::create_dir_all(opts.assets_dir)
-        .with_context(|| format!("failed to create {}", opts.assets_dir.display()))?;
-    if schema_mode == ImportSchemaMode::Ensure {
-        schema::ensure_schema(conn).await?;
-    }
-    crate::db::account_profile::ensure_account_row(conn, opts.account_id).await?;
-
-    if schema_mode == ImportSchemaMode::Ensure {
-        say("  sql:      ensuring schema + resetting staging for account…");
-    } else {
-        say("  sql:      resetting staging for account…");
-    }
-    crate::db::staging::reset_for_account(conn, opts.account_id).await?;
-    let wipe_sources = sources_to_wipe(opts)?;
+    let wipe_sources = prepare_import(conn, opts, schema_mode)
+        .await
+        .map_err(ImportError::Internal)?;
     say(&format!(
         "  import:   {} JSONL file{}",
         paths.len(),
@@ -355,7 +336,9 @@ pub(crate) async fn import_on_conn(
     // imports for different accounts cannot race into SQLITE_BUSY at the
     // first INSERT. The run is checked again under that lock: a run discarded
     // or completed while the batch uploaded takes no messages.
-    let mut tx = crate::db::begin_write(conn).await?;
+    let mut tx = crate::db::begin_write(conn)
+        .await
+        .map_err(|err| ImportError::Internal(err.into()))?;
     if let Some(import_id) = opts.import_id {
         crate::db::imports::require_running_import(&mut tx, opts.account_id, import_id).await?;
     }
@@ -366,8 +349,12 @@ pub(crate) async fn import_on_conn(
         started.elapsed().as_secs_f64()
     ));
     promote_step(&mut tx, opts, &wipe_sources, &mut stats).await?;
-    crate::db::staging::reset_for_account(&mut tx, opts.account_id).await?;
-    tx.commit().await?;
+    crate::db::staging::reset_for_account(&mut tx, opts.account_id)
+        .await
+        .map_err(ImportError::Internal)?;
+    tx.commit()
+        .await
+        .map_err(|err| ImportError::Internal(err.into()))?;
 
     stats.assets_copied = asset_stats.copied;
     stats.assets_deduped = asset_stats.deduped;
@@ -381,6 +368,36 @@ pub(crate) async fn import_on_conn(
         stats.assets_copied
     ));
     Ok(stats)
+}
+
+/// Everything an import does before its transaction: the asset store
+/// directory, the schema when asked for, the account row, an empty staging
+/// area, and the source ids a replace-mode import wipes, which it returns.
+/// None of it reads the files, so every error here is the server's.
+///
+/// # Errors
+///
+/// Returns an error when a directory or row cannot be written, or a source
+/// id is invalid.
+async fn prepare_import(
+    conn: &mut SqliteConnection,
+    opts: &ImportOptions<'_>,
+    schema_mode: ImportSchemaMode,
+) -> Result<Vec<String>> {
+    fs::create_dir_all(opts.assets_dir)
+        .with_context(|| format!("failed to create {}", opts.assets_dir.display()))?;
+    if schema_mode == ImportSchemaMode::Ensure {
+        schema::ensure_schema(conn).await?;
+    }
+    crate::db::account_profile::ensure_account_row(conn, opts.account_id).await?;
+
+    if schema_mode == ImportSchemaMode::Ensure {
+        say("  sql:      ensuring schema + resetting staging for account…");
+    } else {
+        say("  sql:      resetting staging for account…");
+    }
+    crate::db::staging::reset_for_account(conn, opts.account_id).await?;
+    sources_to_wipe(opts)
 }
 
 /// Print one progress line and flush, so a long import shows movement even
@@ -414,23 +431,29 @@ fn sources_to_wipe(opts: &ImportOptions<'_>) -> Result<Vec<String>> {
 ///
 /// # Errors
 ///
-/// Returns an error when a file cannot be read or a row cannot be written.
+/// Returns [`ImportError::Rejected`], naming the file, when a line breaks a
+/// rule the sender can fix, and [`ImportError::Internal`] when a file cannot
+/// be read or a row cannot be written.
 async fn stage_all_files(
     tx: &mut SqliteConnection,
     paths: &[PathBuf],
     opts: &ImportOptions<'_>,
     stats: &mut ImportStats,
     started: Instant,
-) -> Result<AssetStats> {
+) -> Result<AssetStats, ImportError> {
     let total_files = paths.len();
     let progress_every = if total_files <= 20 {
         1usize
     } else {
         (total_files / 40).max(10)
     };
-    let media_work = TempDir::new().context("temp dir for import-time media rewrite")?;
+    let media_work = TempDir::new()
+        .context("temp dir for import-time media rewrite")
+        .map_err(ImportError::Internal)?;
     let mut asset_stats = AssetStats::default();
-    let identities = crate::db::account_profile::account_identity_keys(tx, opts.account_id).await?;
+    let identities = crate::db::account_profile::account_identity_keys(tx, opts.account_id)
+        .await
+        .map_err(ImportError::Internal)?;
     let mut stmts = StagingInserts::new(opts.account_id, opts.import_id, identities);
 
     for (idx, path) in paths.iter().enumerate() {
@@ -442,7 +465,8 @@ async fn stage_all_files(
             &mut asset_stats,
             media_work.path(),
         )
-        .await?;
+        .await
+        .map_err(|err| ImportError::staging(path, err))?;
         stats.merge_file(&file_stats);
         stats.files += 1;
 
@@ -469,13 +493,14 @@ async fn stage_all_files(
 ///
 /// # Errors
 ///
-/// Returns an error when a promote statement fails.
+/// Returns [`PromoteError`](promote::PromoteError) when a promote statement
+/// fails.
 async fn promote_step(
     tx: &mut SqliteConnection,
     opts: &ImportOptions<'_>,
     wipe_sources: &[String],
     stats: &mut ImportStats,
-) -> Result<()> {
+) -> Result<(), promote::PromoteError> {
     let promote_stats = promote::promote_append(
         tx,
         opts.mode,

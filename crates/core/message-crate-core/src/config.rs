@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use media::{CompressOptions, MediaMode};
 
 use crate::exporters::{ApplePlatform, WhatsappPlatform};
+use crate::pipeline::{IssueSink, RunIssue, emit_issue};
 use crate::process::{CancelFlag, LogSink, emit_log};
 use crate::progress::{ProgressEvent, ProgressSink, emit_progress};
 
@@ -100,6 +101,11 @@ pub struct ExporterConfig {
     /// nothing; the desktop app sets a sink and drives its progress bar
     /// from the events. Log lines are never read for counts.
     pub progress: Option<ProgressSink>,
+    /// Each row for the Import Run's record (an item skipped or failed), sent
+    /// the moment the run records it. `None` sends the rows nowhere; the
+    /// desktop app sets a sink and passes each row to its window, so an app
+    /// that closes mid-run keeps the rows that had arrived.
+    pub issues: Option<IssueSink>,
     /// Packaging format (`csv` / `eml` / `mbox` / `json` / `jsonl` / `xml` /
     /// `sms-backup-plus`).
     pub output_format: OutputFormat,
@@ -120,6 +126,11 @@ impl ExporterConfig {
     /// Send a typed progress event to the progress sink, if one is set.
     pub fn emit_progress(&self, event: ProgressEvent) {
         emit_progress(self.progress.as_ref(), event);
+    }
+
+    /// Send a row for the Import Run's record to the issue sink, if one is set.
+    pub fn emit_issue(&self, issue: RunIssue) {
+        emit_issue(self.issues.as_ref(), issue);
     }
 
     /// First input path, if any.
@@ -314,6 +325,7 @@ mod tests {
             cancel: None,
             log: None,
             progress: None,
+            issues: None,
             output_format: OutputFormat::Json,
             resume: false,
             source: SourceConfig::Format(FormatConfig::default()),

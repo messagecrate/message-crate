@@ -6,6 +6,7 @@ import type {
   AttachmentMediaMode,
   ExtractConfig,
   ExtractErrorEvent,
+  ImportFileDoneEvent,
   ImportIssueEvent,
   ImportProgressEvent,
 } from "./types";
@@ -408,6 +409,7 @@ export function onExtractEvents(callbacks: {
   onLog: (line: string) => void;
   onProgress?: (event: ImportProgressEvent) => void;
   onIssue?: (event: ImportIssueEvent) => void;
+  onFileDone?: (event: ImportFileDoneEvent) => void;
   onFinished: (summary: string) => void;
   onError: (err: ExtractErrorEvent) => void;
 }): Promise<UnlistenFn> {
@@ -415,6 +417,7 @@ export function onExtractEvents(callbacks: {
     listen<string>("extract:log", (e) => callbacks.onLog(e.payload)),
     listen<ImportProgressEvent>("extract:progress", (e) => callbacks.onProgress?.(e.payload)),
     listen<ImportIssueEvent>("extract:issue", (e) => callbacks.onIssue?.(e.payload)),
+    listen<ImportFileDoneEvent>("extract:file-done", (e) => callbacks.onFileDone?.(e.payload)),
     listen<string>("extract:finished", (e) => callbacks.onFinished(e.payload)),
     listen<ExtractErrorEvent>("extract:error", (e) => callbacks.onError(e.payload)),
   ]).then((unlisteners) => {
@@ -440,6 +443,7 @@ export async function awaitTauriJob(
   onLog?: (line: string) => void,
   onProgress?: (event: ImportProgressEvent) => void,
   onIssue?: (event: ImportIssueEvent) => void,
+  onFileDone?: (event: ImportFileDoneEvent) => void,
 ): Promise<TauriJobResult> {
   let unlisten: UnlistenFn | undefined;
   const release = holdDesktopJob(job);
@@ -451,6 +455,7 @@ export async function awaitTauriJob(
             onLog: (line) => onLog?.(line),
             onProgress,
             onIssue,
+            onFileDone,
             onFinished: (summary) => resolve(parseTauriJobResult(summary)),
             onError: (err) => reject(new Error(err.user_message ?? err.detail)),
           });

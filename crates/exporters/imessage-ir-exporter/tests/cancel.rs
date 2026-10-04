@@ -80,6 +80,7 @@ fn a_cancelled_run_stops_and_kills_the_reader() {
     let config = ExporterConfig {
         log: Some(LogSink::new(move |_| on_log())),
         progress: Some(ProgressSink::unpaced(move |_| on_progress())),
+        issues: None,
         ..config(&db_path, &output, Some(Arc::clone(&cancel)))
     };
 

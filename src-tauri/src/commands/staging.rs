@@ -205,10 +205,12 @@ fn transcode_summary(report: &TranscodeReport) -> String {
 /// stuck true and no way back except restarting the app. Do not restore the
 /// quiet path.
 ///
-/// The report only carries counts, not per-file reasons, so a nonzero
-/// `failed`/`too_large` count is surfaced as one summarizing `extract:log`
-/// line (see [`transcode_summary`]) rather than invented per-file
-/// `extract:issue` events.
+/// Each file the pass could not convert goes to the window as an
+/// `extract:issue` the moment the pass gives up on it, so the window has
+/// written it into the run record before an app that closes mid-pass stops.
+/// The report carries counts only, so a nonzero `failed`/`too_large` count
+/// is also surfaced as one summarizing `extract:log` line (see
+/// [`transcode_summary`]).
 ///
 /// # Errors
 ///
@@ -233,6 +235,7 @@ pub fn transcode_staging(
     );
 
     let app_handle = app.clone();
+    let issues = events::issue_sink(&app);
     spawn_job(app, job, move || {
         if has_media_step {
             events::emit(
@@ -250,6 +253,7 @@ pub fn transcode_staging(
             &staging_dir,
             &options,
             Some(&cancel),
+            Some(&issues),
             &mut |progress| {
                 events::emit(
                     &app_handle,

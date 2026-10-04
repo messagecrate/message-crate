@@ -4,7 +4,7 @@
 //! Tauri because it is not serializable. These structs match the TypeScript
 //! types in `web/src/lib/types.ts`.
 
-use message_crate_core::{ProgressEvent, RunIssue};
+use message_crate_core::{IssueSink, ProgressEvent, RunIssue};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
@@ -12,8 +12,12 @@ use tauri::{AppHandle, Emitter};
 pub const LOG: &str = "extract:log";
 /// Progress-bar numbers. Payload: [`ExtractProgressEvent`].
 pub const PROGRESS: &str = "extract:progress";
-/// One skipped or failed item for the Import Errors list. Payload: an issue row.
+/// One skipped or failed item for the Import Errors list, sent as the job
+/// records it. Payload: an issue row.
 pub const ISSUE: &str = "extract:issue";
+/// The Upload finished with one conversation file. Payload:
+/// [`ExtractFileDoneEvent`].
+pub const FILE_DONE: &str = "extract:file-done";
 /// The job finished. Payload: the summary line or JSON the screen shows.
 pub const FINISHED: &str = "extract:finished";
 /// The job failed before it could finish. Payload: [`ExtractErrorEvent`].
@@ -26,6 +30,13 @@ pub fn emit(app: &AppHandle, event: &str, payload: impl Serialize + Clone) {
     if let Err(error) = app.emit(event, payload) {
         eprintln!("warning: {event} event not delivered: {error}");
     }
+}
+
+/// An issue sink that sends each row to the window as `extract:issue` the
+/// moment the job records it.
+pub fn issue_sink(app: &AppHandle) -> IssueSink {
+    let app = app.clone();
+    IssueSink::new(move |issue| emit(&app, ISSUE, ExtractIssueEvent::from(&issue)))
 }
 
 /// Progress numbers the UI uses to update the progress bar.
@@ -90,9 +101,9 @@ impl From<ProgressEvent> for ExtractProgressEvent {
     }
 }
 
-/// One row of the Import Run's issues, from an exporter's [`RunIssue`].
-/// Matches `ImportIssueEvent` in `web/src/lib/types.ts`, the shape the
-/// upload sends its own issues in.
+/// One row of the Import Run's issues, from an exporter's or the Media
+/// pass's [`RunIssue`], or from the Upload. Matches `ImportIssueEvent` in
+/// `web/src/lib/types.ts`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ExtractIssueEvent {
     /// `skip` when the item was left out, `error` when it failed.
@@ -103,6 +114,11 @@ pub struct ExtractIssueEvent {
     pub item: String,
     /// Why, in one sentence.
     pub reason: String,
+    /// The conversation file an Upload row is about, which tells the window
+    /// whether a resumed Upload reports the row again. Left out of the JSON
+    /// for the other stages' rows.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub conversation: Option<String>,
 }
 
 impl From<&RunIssue> for ExtractIssueEvent {
@@ -112,8 +128,22 @@ impl From<&RunIssue> for ExtractIssueEvent {
             step: issue.step.clone(),
             item: issue.item.clone(),
             reason: issue.reason.clone(),
+            conversation: None,
         }
     }
+}
+
+/// The Upload finished with one conversation file. Matches
+/// `ImportFileDoneEvent` in `web/src/lib/types.ts`. The window drops from
+/// the run record the rows of an earlier stop about a conversation that is
+/// now on the server.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ExtractFileDoneEvent {
+    /// The conversation file, as the Upload's issue rows name it.
+    pub file: String,
+    /// `ok` (sent now), `skipped` (an earlier part of the run sent it), or
+    /// `failed`.
+    pub status: String,
 }
 
 /// Failure details for the `extract:error` event.

@@ -458,17 +458,23 @@ impl NotDecrypted {
     /// How many reasons the run's summary names; the rest are counted.
     const REASONS_NAMED: usize = 5;
 
-    /// Note one attachment and say why on the log as it happens.
+    /// Note one attachment, and say why on the log and to the issue sink as
+    /// it happens.
     fn record(&mut self, options: &ExportOptions, path: &Path, reason: String) {
         options.emit_log(format!(
             "warning: attachment {} could not be decrypted: {reason}",
             path.display()
         ));
+        options.emit_issue(RunIssue {
+            kind: "error".into(),
+            step: "attachments".into(),
+            item: path.display().to_string(),
+            reason: format!("could not be decrypted: {reason}"),
+        });
         self.0.push((path.to_path_buf(), reason));
     }
 
-    /// Add the count, the first reasons, and one issue per attachment to
-    /// `report`.
+    /// Add the count and the first reasons to `report`.
     fn report_into(self, report: &mut ExportReport) {
         if self.0.is_empty() {
             return;
@@ -480,14 +486,6 @@ impl NotDecrypted {
                 path.display()
             ));
         }
-        report
-            .issues
-            .extend(self.0.into_iter().map(|(path, reason)| RunIssue {
-                kind: "error".into(),
-                step: "attachments".into(),
-                item: path.display().to_string(),
-                reason: format!("could not be decrypted: {reason}"),
-            }));
     }
 }
 
@@ -841,6 +839,7 @@ mod tests {
             output_format,
             log: None,
             progress: None,
+            issues: None,
             cancel: None,
             resume: false,
         }

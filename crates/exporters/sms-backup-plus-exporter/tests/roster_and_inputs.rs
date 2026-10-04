@@ -32,6 +32,7 @@ fn convert(input: &Path, output_dir: &Path) -> ExportReport {
         output_format: OutputFormat::Jsonl,
         cancel: None,
         log: None,
+        issues: None,
         resume: false,
     })
     .expect("convert")
