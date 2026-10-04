@@ -295,7 +295,7 @@ impl SmsBackupRead {
             owner_phones: &[],
             attachments_dir: Some(&self.attachments_dir),
             spool: self.spool.as_ref(),
-            skip: Some(&self.output),
+            exclude_dir: Some(&self.output),
             media: if self.spool.is_some() {
                 MediaMode::Clone
             } else {
@@ -319,12 +319,8 @@ impl SmsBackupRead {
     }
 
     /// Stage the spooled attachments into the output's `attachments/`.
-    /// Convert counts only the attachments a media pass stages, as for an
-    /// `attachments/` copied from any other input, so the count of files
-    /// written here is not kept.
     fn stage(self, documents: &mut [ConversationDocument], config: &ExporterConfig) -> Result<()> {
-        stage_read_attachments(documents, &self.options(config))?;
-        Ok(())
+        stage_read_attachments(documents, &self.options(config))
     }
 }
 
