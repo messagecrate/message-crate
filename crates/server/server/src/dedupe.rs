@@ -9,11 +9,10 @@ use anyhow::{Context, Result};
 use rayon::prelude::*;
 use sqlx::SqliteConnection;
 
-use crate::db::{WriteTx, begin_write};
-
 use crate::db::conversations::is_group_type;
 use crate::db::schema;
 use crate::db::sql::SQLITE_IN_CHUNK;
+use crate::db::{WriteTx, begin_write};
 
 const CONTENT_KEY_WRITE_LOG_EVERY: usize = 50_000;
 
