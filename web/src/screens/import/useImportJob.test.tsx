@@ -2076,43 +2076,6 @@ describe("useImportJob resume path", () => {
     expect(invokeDeleteStagingMock).toHaveBeenCalled();
   });
 
-  it("finishes a resumed Upload clean when the only rows are for conversations an earlier part sent", async () => {
-    const alreadySent: ImportIssueEvent = {
-      kind: "skip",
-      step: "upload",
-      item: "a.jsonl",
-      reason: "already imported or skipped",
-    };
-    runMock.mockImplementation(
-      runResultWithIssue(
-        {
-          summary: "Push finished.",
-          report: okReport({
-            conversations_total: 2,
-            conversations_ok: 1,
-            conversations_skipped: 1,
-            results: [
-              { file: "a.jsonl", status: "skipped", messages: 0, attachments: 0 },
-              { file: "b.jsonl", status: "ok", messages: 10, attachments: 0 },
-            ],
-          }),
-        },
-        alreadySent,
-      ),
-    );
-    const { result } = renderHook(() => useImportJob());
-    await act(async () => {
-      await result.current.startImport(baseForm, {
-        sessionId: 99,
-        stagingDir: "/home/u/message-crate/staging-260830",
-      });
-    });
-
-    expect(result.current.summaryView?.status).toBe("completed");
-    const [, body] = completeImportMock.mock.calls[0] as [number, Record<string, unknown>];
-    expect(body.issues).toEqual([]);
-  });
-
   it("still posts /complete against the resumed run id", async () => {
     const { result } = renderHook(() => useImportJob());
 

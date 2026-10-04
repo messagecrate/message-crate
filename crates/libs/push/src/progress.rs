@@ -320,16 +320,18 @@ impl<'p, 'f> Reporter<'p, 'f> {
         }
     }
 
-    /// Send one Import Errors row per conversation that failed, was
-    /// skipped, or was left unsent by a stop, so any consumer can list them
-    /// without reading the report.
+    /// Send one Import Errors row per conversation that failed or was left
+    /// unsent by a stop, so any consumer can list them without reading the
+    /// report.
+    /// A `skipped` conversation gets no row: the push journal skips only a
+    /// conversation an earlier part of the same run sent, so it is on the
+    /// server and is not a problem.
     /// The log already carries the `fail` line for each failure, so this
     /// goes to the callback only.
     pub(crate) fn conversation_issues(&mut self, results: &[FileResult]) {
         for result in results {
             let (kind, fallback) = match result.status.as_str() {
                 "failed" => ("error", "upload failed"),
-                "skipped" => ("skip", "already imported or skipped"),
                 "cancelled" => (
                     "skip",
                     "the Upload was stopped before this conversation was sent",
@@ -413,7 +415,7 @@ mod tests {
     }
 
     #[test]
-    fn conversation_issues_cover_failed_skipped_and_cancelled_files_only() {
+    fn conversation_issues_cover_failed_and_cancelled_files_only() {
         let dir = tempfile::tempdir().unwrap();
         let log_path = dir.path().join("push.log");
         let mut seen = Vec::new();
@@ -458,11 +460,6 @@ mod tests {
                     "error".to_string(),
                     "bad.jsonl".to_string(),
                     "attachment exceeds limit".to_string()
-                ),
-                (
-                    "skip".to_string(),
-                    "done.jsonl".to_string(),
-                    "already imported or skipped".to_string()
                 ),
                 (
                     "skip".to_string(),

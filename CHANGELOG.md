@@ -505,6 +505,8 @@ released versions carry their date on the heading.
   it drops.** A message the backup held twice was kept once, as it should
   be, but the import's summary never said a copy was dropped. It now says
   how many, as it does for GO SMS Pro, SMS Backup+, iMazing and OpenExtract.
+- 2026-10-04 The way a resumed Upload records the conversations an earlier
+  part of the Import Run already sent was reworked, with nothing visible.
 
 #### Exporting and converting
 
