@@ -8,8 +8,10 @@
 //! is already there) or stages attachments and writes through
 //! `message_ir_format::FormatSink` for every other format. An exporter whose
 //! attachments arrive as bytes writes each payload to the writer's
-//! [`AttachmentSpool`] as it parses, so parse never holds the backup's
-//! attachments in memory, and the write reads them back a file at a time.
+//! [`AttachmentSpool`], under the app's cache folder, as it parses, so parse
+//! never holds the backup's attachments in memory, and the write reads them
+//! back a file at a time. Every write is checked for room first, against
+//! the disk that holds it ([`check_headroom`]).
 //! The transcode pass ([`transcode_staged`]) converts or compresses staged
 //! attachments afterwards as its own resumable pass, and
 //! [`summarize_staging`] reads a staging folder back for the Staging Review.
@@ -21,6 +23,7 @@
 //! `docs/adr/0012-four-crates-in-the-export-pipeline.md`.
 
 mod export_writer;
+mod headroom;
 mod media_settings;
 mod spool;
 mod staging_summary;
@@ -28,6 +31,7 @@ mod transcode;
 mod write_queue;
 
 pub use export_writer::{ExportWriter, ExportWriterParts};
+pub use headroom::{Disk, bytes_embedded, bytes_to_copy, bytes_to_write, check_headroom};
 pub use media_settings::{MEDIA_SETTINGS_FILE, read_media_settings, write_media_settings};
 pub use spool::AttachmentSpool;
 pub use staging_summary::{AttachmentForecast, StagingSummary, SummaryProgress, summarize_staging};

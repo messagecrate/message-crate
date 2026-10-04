@@ -83,6 +83,7 @@ mod tests {
         ExporterConfig {
             inputs: Vec::new(),
             output: PathBuf::from("out"),
+            cache_dir: PathBuf::from("/cache"),
             timezone: None,
             obfuscate,
             media,

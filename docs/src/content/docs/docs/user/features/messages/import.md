@@ -210,6 +210,11 @@ The Staging row shows:
 The Staging Directory is a new folder for each run, named `staging-` followed by the source and the date and time.
 It is made under `~/message-crate` unless **Settings → System** names another **Staging directory**.
 
+While Staging reads the backup, it keeps two kinds of working files in the app's cache folder, never in the Staging Directory: the databases it decrypts from an encrypted iPhone backup, and the attachments it reads out of an SMS Backup & Restore, GO SMS Pro or SMS Backup+ backup.
+They are deleted when Staging ends, whether it finished or failed.
+If the app was closed or stopped during Staging, they are deleted the next time the app starts.
+Before it writes, Staging checks that the disk holding the cache folder and the disk holding the Staging Directory each have room, and stops with the space it needs when one does not.
+
 ### Staging Review
 
 The run stops and the row reads **Awaiting approval**.

@@ -309,6 +309,8 @@ impl Verbose<'_> {
 pub(crate) struct ConvertExportArgs<'a, P: AsRef<Path>> {
     pub inputs: &'a [P],
     pub output_dir: &'a Path,
+    /// The app's cache folder, which the run's attachment spool goes under.
+    pub cache_dir: &'a Path,
     pub owner_phones: &'a [String],
     pub owner_emails: &'a [String],
     pub verbose: bool,
@@ -340,6 +342,7 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
     let ConvertExportArgs {
         inputs,
         output_dir,
+        cache_dir,
         owner_phones,
         owner_emails,
         verbose,
@@ -367,7 +370,8 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
 
     let input_paths: Vec<PathBuf> = inputs.iter().map(|p| p.as_ref().to_path_buf()).collect();
     let (inputs, output_dir) = prepare_outputs(&input_paths, output_dir)?;
-    let writer = ExportWriter::open(&output_dir, output_format, transforms, resume)?;
+    let writer =
+        ExportWriter::open(&output_dir, output_format, transforms, resume)?.with_spool(cache_dir);
 
     let eml_paths = collect_eml_paths(&inputs, cancel)?;
     verbose.line(format!(
@@ -381,8 +385,7 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
         input_roots: inputs,
         owner,
     };
-    let spool = writer.copies_attachments().then(|| writer.spool());
-    let mut ingest = EmlIngest::new(spool, eml_paths.len());
+    let mut ingest = EmlIngest::new(writer.spool(), eml_paths.len());
     parse_all_emls(&eml_paths, &parse, cancel, verbose, &mut ingest)?;
     verbose.line(ingest.parse_summary());
     let EmlIngest {
@@ -632,7 +635,7 @@ mod tests {
                 data: vec![4, 5, 6],
             },
         ];
-        let spool = AttachmentSpool::open(dir.path()).unwrap();
+        let spool = AttachmentSpool::new(dir.path());
         let queued = queue_attachments(&blobs, Some(&spool)).unwrap();
         assert_eq!(queued.len(), 2);
 

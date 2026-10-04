@@ -41,13 +41,21 @@ fn main() {
         // The Message Crate this app starts for itself, when asked to.
         .manage(LocalServer::default())
         // The Staging Directory and the staging folders made under it, kept
-        // in the app's data folder.
+        // in the app's data folder, and the sweep of the cache folder's
+        // scratch folders.
         .setup(|app| {
             let record = app
                 .path()
                 .app_data_dir()?
                 .join(staging_folders::RECORD_FILE);
             app.manage(StagingFolders::at(record, dirs::home_dir()));
+            // What killed runs left in the cache folder's scratch folders
+            // (decrypted databases, attachment payloads) is deleted now,
+            // not at the next run of the same kind. A folder a running job
+            // holds is kept. On a thread of its own, so a large leftover
+            // does not hold up the window.
+            let cache_dir = commands::paths::app_cache_dir(app.handle())?;
+            std::thread::spawn(move || message_crate_core::sweep_scratch(&cache_dir));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

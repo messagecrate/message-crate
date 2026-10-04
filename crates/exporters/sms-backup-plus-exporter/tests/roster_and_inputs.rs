@@ -20,9 +20,11 @@ fn fixtures() -> PathBuf {
 /// Convert `input` to JSONL under `output_dir`, with the owner at
 /// +15555550100 and attachments copied.
 fn convert(input: &Path, output_dir: &Path) -> ExportReport {
+    let cache = tempfile::tempdir().unwrap();
     convert_export(ConvertExportArgs {
         inputs: &[input],
         output_dir,
+        cache_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,
