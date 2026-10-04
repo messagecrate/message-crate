@@ -86,7 +86,8 @@ pub struct ExtractArgs {
     pub media_max_resolution: Option<String>,
     /// Frame-rate cap for compressed video, for example `30`.
     pub media_max_fps: Option<String>,
-    /// Size below which a video is not compressed, for example `20M`.
+    /// Size below which a video is not compressed, as a whole number of
+    /// megabytes, for example `20`.
     pub media_min_size: Option<String>,
     /// When true, replace names and phone numbers with fake ones.
     pub obfuscate: Option<bool>,
@@ -158,7 +159,7 @@ pub fn extract(
         attachment_media: parse_attachment_media(args.attachment_media.as_deref())?,
         media_max_resolution: parse_max_resolution(args.media_max_resolution.as_deref())?,
         media_max_fps: args.media_max_fps.unwrap_or_else(|| "30".into()),
-        media_min_size: args.media_min_size.unwrap_or_else(|| "20M".into()),
+        media_min_size: args.media_min_size.unwrap_or_else(|| "20".into()),
         obfuscate: args.obfuscate.unwrap_or(false),
         // `Form` trims and drops empty values itself, so the raw strings can
         // pass through unchanged.
@@ -303,14 +304,14 @@ fn exporter_attachment_media(chosen: AttachmentMedia) -> AttachmentMedia {
 ///
 /// `CompressOptions` only takes effect under [`media::MediaMode::Compress`],
 /// so the real options are built only when `Compress` was chosen and
-/// `CompressOptions::default()` is returned otherwise. The errors name the
-/// form's fields, because the Import Run shows them to the person as they
-/// are.
+/// `CompressOptions::default()` is returned otherwise. The errors are
+/// [`media::compress_options_from_form`]'s, which name the form's fields,
+/// because the Import Run shows them to the person as they are.
 ///
 /// # Errors
 ///
-/// Returns an error if `max_fps` is not a positive number or `min_size`
-/// cannot be parsed as a byte size.
+/// Returns an error if `max_fps` is not a positive number or `min_size` is
+/// not a whole number of megabytes.
 fn parse_compress_options(
     chosen: AttachmentMedia,
     max_resolution: MaxResolution,
@@ -320,23 +321,8 @@ fn parse_compress_options(
     if !matches!(chosen, AttachmentMedia::Compress) {
         return Ok(CompressOptions::default());
     }
-    let max_fps = max_fps.trim();
-    let fps = max_fps
-        .parse::<f32>()
-        .ok()
-        .filter(|fps| fps.is_finite() && *fps > 0.0)
-        .ok_or_else(|| {
-            if max_fps.is_empty() {
-                "Max FPS is empty. It must be a number of frames per second, such as 30."
-                    .to_string()
-            } else {
-                format!(
-                    "Max FPS must be a number of frames per second above 0, such as 30, not '{max_fps}'."
-                )
-            }
-        })?;
-    media::compress_options_from_form(max_resolution, fps, min_size, true)
-        .map_err(|e| format!("Minimum Video File Size is not a size: {e:#}"))
+    media::compress_options_from_form(max_resolution, max_fps, min_size, true)
+        .map_err(|e| format!("{e:#}"))
 }
 
 /// The media settings an Import Run works to, decided once when its Staging

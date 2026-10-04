@@ -23,7 +23,7 @@ function message(id: number): Message {
     id,
     source: "test",
     service: "sms",
-    guid: null,
+    guid: "g1",
     timestamp: "2024-01-01T00:00:00Z",
     is_from_me: false,
     sender: "someone",

@@ -17,6 +17,7 @@ function message(over: Partial<Message> = {}): Message {
   return {
     id: 10,
     source: "imessage",
+    guid: "g10",
     timestamp: "2024-01-01T10:00:00Z",
     sort_order: 0,
     is_from_me: false,

@@ -37,7 +37,7 @@ struct RawRow {
     conversation_id: i64,
     source: String,
     service: Option<String>,
-    guid: Option<String>,
+    guid: String,
     timestamp: String,
     sort_order: i64,
     is_from_me: bool,

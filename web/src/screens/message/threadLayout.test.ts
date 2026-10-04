@@ -12,7 +12,7 @@ function message(
     id,
     source: "imessage",
     service: "iMessage",
-    guid: null,
+    guid: "g1",
     timestamp,
     is_from_me: "me" in from,
     sender: "sender" in from ? from.sender : null,

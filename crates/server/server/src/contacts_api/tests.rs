@@ -490,14 +490,15 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     ] {
         sqlx::query(
             "INSERT INTO messages (
-                conversation_id, account_id, source, timestamp, is_from_me,
+                conversation_id, account_id, source, guid, timestamp, is_from_me,
                 sender_handle_id, sort_order, body
-             ) VALUES (1, $1, 'imessage', $2, 0, $3, 0, $4)",
+             ) VALUES (1, $1, 'imessage', $5, $2, 0, $3, 0, $4)",
         )
         .bind(account)
         .bind(ts)
         .bind(peer)
         .bind(body)
+        .bind(crate::test_support::unique_guid())
         .execute(&mut *conn)
         .await
         .unwrap();
@@ -505,8 +506,8 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     // A reply of yours: not a message Sam sent, so not in `total_messages`.
     sqlx::query(
         "INSERT INTO messages (
-            conversation_id, account_id, source, timestamp, is_from_me, sort_order, body
-         ) VALUES (1, $1, 'imessage', '2024-06-01T14:00:00Z', 1, 0, 'back at you')",
+            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
+         ) VALUES (1, $1, 'imessage', 'msg-9', '2024-06-01T14:00:00Z', 1, 0, 'back at you')",
     )
     .bind(account)
     .execute(&mut *conn)
@@ -542,9 +543,9 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     .unwrap();
     sqlx::query(
         "INSERT INTO messages (
-            conversation_id, account_id, source, timestamp, is_from_me,
+            conversation_id, account_id, source, guid, timestamp, is_from_me,
             sender_handle_id, sort_order, body
-         ) VALUES (2, $1, 'imessage', '2024-07-01T12:00:00Z', 0, $2, 0, 'group hi')",
+         ) VALUES (2, $1, 'imessage', 'msg-8', '2024-07-01T12:00:00Z', 0, $2, 0, 'group hi')",
     )
     .bind(account)
     .bind(peer)
@@ -569,8 +570,8 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     .unwrap();
     sqlx::query(
         "INSERT INTO messages (
-            conversation_id, account_id, source, timestamp, is_from_me, sort_order, body
-         ) VALUES (9, $1, 'imessage', '2024-08-01T12:00:00Z', 0, 0, 'nope')",
+            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
+         ) VALUES (9, $1, 'imessage', 'msg-7', '2024-08-01T12:00:00Z', 0, 0, 'nope')",
     )
     .bind(account)
     .execute(&mut *conn)
@@ -658,14 +659,15 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     ] {
         sqlx::query(
             "INSERT INTO messages (
-                conversation_id, account_id, source, timestamp, is_from_me,
+                conversation_id, account_id, source, guid, timestamp, is_from_me,
                 sender_handle_id, sort_order, body
-             ) VALUES (1, $1, 'imessage', $2, 0, $3, 0, $4)",
+             ) VALUES (1, $1, 'imessage', $5, $2, 0, $3, 0, $4)",
         )
         .bind(account)
         .bind(ts)
         .bind(sam_handle)
         .bind(body)
+        .bind(crate::test_support::unique_guid())
         .execute(&mut *conn)
         .await
         .unwrap();
@@ -698,9 +700,9 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     .unwrap();
     sqlx::query(
         "INSERT INTO messages (
-            conversation_id, account_id, source, timestamp, is_from_me,
+            conversation_id, account_id, source, guid, timestamp, is_from_me,
             sender_handle_id, sort_order, body
-         ) VALUES (2, $1, 'imessage', '2024-07-01T12:00:00Z', 0, $2, 0, 'group hi')",
+         ) VALUES (2, $1, 'imessage', 'msg-5', '2024-07-01T12:00:00Z', 0, $2, 0, 'group hi')",
     )
     .bind(account)
     .bind(sam_handle)
@@ -749,9 +751,9 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     .unwrap();
     sqlx::query(
         "INSERT INTO messages (
-            conversation_id, account_id, source, timestamp, is_from_me,
+            conversation_id, account_id, source, guid, timestamp, is_from_me,
             sender_handle_id, sort_order, body
-         ) VALUES (3, $1, 'imessage', '2024-05-01T09:00:00Z', 0, $2, 0, 'hey')",
+         ) VALUES (3, $1, 'imessage', 'msg-4', '2024-05-01T09:00:00Z', 0, $2, 0, 'hey')",
     )
     .bind(account)
     .bind(pat_handle)
@@ -940,9 +942,9 @@ async fn insert_held_message(
     let ts = format!("{day}T{:02}:{:02}:00Z", minute / 60, minute % 60);
     sqlx::query(
         "INSERT INTO messages (
-            conversation_id, account_id, source, timestamp, is_from_me,
+            conversation_id, account_id, source, guid, timestamp, is_from_me,
             owner_handle_id, sender_handle_id, sort_order, body
-         ) VALUES ($1, $2, 'imessage', $3, $4, $5, $6, $7, 'm')",
+         ) VALUES ($1, $2, 'imessage', $8, $3, $4, $5, $6, $7, 'm')",
     )
     .bind(conversation)
     .bind(account)
@@ -951,6 +953,7 @@ async fn insert_held_message(
     .bind(owner)
     .bind(sender)
     .bind(minute as i64)
+    .bind(crate::test_support::unique_guid())
     .execute(&mut *conn)
     .await
     .unwrap();
@@ -1738,9 +1741,9 @@ async fn insert_direct_conversation(
     for (i, ts) in timestamps.iter().enumerate() {
         sqlx::query(
             "INSERT INTO messages (
-                conversation_id, account_id, source, service, timestamp, is_from_me,
+                conversation_id, account_id, source, guid, service, timestamp, is_from_me,
                 sender_handle_id, sort_order, body
-             ) VALUES ($1, $2, $3, $3, $4, 0, $5, $6, 'hi')",
+             ) VALUES ($1, $2, $3, $7, $3, $4, 0, $5, $6, 'hi')",
         )
         .bind(conversation_id)
         .bind(account)
@@ -1748,6 +1751,7 @@ async fn insert_direct_conversation(
         .bind(ts)
         .bind(handle_id)
         .bind(i as i64)
+        .bind(crate::test_support::unique_guid())
         .execute(&mut *conn)
         .await
         .unwrap();
@@ -1820,15 +1824,16 @@ async fn insert_message_from(
     .unwrap();
     sqlx::query(
         "INSERT INTO messages (
-            conversation_id, account_id, source, service, timestamp, is_from_me,
+            conversation_id, account_id, source, guid, service, timestamp, is_from_me,
             sender_handle_id, sort_order, body
-         ) VALUES ($1, $2, 'imessage', 'imessage', $3, $4, $5, 0, 'hi')",
+         ) VALUES ($1, $2, 'imessage', $6, 'imessage', $3, $4, $5, 0, 'hi')",
     )
     .bind(conversation_id)
     .bind(account)
     .bind(ts)
     .bind(i64::from(is_from_me))
     .bind(handle_id)
+    .bind(crate::test_support::unique_guid())
     .execute(&mut *conn)
     .await
     .unwrap();

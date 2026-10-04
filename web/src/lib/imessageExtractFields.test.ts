@@ -19,7 +19,7 @@ describe("imessageExtractFields", () => {
       attachment_media: "convert",
       media_max_resolution: "1080p",
       media_max_fps: "30",
-      media_min_size: "20M",
+      media_min_size: "20",
       obfuscate: true,
       backup_password: "pw",
     });
@@ -42,7 +42,7 @@ describe("imessageExtractFields", () => {
       attachment_media: "copy",
       media_max_resolution: "720p",
       media_max_fps: "30",
-      media_min_size: "20M",
+      media_min_size: "20",
     });
   });
 
@@ -63,7 +63,7 @@ describe("imessageExtractFields", () => {
       attachment_media: "skip",
       media_max_resolution: "720p",
       media_max_fps: "30",
-      media_min_size: "20M",
+      media_min_size: "20",
       attachment_root: "/mnt/iphone/Library/SMS",
       apple_contacts: "/mnt/iphone/AddressBook.sqlitedb",
     });

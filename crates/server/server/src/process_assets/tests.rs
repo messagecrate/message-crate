@@ -468,12 +468,13 @@ pub(crate) async fn seed_message(conn: &mut SqliteConnection, source: &str) -> i
     .await
     .unwrap();
     sqlx::query_scalar(
-        "INSERT INTO messages (conversation_id, account_id, source, timestamp, is_from_me, sort_order)
-         VALUES ($1, $2, $3, '2020-01-01T00:00:00Z', 0, 0) RETURNING id",
+        "INSERT INTO messages (conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order)
+         VALUES ($1, $2, $3, $4, '2020-01-01T00:00:00Z', 0, 0) RETURNING id",
     )
     .bind(conversation_id)
     .bind(ACCOUNT)
     .bind(source)
+    .bind(crate::test_support::unique_guid())
     .fetch_one(&mut *conn)
     .await
     .unwrap()

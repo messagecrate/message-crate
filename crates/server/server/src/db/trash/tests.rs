@@ -346,12 +346,13 @@ async fn insert_message(
 ) -> i64 {
     sqlx::query_scalar(
         "INSERT INTO messages (
-            conversation_id, account_id, source, timestamp, is_from_me, sort_order, body
-         ) VALUES ($1, $2, 'imessage', '2020-01-01T00:00:00Z', 1, $3, 'hi') RETURNING id",
+            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
+         ) VALUES ($1, $2, 'imessage', $4, '2020-01-01T00:00:00Z', 1, $3, 'hi') RETURNING id",
     )
     .bind(conversation_id)
     .bind(account_id)
     .bind(sort_order)
+    .bind(crate::test_support::unique_guid())
     .fetch_one(&mut *conn)
     .await
     .unwrap()

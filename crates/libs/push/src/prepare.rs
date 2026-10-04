@@ -421,10 +421,10 @@ fn build_import_chunks(
     for (i, msg) in doc.messages.iter().enumerate() {
         check_cancel(ctx.cfg.cancel.as_ref())?;
         let (line, guid) = if ctx.cfg.skip_attachments {
-            project::message_line_without_attachments(msg, i)?
+            project::message_line_without_attachments(msg)?
         } else {
             // Rewrite attachment fields to uploaded digests or missing placeholders.
-            project::message_line(msg, &projections[i], i)?
+            project::message_line(msg, &projections[i])?
         };
         if !ctx.cfg.force && ctx.lock_journal().journal.has_message(name, &guid) {
             // Already imported this message id on a previous successful push.
