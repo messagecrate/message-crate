@@ -6,6 +6,12 @@ import { focusRing } from "../lib/uiStyles";
 import { DownloadIcon } from "./icons";
 import PlainButton from "./PlainButton";
 
+/** How the round button is drawn: over a picture in the conversation, or in the viewer's dark top bar. */
+const ROUND = {
+  overlay: { className: "absolute right-1.5 top-1.5 h-7 w-7 bg-media-control", icon: 14 },
+  viewer: { className: "h-10 w-10 bg-lightbox-control", icon: 18 },
+} as const;
+
 /**
  * Save an attachment's original: the control every attachment carries in the
  * conversation and in the viewer. `overlay` draws it as a round button over a
@@ -39,17 +45,16 @@ export default function DownloadAttachmentButton({
     );
   }
 
-  const size = look === "viewer" ? "h-10 w-10" : "h-7 w-7";
-  const place = look === "viewer" ? "" : "absolute right-1.5 top-1.5";
+  const round = ROUND[look];
   return (
     <PlainButton
       onPress={() => download.mutate()}
       isDisabled={download.isPending}
       aria-label={label}
       title={download.isError ? "Download failed" : "Download"}
-      className={`${place} flex ${size} cursor-pointer items-center justify-center rounded-full border-none ${look === "viewer" ? "bg-lightbox-control" : "bg-media-control"} text-lightbox-text disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`}
+      className={`${round.className} flex cursor-pointer items-center justify-center rounded-full border-none text-lightbox-text disabled:cursor-not-allowed disabled:opacity-50 ${focusRing}`}
     >
-      <DownloadIcon size={look === "viewer" ? 18 : 14} />
+      <DownloadIcon size={round.icon} />
     </PlainButton>
   );
 }
