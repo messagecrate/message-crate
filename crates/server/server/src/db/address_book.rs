@@ -118,7 +118,7 @@ impl std::fmt::Display for LoadError {
 /// The key of one identity: the three columns `handles` is unique on.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct IdentityKey {
-    service: &'static str,
+    service: HandleService,
     handle_type: &'static str,
     normalized: String,
 }
@@ -197,6 +197,26 @@ impl FileContact {
     }
 }
 
+/// Where a named holder the file cannot speak for is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HolderPlace {
+    /// In the Trash: its id reads as unknown text, so the file cannot list
+    /// it.
+    Trash,
+    /// In Contacts, and not in the file.
+    OutsideFile,
+}
+
+impl HolderPlace {
+    /// The end of a sentence that starts "which …".
+    fn phrase(self) -> &'static str {
+        match self {
+            Self::Trash => "is in the Trash",
+            Self::OutsideFile => "is not in the file",
+        }
+    }
+}
+
 /// What the account holds when the load starts.
 #[derive(Debug, Default)]
 struct Snapshot {
@@ -252,7 +272,7 @@ impl Snapshot {
             };
             snapshot.handles.insert(
                 IdentityKey {
-                    service: service.as_str(),
+                    service,
                     handle_type: handle_type.as_str(),
                     normalized,
                 },
@@ -311,13 +331,12 @@ impl Snapshot {
         self.name_of(holder).is_empty() || in_file.contains(&holder)
     }
 
-    /// Why the file cannot speak for `holder`, a named contact outside it,
-    /// for a sentence that ends "which …".
-    fn where_it_is(&self, holder: i64) -> &'static str {
+    /// Why the file cannot speak for `holder`, a named contact outside it.
+    fn place_of(&self, holder: i64) -> HolderPlace {
         if self.trashed.contains_key(&holder) {
-            "is in the Trash"
+            HolderPlace::Trash
         } else {
-            "is not in the file"
+            HolderPlace::OutsideFile
         }
     }
 
@@ -507,7 +526,7 @@ fn row_identity(
         return Err(format!("row {n}: identity is blank"));
     }
     let key = |normalized: String| IdentityKey {
-        service: service.as_str(),
+        service,
         handle_type: handle_type.as_str(),
         normalized,
     };
@@ -742,16 +761,16 @@ fn plan(rows: &[FileRow], snapshot: &Snapshot) -> Result<Vec<FileContact>, Vec<S
                 continue;
             }
             let holder_name = snapshot.name_of(holder);
-            let where_it_is = snapshot.where_it_is(holder);
+            let place = snapshot.place_of(holder);
+            let where_it_is = place.phrase();
             // A trashed holder cannot be added to the file, because its id
             // reads as unknown text, so the way through is the Trash.
-            let way_through = if snapshot.trashed.contains_key(&holder) {
-                format!(
+            let way_through = match place {
+                HolderPlace::Trash => format!(
                     "restore \"{holder_name}\" and add it to the file, \
                      or delete \"{holder_name}\" for good,"
-                )
-            } else {
-                format!("add \"{holder_name}\" to the file")
+                ),
+                HolderPlace::OutsideFile => format!("add \"{holder_name}\" to the file"),
             };
             errors.push(format!(
                 "row {}: {} belongs to \"{holder_name}\" (contact {holder}), which {where_it_is}, \
@@ -815,7 +834,7 @@ fn siblings_that_follow(
                 let (handle_id, holder) = snapshot.handles[*key];
                 match holder {
                     Some(holder) if !snapshot.may_take_from(holder, in_file) => {
-                        let where_it_is = snapshot.where_it_is(holder);
+                        let where_it_is = snapshot.place_of(holder).phrase();
                         contact.notes.push((
                             identity.row,
                             format!(
@@ -823,7 +842,7 @@ fn siblings_that_follow(
                                  add a row for it to move it",
                                 identity.row,
                                 key.normalized,
-                                parse_service(key.service).map_or(key.service, service_label),
+                                service_label(key.service),
                                 snapshot.describe(holder)
                             ),
                         ));
@@ -912,6 +931,11 @@ pub(crate) async fn rewrite_ids_to_nameless(
         }
     }
     let is_nameless = |id: i64| snapshot.contacts.get(&id).is_some_and(String::is_empty);
+    let key_of: HashMap<i64, &IdentityKey> = snapshot
+        .handles
+        .iter()
+        .map(|(key, &(handle_id, _))| (handle_id, key))
+        .collect();
 
     // The nameless contact each new contact takes, by its `contact_id` text.
     // No two new contacts can take the same one: it must hold only
@@ -923,6 +947,14 @@ pub(crate) async fn rewrite_ids_to_nameless(
         .filter(|c| c.target == Target::New && !c.id_text.is_empty())
     {
         let listed: HashSet<&IdentityKey> = contact.identities.iter().map(|i| &i.key).collect();
+        // What the contact takes: what it lists, and the siblings that go
+        // with those (see [`siblings_that_follow`]).
+        let taken: HashSet<&IdentityKey> = contact
+            .followers
+            .iter()
+            .filter_map(|handle_id| key_of.get(handle_id).copied())
+            .chain(listed.iter().copied())
+            .collect();
         let contact_rows: Vec<&FileRow> = rows
             .iter()
             .filter(|row| row.contact_id == contact.id_text)
@@ -947,18 +979,7 @@ pub(crate) async fn rewrite_ids_to_nameless(
             let &(_, Some(holder)) = snapshot.handles.get(&identity.key)? else {
                 return None;
             };
-            // A sibling the load takes with a listed identity counts as
-            // listed (see [`siblings_that_follow`]).
-            let takes = |key: &IdentityKey| {
-                listed.contains(key)
-                    || snapshot
-                        .handles
-                        .get(key)
-                        .is_some_and(|&(handle_id, _)| contact.followers.contains(&handle_id))
-            };
-            let holds_only_taken = held
-                .get(&holder)
-                .is_some_and(|keys| keys.iter().all(|key| takes(key)));
+            let holds_only_taken = held.get(&holder).is_some_and(|keys| keys.is_subset(&taken));
             (is_nameless(holder) && holds_only_taken && reads_the_same(holder)).then_some(holder)
         });
         if let Some(nameless) = nameless {
@@ -1074,7 +1095,7 @@ async fn apply(
                     .bind(&identity.written)
                     .bind(&identity.key.normalized)
                     .bind(identity.key.handle_type)
-                    .bind(identity.key.service)
+                    .bind(identity.key.service.as_str())
                     .bind(Origin::AddressBook.as_str())
                     .fetch_one(&mut *conn)
                     .await?
