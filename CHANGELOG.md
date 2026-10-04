@@ -898,6 +898,11 @@ released versions carry their date on the heading.
   the build, and could leave a folder of part-written Demo Data behind. It
   now stops as soon as the conversation it is writing is done, and leaves
   nothing behind.
+- 2026-10-04 **Every contact in the Demo Data's Address Book has a name.**
+  One contact in the medium Demo Data's Address Book, and three in the
+  large one, had a blank name. Loading the book could not name them, so
+  their numbers stayed under Unknown. Every contact in it now has a name,
+  and building the medium Demo Account names all 75.
 - 2026-10-04 **The Docker image no longer sets environment variables the
   server never reads.** The image set `MC_DB`, `MC_DATA_DIR` and `HOSTNAME`,
   and changing them changed nothing. The database and the data folder come
