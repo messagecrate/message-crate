@@ -77,6 +77,17 @@ describe("colors are theme tokens", () => {
   });
 });
 
+describe("focus rings", () => {
+  // A ring offset is a box-shadow in a colour of its own, white unless a class
+  // sets it, so it drew a white line round every focused button in the dark
+  // theme (#1703). `focusRing` leaves the gap as an outline offset, which shows
+  // whatever surface the element sits on.
+  it("no source puts an offset on a ring", () => {
+    const found = sources().flatMap(([path, text]) => hits(path, text, /\bring-offset-/));
+    expect(found).toEqual([]);
+  });
+});
+
 describe("z-index values come from the ladder", () => {
   it("no source outside lib/zLayers.ts writes a z-index class", () => {
     const zClass = /(^|[\s"'`:!])-?z-(\d|\[)/;
