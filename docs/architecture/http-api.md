@@ -251,9 +251,11 @@ that counts something else is a second shape.
 A list's row carries nothing that grows without bound. Where a resource
 holds such a collection, as an Import Run holds its issues, the list answers
 how many in a count (`issue_count`) and the resource's own `GET` answers the
-collection: `GET /v1/imports` and `GET /v1/accounts/{id}/imports` answer
-each run as an `ImportRunSummary`, and `GET /v1/imports/{id}` answers its
-issues. The count is read in the list's own statement, never by a statement
+collection. `GET /v1/imports` and an account's own
+`GET /v1/accounts/{id}/imports` answer each run as an `ImportRunSummary`,
+the owner's `GET /v1/accounts/{id}/imports` as an `OwnerImportRun`, both
+with `issue_count` and neither with the issues, and `GET /v1/imports/{id}`
+answers the issues. The count is read in the list's own statement, never by a statement
 per row. Why: `limit` bounds a page's rows and nothing else, so a collection
 inside each row left a page's size to whatever the runs recorded. Forty
 WhatsApp runs of 20,000 skipped files each made one page of Settings →
@@ -708,14 +710,16 @@ A type on the wire is named one of three ways, and a reader can tell which
 from the name:
 
 - A thing the interface hands out is named for what it is, with no suffix:
-  `Message`, `Account`, `ApiToken`, `Contact`, `ContactSummary`, `Identity`,
-  `ImportRun`. It keeps that name wherever it appears.
+  `Message`, `Account`, `ApiToken`, `Contact`, `Identity`, `ImportRun`. It
+  keeps that name wherever it appears.
 - A projection of such a thing, a type that answers part of it where the
   whole does not belong, is the thing's name with one word that says which
-  part, and is written down here with its reason. `ImportRunSummary` is an Import Run
-  as a list of runs answers it, `issue_count` in place of `issues`
-  ([Lists](#lists)). `OwnerImportRun` and `OwnerExportRun` are a run as
-  the owner reads it ([Credentials and reach](#credentials-and-reach)).
+  part, and is written down here with its reason. `Summary` is the thing as
+  a list answers it: `ContactSummary` is a contact's row in the Contacts
+  list, and `ImportRunSummary` is an Import Run without its issues, which
+  `ImportRun` adds to it ([Lists](#lists)). `Owner` is the thing as the
+  owner reads it under another account: `OwnerImportRun` and
+  `OwnerExportRun` ([Credentials and reach](#credentials-and-reach)).
 - An action's input and output are named for the action:
   `VerbNounRequest` for a body sent in, `VerbNounResponse` for an answer that
   is not a thing (`CreateApiTokenRequest`, `DeleteMessagesResponse`), and

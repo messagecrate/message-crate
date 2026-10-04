@@ -434,21 +434,6 @@ const IMPORT_COLUMNS: &str = "id, account_id, source, tool, mode, status, starte
      attachments_ms, prepare_ms, upload_ms, summary_json, stage, staging_dir, device_id, \
      form_json, source_fingerprint, source_identities, dedupe";
 
-/// How many columns [`IMPORT_COLUMNS`] names: a statement that reads more
-/// after them starts its own at this position.
-const IMPORT_COLUMN_COUNT: usize = {
-    let bytes = IMPORT_COLUMNS.as_bytes();
-    let mut columns = 1;
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b',' {
-            columns += 1;
-        }
-        i += 1;
-    }
-    columns
-};
-
 /// Map one `imports` row by column position.
 fn import_from_row(row: &SqliteRow) -> Result<ImportRow, sqlx::Error> {
     Ok(ImportRow {
@@ -925,8 +910,8 @@ pub async fn list_imports_page(
     let sql = format!(
         "SELECT {IMPORT_COLUMNS},
                 (SELECT COUNT(*) FROM import_issues
-                 WHERE import_issues.import_id = imports.id),
-                {contacts_new}, {contacts_changed}
+                 WHERE import_issues.import_id = imports.id) AS issue_count,
+                {contacts_new} AS contacts_new, {contacts_changed} AS contacts_changed
          FROM imports
          WHERE account_id = $1{status_sql}
          ORDER BY started_at {direction}, id {direction}
@@ -937,18 +922,18 @@ pub async fn list_imports_page(
         query = query.bind(status);
     }
     let rows = query.bind(limit).bind(offset).fetch_all(&mut *conn).await?;
-    let count = |row: &SqliteRow, index: usize| -> Result<u64, sqlx::Error> {
-        Ok(row.try_get::<i64, _>(index)?.max(0) as u64)
+    let count = |row: &SqliteRow, column: &str| -> Result<u64, sqlx::Error> {
+        Ok(row.try_get::<i64, _>(column)?.max(0) as u64)
     };
     let items = rows
         .iter()
         .map(|row| {
             Ok(ListedImport {
                 row: import_from_row(row)?,
-                issue_count: count(row, IMPORT_COLUMN_COUNT)?,
+                issue_count: count(row, "issue_count")?,
                 contacts: crate::db::import_contacts::ContactCounts {
-                    new_count: count(row, IMPORT_COLUMN_COUNT + 1)?,
-                    changed_count: count(row, IMPORT_COLUMN_COUNT + 2)?,
+                    new_count: count(row, "contacts_new")?,
+                    changed_count: count(row, "contacts_changed")?,
                 },
             })
         })

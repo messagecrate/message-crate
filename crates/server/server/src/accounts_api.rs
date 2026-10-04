@@ -1345,9 +1345,9 @@ pub(crate) async fn list_account_imports(
     let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
     let rows = crate::imports_api::import_rows_page(&mut conn, target, query).await?;
     Ok(Json(if reach.is_own() {
-        AccountImportRuns::Own(crate::imports_api::shape_page(rows))
+        AccountImportRuns::Own(crate::imports_api::runs_page(rows))
     } else {
-        AccountImportRuns::Owner(crate::imports_api::shape_page(rows))
+        AccountImportRuns::Owner(crate::imports_api::runs_page(rows))
     }))
 }
 

@@ -150,7 +150,7 @@ pub struct ContactCounts {
 /// runs, so the two cannot count differently. Which reasons are new is
 /// [`ContactReason::is_new`].
 #[must_use]
-pub fn tally_sql(import_id: &str) -> [String; 2] {
+pub(in crate::db) fn tally_sql(import_id: &str) -> [String; 2] {
     [true, false].map(|new| {
         let reasons = ContactReason::ALL
             .iter()

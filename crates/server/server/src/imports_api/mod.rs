@@ -753,71 +753,24 @@ pub(crate) struct ImportIssue {
 }
 
 /// An Import Run: one per import, the same record wherever the interface
-/// hands one run out. It holds the counts Settings shows, everything the
-/// desktop app needs to resume a running run, and the issues the run
-/// recorded. A list of runs answers each as an `ImportRunSummary`.
+/// hands one run out. It is the run as a list answers it, the
+/// `ImportRunSummary`, with the issues the run recorded.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct ImportRun {
-    /// Import Run id.
-    pub(crate) id: i64,
-    /// Source id the run imports.
-    pub(crate) source: String,
-    /// Importing tool, e.g. `message-crate-push`.
-    pub(crate) tool: Option<String>,
-    /// Import mode (`replace` or `append`).
-    pub(crate) mode: String,
-    /// Whether cross-source dedupe runs after each batch.
-    pub(crate) dedupe: bool,
-    /// Lifecycle status.
-    pub(crate) status: crate::db::imports::ImportStatus,
-    /// UTC time the run started.
-    pub(crate) started_at: String,
-    /// UTC time the run finished, when it has.
-    pub(crate) finished_at: Option<String>,
-    /// Messages counted for the run.
-    pub(crate) message_count: i64,
-    /// Attachments counted for the run.
-    pub(crate) attachment_count: i64,
-    /// Bytes uploaded so far.
-    pub(crate) bytes_uploaded: i64,
-    /// Total wall-clock duration, when finished.
-    pub(crate) duration_ms: Option<i64>,
-    /// Time spent parsing, when finished.
-    pub(crate) parse_ms: Option<i64>,
-    /// Time spent on attachments, when finished.
-    pub(crate) attachments_ms: Option<i64>,
-    /// Time spent preparing conversation files, when finished.
-    pub(crate) prepare_ms: Option<i64>,
-    /// Time spent uploading, when finished.
-    pub(crate) upload_ms: Option<i64>,
-    /// Where a running run is; null once it is over.
-    pub(crate) stage: Option<crate::db::imports::ImportStage>,
-    /// Absolute path to the staging folder on the client that owns the run.
-    pub(crate) staging_dir: Option<String>,
-    /// Which install created the run.
-    pub(crate) device_id: Option<String>,
-    /// Import form snapshot, or null.
-    pub(crate) form: serde_json::Value,
-    /// Source path, size, mtime, and message count, or null.
-    pub(crate) source_fingerprint: serde_json::Value,
-    /// Addresses the backup's device sent from (JSON array), or null.
-    pub(crate) source_identities: serde_json::Value,
-    /// What the person approved at the last Review they passed, or null. The
-    /// column `PATCH /v1/imports/{id}` writes with its `summary`.
-    pub(crate) summary: serde_json::Value,
+    /// Everything a list answers for the run: the counts Settings shows,
+    /// everything the desktop app needs to resume a running run, and how
+    /// many issues it recorded.
+    #[serde(flatten)]
+    pub(crate) run: ImportRunSummary,
     /// Issues the run recorded, oldest first.
     pub(crate) issues: Vec<ImportIssue>,
-    /// Contacts this run created.
-    pub(crate) contacts_new: u64,
-    /// Contacts it only changed.
-    pub(crate) contacts_changed: u64,
 }
 
 /// An Import Run as a list of runs answers it: the `ImportRun` with how
-/// many issues it recorded in place of the issues. A run may record any
-/// number of issues, so a page that carried them would have no bound on its
-/// size; `GET /v1/imports/{id}` answers them (#1559,
-/// `docs/architecture/http-api.md`, "Code").
+/// many issues it recorded and not the issues. A run may record any number
+/// of issues, so a page that carried them would have no bound on its size;
+/// `GET /v1/imports/{id}` answers them (#1559,
+/// `docs/architecture/http-api.md`, "Lists").
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct ImportRunSummary {
     /// Import Run id.
@@ -1036,13 +989,12 @@ pub(crate) async fn list_imports(
 ) -> Result<Json<Page<ImportRunSummary>>, ApiError> {
     let mut conn = state.db.acquire().await?;
     let rows = import_rows_page(&mut conn, resolve_import_account(&auth), query).await?;
-    Ok(Json(shape_page(rows)))
+    Ok(Json(runs_page(rows)))
 }
 
-/// A page of listed runs, each shaped for whoever reads it: an
-/// [`ImportRunSummary`] for the account, an [`OwnerImportRun`] for the
-/// owner.
-pub(crate) fn shape_page<T: From<crate::db::imports::ListedImport>>(
+/// A page of listed runs as a page of one run type: [`ImportRunSummary`]
+/// for the account, [`OwnerImportRun`] for the owner. It reads nothing.
+pub(crate) fn runs_page<T: From<crate::db::imports::ListedImport>>(
     rows: Page<crate::db::imports::ListedImport>,
 ) -> Page<T> {
     Page {
@@ -1447,13 +1399,9 @@ pub(crate) async fn import_run(
     conn: &mut SqliteConnection,
     row: crate::db::imports::ImportRow,
 ) -> Result<ImportRun, ApiError> {
-    let issues = crate::db::imports::list_import_issues(conn, row.id)
+    let issues: Vec<ImportIssue> = crate::db::imports::list_import_issues(conn, row.id)
         .await
-        .map_err(ApiError::Internal)?;
-    let contacts = crate::db::import_contacts::counts(conn, row.id)
-        .await
-        .map_err(ApiError::Internal)?;
-    let issues = issues
+        .map_err(ApiError::Internal)?
         .into_iter()
         .map(|issue| ImportIssue {
             kind: issue.kind,
@@ -1462,35 +1410,15 @@ pub(crate) async fn import_run(
             reason: issue.reason,
         })
         .collect();
-
-    Ok(ImportRun {
-        id: row.id,
-        source: row.source,
-        tool: row.tool,
-        mode: row.mode,
-        dedupe: row.dedupe,
-        status: row.status,
-        started_at: row.started_at,
-        finished_at: row.finished_at,
-        message_count: row.message_count,
-        attachment_count: row.attachment_count,
-        bytes_uploaded: row.bytes_uploaded,
-        duration_ms: row.duration_ms,
-        parse_ms: row.parse_ms,
-        attachments_ms: row.attachments_ms,
-        prepare_ms: row.prepare_ms,
-        upload_ms: row.upload_ms,
-        stage: row.stage,
-        staging_dir: row.staging_dir,
-        device_id: row.device_id,
-        form: crate::db::imports::json_column(row.form_json),
-        source_fingerprint: crate::db::imports::json_column(row.source_fingerprint),
-        source_identities: crate::db::imports::json_column(row.source_identities),
-        summary: crate::db::imports::json_column(row.summary_json),
-        issues,
-        contacts_new: contacts.new_count,
-        contacts_changed: contacts.changed_count,
-    })
+    let contacts = crate::db::import_contacts::counts(conn, row.id)
+        .await
+        .map_err(ApiError::Internal)?;
+    let run = ImportRunSummary::from(crate::db::imports::ListedImport {
+        row,
+        issue_count: issues.len() as u64,
+        contacts,
+    });
+    Ok(ImportRun { run, issues })
 }
 
 /// New stage for a running Import Run.

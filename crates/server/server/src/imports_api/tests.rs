@@ -4409,7 +4409,7 @@ async fn a_discard_with_an_unknown_issue_kind_is_refused() {
 /// An Import Run is one record wherever the interface hands one run out:
 /// the answer to `complete` and to `discard` and `GET /v1/imports/{id}` are
 /// the same JSON, issues included. The run's row in `GET /v1/imports` is the
-/// same JSON with the count of its issues in place of the issues.
+/// same JSON without the issues, and both count them.
 #[tokio::test]
 async fn an_import_run_reads_the_same_from_every_route() {
     let (fixture, account) = fixture_with_account().await;
@@ -4469,7 +4469,7 @@ async fn an_import_run_reads_the_same_from_every_route() {
             .unwrap()
             .remove("issues")
             .expect("the run carries its issues");
-        summary["issue_count"] = issues.as_array().unwrap().len().into();
+        assert_eq!(summary["issue_count"], issues.as_array().unwrap().len());
         assert_eq!(listed, &summary, "GET /v1/imports, run {id}");
     }
 }
@@ -4937,6 +4937,9 @@ async fn a_page_of_import_runs_is_read_without_a_statement_per_row() {
         .await
         .unwrap();
 
+    // The connection's statement cache holds each distinct statement once,
+    // however often it ran. A read per row is a statement of its own, so it
+    // would show here as a third or fourth.
     assert_eq!(
         conn.cached_statements_size(),
         2,
@@ -4944,6 +4947,6 @@ async fn a_page_of_import_runs_is_read_without_a_statement_per_row() {
     );
     let counts: Vec<u64> = rows.items.iter().map(|run| run.issue_count).collect();
     assert_eq!(counts, [1, 0, 3], "newest first");
-    let owner: Page<OwnerImportRun> = shape_page(rows);
+    let owner: Page<OwnerImportRun> = runs_page(rows);
     assert_eq!(owner.items[2].issue_count, 3);
 }

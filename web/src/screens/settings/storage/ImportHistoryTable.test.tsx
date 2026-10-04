@@ -146,9 +146,8 @@ describe("Import history", () => {
   it("reads a run's issues when the run is opened", async () => {
     const listed = { ...anImport(1), status: "completed_with_issues", issue_count: 1 };
     listAccountImports.mockResolvedValue({ items: [listed], total: 1, limit: 50, offset: 0 });
-    const { issue_count: _count, ...run } = listed;
     getAccountImport.mockResolvedValue({
-      ...run,
+      ...listed,
       summary: null,
       contacts_new: 0,
       contacts_changed: 0,
