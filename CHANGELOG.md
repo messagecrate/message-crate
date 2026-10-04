@@ -999,9 +999,11 @@ released versions carry their date on the heading.
   history keeps the list inside the page.** Opening any Import Run made the
   Import history table about a million pixels wide. Every column but Date
   sat far off to the side. Opening one that recorded errors or skipped
-  items made the table keep getting wider while it stayed open. The run's
-  details now open below its row at the table's own width, and its errors
-  and skipped items scroll inside their own box.
+  items made the table keep getting wider while it stayed open, and its
+  Import Errors and Notes tables showed only their first column, so no
+  error or note could be read. The run's details now open below its row at
+  the table's own width, and its errors, skipped items and notes show every
+  column and scroll inside their own box.
 - 2026-10-04 **Import history in Settings → Storage loads quickly however
   many problems your imports recorded.** The list used to bring every error
   and skipped item of every import on the page, so a few large WhatsApp
