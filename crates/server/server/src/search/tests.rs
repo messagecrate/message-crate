@@ -3784,13 +3784,13 @@ mod name_keyed_conversation {
     }
 }
 
-/// A group conversation's chat id is the source's own id for it: `group:`
-/// and that id from the exporters that write the prefix, a WhatsApp group
-/// JID (`…@g.us`) or an SMS Backup & Restore `chat-<key>` from the others.
-/// Search reads that id as a key, not as text: every id of one shape shares
-/// its text, so plain text `group` or `g.us`, `in:grou`, `with:group` and
-/// `identity:group` would find every group conversation of that shape
-/// (#1706). A group conversation is found by its title and its members.
+/// A group conversation's chat id is the source's own id for it, in a shape
+/// every group conversation from that source shares: for example `group:`
+/// and the id, a WhatsApp group JID (`…@g.us`), or an SMS Backup & Restore
+/// `chat-<key>`. Search reads that id as a key, not as text, or plain text
+/// `group` or `g.us`, `in:grou`, `with:group` and `identity:group` would
+/// find every group conversation of that shape (#1706). A group
+/// conversation is found by its title and its members.
 mod group_keyed_conversation {
     use super::*;
 
