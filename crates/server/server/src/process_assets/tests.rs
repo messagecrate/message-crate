@@ -62,43 +62,40 @@ fn a_part_path_is_removed_and_never_converted() {
     let mut part = row("aa/upload.part");
     part.mime_type = Some("video/mp4".to_string());
     part.original_name = Some("clip.mp4".to_string());
-    assert_eq!(plan(&part, &opts, FRESH).unwrap(), Plan::RemoveIncomplete);
+    assert_eq!(plan(&part, &opts, FRESH), Plan::RemoveIncomplete);
     // Even when the file is already gone the plan is the same; the executor
     // deals with an absent file.
     let gone = OnDisk {
         original_exists: false,
         preview: PreviewFile::Missing,
     };
-    assert_eq!(plan(&part, &opts, gone).unwrap(), Plan::RemoveIncomplete);
+    assert_eq!(plan(&part, &opts, gone), Plan::RemoveIncomplete);
 }
 
 #[test]
 fn a_blob_that_is_not_media_is_skipped() {
     let opts = ProcessAssetsOptions::default();
     assert_eq!(
-        plan(&row("aa/notes.txt"), &opts, FRESH).unwrap(),
+        plan(&row("aa/notes.txt"), &opts, FRESH),
         Plan::Skip(SkipReason::NotMedia)
     );
     let mut pdf = row(&format!("ab/{SHA}"));
     pdf.mime_type = Some("application/pdf".to_string());
     pdf.original_name = Some("clip.mp4".to_string());
-    assert_eq!(
-        plan(&pdf, &opts, FRESH).unwrap(),
-        Plan::Skip(SkipReason::NotMedia)
-    );
+    assert_eq!(plan(&pdf, &opts, FRESH), Plan::Skip(SkipReason::NotMedia));
 }
 
 #[test]
 fn a_gif_is_skipped_because_an_animation_gets_no_still_preview() {
     let opts = ProcessAssetsOptions::default();
     assert_eq!(
-        plan(&row("aa/photo.gif"), &opts, FRESH).unwrap(),
+        plan(&row("aa/photo.gif"), &opts, FRESH),
         Plan::Skip(SkipReason::NotMedia)
     );
     let mut declared = row(&format!("ab/{SHA}"));
     declared.mime_type = Some("image/gif".to_string());
     assert_eq!(
-        plan(&declared, &opts, FRESH).unwrap(),
+        plan(&declared, &opts, FRESH),
         Plan::Skip(SkipReason::NotMedia)
     );
 }
@@ -107,15 +104,15 @@ fn a_gif_is_skipped_because_an_animation_gets_no_still_preview() {
 fn each_kind_is_derived_when_nothing_stands_in_the_way() {
     let opts = ProcessAssetsOptions::default();
     assert_eq!(
-        plan(&row("aa/photo.jpg"), &opts, FRESH).unwrap(),
+        plan(&row("aa/photo.jpg"), &opts, FRESH),
         Plan::Derive(Kind::Image)
     );
     assert_eq!(
-        plan(&row("aa/clip.mp4"), &opts, FRESH).unwrap(),
+        plan(&row("aa/clip.mp4"), &opts, FRESH),
         Plan::Derive(Kind::Video)
     );
     assert_eq!(
-        plan(&row("aa/memo.m4a"), &opts, FRESH).unwrap(),
+        plan(&row("aa/memo.m4a"), &opts, FRESH),
         Plan::Derive(Kind::Audio)
     );
 }
@@ -125,16 +122,10 @@ fn an_extensionless_blob_is_derived_by_its_declared_mime_or_its_attachment_name(
     let opts = ProcessAssetsOptions::default();
     let mut by_mime = row(&format!("ab/{SHA}"));
     by_mime.mime_type = Some("image/heic".to_string());
-    assert_eq!(
-        plan(&by_mime, &opts, FRESH).unwrap(),
-        Plan::Derive(Kind::Image)
-    );
+    assert_eq!(plan(&by_mime, &opts, FRESH), Plan::Derive(Kind::Image));
     let mut by_name = row(&format!("ab/{SHA}"));
     by_name.original_name = Some("voice-note.amr".to_string());
-    assert_eq!(
-        plan(&by_name, &opts, FRESH).unwrap(),
-        Plan::Derive(Kind::Audio)
-    );
+    assert_eq!(plan(&by_name, &opts, FRESH), Plan::Derive(Kind::Audio));
 }
 
 #[test]
@@ -144,15 +135,15 @@ fn skip_image_turns_off_images_and_nothing_else() {
         ..Default::default()
     };
     assert_eq!(
-        plan(&row("aa/photo.jpg"), &opts, FRESH).unwrap(),
+        plan(&row("aa/photo.jpg"), &opts, FRESH),
         Plan::Skip(SkipReason::KindDisabled)
     );
     assert_eq!(
-        plan(&row("aa/clip.mp4"), &opts, FRESH).unwrap(),
+        plan(&row("aa/clip.mp4"), &opts, FRESH),
         Plan::Derive(Kind::Video)
     );
     assert_eq!(
-        plan(&row("aa/memo.m4a"), &opts, FRESH).unwrap(),
+        plan(&row("aa/memo.m4a"), &opts, FRESH),
         Plan::Derive(Kind::Audio)
     );
 }
@@ -164,15 +155,15 @@ fn skip_video_turns_off_videos_and_nothing_else() {
         ..Default::default()
     };
     assert_eq!(
-        plan(&row("aa/clip.mp4"), &opts, FRESH).unwrap(),
+        plan(&row("aa/clip.mp4"), &opts, FRESH),
         Plan::Skip(SkipReason::KindDisabled)
     );
     assert_eq!(
-        plan(&row("aa/photo.jpg"), &opts, FRESH).unwrap(),
+        plan(&row("aa/photo.jpg"), &opts, FRESH),
         Plan::Derive(Kind::Image)
     );
     assert_eq!(
-        plan(&row("aa/memo.m4a"), &opts, FRESH).unwrap(),
+        plan(&row("aa/memo.m4a"), &opts, FRESH),
         Plan::Derive(Kind::Audio)
     );
 }
@@ -184,15 +175,15 @@ fn skip_audio_turns_off_audio_and_nothing_else() {
         ..Default::default()
     };
     assert_eq!(
-        plan(&row("aa/memo.m4a"), &opts, FRESH).unwrap(),
+        plan(&row("aa/memo.m4a"), &opts, FRESH),
         Plan::Skip(SkipReason::KindDisabled)
     );
     assert_eq!(
-        plan(&row("aa/photo.jpg"), &opts, FRESH).unwrap(),
+        plan(&row("aa/photo.jpg"), &opts, FRESH),
         Plan::Derive(Kind::Image)
     );
     assert_eq!(
-        plan(&row("aa/clip.mp4"), &opts, FRESH).unwrap(),
+        plan(&row("aa/clip.mp4"), &opts, FRESH),
         Plan::Derive(Kind::Video)
     );
 }
@@ -206,23 +197,20 @@ fn an_existing_preview_is_kept_unless_force_is_given() {
     let mut photo = row("aa/photo.jpg");
     photo.derived_assets_path = Some(format!("ab/{SHA}.jpg"));
     assert_eq!(
-        plan(&photo, &ProcessAssetsOptions::default(), derived).unwrap(),
+        plan(&photo, &ProcessAssetsOptions::default(), derived),
         Plan::Skip(SkipReason::AlreadyDerived)
     );
     let force = ProcessAssetsOptions {
         force: true,
         ..Default::default()
     };
-    assert_eq!(
-        plan(&photo, &force, derived).unwrap(),
-        Plan::Derive(Kind::Image)
-    );
+    assert_eq!(plan(&photo, &force, derived), Plan::Derive(Kind::Image));
     let damaged = OnDisk {
         original_exists: true,
         preview: PreviewFile::Damaged,
     };
     assert_eq!(
-        plan(&photo, &ProcessAssetsOptions::default(), damaged).unwrap(),
+        plan(&photo, &ProcessAssetsOptions::default(), damaged),
         Plan::Derive(Kind::Image),
         "a damaged Preview is converted again without --force"
     );
@@ -239,7 +227,7 @@ fn a_disabled_kind_is_reported_before_an_existing_preview() {
         preview: PreviewFile::Intact,
     };
     assert_eq!(
-        plan(&row("aa/photo.jpg"), &opts, derived).unwrap(),
+        plan(&row("aa/photo.jpg"), &opts, derived),
         Plan::Skip(SkipReason::KindDisabled)
     );
 }
@@ -251,19 +239,23 @@ fn a_missing_original_is_an_error_only_when_a_conversion_is_wanted() {
         original_exists: false,
         preview: PreviewFile::Missing,
     };
-    let err = plan(&row("aa/photo.jpg"), &opts, missing).unwrap_err();
-    assert_eq!(err.to_string(), "missing original");
+    assert_eq!(
+        plan(&row("aa/photo.jpg"), &opts, missing),
+        Plan::MissingOriginal {
+            damaged_preview: false
+        }
+    );
     // A preview already on disk, or a kind nobody wants, needs no original.
     let missing_but_derived = OnDisk {
         original_exists: false,
         preview: PreviewFile::Intact,
     };
     assert_eq!(
-        plan(&row("aa/photo.jpg"), &opts, missing_but_derived).unwrap(),
+        plan(&row("aa/photo.jpg"), &opts, missing_but_derived),
         Plan::Skip(SkipReason::AlreadyDerived)
     );
     assert_eq!(
-        plan(&row("aa/notes.txt"), &opts, missing).unwrap(),
+        plan(&row("aa/notes.txt"), &opts, missing),
         Plan::Skip(SkipReason::NotMedia)
     );
     // A damaged Preview with no original to convert it from again is dropped.
@@ -272,8 +264,10 @@ fn a_missing_original_is_an_error_only_when_a_conversion_is_wanted() {
         preview: PreviewFile::Damaged,
     };
     assert_eq!(
-        plan(&row("aa/photo.jpg"), &opts, missing_and_damaged).unwrap(),
-        Plan::DropDamagedPreview
+        plan(&row("aa/photo.jpg"), &opts, missing_and_damaged),
+        Plan::MissingOriginal {
+            damaged_preview: true
+        }
     );
 }
 
@@ -642,7 +636,7 @@ async fn listed_attachments_carry_name_hints_for_extensionless_blobs() {
     let rows = list_attachments(&mut conn, ACCOUNT).await.unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(
-        plan(&rows[0], &ProcessAssetsOptions::default(), FRESH).unwrap(),
+        plan(&rows[0], &ProcessAssetsOptions::default(), FRESH),
         Plan::Derive(Kind::Audio),
         "an extensionless blob with no declared MIME must classify from its attachment name"
     );

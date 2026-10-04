@@ -247,16 +247,18 @@ impl<'a> AccountPass<'a> {
                 preview_file(row.derived_assets_path.as_deref(), &self.converted_dir)
             },
         };
-        let kind = match plan(row, self.opts, on_disk)? {
+        let kind = match plan(row, self.opts, on_disk) {
             Plan::RemoveIncomplete => return self.remove_incomplete(row, &source_path),
             Plan::Skip(SkipReason::AlreadyDerived) => {
                 self.share_existing_preview(conn, row).await?;
                 return Ok(Outcome::Skipped);
             }
             Plan::Skip(_) => return Ok(Outcome::Skipped),
-            Plan::DropDamagedPreview => {
-                self.drop_damaged_preview(conn, row).await?;
-                return Err(missing_original());
+            Plan::MissingOriginal { damaged_preview } => {
+                if damaged_preview {
+                    self.drop_damaged_preview(conn, row).await?;
+                }
+                bail!("missing original");
             }
             Plan::Derive(kind) => kind,
         };
@@ -557,10 +559,10 @@ enum Plan {
     Skip(SkipReason),
     /// Convert the original for the browser as this kind of media.
     Derive(Kind),
-    /// The Preview is damaged and the original is missing, so it cannot be
-    /// converted again: stop naming the Preview and delete it, and count the
-    /// attachment as a failure.
-    DropDamagedPreview,
+    /// A conversion is wanted and the original is missing: count the
+    /// attachment as a failure. When the Preview is damaged it cannot be
+    /// converted again, so stop naming it and delete it first.
+    MissingOriginal { damaged_preview: bool },
 }
 
 /// Why a blob is left as it is.
@@ -598,21 +600,16 @@ enum PreviewFile {
 
 /// Decide what one blob needs from the row, the options and what is on disk.
 /// No IO happens here: `on_disk` carries the facts the caller read.
-///
-/// # Errors
-///
-/// Returns an error when a conversion is wanted and the original is missing,
-/// unless a damaged Preview is there to drop.
-fn plan(row: &AssetRow, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> Result<Plan> {
+fn plan(row: &AssetRow, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> Plan {
     if is_part_path(&row.assets_path) {
-        return Ok(Plan::RemoveIncomplete);
+        return Plan::RemoveIncomplete;
     }
     let Some(kind) = media::kind_of(
         Path::new(&row.assets_path),
         row.mime_type.as_deref(),
         &row.name_hints(),
     ) else {
-        return Ok(Plan::Skip(SkipReason::NotMedia));
+        return Plan::Skip(SkipReason::NotMedia);
     };
     let wanted = match kind {
         Kind::Image => !opts.skip_image,
@@ -620,24 +617,17 @@ fn plan(row: &AssetRow, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> Result<
         Kind::Audio => !opts.skip_audio,
     };
     if !wanted {
-        return Ok(Plan::Skip(SkipReason::KindDisabled));
+        return Plan::Skip(SkipReason::KindDisabled);
     }
     if on_disk.preview == PreviewFile::Intact && !opts.force {
-        return Ok(Plan::Skip(SkipReason::AlreadyDerived));
+        return Plan::Skip(SkipReason::AlreadyDerived);
     }
     if !on_disk.original_exists {
-        if on_disk.preview == PreviewFile::Damaged {
-            return Ok(Plan::DropDamagedPreview);
-        }
-        return Err(missing_original());
+        return Plan::MissingOriginal {
+            damaged_preview: on_disk.preview == PreviewFile::Damaged,
+        };
     }
-    Ok(Plan::Derive(kind))
-}
-
-/// The failure an attachment is counted under when its original is not on
-/// disk, whether or not a damaged Preview was dropped for it.
-fn missing_original() -> anyhow::Error {
-    anyhow::anyhow!("missing original")
+    Plan::Derive(kind)
 }
 
 /// The state of the Preview `derived_assets_path` names under
