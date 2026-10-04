@@ -106,18 +106,6 @@ function sum(a: number | undefined, b: number | null | undefined): number | unde
   return Math.round((a ?? 0) + (b ?? 0));
 }
 
-/** Conversation files of `report` whose result has one of `statuses`. */
-function conversationFiles(
-  report: PushFinishedReport | null,
-  statuses: readonly string[],
-): Set<string> {
-  return new Set(
-    (report?.results ?? [])
-      .filter((result) => statuses.includes(result.status))
-      .map((result) => result.file),
-  );
-}
-
 /** The whole run so far: the earlier parts' record with this part added. */
 export function wholeRun(carried: RunRecord, part: RunPart): RunRecord {
   const report = part.report;
@@ -154,11 +142,15 @@ export const RUN_ERROR_ITEM = "Import";
  * again.
  */
 export function recordToCarry(carried: RunRecord, part: RunPart): RunRecord {
-  const conversations = conversationFiles(part.report, ["failed", "cancelled"]);
+  const sentAgain = new Set(
+    (part.report?.results ?? [])
+      .filter((result) => result.status === "failed" || result.status === "cancelled")
+      .map((result) => result.file),
+  );
   const issues = part.issues.filter(
     (issue) =>
       !(issue.kind === "error" && issue.item === RUN_ERROR_ITEM) &&
-      !(issue.stage === "upload" && conversations.has(issue.item)),
+      !(issue.stage === "upload" && sentAgain.has(issue.item)),
   );
   return wholeRun(carried, { ...part, issues });
 }
