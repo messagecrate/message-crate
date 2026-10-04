@@ -94,9 +94,16 @@ vi.mock("../../lib/useAccountProfile", () => ({
       loadAccountProfileMock(...args),
 }));
 
+/** What `onAccountIdChange` was given; `logInAs` calls them, as `setAccountId` does. */
+const accountListeners = vi.hoisted(() => new Set<() => void>());
+
 vi.mock("../../lib/api", () => ({
   getBaseUrl: () => "http://127.0.0.1:8080",
   getAccountId: () => auth.accountId,
+  onAccountIdChange: (listener: () => void) => {
+    accountListeners.add(listener);
+    return () => accountListeners.delete(listener);
+  },
 }));
 
 // The three server calls this hook makes. Everything else in serverApi stays real,
@@ -1755,7 +1762,7 @@ describe("useImportJob wiring", () => {
       view.unmount();
     });
 
-    it("lets the desktop job go when the run is discarded at a review", async () => {
+    it("lets the desktop job go when the run is cancelled at a review", async () => {
       const { view, convert } = await renderConvert();
       const { result } = renderHook(() => useImportJob());
       await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
@@ -2706,6 +2713,28 @@ describe("one desktop app, two accounts (#1085)", () => {
 
   afterEach(() => {
     auth = { token: "test-token", accountId: 1 };
+  });
+
+  /** Log another account in, telling whoever follows the account, as `setAccountId` does. */
+  function logInAs(account: typeof ACCOUNT_A): void {
+    auth = account;
+    act(() => {
+      for (const listener of accountListeners) listener();
+    });
+  }
+
+  it("holds the desktop job at A's review for A only, so B's Export and Convert stay on (#1407)", async () => {
+    const a = renderHook(() => useImportJob());
+    await act(() => a.result.current.startImport(form()));
+    expect(a.result.current.phase).toBe("staging_review");
+    expect(currentDesktopJob()).toBe("Import Run");
+    a.unmount();
+
+    logInAs(ACCOUNT_B);
+    expect(currentDesktopJob()).toBeNull();
+
+    logInAs(ACCOUNT_A);
+    expect(currentDesktopJob()).toBe("Import Run");
   });
 
   it("does not offer account A's parked form to account B", async () => {
