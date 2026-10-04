@@ -283,7 +283,7 @@ async fn fill_missing_content_keys_writes_multiple_rows_in_one_batch() {
             timestamp: "2015-03-12T18:04:22Z",
             is_from_me: true,
             body: Some(body),
-            sort_order: sort_order,
+            sort_order,
             ..MessageRow::new(TEST_ACCOUNT_ID, 1)
         }
         .insert(&mut conn)
@@ -692,7 +692,7 @@ async fn an_exact_duplicate_across_three_sources_keeps_one() {
     ] {
         ids.push(
             MessageRow {
-                source: source,
+                source,
                 guid: Some(guid.into()),
                 timestamp: "2015-03-12T18:04:22Z",
                 is_from_me: true,
@@ -736,9 +736,9 @@ async fn a_near_duplicate_across_three_sources_keeps_one() {
     ] {
         ids.push(
             MessageRow {
-                source: source,
+                source,
                 guid: Some(guid.into()),
-                timestamp: timestamp,
+                timestamp,
                 is_from_me: true,
                 body: Some("Running late"),
                 sort_order: 0,
