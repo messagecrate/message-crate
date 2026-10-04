@@ -995,10 +995,10 @@ released versions carry their date on the heading.
   the date field's calendar buttons and the import form's section headings
   had a thin white line between the button and the ring. The gap now shows
   the colour behind the button, in every theme.
-- 2026-10-04 **Every focused control draws the same focus ring.** The
-  sections of an import's results and the conversation counts in the
-  contact drawer drew their keyboard focus ring further out than every
-  other control. They now draw it as close as the rest.
+- 2026-10-04 **The focus ring in an import's results and the contact
+  drawer sits 1 pixel from the edge.** The sections of an import's results
+  and the conversation counts in the contact drawer drew their keyboard
+  focus ring 2 pixels out, further than most buttons draw theirs.
 - 2026-10-04 **The panel resize grips move by exactly 8 pixels.** Each
   arrow key on the grip of the left panel or the list column moved the
   panel 9 pixels wider or 7 narrower, and pressing the grip without moving
