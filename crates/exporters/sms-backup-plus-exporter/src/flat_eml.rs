@@ -3,7 +3,7 @@
 use crate::assets::extract_body;
 use crate::types::ParsedMessage;
 use mailparse::{MailHeaderMap, ParsedMail};
-use message_ir::IrConversationType;
+use message_ir::{HandleType, IrConversationType};
 use phone::{Handle, OwnerHandleSet};
 use regex::Regex;
 use sha2::{Digest, Sha256};
@@ -241,14 +241,78 @@ fn mail_participants(headers: &MailHeaders, sent: bool, owner: &Owner) -> MailPa
     }
 }
 
-/// The contact name from an `SMS with <name>` subject, unless it is a number.
-fn contact_name_from_subject(subject: &str) -> Option<String> {
+/// True for a name written like a number: `+` first, or digits only.
+fn is_written_like_a_number(name: &str) -> bool {
+    name.starts_with('+') || name.chars().all(|c| c.is_ascii_digit())
+}
+
+/// The contact name from an `SMS with <name>` subject.
+///
+/// SMS Backup+ titles a mail with the contact's name, or with the number for
+/// a contact it has no name for, so beside an address a name written like a
+/// number is that address and no name. A mail with no address has nothing
+/// the name could spell, so there it is taken as it is: it is all that keys
+/// the conversation, and the export writes a conversation known only by a
+/// name that way (#1593).
+fn contact_name_from_subject(subject: &str, has_address: bool) -> Option<String> {
     let caps = SUBJECT_RE.captures(subject.trim())?;
     let name = caps[1].trim();
-    if name.starts_with('+') || name.chars().all(|c| c.is_ascii_digit()) {
+    if has_address && is_written_like_a_number(name) {
         return None;
     }
     Some(name.to_string())
+}
+
+/// The display name in a `From` header, `"Carol" <carol@example.com>`. `None`
+/// when it has none, or when it is written like a number, which SMS Backup+
+/// gives a sender it has no name for.
+fn from_display_name(from: &str) -> Option<String> {
+    let list = mailparse::addrparse(from).ok()?;
+    let mailparse::MailAddr::Single(info) = list.first()? else {
+        return None;
+    };
+    let name = info.display_name.as_deref()?.trim();
+    (!name.is_empty() && !is_written_like_a_number(name)).then(|| name.to_string())
+}
+
+/// An email address and the number it stands for, from a one-to-one mail
+/// that gives both: SMS Backup+ writes the other person as their email
+/// address in `From` (received) or `To` (sent) when their contact has one,
+/// and their number in `X-smssync-address`. `None` for a group's mail, whose
+/// `X-smssync-address` names only one of its people, and for a mail that
+/// gives no email address or no single number (#1545).
+pub(crate) fn email_and_number(
+    headers: &MailHeaders,
+    sent: bool,
+    owner: &Owner,
+) -> Option<(String, Handle)> {
+    let to = to_addresses(&headers.to);
+    if to.len() >= GROUP_MIN_TO_ADDRESSES {
+        return None;
+    }
+    let mut numbers = smssync_addresses(&headers.smssync_address)
+        .into_iter()
+        .filter(|a| !owner.is_owner_handle(a));
+    let number = numbers.next()?;
+    if numbers.next().is_some() || number.kind() != HandleType::Phone {
+        return None;
+    }
+    let other = if sent {
+        to.into_iter().next()?
+    } else {
+        addr_spec(&headers.from).to_string()
+    };
+    if owner.is_owner_email(&other) {
+        return None;
+    }
+    let email = mail_address_handle(&other)?;
+    (email.kind() == HandleType::Email).then(|| (email.into_key(), number))
+}
+
+/// A group's key and title from its members' keys.
+pub(crate) fn group_key(members: &[Handle]) -> (String, String) {
+    let keys: Vec<String> = members.iter().map(|a| a.key().to_string()).collect();
+    phone::group_chat_id("group-", &keys)
 }
 
 /// Unix seconds from the SMS Backup+ date header (milliseconds or seconds), else the `Date` header,
@@ -306,7 +370,9 @@ pub(crate) fn is_flat_sms_eml(headers: &MailHeaders) -> bool {
 }
 
 /// One SMS Backup+ "flat" EML (one text per file) as a message, or `None`
-/// when the file is not one, has no readable date, or names nobody.
+/// when the file is not one or has no readable date. A mail that names
+/// nobody, with no address and no name, is kept: it belongs to the
+/// conversation that names nobody (#1591).
 pub(crate) fn parse_flat_eml_mail(
     path: &Path,
     mail: &ParsedMail<'_>,
@@ -317,15 +383,24 @@ pub(crate) fn parse_flat_eml_mail(
         return None;
     }
     let (timestamp_secs, has_milliseconds) = timestamp_seconds(headers)?;
-    let name_alias = contact_name_from_subject(&headers.subject);
+    let has_address = !smssync_addresses(&headers.smssync_address).is_empty();
+    let subject_name = contact_name_from_subject(&headers.subject, has_address);
     let sent = is_sent(headers, owner);
     let addresses = FlatAddresses::from_headers(headers, owner, sent);
-    let conversation = addresses.conversation(headers, sent, name_alias.as_deref())?;
+    let conversation = addresses.conversation(headers, sent);
     let owner_not_named = addresses.owner_not_named;
-    // The subject names the `X-smssync-address` contact, who is not known to
-    // have written a mail that does not name the owner. It keys only a
-    // conversation nothing else identifies.
-    let name_alias = name_alias.filter(|_| !owner_not_named || conversation.chat_key.is_empty());
+    let name_alias = if !owner_not_named {
+        subject_name
+    } else if conversation.sender.is_some() {
+        // Filed under the sender in `From`: the name is the one `From`
+        // gives that sender (#1547).
+        from_display_name(&headers.from)
+    } else {
+        // The subject names the `X-smssync-address` contact, who is not
+        // known to have written a mail that does not name the owner. It
+        // keys only a conversation nothing else identifies.
+        subject_name.filter(|_| conversation.chat_key.is_empty())
+    };
 
     let file_key = hex::encode(Sha256::digest(path.to_string_lossy().as_bytes()));
     let body = extract_body(
@@ -350,6 +425,7 @@ pub(crate) fn parse_flat_eml_mail(
         android_type: headers.smssync_type.clone(),
         eml_path: String::new(),
         owner_not_named,
+        email_number: email_and_number(headers, sent, owner),
     })
 }
 
@@ -420,19 +496,14 @@ impl FlatAddresses {
         }
     }
 
-    /// A group when two or more other participants are named, else the one-to-one chat
-    /// with the peer. `None` when nothing identifies the other party and no
-    /// display name exists to key the conversation on (`name_only_key`).
-    fn conversation(
-        &self,
-        headers: &MailHeaders,
-        sent: bool,
-        name_alias: Option<&str>,
-    ) -> Option<FlatConversation> {
+    /// A group when two or more other participants are named, else the
+    /// one-to-one chat with the peer. With no peer the chat key is empty:
+    /// `chat_id_for` then keys the conversation by the subject's name, or
+    /// as the conversation that names nobody.
+    fn conversation(&self, headers: &MailHeaders, sent: bool) -> FlatConversation {
         if self.non_owner.len() >= GROUP_MIN_PARTICIPANTS {
-            let keys: Vec<String> = self.non_owner.iter().map(|a| a.key().to_string()).collect();
-            let (chat_key, title) = phone::group_chat_id("group-", &keys);
-            return Some(FlatConversation {
+            let (chat_key, title) = group_key(&self.non_owner);
+            return FlatConversation {
                 chat_key,
                 conversation_type: IrConversationType::Group,
                 group_title: Some(title),
@@ -442,16 +513,12 @@ impl FlatAddresses {
                 } else {
                     self.group_sender(headers)
                 },
-            });
+            };
         }
         // Prefer the first non-owner address (groups already use this rule). An
         // owner-first `owner~peer` list must not key the CSV to the owner's number.
         let peer = self.non_owner.first().or(self.first.as_ref()).cloned();
-        // Keep an empty chat_key when a display name exists so `name_only_key` can key on it.
-        if peer.is_none() && name_alias.map(str::trim).unwrap_or_default().is_empty() {
-            return None;
-        }
-        Some(FlatConversation {
+        FlatConversation {
             chat_key: peer
                 .as_ref()
                 .map(|p| p.key().to_string())
@@ -460,7 +527,7 @@ impl FlatAddresses {
             group_title: None,
             participants: peer.iter().cloned().collect(),
             sender: peer.filter(|_| !sent && self.peer_is_sender(headers)),
-        })
+        }
     }
 
     /// True when the one-to-one peer is who wrote an incoming message. For a

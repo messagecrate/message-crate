@@ -355,7 +355,9 @@ pub fn display_names_for_handles(
 
 /// The default roster: `participant_e164s` (with display names gathered from
 /// the messages) plus the single-peer chat-id fallback when the roster is
-/// empty for an individual chat.
+/// empty for an individual chat. The conversation that names nobody
+/// ([`crate::NAMELESS_CHAT_ID`]) has no fallback: it is with nobody, and a
+/// participant made from its key would make it a person.
 pub fn default_participants(
     chat_id: &str,
     convo: &PendingConversation,
@@ -372,7 +374,11 @@ pub fn default_participants(
             handle_type: Some(HandleType::Phone),
         })
         .collect();
-    if participants.is_empty() && !convo.is_group && !chat_id.is_empty() {
+    if participants.is_empty()
+        && !convo.is_group
+        && !chat_id.is_empty()
+        && chat_id != crate::NAMELESS_CHAT_ID
+    {
         if crate::name_of_chat_id(chat_id).is_some() {
             // The source named this person and recorded no address for them,
             // so the chat id is made from the name — not something to store
@@ -535,6 +541,23 @@ mod tests {
         assert_eq!(
             doc.conversation.participants[0].display_name.as_deref(),
             Some("Bob")
+        );
+    }
+
+    /// The conversation that names nobody is with nobody: its key never
+    /// becomes a participant, whom the server would make a contact (#1591).
+    #[test]
+    fn the_conversation_that_names_nobody_has_no_fallback_participant() {
+        let mut convo = PendingConversation::new(crate::NAMELESS_CHAT_ID, false, None, Vec::new());
+        let mut m = msg(1_609_459_200, true, "hi");
+        m.sender_handle = String::new();
+        convo.messages = vec![m];
+
+        let (doc, _) = pending_to_document(crate::NAMELESS_CHAT_ID, &convo, &TestHooks);
+        assert!(
+            doc.conversation.participants.is_empty(),
+            "{:?}",
+            doc.conversation.participants
         );
     }
 

@@ -44,6 +44,9 @@ pub(crate) struct ParsedMessage {
     /// the address in `From`, or under `X-smssync-address` with no sender
     /// when `From` gives none.
     pub owner_not_named: bool,
+    /// An email address and the number it stands for, when this is a
+    /// one-to-one mail that gives both (`flat_eml::email_and_number`).
+    pub email_number: Option<(String, Handle)>,
 }
 
 impl ParsedMessage {

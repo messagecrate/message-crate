@@ -206,3 +206,41 @@ fn a_group_message_not_naming_the_owner_is_counted_once() {
     );
     assert!(result.issues.is_empty(), "{:?}", result.issues);
 }
+
+/// A group member the archive names only by email address keeps the address
+/// as their key, and the summary counts them once, however many mails name
+/// them (#1545).
+#[test]
+fn a_group_member_with_no_number_in_the_archive_is_counted_once() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("backup");
+    fs::create_dir_all(&input).unwrap();
+    for (name, date) in [("1.eml", "1609459200000"), ("2.eml", "1609459300000")] {
+        let mail = format!(
+            "From: me@example.com\n\
+             To: \"Dave\" <dave@example.com>, <+14075550108@unknown.email>\n\
+             Subject: SMS with Dave\n\
+             X-smssync-type: 128\n\
+             X-smssync-address: 4075550108\n\
+             X-smssync-date: {date}\n\
+             Content-Type: text/plain; charset=utf-8\n\
+             \n\
+             Hello {name}\n"
+        );
+        fs::write(input.join(name), mail).unwrap();
+    }
+    let output = tmp.path().join("out");
+
+    let result = crate::run(&jsonl_run_config(&[&input], &output, source(true))).expect("run");
+
+    let written = assert_run_wrote_jsonl(&result, &output, 1);
+    assert!(written.contains("dave@example.com"), "{written}");
+    assert!(
+        result
+            .messages
+            .iter()
+            .any(|l| l == "  group_members_without_number: 1"),
+        "{:?}",
+        result.messages
+    );
+}

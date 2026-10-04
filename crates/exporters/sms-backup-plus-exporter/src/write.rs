@@ -252,9 +252,13 @@ impl<'a> Conversation<'a> {
         // A one-to-one conversation whose roster has no address is with the
         // address its chat id is, or, for a conversation keyed by a name,
         // with that name: the `name:` prefix is the key's, not the person's.
+        // The conversation that names nobody is with nobody: its mail has no
+        // address and no name, so the import keeps it as that conversation
+        // instead of making `nameless:` a person's address (#1591).
         let mut name_only = false;
         if peers.is_empty()
             && let Some(id) = trimmed(&doc.conversation.chat_identifier)
+                .filter(|id| *id != message_ir::NAMELESS_CHAT_ID)
         {
             let name = message_ir::name_of_chat_id(id);
             name_only = name.is_some();

@@ -127,15 +127,23 @@ fn sent_detection_uses_exact_owner_email() {
 }
 
 /// SMS Backup+ titles a thread "SMS with <who>". For a saved contact
-/// that is their name; for an unsaved one it is the number, which is an
-/// address and never a display name.
+/// that is their name; for an unsaved one it is the number, which beside
+/// an address is that address and never a display name. With no address,
+/// the name is taken as it is (#1593).
 #[test]
-fn a_subject_naming_a_number_gives_no_contact_name() {
-    assert_eq!(contact_name_from_subject("SMS with +15555550101"), None);
-    assert_eq!(contact_name_from_subject("SMS with 5550101"), None);
+fn a_subject_naming_a_number_gives_no_contact_name_beside_an_address() {
     assert_eq!(
-        contact_name_from_subject("SMS with Sam").as_deref(),
+        contact_name_from_subject("SMS with +15555550101", true),
+        None
+    );
+    assert_eq!(contact_name_from_subject("SMS with 5550101", true), None);
+    assert_eq!(
+        contact_name_from_subject("SMS with Sam", true).as_deref(),
         Some("Sam")
+    );
+    assert_eq!(
+        contact_name_from_subject("SMS with +1 555 0101", false).as_deref(),
+        Some("+1 555 0101")
     );
 }
 
@@ -421,4 +429,61 @@ fn a_sent_message_to_one_recipient_stays_one_to_one() {
     .unwrap();
     assert_eq!(msg.conversation_type, IrConversationType::Individual);
     assert_eq!(msg.chat_key, "+14075550150");
+}
+
+/// A received group MMS that does not name the owner is filed under the
+/// sender in `From`, and the sender's name is the display name `From` gives,
+/// never the subject's, which names the `X-smssync-address` contact (#1547).
+#[test]
+fn a_group_mms_not_naming_the_owner_names_its_sender_from_the_from_header() {
+    let msg = parse(
+        "From: \"Carol\" <carol@example.com>\nTo: <me@icloud.example>, <+14075550150@unknown.email>\nSubject: SMS with Alice\nX-smssync-type: 132\nX-smssync-address: 4075550150\nX-smssync-date: 1609459260000\nContent-Type: text/plain; charset=utf-8\n\nhello\n",
+        &["5555550100"],
+    )
+    .unwrap();
+    assert_eq!(msg.chat_key, "carol@example.com");
+    assert_eq!(
+        msg.sender.map(Handle::into_key).as_deref(),
+        Some("carol@example.com")
+    );
+    assert_eq!(msg.name_alias.as_deref(), Some("Carol"));
+}
+
+/// A mail with no address is keyed by the name in its subject, even a name
+/// written like a number: with no address beside it, the name cannot be
+/// mistaken for one (#1593).
+#[test]
+fn a_mail_with_no_address_is_keyed_by_a_name_written_like_a_number() {
+    for name in ["+1 555 0101", "5550101"] {
+        let msg = parse(
+            &format!("From: me@example.com\nTo: x@unknown.email\nSubject: SMS with {name}\nX-smssync-type: 2\nX-smssync-address: \nX-smssync-date: 1609459200000\nContent-Type: text/plain; charset=utf-8\n\nhi\n"),
+            &["5555550100"],
+        )
+        .unwrap_or_else(|| panic!("{name}: skipped"));
+        assert_eq!(crate::identity::chat_id_for(&msg), format!("name:{name}"));
+    }
+}
+
+/// A mail that names nobody, with no address and a subject that gives no
+/// name, is the conversation that names nobody: no participant, no sender
+/// (#1591).
+#[test]
+fn a_mail_that_names_nobody_is_kept_in_the_conversation_that_names_nobody() {
+    for (typ, from, to) in [
+        ("2", "me@example.com", ""),
+        ("1", "unknown@unknown.email", "me@example.com"),
+    ] {
+        let msg = parse(
+            &format!("From: {from}\nTo: {to}\nSubject: SMS\nX-smssync-type: {typ}\nX-smssync-address: \nX-smssync-date: 1609459200000\nContent-Type: text/plain; charset=utf-8\n\nhi\n"),
+            &["5555550100"],
+        )
+        .unwrap_or_else(|| panic!("type {typ}: skipped"));
+        assert_eq!(
+            crate::identity::chat_id_for(&msg),
+            message_ir::NAMELESS_CHAT_ID
+        );
+        assert!(msg.participants.is_empty(), "{:?}", msg.participants);
+        assert!(msg.sender.is_none(), "{:?}", msg.sender);
+        assert_eq!(msg.name_alias, None);
+    }
 }

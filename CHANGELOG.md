@@ -248,6 +248,17 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **A group text from an SMS Backup+ archive stays one
+  conversation when a member's contact gained an email address.** SMS
+  Backup+ names a person by their email address when their contact on the
+  phone had one at backup time, and by their number otherwise, so one group
+  could split in two. The import now learns each address's number from that
+  person's own texts in the archive and keys the group member by the number.
+  A member the archive never gives a number for keeps their email address,
+  and the run's summary counts them.
+- 2026-10-04 **A received SMS Backup+ group text that doesn't name you shows
+  its sender's name.** Such a text is filed under its sender, who showed up
+  as a bare address. The sender now gets the name the mail gives them.
 - 2026-10-04 **Working files from reading a backup no longer stay behind
   when an import is stopped, and Staging checks for room while it reads
   the backup.** Reading an encrypted iPhone backup decrypts its message
@@ -577,6 +588,17 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-04 **Messages sent to nobody survive an export as SMS Backup+
+  mail.** OpenExtract keeps sent texts that name no recipient in one
+  conversation. Exported as **EML (SMS Backup+)** and imported again, they
+  came back as a conversation with a made-up person, who was then added
+  to Contacts. They now come back as the same conversation with no one in
+  it.
+- 2026-10-04 **A person known only by a name that looks like a number keeps
+  their messages through an SMS Backup+ export.** A person a backup named
+  "+1 555 0101", with no address, lost every message when exported as
+  **EML (SMS Backup+)** and imported again. The import now keeps them in
+  that person's conversation.
 - 2026-10-04 **Every format checks for room before it writes.** Only an
   import to the server used to check for free disk space; writing CSV,
   JSON, EML, MBOX or SMS Backup & Restore XML, and **Convert** in
