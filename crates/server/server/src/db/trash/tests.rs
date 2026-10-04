@@ -684,6 +684,7 @@ async fn delete_reports_a_thumbnail_only_when_no_row_names_it() {
     // Another file whose Preview has the very bytes of a Thumbnail of the
     // conversation deleted.
     insert_attachment(&mut conn, k1, &sha('g'), Some(&shared_thumbnail)).await;
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     for (original, thumbnail) in [(&alone, &thumbnail), (&shared_original, &shared_thumbnail)] {
         sqlx::query(
             "UPDATE attachments
@@ -694,10 +695,11 @@ async fn delete_reports_a_thumbnail_only_when_no_row_names_it() {
         .bind(thumbnail)
         .bind(format!("{}/{thumbnail}.jpg", &thumbnail[..2]))
         .bind(original)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
     }
+    tx.commit().await.unwrap();
 
     move_to_trash(&mut conn, ACCOUNT_A, Trashable::Conversation(doomed))
         .await

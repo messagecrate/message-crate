@@ -1274,10 +1274,14 @@ fn a_version_made_after_its_rows_were_deleted_is_left_for_the_sweep() {
         let rows = versions_db::stored_originals(&mut opened.conn().await.unwrap(), ACCOUNT, None)
             .await
             .unwrap();
+        let mut conn = opened.conn().await.unwrap();
+        let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
         sqlx::query("DELETE FROM attachments")
-            .execute(&opened.db)
+            .execute(&mut *tx)
             .await
             .unwrap();
+        tx.commit().await.unwrap();
+        drop(conn);
         let opts = ProcessAssetsOptions::default();
         let work = tempfile::tempdir().unwrap();
         let pass = AccountPass::new(&opened.cfg, &opts, work.path(), ACCOUNT, Log::Print)
