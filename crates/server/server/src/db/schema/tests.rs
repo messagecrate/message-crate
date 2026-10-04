@@ -7,17 +7,6 @@ use crate::test_support::{
 const A1: i64 = 7;
 const A2: i64 = 8;
 
-async fn insert_message(conn: &mut SqliteConnection, id: i64, guid: &str, body: &str) {
-    MessageRow {
-        id: Some(id),
-        guid: Some(guid.into()),
-        body: Some(body),
-        ..MessageRow::new(A1, 1)
-    }
-    .insert(conn)
-    .await;
-}
-
 async fn conversation_id(conn: &mut SqliteConnection, account: i64) -> i64 {
     sqlx::query_scalar::<_, i64>("SELECT id FROM conversations WHERE account_id = $1")
         .bind(account)
@@ -69,7 +58,14 @@ async fn promote_fts_indexing_covers_only_rows_inserted_by_this_promotion() {
     let mut conn = pool.acquire().await.unwrap();
 
     // An earlier import already indexed this row through the insert trigger.
-    insert_message(&mut conn, 10, "g-existing", "carriedover").await;
+    MessageRow {
+        id: Some(10),
+        guid: Some("g-existing".into()),
+        body: Some("carriedover"),
+        ..MessageRow::new(A1, 1)
+    }
+    .insert(&mut conn)
+    .await;
     let max_id_before_promote: i64 =
         sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM messages")
             .fetch_one(&mut *conn)
@@ -131,8 +127,22 @@ async fn promote_fts_indexing_reindexes_an_existing_message_that_gained_an_attac
     let mut conn = pool.acquire().await.unwrap();
 
     // Two messages an earlier import indexed through the insert trigger.
-    insert_message(&mut conn, 10, "g-gains", "gainsbody").await;
-    insert_message(&mut conn, 12, "g-keeps", "keepsbody").await;
+    MessageRow {
+        id: Some(10),
+        guid: Some("g-gains".into()),
+        body: Some("gainsbody"),
+        ..MessageRow::new(A1, 1)
+    }
+    .insert(&mut conn)
+    .await;
+    MessageRow {
+        id: Some(12),
+        guid: Some("g-keeps".into()),
+        body: Some("keepsbody"),
+        ..MessageRow::new(A1, 1)
+    }
+    .insert(&mut conn)
+    .await;
     let max_id_before_promote: i64 =
         sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM messages")
             .fetch_one(&mut *conn)
