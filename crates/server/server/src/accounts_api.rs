@@ -17,7 +17,7 @@
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use message_ir::{HandleService, HandleType};
+use message_ir::HandleService;
 use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
@@ -462,7 +462,9 @@ pub async fn get_account(
 pub struct LinkAccountIdentityRequest {
     /// The address as typed, e.g. `+15555550100` or `alex@example.com`.
     pub address: String,
-    /// Platform the address belongs to: `phone`, `email`, or `whatsapp`.
+    /// Platform the address belongs to: `phone`, `email` (the phone
+    /// platform), or `whatsapp`. It never decides the identity's type, which
+    /// comes from the address; an email address on WhatsApp is refused.
     pub service: String,
 }
 
@@ -471,7 +473,9 @@ pub struct LinkAccountIdentityRequest {
 pub struct UnlinkAccountIdentityRequest {
     /// The address as typed, e.g. `+15555550100` or `alex@example.com`.
     pub address: String,
-    /// Platform the address belongs to: `phone`, `email`, or `whatsapp`.
+    /// Platform the address belongs to: `phone`, `email` (the phone
+    /// platform), or `whatsapp`. It never decides the identity's type, which
+    /// comes from the address.
     pub service: String,
 }
 
@@ -550,6 +554,10 @@ enum ProfileUpdateError {
     /// The client named an identity service the profile does not support.
     #[error("unsupported identity service: {0}")]
     UnsupportedService(String),
+    /// The service cannot carry an identity of the address's type: an email
+    /// address on WhatsApp.
+    #[error(transparent)]
+    ServiceCannotCarry(#[from] handles::EmailOnWhatsapp),
     /// The client named a time zone chrono-tz does not know.
     #[error("unknown time zone: {0}; use an IANA name such as America/New_York")]
     UnknownTimeZone(String),
@@ -568,26 +576,20 @@ impl From<ProfileUpdateError> for ApiError {
     fn from(e: ProfileUpdateError) -> Self {
         match e {
             err @ (ProfileUpdateError::UnsupportedService(_)
+            | ProfileUpdateError::ServiceCannotCarry(_)
             | ProfileUpdateError::UnknownTimeZone(_)) => Self::validation(err.to_string()),
             ProfileUpdateError::Db(err) => Self::Internal(err),
         }
     }
 }
 
-enum ProfileHandleKind {
-    Phone,
-    Email,
-    Whatsapp,
-}
-
-/// Map a client `service` string to a handle kind.
-fn parse_profile_service(
-    service: &str,
-) -> std::result::Result<ProfileHandleKind, ProfileUpdateError> {
+/// The platform a client `service` string names. `email` is the phone
+/// platform, where iMessage reaches an email address. The service never
+/// decides an identity's type, which comes from the address (#1432).
+fn parse_profile_service(service: &str) -> std::result::Result<HandleService, ProfileUpdateError> {
     match service.trim().to_ascii_lowercase().as_str() {
-        "phone" => Ok(ProfileHandleKind::Phone),
-        "email" => Ok(ProfileHandleKind::Email),
-        "whatsapp" => Ok(ProfileHandleKind::Whatsapp),
+        "phone" | "email" => Ok(HandleService::Phone),
+        "whatsapp" => Ok(HandleService::Whatsapp),
         other => Err(ProfileUpdateError::UnsupportedService(other.to_string())),
     }
 }
@@ -617,11 +619,8 @@ async fn apply_profile_update(
         if raw.is_empty() {
             continue;
         }
-        let (handle_type, service) = match parse_profile_service(&entry.service)? {
-            ProfileHandleKind::Phone => (HandleType::Phone, HandleService::Phone),
-            ProfileHandleKind::Whatsapp => (HandleType::Phone, HandleService::Whatsapp),
-            ProfileHandleKind::Email => (HandleType::Email, HandleService::Phone),
-        };
+        let service = parse_profile_service(&entry.service)?;
+        let handle_type = handles::handle_type_of(raw);
         account_profile::unlink_account_handle(conn, account_id, raw, handle_type, service).await?;
     }
 
@@ -630,26 +629,17 @@ async fn apply_profile_update(
         if raw.is_empty() {
             continue;
         }
-        match parse_profile_service(&entry.service)? {
-            ProfileHandleKind::Phone => {
-                account_profile::link_account_handle(conn, account_id, raw, HandleType::Phone)
-                    .await?;
-            }
-            ProfileHandleKind::Email => {
-                account_profile::link_account_handle(conn, account_id, raw, HandleType::Email)
-                    .await?;
-            }
-            ProfileHandleKind::Whatsapp => {
-                account_profile::link_account_handle_with_service(
-                    conn,
-                    account_id,
-                    raw,
-                    HandleType::Phone,
-                    Some("whatsapp"),
-                )
-                .await?;
-            }
-        }
+        let service = parse_profile_service(&entry.service)?;
+        let handle_type = handles::handle_type_of(raw);
+        handles::check_service_carries(raw, service, handle_type)?;
+        account_profile::link_account_handle_with_service(
+            conn,
+            account_id,
+            raw,
+            handle_type,
+            Some(service.as_str()),
+        )
+        .await?;
     }
 
     Ok(())

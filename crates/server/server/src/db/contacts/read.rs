@@ -9,7 +9,6 @@ use serde::Serialize;
 use sqlx::SqliteConnection;
 
 use crate::db::contacts::UNKNOWN_CONTACT_SQL;
-use crate::db::handles::{infer_handle_type_from_shape, normalize_handle};
 use crate::db::sql::{SqlParam, bind_args, in_placeholders};
 use crate::paging::{Direction, MAX_CONTACT_SUMMARY_IDS, Page, SortKey};
 use crate::search::bridge::{TrashScope, contact_sent_messages};
@@ -527,9 +526,9 @@ type ContactSelectionRow = (
 /// this count promises.
 ///
 /// Matches on the same normalized form the import pipeline stores in
-/// `handles.normalized` ([`normalize_handle`]), so an export spelling like
-/// `+1 555 0100` is recognized against a contact stored as
-/// `+15550100`. Blanks are dropped; duplicates are collapsed by *normalized*
+/// `handles.normalized` (the key [`phone::Handle::parse`] gives), so an
+/// export spelling like `+1 555 0100` is recognized against a contact stored
+/// as `+15550100`. Blanks are dropped; duplicates are collapsed by *normalized*
 /// form (two spellings of the same person must not both count as "new"),
 /// keeping the first-seen raw (trimmed) spelling and first-seen order.
 ///
@@ -550,15 +549,15 @@ pub async fn unknown_contact_identifiers(
         if trimmed.is_empty() {
             continue;
         }
-        // Import prefers the handle type the source declared (SMS, email
-        // header, ...); here there is no declared type, so this infers one
-        // from the string's shape instead. The two can diverge: a
-        // source-declared phone number whose digits don't look phone-shaped
-        // (e.g. a short code) would infer as Other here and normalize
-        // differently than the database's stored (Phone-typed) form, reading as
-        // "new" even though import would have linked it. Acceptable for a
-        // best-effort gate count; not a source of silent data loss.
-        let normalized = normalize_handle(trimmed, infer_handle_type_from_shape(trimmed)).0;
+        // No type is declared here, so `Handle::parse` types the identifier,
+        // the rule import uses for an address its source did not type. A
+        // source-declared type can still differ (an exporter that calls a
+        // number `other`), and then this reads the identifier as new: a
+        // best-effort gate count, not a source of silent data loss.
+        let Some(handle) = phone::Handle::parse(trimmed) else {
+            continue;
+        };
+        let normalized = handle.into_key();
         if seen_normalized.insert(normalized.clone()) {
             unique.push((trimmed.to_string(), normalized));
         }

@@ -413,6 +413,38 @@ async fn a_participants_message_on_an_unknown_service_is_from_the_participant() 
     assert_eq!(contacts, 1, "both messages are from the one contact");
 }
 
+/// One number is one identity type whether it arrives as a sender or as a
+/// participant the header gives no type. The participant `tel:+15555550157`
+/// was typed by its characters, which a `tel:` prefix makes `other`, while
+/// the sender `+15555550157` was typed by `Handle::parse` as `phone`, so the
+/// one number became two identities that were never linked (#1432).
+#[tokio::test]
+async fn a_number_is_one_type_as_a_sender_and_as_an_untyped_participant() {
+    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let body = imessage_header(
+        "chat1000000006",
+        "group",
+        r#"[{"handle":"tel:+15555550157","display_name":null,"handle_type":null}]"#,
+    ) + &incoming("g-tel-1", "+15555550157");
+    import_one(&mut conn, "chat1000000006.jsonl", &body)
+        .await
+        .unwrap();
+
+    let identities: Vec<(String, String)> = sqlx::query_as(
+        "SELECT normalized, handle_type FROM handles
+         WHERE account_id = $1 AND raw <> 'chat1000000006' ORDER BY normalized",
+    )
+    .bind(TEST_ACCOUNT)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(
+        identities,
+        [("+15555550157".to_string(), "phone".to_string())]
+    );
+}
+
 /// A sender the header does not list is typed by the address alone: a phone
 /// number is a `phone` identity whatever service the message came over. It
 /// was `other` on any service but SMS, iMessage, WhatsApp and RCS (#1144).

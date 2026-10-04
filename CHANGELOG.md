@@ -701,6 +701,20 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-04 **One number is one identity however it arrives.** A number
+  written with `tel:` in front, in a backup that gave no type for it, became
+  a separate identity from the same number as a message sender, on a contact
+  of its own. An email address added to a contact under iMessage, or to
+  your own identities under Phone, was saved as a phone number. Every
+  address is now typed by what it is, whatever service it came over or was
+  added under.
+- 2026-10-04 **Changing a contact's identity can move it to another
+  service.** Changing a WhatsApp number to a Text Message number in one edit
+  was refused with "previous address not found on contact". The old
+  identity is now found on its own service. Changing a WhatsApp number to an
+  email address without naming a service saved an email address on
+  WhatsApp; it is now refused with the reason, since WhatsApp carries no
+  email addresses.
 - 2026-10-04 **An Address Book loaded straight back renames nobody.** A
   name cell that started with a tab, written `'` then a tab in the
   spreadsheet, created a contact whose name kept the tab, and loading the
