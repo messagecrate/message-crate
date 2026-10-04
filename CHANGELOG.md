@@ -1115,6 +1115,13 @@ released versions carry their date on the heading.
   messages, and the files in other accounts' folders. The reset stops if any
   of them changed. On a database of about 1.3 million messages the check
   takes about 14 seconds.
+- 2026-10-04 **Deleting attachments no longer holds up everyone else.**
+  Emptying the Trash, deleting a conversation or all of an account's
+  messages, and the clean-up at the end of an import deleted every file
+  while keeping all other changes waiting. With many files on a slow disk,
+  another person's import, a sign-in or media conversion could wait 15
+  seconds and fail. The files are now set aside in a moment and deleted
+  afterwards, while everything else goes on.
 
 ### Upgrading
 
