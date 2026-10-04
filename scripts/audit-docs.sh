@@ -15,7 +15,8 @@
 # is accepted. When a fix ships, the entry comes off the list and the fix goes
 # in instead. Why: #1457.
 #
-# Reads docs/node_modules, so run `npm ci` in docs/ first.
+# Reads docs/node_modules, so run `npm ci` in docs/ first. Needs jq 1.6 or
+# newer, which reads the audit report.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -23,8 +24,15 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 cd "${REPO_ROOT}/docs"
 
 # GHSA IDs accepted with no patched version. Empty while every high or
-# critical advisory in docs/ has a fix.
+# critical advisory in docs/ has a fix. The expansion below guards the empty
+# list, because bash before 4.4 (macOS ships 3.2) calls an empty array
+# unbound under `set -u`.
 ACCEPTED=()
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "audit-docs.sh needs jq to read the npm audit report; AGENTS.md, \"First time setup\", says how to install it." >&2
+  exit 1
+fi
 
 report="$(npm audit --json || true)"
 
@@ -34,7 +42,7 @@ if ! jq -e '.vulnerabilities | type == "object"' <<<"${report}" >/dev/null 2>&1;
   exit 1
 fi
 
-accepted_json="$(jq -cn '$ARGS.positional' --args "${ACCEPTED[@]}")"
+accepted_json="$(jq -cn '$ARGS.positional' --args ${ACCEPTED[@]+"${ACCEPTED[@]}"})"
 
 # Each advisory sits in the `via` list of the package it names. Entries that
 # are plain strings point at another vulnerable package, not an advisory.

@@ -302,7 +302,7 @@ Do this once on a new machine. Then follow **Run the server (development)**.
 | OS             | What to install                                                                                                                          |
 |----------------|------------------------------------------------------------------------------------------------------------------------------------------|
 | Linux (Ubuntu) | C compiler, OpenSSL, test libs, WebKit/GTK for Tauri, ffmpeg (commands below)                                                            |
-| macOS          | Xcode Command Line Tools: `xcode-select --install`                                                                                       |
+| macOS          | Xcode Command Line Tools: `xcode-select --install`. macOS 15+ ships `jq`; older: `brew install jq`                                       |
 | Windows        | [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with the "Desktop development with C++" workload |
 | WSL2           | Keep the clone under `~/…`, not `/mnt/c`. Install Rust and Node inside WSL. Prefer WSLg (Windows 11).                                    |
 
@@ -311,6 +311,7 @@ Ubuntu packages:
 ```bash
 sudo apt update
 sudo apt install -y curl git build-essential pkg-config libssl-dev
+sudo apt install -y jq   # ./scripts/check-all.sh (docs audit)
 sudo apt install -y libfontconfig1-dev libxkbcommon-dev   # cargo test --workspace
 sudo apt install -y \
   libwebkit2gtk-4.1-dev libgtk-3-dev \
