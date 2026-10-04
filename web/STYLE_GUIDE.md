@@ -36,6 +36,7 @@ These drive a `color-mix` derivation tree in `theme.css`. Three `data-theme` mod
 | `--ok` | `text-ok` |
 | `--ok-soft-bg` | `bg-ok-soft-bg` |
 | `--lightbox-bg`, `--lightbox-control`, `--lightbox-text` | `bg-lightbox-bg`, `bg-lightbox-control`, `text-lightbox-text` |
+| `--media-control` | `bg-media-control` (a play or download button over a picture in the conversation, with `text-lightbox-text`) |
 | `--avatar-1` … `--avatar-8`, `--avatar-text` | `bg-avatar-1` … `bg-avatar-8` (picked by `contactAvatarClass`), `text-avatar-text` |
 | `--elevation-card`, `-popup`, `-modal`, `-drawer`, `-contact-drawer`, `-pill`, `-bubble` | `shadow-card`, `shadow-popup`, `shadow-modal`, `shadow-drawer`, `shadow-contact-drawer`, `shadow-pill`, `shadow-bubble` |
 | etc. | (see `@theme inline` in `theme.css` for full list) |

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
-import { saveTextFile } from "../lib/saveTextFile";
+import { saveFile } from "../lib/saveFile";
 import { exportAddressBook } from "../lib/serverApi";
 import Button from "./Button";
 
@@ -34,7 +34,7 @@ export default function ExportAddressBookButton({
       // selection: sending the search with them could only take rows away.
       const body = checkedIds.length > 0 ? { ids: checkedIds } : { q: query };
       const csv = await exportAddressBook(body);
-      await saveTextFile(FILE_NAME, csv, "text/csv");
+      await saveFile(FILE_NAME, new Blob([csv], { type: "text/csv" }));
     } catch (err) {
       setError(apiErrorMessage(err, "Could not export the address book."));
     } finally {
