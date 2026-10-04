@@ -1,21 +1,25 @@
 import {
   lazy,
+  type ReactNode,
   Suspense,
   useCallback,
   useContext,
   useEffect,
   useEffectEvent,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
 import {
   ComboBox,
   ComboBoxStateContext,
+  Dialog,
   Group,
   Input,
   ListBox,
   ListBoxItem,
   Popover,
+  Text,
 } from "react-aria-components";
 import {
   clearRecentSearches,
@@ -23,7 +27,13 @@ import {
   pushRecentSearch,
   type SearchScope,
 } from "../lib/recentSearches";
-import type { SearchList } from "../lib/searchFields";
+import {
+  type MarkedWord,
+  SEARCH_LIST_NAMES,
+  type SearchList,
+  useMarkedWords,
+} from "../lib/searchFields";
+import { removeToken } from "../lib/searchQuery";
 import { popupShadow } from "../lib/uiStyles";
 import { useDismissable } from "../lib/useDismissable";
 import {
@@ -33,6 +43,7 @@ import {
 } from "../lib/useSearchSuggestions";
 import { Z_INLINE_PANEL, Z_POPOVER } from "../lib/zLayers";
 import type { AdvancedSearchMode } from "./AdvancedSearchForm";
+import Button from "./Button";
 import PlainButton from "./PlainButton";
 
 // The advanced form pulls in the date picker and calendar, about 150 kB of
@@ -112,6 +123,23 @@ type Option = {
   run: () => void;
 };
 
+/**
+ * The box's padding and type. The layer that marks words behind the text
+ * takes the same, so each mark sits under its word.
+ */
+const boxText = "px-2 py-2.5 text-[0.875rem]";
+
+/**
+ * What a marked word's note and the box's description say about it: the
+ * word, then the rest of the sentence, so the note can set the word as code.
+ */
+function markNote(mark: MarkedWord): { word: string; rest: string } {
+  return {
+    word: `${mark.word}:`,
+    rest: ` works only in ${SEARCH_LIST_NAMES[mark.worksIn]}, so this list searches without it.`,
+  };
+}
+
 const optionClass =
   "box-border flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-[0.875rem] text-text outline-none data-focused:bg-hover";
 
@@ -127,6 +155,11 @@ const optionClass =
  * popdown. Every row is an action, not a value to select: a recent search
  * runs, a suggestion edits the query, and the last row opens Advanced search.
  * Enter with no row active runs the text in the box.
+ *
+ * A word only `otherList` takes is marked in place with a wavy underline,
+ * drawn by a layer behind the text, so the box stays a plain text input.
+ * Clicking the word opens a note naming the list it works in, with a Remove
+ * button for that word (#1561).
  */
 export default function SearchBar({
   value,
@@ -136,6 +169,7 @@ export default function SearchBar({
   list,
   placeholder,
   advancedMode,
+  otherList = null,
   onOpenChange,
 }: {
   /**
@@ -158,6 +192,12 @@ export default function SearchBar({
   placeholder: string;
   /** Which advanced form to show; `null` offers none. */
   advancedMode: AdvancedSearchMode | null;
+  /**
+   * The list whose words this box marks: a word `list` does not take and
+   * `otherList` does is underlined, and the list searches without it.
+   * `null` marks nothing.
+   */
+  otherList?: SearchList | null;
   /** True while the popdown or advanced panel is open (for list-column stacking). */
   onOpenChange?: (open: boolean) => void;
 }) {
@@ -204,6 +244,38 @@ export default function SearchBar({
   const ranRowRef = useRef(false);
 
   const suggestions = useSearchSuggestions(text, list);
+  const { marked } = useMarkedWords(text, list, otherList);
+
+  /** The marked word whose note is open, found again by where it starts. */
+  const [noteAt, setNoteAt] = useState<number | null>(null);
+  const note = marked.find((m) => m.start === noteAt) ?? null;
+  const noteText = note ? markNote(note) : null;
+  const layerRef = useRef<HTMLDivElement>(null);
+  const markRefs = useRef(new Map<number, HTMLSpanElement>());
+  const noteAnchorRef = useRef<HTMLSpanElement | null>(null);
+  noteAnchorRef.current = note ? (markRefs.current.get(note.start) ?? null) : null;
+
+  /** The layer scrolls with the text, so a mark stays under its word in a long search. */
+  const followScroll = useCallback(() => {
+    const layer = layerRef.current;
+    const input = inputRef.current;
+    if (layer && input) layer.style.transform = `translateX(${-input.scrollLeft}px)`;
+  }, []);
+  useLayoutEffect(followScroll);
+
+  /** Opens the note of the marked word a click put the caret inside. */
+  const openNoteAtCaret = (input: HTMLInputElement) => {
+    const at = input.selectionStart;
+    if (at === null || at !== input.selectionEnd) return;
+    const mark = marked.find((m) => m.start < at && at < m.end);
+    if (mark) setNoteAt(mark.start);
+  };
+
+  const removeMarked = (mark: MarkedWord) => {
+    setNoteAt(null);
+    editText(removeToken(text, mark));
+    inputRef.current?.focus();
+  };
 
   const notifyOpen = useEffectEvent((open: boolean) => {
     onOpenChange?.(open);
@@ -285,7 +357,7 @@ export default function SearchBar({
           if (open) setRecents(loadRecentSearches(scope));
         }}
       >
-        <KeepPopdownClosed when={showAdvanced} />
+        <KeepPopdownClosed when={showAdvanced || note !== null} />
         <Group
           // Each key press starts with no row run, so a row a click ran never
           // swallows the next Enter. React Aria runs the active row after this.
@@ -295,24 +367,41 @@ export default function SearchBar({
           className="flex items-center rounded-xl border border-border bg-bg focus-within:border-accent"
         >
           <MagnifyingGlassIcon />
-          <Input
-            ref={inputRef}
-            type="search"
-            placeholder={placeholder}
-            onKeyDown={(e) => {
-              if (e.key === "Escape" && showAdvanced) {
-                setShowAdvanced(false);
-                return;
-              }
-              if (e.key !== "Enter") return;
-              // React Aria has already run the active row, if there was one.
-              if (ranRowRef.current) return;
-              applyQuery(text, { save: true });
-            }}
-            // The bar has a Clear search button of its own, so the one the browser
-            // draws inside a search input is hidden; otherwise there are two.
-            className="min-w-0 flex-1 border-none bg-transparent px-2 py-2.5 text-[0.875rem] text-text outline-none [&::-webkit-search-cancel-button]:appearance-none"
-          />
+          <div className="relative flex min-w-0 flex-1 overflow-hidden">
+            <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
+              <div
+                ref={layerRef}
+                data-testid="search-marks"
+                className={`${boxText} w-max whitespace-pre text-transparent`}
+              >
+                {markedText(text, marked, (start, span) => {
+                  if (span) markRefs.current.set(start, span);
+                  else markRefs.current.delete(start);
+                })}
+              </div>
+            </div>
+            <Input
+              ref={inputRef}
+              type="search"
+              placeholder={placeholder}
+              onScroll={followScroll}
+              onSelect={followScroll}
+              onClick={(e) => openNoteAtCaret(e.currentTarget)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape" && showAdvanced) {
+                  setShowAdvanced(false);
+                  return;
+                }
+                if (e.key !== "Enter") return;
+                // React Aria has already run the active row, if there was one.
+                if (ranRowRef.current) return;
+                applyQuery(text, { save: true });
+              }}
+              // The bar has a Clear search button of its own, so the one the browser
+              // draws inside a search input is hidden; otherwise there are two.
+              className={`relative w-full min-w-0 border-none bg-transparent ${boxText} text-text outline-none [&::-webkit-search-cancel-button]:appearance-none`}
+            />
+          </div>
           {text ? (
             <PlainButton
               aria-label="Clear search"
@@ -329,6 +418,14 @@ export default function SearchBar({
             </PlainButton>
           ) : null}
         </Group>
+        {marked.length > 0 ? (
+          <Text slot="description" className="sr-only">
+            {marked
+              .map(markNote)
+              .map(({ word, rest }) => word + rest)
+              .join(" ")}
+          </Text>
+        ) : null}
         <Popover
           hidden={showAdvanced}
           placement="bottom start"
@@ -382,6 +479,32 @@ export default function SearchBar({
         </Popover>
       </ComboBox>
 
+      <Popover
+        triggerRef={noteAnchorRef}
+        isOpen={note !== null && noteAnchorRef.current !== null}
+        onOpenChange={(open) => {
+          if (!open) setNoteAt(null);
+        }}
+        placement="bottom start"
+        offset={6}
+        data-mc-overlay=""
+        className={`max-w-xs rounded-md border border-border bg-popover p-3 outline-none ${Z_POPOVER} ${popupShadow}`}
+      >
+        <Dialog aria-label="Marked search word" className="outline-none">
+          {note ? (
+            <div className="flex flex-col items-start gap-2 text-[0.813rem] text-text">
+              <p className="m-0">
+                <code className="font-mono">{noteText?.word}</code>
+                {noteText?.rest}
+              </p>
+              <Button size="xs" onPress={() => removeMarked(note)}>
+                Remove
+              </Button>
+            </div>
+          ) : null}
+        </Dialog>
+      </Popover>
+
       {showAdvanced && advancedMode ? (
         <div className={`absolute top-full left-0 mt-2 w-full min-w-[300px] ${Z_INLINE_PANEL}`}>
           <Suspense fallback={null}>
@@ -396,4 +519,34 @@ export default function SearchBar({
       ) : null}
     </div>
   );
+}
+
+/**
+ * The box's text, split so each marked word is a span with a wavy underline.
+ * The text itself is transparent: only the underline shows, under the
+ * input's own text. `ref` hears of each marked span by where its word starts.
+ */
+function markedText(
+  text: string,
+  marked: readonly MarkedWord[],
+  ref: (start: number, span: HTMLSpanElement | null) => void,
+) {
+  const parts: ReactNode[] = [];
+  let from = 0;
+  for (const mark of marked) {
+    parts.push(text.slice(from, mark.start));
+    parts.push(
+      <span
+        key={mark.start}
+        ref={(span) => ref(mark.start, span)}
+        data-marked-word={mark.word}
+        className="underline decoration-danger decoration-wavy underline-offset-4 [text-decoration-skip-ink:none]"
+      >
+        {text.slice(mark.start, mark.end)}
+      </span>,
+    );
+    from = mark.end;
+  }
+  parts.push(text.slice(from));
+  return parts;
 }

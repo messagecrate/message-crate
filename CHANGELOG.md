@@ -21,6 +21,12 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-04 **A search word the other list takes stays in the box.**
+  Switching between Conversations and Messages with a word only one of them
+  takes, such as `from:me` on Conversations, no longer shows an error. The
+  word is underlined with a red wavy line and the list searches with the rest.
+  Click the word to see which list it works in, and **Remove** it there if you
+  no longer want it. Switching back searches with it again.
 - 2026-10-04 **Notes you sent to yourself are their own conversation.** A chat
   with your own number or email, such as Apple Messages to yourself or
   WhatsApp's "Message yourself", imports with no one else in it and no

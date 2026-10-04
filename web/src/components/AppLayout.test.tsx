@@ -4,7 +4,9 @@ import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { SearchList } from "../lib/searchFields";
 import { mockedAuth, Providers } from "../test/providers";
+import { searchFieldsFor } from "../test/searchFields";
 import { setupUser } from "../test/user";
 import AppLayout from "./AppLayout";
 
@@ -65,8 +67,10 @@ vi.mock("./ContactDrawer", () => ({ default: () => null }));
 vi.mock("./CheckedContactsPanel", () => ({ default: () => null }));
 
 vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
+// The desktop app with a profile shows Export in the left panel.
+const desktop = vi.hoisted(() => ({ on: false }));
 vi.mock("../lib/useAccountProfile", () => ({
-  useAccountProfile: () => ({ profile: null }),
+  useAccountProfile: () => ({ profile: desktop.on ? {} : null }),
 }));
 const sets = vi.hoisted(() => ({
   groups: [] as string[],
@@ -80,7 +84,11 @@ vi.mock("../lib/useContactGroups", () => ({
 vi.mock("../lib/useMessageTags", () => ({
   useMessageTags: () => ({ tags: sets.tags, loading: sets.tagsLoading }),
 }));
-vi.mock("../lib/tauri-check", () => ({ isTauri: () => false }));
+vi.mock("../lib/tauri-check", () => ({ isTauri: () => desktop.on }));
+vi.mock("../lib/serverApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/serverApi")>()),
+  listSearchFields: vi.fn(async (list: SearchList) => searchFieldsFor(list)),
+}));
 vi.mock("../screens/import/useImportAttention", () => ({
   useImportAttention: () => null,
 }));
@@ -100,6 +108,7 @@ vi.mock("../lib/savedSearches", () => ({
 
 afterEach(() => {
   cleanup();
+  desktop.on = false;
   sets.groups = [];
   sets.groupsLoading = false;
   sets.tags = [];
@@ -158,8 +167,47 @@ describe("AppLayout", () => {
     const user = userEvent.setup();
     renderLayout(`/${search}`);
 
-    await user.click(screen.getByRole("button", { name: "First result" }));
+    // A search with a `word:` waits for the lists' words.
+    await user.click(await screen.findByRole("button", { name: "First result" }));
     expect(screen.getByTestId("location").textContent).toBe(`/messages/6${search}`);
+  });
+});
+
+describe("AppLayout's Conversations / Messages switch", () => {
+  it("keeps a word only Messages takes, and Conversations searches without it", async () => {
+    // #1561: switching used to show the server's refusal of `from:`.
+    const user = setupUser();
+    renderLayout("/?q=from%3Aann+hello&view=messages");
+    expect((await screen.findByTestId("message-search-list")).textContent).toBe(
+      "query: from:ann hello",
+    );
+
+    await user.click(screen.getByRole("radio", { name: "Conversations" }));
+    expect((await screen.findByTestId("conversation-list")).textContent).toBe("query: hello");
+    expect(screen.getByTestId("location").textContent).toBe("/?q=from%3Aann+hello");
+
+    await user.click(screen.getByRole("radio", { name: "Messages" }));
+    expect((await screen.findByTestId("message-search-list")).textContent).toBe(
+      "query: from:ann hello",
+    );
+  });
+
+  it("says why Messages lists nothing when every word works only in Conversations", async () => {
+    renderLayout("/?q=messages%3A%3E5&view=messages");
+    expect(
+      await screen.findByText(/Every word of this search works only in Conversations/),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("message-search-list")).toBeNull();
+  });
+
+  it("exports the conversations the list shows, without a word only Messages takes", async () => {
+    desktop.on = true;
+    const user = setupUser();
+    renderLayout("/?q=from%3Aann+hello");
+    await screen.findByTestId("conversation-list");
+
+    await user.click(screen.getByRole("button", { name: "Export" }));
+    expect(screen.getByTestId("location").textContent).toBe("/export?q=hello&list=conversations");
   });
 });
 
@@ -246,16 +294,16 @@ describe("AppLayout on a Contact Group or Message Tag page", () => {
     expect(screen.getByTestId("location").textContent).toBe("/tag/%231?q=ada");
   });
 
-  it("on a tag page with nothing typed, the Messages list asks for a search", () => {
+  it("on a tag page with nothing typed, the Messages list asks for a search", async () => {
     sets.tags = ["Holiday"];
     renderLayout("/tag/Holiday?view=messages");
-    expect(screen.getByTestId("message-search-list").textContent).toBe("query: ");
+    expect((await screen.findByTestId("message-search-list")).textContent).toBe("query: ");
   });
 
-  it("on a tag page with a typed search, the Messages list searches the tag", () => {
+  it("on a tag page with a typed search, the Messages list searches the tag", async () => {
     sets.tags = ["Holiday"];
     renderLayout("/tag/Holiday?q=ada&view=messages");
-    const list = screen.getByTestId("message-search-list").textContent ?? "";
+    const list = (await screen.findByTestId("message-search-list")).textContent ?? "";
     expect(list).toContain("Holiday");
     expect(list).toContain("ada");
   });

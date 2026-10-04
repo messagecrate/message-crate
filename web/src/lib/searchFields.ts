@@ -12,6 +12,7 @@
 
 import { keys } from "./queryKeys";
 import { useRouteQuery } from "./routeQuery";
+import { dropTokens, type FieldToken, fieldTokens } from "./searchQuery";
 import { listSearchFields, type SearchFieldList } from "./serverApi";
 import type { components } from "./serverApi.types";
 
@@ -20,32 +21,17 @@ export type SearchField = Schema["FieldDoc"];
 export type SearchList = SearchFieldList;
 
 /**
- * A `word:` token: a field name followed by a colon, at the start or after a
- * space or an opening bracket, with or without a leading minus. Quoted phrases
- * are removed first so a colon inside one does not count.
+ * True when the query has a `word:` token, which only the server can apply.
+ * The tokens are read as the server's lexer reads them (`fieldTokens`), so a
+ * colon inside a quoted phrase or a pasted `http://` address is not one.
  */
-// The bracket matters because `(kind:group or kind:direct)` is a real query.
-// The value must not start with `/`, so a pasted URL like `http://x` is a word.
-const FIELD_TOKEN_RE = /(^|[\s(])-?[a-z][a-z-]*:(?!\/)/i;
-const PHRASE_RE = /"(?:[^"]|"")*"/g;
-
-/** True when the query has a `word:` token, which only the server can apply. */
 export function hasFieldToken(q: string): boolean {
-  return FIELD_TOKEN_RE.test(q.replace(PHRASE_RE, " "));
+  return fieldTokens(q).length > 0;
 }
 
-/**
- * The field words a query carries, lower-cased and without the leading minus,
- * in order of appearance. Quoted phrases are removed first, as in
- * `hasFieldToken`, so a colon inside one does not read as a word.
- */
+/** The field words a query carries, lower-cased and without the leading minus, in order of appearance. */
 export function fieldWords(q: string): string[] {
-  const words: string[] = [];
-  for (const match of q.replace(PHRASE_RE, " ").matchAll(/(^|[\s(])-?([a-z][a-z-]*):(?!\/)/gi)) {
-    const word = match[2].toLowerCase();
-    if (!words.includes(word)) words.push(word);
-  }
-  return words;
+  return [...new Set(fieldTokens(q).map((t) => t.word))];
 }
 
 /**
@@ -60,10 +46,7 @@ export function unsupportedFieldWords(q: string, fields: readonly SearchField[])
 
 /** The free-text words of a query, with every `word:value` token removed. */
 export function stripFieldTokens(q: string): string {
-  return q
-    .replace(/(^|[\s(])-?[a-z][a-z-]*:(?!\/)("(?:[^"]|"")*"|\S*)/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  return dropTokens(q, fieldTokens(q)).replace(/\s+/g, " ").trim();
 }
 
 /**
@@ -86,4 +69,73 @@ export function useSearchFields(list: SearchList | null): {
   );
   // A failed refetch keeps the words already fetched, and those still hold.
   return { fields: data ?? [], loading: isPending, error: data === undefined ? error : null };
+}
+
+/** The name a list goes by on screen. */
+export const SEARCH_LIST_NAMES: Record<SearchList, string> = {
+  contacts: "Contacts",
+  conversations: "Conversations",
+  messages: "Messages",
+};
+
+/** A `word:value` token one list does not take and another list does. */
+export type MarkedWord = FieldToken & { worksIn: SearchList };
+
+/**
+ * The tokens of `query` whose word `fields` (one list's words) does not
+ * carry and `other.fields` does, each with the list it works in. A word
+ * neither list has is left to the server, which refuses it and offers the
+ * nearest word.
+ */
+export function markedWords(
+  query: string,
+  fields: readonly SearchField[],
+  other: { list: SearchList; fields: readonly SearchField[] },
+): MarkedWord[] {
+  const here = new Set(fields.map((f) => f.word));
+  const there = new Set(other.fields.map((f) => f.word));
+  return fieldTokens(query)
+    .filter((t) => !here.has(t.word) && there.has(t.word))
+    .map((t) => ({ ...t, worksIn: other.list }));
+}
+
+/**
+ * `query` as `list` searches it: without the words only `otherList` takes
+ * (#1561). `ready` is `useMarkedWords`'s. The results lists and Export both
+ * read their query through this, so they leave out the same words.
+ */
+export function useListQuery(
+  query: string,
+  list: SearchList,
+  otherList: SearchList,
+): { listQuery: string; marked: MarkedWord[]; ready: boolean } {
+  const { marked, ready } = useMarkedWords(query, list, otherList);
+  return { listQuery: dropTokens(query, marked), marked, ready };
+}
+
+/**
+ * The words of `query` that `list` does not take and `otherList` does, which
+ * the search box marks and the list leaves out of its search (#1561).
+ *
+ * `ready` is false while the words of either list are still being fetched
+ * and the query has a `word:` token, so a list can wait rather than send a
+ * word the server would refuse. When either fetch fails, nothing is marked:
+ * the server answers the query as typed. A `null` list or other list marks
+ * nothing and asks the server nothing.
+ */
+export function useMarkedWords(
+  query: string,
+  list: SearchList | null,
+  otherList: SearchList | null,
+): { marked: MarkedWord[]; ready: boolean } {
+  const both = list !== null && otherList !== null;
+  const here = useSearchFields(both ? list : null);
+  const there = useSearchFields(both ? otherList : null);
+  if (!both || !hasFieldToken(query)) return { marked: [], ready: true };
+  if (here.error || there.error) return { marked: [], ready: true };
+  if (here.loading || there.loading) return { marked: [], ready: false };
+  return {
+    marked: markedWords(query, here.fields, { list: otherList, fields: there.fields }),
+    ready: true,
+  };
 }

@@ -137,6 +137,143 @@ export function replaceLastToken(query: string, text: string): string {
   return query.slice(0, lastToken(query).start) + text;
 }
 
+/**
+ * A `word:value` token of a query: its word, lower-cased as the server reads
+ * it, and where the token starts (its minus included) and ends.
+ */
+export type FieldToken = { word: string; start: number; end: number };
+
+/**
+ * Every `word:value` token of `query`, in order, as `searchTokens` reads them:
+ * a word of letters and hyphens starting with a letter, then a colon whose
+ * value does not start with `/`. A `word:` with no value yet counts, so a
+ * word being typed is one too. A colon inside a quoted phrase does not.
+ */
+export function fieldTokens(query: string): FieldToken[] {
+  const tokens: FieldToken[] = [];
+  for (const token of searchTokens(query)) {
+    if (token.kind !== "text") continue;
+    const match = /^-?([A-Za-z][A-Za-z-]*):(?!\/)/.exec(query.slice(token.start, token.end));
+    if (match) tokens.push({ word: match[1].toLowerCase(), start: token.start, end: token.end });
+  }
+  return tokens;
+}
+
+/** `or`, `and` or `not` as the language's operator: bare, without a minus, in any case. */
+function operator(text: string): "binary" | "not" | null {
+  const word = text.toLowerCase();
+  if (word === "or" || word === "and") return "binary";
+  return word === "not" ? "not" : null;
+}
+
+/**
+ * `query` without the tokens in `drop`, which are tokens of `query` named by
+ * where they start: what a list searches when it leaves out words it marks.
+ * A `not` right before a dropped token goes with it, since it negated that
+ * token and nothing else. What the dropped tokens leave with nothing to join
+ * goes too: an `or` or `and` with nothing on one side, and a pair of
+ * parentheses left empty, with any `not` before it. So `from:me or hello`
+ * without `from:me` is `hello`, which the server reads, rather than
+ * `or hello`, which it refuses. An operator or a pair of parentheses that had
+ * nothing to join before anything was dropped stays, so the server refuses
+ * that search as it would have. Everything else stays as typed.
+ */
+export function dropTokens(
+  query: string,
+  drop: readonly { start: number }[],
+  { operators = true }: { operators?: boolean } = {},
+): string {
+  const tokens = searchTokens(query);
+  const starts = new Set(drop.map((d) => d.start));
+  const gone = tokens.map(() => false);
+  const text = (i: number) => query.slice(tokens[i].start, tokens[i].end);
+  /** Drop token `i`, and the `not`s before it, which negated it and nothing else. */
+  const dropAt = (i: number) => {
+    gone[i] = true;
+    for (let j = i - 1; j >= 0 && (gone[j] || operator(text(j)) === "not"); j -= 1) {
+      if (tokens[j].kind === "text") gone[j] = true;
+    }
+  };
+  /** The live token at `live[at]`, when it joins nothing: an operator, or a `(` whose `)` is next. */
+  const joinsNothing = (live: readonly number[], at: number): boolean => {
+    const i = live[at];
+    const before = at > 0 ? live[at - 1] : null;
+    const after = at + 1 < live.length ? live[at + 1] : null;
+    if (tokens[i].kind === "open") return after !== null && tokens[after].kind === "close";
+    if (tokens[i].kind === "close") return false;
+    const op = operator(text(i));
+    if (op === null) return false;
+    const nothingAfter =
+      after === null || tokens[after].kind === "close" || operator(text(after)) === "binary";
+    if (op === "not") return nothingAfter;
+    const nothingBefore =
+      before === null || tokens[before].kind === "open" || operator(text(before)) !== null;
+    return nothingBefore || nothingAfter;
+  };
+  const everyToken = tokens.map((_, i) => i);
+  const alreadyLoose = new Set(everyToken.filter((i) => joinsNothing(everyToken, i)));
+  tokens.forEach((t, i) => {
+    if (starts.has(t.start)) dropAt(i);
+  });
+  if (!gone.some(Boolean)) return query;
+  // One token, or one empty pair of parentheses, at a time, until the drops
+  // leave nothing with nothing to join.
+  for (;;) {
+    const live = everyToken.filter((i) => !gone[i]);
+    const at = live.findIndex(
+      (i, n) =>
+        !alreadyLoose.has(i) && (operators || tokens[i].kind === "open") && joinsNothing(live, n),
+    );
+    if (at < 0) break;
+    if (tokens[live[at]].kind === "open") {
+      gone[live[at + 1]] = true;
+      dropAt(live[at]);
+    } else {
+      gone[live[at]] = true;
+    }
+  }
+  return cutTokens(
+    query,
+    tokens.filter((_, i) => gone[i]),
+  );
+}
+
+/**
+ * `query` without the one token `token`: what Remove does to a marked word in
+ * the search box. A `not` that negated it goes with it, and so does a pair of
+ * parentheses that held only it, since either left behind changes what the
+ * search means or makes the server refuse it. An `or` or `and` the word
+ * leaves with nothing to join stays, as typed.
+ */
+export function removeToken(query: string, token: { start: number }): string {
+  return dropTokens(query, [token], { operators: false });
+}
+
+/**
+ * `query` with each of `tokens` cut out, in order. The space before a token
+ * goes with it; with nothing before it but the start or a `(`, the space
+ * after it goes instead. Everything else stays as typed.
+ */
+function cutTokens(query: string, tokens: readonly { start: number; end: number }[]): string {
+  let out = "";
+  let from = 0;
+  for (const token of tokens) {
+    out += trimEndSpaces(query.slice(from, token.start));
+    from = token.end;
+    if (out === "" || out.endsWith("(")) {
+      while (from < query.length && isSpace(query[from])) from += 1;
+    }
+  }
+  return out + query.slice(from);
+}
+
+/** `text` without the spaces at its end, as the lexer reads spaces. */
+function trimEndSpaces(text: string): string {
+  let end = text.length;
+  while (end > 0 && isSpace(text[end - 1])) end -= 1;
+  return text.slice(0, end);
+}
+
 /** True when every `)` in `query` closes a `(` before it, and none is left open. */
 function parenthesesPair(query: string): boolean {
   let depth = 0;

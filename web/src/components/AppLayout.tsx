@@ -5,6 +5,7 @@ import { groupFromSlug, slugFromPath, slugPath } from "../lib/contactGroups";
 import { asMessagesLocationState } from "../lib/messagesLocationState";
 import { tagFromSlug, tagListQuery } from "../lib/messageTags";
 import { MESSAGE_SORT_PARAM, messagesSearch, resultsView, VIEW_PARAM } from "../lib/resultsView";
+import { useListQuery } from "../lib/searchFields";
 import { trashed } from "../lib/searchQuery";
 import type { Conversation } from "../lib/types";
 import { useContactGroups } from "../lib/useContactGroups";
@@ -278,7 +279,16 @@ export default function AppLayout() {
   // What Export starts from: the conversation list's query, tag filter
   // included, and nothing when the person is on contacts, Trash, or a
   // full-screen route. A tag page with no list has nothing to export.
-  const browseQuery = mode === "conversations" && tagPage === null ? threadListQuery : "";
+  // Export runs on the Conversations list, so it leaves out the words the
+  // Conversations list leaves out (#1561). Until the lists' words are known,
+  // nothing is known to leave out, and Export starts from the search as typed.
+  const exportQuery = useListQuery(threadListQuery, "conversations", "messages");
+  const browseQuery =
+    mode === "conversations" && tagPage === null
+      ? exportQuery.ready
+        ? exportQuery.listQuery
+        : threadListQuery
+      : "";
 
   return (
     <RightToolbarProvider>
