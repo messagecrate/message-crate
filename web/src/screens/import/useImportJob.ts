@@ -21,7 +21,7 @@ import {
 } from "../../lib/importSession";
 import { importSessionCreateBody, showsAttachmentOptions } from "../../lib/importSource";
 import { CANCELLED_MESSAGE, createRunCancel, type RunCancel } from "../../lib/runCancel";
-import { registerRunningUpload } from "../../lib/runningUpload";
+import { registerRunningUpload, uploadSessionRefused } from "../../lib/runningUpload";
 import { sbrExtractFields } from "../../lib/sbrExtractFields";
 import { completeImport, createImport, getServerState } from "../../lib/serverApi";
 import {
@@ -1059,20 +1059,27 @@ async function runPush(
     await upload;
   };
   const ended = registerRunningUpload(pause);
+  let sessionRefused = false;
   try {
-    await upload;
+    sessionRefused = await upload;
   } finally {
     ended();
   }
+  // The push stopped because the server refused its session: every request
+  // with that token is refused now, so the session ends here too (#1491).
+  if (sessionRefused) uploadSessionRefused();
 }
 
-/** `runPush` without the registration that lets logging out pause it. */
+/**
+ * `runPush` without the registration that lets logging out pause it.
+ * Resolves to whether the server refused the session the push sent.
+ */
 async function uploadAndFinish(
   token: string | null,
   sessionId: number,
   outputDir: string,
   approvedPlan?: StagingSummary,
-): Promise<void> {
+): Promise<boolean> {
   store.set({ running: true, phase: "running" });
   scratch.activeStage = "upload";
   setRowByLabel(UPLOAD_LABEL, { status: "active", detail: "Uploading to Message Crate…" });
@@ -1090,7 +1097,7 @@ async function uploadAndFinish(
       uploadMs: null,
       skipComplete: true,
     });
-    return;
+    return false;
   }
 
   const uploadStartedAt = performance.now();
@@ -1150,6 +1157,7 @@ async function uploadAndFinish(
   }
 
   await finishImport({ sessionId, status, pushReport: report, uploadMs });
+  return report?.session_refused === true;
 }
 
 /**

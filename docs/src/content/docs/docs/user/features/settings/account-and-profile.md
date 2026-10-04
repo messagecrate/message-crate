@@ -116,6 +116,12 @@ While an import into the account is running, the attachment files stay on the se
 The dialog asks for the username, typed exactly.
 It asks for **Current password** as well when the account has a password.
 Deleting the account ends the Session and returns to the login screen.
+An Upload that is running is paused first, without asking.
+
+In the desktop app, the dialog also names the account's staging folders on this computer, where its imports keep their files.
+Deleting the account deletes them, since the account's imports go with it and nothing would offer the folders again.
+A folder that cannot be deleted is named in a message afterwards, so it can be deleted by hand.
+The browser does not touch any folder.
 
 Neither action can be undone.
 

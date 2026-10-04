@@ -193,6 +193,11 @@ export interface PushFinishedReport {
   ok: boolean;
   /** The cancel flag stopped the push: a pause the run resumes from, not a failure. */
   cancelled: boolean;
+  /**
+   * The server refused the session the push sent (it expired or was ended),
+   * which stopped the push as a pause. The window ends the session too.
+   */
+  session_refused: boolean;
   messages_attempted: number;
   messages_inserted: number;
   messages_deduped: number;
@@ -470,6 +475,7 @@ function isPushFinishedReport(value: unknown): value is PushFinishedReport {
   return (
     typeof value.ok === "boolean" &&
     typeof value.cancelled === "boolean" &&
+    typeof value.session_refused === "boolean" &&
     typeof value.messages_attempted === "number" &&
     typeof value.messages_inserted === "number" &&
     typeof value.messages_deduped === "number" &&

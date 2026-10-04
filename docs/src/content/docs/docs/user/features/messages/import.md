@@ -283,8 +283,12 @@ Every conversation it did not send stays staged for the resume.
 
 **Log out** during an Upload first asks: "An Upload is running. Logging out pauses it; you can resume it after you log in."
 **Log out** there pauses the Upload, waits until it has stopped, and then logs out; **Go back** leaves the Upload running.
+While it waits, the dialog says the Upload is pausing and offers **Log out now**.
+Logout waits at most 15 seconds.
+When the Upload has not paused by then, or **Log out now** is selected, it logs out anyway and says the Upload resumes from what it had sent.
 The next time the same account logs in and opens Import, the run is offered with **Resume**.
 An Upload is also paused, without asking, when the account is deleted or its session has ended.
+When the server ends the session during an Upload, the Upload pauses at once, records no conversation as failed for it, and the app returns to the login screen.
 
 ## Resuming
 

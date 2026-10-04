@@ -822,6 +822,11 @@ export function listImports(
   return apiClient.get<Schema["Page_ImportRun"]>(withQuery("/v1/imports", query(params)), opts);
 }
 
+/** Every Import Run of the account, newest first, read page by page. */
+export function listEveryImport(opts?: RequestOptions): Promise<Schema["ImportRun"][]> {
+  return readEveryPage<Schema["Page_ImportRun"]>("/v1/imports", opts);
+}
+
 export function getImport(id: number, opts?: RequestOptions): Promise<Schema["ImportRun"]> {
   return apiClient.get<Schema["ImportRun"]>(`/v1/imports/${id}`, opts);
 }

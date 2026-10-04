@@ -9,13 +9,26 @@ import PlainButton from "./PlainButton";
  * set, so the dialog asks for it only then and confirms with none otherwise.
  * `error` is why the last confirm failed; the dialog stays open to retry.
  *
+ * `stagingFolders`, in the desktop app, are the account's staging folders
+ * on this computer, deleted with the account. The dialog names them before
+ * the person confirms, and holds the confirm while it looks for them.
+ *
  * The typed username and password live in `DeleteAccountForm`, which exists
  * only while the dialog is open, so closing the dialog discards them.
  */
+/** The account's staging folders on this computer, as the dialog shows them. */
+export type StagingFoldersCheck = {
+  checking: boolean;
+  paths: readonly string[];
+  /** Why they could not be looked for, or empty. */
+  error: string;
+};
+
 export default function DeleteAccountDialog({
   open,
   username,
   hasPassword,
+  stagingFolders,
   deleting = false,
   error = "",
   onClose,
@@ -24,6 +37,7 @@ export default function DeleteAccountDialog({
   open: boolean;
   username: string;
   hasPassword: boolean;
+  stagingFolders?: StagingFoldersCheck;
   deleting?: boolean;
   error?: string;
   onClose: () => void;
@@ -41,6 +55,7 @@ export default function DeleteAccountDialog({
       <DeleteAccountForm
         username={username}
         hasPassword={hasPassword}
+        stagingFolders={stagingFolders}
         deleting={deleting}
         error={error}
         onClose={onClose}
@@ -53,6 +68,7 @@ export default function DeleteAccountDialog({
 function DeleteAccountForm({
   username,
   hasPassword,
+  stagingFolders,
   deleting,
   error,
   onClose,
@@ -60,6 +76,7 @@ function DeleteAccountForm({
 }: {
   username: string;
   hasPassword: boolean;
+  stagingFolders?: StagingFoldersCheck;
   deleting: boolean;
   error: string;
   onClose: () => void;
@@ -71,6 +88,7 @@ function DeleteAccountForm({
   const expected = username.trim();
   const matches =
     expected.length > 0 && typedUsername === expected && (!hasPassword || password.length > 0);
+  const checkingFolders = stagingFolders?.checking ?? false;
 
   return (
     <>
@@ -89,6 +107,8 @@ function DeleteAccountForm({
         This cannot be undone. Your messages, contacts, group conversations, profile, and
         attachments will be permanently deleted.
       </p>
+
+      {stagingFolders ? <StagingFoldersNote check={stagingFolders} /> : null}
 
       <label className="mt-5 block">
         <span className="text-[0.875rem] text-text">
@@ -124,13 +144,45 @@ function DeleteAccountForm({
       <div className="mt-5 flex justify-end">
         <Button
           variant="danger"
-          disabled={deleting || !matches}
+          disabled={deleting || !matches || checkingFolders}
           onClick={() => onConfirm(hasPassword ? password : undefined)}
           className="!px-4 !py-2 !text-[0.813rem]"
         >
           {deleting ? "Deleting…" : "Permanently delete my account"}
         </Button>
       </div>
+    </>
+  );
+}
+
+/** Names the staging folders deleted with the account, or says why it cannot. */
+function StagingFoldersNote({ check }: { check: StagingFoldersCheck }) {
+  const text = "mt-3 text-[0.875rem] leading-relaxed text-muted";
+  if (check.checking) {
+    return (
+      <p className={text}>Looking for this account&apos;s staging folders on this computer…</p>
+    );
+  }
+  if (check.error) {
+    return (
+      <p className={text}>
+        {`Message Crate could not look for this account's staging folders on this computer, so it deletes none: ${check.error}`}
+      </p>
+    );
+  }
+  if (check.paths.length === 0) return null;
+  return (
+    <>
+      <p className={text}>
+        Deleting the account also deletes its staging folders on this computer:
+      </p>
+      <ul className="mt-2 list-disc pl-5 text-[0.813rem] text-text">
+        {check.paths.map((path) => (
+          <li key={path} className="break-all">
+            <code className="font-mono text-[0.75rem]">{path}</code>
+          </li>
+        ))}
+      </ul>
     </>
   );
 }

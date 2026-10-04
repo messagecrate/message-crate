@@ -5,8 +5,11 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import DeleteAccountDialog from "../../components/DeleteAccountDialog";
 import PlainButton from "../../components/PlainButton";
 import { useAuth } from "../../lib/auth";
-import { useRouteCache } from "../../lib/routeQuery";
+import { accountStagingFolders } from "../../lib/importSession";
+import { keys } from "../../lib/queryKeys";
+import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
 import { deleteAccount, deleteAllMessages as deleteAllMessagesRoute } from "../../lib/serverApi";
+import { isTauri } from "../../lib/tauri-check";
 import { useDeleteAccount, useDeleteAccountMessages } from "../owner/useOwnerAccounts";
 import { dangerButtonClass } from "./profileStyles";
 
@@ -18,7 +21,10 @@ const dangerButton = `${dangerButtonClass} !box-border !w-auto !min-w-[10.5rem] 
  * Delete an account's messages, or the account.
  *
  * For the logged-in account, deleting the account asks for its password when
- * it has one (`hasPassword`) and logs out. Given `managedAccountId`, the owner is deleting someone
+ * it has one (`hasPassword`) and logs out. In the desktop app it also deletes
+ * the account's staging folders on this computer, which the dialog names
+ * first: the server deletes the account's Import Runs with it, so nothing
+ * would offer those folders again. Given `managedAccountId`, the owner is deleting someone
  * else's: no password is asked, because the owner does not know it, and the
  * owner lands back on User Accounts. The owner deletes on the strength of the
  * count and the account holder's word, so the confirmation states the count.
@@ -64,6 +70,13 @@ export function ProfileDangerZone({
   // An account the owner barred from deleting asks the owner instead.
   const notPermitted = !canDelete && !managed;
   const count = messageCount.toLocaleString();
+  // Only the desktop app can find and delete folders on this computer.
+  const checkFolders = deleteDialogOpen && !managed && isTauri();
+  const stagingFolders = useRouteQuery(
+    keys.imports.stagingFolders,
+    (signal) => accountStagingFolders(signal),
+    { enabled: checkFolders, staleTime: 0 },
+  );
 
   const deleteAllMessages = async () => {
     if (messagesLocked || notPermitted) return;
@@ -96,8 +109,12 @@ export function ProfileDangerZone({
       await deleteAccount({ confirm: true, current_password: currentPassword });
       setDeleteDialogOpen(false);
       // The account is gone, so there is nothing to go back to: an Upload
-      // still running is paused without asking, and its folder stays.
-      void logout({ ask: false });
+      // still running is paused without asking, and the folders the dialog
+      // named are deleted once the session is revoked.
+      void logout({
+        ask: false,
+        deletedAccountFolders: checkFolders ? (stagingFolders.data ?? []) : [],
+      });
     } catch (e) {
       setDangerError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -225,6 +242,15 @@ export function ProfileDangerZone({
           open={deleteDialogOpen}
           username={username}
           hasPassword={hasPassword}
+          stagingFolders={
+            checkFolders
+              ? {
+                  checking: stagingFolders.isPending,
+                  paths: stagingFolders.data ?? [],
+                  error: stagingFolders.error?.message ?? "",
+                }
+              : undefined
+          }
           deleting={deleting}
           error={dangerError}
           onClose={() => {
