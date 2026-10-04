@@ -503,17 +503,12 @@ pub(crate) async fn seed_message(conn: &mut SqliteConnection, source: &str) -> i
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    sqlx::query_scalar(
-        "INSERT INTO messages (conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order)
-         VALUES ($1, $2, $3, $4, '2020-01-01T00:00:00Z', 0, 0) RETURNING id",
-    )
-    .bind(conversation_id)
-    .bind(ACCOUNT)
-    .bind(source)
-    .bind(crate::test_support::unique_guid())
-    .fetch_one(&mut *conn)
+    crate::test_support::MessageRow {
+        source,
+        ..crate::test_support::MessageRow::new(ACCOUNT, conversation_id)
+    }
+    .insert(conn)
     .await
-    .unwrap()
 }
 
 /// Store `bytes` as the original for an attachment of `message_id`, the way
@@ -531,15 +526,18 @@ pub(crate) async fn attach_stored_blob(
     let path = opened.cfg.paths.assets_dir_for_account(ACCOUNT).join(&rel);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, bytes).unwrap();
-    sqlx::query_scalar(
+    let mut tx = crate::db::begin_write(conn).await.unwrap();
+    let id = sqlx::query_scalar(
         "INSERT INTO attachments (message_id, sha256, assets_path) VALUES ($1, $2, $3) RETURNING id",
     )
     .bind(message_id)
     .bind(sha)
     .bind(rel)
-    .fetch_one(&mut *conn)
+    .fetch_one(&mut *tx)
     .await
-    .unwrap()
+    .unwrap();
+    tx.commit().await.unwrap();
+    id
 }
 
 /// A database with one account and one PNG attachment on a message of
@@ -622,6 +620,7 @@ async fn listed_attachments_carry_name_hints_for_extensionless_blobs() {
     let mut conn = opened.conn().await.unwrap();
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, "imessage").await;
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query(
         "INSERT INTO attachments (message_id, sha256, assets_path, mime_type, original_name, path)
          VALUES ($1, $2, $3, NULL, 'voice-note.amr', 'attachments/voice-note.amr')",
@@ -629,9 +628,10 @@ async fn listed_attachments_carry_name_hints_for_extensionless_blobs() {
     .bind(message_id)
     .bind(SHA)
     .bind(format!("ab/{SHA}"))
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await
     .unwrap();
+    tx.commit().await.unwrap();
 
     let rows = list_attachments(&mut conn, ACCOUNT).await.unwrap();
     assert_eq!(rows.len(), 1);
@@ -905,15 +905,17 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
         .join(&rel);
     fs::create_dir_all(preview.parent().unwrap()).unwrap();
     fs::write(&preview, b"a Preview cut short").unwrap();
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query(
         "UPDATE attachments
          SET derived_sha256 = $1, derived_assets_path = $2, derived_mime_type = 'image/jpeg'",
     )
     .bind(&preview_sha)
     .bind(&rel)
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await
     .unwrap();
+    tx.commit().await.unwrap();
     fs::remove_file(
         opened
             .cfg

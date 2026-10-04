@@ -235,31 +235,23 @@ struct InsertMsgArgs<'a> {
     guid: &'a str,
     /// The UTC instant, as the server stores it.
     timestamp: &'a str,
-    from_me: i64,
+    from_me: bool,
     body: &'a str,
     sort_order: i64,
 }
 
 async fn insert_msg(conn: &mut SqliteConnection, args: InsertMsgArgs<'_>) -> i64 {
-    sqlx::query_scalar(
-        r"
-        INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me,
-            sender_handle_id, subject, body, sort_order
-        ) VALUES (1, $1, $2, $3, $4, $5, NULL, NULL, $6, $7)
-        RETURNING id
-        ",
-    )
-    .bind(TEST_ACCOUNT_ID)
-    .bind(args.source)
-    .bind(args.guid)
-    .bind(args.timestamp)
-    .bind(args.from_me)
-    .bind(args.body)
-    .bind(args.sort_order)
-    .fetch_one(&mut *conn)
+    crate::test_support::MessageRow {
+        source: args.source,
+        guid: args.guid.into(),
+        timestamp: args.timestamp,
+        is_from_me: args.from_me,
+        body: Some(args.body),
+        sort_order: args.sort_order,
+        ..crate::test_support::MessageRow::new(TEST_ACCOUNT_ID, 1)
+    }
+    .insert(conn)
     .await
-    .unwrap()
 }
 
 #[tokio::test]
@@ -273,19 +265,23 @@ async fn fill_missing_content_keys_skips_rows_that_already_have_keys() {
             source: "go-sms-pro",
             guid: "g-fill",
             timestamp: "2015-03-12T18:04:22Z",
-            from_me: 1,
+            from_me: true,
             body: "Need a key",
             sort_order: 0,
         },
     )
     .await;
-    let first = fill_missing_content_keys(&mut conn, TEST_ACCOUNT_ID)
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    let first = fill_missing_content_keys(&mut tx, TEST_ACCOUNT_ID)
         .await
         .unwrap();
+    tx.commit().await.unwrap();
     assert_eq!(first, 1);
-    let second = fill_missing_content_keys(&mut conn, TEST_ACCOUNT_ID)
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    let second = fill_missing_content_keys(&mut tx, TEST_ACCOUNT_ID)
         .await
         .unwrap();
+    tx.commit().await.unwrap();
     assert_eq!(second, 0);
     let key: Option<String> =
         sqlx::query_scalar("SELECT content_key FROM messages WHERE guid = 'g-fill'")
@@ -311,16 +307,18 @@ async fn fill_missing_content_keys_writes_multiple_rows_in_one_batch() {
                 source: "go-sms-pro",
                 guid,
                 timestamp: "2015-03-12T18:04:22Z",
-                from_me: 1,
+                from_me: true,
                 body,
                 sort_order,
             },
         )
         .await;
     }
-    let filled = fill_missing_content_keys(&mut conn, TEST_ACCOUNT_ID)
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    let filled = fill_missing_content_keys(&mut tx, TEST_ACCOUNT_ID)
         .await
         .unwrap();
+    tx.commit().await.unwrap();
     assert_eq!(filled, 3);
     let keys: Vec<(String, Option<String>)> = sqlx::query_as(
         r"
@@ -353,7 +351,7 @@ async fn dedupe_cross_source_does_not_rewrite_unchanged_keys() {
             source: "go-sms-pro",
             guid: "g-once",
             timestamp: "2015-03-12T18:04:22Z",
-            from_me: 1,
+            from_me: true,
             body: "Once",
             sort_order: 0,
         },
@@ -380,7 +378,7 @@ async fn integration_exact_flags_cross_source() {
             source: "go-sms-pro",
             guid: "g1",
             timestamp: "2015-03-12T18:04:22Z",
-            from_me: 1,
+            from_me: true,
             body: "Running late",
             sort_order: 0,
         },
@@ -392,7 +390,7 @@ async fn integration_exact_flags_cross_source() {
             source: "sms-backup-plus",
             guid: "g2",
             timestamp: "2015-03-12T18:04:22+00:00",
-            from_me: 1,
+            from_me: true,
             body: "Running late",
             sort_order: 0,
         },
@@ -429,7 +427,7 @@ async fn integration_near_flags_within_window() {
             source: "go-sms-pro",
             guid: "g1",
             timestamp: "2015-03-12T18:04:22Z",
-            from_me: 0,
+            from_me: false,
             body: "On my way",
             sort_order: 0,
         },
@@ -441,7 +439,7 @@ async fn integration_near_flags_within_window() {
             source: "sms-backup-plus",
             guid: "g2",
             timestamp: "2015-03-12T18:04:24Z",
-            from_me: 0,
+            from_me: false,
             body: "On my way",
             sort_order: 1,
         },
@@ -472,7 +470,7 @@ async fn integration_negative_far_apart_not_flagged() {
             source: "go-sms-pro",
             guid: "g1",
             timestamp: "2015-03-12T18:04:22Z",
-            from_me: 0,
+            from_me: false,
             body: "On my way",
             sort_order: 0,
         },
@@ -484,7 +482,7 @@ async fn integration_negative_far_apart_not_flagged() {
             source: "sms-backup-plus",
             guid: "g2",
             timestamp: "2015-03-12T18:05:22Z",
-            from_me: 0,
+            from_me: false,
             body: "On my way",
             sort_order: 1,
         },
@@ -516,7 +514,7 @@ async fn integration_priority_prefers_first_imported_source() {
             source: "sms-backup-plus",
             guid: "g1",
             timestamp: "2015-03-12T18:04:22Z",
-            from_me: 1,
+            from_me: true,
             body: "Hello",
             sort_order: 0,
         },
@@ -528,7 +526,7 @@ async fn integration_priority_prefers_first_imported_source() {
             source: "go-sms-pro",
             guid: "g2",
             timestamp: "2015-03-12T18:04:22Z",
-            from_me: 1,
+            from_me: true,
             body: "Hello",
             sort_order: 1,
         },
@@ -582,7 +580,7 @@ async fn a_twin_exactly_at_the_window_edge_is_flagged_and_one_past_it_is_not() {
                 source: "go-sms-pro",
                 guid: "g1",
                 timestamp: "2015-03-12T18:04:22Z",
-                from_me: 0,
+                from_me: false,
                 body: "On my way",
                 sort_order: 0,
             },
@@ -594,7 +592,7 @@ async fn a_twin_exactly_at_the_window_edge_is_flagged_and_one_past_it_is_not() {
                 source: "sms-backup-plus",
                 guid: "g2",
                 timestamp: second_timestamp,
-                from_me: 0,
+                from_me: false,
                 body: "On my way",
                 sort_order: 1,
             },
@@ -645,7 +643,7 @@ async fn two_near_messages_from_one_source_are_both_kept() {
             source: "go-sms-pro",
             guid: "g1",
             timestamp: "2015-03-12T18:04:22Z",
-            from_me: 1,
+            from_me: true,
             body: "ok",
             sort_order: 0,
         },
@@ -657,7 +655,7 @@ async fn two_near_messages_from_one_source_are_both_kept() {
             source: "go-sms-pro",
             guid: "g2",
             timestamp: "2015-03-12T18:04:23Z",
-            from_me: 1,
+            from_me: true,
             body: "ok",
             sort_order: 1,
         },
@@ -699,7 +697,7 @@ async fn identical_rows_from_one_source_are_both_kept() {
                     source: "go-sms-pro",
                     guid,
                     timestamp: "2015-03-12T18:04:22Z",
-                    from_me: 1,
+                    from_me: true,
                     body: "ok",
                     sort_order: 0,
                 },
@@ -738,7 +736,7 @@ async fn an_exact_duplicate_across_three_sources_keeps_one() {
                     source,
                     guid,
                     timestamp: "2015-03-12T18:04:22Z",
-                    from_me: 1,
+                    from_me: true,
                     body: "Running late",
                     sort_order: 0,
                 },
@@ -783,7 +781,7 @@ async fn a_near_duplicate_across_three_sources_keeps_one() {
                     source,
                     guid,
                     timestamp,
-                    from_me: 1,
+                    from_me: true,
                     body: "Running late",
                     sort_order: 0,
                 },
@@ -943,7 +941,7 @@ async fn a_write_that_commits_while_the_pass_reads_does_not_fail_it() {
             source: "go-sms-pro",
             guid: "g1",
             timestamp: "2015-03-12T18:04:22Z",
-            from_me: 1,
+            from_me: true,
             body: "Running late",
             sort_order: 0,
         },
@@ -955,7 +953,7 @@ async fn a_write_that_commits_while_the_pass_reads_does_not_fail_it() {
             source: "sms-backup-plus",
             guid: "g2",
             timestamp: "2015-03-12T18:04:22Z",
-            from_me: 1,
+            from_me: true,
             body: "Running late",
             sort_order: 0,
         },
@@ -1046,12 +1044,14 @@ async fn add_participant(conn: &mut SqliteConnection, conversation_id: i64, norm
 }
 
 async fn add_attachment(conn: &mut SqliteConnection, message_id: i64, sha: &str) {
+    let mut tx = crate::db::begin_write(conn).await.unwrap();
     sqlx::query("INSERT INTO attachments (message_id, sha256) VALUES ($1, $2)")
         .bind(message_id)
         .bind(sha)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
+    tx.commit().await.unwrap();
 }
 
 struct Msg<'a> {
@@ -1066,26 +1066,17 @@ struct Msg<'a> {
 }
 
 async fn message(conn: &mut SqliteConnection, m: Msg<'_>) -> i64 {
-    sqlx::query_scalar(
-        r"
-        INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me,
-            sender_handle_id, subject, body, sort_order
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, $8, 0)
-        RETURNING id
-        ",
-    )
-    .bind(m.conversation_id)
-    .bind(TEST_ACCOUNT_ID)
-    .bind(m.source)
-    .bind(m.guid)
-    .bind(m.timestamp)
-    .bind(i64::from(m.from_me))
-    .bind(m.sender)
-    .bind(m.body)
-    .fetch_one(&mut *conn)
+    crate::test_support::MessageRow {
+        source: m.source,
+        guid: m.guid.into(),
+        timestamp: m.timestamp,
+        is_from_me: m.from_me,
+        sender_handle_id: m.sender,
+        body: Some(m.body),
+        ..crate::test_support::MessageRow::new(TEST_ACCOUNT_ID, m.conversation_id)
+    }
+    .insert(conn)
     .await
-    .unwrap()
 }
 
 async fn setup_account(conn: &mut SqliteConnection) {
@@ -1799,7 +1790,7 @@ async fn insert_ok_rows(
                     source,
                     guid,
                     timestamp,
-                    from_me: i64::from(from_me),
+                    from_me,
                     body: "ok",
                     sort_order,
                 },
