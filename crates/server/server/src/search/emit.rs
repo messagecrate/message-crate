@@ -4,6 +4,7 @@
 use chrono::NaiveDate;
 
 use crate::db::contacts::UNKNOWN_CONTACT_SQL;
+use crate::db::conversations::{conversation_title_sql, is_with_yourself_sql};
 
 use super::bridge::{ListCtx, MessageAgg, Sql, TrashScope};
 use super::error::{QueryError, QueryErrorKind};
@@ -241,7 +242,11 @@ fn emit_text(ctx: &ListCtx, out: &mut Sql, term: &TextTerm) {
         }
         ListKind::Conversations => {
             out.push("(");
-            free_text_match(out, "coalesce(c.group_title, '')", term);
+            free_text_match(
+                out,
+                &format!("coalesce({}, '')", conversation_title_sql("c")),
+                term,
+            );
             out.push(" OR EXISTS (SELECT 1 FROM handles hc WHERE hc.id = c.chat_handle_id AND ");
             free_text_match(out, "hc.raw", term);
             // The handle join is a LEFT join: a source may name a participant
@@ -375,7 +380,12 @@ fn emit_text_word(
             result = text_match(o, "coalesce(m.subject, '')", term, v);
         }),
         ("title", _) => ctx.conversation(out, |o| {
-            result = text_match(o, "coalesce(c.group_title, '')", term, v);
+            result = text_match(
+                o,
+                &format!("coalesce({}, '')", conversation_title_sql("c")),
+                term,
+                v,
+            );
         }),
         ("name", ListKind::Contacts) => {
             result = text_match(out, "ct.preferred_name", term, v);
@@ -534,13 +544,18 @@ fn is_a_key_handle(handle_id_expr: &str) -> String {
 
 /// Some party to conversation `c` is `v`: its chat handle when that is an
 /// address, a participant's handle, or a participant's display name (see
-/// `participant_matches`).
+/// `participant_matches`). `with:me` is a conversation the account holder
+/// has with themselves, the one place the holder is the other party (#1094).
 fn with_person(
     ctx: &ListCtx,
     out: &mut Sql,
     term: &FieldTerm,
     v: &Value,
 ) -> Result<(), QueryError> {
+    if matches!(v, Value::Keyword("me")) {
+        ctx.conversation(out, |o| o.push(&is_with_yourself_sql("c")));
+        return Ok(());
+    }
     let mut result = Ok(());
     ctx.conversation(out, |o| {
         o.push(&format!(
@@ -717,8 +732,8 @@ fn emit_to(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<
     result
 }
 
-/// `in:#id` names a conversation; `in:<text>` matches its group title or its
-/// chat handle.
+/// `in:#id` names a conversation; `in:<text>` matches its title
+/// (`conversation_title_sql`) or its chat handle.
 fn emit_in(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<(), QueryError> {
     match v {
         Value::Id(id) => {
@@ -730,7 +745,12 @@ fn emit_in(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<
             let prefix = matches!(v, Value::Prefix(_));
             ctx.conversation(out, |o| {
                 o.push("(");
-                like_contains(o, "coalesce(c.group_title, '')", t, prefix);
+                like_contains(
+                    o,
+                    &format!("coalesce({}, '')", conversation_title_sql("c")),
+                    t,
+                    prefix,
+                );
                 o.push(" OR EXISTS (SELECT 1 FROM handles hc WHERE hc.id = c.chat_handle_id AND ");
                 like_contains(o, "hc.raw", t, prefix);
                 o.push("))");

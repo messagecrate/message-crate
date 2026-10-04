@@ -604,6 +604,7 @@ mod tests {
                 chat_identifier: "+1".into(),
                 conversation_type: "individual".into(),
                 group_title: None,
+                title: None,
                 participants: vec![Participant {
                     identity: Some("+1".into()),
                     name: "Sam".into(),
@@ -674,6 +675,7 @@ mod tests {
                 chat_identifier: "+1".into(),
                 conversation_type: "individual".into(),
                 group_title: None,
+                title: None,
                 participants: vec![participant],
             },
             attachments: vec![],

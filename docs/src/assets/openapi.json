@@ -12783,7 +12783,7 @@
               "string",
               "null"
             ],
-            "description": "Group label from the export, when present."
+            "description": "The title the conversation is shown by: the export's title, else, for\na conversation the account holder has with themselves, the account's\ndisplay name or, without one, the conversation's own address. Left\nout when there is neither, and the conversation goes by its\nparticipants."
           },
           "last_message_at": {
             "type": [
@@ -14350,7 +14350,7 @@
               "string",
               "null"
             ],
-            "description": "Group label, when set."
+            "description": "The title the export gave the conversation, when it gave one."
           },
           "id": {
             "type": "integer",
@@ -14363,6 +14363,13 @@
               "$ref": "#/components/schemas/Participant"
             },
             "description": "Participants of the conversation."
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The title the conversation is shown by: the export's title, else,\nfor a conversation the account holder has with themselves, the\naccount's display name or, without one, the conversation's own\naddress. Left out when there is neither, and the conversation goes\nby its participants."
           }
         }
       },
@@ -15408,7 +15415,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "Group label from the export, when present."
+                  "description": "The title the conversation is shown by: the export's title, else, for\na conversation the account holder has with themselves, the account's\ndisplay name or, without one, the conversation's own address. Left\nout when there is neither, and the conversation goes by its\nparticipants."
                 },
                 "last_message_at": {
                   "type": [

@@ -83,7 +83,11 @@ pub struct ConversationSummary {
     pub service: String,
     /// True for group conversations.
     pub is_group: bool,
-    /// Group label from the export, when present.
+    /// The title the conversation is shown by: the export's title, else, for
+    /// a conversation the account holder has with themselves, the account's
+    /// display name or, without one, the conversation's own address. Left
+    /// out when there is neither, and the conversation goes by its
+    /// participants.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     /// Message tags on this conversation.
@@ -149,7 +153,7 @@ pub async fn list_conversations_sorted(
     // aliases real columns.
     let sql = format!(
         "SELECT * FROM ({select} WHERE {where_sql}) AS c ORDER BY {order_by} LIMIT ? OFFSET ?",
-        select = CONVERSATION_ROW_SELECT,
+        select = conversation_row_select(),
         order_by = conversation_order_by(order),
     );
     let out = load_conversation_rows(conn, account_id, &sql, &params).await?;
@@ -173,27 +177,70 @@ pub async fn get_conversation_summary(
     account_id: i64,
     conversation_id: i64,
 ) -> Result<Option<ConversationSummary>, ApiError> {
-    let sql = format!("{CONVERSATION_ROW_SELECT} WHERE c.id = ? AND c.account_id = ?");
+    let sql = format!(
+        "{} WHERE c.id = ? AND c.account_id = ?",
+        conversation_row_select()
+    );
     let params = [SqlParam::Int(conversation_id), SqlParam::Int(account_id)];
     let out = load_conversation_rows(conn, account_id, &sql, &params).await?;
     Ok(out.into_iter().next())
 }
 
+/// A SQL condition, true when conversation `c` is one the account holder has
+/// with themselves: a one-to-one conversation whose own identity is one of
+/// the account's identities, such as notes sent to their own number (#1094).
+/// `c` is the alias of a `conversations` row. `with:me` asks this, and
+/// [`conversation_title_sql`] names such a conversation by it.
+#[must_use]
+pub fn is_with_yourself_sql(c: &str) -> String {
+    format!(
+        "(lower({c}.conversation_type) = 'individual'
+          AND EXISTS (SELECT 1 FROM handles hy WHERE hy.id = {c}.chat_handle_id AND {}))",
+        crate::db::account_profile::is_account_identity_sql("hy", &format!("{c}.account_id"))
+    )
+}
+
+/// The title conversation `c` is shown by, as a SQL expression: the title the
+/// export gave it; else, for a conversation with yourself
+/// ([`is_with_yourself_sql`]), the account's display name, or its own
+/// address when the account has none. NULL when there is neither, and the
+/// conversation goes by its participants. Computed on every read, so it
+/// follows a change of the display name. The list, the single-conversation
+/// read, the message rows and `title:` all read this one expression.
+#[must_use]
+pub fn conversation_title_sql(c: &str) -> String {
+    format!(
+        "COALESCE(NULLIF(trim({c}.group_title), ''),
+                  CASE WHEN {with_yourself} THEN COALESCE(
+                      (SELECT NULLIF(trim(ay.preferred_name), '') FROM accounts ay
+                       WHERE ay.id = {c}.account_id),
+                      (SELECT hy.raw FROM handles hy WHERE hy.id = {c}.chat_handle_id))
+                  END)",
+        with_yourself = is_with_yourself_sql(c)
+    )
+}
+
 /// The row shape shared by the conversation list and the single-conversation
-/// read: id, type, title, and the counts/timestamps computed from `messages`.
-/// Callers append their own `WHERE`, `ORDER BY`, and paging.
-const CONVERSATION_ROW_SELECT: &str = "SELECT c.id,
+/// read: id, type, title ([`conversation_title_sql`]), and the
+/// counts/timestamps computed from `messages`. Callers append their own
+/// `WHERE`, `ORDER BY`, and paging.
+fn conversation_row_select() -> String {
+    format!(
+        "SELECT c.id,
                 c.conversation_type,
-                c.group_title,
+                {title} AS group_title,
                 (SELECT COUNT(*) FROM messages m
                  WHERE m.conversation_id = c.id AND m.duplicate_of IS NULL) AS message_count,
                 (SELECT MIN(m.timestamp) FROM messages m
                  WHERE m.conversation_id = c.id AND m.duplicate_of IS NULL) AS first_message_at,
                 (SELECT MAX(m.timestamp) FROM messages m
                  WHERE m.conversation_id = c.id AND m.duplicate_of IS NULL) AS last_message_at
-         FROM conversations c";
+         FROM conversations c",
+        title = conversation_title_sql("c")
+    )
+}
 
-/// Run a `CONVERSATION_ROW_SELECT`-shaped query and assemble
+/// Run a [`conversation_row_select`]-shaped query and assemble
 /// [`ConversationSummary`] rows: participants, sources, and tags, exactly as
 /// the list builds them. Shared so the list and the single-conversation read
 /// cannot drift into two different notions of what a conversation summary is.

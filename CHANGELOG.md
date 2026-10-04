@@ -21,6 +21,12 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-04 **Notes you sent to yourself are their own conversation.** A chat
+  with your own number or email, such as Apple Messages to yourself or
+  WhatsApp's "Message yourself", imports with no one else in it and no
+  longer adds you to Contacts. It goes by your display name, or by the
+  address when you have none, and changes when your display name does.
+  Search `with:me` to list exactly those conversations.
 - 2026-10-04 **The Audit Trail narrows to a deleted account.** Owner Home's
   Account picker lists deleted accounts below the live ones, each by its
   old username and when it was deleted. Picking one shows only what

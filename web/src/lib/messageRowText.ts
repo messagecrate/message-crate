@@ -3,10 +3,12 @@ import type { Message, MessageConversation } from "./types";
 
 /**
  * A conversation's name as the conversation list shows it ({@link conversationName}).
+ * `title` is the one the server computes, as it does the list's `label`: the
+ * export's title, or the account's name for a conversation with yourself.
  */
 export function messageConversationName(conversation: MessageConversation): string {
   return conversationName({
-    title: conversation.group_title,
+    title: conversation.title,
     isGroup: isGroupType(conversation.conversation_type),
     participants: conversation.participants,
   });

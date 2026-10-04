@@ -38,6 +38,16 @@ describe("messageConversationName", () => {
     expect(messageConversationName(conversation())).toBe("Alice");
   });
 
+  it("names a conversation with yourself by the title the server gives it", () => {
+    // The server titles it with the account's display name, or the address;
+    // it has no participants to fall back on.
+    expect(
+      messageConversationName(
+        conversation({ chat_identifier: "+15555550199", participants: [], title: "Sam Holder" }),
+      ),
+    ).toBe("Sam Holder");
+  });
+
   it("names a group conversation by its title, else by everyone in it", () => {
     const people = [
       { name: "Alice", identity: "+1" },
@@ -45,7 +55,7 @@ describe("messageConversationName", () => {
     ];
     expect(
       messageConversationName(
-        conversation({ conversation_type: "group", group_title: " Family ", participants: people }),
+        conversation({ conversation_type: "group", title: " Family ", participants: people }),
       ),
     ).toBe("Family");
     expect(

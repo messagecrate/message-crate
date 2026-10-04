@@ -412,7 +412,7 @@ impl FileStaging<'_> {
 
         // Copy or convert media first: it needs no database rows, and a failure
         // here leaves nothing half-written.
-        let prepared_messages = prepare_message_attachments(
+        let mut prepared_messages = prepare_message_attachments(
             self.opts,
             self.opts.assets_dir,
             messages,
@@ -466,11 +466,25 @@ impl FileStaging<'_> {
         // The person a name-keyed chat is with gets their contact from their
         // participant record, an identity of type `other` holding the name,
         // so the key giving them a second contact would make one person two.
-        let chat_is_a_person = individual
+        //
+        // A one-to-one chat with one of the account's own identities is a
+        // conversation the holder has with themselves (Apple Messages' chat
+        // with the owner's number, WhatsApp's "Message yourself"). The holder
+        // is never a participant and gets no contact, so the chat id gets
+        // none either, and the received copy of each note has no sender
+        // (#1094). Its header's participant, if any, is the holder and
+        // `insert_participant` drops it.
+        let chat_is_an_address = individual
             && !is_orphaned_export(Path::new(&self.source_file))
             && message_ir::name_of_chat_id(&conversation.chat_identifier).is_none()
             && conversation.chat_identifier != message_ir::NAMELESS_CHAT_ID;
-        if chat_is_a_person {
+        let with_yourself = chat_is_an_address
+            && is_account_identity(
+                &self.stmts.identities,
+                &conversation.chat_identifier,
+                chat_handle_type,
+            );
+        if chat_is_an_address && !with_yourself {
             count_other_identity(chat_handle_type, chat_cached, &mut stats);
             let _ = ensure_contact_for_handle(
                 self.tx,
@@ -508,6 +522,13 @@ impl FileStaging<'_> {
             .await?;
         }
 
+        // The received copy of a note to yourself was sent by the holder,
+        // who is nobody's sender here.
+        if with_yourself {
+            for (msg, _) in &mut prepared_messages {
+                msg.sender = None;
+            }
+        }
         let first_sort_order =
             db_staging::first_sort_order(self.tx, self.stmts.account_id, chat_handle_id).await?;
         let pending_rows = resolve_message_rows(
