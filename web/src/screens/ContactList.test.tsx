@@ -418,7 +418,10 @@ describe("ContactList", () => {
       expect(screen.getByRole("checkbox", { name: "Select all contacts" })).not.toBeChecked();
     });
 
-    it("exports every contact the list holds", async () => {
+    // The whole test, from the first page to the export, takes about 0.6 s on
+    // an idle machine and up to 5.7 s at a load average near 100, past the
+    // 5000 ms test budget (#1594).
+    it("exports every contact the list holds", { timeout: 15_000 }, async () => {
       renderAll();
       await screen.findByRole("checkbox", { name: "Select Person 0001" });
 
