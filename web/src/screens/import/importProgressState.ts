@@ -1,4 +1,4 @@
-import type { ImportIssue } from "../../components/import/ImportSummaryPanel";
+import type { ImportIssue, ImportNote } from "../../components/import/ImportSummaryPanel";
 import type { ImportIssueStage } from "../../components/import/importIssueStage";
 import { formatAttachmentProgress } from "../../lib/attachmentProgressCopy";
 import type { AttachmentMediaMode, ImportIssueEvent, ImportProgressEvent } from "../../lib/types";
@@ -105,6 +105,11 @@ export function issueFromEvent(event: ImportIssueEvent): ImportIssue {
   };
   if (event.conversation != null) issue.conversation = event.conversation;
   return issue;
+}
+
+/** A note the desktop app reported, as the run records it. */
+export function noteFromEvent(event: ImportIssueEvent): ImportNote {
+  return { stage: stageForStep(event.step), item: event.item, text: event.reason };
 }
 
 /**

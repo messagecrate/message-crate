@@ -74,6 +74,22 @@ describe("ImportSummaryPanel", () => {
     expect(screen.getByLabelText("Import errors")).toBeInTheDocument();
     expect(screen.queryByText("Open import log")).not.toBeInTheDocument();
   });
+
+  it("shows the run's notes apart from its Import Errors (#1626)", () => {
+    render(
+      <ImportSummaryPanel
+        summary={{
+          ...baseSummary,
+          notes: [{ stage: "staging", item: "1.eml", text: "kept as a one-to-one message" }],
+        }}
+        embedStepTimings={false}
+      />,
+    );
+    expect(screen.getByRole("heading", { name: "Notes" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Import notes")).toBeInTheDocument();
+    expect(screen.getByText("kept as a one-to-one message")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Import Errors" })).not.toBeInTheDocument();
+  });
 });
 
 describe("completionTextFor", () => {

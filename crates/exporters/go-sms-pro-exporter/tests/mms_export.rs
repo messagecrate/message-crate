@@ -64,6 +64,7 @@ fn convert(input_dir: &Path, output_dir: &Path) -> ExportReport {
         output_format: OutputFormat::Csv,
         cancel: None,
         resume: false,
+        issues: None,
     })
     .expect("convert_export")
 }
@@ -256,7 +257,8 @@ fn a_pdu_that_breaks_the_mms_rules_is_counted_and_named() {
     assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
     assert!(
         report.errors[0].ends_with(
-            "I_1609459200_1_0.pdu: malformed PDU: expected unknown header field code at byte 2"
+            "I_1609459200_1_0.pdu: This MMS could not be read and was left out: malformed PDU: \
+             expected unknown header field code at byte 2"
         ),
         "{}",
         report.errors[0]
@@ -284,6 +286,7 @@ fn a_run_that_copies_no_attachments_still_records_their_size() {
         output_format: OutputFormat::Csv,
         cancel: None,
         resume: false,
+        issues: None,
     })
     .expect("convert_export");
 

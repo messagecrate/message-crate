@@ -56,8 +56,109 @@ pub struct ReadReport {
     pub dropped_character_references: u64,
     /// Repeated copies of a message dropped, one copy of each kept.
     pub duplicates_dropped: u64,
-    /// Per-file error messages from parsing/staging.
-    pub errors: Vec<String>,
+    /// What could not be read, each with the file it was in.
+    pub errors: Vec<ReadError>,
+}
+
+/// Something in one backup file the reader could not read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReadError {
+    /// The file, as a path.
+    pub file: String,
+    /// Why, as the parser said it.
+    pub reason: String,
+}
+
+impl ReadError {
+    fn new(path: &Path, error: &anyhow::Error) -> Self {
+        Self {
+            file: path.display().to_string(),
+            reason: format!("{error:#}"),
+        }
+    }
+}
+
+impl std::fmt::Display for ReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.file, self.reason)
+    }
+}
+
+impl ReadReport {
+    /// One log line for each kind of message the read dropped or skipped,
+    /// leaving out the kinds it found none of, then one line for every
+    /// error, so a person can tell what did not come across.
+    pub fn log_lines(&self) -> Vec<String> {
+        let counts = [
+            (
+                self.duplicates_dropped,
+                "Dropped",
+                "repeated copy of a message",
+                "repeated copies of messages",
+            ),
+            (
+                self.skipped_invalid_date,
+                "Skipped",
+                "message with an invalid date",
+                "messages with an invalid date",
+            ),
+            (
+                self.skipped_out_of_range,
+                "Skipped",
+                "message outside the date range",
+                "messages outside the date range",
+            ),
+            (
+                self.skipped_unknown_address,
+                "Skipped",
+                "message with no usable address",
+                "messages with no usable address",
+            ),
+            (
+                self.skipped_unknown_type,
+                "Skipped",
+                "message of an unknown type",
+                "messages of an unknown type",
+            ),
+            (
+                self.skipped_draft_or_outbox,
+                "Skipped",
+                "draft or unsent message",
+                "drafts or unsent messages",
+            ),
+            (
+                self.skipped_empty_participants,
+                "Skipped",
+                "MMS with no participants",
+                "MMS with no participants",
+            ),
+            (
+                self.skipped_unreadable_part,
+                "Skipped",
+                "message part that could not be read",
+                "message parts that could not be read",
+            ),
+            (
+                self.dropped_character_references,
+                "Dropped",
+                "character reference that is not a character",
+                "character references that are not characters",
+            ),
+        ];
+        counts
+            .into_iter()
+            .filter(|(count, ..)| *count > 0)
+            .map(|(count, verb, one, many)| {
+                let what = if count == 1 { one } else { many };
+                format!("{verb} {count} {what}")
+            })
+            .chain(
+                self.errors
+                    .iter()
+                    .map(|error| format!("xml warning: {error}")),
+            )
+            .collect()
+    }
 }
 
 /// Options for [`read_backup`].
@@ -565,7 +666,7 @@ pub fn read_backup(
                 Err(error) => {
                     // Keep parsing the rest of the file; one bad record
                     // must not abort the whole backup.
-                    report.errors.push(format!("{}: {error:#}", path.display()));
+                    report.errors.push(ReadError::new(&path, &error));
                     Ok(())
                 }
             }
@@ -578,7 +679,7 @@ pub fn read_backup(
             if is_cancelled(options.cancel) || error.to_string() == "cancelled" {
                 return Err(error);
             }
-            report.errors.push(format!("{}: {error:#}", path.display()));
+            report.errors.push(ReadError::new(&path, &error));
         }
     }
     check_cancel(options.cancel)?;

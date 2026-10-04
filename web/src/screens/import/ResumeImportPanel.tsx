@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Button from "../../components/Button";
 import PasswordField from "../../components/PasswordField";
+import { desktopJobRunningText, useDesktopJob } from "../../lib/desktopJob";
 import type { ActiveImportSession } from "../../lib/importSession";
 import type { SnapshotSecret } from "./formSnapshot";
 import { hintStyle, StackedField } from "./ImportFormUi";
@@ -138,11 +139,16 @@ export default function ResumeImportPanel({
 }) {
   const [secretValue, setSecretValue] = useState("");
   const [showSecret, setShowSecret] = useState(false);
+  // Resuming starts a Stage, which the desktop refuses while another job
+  // runs. The panel shows only while this window runs no Import Run, so any
+  // job held here, an Import Run included, is another one.
+  const runningJob = useDesktopJob();
   if (decision.kind === "none" || !decision.session) return null;
   const copy = COPY[decision.kind];
   const session = decision.session;
   const resumes = copy.primary.action === "resume";
   const secretCopy = resumes && secret ? SECRET_COPY[secret] : null;
+  const blockedBy = resumes ? runningJob : null;
 
   return (
     <>
@@ -172,7 +178,7 @@ export default function ResumeImportPanel({
         <Button
           variant="primary"
           size="wide"
-          disabled={secretCopy !== null && secretValue.trim() === ""}
+          disabled={blockedBy !== null || (secretCopy !== null && secretValue.trim() === "")}
           onClick={resumes ? () => onResume(secretCopy ? secretValue : "") : onDiscard}
         >
           {copy.primary.label}
@@ -183,6 +189,11 @@ export default function ResumeImportPanel({
           </Button>
         ) : null}
       </div>
+      {blockedBy ? (
+        <p role="status" className="m-0 mt-3 text-[0.813rem] text-muted">
+          {desktopJobRunningText(blockedBy, copy.primary.label)}
+        </p>
+      ) : null}
     </>
   );
 }

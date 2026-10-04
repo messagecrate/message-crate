@@ -2,8 +2,8 @@
 //! shows. The smoke tests call `convert_json` directly, so a `run()` that
 //! wrote nothing, or a report that dropped the bad-date count, passed them.
 
-use message_crate_core::testutil::{assert_run_wrote_jsonl, jsonl_run_config};
-use message_crate_core::{SourceConfig, WhatsappConfig};
+use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_run_config};
+use message_crate_core::{RunIssue, SourceConfig, WhatsappConfig};
 use std::fs;
 
 /// A message with the given `timestamp` JSON value.
@@ -105,4 +105,51 @@ fn run_records_the_form_owner_on_the_header() {
     );
     let header = written.lines().next().unwrap();
     assert!(!header.contains(r#""handle":"+15555550100""#), "{header}");
+}
+
+/// A message whose media file is not in the backup is kept without it, and
+/// the run sends a note naming the file (#1535).
+#[test]
+fn run_sends_a_note_for_a_media_file_the_backup_does_not_hold() {
+    let tmp = tempfile::tempdir().unwrap();
+    let json = tmp.path().join("result.json");
+    fs::write(
+        &json,
+        r#"{ "15555550122@s.whatsapp.net": {
+    "name": "Sam Example", "type": "ANDROID",
+    "messages": { "AAA": {
+        "from_me": false, "timestamp": 1609459200, "time": "00:00", "key_id": "AAA",
+        "data": "Media/WhatsApp Images/IMG-1.jpg", "sender": null, "media": true,
+        "mime": "image/jpeg", "caption": "A photo", "sticker": false, "reply": null,
+        "reactions": {}
+    } }
+  } }"#,
+    )
+    .unwrap();
+    let output = tmp.path().join("out");
+    let mut config = jsonl_run_config(
+        &[],
+        &output,
+        SourceConfig::Whatsapp(WhatsappConfig {
+            json: Some(json),
+            ..WhatsappConfig::default()
+        }),
+    );
+    config.media.mode = media::MediaMode::Clone;
+    let issues = collect_issues(&mut config);
+
+    let result = crate::run(&config).expect("run");
+
+    assert_run_wrote_jsonl(&result, &output, 1);
+    assert_eq!(
+        *issues.lock().unwrap(),
+        [RunIssue {
+            kind: "note".into(),
+            step: "parse".into(),
+            item: "Media/WhatsApp Images/IMG-1.jpg".into(),
+            reason:
+                "This attachment's file is not in the backup, so its message is kept without it."
+                    .into(),
+        }]
+    );
 }

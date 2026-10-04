@@ -7,7 +7,8 @@ use crate::xml::{SkippedBadAddrDetail, XmlMessage, parse_xml_file};
 use anyhow::{Context, Result, bail};
 use go_sms_mms::{ParsedPdu, PduError, parse_pdu_file};
 use message_crate_core::{
-    CancelFlag, ExportReport, ExportTransforms, OutputFormat, prepare_outputs, project_conversation,
+    CancelFlag, ExportReport, ExportTransforms, IssueSink, OutputFormat, prepare_outputs,
+    project_conversation,
 };
 use message_ir::{
     ExportMeta, IrParticipant, IrService, IrSource, PendingAttachment, PendingConversation,
@@ -358,6 +359,8 @@ pub(crate) struct ConvertExportArgs<'a> {
     /// Continue an interrupted export: keep previous output and skip the
     /// conversations already written.
     pub resume: bool,
+    /// Where each Import Error and note goes as the run records it.
+    pub issues: Option<&'a IssueSink>,
 }
 
 /// Convert a GO SMS Pro export directory into the shared conversation structure
@@ -380,6 +383,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         output_format,
         cancel,
         resume,
+        issues,
     } = args;
     if !input_dir.is_dir() {
         bail!("input is not a directory: {}", input_dir.display());
@@ -398,7 +402,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         owners: &owners,
         spool: writer.spool(),
         conversations: BTreeMap::new(),
-        report: ExportReport::default(),
+        report: ExportReport::with_issues(issues.cloned()),
         skips: SkipDetails::default(),
     };
     for xml_path in sorted_files(input_dir, &is_xml_file)? {
@@ -480,9 +484,10 @@ impl Ingest<'_> {
         let (msgs, stats) = match parse_xml_file(xml_path) {
             Ok(parsed) => parsed,
             Err(err) => {
-                self.report
-                    .errors
-                    .push(format!("{}: {err:#}", xml_path.display()));
+                self.report.error(
+                    xml_path.display().to_string(),
+                    format!("This file could not be read and was left out: {err:#}"),
+                );
                 return;
             }
         };
@@ -507,8 +512,8 @@ impl Ingest<'_> {
 
     /// Add the MMS in one PDU file. A stub (the placeholder GO SMS Pro
     /// writes for an MMS it never downloaded) is counted and listed; a file
-    /// that breaks the MMS rules is counted, and the first twenty are named
-    /// in the report.
+    /// that breaks the MMS rules is counted, and named in the report and as
+    /// an Import Error.
     ///
     /// # Errors
     ///
@@ -533,11 +538,10 @@ impl Ingest<'_> {
             }
             Err(err) => {
                 self.report.bump("skipped_unparseable_pdu", 1);
-                if self.report.errors.len() < 20 {
-                    self.report
-                        .errors
-                        .push(format!("{}: {err}", pdu_path.display()));
-                }
+                self.report.error(
+                    pdu_path.display().to_string(),
+                    format!("This MMS could not be read and was left out: {err}"),
+                );
                 return Ok(());
             }
         };

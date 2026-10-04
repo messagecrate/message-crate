@@ -3682,4 +3682,104 @@ mod name_keyed_conversation {
             }
         }
     }
+
+    /// Plain text on Conversations and `in:` on Messages never read the
+    /// `name:` prefix of a conversation's key, nor the `nameless:` key:
+    /// every name key contains `name:`, so `nam` or `in:nam` would find them
+    /// all (#1696). The conversation is still found by the name after the
+    /// prefix, by its participant row, and by its title.
+    #[tokio::test]
+    async fn plain_text_and_in_read_the_name_not_the_key_prefix() {
+        let (pool, _dir, _f) = seeded().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let key = handle(&mut conn, ACCOUNT, "name:Sarah Vale", "sms").await;
+        let sarah = conversation(&mut conn, ACCOUNT, key, "individual", None, &[]).await;
+        named_participant(&mut conn, sarah, "Sarah Vale").await;
+        let to_sarah = message(
+            &mut conn,
+            ACCOUNT,
+            msg(sarah, "2024-03-01T10:00:00Z", false, None, "hello"),
+        )
+        .await;
+        let titled_key = handle(&mut conn, ACCOUNT, "name:Theo Marsh", "sms").await;
+        let theo = conversation(
+            &mut conn,
+            ACCOUNT,
+            titled_key,
+            "individual",
+            Some("Theo Marsh"),
+            &[],
+        )
+        .await;
+        named_participant(&mut conn, theo, "Theo Marsh").await;
+        let to_theo = message(
+            &mut conn,
+            ACCOUNT,
+            msg(theo, "2024-03-01T11:00:00Z", false, None, "hello"),
+        )
+        .await;
+        let nobody_key = handle(&mut conn, ACCOUNT, message_ir::NAMELESS_CHAT_ID, "sms").await;
+        let nobody = conversation(&mut conn, ACCOUNT, nobody_key, "individual", None, &[]).await;
+        let to_nobody = message(
+            &mut conn,
+            ACCOUNT,
+            msg(nobody, "2024-03-02T10:00:00Z", false, None, "hello"),
+        )
+        .await;
+
+        for query in ["nam", "nam*", "\"name:\""] {
+            let found = run(&mut conn, ListKind::Conversations, query).await;
+            for row in [sarah, theo] {
+                assert!(
+                    !found.contains(&row),
+                    "Conversations {query} found a name-keyed conversation"
+                );
+            }
+        }
+        for query in ["less", "nameless", "nameless*"] {
+            assert!(
+                !run(&mut conn, ListKind::Conversations, query)
+                    .await
+                    .contains(&nobody),
+                "Conversations {query} found the conversation that names nobody"
+            );
+        }
+        for query in ["in:nam", "in:nam*", "in:\"name:\""] {
+            let found = run(&mut conn, ListKind::Messages, query).await;
+            for row in [to_sarah, to_theo] {
+                assert!(
+                    !found.contains(&row),
+                    "Messages {query} found a name-keyed conversation"
+                );
+            }
+        }
+        for query in ["in:less", "in:nameless*"] {
+            assert!(
+                !run(&mut conn, ListKind::Messages, query)
+                    .await
+                    .contains(&to_nobody),
+                "Messages {query} found the conversation that names nobody"
+            );
+        }
+
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "sarah").await,
+            vec![sarah]
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "theo").await,
+            vec![theo]
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Messages, "in:theo").await,
+            vec![to_theo]
+        );
+        for query in ["in:sarah", "in:val*", "in:\"Sarah Vale\""] {
+            assert_eq!(
+                run(&mut conn, ListKind::Messages, query).await,
+                vec![to_sarah],
+                "{query}"
+            );
+        }
+    }
 }

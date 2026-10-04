@@ -4,13 +4,14 @@
 use crate::read::{ReadOptions, ReadReport, read_backup};
 use crate::write::SbrArchive;
 use anyhow::Result;
-use message_crate_core::{CancelFlag, ExportReport, ExportTransforms, OutputFormat};
+use message_crate_core::{CancelFlag, ExportReport, ExportTransforms, IssueSink, OutputFormat};
 use message_staging::{AttachmentSource, ExportWriter};
 use std::path::Path;
 
 /// Map the reader's [`ReadReport`] onto the shared [`ExportReport`] shape,
-/// moving reader-specific counters into `extra`.
-fn to_core_report(report: ReadReport) -> ExportReport {
+/// moving reader-specific counters into `extra`, and send each error to
+/// `issues` as an Import Error.
+fn to_core_report(report: ReadReport, issues: Option<&IssueSink>) -> ExportReport {
     let mut out = ExportReport {
         conversations: report.conversations,
         // Every message in a produced document is either sent or received.
@@ -20,9 +21,14 @@ fn to_core_report(report: ReadReport) -> ExportReport {
         skipped_invalid_date: report.skipped_invalid_date,
         skipped_out_of_range: report.skipped_out_of_range,
         duplicates_dropped: report.duplicates_dropped,
-        errors: report.errors,
-        ..ExportReport::default()
+        ..ExportReport::with_issues(issues.cloned())
     };
+    for error in report.errors {
+        out.error(
+            error.file,
+            format!("This file could not be read in full: {}", error.reason),
+        );
+    }
     out.extra.insert("sms_seen".into(), report.sms_seen);
     out.extra.insert("mms_seen".into(), report.mms_seen);
     out.extra.insert(
@@ -63,6 +69,8 @@ pub(crate) struct ConvertExportArgs<'a> {
     /// Continue an interrupted export: keep previous output and skip the
     /// conversations already written.
     pub resume: bool,
+    /// Where each Import Error goes as the run records it.
+    pub issues: Option<&'a IssueSink>,
 }
 
 /// Convert SMS Backup & Restore XML into the shared conversation structure,
@@ -106,7 +114,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     // The reader already counted conversations; zero the conversation
     // counter so the shared write tail's fold counts only the documents it
     // actually writes.
-    let mut core = to_core_report(report);
+    let mut core = to_core_report(report, args.issues);
     core.conversations = 0;
     writer.finish(
         documents,

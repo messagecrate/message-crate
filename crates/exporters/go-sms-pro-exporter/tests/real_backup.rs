@@ -35,6 +35,7 @@ fn real_backup_exports_clean_conversations() {
         output_format: OutputFormat::Csv,
         cancel: None,
         resume: false,
+        issues: None,
     })
     .unwrap();
     println!("{report:#?}");

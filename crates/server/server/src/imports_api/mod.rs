@@ -637,16 +637,44 @@ pub(crate) struct CompleteImportRequest {
     pub(crate) summary: Option<serde_json::Value>,
     #[serde(default)]
     pub(crate) issues: Vec<ImportIssueRequest>,
+    /// The run's notes, apart from its Import Errors. A note never makes a
+    /// run `completed_with_issues`.
+    #[serde(default)]
+    pub(crate) notes: Vec<ImportNoteRequest>,
 }
 
 /// The Import Errors a discarded run recorded before it was given up. A run
 /// that paused and is then discarded never posts `complete`, so its issues
-/// come with the discard.
+/// and notes come with the discard.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct DiscardImportRequest {
     /// The run's Import Errors so far. The list is empty when the run
     /// recorded none.
     pub(crate) issues: Vec<ImportIssueRequest>,
+    /// The run's notes so far. The list is empty when the run recorded none.
+    pub(crate) notes: Vec<ImportNoteRequest>,
+}
+
+/// One note a Stage of the Import Run recorded: something it did with an
+/// item that is worth knowing but did not fail, such as a message it kept
+/// with a caveat.
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub(crate) struct ImportNoteRequest {
+    /// Stage the note came from.
+    pub(crate) stage: crate::db::imports::ImportIssueStage,
+    /// The file, message or address the note is about.
+    pub(crate) item: String,
+    /// What the run did with it, in one sentence.
+    pub(crate) text: String,
+}
+
+/// One requested note, as the database records it.
+fn note_row(note: ImportNoteRequest) -> crate::db::imports::ImportNoteRow {
+    crate::db::imports::ImportNoteRow {
+        stage: note.stage,
+        item: note.item,
+        text: note.text,
+    }
 }
 
 /// One error or skip a Stage of the Import Run reported.
@@ -742,6 +770,18 @@ pub(crate) struct ListImportsQuery {
     pub(crate) sort: Option<String>,
 }
 
+/// One stored import note: something the run did with an item that is worth
+/// knowing but did not fail.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub(crate) struct ImportNote {
+    /// Stage the note came from.
+    pub(crate) stage: crate::db::imports::ImportIssueStage,
+    /// The file, message or address the note is about.
+    item: String,
+    /// What the run did with it.
+    text: String,
+}
+
 /// One stored import issue.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct ImportIssue {
@@ -754,7 +794,7 @@ pub(crate) struct ImportIssue {
 
 /// An Import Run: one per import, the same record wherever the interface
 /// hands one run out. It is the run as a list answers it, the
-/// `ImportRunSummary`, with the issues the run recorded.
+/// `ImportRunSummary`, with the issues and the notes the run recorded.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct ImportRun {
     /// Everything a list answers for the run: the counts Settings shows,
@@ -764,11 +804,13 @@ pub(crate) struct ImportRun {
     pub(crate) run: ImportRunSummary,
     /// Issues the run recorded, oldest first.
     pub(crate) issues: Vec<ImportIssue>,
+    /// Notes the run recorded, oldest first, apart from its issues.
+    pub(crate) notes: Vec<ImportNote>,
 }
 
 /// An Import Run as a list of runs answers it: every field of the run but
-/// its issues. A run may record any number of issues, so a page that
-/// carried them would have no bound on its size; `GET /v1/imports/{id}`
+/// its issues and notes. A run may record any number of either, so a page
+/// that carried them would have no bound on its size; `GET /v1/imports/{id}`
 /// answers them (#1559,
 /// `docs/architecture/http-api.md`, "Lists").
 #[derive(Debug, Serialize, utoipa::ToSchema)]
@@ -822,6 +864,8 @@ pub(crate) struct ImportRunSummary {
     pub(crate) summary: serde_json::Value,
     /// How many issues the run recorded.
     pub(crate) issue_count: u64,
+    /// How many notes the run recorded.
+    pub(crate) note_count: u64,
     /// Contacts this run created.
     pub(crate) contacts_new: u64,
     /// Contacts it only changed.
@@ -856,6 +900,7 @@ impl From<crate::db::imports::ListedImport> for ImportRunSummary {
             source_identities: crate::db::imports::json_column(row.source_identities),
             summary: crate::db::imports::json_column(row.summary_json),
             issue_count: listed.issue_count,
+            note_count: listed.note_count,
             contacts_new: listed.contacts.new_count,
             contacts_changed: listed.contacts.changed_count,
         }
@@ -865,9 +910,9 @@ impl From<crate::db::imports::ListedImport> for ImportRunSummary {
 /// An Import Run as the owner reads it under another account: its source,
 /// mode, times, outcome and counts, and nothing of what the backup held
 /// (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may
-/// see"). The run's summary, its issues and its form say whom the account
-/// talks to, so they stay out, and a field reaches the owner only by being
-/// added here.
+/// see"). The run's summary, its issues, its notes and its form say whom the
+/// account talks to, so they stay out, and a field reaches the owner only by
+/// being added here.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct OwnerImportRun {
     /// Import Run id.
@@ -907,6 +952,9 @@ pub(crate) struct OwnerImportRun {
     /// Issues the run recorded. Each names the conversation it was about, so
     /// the owner reads how many and not which.
     issue_count: u64,
+    /// Notes the run recorded. Each names a file or an address, so the owner
+    /// reads how many and not which.
+    note_count: u64,
     /// Contacts this run created.
     contacts_new: u64,
     /// Contacts it only changed.
@@ -919,18 +967,19 @@ pub(crate) async fn owner_import_run(
     conn: &mut SqliteConnection,
     row: crate::db::imports::ImportRow,
 ) -> Result<OwnerImportRun, ApiError> {
-    let issue_count = crate::db::imports::issue_count(conn, row.id).await?;
-    listed_import(conn, row, issue_count)
+    let (issue_count, note_count) = crate::db::imports::issue_and_note_counts(conn, row.id).await?;
+    listed_import(conn, row, issue_count, note_count)
         .await
         .map(OwnerImportRun::from)
 }
 
-/// One run's row as the list would read it, given its issue count: the
-/// contact tally is read here.
+/// One run's row as the list would read it, given its issue and note
+/// counts: the contact tally is read here.
 async fn listed_import(
     conn: &mut SqliteConnection,
     row: crate::db::imports::ImportRow,
     issue_count: u64,
+    note_count: u64,
 ) -> Result<crate::db::imports::ListedImport, ApiError> {
     let contacts = crate::db::import_contacts::counts(conn, row.id)
         .await
@@ -938,6 +987,7 @@ async fn listed_import(
     Ok(crate::db::imports::ListedImport {
         row,
         issue_count,
+        note_count,
         contacts,
     })
 }
@@ -970,6 +1020,7 @@ impl From<crate::db::imports::ListedImport> for OwnerImportRun {
             upload_ms: row.upload_ms,
             counts,
             issue_count: listed.issue_count,
+            note_count: listed.note_count,
             contacts_new: listed.contacts.new_count,
             contacts_changed: listed.contacts.changed_count,
         }
@@ -1212,6 +1263,7 @@ pub(crate) async fn complete_import(
         upload_ms: body.upload_ms,
         summary_json,
         issues: body.issues.into_iter().map(issue_input).collect(),
+        notes: body.notes.into_iter().map(note_row).collect(),
     };
     let mut conn = state.db.acquire().await?;
     let row = complete_run(&mut conn, account, import_id, &args)
@@ -1404,8 +1456,8 @@ fn import_date_ymd(row: &crate::db::imports::ImportRow) -> String {
         )
 }
 
-/// One Import Run in full, read from its row, its issues and its contact
-/// tally. The caller has already established that the row is the account's.
+/// One Import Run in full, read from its row, its issues, its notes and its
+/// contact tally. The caller has already established that the row is the account's.
 pub(crate) async fn import_run(
     conn: &mut SqliteConnection,
     row: crate::db::imports::ImportRow,
@@ -1421,8 +1473,20 @@ pub(crate) async fn import_run(
             reason: issue.reason,
         })
         .collect();
-    let run = listed_import(conn, row, issues.len() as u64).await?.into();
-    Ok(ImportRun { run, issues })
+    let notes = crate::db::imports::list_import_notes(conn, row.id)
+        .await
+        .map_err(ApiError::Internal)?
+        .into_iter()
+        .map(|note| ImportNote {
+            stage: note.stage,
+            item: note.item,
+            text: note.text,
+        })
+        .collect::<Vec<_>>();
+    let run = listed_import(conn, row, issues.len() as u64, notes.len() as u64)
+        .await?
+        .into();
+    Ok(ImportRun { run, issues, notes })
 }
 
 /// New stage for a running Import Run.
@@ -1508,8 +1572,9 @@ pub(crate) async fn discard_import(
     let account = resolve_import_account(&auth);
     validate_import_issues(&body.issues)?;
     let issues: Vec<_> = body.issues.into_iter().map(issue_input).collect();
+    let notes: Vec<_> = body.notes.into_iter().map(note_row).collect();
     let mut conn = state.db.acquire().await?;
-    crate::db::imports::discard_import(&mut conn, account, import_id, &issues).await?;
+    crate::db::imports::discard_import(&mut conn, account, import_id, &issues, &notes).await?;
     let run = full_import_run(&mut conn, account, import_id).await;
     drop(conn);
     crate::asset_store::sweep_after_run(&state.db, &state.cfg.paths, account).await;

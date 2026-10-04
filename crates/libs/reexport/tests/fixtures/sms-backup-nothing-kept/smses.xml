@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes" ?>
+<smses count="2">
+  <sms protocol="0" address="" date="1400773262000" type="1" body="no address" />
+  <sms protocol="0" address="+15555550101" date="1400773263000" type="9" body="unknown type" />
+</smses>
