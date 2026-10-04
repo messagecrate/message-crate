@@ -3,7 +3,7 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { TimeZoneContext } from "../lib/timeZone";
+import { inTimeZone } from "../test/timeZone";
 import IdentityTable, { type IdentityRow } from "./IdentityTable";
 
 afterEach(cleanup);
@@ -48,7 +48,7 @@ const identities = () =>
 
 describe("IdentityTable", () => {
   it("shows the eight columns, text left and numbers right, with the header aligned like its cells", () => {
-    render(<IdentityTable {...dates} rows={rows} onRemove={() => {}} />);
+    render(inTimeZone("UTC", <IdentityTable {...dates} rows={rows} onRemove={() => {}} />));
 
     expect(headers()).toEqual([
       "Service",
@@ -163,7 +163,12 @@ describe("IdentityTable", () => {
 
     // The rows' conversations add up to 3; two identities share one, so the
     // contact has 2.
-    render(<IdentityTable {...dates} rows={rows} totalConversations={2} onRemove={() => {}} />);
+    render(
+      inTimeZone(
+        "UTC",
+        <IdentityTable {...dates} rows={rows} totalConversations={2} onRemove={() => {}} />,
+      ),
+    );
     const summary = screen.getByText("Summary").closest("[role=row]");
     const cells = within(summary as HTMLElement).getAllByRole("gridcell");
     expect(cells.map((c) => c.textContent)).toEqual([
@@ -209,9 +214,10 @@ describe("IdentityTable dates", () => {
       group_messages: 0,
     };
     render(
-      <TimeZoneContext.Provider value="America/Los_Angeles">
-        <IdentityTable {...dates} rows={[late]} onRemove={() => {}} />
-      </TimeZoneContext.Provider>,
+      inTimeZone(
+        "America/Los_Angeles",
+        <IdentityTable {...dates} rows={[late]} onRemove={() => {}} />,
+      ),
     );
     expect(screen.getAllByText("2024-12-31")).toHaveLength(2);
   });

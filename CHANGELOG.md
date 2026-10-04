@@ -247,6 +247,11 @@ released versions carry their date on the heading.
   messages that name nobody. Each person now keeps a conversation of their
   own. Such a person also became two contacts on import, one holding their
   name and one with no name; they are now one contact.
+- 2026-10-03 **A video, photo or audio file that cannot be converted says
+  why, briefly.** The error for a file the Media stage of an Import Run
+  could not convert held the converter's version, build settings and progress
+  lines, with the reason at the end of several kilobytes. It now holds only
+  the lines that say why the conversion failed.
 - 2026-10-03 **An attachment with a blank file name is refused.** An
   import that gave an attachment a blank file name, empty or only spaces,
   stored that blank name when the server already held the file. The import
