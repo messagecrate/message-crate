@@ -22,12 +22,12 @@ function sources(): [string, string][] {
     .map((p) => [p.replaceAll("\\", "/"), readFileSync(new URL(p, SRC), "utf8")]);
 }
 
-/** Lines of `text` matching `re`, or for which `re` returns true, as "path:line: text". */
-function hits(path: string, text: string, re: RegExp | ((line: string) => boolean)): string[] {
-  const match = typeof re === "function" ? re : (line: string) => re.test(line);
+/** Lines of `text` that `test` matches (a pattern, or a check that returns true), as "path:line: text". */
+function hits(path: string, text: string, test: RegExp | ((line: string) => boolean)): string[] {
+  const matches = typeof test === "function" ? test : (line: string) => test.test(line);
   return text
     .split("\n")
-    .flatMap((line, i) => (match(line) ? [`${path}:${i + 1}: ${line.trim()}`] : []));
+    .flatMap((line, i) => (matches(line) ? [`${path}:${i + 1}: ${line.trim()}`] : []));
 }
 
 // The theme presets and the color picker hold colors as data a person picks,
@@ -131,32 +131,47 @@ describe("focus rings", () => {
   // whose variant names focus (`focus-visible:`, `data-focus-visible:`,
   // `has-[…:focus-visible]:` and the rest), and a group with no variant, which
   // a render prop such as `isFocused` may switch on whatever its name, must
-  // have `ring-inset` under its variant or bare, and a width of 2 only. The
-  // files in RING_HALOS draw a ring that is not a focus ring.
-  const RING_HALOS = new Map([
-    ["components/StepProgress.tsx", "the current step's halo, `ring-4 ring-accent/30`"],
-  ]);
-  const ringClass = /^((?:[^:]*:)*)!?ring(?:-(.+?))?!?$/;
+  // have `ring-inset` under its variant or bare, and a width of 2 only.
+  // `ring-0` takes a ring away, so it is no width. A bare `ring` is a 1px
+  // width under a variant or beside another ring class, and otherwise the
+  // word in a sentence. Tailwind's `inset-ring-*` is a second inset ring, so
+  // it counts on any line. RING_HALOS holds the exact classes of each ring
+  // that is not a focus ring.
+  const RING_HALOS = new Map([["components/StepProgress.tsx", "ring-4 ring-accent/30"]]);
+  const ringClass = /^((?:[^:]*:)*)!?(inset-)?ring(?:-(.+?))?!?$/;
+  /** A token with the brackets of the code around it taken off, its own kept. */
+  const trim = (token: string) => {
+    let t = token;
+    const count = (c: string) => t.split(c).length - 1;
+    while (t.startsWith("(") && count("(") > count(")")) t = t.slice(1);
+    while (t.endsWith(")") && count(")") > count("(")) t = t.slice(0, -1);
+    return t.replace(/[,;]+$/, "");
+  };
+  const isWidth = (rest: string) =>
+    rest === "" || /^(\d+|\[\d+(\.\d+)?(px|rem|em)?\]|\((length:)?--[\w-]+\))$/.test(rest);
   const flushRing = (path: string) => (line: string) => {
+    const halo = RING_HALOS.get(path);
+    const text = halo !== undefined ? line.replace(halo, "") : line;
     const byVariant = new Map<string, string[]>();
-    for (const token of line.split(/[\s"'`{}()$+?]+/)) {
+    for (const token of text.split(/[\s"'`{}$+?]+/).map(trim)) {
       const m = ringClass.exec(token);
       if (!m) continue;
+      if (m[2] !== undefined) return true;
       const variant = m[1] ?? "";
-      // A bare `ring` with no variant reads as the word in a sentence.
-      if (variant === "" && m[2] === undefined) continue;
-      byVariant.set(variant, [...(byVariant.get(variant) ?? []), m[2] ?? ""]);
+      byVariant.set(variant, [...(byVariant.get(variant) ?? []), m[3] ?? ""]);
     }
+    const bare = byVariant.get("");
+    if (bare?.every((rest) => rest === "")) byVariant.delete("");
     const inset = (variant: string) =>
       (byVariant.get(variant) ?? []).includes("inset") ||
       (byVariant.get("") ?? []).includes("inset");
     return [...byVariant].some(([variant, rests]) => {
-      const ring = rests.filter((rest) => rest !== "inset" && !rest.startsWith("offset-"));
+      if (variant !== "" && !variant.includes("focus")) return false;
+      const ring = rests.filter(
+        (rest) => rest !== "inset" && rest !== "0" && !rest.startsWith("offset-"),
+      );
       if (ring.length === 0) return false;
-      const focus = variant.includes("focus") || (variant === "" && !RING_HALOS.has(path));
-      if (!focus) return false;
-      const widths = ring.filter((rest) => rest === "" || /^(\d+|\[.*\])$/.test(rest));
-      return !inset(variant) || widths.some((width) => width !== "2");
+      return !inset(variant) || ring.filter(isWidth).some((width) => width !== "2");
     });
   };
   it("no source outside lib/uiStyles.ts draws a focus ring other than the inset ring", () => {
