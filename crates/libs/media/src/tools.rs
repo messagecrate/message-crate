@@ -1,7 +1,9 @@
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 
@@ -265,6 +267,26 @@ const QUIET_FFMPEG: [&str; 4] = ["-hide_banner", "-nostats", "-loglevel", "error
 /// stderr whatever `-loglevel` says. A pipe nobody reads fills at 64 KiB on
 /// Linux, after which ffmpeg blocks on the write and never exits (#1178).
 pub(crate) fn run_ffmpeg(args: &[String]) -> Result<()> {
+    run_ffmpeg_with(args, None)
+}
+
+/// [`run_ffmpeg`], stopped when `stop` is set: ffmpeg is killed and waited
+/// for, and the run fails. A run asked for after `stop` is set never starts
+/// ffmpeg. What ffmpeg wrote before it was killed is the caller's to remove.
+pub(crate) fn run_ffmpeg_until(args: &[String], stop: &AtomicBool) -> Result<()> {
+    run_ffmpeg_with(args, Some(stop))
+}
+
+/// How long the wait for a stoppable ffmpeg sleeps between looks, at most.
+/// It starts at a millisecond and doubles, so a quick conversion is not held
+/// up and a long one is stopped within this.
+const STOP_POLL_MAX: Duration = Duration::from_millis(25);
+
+fn run_ffmpeg_with(args: &[String], stop: Option<&AtomicBool>) -> Result<()> {
+    let stopped = || stop.is_some_and(|stop| stop.load(Ordering::Relaxed));
+    if stopped() {
+        bail!("stopped before ffmpeg started");
+    }
     let ffmpeg = resolve_tool("ffmpeg").ok_or_else(|| {
         anyhow::anyhow!(
             "ffmpeg not found in lib/ (or beside this program), in MESSAGE_CRATE_BIN, or on PATH"
@@ -280,7 +302,27 @@ pub(crate) fn run_ffmpeg(args: &[String]) -> Result<()> {
         .context("start ffmpeg")?;
     let stderr = child.stderr.take().context("ffmpeg stderr")?;
     let reader = std::thread::spawn(move || read_tail(stderr, STDERR_TAIL_BYTES));
-    let status = child.wait().context("wait for ffmpeg")?;
+    let status = if stop.is_some() {
+        let mut pause = Duration::from_millis(1);
+        loop {
+            if let Some(status) = child.try_wait().context("wait for ffmpeg")? {
+                break status;
+            }
+            if stopped() {
+                // Killed and then waited for, so no process is left behind.
+                // The reader ends on its own once the pipe closes, and is
+                // not waited for: what ffmpeg said no longer matters.
+                let _ = child.kill();
+                let _ = child.wait();
+                drop(reader);
+                bail!("stopped while ffmpeg ran");
+            }
+            std::thread::sleep(pause);
+            pause = (pause * 2).min(STOP_POLL_MAX);
+        }
+    } else {
+        child.wait().context("wait for ffmpeg")?
+    };
     let tail = reader
         .join()
         .map_err(|_| anyhow::anyhow!("the thread reading ffmpeg's stderr panicked"))?
@@ -469,6 +511,44 @@ mod tests {
         );
 
         run_ffmpeg_within_a_minute(&["-i", "in.mov", "out.mp4"]).expect("ffmpeg exits 0");
+    }
+
+    /// Setting the stop kills ffmpeg and waits for it, so a stopped server
+    /// leaves no conversion running (#1729), and a run asked for once it is
+    /// set never starts one.
+    #[cfg(unix)]
+    #[test]
+    fn run_ffmpeg_until_kills_ffmpeg_when_stopped() {
+        let _guard = tools_test_lock();
+        let _restore = RestoreToolsDir::capture();
+        let dir = mock_ffmpeg_dir("echo $$ > \"$(dirname \"$0\")/pid\"\nexec sleep 600");
+        let pid_file = dir.path().join("pid");
+        let stop = std::sync::Arc::new(AtomicBool::new(false));
+
+        let running = {
+            let stop = std::sync::Arc::clone(&stop);
+            std::thread::spawn(move || run_ffmpeg_until(&["out.mp4".to_string()], &stop))
+        };
+        let deadline = std::time::Instant::now() + Duration::from_secs(60);
+        while !pid_file.is_file() {
+            assert!(std::time::Instant::now() < deadline, "ffmpeg did not start");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let pid = fs::read_to_string(&pid_file).unwrap().trim().to_string();
+        stop.store(true, Ordering::Relaxed);
+        let err = running.join().unwrap().expect_err("a stopped run fails");
+
+        assert!(format!("{err:#}").contains("stopped"), "{err:#}");
+        let alive = Command::new("kill")
+            .args(["-0", &pid])
+            .stderr(Stdio::null())
+            .status()
+            .unwrap();
+        assert!(!alive.success(), "ffmpeg {pid} still runs");
+        fs::remove_file(&pid_file).unwrap();
+        let err = run_ffmpeg_until(&["out.mp4".to_string()], &stop).expect_err("stopped");
+        assert!(format!("{err:#}").contains("stopped"), "{err:#}");
+        assert!(!pid_file.exists(), "no ffmpeg starts once the stop is set");
     }
 
     #[cfg(unix)]

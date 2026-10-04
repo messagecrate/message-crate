@@ -4,6 +4,9 @@ use std::path::Path;
 use super::*;
 use crate::tools::run_ffmpeg;
 
+/// A stop that is never set, for a conversion that runs to its end.
+static NOT_STOPPED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 /// Generate a test file with ffmpeg from a lavfi `source`, encoded by `codec`.
 fn generate(path: &Path, source: &str, codec: &[&str]) {
     let mut args: Vec<String> = ["-y", "-f", "lavfi", "-i", source]
@@ -132,7 +135,7 @@ fn a_thumbnail_is_a_jpeg_scaled_to_560_pixels_on_its_long_side() {
         (&small, (100, 50)),
     ] {
         let dest = dir.path().join("thumbnail.jpg");
-        make_thumbnail(src, &dest).unwrap();
+        make_thumbnail(src, &dest, &NOT_STOPPED).unwrap();
         let (codec, width, height) = shape(&dest);
         assert_eq!(codec, "mjpeg", "{}", src.display());
         assert_eq!((width, height), want, "{}", src.display());
@@ -150,7 +153,7 @@ fn a_video_thumbnail_is_its_first_frame() {
     video(&src, &["-c:v", "libx265", "-tag:v", "hvc1"]);
     let dest = dir.path().join("thumbnail.jpg");
 
-    make_thumbnail(&src, &dest).unwrap();
+    make_thumbnail(&src, &dest, &NOT_STOPPED).unwrap();
 
     assert_eq!(shape(&dest), ("mjpeg".to_string(), 320, 240));
 }
@@ -165,7 +168,7 @@ fn a_hevc_video_preview_is_h264_that_every_browser_plays() {
     video(&src, &["-c:v", "libx265", "-tag:v", "hvc1"]);
     let dest = dir.path().join("preview.mp4");
 
-    make_preview(&src, Kind::Video, &dest).unwrap();
+    make_preview(&src, Kind::Video, &dest, &NOT_STOPPED).unwrap();
 
     assert_eq!(shape(&dest), ("h264".to_string(), 320, 240));
     assert!(browser_shows(&dest, Some("video/mp4")));
@@ -183,11 +186,11 @@ fn an_image_preview_is_a_jpeg_and_an_audio_preview_an_mp3() {
     generate(&audio, "sine=duration=0.5", &[]);
 
     let jpeg = dir.path().join("preview.jpg");
-    make_preview(&image, Kind::Image, &jpeg).unwrap();
+    make_preview(&image, Kind::Image, &jpeg, &NOT_STOPPED).unwrap();
     assert_eq!(shape(&jpeg).0, "mjpeg");
 
     let mp3 = dir.path().join("preview.mp3");
-    make_preview(&audio, Kind::Audio, &mp3).unwrap();
+    make_preview(&audio, Kind::Audio, &mp3, &NOT_STOPPED).unwrap();
     assert!(fs::read(&mp3).unwrap().len() > 100, "an MP3 was written");
 }
 
@@ -198,6 +201,7 @@ fn a_preview_is_written_only_under_its_own_extension() {
         &dir.path().join("clip.mov"),
         Kind::Video,
         &dir.path().join("preview.mov"),
+        &NOT_STOPPED,
     );
     let Err(err) = err else {
         panic!("a video Preview written as .mov");

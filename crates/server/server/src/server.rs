@@ -1353,6 +1353,7 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
     );
 
     let demo_build = state.demo_build.clone();
+    let media_queue = state.media_queue.clone();
     let app = http_app(state);
     let listener = tokio::net::TcpListener::bind(&bind).await?;
     eprintln!(
@@ -1366,6 +1367,9 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
     // A Demo Account build the owner started would otherwise end part-way
     // when the process exits (#1215).
     demo_build.stop().await;
+    // An ffmpeg the pass started would otherwise go on converting after the
+    // process exits (#1729).
+    media_queue.stop().await;
     served?;
     Ok(())
 }
@@ -1382,9 +1386,15 @@ async fn serve_until_shutdown(
 }
 
 /// Resolve on Ctrl-C, or on SIGTERM on Unix, so axum drains in-flight
-/// requests before exiting. `docker stop` and a service manager send SIGTERM,
-/// not Ctrl-C (#1218).
+/// requests before exiting.
 async fn shutdown_signal() {
+    stop_requested().await;
+    eprintln!("shutting down");
+}
+
+/// Resolve on Ctrl-C, or on SIGTERM on Unix. `docker stop` and a service
+/// manager send SIGTERM, not Ctrl-C (#1218).
+pub(crate) async fn stop_requested() {
     let ctrl_c = async {
         let _ = tokio::signal::ctrl_c().await;
     };
@@ -1408,7 +1418,6 @@ async fn shutdown_signal() {
         () = ctrl_c => {}
         () = terminate => {}
     }
-    eprintln!("shutting down");
 }
 
 /// Report process liveness.

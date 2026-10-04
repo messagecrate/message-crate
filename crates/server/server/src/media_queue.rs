@@ -13,8 +13,14 @@
 //! Without ffmpeg the pass makes nothing and leaves the queue as it is, so
 //! the Assets are worked on once ffmpeg is there: at the next start, or
 //! after the next Import Run.
+//!
+//! When the server stops, [`MediaQueue::stop`] kills the ffmpeg the pass
+//! runs and waits for the pass to end. The Asset it was working on stays
+//! queued, and the part-made file is removed with the work directory.
 
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::thread::JoinHandle;
 
 use anyhow::Result;
 use sqlx::SqlitePool;
@@ -24,12 +30,17 @@ use crate::config::Config;
 use crate::db::media_queue;
 use crate::process_assets::ProcessAssetsStats;
 
-/// The handle that wakes the background pass. Every clone wakes the same
-/// pass; one that no pass was started for wakes nothing, which is how the
-/// tests see the queue before the pass runs.
+/// The handle that wakes and stops the background pass. Every clone wakes
+/// the same pass; one that no pass was started for wakes nothing, which is
+/// how the tests see the queue before the pass runs.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct MediaQueue {
     wake: Arc<Notify>,
+    /// Set when the server stops: the conversion that runs is killed, and
+    /// the pass ends.
+    stop: Arc<AtomicBool>,
+    /// The pass's thread, for [`MediaQueue::stop`] to wait on.
+    thread: Arc<Mutex<Option<JoinHandle<()>>>>,
 }
 
 impl MediaQueue {
@@ -41,14 +52,14 @@ impl MediaQueue {
 
     /// Start the pass: it works through the queue now, which is what
     /// resumes the work a stopped server left, and again each time it is
-    /// woken. It runs until the process ends.
+    /// woken. It runs until [`MediaQueue::stop`].
     ///
     /// The conversions run ffmpeg and wait for it, for minutes on a long
     /// video, so the pass runs on a thread of its own, with a runtime of its
     /// own, rather than on the threads that answer requests. A plain thread
     /// and not a blocking task of the server's runtime, because the runtime
-    /// waits for its blocking tasks when it shuts down, and the pass never
-    /// ends.
+    /// waits for its blocking tasks when it shuts down, and the pass ends
+    /// only when it is stopped.
     ///
     /// # Panics
     ///
@@ -56,7 +67,8 @@ impl MediaQueue {
     /// leaves the server unable to serve anything either.
     pub(crate) fn start(&self, pool: SqlitePool, cfg: Arc<Config>) {
         let wake = Arc::clone(&self.wake);
-        std::thread::Builder::new()
+        let stop = Arc::clone(&self.stop);
+        let thread = std::thread::Builder::new()
             .name("media-queue".into())
             .spawn(move || {
                 let runtime = tokio::runtime::Builder::new_current_thread()
@@ -64,18 +76,44 @@ impl MediaQueue {
                     .build()
                     .expect("a runtime for the pass that makes Thumbnails and Previews");
                 runtime.block_on(async move {
-                    loop {
-                        if let Err(error) = work_through(&pool, &cfg).await {
+                    while !stop.load(Ordering::Relaxed) {
+                        if let Err(error) = work_through(&pool, &cfg, &stop).await {
                             tracing::warn!(
                                 error = format!("{error:#}"),
                                 "the pass that makes Thumbnails and Previews stopped; it starts again after the next Import Run"
                             );
+                        }
+                        if stop.load(Ordering::Relaxed) {
+                            break;
                         }
                         wake.notified().await;
                     }
                 });
             })
             .expect("a thread for the pass that makes Thumbnails and Previews");
+        *self.thread.lock().unwrap_or_else(PoisonError::into_inner) = Some(thread);
+    }
+
+    /// Stop the pass and wait for it to end, for a server that is stopping:
+    /// the ffmpeg it runs is killed and waited for, the Asset it was working
+    /// on stays queued for the next start, and its work directory, with the
+    /// part-made file, is removed. Waits for nothing when no pass was
+    /// started.
+    pub(crate) async fn stop(&self) {
+        self.stop.store(true, Ordering::Relaxed);
+        self.wake.notify_one();
+        let thread = self
+            .thread
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        let Some(thread) = thread else {
+            return;
+        };
+        let ended = tokio::task::spawn_blocking(move || thread.join()).await;
+        if !matches!(ended, Ok(Ok(()))) {
+            tracing::warn!("the pass that makes Thumbnails and Previews did not end cleanly");
+        }
     }
 }
 
@@ -138,10 +176,11 @@ fn log_not_queued(account_id: i64, import_id: i64, error: &sqlx::Error) {
 }
 
 /// Make the Thumbnail and Preview of every queued Asset, oldest first, until
-/// the queue is empty, and answer what was made. Each Asset leaves the queue
-/// once it is processed, whether or not every version could be made; a
-/// failure is logged, and `process-assets` tries it again. An Asset queued
-/// again while it was worked on stays queued. Without ffmpeg nothing is made
+/// the queue is empty or `stop` is set, and answer what was made. Each Asset
+/// leaves the queue once it is processed, whether or not every version could
+/// be made; a failure is logged, and `process-assets` tries it again. An
+/// Asset queued again while it was worked on stays queued, and so does the
+/// one being worked on when `stop` is set. Without ffmpeg nothing is made
 /// and the queue is left as it is.
 ///
 /// A connection is taken for each query and given back after it, so the
@@ -151,7 +190,11 @@ fn log_not_queued(account_id: i64, import_id: i64, error: &sqlx::Error) {
 ///
 /// Returns an error when the queue cannot be read or written, or the work
 /// directory cannot be made.
-pub(crate) async fn work_through(pool: &SqlitePool, cfg: &Config) -> Result<ProcessAssetsStats> {
+pub(crate) async fn work_through(
+    pool: &SqlitePool,
+    cfg: &Config,
+    stop: &AtomicBool,
+) -> Result<ProcessAssetsStats> {
     let mut stats = ProcessAssetsStats::default();
     let waiting = media_queue::count(&mut *pool.acquire().await?).await?;
     if waiting == 0 {
@@ -165,15 +208,28 @@ pub(crate) async fn work_through(pool: &SqlitePool, cfg: &Config) -> Result<Proc
         return Ok(stats);
     }
     let work = crate::process_assets::work_dir(&cfg.paths.data_dir)?;
-    while let Some(asset) = media_queue::first(&mut *pool.acquire().await?).await? {
+    while !stop.load(Ordering::Relaxed)
+        && let Some(asset) = media_queue::first(&mut *pool.acquire().await?).await?
+    {
         let done = crate::process_assets::process_one_asset(
             cfg,
             pool,
             work.path(),
             asset.account_id,
             &asset.sha256,
+            stop,
         )
         .await;
+        if stop.load(Ordering::Relaxed) {
+            // Whatever it was making is gone with the work directory, so it
+            // is made at the next start.
+            tracing::info!(
+                account_id = asset.account_id,
+                sha256 = asset.sha256,
+                "the server is stopping; the Asset stays queued"
+            );
+            break;
+        }
         match done {
             Ok(made) => stats.add(&made),
             Err(error) => {
@@ -188,12 +244,14 @@ pub(crate) async fn work_through(pool: &SqlitePool, cfg: &Config) -> Result<Proc
         }
         media_queue::remove(&mut *pool.acquire().await?, &asset).await?;
     }
-    tracing::info!(
-        thumbnails = stats.thumbnails,
-        previews = stats.derived,
-        failures = stats.errors,
-        "the queued Assets are done"
-    );
+    if !stop.load(Ordering::Relaxed) {
+        tracing::info!(
+            thumbnails = stats.thumbnails,
+            previews = stats.derived,
+            failures = stats.errors,
+            "the queued Assets are done"
+        );
+    }
     Ok(stats)
 }
 

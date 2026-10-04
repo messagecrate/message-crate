@@ -175,6 +175,9 @@ async fn dedupe_and_process_assets(
             skip_audio: false,
             account: Some(account_id),
         },
+        // Never set: a build the server stops is dropped, which ends the
+        // pass once the conversion that runs is done.
+        &AtomicBool::new(false),
     )
     .await
     .context("process-assets after prepared demo import")?;
