@@ -242,6 +242,16 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **iMazing and Apple Messages imports name a folder they cannot
+  read in full.** When an iMazing chat folder held an entry that could not
+  be read, the rows whose files were in it came through with no photo or
+  file, and a Live Photo video in it was dropped, without a word. On a Mac,
+  a Contacts account folder that could not be read left that account's
+  names out of an Apple Messages import with no message, and one Contacts
+  account whose database could not be read left out every account's
+  names. The iMazing import now stops and names the folder. The Apple
+  Messages import now names each Contacts account it cannot read in its
+  log and keeps the names from the others.
 - 2026-10-04 **Minimum Video File Size takes a number of megabytes.**
   Compress & Convert added an `M` to whatever was typed in Minimum Video
   File Size, so `20MB` became `20MBM` and the run was refused over a value
@@ -530,6 +540,12 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-04 **An export stops when it cannot read an earlier export's
+  email folder.** An export or conversion written into a folder an earlier
+  one used first removes the earlier one's email conversation folders. A
+  conversation folder holding an entry that could not be read could look
+  as if it held no email, and then stayed beside the new export. The
+  export now stops and names the folder.
 - 2026-10-04 **An obfuscated export keeps a reply to a message in another
   conversation.** Apple Messages can reply or react to a message in another
   conversation. In an obfuscated export, that reply or reaction pointed at

@@ -546,6 +546,68 @@ fn clean_previous_mail_output_accepts_a_missing_folder() {
     clean_previous_mail_output(&tmp.path().join("missing")).unwrap();
 }
 
+/// An entry of a subfolder that cannot be read fails the clean-up with the
+/// folder named, rather than reading the folder as holding no `.eml` and
+/// leaving an earlier export's folder beside the new one (#1563).
+#[test]
+fn an_entry_that_cannot_be_read_fails_the_eml_check_and_names_the_folder() {
+    let dir = Path::new("/exports/+15555550102");
+    let entries = vec![
+        Ok(dir.join("notes.txt")),
+        Err(std::io::Error::other("stale file handle")),
+        Ok(dir.join("0001.eml")),
+    ];
+
+    let error = holds_eml(dir, entries).unwrap_err();
+
+    let message = format!("{error:#}");
+    assert!(message.contains("/exports/+15555550102"), "{message}");
+    assert!(message.contains("stale file handle"), "{message}");
+}
+
+/// Run `f` with the permissions of `folder` set to `mode`, then set them back
+/// to `0o755` before returning, so the temporary folder can still be removed.
+///
+/// `None`, with a line on stderr, when `folder` can still be listed under
+/// `mode`: a user such as root cannot exercise the failure, so the test has
+/// nothing to check.
+#[cfg(unix)]
+fn with_folder_mode<T>(folder: &Path, mode: u32, f: impl FnOnce() -> T) -> Option<T> {
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::set_permissions(folder, fs::Permissions::from_mode(mode)).expect("set the folder's mode");
+    let result = if fs::read_dir(folder).is_ok() {
+        eprintln!(
+            "skipped: {} can still be listed with mode {mode:o}",
+            folder.display()
+        );
+        None
+    } else {
+        Some(f())
+    };
+    fs::set_permissions(folder, fs::Permissions::from_mode(0o755))
+        .expect("restore the folder's mode");
+    result
+}
+
+/// A subfolder the clean-up cannot list fails it with the subfolder named.
+#[cfg(unix)]
+#[test]
+fn a_subfolder_that_cannot_be_read_fails_the_clean_up_and_names_it() {
+    let tmp = tempfile::tempdir().unwrap();
+    let folder = tmp.path().join("+15555550102");
+    fs::create_dir(&folder).unwrap();
+    fs::write(folder.join("0001.eml"), "Subject: x\n").unwrap();
+    let Some(result) = with_folder_mode(&folder, 0o000, || clean_previous_mail_output(tmp.path()))
+    else {
+        return;
+    };
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains("+15555550102"), "{message}");
+    assert!(folder.join("0001.eml").is_file());
+}
+
 #[test]
 fn a_messages_own_owner_survives_an_mbox_round_trip() {
     let mut msg = base_sms();

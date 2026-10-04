@@ -83,10 +83,10 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     };
     for (csv_index, discovered) in discover_csv_files(input)?.iter().enumerate() {
         message_crate_core::check_cancel(cancel)?;
-        ingest.ingest_file(csv_index, discovered);
+        ingest.ingest_file(csv_index, discovered)?;
     }
     if copy_attachments {
-        ingest.attach_unnamed_files();
+        ingest.attach_unnamed_files()?;
     }
     let Ingest {
         mut conversations,
@@ -325,7 +325,12 @@ impl Ingest {
     ///
     /// A file that fails to parse is recorded in the report and skipped so
     /// one bad export does not stop the rest.
-    fn ingest_file(&mut self, csv_index: usize, discovered: &DiscoveredCsv) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the CSV's chat folder, or one of its entries,
+    /// cannot be read while looking for the rows' files.
+    fn ingest_file(&mut self, csv_index: usize, discovered: &DiscoveredCsv) -> Result<()> {
         match discovered.kind {
             SourceKind::Messages => self.report.bump("messages_files", 1),
             SourceKind::WhatsApp => self.report.bump("whatsapp_files", 1),
@@ -336,7 +341,7 @@ impl Ingest {
                 self.report
                     .errors
                     .push(format!("{}: {e:#}", discovered.path.display()));
-                return;
+                return Ok(());
             }
         };
         let folder = csv_folder(discovered).to_path_buf();
@@ -348,7 +353,7 @@ impl Ingest {
             .collect();
         // Only a run that copies attachments looks for a row's file.
         let sources = if self.copy_attachments {
-            row_sources(&rows, &seconds, &FolderFiles::read(&folder))
+            row_sources(&rows, &seconds, &FolderFiles::read(&folder)?)
         } else {
             vec![None; rows.len()]
         };
@@ -378,6 +383,7 @@ impl Ingest {
         for (session, session_rows) in by_session {
             self.ingest_session(&csv, discovered, &session, &session_rows);
         }
+        Ok(())
     }
 
     /// Work out the key of one chat session, then add each of its rows.
@@ -521,7 +527,12 @@ impl Ingest {
     ///
     /// Runs only when attachments are copied, because only then is any row
     /// matched to a file, so only then is "named by no row" known.
-    fn attach_unnamed_files(&mut self) {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a chat folder, or one of its entries, cannot be
+    /// read.
+    fn attach_unnamed_files(&mut self) -> Result<()> {
         let named: HashSet<PathBuf> = self.claims.iter().map(|c| c.source.clone()).collect();
         // Each picture an Image row names, with those rows in CSV order.
         let mut pictures: HashMap<PathBuf, Vec<usize>> = HashMap::new();
@@ -543,7 +554,7 @@ impl Ingest {
                 pictures: &pictures,
                 texts_at,
             };
-            found.extend(unnamed_files(folder, &rows));
+            found.extend(unnamed_files(folder, &rows)?);
         }
         for file in found {
             match file {
@@ -556,6 +567,7 @@ impl Ingest {
                 UnnamedFile::Other => self.report.bump("files_named_by_no_row", 1),
             }
         }
+        Ok(())
     }
 
     /// Add `video` to the message of the first of `rows`, the claims of the
