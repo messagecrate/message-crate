@@ -12,16 +12,27 @@ use std::path::{Path, PathBuf};
 /// clean removes.
 pub const EXPORT_SENTINEL: &str = ".message-crate-export";
 
-/// Refuse `output_dir` unless it holds the sentinel, which only an export
-/// writes. Every function in this crate that removes files from an output
-/// directory calls this first, so none of them can remove a person's own
+/// Whether `output_dir` holds the sentinel, which only an export writes.
+pub(crate) fn has_export_sentinel(output_dir: &Path) -> bool {
+    output_dir.join(EXPORT_SENTINEL).is_file()
+}
+
+/// Refuse `output_dir` unless it holds the sentinel. Every path in this crate
+/// that removes files from an output directory reaches the sentinel check
+/// before it removes anything: the mail clean and the placeholders call
+/// this, [`clean_previous_ir_output`] marks an empty directory or refuses
+/// any other without one, and [`FormatSink::finish`] runs only on a sink
+/// [`FormatSink::open`] checked. So none of them can remove a person's own
 /// files, whoever calls it.
+///
+/// [`FormatSink::finish`]: crate::FormatSink::finish
+/// [`FormatSink::open`]: crate::FormatSink::open
 ///
 /// # Errors
 ///
 /// Returns an error when the directory has no sentinel.
 pub(crate) fn require_export_directory(output_dir: &Path) -> Result<()> {
-    if output_dir.join(EXPORT_SENTINEL).is_file() {
+    if has_export_sentinel(output_dir) {
         return Ok(());
     }
     bail!(
@@ -59,7 +70,7 @@ const OPERATING_SYSTEM_FILES: [&str; 3] = [".DS_Store", "Thumbs.db", "desktop.in
 /// Returns an error when the directory cannot be read, the sentinel cannot be
 /// written, or the directory has no sentinel and is not empty.
 pub fn mark_export_folder(output_dir: &Path) -> Result<()> {
-    if output_dir.join(EXPORT_SENTINEL).is_file() {
+    if has_export_sentinel(output_dir) {
         return Ok(());
     }
     for entry in read_dir(output_dir)? {
@@ -92,7 +103,7 @@ pub fn clean_previous_ir_output(output_dir: &Path) -> Result<()> {
     if !output_dir.is_dir() {
         return Ok(());
     }
-    if !output_dir.join(EXPORT_SENTINEL).is_file() {
+    if !has_export_sentinel(output_dir) {
         return mark_export_folder(output_dir);
     }
     for name in recorded_archive_files(output_dir)? {

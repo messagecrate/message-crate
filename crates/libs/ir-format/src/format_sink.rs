@@ -2,7 +2,9 @@
 //! (JSON, JSON Lines, CSV, EML, MBOX), or one merged archive supplied by
 //! the crate that owns that archive's format.
 
-use crate::clean::{clean_previous_ir_output, record_archive_files, require_export_directory};
+use crate::clean::{
+    clean_previous_ir_output, has_export_sentinel, record_archive_files, require_export_directory,
+};
 use crate::export_transforms::apply_transforms;
 use crate::write::write_format;
 use anyhow::{Context, Result};
@@ -141,7 +143,7 @@ impl FormatSink {
         format: OutputFormat,
         transforms: ExportTransforms,
     ) -> Result<(Self, PathBuf)> {
-        if !output.join(crate::clean::EXPORT_SENTINEL).is_file() {
+        if !has_export_sentinel(output) {
             anyhow::bail!(
                 "cannot resume into {}: it is not a staging folder from a previous run",
                 output.display()
