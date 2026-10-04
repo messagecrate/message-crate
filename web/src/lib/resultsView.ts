@@ -1,4 +1,5 @@
 import { type MessageSearchSort, messageSortFromParam } from "./messageSearchSort";
+import { tagListQuery } from "./messageTags";
 
 /**
  * What the Messages screen's results list: the conversations a search
@@ -17,6 +18,13 @@ export const VIEW_PARAM = "view";
 export const MESSAGE_SORT_PARAM = "sort";
 /** The message a search result opened its conversation at. */
 export const AT_PARAM = "at";
+/**
+ * The Message Tag a conversation was opened from: the tag's name, or `none`
+ * for the No Message Tag page (#1562). The tag page names the tag in its
+ * path and `/messages/:id` does not, so the tag rides here, apart from `q`,
+ * which holds only what the person typed.
+ */
+export const TAG_PARAM = "tag";
 
 /**
  * The other list of the switch. A word only that list takes stays in the
@@ -36,6 +44,20 @@ export function pickedMessageSort(params: URLSearchParams): MessageSearchSort | 
   return messageSortFromParam(params.get(MESSAGE_SORT_PARAM));
 }
 
+/** The Message Tag `params` lists by on `/messages/:id`, or null for none. */
+export function listedTag(params: URLSearchParams): string | null {
+  return params.get(TAG_PARAM) || null;
+}
+
+/**
+ * The conversations list's query on a page of the Messages screen: what was
+ * typed in `q`, or `f` when a contact's link set it, within `tag`. Every page
+ * builds it here from its own tag, so none can leave `q` or `f` out (#1562).
+ */
+export function conversationListQuery(params: URLSearchParams, tag: string | null): string {
+  return tagListQuery(tag, params.get("f") || params.get("q") || "");
+}
+
 /** The message a search result opened at: a positive integer, or null. */
 export function openedAt(params: URLSearchParams): number | null {
   const raw = params.get(AT_PARAM);
@@ -45,16 +67,17 @@ export function openedAt(params: URLSearchParams): number | null {
 }
 
 /**
- * The address search for a page of the Messages screen: `q` and the Messages
- * list's own parameters from `current`, with `overrides` on top. An empty
- * value drops the parameter. `f` is not carried: a typed search replaces it.
+ * The address search for a page of the Messages screen: `q`, the listed tag
+ * and the Messages list's own parameters from `current`, with `overrides` on
+ * top. An empty value drops the parameter. `f` is not carried: a typed search
+ * replaces it.
  */
 export function messagesSearch(
   current: URLSearchParams,
   overrides: Record<string, string>,
 ): string {
   const next = new URLSearchParams();
-  for (const key of ["q", VIEW_PARAM, MESSAGE_SORT_PARAM, AT_PARAM]) {
+  for (const key of ["q", TAG_PARAM, VIEW_PARAM, MESSAGE_SORT_PARAM, AT_PARAM]) {
     const value = key in overrides ? overrides[key] : current.get(key);
     if (value) next.set(key, value);
   }
