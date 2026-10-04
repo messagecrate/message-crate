@@ -679,11 +679,9 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
-- 2026-10-04 **Writing a backup in a format other than JSON Lines counts
-  attachment sizes the way Staging does.** An attachment whose file is not
-  there is left out of the byte total and the check for room on the disk
-  from the start. No screen shows that total today, so nothing visible
-  changes.
+- 2026-10-04 How an exporter writing a format other than JSON Lines counts
+  the size of an attachment with no file was reworked to match Staging,
+  with nothing visible.
 - 2026-10-04 **Converting an SMS Backup & Restore backup says what it
   left out.** The log said nothing about the repeated copies it dropped,
   the messages with an invalid date, a date outside the range, no usable

@@ -416,8 +416,9 @@ mod tests {
 
     /// An export to a format other than JSON Lines knows before it starts
     /// which attachments have no file: a source that says so, a path with
-    /// nothing there and a source with no bytes. Its byte total leaves them out from the first
-    /// event and never drops mid-run, as the write queue's does (#1701).
+    /// nothing there and a source with no bytes. Its byte total leaves them
+    /// out from the first event and never drops mid-run, as the write
+    /// queue's does (#1701).
     #[test]
     fn the_byte_total_of_a_csv_export_stays_the_same_when_a_file_is_gone() {
         let tmp = tempfile::tempdir().unwrap();
