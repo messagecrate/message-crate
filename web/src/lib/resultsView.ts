@@ -20,9 +20,9 @@ export const MESSAGE_SORT_PARAM = "sort";
 export const AT_PARAM = "at";
 /**
  * The Message Tag a conversation was opened from: the tag's name, or `none`
- * for the No Message Tag page (#1562). The tag page names the tag in its path and
- * `/messages/:id` does not, so the tag rides here, apart from `q`, which
- * holds only what the person typed.
+ * for the No Message Tag page (#1562). The tag page names the tag in its
+ * path and `/messages/:id` does not, so the tag rides here, apart from `q`,
+ * which holds only what the person typed.
  */
 export const TAG_PARAM = "tag";
 
@@ -52,7 +52,7 @@ export function listedTag(params: URLSearchParams): string | null {
 /**
  * The conversations list's query on a page of the Messages screen: what was
  * typed in `q`, or `f` when a contact's link set it, within `tag`. Every page
- * builds it here, so none can leave one of the three out (#1562).
+ * builds it here from its own tag, so none can leave `q` or `f` out (#1562).
  */
 export function conversationListQuery(params: URLSearchParams, tag: string | null): string {
   return tagListQuery(tag, params.get("f") || params.get("q") || "");

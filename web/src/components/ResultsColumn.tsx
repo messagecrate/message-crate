@@ -78,9 +78,9 @@ export default function ResultsColumn({
   /** The search both lists run: the typed search, with a page's tag or filter in it. */
   query: string;
   /**
-   * The Message Tag in `query`, or `none` on the No Message
-   * Tag page, or null. A
-   * result opened from the Messages list carries it apart from `q` (#1562).
+   * The Message Tag in `query`, or `none` on the No Message Tag page, or
+   * null. A result opened from the Messages list carries it apart from `q`
+   * (#1562).
    */
   tag: string | null;
   /**
