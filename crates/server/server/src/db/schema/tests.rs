@@ -1,27 +1,11 @@
 use super::*;
 use crate::db::engine::test_pool;
-use crate::test_support::{SeedConversation, TestFixture, seed_conversation, test_fixture};
+use crate::test_support::{
+    MessageRow, SeedConversation, TestFixture, seed_conversation, test_fixture,
+};
 
 const A1: i64 = 7;
 const A2: i64 = 8;
-
-async fn insert_message(conn: &mut SqliteConnection, id: i64, guid: &str, body: &str) {
-    sqlx::query(
-        r"
-        INSERT INTO messages (
-            id, conversation_id, account_id, source, guid,
-            timestamp, is_from_me, sort_order, body
-        ) VALUES ($1, 1, $2, 'imessage', $3, '2020-01-01T00:00:00Z', 0, 0, $4)
-        ",
-    )
-    .bind(id)
-    .bind(A1)
-    .bind(guid)
-    .bind(body)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
-}
 
 async fn conversation_id(conn: &mut SqliteConnection, account: i64) -> i64 {
     sqlx::query_scalar::<_, i64>("SELECT id FROM conversations WHERE account_id = $1")
@@ -74,20 +58,37 @@ async fn promote_fts_indexing_covers_only_rows_inserted_by_this_promotion() {
     let mut conn = pool.acquire().await.unwrap();
 
     // An earlier import already indexed this row through the insert trigger.
-    insert_message(&mut conn, 10, "g-existing", "carriedover").await;
+    MessageRow {
+        id: Some(10),
+        guid: Some("g-existing".into()),
+        body: Some("carriedover"),
+        ..MessageRow::new(A1, 1)
+    }
+    .insert(&mut conn)
+    .await;
     let max_id_before_promote: i64 =
         sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM messages")
             .fetch_one(&mut *conn)
             .await
             .unwrap();
 
-    drop_messages_fts_triggers(&mut conn).await.unwrap();
-    insert_message(&mut conn, 11, "g-new", "freshbody").await;
+    // A promote drops the triggers, inserts, and indexes in one write
+    // transaction, and so does this test.
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    drop_messages_fts_triggers(&mut tx).await.unwrap();
+    MessageRow {
+        id: Some(11),
+        guid: Some("g-new".into()),
+        body: Some("freshbody"),
+        ..MessageRow::new(A1, 1)
+    }
+    .insert_in(&mut tx)
+    .await;
     // Append promotion maps existing GUIDs (so child rows find their parent)
     // alongside newly inserted rows, and one production row can be the target
     // of more than one staging row.
     execute_batch(
-        &mut conn,
+        &mut tx,
         r"
         CREATE TEMP TABLE _promote_msg_map (
             staging_id INTEGER PRIMARY KEY,
@@ -99,10 +100,11 @@ async fn promote_fts_indexing_covers_only_rows_inserted_by_this_promotion() {
     .await
     .unwrap();
 
-    let indexed = index_messages_fts_from_promote_map(&mut conn, max_id_before_promote, 0)
+    let indexed = index_messages_fts_from_promote_map(&mut tx, max_id_before_promote, 0)
         .await
         .unwrap();
-    install_messages_fts_triggers(&mut conn).await.unwrap();
+    install_messages_fts_triggers(&mut tx).await.unwrap();
+    tx.commit().await.unwrap();
 
     assert_eq!(
         indexed, 1,
@@ -125,8 +127,22 @@ async fn promote_fts_indexing_reindexes_an_existing_message_that_gained_an_attac
     let mut conn = pool.acquire().await.unwrap();
 
     // Two messages an earlier import indexed through the insert trigger.
-    insert_message(&mut conn, 10, "g-gains", "gainsbody").await;
-    insert_message(&mut conn, 12, "g-keeps", "keepsbody").await;
+    MessageRow {
+        id: Some(10),
+        guid: Some("g-gains".into()),
+        body: Some("gainsbody"),
+        ..MessageRow::new(A1, 1)
+    }
+    .insert(&mut conn)
+    .await;
+    MessageRow {
+        id: Some(12),
+        guid: Some("g-keeps".into()),
+        body: Some("keepsbody"),
+        ..MessageRow::new(A1, 1)
+    }
+    .insert(&mut conn)
+    .await;
     let max_id_before_promote: i64 =
         sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM messages")
             .fetch_one(&mut *conn)
@@ -138,10 +154,12 @@ async fn promote_fts_indexing_reindexes_an_existing_message_that_gained_an_attac
             .await
             .unwrap();
 
-    // An append maps both, and adds an attachment to message 10 only.
-    drop_messages_fts_triggers(&mut conn).await.unwrap();
+    // An append maps both, and adds an attachment to message 10 only, in
+    // one write transaction as a promote does.
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    drop_messages_fts_triggers(&mut tx).await.unwrap();
     execute_batch(
-        &mut conn,
+        &mut tx,
         r"
         CREATE TEMP TABLE _promote_msg_map (
             staging_id INTEGER PRIMARY KEY,
@@ -155,13 +173,14 @@ async fn promote_fts_indexing_reindexes_an_existing_message_that_gained_an_attac
     .unwrap();
 
     let indexed = index_messages_fts_from_promote_map(
-        &mut conn,
+        &mut tx,
         max_id_before_promote,
         max_attachment_before_promote,
     )
     .await
     .unwrap();
-    install_messages_fts_triggers(&mut conn).await.unwrap();
+    install_messages_fts_triggers(&mut tx).await.unwrap();
+    tx.commit().await.unwrap();
 
     assert_eq!(
         indexed, 1,
@@ -338,18 +357,13 @@ async fn same_source_guid_allowed_across_accounts() {
         (conversation_id(&mut conn, A1).await, A1),
         (conversation_id(&mut conn, A2).await, A2),
     ] {
-        sqlx::query(
-            r"
-            INSERT INTO messages (
-                conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order
-            ) VALUES ($1, $2, 'sms', 'same-guid', '2020-01-01T00:00:00Z', 0, 0)
-            ",
-        )
-        .bind(conv)
-        .bind(account)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
+        MessageRow {
+            source: "sms",
+            guid: Some("same-guid".into()),
+            ..MessageRow::new(account, conv)
+        }
+        .insert(&mut conn)
+        .await;
     }
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM messages WHERE guid = 'same-guid'")
         .fetch_one(&mut *conn)
@@ -365,18 +379,14 @@ async fn a_message_without_a_guid_is_refused() {
     let (pool, _fixture) = seeded_schema_fixture().await;
     let mut conn = pool.acquire().await.unwrap();
     let conv = conversation_id(&mut conn, A1).await;
-    for guid in [None, Some("")] {
-        let inserted = sqlx::query(
-            r"
-            INSERT INTO messages (
-                conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order
-            ) VALUES ($1, $2, 'sms', $3, '2020-01-01T00:00:00Z', 0, 0)
-            ",
-        )
-        .bind(conv)
-        .bind(A1)
-        .bind(guid)
-        .execute(&mut *conn)
+    for guid in [None, Some(String::new())] {
+        let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+        let inserted = MessageRow {
+            source: "sms",
+            guid: guid.clone(),
+            ..MessageRow::new(A1, conv)
+        }
+        .try_insert_in(&mut tx)
         .await;
         assert!(inserted.is_err(), "guid {guid:?} was accepted");
     }
@@ -541,50 +551,48 @@ async fn messages_fts_stays_in_sync() {
             .fetch_one(&mut *conn)
             .await
             .unwrap();
-    let message_id: i64 = sqlx::query_scalar(
-        r"
-        INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp,
-            is_from_me, sort_order, body, subject
-        ) VALUES ($1, $2, 'sms', 'g1', '2020-01-01T00:00:00Z', 0, 0, 'hello there', NULL)
-        RETURNING id
-        ",
-    )
-    .bind(conversation_id)
-    .bind(A1)
-    .fetch_one(&mut *conn)
-    .await
-    .unwrap();
+    // Every write and read below runs in one write transaction, as a write
+    // to `messages` must.
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    let message_id = MessageRow {
+        source: "sms",
+        guid: Some("g1".into()),
+        body: Some("hello there"),
+        ..MessageRow::new(A1, conversation_id)
+    }
+    .insert_in(&mut tx)
+    .await;
     sqlx::query(
         "INSERT INTO attachments (message_id, original_name, transcription) VALUES ($1, 'voice.m4a', 'secret phrase')",
     )
     .bind(message_id)
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await
     .unwrap();
 
-    assert_eq!(fts_hits(&mut conn, "there").await, 1);
-    assert_eq!(fts_hits(&mut conn, "secret").await, 1);
+    assert_eq!(fts_hits(&mut tx, "there").await, 1);
+    assert_eq!(fts_hits(&mut tx, "secret").await, 1);
 
     sqlx::query("UPDATE messages SET body = 'goodbye' WHERE id = $1")
         .bind(message_id)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
-    assert_eq!(fts_hits(&mut conn, "there").await, 0);
-    assert_eq!(fts_hits(&mut conn, "goodbye").await, 1);
+    assert_eq!(fts_hits(&mut tx, "there").await, 0);
+    assert_eq!(fts_hits(&mut tx, "goodbye").await, 1);
 
     sqlx::query("DELETE FROM attachments WHERE message_id = $1")
         .bind(message_id)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
     sqlx::query("DELETE FROM messages WHERE id = $1")
         .bind(message_id)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
-    assert_eq!(fts_hits(&mut conn, "goodbye").await, 0);
+    assert_eq!(fts_hits(&mut tx, "goodbye").await, 0);
+    tx.commit().await.unwrap();
 }
 
 /// How many index entries `term` has, read from the index itself. `MATCH`
@@ -618,21 +626,17 @@ async fn messages_fts_forgets_attachment_text_that_is_gone() {
             .fetch_one(&mut *conn)
             .await
             .unwrap();
-    let insert_message = r"
-        INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp,
-            is_from_me, sort_order, body, subject
-        ) VALUES ($1, $2, 'sms', $3, '2020-01-01T00:00:00Z', 0, 0, $4, NULL)
-        RETURNING id
-        ";
-    let message_id: i64 = sqlx::query_scalar(insert_message)
-        .bind(conversation_id)
-        .bind(A1)
-        .bind("g-att")
-        .bind("zzbody text")
-        .fetch_one(&mut *conn)
-        .await
-        .unwrap();
+    // Every write and read below runs in one write transaction, as a write
+    // to `messages` must.
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    let message_id = MessageRow {
+        source: "sms",
+        guid: Some("g-att".into()),
+        body: Some("zzbody text"),
+        ..MessageRow::new(A1, conversation_id)
+    }
+    .insert_in(&mut tx)
+    .await;
     for (name, transcription) in [("zzfirst.m4a", "zzspoken words"), ("zzsecond.pdf", "")] {
         sqlx::query(
             "INSERT INTO attachments (message_id, original_name, transcription) VALUES ($1, $2, $3)",
@@ -640,70 +644,71 @@ async fn messages_fts_forgets_attachment_text_that_is_gone() {
         .bind(message_id)
         .bind(name)
         .bind(transcription)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
     }
     for term in ["zzbody", "zzfirst", "zzspoken", "zzsecond"] {
-        assert_eq!(fts_hits(&mut conn, term).await, 1, "{term}");
-        assert_eq!(fts_term_entries(&mut conn, term).await, 1, "{term}");
+        assert_eq!(fts_hits(&mut tx, term).await, 1, "{term}");
+        assert_eq!(fts_term_entries(&mut tx, term).await, 1, "{term}");
     }
 
     sqlx::query("UPDATE attachments SET original_name = 'zzrenamed.m4a' WHERE original_name = 'zzfirst.m4a'")
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
-    assert_eq!(fts_hits(&mut conn, "zzfirst").await, 0);
-    assert_eq!(fts_term_entries(&mut conn, "zzfirst").await, 0);
+    assert_eq!(fts_hits(&mut tx, "zzfirst").await, 0);
+    assert_eq!(fts_term_entries(&mut tx, "zzfirst").await, 0);
     for term in ["zzbody", "zzrenamed", "zzspoken", "zzsecond"] {
-        assert_eq!(fts_hits(&mut conn, term).await, 1, "{term}");
+        assert_eq!(fts_hits(&mut tx, term).await, 1, "{term}");
     }
 
     sqlx::query("DELETE FROM attachments WHERE original_name = 'zzrenamed.m4a'")
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
     for term in ["zzrenamed", "zzspoken"] {
-        assert_eq!(fts_hits(&mut conn, term).await, 0, "{term}");
-        assert_eq!(fts_term_entries(&mut conn, term).await, 0, "{term}");
+        assert_eq!(fts_hits(&mut tx, term).await, 0, "{term}");
+        assert_eq!(fts_term_entries(&mut tx, term).await, 0, "{term}");
     }
     for term in ["zzbody", "zzsecond"] {
-        assert_eq!(fts_hits(&mut conn, term).await, 1, "{term}");
+        assert_eq!(fts_hits(&mut tx, term).await, 1, "{term}");
     }
 
     sqlx::query("UPDATE messages SET body = 'zzedited text' WHERE id = $1")
         .bind(message_id)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
-    assert_eq!(fts_term_entries(&mut conn, "zzbody").await, 0);
-    assert_eq!(fts_hits(&mut conn, "zzsecond").await, 1);
-    assert_eq!(fts_term_entries(&mut conn, "zzsecond").await, 1);
+    assert_eq!(fts_term_entries(&mut tx, "zzbody").await, 0);
+    assert_eq!(fts_hits(&mut tx, "zzsecond").await, 1);
+    assert_eq!(fts_term_entries(&mut tx, "zzsecond").await, 1);
 
     sqlx::query("DELETE FROM messages WHERE id = $1")
         .bind(message_id)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
     for term in ["zzedited", "zzsecond"] {
-        assert_eq!(fts_hits(&mut conn, term).await, 0, "{term}");
-        assert_eq!(fts_term_entries(&mut conn, term).await, 0, "{term}");
+        assert_eq!(fts_hits(&mut tx, term).await, 0, "{term}");
+        assert_eq!(fts_term_entries(&mut tx, term).await, 0, "{term}");
     }
 
-    let reused_id: i64 = sqlx::query_scalar(insert_message)
-        .bind(conversation_id)
-        .bind(A1)
-        .bind("g-next")
-        .bind("zznext text")
-        .fetch_one(&mut *conn)
-        .await
-        .unwrap();
+    let reused_id = MessageRow {
+        source: "sms",
+        guid: Some("g-next".into()),
+        body: Some("zznext text"),
+        ..MessageRow::new(A1, conversation_id)
+    }
+    .insert_in(&mut tx)
+    .await;
     assert_eq!(
         reused_id, message_id,
         "SQLite hands the deleted id out again"
     );
-    assert_eq!(fts_hits(&mut conn, "zznext").await, 1);
-    assert_eq!(fts_hits(&mut conn, "zzsecond").await, 0);
+    assert_eq!(fts_hits(&mut tx, "zznext").await, 1);
+    assert_eq!(fts_hits(&mut tx, "zzsecond").await, 0);
+    tx.commit().await.unwrap();
 }
 
 /// The fingerprint changes whenever the schema text does, and only then:

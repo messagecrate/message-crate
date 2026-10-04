@@ -1,4 +1,4 @@
-import { shownMimeType } from "./attachmentPreview";
+import { attachmentKind } from "./attachmentMedia";
 import type { Message, MessageAttachment } from "./types";
 
 /**
@@ -12,7 +12,9 @@ export function lightboxImages(
   clicked: MessageAttachment,
 ): { items: MessageAttachment[]; index: number } {
   const items = messages.flatMap((m) =>
-    (m.attachments || []).filter((a) => a.sha256 && shownMimeType(a)?.startsWith("image/")),
+    (m.attachments || []).filter(
+      (a) => a.sha256 && !a.missing_reason && attachmentKind(a) === "image",
+    ),
   );
   const index = items.indexOf(clicked);
   if (items.length === 0) return { items: [clicked], index: 0 };

@@ -30,6 +30,8 @@ pub mod sqlite_functions;
 pub mod staging;
 pub mod storage;
 pub mod trash;
+#[cfg(test)]
+pub mod write_guard;
 pub mod write_tx;
 
 pub use write_tx::{WriteTx, begin_write};

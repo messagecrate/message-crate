@@ -198,3 +198,23 @@ export function PhoneIcon({ size, className, ...rest }: IconProps) {
     </IconShell>
   );
 }
+
+/** Download — an arrow down onto a tray. */
+export function DownloadIcon({ size, className, ...rest }: IconProps) {
+  return (
+    <IconShell size={size} className={className} {...rest}>
+      <path d="M12 3v12" />
+      <path d="m7 10 5 5 5-5" />
+      <path d="M5 21h14" />
+    </IconShell>
+  );
+}
+
+/** Play — a triangle pointing right, filled. */
+export function PlayIcon({ size, className, ...rest }: IconProps) {
+  return (
+    <IconShell size={size} className={className} {...rest}>
+      <path d="M7 4.5v15l12-7.5Z" fill="currentColor" />
+    </IconShell>
+  );
+}

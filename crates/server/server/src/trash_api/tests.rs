@@ -224,6 +224,7 @@ async fn a_file_head_reported_present_survives_an_empty_trash_before_the_batch()
     let old = seed(&fixture, &alice, "+15555550177").await;
     {
         let mut conn = fixture.conn().await;
+        let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
         sqlx::query(
             "INSERT INTO attachments (message_id, sha256, assets_path)
              SELECT id, $2, $3 FROM messages WHERE conversation_id = $1",
@@ -231,9 +232,10 @@ async fn a_file_head_reported_present_survives_an_empty_trash_before_the_batch()
         .bind(old)
         .bind(sha.as_str())
         .bind(crate::assets_api::shard_rel_path(&sha, ""))
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
+        tx.commit().await.unwrap();
     }
     trash(&fixture, &alice, Trashable::Conversation(old)).await;
 
@@ -400,14 +402,16 @@ async fn a_short_stored_fingerprint_does_not_stop_empty_trash() {
     let doomed = seed(&fixture, &alice, "+15555550180").await;
     {
         let mut conn = fixture.conn().await;
+        let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
         sqlx::query(
             "INSERT INTO attachments (message_id, sha256, assets_path)
              SELECT id, 'a', 'a' FROM messages WHERE conversation_id = $1",
         )
         .bind(doomed)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
+        tx.commit().await.unwrap();
     }
     trash(&fixture, &alice, Trashable::Conversation(doomed)).await;
 

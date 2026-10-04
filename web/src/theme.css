@@ -49,6 +49,12 @@
   --lightbox-text: #ffffff;
 
   /*
+    A button drawn over a picture in the conversation (play, download): dark
+    and see-through, so it reads over a light photo and a dark one alike.
+  */
+  --media-control: rgb(0 0 0 / 0.55);
+
+  /*
     Contact avatar colors, picked per person from the name and handle. Each
     is dark enough to carry white initials on the light and the dark theme,
     so one set serves both.
@@ -188,6 +194,7 @@
   --color-lightbox-bg: var(--lightbox-bg);
   --color-lightbox-control: var(--lightbox-control);
   --color-lightbox-text: var(--lightbox-text);
+  --color-media-control: var(--media-control);
   --color-avatar-1: var(--avatar-1);
   --color-avatar-2: var(--avatar-2);
   --color-avatar-3: var(--avatar-3);

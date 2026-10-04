@@ -1,11 +1,44 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect } from "react";
 import { Dialog, Modal, ModalOverlay } from "react-aria-components";
-import { useAssetObjectUrl } from "../hooks/useAssetObjectUrl";
-import { hasPreview } from "../lib/attachmentPreview";
+import { type AssetRequest, useAssetObjectUrls } from "../hooks/useAssetObjectUrl";
+import { attachmentName, fullVersion } from "../lib/attachmentMedia";
 import type { MessageAttachment } from "../lib/types";
+import { focusRing } from "../lib/uiStyles";
 import { Z_MODAL } from "../lib/zLayers";
+import DownloadAttachmentButton from "./DownloadAttachmentButton";
 import PlainButton from "./PlainButton";
 
+/**
+ * What the viewer holds: the photo on screen, in full and as its Thumbnail,
+ * and its neighbours in full, so stepping to the next or previous photo finds
+ * it loaded. A photo with no version a browser can show asks for none.
+ */
+function viewerRequests(items: MessageAttachment[], currentIndex: number): AssetRequest[] {
+  const requests: AssetRequest[] = [];
+  const full = (attachment: MessageAttachment | undefined) => {
+    const version = attachment ? fullVersion(attachment) : "none";
+    if (attachment?.sha256 && version !== "none") {
+      requests.push({ sha256: attachment.sha256, version });
+    }
+  };
+  const current = items[currentIndex];
+  if (current?.sha256 && current.thumbnail_mime_type) {
+    requests.push({ sha256: current.sha256, version: "thumbnail" });
+  }
+  full(current);
+  if (items.length > 1) {
+    full(items[(currentIndex + 1) % items.length]);
+    full(items[(currentIndex - 1 + items.length) % items.length]);
+  }
+  return requests;
+}
+
+/**
+ * The photo viewer. It opens the original or the Preview by the photo's type,
+ * never by a load that failed (`docs/architecture/media.md`, rule 2), keeps
+ * the Thumbnail on screen until the full version has loaded, and offers the
+ * original as a download.
+ */
 export default function AttachmentLightbox({
   items,
   currentIndex,
@@ -20,13 +53,7 @@ export default function AttachmentLightbox({
   onNext: () => void;
 }) {
   const attachment = items[currentIndex];
-  // Opening an attachment gives the original. When the browser cannot draw
-  // those bytes and the attachment has a preview, the viewer shows the preview.
-  const [undrawable, setUndrawable] = useState<string | null>(null);
-  const showPreview = Boolean(
-    attachment && hasPreview(attachment) && undrawable === attachment.sha256,
-  );
-  const { url, loading, error } = useAssetObjectUrl(attachment?.sha256, showPreview);
+  const lookup = useAssetObjectUrls(viewerRequests(items, currentIndex));
 
   // React Aria's Dialog type omits keyboard events and drops them at runtime,
   // so arrow-key navigation is handled with a window listener (as in ContactDrawer).
@@ -42,19 +69,37 @@ export default function AttachmentLightbox({
 
   if (!attachment) return null;
 
+  const name = attachmentName(attachment);
+  const version = fullVersion(attachment);
+  const full = version === "none" ? null : lookup(attachment.sha256, version);
+  const thumbnail = attachment.thumbnail_mime_type ? lookup(attachment.sha256, "thumbnail") : null;
+  const note = "text-[0.875rem] text-lightbox-text";
+
   let media: ReactNode;
-  if (error) {
-    media = <div className="text-[0.875rem] text-lightbox-text">Failed to load attachment</div>;
-  } else if (loading || !url) {
-    media = <div className="text-[0.875rem] text-lightbox-text">Loading…</div>;
+  if (full?.url) {
+    media = <img src={full.url} alt={name} className="max-h-[90vh] max-w-[90vw] object-contain" />;
   } else {
+    const message =
+      version === "none"
+        ? "This photo has no copy a browser can show yet. Download it to open the original."
+        : full?.error
+          ? "Failed to load attachment"
+          : "Loading…";
     media = (
-      <img
-        src={url}
-        alt={attachment.original_name || "attachment"}
-        onError={() => setUndrawable(attachment.sha256 ?? null)}
-        className="max-h-[90vh] max-w-[90vw] object-contain"
-      />
+      <div className="flex flex-col items-center gap-3">
+        {thumbnail?.url ? (
+          <img
+            src={thumbnail.url}
+            alt={name}
+            aria-busy={version !== "none" && !full?.error}
+            className="max-h-[80vh] max-w-[90vw] object-contain"
+          />
+        ) : null}
+        <div className={`${note} max-w-[28rem] text-center`}>{message}</div>
+        {version === "none" ? (
+          <DownloadAttachmentButton attachment={attachment} look="text" />
+        ) : null}
+      </div>
     );
   }
 
@@ -75,7 +120,7 @@ export default function AttachmentLightbox({
               <PlainButton
                 onPress={onPrev}
                 aria-label="Previous attachment"
-                className="absolute left-4 top-1/2 flex h-12 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border-none bg-lightbox-control text-[2rem] text-lightbox-text"
+                className={`absolute left-4 top-1/2 flex h-12 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border-none bg-lightbox-control text-[2rem] text-lightbox-text ${focusRing}`}
               >
                 ‹
               </PlainButton>
@@ -87,20 +132,21 @@ export default function AttachmentLightbox({
               <PlainButton
                 onPress={onNext}
                 aria-label="Next attachment"
-                className="absolute right-4 top-1/2 flex h-12 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border-none bg-lightbox-control text-[2rem] text-lightbox-text"
+                className={`absolute right-4 top-1/2 flex h-12 w-12 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full border-none bg-lightbox-control text-[2rem] text-lightbox-text ${focusRing}`}
               >
                 ›
               </PlainButton>
             )}
 
             <div className="absolute right-4 top-4 flex items-center gap-4">
-              <span className="text-[0.875rem] text-lightbox-text">
+              <span className={note}>
                 {currentIndex + 1} / {items.length}
               </span>
+              <DownloadAttachmentButton attachment={attachment} look="viewer" />
               <PlainButton
                 onPress={onClose}
                 aria-label="Close attachment viewer"
-                className="flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border-none bg-lightbox-control text-[1.5rem] text-lightbox-text"
+                className={`flex h-10 w-10 cursor-pointer items-center justify-center rounded-full border-none bg-lightbox-control text-[1.5rem] text-lightbox-text ${focusRing}`}
               >
                 ×
               </PlainButton>
