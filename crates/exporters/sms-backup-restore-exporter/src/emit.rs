@@ -17,7 +17,6 @@ fn to_core_report(report: ReadReport) -> ExportReport {
         messages: report.sent + report.received,
         sent: report.sent,
         received: report.received,
-        attachments_saved: report.attachments_saved,
         skipped_invalid_date: report.skipped_invalid_date,
         skipped_out_of_range: report.skipped_out_of_range,
         errors: report.errors,
@@ -91,10 +90,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
             owner_phones: args.owner_phones,
             attachments_dir: Some(writer.attachments_dir()),
             spool: writer.copies_attachments().then(|| writer.spool()),
-            // The payloads wait in the writer's spool for the shared write
-            // tail, which stages them itself (a conversation at a time on
-            // the queue arm).
-            stage_attachments: false,
+            exclude_dir: Some(args.output_dir),
             media: writer.media_mode(),
             compress,
             log: writer.log(),
@@ -103,9 +99,9 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         },
     )?;
 
-    // The reader already counted conversations (and staged nothing, so its
-    // attachments_saved is zero); zero the conversation counter so the shared
-    // write tail's fold counts only the documents it actually writes.
+    // The reader already counted conversations; zero the conversation
+    // counter so the shared write tail's fold counts only the documents it
+    // actually writes.
     let mut core = to_core_report(report);
     core.conversations = 0;
     writer.finish(

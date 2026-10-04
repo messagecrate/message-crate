@@ -231,6 +231,102 @@ fn convert_xml_with_ir_reader() {
     );
 }
 
+/// Every file under `dir`, by its path relative to `dir`, with its bytes.
+fn snapshot(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
+    let mut files = Vec::new();
+    let mut pending = vec![dir.to_path_buf()];
+    while let Some(folder) = pending.pop() {
+        for entry in fs::read_dir(&folder).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                pending.push(path);
+            } else {
+                let bytes = fs::read(&path).unwrap();
+                files.push((path.strip_prefix(dir).unwrap().to_path_buf(), bytes));
+            }
+        }
+    }
+    files.sort();
+    files
+}
+
+/// Convert an SMS backup with a picture into `destination`, replace the
+/// backup with `broken`, and convert it again into the same folder with
+/// `media`. The second run must fail and leave the first run's output as it
+/// was.
+fn assert_broken_backup_keeps_previous_output(media: MediaMode, broken: impl Fn(&str) -> String) {
+    let source = tempfile::tempdir().unwrap();
+    let backup = r#"<smses><mms date="1400773400000" msg_box="1" address="+15555550101"><parts><part ct="image/jpeg" name="a.jpg" data="aGVsbG8="/></parts><addrs><addr address="+15555550101" type="137"/><addr address="+15555550100" type="151"/></addrs></mms></smses>"#;
+    fs::write(source.path().join("smses.xml"), backup).unwrap();
+    let destination = tempfile::tempdir().unwrap();
+    let mut config = config(source.path(), destination.path(), OutputFormat::Json);
+    config.media.mode = media;
+    convert_export(source.path(), &config).unwrap();
+    let previous = snapshot(destination.path());
+    assert!(
+        previous
+            .iter()
+            .any(|(path, _)| path.extension().is_some_and(|e| e == "json")),
+        "{media:?}: the first run wrote a conversation: {previous:?}"
+    );
+    if media == MediaMode::Clone {
+        assert!(
+            previous
+                .iter()
+                .any(|(path, _)| path.starts_with("attachments")),
+            "{media:?}: the first run staged the picture: {previous:?}"
+        );
+    }
+
+    fs::write(source.path().join("smses.xml"), broken(backup)).unwrap();
+    convert_export(source.path(), &config).unwrap_err();
+
+    assert_eq!(
+        snapshot(destination.path()),
+        previous,
+        "{media:?}: the previous output is left as it was"
+    );
+}
+
+/// A backup Convert cannot read, or one with no conversation in it, stops
+/// the run before the output is cleaned, whether or not the run copies
+/// attachments (issue #1439).
+#[test]
+fn a_broken_sms_backup_leaves_the_previous_output_as_it_was() {
+    for media in [MediaMode::Clone, MediaMode::Disabled] {
+        assert_broken_backup_keeps_previous_output(media, |backup| backup[..20].to_string());
+        assert_broken_backup_keeps_previous_output(media, |_| "<smses count=\"0\"></smses>".into());
+    }
+}
+
+/// An output inside the backup's folder is left out of the read, so the
+/// backup an earlier conversion wrote there is not read back in as a second
+/// copy of every conversation.
+#[test]
+fn a_backup_converted_into_a_folder_inside_it_is_not_read_back() {
+    let source = tempfile::tempdir().unwrap();
+    fs::write(
+        source.path().join("smses.xml"),
+        r#"<smses><sms protocol="0" address="+15555550101" date="1400773261000" type="1" body="hello xml" contact_name="Sam"/></smses>"#,
+    )
+    .unwrap();
+    let output = source.path().join("converted");
+    let mut config = config(source.path(), &output, OutputFormat::Xml);
+    config.obfuscate = ObfuscateConfig {
+        enabled: true,
+        seed: Some("00".repeat(32)),
+    };
+
+    let first = convert_export(source.path(), &config).unwrap();
+    let second = convert_export(source.path(), &config).unwrap();
+
+    assert_eq!(first.report.conversations, 1);
+    assert_eq!(
+        second.report.conversations, 1,
+        "the earlier backup was read back"
+    );
+}
+
 #[test]
 fn mixed_formats_error() {
     let source = tempfile::tempdir().unwrap();

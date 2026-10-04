@@ -490,6 +490,13 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-04 **Convert keeps the previous output when an Android XML backup
+  can't be read.** Converting a broken `smses.xml` into a folder an earlier
+  conversion wrote removed that conversion's files before the backup was
+  read, so the run failed with nothing left. The backup is now read first,
+  as every other input is, and a backup Convert can't read, or one with no
+  conversations in it, stops the run with the previous output left as it
+  was.
 - 2026-10-03 **An obfuscated export leaves out attachments in subfolders
   too.** A real photo or file inside a subfolder of the export's
   attachments stayed in the export that exists to leave it out. A shortcut
