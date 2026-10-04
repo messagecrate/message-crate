@@ -25,12 +25,22 @@
 //! Dropping a table is not writing to it. SQLite asks about a `DROP TABLE`
 //! as a drop of the table followed by a delete of it, so the guard lets
 //! through the delete that comes straight after the drop of the same table:
-//! the schema rebuild at startup drops every table on a bare connection.
+//! the schema rebuild at startup drops every table on a bare connection,
+//! with foreign keys off. With foreign keys on, SQLite also asks about a
+//! second delete of the table and a delete of each table that refers to it,
+//! and the guard refuses those.
 //!
-//! sqlx keeps prepared statements per connection, and SQLite asks the
-//! authorizer only while preparing. A statement first prepared inside a
-//! transaction and run again later on its own on the same connection is not
-//! asked about again.
+//! What the guard does not see:
+//!
+//! - sqlx keeps prepared statements per connection, and SQLite asks the
+//!   authorizer only while preparing. A statement first prepared inside a
+//!   transaction and run again later on its own on the same connection is
+//!   not asked about again.
+//! - It asks whether a transaction is open, not whether `begin_write` opened
+//!   it. Clippy refuses sqlx's own `begin` (`clippy.toml`), but a `BEGIN`
+//!   statement run by hand would satisfy the guard.
+//! - It is in the library's unit tests only. The integration tests under
+//!   `tests/` start the server binary, which does not have it.
 
 use std::cell::RefCell;
 use std::ffi::{CStr, c_char, c_int, c_void};
@@ -124,7 +134,6 @@ unsafe extern "C" fn authorize(
     ffi::SQLITE_OK
 }
 
-#[cfg(test)]
 mod tests {
     use crate::db::{begin_write, schema};
     use crate::test_support::{MessageRow, SeedConversation, SeedMessage, seed_conversation};
@@ -205,11 +214,13 @@ mod tests {
         );
     }
 
-    /// The schema rebuild drops `messages` on a bare connection, and SQLite
-    /// asks about that drop as a delete of the table: the guard lets it
-    /// through.
+    /// The schema rebuild drops `messages` on a bare connection with foreign
+    /// keys off, and SQLite asks about that drop as a delete of the table:
+    /// the guard lets it through. This tests the guard's exemption for a
+    /// drop, not a write the guard catches, so it passes without the guard
+    /// too.
     #[tokio::test]
-    async fn dropping_the_messages_table_is_not_a_write_to_it() {
+    async fn dropping_the_messages_table_with_foreign_keys_off_is_not_a_write_to_it() {
         let (pool, _dir) = crate::db::engine::test_pool().await;
         let mut conn = pool.acquire().await.unwrap();
         schema::ensure_schema(&mut conn).await.unwrap();
