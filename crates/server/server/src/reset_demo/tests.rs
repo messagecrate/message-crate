@@ -425,8 +425,9 @@ async fn reset_check_refuses_a_prepared_database_with_more_non_demo_messages() {
 }
 
 /// The check compares every row another account holds, not its message
-/// count, the rows of deleted accounts, and the Server Settings: each change here leaves the counts of
-/// messages as they were and is refused, naming its table (#1225).
+/// count, the rows of deleted accounts, and the Server Settings: each change
+/// here leaves the counts of messages as they were and is refused, naming its
+/// table (#1225, #1450).
 #[tokio::test]
 async fn reset_check_refuses_a_prepared_database_that_changed_another_accounts_rows_or_the_server_settings()
  {
@@ -581,6 +582,98 @@ async fn reset_check_refuses_a_prepared_database_whose_search_finds_another_acco
             "outside the Demo Account in: messages_fts searches (active rows=2, prepared rows=0)"
         ),
         "the error names the searches alone: {error}"
+    );
+}
+
+/// A virtual table the check has no rule for refuses the reset by its name,
+/// rather than being skipped: its rows could belong to any account.
+#[tokio::test]
+async fn reset_check_refuses_a_virtual_table_it_cannot_compare() {
+    let temp = tempfile::tempdir().expect("create test directory");
+    let (active, prepared) = active_and_prepared_reset_databases(temp.path()).await;
+    for db in [&active, &prepared] {
+        let (pool, mut conn) = test_db(db).await;
+        sqlx::query("CREATE VIRTUAL TABLE notes_fts USING fts5(body)")
+            .execute(&mut *conn)
+            .await
+            .expect("create another virtual table");
+        close_test_db(pool, conn).await;
+    }
+
+    let error = format!(
+        "{:#}",
+        verify_non_demo_state_preserved(&active, &prepared, DEMO_ACCOUNT_ID)
+            .await
+            .expect_err("a virtual table with no rule is refused")
+    );
+
+    assert!(
+        error.contains("cannot compare the virtual table notes_fts"),
+        "{error}"
+    );
+}
+
+/// A reset that deleted the old Demo Account's Audit Trail entries, rather
+/// than leaving them unlinked as deleting an account does, is refused
+/// (ADR 0020).
+#[tokio::test]
+async fn a_reset_that_loses_the_old_demo_accounts_audit_trail_is_refused() {
+    let temp = tempfile::tempdir().expect("create test directory");
+    let db = temp.path().join("messagecrate.db");
+    seed_reset_test_database(&db).await;
+    let (pool, mut conn) = test_db(&db).await;
+    let entry: i64 = sqlx::query_scalar(
+        "INSERT INTO audit_entries (at, action, actor, account_id, username)
+         VALUES ('2026-01-01T00:00:00Z', 'logged_in', 'holder', $1, 'demo')
+         RETURNING id",
+    )
+    .bind(DEMO_ACCOUNT_ID)
+    .fetch_one(&mut *conn)
+    .await
+    .expect("record a Demo Account login");
+    close_test_db(pool, conn).await;
+    checkpoint_and_clean_sidecars(&db, "after recording a login")
+        .await
+        .expect("checkpoint");
+    let bundle = temp.path().join("bundle");
+    write_tiny_reset_bundle(&bundle);
+    let cfg = test_config(&db, &temp.path().join("data"));
+
+    let result = reset_prepared_bundle_with(&cfg, &bundle, DEMO_ACCOUNT_ID, async |db| {
+        sqlx::query("DELETE FROM audit_entries WHERE id = $1")
+            .bind(entry)
+            .execute(db)
+            .await?;
+        Ok(())
+    })
+    .await;
+
+    let error = format!("{:#}", result.err().expect("the reset is refused"));
+    assert!(
+        error.ends_with("lost the old Demo Account's Audit Trail in: audit_entries (1 rows)"),
+        "{error}"
+    );
+    assert_reset_test_database(&db).await;
+}
+
+/// An account folder linked from another disk is listed through the link,
+/// so a change to it refuses the reset like any other.
+#[cfg(unix)]
+#[test]
+fn an_account_folder_linked_from_elsewhere_is_listed() {
+    let temp = tempfile::tempdir().expect("create test directory");
+    let elsewhere = temp.path().join("elsewhere");
+    fs::create_dir_all(elsewhere.join("assets")).expect("create the linked folder");
+    fs::write(elsewhere.join("assets/kept.bin"), b"keep").expect("write a file");
+    let data_dir = temp.path().join("data");
+    fs::create_dir_all(&data_dir).expect("create the data folder");
+    std::os::unix::fs::symlink(&elsewhere, data_dir.join("9")).expect("link account 9");
+
+    let listing = other_account_folders(&data_dir, DEMO_ACCOUNT_ID).expect("list the folders");
+
+    assert_eq!(
+        listing.get(Path::new("9/assets/kept.bin")),
+        Some(&FolderEntry::File { bytes: 4 })
     );
 }
 
@@ -942,8 +1035,20 @@ async fn make_prepared_reset_database_observably_different(path: &Path) {
 /// [`non_demo_state`] with it reads every row of the database.
 const EVERY_ROW: DemoRows = DemoRows {
     account: -1,
-    entries_before: i64::MAX,
+    last_entry_before_reset: i64::MAX,
 };
+
+/// [`non_demo_state_on_conn`] on the database at `db`.
+async fn non_demo_state(
+    db: &Path,
+    demo: DemoRows,
+    search_terms: &[String],
+) -> Result<BTreeMap<String, TableDigest>> {
+    with_check_conn(db, async |conn| {
+        non_demo_state_on_conn(conn, demo, search_terms).await
+    })
+    .await
+}
 
 /// Give `account_id` what a person makes beside their messages: a contact in
 /// a Contact Group, and a Saved Search. The group membership has no
