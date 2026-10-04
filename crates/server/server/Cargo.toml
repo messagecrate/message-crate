@@ -19,6 +19,7 @@ clap-markdown = "0.1.5"
 csv = { workspace = true }
 demo-seed = { path = "../demo-seed" }
 fs2 = "0.4.3"
+hmac = "0.13.0"
 futures-util = { version = "0.3.31", default-features = false }
 libc = "0.2"
 # The bindings sqlx-sqlite already links (VENDORING.md pins the version), for

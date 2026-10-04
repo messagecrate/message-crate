@@ -60,11 +60,16 @@ pub enum ProblemType {
     MethodNotAllowed,
     /// `Accept` names nothing this route can produce.
     NotAcceptable,
+    /// A media link that is malformed, for another asset, expired, or minted
+    /// by a Session that has ended.
+    MediaLinkInvalid,
+    /// A `Range` that selects no byte of the file.
+    RangeNotSatisfiable,
 }
 
 impl ProblemType {
     /// Every registered type, in the order the docs index lists them.
-    pub const ALL: [Self; 20] = [
+    pub const ALL: [Self; 22] = [
         Self::ValidationFailed,
         Self::MalformedBody,
         Self::UnsupportedMediaType,
@@ -85,6 +90,8 @@ impl ProblemType {
         Self::NotFound,
         Self::MethodNotAllowed,
         Self::NotAcceptable,
+        Self::MediaLinkInvalid,
+        Self::RangeNotSatisfiable,
     ];
 
     /// The last segment of the `type` URL and the page's file name.
@@ -111,6 +118,8 @@ impl ProblemType {
             Self::NotFound => "not-found",
             Self::MethodNotAllowed => "method-not-allowed",
             Self::NotAcceptable => "not-acceptable",
+            Self::MediaLinkInvalid => "media-link-invalid",
+            Self::RangeNotSatisfiable => "range-not-satisfiable",
         }
     }
 
@@ -124,7 +133,9 @@ impl ProblemType {
             Self::MalformedBody => StatusCode::BAD_REQUEST,
             Self::UnsupportedMediaType => StatusCode::UNSUPPORTED_MEDIA_TYPE,
             Self::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
-            Self::InvalidCredentials | Self::AuthenticationRequired => StatusCode::UNAUTHORIZED,
+            Self::InvalidCredentials | Self::AuthenticationRequired | Self::MediaLinkInvalid => {
+                StatusCode::UNAUTHORIZED
+            }
             Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             Self::UsernameTaken | Self::NameTaken | Self::StateConflict => StatusCode::CONFLICT,
             Self::DemoAccountProtected
@@ -135,6 +146,7 @@ impl ProblemType {
             Self::NotFound => StatusCode::NOT_FOUND,
             Self::MethodNotAllowed => StatusCode::METHOD_NOT_ALLOWED,
             Self::NotAcceptable => StatusCode::NOT_ACCEPTABLE,
+            Self::RangeNotSatisfiable => StatusCode::RANGE_NOT_SATISFIABLE,
         }
     }
 
@@ -162,6 +174,8 @@ impl ProblemType {
             Self::NotFound => "Not found",
             Self::MethodNotAllowed => "Method not allowed",
             Self::NotAcceptable => "Not acceptable",
+            Self::MediaLinkInvalid => "Media link invalid",
+            Self::RangeNotSatisfiable => "Range not satisfiable",
         }
     }
 
@@ -209,6 +223,11 @@ For an import batch, `line` carries the line of the request body that could not 
             Self::NotFound => "No resource at that address exists for this account. An id that belongs to another account answers this too, so an unknown id and a forbidden one look the same, with one exception: the `{id}` of `/v1/accounts/{id}` itself. A caller who is neither the owner nor the account it names gets `403 Forbidden` there, whether or not the account exists. An id nested under it, such as another account's API token, still answers this.".to_string(),
             Self::MethodNotAllowed => "The path exists but does not take this method. The OpenAPI document lists each route's methods.".to_string(),
             Self::NotAcceptable => "The request's `Accept` header named nothing this route can produce. Every `/v1` route but the asset download, its preview and the address book export answers `application/json`, and a failure `application/problem+json`; send `Accept: application/json`, `*/*`, or no `Accept` at all.".to_string(),
+            Self::MediaLinkInvalid => format!(
+                "The `media_link` in the URL opens nothing here: it is not a media link, it was made for another asset or another account, it expired, or the Session that made it has ended. A media link lives {} minutes and no longer than the Session that made it. `detail` says which. Make a new one with `POST /v1/assets/{{sha256}}/media-links` and load the URL it answers; a request that sends `Authorization: Bearer <token>` needs no link.",
+                crate::assets_api::media_links::MEDIA_LINK_TTL.as_secs() / 60
+            ),
+            Self::RangeNotSatisfiable => "The request's `Range` selects no byte of the file: it starts at or past the end, or asks for a suffix of no bytes. The `Content-Range` header (`bytes */<length>`) says how long the file is. Ask for a range inside it, or send no `Range` to get the whole file. A `Range` the server does not serve as one range, such as several ranges or another unit, is not refused: it answers the whole file.".to_string(),
         }
     }
 }
@@ -266,6 +285,7 @@ pub mod openapi {
         SearchQueryInvalid,
         StateConflict,
         AssetUploadInvalid,
+        RangeNotSatisfiable,
     );
 }
 

@@ -160,6 +160,16 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-04 **The server sends an attachment a piece at a time.** A video
+  or voice note can start playing before the whole file has arrived, and a
+  player can jump to any point in it without downloading what comes before.
+  The server also hands the app a short-lived link to one attachment, which
+  works for an hour and ends when you log out, so a player built into the
+  page can load it. The app's players start using both in a coming release;
+  nothing on screen changes yet. The architecture notes record how
+  attachments are to be shown: a small thumbnail in the conversation, the
+  original or a browser-ready copy chosen by file type when one is opened,
+  and the original whenever one is downloaded.
 - 2026-09-22 **An account identity means ownership.** The Profile tab now
   says what the identities are for: your phone numbers and emails, which
   Import uses to determine which messages belong to you. The glossary and

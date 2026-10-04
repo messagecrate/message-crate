@@ -85,14 +85,30 @@ contents, so the same file sent in ten messages is one asset. An asset is
 the only thing in the database addressed by a hash rather than a row number,
 because the file exists before the database does and its contents are its
 identity.
-_Avoid_: Attachment file, Blob, Media, Upload
+_Avoid_: Attachment file, Blob, Media (as a name for an Asset; Media Link
+names a credential), Upload
 
 **Preview**:
 A copy of an Asset in a format every browser can show, made by the server and
-kept beside the original, which is never changed. A Conversation shows the
-Preview of an attachment that has one; opening the attachment gives the
-original. Not every Asset has a Preview.
+kept beside the original, which is never changed. Only an Asset of a type
+browsers often cannot show (HEIC, HEVC video, AMR audio and the like) has one.
+Opening such an attachment shows its Preview; opening any other shows the
+original, and downloading always gives the original.
 _Avoid_: Derived asset, Converted file
+
+**Thumbnail**:
+A small picture of an image or video Asset, about 560 pixels across and under
+100 kilobytes, made by the server: the image scaled down, or a video's first
+frame. A Conversation shows the Thumbnail, never the original, so a long
+conversation loads quickly.
+_Avoid_: Preview (a Preview is a full copy, not a small one)
+
+**Media Link**:
+A short-lived URL that reads one Asset and its Preview for the account that
+made it, so a picture, video or audio player in the page can load the Asset
+without the Session's header. It lasts an hour, and ends sooner when the
+Session that made it ends.
+_Avoid_: Signed URL, Share link (it is never meant to leave the page)
 
 **Import Run**:
 One attempt to bring messages from a backup into Message Crate, recorded
