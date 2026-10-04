@@ -152,12 +152,10 @@ fn make_contact(
     rng: &mut impl Rng,
     used: &mut HashSet<String>,
 ) -> Result<Contact> {
-    let nameless = rng.random_bool(cfg.contacts.no_name);
-    let (first, middle, last) = if nameless {
-        (String::new(), String::new(), String::new())
-    } else {
-        sample_name_shape(cfg, names, rng)
-    };
+    // Every contact has a name. The server's address book load names an
+    // Unknown only with its row's name, so a contact with none would stay an
+    // Unknown, which the unassigned handles already are (#1557).
+    let (first, middle, last) = sample_name_shape(cfg, names, rng);
 
     let mut phones = vec![phones::generate_phone(rng, cfg.contacts.us_phones, used)?];
     if rng.random_bool(cfg.contacts.multi_phone_fraction) {
