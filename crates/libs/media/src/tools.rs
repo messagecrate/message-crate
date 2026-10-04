@@ -282,6 +282,26 @@ pub(crate) fn run_ffmpeg_until(args: &[String], stop: &AtomicBool) -> Result<()>
 /// up and a long one is stopped within this.
 const STOP_POLL_MAX: Duration = Duration::from_millis(25);
 
+/// How long a failed stoppable run waits for a stop before it reports the
+/// failure. Ctrl-C in a terminal reaches ffmpeg and this process together,
+/// and ffmpeg can exit before the handler here has set the stop; the failure
+/// is then the stop's, and the caller must not read it as a bad file.
+const STOP_GRACE: Duration = Duration::from_millis(200);
+
+/// Whether `stopped` turns true within [`STOP_GRACE`].
+fn stop_follows(stopped: impl Fn() -> bool) -> bool {
+    let deadline = std::time::Instant::now() + STOP_GRACE;
+    loop {
+        if stopped() {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+}
+
 fn run_ffmpeg_with(args: &[String], stop: Option<&AtomicBool>) -> Result<()> {
     let stopped = || stop.is_some_and(|stop| stop.load(Ordering::Relaxed));
     if stopped() {
@@ -306,6 +326,10 @@ fn run_ffmpeg_with(args: &[String], stop: Option<&AtomicBool>) -> Result<()> {
         let mut pause = Duration::from_millis(1);
         loop {
             if let Some(status) = child.try_wait().context("wait for ffmpeg")? {
+                if !status.success() && stop_follows(stopped) {
+                    drop(reader);
+                    bail!("stopped while ffmpeg ran");
+                }
                 break status;
             }
             if stopped() {

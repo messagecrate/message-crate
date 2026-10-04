@@ -109,6 +109,31 @@ fn run_ffmpeg_until_kills_ffmpeg_when_stopped() {
     assert!(!pid_file.exists(), "no ffmpeg starts once the stop is set");
 }
 
+/// Ctrl-C in a terminal reaches ffmpeg and the server together, and ffmpeg
+/// can exit before the server's handler sets the stop. A failure the stop
+/// follows within the grace is the stop's, so the server keeps the Asset
+/// queued rather than reading it as a bad file (#1729).
+#[cfg(unix)]
+#[test]
+fn a_failure_the_stop_follows_is_a_stop() {
+    let _guard = tools_test_lock();
+    let _restore = RestoreToolsDir::capture();
+    let _dir = mock_ffmpeg_dir("exit 255");
+    let stop = std::sync::Arc::new(AtomicBool::new(false));
+    let setter = {
+        let stop = std::sync::Arc::clone(&stop);
+        std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(20));
+            stop.store(true, Ordering::Relaxed);
+        })
+    };
+
+    let err = run_ffmpeg_until(&["out.mp4".to_string()], &stop).expect_err("ffmpeg exits 255");
+    setter.join().unwrap();
+
+    assert!(format!("{err:#}").contains("stopped"), "{err:#}");
+}
+
 #[cfg(unix)]
 #[test]
 fn run_ffmpeg_failure_carries_what_ffmpeg_said() {
