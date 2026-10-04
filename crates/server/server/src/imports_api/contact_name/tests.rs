@@ -138,8 +138,11 @@ async fn an_import_replaces_a_trashed_contact_with_a_fresh_one() {
         .await
         .unwrap();
 
+    // Discarding the trashed contact reaches `messages` through a foreign
+    // key, so this runs in a write transaction, as it does inside an import.
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     let fresh = ensure_contact_for_handle(
-        &mut conn,
+        &mut tx,
         TEST_ACCOUNT,
         None,
         met,
@@ -148,6 +151,7 @@ async fn an_import_replaces_a_trashed_contact_with_a_fresh_one() {
     )
     .await
     .unwrap();
+    tx.commit().await.unwrap();
 
     // SQLite may hand the fresh row the id the deleted one had, so the ids
     // say nothing; what the row holds does.
@@ -259,7 +263,7 @@ async fn a_fresh_contact_takes_the_number_on_every_service() {
 /// A conversation header line. `participants` is the JSON array body.
 fn header(chat: &str, kind: &str, participants: &str) -> String {
     format!(
-        r#"{{"schema_version":6,"export":{{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{chat}","conversation_type":"{kind}","group_title":null,"participants":[{participants}],"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
+        r#"{{"schema_version":7,"export":{{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{chat}","conversation_type":"{kind}","group_title":null,"participants":[{participants}],"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
     )
 }
 

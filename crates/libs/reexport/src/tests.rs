@@ -832,7 +832,7 @@ fn a_json_that_is_not_an_ir_export_is_refused() {
         // The right version but missing a required section.
         (
             "partial.json",
-            r#"{"schema_version":6,"export":{},"messages":[]}"#,
+            r#"{"schema_version":7,"export":{},"messages":[]}"#,
         ),
         // Not JSON at all.
         ("broken.json", "{not json"),
@@ -854,7 +854,7 @@ fn a_jsonl_whose_first_line_is_not_a_conversation_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join("log.jsonl"),
-        "{\"level\":\"info\",\"msg\":\"started\"}\n         {\"schema_version\":6,\"export\":{},\"conversation\":{},\"messages\":[]}\n",
+        "{\"level\":\"info\",\"msg\":\"started\"}\n         {\"schema_version\":7,\"export\":{},\"conversation\":{},\"messages\":[]}\n",
     )
     .unwrap();
 
@@ -936,7 +936,7 @@ fn an_xml_that_is_not_an_smses_export_is_refused() {
 #[test]
 fn every_kind_of_sidecar_is_skipped() {
     let dir = tempfile::tempdir().unwrap();
-    let ir_json = r#"{"schema_version":6,"export":{},"conversation":{},"messages":[]}"#;
+    let ir_json = r#"{"schema_version":7,"export":{},"conversation":{},"messages":[]}"#;
     for name in [
         "conversation.meta.json",
         "conversation.json.tmp",
@@ -1140,7 +1140,7 @@ fn a_folder_of_version_3_files_is_refused_by_name() {
         .unwrap_err();
         let message = format!("{error:#}");
         assert!(
-            message.contains("This file is schema version 3; Message Crate reads version 6"),
+            message.contains("This file is schema version 3; Message Crate reads version 7"),
             "{message}"
         );
         assert!(
@@ -1169,7 +1169,7 @@ fn a_version_3_file_among_version_5_files_stops_the_run_and_writes_nothing() {
     .unwrap_err();
     let message = format!("{error:#}");
     assert!(
-        message.contains("This file is schema version 3; Message Crate reads version 6"),
+        message.contains("This file is schema version 3; Message Crate reads version 7"),
         "{message}"
     );
     assert!(message.contains("old.jsonl"), "{message}");

@@ -329,7 +329,7 @@ fn ir_message(
 /// reaction, and a plain message with none of these.
 async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
     let header = serde_json::json!({
-        "schema_version": 6,
+        "schema_version": 7,
         "export": {"source": "imessage", "tool": "test", "tool_version": "0",
                    "owner_identity": null, "owner_display_name": null},
         "conversation": {
@@ -358,8 +358,7 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
              "is_from_me": false, "reactor_identity": "+15555550161"}
         ]),
         serde_json::json!({
-            "is_reply": true,
-            "is_deleted": false
+            "is_reply": true
         }),
     );
     let announcement = ir_message(
@@ -373,7 +372,6 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
         ]),
         serde_json::json!({
             "is_reply": false,
-            "is_deleted": false,
             "announcement": "named the conversation Reactions"
         }),
     );
@@ -413,6 +411,129 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
     .unwrap();
     assert_eq!(stats.messages, 3);
     assert_eq!(stats.tapbacks, 3);
+}
+
+/// An Apple Messages conversation file holding a message the owner deleted
+/// in Messages, one unsent whole, and one only partly unsent, as the Apple
+/// Messages exporter writes them from `chat-db-fixture`'s messages 16 to 18.
+const APPLE_MESSAGES_DELETIONS: &str =
+    include_str!("../../tests/fixtures/apple-messages-deletions.jsonl");
+
+/// Import [`APPLE_MESSAGES_DELETIONS`] into `account_id` through the whole
+/// pipeline.
+async fn import_deletions(fixture: &TestFixture, account_id: i64) {
+    let dir = fixture.dir().join("deletions");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("deletions.jsonl");
+    std::fs::write(&path, APPLE_MESSAGES_DELETIONS).unwrap();
+    let assets = dir.join("assets");
+    let mut conn = fixture.conn().await;
+    let stats = crate::imports_api::import_jsonl_files_on_conn(
+        &mut conn,
+        &[path],
+        &crate::imports_api::ImportOptions::fixed(crate::imports_api::FixedImportArgs {
+            assets_dir: &assets,
+            asset_root: &dir,
+            mode: crate::imports_api::ImportMode::Append,
+            source: "imessage",
+            account_id,
+            fill_content_keys: false,
+            import_id: None,
+        }),
+        crate::imports_api::ImportSchemaMode::Ensure,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        stats.messages, 3,
+        "a marked message is imported like any other"
+    );
+}
+
+/// The guids of a messages page, in its order.
+fn guids(page: &serde_json::Value) -> Vec<String> {
+    page["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["guid"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// The deleted message imports as `deleted_in_source_app`, the one unsent
+/// whole as `unsent`, and the partly unsent one with no mark, and the
+/// messages route returns each mark as imported. No mark hides a message.
+#[tokio::test]
+async fn a_deleted_and_an_unsent_message_are_returned_with_their_mark() {
+    let (fixture, alice) = fixture_with_account().await;
+    import_deletions(&fixture, alice.account_id).await;
+
+    let page: serde_json::Value =
+        get_json(&fixture.state, "/v1/messages?sort=date", &alice.token).await;
+    let marks: Vec<(String, serde_json::Value)> = page["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| {
+            (
+                m["guid"].as_str().unwrap().to_string(),
+                m["deletion"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        marks,
+        [
+            (
+                "guid-16".to_string(),
+                serde_json::json!("deleted_in_source_app")
+            ),
+            ("guid-17".to_string(), serde_json::json!("unsent")),
+            ("guid-18".to_string(), serde_json::Value::Null),
+        ],
+        "{page}"
+    );
+}
+
+/// `deleted:yes` narrows the list to the messages carrying either mark and
+/// `deleted:no` to the rest; together they split it.
+#[tokio::test]
+async fn deleted_yes_and_no_split_the_messages_by_their_mark() {
+    let (fixture, alice) = fixture_with_account().await;
+    import_deletions(&fixture, alice.account_id).await;
+
+    let marked: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=deleted%3Ayes&sort=date",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(guids(&marked), ["guid-16", "guid-17"], "{marked}");
+    let unmarked: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=deleted%3Ano&sort=date",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(guids(&unmarked), ["guid-18"], "{unmarked}");
+    let negated: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=-deleted%3Ayes&sort=date",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(guids(&negated), ["guid-18"], "{negated}");
+    let found: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=delete&sort=date",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(
+        guids(&found),
+        ["guid-16"],
+        "a message deleted in the source app is found by its text: {found}"
+    );
 }
 
 /// Reactions and the reply, announcement and sticker flags survive the trip
@@ -509,12 +630,13 @@ async fn a_message_in_a_trashed_conversation_or_a_duplicate_is_read_by_id() {
     let (fixture, alice, direct, group) = seeded().await;
     {
         let mut conn = fixture.conn().await;
+        let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
         sqlx::query(
             "INSERT INTO trashed_conversations (account_id, conversation_id) VALUES ($1, $2)",
         )
         .bind(alice.account_id)
         .bind(group)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
         // The second message of the direct thread becomes a copy of the first.
@@ -525,9 +647,10 @@ async fn a_message_in_a_trashed_conversation_or_a_duplicate_is_read_by_id() {
              WHERE id = (SELECT MAX(id) FROM messages WHERE conversation_id = $1)",
         )
         .bind(direct)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
+        tx.commit().await.unwrap();
     }
 
     let trashed: serde_json::Value =

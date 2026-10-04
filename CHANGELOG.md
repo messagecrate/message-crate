@@ -21,6 +21,30 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-04 **A message deleted in Apple Messages, or unsent, is kept and
+  marked.** A message deleted in Apple Messages that its recently deleted
+  list still holds is imported with its text and marked Deleted in the
+  source app. A message its sender unsent is imported as Unsent, rather than
+  as a line saying someone unsent a message. A message only partly unsent
+  keeps what is left and has no mark. Search finds marked messages like any
+  other, and `deleted:yes` or `deleted:no` on Messages narrows to them or
+  away from them. Nothing is hidden. A later import of the same message
+  that carries the mark adds it to the message already there. Export keeps
+  the mark, so a conversation exported and imported again keeps it too. The
+  conversation shows the mark in a coming release.
+- 2026-10-04 **A long conversation scrolls without downloading its photos,
+  and videos and voice notes play in place.** A photo or video shows as a
+  small thumbnail, loaded only when its message scrolls near the screen,
+  with its file name in its place until the server has made it. A video
+  shows a play button and loads nothing until it is pressed; then it plays
+  in the conversation and seeking loads only the part sought to, where
+  before a video downloaded whole before its first frame. A voice note has a
+  play button of its own. The viewer keeps the thumbnail up while the full
+  photo loads and has the next and previous photos ready. A HEIC photo, a
+  HEVC video or an AMR voice note opens as the copy every browser can show,
+  the same in every browser, and says so when that copy is not made yet.
+  Every attachment has a download button, which always saves the original
+  under its own name; the desktop app asks where to save it.
 - 2026-10-04 **Photos and videos get their browser copies after every
   import, without anyone asking.** Once an import ends, the server makes a
   small thumbnail of every photo and video it brought, and a copy every
@@ -28,8 +52,7 @@ released versions carry their date on the heading.
   browsers often cannot play. It works in the background, so the import
   finishes as soon as its messages are in, and a server stopped part-way
   finishes the rest when it starts again. Until now those copies existed
-  only after someone ran a command on the server. The conversation starts
-  showing the thumbnails in a coming release.
+  only after someone ran a command on the server.
 - 2026-10-04 **The server keeps its log in files the owner can read.** Docker
   and the desktop app's server now write their log to a `logs` directory
   beside the database, as well as to their output, so the lines that explain a
@@ -1058,6 +1081,11 @@ released versions carry their date on the heading.
   edge, unlike every other button. They now leave the same 1-pixel gap. The
   day the date picker's keyboard cursor is on shows a 2-pixel ring inside it,
   the same as a focused table row, where it showed a 1-pixel one.
+- 2026-10-04 **A Settings tab that can't be opened yet shows the not-allowed
+  pointer.** While the owner adds an account, Profile, Storage and Audit
+  Trail are greyed out until the account exists, but the pointer over them
+  was the plain arrow. It is now the not-allowed pointer every other control
+  that is turned off shows.
 - 2026-10-04 **The panel resize grips move by exactly 8 pixels.** Each
   arrow key on the grip of the left panel or the list column moved the
   panel 9 pixels wider or 7 narrower, and pressing the grip without moving
@@ -1193,6 +1221,12 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-04 **Stopping the server stops the conversion it was running.** A
+  server stopped with Ctrl-C or `docker stop` while it made a browser copy
+  of a video left that conversion running after the server had stopped,
+  using the computer for nothing. It now stops the conversion, removes the
+  part-made copy, and makes the copy again when it next starts. Stopping
+  the command that rebuilds the copies does the same.
 - 2026-10-04 **A video's browser copy plays in every browser.** The copy
   the server made of a HEVC video, the format an iPhone records in, was HEVC
   as well, which most browsers cannot play. It is now H.264, which they all
@@ -1392,6 +1426,12 @@ released versions carry their date on the heading.
 - Message files exported before reactions moved onto the message they react
   to are refused when you import or convert them, rather than read with their
   Apple Messages reactions lost. This holds for JSON, JSONL, CSV, EML and mbox
+  exports, and for an Import Run an earlier build left paused. Export the
+  backup again with this build, then import or convert the new files; discard
+  a paused run and start the import again.
+- Message files exported before a message could be marked Deleted in the
+  source app or Unsent are refused when you import or convert them, rather
+  than read with the mark lost. This holds for JSON, JSONL, CSV, EML and mbox
   exports, and for an Import Run an earlier build left paused. Export the
   backup again with this build, then import or convert the new files; discard
   a paused run and start the import again.

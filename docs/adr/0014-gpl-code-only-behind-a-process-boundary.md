@@ -146,7 +146,9 @@ It also defines `Reaction`, the shape of a reaction in the conversation file
 for every source, because the reader writes reactions in that shape and this
 is the one crate both sides may link (#1642). `message-ir` re-exports it as
 `message_ir::Reaction`, so every crate over the conversation file, the server
-included, links the protocol crate. That carries no GPL code with it: the
+included, links the protocol crate. `Deletion`, a message's mark as Deleted
+in the source app or Unsent, lives beside it for the same reason (#1643) and
+is re-exported as `message_ir::Deletion`. That carries no GPL code with it: the
 protocol crate depends on `serde` and `serde_json` alone.
 
 `crates/helpers/chat-db-fixture` writes the small `chat.db` both sides test

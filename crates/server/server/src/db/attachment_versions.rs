@@ -6,6 +6,8 @@
 
 use sqlx::SqliteConnection;
 
+use crate::db::begin_write;
+
 /// One of the two versions the server makes of an original.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Version {
@@ -175,7 +177,9 @@ pub async fn stored_originals(
 
 /// Point every attachment row of `account_id` for the original
 /// `original_sha` at `file` as its `version`, and answer how many rows now
-/// name it. 0 when every row of the original was deleted meanwhile.
+/// name it. 0 when every row of the original was deleted meanwhile. The
+/// update runs in a write transaction of its own, as every write to
+/// `attachments` does (`crate::db::write_tx`).
 ///
 /// # Errors
 ///
@@ -188,6 +192,7 @@ pub async fn record(
     file: &VersionFile,
 ) -> Result<u64, sqlx::Error> {
     let [sha_column, path_column, mime_column] = version.columns();
+    let mut tx = begin_write(conn).await?;
     let done = sqlx::query(&format!(
         "UPDATE attachments
          SET {sha_column} = $1, {path_column} = $2, {mime_column} = $3
@@ -199,13 +204,15 @@ pub async fn record(
     .bind(&file.mime_type)
     .bind(original_sha)
     .bind(account_id)
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await?;
+    tx.commit().await?;
     Ok(done.rows_affected())
 }
 
 /// Clear the `version` columns of every attachment row of `account_id` that
-/// names the file at `assets_path`.
+/// names the file at `assets_path`, in a write transaction of its own, as
+/// [`record`] does.
 ///
 /// # Errors
 ///
@@ -217,6 +224,7 @@ pub async fn clear(
     assets_path: &str,
 ) -> Result<(), sqlx::Error> {
     let [sha_column, path_column, mime_column] = version.columns();
+    let mut tx = begin_write(conn).await?;
     sqlx::query(&format!(
         "UPDATE attachments
          SET {sha_column} = NULL, {path_column} = NULL, {mime_column} = NULL
@@ -225,9 +233,9 @@ pub async fn clear(
     ))
     .bind(assets_path)
     .bind(account_id)
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await?;
-    Ok(())
+    tx.commit().await
 }
 
 /// Where the `version` of one of the account's originals is stored, and its

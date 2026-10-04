@@ -110,7 +110,8 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
     );
 
     let is_reply = message_csv::parse_bool(get("is_reply"));
-    let is_deleted = message_csv::parse_bool(get("is_deleted"));
+    // A mark the CSV names wrongly is refused rather than read as none.
+    let deletion = message_ir::parse_deletion(get("deletion")).context("bad deletion")?;
     let thread_originator_part = {
         let s = get("thread_originator_part");
         if s.is_empty() { None } else { s.parse().ok() }
@@ -128,7 +129,6 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
         in_reply_to_guid: nonempty(get("thread_originator_guid")),
         thread_originator_part,
         num_replies,
-        is_deleted,
         send_effect: nonempty(get("send_effect")),
         shared_location: nonempty(get("shared_location")),
         announcement: nonempty(get("announcement")),
@@ -158,6 +158,7 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
         text: get("text").to_string(),
         attachments,
         reactions,
+        deletion,
         imessage,
         source,
     })

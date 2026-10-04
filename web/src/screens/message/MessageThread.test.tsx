@@ -2,8 +2,21 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { fetchAssetObjectUrl } from "../../lib/serverApi";
 import type { Message } from "../../lib/types";
+import {
+  installIntersectionObserver,
+  observersWithin,
+  scrollNear,
+} from "../../test/intersectionObserver";
+import { renderWithProviders } from "../../test/providers";
 import MessageThread from "./MessageThread";
+
+vi.mock("../../lib/serverApi", () => ({
+  fetchAsset: vi.fn(),
+  fetchAssetObjectUrl: vi.fn(),
+  createMediaLink: vi.fn(),
+}));
 
 afterEach(() => {
   cleanup();
@@ -115,5 +128,54 @@ describe("MessageThread", () => {
     expect(screen.getByText("Scroll up for older messages")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Previous" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Next" })).toBeNull();
+  });
+});
+
+/**
+ * Scrolling a long conversation loads only the Thumbnails of the messages
+ * that come near the screen, measured against the thread's own scroll area
+ * (`docs/architecture/media.md`, rule 5). Measured against the window, the
+ * margin would not reach past the thread's edge, and a Thumbnail would start
+ * loading only once it was already on screen.
+ */
+describe("MessageThread and attachments", () => {
+  function withPhoto(id: number, sha256: string): Message {
+    return message({
+      id,
+      text: null,
+      attachments: [
+        {
+          original_name: `${sha256}.jpg`,
+          mime_type: "image/jpeg",
+          sha256,
+          thumbnail_mime_type: "image/jpeg",
+        },
+      ],
+    });
+  }
+
+  it("fetches the Thumbnail of the message scrolled near the screen, and nothing else", async () => {
+    installIntersectionObserver();
+    vi.mocked(fetchAssetObjectUrl).mockImplementation(
+      async (sha, options) => `blob:${options?.version}-${sha}`,
+    );
+    const { container } = renderWithProviders(
+      <MessageThread {...baseProps} messages={[withPhoto(1, "aaa"), withPhoto(2, "bbb")]} />,
+    );
+    const row = container.querySelector("#row-2");
+    if (!row) throw new Error("no row for message 2");
+    expect(fetchAssetObjectUrl).not.toHaveBeenCalled();
+    const scrollArea = container.firstElementChild;
+    expect(observersWithin(row)).toEqual([{ root: scrollArea, rootMargin: "800px 0px" }]);
+
+    scrollNear(row);
+
+    expect(await screen.findByRole("img", { name: "bbb.jpg" })).toHaveAttribute(
+      "src",
+      "blob:thumbnail-bbb",
+    );
+    expect(vi.mocked(fetchAssetObjectUrl).mock.calls.map(([sha, o]) => [sha, o?.version])).toEqual([
+      ["bbb", "thumbnail"],
+    ]);
   });
 });

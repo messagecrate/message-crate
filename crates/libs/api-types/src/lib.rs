@@ -408,6 +408,42 @@ api_shape! {
         pub attachments: Vec<Attachment>,
         /// Reactions on this message.
         pub tapbacks: Vec<Tapback>,
+        /// `deleted_in_source_app` for a message the person deleted in the
+        /// app it came from before the backup, `unsent` for one its sender
+        /// took back; `null` for neither. The message is listed and found
+        /// like any other either way.
+        pub deletion: Option<Deletion>,
+    }
+}
+
+/// Why a message's content is gone in the app it came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum Deletion {
+    /// Deleted in the source app: the person deleted it there before the
+    /// backup was made, and the backup still holds it.
+    DeletedInSourceApp,
+    /// Unsent: its sender took it back for everyone, and nothing of it is
+    /// left.
+    Unsent,
+}
+
+impl Deletion {
+    /// Both marks.
+    pub const ALL: [Self; 2] = [Self::DeletedInSourceApp, Self::Unsent];
+
+    /// The mark as the wire and the database spell it.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::DeletedInSourceApp => "deleted_in_source_app",
+            Self::Unsent => "unsent",
+        }
+    }
+
+    /// Read a sent or stored value; anything else names no mark.
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|d| d.as_str() == value)
     }
 }
 
@@ -568,6 +604,7 @@ mod tests {
                 is_from_me: true,
                 sender: None,
             }],
+            deletion: Some(Deletion::DeletedInSourceApp),
         };
 
         let json = serde_json::to_string(&message).expect("serializes");
@@ -588,6 +625,8 @@ mod tests {
         assert_eq!(read.conversation.participants[0].identity, None);
         assert_eq!(read.attachments.len(), 1);
         assert_eq!(read.tapbacks[0].kind, "loved");
+        assert_eq!(written["deletion"], "deleted_in_source_app");
+        assert_eq!(read.deletion, Some(Deletion::DeletedInSourceApp));
     }
 }
 

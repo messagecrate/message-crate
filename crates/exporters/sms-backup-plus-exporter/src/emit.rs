@@ -807,6 +807,7 @@ mod tests {
                 text: "hi".into(),
                 attachments: std::mem::take(&mut atts),
                 reactions: Vec::new(),
+                deletion: None,
                 imessage: None,
                 source: None,
             }],

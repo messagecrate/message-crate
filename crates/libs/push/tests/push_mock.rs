@@ -57,6 +57,7 @@ fn sample_doc() -> ConversationDocument {
             text: "hello there".into(),
             attachments: vec![],
             reactions: Vec::new(),
+            deletion: None,
             imessage: None,
             source: None,
         }],

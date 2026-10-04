@@ -5,6 +5,9 @@ use crate::asset_store::tests::make_abandoned;
 use crate::config::PathsConfig;
 use crate::db::engine;
 
+/// A stop that is never set, for a pass that runs to its end.
+static NOT_STOPPED: AtomicBool = AtomicBool::new(false);
+
 const SHA: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
 
 /// A row for a stored blob named `assets_path`, with nothing else known.
@@ -60,6 +63,7 @@ fn pass<'a>(
     AccountPass {
         opts,
         work_dir,
+        stop: &NOT_STOPPED,
         account_id: 7,
         assets_dir: assets_dir.to_path_buf(),
         converted_dir: converted_dir.to_path_buf(),
@@ -542,17 +546,12 @@ pub(crate) async fn seed_message(conn: &mut SqliteConnection, source: &str) -> i
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    sqlx::query_scalar(
-        "INSERT INTO messages (conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order)
-         VALUES ($1, $2, $3, $4, '2020-01-01T00:00:00Z', 0, 0) RETURNING id",
-    )
-    .bind(conversation_id)
-    .bind(ACCOUNT)
-    .bind(source)
-    .bind(crate::test_support::unique_guid())
-    .fetch_one(&mut *conn)
+    crate::test_support::MessageRow {
+        source,
+        ..crate::test_support::MessageRow::new(ACCOUNT, conversation_id)
+    }
+    .insert(conn)
     .await
-    .unwrap()
 }
 
 /// Store `bytes` as the original for an attachment of `message_id`, the way
@@ -570,15 +569,18 @@ pub(crate) async fn attach_stored_blob(
     let path = opened.cfg.paths.assets_dir_for_account(ACCOUNT).join(&rel);
     fs::create_dir_all(path.parent().unwrap()).unwrap();
     fs::write(&path, bytes).unwrap();
-    sqlx::query_scalar(
+    let mut tx = crate::db::begin_write(conn).await.unwrap();
+    let id = sqlx::query_scalar(
         "INSERT INTO attachments (message_id, sha256, assets_path) VALUES ($1, $2, $3) RETURNING id",
     )
     .bind(message_id)
     .bind(sha)
     .bind(rel)
-    .fetch_one(&mut *conn)
+    .fetch_one(&mut *tx)
     .await
-    .unwrap()
+    .unwrap();
+    tx.commit().await.unwrap();
+    id
 }
 
 /// A database with one account and one attachment on a message of
@@ -688,6 +690,7 @@ async fn listed_attachments_carry_name_hints_for_extensionless_blobs() {
     let mut conn = opened.conn().await.unwrap();
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, "imessage").await;
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query(
         "INSERT INTO attachments (message_id, sha256, assets_path, mime_type, original_name, path)
          VALUES ($1, $2, $3, NULL, 'voice-note.amr', 'attachments/voice-note.amr')",
@@ -695,9 +698,10 @@ async fn listed_attachments_carry_name_hints_for_extensionless_blobs() {
     .bind(message_id)
     .bind(SHA)
     .bind(format!("ab/{SHA}"))
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await
     .unwrap();
+    tx.commit().await.unwrap();
 
     let rows = versions_db::stored_originals(&mut conn, ACCOUNT, None)
         .await
@@ -716,7 +720,7 @@ fn a_run_writes_a_jpeg_preview_under_the_converted_folder_and_records_it() {
         let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
         let opts = ProcessAssetsOptions::default();
 
-        let first = run(&opened, &opts).await.unwrap();
+        let first = run(&opened, &opts, &NOT_STOPPED).await.unwrap();
 
         assert_eq!(first, stats(1, 1, 1, 0, 0));
         let mut conn = opened.conn().await.unwrap();
@@ -738,12 +742,18 @@ fn a_run_writes_a_jpeg_preview_under_the_converted_folder_and_records_it() {
         assert_eq!(mime, "image/jpeg");
 
         // A second run leaves the preview alone; `force` makes it again.
-        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 0, 0, 1, 0));
+        assert_eq!(
+            run(&opened, &opts, &NOT_STOPPED).await.unwrap(),
+            stats(1, 0, 0, 1, 0)
+        );
         let force = ProcessAssetsOptions {
             force: true,
             ..Default::default()
         };
-        assert_eq!(run(&opened, &force).await.unwrap(), stats(1, 1, 1, 0, 0));
+        assert_eq!(
+            run(&opened, &force, &NOT_STOPPED).await.unwrap(),
+            stats(1, 1, 1, 0, 0)
+        );
     });
 }
 
@@ -756,7 +766,10 @@ fn a_dry_run_counts_the_preview_it_would_write_and_writes_nothing() {
             ..Default::default()
         };
 
-        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 1, 1, 0, 0));
+        assert_eq!(
+            run(&opened, &opts, &NOT_STOPPED).await.unwrap(),
+            stats(1, 1, 1, 0, 0)
+        );
 
         let converted = opened.cfg.paths.assets_converted_dir_for_account(ACCOUNT);
         assert_eq!(fs::read_dir(&converted).unwrap().count(), 0);
@@ -788,12 +801,18 @@ fn a_plain_run_converts_again_a_preview_cut_short() {
     with_real_ffmpeg(async {
         let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
         let opts = ProcessAssetsOptions::default();
-        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 1, 1, 0, 0));
+        assert_eq!(
+            run(&opened, &opts, &NOT_STOPPED).await.unwrap(),
+            stats(1, 1, 1, 0, 0)
+        );
         let (sha, preview) = preview_on_disk(&opened, attachment_id).await;
         let whole = fs::read(&preview).unwrap();
         fs::write(&preview, &whole[..whole.len() / 2]).unwrap();
 
-        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 1, 0, 0, 0));
+        assert_eq!(
+            run(&opened, &opts, &NOT_STOPPED).await.unwrap(),
+            stats(1, 1, 0, 0, 0)
+        );
 
         let (sha_after, preview_after) = preview_on_disk(&opened, attachment_id).await;
         let bytes = fs::read(&preview_after).unwrap();
@@ -813,11 +832,17 @@ fn a_plain_run_skips_a_preview_that_hashes_to_its_name() {
     with_real_ffmpeg(async {
         let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
         let opts = ProcessAssetsOptions::default();
-        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 1, 1, 0, 0));
+        assert_eq!(
+            run(&opened, &opts, &NOT_STOPPED).await.unwrap(),
+            stats(1, 1, 1, 0, 0)
+        );
         let (_, preview) = preview_on_disk(&opened, attachment_id).await;
         let written = fs::metadata(&preview).unwrap().modified().unwrap();
 
-        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 0, 0, 1, 0));
+        assert_eq!(
+            run(&opened, &opts, &NOT_STOPPED).await.unwrap(),
+            stats(1, 0, 0, 1, 0)
+        );
 
         assert_eq!(
             fs::metadata(&preview).unwrap().modified().unwrap(),
@@ -836,14 +861,20 @@ fn a_second_source_imported_after_the_preview_was_made_gets_the_preview() {
     with_real_ffmpeg(async {
         let (opened, _dir, imessage_attachment) = fixture_with_bmp("imessage").await;
         let opts = ProcessAssetsOptions::default();
-        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 1, 1, 0, 0));
+        assert_eq!(
+            run(&opened, &opts, &NOT_STOPPED).await.unwrap(),
+            stats(1, 1, 1, 0, 0)
+        );
         let mut conn = opened.conn().await.unwrap();
         let message_id = seed_message(&mut conn, "whatsapp").await;
         let whatsapp_attachment =
             attach_stored_blob(&opened, &mut conn, message_id, SHA, ".bmp", BMP_1X1).await;
         assert_eq!(derived_of(&mut conn, whatsapp_attachment).await, None);
 
-        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 0, 0, 1, 0));
+        assert_eq!(
+            run(&opened, &opts, &NOT_STOPPED).await.unwrap(),
+            stats(1, 0, 0, 1, 0)
+        );
 
         let preview = derived_of(&mut conn, imessage_attachment).await;
         assert!(preview.is_some());
@@ -866,7 +897,7 @@ fn a_png_gets_a_thumbnail_and_no_preview() {
         let (opened, _dir, attachment_id) = fixture_with("imessage", ".png", PNG_1X1_RGB).await;
 
         assert_eq!(
-            run(&opened, &ProcessAssetsOptions::default())
+            run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
                 .await
                 .unwrap(),
             stats(1, 0, 1, 0, 0)
@@ -911,9 +942,16 @@ fn one_asset_is_processed_alone() {
         .await;
         let work = tempfile::tempdir().unwrap();
 
-        let made = process_one_asset(&opened.cfg, &opened.db, work.path(), ACCOUNT, SHA)
-            .await
-            .unwrap();
+        let made = process_one_asset(
+            &opened.cfg,
+            &opened.db,
+            work.path(),
+            ACCOUNT,
+            SHA,
+            &NOT_STOPPED,
+        )
+        .await
+        .unwrap();
 
         assert_eq!(made, stats(1, 0, 1, 0, 0));
         assert!(thumbnail_of(&mut conn, queued).await.is_some());
@@ -934,7 +972,7 @@ fn a_file_two_sources_share_is_converted_once_for_both() {
             attach_stored_blob(&opened, &mut conn, message_id, SHA, ".bmp", BMP_1X1).await;
 
         assert_eq!(
-            run(&opened, &ProcessAssetsOptions::default())
+            run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
                 .await
                 .unwrap(),
             stats(1, 1, 1, 0, 0)
@@ -946,11 +984,32 @@ fn a_file_two_sources_share_is_converted_once_for_both() {
     });
 }
 
+/// A `process-assets` that Ctrl-C or SIGTERM stops fails, so a script that
+/// runs it never reads a stopped run as a finished one, and converts nothing
+/// more (#1729).
+#[tokio::test]
+async fn a_stopped_run_fails_and_converts_nothing_more() {
+    let (opened, _dir, attachment) = fixture_with_bmp("imessage").await;
+
+    let err = run(
+        &opened,
+        &ProcessAssetsOptions::default(),
+        &AtomicBool::new(true),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err.to_string().starts_with("stopped"), "got: {err}");
+    let mut conn = opened.conn().await.unwrap();
+    assert_eq!(thumbnail_of(&mut conn, attachment).await, None);
+    assert_eq!(derived_of(&mut conn, attachment).await, None);
+}
+
 #[tokio::test]
 async fn a_database_without_accounts_is_an_error() {
     let (opened, _dir) = open_db().await;
 
-    let err = run(&opened, &ProcessAssetsOptions::default())
+    let err = run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
         .await
         .unwrap_err();
 
@@ -967,7 +1026,7 @@ async fn an_account_without_an_assets_folder_is_passed_over() {
     seed_account(&mut conn, ACCOUNT).await;
 
     assert_eq!(
-        run(&opened, &ProcessAssetsOptions::default())
+        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
             .await
             .unwrap(),
         stats(0, 0, 0, 0, 0)
@@ -984,7 +1043,7 @@ async fn a_blob_that_is_not_media_is_left_as_is_by_the_run() {
         attach_stored_blob(&opened, &mut conn, message_id, SHA, ".txt", b"notes").await;
 
     assert_eq!(
-        run(&opened, &ProcessAssetsOptions::default())
+        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
             .await
             .unwrap(),
         stats(1, 0, 0, 1, 0)
@@ -1014,7 +1073,7 @@ async fn a_missing_original_is_counted_as_a_failure_and_the_run_goes_on() {
     .await;
 
     assert_eq!(
-        run(&opened, &ProcessAssetsOptions::default())
+        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
             .await
             .unwrap(),
         stats(2, 0, 0, 1, 1)
@@ -1043,15 +1102,17 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
         .join(&rel);
     fs::create_dir_all(preview.parent().unwrap()).unwrap();
     fs::write(&preview, b"a Preview cut short").unwrap();
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query(
         "UPDATE attachments
          SET derived_sha256 = $1, derived_assets_path = $2, derived_mime_type = 'image/jpeg'",
     )
     .bind(&preview_sha)
     .bind(&rel)
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await
     .unwrap();
+    tx.commit().await.unwrap();
     fs::remove_file(
         opened
             .cfg
@@ -1066,12 +1127,15 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
         dry_run: true,
         ..Default::default()
     };
-    assert_eq!(run(&opened, &dry_run).await.unwrap(), stats(1, 0, 0, 0, 1));
+    assert_eq!(
+        run(&opened, &dry_run, &NOT_STOPPED).await.unwrap(),
+        stats(1, 0, 0, 0, 1)
+    );
     assert!(preview.is_file(), "a dry run deletes nothing");
     assert_eq!(derived_of(&mut conn, imessage_attachment).await, named);
 
     assert_eq!(
-        run(&opened, &ProcessAssetsOptions::default())
+        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
             .await
             .unwrap(),
         stats(1, 0, 0, 0, 1)
@@ -1124,7 +1188,7 @@ async fn opening_an_account_without_an_assets_folder_gives_nothing_to_process() 
     let opts = ProcessAssetsOptions::default();
     let work = tempfile::tempdir().unwrap();
 
-    let pass = AccountPass::open(&opened.cfg, &opts, work.path(), ACCOUNT).unwrap();
+    let pass = AccountPass::open(&opened.cfg, &opts, work.path(), ACCOUNT, &NOT_STOPPED).unwrap();
 
     assert!(pass.is_none());
     assert!(
@@ -1150,7 +1214,7 @@ async fn opening_an_account_makes_its_converted_folder_and_cleans_its_incoming_t
     let live_part = assets.join(".incoming").join(format!("{SHA}-2.part"));
     fs::write(&live_part, b"an upload in progress").unwrap();
 
-    let pass = AccountPass::open(&opened.cfg, &opts, work.path(), ACCOUNT)
+    let pass = AccountPass::open(&opened.cfg, &opts, work.path(), ACCOUNT, &NOT_STOPPED)
         .unwrap()
         .expect("an account with an assets folder is processed");
 
@@ -1190,7 +1254,7 @@ async fn opening_an_account_removes_temporary_files_a_killed_run_left_in_the_sha
         make_abandoned(path);
     }
 
-    AccountPass::open(&opened.cfg, &opts, work.path(), ACCOUNT)
+    AccountPass::open(&opened.cfg, &opts, work.path(), ACCOUNT, &NOT_STOPPED)
         .unwrap()
         .expect("an account with an assets folder is processed");
 
@@ -1222,7 +1286,7 @@ async fn a_dry_run_leaves_temporary_files_in_the_shards() {
     fs::write(&left, b"half").unwrap();
     make_abandoned(&left);
 
-    AccountPass::open(&opened.cfg, &opts, work.path(), ACCOUNT)
+    AccountPass::open(&opened.cfg, &opts, work.path(), ACCOUNT, &NOT_STOPPED)
         .unwrap()
         .expect("an account with an assets folder is processed");
 
@@ -1272,15 +1336,26 @@ fn a_version_made_after_its_rows_were_deleted_is_left_for_the_sweep() {
         let rows = versions_db::stored_originals(&mut opened.conn().await.unwrap(), ACCOUNT, None)
             .await
             .unwrap();
+        let mut conn = opened.conn().await.unwrap();
+        let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
         sqlx::query("DELETE FROM attachments")
-            .execute(&opened.db)
+            .execute(&mut *tx)
             .await
             .unwrap();
+        tx.commit().await.unwrap();
+        drop(conn);
         let opts = ProcessAssetsOptions::default();
         let work = tempfile::tempdir().unwrap();
-        let pass = AccountPass::new(&opened.cfg, &opts, work.path(), ACCOUNT, Log::Print)
-            .unwrap()
-            .unwrap();
+        let pass = AccountPass::new(
+            &opened.cfg,
+            &opts,
+            work.path(),
+            ACCOUNT,
+            &NOT_STOPPED,
+            Log::Print,
+        )
+        .unwrap()
+        .unwrap();
 
         let made = pass.process_rows(&opened.db, &rows).await;
 
@@ -1305,9 +1380,16 @@ fn nothing_is_stored_once_the_account_directory_is_gone() {
             .unwrap();
         let opts = ProcessAssetsOptions::default();
         let work = tempfile::tempdir().unwrap();
-        let pass = AccountPass::new(&opened.cfg, &opts, work.path(), ACCOUNT, Log::Print)
-            .unwrap()
-            .unwrap();
+        let pass = AccountPass::new(
+            &opened.cfg,
+            &opts,
+            work.path(),
+            ACCOUNT,
+            &NOT_STOPPED,
+            Log::Print,
+        )
+        .unwrap()
+        .unwrap();
         let account_dir = opened.cfg.paths.data_dir.join(ACCOUNT.to_string());
         let source = pass.assets_dir.join(&rows[0].assets_path);
         let kept = work.path().join("original.png");
@@ -1381,9 +1463,16 @@ async fn a_live_pass_keeps_its_work_directory_young() {
         .set_modified(two_days_ago)
         .unwrap();
     let opts = ProcessAssetsOptions::default();
-    let pass = AccountPass::new(&opened.cfg, &opts, work.path(), ACCOUNT, Log::Print)
-        .unwrap()
-        .unwrap();
+    let pass = AccountPass::new(
+        &opened.cfg,
+        &opts,
+        work.path(),
+        ACCOUNT,
+        &NOT_STOPPED,
+        Log::Print,
+    )
+    .unwrap()
+    .unwrap();
 
     pass.process_rows(&opened.db, &rows).await;
 

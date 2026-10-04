@@ -7,8 +7,8 @@ are defined in `CONTEXT.md`. The maintainer decided the five rules below on
 #1029, on 2026-10-04; each carries its reason.
 
 The server side of rule 1 is built (#1658), and so are rules 3 and 4, the
-Thumbnails and Previews the server makes after each import (#1659). The web
-app's half of rules 1, 2 and 5 is #1660.
+Thumbnails and Previews the server makes after each import (#1659), and the
+web app's half of rules 1, 2 and 5 (#1660).
 
 Every rule holds for the server in Docker and for the server the desktop app
 starts alike. They are one binary, and no rule here depends on which one
@@ -58,6 +58,11 @@ exact rather than generous: AAC audio in an `.m4a` plays in most browsers and
 still gets a Preview, because a list that holds a type most browsers show
 would fail in the one that does not, and an MP3 copy of a voice note costs
 little.
+
+The web app reads the rule in `fullVersion` (`web/src/lib/attachmentMedia.ts`).
+It opens the Preview when the attachment has one (`preview_mime_type`), the original when its type is one of the six above, and neither otherwise.
+It reads the type in the server's order for a stored original, which is named by its fingerprint alone and has no extension: the type the import declared, then the extension of the export's name for the file, then of its path in the export.
+It cannot read an MP4's codec, so a HEVC MP4 plays its original until its Preview is made, and its Preview after.
 
 Why: the viewer used to fetch the original and fall back to the Preview only
 when the browser failed to show it. The result depended on the browser, so a
@@ -124,11 +129,23 @@ server's log, and `process-assets` tries it again. An Asset a later Import
 Run queues while the pass works on it is queued again rather than dropped,
 so the new run's rows get the versions too. The pass holds no database
 connection while ffmpeg runs, and writes its part-made files in a work
-directory under the data directory, which the next pass removes when a
-stopped server left it behind. Nothing is stored for an account deleted
-meanwhile. A version made for an attachment deleted meanwhile is named by
-no row, and the sweep at the next Import Run's end removes it once it is an
-hour old, the grace that keeps another pass's file with the same bytes.
+directory under the data directory. A server that stops, on Ctrl-C or
+SIGTERM, kills the ffmpeg the pass runs and waits for it, removes the work
+directory, and leaves the Asset queued for its next start. A Demo Account
+build the server is running when it stops has its ffmpeg killed the same
+way, and the part-built Demo Account is removed. `process-assets` stopped
+the same way kills its ffmpeg, removes its work directory and fails; a
+second Ctrl-C or SIGTERM ends it at once and leaves its work directory for
+the next pass. A process that is killed does none of this. The next pass
+removes the work directory it left behind. Nothing is stored for an account
+deleted meanwhile. A version made for an attachment deleted meanwhile is
+named by no row, and the sweep at the next Import Run's end removes it once
+it is an hour old, the grace that keeps another pass's file with the same
+bytes.
+
+Why stop the conversion: ffmpeg is a process of its own, and one the server
+does not stop goes on converting after the server has stopped, using the
+computer for work nothing will record.
 
 Why a table: the queue outlives the process, so a server stopped part-way
 works through what was left when it starts again, with nothing to redo and no

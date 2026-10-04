@@ -197,7 +197,7 @@ fn batch_naming(sha: &str) -> String {
     );
     format!(
         "{}\n{message}\n",
-        r#"{"schema_version":6,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550123","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550123","display_name":null}],"stats":{"message_count":1,"attachment_count":1,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}"#,
+        r#"{"schema_version":7,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550123","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550123","display_name":null}],"stats":{"message_count":1,"attachment_count":1,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}"#,
     )
 }
 
@@ -224,6 +224,7 @@ async fn a_file_head_reported_present_survives_an_empty_trash_before_the_batch()
     let old = seed(&fixture, &alice, "+15555550177").await;
     {
         let mut conn = fixture.conn().await;
+        let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
         sqlx::query(
             "INSERT INTO attachments (message_id, sha256, assets_path)
              SELECT id, $2, $3 FROM messages WHERE conversation_id = $1",
@@ -231,9 +232,10 @@ async fn a_file_head_reported_present_survives_an_empty_trash_before_the_batch()
         .bind(old)
         .bind(sha.as_str())
         .bind(crate::assets_api::shard_rel_path(&sha, ""))
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
+        tx.commit().await.unwrap();
     }
     trash(&fixture, &alice, Trashable::Conversation(old)).await;
 
@@ -400,14 +402,16 @@ async fn a_short_stored_fingerprint_does_not_stop_empty_trash() {
     let doomed = seed(&fixture, &alice, "+15555550180").await;
     {
         let mut conn = fixture.conn().await;
+        let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
         sqlx::query(
             "INSERT INTO attachments (message_id, sha256, assets_path)
              SELECT id, 'a', 'a' FROM messages WHERE conversation_id = $1",
         )
         .bind(doomed)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
+        tx.commit().await.unwrap();
     }
     trash(&fixture, &alice, Trashable::Conversation(doomed)).await;
 
@@ -419,7 +423,7 @@ async fn a_short_stored_fingerprint_does_not_stop_empty_trash() {
 /// attachment is the file `sha`.
 fn batch_from_source(source: &str, handle: &str, sha: &str) -> String {
     let header = format!(
-        r#"{{"schema_version":6,"export":{{"source":"{source}","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{handle}","conversation_type":"individual","group_title":null,"participants":[{{"identity":"{handle}","display_name":null}}],"stats":{{"message_count":1,"attachment_count":1,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
+        r#"{{"schema_version":7,"export":{{"source":"{source}","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{handle}","conversation_type":"individual","group_title":null,"participants":[{{"identity":"{handle}","display_name":null}}],"stats":{{"message_count":1,"attachment_count":1,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
     );
     let message = format!(
         r#"{{"guid":"g-{source}","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"{handle}","sender_display_name":null,"subject":null,"text":"from {source}","attachments":[{{"path":"attachments/photo.jpg","original_name":"photo.jpg","mime_type":"image/jpeg","digest_sha256":"{sha}","is_sticker":false,"transcription":null,"sticker_effect":null}}],"imessage":null,"source":null}}"#

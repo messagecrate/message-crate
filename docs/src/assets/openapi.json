@@ -14152,6 +14152,14 @@
           }
         }
       },
+      "Deletion": {
+        "type": "string",
+        "description": "Why a message's content is gone in the app it came from.",
+        "enum": [
+          "deleted_in_source_app",
+          "unsent"
+        ]
+      },
       "DemoAccount": {
         "type": "object",
         "description": "The Demo Account, as the owner manages it.",
@@ -15226,6 +15234,17 @@
           "conversation": {
             "$ref": "#/components/schemas/MessageConversation",
             "description": "The conversation this message belongs to."
+          },
+          "deletion": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Deletion",
+                "description": "`deleted_in_source_app` for a message the person deleted in the\napp it came from before the backup, `unsent` for one its sender\ntook back; `null` for neither. The message is listed and found\nlike any other either way."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "guid": {
             "type": "string",
@@ -17165,6 +17184,17 @@
                 "conversation": {
                   "$ref": "#/components/schemas/MessageConversation",
                   "description": "The conversation this message belongs to."
+                },
+                "deletion": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Deletion",
+                      "description": "`deleted_in_source_app` for a message the person deleted in the\napp it came from before the backup, `unsent` for one its sender\ntook back; `null` for neither. The message is listed and found\nlike any other either way."
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "guid": {
                   "type": "string",

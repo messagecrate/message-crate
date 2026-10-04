@@ -1353,6 +1353,7 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
     );
 
     let demo_build = state.demo_build.clone();
+    let media_queue = state.media_queue.clone();
     let app = http_app(state);
     let listener = tokio::net::TcpListener::bind(&bind).await?;
     eprintln!(
@@ -1362,29 +1363,57 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
     eprintln!(
         "  routes: `message-crate-server dump-openapi` lists them all; set [server] openapi_ui = true for /docs"
     );
-    let served = serve_until_shutdown(listener, app).await;
+    let on_signal = {
+        let demo_build = demo_build.clone();
+        let media_queue = media_queue.clone();
+        move || {
+            media_queue.ask_to_stop();
+            demo_build.stop_conversions();
+        }
+    };
+    let served = serve_until_shutdown(listener, app, on_signal).await;
     // A Demo Account build the owner started would otherwise end part-way
     // when the process exits (#1215).
     demo_build.stop().await;
+    // An ffmpeg the pass started would otherwise go on converting after the
+    // process exits (#1729). The pass was told to stop when the signal came;
+    // this waits for it.
+    media_queue.stop().await;
     served?;
     Ok(())
 }
 
 /// Serve `app` on `listener` until a shutdown signal arrives, then stop
 /// accepting connections and return once the requests in flight have finished.
+///
+/// `on_signal` runs as the signal arrives, before the requests drain. The
+/// server stops its conversions there: Ctrl-C in a terminal reaches the
+/// ffmpeg they run as well, and a conversion not yet told to stop would read
+/// that ffmpeg's exit as a failure, take the Asset off the queue, and start
+/// the next one (#1729).
 async fn serve_until_shutdown(
     listener: tokio::net::TcpListener,
     app: Router,
+    on_signal: impl FnOnce() + Send + 'static,
 ) -> std::io::Result<()> {
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(async move {
+            shutdown_signal().await;
+            on_signal();
+        })
         .await
 }
 
 /// Resolve on Ctrl-C, or on SIGTERM on Unix, so axum drains in-flight
-/// requests before exiting. `docker stop` and a service manager send SIGTERM,
-/// not Ctrl-C (#1218).
+/// requests before exiting.
 async fn shutdown_signal() {
+    stop_requested().await;
+    eprintln!("shutting down");
+}
+
+/// Resolve on Ctrl-C, or on SIGTERM on Unix. `docker stop` and a service
+/// manager send SIGTERM, not Ctrl-C (#1218).
+pub(crate) async fn stop_requested() {
     let ctrl_c = async {
         let _ = tokio::signal::ctrl_c().await;
     };
@@ -1408,7 +1437,6 @@ async fn shutdown_signal() {
         () = ctrl_c => {}
         () = terminate => {}
     }
-    eprintln!("shutting down");
 }
 
 /// Report process liveness.

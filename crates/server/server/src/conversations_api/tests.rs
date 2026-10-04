@@ -6,8 +6,8 @@ use sqlx::SqliteConnection;
 
 use crate::db::{account_profile, imports};
 use crate::test_support::{
-    RegisteredAccount, TestFixture, fixture_with_account, register_via_api, seed_one_message,
-    test_fixture,
+    MessageRow, RegisteredAccount, TestFixture, fixture_with_account, register_via_api,
+    seed_one_message, test_fixture,
 };
 
 /// A newest-first page — the default ordering, which is what most of these
@@ -97,15 +97,13 @@ async fn conversations_setup() -> (sqlx::SqlitePool, TestFixture, i64) {
     .execute(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
-         ) VALUES (1, $1, 'imessage', 'msg-18', '2024-06-01T12:00:00Z', 0, 0, 'hello')",
-    )
-    .bind(account)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    MessageRow {
+        timestamp: "2024-06-01T12:00:00Z",
+        body: Some("hello"),
+        ..MessageRow::new(account, 1)
+    }
+    .insert(&mut conn)
+    .await;
     let pool = fixture.state.db.clone();
     (pool, fixture, account)
 }
@@ -189,15 +187,14 @@ async fn list_conversations_finds_a_handle_across_platforms() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
-         ) VALUES (10, $1, 'whatsapp', 'msg-17', '2024-08-01T12:00:00Z', 0, 0, 'wa hello')",
-    )
-    .bind(account)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    MessageRow {
+        source: "whatsapp",
+        timestamp: "2024-08-01T12:00:00Z",
+        body: Some("wa hello"),
+        ..MessageRow::new(account, 10)
+    }
+    .insert(&mut conn)
+    .await;
 
     // `identity:` matches the raw value on any platform; it does not
     // distinguish which platform a handle belongs to (there is no search
@@ -225,17 +222,19 @@ async fn list_conversations_sorts_by_date_or_message_count() {
     // the busiest thread but not the most recent one. Conversation 2 gets a
     // single *newer* message. Date order and count order then disagree,
     // which is what makes this test able to tell them apart.
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
-         ) VALUES
-            (1, $1, 'imessage', 'msg-15', '2024-05-01T12:00:00Z', 0, 1, 'older'),
-            (1, $1, 'imessage', 'msg-16', '2024-05-02T12:00:00Z', 0, 2, 'older still')",
-    )
-    .bind(account)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    for (timestamp, sort_order, body) in [
+        ("2024-05-01T12:00:00Z", 1, "older"),
+        ("2024-05-02T12:00:00Z", 2, "older still"),
+    ] {
+        MessageRow {
+            timestamp,
+            sort_order,
+            body: Some(body),
+            ..MessageRow::new(account, 1)
+        }
+        .insert(&mut conn)
+        .await;
+    }
 
     let peer2 =
         account_profile::link_account_handle(&mut conn, account, "+15555550143", HandleType::Phone)
@@ -251,15 +250,13 @@ async fn list_conversations_sorts_by_date_or_message_count() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
-         ) VALUES (2, $1, 'imessage', 'msg-14', '2024-07-01T12:00:00Z', 0, 0, 'newest')",
-    )
-    .bind(account)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    MessageRow {
+        timestamp: "2024-07-01T12:00:00Z",
+        body: Some("newest"),
+        ..MessageRow::new(account, 2)
+    }
+    .insert(&mut conn)
+    .await;
 
     async fn ids_for(
         pool: &sqlx::SqlitePool,
@@ -351,15 +348,13 @@ async fn list_conversations_paginates() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
-         ) VALUES (2, $1, 'imessage', 'msg-13', '2024-07-01T12:00:00Z', 0, 0, 'later')",
-    )
-    .bind(account)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    MessageRow {
+        timestamp: "2024-07-01T12:00:00Z",
+        body: Some("later"),
+        ..MessageRow::new(account, 2)
+    }
+    .insert(&mut conn)
+    .await;
 
     let page0 = list_conversations(&mut conn, account, "", 1, 0)
         .await
@@ -494,15 +489,13 @@ async fn list_conversations_filters_by_contact_and_type() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
-         ) VALUES (9, $1, 'imessage', 'msg-12', '2024-08-01T12:00:00Z', 0, 0, 'group')",
-    )
-    .bind(account)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    MessageRow {
+        timestamp: "2024-08-01T12:00:00Z",
+        body: Some("group"),
+        ..MessageRow::new(account, 9)
+    }
+    .insert(&mut conn)
+    .await;
 
     // Group that includes Sam (distinct chat handle; Sam is a participant).
     let group_chat =
@@ -527,15 +520,13 @@ async fn list_conversations_filters_by_contact_and_type() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
-         ) VALUES (3, $1, 'imessage', 'msg-11', '2024-09-01T12:00:00Z', 0, 0, 'hi group')",
-    )
-    .bind(account)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    MessageRow {
+        timestamp: "2024-09-01T12:00:00Z",
+        body: Some("hi group"),
+        ..MessageRow::new(account, 3)
+    }
+    .insert(&mut conn)
+    .await;
 
     let all = list_conversations(
         &mut conn,
@@ -697,15 +688,13 @@ async fn list_conversations_filters_by_participant_count() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
-         ) VALUES (10, $1, 'imessage', 'msg-10', '2024-10-01T12:00:00Z', 0, 0, 'hi')",
-    )
-    .bind(account)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    MessageRow {
+        timestamp: "2024-10-01T12:00:00Z",
+        body: Some("hi"),
+        ..MessageRow::new(account, 10)
+    }
+    .insert(&mut conn)
+    .await;
 
     let eq2 = list_conversations(&mut conn, account, "participants:=2", 50, 0)
         .await
@@ -774,15 +763,13 @@ async fn list_conversations_participants_eq_three_on_built_fixture() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
-         ) VALUES (20, $1, 'imessage', 'msg-9', '2024-11-01T12:00:00Z', 0, 0, 'hi trio')",
-    )
-    .bind(account)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    MessageRow {
+        timestamp: "2024-11-01T12:00:00Z",
+        body: Some("hi trio"),
+        ..MessageRow::new(account, 20)
+    }
+    .insert(&mut conn)
+    .await;
 
     let page = list_conversations(&mut conn, account, "participants:=3", 50, 0)
         .await
@@ -877,28 +864,22 @@ async fn list_conversations_filters_by_import_id() {
     .await
     .unwrap();
 
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body,
-            import_id
-         ) VALUES (1, $1, 'imessage', 'msg-8', '2024-06-01T12:00:00Z', 0, 0, 'hello', $2)",
-    )
-    .bind(account)
-    .bind(import_a)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body,
-            import_id
-         ) VALUES (2, $1, 'imessage', 'msg-7', '2024-07-01T12:00:00Z', 0, 0, 'later', $2)",
-    )
-    .bind(account)
-    .bind(import_b)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    MessageRow {
+        timestamp: "2024-06-01T12:00:00Z",
+        body: Some("hello"),
+        import_id: Some(import_a),
+        ..MessageRow::new(account, 1)
+    }
+    .insert(&mut conn)
+    .await;
+    MessageRow {
+        timestamp: "2024-07-01T12:00:00Z",
+        body: Some("later"),
+        import_id: Some(import_b),
+        ..MessageRow::new(account, 2)
+    }
+    .insert(&mut conn)
+    .await;
 
     let a = list_conversations(
         &mut conn,
@@ -1012,36 +993,26 @@ async fn duplicate_only_threads_have_no_last_message_date_and_sort_last() {
     }
 
     // Conversation 4 keeps a real message, and it belongs to the import.
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body,
-            import_id
-         ) VALUES (4, $1, 'imessage', 'msg-6', '2024-05-01T12:00:00Z', 0, 0, 'canonical', $2)",
-    )
-    .bind(account)
-    .bind(import_a)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
-    let winner_id: i64 = sqlx::query_scalar("SELECT id FROM messages WHERE conversation_id = 4")
-        .fetch_one(&mut *conn)
-        .await
-        .unwrap();
+    let winner_id = MessageRow {
+        timestamp: "2024-05-01T12:00:00Z",
+        body: Some("canonical"),
+        import_id: Some(import_a),
+        ..MessageRow::new(account, 4)
+    }
+    .insert(&mut conn)
+    .await;
 
     // Conversation 3's only message is a duplicate, so its last_message_at
     // is NULL even though its timestamp is the later of the two.
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body,
-            import_id, duplicate_of
-         ) VALUES (3, $1, 'imessage', 'msg-5', '2024-06-01T12:00:00Z', 0, 0, 'dup', $2, $3)",
-    )
-    .bind(account)
-    .bind(import_a)
-    .bind(winner_id)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    MessageRow {
+        timestamp: "2024-06-01T12:00:00Z",
+        body: Some("dup"),
+        import_id: Some(import_a),
+        duplicate_of: Some(winner_id),
+        ..MessageRow::new(account, 3)
+    }
+    .insert(&mut conn)
+    .await;
 
     async fn ids_for(
         pool: &sqlx::SqlitePool,
@@ -1228,33 +1199,24 @@ async fn list_conversations_import_id_includes_duplicate_only_thread() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
-         ) VALUES (4, $1, 'imessage', 'msg-4', '2024-05-01T12:00:00Z', 0, 0, 'canonical')",
-    )
-    .bind(account)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
-    let winner_id: i64 = sqlx::query_scalar("SELECT id FROM messages WHERE conversation_id = 4")
-        .fetch_one(&mut *conn)
-        .await
-        .unwrap();
+    let winner_id = MessageRow {
+        timestamp: "2024-05-01T12:00:00Z",
+        body: Some("canonical"),
+        ..MessageRow::new(account, 4)
+    }
+    .insert(&mut conn)
+    .await;
 
     // Only message in conversation 3 from import A is a duplicate.
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body,
-            import_id, duplicate_of
-         ) VALUES (3, $1, 'imessage', 'msg-3', '2024-06-01T12:00:00Z', 0, 0, 'dup', $2, $3)",
-    )
-    .bind(account)
-    .bind(import_a)
-    .bind(winner_id)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    MessageRow {
+        timestamp: "2024-06-01T12:00:00Z",
+        body: Some("dup"),
+        import_id: Some(import_a),
+        duplicate_of: Some(winner_id),
+        ..MessageRow::new(account, 3)
+    }
+    .insert(&mut conn)
+    .await;
 
     let by_import = list_conversations(
         &mut conn,
@@ -2014,20 +1976,15 @@ async fn insert_message(
     sort_order: i64,
     body: &str,
 ) -> i64 {
-    sqlx::query_scalar(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
-         ) VALUES ($1, $2, 'imessage', $6, $3, 1, $4, $5) RETURNING id",
-    )
-    .bind(conversation_id)
-    .bind(account_id)
-    .bind(timestamp)
-    .bind(sort_order)
-    .bind(body)
-    .bind(crate::test_support::unique_guid())
-    .fetch_one(&mut *conn)
+    MessageRow {
+        timestamp,
+        is_from_me: true,
+        sort_order,
+        body: Some(body),
+        ..MessageRow::new(account_id, conversation_id)
+    }
+    .insert(conn)
     .await
-    .unwrap()
 }
 
 #[tokio::test]
@@ -2096,16 +2053,13 @@ async fn conversation_messages_say_which_were_sent_and_which_received() {
         "sent",
     )
     .await;
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
-         ) VALUES ($1, $2, 'imessage', 'msg-1', '2024-01-02T00:00:00Z', 0, 0, 'received')",
-    )
-    .bind(conversation_id)
-    .bind(user.account_id)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    MessageRow {
+        timestamp: "2024-01-02T00:00:00Z",
+        body: Some("received"),
+        ..MessageRow::new(user.account_id, conversation_id)
+    }
+    .insert(&mut conn)
+    .await;
     drop(conn);
 
     let page: serde_json::Value = crate::test_support::get_json(
@@ -2206,32 +2160,29 @@ async fn conversation_messages_page_and_total_is_the_whole_count() {
     assert_eq!(texts, vec!["msg2", "msg3"]);
 }
 
-/// Seed `count` messages into one conversation in a single statement, body
-/// `msg{n}`, guid `{prefix}-{n}` from one [`unique_guid`] and `sort_order` `n`
-/// from 0, all at one timestamp, so the conversation's order is `n`.
-///
-/// [`unique_guid`]: crate::test_support::unique_guid
+/// Seed `count` messages into one conversation in one write transaction, body
+/// `msg{n}` and `sort_order` `n` from 0, all at one timestamp, so the
+/// conversation's order is `n`.
 async fn insert_many_messages(
     conn: &mut SqliteConnection,
     conversation_id: i64,
     account_id: i64,
     count: i64,
 ) {
-    sqlx::query(
-        "WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i + 1 FROM n WHERE i + 1 < $3)
-         INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
-         )
-         SELECT $1, $2, 'imessage', $4 || '-' || i, '2024-01-01T00:00:00Z', 1, i, 'msg' || i
-         FROM n",
-    )
-    .bind(conversation_id)
-    .bind(account_id)
-    .bind(count)
-    .bind(crate::test_support::unique_guid())
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    let mut tx = crate::db::begin_write(conn).await.unwrap();
+    for i in 0..count {
+        let body = format!("msg{i}");
+        MessageRow {
+            timestamp: "2024-01-01T00:00:00Z",
+            is_from_me: true,
+            sort_order: i,
+            body: Some(&body),
+            ..MessageRow::new(account_id, conversation_id)
+        }
+        .insert_in(&mut tx)
+        .await;
+    }
+    tx.commit().await.unwrap();
 }
 
 /// The conversation page reads a thread by stepping `offset` forward. The
@@ -2463,12 +2414,14 @@ async fn a_page_starts_at_one_place_beside_a_message_of_this_conversation() {
     // A duplicate is never shown in the conversation, so no page sits beside it.
     let duplicate = message_id(&fixture, "msg2").await;
     let mut conn = fixture.conn().await;
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query("UPDATE messages SET duplicate_of = $1 WHERE id = $2")
         .bind(id)
         .bind(duplicate)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
+    tx.commit().await.unwrap();
     drop(conn);
 
     for (query, named) in [
@@ -2703,15 +2656,17 @@ async fn sources_fixture() -> (TestFixture, RegisteredAccount, i64) {
     .fetch_one(&mut *conn)
     .await
     .unwrap();
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query(
         "UPDATE messages SET duplicate_of = $1
          WHERE conversation_id = $2 AND source = 'sms' AND body = 'first'",
     )
     .bind(original)
     .bind(conversation_id)
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await
     .unwrap();
+    tx.commit().await.unwrap();
     drop(conn);
     (fixture, alice, conversation_id)
 }

@@ -208,24 +208,18 @@ pub(crate) fn msg<'a>(
 }
 
 pub(crate) async fn message(conn: &mut SqliteConnection, account: i64, m: Msg<'_>) -> i64 {
-    sqlx::query_scalar(
-        "INSERT INTO messages (conversation_id, account_id, source, guid, timestamp, is_from_me,
-                               sender_handle_id, service, subject, body, sort_order)
-         VALUES ($1, $2, $3, $10, $4, $5, $6, $7, $8, $9, 0) RETURNING id",
-    )
-    .bind(m.conversation)
-    .bind(account)
-    .bind(m.source)
-    .bind(m.timestamp)
-    .bind(i64::from(m.from_me))
-    .bind(m.sender)
-    .bind(m.service)
-    .bind(m.subject)
-    .bind(m.body)
-    .bind(crate::test_support::unique_guid())
-    .fetch_one(&mut *conn)
+    crate::test_support::MessageRow {
+        source: m.source,
+        timestamp: m.timestamp,
+        is_from_me: m.from_me,
+        sender_handle_id: m.sender,
+        service: Some(m.service),
+        subject: m.subject,
+        body: m.body,
+        ..crate::test_support::MessageRow::new(account, m.conversation)
+    }
+    .insert(conn)
     .await
-    .unwrap()
 }
 
 pub(crate) async fn attachment(
@@ -235,6 +229,7 @@ pub(crate) async fn attachment(
     mime: &str,
     size: i64,
 ) {
+    let mut tx = crate::db::begin_write(conn).await.unwrap();
     sqlx::query(
         "INSERT INTO attachments (message_id, original_name, mime_type, size_bytes)
          VALUES ($1, $2, $3, $4)",
@@ -243,9 +238,10 @@ pub(crate) async fn attachment(
     .bind(name)
     .bind(mime)
     .bind(size)
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await
     .unwrap();
+    tx.commit().await.unwrap();
 }
 
 pub(crate) async fn group(
@@ -649,12 +645,14 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
         ),
     )
     .await;
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query("UPDATE messages SET duplicate_of = $1 WHERE id = $2")
         .bind(f.dup_only_msg)
         .bind(f.dup_only_msg)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
+    tx.commit().await.unwrap();
 
     f.family = group(&mut conn, a, "Family", &[f.ana]).await;
     f.archive = tag(&mut conn, a, "Archive", &[f.archive_group]).await;
@@ -1830,10 +1828,11 @@ mod people_words {
         .fetch_one(&mut *conn)
         .await
         .unwrap();
+        let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
         sqlx::query("UPDATE messages SET import_id = $1 WHERE id = $2")
             .bind(run_id)
             .bind(f.bo_2023)
-            .execute(&mut *conn)
+            .execute(&mut *tx)
             .await
             .unwrap();
         // The duplicate-only message is part of this run too: a search about
@@ -1842,9 +1841,10 @@ mod people_words {
         sqlx::query("UPDATE messages SET import_id = $1 WHERE id = $2")
             .bind(run_id)
             .bind(f.dup_only_msg)
-            .execute(&mut *conn)
+            .execute(&mut *tx)
             .await
             .unwrap();
+        tx.commit().await.unwrap();
         assert_eq!(
             run(&mut conn, ListKind::Messages, "import:last").await,
             sorted(vec![f.bo_2023, f.dup_only_msg])
@@ -1965,7 +1965,7 @@ mod kind_words {
     ) -> (i64, i64) {
         let path = dir.join(format!("{chat}.jsonl"));
         let header = serde_json::json!({
-            "schema_version": 6,
+            "schema_version": 7,
             "export": {"source": source, "tool": "test", "tool_version": "0",
                        "owner_identity": null, "owner_display_name": null},
             "conversation": {
@@ -2030,12 +2030,14 @@ mod kind_words {
         }
         for (i, (_, copy)) in copies.iter().enumerate() {
             let (_, original) = kept[(i + 1) % kept.len()];
+            let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
             sqlx::query("UPDATE messages SET duplicate_of = $1 WHERE id = $2")
                 .bind(original)
                 .bind(copy)
-                .execute(&mut *conn)
+                .execute(&mut *tx)
                 .await
                 .unwrap();
+            tx.commit().await.unwrap();
         }
         for (i, source) in IMPORT_SOURCES.iter().enumerate() {
             let q = format!("source:{source}");
@@ -2700,12 +2702,14 @@ mod measure_words {
             ),
         )
         .await;
+        let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
         sqlx::query("UPDATE messages SET duplicate_of = $1 WHERE id = $2")
             .bind(f.jane_2018)
             .bind(jane_dup)
-            .execute(&mut *conn)
+            .execute(&mut *tx)
             .await
             .unwrap();
+        tx.commit().await.unwrap();
         message(
             &mut conn,
             a,

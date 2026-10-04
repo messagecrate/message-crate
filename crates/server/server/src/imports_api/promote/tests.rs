@@ -9,7 +9,7 @@ async fn import_one_message(conn: &mut SqliteConnection, dir: &std::path::Path, 
     std::fs::write(
         &path,
         format!(
-            r#"{{"schema_version":6,"export":{{"source":"sms-backup-restore","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"+15555550143","conversation_type":"individual","group_title":null,"participants":[{{"identity":"+15555550143","display_name":null}}],"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}
+            r#"{{"schema_version":7,"export":{{"source":"sms-backup-restore","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"+15555550143","conversation_type":"individual","group_title":null,"participants":[{{"identity":"+15555550143","display_name":null}}],"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}
 {{"guid":"{guid}","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550143","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}}
 "#
         ),
@@ -85,16 +85,35 @@ async fn an_import_analyzes_import_tables_before_begin() {
 
 #[tokio::test]
 async fn promote_message_map_ignores_other_accounts() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
-    let mut conn = pool.acquire().await.unwrap();
-    for statement in [
-        "CREATE TABLE messages (id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL)",
-        "INSERT INTO messages (id, account_id) VALUES
-            (1, 7),
-            (2, 8)",
-    ] {
-        sqlx::query(statement).execute(&mut *conn).await.unwrap();
+    use crate::test_support::{MessageRow, SeedConversation, seed_conversation, test_fixture};
+
+    let fixture = test_fixture().await;
+    let other_account = TEST_ACCOUNT + 1;
+    for (account_id, message_id) in [(TEST_ACCOUNT, 1), (other_account, 2)] {
+        fixture
+            .account_with_id(account_id, &format!("user{account_id}"))
+            .await;
+        let conversation_id = seed_conversation(
+            &fixture.state,
+            &SeedConversation {
+                account_id,
+                handle: "+15555550100",
+                conversation_type: "individual",
+                group_title: None,
+                source_file: "t.json",
+                messages: &[],
+            },
+        )
+        .await;
+        let mut conn = fixture.conn().await;
+        MessageRow {
+            id: Some(message_id),
+            ..MessageRow::new(account_id, conversation_id)
+        }
+        .insert(&mut conn)
+        .await;
     }
+    let mut conn = fixture.conn().await;
     let mut promote = Promote {
         tx: &mut conn,
         account_id: TEST_ACCOUNT,

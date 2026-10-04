@@ -222,6 +222,8 @@ pub struct StagingMessage<'a> {
     pub thread_originator_part: Option<i64>,
     /// Replies hanging off this message.
     pub num_replies: i64,
+    /// Deleted in the source app, Unsent, or `None` for neither.
+    pub deletion: Option<message_ir::Deletion>,
     /// Stable order within the conversation when timestamps collide.
     pub sort_order: i64,
     /// Import run that staged the row.
@@ -271,7 +273,7 @@ pub struct StagingTapback {
 }
 
 /// Bind counts, in lockstep with the `INSERT` column lists below.
-const MESSAGE_BIND_COLUMNS: usize = 18;
+const MESSAGE_BIND_COLUMNS: usize = 19;
 const ATTACHMENT_BIND_COLUMNS: usize = 10;
 const TAPBACK_BIND_COLUMNS: usize = 6;
 
@@ -297,7 +299,8 @@ pub async fn insert_messages(
         INSERT INTO staging_messages (
             conversation_id, account_id, source, guid, timestamp, is_from_me,
             sender_handle_id, owner_handle_id, service, subject, body, is_announcement, is_reply,
-            thread_originator_guid, thread_originator_part, num_replies, sort_order, import_id
+            thread_originator_guid, thread_originator_part, num_replies, deletion, sort_order,
+            import_id
         ) VALUES {}
         ON CONFLICT DO NOTHING
         RETURNING id, sort_order
@@ -323,6 +326,7 @@ pub async fn insert_messages(
             .bind(row.thread_originator_guid)
             .bind(row.thread_originator_part)
             .bind(row.num_replies)
+            .bind(row.deletion.map(message_ir::Deletion::as_str))
             .bind(row.sort_order)
             .bind(row.import_id);
     }
@@ -687,13 +691,14 @@ const INSERT_MESSAGES_FROM_STAGING: &str = r"
         INSERT INTO messages (
             conversation_id, account_id, source, guid, timestamp, is_from_me,
             sender_handle_id, owner_handle_id, service, subject, body, is_announcement, is_reply,
-            thread_originator_guid, thread_originator_part, num_replies, sort_order, import_id
+            thread_originator_guid, thread_originator_part, num_replies, deletion, sort_order,
+            import_id
         )
         SELECT
             cm.prod_id, sm.account_id, sm.source, sm.guid, sm.timestamp, sm.is_from_me,
             sm.sender_handle_id, sm.owner_handle_id, sm.service, sm.subject, sm.body, sm.is_announcement, sm.is_reply,
-            sm.thread_originator_guid, sm.thread_originator_part, sm.num_replies, sm.sort_order,
-            sm.import_id
+            sm.thread_originator_guid, sm.thread_originator_part, sm.num_replies, sm.deletion,
+            sm.sort_order, sm.import_id
         FROM staging_messages sm
         JOIN _promote_conv_map cm ON cm.staging_id = sm.conversation_id
         WHERE sm.account_id = $1
@@ -843,6 +848,33 @@ pub async fn write_message_map(
     .execute(&mut *conn)
     .await?;
     Ok(())
+}
+
+/// Give each stored message the mark its staged row carries, through
+/// `_promote_msg_map`. An append-mode import skips a message production
+/// already holds, so a message imported before it was deleted or unsent
+/// takes the mark only here. A staged row with no mark leaves the stored
+/// mark as it is: a backup that does not say a message was deleted does not
+/// say it was restored. Returns how many messages changed.
+///
+/// # Errors
+///
+/// Returns an error when the update fails.
+pub async fn promote_deletion_marks(conn: &mut SqliteConnection) -> Result<u64> {
+    Ok(sqlx::query(
+        r"
+        UPDATE messages
+        SET deletion = sm.deletion
+        FROM _promote_msg_map mm
+        JOIN staging_messages sm ON sm.id = mm.staging_id
+        WHERE messages.id = mm.prod_id
+          AND sm.deletion IS NOT NULL
+          AND messages.deletion IS NOT sm.deletion
+        ",
+    )
+    .execute(&mut *conn)
+    .await?
+    .rows_affected())
 }
 
 /// What [`promote_attachments`] did.

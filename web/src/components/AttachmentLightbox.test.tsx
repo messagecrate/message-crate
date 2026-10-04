@@ -1,15 +1,21 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fetchAssetObjectUrl } from "../lib/serverApi";
+import { saveFile } from "../lib/saveFile";
+import { fetchAsset, fetchAssetObjectUrl } from "../lib/serverApi";
 import type { MessageAttachment } from "../lib/types";
+import { renderWithProviders } from "../test/providers";
 import { setupUser } from "../test/user";
 import AttachmentLightbox from "./AttachmentLightbox";
 
 vi.mock("../lib/serverApi", () => ({
-  fetchAssetObjectUrl: vi.fn().mockResolvedValue("blob:mock-url"),
+  fetchAsset: vi.fn(),
+  fetchAssetObjectUrl: vi.fn(),
 }));
+vi.mock("../lib/saveFile", () => ({ saveFile: vi.fn() }));
+
+const render = renderWithProviders;
 
 const items: MessageAttachment[] = [
   {
@@ -31,8 +37,17 @@ const items: MessageAttachment[] = [
 ];
 
 beforeEach(() => {
-  vi.mocked(fetchAssetObjectUrl).mockResolvedValue("blob:mock-url");
+  vi.mocked(fetchAssetObjectUrl).mockImplementation(
+    async (sha, options) => `blob:${options?.version ?? "original"}-${sha}`,
+  );
 });
+
+/** Each fetch of attachment bytes: whose, and which version. */
+function fetches(): { sha256: string; version: string | undefined }[] {
+  return vi
+    .mocked(fetchAssetObjectUrl)
+    .mock.calls.map(([sha256, options]) => ({ sha256, version: options?.version }));
+}
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -147,11 +162,17 @@ describe("AttachmentLightbox buttons", () => {
 });
 
 /**
- * Opening an attachment gives the original, at its full quality, even when
- * the conversation showed a preview. Only bytes the browser cannot draw fall
- * back to the preview, so a HEIC photo does not open as a broken image.
+ * The viewer chooses the version by the photo's type before it fetches a
+ * byte, never by a load that failed (`docs/architecture/media.md`, rule 2):
+ * the original of a type every browser shows, the Preview of one browsers
+ * often cannot, and neither while that Preview is not made yet.
  */
-describe("AttachmentLightbox and previews", () => {
+describe("AttachmentLightbox and the type rule", () => {
+  const jpeg: MessageAttachment = {
+    original_name: "IMG_0002.jpg",
+    mime_type: "image/jpeg",
+    sha256: "jjj",
+  };
   const heic: MessageAttachment = {
     original_name: "IMG_0001.heic",
     mime_type: "image/heic",
@@ -159,38 +180,118 @@ describe("AttachmentLightbox and previews", () => {
     preview_mime_type: "image/jpeg",
   };
 
-  it("opens the original of an attachment that has a preview", async () => {
+  it("opens a JPEG's original", async () => {
+    open(0, [jpeg]);
+
+    expect(await screen.findByRole("img", { name: "IMG_0002.jpg" })).toHaveAttribute(
+      "src",
+      "blob:original-jjj",
+    );
+    expect(fetches()).toEqual([{ sha256: "jjj", version: "original" }]);
+  });
+
+  it("opens a HEIC's Preview, and never asks for the original", async () => {
+    open(0, [heic]);
+
+    expect(await screen.findByRole("img", { name: "IMG_0001.heic" })).toHaveAttribute(
+      "src",
+      "blob:preview-ccc",
+    );
+    expect(fetches()).toEqual([{ sha256: "ccc", version: "preview" }]);
+  });
+
+  it("says a HEIC with no Preview yet cannot be shown, and offers the original as a download", async () => {
+    const user = setupUser();
+    const original = new Blob(["heic"]);
+    vi.mocked(fetchAsset).mockResolvedValue(original);
+    open(0, [{ ...heic, preview_mime_type: null }]);
+
+    expect(screen.getByText(/no copy a browser can show yet/)).toBeInTheDocument();
+    expect(fetchAssetObjectUrl).not.toHaveBeenCalled();
+
+    await user.click(screen.getAllByRole("button", { name: "Download IMG_0001.heic" })[0]);
+
+    await waitFor(() => expect(saveFile).toHaveBeenCalledWith("IMG_0001.heic", original));
+    expect(fetchAsset).toHaveBeenCalledWith("ccc", { version: "original" });
+  });
+
+  it("downloads the original of a photo it shows as its Preview", async () => {
+    const user = setupUser();
+    vi.mocked(fetchAsset).mockResolvedValue(new Blob(["heic"]));
     open(0, [heic]);
     await screen.findByRole("img", { name: "IMG_0001.heic" });
 
-    expect(fetchAssetObjectUrl).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(fetchAssetObjectUrl).mock.calls[0][1]?.preview).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Download IMG_0001.heic" }));
+
+    await waitFor(() => expect(fetchAsset).toHaveBeenCalledWith("ccc", { version: "original" }));
+    expect(saveFile).toHaveBeenCalled();
+  });
+});
+
+/**
+ * The viewer never shows an empty frame, and stepping through a
+ * conversation's photos does not wait on each one
+ * (`docs/architecture/media.md`, rule 5).
+ */
+describe("AttachmentLightbox while it loads", () => {
+  it("keeps the Thumbnail on screen until the full version is ready", async () => {
+    let finish: (url: string) => void = () => {};
+    vi.mocked(fetchAssetObjectUrl).mockImplementation((sha, options) =>
+      options?.version === "thumbnail"
+        ? Promise.resolve(`blob:thumbnail-${sha}`)
+        : new Promise((resolve) => {
+            finish = resolve;
+          }),
+    );
+    open(0, [{ ...items[0], thumbnail_mime_type: "image/jpeg" }]);
+
+    expect(await screen.findByRole("img", { name: "first.png" })).toHaveAttribute(
+      "src",
+      "blob:thumbnail-aaa",
+    );
+    expect(screen.getByText("Loading…")).toBeInTheDocument();
+
+    await act(async () => finish("blob:original-aaa"));
+
+    expect(screen.getByRole("img", { name: "first.png" })).toHaveAttribute(
+      "src",
+      "blob:original-aaa",
+    );
+    expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
   });
 
-  it("shows the preview when the browser cannot draw the original", async () => {
-    vi.mocked(fetchAssetObjectUrl).mockImplementation(async (_sha, options) =>
-      options?.preview ? "blob:preview" : "blob:original",
-    );
-    open(0, [heic]);
-    const original = await screen.findByRole("img", { name: "IMG_0001.heic" });
-    expect(original).toHaveAttribute("src", "blob:original");
+  it("fetches the next and the previous photo along with the one on screen", async () => {
+    const third: MessageAttachment = { ...items[0], original_name: "third.png", sha256: "ttt" };
+    open(1, [...items, third]);
+    await screen.findByRole("img", { name: "second.png" });
 
-    fireEvent.error(original);
-
-    await waitFor(() =>
-      expect(screen.getByRole("img", { name: "IMG_0001.heic" })).toHaveAttribute(
-        "src",
-        "blob:preview",
-      ),
+    expect(fetches()).toEqual(
+      expect.arrayContaining([
+        { sha256: "bbb", version: "original" },
+        { sha256: "ttt", version: "original" },
+        { sha256: "aaa", version: "original" },
+      ]),
     );
+    expect(fetches()).toHaveLength(3);
   });
 
-  it("asks for no preview when the attachment has none", async () => {
-    open(0);
-    fireEvent.error(await screen.findByRole("img", { name: "first.png" }));
+  it("finds the next photo already loaded when it steps to it", async () => {
+    const third: MessageAttachment = { ...items[0], original_name: "third.png", sha256: "ttt" };
+    const fourth: MessageAttachment = { ...items[0], original_name: "fourth.png", sha256: "fff" };
+    const all = [...items, third, fourth];
+    const spies = { onClose: vi.fn(), onPrev: vi.fn(), onNext: vi.fn() };
+    const { rerender } = render(<AttachmentLightbox items={all} currentIndex={0} {...spies} />);
+    await screen.findByRole("img", { name: "first.png" });
+    const before = fetches().length;
 
-    expect(fetchAssetObjectUrl).toHaveBeenCalledTimes(1);
-    expect(vi.mocked(fetchAssetObjectUrl).mock.calls[0][1]?.preview).toBe(false);
+    rerender(<AttachmentLightbox items={all} currentIndex={1} {...spies} />);
+
+    expect(screen.getByRole("img", { name: "second.png" })).toHaveAttribute(
+      "src",
+      "blob:original-bbb",
+    );
+    // Only the photo after the new one is fetched: the step itself fetched nothing.
+    expect(fetches().slice(before)).toEqual([{ sha256: "ttt", version: "original" }]);
   });
 });
 

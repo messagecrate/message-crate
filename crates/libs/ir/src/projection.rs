@@ -300,6 +300,8 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
             attachments,
             // No source that stages its rows here records reactions yet.
             reactions: Vec::new(),
+            // Nor a message deleted in the source app or unsent.
+            deletion: None,
             imessage: None,
             source: hooks.source(convo, msg).into_option(),
         });

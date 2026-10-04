@@ -12,11 +12,12 @@
 //! is ever written beside the original.
 
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 
 use anyhow::{Context, Result, bail};
 
 use crate::Kind;
-use crate::tools::{probe_video, require_ffmpeg, run_ffmpeg};
+use crate::tools::{probe_video, require_ffmpeg, run_ffmpeg_until};
 
 /// The longest side of a Thumbnail, in pixels. A smaller original keeps its
 /// own size.
@@ -96,11 +97,14 @@ pub fn browser_shows(src: &Path, media_type: Option<&str>) -> bool {
 /// Write the Thumbnail of the image or video `src` to `dest`, a JPEG: the
 /// image, or a video's first frame, scaled to at most
 /// [`THUMBNAIL_LONG_EDGE`] pixels on its long side and never enlarged.
+/// Setting `stop` kills ffmpeg and fails the call; what it wrote to `dest`
+/// is the caller's to remove.
 ///
 /// # Errors
 ///
-/// Returns an error when ffmpeg is missing or cannot read `src`.
-pub fn make_thumbnail(src: &Path, dest: &Path) -> Result<()> {
+/// Returns an error when ffmpeg is missing or cannot read `src`, or `stop`
+/// is set.
+pub fn make_thumbnail(src: &Path, dest: &Path, stop: &AtomicBool) -> Result<()> {
     require_ffmpeg()?;
     let edge = THUMBNAIL_LONG_EDGE;
     let args = vec![
@@ -123,7 +127,7 @@ pub fn make_thumbnail(src: &Path, dest: &Path) -> Result<()> {
         "mjpeg".into(),
         path_str(dest),
     ];
-    run_ffmpeg(&args).with_context(|| format!("thumbnail of {}", src.display()))
+    run_ffmpeg_until(&args, stop).with_context(|| format!("thumbnail of {}", src.display()))
 }
 
 /// The extension of the Preview of a `kind` file: what every browser shows.
@@ -139,12 +143,14 @@ pub fn preview_extension(kind: Kind) -> &'static str {
 /// Write the Preview of `src`, a `kind` file, to `dest`: a JPEG for an
 /// image, an MP4 with H.264 video (at most 1080p, 8-bit 4:2:0, which every
 /// browser plays) and AAC audio for a video, an MP3 for audio. `dest`
-/// carries [`preview_extension`]'s extension.
+/// carries [`preview_extension`]'s extension. Setting `stop` kills ffmpeg
+/// and fails the call; what it wrote to `dest` is the caller's to remove.
 ///
 /// # Errors
 ///
-/// Returns an error when ffmpeg is missing or cannot convert `src`.
-pub fn make_preview(src: &Path, kind: Kind, dest: &Path) -> Result<()> {
+/// Returns an error when ffmpeg is missing or cannot convert `src`, or
+/// `stop` is set.
+pub fn make_preview(src: &Path, kind: Kind, dest: &Path, stop: &AtomicBool) -> Result<()> {
     require_ffmpeg()?;
     let wanted = preview_extension(kind);
     if dest.extension().and_then(|e| e.to_str()) != Some(&wanted[1..]) {
@@ -203,7 +209,7 @@ pub fn make_preview(src: &Path, kind: Kind, dest: &Path) -> Result<()> {
         }
     }
     args.push(path_str(dest));
-    run_ffmpeg(&args).with_context(|| format!("preview of {}", src.display()))
+    run_ffmpeg_until(&args, stop).with_context(|| format!("preview of {}", src.display()))
 }
 
 fn path_str(path: &Path) -> String {

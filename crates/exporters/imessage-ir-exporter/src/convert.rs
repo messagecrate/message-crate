@@ -363,6 +363,7 @@ fn message_to_ir(
         text: record.text,
         attachments,
         reactions: record.reactions,
+        deletion: record.deletion,
         imessage: record.imessage.map(imessage_to_ir),
         source: None,
     };
@@ -376,7 +377,6 @@ fn imessage_to_ir(fields: ImessageRecord) -> IrImessage {
         in_reply_to_guid: fields.in_reply_to_guid,
         thread_originator_part: fields.thread_originator_part,
         num_replies: fields.num_replies,
-        is_deleted: fields.is_deleted,
         send_effect: fields.send_effect,
         shared_location: fields.shared_location,
         announcement: fields.announcement,
@@ -962,6 +962,7 @@ mod tests {
             subject: None,
             text: "hi".into(),
             reactions: Vec::new(),
+            deletion: None,
             owner_identity: "+15555550100".into(),
             owner_display_name: None,
             imessage: None,
@@ -980,7 +981,6 @@ mod tests {
             in_reply_to_guid: text("parent"),
             thread_originator_part: Some(1),
             num_replies: Some(2),
-            is_deleted: true,
             send_effect: text("Slam"),
             shared_location: text("started"),
             announcement: text("renamed"),
@@ -1122,6 +1122,7 @@ mod tests {
                 })
                 .collect(),
             reactions: Vec::new(),
+            deletion: None,
             imessage: None,
             source: None,
         }
