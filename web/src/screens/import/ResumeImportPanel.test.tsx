@@ -1,9 +1,11 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { holdDesktopJob } from "../../lib/desktopJob";
 import type { ActiveImportSession } from "../../lib/importSession";
+import { setupUser } from "../../test/user";
 import ResumeImportPanel from "./ResumeImportPanel";
 import type { ResumeDecision } from "./resumeDecision";
 
@@ -441,5 +443,45 @@ describe("ResumeImportPanel", () => {
     expect(screen.queryByLabelText("Encryption password")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Decryption key")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Pick up" })).toBeEnabled();
+  });
+  // Resuming starts a Stage, which the desktop refuses while another job
+  // runs, so the button waits for it and says which job it waits for, as
+  // the Import form does (#1629).
+  it("holds the resume while another desktop job runs and says which one", async () => {
+    const user = setupUser();
+    const onResume = vi.fn();
+    const onDiscard = vi.fn();
+    const decision: ResumeDecision = { kind: "resume_push", session: session() };
+    const release = holdDesktopJob("Export");
+    try {
+      render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
+
+      expect(screen.getByRole("button", { name: "Resume" })).toBeDisabled();
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "An export is running. Resume can start once it ends.",
+      );
+      await user.click(screen.getByRole("button", { name: "Discard this import" }));
+      expect(onDiscard).toHaveBeenCalledTimes(1);
+    } finally {
+      act(() => release());
+    }
+
+    expect(screen.getByRole("button", { name: "Resume" })).toBeEnabled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Resume" }));
+    expect(onResume).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a discard-only decision alone while another desktop job runs", () => {
+    const decision: ResumeDecision = { kind: "other_device", session: session() };
+    const release = holdDesktopJob("Convert");
+    try {
+      render(<ResumeImportPanel decision={decision} onResume={vi.fn()} onDiscard={vi.fn()} />);
+
+      expect(screen.getByRole("button", { name: "Discard this import" })).toBeEnabled();
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    } finally {
+      release();
+    }
   });
 });

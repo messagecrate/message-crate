@@ -1,7 +1,8 @@
 use super::*;
-use message_crate_core::{FormatConfig, MediaConfig, ObfuscateConfig, SourceConfig};
+use message_crate_core::{FormatConfig, LogSink, MediaConfig, ObfuscateConfig, SourceConfig};
 use message_ir::IrAttachment;
 use message_ir_format::{read_conversation_csv, read_conversation_json};
+use std::sync::{Arc, Mutex};
 
 fn write_fixture(dir: &Path, format: OutputFormat) {
     fs::create_dir_all(dir).unwrap();
@@ -398,6 +399,89 @@ fn run_converts_an_export_and_reports_the_detected_format() {
     assert_eq!(
         read_conversation_csv(&csv).unwrap().messages[0].text,
         "hello reexport"
+    );
+}
+
+/// A committed SMS Backup & Restore backup under this crate's
+/// `tests/fixtures/`.
+fn sms_fixture(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name)
+}
+
+/// The config of a Convert from `input`, with every line it logs as it
+/// runs.
+fn logged_config(input: &Path, output: &Path) -> (ExporterConfig, Arc<Mutex<Vec<String>>>) {
+    let lines = Arc::new(Mutex::new(Vec::new()));
+    let sink_lines = Arc::clone(&lines);
+    let mut config = config(input, output, OutputFormat::Csv);
+    config.log = Some(LogSink::new(move |line: &str| {
+        sink_lines.lock().unwrap().push(line.to_string());
+    }));
+    (config, lines)
+}
+
+/// Convert from an SMS Backup & Restore backup says what its reader
+/// dropped and skipped, before the `Conversations:` line the desktop app
+/// shows as the run's summary, and names every file it could not read, not
+/// only the first five (#1603). The fixture holds one of each kind, and six
+/// files cut off partway.
+#[test]
+fn run_from_an_sms_backup_logs_the_reader_counts_and_every_error() {
+    let destination = tempfile::tempdir().unwrap();
+    let (config, logged) = logged_config(&sms_fixture("sms-backup-every-skip"), destination.path());
+
+    let result = run(&config).unwrap();
+
+    let logged = logged.lock().unwrap().clone();
+    for expected in [
+        "Dropped 1 repeated copy of a message",
+        "Skipped 1 message with an invalid date",
+        "Skipped 1 message with no usable address",
+        "Skipped 1 message of an unknown type",
+        "Skipped 1 draft or unsent message",
+        "Skipped 1 MMS with no participants",
+        "Skipped 1 message part that could not be read",
+        "Dropped 1 character reference that is not a character",
+    ] {
+        assert!(
+            logged.iter().any(|line| line == expected),
+            "{expected:?} in the log: {logged:#?}"
+        );
+    }
+    for n in 1..=6 {
+        let name = format!("broken-{n}.xml");
+        assert!(
+            logged
+                .iter()
+                .any(|line| line.starts_with("xml warning: ") && line.contains(&name)),
+            "an error for {name} in the log: {logged:#?}"
+        );
+    }
+    // The run's summary lines follow everything logged as it ran.
+    assert_eq!(
+        result.messages.first().map(String::as_str),
+        Some("Detected input format: xml")
+    );
+}
+
+/// A backup whose every message is skipped stops the run with no
+/// conversation, and the log still says why each was skipped (#1603).
+#[test]
+fn a_convert_that_keeps_no_message_still_logs_why() {
+    let destination = tempfile::tempdir().unwrap();
+    let (config, logged) =
+        logged_config(&sms_fixture("sms-backup-nothing-kept"), destination.path());
+
+    let err = run(&config).unwrap_err().to_string();
+
+    assert!(err.contains("no conversations loaded"), "{err}");
+    let logged = logged.lock().unwrap().clone();
+    assert!(
+        logged.contains(&"Skipped 1 message with no usable address".to_string())
+            && logged.contains(&"Skipped 1 message of an unknown type".to_string()),
+        "{logged:#?}"
     );
 }
 
