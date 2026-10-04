@@ -154,7 +154,7 @@ mod tests {
             packaging_stem_suffix: None,
         };
         let header = String::from_utf8(document_header_line(&doc).unwrap()).unwrap();
-        assert!(header.contains(r#""schema_version":5"#));
+        assert!(header.contains(r#""schema_version":6"#));
         assert!(header.contains(r#""sms-backup-restore""#));
         assert!(!header.contains(r#""record":"conversation""#));
 
@@ -170,6 +170,7 @@ mod tests {
             subject: None,
             text: "hello".into(),
             attachments: vec![],
+            reactions: Vec::new(),
             imessage: None,
             source: None,
         };
@@ -205,6 +206,7 @@ mod tests {
                 missing_reason: None,
                 bytes: None,
             }],
+            reactions: Vec::new(),
             imessage: None,
             source: None,
         };

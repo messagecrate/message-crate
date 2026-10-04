@@ -75,7 +75,7 @@ fn convert_smoke_writes_csv_not_json() {
             "owner_identity",
             "participants_json",
             "read_receipt", // unified header; empty for SMS
-            "tapbacks_json",
+            "reactions_json",
         ],
         &["date_ms", "contact_name", "xml_fields_json"],
         // The flat SMSSync message, read back out of the export. The previous

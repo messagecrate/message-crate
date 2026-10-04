@@ -4,7 +4,9 @@ use crate::headers as hn;
 use crate::{MailAttachment, MailMessage, Participant};
 use anyhow::{Context, Result, bail};
 use mailparse::{MailHeader, MailHeaderMap, ParsedMail};
-use message_ir::{IrDirection, IrImessage, IrMessage, IrMessageKind, IrService, IrSource};
+use message_ir::{
+    IrDirection, IrImessage, IrMessage, IrMessageKind, IrService, IrSource, Reaction,
+};
 use serde::Deserialize;
 use std::fs;
 use std::path::Path;
@@ -33,19 +35,20 @@ struct AttachmentMetaCell {
 pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     let mail = mailparse::parse_mail(bytes).context("parse eml bytes")?;
     let headers = &mail.headers;
-    let earlier = hn::EARLIER_HANDLE_HEADERS
+    if let Some(earlier) = hn::EARLIER_HANDLE_HEADERS
         .iter()
         .find(|name| headers.get_first_header(name).is_some())
-        .copied()
-        .or_else(|| {
-            optional_header(headers, hn::TAPBACKS)
-                .is_some_and(|raw| raw.contains("\"reactor_handle\""))
-                .then_some(hn::TAPBACKS)
-        });
-    if let Some(earlier) = earlier {
+    {
         bail!(
             "This mail was written by an earlier Message Crate, which named each address a \
              handle ({earlier}); export the backup again"
+        );
+    }
+    if headers.get_first_header(hn::EARLIER_TAPBACKS).is_some() {
+        bail!(
+            "This mail was written by an earlier Message Crate, which kept reactions in {}; \
+             export the backup again",
+            hn::EARLIER_TAPBACKS
         );
     }
 
@@ -77,6 +80,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
 
     let text = extract_text_body(&mail).unwrap_or_default();
     let attachments = merge_attachments(&mail, headers);
+    let reactions = parse_reactions(headers)?;
 
     let source = {
         let android_type =
@@ -108,7 +112,6 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             read_receipt_rfc3339: optional_header(headers, hn::READ_RECEIPT),
             parts: header_json(headers, hn::PARTS),
             edits: header_json(headers, hn::EDITS),
-            tapbacks: header_json(headers, hn::TAPBACKS),
             app: header_json(headers, hn::APP),
             balloon_bundle_id: optional_header(headers, hn::BALLOON_BUNDLE_ID),
             balloon_kind: optional_header(headers, hn::BALLOON_KIND),
@@ -146,6 +149,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             // Attachment payloads live in `MailMessage::attachments`; readers
             // that build IR fill this list from there.
             attachments: Vec::new(),
+            reactions,
             imessage,
             source,
         },
@@ -250,6 +254,20 @@ fn header_bool(headers: &[MailHeader<'_>], name: &str) -> bool {
 /// A header value parsed as a number.
 fn header_u32(headers: &[MailHeader<'_>], name: &str) -> Option<u32> {
     optional_header(headers, name)?.parse().ok()
+}
+
+/// The message's reactions from `X-ME-Reactions`, or none when the header is
+/// absent.
+fn parse_reactions(headers: &[MailHeader<'_>]) -> Result<Vec<Reaction>> {
+    let Some(raw) = optional_header(headers, hn::REACTIONS) else {
+        return Ok(Vec::new());
+    };
+    serde_json::from_str(&raw).with_context(|| {
+        format!(
+            "This mail's reactions ({}) do not read; export the backup again",
+            hn::REACTIONS
+        )
+    })
 }
 
 /// Participants from the JSON header, or none when it is absent.
@@ -398,6 +416,7 @@ mod tests {
                 subject: None,
                 text: "hello roundtrip".into(),
                 attachments: Vec::new(),
+                reactions: Vec::new(),
                 imessage: None,
                 source: Some(IrSource {
                     android_type: Some(2),
@@ -427,9 +446,27 @@ mod tests {
 
     /// Every optional `X-ME-*` header pair the first roundtrip test leaves
     /// unexercised: group/roster headers, subject, source fields, the full
-    /// iMessage extension bag, and attachment metadata.
+    /// iMessage extension bag, the reactions, and attachment metadata.
     #[test]
     fn roundtrip_group_imessage_full_extension_bag() {
+        let reactions = vec![
+            Reaction {
+                part_index: 0,
+                kind: "loved".into(),
+                emoji: None,
+                is_from_me: false,
+                reactor_identity: Some("+15555550102".into()),
+                reactor_display_name: Some("=?utf-8?Q?=22?= Ray".into()),
+            },
+            Reaction {
+                part_index: 1,
+                kind: "emoji".into(),
+                emoji: Some("\u{1f525}".into()),
+                is_from_me: true,
+                reactor_identity: None,
+                reactor_display_name: Some("Me".into()),
+            },
+        ];
         let imessage = message_ir::IrImessage {
             is_reply: true,
             in_reply_to_guid: Some("parent-guid-1111".into()),
@@ -442,7 +479,6 @@ mod tests {
             read_receipt_rfc3339: Some("2014-05-22T15:41:01Z".into()),
             parts: serde_json::from_str(r#"[{"index":0,"kind":"run","text":"hi"}]"#).ok(),
             edits: serde_json::from_str(r#"[{"part":0,"texts":["hi","hi!"]}]"#).ok(),
-            tapbacks: serde_json::from_str(r#"[{"part_index":0,"kind":"loved"}]"#).ok(),
             app: serde_json::from_str(r#"{"name":"Games"}"#).ok(),
             balloon_bundle_id: Some("com.apple.messages.URLBalloonProvider".into()),
             balloon_kind: Some("url".into()),
@@ -484,6 +520,7 @@ mod tests {
                 subject: Some("MMS subject".into()),
                 text: "full bag".into(),
                 attachments: Vec::new(),
+                reactions: reactions.clone(),
                 imessage: Some(imessage.clone()),
                 source: Some(IrSource {
                     android_type: Some(1),
@@ -532,6 +569,11 @@ mod tests {
         assert_eq!(
             serde_json::to_value(&source.fields).unwrap(),
             serde_json::json!({"address": "+15555550101"})
+        );
+
+        assert_eq!(
+            parsed.message.reactions, reactions,
+            "each reaction keeps its reactor, even a name that looks like an encoded word"
         );
 
         // The whole extension bag must survive field for field.
@@ -595,6 +637,7 @@ mod tests {
                 subject: None,
                 text: "the message text".into(),
                 attachments: Vec::new(),
+                reactions: Vec::new(),
                 imessage: None,
                 source: None,
             },

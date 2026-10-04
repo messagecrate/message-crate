@@ -197,6 +197,13 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-04 **A reaction travels on the message it reacts to.** An Apple
+  Messages tapback or emoji reaction is written into an export on the
+  message it reacts to, with the person who reacted named, and an import
+  stores it under that person. Export writes the reactions the server keeps
+  the same way, so a conversation exported and imported again keeps them.
+  Every app's reactions will take this one shape; Apple Messages is the first,
+  and WhatsApp follows in a coming release.
 - 2026-10-04 **The server sends an attachment a piece at a time.** A video
   or voice note can start playing before the whole file has arrived, and a
   player can jump to any point in it without downloading what comes before.
@@ -700,6 +707,9 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-04 How an exporter writing a format other than JSON Lines counts
+  the size of an attachment with no file was reworked to match Staging,
+  with nothing visible.
 - 2026-10-04 **Converting an SMS Backup & Restore backup says what it
   left out.** The log said nothing about the repeated copies it dropped,
   the messages with an invalid date, a date outside the range, no usable
@@ -1052,6 +1062,11 @@ released versions carry their date on the heading.
   edge, unlike every other button. They now leave the same 1-pixel gap. The
   day the date picker's keyboard cursor is on shows a 2-pixel ring inside it,
   the same as a focused table row, where it showed a 1-pixel one.
+- 2026-10-04 **A Settings tab that can't be opened yet shows the not-allowed
+  pointer.** While the owner adds an account, Profile, Storage and Audit
+  Trail are greyed out until the account exists, but the pointer over them
+  was the plain arrow. It is now the not-allowed pointer every other control
+  that is turned off shows.
 - 2026-10-04 **The panel resize grips move by exactly 8 pixels.** Each
   arrow key on the grip of the left panel or the list column moved the
   panel 9 pixels wider or 7 narrower, and pressing the grip without moving
@@ -1383,6 +1398,12 @@ released versions carry their date on the heading.
   JSON, JSONL, CSV, EML and mbox exports, and for an Import Run an earlier
   build left paused. Export the backup again with this build, then import
   or convert the new files; discard a paused run and start the import again.
+- Message files exported before reactions moved onto the message they react
+  to are refused when you import or convert them, rather than read with their
+  Apple Messages reactions lost. This holds for JSON, JSONL, CSV, EML and mbox
+  exports, and for an Import Run an earlier build left paused. Export the
+  backup again with this build, then import or convert the new files; discard
+  a paused run and start the import again.
 - `reset-demo` no longer writes a configuration file, and reads the one given
   with `--config`. If an earlier `reset-demo` replaced your configuration
   file, the server stops at startup with a missing `[server]` section: put

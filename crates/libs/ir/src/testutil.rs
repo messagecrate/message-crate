@@ -3,7 +3,7 @@
 use crate::{
     ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, HandleType,
     IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind, IrParticipant,
-    IrService, IrSource, SCHEMA_VERSION,
+    IrService, IrSource, Reaction, SCHEMA_VERSION,
 };
 use serde_json::json;
 
@@ -43,6 +43,7 @@ pub fn sample_document(text: &str) -> ConversationDocument {
             subject: None,
             text: text.into(),
             attachments: vec![],
+            reactions: vec![],
             imessage: None,
             source: Some(IrSource {
                 android_type: Some(1),
@@ -78,8 +79,8 @@ pub fn sample_whatsapp_document(text: &str) -> ConversationDocument {
 }
 
 /// Two-message iMessage conversation fixture: an incoming reply with a
-/// send effect, tapbacks and parts, then the owner's outgoing tapback on
-/// it. Every iMessage-only field a writer might mirror is set, so a format
+/// send effect, the owner's reaction and parts, then the owner's outgoing
+/// tapback on it. Every iMessage-only field a writer might mirror is set, so a format
 /// that must not leak them has something to leak.
 pub fn sample_imessage_document() -> ConversationDocument {
     let mut doc = ConversationDocument {
@@ -115,13 +116,20 @@ pub fn sample_imessage_document() -> ConversationDocument {
                 subject: None,
                 text: "hello imessage".into(),
                 attachments: vec![],
+                reactions: vec![Reaction {
+                    part_index: 0,
+                    kind: "loved".into(),
+                    emoji: None,
+                    is_from_me: true,
+                    reactor_identity: None,
+                    reactor_display_name: Some("Me".into()),
+                }],
                 imessage: Some(IrImessage {
                     is_reply: true,
                     in_reply_to_guid: Some("parent-guid-1111".into()),
                     thread_originator_part: Some(0),
                     num_replies: Some(2),
                     send_effect: Some("Sent with Balloons".into()),
-                    tapbacks: Some(json!([{"part_index": 0, "kind": "loved"}])),
                     parts: Some(json!([{"index": 0, "kind": "run", "text": "hello imessage"}])),
                     ..IrImessage::default()
                 }),
@@ -139,6 +147,7 @@ pub fn sample_imessage_document() -> ConversationDocument {
                 subject: None,
                 text: "Loved a message".into(),
                 attachments: vec![],
+                reactions: vec![],
                 imessage: Some(IrImessage {
                     associated_guid: Some("parent-guid-1111".into()),
                     associated_part: Some(0),

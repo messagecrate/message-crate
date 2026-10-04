@@ -1,15 +1,12 @@
-import { SelectionIndicator, Tab, TabList, TabPanel, Tabs } from "react-aria-components";
-import { focusRing } from "../../lib/uiStyles";
+import { TabList, TabPanel, Tabs } from "react-aria-components";
+import Tab from "../../components/Tab";
 import type { ServerState } from "../../lib/useServerState";
 import ClaimForm from "./ClaimForm";
 import CreateAccountForm from "./CreateAccountForm";
 import LoginForm from "./LoginForm";
 
-function tabClassName({ isSelected }: { isSelected: boolean }) {
-  return `relative -mb-px flex-1 cursor-pointer border-none bg-transparent px-3 py-2 text-center text-[0.875rem] font-medium transition-colors duration-200 ${focusRing} ${
-    isSelected ? "text-text" : "text-muted hover:text-text"
-  }`;
-}
+/** Login and Create Account share the strip in halves, in the card's 14px text. */
+const authTabClass = "flex-1 text-center text-[0.875rem]";
 
 /**
  * The ways into a Message Crate, which depend on what state it is in.
@@ -65,13 +62,11 @@ export default function LocalAuthTabs({
         aria-label="Log in or create an account"
         className="relative mb-6 flex border-b border-border"
       >
-        <Tab id="login" className={tabClassName}>
+        <Tab id="login" className={authTabClass}>
           Login
-          <SelectionIndicator className="absolute bottom-0 left-2 right-2 h-[2px] rounded-full bg-accent transition-[translate,width] duration-200 motion-reduce:transition-none" />
         </Tab>
-        <Tab id="create" className={tabClassName}>
+        <Tab id="create" className={authTabClass}>
           Create Account
-          <SelectionIndicator className="absolute bottom-0 left-2 right-2 h-[2px] rounded-full bg-accent transition-[translate,width] duration-200 motion-reduce:transition-none" />
         </Tab>
       </TabList>
 
