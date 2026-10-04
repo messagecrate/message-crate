@@ -79,10 +79,11 @@ pub fn sample_whatsapp_document(text: &str) -> ConversationDocument {
     doc
 }
 
-/// Two-message iMessage conversation fixture: an incoming reply with a
-/// send effect, the owner's reaction and parts, deleted in the source app, then the owner's outgoing
-/// tapback on it. Every iMessage-only field a writer might mirror is set, so a format
-/// that must not leak them has something to leak.
+/// Two-message iMessage conversation fixture: an incoming reply with a send
+/// effect, the owner's reaction and parts, deleted in the source app, then
+/// the owner's outgoing tapback on it. Every iMessage-only field a writer
+/// might mirror is set, so a format that must not leak them has something to
+/// leak.
 pub fn sample_imessage_document() -> ConversationDocument {
     let mut doc = ConversationDocument {
         schema_version: SCHEMA_VERSION,

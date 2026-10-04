@@ -22,14 +22,15 @@ released versions carry their date on the heading.
 ### Features
 
 - 2026-10-04 **A message deleted in Apple Messages, or unsent, is kept and
-  marked.** An Apple Messages message you had deleted on the phone but that is
-  still in its recently deleted list is imported with its text and marked
-  Deleted in the source app. A message its sender unsent is imported as
-  Unsent, rather than as a line saying someone unsent a message. A message
-  only partly unsent keeps what is left and has no mark. Search finds marked
-  messages like any other, and `deleted:yes` or `deleted:no` on Messages
-  narrows to them or away from them; nothing is hidden. Export keeps the
-  mark, so a conversation exported and imported again keeps it too. The
+  marked.** A message deleted in Apple Messages that its recently deleted
+  list still holds is imported with its text and marked Deleted in the
+  source app. A message its sender unsent is imported as Unsent, rather than
+  as a line saying someone unsent a message. A message only partly unsent
+  keeps what is left and has no mark. Search finds marked messages like any
+  other, and `deleted:yes` or `deleted:no` on Messages narrows to them or
+  away from them. Nothing is hidden. A later import of the same message
+  that carries the mark adds it to the message already there. Export keeps
+  the mark, so a conversation exported and imported again keeps it too. The
   conversation shows the mark in a coming release.
 - 2026-10-04 **A long conversation scrolls without downloading its photos,
   and videos and voice notes play in place.** A photo or video shows as a
