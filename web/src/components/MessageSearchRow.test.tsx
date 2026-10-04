@@ -2,11 +2,14 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import { TimeZoneContext } from "../lib/timeZone";
 import type { Message } from "../lib/types";
+import { inTimeZone } from "../test/timeZone";
 import MessageSearchRow from "./MessageSearchRow";
 
 afterEach(cleanup);
+
+/** The account's zone every row here renders in. */
+const ZONE = "America/New_York";
 
 function message(over: Partial<Message> = {}): Message {
   return {
@@ -39,19 +42,22 @@ function message(over: Partial<Message> = {}): Message {
 
 function renderRow(m: Message, terms = [{ text: "photo", prefix: false }]) {
   return render(
-    <TimeZoneContext.Provider value="America/New_York">
-      <MessageSearchRow message={m} terms={terms} isSelected={false} onClick={() => {}} />
-    </TimeZoneContext.Provider>,
+    inTimeZone(
+      ZONE,
+      <MessageSearchRow message={m} terms={terms} isSelected={false} onClick={() => {}} />,
+    ),
   );
 }
 
 describe("MessageSearchRow", () => {
   it("shows the conversation, the day in the account's zone, the sender, and the matching word in bold", () => {
-    renderRow(message());
+    const m = message();
+    renderRow(m);
     const row = screen.getByRole("button");
     expect(row).toHaveTextContent("Family");
     expect(row).toHaveTextContent(
-      new Date("2024-01-01T12:00:00Z").toLocaleDateString([], {
+      new Date(m.timestamp).toLocaleDateString([], {
+        timeZone: ZONE,
         year: "numeric",
         month: "short",
         day: "numeric",

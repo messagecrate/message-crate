@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "../../lib/account";
 import { mockedAuth, renderWithProviders as render } from "../../test/providers";
+import { inTimeZone } from "../../test/timeZone";
 import { IdentitiesSection } from "./IdentitiesSection";
 import { type Identity, removeBody } from "./identities";
 
@@ -66,7 +67,7 @@ afterEach(cleanup);
 
 describe("IdentitiesSection", () => {
   it("says what identities are for, then lists them with dates and counts from the server", async () => {
-    render(<IdentitiesSection profile={profile} />);
+    render(inTimeZone("UTC", <IdentitiesSection profile={profile} />));
 
     expect(screen.getByRole("heading", { name: "My Identities" })).toBeInTheDocument();
     expect(
