@@ -16,13 +16,28 @@ afterEach(() => {
   tauriMock.current = false;
 });
 
-describe("InfiniteOffsetList in the desktop app", () => {
-  it("opens a search result on one click", async () => {
+/**
+ * Runs `run` as the desktop app, with a 400px by 300px viewport. jsdom lays
+ * out nothing, so without one React Aria's Virtualizer draws no rows.
+ */
+function inDesktopViewport(run: () => Promise<void>) {
+  return async () => {
     tauriMock.current = true;
-    // jsdom lays out nothing; give the virtualizer a viewport to fill.
     const heights = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(400);
     const widths = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300);
     try {
+      await run();
+    } finally {
+      heights.mockRestore();
+      widths.mockRestore();
+    }
+  };
+}
+
+describe("InfiniteOffsetList in the desktop app", () => {
+  it(
+    "opens a search result on one click",
+    inDesktopViewport(async () => {
       const onSelect = vi.fn();
       renderList(
         [
@@ -34,11 +49,8 @@ describe("InfiniteOffsetList in the desktop app", () => {
       await userEvent.click(await screen.findByText("Grace"));
       expect(onSelect).toHaveBeenCalledTimes(1);
       expect(onSelect).toHaveBeenCalledWith({ id: "2", name: "Grace" });
-    } finally {
-      heights.mockRestore();
-      widths.mockRestore();
-    }
-  });
+    }),
+  );
 
   it("shows the rows on screen and asks for more when the first page fits, without a scroll", async () => {
     tauriMock.current = true;
@@ -138,6 +150,7 @@ function renderList(
     lead?: boolean;
     total?: number;
     selectedId?: string | null;
+    isRowHighlighted?: (item: Item) => boolean;
   },
 ) {
   return render(listElement(items, extra));
@@ -157,6 +170,7 @@ function listElement(items: Item[], extra?: Parameters<typeof renderList>[1]) {
         estimateSize={49}
         getId={(c) => c.id}
         selectedId={extra?.selectedId}
+        isRowHighlighted={extra?.isRowHighlighted}
         onSelect={extra?.onSelect ?? (() => {})}
         selectAll={{ onChange: () => {}, label: "Select all contacts" }}
         renderRow={(c) => <span>{c.name}</span>}
@@ -433,20 +447,15 @@ describe("InfiniteOffsetList choosing a row", () => {
     );
   });
 
-  it("draws the focus ring on a row of the desktop app's list, reached with the arrow keys", async () => {
-    tauriMock.current = true;
-    const heights = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(400);
-    const widths = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300);
-    try {
+  it(
+    "draws the focus ring on a row of the desktop app's list, reached with the arrow keys",
+    inDesktopViewport(async () => {
       renderList([{ id: "1", name: "Alice" }], { sectioned: false });
       expect((await screen.findByRole("option", { name: "Alice" })).className).toContain(
         "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
       );
-    } finally {
-      heights.mockRestore();
-      widths.mockRestore();
-    }
-  });
+    }),
+  );
 
   it("selects from the row and not from the lead cell", async () => {
     const user = userEvent.setup();
@@ -473,7 +482,7 @@ describe("InfiniteOffsetList marking the open row", () => {
     { id: "3", name: "Carol" },
   ];
 
-  /** Every row element of the rendered path, by the name it shows. */
+  /** The rows with `role` that carry `aria-current`, each as `name=value`. */
   function currentRows(role: "button" | "option"): string[] {
     return screen
       .getAllByRole(role)
@@ -520,24 +529,9 @@ describe("InfiniteOffsetList marking the open row", () => {
   });
 
   describe("in the desktop app", () => {
-    function withViewport(run: () => Promise<void>) {
-      return async () => {
-        tauriMock.current = true;
-        // jsdom lays out nothing; give the virtualizer a viewport to fill.
-        const heights = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(400);
-        const widths = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300);
-        try {
-          await run();
-        } finally {
-          heights.mockRestore();
-          widths.mockRestore();
-        }
-      };
-    }
-
     it(
       "marks only the open row as current",
-      withViewport(async () => {
+      inDesktopViewport(async () => {
         renderList(people, { sectioned: false, selectedId: "2" });
         await screen.findByRole("option", { name: "Bob" });
         expect(currentRows("option")).toEqual(["Bob=true"]);
@@ -550,7 +544,7 @@ describe("InfiniteOffsetList marking the open row", () => {
 
     it(
       "moves the mark when another row opens",
-      withViewport(async () => {
+      inDesktopViewport(async () => {
         const { rerender } = renderList(people, { sectioned: false, selectedId: "2" });
         await screen.findByRole("option", { name: "Bob" });
         rerender(listElement(people, { sectioned: false, selectedId: "3" }));
@@ -566,8 +560,27 @@ describe("InfiniteOffsetList marking the open row", () => {
     );
 
     it(
+      "marks the open row, not the checked rows it highlights, as current",
+      inDesktopViewport(async () => {
+        // Contacts draws the checked rows highlighted while any are checked.
+        const checked = new Set(["1", "3"]);
+        renderList(people, {
+          sectioned: false,
+          lead: true,
+          selectedId: "2",
+          isRowHighlighted: (c) => checked.has(c.id),
+        });
+        await screen.findByRole("option", { name: /Bob/ });
+        expect(currentRows("option")).toEqual(["Bob=true"]);
+        expect(screen.getByRole("option", { name: /Alice/ }).className).toContain(
+          "bg-hover-strong",
+        );
+      }),
+    );
+
+    it(
       "opens a closed row on one click while another row is open",
-      withViewport(async () => {
+      inDesktopViewport(async () => {
         const onSelect = vi.fn();
         renderList(people, { sectioned: false, selectedId: "2", onSelect });
         await userEvent.click(await screen.findByText("Carol"));
