@@ -187,9 +187,6 @@ if [[ "${DEMO}" -eq 1 ]]; then
   require_cmd ffprobe
   echo "Seeding demo data (${SIZE})…"
   server_cli reset-demo --size "${SIZE}" --config "${CONFIG}"
-  echo "Converting demo media…"
-  server_cli process-assets --config "${CONFIG}" \
-    || echo "warning: process-assets failed; UI still works"
 elif [[ "${RESET}" -eq 1 ]]; then
   # The server adds the Demo Account to a database that does not exist yet,
   # so an empty start means creating the database first.

@@ -1417,7 +1417,7 @@ async fn unknowns_holding(conn: &mut SqliteConnection, wanted: &[String]) -> usi
          FROM contact_handles ch
          JOIN handles h ON h.id = ch.handle_id
          JOIN contacts c ON c.id = ch.contact_id
-         WHERE ch.account_id = $1 AND trim(c.preferred_name) = ''",
+         WHERE ch.account_id = $1 AND c.preferred_name = ''",
     )
     .bind(DEMO_ACCOUNT_ID)
     .fetch_all(&mut *conn)
@@ -1573,7 +1573,7 @@ async fn the_demo_address_book_names_the_unknowns_the_imports_made() {
          JOIN contact_handles ch ON ch.handle_id = cv.chat_handle_id
          JOIN contacts c ON c.id = ch.contact_id
          WHERE cv.account_id = $1 AND cv.conversation_type = 'individual'
-           AND trim(c.preferred_name) <> ''
+           AND c.preferred_name <> ''
            AND c.id IN (SELECT value FROM json_each($2))",
     )
     .bind(DEMO_ACCOUNT_ID)

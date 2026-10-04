@@ -98,12 +98,12 @@ pub async fn propose_name(
         }
         Origin::AddressBook => {
             "UPDATE contacts SET preferred_name = $1
-             WHERE account_id = $2 AND id = $3 AND trim(preferred_name) <> $1"
+             WHERE account_id = $2 AND id = $3 AND preferred_name <> $1"
         }
         Origin::Import => {
             "UPDATE contacts SET preferred_name = $1
              WHERE account_id = $2 AND id = $3
-               AND origin = 'import' AND trim(preferred_name) = ''"
+               AND origin = 'import' AND preferred_name = ''"
         }
     };
     let changed = sqlx::query(sql)
@@ -120,7 +120,9 @@ pub async fn propose_name(
     Ok(changed)
 }
 
-/// Create a contact carrying `preferred_name`, which may be empty.
+/// Create a contact carrying `preferred_name`, which may be empty. The name
+/// is stored trimmed of whitespace, tabs and line breaks included, as every
+/// write path stores it, so a comparison in SQL reads the name as it is.
 ///
 /// # Errors
 ///
@@ -135,7 +137,7 @@ pub async fn create_contact(
         "INSERT INTO contacts (account_id, preferred_name, origin) VALUES ($1, $2, $3) RETURNING id",
     )
     .bind(account_id)
-    .bind(preferred_name)
+    .bind(preferred_name.trim())
     .bind(origin.as_str())
     .fetch_one(&mut *conn)
     .await?;
@@ -287,7 +289,7 @@ pub async fn create_import_group(
 /// because a contact stops being Unknown the moment someone names it or
 /// links an address to it.
 pub const UNKNOWN_CONTACT_SQL: &str = "(
-    trim(ct.preferred_name) = ''
+    ct.preferred_name = ''
     OR NOT EXISTS (
         SELECT 1 FROM contact_handles ch2
         JOIN handles h2 ON h2.id = ch2.handle_id
@@ -519,7 +521,7 @@ pub async fn is_nameless(
     contact_id: i64,
 ) -> Result<bool> {
     let nameless: Option<bool> = sqlx::query_scalar(
-        "SELECT trim(preferred_name) = '' FROM contacts WHERE account_id = $1 AND id = $2",
+        "SELECT preferred_name = '' FROM contacts WHERE account_id = $1 AND id = $2",
     )
     .bind(account_id)
     .bind(contact_id)
@@ -542,7 +544,7 @@ pub async fn delete_if_empty(
 ) -> Result<bool> {
     let deleted = sqlx::query(
         "DELETE FROM contacts
-         WHERE account_id = $1 AND id = $2 AND trim(preferred_name) = ''
+         WHERE account_id = $1 AND id = $2 AND preferred_name = ''
            AND NOT EXISTS (SELECT 1 FROM contact_handles ch
                            WHERE ch.account_id = $1 AND ch.contact_id = $2)",
     )

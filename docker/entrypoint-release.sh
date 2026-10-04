@@ -14,9 +14,6 @@ cd /app
 CONFIG_DOCKER="config/config.docker.toml"
 CONFIG="config/config.toml"
 
-export MC_DB="${MC_DB:-/app/data/messagecrate.db}"
-export MC_DATA_DIR="${MC_DATA_DIR:-/app/data}"
-
 mkdir -p config data
 cp "${CONFIG_DOCKER}" "${CONFIG}"
 
