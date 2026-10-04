@@ -71,8 +71,10 @@ function extensionType(name: string | null | undefined): string | null {
 }
 
 /**
- * The attachment's own type, lowercased and without parameters: the type the
- * import declared, else the one its file name's extension gives.
+ * The attachment's own type, lowercased and without parameters, read in the
+ * order the server's `media::media_type_of` reads it for a stored original,
+ * which has no extension: the type the import declared, then the extension
+ * of the name the export gave the file, then of its path in the export.
  */
 export function mediaType(attachment: MessageAttachment): string | null {
   const declared = attachment.mime_type?.split(";")[0].trim().toLowerCase();
@@ -98,11 +100,6 @@ export function fullVersion(attachment: MessageAttachment): FullVersion {
   if (attachment.preview_mime_type) return "preview";
   const type = mediaType(attachment);
   return type && SHOWN_AS_IS.has(type) ? "original" : "none";
-}
-
-/** The type of the version `fullVersion` opens, for a media element's `<source>`. */
-export function fullMimeType(attachment: MessageAttachment): string | undefined {
-  return (attachment.preview_mime_type || mediaType(attachment)) ?? undefined;
 }
 
 /** The name a person knows the attachment by: the export's name, else its path's last part. */

@@ -1,7 +1,8 @@
 /** @vitest-environment jsdom */
 
-import { screen, waitFor } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CANNOT_PLAY_HERE, NO_PLAYABLE_COPY, STOPPED } from "../hooks/useStreamedMedia";
 import { saveFile } from "../lib/saveFile";
 import { createMediaLink, fetchAsset, fetchAssetObjectUrl } from "../lib/serverApi";
 import type { Message, MessageAttachment } from "../lib/types";
@@ -225,8 +226,7 @@ describe("a video in the conversation", () => {
 
     const video = await screen.findByLabelText("clip.mov", { selector: "video" });
     expect(createMediaLink).toHaveBeenCalledWith("ccc");
-    expect(video.querySelector("source")).toHaveAttribute("src", LINK.preview_url);
-    expect(video.querySelector("source")).toHaveAttribute("type", "video/mp4");
+    expect(video).toHaveAttribute("src", LINK.preview_url);
     // Streamed by the element itself, never downloaded whole first.
     expect(fetchAsset).not.toHaveBeenCalled();
     expect(fetches()).toEqual([{ sha256: "ccc", version: "thumbnail" }]);
@@ -243,7 +243,44 @@ describe("a video in the conversation", () => {
     await user.click(screen.getByRole("button", { name: "Play clip.mp4" }));
 
     const video = await screen.findByLabelText("clip.mp4", { selector: "video" });
-    expect(video.querySelector("source")).toHaveAttribute("src", LINK.url);
+    expect(video).toHaveAttribute("src", LINK.url);
+  });
+
+  /** Fail the video element as the browser does, with `code` on its `error`. */
+  function failVideo(video: HTMLElement, code: number) {
+    Object.defineProperty(video, "error", { configurable: true, value: { code } });
+    fireEvent.error(video);
+  }
+
+  it("goes back to its play button when the stream breaks off, and plays again through a new Media Link", async () => {
+    // A Media Link ends after an hour or with the Session, and the element's
+    // next range then fails as a network error. A player left holding the
+    // dead link could not be started again without a reload.
+    const user = setupUser();
+    renderWithProviders(<MessageAttachments message={message([mov])} />);
+    await user.click(screen.getByRole("button", { name: "Play clip.mov" }));
+    failVideo(await screen.findByLabelText("clip.mov", { selector: "video" }), 2);
+
+    expect(screen.getByText(STOPPED)).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Play clip.mov" }));
+
+    expect(await screen.findByLabelText("clip.mov", { selector: "video" })).toBeInTheDocument();
+    expect(createMediaLink).toHaveBeenCalledTimes(2);
+  });
+
+  it("says the browser cannot play a file it cannot decode, and offers no play button to fail again", async () => {
+    const user = setupUser();
+    renderWithProviders(
+      <MessageAttachments
+        message={message([{ original_name: "hevc.mp4", mime_type: "video/mp4", sha256: "ddd" }])}
+      />,
+    );
+    await user.click(screen.getByRole("button", { name: "Play hevc.mp4" }));
+    failVideo(await screen.findByLabelText("hevc.mp4", { selector: "video" }), 4);
+
+    expect(screen.getByText(CANNOT_PLAY_HERE)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Play hevc.mp4" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Download hevc.mp4" })).toBeInTheDocument();
   });
 
   it("says a HEVC video with no Preview yet cannot be played, and offers the download", () => {
@@ -251,7 +288,7 @@ describe("a video in the conversation", () => {
       <MessageAttachments message={message([{ ...mov, preview_mime_type: null }])} />,
     );
 
-    expect(screen.getByText("No copy a browser can play yet")).toBeInTheDocument();
+    expect(screen.getByText(NO_PLAYABLE_COPY)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Play clip.mov" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download clip.mov" })).toBeInTheDocument();
   });
@@ -289,8 +326,7 @@ describe("a recording in the conversation", () => {
 
     const audio = await screen.findByLabelText("voice.amr", { selector: "audio" });
     expect(createMediaLink).toHaveBeenCalledWith("eee");
-    expect(audio.querySelector("source")).toHaveAttribute("src", LINK.preview_url);
-    expect(audio.querySelector("source")).toHaveAttribute("type", "audio/mpeg");
+    expect(audio).toHaveAttribute("src", LINK.preview_url);
     expect(fetchAssetObjectUrl).not.toHaveBeenCalled();
   });
 
@@ -299,7 +335,7 @@ describe("a recording in the conversation", () => {
       <MessageAttachments message={message([{ ...amr, preview_mime_type: null }])} />,
     );
 
-    expect(screen.getByText("No copy a browser can play yet")).toBeInTheDocument();
+    expect(screen.getByText(NO_PLAYABLE_COPY)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Play voice.amr" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download voice.amr" })).toBeInTheDocument();
   });
