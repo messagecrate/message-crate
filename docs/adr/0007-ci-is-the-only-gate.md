@@ -279,11 +279,13 @@ push to `main` is where such a break shows, and it is fixed forward: a pull
 request whose review finds `main` red on the same job stops and says so
 (AGENTS.md, "Review on the pull request", step 6). `ci.yml` cancels an
 in-progress run only for a `pull_request` event, never for a push to `main` or
-a tag, so a run on `main` that has started keeps its verdict. Before this, a burst of squash
-merges cancelled every `main` run but the last — twelve merges on 2026-09-05
-left eleven cancelled runs and one result. GitHub still keeps only one waiting
-run per concurrency group, so a merge that lands while one `main` run works
-and another waits cancels the one that waits. A run started by hand has a
+a tag, so a run on `main` that has started keeps its verdict. Before this, a
+burst of squash merges cancelled every `main` run but the last — twelve merges
+on 2026-09-05 left eleven cancelled runs and one result. GitHub still keeps
+only one waiting run per concurrency group, so a merge that lands while one
+`main` run works and another waits cancels the one that waits. Twelve merges
+that all land while the first run works now leave two results, the first run
+and the last, and cancel the ten between them. A run started by hand has a
 group of its own for that reason, so no merge cancels a manual run that is
 meant to push the Docker image (#1555).
 

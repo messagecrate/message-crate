@@ -36,8 +36,8 @@ on:
 # the one that counts. GitHub keeps one waiting run per group, though, so a
 # merge to main while one run works and another waits cancels the one that
 # waits. A manual run gets a group of its own for that reason, so no push run
-# can cancel it, and one started to push the Docker image pushes it once every
-# job passes.
+# can cancel it. A manual run started to push the Docker image pushes it once
+# every job passes.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' && format('dispatch-{0}', github.run_id) || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
