@@ -8,7 +8,7 @@ use message_crate_core::{
     CancelFlag, ExportReport, ExportTransforms, OutputFormat, prepare_outputs, project_conversation,
 };
 use message_ir::{
-    ConversationKey, ExportMeta, HandleType, IrParticipant, IrService, IrSource,
+    ConversationKey, ExportMeta, HandleType, IrParticipant, IrService, IrSource, NAMELESS_CHAT_ID,
     PendingConversation, PendingMessage, ProjectionHooks,
 };
 use message_staging::{AttachmentSource, ExportWriter};
@@ -105,14 +105,15 @@ struct Ingest {
 
 /// One conversation and its key, awaiting projection.
 struct Pending {
-    /// `None` for the `unknown` conversation, of sent rows that name nobody.
+    /// `None` for the conversation of sent rows that name nobody, keyed
+    /// [`NAMELESS_CHAT_ID`].
     key: Option<ConversationKey>,
     convo: PendingConversation,
 }
 
 /// The conversation a set of rows belongs to.
 struct Conversation {
-    /// `None` for the `unknown` conversation.
+    /// `None` for the conversation that names nobody.
     key: Option<ConversationKey>,
     /// The other person's name, for a one-to-one conversation the source
     /// names; empty otherwise.
@@ -125,7 +126,7 @@ impl Conversation {
     fn chat_id(&self) -> String {
         self.key
             .as_ref()
-            .map_or_else(|| "unknown".to_string(), ConversationKey::chat_id)
+            .map_or_else(|| NAMELESS_CHAT_ID.to_string(), ConversationKey::chat_id)
     }
 
     fn is_group(&self) -> bool {
@@ -346,7 +347,7 @@ fn member(party: &str) -> IrParticipant {
 /// is keyed by the number the source recorded. Only when neither is an
 /// address is it keyed by the name, the label's first: the exporter records
 /// the name and no address, and the server resolves it against contacts on
-/// import. With neither, the row goes to the `unknown` conversation.
+/// import. With neither, the row goes to the conversation that names nobody.
 fn one_to_one(sender: Option<&str>, label: Option<&str>) -> Conversation {
     let given = |s: &&str| !s.trim().is_empty();
     let address = [sender, label]
@@ -492,7 +493,8 @@ fn parse_timestamp(raw: &str) -> Option<i64> {
 /// OpenExtract deltas of the shared [`message_ir::pending_to_document`] projection.
 struct OpenExtractProjection<'a> {
     export: &'a ExportMeta,
-    /// The key of the conversation being projected; `None` for `unknown`.
+    /// The key of the conversation being projected; `None` for the one that
+    /// names nobody.
     key: Option<&'a ConversationKey>,
 }
 
@@ -525,8 +527,8 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
 
     /// A group's members come from its key. A one-to-one conversation's one
     /// participant is the person it is with: their address, or for a
-    /// conversation keyed by a name, the name and no address. The `unknown`
-    /// conversation has no roster at all.
+    /// conversation keyed by a name, the name and no address. The conversation
+    /// that names nobody has no roster at all.
     fn participants(&self, _chat_id: &str, convo: &PendingConversation) -> Vec<IrParticipant> {
         match self.key {
             None => Vec::new(),
@@ -602,7 +604,7 @@ mod tests {
         let report = convert(dir.path(), &out).unwrap();
         assert_eq!(report.extra("name_only_chat"), 1);
         assert_eq!(report.conversations, 1);
-        let csv_path = out.join("Cathy_Arp.csv");
+        let csv_path = out.join("name_Cathy_Arp.csv");
         assert!(csv_path.is_file(), "missing {}", csv_path.display());
         let body = fs::read_to_string(&csv_path).unwrap();
         assert!(

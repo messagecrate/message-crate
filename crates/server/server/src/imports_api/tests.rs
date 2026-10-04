@@ -1216,7 +1216,7 @@ async fn name_only_participant_becomes_an_other_identity_on_a_contact() {
     let path = write_jsonl(
         tmp.path(),
         "name-only.jsonl",
-        r#"{"schema_version":4,"export":{"source":"openextract","tool":"test","tool_version":"0","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"Sarah_Vale","conversation_type":"individual","group_title":null,"participants":[{"display_name":"Sarah Vale"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}
+        r#"{"schema_version":4,"export":{"source":"openextract","tool":"test","tool_version":"0","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"name:Sarah Vale","conversation_type":"individual","group_title":null,"participants":[{"display_name":"Sarah Vale"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}
 {"guid":"g-name-only","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_handle":null,"sender_display_name":"Sarah Vale","subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}
 "#,
     );
@@ -1271,6 +1271,85 @@ async fn name_only_participant_becomes_an_other_identity_on_a_contact() {
     .await
     .unwrap();
     assert!(participant_is_her);
+
+    // The chat keyed by her name gives her no second contact: she is one
+    // contact, and the key's handle belongs to nobody.
+    let contacts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM contacts WHERE account_id = $1")
+        .bind(TEST_ACCOUNT)
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(contacts, 1);
+    let key_has_a_contact: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM contact_handles ch JOIN handles h ON h.id = ch.handle_id
+                        WHERE h.raw = 'name:Sarah Vale')",
+    )
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    assert!(!key_has_a_contact);
+}
+
+/// A person named "AMAZON" with no address and the sender `AMAZON` are two
+/// conversations, because a name key never equals an address.
+#[tokio::test]
+async fn a_name_keyed_chat_is_not_the_chat_of_the_address_it_spells() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("messagecrate.db");
+    let assets = tmp.path().join("assets");
+    let named = write_jsonl(
+        tmp.path(),
+        "name-AMAZON.jsonl",
+        r#"{"schema_version":4,"export":{"source":"sms_backup_plus","tool":"test","tool_version":"0","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"name:AMAZON","conversation_type":"individual","group_title":null,"participants":[{"display_name":"AMAZON"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}
+{"guid":"g-named","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_handle":null,"sender_display_name":"AMAZON","subject":null,"text":"from a person","attachments":[],"imessage":null,"source":null}
+"#,
+    );
+    let sender = write_jsonl(
+        tmp.path(),
+        "AMAZON.jsonl",
+        r#"{"schema_version":4,"export":{"source":"sms_backup_plus","tool":"test","tool_version":"0","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"AMAZON","conversation_type":"individual","group_title":null,"participants":[{"handle":"AMAZON","display_name":null,"handle_type":"other"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183463000,"last_timestamp_unix_ms":1426183463000}}}
+{"guid":"g-sender","timestamp_unix_ms":1426183463000,"direction":"incoming","service":"sms","message_kind":"sms","sender_handle":"AMAZON","sender_display_name":null,"subject":null,"text":"from a sender","attachments":[],"imessage":null,"source":null}
+"#,
+    );
+    let opts = replace_opts(&assets, tmp.path(), "sms_backup_plus");
+    import_jsonl_files(&db, &[named, sender], &opts)
+        .await
+        .unwrap();
+
+    let (_pool, mut conn) = open_verify(&db).await;
+    let conversations: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM conversations WHERE account_id = $1")
+            .bind(TEST_ACCOUNT)
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+    assert_eq!(conversations, 2);
+}
+
+/// The conversation whose rows name nobody is no person, so its chat id
+/// gives nobody a contact.
+#[tokio::test]
+async fn the_conversation_that_names_nobody_never_becomes_a_contact() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("messagecrate.db");
+    let assets = tmp.path().join("assets");
+    let path = write_jsonl(
+        tmp.path(),
+        "nameless.jsonl",
+        r#"{"schema_version":4,"export":{"source":"openextract","tool":"test","tool_version":"0","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"nameless:","conversation_type":"individual","group_title":null,"participants":[],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}
+{"guid":"g-nameless","timestamp_unix_ms":1426183462000,"direction":"outgoing","service":"sms","message_kind":"sms","sender_handle":null,"sender_display_name":null,"subject":null,"text":"to whom","attachments":[],"imessage":null,"source":null}
+"#,
+    );
+    let opts = replace_opts(&assets, tmp.path(), "openextract");
+    import_jsonl_files(&db, &[path], &opts).await.unwrap();
+
+    let (_pool, mut conn) = open_verify(&db).await;
+    let contacts: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM contacts WHERE account_id = $1")
+        .bind(TEST_ACCOUNT)
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(contacts, 0);
 }
 
 /// A group chat's identifier names the conversation, not a person, so only

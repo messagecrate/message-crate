@@ -4,34 +4,37 @@
 //! projection (`message_ir::one_copy_per_message`), not here.
 
 use crate::types::ParsedMessage;
+use message_ir::{ConversationKey, NAMELESS_CHAT_ID};
 
 /// Who this chat is with, as a stable string (the peer's handle key, or
 /// `chat-…` for groups).
 ///
 /// When the mail names the other party but records no address, the chat is
-/// keyed by that name, trimmed, so each person gets their own conversation.
-/// Collapsing them all into one `unknown` chat would merge unrelated people;
-/// the server resolves the name against contacts on import. The file name is
+/// keyed by that name through [`ConversationKey::NameOnly`], so each person
+/// gets their own conversation. Collapsing them all into one chat would
+/// merge unrelated people; the server resolves the name against contacts on
+/// import. The name key carries a prefix no address has, so a person named
+/// "AMAZON" never shares the chat of the sender `AMAZON`. The file name is
 /// made from this key later, by `ConversationDocument::filename_stem`.
+///
+/// A mail that names nobody never gets here: the parser skips it and counts
+/// it as a parse error. Should one arrive, it is keyed [`NAMELESS_CHAT_ID`],
+/// the key every exporter gives the conversation that names nobody, so it
+/// can never take a person's key.
 pub(crate) fn chat_id_for(msg: &ParsedMessage) -> String {
     if msg.is_group() {
         format!("chat-{}", msg.chat_key)
     } else if msg.chat_key.is_empty() {
-        match name_only_key(msg) {
-            Some(key) => key,
-            None => "unknown".to_string(),
-        }
+        name_only_key(msg).map_or_else(|| NAMELESS_CHAT_ID.to_string(), |key| key.chat_id())
     } else {
         msg.chat_key.clone()
     }
 }
 
-/// The peer's name, trimmed, when the mail named them and recorded no
-/// address. `None` when there is no usable name either.
-///
-/// The name is kept whole: a file-name stem would give "张伟" and "李娜" one
-/// key, and "José" and "Josè" another.
-pub(crate) fn name_only_key(msg: &ParsedMessage) -> Option<String> {
+/// The key of a chat with a peer the mail named and recorded no address
+/// for. `None` when the mail is a group's, records an address, or has no
+/// usable name either.
+fn name_only_key(msg: &ParsedMessage) -> Option<ConversationKey> {
     if msg.is_group() || !msg.chat_key.is_empty() {
         return None;
     }
@@ -39,7 +42,7 @@ pub(crate) fn name_only_key(msg: &ParsedMessage) -> Option<String> {
     if name.is_empty() {
         return None;
     }
-    Some(name.to_string())
+    Some(ConversationKey::NameOnly(name.to_string()))
 }
 
 /// Message time as milliseconds since 1970.
@@ -77,9 +80,31 @@ mod tests {
     }
 
     #[test]
-    fn unknown_chat_id_for_empty_peer() {
+    fn a_mail_that_names_nobody_is_keyed_nameless() {
         let msg = sample_msg("", 1_609_459_200.0, false, "hi");
-        assert_eq!(chat_id_for(&msg), "unknown");
+        assert_eq!(chat_id_for(&msg), NAMELESS_CHAT_ID);
+    }
+
+    /// A person named "unknown" is not the chat of the mails that name
+    /// nobody.
+    #[test]
+    fn a_person_named_unknown_has_a_chat_of_their_own() {
+        let nobody = sample_msg("", 1.0, false, "hi");
+        let mut named = nobody.clone();
+        named.name_alias = Some("unknown".into());
+        assert_ne!(chat_id_for(&named), chat_id_for(&nobody));
+    }
+
+    /// A person named "AMAZON" with no address is not the sender `AMAZON`,
+    /// and a person named like a number is not that number.
+    #[test]
+    fn a_name_never_shares_the_chat_of_an_address_it_spells() {
+        for address in ["AMAZON", "+15555550101"] {
+            let from_address = sample_msg(address, 1.0, false, "hi");
+            let mut named = sample_msg("", 1.0, false, "hi");
+            named.name_alias = Some(address.into());
+            assert_ne!(chat_id_for(&named), chat_id_for(&from_address), "{address}");
+        }
     }
 
     #[test]
@@ -89,7 +114,7 @@ mod tests {
         let mut b = a.clone();
         b.name_alias = Some("李娜".into());
         assert_ne!(chat_id_for(&a), chat_id_for(&b));
-        assert_ne!(chat_id_for(&a), "unknown");
+        assert_ne!(chat_id_for(&a), NAMELESS_CHAT_ID);
     }
 
     #[test]
@@ -105,6 +130,6 @@ mod tests {
     fn a_chat_known_only_by_name_is_keyed_on_the_trimmed_name() {
         let mut msg = sample_msg("", 1.0, false, "hi");
         msg.name_alias = Some("  José Ramírez \t".into());
-        assert_eq!(chat_id_for(&msg), "José Ramírez");
+        assert_eq!(chat_id_for(&msg), "name:José Ramírez");
     }
 }

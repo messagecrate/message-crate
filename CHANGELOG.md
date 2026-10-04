@@ -237,6 +237,16 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **A person known only by name keeps a conversation of their
+  own.** SMS Backup+, iMazing and OpenExtract backups sometimes name a person
+  without recording a number or address. That person's conversation could
+  merge with another's: two names in a script other than Latin, such as
+  "张伟" and "李娜", became one conversation, and so did "Ana Lee" and
+  "Ana.Lee". A person named "AMAZON" shared the conversation of the sender
+  AMAZON, and a person named "unknown" shared the conversation of sent
+  messages that name nobody. Each person now keeps a conversation of their
+  own. Such a person also became two contacts on import, one holding their
+  name and one with no name; they are now one contact.
 - 2026-10-03 **A video, photo or audio file that cannot be converted says
   why, briefly.** The error for a file the Media stage of an Import Run
   could not convert held the converter's version, build settings and progress
@@ -584,6 +594,12 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-04 **The Contact Groups and Message Tags menus say why a name is
+  refused.** Creating a Contact Group from the Contact Groups menu on the
+  contacts list, or a Message Tag from the Message Tags menu on the
+  conversation list, did nothing when the server refused the name, such as a
+  Contact Group name holding `;` or a name over 80 characters. The menu now
+  keeps the typed name and shows the reason, as the sidebar already did.
 - 2026-10-04 **A screen reader says which contact is open.** The open
   contact in the Contacts list was shown only by its highlight, so a screen
   reader gave no sign of which one was open. The open contact is now

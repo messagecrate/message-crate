@@ -383,7 +383,7 @@ pub fn default_participants(
         })
         .collect();
     if participants.is_empty() && !convo.is_group && !chat_id.is_empty() {
-        if convo.extra.contains_key(crate::CHAT_ID_IS_NAME) {
+        if crate::name_of_chat_id(chat_id).is_some() {
             // The source named this person and recorded no address for them,
             // so the chat id is made from the name — not something to store
             // as an identity.

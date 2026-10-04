@@ -518,8 +518,23 @@ fn participant_matches(out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<(),
     }
 }
 
-/// Some party to conversation `c` is `v`: its chat handle, a participant's
-/// handle, or a participant's display name (see `participant_matches`).
+/// SQL that holds when the handle `handle_id_expr` is a conversation key
+/// rather than anybody's address: `name:` and a name, or `nameless:`. Such a
+/// chat handle is never matched as a person, because every name key
+/// contains `name:` and `with:nam` would find them all; the person a
+/// name-keyed conversation is with is found by their participant row.
+fn is_a_key_handle(handle_id_expr: &str) -> String {
+    let prefix = message_ir::NAME_CHAT_ID_PREFIX;
+    let nameless = message_ir::NAMELESS_CHAT_ID;
+    format!(
+        "EXISTS (SELECT 1 FROM handles hk WHERE hk.id = {handle_id_expr} AND (substr(hk.raw, 1, {}) = '{prefix}' OR hk.raw = '{nameless}'))",
+        prefix.len()
+    )
+}
+
+/// Some party to conversation `c` is `v`: its chat handle when that is an
+/// address, a participant's handle, or a participant's display name (see
+/// `participant_matches`).
 fn with_person(
     ctx: &ListCtx,
     out: &mut Sql,
@@ -528,10 +543,13 @@ fn with_person(
 ) -> Result<(), QueryError> {
     let mut result = Ok(());
     ctx.conversation(out, |o| {
-        o.push("(");
+        o.push(&format!(
+            "(((NOT {}) AND ",
+            is_a_key_handle("c.chat_handle_id")
+        ));
         result = person_matches(ctx, o, "c.chat_handle_id", term, v);
         o.push(&format!(
-            " OR EXISTS (SELECT 1 FROM {} WHERE p.conversation_id = c.id AND (",
+            ") OR EXISTS (SELECT 1 FROM {} WHERE p.conversation_id = c.id AND (",
             participants_with_contact(ctx.trash)
         ));
         if result.is_ok() {

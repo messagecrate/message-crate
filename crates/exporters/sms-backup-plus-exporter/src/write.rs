@@ -223,8 +223,12 @@ impl SmsBackupPlusArchive {
 /// What every mail of one conversation shares.
 struct Conversation<'a> {
     doc: &'a ConversationDocument,
-    /// The other people's handles, the owner's left out.
+    /// The other people's handles, the owner's left out. For a conversation
+    /// keyed by a name, the name.
     peers: Vec<&'a str>,
+    /// Whether the conversation is keyed by a name, with no address for the
+    /// person it is with.
+    name_only: bool,
     /// `References` local part: the same for every mail of the conversation,
     /// so a mail program threads them.
     thread: String,
@@ -245,15 +249,22 @@ impl<'a> Conversation<'a> {
             .filter_map(|p| p.handle.as_deref().and_then(trimmed))
             .filter(|handle| Some(handle_key(handle)) != owner)
             .collect();
+        // A one-to-one conversation whose roster has no address is with the
+        // address its chat id is, or, for a conversation keyed by a name,
+        // with that name: the `name:` prefix is the key's, not the person's.
+        let mut name_only = false;
         if peers.is_empty()
             && let Some(id) = trimmed(&doc.conversation.chat_identifier)
         {
-            peers.push(id);
+            let name = message_ir::name_of_chat_id(id);
+            name_only = name.is_some();
+            peers.push(name.unwrap_or(id));
         }
         let digest = hex::encode(Sha256::digest(doc.conversation.chat_identifier.as_bytes()));
         Self {
             doc,
             peers,
+            name_only,
             thread: digest[..32].to_string(),
         }
     }
@@ -263,8 +274,14 @@ impl<'a> Conversation<'a> {
     }
 
     /// `X-smssync-address`: the peer, or a group's peers joined by `~` as
-    /// SMS Backup+ joins them.
+    /// SMS Backup+ joins them. Empty for a conversation keyed by a name, as
+    /// SMS Backup+ writes a message it has no number for: the importer then
+    /// keys the conversation by the name in the subject, where an address
+    /// would make the name an address.
     fn address(&self) -> String {
+        if self.name_only {
+            return String::new();
+        }
         self.peers.join("~")
     }
 
@@ -307,6 +324,10 @@ impl<'a> Conversation<'a> {
     fn subject(&self, message: &IrMessage) -> String {
         let sender = self.sender_of(message);
         let named = match message.direction {
+            // The mail of a conversation keyed by a name has no address, so
+            // the importer keys it by the subject's name: every mail of it
+            // names the conversation's name, whoever the source said wrote.
+            _ if self.name_only => self.peers.first().map(|name| (*name).to_string()),
             IrDirection::Incoming => sender.map(|handle| {
                 message
                     .sender_display_name

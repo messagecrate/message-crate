@@ -3,7 +3,7 @@
 
 use crate::attachments_emit::queue_attachments;
 use crate::flat_eml::Owner;
-use crate::identity::{chat_id_for, name_only_key, timestamp_ms};
+use crate::identity::{chat_id_for, timestamp_ms};
 use crate::parse_emit::{ParsedEmlKind, collect_eml_paths, parse_one_eml};
 use crate::types::ParsedMessage;
 use anyhow::{Result, bail};
@@ -132,7 +132,6 @@ fn add_message(
     report: &mut ExportReport,
 ) {
     let chat_id = chat_id_for(&msg);
-    let name_only = name_only_key(&msg).is_some();
 
     let peers: Vec<String> = msg
         .participants
@@ -146,11 +145,6 @@ fn add_message(
         msg.group_title.clone(),
         peers,
     );
-    if name_only {
-        convo
-            .extra
-            .insert(message_ir::CHAT_ID_IS_NAME.to_string(), "1".to_string());
-    }
 
     report.bump("messages_before_dedupe", 1);
     convo.messages.push(pending_from_parsed(msg, pending_atts));
