@@ -134,8 +134,8 @@ export function useColumnResize({
     const step = e.shiftKey ? 24 : 8;
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
-      // Start from the column's measured width, as a drag does, so a flex-shrunk column
-      // moves on the first key press.
+      // Start from the column's measured width, as a drag does, so a
+      // flex-shrunk column moves on the first key press.
       const from = measureColumnWidth(e.currentTarget, widthRef.current);
       const next = clampWidth(
         e.key === "ArrowLeft" ? from - step : from + step,

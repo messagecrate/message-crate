@@ -19,18 +19,24 @@ function handleProps() {
 
 function renderHandle(
   props: ReturnType<typeof handleProps>,
-  { dragging = false, handleHover = false } = {},
+  {
+    dragging = false,
+    handleHover = false,
+    width = 220,
+    container,
+  }: { dragging?: boolean; handleHover?: boolean; width?: number; container?: HTMLElement } = {},
 ) {
   return render(
     <ColumnResizeHandle
       ariaLabel="Resize navigation panel"
-      width={220}
+      width={width}
       minWidth={160}
       maxWidth={520}
       dragging={dragging}
       handleHover={handleHover}
       handleProps={props}
     />,
+    container ? { container } : undefined,
   );
 }
 
@@ -64,19 +70,8 @@ function gripInColumn({
     y: 0,
     toJSON: () => ({}),
   });
-  const { getByRole } = render(
-    <ColumnResizeHandle
-      ariaLabel="Resize list"
-      width={stored}
-      minWidth={160}
-      maxWidth={520}
-      dragging={false}
-      handleHover={false}
-      handleProps={props}
-    />,
-    { container: column },
-  );
-  return getByRole("separator", { name: "Resize list" });
+  const { getByRole } = renderHandle(props, { width: stored, container: column });
+  return getByRole("separator", { name: "Resize navigation panel" });
 }
 
 beforeEach(() => {
