@@ -13706,7 +13706,8 @@
         "type": "object",
         "description": "The Import Errors a discarded run recorded before it was given up. A run\nthat paused and is then discarded never posts `complete`, so its issues\nand notes come with the discard.",
         "required": [
-          "issues"
+          "issues",
+          "notes"
         ],
         "properties": {
           "issues": {
@@ -13721,7 +13722,7 @@
             "items": {
               "$ref": "#/components/schemas/ImportNoteRequest"
             },
-            "description": "The run's notes so far."
+            "description": "The run's notes so far. The list is empty when the run recorded none."
           }
         }
       },
@@ -14206,6 +14207,7 @@
           "source_identities",
           "summary",
           "issue_count",
+          "note_count",
           "contacts_new",
           "contacts_changed"
         ],
@@ -14288,6 +14290,12 @@
           "mode": {
             "type": "string",
             "description": "Import mode (`replace` or `append`)."
+          },
+          "note_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many notes the run recorded.",
+            "minimum": 0
           },
           "parse_ms": {
             "type": [
@@ -14870,6 +14878,7 @@
           "bytes_uploaded",
           "counts",
           "issue_count",
+          "note_count",
           "contacts_new",
           "contacts_changed"
         ],
@@ -14949,6 +14958,12 @@
           "mode": {
             "type": "string",
             "description": "Import mode (`replace` or `append`)."
+          },
+          "note_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Notes the run recorded. Each names a file or an address, so the owner\nreads how many and not which.",
+            "minimum": 0
           },
           "parse_ms": {
             "type": [
@@ -16263,6 +16278,7 @@
                 "source_identities",
                 "summary",
                 "issue_count",
+                "note_count",
                 "contacts_new",
                 "contacts_changed"
               ],
@@ -16345,6 +16361,12 @@
                 "mode": {
                   "type": "string",
                   "description": "Import mode (`replace` or `append`)."
+                },
+                "note_count": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "How many notes the run recorded.",
+                  "minimum": 0
                 },
                 "parse_ms": {
                   "type": [
@@ -16777,6 +16799,7 @@
                 "bytes_uploaded",
                 "counts",
                 "issue_count",
+                "note_count",
                 "contacts_new",
                 "contacts_changed"
               ],
@@ -16856,6 +16879,12 @@
                 "mode": {
                   "type": "string",
                   "description": "Import mode (`replace` or `append`)."
+                },
+                "note_count": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "Notes the run recorded. Each names a file or an address, so the owner\nreads how many and not which.",
+                  "minimum": 0
                 },
                 "parse_ms": {
                   "type": [

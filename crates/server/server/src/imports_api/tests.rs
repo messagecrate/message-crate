@@ -2186,7 +2186,7 @@ async fn a_batch_into_a_run_that_is_not_running_is_a_state_conflict() {
         &state,
         &format!("/v1/imports/{id}/discard"),
         &token,
-        serde_json::json!({ "issues": [] }),
+        serde_json::json!({ "issues": [], "notes": [] }),
     )
     .await;
 
@@ -2716,7 +2716,7 @@ async fn every_route_on_another_accounts_run_is_not_found_and_changes_nothing() 
                 &format!("{run}/discard"),
                 token,
                 "application/json",
-                r#"{"issues":[]}"#,
+                r#"{"issues":[],"notes":[]}"#,
             )
             .await,
         ),
@@ -4359,6 +4359,7 @@ async fn a_discard_records_the_issues_it_carries() {
         token,
         serde_json::json!({
             "issues": [{ "kind": "skip", "stage": "media", "item": "IMG_0001.heic", "reason": "convert failed" }],
+            "notes": [],
         }),
     )
     .await;
@@ -4405,7 +4406,11 @@ async fn a_completion_records_the_notes_it_carries_apart_from_its_issues() {
 
     assert_eq!(completed["status"], "completed", "{completed}");
     assert_eq!(completed["notes"], serde_json::json!([note]), "{completed}");
+    assert_eq!(completed["note_count"], 1, "{completed}");
     assert_eq!(completed["issues"], serde_json::json!([]), "{completed}");
+    let page: serde_json::Value = get_json(state, "/v1/imports", token).await;
+    assert_eq!(page["items"][0]["note_count"], 1, "{page}");
+    assert!(page["items"][0].get("notes").is_none(), "{page}");
     let run: serde_json::Value = get_json(state, &format!("/v1/imports/{id}"), token).await;
     assert_eq!(run["notes"], serde_json::json!([note]), "{run}");
 }
@@ -4464,7 +4469,7 @@ async fn a_discard_with_an_unknown_issue_kind_is_refused() {
         &format!("/v1/imports/{id}/discard"),
         token,
         "application/json",
-        r#"{"issues":[{"kind":"warning","stage":"staging","item":"a.jsonl","reason":"x"}]}"#,
+        r#"{"issues":[{"kind":"warning","stage":"staging","item":"a.jsonl","reason":"x"}],"notes":[]}"#,
     )
     .await;
 
@@ -4519,7 +4524,7 @@ async fn an_import_run_reads_the_same_from_every_route() {
         state,
         &format!("/v1/imports/{discarded_id}/discard"),
         token,
-        serde_json::json!({ "issues": [] }),
+        serde_json::json!({ "issues": [], "notes": [] }),
     )
     .await;
     assert_eq!(discarded["status"], "cancelled", "{discarded}");
@@ -4541,12 +4546,14 @@ async fn an_import_run_reads_the_same_from_every_route() {
             .remove("issues")
             .expect("the run carries its issues");
         assert_eq!(summary["issue_count"], issues.as_array().unwrap().len());
-        // The list leaves out the notes too: one run answers them.
-        summary
+        // The list leaves out the notes too, and counts them: one run
+        // answers them.
+        let notes = summary
             .as_object_mut()
             .unwrap()
             .remove("notes")
             .expect("the run carries its notes");
+        assert_eq!(summary["note_count"], notes.as_array().unwrap().len());
         assert_eq!(listed, &summary, "GET /v1/imports, run {id}");
     }
 }

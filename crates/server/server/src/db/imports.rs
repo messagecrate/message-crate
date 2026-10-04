@@ -228,7 +228,7 @@ pub struct CompleteImportArgs {
     /// Per-file issues to record against the run.
     pub issues: Vec<ImportIssueInput>,
     /// Per-item notes to record against the run.
-    pub notes: Vec<ImportNoteInput>,
+    pub notes: Vec<ImportNoteRow>,
 }
 
 impl CompleteImportArgs {
@@ -264,19 +264,8 @@ pub struct ImportIssueInput {
     pub reason: String,
 }
 
-/// One note to record against an Import Run: something the run did with an
-/// item that is worth knowing but did not fail.
-#[derive(Debug, Clone)]
-pub struct ImportNoteInput {
-    /// Stage the note came from.
-    pub stage: ImportIssueStage,
-    /// The file, message or address the note is about.
-    pub item: String,
-    /// What the run did with it.
-    pub text: String,
-}
-
-/// One stored `import_notes` row.
+/// One `import_notes` row, as it is written and read back: something the
+/// run did with an item that is worth knowing but did not fail.
 #[derive(Debug, Clone)]
 pub struct ImportNoteRow {
     /// Stage the note came from.
@@ -618,7 +607,7 @@ pub async fn discard_import(
     account_id: i64,
     import_id: i64,
     issues: &[ImportIssueInput],
-    notes: &[ImportNoteInput],
+    notes: &[ImportNoteRow],
 ) -> std::result::Result<(), ImportLookupError> {
     for issue in issues {
         validate_issue_kind(&issue.kind)?;
@@ -812,7 +801,7 @@ async fn insert_issues(
 async fn insert_notes(
     conn: &mut SqliteConnection,
     import_id: i64,
-    notes: &[ImportNoteInput],
+    notes: &[ImportNoteRow],
 ) -> Result<()> {
     for note in notes {
         sqlx::query(
@@ -939,14 +928,16 @@ pub const DEFAULT_IMPORT_SORT: [SortKey<ImportSort>; 1] = [SortKey {
     direction: Direction::Desc,
 }];
 
-/// One Import Run as the list reads it: its row, how many issues it
-/// recorded, and its contact tally, all from the list's one statement.
+/// One Import Run as the list reads it: its row, how many issues and notes
+/// it recorded, and its contact tally, all from the list's one statement.
 #[derive(Debug, Clone)]
 pub struct ListedImport {
     /// The run's row.
     pub row: ImportRow,
     /// How many issues the run recorded.
     pub issue_count: u64,
+    /// How many notes the run recorded.
+    pub note_count: u64,
     /// The contacts the run created and the ones it only changed.
     pub contacts: crate::db::import_contacts::ContactCounts,
 }
@@ -992,6 +983,8 @@ pub async fn list_imports_page(
         "SELECT {IMPORT_COLUMNS},
                 (SELECT COUNT(*) FROM import_issues
                  WHERE import_issues.import_id = imports.id) AS issue_count,
+                (SELECT COUNT(*) FROM import_notes
+                 WHERE import_notes.import_id = imports.id) AS note_count,
                 {contacts_new} AS contacts_new, {contacts_changed} AS contacts_changed
          FROM imports
          WHERE account_id = $1{status_sql}
@@ -1012,6 +1005,7 @@ pub async fn list_imports_page(
             Ok(ListedImport {
                 row: import_from_row(row)?,
                 issue_count: count(row, "issue_count")?,
+                note_count: count(row, "note_count")?,
                 contacts: crate::db::import_contacts::ContactCounts {
                     new_count: count(row, "contacts_new")?,
                     changed_count: count(row, "contacts_changed")?,
@@ -1026,6 +1020,16 @@ pub async fn list_imports_page(
 /// that `import_id` is the account's.
 pub async fn issue_count(conn: &mut SqliteConnection, import_id: i64) -> Result<u64> {
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM import_issues WHERE import_id = $1")
+        .bind(import_id)
+        .fetch_one(&mut *conn)
+        .await?;
+    Ok(count.max(0) as u64)
+}
+
+/// How many notes the run recorded. The caller has already established
+/// that `import_id` is the account's.
+pub async fn note_count(conn: &mut SqliteConnection, import_id: i64) -> Result<u64> {
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM import_notes WHERE import_id = $1")
         .bind(import_id)
         .fetch_one(&mut *conn)
         .await?;

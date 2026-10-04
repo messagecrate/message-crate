@@ -651,8 +651,7 @@ pub(crate) struct DiscardImportRequest {
     /// The run's Import Errors so far. The list is empty when the run
     /// recorded none.
     pub(crate) issues: Vec<ImportIssueRequest>,
-    /// The run's notes so far.
-    #[serde(default)]
+    /// The run's notes so far. The list is empty when the run recorded none.
     pub(crate) notes: Vec<ImportNoteRequest>,
 }
 
@@ -670,8 +669,8 @@ pub(crate) struct ImportNoteRequest {
 }
 
 /// One requested note, as the database records it.
-fn note_input(note: ImportNoteRequest) -> crate::db::imports::ImportNoteInput {
-    crate::db::imports::ImportNoteInput {
+fn note_input(note: ImportNoteRequest) -> crate::db::imports::ImportNoteRow {
+    crate::db::imports::ImportNoteRow {
         stage: note.stage,
         item: note.item,
         text: note.text,
@@ -865,6 +864,8 @@ pub(crate) struct ImportRunSummary {
     pub(crate) summary: serde_json::Value,
     /// How many issues the run recorded.
     pub(crate) issue_count: u64,
+    /// How many notes the run recorded.
+    pub(crate) note_count: u64,
     /// Contacts this run created.
     pub(crate) contacts_new: u64,
     /// Contacts it only changed.
@@ -899,6 +900,7 @@ impl From<crate::db::imports::ListedImport> for ImportRunSummary {
             source_identities: crate::db::imports::json_column(row.source_identities),
             summary: crate::db::imports::json_column(row.summary_json),
             issue_count: listed.issue_count,
+            note_count: listed.note_count,
             contacts_new: listed.contacts.new_count,
             contacts_changed: listed.contacts.changed_count,
         }
@@ -950,6 +952,9 @@ pub(crate) struct OwnerImportRun {
     /// Issues the run recorded. Each names the conversation it was about, so
     /// the owner reads how many and not which.
     issue_count: u64,
+    /// Notes the run recorded. Each names a file or an address, so the owner
+    /// reads how many and not which.
+    note_count: u64,
     /// Contacts this run created.
     contacts_new: u64,
     /// Contacts it only changed.
@@ -963,17 +968,19 @@ pub(crate) async fn owner_import_run(
     row: crate::db::imports::ImportRow,
 ) -> Result<OwnerImportRun, ApiError> {
     let issue_count = crate::db::imports::issue_count(conn, row.id).await?;
-    listed_import(conn, row, issue_count)
+    let note_count = crate::db::imports::note_count(conn, row.id).await?;
+    listed_import(conn, row, issue_count, note_count)
         .await
         .map(OwnerImportRun::from)
 }
 
-/// One run's row as the list would read it, given its issue count: the
-/// contact tally is read here.
+/// One run's row as the list would read it, given its issue and note
+/// counts: the contact tally is read here.
 async fn listed_import(
     conn: &mut SqliteConnection,
     row: crate::db::imports::ImportRow,
     issue_count: u64,
+    note_count: u64,
 ) -> Result<crate::db::imports::ListedImport, ApiError> {
     let contacts = crate::db::import_contacts::counts(conn, row.id)
         .await
@@ -981,6 +988,7 @@ async fn listed_import(
     Ok(crate::db::imports::ListedImport {
         row,
         issue_count,
+        note_count,
         contacts,
     })
 }
@@ -1013,6 +1021,7 @@ impl From<crate::db::imports::ListedImport> for OwnerImportRun {
             upload_ms: row.upload_ms,
             counts,
             issue_count: listed.issue_count,
+            note_count: listed.note_count,
             contacts_new: listed.contacts.new_count,
             contacts_changed: listed.contacts.changed_count,
         }
@@ -1474,8 +1483,10 @@ pub(crate) async fn import_run(
             item: note.item,
             text: note.text,
         })
-        .collect();
-    let run = listed_import(conn, row, issues.len() as u64).await?.into();
+        .collect::<Vec<_>>();
+    let run = listed_import(conn, row, issues.len() as u64, notes.len() as u64)
+        .await?
+        .into();
     Ok(ImportRun { run, issues, notes })
 }
 
