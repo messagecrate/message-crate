@@ -31,14 +31,16 @@ Discovery walks the selected path recursively without following directory symbol
 - When the Import form's **Attachments** choice copies media (and always for mail / Xml), each row's file is found in its own
   chat folder by the naming rules in [input](/docs/developer/formats/imazing/input/#export-tree) and copied under
   `output/attachments/`. A row with no such file, or whose file can't be told apart from another row's, is marked `file_missing`, so no file goes to two rows.
-- When media is copied, the files beside a CSV that no row names are sorted after every CSV is read.
-  A chat folder that holds a WhatsApp CSV is left out, because Live Photo videos and link previews
-  are what iMazing writes into a Messages chat folder.
-  A Live Photo's video (`.mov` beside a `.jpg` or `.jpeg` an Image row names) becomes the second
+- When media is copied, the files beside a Messages CSV that no row names are sorted after every CSV
+  is read, because only iMazing's Messages export writes files without a row.
+  A folder that holds only a WhatsApp CSV is not looked at.
+  A Live Photo's video (`.mov` beside a `.jpg` or `.jpeg` a Messages Image row names) becomes the second
   attachment of that row's message, named as the row's picture with the video's extension.
   When two rows name the picture, the first in CSV order takes the video, and the report names the
   picture in a note, which the run's summary lines print as `note:`, apart from its errors.
   The report counts the videos as `live_photo_videos`.
+  In a folder that also holds a WhatsApp CSV, any other file no row names may be WhatsApp's, so it is
+  neither counted nor imported.
 - A link preview (`.url`) whose `URL=` address appears in the text of a row at the second the file
   name starts with is not imported, because it holds nothing the message does not already show. The
   report counts it as `link_previews_already_in_message`. Every other file no row names, a `.url`

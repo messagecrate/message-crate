@@ -973,16 +973,25 @@ fn a_whatsapp_chat_folder_gets_no_live_photo_video_and_no_unnamed_file_count() {
     assert_whatsapp_folder_left_alone(&export);
 }
 
-/// A chat folder that holds a WhatsApp CSV is left alone even when a
-/// Messages CSV sits beside it, so the report's counts do not depend on
-/// whether one does.
+/// In a chat folder that holds a Messages CSV and a WhatsApp CSV, a Live
+/// Photo video whose picture a Messages Image row names still joins that
+/// row's message. A file no row names may be WhatsApp's there, so the
+/// WhatsApp photo's `.mov`, the link preview and the stray file are neither
+/// attached nor counted, as in a folder with only the WhatsApp CSV.
 #[test]
-fn a_chat_folder_with_a_whatsapp_and_a_messages_csv_gets_no_unnamed_file_count() {
+fn a_chat_folder_with_a_whatsapp_and_a_messages_csv_attaches_only_messages_live_photos() {
     let messages_csv = format!(
-        "{MESSAGES_HEADER}Bob,2020-01-01 12:03:00,iMessage,Incoming,+15555550100,Bob,Read,,,hi,,,\n"
+        "{MESSAGES_HEADER}Bob,2020-01-01 12:03:00,iMessage,Incoming,+15555550100,Bob,Read,,,live,,IMG_0009.jpg,Image\n"
     );
     let mut files = UNNAMED_FILES_BESIDE_A_WHATSAPP_PHOTO.to_vec();
-    files.push(("Messages.csv", &messages_csv));
+    files.extend([
+        ("Messages.csv", messages_csv.as_str()),
+        (
+            "2020-01-01 12 03 00 - Bob - IMG_0009.jpg",
+            "messages picture",
+        ),
+        ("2020-01-01 12 03 00 - Bob - IMG_0009.mov", "messages video"),
+    ]);
     let export = convert_chat_folder_with(
         (
             "WhatsApp.csv",
@@ -991,7 +1000,24 @@ fn a_chat_folder_with_a_whatsapp_and_a_messages_csv_gets_no_unnamed_file_count()
         &files,
         "+15555550100__whatsapp.json",
     );
-    assert_whatsapp_folder_left_alone(&export);
+    assert_eq!(export.attachment_bodies("photo"), vec!["picture"]);
+    let messages =
+        message_ir_format::read_conversation_json(&export.out.join("+15555550100.json")).unwrap();
+    let live = messages
+        .messages
+        .iter()
+        .find(|m| m.text == "live")
+        .expect("the Messages photo row");
+    let bodies: Vec<String> = live
+        .attachments
+        .iter()
+        .map(|a| fs::read_to_string(export.out.join(a.path.as_deref().unwrap())).unwrap())
+        .collect();
+    assert_eq!(bodies, vec!["messages picture", "messages video"]);
+    let report = &export.report;
+    assert_eq!(report.extra("live_photo_videos"), 1);
+    assert_eq!(report.extra("link_previews_already_in_message"), 0);
+    assert_eq!(report.extra("files_named_by_no_row"), 0);
 }
 
 /// #1080: a group's key is not built from who wrote, so a group in which one

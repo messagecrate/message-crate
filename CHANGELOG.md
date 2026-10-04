@@ -250,8 +250,7 @@ released versions carry their date on the heading.
   videos and link previews in WhatsApp chat folders, though only iMazing's
   Messages export holds them. It could attach a video beside a WhatsApp
   photo to that photo's message. It also counted the folder's other files
-  as left out. It now leaves every folder that holds a WhatsApp export
-  alone.
+  as left out. It now looks for them in Messages chat folders only.
 - 2026-10-04 **iMazing and Apple Messages imports name a folder they cannot
   read in full.** When an iMazing chat folder held an entry that could not
   be read, the rows whose files were in it came through with no photo or
