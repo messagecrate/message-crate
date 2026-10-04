@@ -15,7 +15,10 @@ use std::{
     },
 };
 
-use chat_db_fixture::{FRIEND_EMAIL, FRIEND_PHONE, OWNER, OWNER_EMAIL, PHOTO_BYTES, write_chat_db};
+use chat_db_fixture::{
+    FRIEND_EMAIL, FRIEND_PHONE, GROUP_CHAT_IDENTIFIER, OWNER, OWNER_EMAIL, PHOTO_BYTES,
+    REACTED_GUID, REACTION_EMOJI, write_chat_db,
+};
 use common::{config, helper_binary};
 use message_crate_core::{ExporterConfig, OutputFormat};
 use message_ir::{ConversationDocument, IrDirection, IrMessage};
@@ -172,6 +175,57 @@ fn messages_from_either_owner_address_are_sent_by_the_owner() {
         roster,
         vec![FRIEND_EMAIL],
         "the owner's email is not a participant of the owner's own chat"
+    );
+}
+
+/// A tapback and an emoji reaction on one message reach the conversation
+/// file as that message's `reactions`, each naming the person who reacted
+/// rather than the author of the message reacted to. Removed reactions and
+/// the reaction rows themselves are not reactions of the message.
+#[test]
+fn a_tapback_and_an_emoji_reaction_are_the_messages_reactions() {
+    helper_binary();
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = write_chat_db(dir.path());
+    let output = dir.path().join("out");
+
+    imessage_ir_exporter::run(&config(&db_path, &output, None)).unwrap();
+
+    // Read the line as written, so the test checks the file's own shape.
+    let group = jsonl_files(&output)
+        .into_iter()
+        .map(|path| fs::read_to_string(path).unwrap())
+        .find(|text| text.contains(GROUP_CHAT_IDENTIFIER))
+        .expect("the group's conversation file");
+    let pizza: serde_json::Value = group
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|line| line["guid"] == REACTED_GUID)
+        .expect("the message reacted to");
+    assert_eq!(
+        pizza["reactions"],
+        serde_json::json!([
+            {
+                "part_index": 0,
+                "kind": "loved",
+                "is_from_me": false,
+                "reactor_identity": FRIEND_PHONE,
+                // The fixture has no address book, so the name is the address.
+                "reactor_display_name": FRIEND_PHONE,
+            },
+            {
+                "part_index": 0,
+                "kind": "emoji",
+                "emoji": REACTION_EMOJI,
+                "is_from_me": true,
+                "reactor_display_name": OWNER,
+            },
+        ]),
+        "{pizza}"
+    );
+    assert!(
+        pizza["imessage"].get("tapbacks").is_none(),
+        "reactions are not kept a second time in the Apple fields: {pizza}"
     );
 }
 

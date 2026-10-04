@@ -117,7 +117,7 @@ Reverse import (EML/MBOX → common-message JSON) is available via [`message-ir-
 
 Prefix: **`X-ME-`** (Message Crate). JSON header values are compact single-line JSON.
 
-A mail an earlier Message Crate wrote names its addresses with `X-ME-Sender-Handle`, `X-ME-Owner-Handle` or `X-ME-Message-Owner-Handle`. The reader refuses such a mail, naming the header, rather than read it with no sender, and refuses an `X-ME-Tapbacks` whose entries say `reactor_handle` the same way: export the backup again. An `X-ME-Participants` roster that does not read, such as one whose entries say `handle`, is refused too, with the same advice, rather than read as nobody. The writer escapes `=?` in every JSON header as `=\u003f`, so a name that looks like an RFC 2047 encoded word is not decoded on the way back.
+A mail an earlier Message Crate wrote names its addresses with `X-ME-Sender-Handle`, `X-ME-Owner-Handle` or `X-ME-Message-Owner-Handle`. The reader refuses such a mail, naming the header, rather than read it with no sender: export the backup again. A mail that keeps its reactions in `X-ME-Tapbacks`, as an earlier Message Crate wrote them, is refused the same way rather than read with its reactions gone, and so is an `X-ME-Reactions` that does not read. An `X-ME-Participants` roster that does not read, such as one whose entries say `handle`, is refused too, with the same advice, rather than read as nobody. The writer escapes `=?` in every JSON header as `=\u003f`, so a name that looks like an RFC 2047 encoded word is not decoded on the way back.
 
 | Header | Values | Notes |
 |--------|----------------|-------|
@@ -142,6 +142,7 @@ A mail an earlier Message Crate wrote names its addresses with `X-ME-Sender-Hand
 | `X-ME-Android-Type` | integer string | Optional; SMS `type` / MMS `msg_box` |
 | `X-ME-Source-Fields` | JSON | Optional full-fidelity bag (CSV `source_fields_json` / PDU extras) |
 | `X-ME-Attachment-Meta` | JSON array | Parallel to MIME attachment parts (see Attachments) |
+| `X-ME-Reactions` | JSON array | The message's `reactions`, each a `Reaction` (see Reactions); omitted when it has none |
 
 ### Message-kind taxonomy (shared)
 
@@ -224,11 +225,15 @@ Align with the unified CSV inventory in [`message_ir_format::CSV_HEADERS`](https
 
 Ordinary SMS leaves reply headers unset (no fake threads).
 
-### Tapbacks / reactions
+### Reactions
 
-Apple stores tapbacks as separate `message` rows (`associated_message_type` 2000–2005 add, 3000–3005 remove, plus sticker associations).
+A message's reactions travel on the message itself, in `X-ME-Reactions`: the common message's `reactions` list, one shape for every source, each entry naming the person who reacted. Removed reactions are already left out.
 
-**Preferred: one `.eml` per tapback.**
+```http title="X-ME-Reactions"
+X-ME-Reactions: [{"part_index":0,"kind":"loved","is_from_me":false,"reactor_identity":"+1555…","reactor_display_name":"Alex"}]
+```
+
+Apple stores tapbacks as separate `message` rows (`associated_message_type` 2000–2005 add, 3000–3005 remove, plus sticker associations), and each is written as a `.eml` of its own as well:
 
 | Header | Values |
 |--------|--------|
@@ -244,13 +249,7 @@ Body `text/plain`: short human line (`Loved a message`, `😂 reacted`) so clien
 
 Sticker tapback: include sticker image MIME part + `X-ME-Attachment-Meta` with `is_sticker: true`.
 
-**Optional aggregate on parent** (translator cache only):
-
-```http title="X-ME-Tapbacks"
-X-ME-Tapbacks: [{"part_index":0,"kind":"loved","is_from_me":false,"reactor_identity":"+1555…","reactor_display_name":"Alex"}]
-```
-
-Readers SHOULD prefer per-message tapback EMLs. Do **not** store reactions only as free text in the parent body.
+Do **not** store reactions only as free text in the parent body.
 
 ### Multipart bubbles (`X-ME-Parts`)
 
@@ -340,7 +339,7 @@ Normal sticker sends: image MIME part + `X-ME-Attachment-Meta` (`is_sticker`, `s
 | `owner_identity` / `owner_display_name` | `X-ME-Owner-*` |
 | `message_owner_identity` | `X-ME-Message-Owner-Identity` |
 | `participants_json` (iMessage) | `X-ME-Participants` |
-| `tapbacks_json` | tapback EMLs (+ optional `X-ME-Tapbacks`) |
+| `reactions_json` | `X-ME-Reactions` |
 | `parts_json` / `edits_json` / `app_json` | `X-ME-Parts` / `X-ME-Edits` / `X-ME-App` |
 | `send_effect` | `X-ME-Send-Effect` |
 | `thread_originator_*` | `In-Reply-To` + `X-ME-Thread-*` |

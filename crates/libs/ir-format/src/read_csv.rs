@@ -7,7 +7,7 @@ use message_csv::{AttachmentCell, ParticipantCell};
 use message_ir::{
     ConversationDocument, ConversationHeader, ConversationMeta, ConversationStats, ExportMeta,
     IrAttachment, IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind,
-    IrParticipant, IrService, SCHEMA_VERSION, nonempty, parse_android_type,
+    IrParticipant, IrService, Reaction, SCHEMA_VERSION, nonempty, parse_android_type,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -103,6 +103,7 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
         _ => IrDirection::Incoming,
     };
     let attachments = parse_attachments(get("attachments_json"))?;
+    let reactions = parse_reactions(get("reactions_json"))?;
     let source = source_from_parts(
         parse_android_type(get("android_type")),
         get("source_fields_json"),
@@ -134,7 +135,6 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
         read_receipt_rfc3339: nonempty(get("read_receipt")),
         parts: parse_json_cell(get("parts_json")),
         edits: parse_json_cell(get("edits_json")),
-        tapbacks: parse_json_cell(get("tapbacks_json")),
         app: parse_json_cell(get("app_json")),
         balloon_bundle_id: nonempty(get("balloon_bundle_id")),
         balloon_kind: nonempty(get("balloon_kind")),
@@ -157,6 +157,7 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
         subject: nonempty(get("subject")),
         text: get("text").to_string(),
         attachments,
+        reactions,
         imessage,
         source,
     })
@@ -218,6 +219,14 @@ fn parse_participants(raw: &str) -> Vec<IrParticipant> {
 }
 
 /// Attachments from the `attachments_json` cell.
+/// A `reactions_json` cell: blank for none, else the list the writer wrote.
+fn parse_reactions(raw: &str) -> Result<Vec<Reaction>> {
+    if raw.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    serde_json::from_str(raw).with_context(|| format!("parse reactions_json: {raw}"))
+}
+
 fn parse_attachments(raw: &str) -> Result<Vec<IrAttachment>> {
     let cells: Vec<AttachmentCell> =
         serde_json::from_str(raw).with_context(|| format!("parse attachments_json: {raw}"))?;

@@ -366,6 +366,7 @@ fn message_to_ir(
         subject: record.subject,
         text: record.text,
         attachments,
+        reactions: record.reactions,
         imessage: record.imessage.map(imessage_to_ir),
         source: None,
     };
@@ -386,7 +387,6 @@ fn imessage_to_ir(fields: ImessageRecord) -> IrImessage {
         read_receipt_rfc3339: fields.read_receipt_rfc3339,
         parts: fields.parts,
         edits: fields.edits,
-        tapbacks: fields.tapbacks,
         app: fields.app,
         balloon_bundle_id: fields.balloon_bundle_id,
         balloon_kind: fields.balloon_kind,
@@ -937,6 +937,7 @@ mod tests {
             sender_display_name: None,
             subject: None,
             text: "hi".into(),
+            reactions: Vec::new(),
             owner_identity: "+15555550100".into(),
             owner_display_name: None,
             imessage: None,
@@ -962,7 +963,6 @@ mod tests {
             read_receipt_rfc3339: text("2021-01-01T00:00:00+00:00"),
             parts: json("part"),
             edits: json("edit"),
-            tapbacks: json("tapback"),
             app: json("app"),
             balloon_bundle_id: text("com.example.app"),
             balloon_kind: text("app"),
@@ -983,7 +983,21 @@ mod tests {
             is_reply: true,
             ..ImessageRecord::default()
         });
+        let reaction = message_ir::Reaction {
+            part_index: 1,
+            kind: "emoji".into(),
+            emoji: Some("🔥".into()),
+            is_from_me: false,
+            reactor_identity: Some("+15555550123".into()),
+            reactor_display_name: Some("Ray".into()),
+        };
+        with_fields.reactions = vec![reaction.clone()];
         let (message, _) = message_to_ir(with_fields, AttachmentEmbed::Embed, true);
+        assert_eq!(
+            message.reactions,
+            [reaction],
+            "the reader's reactions as they are"
+        );
         assert!(message.imessage.is_some_and(|fields| fields.is_reply));
     }
 
@@ -1083,6 +1097,7 @@ mod tests {
                     bytes: None,
                 })
                 .collect(),
+            reactions: Vec::new(),
             imessage: None,
             source: None,
         }

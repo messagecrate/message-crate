@@ -176,6 +176,13 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-04 **A reaction travels on the message it reacts to.** An Apple
+  Messages tapback or emoji reaction is written into an export on the
+  message it reacts to, with the person who reacted named, and an import
+  stores it under that person. Export writes the reactions the server keeps
+  the same way, so a conversation exported and imported again keeps them.
+  Every app's reactions will take this one shape; Apple Messages is the first,
+  and WhatsApp follows in a coming release.
 - 2026-10-04 **The server sends an attachment a piece at a time.** A video
   or voice note can start playing before the whole file has arrived, and a
   player can jump to any point in it without downloading what comes before.
@@ -1342,6 +1349,12 @@ released versions carry their date on the heading.
   JSON, JSONL, CSV, EML and mbox exports, and for an Import Run an earlier
   build left paused. Export the backup again with this build, then import
   or convert the new files; discard a paused run and start the import again.
+- Message files exported before reactions moved onto the message they react
+  to are refused when you import or convert them, rather than read with their
+  Apple Messages reactions lost. This holds for JSON, JSONL, CSV, EML and mbox
+  exports, and for an Import Run an earlier build left paused. Export the
+  backup again with this build, then import or convert the new files; discard
+  a paused run and start the import again.
 - `reset-demo` no longer writes a configuration file, and reads the one given
   with `--config`. If an earlier `reset-demo` replaced your configuration
   file, the server stops at startup with a missing `[server]` section: put

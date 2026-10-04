@@ -10,9 +10,9 @@ use chrono::{DateTime, NaiveDateTime};
 use message_ir::{
     ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IrAttachment,
     IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind, IrParticipant,
-    IrService, IrSource, SCHEMA_VERSION,
+    IrService, IrSource, Reaction, SCHEMA_VERSION,
 };
-use serde_json::{Value, json};
+use serde_json::json;
 
 use message_crate_api_types::{Attachment, Message, Tapback};
 
@@ -108,7 +108,6 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
             .is_announcement
             .then(|| msg.text.clone().unwrap_or_default())
             .filter(|text| !text.is_empty()),
-        tapbacks: tapbacks_json(&msg.tapbacks),
         ..Default::default()
     };
 
@@ -130,6 +129,7 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
         subject: msg.subject.clone(),
         text: msg.text.clone().unwrap_or_default(),
         attachments,
+        reactions: msg.tapbacks.iter().filter_map(reaction_from_row).collect(),
         imessage: imessage.into_option(),
         source: IrSource {
             android_type: None,
@@ -235,22 +235,19 @@ fn to_ir_attachment(att: &Attachment) -> IrAttachment {
     }
 }
 
-/// JSON array of tapbacks (reactions), or `None` when the message has none.
-fn tapbacks_json(tapbacks: &[Tapback]) -> Option<Value> {
-    if tapbacks.is_empty() {
-        return None;
-    }
-    let mut items = Vec::with_capacity(tapbacks.len());
-    for t in tapbacks {
-        items.push(json!({
-            "part_index": t.part_index,
-            "kind": t.kind,
-            "emoji": t.emoji,
-            "is_from_me": t.is_from_me,
-            "reactor_identity": t.sender,
-        }));
-    }
-    Some(Value::Array(items))
+/// One stored reaction as the conversation file's [`Reaction`]. The server
+/// keeps no reactor name, so none is written. A part index no message can
+/// have (below zero, or past `u32`) leaves the reaction out rather than
+/// moving it onto another part.
+fn reaction_from_row(row: &Tapback) -> Option<Reaction> {
+    Some(Reaction {
+        part_index: u32::try_from(row.part_index).ok()?,
+        kind: row.kind.clone(),
+        emoji: row.emoji.clone(),
+        is_from_me: row.is_from_me,
+        reactor_identity: row.sender.clone(),
+        reactor_display_name: None,
+    })
 }
 
 /// Choose SMS, MMS, iMessage, or announcement from service and attachments.
@@ -484,10 +481,11 @@ mod tests {
         );
     }
 
-    /// Reply threading, reactions and an announcement's text come through
-    /// the pull into the message's iMessage fields.
+    /// Reply threading comes through the pull into the message's iMessage
+    /// fields, and the stored reactions into the message's `reactions`, each
+    /// under the person who reacted.
     #[test]
-    fn a_reply_with_tapbacks_keeps_its_threading_and_reactions() {
+    fn a_reply_with_reactions_keeps_its_threading_and_reactions() {
         let mut msg = seed_message_with_participant(Participant {
             identity: Some("+1".into()),
             name: "Sam".into(),
@@ -526,11 +524,25 @@ mod tests {
         assert_eq!(imessage.num_replies, Some(3));
         assert_eq!(imessage.announcement, None);
         assert_eq!(
-            imessage.tapbacks,
-            Some(json!([
-                { "part_index": 0, "kind": "loved", "emoji": null, "is_from_me": true, "reactor_identity": null },
-                { "part_index": 1, "kind": "emoji", "emoji": "🎉", "is_from_me": false, "reactor_identity": "+2" },
-            ]))
+            ir.reactions,
+            [
+                Reaction {
+                    part_index: 0,
+                    kind: "loved".into(),
+                    emoji: None,
+                    is_from_me: true,
+                    reactor_identity: None,
+                    reactor_display_name: None,
+                },
+                Reaction {
+                    part_index: 1,
+                    kind: "emoji".into(),
+                    emoji: Some("🎉".into()),
+                    is_from_me: false,
+                    reactor_identity: Some("+2".into()),
+                    reactor_display_name: None,
+                },
+            ]
         );
     }
 
@@ -607,7 +619,7 @@ mod tests {
             imessage.announcement.as_deref(),
             Some("Sam named the conversation \"Book Club\"")
         );
-        assert_eq!(imessage.tapbacks, None);
+        assert!(ir.reactions.is_empty());
 
         msg.text = None;
         let ir = to_ir_message(&msg, false).unwrap();

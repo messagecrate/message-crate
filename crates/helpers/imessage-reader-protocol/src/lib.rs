@@ -28,6 +28,11 @@
 //! This crate carries the type definitions, their serde shapes, and one rule:
 //! [`bare_address`], which says what an owner address looks like on the wire.
 //! It is MIT OR Apache-2.0 so that both sides can link it.
+//!
+//! [`Reaction`] is defined here and nowhere else. It is the shape of a
+//! reaction in the conversation file too (`message_ir::Reaction` is this
+//! type), for every source, and this is the one crate both the GPL reader and
+//! the app may link.
 
 use std::path::PathBuf;
 
@@ -52,7 +57,9 @@ use serde_json::Value;
 /// [`Message::sender_identity`], [`Message::owner_identity`] and the
 /// tapbacks' `reactor_identity` (they were `handle`, `sender_handle`,
 /// `owner_handle` and `reactor_handle`).
-pub const PROTOCOL_VERSION: u32 = 7;
+/// 8: a message's reactions are [`Message::reactions`], a list of
+/// [`Reaction`], and no longer a JSON value in `Imessage::tapbacks`.
+pub const PROTOCOL_VERSION: u32 = 8;
 
 /// The owner address behind a raw `chat.account_login` or
 /// `message.destination_caller_id` value, or `None` when nothing is left.
@@ -326,6 +333,10 @@ pub struct Message {
     /// The body, or the sentence that stands in for a tapback or
     /// announcement.
     pub text: String,
+    /// The reactions on this message that stand, in part, time and row
+    /// order. A reaction that was later removed is not in the list, and a
+    /// tapback row has none of its own.
+    pub reactions: Vec<Reaction>,
     /// The owner's address on this row (`destination_caller_id` through
     /// [`bare_address`]), or empty when the row carries none.
     pub owner_identity: String,
@@ -362,8 +373,6 @@ pub struct Imessage {
     pub parts: Option<Value>,
     /// Edit history as a JSON array.
     pub edits: Option<Value>,
-    /// Reactions on this message as a JSON array.
-    pub tapbacks: Option<Value>,
     /// An app balloon's payload.
     pub app: Option<Value>,
     /// The balloon's bundle id.
@@ -380,6 +389,32 @@ pub struct Imessage {
     pub tapback_emoji: Option<String>,
     /// For a tapback, `add` or `remove`.
     pub tapback_action: Option<String>,
+}
+
+/// One reaction on a message: who reacted, to which part, and with what.
+///
+/// Adds and removes are resolved before a list of these is written, so a
+/// reaction has no action: it is one that stands. Each names its own reactor,
+/// who is rarely the author of the message reacted to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Reaction {
+    /// The part of the message reacted to; 0 for the first or only part.
+    pub part_index: u32,
+    /// What the reaction is: `loved`, `liked`, `disliked`, `laughed`,
+    /// `emphasized`, `questioned`, `sticker`, or `emoji`.
+    pub kind: String,
+    /// For an `emoji` reaction, the emoji.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub emoji: Option<String>,
+    /// `true` when the owner reacted.
+    pub is_from_me: bool,
+    /// The identity of the person who reacted, when someone other than the
+    /// owner did and the source names them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reactor_identity: Option<String>,
+    /// The name of the person who reacted, when the source knows one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reactor_display_name: Option<String>,
 }
 
 /// One attachment's metadata and where its bytes are.

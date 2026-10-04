@@ -756,6 +756,14 @@ fn conversation_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> M
             ),
             (headers::SUBJECT, msg.message.subject.clone()),
             (
+                headers::REACTIONS,
+                (!msg.message.reactions.is_empty()).then(|| {
+                    header_safe_json(
+                        serde_json::to_string(&msg.message.reactions).unwrap_or_default(),
+                    )
+                }),
+            ),
+            (
                 headers::ANDROID_TYPE,
                 source
                     .and_then(|src| src.android_type)
@@ -772,7 +780,7 @@ fn conversation_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> M
 }
 
 /// The headers only iMessage rows carry: reply threading, effects, edits,
-/// tapbacks, and app balloons. Rows from other services add nothing here.
+/// the reaction a tapback row is, and app balloons. Rows from other services add nothing here.
 fn imessage_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> MessageBuilder<'m> {
     let Some(im) = msg.im() else {
         return builder;
@@ -806,7 +814,6 @@ fn imessage_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> Messa
             (headers::APP, value_as_string(im.app.as_ref())),
             (headers::BALLOON_BUNDLE_ID, im.balloon_bundle_id.clone()),
             (headers::BALLOON_KIND, im.balloon_kind.clone()),
-            (headers::TAPBACKS, value_as_string(im.tapbacks.as_ref())),
             (headers::ASSOCIATED_GUID, im.associated_guid.clone()),
             (
                 headers::ASSOCIATED_PART,

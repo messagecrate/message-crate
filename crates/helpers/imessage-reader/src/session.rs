@@ -230,6 +230,7 @@ mod tests {
     use crate::test_support::FixtureDb;
     use chat_db_fixture::{
         FRIEND_EMAIL, FRIEND_PHONE, FRIEND_PHONE_EMAIL, GROUP_CHAT_IDENTIFIER, OWNER, OWNER_EMAIL,
+        REACTED_GUID,
     };
 
     /// The caches hold what the fixture wrote: six chats with their styles,
@@ -253,7 +254,11 @@ mod tests {
         assert_eq!(session.handle_address(0), None);
         assert_eq!(session.handle_address(99), None);
         assert_eq!(session.handle_name(1), None, "no contacts file, so no name");
-        assert!(session.tapbacks.is_empty());
+        assert_eq!(
+            session.tapbacks[REACTED_GUID][&0].len(),
+            2,
+            "the tapback and the emoji reaction on one message"
+        );
     }
 
     /// Every address the backup names as the owner's counts, from either
@@ -275,7 +280,7 @@ mod tests {
         let fixture = FixtureDb::write();
         let session = fixture.session();
         let messages = FixtureDb::messages(&session);
-        assert_eq!(messages.len(), 12);
+        assert_eq!(messages.len(), 15);
 
         let rowid = |index: usize| session.conversation(&messages[index]).map(|c| c.rowid);
         assert_eq!(rowid(0), Some(1));

@@ -255,14 +255,14 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     .await;
     assert!(status.is_success(), "{status} {answer}");
     let header = json!({
-        "schema_version": 4,
+        "schema_version": message_ir::SCHEMA_VERSION,
         "export": { "source": "whatsapp", "tool": "t", "tool_version": "0",
-                    "owner_handle": "+15555550106", "owner_display_name": "Me" },
+                    "owner_identity": "+15555550106", "owner_display_name": "Me" },
         "conversation": {
             "chat_identifier": CONTACT_PHONE, "conversation_type": "individual", "group_title": null,
             "participants": [
-                { "handle": CONTACT_PHONE, "display_name": CONTACT_NAME },
-                { "handle": CONTACT_EMAIL, "display_name": CONTACT_NAME }
+                { "identity": CONTACT_PHONE, "display_name": CONTACT_NAME },
+                { "identity": CONTACT_EMAIL, "display_name": CONTACT_NAME }
             ],
             "stats": { "message_count": 1, "attachment_count": 1,
                        "first_timestamp_unix_ms": 1_700_000_000_000_i64,
@@ -271,7 +271,7 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     });
     let message = json!({
         "guid": "g-1", "timestamp_unix_ms": 1_700_000_000_000_i64, "direction": "incoming",
-        "service": "whatsapp", "message_kind": "sms", "sender_handle": CONTACT_PHONE,
+        "service": "whatsapp", "message_kind": "sms", "sender_identity": CONTACT_PHONE,
         "sender_display_name": CONTACT_NAME, "subject": null, "text": MESSAGE_TEXT,
         "attachments": [{ "path": "attachments/photo.bin", "original_name": "photo.bin",
                           "mime_type": "application/octet-stream", "digest_sha256": sha256,

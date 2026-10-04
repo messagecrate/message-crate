@@ -4,7 +4,7 @@ use message_crate_core::{ExportReport, OutputFormat};
 use message_ir::{
     ConversationMeta, ConversationStats, ExportMeta, HandleType, IrConversationType, IrImessage,
     IrMessage, IrMessageKind, IrParticipant, IrService, IrSource, MessageGuid, MessageIdentity,
-    SCHEMA_VERSION,
+    Reaction, SCHEMA_VERSION,
 };
 use serde_json::{Value, json};
 use std::fs;
@@ -53,6 +53,7 @@ fn doc_with_image_attachment() -> ConversationDocument {
                 missing_reason: None,
                 bytes: None,
             }],
+            reactions: vec![],
             imessage: None,
             source: None,
         }],
@@ -254,6 +255,14 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
                 missing_reason: Some("file_missing".into()),
                 bytes: None,
             }],
+            reactions: vec![Reaction {
+                part_index: 0,
+                kind: "emoji".into(),
+                emoji: Some("👍".into()),
+                is_from_me: false,
+                reactor_identity: Some("LEAK-20".into()),
+                reactor_display_name: Some("LEAK-21".into()),
+            }],
             imessage: Some(IrImessage {
                 is_reply: true,
                 in_reply_to_guid: Some("LEAK-28".into()),
@@ -266,16 +275,6 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
                 read_receipt_rfc3339: Some("2014-05-22T12:21:01Z".into()),
                 parts: Some(json!([{ "text": "LEAK-18", "attachment_indices": [0] }])),
                 edits: Some(json!([{ "text": "LEAK-19", "timestamp_unix_ms": 1 }])),
-                tapbacks: Some(json!([{
-                    "part_index": 0,
-                    "kind": "emoji",
-                    "emoji": "👍",
-                    "is_from_me": false,
-                    "reactor_identity": "LEAK-20",
-                    "reactor_display_name": "LEAK-21",
-                    "sender": "LEAK-22",
-                    "unknown_key": "LEAK-23",
-                }])),
                 app: Some(json!({ "url": "https://LEAK-24.example/", "title": "LEAK-25" })),
                 balloon_bundle_id: Some("com.apple.DigitalTouchBalloonProvider".into()),
                 balloon_kind: Some("sketch".into()),
@@ -333,9 +332,9 @@ const KEPT_AS_IS: &[(&str, &str)] = &[
         "the reaction, not who made it",
     ),
     ("messages[].imessage.tapback_action", "tapback label"),
-    ("messages[].imessage.tapbacks[].kind", "tapback label"),
+    ("messages[].reactions[].kind", "reaction label"),
     (
-        "messages[].imessage.tapbacks[].emoji",
+        "messages[].reactions[].emoji",
         "the reaction, not who made it",
     ),
 ];
@@ -414,38 +413,35 @@ fn obfuscated_export_keeps_no_string_from_the_source() {
     assert!(leaked.is_empty(), "obfuscated export kept {leaked:?}");
 }
 
-/// Tapbacks are imported, so an obfuscated export must still say what each
+/// Reactions are imported, so an obfuscated export must still say what each
 /// reaction was; only who reacted is replaced.
 #[test]
-fn obfuscate_keeps_each_tapback_and_replaces_only_who_reacted() {
+fn obfuscate_keeps_each_reaction_and_replaces_only_who_reacted() {
     let mut doc = doc_with_a_marker_in_every_field();
     let mut anon = Obfuscator::new([7u8; 32]);
     obfuscate_one(&mut doc, &mut anon);
 
-    let tapbacks = doc.messages[0]
-        .imessage
-        .as_ref()
-        .unwrap()
-        .tapbacks
-        .as_ref()
-        .expect("tapbacks are kept");
-    let tapbacks = tapbacks.as_array().expect("tapbacks stay a list");
-    assert_eq!(tapbacks.len(), 1);
-    let tapback = &tapbacks[0];
-    assert_eq!(tapback["part_index"], json!(0));
-    assert_eq!(tapback["kind"], json!("emoji"));
-    assert_eq!(tapback["emoji"], json!("👍"));
-    assert_eq!(tapback["is_from_me"], json!(false));
-    let reactor = tapback["reactor_identity"]
-        .as_str()
-        .expect("reactor_identity is kept as a string");
+    let [reaction] = doc.messages[0].reactions.as_slice() else {
+        panic!("one reaction is kept: {:?}", doc.messages[0].reactions);
+    };
+    assert_eq!(reaction.part_index, 0);
+    assert_eq!(reaction.kind, "emoji");
+    assert_eq!(reaction.emoji.as_deref(), Some("👍"));
+    assert!(!reaction.is_from_me);
+    let reactor = reaction
+        .reactor_identity
+        .as_deref()
+        .expect("reactor_identity is kept");
     assert!(!reactor.is_empty());
     assert!(
         !reactor.contains("LEAK-"),
         "reactor_identity kept {reactor}"
     );
-    // `sender` is not a tapback key, so it goes with the other unknown keys.
-    assert!(tapback.get("sender").is_none(), "{tapback}");
+    let name = reaction
+        .reactor_display_name
+        .as_deref()
+        .expect("reactor_display_name is kept");
+    assert!(!name.contains("LEAK-"), "reactor_display_name kept {name}");
 }
 
 #[test]
