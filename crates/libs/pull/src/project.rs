@@ -558,6 +558,33 @@ mod tests {
         assert_eq!(doc.conversation.stats.message_count, 2);
     }
 
+    /// Whether the conversation is a group comes from the server's
+    /// `is_group`, never from reading `conversation_type` again.
+    #[test]
+    fn a_document_is_a_group_when_the_server_says_so() {
+        let mut seed = seed_message_with_participant(Participant {
+            identity: Some("+1".into()),
+            name: "Sam".into(),
+            service: None,
+            contact_id: None,
+        });
+        seed.conversation.conversation_type = " group ".into();
+        seed.conversation.is_group = false;
+        let doc = build_document("imessage", &seed, vec![]);
+        assert_eq!(
+            doc.conversation.conversation_type,
+            IrConversationType::Individual
+        );
+
+        seed.conversation.conversation_type = "individual".into();
+        seed.conversation.is_group = true;
+        let doc = build_document("imessage", &seed, vec![]);
+        assert_eq!(
+            doc.conversation.conversation_type,
+            IrConversationType::Group
+        );
+    }
+
     /// An announcement keeps its text; one with no text carries nothing.
     #[test]
     fn an_announcement_keeps_its_text() {
