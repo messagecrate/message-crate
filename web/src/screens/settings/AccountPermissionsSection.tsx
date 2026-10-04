@@ -1,6 +1,6 @@
 import Checkbox from "../../components/Checkbox";
 import Select, { ListBoxItem, selectItemClassName } from "../../components/Select";
-import type { AccountProfile } from "../../lib/account";
+import { type AccountProfile, fixedSettings } from "../../lib/account";
 import { parseSelectKey } from "../../lib/selectKey";
 import { type ManagedAccountChanges, useUpdateAccount } from "../owner/useOwnerAccounts";
 import { sectionTitleClass } from "./profileStyles";
@@ -30,8 +30,8 @@ export function AccountPermissionsSection({
   managedAccountId?: number;
 }) {
   const updateAccount = useUpdateAccount();
-  // The Demo Account's status and permissions are fixed, for the owner too.
-  const fixed = profile.is_demo === true;
+  // Fixed on the Demo Account, for the owner too.
+  const fixed = fixedSettings(profile).statusAndPermissions;
   const managed = managedAccountId !== undefined && !fixed;
   // Not locked while a change is sent: the server answers in a moment, and
   // greying all four controls for that moment reads as a flash.

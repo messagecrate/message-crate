@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Button from "../../components/Button";
 import TimeZoneField from "../../components/TimeZoneField";
+import { fixedSettings } from "../../lib/account";
 import { useSettingsAccount, useUpdateSettingsProfile } from "../../lib/useSettingsAccount";
 import { AccountActivitySection } from "./AccountActivitySection";
 import { AddressBookSection } from "./AddressBookSection";
@@ -33,10 +34,7 @@ export function ProfileSettingsPanel({ managedAccountId }: { managedAccountId?: 
   }
 
   const name = nameDraft ?? profile.preferred_name ?? "";
-  // Every visitor shares the Demo Account, so the server refuses a new name,
-  // a new zone and an address book load for it, from the owner as well
-  // (`docs/adr/0016-the-demo-account-is-fixed-not-configured.md`).
-  const fixed = profile.is_demo === true;
+  const fixed = fixedSettings(profile);
 
   const handleSaveName = async () => {
     setNameError("");
@@ -70,11 +68,11 @@ export function ProfileSettingsPanel({ managedAccountId }: { managedAccountId?: 
           type="text"
           aria-label="Display name"
           value={name}
-          readOnly={fixed}
+          readOnly={fixed.displayName}
           onChange={(e) => setNameDraft(e.target.value)}
-          className={`${inputClassName} flex-1${fixed ? " !text-muted" : ""}`}
+          className={`${inputClassName} flex-1${fixed.displayName ? " !text-muted" : ""}`}
         />
-        {fixed ? null : (
+        {fixed.displayName ? null : (
           <Button
             variant="primary"
             onClick={handleSaveName}
@@ -91,11 +89,11 @@ export function ProfileSettingsPanel({ managedAccountId }: { managedAccountId?: 
       <TimeZoneField
         value={profile.time_zone}
         onChange={(zone) => void handleChangeZone(zone)}
-        isDisabled={fixed || updateProfile.isPending}
+        isDisabled={fixed.timeZone || updateProfile.isPending}
         className="mb-[0.35rem] max-w-[28rem]"
       />
       <div className="text-[0.813rem] text-muted">
-        {fixed
+        {fixed.displayName && fixed.timeZone
           ? "Message times are shown in this zone. The Demo Account's display name and time zone are fixed."
           : "Message times are shown in this zone."}
       </div>
@@ -108,7 +106,7 @@ export function ProfileSettingsPanel({ managedAccountId }: { managedAccountId?: 
         <>
           <IdentitiesSection profile={profile} managedAccountId={managedAccountId} />
           {managed && <AccountActivitySection profile={profile} />}
-          {!managed && !fixed && <AddressBookSection />}
+          {!managed && !fixed.addressBook && <AddressBookSection />}
         </>
       )}
     </div>

@@ -27,6 +27,7 @@ function message(id: number, attachments: MessageAttachment[]): Message {
       id: 1,
       chat_identifier: "x",
       conversation_type: "individual",
+      is_group: false,
       group_title: null,
       participants: [{ identity: "+1555", name: "Ada", contact_id: null }],
     },

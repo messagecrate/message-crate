@@ -1,4 +1,4 @@
-import { conversationName, isGroupType } from "./conversationName";
+import { conversationName } from "./conversationName";
 import type { Message, MessageConversation } from "./types";
 
 /**
@@ -9,7 +9,7 @@ import type { Message, MessageConversation } from "./types";
 export function messageConversationName(conversation: MessageConversation): string {
   return conversationName({
     title: conversation.label,
-    isGroup: isGroupType(conversation.conversation_type),
+    isGroup: conversation.is_group,
     participants: conversation.participants,
   });
 }

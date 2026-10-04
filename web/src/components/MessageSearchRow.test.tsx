@@ -29,6 +29,7 @@ function message(over: Partial<Message> = {}): Message {
       id: 1,
       chat_identifier: "chat1",
       conversation_type: "group",
+      is_group: true,
       group_title: "Family",
       label: "Family",
       participants: [

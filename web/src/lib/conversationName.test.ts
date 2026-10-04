@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { conversationName, isGroupType } from "./conversationName";
+import { conversationName } from "./conversationName";
 
 const alice = { name: "Alice" };
 const bob = { name: "Bob" };
@@ -26,13 +26,5 @@ describe("conversationName", () => {
   it("says (unknown) when there is nobody to name", () => {
     expect(conversationName({ title: null, isGroup: false, participants: [] })).toBe("(unknown)");
     expect(conversationName({ title: null, isGroup: true, participants: [] })).toBe("(unknown)");
-  });
-});
-
-describe("isGroupType", () => {
-  it("ignores case, as the server does", () => {
-    expect(isGroupType("group")).toBe(true);
-    expect(isGroupType("Group")).toBe(true);
-    expect(isGroupType("individual")).toBe(false);
   });
 });
