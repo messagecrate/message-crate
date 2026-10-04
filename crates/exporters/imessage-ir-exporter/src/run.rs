@@ -931,6 +931,59 @@ done"#
         );
     }
 
+    /// A reader that stops partway through the attachments stops the run
+    /// with an error that says so, through the write queue (JSON Lines) and
+    /// through the staging step (CSV) alike. Before, the run recorded the
+    /// photo the reader died on, and every attachment after it,
+    /// `file_missing`, and ended looking like a finished run (#1442).
+    #[cfg(unix)]
+    #[test]
+    fn a_reader_that_stops_during_the_attachments_stops_the_run() {
+        use ios_backup::testutil::{fake_helper, spawn_fake};
+
+        for format in [OutputFormat::Jsonl, OutputFormat::Csv] {
+            let dir = tempfile::tempdir().unwrap();
+            let chat = dir.path().join("chat.db");
+            fs::write(&chat, b"sqlite").unwrap();
+            let body = encrypted_export_script(
+                dir.path(),
+                r#"echo video > "$scratch/video.mov"; echo "{\"event\":\"attachment\",\"outcome\":\"ready\",\"path\":\"$scratch/video.mov\"}""#,
+                "exit 3",
+            );
+            let program = fake_helper(dir.path(), &body);
+            let config = ExporterConfig {
+                output_format: format,
+                ..apple_cfg(
+                    &chat,
+                    AppleConfig {
+                        platform: Some(ApplePlatform::MacOs),
+                        ..AppleConfig::default()
+                    },
+                )
+            };
+
+            let err = run_with(&config, |request, _, _| Ok(spawn_fake(&program, request)))
+                .expect_err("a run whose reader stopped fails");
+            let text = format!("{err:#}");
+            assert!(
+                text.contains(
+                    "attachment /backup/IMG_0002.JPG: \
+                     imessage-reader stopped before finishing (exit status: 3)"
+                ),
+                "{format:?}: {text}"
+            );
+            let written: Vec<_> = fs::read_dir(&config.output)
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .filter(|path| path.extension().is_some_and(|ext| ext == format.as_str()))
+                .collect();
+            assert!(
+                written.is_empty(),
+                "{format:?}: no conversation file records the photo missing: {written:?}"
+            );
+        }
+    }
+
     /// The program decrypts into a folder under the output folder, on the
     /// disk the run checks for space before it writes, and the folder is
     /// gone once the run ends (#1134).

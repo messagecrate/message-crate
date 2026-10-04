@@ -246,6 +246,10 @@ impl Helper {
     }
 
     /// Write one more request line.
+    ///
+    /// A closed pipe means the program has exited, so that failure is the
+    /// same "stopped" error a reply cut short gives, with its exit status and
+    /// stderr, rather than a bare broken pipe.
     fn send(&mut self, request: &Request) -> Result<()> {
         let stdin = self
             .stdin
@@ -253,10 +257,14 @@ impl Helper {
             .ok_or_else(|| anyhow!("imessage-reader's stdin is already closed"))?;
         let mut line = serde_json::to_string(request)?;
         line.push('\n');
-        stdin
+        match stdin
             .write_all(line.as_bytes())
             .and_then(|()| stdin.flush())
-            .context("send a request to imessage-reader")
+        {
+            Ok(()) => Ok(()),
+            Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => Err(self.exited_early()),
+            Err(e) => Err(anyhow::Error::new(e).context("send a request to imessage-reader")),
+        }
     }
 
     /// The error for a program that stopped talking before it was done.

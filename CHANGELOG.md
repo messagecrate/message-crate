@@ -237,6 +237,14 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **An Apple Messages import stops when the Apple Messages
+  reader stops.** When the Apple Messages reader (imessage-reader) stopped
+  while an encrypted iPhone backup's attachments were being copied, every
+  attachment still to come was recorded missing, with one log line each,
+  and the Import Run ended looking like a run with many missing
+  attachments. The run now stops at that point with an error that says the
+  reader stopped, and no attachment is recorded missing because of it, so
+  the run can be resumed.
 - 2026-10-04 **A person known only by name keeps a conversation of their
   own.** SMS Backup+, iMazing and OpenExtract backups sometimes name a person
   without recording a number or address. That person's conversation could

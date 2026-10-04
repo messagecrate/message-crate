@@ -38,26 +38,54 @@ pub struct AttachmentJob<'a> {
     pub size_hint: Option<u64>,
 }
 
+/// Why a loader handed back no bytes for one attachment.
+///
+/// The two kinds differ in whose problem the failure is. One file that
+/// cannot be read is that attachment's problem, so the run records it
+/// missing and goes on. A loader that can read nothing more, such as one
+/// whose `imessage-reader` process has stopped, is the run's problem:
+/// every later attachment would fail the same way, and recording each one
+/// missing would pass a broken run off as a finished one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoadError {
+    /// This one file could not be read. The attachment is recorded
+    /// `file_missing` and the run goes on.
+    Unreadable(String),
+    /// Nothing more can be loaded. The run stops with this message, so it
+    /// can be resumed once the cause is gone.
+    Fatal(String),
+}
+
+impl std::fmt::Display for LoadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unreadable(message) | Self::Fatal(message) => f.write_str(message),
+        }
+    }
+}
+
+impl std::error::Error for LoadError {}
+
 /// Load, write, and optionally convert each attachment.
 ///
 /// `load(i)` returns `Ok(None)` when the source is missing. `Ok(Some(bytes))`
-/// is the file to stage. An `Err` from `load(i)` other than `"cancelled"` is
-/// caught here and treated the same as a missing source: the attachment gets
-/// `missing_reason = "file_missing"` and the run continues rather than
-/// aborting. A write or rename of the staged file that fails is handled the
-/// same way, and its error goes to `log`. Cancel is checked before each job.
+/// is the file to stage. [`LoadError::Unreadable`] is treated the same as a
+/// missing source: the attachment gets `missing_reason = "file_missing"` and
+/// the run continues rather than aborting. A write or rename of the staged
+/// file that fails is handled the same way, and its error goes to `log`.
+/// Cancel is checked before each job.
 ///
 /// # Errors
 ///
-/// Returns `"cancelled"` when the flag is set before a job starts, or when
-/// `load(i)` itself returns `"cancelled"`. Returns an I/O or convert error
-/// string when the staging directory cannot be created or the convert pass
-/// cannot run.
+/// Returns `"cancelled"` when the flag is set before a job starts. Returns
+/// the message of a [`LoadError::Fatal`] from `load(i)`, leaving that job and
+/// every later one untouched. Returns an I/O or convert error string when the
+/// staging directory cannot be created or the convert pass cannot run.
 pub fn run_attachment_jobs(
     jobs: &mut [AttachmentJob<'_>],
     attachments_dir: &Path,
     media: &MediaConfig,
-    mut load: impl FnMut(usize) -> Result<Option<Vec<u8>>, String>,
+    mut load: impl FnMut(usize) -> Result<Option<Vec<u8>>, LoadError>,
     mut on_progress: impl FnMut(AttachmentProgress),
     log: Option<&LogSink>,
     cancel: Option<&AtomicBool>,
@@ -98,11 +126,10 @@ pub fn run_attachment_jobs(
 
         let loaded = match load(i) {
             Ok(loaded) => loaded,
-            // A cancel raised inside the loader still stops the run.
-            Err(err) if err == "cancelled" => return Err(err),
+            Err(LoadError::Fatal(message)) => return Err(message),
             // One unreadable source is that attachment's problem, not the
             // run's. Fall through to the missing-file handling below.
-            Err(_) => None,
+            Err(LoadError::Unreadable(_)) => None,
         };
         let bytes = match loaded {
             Some(bytes) if !bytes.is_empty() => bytes,
@@ -182,8 +209,9 @@ pub fn run_attachment_jobs(
 /// one content-addressed file, so they count once.
 ///
 /// `load(i)` is the per-exporter payload hook: `i` is the flat attachment
-/// index in message order. `Ok(None)` (or a non-cancel `Err`) marks that
-/// attachment `file_missing` and the run continues.
+/// index in message order. `Ok(None)` or [`LoadError::Unreadable`] marks that
+/// attachment `file_missing` and the run continues; [`LoadError::Fatal`]
+/// stops the run.
 ///
 /// Size hints for the progress totals come from each attachment's
 /// `size_bytes` (falling back to in-memory `bytes` length when present);
@@ -192,13 +220,14 @@ pub fn run_attachment_jobs(
 ///
 /// # Errors
 ///
-/// Returns `"cancelled"` when the user cancels, or an I/O / convert error
-/// string when the staging directory cannot be used.
+/// Returns `"cancelled"` when the user cancels, the message of a
+/// [`LoadError::Fatal`] from `load(i)`, or an I/O / convert error string when
+/// the staging directory cannot be used.
 pub fn stage_conversation_attachments<'a>(
     messages: impl IntoIterator<Item = &'a mut IrMessage>,
     attachments_dir: &Path,
     media: &MediaConfig,
-    load: impl FnMut(usize) -> Result<Option<Vec<u8>>, String>,
+    load: impl FnMut(usize) -> Result<Option<Vec<u8>>, LoadError>,
     log: Option<&LogSink>,
     progress: Option<&ProgressSink>,
     cancel: Option<&CancelFlag>,

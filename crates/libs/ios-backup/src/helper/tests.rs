@@ -209,6 +209,31 @@ mod faults {
         );
     }
 
+    /// A request to a program that has already exited says it stopped, with
+    /// its status, whether the request line still fit in the pipe or the
+    /// pipe was already closed (#1442). The second request always meets a
+    /// closed pipe, which before read as a bare "Broken pipe" that did not
+    /// say the program had stopped.
+    #[test]
+    fn a_request_to_a_helper_that_has_exited_says_it_stopped() {
+        let dir = tempfile::tempdir().unwrap();
+        let body = format!("{}\nexit 3", source_line(PROTOCOL_VERSION));
+        let path = fake_helper(dir.path(), &body);
+        let mut helper = spawn_fake(&path, &identities_request());
+
+        assert!(matches!(helper.next_event().unwrap(), Event::Source { .. }));
+        for attempt in 1..=2 {
+            let err = helper
+                .decrypt_attachment(std::path::Path::new("/backup/IMG_0001.JPG"))
+                .unwrap_err();
+            assert_eq!(
+                format!("{err:#}"),
+                "imessage-reader stopped before finishing (exit status: 3)",
+                "request {attempt}"
+            );
+        }
+    }
+
     #[test]
     fn a_helper_that_fails_after_answering_reports_its_status_on_finish() {
         let dir = tempfile::tempdir().unwrap();
