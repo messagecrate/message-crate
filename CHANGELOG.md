@@ -791,6 +791,11 @@ released versions carry their date on the heading.
 
 #### Search
 
+- 2026-10-04 **Searching for `group` no longer lists every group
+  conversation.** Typing `group` on Conversations listed every group
+  conversation, whatever its title; `in:grou` on Messages listed every
+  message in them, and `with:group` and `identity:group` found them too. A
+  group conversation is now found by its title and by the people in it.
 - 2026-10-04 **Searching Conversations for `name` no longer lists every
   conversation known only by a name.** Typing `name` on Conversations listed
   every conversation whose backup gave a name and no address, and `less` the

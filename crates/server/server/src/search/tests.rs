@@ -3783,3 +3783,103 @@ mod name_keyed_conversation {
         }
     }
 }
+
+/// A group conversation's chat id is `group:` and the id the source gave the
+/// group. Search reads that key as a key, not as text: every group key
+/// starts with `group:`, so plain text `group`, `in:grou`, `with:group` and
+/// `identity:group` would find every group conversation (#1706). A group is
+/// found by its title and its members.
+mod group_keyed_conversation {
+    use super::*;
+
+    #[tokio::test]
+    async fn is_found_by_its_title_and_members_not_its_key() {
+        let (pool, _dir, f) = seeded().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let key = handle(&mut conn, ACCOUNT, "group:chat8812", "imessage").await;
+        let untitled = conversation(&mut conn, ACCOUNT, key, "group", None, &[f.ana_handle]).await;
+        named_participant(&mut conn, untitled, "Robin Quill").await;
+        let in_untitled = message(
+            &mut conn,
+            ACCOUNT,
+            msg(untitled, "2024-03-01T10:00:00Z", false, None, "hello"),
+        )
+        .await;
+        let titled_key = handle(&mut conn, ACCOUNT, "group:chat8813", "imessage").await;
+        let titled = conversation(
+            &mut conn,
+            ACCOUNT,
+            titled_key,
+            "group",
+            Some("Hiking Crew"),
+            &[f.ana_handle],
+        )
+        .await;
+        let in_titled = message(
+            &mut conn,
+            ACCOUNT,
+            msg(titled, "2024-03-01T11:00:00Z", false, None, "hello"),
+        )
+        .await;
+
+        for query in [
+            "group",
+            "grou*",
+            "\"group:\"",
+            "chat8812",
+            "with:group",
+            "with:grou*",
+            "identity:group",
+            "identity:grou*",
+            "identity:\"group:chat8812\"",
+        ] {
+            let found = run(&mut conn, ListKind::Conversations, query).await;
+            for row in [untitled, titled] {
+                assert!(
+                    !found.contains(&row),
+                    "Conversations {query} found a group through its key"
+                );
+            }
+        }
+        for query in [
+            "in:grou",
+            "in:grou*",
+            "in:\"group:\"",
+            "in:chat8812",
+            "with:group",
+            "identity:group",
+        ] {
+            let found = run(&mut conn, ListKind::Messages, query).await;
+            for row in [in_untitled, in_titled] {
+                assert!(
+                    !found.contains(&row),
+                    "Messages {query} found a group through its key"
+                );
+            }
+        }
+
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "hiking").await,
+            vec![titled]
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Messages, "in:hiking").await,
+            vec![in_titled]
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "robin quill").await,
+            vec![untitled]
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "with:\"Robin Quill\"").await,
+            vec![untitled]
+        );
+        for query in ["with:+15550001", "identity:+15550001"] {
+            let found = run(&mut conn, ListKind::Conversations, query).await;
+            assert!(
+                found.contains(&untitled) && found.contains(&titled),
+                "{query} did not find the groups Ana is in"
+            );
+        }
+    }
+}

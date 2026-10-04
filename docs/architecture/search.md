@@ -242,7 +242,7 @@ below use these phrases for them:
 | List | Base row | Plain text searches | Defaults | Lifted by |
 |---|---|---|---|---|
 | Contacts | one contact | the contact's name, and the raw and normalized form of each of its identities | a contact in the trash is left out | `trashed:` |
-| Conversations | one conversation | the title, the conversation's own identity (its raw form, except for the two keys below), the raw form of each participant's identity, and each participant's name. For a conversation known only by a name, its own identity is read as the name after the `name:` prefix, and the `nameless:` key of the conversation that names nobody is read as nothing (#1696). Why: every name key contains `name:`, so `nam` would find them all | a conversation in the trash is left out; a conversation whose every message is a duplicate is left out | `trashed:` lifts the first; `source:` and `import:` lift the second |
+| Conversations | one conversation | the title, the conversation's own identity (its raw form, except for the three keys below), the raw form of each participant's identity, and each participant's name. For a conversation known only by a name, its own identity is read as the name after the `name:` prefix; a group's `group:` key, and the `nameless:` key of the conversation that names nobody, are read as nothing (#1696, #1706). Why: every name key contains `name:` and every group key `group:`, so `nam` or `group` would find them all, and the id after `group:` is the source's own id, which nobody knows a group by. A group is found by its title and its members | a conversation in the trash is left out; a conversation whose every message is a duplicate is left out | `trashed:` lifts the first; `source:` and `import:` lift the second |
 | Messages | one message | the full-text index (above) and attachment file names | a message whose conversation is in the trash is left out; a duplicate message is left out | `trashed:` lifts the first; `source:` and `import:` lift the second |
 
 A word lifts its default wherever it appears in the query, negated or inside
@@ -314,14 +314,14 @@ Text, `none`, `any`.
 Text, `none`, `any`. The raw or the normalized form of an identity.
 
 - **Contacts**: one of the contact's identities. `none` is a contact with no address: no identity, or only identities of type `other`, which hold a name the backup gave with no address.
-- **Conversations**: the conversation's own identity or a participant's. The conversation's own identity counts only when it is an address: the `name:` key of a conversation known only by a name, and the `nameless:` key of one that names nobody, are not, as in `with:` (#1592). `none` is a conversation where no participant has an address (every participant's identity is of type `other`); `any` is one where some participant does.
+- **Conversations**: the conversation's own identity or a participant's. The conversation's own identity counts only when it is an address: a group's `group:` key, the `name:` key of a conversation known only by a name, and the `nameless:` key of one that names nobody, are not, as in `with:` (#1592, #1706). `none` is a conversation where no participant has an address (every participant's identity is of type `other`); `any` is one where some participant does.
 - **Messages**: the same, for the message's conversation.
 
 ### `with:`
 
 Person, `me`.
 
-- **Conversations**: this person is in the conversation: the conversation's own identity or a participant's identity is theirs, or a participant's name contains the text. The conversation's own identity counts only when it is an address, not the `name:` or `nameless:` key of a conversation known by a name or by nobody. Why: every name key contains `name:`, so `with:nam` or `identity:nam` would find them all. The person such a conversation is with is found by their participant row. A contact `#id` reaches a participant only through the identity the participant takes part as, on the contact it is on now. `me` is a conversation the account holder has with themselves: a one-to-one conversation whose own identity is one of the account's identities. It has no participants, so it is the only conversation `me` finds. Why: the holder is never a participant, so a conversation with themselves is the one place the holder is the other party (#1094).
+- **Conversations**: this person is in the conversation: the conversation's own identity or a participant's identity is theirs, or a participant's name contains the text. The conversation's own identity counts only when it is an address, not the `group:` key of a group, nor the `name:` or `nameless:` key of a conversation known by a name or by nobody. Why: every group key contains `group:` and every name key `name:`, so `with:group` or `identity:nam` would find them all (#1706). The people in such a conversation are found by their participant rows. A contact `#id` reaches a participant only through the identity the participant takes part as, on the contact it is on now. `me` is a conversation the account holder has with themselves: a one-to-one conversation whose own identity is one of the account's identities. It has no participants, so it is the only conversation `me` finds. Why: the holder is never a participant, so a conversation with themselves is the one place the holder is the other party (#1094).
 - **Messages**: the same, for the message's conversation.
 
 ### `from:`
@@ -340,7 +340,7 @@ Person, `me`.
 
 Name.
 
-- **Messages**: `#id` is the message's conversation. Text is contained in the conversation's title or in its own identity: the raw form, except for the two keys below. For a conversation known only by a name, its own identity is read as the name after the `name:` prefix, so `in:sarah` finds it with no title, and the `nameless:` key of the conversation that names nobody is read as nothing. Why: every name key contains `name:`, so `in:nam` would find them all (#1696).
+- **Messages**: `#id` is the message's conversation. Text is contained in the conversation's title or in its own identity: the raw form, except for the three keys below. For a conversation known only by a name, its own identity is read as the name after the `name:` prefix, so `in:sarah` finds it with no title; a group's `group:` key, and the `nameless:` key of the conversation that names nobody, are read as nothing. Why: every name key contains `name:` and every group key `group:`, so `in:nam` or `in:grou` would find them all (#1696, #1706).
 
 ### `group:`
 

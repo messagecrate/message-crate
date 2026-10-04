@@ -432,8 +432,9 @@ fn emit_text_word(
                 "EXISTS (SELECT 1 FROM participants p JOIN handles h ON h.id = p.handle_id WHERE p.conversation_id = c.id AND h.handle_type <> 'other')",
             ),
             // The conversation's own identity counts only when it is an
-            // address: a `name:` or `nameless:` key is shared by every
-            // conversation keyed that way, as in `with:` (#1592).
+            // address: a `group:`, `name:` or `nameless:` key starts with
+            // what every conversation keyed that way shares, as in `with:`
+            // (#1592, #1706).
             Value::Text(_) | Value::Prefix(_) => {
                 o.push(&format!(
                     "EXISTS (SELECT 1 FROM handles h WHERE ((h.id = c.chat_handle_id AND NOT {}) OR EXISTS (SELECT 1 FROM participants p WHERE p.conversation_id = c.id AND p.handle_id = h.id)) AND (",
@@ -538,26 +539,31 @@ fn conversation_title_text() -> String {
 
 /// The text of conversation `c`'s own identity, as plain text on
 /// Conversations and `in:` on Messages read it: an address as it is, the
-/// name a `name:` key holds without the prefix, and nothing for the
-/// `nameless:` key. Every name key contains `name:`, so reading the prefix
-/// would make `nam` or `in:nam` find them all (#1696); the name after it is
-/// the name the conversation is known by, so `in:sarah` still finds Sarah's
-/// conversation when it has no title.
+/// name a `name:` key holds without the prefix, and nothing for a `group:`
+/// key or the `nameless:` key. Every name key contains `name:` and every
+/// group key `group:`, so reading the prefix would make `nam` or `in:grou`
+/// find them all (#1696, #1706); the name after `name:` is the name the
+/// conversation is known by, so `in:sarah` still finds Sarah's conversation
+/// when it has no title. The id after `group:` is the source's own id for
+/// the group, which nobody knows the group by: a group is found by its
+/// title and its members.
 fn conversation_identity_text() -> String {
     format!(
-        "coalesce((SELECT CASE WHEN {} THEN '' WHEN {} THEN substr(hc.raw, {}) \
+        "coalesce((SELECT CASE WHEN {} OR {} THEN '' WHEN {} THEN substr(hc.raw, {}) \
            ELSE hc.raw END FROM handles hc WHERE hc.id = c.chat_handle_id), '')",
         is_the_nameless_key("hc.raw"),
+        is_a_group_key("hc.raw"),
         is_a_name_key("hc.raw"),
         message_ir::NAME_CHAT_ID_PREFIX.len() + 1
     )
 }
 
 /// SQL that holds when the handle `handle_id_expr` is a conversation key
-/// rather than anybody's address: `name:` and a name, or `nameless:`. Such a
-/// chat handle is never matched as a person, because every name key
-/// contains `name:` and `with:nam` would find them all; the person a
-/// name-keyed conversation is with is found by their participant row.
+/// rather than anybody's address: `group:` and the source's id for the
+/// group, `name:` and a name, or `nameless:`. Such a chat handle is never
+/// matched as a person, because every group key contains `group:` and every
+/// name key `name:`, so `with:grou` or `with:nam` would find them all; the
+/// people in such a conversation are found by their participant rows.
 fn is_a_key_handle(handle_id_expr: &str) -> String {
     format!(
         "EXISTS (SELECT 1 FROM handles hk WHERE hk.id = {handle_id_expr} AND {})",
@@ -569,15 +575,23 @@ fn is_a_key_handle(handle_id_expr: &str) -> String {
 /// a query that already holds the handle row (see `is_a_key_handle`).
 fn is_a_key_raw(raw_col: &str) -> String {
     format!(
-        "({} OR {})",
+        "({} OR {} OR {})",
+        is_a_group_key(raw_col),
         is_a_name_key(raw_col),
         is_the_nameless_key(raw_col)
     )
 }
 
-/// SQL that holds when the handle text `raw_col` is a `name:` key. With
-/// [`is_the_nameless_key`], the one place that knows the key shapes, so
-/// `with:`, `identity:`, plain text and `in:` agree on what a key is.
+/// SQL that holds when the handle text `raw_col` is a `group:` key. With
+/// [`is_a_name_key`] and [`is_the_nameless_key`], the one place that knows
+/// the key shapes, so `with:`, `identity:`, plain text and `in:` agree on
+/// what a key is.
+fn is_a_group_key(raw_col: &str) -> String {
+    let prefix = message_ir::GROUP_CHAT_ID_PREFIX;
+    format!("substr({raw_col}, 1, {}) = '{prefix}'", prefix.len())
+}
+
+/// SQL that holds when the handle text `raw_col` is a `name:` key.
 fn is_a_name_key(raw_col: &str) -> String {
     let prefix = message_ir::NAME_CHAT_ID_PREFIX;
     format!("substr({raw_col}, 1, {}) = '{prefix}'", prefix.len())
