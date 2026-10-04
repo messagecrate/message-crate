@@ -38,7 +38,9 @@ const EXAMPLE_STAGING = "staging-iphone-ios-260809-143022";
 const settingsGrid =
   "grid grid-cols-[minmax(0,1fr)] items-center gap-x-3 gap-y-1 sm:grid-cols-[13.5rem_minmax(0,1fr)]";
 const settingsLabel = "whitespace-nowrap text-[0.875rem] font-medium text-text";
-const settingsHelp = "pl-2 sm:col-start-2 text-[0.75rem] text-muted";
+/** A line under a control, kept in the control's column from `sm`. */
+const settingsNoteLayout = "pl-2 text-[0.75rem] sm:col-start-2";
+const settingsHelp = `${settingsNoteLayout} text-muted`;
 
 const FFMPEG_DEBOUNCE_MS = 300;
 
@@ -364,7 +366,7 @@ export function SystemSection() {
           />
         </div>
         {stagingError ? (
-          <p className="m-0 pl-2 text-[0.75rem] text-danger sm:col-start-2" role="alert">
+          <p className={`${settingsNoteLayout} m-0 text-danger`} role="alert">
             {stagingError}
           </p>
         ) : null}
