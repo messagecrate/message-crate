@@ -393,11 +393,44 @@ fn parallel_drain_stops_on_the_first_error() {
 }
 
 /// One attachments event's counts.
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 struct AttachmentCounts {
     done: usize,
+    total: usize,
     bytes_done: u64,
     bytes_total: u64,
+}
+
+/// The counts of every attachments event in `events`, in order.
+fn attachment_counts(events: &[ProgressEvent]) -> Vec<AttachmentCounts> {
+    events
+        .iter()
+        .filter_map(|event| match *event {
+            ProgressEvent::Attachments {
+                done,
+                total,
+                bytes_done,
+                bytes_total,
+            } => Some(AttachmentCounts {
+                done,
+                total,
+                bytes_done,
+                bytes_total,
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The `(done, total)` of every prepare event in `events`, in order.
+fn prepare_counts(events: &[ProgressEvent]) -> Vec<(usize, usize)> {
+    events
+        .iter()
+        .filter_map(|event| match *event {
+            ProgressEvent::Prepare { done, total } => Some((done, total)),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Every attachments event a drain of `units` reported, in order, from a
@@ -426,22 +459,7 @@ fn attachment_bytes(units: Vec<ConversationUnit>, writer_count: usize) -> Vec<At
         drain_write_queue(&out, units, &options, None, Some(&sink), None).unwrap();
     }
 
-    let seen = seen.lock().unwrap();
-    seen.iter()
-        .filter_map(|event| match event {
-            ProgressEvent::Attachments {
-                done,
-                bytes_done,
-                bytes_total,
-                ..
-            } => Some(AttachmentCounts {
-                done: *done,
-                bytes_done: *bytes_done,
-                bytes_total: *bytes_total,
-            }),
-            _ => None,
-        })
-        .collect()
+    attachment_counts(&seen.lock().unwrap())
 }
 
 /// The last attachment count a run reported, from both kinds of drain.
@@ -541,42 +559,35 @@ fn parallel_progress_counts_are_snapshots_that_never_go_back() {
     .unwrap();
 
     let seen = seen.lock().unwrap();
-    let attachments: Vec<_> = seen
-        .iter()
-        .filter_map(|event| match event {
-            ProgressEvent::Attachments {
-                done,
-                bytes_done,
-                bytes_total,
-                ..
-            } => Some((*done, *bytes_done, *bytes_total)),
-            _ => None,
-        })
-        .collect();
-    for &(done, bytes_done, bytes_total) in &attachments {
-        let d = done as u64;
+    let attachments = attachment_counts(&seen);
+    for counts in &attachments {
+        let d = counts.done as u64;
         assert_eq!(
-            (bytes_done, bytes_total),
+            (counts.bytes_done, counts.bytes_total),
             (5 * d, hinted - 95 * d),
-            "an attachments event mixes two moments at {done} done"
+            "an attachments event mixes two moments: {counts:?}"
         );
     }
     for pair in attachments.windows(2) {
-        assert!(pair[1].0 > pair[0].0, "attachments went back: {pair:?}");
+        assert!(
+            pair[1].done > pair[0].done,
+            "attachments went back: {pair:?}"
+        );
     }
     let five_each = 5 * total as u64;
-    assert_eq!(attachments.last(), Some(&(total, five_each, five_each)));
-
-    let prepared: Vec<_> = seen
-        .iter()
-        .filter_map(|event| match event {
-            ProgressEvent::Prepare { done, .. } => Some(*done),
-            _ => None,
-        })
-        .collect();
     assert_eq!(
-        prepared,
-        (0..=UNITS).collect::<Vec<_>>(),
+        attachments.last(),
+        Some(&AttachmentCounts {
+            done: total,
+            total,
+            bytes_done: five_each,
+            bytes_total: five_each,
+        })
+    );
+
+    assert_eq!(
+        prepare_counts(&seen),
+        (0..=UNITS).map(|done| (done, UNITS)).collect::<Vec<_>>(),
         "prepare events in order"
     );
 }
@@ -614,29 +625,16 @@ fn typed_progress_covers_prepare_and_attachments_across_units() {
     );
     // Two writers report concurrently, and each event still carries one
     // moment's counts in count order, so the last one is the full total.
-    let attachments_last = seen
-        .iter()
-        .filter_map(|event| match event {
-            ProgressEvent::Attachments {
-                done,
-                total,
-                bytes_done,
-                bytes_total,
-            } => Some((*done, *total, *bytes_done, *bytes_total)),
-            _ => None,
+    assert_eq!(
+        attachment_counts(&seen).last(),
+        Some(&AttachmentCounts {
+            done: 4,
+            total: 4,
+            bytes_done: 4,
+            bytes_total: 4,
         })
-        .next_back()
-        .unwrap();
-    assert_eq!(attachments_last, (4, 4, 4, 4));
-    let prepared_last = seen
-        .iter()
-        .filter_map(|event| match event {
-            ProgressEvent::Prepare { done, total } => Some((*done, *total)),
-            _ => None,
-        })
-        .next_back()
-        .unwrap();
-    assert_eq!(prepared_last, (4, 4));
+    );
+    assert_eq!(prepare_counts(&seen).last(), Some(&(4, 4)));
     assert!(
         !seen
             .iter()
@@ -680,16 +678,10 @@ fn sequential_drain_reports_prepare_in_order_and_counts_resumed_units() {
     )
     .unwrap();
 
-    let prepared: Vec<(usize, usize)> = seen
-        .lock()
-        .unwrap()
-        .iter()
-        .filter_map(|event| match event {
-            ProgressEvent::Prepare { done, total } => Some((*done, *total)),
-            _ => None,
-        })
-        .collect();
-    assert_eq!(prepared, [(0, 2), (1, 2), (2, 2)]);
+    assert_eq!(
+        prepare_counts(&seen.lock().unwrap()),
+        [(0, 2), (1, 2), (2, 2)]
+    );
 }
 
 #[test]
