@@ -38,6 +38,14 @@ pub enum ContactReason {
 }
 
 impl ContactReason {
+    /// Every reason, from most to least consequential.
+    pub const ALL: [Self; 4] = [
+        Self::ReplacedTrashed,
+        Self::Created,
+        Self::Named,
+        Self::IdentityAdded,
+    ];
+
     /// Storage id, the same word the API serializes.
     pub fn as_str(self) -> &'static str {
         match self {
@@ -50,13 +58,7 @@ impl ContactReason {
 
     /// The variant stored as `word`, if any.
     pub fn parse(word: &str) -> Option<Self> {
-        match word {
-            "replaced_trashed" => Some(Self::ReplacedTrashed),
-            "created" => Some(Self::Created),
-            "named" => Some(Self::Named),
-            "identity_added" => Some(Self::IdentityAdded),
-            _ => None,
-        }
+        Self::ALL.into_iter().find(|reason| reason.as_str() == word)
     }
 
     /// True when the run brought this contact into being.
@@ -142,6 +144,27 @@ pub struct ContactCounts {
     pub changed_count: u64,
 }
 
+/// The run's tally as two SQL expressions, the new count and the changed
+/// count, for the run whose id is `import_id` (a parameter or a column).
+/// One statement reads it for one run and the Import Run list for a page of
+/// runs, so the two cannot count differently. Which reasons are new is
+/// [`ContactReason::is_new`].
+#[must_use]
+pub fn tally_sql(import_id: &str) -> [String; 2] {
+    [true, false].map(|new| {
+        let reasons = ContactReason::ALL
+            .iter()
+            .filter(|reason| reason.is_new() == new)
+            .map(|reason| format!("'{}'", reason.as_str()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(
+            "(SELECT COUNT(*) FROM import_contacts \
+             WHERE import_contacts.import_id = {import_id} AND reason IN ({reasons}))"
+        )
+    })
+}
+
 /// The run's tally. The caller has already established that `import_id`
 /// is the account's.
 ///
@@ -149,23 +172,16 @@ pub struct ContactCounts {
 ///
 /// Returns an error when the query fails.
 pub async fn counts(conn: &mut SqliteConnection, import_id: i64) -> Result<ContactCounts> {
-    let rows: Vec<(String, i64)> = sqlx::query_as(
-        "SELECT reason, COUNT(*) FROM import_contacts
-         WHERE import_id = $1 GROUP BY reason",
-    )
-    .bind(import_id)
-    .fetch_all(&mut *conn)
-    .await?;
-    let mut tally = ContactCounts::default();
-    for (reason, count) in rows {
-        let count = count.max(0) as u64;
-        match ContactReason::parse(&reason) {
-            Some(reason) if reason.is_new() => tally.new_count += count,
-            Some(_) => tally.changed_count += count,
-            None => {}
-        }
-    }
-    Ok(tally)
+    let [new, changed] = tally_sql("$1");
+    let (new_count, changed_count): (i64, i64) =
+        sqlx::query_as(&format!("SELECT {new}, {changed}"))
+            .bind(import_id)
+            .fetch_one(&mut *conn)
+            .await?;
+    Ok(ContactCounts {
+        new_count: new_count.max(0) as u64,
+        changed_count: changed_count.max(0) as u64,
+    })
 }
 
 /// One page of the run's contacts, most consequential reason first and

@@ -1550,10 +1550,11 @@ export interface components {
         /** @description One of an account's Import Runs as its reader may see it. */
         AccountImportRun: components["schemas"]["ImportRun"] | components["schemas"]["OwnerImportRun"];
         /**
-         * @description An account's Import Runs as its reader may see them: in full for the
-         *     account itself, each an `OwnerImportRun` for the owner.
+         * @description An account's Import Runs as its reader may see them: each an
+         *     `ImportRunSummary` for the account itself, an `OwnerImportRun` for the
+         *     owner. Neither carries the run's issues.
          */
-        AccountImportRuns: components["schemas"]["Page_ImportRun"] | components["schemas"]["Page_OwnerImportRun"];
+        AccountImportRuns: components["schemas"]["Page_ImportRunSummary"] | components["schemas"]["Page_OwnerImportRun"];
         /** @description One account's share of the messages held: an id, a username and numbers. */
         AccountMessages: {
             /** Format: int64 */
@@ -2542,8 +2543,9 @@ export interface components {
         ImportMode: "replace" | "append";
         /**
          * @description An Import Run: one per import, the same record wherever the interface
-         *     hands one out. It holds the counts Settings shows, everything the desktop
-         *     app needs to resume a running run, and the issues the run recorded.
+         *     hands one run out. It holds the counts Settings shows, everything the
+         *     desktop app needs to resume a running run, and the issues the run
+         *     recorded. A list of runs answers each as an `ImportRunSummary`.
          */
         ImportRun: {
             /**
@@ -2591,6 +2593,106 @@ export interface components {
             id: number;
             /** @description Issues the run recorded, oldest first. */
             issues: components["schemas"]["ImportIssue"][];
+            /**
+             * Format: int64
+             * @description Messages counted for the run.
+             */
+            message_count: number;
+            /** @description Import mode (`replace` or `append`). */
+            mode: string;
+            /**
+             * Format: int64
+             * @description Time spent parsing, when finished.
+             */
+            parse_ms?: number | null;
+            /**
+             * Format: int64
+             * @description Time spent preparing conversation files, when finished.
+             */
+            prepare_ms?: number | null;
+            /** @description Source id the run imports. */
+            source: string;
+            /** @description Source path, size, mtime, and message count, or null. */
+            source_fingerprint: unknown;
+            /** @description Addresses the backup's device sent from (JSON array), or null. */
+            source_identities: unknown;
+            stage?: components["schemas"]["ImportStage"] | null;
+            /** @description Absolute path to the staging folder on the client that owns the run. */
+            staging_dir?: string | null;
+            /** @description UTC time the run started. */
+            started_at: string;
+            /** @description Lifecycle status. */
+            status: components["schemas"]["ImportStatus"];
+            /**
+             * @description What the person approved at the last Review they passed, or null. The
+             *     column `PATCH /v1/imports/{id}` writes with its `summary`.
+             */
+            summary: unknown;
+            /** @description Importing tool, e.g. `message-crate-push`. */
+            tool?: string | null;
+            /**
+             * Format: int64
+             * @description Time spent uploading, when finished.
+             */
+            upload_ms?: number | null;
+        };
+        /**
+         * @description An Import Run as a list of runs answers it: the `ImportRun` with how
+         *     many issues it recorded in place of the issues. A run may record any
+         *     number of issues, so a page that carried them would have no bound on its
+         *     size; `GET /v1/imports/{id}` answers them (#1559,
+         *     `docs/architecture/http-api.md`, "Code").
+         */
+        ImportRunSummary: {
+            /**
+             * Format: int64
+             * @description Attachments counted for the run.
+             */
+            attachment_count: number;
+            /**
+             * Format: int64
+             * @description Time spent on attachments, when finished.
+             */
+            attachments_ms?: number | null;
+            /**
+             * Format: int64
+             * @description Bytes uploaded so far.
+             */
+            bytes_uploaded: number;
+            /**
+             * Format: int64
+             * @description Contacts it only changed.
+             */
+            contacts_changed: number;
+            /**
+             * Format: int64
+             * @description Contacts this run created.
+             */
+            contacts_new: number;
+            /** @description Whether cross-source dedupe runs after each batch. */
+            dedupe: boolean;
+            /** @description Which install created the run. */
+            device_id?: string | null;
+            /**
+             * Format: int64
+             * @description Total wall-clock duration, when finished.
+             */
+            duration_ms?: number | null;
+            /** @description UTC time the run finished, when it has. */
+            finished_at?: string | null;
+            /** @description Import form snapshot, or null. */
+            form: unknown;
+            /**
+             * Format: int64
+             * @description Import Run id.
+             */
+            id: number;
+            /**
+             * Format: int64
+             * @description How many issues the run recorded. `GET /v1/imports/{id}` answers
+             *     them.
+             */
+            issue_count: number;
             /**
              * Format: int64
              * @description Messages counted for the run.
@@ -3618,7 +3720,7 @@ export interface components {
             total: number;
         };
         /** @description One page of a list. */
-        Page_ImportRun: {
+        Page_ImportRunSummary: {
             /** @description The rows on this page. */
             items: {
                 /**
@@ -3664,8 +3766,12 @@ export interface components {
                  * @description Import Run id.
                  */
                 id: number;
-                /** @description Issues the run recorded, oldest first. */
-                issues: components["schemas"]["ImportIssue"][];
+                /**
+                 * Format: int64
+                 * @description How many issues the run recorded. `GET /v1/imports/{id}` answers
+                 *     them.
+                 */
+                issue_count: number;
                 /**
                  * Format: int64
                  * @description Messages counted for the run.
@@ -9638,7 +9744,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Page_ImportRun"];
+                    "application/json": components["schemas"]["Page_ImportRunSummary"];
                 };
             };
             /** @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. */

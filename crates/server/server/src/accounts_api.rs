@@ -34,7 +34,7 @@ use crate::db::{WriteTx, begin_write};
 use crate::db::{account_profile, imports, server_settings, session_tokens};
 use crate::exports_api::OwnerExportRun;
 use crate::extract::{Json, Path, Query};
-use crate::imports_api::{ImportRun, OwnerImportRun};
+use crate::imports_api::{ImportRun, ImportRunSummary, OwnerImportRun};
 use crate::paging::{DEFAULT_LIST_LIMIT, Page, PageQuery, page_of, page_params};
 use crate::server::{
     ApiError, AppState, AuthIdentity, Created, LoggedIn, Owner, refuse_for_demo_account,
@@ -1282,13 +1282,14 @@ pub(crate) async fn list_account_identities(
 // rather than the account's with fields removed, so a field added to a run
 // reaches the owner only when someone adds it to that type.
 
-/// An account's Import Runs as its reader may see them: in full for the
-/// account itself, each an `OwnerImportRun` for the owner.
+/// An account's Import Runs as its reader may see them: each an
+/// `ImportRunSummary` for the account itself, an `OwnerImportRun` for the
+/// owner. Neither carries the run's issues.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 #[serde(untagged)]
 pub(crate) enum AccountImportRuns {
     /// The account's own runs.
-    Own(Page<ImportRun>),
+    Own(Page<ImportRunSummary>),
     /// Another account's runs, as the owner reads them.
     Owner(Page<OwnerImportRun>),
 }
@@ -1343,20 +1344,11 @@ pub(crate) async fn list_account_imports(
     let mut conn = state.db.acquire().await?;
     let reach = require_account_reach(&mut conn, &auth, target, Admits::Owner).await?;
     let rows = crate::imports_api::import_rows_page(&mut conn, target, query).await?;
-    if !reach.is_own() {
-        let mut items = Vec::with_capacity(rows.items.len());
-        for row in rows.items {
-            items.push(crate::imports_api::owner_import_run(&mut conn, row).await?);
-        }
-        return Ok(Json(AccountImportRuns::Owner(Page {
-            items,
-            total: rows.total,
-            limit: rows.limit,
-            offset: rows.offset,
-        })));
-    }
-    let page = crate::imports_api::import_runs_page(&mut conn, rows).await?;
-    Ok(Json(AccountImportRuns::Own(page)))
+    Ok(Json(if reach.is_own() {
+        AccountImportRuns::Own(crate::imports_api::shape_page(rows))
+    } else {
+        AccountImportRuns::Owner(crate::imports_api::shape_page(rows))
+    }))
 }
 
 /// One of an account's Import Runs: status, timings and counts, and for the

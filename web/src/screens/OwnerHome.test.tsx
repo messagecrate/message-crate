@@ -245,6 +245,7 @@ const anImport = {
   message_count: 1234,
   attachment_count: 7,
   bytes_uploaded: 2048,
+  issue_count: 0,
 };
 
 /** The same run in full, which is what opening its row reads. */

@@ -7885,7 +7885,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page_ImportRun"
+                  "$ref": "#/components/schemas/Page_ImportRunSummary"
                 }
               }
             }
@@ -12124,7 +12124,7 @@
       "AccountImportRuns": {
         "oneOf": [
           {
-            "$ref": "#/components/schemas/Page_ImportRun",
+            "$ref": "#/components/schemas/Page_ImportRunSummary",
             "description": "The account's own runs."
           },
           {
@@ -12132,7 +12132,7 @@
             "description": "Another account's runs, as the owner reads them."
           }
         ],
-        "description": "An account's Import Runs as its reader may see them: in full for the\naccount itself, each an `OwnerImportRun` for the owner."
+        "description": "An account's Import Runs as its reader may see them: each an\n`ImportRunSummary` for the account itself, an `OwnerImportRun` for the\nowner. Neither carries the run's issues."
       },
       "AccountMessages": {
         "type": "object",
@@ -14098,7 +14098,7 @@
       },
       "ImportRun": {
         "type": "object",
-        "description": "An Import Run: one per import, the same record wherever the interface\nhands one out. It holds the counts Settings shows, everything the desktop\napp needs to resume a running run, and the issues the run recorded.",
+        "description": "An Import Run: one per import, the same record wherever the interface\nhands one run out. It holds the counts Settings shows, everything the\ndesktop app needs to resume a running run, and the issues the run\nrecorded. A list of runs answers each as an `ImportRunSummary`.",
         "required": [
           "id",
           "source",
@@ -14188,6 +14188,179 @@
               "$ref": "#/components/schemas/ImportIssue"
             },
             "description": "Issues the run recorded, oldest first."
+          },
+          "message_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Messages counted for the run."
+          },
+          "mode": {
+            "type": "string",
+            "description": "Import mode (`replace` or `append`)."
+          },
+          "parse_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Time spent parsing, when finished."
+          },
+          "prepare_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Time spent preparing conversation files, when finished."
+          },
+          "source": {
+            "type": "string",
+            "description": "Source id the run imports."
+          },
+          "source_fingerprint": {
+            "description": "Source path, size, mtime, and message count, or null."
+          },
+          "source_identities": {
+            "description": "Addresses the backup's device sent from (JSON array), or null."
+          },
+          "stage": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ImportStage",
+                "description": "Where a running run is; null once it is over."
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "staging_dir": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Absolute path to the staging folder on the client that owns the run."
+          },
+          "started_at": {
+            "type": "string",
+            "description": "UTC time the run started."
+          },
+          "status": {
+            "$ref": "#/components/schemas/ImportStatus",
+            "description": "Lifecycle status."
+          },
+          "summary": {
+            "description": "What the person approved at the last Review they passed, or null. The\ncolumn `PATCH /v1/imports/{id}` writes with its `summary`."
+          },
+          "tool": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Importing tool, e.g. `message-crate-push`."
+          },
+          "upload_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Time spent uploading, when finished."
+          }
+        }
+      },
+      "ImportRunSummary": {
+        "type": "object",
+        "description": "An Import Run as a list of runs answers it: the `ImportRun` with how\nmany issues it recorded in place of the issues. A run may record any\nnumber of issues, so a page that carried them would have no bound on its\nsize; `GET /v1/imports/{id}` answers them (#1559,\n`docs/architecture/http-api.md`, \"Code\").",
+        "required": [
+          "id",
+          "source",
+          "mode",
+          "dedupe",
+          "status",
+          "started_at",
+          "message_count",
+          "attachment_count",
+          "bytes_uploaded",
+          "form",
+          "source_fingerprint",
+          "source_identities",
+          "summary",
+          "issue_count",
+          "contacts_new",
+          "contacts_changed"
+        ],
+        "properties": {
+          "attachment_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Attachments counted for the run."
+          },
+          "attachments_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Time spent on attachments, when finished."
+          },
+          "bytes_uploaded": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Bytes uploaded so far."
+          },
+          "contacts_changed": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Contacts it only changed.",
+            "minimum": 0
+          },
+          "contacts_new": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Contacts this run created.",
+            "minimum": 0
+          },
+          "dedupe": {
+            "type": "boolean",
+            "description": "Whether cross-source dedupe runs after each batch."
+          },
+          "device_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Which install created the run."
+          },
+          "duration_ms": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "Total wall-clock duration, when finished."
+          },
+          "finished_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "UTC time the run finished, when it has."
+          },
+          "form": {
+            "description": "Import form snapshot, or null."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Import Run id."
+          },
+          "issue_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many issues the run recorded. `GET /v1/imports/{id}` answers\nthem.",
+            "minimum": 0
           },
           "message_count": {
             "type": "integer",
@@ -16137,7 +16310,7 @@
           }
         }
       },
-      "Page_ImportRun": {
+      "Page_ImportRunSummary": {
         "type": "object",
         "description": "One page of a list.",
         "required": [
@@ -16151,7 +16324,7 @@
             "type": "array",
             "items": {
               "type": "object",
-              "description": "An Import Run: one per import, the same record wherever the interface\nhands one out. It holds the counts Settings shows, everything the desktop\napp needs to resume a running run, and the issues the run recorded.",
+              "description": "An Import Run as a list of runs answers it: the `ImportRun` with how\nmany issues it recorded in place of the issues. A run may record any\nnumber of issues, so a page that carried them would have no bound on its\nsize; `GET /v1/imports/{id}` answers them (#1559,\n`docs/architecture/http-api.md`, \"Code\").",
               "required": [
                 "id",
                 "source",
@@ -16166,7 +16339,7 @@
                 "source_fingerprint",
                 "source_identities",
                 "summary",
-                "issues",
+                "issue_count",
                 "contacts_new",
                 "contacts_changed"
               ],
@@ -16235,12 +16408,11 @@
                   "format": "int64",
                   "description": "Import Run id."
                 },
-                "issues": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ImportIssue"
-                  },
-                  "description": "Issues the run recorded, oldest first."
+                "issue_count": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "How many issues the run recorded. `GET /v1/imports/{id}` answers\nthem.",
+                  "minimum": 0
                 },
                 "message_count": {
                   "type": "integer",

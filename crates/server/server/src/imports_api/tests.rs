@@ -948,9 +948,9 @@ async fn promote_stamps_messages_with_import_id() {
     .await
     .unwrap();
     assert_eq!((listed.len(), total), (1, 1));
-    assert_eq!(listed[0].source, "imessage");
-    assert!(!listed[0].started_at.is_empty());
-    assert!(listed[0].finished_at.is_some());
+    assert_eq!(listed[0].row.source, "imessage");
+    assert!(!listed[0].row.started_at.is_empty());
+    assert!(listed[0].row.finished_at.is_some());
     assert_eq!(
         crate::db::storage::attachment_bytes(
             &mut conn,
@@ -4406,9 +4406,10 @@ async fn a_discard_with_an_unknown_issue_kind_is_refused() {
     assert_eq!(run["status"], "running", "{run}");
 }
 
-/// An Import Run is one record wherever the interface hands it out: the
-/// answer to `complete` and to `discard`, `GET /v1/imports/{id}`, and the
-/// run's row in `GET /v1/imports` are the same JSON, issues included.
+/// An Import Run is one record wherever the interface hands one run out:
+/// the answer to `complete` and to `discard` and `GET /v1/imports/{id}` are
+/// the same JSON, issues included. The run's row in `GET /v1/imports` is the
+/// same JSON with the count of its issues in place of the issues.
 #[tokio::test]
 async fn an_import_run_reads_the_same_from_every_route() {
     let (fixture, account) = fixture_with_account().await;
@@ -4462,7 +4463,14 @@ async fn an_import_run_reads_the_same_from_every_route() {
             .iter()
             .find(|run| run["id"] == id)
             .unwrap_or_else(|| panic!("run {id} is listed: {page}"));
-        assert_eq!(listed, answered, "GET /v1/imports, run {id}");
+        let mut summary = answered.clone();
+        let issues = summary
+            .as_object_mut()
+            .unwrap()
+            .remove("issues")
+            .expect("the run carries its issues");
+        summary["issue_count"] = issues.as_array().unwrap().len().into();
+        assert_eq!(listed, &summary, "GET /v1/imports, run {id}");
     }
 }
 
@@ -4837,4 +4845,105 @@ async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accoun
             "{message}"
         );
     }
+}
+
+/// Start an Import Run and complete it with `issues` skips, returning its id.
+async fn run_with_issues(state: &crate::server::AppState, token: &str, issues: usize) -> i64 {
+    let (_, created): (String, serde_json::Value) = post_created_json(
+        state,
+        "/v1/imports",
+        token,
+        serde_json::json!({ "source": "whatsapp" }),
+    )
+    .await;
+    let id = created["id"].as_i64().unwrap();
+    let issues: Vec<serde_json::Value> = (0..issues)
+        .map(|n| {
+            serde_json::json!({
+                "kind": "skip", "stage": "staging", "item": format!("chat-{n}.txt"), "reason": "empty"
+            })
+        })
+        .collect();
+    let _: serde_json::Value = post_json(
+        state,
+        &format!("/v1/imports/{id}/complete"),
+        token,
+        serde_json::json!({ "status": "completed_with_issues", "issues": issues }),
+    )
+    .await;
+    id
+}
+
+/// #1559: a page of the Import Run list carries how many issues each run
+/// recorded and none of the issues, however many a run recorded, so its size
+/// does not grow with them. `GET /v1/imports/{id}` still answers every one.
+#[tokio::test]
+async fn the_import_run_list_counts_each_runs_issues_and_carries_none() {
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    let many = run_with_issues(state, token, 600).await;
+    let none = run_with_issues(state, token, 0).await;
+
+    for path in [
+        "/v1/imports".to_string(),
+        format!("/v1/accounts/{}/imports", account.account_id),
+    ] {
+        let page: serde_json::Value = get_json(state, &path, token).await;
+        for (id, count) in [(many, 600), (none, 0)] {
+            let listed = page["items"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|run| run["id"] == id)
+                .unwrap_or_else(|| panic!("{path}: run {id} is listed: {page}"));
+            assert_eq!(listed["issue_count"], count, "{path}: run {id}");
+            assert!(
+                listed.get("issues").is_none(),
+                "{path}: run {id} carries its issues"
+            );
+        }
+    }
+
+    let run: serde_json::Value = get_json(state, &format!("/v1/imports/{many}"), token).await;
+    let issues = run["issues"].as_array().expect("the run's issues");
+    assert_eq!(issues.len(), 600);
+    assert_eq!(issues[599]["item"], "chat-599.txt");
+}
+
+/// #1559: a page of Import Runs is read in the list's own statements, the
+/// count and the page, whatever rows the page holds: no statement runs once
+/// per row for its issues or its contacts. Both lists shape the rows
+/// without the database, the account's and the owner's alike.
+#[tokio::test]
+async fn a_page_of_import_runs_is_read_without_a_statement_per_row() {
+    use sqlx::Connection as _;
+    let (fixture, account) = fixture_with_account().await;
+    let state = &fixture.state;
+    let token = account.token.as_str();
+    for issues in [3, 0, 1] {
+        run_with_issues(state, token, issues).await;
+    }
+    let mut conn = state.db.acquire().await.unwrap();
+    conn.clear_cached_statements().await.unwrap();
+
+    let query = ListImportsQuery {
+        status: None,
+        limit: None,
+        offset: None,
+        sort: None,
+    };
+    let rows = import_rows_page(&mut conn, account.account_id, query)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        conn.cached_statements_size(),
+        2,
+        "the count and the page, and nothing per row"
+    );
+    let counts: Vec<u64> = rows.items.iter().map(|run| run.issue_count).collect();
+    assert_eq!(counts, [1, 0, 3], "newest first");
+    let owner: Page<OwnerImportRun> = shape_page(rows);
+    assert_eq!(owner.items[2].issue_count, 3);
 }

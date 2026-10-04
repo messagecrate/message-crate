@@ -434,6 +434,21 @@ const IMPORT_COLUMNS: &str = "id, account_id, source, tool, mode, status, starte
      attachments_ms, prepare_ms, upload_ms, summary_json, stage, staging_dir, device_id, \
      form_json, source_fingerprint, source_identities, dedupe";
 
+/// How many columns [`IMPORT_COLUMNS`] names: a statement that reads more
+/// after them starts its own at this position.
+const IMPORT_COLUMN_COUNT: usize = {
+    let bytes = IMPORT_COLUMNS.as_bytes();
+    let mut columns = 1;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b',' {
+            columns += 1;
+        }
+        i += 1;
+    }
+    columns
+};
+
 /// Map one `imports` row by column position.
 fn import_from_row(row: &SqliteRow) -> Result<ImportRow, sqlx::Error> {
     Ok(ImportRow {
@@ -858,9 +873,24 @@ pub const DEFAULT_IMPORT_SORT: [SortKey<ImportSort>; 1] = [SortKey {
     direction: Direction::Desc,
 }];
 
+/// One Import Run as the list reads it: its row, how many issues it
+/// recorded, and its contact tally, all from the list's one statement.
+#[derive(Debug, Clone)]
+pub struct ListedImport {
+    /// The run's row.
+    pub row: ImportRow,
+    /// How many issues the run recorded.
+    pub issue_count: u64,
+    /// The contacts the run created and the ones it only changed.
+    pub contacts: crate::db::import_contacts::ContactCounts,
+}
+
 /// One page of an account's Import Runs, in the order `order` asks for,
 /// narrowed to one `status` when given, with the total the page is cut from.
-/// The rows are whole; each route shapes them for whoever reads them.
+/// Each run's issue count and contact tally are read in the page's own
+/// statement, never one statement per run, and its issues are not read at
+/// all: a run may record any number of them (#1559). Each route shapes the
+/// rows for whoever reads them.
 pub async fn list_imports_page(
     conn: &mut SqliteConnection,
     account_id: i64,
@@ -868,7 +898,7 @@ pub async fn list_imports_page(
     order: &[SortKey<ImportSort>],
     limit: i64,
     offset: i64,
-) -> Result<(Vec<ImportRow>, u64)> {
+) -> Result<(Vec<ListedImport>, u64)> {
     let status_sql = if status.is_some() {
         " AND status = $2"
     } else {
@@ -891,8 +921,12 @@ pub async fn list_imports_page(
     } else {
         ("$2", "$3")
     };
+    let [contacts_new, contacts_changed] = crate::db::import_contacts::tally_sql("imports.id");
     let sql = format!(
-        "SELECT {IMPORT_COLUMNS}
+        "SELECT {IMPORT_COLUMNS},
+                (SELECT COUNT(*) FROM import_issues
+                 WHERE import_issues.import_id = imports.id),
+                {contacts_new}, {contacts_changed}
          FROM imports
          WHERE account_id = $1{status_sql}
          ORDER BY started_at {direction}, id {direction}
@@ -903,10 +937,22 @@ pub async fn list_imports_page(
         query = query.bind(status);
     }
     let rows = query.bind(limit).bind(offset).fetch_all(&mut *conn).await?;
+    let count = |row: &SqliteRow, index: usize| -> Result<u64, sqlx::Error> {
+        Ok(row.try_get::<i64, _>(index)?.max(0) as u64)
+    };
     let items = rows
         .iter()
-        .map(import_from_row)
-        .collect::<Result<Vec<_>, _>>()?;
+        .map(|row| {
+            Ok(ListedImport {
+                row: import_from_row(row)?,
+                issue_count: count(row, IMPORT_COLUMN_COUNT)?,
+                contacts: crate::db::import_contacts::ContactCounts {
+                    new_count: count(row, IMPORT_COLUMN_COUNT + 1)?,
+                    changed_count: count(row, IMPORT_COLUMN_COUNT + 2)?,
+                },
+            })
+        })
+        .collect::<Result<Vec<_>, sqlx::Error>>()?;
     Ok((items, total))
 }
 
