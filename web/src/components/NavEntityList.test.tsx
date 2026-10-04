@@ -105,8 +105,8 @@ describe("NavEntityList navigation", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     // The page moves once the rename is written and the cache has read the
-    // lists again, a few renders after Save; the location is on screen all
-    // along, so wait for its text rather than for the element.
+    // lists again, a few renders after Save. The location is on screen all
+    // along, so the test waits for its text rather than for the element.
     await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/group/Fam"));
   });
 

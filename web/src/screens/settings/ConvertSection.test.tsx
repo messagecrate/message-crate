@@ -1,10 +1,9 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { holdDesktopJob } from "../../lib/desktopJob";
-import { fill } from "../../test/fill";
+import { fill, setupUser } from "../../test/user";
 import { ConvertSection } from "./ConvertSection";
 
 const tauriState = vi.hoisted(() => ({ isTauri: true }));
@@ -50,7 +49,7 @@ const convertButton = () => screen.getByRole("button", { name: "Convert" });
 
 /** Fill both folders; the format stays at its default unless `formatLabel` is given. */
 async function fillFolders(input: string, output: string, formatLabel?: string) {
-  const user = userEvent.setup({ delay: null });
+  const user = setupUser();
   render(<ConvertSection />);
   await fill(user, screen.getByLabelText("Input folder"), input);
   await fill(user, screen.getByLabelText("Output folder"), output);
@@ -84,7 +83,7 @@ describe("ConvertSection", () => {
   });
 
   it("keeps Convert disabled until both folders are filled", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     render(<ConvertSection />);
     expect(convertButton()).toBeDisabled();
 

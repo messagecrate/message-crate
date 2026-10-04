@@ -1,9 +1,8 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fill } from "../test/fill";
+import { fill, setupUser } from "../test/user";
 import TimeZoneField from "./TimeZoneField";
 
 const browser = vi.hoisted(() => ({ zone: "Etc/UTC" }));
@@ -34,7 +33,7 @@ describe("TimeZoneField", () => {
 
   it("finds a zone by a city and hands back its IANA name", async () => {
     const onChange = vi.fn();
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     render(<TimeZoneField value="Etc/UTC" onChange={onChange} />);
     await fill(user, field(), "dallas");
     expect(field().value).toBe("dallas");
@@ -47,7 +46,7 @@ describe("TimeZoneField", () => {
   it("stores the zone the person found, whose past differs from its row's", async () => {
     // Knox kept Eastern time from 1991 to 2006; Chicago did not.
     const onChange = vi.fn();
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     render(<TimeZoneField value="Etc/UTC" onChange={onChange} />);
     await fill(user, field(), "knox");
     const [first] = within(screen.getByRole("listbox")).getAllByRole("option");
@@ -58,7 +57,7 @@ describe("TimeZoneField", () => {
   it("stores this browser's zone as the browser names it", async () => {
     browser.zone = "America/Indiana/Knox";
     const onChange = vi.fn();
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     render(<TimeZoneField value="Etc/UTC" onChange={onChange} />);
     await user.click(field());
     const [first] = within(screen.getByRole("listbox")).getAllByRole("option");
@@ -68,8 +67,9 @@ describe("TimeZoneField", () => {
   });
 
   it("lists every zone under this browser's when nothing is typed", async () => {
+    const user = setupUser();
     render(<TimeZoneField value="Etc/UTC" onChange={() => {}} />);
-    await userEvent.click(field());
+    await user.click(field());
     const list = screen.getByRole("listbox");
     expect(within(list).getByText("This browser")).toBeTruthy();
     expect(within(list).getAllByRole("option").length).toBeGreaterThan(300);
@@ -77,11 +77,11 @@ describe("TimeZoneField", () => {
 
   it("says so when nothing matches, and keeps the zone when the person leaves", async () => {
     const onChange = vi.fn();
+    const user = setupUser();
     render(<TimeZoneField value="America/Chicago" onChange={onChange} />);
-    await userEvent.click(field());
-    await userEvent.keyboard("qqqzzz");
+    await fill(user, field(), "qqqzzz");
     expect(screen.getByText("No time zone matches.")).toBeTruthy();
-    await userEvent.tab();
+    await user.tab();
     expect(field().value).toMatch(/Central Time/);
     expect(onChange).not.toHaveBeenCalled();
   });

@@ -1,11 +1,10 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { currentDesktopJob } from "../lib/desktopJob";
-import { fill } from "../test/fill";
+import { fill, setupUser } from "../test/user";
 import ExportScreen from "./ExportScreen";
 import { ConvertSection } from "./settings/ConvertSection";
 
@@ -77,7 +76,7 @@ function renderScreen(query?: string) {
 
 /** Fill the save folder and press Export. */
 async function exportTo(folder: string) {
-  const user = userEvent.setup({ delay: null });
+  const user = setupUser();
   renderScreen();
   await fill(user, screen.getByPlaceholderText("Choose folder…"), folder);
   await user.click(screen.getByRole("button", { name: "Export" }));
@@ -86,7 +85,7 @@ async function exportTo(folder: string) {
 
 /** Pick a format from the Format select, then press Export. */
 async function exportAs(folder: string, formatLabel: string) {
-  const user = userEvent.setup({ delay: null });
+  const user = setupUser();
   renderScreen();
   await fill(user, screen.getByPlaceholderText("Choose folder…"), folder);
   await user.click(screen.getByRole("button", { name: /Format/ }));
@@ -208,7 +207,7 @@ describe("ExportScreen", () => {
       return { summary: "converted" };
     });
 
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     render(
       <MemoryRouter initialEntries={["/export"]}>
         <ExportScreen />
@@ -265,7 +264,7 @@ describe("ExportScreen", () => {
       return "/home/demo/message-crate/staging-export-260831-120000";
     });
 
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderScreen();
     await fill(user, screen.getByPlaceholderText("Choose folder…"), "/home/demo/out");
     await user.click(screen.getByRole("button", { name: /Format/ }));
@@ -287,7 +286,7 @@ describe("ExportScreen", () => {
   });
 
   it("opens in Everything with no query box, and offers the box under Search", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderScreen();
     expect(screen.getByRole("button", { name: /Scope/ })).toHaveTextContent("Everything");
     expect(screen.queryByRole("textbox", { name: "Search" })).toBeNull();
@@ -298,7 +297,7 @@ describe("ExportScreen", () => {
   });
 
   it("sends the query typed under Search", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderScreen();
     await fill(user, screen.getByPlaceholderText("Choose folder…"), "/home/demo/out");
     await user.click(screen.getByRole("button", { name: /Scope/ }));
@@ -315,7 +314,7 @@ describe("ExportScreen", () => {
   it("opens in Search with the query it was given, and sends it", async () => {
     // LeftPanel hands over the conversation list's query as `?q=`, so the
     // person sees what "the current view" means before exporting it.
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderScreen("messages:>100 tag:Work");
     expect(screen.getByRole("button", { name: /Scope/ })).toHaveTextContent("Search");
     expect(screen.getByRole("textbox", { name: "Search" })).toHaveValue("messages:>100 tag:Work");
@@ -338,7 +337,7 @@ describe("ExportScreen", () => {
   });
 
   it("exports only the matching messages once the search is switched to Messages", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderScreen("tag:Work");
     await user.click(screen.getByRole("button", { name: /Search in/ }));
     await user.click(await screen.findByRole("option", { name: "Messages" }));
@@ -354,7 +353,7 @@ describe("ExportScreen", () => {
   it("will not export a Search scope with a blank query", async () => {
     // message-crate-pull reads a blank query as the whole account, which is not what
     // someone who chose Search and left the box empty asked for.
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderScreen("from:me");
     await fill(user, screen.getByPlaceholderText("Choose folder…"), "/home/demo/out");
     await user.clear(screen.getByRole("textbox", { name: "Search" }));

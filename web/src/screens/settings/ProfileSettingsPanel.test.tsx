@@ -1,11 +1,10 @@
 /** @vitest-environment jsdom */
 
 import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "../../lib/account";
-import { fill } from "../../test/fill";
 import { mockedAuth, renderWithProviders as render } from "../../test/providers";
+import { fill, setupUser } from "../../test/user";
 import { ProfileSettingsPanel } from "./ProfileSettingsPanel";
 
 const getAccountProfile = vi.hoisted(() => vi.fn());
@@ -57,7 +56,7 @@ function zoneField() {
 
 describe("ProfileSettingsPanel", () => {
   it("keeps a typed, unsaved display name when the time zone changes", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     render(<ProfileSettingsPanel />);
     await waitFor(() => expect(nameField().value).toBe("Stored Name"));
 
@@ -74,7 +73,7 @@ describe("ProfileSettingsPanel", () => {
   });
 
   it("clears the display name when an emptied field is saved", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     render(<ProfileSettingsPanel />);
     await waitFor(() => expect(nameField().value).toBe("Stored Name"));
 

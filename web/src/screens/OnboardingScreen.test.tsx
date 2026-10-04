@@ -1,10 +1,9 @@
 /** @vitest-environment jsdom */
 
 import { act, cleanup, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fill } from "../test/fill";
 import { renderWithProviders as render } from "../test/providers";
+import { fill, setupUser } from "../test/user";
 
 const logout = vi.fn();
 const apiPost = vi.fn(async () => ({}));
@@ -49,11 +48,6 @@ vi.mock("../lib/useAccountProfile", () => ({
 import OnboardingScreen, { REPEATED_ERROR_BLINK_MS, SAME_GESTURE_MS } from "./OnboardingScreen";
 
 const rowValue = (n: number) => screen.getByRole("textbox", { name: `Account ${n} value` });
-
-// user-event's default per-keystroke delay is a real setTimeout(0), which
-// nothing here needs; `delay: null` fires each event without one. Values go
-// in with `fill`, one event per value, for the reason `fill` gives.
-const setupUser = () => userEvent.setup({ delay: null });
 
 describe("OnboardingScreen", () => {
   beforeEach(() => {
@@ -469,6 +463,9 @@ describe("OnboardingScreen", () => {
 
     await user.click(screen.getByRole("button", { name: "Text Message Account 1 type" }));
     await user.click(screen.getByRole("option", { name: "Email" }));
+    // A second look, outside the first click's gesture: only a new message
+    // keeps the line from blanking.
+    vi.setSystemTime(Date.now() + SAME_GESTURE_MS + 50);
     await user.click(screen.getByRole("button", { name: "+ Add account" }));
 
     expect(screen.getByText("Enter an email address like you@example.com.")).toBeInTheDocument();
