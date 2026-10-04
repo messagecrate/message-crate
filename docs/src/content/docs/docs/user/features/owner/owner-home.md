@@ -205,9 +205,9 @@ The **Account** column names the account each entry is about.
 
 Nobody can change or delete an entry, the Owner included.
 A deleted account's entries stay under its old username, marked **deleted**.
-**Account** lists deleted accounts by their old usernames under **Deleted accounts**, below the live ones.
-Picking one narrows the list to the entries and runs that account left, and the logins refused for its username after it was deleted.
-A later account given the same username keeps its own entries apart.
+**Account** lists deleted accounts under **Deleted accounts**, below the live ones, each by its old username and the day it was deleted.
+Picking one narrows the list to the entries and runs that account left.
+Another account given the same username, before or after, keeps its own entries apart.
 Opening and closing the Message Crate to new accounts is recorded too, under no account.
 
 ## Logs

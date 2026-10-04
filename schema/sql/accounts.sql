@@ -148,6 +148,10 @@ CREATE TABLE IF NOT EXISTS imports (
     -- The username the account had, written when the account is deleted and
     -- `account_id` becomes NULL, so the run still says whose it was.
     username TEXT,
+    -- The `account_deleted` entry (`audit_entries.id`) of the account, written
+    -- when it is deleted, so the run reads with that account's other entries
+    -- and apart from a later account given the same username.
+    deletion_entry_id INTEGER,
     -- What started the run: 'session' or 'api_token'. NULL for a run the
     -- server started itself (the Demo Account build, the CLI import).
     credential TEXT,
@@ -241,6 +245,10 @@ CREATE TABLE IF NOT EXISTS exports (
     -- The username the account had, written when the account is deleted and
     -- `account_id` becomes NULL, so the run still says whose it was.
     username TEXT,
+    -- The `account_deleted` entry (`audit_entries.id`) of the account, written
+    -- when it is deleted, so the run reads with that account's other entries
+    -- and apart from a later account given the same username.
+    deletion_entry_id INTEGER,
     -- What started the run: 'session' or 'api_token'. NULL for a run the
     -- server started itself (the Demo Account build, the CLI import).
     credential TEXT,
@@ -364,6 +372,11 @@ CREATE TABLE IF NOT EXISTS audit_entries (
     -- That account's username when the entry was written; for a refused
     -- login, the username as typed, trimmed and cut to 128 characters.
     username TEXT,
+    -- The `account_deleted` entry of the account the entry is about, written
+    -- on every entry about it when it is deleted, that entry included. A
+    -- deleted account is read by it: its id outlives it no other way, and
+    -- its username may pass to a later account.
+    deletion_entry_id INTEGER REFERENCES audit_entries(id),
     -- session_ended: logged_out, replaced or revoked. login_refused:
     -- unknown_username, wrong_password or account_disabled. NULL otherwise.
     reason TEXT,
@@ -395,3 +408,6 @@ CREATE INDEX IF NOT EXISTS ix_audit_entries_at
 
 CREATE INDEX IF NOT EXISTS ix_audit_entries_session
     ON audit_entries(session_entry_id);
+
+CREATE INDEX IF NOT EXISTS ix_audit_entries_deletion
+    ON audit_entries(deletion_entry_id);

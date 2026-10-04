@@ -87,7 +87,9 @@ account it is about and that account's `username`, with counts and names in
 `session_ended` row that closes it points back through `session_entry_id`; a
 session with no such row reads as expired from its expiry. Deleting an account
 sets `account_id` NULL here and on its `imports` and `exports`, which keep the
-`username`. Refused logins for a username no account has are deleted after 90
+`username`, and marks each of them with `deletion_entry_id`, the id of the
+account's `account_deleted` row, by which the deleted account is read apart
+from any other account given its username. Refused logins for a username no account has are deleted after 90
 days; nothing else is.
 
 ### `handles`

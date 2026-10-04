@@ -401,21 +401,22 @@ describe("OwnerHome", () => {
     );
   });
 
-  it("lists deleted accounts below the live ones, and narrows the Audit Trail to one by its old username", async () => {
+  it("lists each deleted account below the live ones, and narrows the Audit Trail to one", async () => {
     listAccounts.mockResolvedValue([theOwner, anAccount]);
     listDeletedAccounts.mockResolvedValue([
-      { username: "carol", deleted_at: "2026-10-02T10:00:00+00:00" },
+      { id: 31, username: "carol", deleted_at: "2026-10-03T10:00:00+00:00" },
+      { id: 12, username: "carol", deleted_at: "2026-09-01T10:00:00+00:00" },
     ]);
     const carolsEntry = {
-      id: 9,
+      id: 31,
       action: "account_deleted",
-      at: "2026-10-02T10:00:00+00:00",
+      at: "2026-10-03T10:00:00+00:00",
       actor: "owner",
       account_id: null,
       username: "carol",
     };
-    listAuditTrail.mockImplementation(async (params: { username?: string }) => ({
-      items: params.username
+    listAuditTrail.mockImplementation(async (params: { deleted_account_id?: number }) => ({
+      items: params.deleted_account_id
         ? [carolsEntry]
         : [
             carolsEntry,
@@ -428,22 +429,27 @@ describe("OwnerHome", () => {
               username: "bob",
             },
           ],
-      total: params.username ? 1 : 2,
+      total: params.deleted_account_id ? 1 : 2,
       limit: 50,
       offset: 0,
     }));
     renderHome(["/owner/audit-trail"]);
     await screen.findByRole("table");
+    await waitFor(() => expect(listDeletedAccounts).toHaveBeenCalled());
 
     await userEvent.click(await screen.findByRole("button", { name: /Every account/ }));
     const options = (await screen.findAllByRole("option")).map((option) => option.textContent);
-    expect(options).toEqual(["Every account", "root", "bob", "carol (deleted)"]);
+    expect(options).toHaveLength(5);
+    expect(options.slice(0, 3)).toEqual(["Every account", "root", "bob"]);
+    expect(options[3]).toMatch(/^carol, deleted .*2026/);
+    expect(options[4]).toMatch(/^carol, deleted .*2026/);
+    expect(options[3]).not.toBe(options[4]);
     expect(screen.getByText("Deleted accounts")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("option", { name: "carol (deleted)" }));
+    await userEvent.click(screen.getByRole("option", { name: options[3] ?? "" }));
 
     await waitFor(() =>
       expect(listAuditTrail).toHaveBeenCalledWith(
-        expect.objectContaining({ username: "carol", offset: 0 }),
+        expect.objectContaining({ deleted_account_id: 31, offset: 0 }),
         expect.anything(),
       ),
     );
@@ -451,7 +457,7 @@ describe("OwnerHome", () => {
     await waitFor(() =>
       expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2),
     );
-    expect(screen.getByRole("button", { name: /carol \(deleted\)/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /carol, deleted/ })).toBeInTheDocument();
   });
 
   it("offers no Deleted accounts section when no account was deleted", async () => {

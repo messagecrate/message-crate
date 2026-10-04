@@ -5,55 +5,33 @@ import Select, {
   selectItemClassName,
   selectSectionHeaderClassName,
 } from "../../components/Select";
+import { formatDateTime } from "../../lib/formatDate";
 import AuditTrail from "../auditTrail/AuditTrail";
-import { type AuditTrailOf, useDeletedAccountUsernames } from "../auditTrail/useAuditTrail";
+import {
+  type AuditTrailOf,
+  auditTrailKey,
+  auditTrailOf,
+  useDeletedAccounts,
+} from "../auditTrail/useAuditTrail";
 import { sectionHint } from "../settings/storage/storageUtils";
 import { useOwnerAccounts } from "./useOwnerAccounts";
 
-/** The picker's key for the full list, beside each account's id. */
-const EVERY_ACCOUNT = "all";
-
-/**
- * The start of a deleted account's key in the picker, before its username.
- * A live account's key is its id, all digits, so the two never meet.
- */
-const DELETED = "deleted:";
-
 const itemClassName = (state: { isFocused: boolean; isSelected: boolean }) =>
   selectItemClassName(state, "sm");
-
-/** The picker's key for whose trail is shown. */
-function pickerKey(of: AuditTrailOf): string {
-  switch (of.kind) {
-    case "account":
-      return String(of.id);
-    case "deleted":
-      return `${DELETED}${of.username}`;
-    default:
-      return EVERY_ACCOUNT;
-  }
-}
-
-/** Whose trail a picker key names. */
-function fromPickerKey(key: string): AuditTrailOf {
-  if (key === EVERY_ACCOUNT) return { kind: "all" };
-  if (key.startsWith(DELETED)) return { kind: "deleted", username: key.slice(DELETED.length) };
-  return { kind: "account", id: Number(key) };
-}
 
 /**
  * Owner Home's Audit Trail: what each user did on this Message Crate, and
  * when, every account's entries and runs in one list, newest first.
  *
  * The account picker narrows the list to one account's entries, the ones
- * its holder reads under Settings. Below the live accounts it lists the
- * deleted ones by their old usernames, and picking one narrows the list to
- * the entries and runs that account left behind.
+ * its holder reads under Settings. Below the live accounts it lists each
+ * deleted account by its old username and when it was deleted, and picking
+ * one narrows the list to the entries and runs that account left behind.
  */
 export function OwnerAuditTrailPanel() {
   const [of, setOf] = useState<AuditTrailOf>({ kind: "all" });
   const { accounts } = useOwnerAccounts();
-  const deleted = useDeletedAccountUsernames();
+  const deleted = useDeletedAccounts();
 
   return (
     <section>
@@ -64,20 +42,20 @@ export function OwnerAuditTrailPanel() {
           <Select
             aria-label="Account"
             size="sm"
-            className="w-[12rem]"
-            selectedKey={pickerKey(of)}
+            className="w-[16rem]"
+            selectedKey={auditTrailKey(of)}
             onSelectionChange={(key) => {
               if (key == null) return;
-              setOf(fromPickerKey(String(key)));
+              setOf(auditTrailOf(String(key)));
             }}
           >
-            <ListBoxItem id={EVERY_ACCOUNT} className={itemClassName}>
+            <ListBoxItem id={auditTrailKey({ kind: "all" })} className={itemClassName}>
               Every account
             </ListBoxItem>
             {accounts.map((account) => (
               <ListBoxItem
                 key={account.account_id}
-                id={String(account.account_id)}
+                id={auditTrailKey({ kind: "account", id: account.account_id })}
                 className={itemClassName}
               >
                 {account.username}
@@ -86,16 +64,19 @@ export function OwnerAuditTrailPanel() {
             {deleted.length > 0 && (
               <ListBoxSection>
                 <Header className={selectSectionHeaderClassName}>Deleted accounts</Header>
-                {deleted.map((username) => (
-                  <ListBoxItem
-                    key={`${DELETED}${username}`}
-                    id={`${DELETED}${username}`}
-                    textValue={`${username} (deleted)`}
-                    className={itemClassName}
-                  >
-                    {username} (deleted)
-                  </ListBoxItem>
-                ))}
+                {deleted.map((account) => {
+                  const label = `${account.username}, deleted ${formatDateTime(account.deleted_at)}`;
+                  return (
+                    <ListBoxItem
+                      key={account.id}
+                      id={auditTrailKey({ kind: "deleted", id: account.id })}
+                      textValue={label}
+                      className={itemClassName}
+                    >
+                      {label}
+                    </ListBoxItem>
+                  );
+                })}
               </ListBoxSection>
             )}
           </Select>

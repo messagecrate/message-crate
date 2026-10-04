@@ -122,13 +122,13 @@ export const keys = {
     contacts: (id: number) => ["imports", String(id), "contacts"] as const,
   },
   /**
-   * Pages of an Audit Trail: every account's (`"all"`, the owner's), the
-   * logged-in account's own (`"own"`), one account the owner has opened, or
-   * a deleted account's by its old username (`"deleted:<username>"`).
+   * Pages of an Audit Trail, `whose` being the trail's `auditTrailKey`:
+   * every account's (`"all"`, the owner's), the logged-in account's own
+   * (`"own"`), one account the owner has opened (`"account:<id>"`), or one
+   * deleted account's (`"deleted:<id>"`).
    */
   auditTrail: {
-    page: (whose: number | "all" | "own" | `deleted:${string}`, page: number) =>
-      ["audit-trail", whose, page] as const,
+    page: (whose: string, page: number) => ["audit-trail", whose, page] as const,
     /** The deleted accounts the owner can narrow the Audit Trail to. */
     deletedAccounts: ["audit-trail", "deleted-accounts"] as const,
   },

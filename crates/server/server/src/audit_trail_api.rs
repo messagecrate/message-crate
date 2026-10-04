@@ -1,8 +1,8 @@
 //! The Audit Trail: `GET /v1/audit-trail`, every account's entries for the
-//! owner, or a deleted account's by its username, beside
+//! owner, or one deleted account's, beside
 //! `GET /v1/accounts/{id}/audit-trail` in `accounts_api`, one account's for
 //! the owner and for that account. Both answer from [`audit_trail_page`], so
-//! the two cannot differ. `GET /v1/audit-trail/deleted-accounts` names the
+//! the two cannot differ. `GET /v1/audit-trail/deleted-accounts` lists the
 //! deleted accounts the owner can narrow the trail to.
 //!
 //! The trail says who did what and when, and how much: never what a message
@@ -16,22 +16,25 @@ use serde::Deserialize;
 
 use crate::db::audit_trail::{self, AuditEntry, DeletedAccount, Scope};
 use crate::extract::{Json, Query};
-use crate::paging::{DEFAULT_LIST_LIMIT, MAX_LIST_OFFSET, Page, page_params};
+use crate::paging::{
+    DEFAULT_LIST_LIMIT, MAX_LIST_OFFSET, Page, PageParams, page_params, page_read,
+};
 use crate::server::{ApiError, AppState, Owner};
 
 /// Query string of `GET /v1/audit-trail`.
 #[derive(Debug, Deserialize)]
 pub(crate) struct ListAuditTrailQuery {
-    /// Only the entries that belong to no account and carry this username.
+    /// Only one deleted account's entries and runs, by
+    /// [`DeletedAccount::id`].
     #[serde(default)]
-    pub(crate) username: Option<String>,
+    pub(crate) deleted_account_id: Option<i64>,
     #[serde(default)]
     pub(crate) limit: Option<usize>,
     #[serde(default)]
     pub(crate) offset: Option<usize>,
 }
 
-/// Query string of `GET /v1/accounts/{id}/audit-trail`.
+/// Query string of `GET /v1/accounts/{id}/audit-trail`: a page.
 #[derive(Debug, Deserialize)]
 pub(crate) struct ListAccountAuditTrailQuery {
     #[serde(default)]
@@ -40,13 +43,13 @@ pub(crate) struct ListAccountAuditTrailQuery {
     pub(crate) offset: Option<usize>,
 }
 
-/// Query string of `GET /v1/audit-trail/deleted-accounts`.
-#[derive(Debug, Deserialize)]
-pub(crate) struct ListDeletedAccountsQuery {
-    #[serde(default)]
-    pub(crate) limit: Option<usize>,
-    #[serde(default)]
-    pub(crate) offset: Option<usize>,
+/// Query string of `GET /v1/audit-trail/deleted-accounts`: a page, as for
+/// one account's Audit Trail.
+pub(crate) type ListDeletedAccountsQuery = ListAccountAuditTrailQuery;
+
+/// The page `limit` and `offset` ask for, as every Audit Trail list reads it.
+fn trail_page_params(limit: Option<usize>, offset: Option<usize>) -> Result<PageParams, ApiError> {
+    page_params(limit, offset, DEFAULT_LIST_LIMIT, Some(MAX_LIST_OFFSET))
 }
 
 /// One page of the Audit Trail over `scope`, newest first, as `reader` (the
@@ -56,12 +59,12 @@ pub(crate) struct ListDeletedAccountsQuery {
 /// Credentials).
 pub(crate) async fn audit_trail_page(
     state: &AppState,
-    scope: Scope<'_>,
+    scope: Scope,
     reader: i64,
     limit: Option<usize>,
     offset: Option<usize>,
 ) -> Result<Json<Page<AuditEntry>>, ApiError> {
-    let params = page_params(limit, offset, DEFAULT_LIST_LIMIT, Some(MAX_LIST_OFFSET))?;
+    let params = trail_page_params(limit, offset)?;
     let mut conn = state.db.acquire().await?;
     let (mut items, total) =
         audit_trail::page(&mut conn, scope, params.limit, params.offset).await?;
@@ -70,12 +73,7 @@ pub(crate) async fn audit_trail_page(
             item.api_token_hint = None;
         }
     }
-    Ok(Json(Page {
-        items,
-        total,
-        limit: params.limit,
-        offset: params.offset,
-    }))
+    Ok(Json(page_read(items, total, params)))
 }
 
 /// Every account's Audit Trail, newest first: logins, sessions ending,
@@ -83,18 +81,18 @@ pub(crate) async fn audit_trail_page(
 /// changes to accounts, including those of deleted accounts under their old
 /// usernames. The owner's alone.
 ///
-/// `username` narrows the list to a deleted account's entries and runs,
-/// which no longer carry an account id, beside the logins refused for that
-/// username while no account held it. It matches whatever the case, and
-/// never a live account's entries, which `GET /v1/accounts/{id}/audit-trail`
-/// reads.
+/// `deleted_account_id` narrows the list to one deleted account's entries
+/// and runs, which no longer carry an account id. The ids are listed by
+/// `GET /v1/audit-trail/deleted-accounts`; an id that names no deleted
+/// account answers an empty page. A live account's entries are read at
+/// `GET /v1/accounts/{id}/audit-trail`.
 #[utoipa::path(
     get,
     path = "/v1/audit-trail",
     tag = "Audit Trail",
     security(("session" = ["owner"])),
     params(
-        ("username" = Option<String>, Query, description = "Only the entries that belong to no account and carry this username: a deleted account's, and the logins refused for it"),
+        ("deleted_account_id" = Option<i64>, Query, description = "Only the entries and runs of the deleted account with this id, from `GET /v1/audit-trail/deleted-accounts`"),
         ("limit" = Option<usize>, Query, description = "Page size, default 40, at most 500"),
         ("offset" = Option<usize>, Query, description = "Rows to skip, at most 50000")
     ),
@@ -108,18 +106,17 @@ pub(crate) async fn list_audit_trail(
     Owner(auth): Owner,
     Query(query): Query<ListAuditTrailQuery>,
 ) -> Result<Json<Page<AuditEntry>>, ApiError> {
-    let scope = match query.username.as_deref().map(str::trim) {
-        None => Scope::All,
-        Some("") => return Err(ApiError::validation("username must not be blank")),
-        Some(username) => Scope::Username(username),
-    };
+    let scope = query
+        .deleted_account_id
+        .map_or(Scope::All, Scope::DeletedAccount);
     audit_trail_page(&state, scope, auth.account_id, query.limit, query.offset).await
 }
 
 /// The deleted accounts whose entries the Audit Trail keeps, by username A to
-/// Z: each username once, with when the last account of that name was
-/// deleted. Owner Home offers them beside the live accounts, to narrow the
-/// Audit Trail to one with `GET /v1/audit-trail?username=`. The owner's alone.
+/// Z, the latest deletion first under one username. Each is one account:
+/// two accounts deleted under one username are two. Owner Home offers them
+/// beside the live accounts, to narrow the Audit Trail to one with
+/// `GET /v1/audit-trail?deleted_account_id=`. The owner's alone.
 #[utoipa::path(
     get,
     path = "/v1/audit-trail/deleted-accounts",
@@ -139,21 +136,11 @@ pub(crate) async fn list_deleted_accounts(
     Owner(_auth): Owner,
     Query(query): Query<ListDeletedAccountsQuery>,
 ) -> Result<Json<Page<DeletedAccount>>, ApiError> {
-    let params = page_params(
-        query.limit,
-        query.offset,
-        DEFAULT_LIST_LIMIT,
-        Some(MAX_LIST_OFFSET),
-    )?;
+    let params = trail_page_params(query.limit, query.offset)?;
     let mut conn = state.db.acquire().await?;
     let (items, total) =
         audit_trail::deleted_accounts_page(&mut conn, params.limit, params.offset).await?;
-    Ok(Json(Page {
-        items,
-        total,
-        limit: params.limit,
-        offset: params.offset,
-    }))
+    Ok(Json(page_read(items, total, params)))
 }
 
 #[cfg(test)]

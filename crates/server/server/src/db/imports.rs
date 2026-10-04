@@ -1065,10 +1065,11 @@ pub async fn record_credential(
 }
 
 /// Ready the account's Import Runs to outlive it, just before the account is
-/// deleted: each keeps `username` and its counts, a run still open is closed
-/// as `cancelled` at `now`, and what describes the person's messages goes:
-/// its issues, form, staging folder, source details and the addresses the
-/// backup sent from (ADR 0020).
+/// deleted: each keeps `username` and its counts, and is marked with
+/// `deletion_entry_id`, the account's `account_deleted` entry. A run still
+/// open is closed as `cancelled` at `now`, and what describes the person's
+/// messages goes: its issues, form, staging folder, source details and the
+/// addresses the backup sent from (ADR 0020).
 ///
 /// # Errors
 ///
@@ -1077,6 +1078,7 @@ pub async fn detach_from_account(
     conn: &mut SqliteConnection,
     account_id: i64,
     username: &str,
+    deletion_entry_id: i64,
     now: &str,
 ) -> Result<()> {
     sqlx::query(
@@ -1095,12 +1097,13 @@ pub async fn detach_from_account(
     .execute(&mut *conn)
     .await?;
     sqlx::query(
-        "UPDATE imports SET username = $2, form_json = NULL, staging_dir = NULL,
+        "UPDATE imports SET username = $2, deletion_entry_id = $3, form_json = NULL, staging_dir = NULL,
                 source_fingerprint = NULL, source_identities = NULL, summary_json = NULL
          WHERE account_id = $1",
     )
     .bind(account_id)
     .bind(username)
+    .bind(deletion_entry_id)
     .execute(&mut *conn)
     .await?;
     Ok(())

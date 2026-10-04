@@ -342,12 +342,15 @@ export function listAccountExports(
 /** Which page of an Audit Trail to read. Absent values are left off the URL. */
 export type AuditTrailParams = { limit?: number; offset?: number };
 
-/** A page of the owner's Audit Trail, narrowed to a deleted account by its old username. */
-export type OwnerAuditTrailParams = AuditTrailParams & { username?: string };
+/** A page of the owner's Audit Trail, or of one deleted account's. */
+export type OwnerAuditTrailParams = AuditTrailParams & { deleted_account_id?: number };
+
+/** A deleted account whose entries the Audit Trail keeps. */
+export type DeletedAccount = Schema["DeletedAccount"];
 
 /**
- * Every account's Audit Trail, newest first, or with `username` a deleted
- * account's entries and runs under its old username. The owner's alone.
+ * Every account's Audit Trail, newest first, or with `deleted_account_id`
+ * one deleted account's entries and runs. The owner's alone.
  */
 export function listAuditTrail(
   params: OwnerAuditTrailParams,
@@ -361,9 +364,9 @@ export function listAuditTrail(
 
 /**
  * Every deleted account whose entries the Audit Trail keeps, by username A
- * to Z, read in full. The owner's alone.
+ * to Z and the latest deletion first, read in full. The owner's alone.
  */
-export function listDeletedAccounts(opts?: RequestOptions): Promise<Schema["DeletedAccount"][]> {
+export function listDeletedAccounts(opts?: RequestOptions): Promise<DeletedAccount[]> {
   return readEveryPage<Schema["Page_DeletedAccount"]>("/v1/audit-trail/deleted-accounts", opts);
 }
 

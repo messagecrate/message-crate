@@ -445,11 +445,11 @@ export interface paths {
          * Every account's Audit Trail, newest first: logins, sessions ending, refused logins, Import Runs, Export Runs, and the owner's and holders' changes to accounts, including those of deleted accounts under their old usernames.
          * @description The owner's alone.
          *
-         *     `username` narrows the list to a deleted account's entries and runs,
-         *     which no longer carry an account id, beside the logins refused for that
-         *     username while no account held it. It matches whatever the case, and
-         *     never a live account's entries, which `GET /v1/accounts/{id}/audit-trail`
-         *     reads.
+         *     `deleted_account_id` narrows the list to one deleted account's entries
+         *     and runs, which no longer carry an account id. The ids are listed by
+         *     `GET /v1/audit-trail/deleted-accounts`; an id that names no deleted
+         *     account answers an empty page. A live account's entries are read at
+         *     `GET /v1/accounts/{id}/audit-trail`.
          */
         get: operations["list_audit_trail"];
         put?: never;
@@ -468,8 +468,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * The deleted accounts whose entries the Audit Trail keeps, by username A to Z: each username once, with when the last account of that name was deleted.
-         * @description Owner Home offers them beside the live accounts, to narrow the Audit Trail to one with `GET /v1/audit-trail?username=`. The owner's alone.
+         * The deleted accounts whose entries the Audit Trail keeps, by username A to Z, the latest deletion first under one username.
+         * @description Each is one account: two accounts deleted under one username are two. Owner Home offers them beside the live accounts, to narrow the Audit Trail to one with `GET /v1/audit-trail?deleted_account_id=`. The owner's alone.
          */
         get: operations["list_deleted_accounts"];
         put?: never;
@@ -2241,12 +2241,18 @@ export interface components {
         };
         /**
          * @description A deleted account as the Audit Trail remembers it: the username its
-         *     entries and runs keep, and when it was deleted. Accounts deleted under one
-         *     username, whatever its case, are one, deleted when the last of them was.
+         *     entries and runs keep, and when it was deleted.
          */
         DeletedAccount: {
             /** @description When it was deleted, RFC 3339 UTC. */
             deleted_at: string;
+            /**
+             * Format: int64
+             * @description The id of its `account_deleted` entry, which every entry and run about
+             *     the account carries once it is deleted. Two accounts deleted under one
+             *     username have two ids.
+             */
+            id: number;
             /** @description The username the account had, which its entries and runs still carry. */
             username: string;
         };
@@ -3334,6 +3340,13 @@ export interface components {
             items: {
                 /** @description When it was deleted, RFC 3339 UTC. */
                 deleted_at: string;
+                /**
+                 * Format: int64
+                 * @description The id of its `account_deleted` entry, which every entry and run about
+                 *     the account carries once it is deleted. Two accounts deleted under one
+                 *     username have two ids.
+                 */
+                id: number;
                 /** @description The username the account had, which its entries and runs still carry. */
                 username: string;
             }[];
@@ -6850,8 +6863,8 @@ export interface operations {
     list_audit_trail: {
         parameters: {
             query?: {
-                /** @description Only the entries that belong to no account and carry this username: a deleted account's, and the logins refused for it */
-                username?: string;
+                /** @description Only the entries and runs of the deleted account with this id, from `GET /v1/audit-trail/deleted-accounts` */
+                deleted_account_id?: number;
                 /** @description Page size, default 40, at most 500 */
                 limit?: number;
                 /** @description Rows to skip, at most 50000 */

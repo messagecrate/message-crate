@@ -156,7 +156,7 @@ const EXERCISED: Record<string, () => unknown> = {
     serverApi.listAccountExports(every<serverApi.AccountRunListParams>({ limit: 50, offset: 50 })),
   listAuditTrail: () =>
     serverApi.listAuditTrail(
-      every<serverApi.OwnerAuditTrailParams>({ limit: 50, offset: 50, username: "alice" }),
+      every<serverApi.OwnerAuditTrailParams>({ limit: 50, offset: 50, deleted_account_id: 9 }),
     ),
   listDeletedAccounts: () => serverApi.listDeletedAccounts(),
   listAccountAuditTrail: () =>

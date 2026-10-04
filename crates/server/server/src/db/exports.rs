@@ -549,7 +549,8 @@ pub async fn record_credential(
 
 /// Ready the account's Export Runs to outlive it, just before the account is
 /// deleted: each keeps `username`, what was asked for and how much matched,
-/// a run still open is closed as `cancelled` at `now`, and its list of
+/// and is marked with `deletion_entry_id`, the account's `account_deleted`
+/// entry. A run still open is closed as `cancelled` at `now`, and its list of
 /// messages, search text and picked ids go (ADR 0020).
 ///
 /// # Errors
@@ -559,6 +560,7 @@ pub async fn detach_from_account(
     conn: &mut SqliteConnection,
     account_id: i64,
     username: &str,
+    deletion_entry_id: i64,
     now: &str,
 ) -> Result<()> {
     sqlx::query(
@@ -577,12 +579,13 @@ pub async fn detach_from_account(
     .execute(&mut *conn)
     .await?;
     sqlx::query(
-        "UPDATE exports SET username = $2, scope_query = NULL,
+        "UPDATE exports SET username = $2, deletion_entry_id = $3, scope_query = NULL,
                 scope_conversation_ids = NULL, scope_message_ids = NULL
          WHERE account_id = $1",
     )
     .bind(account_id)
     .bind(username)
+    .bind(deletion_entry_id)
     .execute(&mut *conn)
     .await?;
     Ok(())

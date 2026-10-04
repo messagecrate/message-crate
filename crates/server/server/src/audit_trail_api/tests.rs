@@ -307,48 +307,47 @@ async fn deleting_an_account_keeps_its_entries_and_runs_under_its_username() {
     assert_eq!(kept, None, "the search text goes with the account");
 }
 
-/// The owner narrows the trail to a deleted account by its username: its
-/// entries and runs, and the logins refused for the username after it was
-/// gone, and nothing of a later account given the same username (#1554).
+/// The owner narrows the trail to one deleted account: its entries and
+/// runs, and nothing of another account given the same username, deleted or
+/// live, nor the logins refused for the username once it was gone (#1554).
 #[tokio::test]
 async fn the_owner_narrows_the_trail_to_a_deleted_account() {
     let fixture = test_fixture().await;
     let state = &fixture.state;
     let owner = claim_as_owner(state, "keeper", PASSWORD).await;
-    let alice = register_via_api(state, "alice", PASSWORD).await;
-    let _bob = register_via_api(state, "bob", PASSWORD).await;
+    let first = register_via_api(state, "alice", PASSWORD).await;
+    delete_account(state, first.account_id, &owner.token).await;
+    let second = register_via_api(state, "Alice", PASSWORD).await;
     let (_, run): (String, Value) = post_created_json(
         state,
         "/v1/exports",
-        &alice.token,
+        &second.token,
         json!({ "scope": { "kind": "everything" } }),
     )
     .await;
+    delete_account(state, second.account_id, &owner.token).await;
     assert_eq!(
-        delete_status(
-            state,
-            &format!("/v1/accounts/{}", alice.account_id),
-            &owner.token
-        )
-        .await,
-        StatusCode::NO_CONTENT
-    );
-    assert_eq!(
-        login_status(state, "Alice", "guess").await,
+        login_status(state, "alice", "guess").await,
         StatusCode::UNAUTHORIZED
     );
-    let _new_alice = register_via_api(state, "alice", PASSWORD).await;
+    let _third = register_via_api(state, "alice", PASSWORD).await;
 
     let deleted: Value = get_json(state, "/v1/audit-trail/deleted-accounts", &owner.token).await;
-    assert_eq!(deleted["total"], 1);
-    assert_eq!(deleted["items"][0]["username"], "alice");
+    assert_eq!(deleted["total"], 2);
+    let deleted = deleted["items"].as_array().unwrap();
+    assert_eq!(deleted[0]["username"], "Alice", "the latest deletion first");
+    assert_eq!(deleted[1]["username"], "alice");
+    assert_ne!(deleted[0]["id"], deleted[1]["id"]);
 
-    let page: Value = get_json(state, "/v1/audit-trail?username=ALICE", &owner.token).await;
+    let path = format!(
+        "/v1/audit-trail?deleted_account_id={}",
+        deleted[0]["id"].as_i64().unwrap()
+    );
+    let page: Value = get_json(state, &path, &owner.token).await;
     let items = page["items"].as_array().unwrap();
     assert_eq!(
         actions(items),
         [
-            "login_refused",
             "account_deleted",
             "session_ended",
             "export_run",
@@ -356,14 +355,35 @@ async fn the_owner_narrows_the_trail_to_a_deleted_account() {
             "account_created"
         ]
     );
-    assert_eq!(page["total"], 6);
+    assert_eq!(page["total"], 5);
     for item in items {
         assert_eq!(item["account_id"], Value::Null, "{item}");
+        assert_eq!(item["username"], "Alice", "{item}");
     }
-    assert_eq!(items[0]["reason"], "unknown_username");
-    assert_eq!(items[3]["id"], run["id"]);
+    assert_eq!(items[0]["id"], deleted[0]["id"]);
+    assert_eq!(items[2]["id"], run["id"]);
 
-    let (status, text) = get_raw(state, "/v1/audit-trail?username=%20", &owner.token).await;
+    let path = format!(
+        "/v1/audit-trail?deleted_account_id={}",
+        deleted[1]["id"].as_i64().unwrap()
+    );
+    let first_items = trail(state, &path, &owner.token).await;
+    assert_eq!(
+        actions(&first_items),
+        [
+            "account_deleted",
+            "session_ended",
+            "logged_in",
+            "account_created"
+        ]
+    );
+
+    let (status, text) = get_raw(
+        state,
+        "/v1/audit-trail?deleted_account_id=alice",
+        &owner.token,
+    )
+    .await;
     expect_problem(status, &text, ProblemType::ValidationFailed);
     let (status, text) = get_raw(
         state,
@@ -372,6 +392,14 @@ async fn the_owner_narrows_the_trail_to_a_deleted_account() {
     )
     .await;
     expect_problem(status, &text, ProblemType::NotTheOwner);
+}
+
+/// Delete the account `id` as the owner.
+async fn delete_account(state: &crate::server::AppState, id: i64, owner_token: &str) {
+    assert_eq!(
+        delete_status(state, &format!("/v1/accounts/{id}"), owner_token).await,
+        StatusCode::NO_CONTENT
+    );
 }
 
 /// A run started with an API token names the token, by label and hint as

@@ -3763,16 +3763,17 @@
           "Audit Trail"
         ],
         "summary": "Every account's Audit Trail, newest first: logins, sessions ending, refused logins, Import Runs, Export Runs, and the owner's and holders' changes to accounts, including those of deleted accounts under their old usernames.",
-        "description": "The owner's alone.\n\n`username` narrows the list to a deleted account's entries and runs,\nwhich no longer carry an account id, beside the logins refused for that\nusername while no account held it. It matches whatever the case, and\nnever a live account's entries, which `GET /v1/accounts/{id}/audit-trail`\nreads.",
+        "description": "The owner's alone.\n\n`deleted_account_id` narrows the list to one deleted account's entries\nand runs, which no longer carry an account id. The ids are listed by\n`GET /v1/audit-trail/deleted-accounts`; an id that names no deleted\naccount answers an empty page. A live account's entries are read at\n`GET /v1/accounts/{id}/audit-trail`.",
         "operationId": "list_audit_trail",
         "parameters": [
           {
-            "name": "username",
+            "name": "deleted_account_id",
             "in": "query",
-            "description": "Only the entries that belong to no account and carry this username: a deleted account's, and the logins refused for it",
+            "description": "Only the entries and runs of the deleted account with this id, from `GET /v1/audit-trail/deleted-accounts`",
             "required": false,
             "schema": {
-              "type": "string"
+              "type": "integer",
+              "format": "int64"
             }
           },
           {
@@ -3876,8 +3877,8 @@
         "tags": [
           "Audit Trail"
         ],
-        "summary": "The deleted accounts whose entries the Audit Trail keeps, by username A to Z: each username once, with when the last account of that name was deleted.",
-        "description": "Owner Home offers them beside the live accounts, to narrow the Audit Trail to one with `GET /v1/audit-trail?username=`. The owner's alone.",
+        "summary": "The deleted accounts whose entries the Audit Trail keeps, by username A to Z, the latest deletion first under one username.",
+        "description": "Each is one account: two accounts deleted under one username are two. Owner Home offers them beside the live accounts, to narrow the Audit Trail to one with `GET /v1/audit-trail?deleted_account_id=`. The owner's alone.",
         "operationId": "list_deleted_accounts",
         "parameters": [
           {
@@ -13333,8 +13334,9 @@
       },
       "DeletedAccount": {
         "type": "object",
-        "description": "A deleted account as the Audit Trail remembers it: the username its\nentries and runs keep, and when it was deleted. Accounts deleted under one\nusername, whatever its case, are one, deleted when the last of them was.",
+        "description": "A deleted account as the Audit Trail remembers it: the username its\nentries and runs keep, and when it was deleted.",
         "required": [
+          "id",
           "username",
           "deleted_at"
         ],
@@ -13342,6 +13344,11 @@
           "deleted_at": {
             "type": "string",
             "description": "When it was deleted, RFC 3339 UTC."
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The id of its `account_deleted` entry, which every entry and run about\nthe account carries once it is deleted. Two accounts deleted under one\nusername have two ids."
           },
           "username": {
             "type": "string",
@@ -15405,8 +15412,9 @@
             "type": "array",
             "items": {
               "type": "object",
-              "description": "A deleted account as the Audit Trail remembers it: the username its\nentries and runs keep, and when it was deleted. Accounts deleted under one\nusername, whatever its case, are one, deleted when the last of them was.",
+              "description": "A deleted account as the Audit Trail remembers it: the username its\nentries and runs keep, and when it was deleted.",
               "required": [
+                "id",
                 "username",
                 "deleted_at"
               ],
@@ -15414,6 +15422,11 @@
                 "deleted_at": {
                   "type": "string",
                   "description": "When it was deleted, RFC 3339 UTC."
+                },
+                "id": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "The id of its `account_deleted` entry, which every entry and run about\nthe account carries once it is deleted. Two accounts deleted under one\nusername have two ids."
                 },
                 "username": {
                   "type": "string",
