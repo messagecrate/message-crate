@@ -259,10 +259,11 @@ descending. Each list declares the keys it accepts, and an unlisted key is
 
 Filtering is the search language in `q`, and nothing else. The one exception
 is a list with no search language, which may take a filter parameter whose
-values are the ones its rows store. The Import Run and Export Run lists are the
-only such lists: `GET /v1/imports?status=running`,
-`GET /v1/exports?status=completed`, and their twins under an account. There is
-no `fields=` selection.
+values are the ones its rows store. The Import Run and Export Run lists and the
+Audit Trail are the only such lists: `GET /v1/imports?status=running`,
+`GET /v1/exports?status=completed` and their twins under an account, and
+`GET /v1/audit-trail?username=alice`, which reads a deleted account's entries
+by the username they keep. There is no `fields=` selection.
 
 A query parameter a route does not declare is `validation-failed`, naming the
 parameters the route accepts. Why: a typo (`limt=10`) or a guess at a
@@ -429,6 +430,15 @@ What each reaches:
   Why: an account holder reads what the owner did to their account, and a
   record its subject or the owner could edit would be no check on either
   (`docs/adr/0020-the-audit-trail-outlives-the-account.md`).
+- A deleted account's entries keep its username and lose its id, so they are
+  read by username: `GET /v1/audit-trail?username=` narrows the owner's list
+  to the entries that belong to no account and carry that username, matched
+  whatever its case, and `GET /v1/audit-trail/deleted-accounts` lists the
+  usernames to ask for. Both are the owner's alone. Why: the account the id
+  named is gone, and a live account's entries are never among them, so a
+  later account given the same username reads apart from the deleted one.
+  Rejected: the username over every entry, which would mix the deleted
+  account's entries with a later namesake's.
 - The account reads its own runs in full. The owner reads each run as an
   `OwnerImportRun` or `OwnerExportRun`: the source, mode, tool, times,
   outcome and counts, with the counts an import's summary reported and how

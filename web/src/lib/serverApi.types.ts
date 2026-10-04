@@ -444,8 +444,34 @@ export interface paths {
         /**
          * Every account's Audit Trail, newest first: logins, sessions ending, refused logins, Import Runs, Export Runs, and the owner's and holders' changes to accounts, including those of deleted accounts under their old usernames.
          * @description The owner's alone.
+         *
+         *     `username` narrows the list to a deleted account's entries and runs,
+         *     which no longer carry an account id, beside the logins refused for that
+         *     username while no account held it. It matches whatever the case, and
+         *     never a live account's entries, which `GET /v1/accounts/{id}/audit-trail`
+         *     reads.
          */
         get: operations["list_audit_trail"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/audit-trail/deleted-accounts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The deleted accounts whose entries the Audit Trail keeps, by username A to Z: each username once, with when the last account of that name was deleted.
+         * @description Owner Home offers them beside the live accounts, to narrow the Audit Trail to one with `GET /v1/audit-trail?username=`. The owner's alone.
+         */
+        get: operations["list_deleted_accounts"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2213,6 +2239,17 @@ export interface components {
              */
             conversations: number;
         };
+        /**
+         * @description A deleted account as the Audit Trail remembers it: the username its
+         *     entries and runs keep, and when it was deleted. Accounts deleted under one
+         *     username, whatever its case, are one, deleted when the last of them was.
+         */
+        DeletedAccount: {
+            /** @description When it was deleted, RFC 3339 UTC. */
+            deleted_at: string;
+            /** @description The username the account had, which its entries and runs still carry. */
+            username: string;
+        };
         /** @description The Demo Account, as the owner manages it. */
         DemoAccount: {
             /** @description Why the last build failed, while `status` is `failed`. */
@@ -3277,6 +3314,25 @@ export interface components {
                 service: string;
                 /** @description Message tags on this conversation. */
                 tags: string[];
+            }[];
+            /** @description Page size used. */
+            limit: number;
+            /** @description Page offset used. */
+            offset: number;
+            /**
+             * Format: int64
+             * @description Rows matching the query across every page.
+             */
+            total: number;
+        };
+        /** @description One page of a list. */
+        Page_DeletedAccount: {
+            /** @description The rows on this page. */
+            items: {
+                /** @description When it was deleted, RFC 3339 UTC. */
+                deleted_at: string;
+                /** @description The username the account had, which its entries and runs still carry. */
+                username: string;
             }[];
             /** @description Page size used. */
             limit: number;
@@ -6788,6 +6844,8 @@ export interface operations {
     list_audit_trail: {
         parameters: {
             query?: {
+                /** @description Only the entries that belong to no account and carry this username: a deleted account's, and the logins refused for it */
+                username?: string;
                 /** @description Page size, default 40, at most 500 */
                 limit?: number;
                 /** @description Rows to skip, at most 50000 */
@@ -6806,6 +6864,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Page_AuditEntry"];
+                };
+            };
+            /** @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /**
+             * @description [`not-the-owner`](https://messagecrate.app/docs/developer/reference/errors/not-the-owner): This route belongs to the owner: creating accounts, changing server settings, or anything else only the owner may do.
+             *
+             *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
+             *
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
+            406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_deleted_accounts: {
+        parameters: {
+            query?: {
+                /** @description Page size, default 40, at most 500 */
+                limit?: number;
+                /** @description Rows to skip, at most 50000 */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_DeletedAccount"];
                 };
             };
             /** @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. */

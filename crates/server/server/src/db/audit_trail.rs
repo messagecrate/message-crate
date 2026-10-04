@@ -813,11 +813,17 @@ pub async fn prepare_account_deletion(
 
 /// Which entries a read covers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Scope {
+pub enum Scope<'a> {
     /// Every entry: the owner's Audit Trail.
     All,
     /// The entries about one account, whoever acted.
     Account(i64),
+    /// The entries that belong to no account and carry this username,
+    /// matched as a login matches it, whatever its case: a deleted account's
+    /// entries and runs, and the logins refused for the username while no
+    /// account held it. A live account's entries are never among them, so a
+    /// deleted account reads apart from a later account given its username.
+    Username(&'a str),
 }
 
 /// When the Session a `logged_in` entry `l` opened runs out: the latest
@@ -867,23 +873,24 @@ impl Source {
     }
 }
 
-/// The union of the trail's sources as `(src, id, at, account_id)` rows,
-/// `src` being a [`Source`] tag.
+/// The union of the trail's sources as `(src, id, at, account_id, username)`
+/// rows, `src` being a [`Source`] tag. `username` is the one the row stores,
+/// which a run holds only once its account is deleted.
 fn sources_sql() -> String {
     format!(
         "
-    SELECT '{entry}' AS src, id, at, account_id FROM audit_entries
+    SELECT '{entry}' AS src, id, at, account_id, username FROM audit_entries
     UNION ALL
-    SELECT '{expiry}', id, expires_at, account_id FROM (
-        SELECT l.id, l.account_id, {expires_at} AS expires_at FROM audit_entries l
+    SELECT '{expiry}', id, expires_at, account_id, username FROM (
+        SELECT l.id, l.account_id, l.username, {expires_at} AS expires_at FROM audit_entries l
          WHERE l.action = 'logged_in'
            AND NOT EXISTS (SELECT 1 FROM audit_entries e
                             WHERE e.session_entry_id = l.id AND e.action = 'session_ended')
     ) WHERE expires_at <= $1
     UNION ALL
-    SELECT '{import}', id, started_at, account_id FROM imports
+    SELECT '{import}', id, started_at, account_id, username FROM imports
     UNION ALL
-    SELECT '{export}', id, started_at, account_id FROM exports",
+    SELECT '{export}', id, started_at, account_id, username FROM exports",
         entry = Source::Entry.tag(),
         expiry = Source::Expiry.tag(),
         import = Source::ImportRun.tag(),
@@ -900,31 +907,36 @@ fn sources_sql() -> String {
 /// Returns an error when a statement fails or a stored row cannot be read.
 pub async fn page(
     conn: &mut SqliteConnection,
-    scope: Scope,
+    scope: Scope<'_>,
     limit: usize,
     offset: usize,
 ) -> Result<(Vec<AuditEntry>, u64)> {
     let now = now_text();
-    let (filter, account) = match scope {
-        Scope::All => ("", None),
-        Scope::Account(id) => ("WHERE account_id = $2", Some(id)),
+    let filter = match scope {
+        Scope::All => "",
+        Scope::Account(_) => "WHERE account_id = $2",
+        Scope::Username(_) => "WHERE account_id IS NULL AND username = $2 COLLATE NOCASE",
     };
     let sources = sources_sql();
     let count_sql = format!("SELECT COUNT(*) FROM ({sources}) {filter}");
-    let mut count = sqlx::query_scalar::<_, i64>(&count_sql).bind(&now);
-    if let Some(id) = account {
-        count = count.bind(id);
-    }
+    let count = sqlx::query_scalar::<_, i64>(&count_sql).bind(&now);
+    let count = match scope {
+        Scope::All => count,
+        Scope::Account(id) => count.bind(id),
+        Scope::Username(username) => count.bind(username),
+    };
     let total = count.fetch_one(&mut *conn).await?;
 
     let page_sql = format!(
         "SELECT src, id FROM ({sources}) {filter}
          ORDER BY at DESC, src DESC, id DESC LIMIT {limit} OFFSET {offset}"
     );
-    let mut rows = sqlx::query_as::<_, (String, i64)>(&page_sql).bind(&now);
-    if let Some(id) = account {
-        rows = rows.bind(id);
-    }
+    let rows = sqlx::query_as::<_, (String, i64)>(&page_sql).bind(&now);
+    let rows = match scope {
+        Scope::All => rows,
+        Scope::Account(id) => rows.bind(id),
+        Scope::Username(username) => rows.bind(username),
+    };
     let rows = rows.fetch_all(&mut *conn).await?;
 
     let mut items = Vec::with_capacity(rows.len());
@@ -939,6 +951,52 @@ pub async fn page(
             items.push(item);
         }
     }
+    Ok((items, u64::try_from(total).unwrap_or(0)))
+}
+
+/// A deleted account as the Audit Trail remembers it: the username its
+/// entries and runs keep, and when it was deleted. Accounts deleted under one
+/// username, whatever its case, are one, deleted when the last of them was.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, utoipa::ToSchema)]
+pub struct DeletedAccount {
+    /// The username the account had, which its entries and runs still carry.
+    pub username: String,
+    /// When it was deleted, RFC 3339 UTC.
+    pub deleted_at: String,
+}
+
+/// One page of the deleted accounts whose entries the Audit Trail keeps, by
+/// username A to Z, and how many there are in all.
+///
+/// # Errors
+///
+/// Returns an error when a statement fails.
+pub async fn deleted_accounts_page(
+    conn: &mut SqliteConnection,
+    limit: usize,
+    offset: usize,
+) -> Result<(Vec<DeletedAccount>, u64)> {
+    const DELETED: &str = "FROM audit_entries
+         WHERE action = 'account_deleted' AND account_id IS NULL AND username IS NOT NULL
+         GROUP BY username COLLATE NOCASE";
+    let total: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM (SELECT 1 {DELETED})"))
+        .fetch_one(&mut *conn)
+        .await
+        .context("count deleted accounts")?;
+    let rows: Vec<(String, String)> = sqlx::query_as(&format!(
+        "SELECT username, MAX(at) {DELETED}
+         ORDER BY username COLLATE NOCASE LIMIT {limit} OFFSET {offset}"
+    ))
+    .fetch_all(&mut *conn)
+    .await
+    .context("list deleted accounts")?;
+    let items = rows
+        .into_iter()
+        .map(|(username, deleted_at)| DeletedAccount {
+            username,
+            deleted_at,
+        })
+        .collect();
     Ok((items, u64::try_from(total).unwrap_or(0)))
 }
 

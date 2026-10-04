@@ -123,10 +123,14 @@ export const keys = {
   },
   /**
    * Pages of an Audit Trail: every account's (`"all"`, the owner's), the
-   * logged-in account's own (`"own"`), or one account the owner has opened.
+   * logged-in account's own (`"own"`), one account the owner has opened, or
+   * a deleted account's by its old username (`"deleted:<username>"`).
    */
   auditTrail: {
-    page: (whose: number | "all" | "own", page: number) => ["audit-trail", whose, page] as const,
+    page: (whose: number | "all" | "own" | `deleted:${string}`, page: number) =>
+      ["audit-trail", whose, page] as const,
+    /** The deleted accounts the owner can narrow the Audit Trail to. */
+    deletedAccounts: ["audit-trail", "deleted-accounts"] as const,
   },
   serverSettings: { all: ["server-settings"] as const },
   /** Where the Demo Account stands, from `GET /v1/server/demo-account`. */

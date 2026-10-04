@@ -32,6 +32,7 @@ const deleteAccountById = vi.hoisted(() => vi.fn());
 const deleteAccountMessages = vi.hoisted(() => vi.fn());
 const listAuditTrail = vi.hoisted(() => vi.fn());
 const listAccountAuditTrail = vi.hoisted(() => vi.fn());
+const listDeletedAccounts = vi.hoisted(() => vi.fn());
 const listApiTokens = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/auth", () => ({
@@ -61,6 +62,7 @@ vi.mock("../lib/serverApi", async (importOriginal) => ({
   deleteAccountMessages: (...a: unknown[]) => deleteAccountMessages(...a),
   listAuditTrail: (...a: unknown[]) => listAuditTrail(...a),
   listAccountAuditTrail: (...a: unknown[]) => listAccountAuditTrail(...a),
+  listDeletedAccounts: (...a: unknown[]) => listDeletedAccounts(...a),
   listApiTokens: (...a: unknown[]) => listApiTokens(...a),
 }));
 
@@ -123,6 +125,8 @@ beforeEach(() => {
   deleteAccountMessages.mockReset();
   listAuditTrail.mockReset();
   listAccountAuditTrail.mockReset();
+  listDeletedAccounts.mockReset();
+  listDeletedAccounts.mockResolvedValue([]);
   listApiTokens.mockReset();
   listApiTokens.mockResolvedValue([]);
   getAccountProfile.mockResolvedValue(theOwner);
@@ -395,6 +399,71 @@ describe("OwnerHome", () => {
     await waitFor(() =>
       expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2),
     );
+  });
+
+  it("lists deleted accounts below the live ones, and narrows the Audit Trail to one by its old username", async () => {
+    listAccounts.mockResolvedValue([theOwner, anAccount]);
+    listDeletedAccounts.mockResolvedValue([
+      { username: "carol", deleted_at: "2026-10-02T10:00:00+00:00" },
+    ]);
+    const carolsEntry = {
+      id: 9,
+      action: "account_deleted",
+      at: "2026-10-02T10:00:00+00:00",
+      actor: "owner",
+      account_id: null,
+      username: "carol",
+    };
+    listAuditTrail.mockImplementation(async (params: { username?: string }) => ({
+      items: params.username
+        ? [carolsEntry]
+        : [
+            carolsEntry,
+            {
+              id: 4,
+              action: "logged_in",
+              at: "2026-10-01T09:00:00+00:00",
+              actor: "holder",
+              account_id: 101,
+              username: "bob",
+            },
+          ],
+      total: params.username ? 1 : 2,
+      limit: 50,
+      offset: 0,
+    }));
+    renderHome(["/owner/audit-trail"]);
+    await screen.findByRole("table");
+
+    await userEvent.click(await screen.findByRole("button", { name: /Every account/ }));
+    const options = (await screen.findAllByRole("option")).map((option) => option.textContent);
+    expect(options).toEqual(["Every account", "root", "bob", "carol (deleted)"]);
+    expect(screen.getByText("Deleted accounts")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("option", { name: "carol (deleted)" }));
+
+    await waitFor(() =>
+      expect(listAuditTrail).toHaveBeenCalledWith(
+        expect.objectContaining({ username: "carol", offset: 0 }),
+        expect.anything(),
+      ),
+    );
+    expect(listAccountAuditTrail).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(2),
+    );
+    expect(screen.getByRole("button", { name: /carol \(deleted\)/ })).toBeInTheDocument();
+  });
+
+  it("offers no Deleted accounts section when no account was deleted", async () => {
+    listAccounts.mockResolvedValue([theOwner, anAccount]);
+    listAuditTrail.mockResolvedValue({ items: [], total: 0, limit: 50, offset: 0 });
+    renderHome(["/owner/audit-trail"]);
+    await waitFor(() => expect(listDeletedAccounts).toHaveBeenCalled());
+
+    await userEvent.click(await screen.findByRole("button", { name: /Every account/ }));
+    const options = (await screen.findAllByRole("option")).map((option) => option.textContent);
+    expect(options).toEqual(["Every account", "root", "bob"]);
+    expect(screen.queryByText("Deleted accounts")).not.toBeInTheDocument();
   });
 
   it("has the header every account sees: the product name, a search bar, the account button", () => {

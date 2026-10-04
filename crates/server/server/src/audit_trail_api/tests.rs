@@ -307,6 +307,73 @@ async fn deleting_an_account_keeps_its_entries_and_runs_under_its_username() {
     assert_eq!(kept, None, "the search text goes with the account");
 }
 
+/// The owner narrows the trail to a deleted account by its username: its
+/// entries and runs, and the logins refused for the username after it was
+/// gone, and nothing of a later account given the same username (#1554).
+#[tokio::test]
+async fn the_owner_narrows_the_trail_to_a_deleted_account() {
+    let fixture = test_fixture().await;
+    let state = &fixture.state;
+    let owner = claim_as_owner(state, "keeper", PASSWORD).await;
+    let alice = register_via_api(state, "alice", PASSWORD).await;
+    let _bob = register_via_api(state, "bob", PASSWORD).await;
+    let (_, run): (String, Value) = post_created_json(
+        state,
+        "/v1/exports",
+        &alice.token,
+        json!({ "scope": { "kind": "everything" } }),
+    )
+    .await;
+    assert_eq!(
+        delete_status(
+            state,
+            &format!("/v1/accounts/{}", alice.account_id),
+            &owner.token
+        )
+        .await,
+        StatusCode::NO_CONTENT
+    );
+    assert_eq!(
+        login_status(state, "Alice", "guess").await,
+        StatusCode::UNAUTHORIZED
+    );
+    let _new_alice = register_via_api(state, "alice", PASSWORD).await;
+
+    let deleted: Value = get_json(state, "/v1/audit-trail/deleted-accounts", &owner.token).await;
+    assert_eq!(deleted["total"], 1);
+    assert_eq!(deleted["items"][0]["username"], "alice");
+
+    let page: Value = get_json(state, "/v1/audit-trail?username=ALICE", &owner.token).await;
+    let items = page["items"].as_array().unwrap();
+    assert_eq!(
+        actions(items),
+        [
+            "login_refused",
+            "account_deleted",
+            "session_ended",
+            "export_run",
+            "logged_in",
+            "account_created"
+        ]
+    );
+    assert_eq!(page["total"], 6);
+    for item in items {
+        assert_eq!(item["account_id"], Value::Null, "{item}");
+    }
+    assert_eq!(items[0]["reason"], "unknown_username");
+    assert_eq!(items[3]["id"], run["id"]);
+
+    let (status, text) = get_raw(state, "/v1/audit-trail?username=%20", &owner.token).await;
+    expect_problem(status, &text, ProblemType::ValidationFailed);
+    let (status, text) = get_raw(
+        state,
+        "/v1/audit-trail/deleted-accounts",
+        &register_via_api(state, "carol", PASSWORD).await.token,
+    )
+    .await;
+    expect_problem(status, &text, ProblemType::NotTheOwner);
+}
+
 /// A run started with an API token names the token, by label and hint as
 /// they were, after the token is deleted.
 #[tokio::test]

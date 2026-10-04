@@ -732,6 +732,13 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-04 **The Audit Trail narrows to a deleted account.** Owner Home's
+  Account picker listed only the accounts that still exist, so a deleted
+  account's entries and runs could be read only in the full list. The
+  picker now lists deleted accounts by their old usernames below the live
+  ones, and picking one shows only what that account did, with the logins
+  refused for its username after it was gone. A new account given the same
+  username keeps its own entries apart.
 - 2026-10-03 **An expired session says to log in again.** When your
   session had expired, or was ended from another window, an Upload or an
   Export said "invalid API key", though the app sends no API key. It now
