@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import Button from "../../components/Button";
-import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
+import { type ImportSummaryView, NOTES_HELP } from "../../components/import/ImportSummaryPanel";
 import VirtualizedImportIssuesTable, {
   VirtualizedImportNotesTable,
 } from "../../components/import/VirtualizedImportIssuesTable";
@@ -602,10 +602,7 @@ export default function ImportRunView({
               {notes.length.toLocaleString()}
             </span>
           </h2>
-          <p className="m-0 mt-1 text-[0.75rem] text-muted">
-            The import kept these items, with a note on each. Identical notes are grouped. Click a
-            row for the full note and the items it names.
-          </p>
+          <p className="m-0 mt-1 text-[0.75rem] text-muted">{NOTES_HELP}</p>
           <VirtualizedImportNotesTable notes={notes} />
         </section>
       ) : null}

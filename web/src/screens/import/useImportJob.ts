@@ -768,9 +768,11 @@ function recordIssue(event: ImportIssueEvent): void {
     scratch.issues = withoutResolved(scratch.issues, resolved);
     scratch.carried = resolveInRecord(scratch.carried, resolved);
   } else if (event.kind === "note") {
-    scratch.notes = [...scratch.notes, noteFromEvent(event)];
+    // In place: an exporter may send a row per item, tens of thousands in a
+    // run, and copying the list for each would cost the square of that.
+    scratch.notes.push(noteFromEvent(event));
   } else {
-    scratch.issues = [...scratch.issues, issueFromEvent(event)];
+    scratch.issues.push(issueFromEvent(event));
   }
   void saveCarriedRecord();
 }

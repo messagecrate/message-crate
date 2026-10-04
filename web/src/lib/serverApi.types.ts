@@ -2320,8 +2320,8 @@ export interface components {
              *     recorded none.
              */
             issues: components["schemas"]["ImportIssueRequest"][];
-            /** @description The run's notes so far. */
-            notes?: components["schemas"]["ImportNoteRequest"][];
+            /** @description The run's notes so far. The list is empty when the run recorded none. */
+            notes: components["schemas"]["ImportNoteRequest"][];
         };
         /**
          * @description Which list an Export Run's query is for (`docs/architecture/http-api.md`,
@@ -2647,6 +2647,11 @@ export interface components {
             message_count: number;
             /** @description Import mode (`replace` or `append`). */
             mode: string;
+            /**
+             * Format: int64
+             * @description How many notes the run recorded.
+             */
+            note_count: number;
             /**
              * Format: int64
              * @description Time spent parsing, when finished.
@@ -3053,6 +3058,12 @@ export interface components {
             message_count: number;
             /** @description Import mode (`replace` or `append`). */
             mode: string;
+            /**
+             * Format: int64
+             * @description Notes the run recorded. Each names a file or an address, so the owner
+             *     reads how many and not which.
+             */
+            note_count: number;
             /**
              * Format: int64
              * @description Time spent parsing, when finished.
@@ -3733,6 +3744,11 @@ export interface components {
                 mode: string;
                 /**
                  * Format: int64
+                 * @description How many notes the run recorded.
+                 */
+                note_count: number;
+                /**
+                 * Format: int64
                  * @description Time spent parsing, when finished.
                  */
                 parse_ms?: number | null;
@@ -3992,6 +4008,12 @@ export interface components {
                 message_count: number;
                 /** @description Import mode (`replace` or `append`). */
                 mode: string;
+                /**
+                 * Format: int64
+                 * @description Notes the run recorded. Each names a file or an address, so the owner
+                 *     reads how many and not which.
+                 */
+                note_count: number;
                 /**
                  * Format: int64
                  * @description Time spent parsing, when finished.

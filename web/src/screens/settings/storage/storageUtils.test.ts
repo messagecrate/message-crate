@@ -34,6 +34,7 @@ function accountImportRun(partial: Partial<AccountImportRun> = {}): AccountImpor
     source_identities: null,
     summary: {},
     issue_count: 0,
+    note_count: 0,
     issues: [],
     notes: [],
     ...partial,
@@ -196,6 +197,7 @@ describe("toImportSummaryView for the owner", () => {
       bytes_uploaded: 0,
       counts: { messages_parsed: 12, messages_inserted: 10 },
       issue_count: 2,
+      note_count: 1,
       contacts_new: 0,
       contacts_changed: 0,
     });
