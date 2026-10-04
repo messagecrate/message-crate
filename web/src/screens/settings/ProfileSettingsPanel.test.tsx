@@ -55,7 +55,13 @@ function zoneField() {
 }
 
 describe("ProfileSettingsPanel", () => {
-  it("keeps a typed, unsaved display name when the time zone changes", async () => {
+  // Focusing the time zone field draws all of its ~320 rows before the search
+  // narrows them, inside the whole settings panel. The test takes about 0.5 s
+  // on an idle machine and 3.3 to 5.4 s at a load average near 100, past the
+  // 5000 ms test budget (#1417).
+  it("keeps a typed, unsaved display name when the time zone changes", {
+    timeout: 15_000,
+  }, async () => {
     const user = setupUser();
     render(<ProfileSettingsPanel />);
     await waitFor(() => expect(nameField().value).toBe("Stored Name"));
