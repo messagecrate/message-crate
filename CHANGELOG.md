@@ -237,11 +237,11 @@ released versions carry their date on the heading.
 
 #### Importing
 
-- 2026-10-03 **A video or photo that cannot be converted says why, briefly.**
-  The error for a file the media conversion could not convert held the
-  converter's version, build settings and progress lines, with the reason
-  at the end of several kilobytes. It now holds only the lines that say why
-  the conversion failed.
+- 2026-10-03 **A video, photo or audio file that cannot be converted says
+  why, briefly.** The error for a file the Media stage of an import could
+  not convert held the converter's version, build settings and progress
+  lines, with the reason at the end of several kilobytes. It now holds only
+  the lines that say why the conversion failed.
 - 2026-10-03 **An attachment with a blank file name is refused.** An
   import that gave an attachment a blank file name, empty or only spaces,
   stored that blank name when the server already held the file. The import

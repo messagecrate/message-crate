@@ -259,9 +259,11 @@ const QUIET_FFMPEG: [&str; 4] = ["-hide_banner", "-nostats", "-loglevel", "error
 /// Run ffmpeg with [`QUIET_FFMPEG`] and `args`, failing with the end of its
 /// stderr when it exits non-zero.
 ///
-/// A thread reads stderr while ffmpeg runs. ffmpeg writes a stats line about
-/// twice a second, and a pipe nobody reads fills at 64 KiB on Linux, after
-/// which ffmpeg blocks on the write and never exits (#1178).
+/// A thread reads stderr while ffmpeg runs. [`QUIET_FFMPEG`] turns the stats
+/// line off, but nothing limits how much else ffmpeg writes: a failure can
+/// repeat an error for every frame, and an encoder such as libx265 writes to
+/// stderr whatever `-loglevel` says. A pipe nobody reads fills at 64 KiB on
+/// Linux, after which ffmpeg blocks on the write and never exits (#1178).
 pub(crate) fn run_ffmpeg(args: &[String]) -> Result<()> {
     let ffmpeg = resolve_tool("ffmpeg").ok_or_else(|| {
         anyhow::anyhow!(
@@ -453,9 +455,10 @@ mod tests {
             .expect("run_ffmpeg did not return within a minute")
     }
 
-    /// ffmpeg writes a stats line about twice a second, so a long conversion
-    /// writes more than a pipe holds (64 KiB on Linux). A pipe nobody reads
-    /// blocks ffmpeg on the write, and the wait for it never returns (#1178).
+    /// ffmpeg can write more to stderr than a pipe holds (64 KiB on Linux),
+    /// with repeated errors or an encoder that ignores `-loglevel`. A pipe
+    /// nobody reads blocks ffmpeg on the write, and the wait for it never
+    /// returns (#1178).
     #[cfg(unix)]
     #[test]
     fn run_ffmpeg_returns_when_ffmpeg_writes_more_than_a_pipe_holds() {
@@ -485,9 +488,10 @@ mod tests {
         );
     }
 
-    /// ffmpeg writes its banner, build configuration and stats lines unless
-    /// told not to, and a failure carried them in front of its cause. The
-    /// mock writes them as ffmpeg does, unless it is given the quiet flags
+    /// ffmpeg writes its banner, build configuration, stats lines and
+    /// warnings unless told not to, and a failure carried them in front of its
+    /// cause. The mock writes them as ffmpeg does unless it is given the quiet
+    /// flags, and it wants them first, where ffmpeg reads global options
     /// (#1412).
     #[cfg(unix)]
     #[test]
@@ -495,11 +499,13 @@ mod tests {
         let _guard = tools_test_lock();
         let _restore = RestoreToolsDir::capture();
         let _dir = mock_ffmpeg_dir(concat!(
-            "case \" $* \" in *' -hide_banner '*) ;; *) ",
+            "[ \"$1\" = -hide_banner ] || { ",
             "echo 'ffmpeg version 6.1.1 Copyright (c) 2000-2023 the FFmpeg developers' >&2; ",
-            "echo '  configuration: --enable-gpl --enable-libx265' >&2 ;; esac\n",
+            "echo '  configuration: --enable-gpl --enable-libx265' >&2; }\n",
             "case \" $* \" in *' -nostats '*) ;; *) ",
             "echo 'frame=  12 fps=0.0 q=0.0 size=       0kB time=00:00:00.40' >&2 ;; esac\n",
+            "case \" $* \" in *' -loglevel error '*) ;; *) ",
+            "echo 'Guessed Channel Layout for Input Stream #0.1 : mono' >&2 ;; esac\n",
             "echo 'in.mov: Invalid data found when processing input' >&2\nexit 1",
         ));
 
@@ -511,7 +517,12 @@ mod tests {
             message.contains("in.mov: Invalid data found when processing input"),
             "the cause is kept: {message:?}"
         );
-        for preamble in ["ffmpeg version", "configuration:", "frame="] {
+        for preamble in [
+            "ffmpeg version",
+            "configuration:",
+            "frame=",
+            "Guessed Channel Layout",
+        ] {
             assert!(!message.contains(preamble), "{preamble} kept: {message:?}");
         }
     }
