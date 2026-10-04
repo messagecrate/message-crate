@@ -1168,8 +1168,9 @@ released versions carry their date on the heading.
   was accepted there. It put every account's attachments in one directory,
   and `reset-demo` failed with "prepared reset state is incomplete". The
   server now refuses to start when either is absolute, contains a
-  separator or a `:`, starts with `.` (as `.` and `..` do), or is empty, or
-  when both are the same name, and the message names the setting.
+  separator or a `:`, starts with `.` (as `.` and `..` do), ends in `.` or
+  a space, or is empty, or when both are the same name in any letter case,
+  and the message names the setting.
 - 2026-10-04 **A damaged Preview whose original is gone is no longer
   shown.** When `process-assets` found a Preview that does not match its
   contents and the original it was made from was missing, it could not make

@@ -81,18 +81,22 @@ fn known_keys<T>(name: &str, section: Section<T>) -> Result<T> {
 /// would replace that directory, so every account's attachments would share
 /// one; a separator or `..` would reach outside it; an empty name or `.`
 /// would be the account's directory itself. A name starting with `.` is
-/// refused too, because the server keeps its own directories under those
-/// names beside the attachments (`.removing`, whose contents are deleted).
+/// refused too, because the server keeps `.removing` beside the attachments
+/// and deletes what is in it. A name ending in `.` or a space is refused,
+/// because Windows drops those, so `assets.` would be `assets` there.
 fn require_directory_name(key: &str, value: &str) -> Result<()> {
     let mut components = Path::new(value).components();
     let one_name =
         matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none();
-    let plain = one_name && !value.starts_with('.') && !value.contains(['/', '\\', ':']);
+    let plain = one_name
+        && !value.starts_with('.')
+        && !value.ends_with(['.', ' '])
+        && !value.contains(['/', '\\', ':']);
     if !plain {
         bail!(
             "[paths] {key} = {value:?} is not a directory name. It names one directory inside \
              each account's directory, such as \"assets\": not empty, with no separator, no \
-             `:`, and not starting with `.`"
+             `:`, not starting with `.`, and not ending in `.` or a space"
         );
     }
     Ok(())
@@ -111,9 +115,11 @@ impl ConfigFile {
         let paths = known_keys("paths", self.paths)?;
         require_directory_name("assets_dir", &paths.assets_dir)?;
         require_directory_name("assets_converted_dir", &paths.assets_converted_dir)?;
-        if paths.assets_dir == paths.assets_converted_dir {
+        if paths.assets_dir.to_lowercase() == paths.assets_converted_dir.to_lowercase() {
             // Originals and Previews are swept under different rules, and a
             // Preview not yet recorded would be swept as an unnamed original.
+            // macOS and Windows ignore letter case by default, so `media` and
+            // `Media` are one directory there.
             bail!(
                 "[paths] assets_dir and assets_converted_dir are both {:?}. Originals and \
                  Previews need a directory each; give them different names",
@@ -620,8 +626,8 @@ mod tests {
     /// refused by its key: an absolute path would put every account's
     /// attachments in one directory, and a separator or `..` would reach
     /// outside the account's own. A name starting with `.` is refused, since
-    /// the server's own `.removing` sits beside the attachments, and so is
-    /// one name for both. A plain name loads.
+    /// the server's own `.removing` sits beside the attachments, and so is one
+    /// ending in `.` or a space, which Windows drops. A plain name loads.
     #[test]
     fn an_assets_directory_that_is_not_one_plain_name_is_refused_naming_its_key() {
         for key in ["assets_dir", "assets_converted_dir"] {
@@ -636,6 +642,8 @@ mod tests {
                 ".removing",
                 ".incoming",
                 "C:assets",
+                "assets.",
+                "assets ",
             ] {
                 let config =
                     format!("[paths]\ndb = \"data/messagecrate.db\"\n{key} = \"{value}\"\n");
@@ -649,18 +657,6 @@ mod tests {
                 );
             }
         }
-
-        let text = format!(
-            "{:#}",
-            load_text(
-                "[paths]\ndb = \"data/messagecrate.db\"\nassets_dir = \"media\"\nassets_converted_dir = \"media\"\n"
-            )
-            .unwrap_err()
-        );
-        assert!(
-            text.contains("assets_dir and assets_converted_dir are both"),
-            "{text}"
-        );
 
         // A plain name other than the default loads, and the account's
         // directories are that name under the account's own directory.
@@ -678,6 +674,26 @@ mod tests {
                 .assets_converted_dir_for_account(7)
                 .ends_with("data/7/previews.v2")
         );
+    }
+
+    /// Originals and Previews are cleaned up under different rules, so one
+    /// directory for both is refused, in any letter case, because macOS and
+    /// Windows ignore it by default.
+    #[test]
+    fn one_name_for_both_asset_directories_is_refused() {
+        for converted in ["media", "Media"] {
+            let text = format!(
+                "{:#}",
+                load_text(&format!(
+                    "[paths]\ndb = \"data/messagecrate.db\"\nassets_dir = \"media\"\nassets_converted_dir = \"{converted}\"\n"
+                ))
+                .unwrap_err()
+            );
+            assert!(
+                text.contains("assets_dir and assets_converted_dir are both"),
+                "{converted}: {text}"
+            );
+        }
     }
 
     /// The config files the repository ships must load under the same rule:
