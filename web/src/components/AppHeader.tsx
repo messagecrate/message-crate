@@ -117,7 +117,7 @@ export default function AppHeader({
         className={`relative flex h-[3.5625rem] shrink-0 items-center border-b border-border bg-panel ${Z_APP_HEADER}`}
       >
         <div
-          className="box-border flex h-12 shrink-0 items-center px-3"
+          className="box-border flex h-12 max-w-[50vw] shrink-0 items-center px-3"
           style={{ width: `var(${LEFT_PANEL_WIDTH_VAR}, ${brandWidth}px)` }}
         >
           <span className="text-[0.875rem] font-bold text-text">Message Crate</span>

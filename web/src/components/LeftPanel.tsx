@@ -203,7 +203,7 @@ export default function LeftPanel({
   return (
     <div
       style={{ flex: `0 0 ${width}px`, width: `${width}px` }}
-      className="relative flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-panel text-text"
+      className="relative flex h-full max-w-[50vw] shrink-0 flex-col overflow-hidden border-r border-border bg-panel text-text"
     >
       <div className={LIST_TOOLBAR_CLASS} aria-hidden />
       <div className={`min-h-0 flex-1 overflow-auto ${resizeHandleGutter}`}>

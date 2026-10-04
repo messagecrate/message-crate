@@ -30,10 +30,15 @@ const sectionHeading = "m-0 mb-2 text-[12px] font-semibold uppercase tracking-[0
 
 const EXAMPLE_STAGING = "staging-iphone-ios-260809-143022";
 
-/** Shared label + control grid so the path fields share one nowrap label column. */
-const settingsGrid = "grid grid-cols-[13.5rem_minmax(0,1fr)] items-center gap-x-3 gap-y-1";
+/**
+ * Shared label + control grid so the path fields share one nowrap label column.
+ * Below the `sm` width the label sits above its control, so a phone-width
+ * window does not scroll sideways.
+ */
+const settingsGrid =
+  "grid grid-cols-[minmax(0,1fr)] items-center gap-x-3 gap-y-1 sm:grid-cols-[13.5rem_minmax(0,1fr)]";
 const settingsLabel = "whitespace-nowrap text-[0.875rem] font-medium text-text";
-const settingsHelp = "col-start-2 pl-2 text-[0.75rem] text-muted";
+const settingsHelp = "pl-2 sm:col-start-2 text-[0.75rem] text-muted";
 
 const FFMPEG_DEBOUNCE_MS = 300;
 
@@ -88,7 +93,7 @@ function AppVersion() {
       <h3 className={sectionHeading}>About</h3>
       <div className={settingsGrid}>
         <span className={settingsLabel}>Version</span>
-        <span className="pl-2 font-mono text-[0.813rem] text-text">{APP_BUILD}</span>
+        <span className="break-all pl-2 font-mono text-[0.813rem] text-text">{APP_BUILD}</span>
       </div>
     </div>
   );
@@ -359,7 +364,7 @@ export function SystemSection() {
           />
         </div>
         {stagingError ? (
-          <p className="col-start-2 m-0 pl-2 text-[0.75rem] text-danger" role="alert">
+          <p className="m-0 pl-2 text-[0.75rem] text-danger sm:col-start-2" role="alert">
             {stagingError}
           </p>
         ) : null}
