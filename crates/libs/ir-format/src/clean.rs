@@ -20,8 +20,9 @@ pub(crate) fn has_export_sentinel(output_dir: &Path) -> bool {
 /// Refuse `output_dir` unless it holds the sentinel. Every path in this crate
 /// that removes files from an output directory reaches the sentinel check
 /// before it removes anything: the mail clean and the placeholders call
-/// this, [`clean_previous_ir_output`] marks an empty directory or refuses
-/// any other without one, and [`FormatSink::finish`] runs only on a sink
+/// this, [`clean_previous_ir_output`] marks a directory without one that is
+/// empty apart from operating-system files and refuses any other, and
+/// [`FormatSink::finish`] runs only on a sink
 /// [`FormatSink::open`] checked. So none of them can remove a person's own
 /// files, whoever calls it.
 ///
