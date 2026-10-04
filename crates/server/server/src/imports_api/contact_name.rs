@@ -9,8 +9,7 @@ use sqlx::SqliteConnection;
 use super::ImportStats;
 use crate::db::contacts;
 use crate::db::handles::{
-    HandleIdCache, infer_handle_type_from_shape as infer_handle_type, normalize_handle,
-    upsert_handle_row_cached,
+    HandleIdCache, handle_type_of, normalize_handle, upsert_handle_row_cached,
 };
 use crate::db::import_contacts::{self, ContactReason};
 use crate::db::trash;
@@ -106,8 +105,8 @@ pub(super) struct IncomingSender<'a> {
     /// The sender's address as the backup recorded it, or the name it gave
     /// with no address (typed `Other`), when it recorded either.
     pub address: Option<&'a str>,
-    /// The address's type when the source stated it; inferred from the
-    /// address's shape when it did not.
+    /// The address's type when the source stated it; `Handle::parse` of the
+    /// address when it did not.
     pub handle_type: Option<HandleType>,
     /// Platform the message arrived on: `phone` or `whatsapp`.
     pub platform: &'a str,
@@ -145,7 +144,7 @@ pub(super) async fn resolve_incoming_sender_handle(
     };
     let handle_type = sender
         .handle_type
-        .unwrap_or_else(|| infer_handle_type(address));
+        .unwrap_or_else(|| handle_type_of(address));
     let (handle_id, flagged, cached) = upsert_handle_row_cached(
         tx,
         cache,

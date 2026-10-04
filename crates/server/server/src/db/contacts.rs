@@ -337,9 +337,20 @@ pub async fn live_contact_exists(
     Ok(found.is_some())
 }
 
+/// Which of an address's rows on a contact [`linked_handle_id`] takes. One
+/// address can be on a contact once per service: a number on Text message
+/// and the same number on WhatsApp.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OnService {
+    /// Only the row on this service.
+    Only(message_ir::HandleService),
+    /// The row on this service when there is one, else the phone row, then
+    /// WhatsApp, then anything else. `None` names no service to prefer.
+    Preferring(Option<message_ir::HandleService>),
+}
+
 /// Id and service of the handle row for `raw` that is linked to this
-/// contact, if any. With a service, only that service's row; without one,
-/// the phone row first, then WhatsApp, then anything else.
+/// contact, if any, picked among its services as `on` says.
 ///
 /// # Errors
 ///
@@ -349,41 +360,38 @@ pub async fn linked_handle_id(
     account_id: i64,
     contact_id: i64,
     raw: &str,
-    service: Option<&str>,
+    on: OnService,
 ) -> Result<Option<(i64, message_ir::HandleService)>> {
     let needle = raw.trim();
     if needle.is_empty() {
         return Ok(None);
     }
-    let mut sql = String::from(
+    let (service, only) = match on {
+        OnService::Only(service) => (Some(service), true),
+        OnService::Preferring(service) => (service, false),
+    };
+    let row = sqlx::query_as::<_, (i64, String)>(
         "SELECT ch.handle_id, h.service
          FROM contact_handles ch
          JOIN handles h ON h.id = ch.handle_id
          WHERE ch.account_id = $1 AND ch.contact_id = $2
-           AND (h.raw = $3 OR h.normalized = $3)",
-    );
-    let row = if let Some(svc) = service.and_then(message_ir::trimmed) {
-        sql.push_str(" AND h.service = $4 LIMIT 1");
-        let platform = message_ir::HandleService::parse(svc);
-        sqlx::query_as::<_, (i64, String)>(&sql)
-            .bind(account_id)
-            .bind(contact_id)
-            .bind(needle)
-            .bind(platform.as_str())
-            .fetch_optional(&mut *conn)
-            .await?
-    } else {
-        sql.push_str(
-            " ORDER BY CASE h.service WHEN 'phone' THEN 0 WHEN 'whatsapp' THEN 1 ELSE 2 END
-             LIMIT 1",
-        );
-        sqlx::query_as::<_, (i64, String)>(&sql)
-            .bind(account_id)
-            .bind(contact_id)
-            .bind(needle)
-            .fetch_optional(&mut *conn)
-            .await?
-    };
+           AND (h.raw = $3 OR h.normalized = $3)
+           AND (NOT $5 OR h.service = $4)
+         ORDER BY CASE
+             WHEN h.service = $4 THEN 0
+             WHEN h.service = 'phone' THEN 1
+             WHEN h.service = 'whatsapp' THEN 2
+             ELSE 3
+         END
+         LIMIT 1",
+    )
+    .bind(account_id)
+    .bind(contact_id)
+    .bind(needle)
+    .bind(service.map(message_ir::HandleService::as_str))
+    .bind(only)
+    .fetch_optional(&mut *conn)
+    .await?;
     Ok(row.map(|(id, service)| (id, message_ir::HandleService::parse(&service))))
 }
 

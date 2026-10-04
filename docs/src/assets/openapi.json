@@ -11913,7 +11913,7 @@
               "string",
               "null"
             ],
-            "description": "Platform service (`phone`, `email`, or `whatsapp`); inferred when omitted."
+            "description": "Platform service: `whatsapp`, or any other value for the phone\nservice; the phone service when omitted. It never decides the\nidentity's type, which comes from the address. An email address on\nWhatsApp is refused."
           }
         }
       },
@@ -17217,7 +17217,7 @@
               "string",
               "null"
             ],
-            "description": "Platform service of both addresses. When omitted, the previous address\nis looked up on the phone service first and WhatsApp second, and the\nnew address takes the service of the previous one."
+            "description": "Platform service of the new address. The previous address is found on\nits own service whatever this names: on the named service first when\nit is there under more than one, else the phone service, then\nWhatsApp. When omitted, the new address takes the service of the\nprevious one. It never decides the new identity's type, which comes\nfrom the address, and an email address on WhatsApp is refused."
           }
         }
       },

@@ -1573,7 +1573,12 @@ export interface components {
         AddContactIdentityRequest: {
             /** @description The address to link. */
             address: string;
-            /** @description Platform service (`phone`, `email`, or `whatsapp`); inferred when omitted. */
+            /**
+             * @description Platform service: `whatsapp`, or any other value for the phone
+             *     service; the phone service when omitted. It never decides the
+             *     identity's type, which comes from the address. An email address on
+             *     WhatsApp is refused.
+             */
             service?: string | null;
         };
         /** @description One named API token as shown in Settings: label, permissions, and masked secret. */
@@ -4302,9 +4307,12 @@ export interface components {
             /** @description The address currently linked. */
             previous_address: string;
             /**
-             * @description Platform service of both addresses. When omitted, the previous address
-             *     is looked up on the phone service first and WhatsApp second, and the
-             *     new address takes the service of the previous one.
+             * @description Platform service of the new address. The previous address is found on
+             *     its own service whatever this names: on the named service first when
+             *     it is there under more than one, else the phone service, then
+             *     WhatsApp. When omitted, the new address takes the service of the
+             *     previous one. It never decides the new identity's type, which comes
+             *     from the address, and an email address on WhatsApp is refused.
              */
             service?: string | null;
         };

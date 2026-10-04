@@ -1,4 +1,5 @@
-//! Shared handle identity helpers (same format for matching + infer type from shape).
+//! Shared handle identity helpers: one key for matching, and one type for an
+//! address the source did not type.
 
 use std::collections::HashMap;
 
@@ -23,24 +24,12 @@ pub fn normalize_handle(raw: &str, handle_type: HandleType) -> (String, Option<S
     phone::normalize_typed_handle(raw, handle_type)
 }
 
-/// Infer a handle type from the handle's shape when the source does not say.
-///
-/// Mirrors the shared rule in message-ir-format: `@` → Email; digit-heavy
-/// phone-shaped strings → Phone (covers SMS/iMessage/WhatsApp numbers);
-/// anything else (Discord usernames, group chat ids) → Other.
-pub fn infer_handle_type_from_shape(handle: &str) -> HandleType {
-    let h = handle.trim();
-    if h.contains('@') {
-        return HandleType::Email;
-    }
-    let has_digit = h.bytes().any(|b| b.is_ascii_digit());
-    let all_phone_chars = h.bytes().all(|b| {
-        b.is_ascii_digit() || matches!(b, b'+' | b'-' | b' ' | b'(' | b')' | b'.' | b'#' | b'*')
-    });
-    if !h.is_empty() && has_digit && all_phone_chars {
-        return HandleType::Phone;
-    }
-    HandleType::Other
+/// The type of an address the source did not type: [`phone::Handle::parse`],
+/// the one rule for what an address is. It reads the address alone and never
+/// the service, so one address has one type wherever it arrives (#1432). A
+/// blank address is `Other`.
+pub fn handle_type_of(address: &str) -> HandleType {
+    phone::Handle::parse(address).map_or(HandleType::Other, |handle| handle.kind())
 }
 
 /// Insert or reuse a `handles` row. Returns the id and whether this call newly
@@ -248,21 +237,6 @@ mod tests {
     use crate::db::schema;
 
     const TEST_ACCOUNT: i64 = 7;
-
-    #[test]
-    fn a_handle_with_letters_or_without_a_digit_is_not_a_phone_number() {
-        for handle in ["chat123456", "user123", "", "+"] {
-            assert_eq!(
-                infer_handle_type_from_shape(handle),
-                HandleType::Other,
-                "{handle:?}"
-            );
-        }
-        assert_eq!(
-            infer_handle_type_from_shape("+1 (555) 555-0100"),
-            HandleType::Phone
-        );
-    }
 
     /// The count of numbers that need a look takes one for each identity the
     /// call both created and flagged, so a plain new number and a flagged

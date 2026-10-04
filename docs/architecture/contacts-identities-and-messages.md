@@ -117,9 +117,9 @@ person two contacts
 **A chat handle's type comes from the header, not its shape.** A group's chat
 handle is stored with the type `other`, whatever it looks like. A one-to-one
 chat handle takes the type the header gives the participant with the same
-address, and so does a message sender that is a participant; the address's
-shape decides only when no participant has it. Why: the exporter knows what
-its source's ids are, and the shape does not. A WhatsApp group id
+address, and so does a message sender that is a participant;
+`phone::Handle::parse` decides only when no participant has it. Why: the
+exporter knows what its source's ids are, and the address alone does not. A WhatsApp group id
 (`120363042@g.us`) and an internal WhatsApp id (`123456@lid`) both hold an
 `@`, and typed by shape each became an email identity that reaches nobody
 ([#1141](https://github.com/messagecrate/message-crate/issues/1141)).
@@ -162,6 +162,30 @@ carry the `Handle` from there to the sender, the participants and the owner.
 Why: the SMS exporters once stripped every address to its digits first, so
 `john1985@example.com` became the phone identity `1985` and a message from
 `AMAZON` was dropped.
+
+**The server types an address by `phone::Handle::parse` alone.** A chat
+handle, a participant or a sender whose source gave no type, an owner
+address, an identifier checked before an import, and an identity a person
+adds or swaps in on a contact are all typed by it, and none by the service.
+Why: identities of one address are linked only when their types are equal.
+A second rule that read characters typed `tel:+15555550157` as `other` and
+the same number as a sender as `phone`, and one that read the service typed
+`ada@example.com` added under iMessage as a phone number
+([#1432](https://github.com/messagecrate/message-crate/issues/1432)).
+
+**Swapping a contact's identity finds the old one on its own service.** The
+edit names the old address and the new one, and may name a service for the
+new one. The old identity is the one on the named service when the address
+is on the contact under more than one, and otherwise the one it has, so one
+edit moves a contact from WhatsApp to Text Message. With no service named,
+the new identity stays on the old one's service, and an address that service
+cannot carry, an email address on WhatsApp, is refused with the reason.
+Why: looked up on the named service, a WhatsApp identity was never found for
+a Text Message edit, and an email address swapped in with no service became
+an email identity on WhatsApp
+([#1411](https://github.com/messagecrate/message-crate/issues/1411)). The
+edit refuses rather than moving the identity to the phone service, because
+the person did not ask for a service change.
 
 **An import names only a nameless contact.** When the backup knows a name and
 the contact has none, the import sets it and marks it as imported. A name a
