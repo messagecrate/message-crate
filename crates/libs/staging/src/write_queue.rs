@@ -229,7 +229,8 @@ impl AttachmentTotals {
         }
     }
 
-    /// Fold in what one attachment changed, then report the new counts.
+    /// Fold in what one attachment changed, then report the new counts: a
+    /// log line for people and a [`ProgressEvent::Attachments`] for the bar.
     fn add_and_report(
         &mut self,
         p: UnitProgress,
@@ -239,14 +240,27 @@ impl AttachmentTotals {
         self.done += p.done;
         self.bytes_done += p.bytes_done;
         self.bytes_total = self.bytes_total.saturating_add_signed(p.bytes_total_change);
-        report_attachments(
-            log,
+        let Self {
+            done,
+            total,
+            bytes_done,
+            bytes_total,
+        } = *self;
+        let due = emit_progress(
             progress,
-            self.done,
-            self.total,
-            self.bytes_done,
-            self.bytes_total,
+            ProgressEvent::Attachments {
+                done,
+                total,
+                bytes_done,
+                bytes_total,
+            },
         );
+        if due {
+            emit_log(
+                log,
+                format!("  attachments {done}/{total} {bytes_done}/{bytes_total}"),
+            );
+        }
     }
 }
 
@@ -631,33 +645,6 @@ fn announce_start(log: Option<&LogSink>, progress: Option<&ProgressSink>, units:
             total: units,
         },
     );
-}
-
-/// Report the queue's running attachment totals: a log line for people and
-/// an [`ProgressEvent::Attachments`] for the bar.
-fn report_attachments(
-    log: Option<&LogSink>,
-    progress: Option<&ProgressSink>,
-    done: usize,
-    total: usize,
-    bytes_done: u64,
-    bytes_total: u64,
-) {
-    let due = emit_progress(
-        progress,
-        ProgressEvent::Attachments {
-            done,
-            total,
-            bytes_done,
-            bytes_total,
-        },
-    );
-    if due {
-        emit_log(
-            log,
-            format!("  attachments {done}/{total} {bytes_done}/{bytes_total}"),
-        );
-    }
 }
 
 /// Log the write queue's totals, noting resumed work.
