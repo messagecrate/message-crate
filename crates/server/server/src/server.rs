@@ -1128,15 +1128,15 @@ pub(crate) fn logged_uri(uri: &axum::http::Uri) -> String {
     let Some(query) = uri.query() else {
         return uri.path().to_string();
     };
-    let prefix = format!("{}=", crate::assets_api::media_links::MEDIA_LINK_PARAM);
     let query = query
         .split('&')
-        .map(|pair| {
-            if pair.starts_with(&prefix) {
-                format!("{prefix}[hidden]")
-            } else {
-                pair.to_string()
+        .map(|pair| match pair.split_once('=') {
+            // The name as the server reads it, percent-decoded, so no
+            // spelling of `media_link` the server accepts reaches the log.
+            Some((name, _)) if crate::assets_api::media_links::names_a_media_link(name) => {
+                format!("{name}=[hidden]")
             }
+            _ => pair.to_string(),
         })
         .collect::<Vec<_>>()
         .join("&");

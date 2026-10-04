@@ -57,7 +57,7 @@ metadata.
 
 ## 3. An attachment has up to three versions
 
-- The **Thumbnail**, about 560 pixels across and tens of kilobytes: the image
+- The **Thumbnail**, about 560 pixels across and under 100 kilobytes: the image
   scaled down, or a video's first frame. Every image and video has one. The
   conversation shows it.
 - The **Preview**, a copy a browser can play or show. Only an attachment of a

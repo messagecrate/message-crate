@@ -154,7 +154,7 @@ current one, because that account reaches every other.
   (`Location: /v1/session`), both answer `201`. A create that takes a batch
   answers `200 OK` with a summary of what was created, updated and skipped,
   because no single resource was made. A Media Link is made though nothing is
-  stored: `POST /v1/assets/{sha256}/media-links` answers `201` with the link's
+  stored: `POST /v1/assets/{sha256}/media-links` answers `201 Created` with the link's
   own URL in `Location`, which the Session that made it can `GET`.
 - A write with nothing to return answers `204 No Content`.
 - A write the server finishes after it answers is `202 Accepted`, with the

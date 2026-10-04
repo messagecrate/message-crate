@@ -323,7 +323,7 @@ export interface paths {
         /**
          * Download a previously stored content-addressed asset (read-only).
          * @description The body streams the stored bytes; the URL is the SHA-256 fingerprint.
-         *     A `Range` of one byte range answers `206` with those bytes, so a media
+         *     A `Range` of one byte range answers `206 Partial Content` with those bytes, so a media
          *     element streams a video and seeks in it; the `ETag` is the fingerprint,
          *     for `If-Range`. A media element, which cannot send the `Authorization`
          *     header, reads with the `media_link` a media link put in the URL
@@ -383,8 +383,8 @@ export interface paths {
          * Download the preview of a stored asset: the JPEG, MP4 or MP3 that `process-assets` made from it for a browser to show.
          * @description The URL is the SHA-256 fingerprint of the original, and the body streams
          *     the preview's bytes in the preview's own media type. An asset with no
-         *     preview answers `404`; the original is at `/v1/assets/{sha256}`. A
-         *     `Range` of one byte range answers `206` with those bytes. The preview has
+         *     preview answers `404 Not Found`; the original is at `/v1/assets/{sha256}`. A
+         *     `Range` of one byte range answers `206 Partial Content` with those bytes. The preview has
          *     no `ETag`, so a `Range` sent with `If-Range` answers the whole preview. A
          *     media element reads with the `media_link` a media link put in the URL.
          */
@@ -2775,7 +2775,7 @@ export interface components {
             expires_at: string;
             /**
              * @description `/v1/assets/{sha256}/preview?media_link=…`: the asset's Preview, which
-             *     answers `404` when the asset has none (the attachment's
+             *     answers `404 Not Found` when the asset has none (the attachment's
              *     `preview_mime_type` says whether it has one).
              */
             preview_url: string;
@@ -6502,6 +6502,8 @@ export interface operations {
             header?: {
                 /** @description One byte range, `bytes=<first>-<last>`, `bytes=<first>-` or `bytes=-<suffix>`; any other range answers the whole preview */
                 Range?: string | null;
+                /** @description Never names a Preview, which has no `ETag`: a `Range` sent with it answers the whole preview */
+                "If-Range"?: string | null;
             };
             path: {
                 /** @description Content SHA-256 hex of the original */

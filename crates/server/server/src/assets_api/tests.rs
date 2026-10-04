@@ -2002,3 +2002,52 @@ async fn a_range_the_server_does_not_serve_answers_the_whole_file() {
     assert_eq!(part.status, StatusCode::PARTIAL_CONTENT);
     assert_eq!(part.body, &ORIGINAL_BYTES[..4]);
 }
+
+/// A Preview has no `ETag`, so no `If-Range` can name it: a `Range` sent with
+/// one answers the whole Preview, even when it names the original's tag, and
+/// so do several ranges.
+#[tokio::test]
+async fn a_preview_under_if_range_answers_the_whole_preview() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let state = &fixture.state;
+    let seeded = seed_attachment_with_preview(state, user.account_id).await;
+    let sha = &seeded.with_preview;
+    let path = format!("/v1/assets/{sha}/preview");
+    let original_tag = format!("\"{sha}\"");
+
+    let whole = fetch(state, &path, Some(&user.token), &[]).await;
+    assert_eq!(whole.header("etag"), None, "a Preview has no ETag");
+    for headers in [
+        vec![("range", "bytes=0-3"), ("if-range", original_tag.as_str())],
+        vec![("range", "bytes=0-3"), ("if-range", "\"anything\"")],
+        vec![("range", "bytes=0-1, 4-5")],
+    ] {
+        let answer = fetch(state, &path, Some(&user.token), &headers).await;
+        assert_eq!(answer.status, StatusCode::OK, "{headers:?}");
+        assert_eq!(answer.body, PREVIEW_BYTES, "{headers:?}");
+    }
+}
+
+/// The asset store never follows a symlink, so a read of an asset whose path
+/// holds one answers `404 Not Found`, not the file it points at.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_symlink_at_an_assets_path_reads_as_no_file() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let state = &fixture.state;
+    let seeded = seed_attachment_with_preview(state, user.account_id).await;
+    let sha = Sha256::parse(&seeded.with_preview).unwrap();
+    let assets_dir = state.cfg.paths.assets_dir_for_account(user.account_id);
+    let stored = assets_dir.join(shard_rel_path(&sha, ""));
+    let elsewhere = fixture.dir().join("elsewhere");
+    fs::write(&elsewhere, b"a file outside the store").unwrap();
+    fs::remove_file(&stored).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &stored).unwrap();
+
+    let answer = fetch(state, &format!("/v1/assets/{sha}"), Some(&user.token), &[]).await;
+    crate::test_support::expect_problem(
+        answer.status,
+        &answer.text(),
+        crate::problem::ProblemType::NotFound,
+    );
+}

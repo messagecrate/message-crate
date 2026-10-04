@@ -32,7 +32,7 @@ use crate::server::{
 pub(crate) mod media_links;
 mod ranges;
 
-use media_links::AssetReader;
+use media_links::AssetReadAccess;
 
 /// Read/write chunk for hashing and copying files: 1 MiB.
 pub(crate) const COPY_BUFFER_BYTES: usize = 1024 * 1024;
@@ -637,7 +637,7 @@ pub(crate) async fn head_asset(
 /// Download a previously stored content-addressed asset (read-only).
 ///
 /// The body streams the stored bytes; the URL is the SHA-256 fingerprint.
-/// A `Range` of one byte range answers `206` with those bytes, so a media
+/// A `Range` of one byte range answers `206 Partial Content` with those bytes, so a media
 /// element streams a video and seeks in it; the `ETag` is the fingerprint,
 /// for `If-Range`. A media element, which cannot send the `Authorization`
 /// header, reads with the `media_link` a media link put in the URL
@@ -677,7 +677,7 @@ pub(crate) async fn head_asset(
 )]
 pub(crate) async fn get_asset(
     State(state): State<AppState>,
-    reader: AssetReader,
+    reader: AssetReadAccess,
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
 ) -> Result<Response, ApiError> {
@@ -701,8 +701,8 @@ pub(crate) async fn get_asset(
 ///
 /// The URL is the SHA-256 fingerprint of the original, and the body streams
 /// the preview's bytes in the preview's own media type. An asset with no
-/// preview answers `404`; the original is at `/v1/assets/{sha256}`. A
-/// `Range` of one byte range answers `206` with those bytes. The preview has
+/// preview answers `404 Not Found`; the original is at `/v1/assets/{sha256}`. A
+/// `Range` of one byte range answers `206 Partial Content` with those bytes. The preview has
 /// no `ETag`, so a `Range` sent with `If-Range` answers the whole preview. A
 /// media element reads with the `media_link` a media link put in the URL.
 #[utoipa::path(
@@ -712,7 +712,8 @@ pub(crate) async fn get_asset(
     security(("session" = []), ("api-token" = ["export"]), ("media-link" = [])),
     params(
         ("sha256" = String, Path, description = "Content SHA-256 hex of the original"),
-        ("Range" = Option<String>, Header, description = "One byte range, `bytes=<first>-<last>`, `bytes=<first>-` or `bytes=-<suffix>`; any other range answers the whole preview")
+        ("Range" = Option<String>, Header, description = "One byte range, `bytes=<first>-<last>`, `bytes=<first>-` or `bytes=-<suffix>`; any other range answers the whole preview"),
+        ("If-Range" = Option<String>, Header, description = "Never names a Preview, which has no `ETag`: a `Range` sent with it answers the whole preview")
     ),
     responses(
         (
@@ -735,7 +736,7 @@ pub(crate) async fn get_asset(
 )]
 pub(crate) async fn get_asset_preview(
     State(state): State<AppState>,
-    reader: AssetReader,
+    reader: AssetReadAccess,
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
 ) -> Result<Response, ApiError> {
@@ -758,9 +759,12 @@ pub(crate) async fn get_asset_preview(
     stream_file(&converted_dir.join(preview_path), mime_type, &headers, None).await
 }
 
-/// Find `sha256` in `account`'s store for a read. A read streams the file
-/// itself, so the lookup does not hash it: that would read every byte twice.
-async fn lookup_for_read(
+/// Find `sha256` in `account`'s store without hashing the file. A read
+/// streams the file itself, so hashing it first would read every byte
+/// twice, and making a media link only asks whether the store holds the
+/// asset. The probe and the writes hash it ([`resolve_asset_lookup`]),
+/// because they decide whether a client may skip sending the bytes.
+pub(crate) async fn lookup_for_read(
     state: &AppState,
     account: i64,
     sha256: &Sha256,
@@ -785,18 +789,44 @@ async fn stream_file(
 ) -> Result<Response, ApiError> {
     use tokio::io::{AsyncReadExt, AsyncSeekExt};
 
-    // Reject symlinks / missing files before streaming.
-    let meta = tokio::fs::symlink_metadata(path).await.map_err(|e| {
-        if e.kind() == std::io::ErrorKind::NotFound {
+    // Open first and take the length from the open file, so the headers
+    // and the bytes describe one file even if a write replaces the path
+    // meanwhile. A symlink is refused, as everywhere in the asset store: the
+    // open does not follow one, so a symlink put at the path at any moment
+    // reads as no file.
+    let open_error = |e: std::io::Error| {
+        #[cfg(unix)]
+        let symlink = e.raw_os_error() == Some(libc::ELOOP);
+        #[cfg(not(unix))]
+        let symlink = false;
+        if symlink || e.kind() == std::io::ErrorKind::NotFound {
             ApiError::NotFound("asset file missing on disk".into())
         } else {
-            ApiError::Internal(anyhow::anyhow!("stat {}: {e}", path.display()))
+            ApiError::Internal(anyhow::anyhow!("open {}: {e}", path.display()))
         }
-    })?;
-    if meta.file_type().is_symlink() || !meta.is_file() {
+    };
+    #[cfg(not(unix))]
+    if tokio::fs::symlink_metadata(path)
+        .await
+        .map_err(open_error)?
+        .file_type()
+        .is_symlink()
+    {
         return Err(ApiError::NotFound("asset file missing on disk".into()));
     }
-    let length = meta.len();
+    let mut options = tokio::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    options.custom_flags(libc::O_NOFOLLOW);
+    let mut file = options.open(path).await.map_err(open_error)?;
+    let opened = file
+        .metadata()
+        .await
+        .map_err(|e| ApiError::Internal(anyhow::anyhow!("stat {}: {e}", path.display())))?;
+    if !opened.is_file() {
+        return Err(ApiError::NotFound("asset file missing on disk".into()));
+    }
+    let length = opened.len();
     let (status, start, count) = match ranges::select(request_headers, length, etag.as_deref()) {
         ranges::Selection::Whole => (StatusCode::OK, 0, length),
         ranges::Selection::Part { start, end } => {
@@ -815,9 +845,6 @@ async fn stream_file(
     };
 
     let mime = mime_type.unwrap_or_else(|| "application/octet-stream".into());
-    let mut file = tokio::fs::File::open(path)
-        .await
-        .map_err(|e| ApiError::Internal(anyhow::anyhow!("open {}: {e}", path.display())))?;
     if start > 0 {
         file.seek(std::io::SeekFrom::Start(start))
             .await

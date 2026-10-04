@@ -5,7 +5,7 @@
 //! One range is served. A `Range` the server does not serve as one range
 //! (another unit, several ranges, a range that cannot be read) is ignored and
 //! the whole file answered, which RFC 9110 allows; only a range that selects
-//! no byte of the file is refused, with `416`.
+//! no byte of the file is refused, with `416 Range Not Satisfiable`.
 
 use axum::http::{HeaderMap, header};
 
@@ -74,15 +74,15 @@ fn parse_one(range: &str, length: u64) -> Option<Selection> {
                 }
             }
         }
-        (Some(start), None) if last.is_empty() => from(start, u64::MAX, length),
-        (Some(start), Some(end)) if start <= end => from(start, end, length),
+        (Some(start), None) if last.is_empty() => clamped_part(start, u64::MAX, length),
+        (Some(start), Some(end)) if start <= end => clamped_part(start, end, length),
         _ => return None,
     };
     Some(selection)
 }
 
 /// The range from `start` to `end`, cut at the end of the file.
-fn from(start: u64, end: u64, length: u64) -> Selection {
+fn clamped_part(start: u64, end: u64, length: u64) -> Selection {
     if start >= length {
         Selection::Unsatisfiable
     } else {

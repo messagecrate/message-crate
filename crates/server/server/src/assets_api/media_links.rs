@@ -23,7 +23,7 @@ use hmac::{KeyInit, Mac};
 use rand::TryRng;
 use serde::Serialize;
 
-use crate::assets_api::{Sha256, hex_encode, lookup_by_sha256_unverified};
+use crate::assets_api::{Sha256, hex_encode, lookup_for_read};
 use crate::db::{account_profile, session_tokens};
 use crate::extract::Path as AxumPath;
 use crate::server::{
@@ -64,59 +64,54 @@ impl MediaLinkKey {
     }
 
     /// The signature over one media link's terms.
-    fn mac(
-        &self,
-        account_id: i64,
-        sha256: &Sha256,
-        expires: i64,
-        session_hash: &str,
-    ) -> HmacSha256 {
+    fn mac(&self, terms: &MediaLinkTerms<'_>) -> HmacSha256 {
+        let MediaLinkTerms {
+            account_id,
+            sha256,
+            expires,
+            session_hash,
+        } = terms;
         let mut mac = HmacSha256::new_from_slice(&self.0).expect("HMAC takes a key of any length");
         mac.update(format!("{account_id}\n{sha256}\n{expires}\n{session_hash}").as_bytes());
         mac
     }
 
-    /// The media link for `sha256` in `account_id`'s store, open until the
-    /// Unix second `expires` while the Session whose token hashes to
-    /// `session_hash` lasts: `<account_id>.<expires>.<signature>`.
-    pub(crate) fn sign(
-        &self,
-        account_id: i64,
-        sha256: &Sha256,
-        expires: i64,
-        session_hash: &str,
-    ) -> String {
-        let signature = self
-            .mac(account_id, sha256, expires, session_hash)
-            .finalize()
-            .into_bytes();
-        format!("{account_id}.{expires}.{}", hex_encode(&signature))
+    /// The media link for these terms: `<account_id>.<expires>.<signature>`.
+    pub(crate) fn sign(&self, terms: &MediaLinkTerms<'_>) -> String {
+        let signature = self.mac(terms).finalize().into_bytes();
+        format!(
+            "{}.{}.{}",
+            terms.account_id,
+            terms.expires,
+            hex_encode(&signature)
+        )
     }
 
     /// Whether `signature` is the one [`Self::sign`] gives these terms,
     /// compared in constant time.
-    fn verifies(
-        &self,
-        account_id: i64,
-        sha256: &Sha256,
-        expires: i64,
-        session_hash: &str,
-        signature: &[u8],
-    ) -> bool {
-        self.mac(account_id, sha256, expires, session_hash)
-            .verify_slice(signature)
-            .is_ok()
+    fn verifies(&self, terms: &MediaLinkTerms<'_>, signature: &[u8]) -> bool {
+        self.mac(terms).verify_slice(signature).is_ok()
     }
 }
 
+/// What a media link is signed over: `sha256` in `account_id`'s store, open
+/// until the Unix second `expires` while the Session whose token hashes to
+/// `session_hash` lasts.
+pub(crate) struct MediaLinkTerms<'a> {
+    pub(crate) account_id: i64,
+    pub(crate) sha256: &'a Sha256,
+    pub(crate) expires: i64,
+    pub(crate) session_hash: &'a str,
+}
+
 /// A media link's three parts, read but not yet checked.
-struct LinkTerms {
+struct ParsedLink {
     account_id: i64,
     expires: i64,
     signature: Vec<u8>,
 }
 
-impl LinkTerms {
+impl ParsedLink {
     fn parse(link: &str) -> Option<Self> {
         let mut parts = link.split('.');
         let account_id = parts.next()?.parse().ok()?;
@@ -157,12 +152,12 @@ fn now_unix() -> i64 {
 /// A request that sends the header is judged by the header alone, as on
 /// every other route: a session, or an API token with the export scope
 /// (`require_asset_read_access`).
-pub(crate) struct AssetReader {
+pub(crate) struct AssetReadAccess {
     /// The account whose asset store the read looks in.
     pub(crate) account_id: i64,
 }
 
-impl axum::extract::FromRequestParts<AppState> for AssetReader {
+impl axum::extract::FromRequestParts<AppState> for AssetReadAccess {
     type Rejection = ApiError;
 
     async fn from_request_parts(
@@ -191,12 +186,28 @@ impl axum::extract::FromRequestParts<AppState> for AssetReader {
     }
 }
 
+/// The pairs of a query string, names and values percent-decoded, as the
+/// server reads every query.
+fn query_pairs(query: &str) -> Vec<(String, String)> {
+    let Ok(uri) = format!("/?{query}").parse::<axum::http::Uri>() else {
+        return Vec::new();
+    };
+    axum::extract::Query::<Vec<(String, String)>>::try_from_uri(&uri)
+        .map(|query| query.0)
+        .unwrap_or_default()
+}
+
+/// Whether a query parameter's name, as it is written in the URL, reads as
+/// `media_link` once decoded.
+pub(crate) fn names_a_media_link(raw_name: &str) -> bool {
+    query_pairs(&format!("{raw_name}="))
+        .first()
+        .is_some_and(|(name, _)| name == MEDIA_LINK_PARAM)
+}
+
 /// The first `media_link` in a query string, decoded.
 fn media_link_in(query: Option<&str>) -> Option<String> {
-    let uri: axum::http::Uri = format!("/?{}", query?).parse().ok()?;
-    axum::extract::Query::<Vec<(String, String)>>::try_from_uri(&uri)
-        .ok()?
-        .0
+    query_pairs(query?)
         .into_iter()
         .find_map(|(name, value)| (name == MEDIA_LINK_PARAM).then_some(value))
 }
@@ -211,21 +222,23 @@ fn media_link_in(query: Option<&str>) -> Option<String> {
 /// account is disabled.
 async fn open_media_link(state: &AppState, link: &str, sha256: &Sha256) -> Result<i64, ApiError> {
     let invalid = |why: &str| ApiError::MediaLinkInvalid(format!("{why}; make a new media link"));
-    let Some(terms) = LinkTerms::parse(link) else {
+    let Some(link) = ParsedLink::parse(link) else {
         return Err(invalid("the media_link is not a media link"));
     };
-    if terms.expires <= now_unix() {
+    if link.expires <= now_unix() {
         return Err(invalid("the media link expired"));
     }
     let mut conn = state.db.acquire().await?;
-    let session_hash = session_tokens::live_session_hash(&mut conn, terms.account_id).await?;
+    let session_hash = session_tokens::live_session_hash(&mut conn, link.account_id).await?;
     let signed = session_hash.is_some_and(|session_hash| {
         state.media_link_key.verifies(
-            terms.account_id,
-            sha256,
-            terms.expires,
-            &session_hash,
-            &terms.signature,
+            &MediaLinkTerms {
+                account_id: link.account_id,
+                sha256,
+                expires: link.expires,
+                session_hash: &session_hash,
+            },
+            &link.signature,
         )
     });
     if !signed {
@@ -233,13 +246,13 @@ async fn open_media_link(state: &AppState, link: &str, sha256: &Sha256) -> Resul
             "the media link was not made for this asset, or the Session that made it has ended",
         ));
     }
-    let auth = account_profile::load_account_auth(&mut conn, terms.account_id)
+    let auth = account_profile::load_account_auth(&mut conn, link.account_id)
         .await?
         .ok_or_else(|| invalid("the account the media link names no longer exists"))?;
     if auth.disabled {
         return Err(ApiError::AccountDisabled("this account is disabled".into()));
     }
-    Ok(terms.account_id)
+    Ok(link.account_id)
 }
 
 /// A media link: the URLs a media element loads to read one asset with no
@@ -249,7 +262,7 @@ pub(crate) struct MediaLink {
     /// `/v1/assets/{sha256}?media_link=…`: the asset's own bytes.
     url: String,
     /// `/v1/assets/{sha256}/preview?media_link=…`: the asset's Preview, which
-    /// answers `404` when the asset has none (the attachment's
+    /// answers `404 Not Found` when the asset has none (the attachment's
     /// `preview_mime_type` says whether it has one).
     preview_url: String,
     /// When the link stops working, RFC 3339 UTC. It stops sooner if the
@@ -288,13 +301,9 @@ pub(crate) async fn create_media_link(
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
 ) -> Result<Response, ApiError> {
-    let assets_dir = state.cfg.paths.assets_dir_for_account(auth.account_id);
-    let lookup = sha256.clone();
-    let held = tokio::task::spawn_blocking(move || {
-        lookup_by_sha256_unverified(&assets_dir, &lookup).is_some()
-    })
-    .await
-    .map_err(|e| ApiError::Internal(anyhow::anyhow!("asset lookup task: {e}")))?;
+    let held = lookup_for_read(&state, auth.account_id, &sha256)
+        .await?
+        .is_some();
     if !held {
         return Err(ApiError::NotFound("asset not found".into()));
     }
@@ -302,9 +311,12 @@ pub(crate) async fn create_media_link(
     let session_hash = session_tokens::hash_api_token(&bearer_token(&headers)?);
     let ttl = i64::try_from(MEDIA_LINK_TTL.as_secs()).unwrap_or(i64::MAX);
     let expires = now_unix().saturating_add(ttl);
-    let link = state
-        .media_link_key
-        .sign(auth.account_id, &sha256, expires, &session_hash);
+    let link = state.media_link_key.sign(&MediaLinkTerms {
+        account_id: auth.account_id,
+        sha256: &sha256,
+        expires,
+        session_hash: &session_hash,
+    });
     let url = format!("/v1/assets/{sha256}?{MEDIA_LINK_PARAM}={link}");
     let body = MediaLink {
         preview_url: format!("/v1/assets/{sha256}/preview?{MEDIA_LINK_PARAM}={link}"),

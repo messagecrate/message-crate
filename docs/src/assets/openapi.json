@@ -2531,7 +2531,7 @@
           "Assets"
         ],
         "summary": "Download a previously stored content-addressed asset (read-only).",
-        "description": "The body streams the stored bytes; the URL is the SHA-256 fingerprint.\nA `Range` of one byte range answers `206` with those bytes, so a media\nelement streams a video and seeks in it; the `ETag` is the fingerprint,\nfor `If-Range`. A media element, which cannot send the `Authorization`\nheader, reads with the `media_link` a media link put in the URL\n(`POST /v1/assets/{sha256}/media-links`).",
+        "description": "The body streams the stored bytes; the URL is the SHA-256 fingerprint.\nA `Range` of one byte range answers `206 Partial Content` with those bytes, so a media\nelement streams a video and seeks in it; the `ETag` is the fingerprint,\nfor `If-Range`. A media element, which cannot send the `Authorization`\nheader, reads with the `media_link` a media link put in the URL\n(`POST /v1/assets/{sha256}/media-links`).",
         "operationId": "get_asset",
         "parameters": [
           {
@@ -3102,7 +3102,7 @@
           "Assets"
         ],
         "summary": "Download the preview of a stored asset: the JPEG, MP4 or MP3 that `process-assets` made from it for a browser to show.",
-        "description": "The URL is the SHA-256 fingerprint of the original, and the body streams\nthe preview's bytes in the preview's own media type. An asset with no\npreview answers `404`; the original is at `/v1/assets/{sha256}`. A\n`Range` of one byte range answers `206` with those bytes. The preview has\nno `ETag`, so a `Range` sent with `If-Range` answers the whole preview. A\nmedia element reads with the `media_link` a media link put in the URL.",
+        "description": "The URL is the SHA-256 fingerprint of the original, and the body streams\nthe preview's bytes in the preview's own media type. An asset with no\npreview answers `404 Not Found`; the original is at `/v1/assets/{sha256}`. A\n`Range` of one byte range answers `206 Partial Content` with those bytes. The preview has\nno `ETag`, so a `Range` sent with `If-Range` answers the whole preview. A\nmedia element reads with the `media_link` a media link put in the URL.",
         "operationId": "get_asset_preview",
         "parameters": [
           {
@@ -3118,6 +3118,18 @@
             "name": "Range",
             "in": "header",
             "description": "One byte range, `bytes=<first>-<last>`, `bytes=<first>-` or `bytes=-<suffix>`; any other range answers the whole preview",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "If-Range",
+            "in": "header",
+            "description": "Never names a Preview, which has no `ETag`: a `Range` sent with it answers the whole preview",
             "required": false,
             "schema": {
               "type": [
@@ -14477,7 +14489,7 @@
           },
           "preview_url": {
             "type": "string",
-            "description": "`/v1/assets/{sha256}/preview?media_link=…`: the asset's Preview, which\nanswers `404` when the asset has none (the attachment's\n`preview_mime_type` says whether it has one)."
+            "description": "`/v1/assets/{sha256}/preview?media_link=…`: the asset's Preview, which\nanswers `404 Not Found` when the asset has none (the attachment's\n`preview_mime_type` says whether it has one)."
           },
           "url": {
             "type": "string",

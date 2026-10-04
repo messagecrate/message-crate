@@ -163,9 +163,12 @@ async fn a_media_link_expires() {
     let session = crate::db::session_tokens::hash_api_token(&user.token);
     let now = chrono::Utc::now().timestamp();
 
-    let fresh = state
-        .media_link_key
-        .sign(user.account_id, &sha, now + 60, &session);
+    let fresh = state.media_link_key.sign(&MediaLinkTerms {
+        account_id: user.account_id,
+        sha256: &sha,
+        expires: now + 60,
+        session_hash: &session,
+    });
     let answer = fetch(
         state,
         &format!("/v1/assets/{sha}?media_link={fresh}"),
@@ -175,9 +178,12 @@ async fn a_media_link_expires() {
     .await;
     assert_eq!(answer.status, StatusCode::OK, "{}", answer.text());
 
-    let expired = state
-        .media_link_key
-        .sign(user.account_id, &sha, now - 1, &session);
+    let expired = state.media_link_key.sign(&MediaLinkTerms {
+        account_id: user.account_id,
+        sha256: &sha,
+        expires: now - 1,
+        session_hash: &session,
+    });
     let answer = fetch(
         state,
         &format!("/v1/assets/{sha}?media_link={expired}"),
@@ -284,20 +290,4 @@ async fn only_a_session_mints_a_media_link_for_an_asset_it_holds() {
     let unknown = Sha256::of_bytes(b"a file nobody stored");
     let (status, _location, text) = mint(state, unknown.as_str(), &user.token).await;
     expect_problem(status, &text, ProblemType::NotFound);
-}
-
-/// The server's log names every request, and a media link in a URL is a
-/// credential: the line keeps the path and the other parameters and hides
-/// the link.
-#[test]
-fn a_logged_uri_hides_the_media_link() {
-    let uri: axum::http::Uri = "/v1/assets/ab?media_link=7.1790000000.deadbeef&x=1"
-        .parse()
-        .unwrap();
-    assert_eq!(
-        crate::server::logged_uri(&uri),
-        "/v1/assets/ab?media_link=[hidden]&x=1"
-    );
-    let plain: axum::http::Uri = "/v1/messages?q=hello".parse().unwrap();
-    assert_eq!(crate::server::logged_uri(&plain), "/v1/messages?q=hello");
 }

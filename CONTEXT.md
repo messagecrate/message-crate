@@ -85,7 +85,8 @@ contents, so the same file sent in ten messages is one asset. An asset is
 the only thing in the database addressed by a hash rather than a row number,
 because the file exists before the database does and its contents are its
 identity.
-_Avoid_: Attachment file, Blob, Media, Upload
+_Avoid_: Attachment file, Blob, Media (as a name for an Asset; Media Link
+names a credential), Upload
 
 **Preview**:
 A copy of an Asset in a format every browser can show, made by the server and
@@ -96,8 +97,8 @@ original, and downloading always gives the original.
 _Avoid_: Derived asset, Converted file
 
 **Thumbnail**:
-A small picture of an image or video Asset, about 560 pixels across and tens
-of kilobytes, made by the server: the image scaled down, or a video's first
+A small picture of an image or video Asset, about 560 pixels across and under
+100 kilobytes, made by the server: the image scaled down, or a video's first
 frame. A Conversation shows the Thumbnail, never the original, so a long
 conversation loads quickly.
 _Avoid_: Preview (a Preview is a full copy, not a small one)
