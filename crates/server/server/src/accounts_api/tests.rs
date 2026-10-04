@@ -453,7 +453,7 @@ async fn an_account_patches_its_own_profile_and_reads_it_back() {
             "time_zone": "America/New_York",
             "identities": [
                 { "address": "+1 (555) 555-0100", "service": "phone" },
-                { "address": "Alex@Example.com", "service": "email" }
+                { "address": "Alex@Example.com", "service": "phone" }
             ]
         }),
     )
@@ -506,6 +506,47 @@ async fn an_account_identity_takes_its_type_from_its_address_not_the_service() {
         sentence,
         "ann@example.com is an email address, and WhatsApp carries no email addresses"
     );
+}
+
+/// The profile's identity service is `phone` or `whatsapp`. `email` was a
+/// second name for `phone` once the address decided the type (#1432, #1631),
+/// so it is refused like any other word, naming the two, and nothing is
+/// linked or unlinked.
+#[tokio::test]
+async fn the_profile_refuses_email_as_a_service() {
+    let (fixture, account) = fixture_with_account().await;
+    let path = member(account.account_id);
+    let linked: serde_json::Value = patch_json(
+        &fixture.state,
+        &path,
+        &account.token,
+        serde_json::json!({
+            "identities": [{ "address": "ada@example.com", "service": "phone" }]
+        }),
+    )
+    .await;
+    assert_eq!(linked["emails"], serde_json::json!(["ada@example.com"]));
+
+    for body in [
+        serde_json::json!({
+            "identities": [{ "address": "ann@example.com", "service": "email" }]
+        }),
+        serde_json::json!({
+            "remove_identities": [{ "address": "ada@example.com", "service": "email" }]
+        }),
+    ] {
+        let (status, text) = patch_raw(&fixture.state, &path, &account.token, body).await;
+        let problem = expect_problem(status, &text, ProblemType::ValidationFailed);
+        assert!(
+            problem
+                .sentence()
+                .contains("expected `phone` or `whatsapp`"),
+            "{text}"
+        );
+    }
+
+    let after: serde_json::Value = get_json(&fixture.state, &path, &account.token).await;
+    assert_eq!(after["emails"], serde_json::json!(["ada@example.com"]));
 }
 
 #[tokio::test]
@@ -580,7 +621,7 @@ async fn the_owner_sets_a_managed_accounts_profile() {
         serde_json::json!({
             "preferred_name": "Carol",
             "time_zone": "America/New_York",
-            "identities": [{ "address": "Carol@Example.com", "service": "email" }],
+            "identities": [{ "address": "Carol@Example.com", "service": "phone" }],
             "can_export": false
         }),
     )
@@ -599,7 +640,7 @@ async fn the_owner_sets_a_managed_accounts_profile() {
         &path,
         &owner.token,
         serde_json::json!({
-            "remove_identities": [{ "address": "carol@example.com", "service": "email" }]
+            "remove_identities": [{ "address": "carol@example.com", "service": "phone" }]
         }),
     )
     .await;
@@ -629,7 +670,7 @@ async fn two_accounts_can_each_hold_the_same_email_address() {
             &path,
             &owner.token,
             serde_json::json!({
-                "identities": [{ "address": "ann@example.com", "service": "email" }]
+                "identities": [{ "address": "ann@example.com", "service": "phone" }]
             }),
         )
         .await;
@@ -683,7 +724,7 @@ async fn the_owner_sets_each_profile_field_on_its_own() {
         &state,
         &path,
         &owner.token,
-        serde_json::json!({ "identities": [{ "address": "carol@example.com", "service": "email" }] }),
+        serde_json::json!({ "identities": [{ "address": "carol@example.com", "service": "phone" }] }),
     )
     .await;
     let read: serde_json::Value = get_json(&state, &path, &owner.token).await;
@@ -1822,7 +1863,7 @@ async fn the_demo_account_refuses_what_would_shut_or_empty_it_from_anyone() {
                 &state,
                 &path,
                 token,
-                serde_json::json!({ "identities": [{ "address": "demo@example.com", "service": "email" }] }),
+                serde_json::json!({ "identities": [{ "address": "demo@example.com", "service": "phone" }] }),
             )
             .await,
             StatusCode::FORBIDDEN,
@@ -1953,7 +1994,7 @@ async fn the_identities_route_counts_the_direct_and_group_messages_held_at_each_
         serde_json::json!({
             "identities": [
                 { "address": "+15555550100", "service": "phone" },
-                { "address": "Alice@Example.com", "service": "email" }
+                { "address": "Alice@Example.com", "service": "phone" }
             ]
         }),
     )
@@ -2245,15 +2286,15 @@ async fn apply_profile_update_sets_name_and_handles() {
         &[
             LinkAccountIdentityRequest {
                 address: "+1 (555) 555-0100".into(),
-                service: "phone".into(),
+                service: IdentityService::Phone,
             },
             LinkAccountIdentityRequest {
                 address: "Alex@Example.com".into(),
-                service: "email".into(),
+                service: IdentityService::Phone,
             },
             LinkAccountIdentityRequest {
                 address: "+15555550199".into(),
-                service: "whatsapp".into(),
+                service: IdentityService::Whatsapp,
             },
         ],
         &[],
@@ -2331,7 +2372,10 @@ async fn apply_profile_update_removes_handles() {
     let fixture = test_fixture().await;
     let account_id = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
-    let both = [("+15555550100", "phone"), ("alex@example.com", "email")];
+    let both = [
+        ("+15555550100", IdentityService::Phone),
+        ("alex@example.com", IdentityService::Phone),
+    ];
     apply_profile_update(
         &mut conn,
         account_id,
@@ -2358,17 +2402,17 @@ async fn apply_profile_update_removes_handles() {
     assert!(loaded.emails.is_empty());
 }
 
-fn link(address: &str, service: &str) -> LinkAccountIdentityRequest {
+fn link(address: &str, service: IdentityService) -> LinkAccountIdentityRequest {
     LinkAccountIdentityRequest {
         address: address.into(),
-        service: service.into(),
+        service,
     }
 }
 
-fn unlink(address: &str, service: &str) -> UnlinkAccountIdentityRequest {
+fn unlink(address: &str, service: IdentityService) -> UnlinkAccountIdentityRequest {
     UnlinkAccountIdentityRequest {
         address: address.into(),
-        service: service.into(),
+        service,
     }
 }
 
@@ -2399,8 +2443,8 @@ async fn removing_one_service_of_a_number_leaves_the_other() {
     let account_id = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
     let both = [
-        link("+15555550100", "phone"),
-        link("+15555550100", "whatsapp"),
+        link("+15555550100", IdentityService::Phone),
+        link("+15555550100", IdentityService::Whatsapp),
     ];
 
     apply_profile_update(&mut conn, account_id, None, None, &both, &[])
@@ -2412,7 +2456,7 @@ async fn removing_one_service_of_a_number_leaves_the_other() {
         None,
         None,
         &[],
-        &[unlink("+15555550100", "whatsapp")],
+        &[unlink("+15555550100", IdentityService::Whatsapp)],
     )
     .await
     .unwrap();
@@ -2430,7 +2474,7 @@ async fn removing_one_service_of_a_number_leaves_the_other() {
         None,
         None,
         &[],
-        &[unlink("+15555550100", "phone")],
+        &[unlink("+15555550100", IdentityService::Phone)],
     )
     .await
     .unwrap();
@@ -2462,7 +2506,7 @@ async fn removing_a_whatsapp_identity_ignores_an_unlinked_text_message_row() {
         account_id,
         None,
         None,
-        &[link("+15555550100", "whatsapp")],
+        &[link("+15555550100", IdentityService::Whatsapp)],
         &[],
     )
     .await
@@ -2474,7 +2518,7 @@ async fn removing_a_whatsapp_identity_ignores_an_unlinked_text_message_row() {
         None,
         None,
         &[],
-        &[unlink("+15555550100", "whatsapp")],
+        &[unlink("+15555550100", IdentityService::Whatsapp)],
     )
     .await
     .unwrap();
@@ -2487,7 +2531,7 @@ async fn removing_a_whatsapp_identity_ignores_an_unlinked_text_message_row() {
 }
 
 #[tokio::test]
-async fn profile_update_rolls_back_when_a_handle_service_is_unsupported() {
+async fn profile_update_rolls_back_when_a_service_cannot_carry_the_identity() {
     let fixture = test_fixture().await;
     let account_id = fixture.account_with_id(101, "alice").await;
     let mut conn = fixture.conn().await;
@@ -2499,7 +2543,7 @@ async fn profile_update_rolls_back_when_a_handle_service_is_unsupported() {
             preferred_name: Some(Some("Changed Name".into())),
             identities: vec![LinkAccountIdentityRequest {
                 address: "alice@example.com".into(),
-                service: "unsupported".into(),
+                service: IdentityService::Whatsapp,
             }],
             ..UpdateAccountRequest::default()
         },

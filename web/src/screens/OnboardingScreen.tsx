@@ -16,6 +16,7 @@ import {
   handleDuplicateKey,
   handlePlaceholder,
   handleValidationError,
+  serverService,
 } from "../lib/handleService";
 import { newId } from "../lib/newId";
 import { keys } from "../lib/queryKeys";
@@ -271,10 +272,10 @@ export default function OnboardingScreen() {
         time_zone: timeZone,
         identities: filled
           .filter((h) => !seededRows.some((original) => sameIdentity(h, original)))
-          .map((h) => ({ address: h.handle.trim(), service: h.service })),
+          .map((h) => ({ address: h.handle.trim(), service: serverService(h.service) })),
         remove_identities: seededRows
           .filter((original) => !filled.some((h) => sameIdentity(h, original)))
-          .map(({ handle, service }) => ({ address: handle, service })),
+          .map(({ handle, service }) => ({ address: handle, service: serverService(service) })),
       });
       // Log in again so "needs setup" is recomputed from the saved profile.
       await login(serverUrl, token, accountId);

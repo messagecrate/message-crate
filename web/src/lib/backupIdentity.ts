@@ -1,10 +1,10 @@
 import { phonesMatch } from "./phoneTokens";
 
-/** Which kind of address a backup identity is, for display and for the profile endpoint. */
-export type IdentityService = "phone" | "email";
+/** The type of a backup identity's address: an email address or a phone number. */
+export type IdentityType = "phone" | "email";
 
 /** Anything with an `@` is an email; everything else is a phone. */
-export function identityService(value: string): IdentityService {
+export function identityType(value: string): IdentityType {
   return value.includes("@") ? "email" : "phone";
 }
 
@@ -13,7 +13,7 @@ export function identityOnProfile(
   value: string,
   profile: { phones: string[]; emails: string[] },
 ): boolean {
-  if (identityService(value) === "email") {
+  if (identityType(value) === "email") {
     const needle = value.trim().toLowerCase();
     return profile.emails.some((email) => email.trim().toLowerCase() === needle);
   }
@@ -30,7 +30,7 @@ export function identityMessageCounts(
   ownerHandles: { handle: string; sent: number; received: number }[],
 ): { sent: number; received: number } {
   const address =
-    identityService(identity) === "email"
+    identityType(identity) === "email"
       ? { phones: [], emails: [identity] }
       : { phones: [identity], emails: [] };
   return ownerHandles

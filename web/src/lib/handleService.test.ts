@@ -7,6 +7,9 @@ import {
   handlePlaceholder,
   handleValidationError,
   inferService,
+  listedServerService,
+  listedService,
+  serverService,
 } from "./handleService";
 
 describe("handleService", () => {
@@ -30,6 +33,35 @@ describe("handleService", () => {
     expect(formatHandleServiceLabel("x", "whatsapp")).toBe("WhatsApp");
     expect(formatHandleServiceLabel("a@example.com", null)).toBe("Email");
     expect(formatHandleServiceLabel("x", null)).toBe("—");
+  });
+});
+
+describe("serverService", () => {
+  it("sends an email address on the phone service, and WhatsApp as WhatsApp", () => {
+    expect(serverService("phone")).toBe("phone");
+    expect(serverService("email")).toBe("phone");
+    expect(serverService("whatsapp")).toBe("whatsapp");
+  });
+});
+
+describe("listedServerService", () => {
+  it("reads the list's three services and names none for any other word", () => {
+    expect(listedServerService("phone")).toBe("phone");
+    expect(listedServerService("email")).toBe("phone");
+    expect(listedServerService("whatsapp")).toBe("whatsapp");
+    // Read as phone, a word the server does not take would move or miss the
+    // identity without a word (#1630).
+    for (const word of ["sms", "whatsap", "unknown", "", null, undefined]) {
+      expect(listedServerService(word)).toBeUndefined();
+    }
+  });
+});
+
+describe("listedService", () => {
+  it("lists an email address as email on any service, and a number by its service", () => {
+    expect(listedService("ann@example.com", "phone")).toBe("email");
+    expect(listedService("+15555550100", "phone")).toBe("phone");
+    expect(listedService("+15555550100", "whatsapp")).toBe("whatsapp");
   });
 });
 
