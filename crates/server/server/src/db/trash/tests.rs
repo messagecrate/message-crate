@@ -817,6 +817,18 @@ async fn delete_trashed_contact_makes_it_unknown_and_leaves_its_conversations() 
         1,
         "the conversation and its messages are untouched"
     );
+    assert!(
+        crate::db::contacts::propose_name(
+            &mut conn,
+            ACCOUNT_A,
+            contact_id,
+            "Pat Lee",
+            crate::db::contacts::Origin::Import
+        )
+        .await
+        .unwrap(),
+        "the next import that knows the name may name it again"
+    );
 }
 
 #[tokio::test]
