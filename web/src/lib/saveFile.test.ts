@@ -68,7 +68,16 @@ describe("saveFile", () => {
     // The bytes as they are, not a JSON array, and the name as a header.
     expect(body).toBeInstanceOf(Uint8Array);
     expect([...(body as Uint8Array)]).toEqual([1, 2, 255]);
-    expect(options).toEqual({ headers: { "file-name": "Caf%C3%A9%20photo.jpg" } });
+    expect(options).toEqual({ headers: { "file-name": '"Caf\\u00e9 photo.jpg"' } });
+  });
+
+  it("escapes a name outside ASCII, an emoji's two halves included, so it fits in a header", async () => {
+    isTauri.mockReturnValue(true);
+    invoke.mockResolvedValue(true);
+
+    await saveFile("😀.png", new Blob(["x"]));
+
+    expect(invoke.mock.calls[0][2]).toEqual({ headers: { "file-name": '"\\ud83d\\ude00.png"' } });
   });
 
   it("reports false when the desktop app's dialog is closed without a choice", async () => {

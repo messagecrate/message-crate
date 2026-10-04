@@ -162,8 +162,9 @@ pub fn open_path(folders: tauri::State<'_, StagingFolders>, path: String) -> Res
     open::that_detached(&resolved).map_err(|error| format!("Could not open path: {error}"))
 }
 
-/// The header that names the file [`save_file`] saves, percent-encoded as
-/// `encodeURIComponent` writes it, because a header carries ASCII only.
+/// The header that names the file [`save_file`] saves: a JSON string with
+/// every character outside ASCII escaped as `\uXXXX`, because a header
+/// carries ASCII only.
 const FILE_NAME_HEADER: &str = "file-name";
 
 /// Show the Save dialog with the file's name filled in, and write the bytes
@@ -198,7 +199,7 @@ pub async fn save_file(app: AppHandle, request: tauri::ipc::Request<'_>) -> Resu
         .headers()
         .get(FILE_NAME_HEADER)
         .and_then(|value| value.to_str().ok())
-        .map(percent_decode)
+        .map(file_name_from_header)
         .transpose()?
         .filter(|name| !name.trim().is_empty())
         .ok_or("The file to save came without its name")?;
@@ -229,24 +230,10 @@ pub async fn save_file(app: AppHandle, request: tauri::ipc::Request<'_>) -> Resu
     Ok(true)
 }
 
-/// Undo `encodeURIComponent`: each `%XX` is the byte `XX`, and the bytes are
-/// UTF-8.
-fn percent_decode(encoded: &str) -> Result<String, String> {
-    let bad = || format!("The file name {encoded:?} is not percent-encoded UTF-8");
-    let mut bytes = Vec::with_capacity(encoded.len());
-    let mut rest = encoded.as_bytes();
-    while let Some((&first, tail)) = rest.split_first() {
-        if first == b'%' {
-            let hex = tail.get(..2).ok_or_else(bad)?;
-            let hex = std::str::from_utf8(hex).map_err(|_| bad())?;
-            bytes.push(u8::from_str_radix(hex, 16).map_err(|_| bad())?);
-            rest = &tail[2..];
-        } else {
-            bytes.push(first);
-            rest = tail;
-        }
-    }
-    String::from_utf8(bytes).map_err(|_| bad())
+/// Read the file name the window wrote as a JSON string.
+fn file_name_from_header(value: &str) -> Result<String, String> {
+    serde_json::from_str(value)
+        .map_err(|error| format!("The file name {value:?} is not a JSON string: {error}"))
 }
 
 /// Write `contents` to `path`, replacing a file already there.
@@ -483,20 +470,22 @@ mod tests {
     }
 
     #[test]
-    fn percent_decode_reads_what_encode_uri_component_wrote() {
-        // encodeURIComponent("Café photo (1).jpg")
+    fn file_name_from_header_reads_the_escapes_the_window_writes() {
+        // What `asciiJson` in web/src/lib/saveFile.ts writes for these names.
         assert_eq!(
-            percent_decode("Caf%C3%A9%20photo%20(1).jpg").unwrap(),
+            file_name_from_header(r#""Caf\u00e9 photo (1).jpg""#).unwrap(),
             "Café photo (1).jpg"
         );
-        assert_eq!(percent_decode("plain.csv").unwrap(), "plain.csv");
+        assert_eq!(
+            file_name_from_header(r#""\ud83d\ude00.png""#).unwrap(),
+            "😀.png"
+        );
     }
 
     #[test]
-    fn percent_decode_refuses_a_cut_short_escape_or_bytes_that_are_not_utf8() {
-        assert!(percent_decode("name%2").is_err());
-        assert!(percent_decode("name%zz").is_err());
-        assert!(percent_decode("%FF.jpg").is_err());
+    fn file_name_from_header_refuses_what_is_not_a_json_string() {
+        assert!(file_name_from_header("plain.csv").is_err());
+        assert!(file_name_from_header(r#""cut short"#).is_err());
     }
 
     #[test]
