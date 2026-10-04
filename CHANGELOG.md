@@ -242,6 +242,14 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **A group imported from two backups takes its current name,
+  however the backups arrive.** When two copies of one group chat became
+  one conversation, the name it ended with depended on whether they came
+  in one upload or two: one upload kept the first copy's name, and two
+  uploads kept the second's. The conversation now takes the name of the
+  copy whose messages run later, which is the name the group has now. An
+  older backup uploaded afterwards no longer brings back a name the group
+  has dropped, and a copy with no name never clears one.
 - 2026-10-04 **Working files from reading a backup no longer stay behind
   when an import is stopped, and Staging checks for room while it reads
   the backup.** Reading an encrypted iPhone backup decrypts its message

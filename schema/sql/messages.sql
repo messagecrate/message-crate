@@ -10,8 +10,6 @@ CREATE TABLE IF NOT EXISTS conversations (
     conversation_type TEXT NOT NULL,
     -- Group display title; NULL for 1:1 chats.
     group_title TEXT,
-    -- When the source export was produced (if known).
-    exported_at TEXT,
     -- Path or name of the source file this thread came from.
     source_file TEXT NOT NULL,
     UNIQUE(account_id, chat_handle_id)

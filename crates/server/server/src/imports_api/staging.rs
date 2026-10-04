@@ -356,7 +356,6 @@ struct StagedConversation {
     platform_service: Option<String>,
     conversation_type: String,
     group_title: Option<String>,
-    exported_at: Option<String>,
     participants: Vec<StagedParticipant>,
     source: String,
 }
@@ -368,7 +367,6 @@ impl StagedConversation {
             platform_service: record.service,
             conversation_type: record.conversation_type,
             group_title: record.group_title,
-            exported_at: record.exported_at,
             participants: record
                 .participants
                 .into_iter()
@@ -405,6 +403,9 @@ impl FileStaging<'_> {
         messages: Vec<MessageRecord>,
     ) -> Result<()> {
         let mut stats = ImportStats::default();
+        // Every timestamp has one fixed RFC 3339 form, so the greatest string
+        // is the latest instant.
+        let latest_message_at = messages.iter().map(|m| m.timestamp.clone()).max();
         let platform = platform_for(
             conversation.platform_service.as_deref(),
             &conversation.source,
@@ -489,7 +490,7 @@ impl FileStaging<'_> {
                 chat_handle_id,
                 conversation_type: &conversation.conversation_type,
                 group_title: conversation.group_title.as_deref(),
-                exported_at: conversation.exported_at.as_deref(),
+                latest_message_at: latest_message_at.as_deref(),
                 source_file: &self.source_file,
             },
         )

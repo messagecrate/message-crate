@@ -3796,6 +3796,113 @@ async fn two_conversations_on_one_identity_in_one_batch_become_one() {
     );
 }
 
+/// The header of the Apple Messages group `chat1000000408`, titled `title`
+/// (no title when `None`), with one participant.
+fn titled_group_header(title: Option<&str>) -> String {
+    let title = title.map_or_else(|| "null".to_string(), |t| format!(r#""{t}""#));
+    format!(
+        r#"{{"schema_version":4,"export":{{"source":"imessage","tool":"test","tool_version":"0","owner_handle":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"chat1000000408","conversation_type":"group","group_title":{title},"participants":[{{"handle":"+15555550119","display_name":null}}],"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
+    )
+}
+
+/// One copy of the group `chat1000000408`: its header titled `title`, and
+/// one message `guid` sent at `ms`.
+fn titled_group_copy(title: Option<&str>, guid: &str, ms: i64) -> String {
+    format!(
+        "{}\n{}\n",
+        titled_group_header(title),
+        same_second_message(guid, ms)
+    )
+}
+
+/// The title the account's one conversation ends with.
+async fn the_one_group_title(state: &crate::server::AppState) -> Option<String> {
+    let mut conn = state.db.acquire().await.unwrap();
+    let titles: Vec<Option<String>> = sqlx::query_scalar("SELECT group_title FROM conversations")
+        .fetch_all(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(titles.len(), 1, "the two copies are one conversation");
+    titles.into_iter().next().unwrap()
+}
+
+/// #1408: two copies of one group, "Old" whose messages end earlier and
+/// "New" whose messages end later, end titled "New" whether they arrive in
+/// one batch or in two, in either order.
+#[tokio::test]
+async fn a_merged_group_takes_the_title_of_the_copy_whose_messages_end_later() {
+    let old = titled_group_copy(Some("Old"), "m-old", 1_426_183_462_000);
+    let new = titled_group_copy(Some("New"), "m-new", 1_426_269_862_000);
+    let arrivals = [
+        ("one batch, Old first", vec![format!("{old}{new}")]),
+        ("one batch, New first", vec![format!("{new}{old}")]),
+        ("two batches, Old first", vec![old.clone(), new.clone()]),
+        ("two batches, New first", vec![new.clone(), old.clone()]),
+    ];
+    for (arrival, bodies) in arrivals {
+        let (state, _fixture, token) = importer().await;
+        post_batches_of_one_run(&state, &token, bodies).await;
+        assert_eq!(
+            the_one_group_title(&state).await.as_deref(),
+            Some("New"),
+            "{arrival}"
+        );
+    }
+}
+
+/// #1408: a copy whose messages end later and that has no title keeps the
+/// title the group already has, in one batch and in two.
+#[tokio::test]
+async fn a_later_copy_with_no_title_keeps_the_stored_title() {
+    let old = titled_group_copy(Some("Old"), "m-old", 1_426_183_462_000);
+    let untitled = titled_group_copy(None, "m-new", 1_426_269_862_000);
+    let arrivals = [
+        ("one batch, titled first", vec![format!("{old}{untitled}")]),
+        (
+            "one batch, untitled first",
+            vec![format!("{untitled}{old}")],
+        ),
+        (
+            "two batches, titled first",
+            vec![old.clone(), untitled.clone()],
+        ),
+        (
+            "two batches, untitled first",
+            vec![untitled.clone(), old.clone()],
+        ),
+    ];
+    for (arrival, bodies) in arrivals {
+        let (state, _fixture, token) = importer().await;
+        post_batches_of_one_run(&state, &token, bodies).await;
+        assert_eq!(
+            the_one_group_title(&state).await.as_deref(),
+            Some("Old"),
+            "{arrival}"
+        );
+    }
+}
+
+/// #1408: two copies whose messages end at the same time keep the title
+/// stored first, in one batch and in two.
+#[tokio::test]
+async fn copies_whose_messages_end_together_keep_the_stored_title() {
+    let first = titled_group_copy(Some("First"), "m-first", 1_426_183_462_000);
+    let second = titled_group_copy(Some("Second"), "m-second", 1_426_183_462_000);
+    let arrivals = [
+        ("one batch", vec![format!("{first}{second}")]),
+        ("two batches", vec![first.clone(), second.clone()]),
+    ];
+    for (arrival, bodies) in arrivals {
+        let (state, _fixture, token) = importer().await;
+        post_batches_of_one_run(&state, &token, bodies).await;
+        assert_eq!(
+            the_one_group_title(&state).await.as_deref(),
+            Some("First"),
+            "{arrival}"
+        );
+    }
+}
+
 /// #1172: a group header that lists one person twice, under two spellings of
 /// one number that normalise to one handle, is taken with `200 OK` and the
 /// group lists that person once.

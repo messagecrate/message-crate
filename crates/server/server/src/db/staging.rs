@@ -46,8 +46,11 @@ pub struct StagingConversation<'a> {
     pub conversation_type: &'a str,
     /// Group label, when set.
     pub group_title: Option<&'a str>,
-    /// When the export was produced, when known.
-    pub exported_at: Option<&'a str>,
+    /// The latest timestamp among the conversation's messages, in the form
+    /// `staging_messages.timestamp` holds, or `None` when it has none. It
+    /// decides the title when this conversation merges into one already
+    /// staged.
+    pub latest_message_at: Option<&'a str>,
     /// Name of the file the thread came from.
     pub source_file: &'a str,
 }
@@ -57,9 +60,11 @@ pub struct StagingConversation<'a> {
 /// Two chat ids that differ as written can normalise to one handle, such as
 /// `+15555550119` and `5555550119`. A conversation on a handle the account
 /// has already staged in this import merges into that row, the way promote
-/// merges into `conversations` on the same key: the id returned is the
-/// staged row's, and that row keeps its title and export time unless it
-/// has none.
+/// merges into `conversations` on the same key, and the id returned is the
+/// staged row's. The merged row takes the title of whichever side's messages
+/// end later, as [`upsert_conversations`] does
+/// (`docs/architecture/contacts-identities-and-messages.md`, "Two copies of
+/// one conversation take the later copy's title").
 ///
 /// # Errors
 ///
@@ -71,11 +76,23 @@ pub async fn insert_conversation(
     Ok(sqlx::query_scalar(
         r"
         INSERT INTO staging_conversations (
-            account_id, chat_handle_id, conversation_type, group_title, exported_at, source_file
-        ) VALUES ($1, $2, $3, $4, $5, $6)
+            account_id, chat_handle_id, conversation_type, group_title, source_file
+        ) VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT(account_id, chat_handle_id) DO UPDATE SET
-            group_title = COALESCE(staging_conversations.group_title, excluded.group_title),
-            exported_at = COALESCE(staging_conversations.exported_at, excluded.exported_at)
+            -- The title of the side whose messages end later. A missing title
+            -- never replaces one, and on a tie the staged title stays. The rule
+            -- and its reason: docs/architecture/contacts-identities-and-messages.md,
+            -- under Two copies of one conversation take the later copy's title.
+            group_title = CASE
+                WHEN excluded.group_title IS NOT NULL
+                 AND (staging_conversations.group_title IS NULL
+                      OR $6 > COALESCE((
+                          SELECT MAX(m.timestamp) FROM staging_messages m
+                          WHERE m.conversation_id = staging_conversations.id
+                      ), ''))
+                THEN excluded.group_title
+                ELSE staging_conversations.group_title
+            END
         RETURNING id
         ",
     )
@@ -83,8 +100,8 @@ pub async fn insert_conversation(
     .bind(row.chat_handle_id)
     .bind(row.conversation_type)
     .bind(row.group_title)
-    .bind(row.exported_at)
     .bind(row.source_file)
+    .bind(row.latest_message_at)
     .fetch_one(&mut *conn)
     .await?)
 }
@@ -440,8 +457,11 @@ pub async fn max_conversation_id(conn: &mut SqliteConnection) -> Result<i64> {
 }
 
 /// Upsert the account's staged conversations into `conversations`, keyed by
-/// `(account_id, chat_handle_id)`. A row already there keeps its title and
-/// export time when the staged row has none.
+/// `(account_id, chat_handle_id)`. A row already there takes the staged
+/// title when the staged messages end later than its own, or when it has no
+/// title; a staged row with no title never clears one
+/// (`docs/architecture/contacts-identities-and-messages.md`, "Two copies of
+/// one conversation take the later copy's title").
 ///
 /// # Errors
 ///
@@ -450,18 +470,33 @@ pub async fn upsert_conversations(conn: &mut SqliteConnection, account_id: i64) 
     sqlx::query(
         r"
         INSERT INTO conversations (
-            account_id, chat_handle_id, conversation_type,
-            group_title, exported_at, source_file
+            account_id, chat_handle_id, conversation_type, group_title, source_file
         )
-        SELECT
-            account_id, chat_handle_id, conversation_type,
-            group_title, exported_at, source_file
+        SELECT account_id, chat_handle_id, conversation_type, group_title, source_file
         FROM staging_conversations
         WHERE account_id = $1
         ON CONFLICT(account_id, chat_handle_id) DO UPDATE SET
             conversation_type = excluded.conversation_type,
-            group_title = COALESCE(excluded.group_title, conversations.group_title),
-            exported_at = COALESCE(excluded.exported_at, conversations.exported_at),
+            -- The title of the side whose messages end later. A missing title
+            -- never replaces one, and on a tie the stored title stays. The rule
+            -- and its reason: docs/architecture/contacts-identities-and-messages.md,
+            -- under Two copies of one conversation take the later copy's title.
+            group_title = CASE
+                WHEN excluded.group_title IS NOT NULL
+                 AND (conversations.group_title IS NULL
+                      OR COALESCE((
+                          SELECT MAX(sm.timestamp)
+                          FROM staging_conversations sc
+                          JOIN staging_messages sm ON sm.conversation_id = sc.id
+                          WHERE sc.account_id = excluded.account_id
+                            AND sc.chat_handle_id = excluded.chat_handle_id
+                      ), '') > COALESCE((
+                          SELECT MAX(m.timestamp) FROM messages m
+                          WHERE m.conversation_id = conversations.id
+                      ), ''))
+                THEN excluded.group_title
+                ELSE conversations.group_title
+            END,
             source_file = excluded.source_file
         ",
     )
