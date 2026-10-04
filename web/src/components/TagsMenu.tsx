@@ -15,7 +15,7 @@ export default function TagsMenu({
   allTags: string[];
   checks: Record<string, MembershipCheckState>;
   onToggle?: (name: string) => void;
-  onCreate?: (name: string) => void;
+  onCreate?: (name: string) => Promise<void>;
   onClearAll?: () => void;
   disabled?: boolean;
 }) {
@@ -35,6 +35,7 @@ export default function TagsMenu({
       createButtonLabel="Create Message Tag"
       createTitle="Create Message Tag"
       createPlaceholder="Message Tag name"
+      createFailedText="Could not create Message Tag"
       isReserved={isReservedTagName}
       reservedError={reservedTagError}
       icon={<TagIcon size={16} />}

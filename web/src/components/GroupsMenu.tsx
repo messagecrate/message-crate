@@ -1,4 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { apiErrorMessage } from "../lib/apiErrorMessage";
 import { isReservedGroupName, reservedGroupError } from "../lib/contactGroups";
 import type { MembershipCheckState } from "../lib/membershipChecks";
 import { popupShadow } from "../lib/uiStyles";
@@ -29,6 +30,7 @@ export default function GroupsMenu({
   createButtonLabel = "Create Contact Group",
   createTitle = "Create Contact Group",
   createPlaceholder = "Contact Group name",
+  createFailedText = "Could not create Contact Group",
   isReserved = isReservedGroupName,
   reservedError = reservedGroupError,
   icon,
@@ -42,7 +44,8 @@ export default function GroupsMenu({
   allGroups: string[];
   checks: Record<string, GroupCheckState>;
   onToggle?: (name: string) => void;
-  onCreate?: (name: string) => void;
+  /** Resolves once the name is created; a rejection's message is shown in the menu. */
+  onCreate?: (name: string) => Promise<void>;
   onClearAll?: () => void;
   disabled?: boolean;
   ariaLabel?: string;
@@ -53,6 +56,8 @@ export default function GroupsMenu({
   createButtonLabel?: string;
   createTitle?: string;
   createPlaceholder?: string;
+  /** Shown when `onCreate` rejects with something that carries no message of its own. */
+  createFailedText?: string;
   isReserved?: (name: string) => boolean;
   reservedError?: (name: string) => string;
   icon?: ReactNode;
@@ -75,6 +80,7 @@ export default function GroupsMenu({
   const [query, setQuery] = useState("");
   const [newName, setNewName] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
@@ -110,15 +116,27 @@ export default function GroupsMenu({
   const toneClass = open ? "text-accent" : "text-muted";
   const popoverClass = `absolute top-full left-0 mt-1 w-64 rounded-xl border border-border bg-popover ${Z_POPOVER} ${popupShadow}`;
 
-  const saveNew = () => {
-    if (disabled || !onCreate) return;
+  const saveNew = async () => {
+    if (disabled || creating || !onCreate) return;
     const name = newName.trim();
     if (!name) return;
     if (isReserved(name)) {
       setCreateError(reservedError(name));
       return;
     }
-    onCreate(name);
+    // The server can refuse the name (too long, or holding a character it
+    // keeps for itself), so the menu stays on the form with the typed name
+    // and the server's sentence until the create succeeds.
+    setCreateError(null);
+    setCreating(true);
+    try {
+      await onCreate(name);
+    } catch (err) {
+      setCreateError(apiErrorMessage(err, createFailedText));
+      return;
+    } finally {
+      setCreating(false);
+    }
     setNewName("");
     setMode("list");
   };
@@ -219,7 +237,7 @@ export default function GroupsMenu({
             onKeyDown={(e) => {
               if (e.key === "Enter") {
                 e.preventDefault();
-                saveNew();
+                void saveNew();
               }
             }}
             placeholder={createPlaceholder}
@@ -229,8 +247,8 @@ export default function GroupsMenu({
           {createError ? <p className="mt-1 text-[0.75rem] text-danger">{createError}</p> : null}
           <div className="mt-3 flex items-center gap-2">
             <PlainButton
-              isDisabled={disabled || !newName.trim()}
-              onPress={saveNew}
+              isDisabled={disabled || creating || !newName.trim()}
+              onPress={() => void saveNew()}
               className="cursor-pointer rounded-md bg-accent px-3 py-1 text-[0.813rem] font-medium text-sent-text disabled:opacity-40"
             >
               Create

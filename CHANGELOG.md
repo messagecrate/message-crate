@@ -578,6 +578,12 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-04 **The Contact Groups and Message Tags menus say why a name is
+  refused.** Creating a Contact Group from the Contact Groups menu on the
+  contacts list, or a Message Tag from the Message Tags menu on the
+  conversation list, did nothing when the server refused the name, such as a
+  Contact Group name holding `;` or a name over 80 characters. The menu now
+  keeps the name you typed and shows the reason, as the sidebar already did.
 - 2026-10-03 **Adding a WhatsApp identity checks that it was added.** When
   a number was already a Text Message identity, adding it on WhatsApp
   closed the dialog even if the server added nothing. The dialog now stays

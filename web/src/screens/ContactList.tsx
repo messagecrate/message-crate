@@ -382,14 +382,12 @@ export default function ContactList({
           const on = groupChecks[name] === "on";
           void applyMembership(name, !on);
         }}
-        onCreate={(name) => {
-          void (async () => {
-            const existing = allGroups.find((g) => g.toLowerCase() === name.toLowerCase());
-            if (!existing) {
-              await groupActions.create(name);
-            }
-            await applyMembership(existing ?? name, true);
-          })();
+        onCreate={async (name) => {
+          const existing = allGroups.find((g) => g.toLowerCase() === name.toLowerCase());
+          if (!existing) {
+            await groupActions.create(name);
+          }
+          await applyMembership(existing ?? name, true);
         }}
         onClearAll={() => {
           void clearAllMembership();

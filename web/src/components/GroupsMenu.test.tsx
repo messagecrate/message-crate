@@ -2,7 +2,8 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "../lib/api";
 import GroupsMenu from "./GroupsMenu";
 
 afterEach(() => {
@@ -94,5 +95,52 @@ describe("GroupsMenu", () => {
     expect(screen.getByText("Work")).toBeTruthy();
     expect(screen.queryByText("College")).toBeNull();
     expect(screen.queryByText("Family")).toBeNull();
+  });
+
+  it("shows the server's refusal of a new name and keeps the typed name", async () => {
+    const user = userEvent.setup();
+    const refusal =
+      'name can\'t hold ";", because the address book separates Contact Group names with it';
+    const onCreate = vi.fn().mockRejectedValue(new ApiError(422, refusal));
+    render(
+      <GroupsMenu
+        allGroups={[...GROUPS]}
+        checks={{}}
+        onCreate={onCreate}
+        ariaLabel="Contact Groups"
+        title="Contact Groups"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Contact Groups" }));
+    await user.click(screen.getByRole("button", { name: /Create Contact Group$/ }));
+    await user.type(screen.getByPlaceholderText("Contact Group name"), "Work; 2024");
+    await user.click(screen.getByRole("button", { name: "Create" }));
+
+    expect(onCreate).toHaveBeenCalledWith("Work; 2024");
+    expect(await screen.findByText(refusal)).toBeTruthy();
+    expect(screen.getByPlaceholderText("Contact Group name")).toHaveValue("Work; 2024");
+  });
+
+  it("returns to the list once the new name is created", async () => {
+    const user = userEvent.setup();
+    const onCreate = vi.fn().mockResolvedValue(undefined);
+    render(
+      <GroupsMenu
+        allGroups={[...GROUPS]}
+        checks={{}}
+        onCreate={onCreate}
+        ariaLabel="Contact Groups"
+        title="Contact Groups"
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: "Contact Groups" }));
+    await user.click(screen.getByRole("button", { name: /Create Contact Group$/ }));
+    await user.type(screen.getByPlaceholderText("Contact Group name"), "Friends{Enter}");
+
+    expect(onCreate).toHaveBeenCalledWith("Friends");
+    expect(await screen.findByRole("searchbox", { name: "Search Contact Groups…" })).toBeTruthy();
+    expect(screen.queryByPlaceholderText("Contact Group name")).toBeNull();
   });
 });
