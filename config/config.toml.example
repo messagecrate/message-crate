@@ -12,8 +12,9 @@
 # account in the database.
 #
 # assets_dir and assets_converted_dir are each one directory name inside every
-# account's directory (data/<account_id>/assets/). An absolute path, a
-# separator, `..` or an empty name is refused.
+# account's directory (data/<account_id>/assets/), and the two differ. An
+# absolute path, a separator, a `:`, a name starting with `.` (such as `..`)
+# or an empty name is refused.
 #
 # The address book is loaded in the app, under Settings, or with
 # `POST /v1/contacts`. It is Message Crate's own CSV.
