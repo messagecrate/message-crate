@@ -262,6 +262,17 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **An import whose app closes or crashes keeps every Error
+  found so far.** Staging reported its Errors only when it finished, Media
+  reported none, and an Upload's skipped attachments waited for the end of
+  the Upload, so an app that closed partway lost them. Every Error now
+  reaches the run the moment it is found. A file Media could not convert,
+  or left out because it was still too large after converting, is listed
+  as an Error with the file and the reason; one it could not convert keeps
+  its original, and its Error goes when a resumed Media converts it. A
+  resumed run lists an Error it finds again once. Discarding a run after
+  a crash during a resumed Upload no longer records a conversation as
+  failed when that Upload had already sent it.
 - 2026-10-04 **The server's `import` command names the file it refuses an
   attachment in.** When an attachment broke a rule, such as a path that
   leaves the export directory or bytes that do not match the fingerprint
@@ -1138,6 +1149,13 @@ released versions carry their date on the heading.
   messages, and the files in other accounts' folders. The reset stops if any
   of them changed. On a database of about 1.3 million messages the check
   takes about 14 seconds.
+- 2026-10-04 **Deleting attachments no longer holds up everyone else.**
+  Emptying the Trash, deleting a conversation or all of an account's
+  messages, and the clean-up at the end of an import deleted every file
+  while keeping all other changes waiting. With many files on a slow disk,
+  another person's import, a sign-in or media conversion could wait 15
+  seconds and fail. The files are now set aside in a moment and deleted
+  afterwards, while everything else goes on.
 
 ### Upgrading
 

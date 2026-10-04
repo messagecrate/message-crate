@@ -53,6 +53,11 @@ pub enum ProgressEvent {
         item: String,
         /// Why, in one sentence.
         reason: String,
+        /// The conversation file the row is about. A row about the whole
+        /// conversation has it as its `item` too. A resumed Upload reads
+        /// again only the conversations the journal does not list, so this
+        /// says which rows a resume reports again.
+        conversation: String,
     },
     /// The run finished; the report is final.
     Finished(PushReport),
@@ -68,6 +73,8 @@ const PROGRESS_BATCH_SIZE: usize = 10;
 /// One attachment omitted from upload but kept as metadata on the message.
 #[derive(Debug, Clone)]
 pub(crate) struct AttachmentSkip {
+    /// The conversation file the attachment is in.
+    pub conversation: String,
     pub item: String,
     pub reason: String,
 }
@@ -316,6 +323,7 @@ impl<'p, 'f> Reporter<'p, 'f> {
                 step: "upload".into(),
                 item: skip.item.clone(),
                 reason: skip.reason.clone(),
+                conversation: skip.conversation.clone(),
             });
         }
     }
@@ -343,6 +351,7 @@ impl<'p, 'f> Reporter<'p, 'f> {
                 step: "upload".into(),
                 item: result.file.clone(),
                 reason: result.error.clone().unwrap_or_else(|| fallback.to_string()),
+                conversation: result.file.clone(),
             });
         }
     }

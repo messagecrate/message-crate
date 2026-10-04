@@ -92,14 +92,19 @@ export function stageForStep(step: ImportProgressEvent["step"]): ImportIssueStag
   return "staging";
 }
 
-/** An issue the desktop app reported, as the run records it and the server stores it. */
+/**
+ * An issue the desktop app reported, as the run records it. The server takes
+ * it without `conversation` (`issueRequests`).
+ */
 export function issueFromEvent(event: ImportIssueEvent): ImportIssue {
-  return {
+  const issue: ImportIssue = {
     kind: event.kind,
     stage: stageForStep(event.step),
     item: event.item,
     reason: event.reason,
   };
+  if (event.conversation != null) issue.conversation = event.conversation;
+  return issue;
 }
 
 /**

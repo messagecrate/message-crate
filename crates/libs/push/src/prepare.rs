@@ -338,6 +338,7 @@ fn scan_one_attachment(
             // defect, so it earns an Import Errors row; a deliberate skip
             // does not.
             scan.skips.push(AttachmentSkip {
+                conversation: name.to_string(),
                 item: format!("{name}:{}", attachment_label(att, index)),
                 reason: "attachment has no file path in the export".into(),
             });
@@ -351,6 +352,7 @@ fn scan_one_attachment(
     let Some(abs) = resolve_attachment(ctx.input, rel)? else {
         scan.skipped += 1;
         scan.skips.push(AttachmentSkip {
+            conversation: name.to_string(),
             item: format!("{name}:{rel}"),
             reason: "attachment file not found on disk".into(),
         });
@@ -366,6 +368,7 @@ fn scan_one_attachment(
     if file_len > ctx.cfg.asset_max_bytes {
         scan.skipped += 1;
         scan.skips.push(AttachmentSkip {
+            conversation: name.to_string(),
             item: format!("{name}:{rel}"),
             reason: format!(
                 "attachment is {} bytes ({} MiB), over the configured asset max of {} MiB",

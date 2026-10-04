@@ -6,9 +6,9 @@
 //! registered in `main.rs`.
 //!
 //! Long jobs return as soon as the background thread starts. Progress, log
-//! lines, issues, and errors are sent as Tauri events (`extract:log`,
-//! `extract:progress`, `extract:issue`, `extract:finished`,
-//! `extract:error`).
+//! lines, issues, each conversation an Upload finished, and errors are sent
+//! as Tauri events (`extract:log`, `extract:progress`, `extract:issue`,
+//! `extract:file-done`, `extract:finished`, `extract:error`).
 
 pub mod events;
 pub mod extract;
