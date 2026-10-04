@@ -1,9 +1,7 @@
 import type { ReactNode } from "react";
 import { Column, ColumnResizer, Group } from "react-aria-components";
-import PlainButton from "../PlainButton";
 import {
   columnResizerClass,
-  linkClass,
   mutedClass,
   thClass,
   thLeftClass,
