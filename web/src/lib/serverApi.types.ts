@@ -1574,10 +1574,9 @@ export interface components {
             /** @description The address to link. */
             address: string;
             /**
-             * @description Platform service: `whatsapp`, or any other value for the phone
-             *     service; the phone service when omitted. It never decides the
-             *     identity's type, which comes from the address. An email address on
-             *     WhatsApp is refused.
+             * @description Platform service, `phone` or `whatsapp`; the phone service when
+             *     omitted. It never decides the identity's type, which comes from the
+             *     address. A new email address on WhatsApp is refused.
              */
             service?: string | null;
         };
@@ -2680,7 +2679,11 @@ export interface components {
         LinkAccountIdentityRequest: {
             /** @description The address as typed, e.g. `+15555550100` or `alex@example.com`. */
             address: string;
-            /** @description Platform the address belongs to: `phone`, `email`, or `whatsapp`. */
+            /**
+             * @description Platform the address belongs to: `phone`, `email` (the phone
+             *     platform), or `whatsapp`. It never decides the identity's type, which
+             *     comes from the address; an email address on WhatsApp is refused.
+             */
             service: string;
         };
         /** @description Body for `POST /v1/contacts/summaries`. */
@@ -4262,7 +4265,11 @@ export interface components {
         UnlinkAccountIdentityRequest: {
             /** @description The address as typed, e.g. `+15555550100` or `alex@example.com`. */
             address: string;
-            /** @description Platform the address belongs to: `phone`, `email`, or `whatsapp`. */
+            /**
+             * @description Platform the address belongs to: `phone`, `email` (the phone
+             *     platform), or `whatsapp`. It never decides the identity's type, which
+             *     comes from the address.
+             */
             service: string;
         };
         /**
@@ -4312,7 +4319,7 @@ export interface components {
              *     it is there under more than one, else the phone service, then
              *     WhatsApp. When omitted, the new address takes the service of the
              *     previous one. It never decides the new identity's type, which comes
-             *     from the address, and an email address on WhatsApp is refused.
+             *     from the address, and a new email address on WhatsApp is refused.
              */
             service?: string | null;
         };

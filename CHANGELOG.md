@@ -676,8 +676,8 @@ released versions carry their date on the heading.
 - 2026-10-04 **One number is one identity however it arrives.** A number
   written with `tel:` in front, in a backup that gave no type for it, became
   a separate identity from the same number as a message sender, on a contact
-  of its own. An email address added to a contact under iMessage was saved
-  as a phone number. Every address is now typed by what it is, whatever
+  of its own. An email address added to a contact under iMessage, or to
+  your own identities as a phone number, was saved as a phone number. Every address is now typed by what it is, whatever
   service it came over or was added under.
 - 2026-10-04 **Changing a contact's identity can move it to another
   service.** Changing a WhatsApp number to a Text Message number in one edit

@@ -165,8 +165,11 @@ Why: the SMS exporters once stripped every address to its digits first, so
 
 **The server types an address by `phone::Handle::parse` alone.** A chat
 handle, a participant or a sender whose source gave no type, an owner
-address, an identifier checked before an import, and an identity a person
-adds or swaps in on a contact are all typed by it, and none by the service.
+address, an identifier checked before an import, an identity a person adds
+or swaps in on a contact, and one an account adds to its own profile are all
+typed by it, and none by the service. A contact edit that names an address
+the account already holds on that service takes that row as it is, so a
+WhatsApp internal id the import stored as `other` stays `other`.
 Why: identities of one address are linked only when their types are equal.
 A second rule that read characters typed `tel:+15555550157` as `other` and
 the same number as a sender as `phone`, and one that read the service typed

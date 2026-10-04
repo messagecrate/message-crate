@@ -11,6 +11,7 @@ use crate::test_support::{
     post_created_json, post_logged_out, post_raw, post_status, post_status_logged_out, put_json,
     put_raw, put_status, register_via_api, seed_conversation, seed_one_message, test_fixture,
 };
+use message_ir::HandleType;
 
 fn member(id: i64) -> String {
     format!("/v1/accounts/{id}")
@@ -467,6 +468,43 @@ async fn an_account_patches_its_own_profile_and_reads_it_back() {
     assert_eq!(patched["must_set_up_profile"], false);
     let read_back: serde_json::Value = get_json(&fixture.state, &path, &account.token).await;
     assert_eq!(read_back, patched);
+}
+
+/// An account's identity is typed by its address, never by the service the
+/// request names: `ada@example.com` under `phone` is an email address. Typed
+/// by the service it was stored as a phone number (#1432). An email address
+/// on WhatsApp is refused with the reason, as a contact edit refuses it.
+#[tokio::test]
+async fn an_account_identity_takes_its_type_from_its_address_not_the_service() {
+    let (fixture, account) = fixture_with_account().await;
+    let path = member(account.account_id);
+
+    let patched: serde_json::Value = patch_json(
+        &fixture.state,
+        &path,
+        &account.token,
+        serde_json::json!({
+            "identities": [{ "address": "ada@example.com", "service": "phone" }]
+        }),
+    )
+    .await;
+    assert_eq!(patched["phones"], serde_json::json!([]));
+    assert_eq!(patched["emails"], serde_json::json!(["ada@example.com"]));
+
+    let (status, sentence) = patch_failure(
+        &fixture.state,
+        &path,
+        &account.token,
+        serde_json::json!({
+            "identities": [{ "address": "ann@example.com", "service": "whatsapp" }]
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        sentence,
+        "ann@example.com is an email address, and WhatsApp carries no email addresses"
+    );
 }
 
 #[tokio::test]
