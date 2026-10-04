@@ -1,9 +1,9 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "../../../test/providers";
+import { setupUser } from "../../../test/user";
 import { StorageSection } from "../StorageSection";
 
 const getAccountProfile = vi.hoisted(() => vi.fn());
@@ -62,7 +62,7 @@ describe("Export history", () => {
   });
 
   it("asks the server for each page of 50 and stops at the last", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     renderWithProviders(<StorageSection />);
 
     const heading = await screen.findByRole("heading", { name: "Export history" });

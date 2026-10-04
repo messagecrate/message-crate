@@ -262,9 +262,8 @@ pub enum ImportSchemaMode {
 
 /// Test helper: open a configured database and run one import.
 ///
-/// Production paths run on their own connection: HTTP serve through
-/// [`import_jsonl_files_on_conn`], and the `import` command and the Demo
-/// Account build through [`import_on_conn`].
+/// Production paths run [`import_jsonl_files_on_conn`] on their own
+/// connection: HTTP serve, the `import` command and the Demo Account build.
 #[cfg(test)]
 pub(crate) async fn import_jsonl_files(
     db_path: &Path,
@@ -284,10 +283,15 @@ pub(crate) async fn import_jsonl_files(
     let mut conn = pool.acquire().await?;
     println!("  sql:      opened {}", db_path.display());
     let _ = io::stdout().flush();
-    import_on_conn(&mut conn, paths, opts, ImportSchemaMode::Ensure).await
+    Ok(import_jsonl_files_on_conn(&mut conn, paths, opts, ImportSchemaMode::Ensure).await?)
 }
 
-/// Import onto an existing connection (warm serve path or tests).
+/// Import onto an existing connection: HTTP serve, the `import` command, the
+/// Demo Account build, and tests.
+///
+/// A command line that reports the error turns it into an `anyhow::Error`
+/// and prints it with `{:#}`, which names the file a refusal was in and the
+/// whole chain of an internal failure.
 ///
 /// # Errors
 ///
@@ -301,32 +305,9 @@ pub async fn import_jsonl_files_on_conn(
     opts: &ImportOptions<'_>,
     schema_mode: ImportSchemaMode,
 ) -> Result<ImportStats, ImportError> {
-    Ok(import_on_conn(conn, paths, opts, schema_mode).await?)
-}
-
-/// [`import_jsonl_files_on_conn`], with every failure still inside `anyhow`,
-/// for the callers that only report it: the `import` command, `reset-demo`
-/// and [`import_jsonl_files`].
-pub(crate) async fn import_on_conn(
-    conn: &mut SqliteConnection,
-    paths: &[PathBuf],
-    opts: &ImportOptions<'_>,
-    schema_mode: ImportSchemaMode,
-) -> Result<ImportStats> {
-    fs::create_dir_all(opts.assets_dir)
-        .with_context(|| format!("failed to create {}", opts.assets_dir.display()))?;
-    if schema_mode == ImportSchemaMode::Ensure {
-        schema::ensure_schema(conn).await?;
-    }
-    crate::db::account_profile::ensure_account_row(conn, opts.account_id).await?;
-
-    if schema_mode == ImportSchemaMode::Ensure {
-        say("  sql:      ensuring schema + resetting staging for account…");
-    } else {
-        say("  sql:      resetting staging for account…");
-    }
-    crate::db::staging::reset_for_account(conn, opts.account_id).await?;
-    let wipe_sources = sources_to_wipe(opts)?;
+    let wipe_sources = prepare_import(conn, opts, schema_mode)
+        .await
+        .map_err(ImportError::Internal)?;
     say(&format!(
         "  import:   {} JSONL file{}",
         paths.len(),
@@ -355,7 +336,9 @@ pub(crate) async fn import_on_conn(
     // imports for different accounts cannot race into SQLITE_BUSY at the
     // first INSERT. The run is checked again under that lock: a run discarded
     // or completed while the batch uploaded takes no messages.
-    let mut tx = crate::db::begin_write(conn).await?;
+    let mut tx = crate::db::begin_write(conn)
+        .await
+        .map_err(|err| ImportError::Internal(err.into()))?;
     if let Some(import_id) = opts.import_id {
         crate::db::imports::require_running_import(&mut tx, opts.account_id, import_id).await?;
     }
@@ -366,8 +349,12 @@ pub(crate) async fn import_on_conn(
         started.elapsed().as_secs_f64()
     ));
     promote_step(&mut tx, opts, &wipe_sources, &mut stats).await?;
-    crate::db::staging::reset_for_account(&mut tx, opts.account_id).await?;
-    tx.commit().await?;
+    crate::db::staging::reset_for_account(&mut tx, opts.account_id)
+        .await
+        .map_err(ImportError::Internal)?;
+    tx.commit()
+        .await
+        .map_err(|err| ImportError::Internal(err.into()))?;
 
     stats.assets_copied = asset_stats.copied;
     stats.assets_deduped = asset_stats.deduped;
@@ -381,6 +368,36 @@ pub(crate) async fn import_on_conn(
         stats.assets_copied
     ));
     Ok(stats)
+}
+
+/// Everything an import does before its transaction: the asset store
+/// directory, the schema when asked for, the account row, an empty staging
+/// area, and the source ids a replace-mode import wipes, which it returns.
+/// None of it reads the files, so every error here is the server's.
+///
+/// # Errors
+///
+/// Returns an error when a directory or row cannot be written, or a source
+/// id is invalid.
+async fn prepare_import(
+    conn: &mut SqliteConnection,
+    opts: &ImportOptions<'_>,
+    schema_mode: ImportSchemaMode,
+) -> Result<Vec<String>> {
+    fs::create_dir_all(opts.assets_dir)
+        .with_context(|| format!("failed to create {}", opts.assets_dir.display()))?;
+    if schema_mode == ImportSchemaMode::Ensure {
+        schema::ensure_schema(conn).await?;
+    }
+    crate::db::account_profile::ensure_account_row(conn, opts.account_id).await?;
+
+    if schema_mode == ImportSchemaMode::Ensure {
+        say("  sql:      ensuring schema + resetting staging for account…");
+    } else {
+        say("  sql:      resetting staging for account…");
+    }
+    crate::db::staging::reset_for_account(conn, opts.account_id).await?;
+    sources_to_wipe(opts)
 }
 
 /// Print one progress line and flush, so a long import shows movement even
@@ -414,23 +431,29 @@ fn sources_to_wipe(opts: &ImportOptions<'_>) -> Result<Vec<String>> {
 ///
 /// # Errors
 ///
-/// Returns an error when a file cannot be read or a row cannot be written.
+/// Returns [`ImportError::Rejected`], naming the file, when a line breaks a
+/// rule the sender can fix, and [`ImportError::Internal`] when a file cannot
+/// be read or a row cannot be written.
 async fn stage_all_files(
     tx: &mut SqliteConnection,
     paths: &[PathBuf],
     opts: &ImportOptions<'_>,
     stats: &mut ImportStats,
     started: Instant,
-) -> Result<AssetStats> {
+) -> Result<AssetStats, ImportError> {
     let total_files = paths.len();
     let progress_every = if total_files <= 20 {
         1usize
     } else {
         (total_files / 40).max(10)
     };
-    let media_work = TempDir::new().context("temp dir for import-time media rewrite")?;
+    let media_work = TempDir::new()
+        .context("temp dir for import-time media rewrite")
+        .map_err(ImportError::Internal)?;
     let mut asset_stats = AssetStats::default();
-    let identities = crate::db::account_profile::account_identity_keys(tx, opts.account_id).await?;
+    let identities = crate::db::account_profile::account_identity_keys(tx, opts.account_id)
+        .await
+        .map_err(ImportError::Internal)?;
     let mut stmts = StagingInserts::new(opts.account_id, opts.import_id, identities);
 
     for (idx, path) in paths.iter().enumerate() {
@@ -442,7 +465,8 @@ async fn stage_all_files(
             &mut asset_stats,
             media_work.path(),
         )
-        .await?;
+        .await
+        .map_err(|err| ImportError::staging(path, err))?;
         stats.merge_file(&file_stats);
         stats.files += 1;
 
@@ -469,13 +493,14 @@ async fn stage_all_files(
 ///
 /// # Errors
 ///
-/// Returns an error when a promote statement fails.
+/// Returns [`PromoteError`](promote::PromoteError) when a promote statement
+/// fails.
 async fn promote_step(
     tx: &mut SqliteConnection,
     opts: &ImportOptions<'_>,
     wipe_sources: &[String],
     stats: &mut ImportStats,
-) -> Result<()> {
+) -> Result<(), promote::PromoteError> {
     let promote_stats = promote::promote_append(
         tx,
         opts.mode,
@@ -612,16 +637,44 @@ pub(crate) struct CompleteImportRequest {
     pub(crate) summary: Option<serde_json::Value>,
     #[serde(default)]
     pub(crate) issues: Vec<ImportIssueRequest>,
+    /// The run's notes, apart from its Import Errors. A note never makes a
+    /// run `completed_with_issues`.
+    #[serde(default)]
+    pub(crate) notes: Vec<ImportNoteRequest>,
 }
 
 /// The Import Errors a discarded run recorded before it was given up. A run
 /// that paused and is then discarded never posts `complete`, so its issues
-/// come with the discard.
+/// and notes come with the discard.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct DiscardImportRequest {
     /// The run's Import Errors so far. The list is empty when the run
     /// recorded none.
     pub(crate) issues: Vec<ImportIssueRequest>,
+    /// The run's notes so far. The list is empty when the run recorded none.
+    pub(crate) notes: Vec<ImportNoteRequest>,
+}
+
+/// One note a Stage of the Import Run recorded: something it did with an
+/// item that is worth knowing but did not fail, such as a message it kept
+/// with a caveat.
+#[derive(Debug, Deserialize, utoipa::ToSchema)]
+pub(crate) struct ImportNoteRequest {
+    /// Stage the note came from.
+    pub(crate) stage: crate::db::imports::ImportIssueStage,
+    /// The file, message or address the note is about.
+    pub(crate) item: String,
+    /// What the run did with it, in one sentence.
+    pub(crate) text: String,
+}
+
+/// One requested note, as the database records it.
+fn note_row(note: ImportNoteRequest) -> crate::db::imports::ImportNoteRow {
+    crate::db::imports::ImportNoteRow {
+        stage: note.stage,
+        item: note.item,
+        text: note.text,
+    }
 }
 
 /// One error or skip a Stage of the Import Run reported.
@@ -717,6 +770,18 @@ pub(crate) struct ListImportsQuery {
     pub(crate) sort: Option<String>,
 }
 
+/// One stored import note: something the run did with an item that is worth
+/// knowing but did not fail.
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub(crate) struct ImportNote {
+    /// Stage the note came from.
+    pub(crate) stage: crate::db::imports::ImportIssueStage,
+    /// The file, message or address the note is about.
+    item: String,
+    /// What the run did with it.
+    text: String,
+}
+
 /// One stored import issue.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct ImportIssue {
@@ -728,10 +793,28 @@ pub(crate) struct ImportIssue {
 }
 
 /// An Import Run: one per import, the same record wherever the interface
-/// hands one out. It holds the counts Settings shows, everything the desktop
-/// app needs to resume a running run, and the issues the run recorded.
+/// hands one run out. It is the run as a list answers it, the
+/// `ImportRunSummary`, with the issues and the notes the run recorded.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct ImportRun {
+    /// Everything a list answers for the run: the counts Settings shows,
+    /// everything the desktop app needs to resume a running run, and how
+    /// many issues it recorded.
+    #[serde(flatten)]
+    pub(crate) run: ImportRunSummary,
+    /// Issues the run recorded, oldest first.
+    pub(crate) issues: Vec<ImportIssue>,
+    /// Notes the run recorded, oldest first, apart from its issues.
+    pub(crate) notes: Vec<ImportNote>,
+}
+
+/// An Import Run as a list of runs answers it: every field of the run but
+/// its issues and notes. A run may record any number of either, so a page
+/// that carried them would have no bound on its size; `GET /v1/imports/{id}`
+/// answers them (#1559,
+/// `docs/architecture/http-api.md`, "Lists").
+#[derive(Debug, Serialize, utoipa::ToSchema)]
+pub(crate) struct ImportRunSummary {
     /// Import Run id.
     pub(crate) id: i64,
     /// Source id the run imports.
@@ -779,20 +862,57 @@ pub(crate) struct ImportRun {
     /// What the person approved at the last Review they passed, or null. The
     /// column `PATCH /v1/imports/{id}` writes with its `summary`.
     pub(crate) summary: serde_json::Value,
-    /// Issues the run recorded, oldest first.
-    pub(crate) issues: Vec<ImportIssue>,
+    /// How many issues the run recorded.
+    pub(crate) issue_count: u64,
+    /// How many notes the run recorded.
+    pub(crate) note_count: u64,
     /// Contacts this run created.
     pub(crate) contacts_new: u64,
     /// Contacts it only changed.
     pub(crate) contacts_changed: u64,
 }
 
+impl From<crate::db::imports::ListedImport> for ImportRunSummary {
+    fn from(listed: crate::db::imports::ListedImport) -> Self {
+        let row = listed.row;
+        Self {
+            id: row.id,
+            source: row.source,
+            tool: row.tool,
+            mode: row.mode,
+            dedupe: row.dedupe,
+            status: row.status,
+            started_at: row.started_at,
+            finished_at: row.finished_at,
+            message_count: row.message_count,
+            attachment_count: row.attachment_count,
+            bytes_uploaded: row.bytes_uploaded,
+            duration_ms: row.duration_ms,
+            parse_ms: row.parse_ms,
+            attachments_ms: row.attachments_ms,
+            prepare_ms: row.prepare_ms,
+            upload_ms: row.upload_ms,
+            stage: row.stage,
+            staging_dir: row.staging_dir,
+            device_id: row.device_id,
+            form: crate::db::imports::json_column(row.form_json),
+            source_fingerprint: crate::db::imports::json_column(row.source_fingerprint),
+            source_identities: crate::db::imports::json_column(row.source_identities),
+            summary: crate::db::imports::json_column(row.summary_json),
+            issue_count: listed.issue_count,
+            note_count: listed.note_count,
+            contacts_new: listed.contacts.new_count,
+            contacts_changed: listed.contacts.changed_count,
+        }
+    }
+}
+
 /// An Import Run as the owner reads it under another account: its source,
 /// mode, times, outcome and counts, and nothing of what the backup held
 /// (`docs/adr/0008-the-owner-holds-no-messages.md`, "What the owner may
-/// see"). The run's summary, its issues and its form say whom the account
-/// talks to, so they stay out, and a field reaches the owner only by being
-/// added here.
+/// see"). The run's summary, its issues, its notes and its form say whom the
+/// account talks to, so they stay out, and a field reaches the owner only by
+/// being added here.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct OwnerImportRun {
     /// Import Run id.
@@ -832,6 +952,9 @@ pub(crate) struct OwnerImportRun {
     /// Issues the run recorded. Each names the conversation it was about, so
     /// the owner reads how many and not which.
     issue_count: u64,
+    /// Notes the run recorded. Each names a file or an address, so the owner
+    /// reads how many and not which.
+    note_count: u64,
     /// Contacts this run created.
     contacts_new: u64,
     /// Contacts it only changed.
@@ -844,38 +967,64 @@ pub(crate) async fn owner_import_run(
     conn: &mut SqliteConnection,
     row: crate::db::imports::ImportRow,
 ) -> Result<OwnerImportRun, ApiError> {
-    let issue_count = crate::db::imports::issue_count(conn, row.id).await?;
+    let (issue_count, note_count) = crate::db::imports::issue_and_note_counts(conn, row.id).await?;
+    listed_import(conn, row, issue_count, note_count)
+        .await
+        .map(OwnerImportRun::from)
+}
+
+/// One run's row as the list would read it, given its issue and note
+/// counts: the contact tally is read here.
+async fn listed_import(
+    conn: &mut SqliteConnection,
+    row: crate::db::imports::ImportRow,
+    issue_count: u64,
+    note_count: u64,
+) -> Result<crate::db::imports::ListedImport, ApiError> {
     let contacts = crate::db::import_contacts::counts(conn, row.id)
         .await
         .map_err(ApiError::Internal)?;
-    let counts = match crate::db::imports::json_column(row.summary_json) {
-        serde_json::Value::Object(summary) => summary
-            .into_iter()
-            .filter_map(|(name, value)| value.as_i64().map(|n| (name, n)))
-            .collect(),
-        _ => std::collections::BTreeMap::new(),
-    };
-    Ok(OwnerImportRun {
-        id: row.id,
-        source: row.source,
-        tool: row.tool,
-        mode: row.mode,
-        status: row.status,
-        started_at: row.started_at,
-        finished_at: row.finished_at,
-        message_count: row.message_count,
-        attachment_count: row.attachment_count,
-        bytes_uploaded: row.bytes_uploaded,
-        duration_ms: row.duration_ms,
-        parse_ms: row.parse_ms,
-        attachments_ms: row.attachments_ms,
-        prepare_ms: row.prepare_ms,
-        upload_ms: row.upload_ms,
-        counts,
+    Ok(crate::db::imports::ListedImport {
+        row,
         issue_count,
-        contacts_new: contacts.new_count,
-        contacts_changed: contacts.changed_count,
+        note_count,
+        contacts,
     })
+}
+
+impl From<crate::db::imports::ListedImport> for OwnerImportRun {
+    fn from(listed: crate::db::imports::ListedImport) -> Self {
+        let row = listed.row;
+        let counts = match crate::db::imports::json_column(row.summary_json) {
+            serde_json::Value::Object(summary) => summary
+                .into_iter()
+                .filter_map(|(name, value)| value.as_i64().map(|n| (name, n)))
+                .collect(),
+            _ => std::collections::BTreeMap::new(),
+        };
+        Self {
+            id: row.id,
+            source: row.source,
+            tool: row.tool,
+            mode: row.mode,
+            status: row.status,
+            started_at: row.started_at,
+            finished_at: row.finished_at,
+            message_count: row.message_count,
+            attachment_count: row.attachment_count,
+            bytes_uploaded: row.bytes_uploaded,
+            duration_ms: row.duration_ms,
+            parse_ms: row.parse_ms,
+            attachments_ms: row.attachments_ms,
+            prepare_ms: row.prepare_ms,
+            upload_ms: row.upload_ms,
+            counts,
+            issue_count: listed.issue_count,
+            note_count: listed.note_count,
+            contacts_new: listed.contacts.new_count,
+            contacts_changed: listed.contacts.changed_count,
+        }
+    }
 }
 
 /// The account's Import Runs, newest first, as a page. `status=running`
@@ -892,46 +1041,42 @@ pub(crate) async fn owner_import_run(
         ("sort" = Option<String>, Query, description = "`started_at` or `-started_at`. Default `-started_at`, newest first.")
     ),
     responses(
-        (status = 200, body = Page<ImportRun>),
+        (status = 200, body = Page<ImportRunSummary>),
     )
 )]
 pub(crate) async fn list_imports(
     State(state): State<AppState>,
     ImportAccess(auth): ImportAccess,
     Query(query): Query<ListImportsQuery>,
-) -> Result<Json<Page<ImportRun>>, ApiError> {
+) -> Result<Json<Page<ImportRunSummary>>, ApiError> {
     let mut conn = state.db.acquire().await?;
     let rows = import_rows_page(&mut conn, resolve_import_account(&auth), query).await?;
-    import_runs_page(&mut conn, rows).await.map(Json)
+    Ok(Json(runs_page(rows)))
 }
 
-/// A page of import rows as a page of Import Runs, each with its issues and
-/// contact tally.
-pub(crate) async fn import_runs_page(
-    conn: &mut SqliteConnection,
-    rows: Page<crate::db::imports::ImportRow>,
-) -> Result<Page<ImportRun>, ApiError> {
-    let mut items = Vec::with_capacity(rows.items.len());
-    for row in rows.items {
-        items.push(import_run(conn, row).await?);
-    }
-    Ok(Page {
-        items,
+/// A page of listed runs as a page of one run type: [`ImportRunSummary`]
+/// for the account, [`OwnerImportRun`] for the owner. It reads nothing.
+pub(crate) fn runs_page<T: From<crate::db::imports::ListedImport>>(
+    rows: Page<crate::db::imports::ListedImport>,
+) -> Page<T> {
+    Page {
+        items: rows.items.into_iter().map(T::from).collect(),
         total: rows.total,
         limit: rows.limit,
         offset: rows.offset,
-    })
+    }
 }
 
-/// One account's Import Runs as a page of rows. `GET /v1/imports` answers
-/// from it for the credential's account and `GET /v1/accounts/{id}/imports`
-/// for the account named, so the two lists cannot drift; each shapes the
-/// rows for whoever reads them.
+/// One account's Import Runs as a page of rows, each with its issue count
+/// and contact tally, read in the list's own statements. `GET /v1/imports`
+/// answers from it for the credential's account and
+/// `GET /v1/accounts/{id}/imports` for the account named, so the two lists
+/// cannot drift; each shapes the rows for whoever reads them.
 pub(crate) async fn import_rows_page(
     conn: &mut SqliteConnection,
     account: i64,
     query: ListImportsQuery,
-) -> Result<Page<crate::db::imports::ImportRow>, ApiError> {
+) -> Result<Page<crate::db::imports::ListedImport>, ApiError> {
     let page = page_params(
         query.limit,
         query.offset,
@@ -1118,6 +1263,7 @@ pub(crate) async fn complete_import(
         upload_ms: body.upload_ms,
         summary_json,
         issues: body.issues.into_iter().map(issue_input).collect(),
+        notes: body.notes.into_iter().map(note_row).collect(),
     };
     let mut conn = state.db.acquire().await?;
     let row = complete_run(&mut conn, account, import_id, &args)
@@ -1131,6 +1277,7 @@ pub(crate) async fn complete_import(
     let run = import_run(&mut conn, row).await;
     drop(conn);
     crate::asset_store::sweep_after_run(&state.db, &state.cfg.paths, account).await;
+    crate::media_queue::queue_import_run(&state.db, &state.media_queue, account, import_id).await;
     run.map(Json)
 }
 
@@ -1310,19 +1457,15 @@ fn import_date_ymd(row: &crate::db::imports::ImportRow) -> String {
         )
 }
 
-/// One Import Run in full, read from its row, its issues and its contact
-/// tally. The caller has already established that the row is the account's.
+/// One Import Run in full, read from its row, its issues, its notes and its
+/// contact tally. The caller has already established that the row is the account's.
 pub(crate) async fn import_run(
     conn: &mut SqliteConnection,
     row: crate::db::imports::ImportRow,
 ) -> Result<ImportRun, ApiError> {
-    let issues = crate::db::imports::list_import_issues(conn, row.id)
+    let issues: Vec<ImportIssue> = crate::db::imports::list_import_issues(conn, row.id)
         .await
-        .map_err(ApiError::Internal)?;
-    let contacts = crate::db::import_contacts::counts(conn, row.id)
-        .await
-        .map_err(ApiError::Internal)?;
-    let issues = issues
+        .map_err(ApiError::Internal)?
         .into_iter()
         .map(|issue| ImportIssue {
             kind: issue.kind,
@@ -1331,35 +1474,20 @@ pub(crate) async fn import_run(
             reason: issue.reason,
         })
         .collect();
-
-    Ok(ImportRun {
-        id: row.id,
-        source: row.source,
-        tool: row.tool,
-        mode: row.mode,
-        dedupe: row.dedupe,
-        status: row.status,
-        started_at: row.started_at,
-        finished_at: row.finished_at,
-        message_count: row.message_count,
-        attachment_count: row.attachment_count,
-        bytes_uploaded: row.bytes_uploaded,
-        duration_ms: row.duration_ms,
-        parse_ms: row.parse_ms,
-        attachments_ms: row.attachments_ms,
-        prepare_ms: row.prepare_ms,
-        upload_ms: row.upload_ms,
-        stage: row.stage,
-        staging_dir: row.staging_dir,
-        device_id: row.device_id,
-        form: crate::db::imports::json_column(row.form_json),
-        source_fingerprint: crate::db::imports::json_column(row.source_fingerprint),
-        source_identities: crate::db::imports::json_column(row.source_identities),
-        summary: crate::db::imports::json_column(row.summary_json),
-        issues,
-        contacts_new: contacts.new_count,
-        contacts_changed: contacts.changed_count,
-    })
+    let notes = crate::db::imports::list_import_notes(conn, row.id)
+        .await
+        .map_err(ApiError::Internal)?
+        .into_iter()
+        .map(|note| ImportNote {
+            stage: note.stage,
+            item: note.item,
+            text: note.text,
+        })
+        .collect::<Vec<_>>();
+    let run = listed_import(conn, row, issues.len() as u64, notes.len() as u64)
+        .await?
+        .into();
+    Ok(ImportRun { run, issues, notes })
 }
 
 /// New stage for a running Import Run.
@@ -1445,11 +1573,13 @@ pub(crate) async fn discard_import(
     let account = resolve_import_account(&auth);
     validate_import_issues(&body.issues)?;
     let issues: Vec<_> = body.issues.into_iter().map(issue_input).collect();
+    let notes: Vec<_> = body.notes.into_iter().map(note_row).collect();
     let mut conn = state.db.acquire().await?;
-    crate::db::imports::discard_import(&mut conn, account, import_id, &issues).await?;
+    crate::db::imports::discard_import(&mut conn, account, import_id, &issues, &notes).await?;
     let run = full_import_run(&mut conn, account, import_id).await;
     drop(conn);
     crate::asset_store::sweep_after_run(&state.db, &state.cfg.paths, account).await;
+    crate::media_queue::queue_import_run(&state.db, &state.media_queue, account, import_id).await;
     run.map(Json)
 }
 

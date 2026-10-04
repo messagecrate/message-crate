@@ -85,14 +85,30 @@ contents, so the same file sent in ten messages is one asset. An asset is
 the only thing in the database addressed by a hash rather than a row number,
 because the file exists before the database does and its contents are its
 identity.
-_Avoid_: Attachment file, Blob, Media, Upload
+_Avoid_: Attachment file, Blob, Media (as a name for an Asset; Media Link
+names a credential), Upload
 
 **Preview**:
 A copy of an Asset in a format every browser can show, made by the server and
-kept beside the original, which is never changed. A Conversation shows the
-Preview of an attachment that has one; opening the attachment gives the
-original. Not every Asset has a Preview.
+kept beside the original, which is never changed. Only an Asset of a type
+browsers often cannot show (HEIC, HEVC video, AMR audio and the like) has one.
+Opening such an attachment shows its Preview; opening any other shows the
+original, and downloading always gives the original.
 _Avoid_: Derived asset, Converted file
+
+**Thumbnail**:
+A small picture of an image or video Asset, a JPEG at most 560 pixels on its
+long side and tens of kilobytes, made by the server: the image scaled down,
+or a video's first frame. A Conversation shows the Thumbnail, never the original, so a long
+conversation loads quickly.
+_Avoid_: Preview (a Preview is a full copy, not a small one)
+
+**Media Link**:
+A short-lived URL that reads one Asset, its Preview and its Thumbnail for
+the account that made it, so a picture, video or audio player in the page can load the Asset
+without the Session's header. It lasts an hour, and ends sooner when the
+Session that made it ends.
+_Avoid_: Signed URL, Share link (it is never meant to leave the page)
 
 **Import Run**:
 One attempt to bring messages from a backup into Message Crate, recorded
@@ -185,7 +201,8 @@ incomplete, and a contact whose only identities are of that type is Unknown.
 Every identity a conversation or a message uses is on a contact; one taken
 off its contact goes to a new contact with no name.
 
-Handle is the word in the code and the database for the same thing.
+Handle is the word in the database and the server code over it for the same
+thing; the conversation file and the HTTP API say identity.
 _Avoid_: Handle, Address, Number
 
 **Participant**:
@@ -426,8 +443,9 @@ app-data directory.
 _Avoid_: Folder, App Data, Home Directory
 
 **Data Directory**:
-The directory a Message Crate keeps everything it stores in: its database
-and each account's attachments. One Message Crate has one Data Directory,
+The directory a Message Crate keeps everything it stores in: its database,
+each account's attachments, and the server's log, in its `logs` directory.
+One Message Crate has one Data Directory,
 and a copy of it is a complete backup. The desktop app's is inside the
 Message Crate Directory; a Docker Message Crate's is the volume given to it.
 _Avoid_: Data Folder, DB Directory, Database Directory

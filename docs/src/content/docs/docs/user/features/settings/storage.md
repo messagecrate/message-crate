@@ -59,6 +59,10 @@ A count the run did not record shows as a dash.
 **Import Errors** appears beside the table when the run recorded problems.
 Identical errors are grouped, and selecting a row shows the full message and the files it applies to.
 
+**Notes** appears under the table when the run kept something with a caveat, such as a message filed under a name because it recorded no phone number.
+A note is not an error.
+Identical notes are grouped, and selecting a row shows the full note and the items it applies to.
+
 **Contacts** closes the record.
 It states how many contacts the run made and how many it changed, then lists each one with what the run did to it:
 

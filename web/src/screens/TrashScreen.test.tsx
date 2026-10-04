@@ -1,7 +1,6 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -18,6 +17,7 @@ import {
 } from "../lib/serverApi";
 import type { Conversation } from "../lib/types";
 import { mockedAuth, Providers } from "../test/providers";
+import { setupUser } from "../test/user";
 import TrashScreen from "./TrashScreen";
 
 vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
@@ -221,7 +221,7 @@ describe("TrashScreen", () => {
   });
 
   it("shows Restore for a selected trashed conversation and calls the restore mutation", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderAt("/trash?tsel=42");
 
     expect(await screen.findByText("Ada Lovelace")).toBeTruthy();
@@ -235,7 +235,7 @@ describe("TrashScreen", () => {
   });
 
   it("clears the selection once restore succeeds, leaving the row out of the trash view", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderAt("/trash?tsel=42");
 
     expect(await screen.findByText("Ada Lovelace")).toBeTruthy();
@@ -252,7 +252,7 @@ describe("TrashScreen", () => {
 
   it("shows an error and keeps the selection when restoring fails", async () => {
     restoreConversationMock.mockRejectedValue(new Error("Could not restore this conversation."));
-    const user = userEvent.setup();
+    const user = setupUser();
     renderAt("/trash?tsel=42");
 
     expect(await screen.findByText("Ada Lovelace")).toBeTruthy();
@@ -275,7 +275,7 @@ describe("TrashScreen", () => {
     });
 
     it("restores a contact from its row and drops it from the list", async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       // The server, modelled: restoring takes the contact out of the trash, so
       // the refetch the mutation triggers answers with an empty page.
       let trashed = [contact(7, "Grace Hopper")];
@@ -325,7 +325,7 @@ describe("TrashScreen", () => {
     it("shows an error when restoring a contact fails", async () => {
       restoreContactMock.mockRejectedValue(new Error("Could not restore this contact."));
       listContactsMock.mockResolvedValue(contactPage([contact(7, "Grace Hopper")]));
-      const user = userEvent.setup();
+      const user = setupUser();
       renderAt("/trash");
 
       await user.click(await screen.findByRole("button", { name: "Restore Grace Hopper" }));
@@ -348,7 +348,7 @@ describe("TrashScreen", () => {
 
   describe("permanent delete", () => {
     it("deletes the selected conversation after the dialog is confirmed, and clears the selection", async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderAt("/trash?tsel=42");
 
       expect(await screen.findByText("Ada Lovelace")).toBeTruthy();
@@ -374,7 +374,7 @@ describe("TrashScreen", () => {
 
     it("keeps the dialog open and shows why when deleting a conversation fails", async () => {
       deleteConversationMock.mockRejectedValue(new Error("Could not delete this conversation."));
-      const user = userEvent.setup();
+      const user = setupUser();
       renderAt("/trash?tsel=42");
 
       await screen.findByText("Ada Lovelace");
@@ -389,7 +389,7 @@ describe("TrashScreen", () => {
     });
 
     it("deletes a contact from its row after a dialog that says the messages stay", async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       let trashed = [contact(7, "Grace Hopper")];
       listContactsMock.mockImplementation(async () => contactPage(trashed));
       deleteContactMock.mockImplementation(async () => {
@@ -417,7 +417,7 @@ describe("TrashScreen", () => {
     });
 
     it("empties the trash after the dialog is confirmed", async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       listContactsMock.mockResolvedValue(contactPage([contact(7, "Grace Hopper")]));
       renderAt("/trash");
 
@@ -442,7 +442,7 @@ describe("TrashScreen", () => {
     });
 
     it("says Empty Trash empties all of Trash while a search narrows the view", async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderAt("/trash?tq=ada");
 
       await user.click(await screen.findByRole("button", { name: "Empty Trash" }));
@@ -502,10 +502,11 @@ describe("TrashScreen", () => {
     );
 
     await screen.findByText("Ada Lovelace");
-    await userEvent.click(screen.getByRole("button", { name: "Restore" }));
+    const user = setupUser();
+    await user.click(screen.getByRole("button", { name: "Restore" }));
     await screen.findByText("Restore refused.");
 
-    await userEvent.click(screen.getByRole("button", { name: "select Bob" }));
+    await user.click(screen.getByRole("button", { name: "select Bob" }));
     await screen.findByText("Bob Kahn");
     expect(screen.queryByText("Restore refused.")).toBeNull();
   });

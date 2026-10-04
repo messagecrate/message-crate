@@ -11,8 +11,10 @@ use message_ir::{
     ConversationDocument, PendingConversation, ProjectionHooks, ProjectionTally,
     pending_to_document, prepare_conversation,
 };
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// Recursively walk `root`, collecting files that match `predicate`.
 /// Skips symlinks (both files and directories). Directories are
@@ -67,34 +69,95 @@ pub struct RunResult {
     pub conversations: u64,
     /// Messages exported, as [`ExportReport::messages`] counted them.
     pub message_count: u64,
-    /// Items the run could not finish, as [`ExportReport::issues`] listed them.
-    pub issues: Vec<RunIssue>,
 }
 
 impl RunResult {
-    /// The log lines `messages` with the counts and issues of `report`.
+    /// The log lines `messages` with the counts of `report`.
     pub fn new(messages: Vec<String>, report: &ExportReport) -> Self {
         Self {
             messages,
             conversations: report.conversations,
             message_count: report.messages,
-            issues: report.issues.clone(),
         }
     }
 }
 
-/// One item a run could not finish, for the Import Run's list of issues.
-/// The fields are the ones the upload reports its own issues with.
+/// One row a run reports for its Import Run's record, sent through an
+/// [`IssueSink`] as the run records it. The fields are the ones the upload
+/// reports its own issues with.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunIssue {
-    /// `skip` when the item was left out, `error` when it failed.
+    /// What the row is: `skip` when the item was left out, `error` when it
+    /// failed, [`NOTE`] when the run did something with it worth knowing that
+    /// is not a failure. `resolved` says an earlier row with the same step
+    /// and item no longer holds, as when Media converts a file on a later try.
     pub kind: String,
     /// The step that raised it, such as `attachments`.
     pub step: String,
     /// What was affected, such as an attachment's path in the backup.
     pub item: String,
-    /// Why, in one sentence.
+    /// Why, in one sentence; for a note, what the run did.
     pub reason: String,
+}
+
+/// The [`RunIssue::kind`] of a note: something the run did with an item that
+/// is worth knowing but did not fail, such as a message it kept with a
+/// caveat. The Import Run lists notes apart from its Import Errors.
+pub const NOTE: &str = "note";
+
+/// The report counter for chats that name their person with no address,
+/// each kept under the name alone and sent as a [`NAME_ONLY_CHAT_NOTE`].
+pub const NAME_ONLY_CHAT: &str = "name_only_chat";
+
+/// The note an exporter sends for a chat that names its person with no
+/// address, which it keeps under the name alone.
+pub const NAME_ONLY_CHAT_NOTE: &str = "This chat names its person with no phone number or email \
+     address, so the conversation is kept under the name alone.";
+
+/// The reason an exporter gives for a CSV it cannot read, before the
+/// parser's own words.
+pub const CSV_NOT_READ: &str = "This CSV could not be read and was left out";
+
+/// The [`RunIssue::step`] of a row an exporter records while it reads the
+/// backup.
+const READ_STEP: &str = "parse";
+
+/// Callback that receives each [`RunIssue`] the moment a run records it.
+///
+/// The desktop app sets one and sends each row on to its window, which
+/// writes it into the Import Run's record at once: an app that closes
+/// mid-run keeps every row that had arrived. A row's `kind` says what it
+/// is, so a new kind of row travels through the same sink. A run without a
+/// sink reports its rows nowhere but the log lines it writes beside them.
+#[derive(Clone)]
+pub struct IssueSink(Arc<dyn Fn(RunIssue) + Send + Sync>);
+
+impl IssueSink {
+    /// Wrap a callback that receives one row at a time.
+    pub fn new<F>(f: F) -> Self
+    where
+        F: Fn(RunIssue) + Send + Sync + 'static,
+    {
+        Self(Arc::new(f))
+    }
+
+    /// Send one row to the callback.
+    pub fn emit(&self, issue: RunIssue) {
+        (self.0)(issue);
+    }
+}
+
+impl fmt::Debug for IssueSink {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("IssueSink")
+    }
+}
+
+/// Send `issue` to `sink` when one is set.
+pub fn emit_issue(sink: Option<&IssueSink>, issue: RunIssue) {
+    if let Some(sink) = sink {
+        sink.emit(issue);
+    }
 }
 
 /// Export run statistics: what was counted while parsing and what the
@@ -132,11 +195,13 @@ pub struct ExportReport {
     /// but did not fail, such as a choice it made between two rows. Shown
     /// apart from `errors`, so a note never reads as a failure.
     pub notes: Vec<String>,
-    /// Items the run could not finish, one row each, for the Import Run's
-    /// list of issues. Unlike `errors`, not capped: the list counts them.
-    pub issues: Vec<RunIssue>,
     /// Per-exporter extension counters keyed by name.
     pub extra: std::collections::BTreeMap<String, u64>,
+    /// Where [`ExportReport::error`], [`ExportReport::note`] and
+    /// [`ExportReport::caveat`] send each row the moment the run records it.
+    /// `None` sends the rows nowhere, and the lines in `errors` and `notes`
+    /// are all that is kept.
+    pub issues: Option<IssueSink>,
 }
 
 /// The report counter for messages an export left out because its format
@@ -149,6 +214,57 @@ pub const NOT_SMS_OR_MMS_LEFT_OUT: &str = "messages_not_sms_or_mms_left_out";
 pub const ATTACHMENTS_MISSING: &str = "attachments_missing";
 
 impl ExportReport {
+    /// An empty report that sends its rows to `issues`.
+    pub fn with_issues(issues: Option<IssueSink>) -> Self {
+        Self {
+            issues,
+            ..Self::default()
+        }
+    }
+
+    /// Record that the run could not read `item` and why: a line in
+    /// `errors`, and an Import Error sent to `issues` at once.
+    pub fn error(&mut self, item: impl Into<String>, reason: impl Into<String>) {
+        let (item, reason) = (item.into(), reason.into());
+        self.errors.push(format!("{item}: {reason}"));
+        self.send("error", item, reason);
+    }
+
+    /// Record something the run did with `item` that is worth knowing but
+    /// did not fail: a line in `notes`, and a note sent to `issues` at once.
+    pub fn note(&mut self, item: impl Into<String>, text: impl Into<String>) {
+        let (item, text) = (item.into(), text.into());
+        self.notes.push(format!("{item}: {text}"));
+        self.send(NOTE, item, text);
+    }
+
+    /// Count `by` under `counter` for one item the run kept with a caveat,
+    /// and send a note that names the item to `issues`. The log keeps the
+    /// count, which says as much as a line per item would.
+    pub fn caveat(
+        &mut self,
+        counter: &str,
+        by: u64,
+        item: impl Into<String>,
+        text: impl Into<String>,
+    ) {
+        self.bump(counter, by);
+        self.send(NOTE, item.into(), text.into());
+    }
+
+    /// Send one row about an item of the backup to `issues`.
+    fn send(&self, kind: &str, item: String, reason: String) {
+        emit_issue(
+            self.issues.as_ref(),
+            RunIssue {
+                kind: kind.into(),
+                step: READ_STEP.into(),
+                item,
+                reason,
+            },
+        );
+    }
+
     /// The run's log line for [`NOT_SMS_OR_MMS_LEFT_OUT`]: how many messages
     /// were left out of `format`, the format that holds only SMS and MMS, and
     /// why. `None` when none were left out.
@@ -361,14 +477,14 @@ pub fn export_meta(
     source: &str,
     tool: &str,
     tool_version: &str,
-    owner_handle: Option<String>,
+    owner_identity: Option<String>,
     owner_display_name: Option<String>,
 ) -> message_ir::ExportMeta {
     message_ir::ExportMeta {
         source: source.to_string(),
         tool: tool.to_string(),
         tool_version: tool_version.to_string(),
-        owner_handle,
+        owner_identity,
         owner_display_name,
     }
 }
@@ -481,7 +597,7 @@ mod tests {
         message_ir::PendingMessage {
             sort_key,
             is_from_me: false,
-            sender_handle: "+15555550100".to_string(),
+            sender_identity: "+15555550100".to_string(),
             sender_display_name: None,
             text: "hi".to_string(),
             attachments: if attachment {

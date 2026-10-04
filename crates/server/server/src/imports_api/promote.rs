@@ -27,19 +27,37 @@ pub(super) struct PromoteStats {
     pub(super) messages_appended: u64,
 }
 
+/// Why promotion stopped.
+///
+/// Promotion reads only rows staging has already accepted, so nothing it can
+/// meet is the sender's to fix: every way it stops is a fault of the server,
+/// and the type has no other kind. A refusal added here would be a new
+/// variant, and `ImportError`'s conversion would have to place it.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum PromoteError {
+    /// The database, or a count that does not add up: nothing the sender can
+    /// change.
+    #[error(transparent)]
+    Internal(anyhow::Error),
+}
+
 /// Move the account's staged rows into the production tables, wiping `wipe_sources` first
 /// in replace mode. Returns the promoted counts.
 ///
 /// `tx` is the import's one transaction, the one staging wrote into, so what
 /// staging did to contacts becomes visible only when promote succeeds too.
 /// The caller commits it.
+///
+/// # Errors
+///
+/// Returns [`PromoteError::Internal`] when a promote statement fails.
 pub(super) async fn promote_append(
     tx: &mut SqliteConnection,
     mode: ImportMode,
     account_id: i64,
     fill_content_keys: bool,
     wipe_sources: &[String],
-) -> Result<PromoteStats> {
+) -> Result<PromoteStats, PromoteError> {
     let mut promote = Promote {
         tx,
         account_id,
@@ -47,20 +65,10 @@ pub(super) async fn promote_append(
         stats: PromoteStats::default(),
         started: Instant::now(),
     };
-    if mode == ImportMode::Replace {
-        promote.wipe_sources(wipe_sources).await?;
-    }
-    promote.promote_conversations().await?;
-    promote.promote_participants().await?;
-    let messages_before = promote.promote_messages().await?;
-    let attachments_before = promote.promote_attachments().await?;
-    promote.promote_tapbacks().await?;
     promote
-        .index_fts(messages_before, attachments_before)
-        .await?;
-    if fill_content_keys {
-        promote.fill_content_keys().await?;
-    }
+        .run(wipe_sources, fill_content_keys)
+        .await
+        .map_err(PromoteError::Internal)?;
     Ok(promote.finish())
 }
 
@@ -84,6 +92,24 @@ const PROMOTE_MESSAGE_BATCH: i64 = 50_000;
 const PROMOTE_INDEX_DROP_MIN_STAGING: i64 = 5_000;
 
 impl Promote<'_> {
+    /// Every phase, in order: the source wipe in replace mode, then each
+    /// table, the search index, and the content keys when asked for.
+    async fn run(&mut self, wipe_sources: &[String], fill_content_keys: bool) -> Result<()> {
+        if self.mode == ImportMode::Replace {
+            self.wipe_sources(wipe_sources).await?;
+        }
+        self.promote_conversations().await?;
+        self.promote_participants().await?;
+        let messages_before = self.promote_messages().await?;
+        let attachments_before = self.promote_attachments().await?;
+        self.promote_tapbacks().await?;
+        self.index_fts(messages_before, attachments_before).await?;
+        if fill_content_keys {
+            self.fill_content_keys().await?;
+        }
+        Ok(())
+    }
+
     /// Log the start of a phase and return its clock.
     fn begin(msg: impl std::fmt::Display) -> Instant {
         promote_log(msg);
@@ -196,6 +222,10 @@ impl Promote<'_> {
         ));
         staging::write_message_map(self.tx, self.account_id, &msg_map).await?;
         self.done(phase, "message id map written");
+
+        let phase = Self::begin("marking messages deleted in the source app or unsent…");
+        let marked = staging::promote_deletion_marks(self.tx).await?;
+        self.done(phase, format!("deletion marks done (changed={marked})"));
         Ok(messages_before)
     }
 

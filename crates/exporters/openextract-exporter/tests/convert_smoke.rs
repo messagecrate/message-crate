@@ -13,6 +13,7 @@ fn convert(input: &Path, output: &Path) -> Result<ExportReport> {
         output_format: OutputFormat::Csv,
         cancel: None,
         resume: false,
+        issues: None,
     })
 }
 
@@ -64,7 +65,7 @@ fn convert_all_conversations_keys_the_chat_by_its_number() {
         &[
             ("text", "Hello from Sam"),
             ("direction", "incoming"),
-            ("sender_handle", "+15555550122"),
+            ("sender_identity", "+15555550122"),
             // 2020-01-01T17:00:00+00:00 in the source.
             ("timestamp_unix_ms", "1577898000000"),
         ],
@@ -94,6 +95,7 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
             output_format: OutputFormat::Jsonl,
             cancel: None,
             resume,
+            issues: None,
         })
     });
 }
@@ -122,6 +124,7 @@ fn convert_to_documents(
         output_format: OutputFormat::Json,
         cancel: None,
         resume: false,
+        issues: None,
     })
     .expect("convert");
     let documents = fs::read_dir(&out)
@@ -139,7 +142,7 @@ fn roster(doc: &message_ir::ConversationDocument) -> Vec<&str> {
     doc.conversation
         .participants
         .iter()
-        .filter_map(|p| p.handle.as_deref())
+        .filter_map(|p| p.identity.as_deref())
         .collect()
 }
 
@@ -256,7 +259,7 @@ fn an_attachments_csv_is_not_read_as_a_conversation() {
 fn senders(doc: &message_ir::ConversationDocument) -> Vec<Option<&str>> {
     doc.messages
         .iter()
-        .map(|m| m.sender_handle.as_deref().filter(|h| !h.is_empty()))
+        .map(|m| m.sender_identity.as_deref().filter(|h| !h.is_empty()))
         .collect()
 }
 
@@ -411,7 +414,7 @@ fn a_number_and_an_email_are_two_people() {
         .conversation
         .participants
         .iter()
-        .map(|p| (p.handle.as_deref(), p.handle_type))
+        .map(|p| (p.identity.as_deref(), p.identity_type))
         .collect();
     assert_eq!(
         members,

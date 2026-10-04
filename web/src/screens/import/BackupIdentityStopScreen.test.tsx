@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setupUser } from "../../test/user";
 import BackupIdentityStopScreen from "./BackupIdentityStopScreen";
 
 const noMatch = { phones: ["+15555550180"], emails: [] };
@@ -55,9 +55,10 @@ describe("BackupIdentityStopScreen", () => {
         onCancel={onCancel}
       />,
     );
-    await userEvent.click(screen.getByRole("button", { name: "Continue import" }));
+    const user = setupUser();
+    await user.click(screen.getByRole("button", { name: "Continue import" }));
     expect(onContinue).toHaveBeenCalled();
-    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onCancel).toHaveBeenCalled();
   });
 });

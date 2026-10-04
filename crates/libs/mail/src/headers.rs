@@ -27,15 +27,32 @@ pub(crate) const EXPORT_TOOL_VERSION: &str = "X-ME-Export-Tool-Version";
 pub(crate) const GROUP_TITLE: &str = "X-ME-Group-Title";
 /// Conversation roster as JSON.
 pub(crate) const PARTICIPANTS: &str = "X-ME-Participants";
-/// Sender handle.
-pub(crate) const SENDER_HANDLE: &str = "X-ME-Sender-Handle";
+/// Sender identity.
+pub(crate) const SENDER_IDENTITY: &str = "X-ME-Sender-Identity";
+/// The message's reactions as JSON, a list of `message_ir::Reaction`.
+pub(crate) const REACTIONS: &str = "X-ME-Reactions";
+/// Why the message's content is gone in the source app:
+/// `deleted_in_source_app` or `unsent`, as `message_ir::Deletion` writes it.
+pub(crate) const DELETION: &str = "X-ME-Deletion";
+/// The header an earlier Message Crate kept the Apple Messages deleted mark
+/// in. The reader refuses a mail that carries it: nothing reads it, so the
+/// mail would lose its mark.
+pub(crate) const EARLIER_IS_DELETED: &str = "X-ME-Is-Deleted";
+/// The headers an earlier Message Crate wrote for the sender and the owner,
+/// when it named each address a handle. The reader refuses a mail that
+/// carries one: nothing reads them, so the mail would lose its sender.
+pub(crate) const EARLIER_HANDLE_HEADERS: &[&str] = &[
+    "X-ME-Sender-Handle",
+    "X-ME-Owner-Handle",
+    "X-ME-Message-Owner-Handle",
+];
 /// Sender display name.
 pub(crate) const SENDER_DISPLAY_NAME: &str = "X-ME-Sender-Display-Name";
-/// The conversation's owner handle.
-pub(crate) const OWNER_HANDLE: &str = "X-ME-Owner-Handle";
-/// The owner handle this one message was sent from or received at, when the
+/// The conversation's owner identity.
+pub(crate) const OWNER_IDENTITY: &str = "X-ME-Owner-Identity";
+/// The owner identity this one message was sent from or received at, when the
 /// source records one per message (Apple Messages does).
-pub(crate) const MESSAGE_OWNER_HANDLE: &str = "X-ME-Message-Owner-Handle";
+pub(crate) const MESSAGE_OWNER_IDENTITY: &str = "X-ME-Message-Owner-Identity";
 /// Owner display name.
 pub(crate) const OWNER_DISPLAY_NAME: &str = "X-ME-Owner-Display-Name";
 /// SMS/MMS subject.
@@ -52,8 +69,6 @@ pub(crate) const THREAD_ORIGINATOR_GUID: &str = "X-ME-Thread-Originator-Guid";
 pub(crate) const THREAD_ORIGINATOR_PART: &str = "X-ME-Thread-Originator-Part";
 /// Reply count.
 pub(crate) const NUM_REPLIES: &str = "X-ME-Num-Replies";
-/// iMessage deleted flag.
-pub(crate) const IS_DELETED: &str = "X-ME-Is-Deleted";
 /// Send effect name.
 pub(crate) const SEND_EFFECT: &str = "X-ME-Send-Effect";
 /// Shared location payload.
@@ -66,8 +81,10 @@ pub(crate) const READ_RECEIPT: &str = "X-ME-Read-Receipt";
 pub(crate) const PARTS: &str = "X-ME-Parts";
 /// Edit history as JSON.
 pub(crate) const EDITS: &str = "X-ME-Edits";
-/// Tapbacks on this message as JSON.
-pub(crate) const TAPBACKS: &str = "X-ME-Tapbacks";
+/// The header an earlier Message Crate kept Apple Messages reactions in.
+/// The reader refuses a mail that carries it: nothing reads it, so the mail
+/// would lose its reactions.
+pub(crate) const EARLIER_TAPBACKS: &str = "X-ME-Tapbacks";
 /// App/balloon payload as JSON.
 pub(crate) const APP: &str = "X-ME-App";
 /// Balloon bundle id.

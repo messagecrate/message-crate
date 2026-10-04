@@ -52,6 +52,7 @@ async fn complete_import_persists_timings_and_issues() {
                 item: "photo.heic".into(),
                 reason: "convert failed".into(),
             }],
+            notes: Vec::new(),
         },
     )
     .await
@@ -105,6 +106,7 @@ async fn complete_import_rejects_invalid_issue_kind() {
                 item: "archive.zip".into(),
                 reason: "not allowed".into(),
             }],
+            notes: Vec::new(),
         },
     )
     .await
@@ -198,6 +200,7 @@ async fn list_import_issues_returns_them_oldest_first() {
                     reason: "upload failed".into(),
                 },
             ],
+            notes: Vec::new(),
         },
     )
     .await
@@ -242,6 +245,7 @@ async fn list_imports_includes_duration_ms() {
             upload_ms: None,
             summary_json: None,
             issues: vec![],
+            notes: Vec::new(),
         },
     )
     .await
@@ -252,7 +256,7 @@ async fn list_imports_includes_duration_ms() {
             .await
             .unwrap();
     assert_eq!((imports.len(), total), (1, 1));
-    assert_eq!(imports[0].duration_ms, Some(48_000));
+    assert_eq!(imports[0].row.duration_ms, Some(48_000));
     let (running, total) = list_imports_page(
         &mut conn,
         ACCOUNT_ID,
@@ -317,7 +321,7 @@ async fn the_list_sorted_by_start_ascending_puts_the_oldest_run_first() {
         .await
         .unwrap();
 
-    let listed: Vec<i64> = imports.iter().map(|run| run.id).collect();
+    let listed: Vec<i64> = imports.iter().map(|run| run.row.id).collect();
     assert_eq!(listed, started);
 }
 
@@ -327,7 +331,7 @@ async fn running_import(conn: &mut SqliteConnection, account: i64) -> Option<Imp
     let (items, _) = list_imports_page(conn, account, Some("running"), &DEFAULT_IMPORT_SORT, 1, 0)
         .await
         .unwrap();
-    items.into_iter().next()
+    items.into_iter().next().map(|listed| listed.row)
 }
 
 #[tokio::test]
@@ -385,7 +389,9 @@ async fn stage_advances_and_discard_frees_the_slot() {
     let active = running_import(&mut conn, account).await.unwrap();
     assert_eq!(active.stage, Some(ImportStage::Upload));
 
-    discard_import(&mut conn, account, id, &[]).await.unwrap();
+    discard_import(&mut conn, account, id, &[], &[])
+        .await
+        .unwrap();
     assert!(
         running_import(&mut conn, account).await.is_none(),
         "a discarded run is no longer running"
@@ -523,7 +529,7 @@ async fn complete_import_refuses_a_run_that_has_finished() {
     let discarded = start_import(&mut conn, &default_start_args(ACCOUNT_ID))
         .await
         .unwrap();
-    discard_import(&mut conn, ACCOUNT_ID, discarded, &[])
+    discard_import(&mut conn, ACCOUNT_ID, discarded, &[], &[])
         .await
         .unwrap();
     let err = complete_import(&mut conn, ACCOUNT_ID, discarded, &with_issue())
@@ -578,10 +584,12 @@ async fn a_discard_that_lands_after_the_run_completed_is_refused() {
     let mut other_conn = pool.acquire().await.unwrap();
     let mut other = crate::db::begin_write(&mut other_conn).await.unwrap();
     complete_elsewhere(&mut other, id).await;
-    let err =
-        crate::db::write_tx::commit_during(other, discard_import(&mut conn, ACCOUNT_ID, id, &[]))
-            .await
-            .unwrap_err();
+    let err = crate::db::write_tx::commit_during(
+        other,
+        discard_import(&mut conn, ACCOUNT_ID, id, &[], &[]),
+    )
+    .await
+    .unwrap_err();
 
     assert!(
         matches!(err, ImportLookupError::InvalidRun { .. }),

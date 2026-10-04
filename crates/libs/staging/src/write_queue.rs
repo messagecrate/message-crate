@@ -76,7 +76,9 @@ pub struct UnitAttachment {
     pub timestamp_unix_ms: i64,
     /// Size from the backup when known; byte totals grow as unhinted files load.
     /// Always `None` for a `Missing` source, which is never copied, even when
-    /// the backup knew its size.
+    /// the backup knew its size. [`ConversationUnit::from_doc`] makes an
+    /// empty `Bytes` source `Missing`, and [`drain_write_queue`] does the same
+    /// for a `Path` with no file there, before either sums a total.
     pub size_hint: Option<u64>,
 }
 
@@ -107,14 +109,7 @@ impl ConversationUnit {
         for (message_index, msg) in doc.messages.iter_mut().enumerate() {
             let timestamp_unix_ms = msg.timestamp_unix_ms;
             for (attachment_index, att) in msg.attachments.iter_mut().enumerate() {
-                let (source, size_hint) = source_for(flat, att);
-                // An attachment with no file is never copied, so its hint
-                // counts toward no byte total: not the progress, not the
-                // disk check.
-                let size_hint = match source {
-                    AttachmentSource::Missing => None,
-                    _ => size_hint,
-                };
+                let (source, size_hint) = counted_source(source_for(flat, att));
                 attachments.push(UnitAttachment {
                     message_index,
                     attachment_index,
@@ -346,6 +341,92 @@ pub fn drain_write_queue_with_loader(
     Ok(report)
 }
 
+/// Make every `Path` source with no file there `Missing`, with no size
+/// hint, so the byte totals and the disk check leave it out from the start
+/// rather than drop when the run reaches it (#1581). Each one is logged as
+/// the read would have logged it. With media turned off nothing is read,
+/// so the caller skips this. A unit a resumed run will skip, because its
+/// conversation file is already written to the end, reads nothing either,
+/// so its paths are not checked or logged again.
+///
+/// Only [`drain_write_queue`] calls this: its loader reads a `Path` from
+/// disk. A caller's own loader in [`drain_write_queue_with_loader`] decides
+/// what a path means (an encrypted iPhone backup's path names a file inside
+/// the backup, not on disk), so those paths are left to it.
+fn leave_out_files_that_are_gone(
+    output_dir: &Path,
+    units: &mut [ConversationUnit],
+    resume: bool,
+    log: Option<&LogSink>,
+) {
+    for unit in units {
+        if written_by_an_earlier_run(output_dir, &unit.doc, resume) {
+            continue;
+        }
+        for attachment in &mut unit.attachments {
+            let source = std::mem::take(&mut attachment.source);
+            (attachment.source, attachment.size_hint) =
+                missing_if_no_file((source, attachment.size_hint), log);
+        }
+    }
+}
+
+/// One attachment's source and size hint as a run counts them: a source
+/// known before the run to have no file, `Missing` or bytes that are empty,
+/// becomes `Missing` with no hint. An attachment with no file is never
+/// copied, so its hint counts toward no byte total, not the progress and
+/// not the disk check, and saying so before any total is summed keeps the
+/// total from dropping when the run reaches it. Both the write queue and
+/// the sink arm of [`ExportWriter::finish`](crate::ExportWriter::finish)
+/// count sources this way.
+pub(crate) fn counted_source(
+    (source, size_hint): (AttachmentSource, Option<u64>),
+) -> (AttachmentSource, Option<u64>) {
+    match source {
+        AttachmentSource::Bytes(bytes) if bytes.is_empty() => (AttachmentSource::Missing, None),
+        AttachmentSource::Missing => (AttachmentSource::Missing, None),
+        found => (found, size_hint),
+    }
+}
+
+/// One attachment's source and size hint, with a `Path` that has no file
+/// there made `Missing` with no hint and logged as the read would have
+/// logged it (#1581). Only for a loader that reads a path from disk, as
+/// [`load_attachment_source`] does.
+pub(crate) fn missing_if_no_file(
+    (source, size_hint): (AttachmentSource, Option<u64>),
+    log: Option<&LogSink>,
+) -> (AttachmentSource, Option<u64>) {
+    match source {
+        AttachmentSource::Path(path) if !path.is_file() => {
+            emit_log(log, unreadable_attachment_line(&path, "no file there"));
+            (AttachmentSource::Missing, None)
+        }
+        found => (found, size_hint),
+    }
+}
+
+/// The log line for an attachment file that could not be read, naming the
+/// file and why.
+fn unreadable_attachment_line(path: &Path, why: impl std::fmt::Display) -> String {
+    format!(
+        "warning: attachment {} could not be read: {why}",
+        path.display()
+    )
+}
+
+/// The conversation file a unit is written to.
+fn conversation_file(output_dir: &Path, doc: &ConversationDocument) -> PathBuf {
+    output_dir.join(format!("{}.jsonl", doc.filename_stem()))
+}
+
+/// Whether a resumed run skips this conversation: an earlier run wrote its
+/// file to the end, attachments and all. An empty or cut-off file left by a
+/// power loss is written again.
+fn written_by_an_earlier_run(output_dir: &Path, doc: &ConversationDocument, resume: bool) -> bool {
+    resume && is_complete_file(&conversation_file(output_dir, doc))
+}
+
 /// Give every unit a file name no other unit in the run has; see
 /// [`give_each_document_its_own_file`].
 fn give_each_unit_its_own_file(units: &mut [ConversationUnit]) -> Result<()> {
@@ -395,6 +476,9 @@ pub fn drain_write_queue(
     cancel: Option<&CancelFlag>,
 ) -> Result<WriteQueueReport> {
     give_each_unit_its_own_file(&mut units)?;
+    if options.media != MediaMode::Disabled {
+        leave_out_files_that_are_gone(output_dir, &mut units, options.resume, log);
+    }
     check_units_headroom(output_dir, &units, options.media)?;
 
     let attachments_dir = output_dir.join("attachments");
@@ -448,17 +532,13 @@ pub fn drain_write_queue(
                         // failing disk) reads as a run's worth of unexplained
                         // missing attachments.
                         let named = match source {
-                            AttachmentSource::Path(path) => Some(path.display().to_string()),
+                            AttachmentSource::Path(path) => Some(path.clone()),
                             _ => None,
                         };
-                        load_attachment_source(source).map_err(|e| {
+                        load_attachment_source(source).inspect_err(|e| {
                             if let Some(path) = named {
-                                emit_log(
-                                    log,
-                                    format!("warning: attachment {path} could not be read: {e}"),
-                                );
+                                emit_log(log, unreadable_attachment_line(&path, e));
                             }
-                            e
                         })
                     };
                     match write_one_unit(
@@ -545,7 +625,7 @@ fn run_media_post_pass(
     };
     // The desktop never runs this branch (it stages with Clone and converts
     // on its own after the gate); the events are for any other consumer.
-    let report = transcode_staged(output_dir, &transcode_options, cancel, &mut |p| {
+    let report = transcode_staged(output_dir, &transcode_options, cancel, None, &mut |p| {
         let due = emit_progress(
             progress,
             ProgressEvent::Media {
@@ -675,10 +755,8 @@ fn write_one_unit(
     let attachment_count = attachments.len();
     let hint_sum: u64 = attachments.iter().filter_map(|a| a.size_hint).sum();
 
-    let path = output_dir.join(format!("{}.jsonl", doc.filename_stem()));
-    if options.resume && is_complete_file(&path) {
-        // Already written to the end by an earlier run, attachments and all;
-        // an empty or cut-off file left by a power loss is written again.
+    let path = conversation_file(output_dir, &doc);
+    if written_by_an_earlier_run(output_dir, &doc, options.resume) {
         // Count its attachments and their bytes as done — progress describes
         // the whole import, not just this run's share of it — and load
         // nothing.

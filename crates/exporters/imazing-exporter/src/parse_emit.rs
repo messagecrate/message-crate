@@ -28,8 +28,8 @@ pub(super) struct Session {
     /// The session name, or empty when the session name is the chat's address.
     pub(super) contact_name: String,
     /// Members a Messages group's session name lists by a name no row pairs
-    /// with an address.
-    pub(super) unresolved_roster_labels: u64,
+    /// with an address, by that name.
+    pub(super) unresolved_roster_labels: Vec<String>,
     /// For a group, the digest of each row ([`row_digest`]), earliest first.
     /// The first one is the group's vendor id; the rest tell apart two groups
     /// whose earliest rows are the same ([`group_vendor_id`]).
@@ -74,7 +74,7 @@ pub(super) fn session_key(kind: SourceKind, session: &str, rows: &[&RawRow]) -> 
             session.to_string()
         },
         key,
-        unresolved_roster_labels: 0,
+        unresolved_roster_labels: Vec::new(),
         row_digests: Vec::new(),
     }
 }
@@ -218,13 +218,17 @@ fn one_to_one_handle(session: &str, rows: &[&RawRow]) -> Option<String> {
 /// Returns the members with an address sorted by handle, then the members
 /// with a name only in roster order, and how many listed names had no
 /// address.
-fn group_members(roster: bool, session: &str, rows: &[&RawRow]) -> (Vec<IrParticipant>, u64) {
+fn group_members(
+    roster: bool,
+    session: &str,
+    rows: &[&RawRow],
+) -> (Vec<IrParticipant>, Vec<String>) {
     let mut members: BTreeMap<String, IrParticipant> = BTreeMap::new();
     let mut add = |handle: String, name: &str, handle_type: HandleType| {
         let member = members.entry(handle.clone()).or_insert(IrParticipant {
-            handle: Some(handle),
+            identity: Some(handle),
             display_name: None,
-            handle_type: Some(handle_type),
+            identity_type: Some(handle_type),
         });
         let name = name.trim();
         if member.display_name.is_none() && !name.is_empty() {
@@ -252,7 +256,7 @@ fn group_members(roster: bool, session: &str, rows: &[&RawRow]) -> (Vec<IrPartic
         add(phone, "", HandleType::Phone);
     }
 
-    let mut unresolved = 0u64;
+    let mut unresolved = Vec::new();
     let mut named_only: Vec<IrParticipant> = Vec::new();
     if roster {
         for label in session.split(" & ").map(str::trim) {
@@ -275,11 +279,11 @@ fn group_members(roster: bool, session: &str, rows: &[&RawRow]) -> (Vec<IrPartic
                         .is_some_and(|name| name.eq_ignore_ascii_case(label))
                 });
                 if !already {
-                    unresolved += 1;
+                    unresolved.push(label.to_string());
                     named_only.push(IrParticipant {
-                        handle: None,
+                        identity: None,
                         display_name: Some(label.to_string()),
-                        handle_type: None,
+                        identity_type: None,
                     });
                 }
             }

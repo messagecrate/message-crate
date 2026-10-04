@@ -61,7 +61,7 @@ Do **not** pack many SMS into one MIME body and then hand the attachments out in
 | Pitfall | Instead |
 |---------|---------|
 | Multi-message archive EML + FCFS attachment leftover assignment | One `.eml` per message; each MIME part belongs to that message only |
-| `*@sms-backup-plus.local` as sole identity | Synthetic addresses with E.164 in the local-part **and** `X-ME-*` handles |
+| `*@sms-backup-plus.local` as sole identity | Synthetic addresses with E.164 in the local-part **and** `X-ME-*` identities |
 | Chat keyed to owner when address is `owner~peer` | First non-owner peer / full roster in `X-ME-Participants` |
 | Archive body times as ambiguous local wall-clock | `Date` in UTC (RFC 5322) + `X-ME-Timestamp-Unix-Ms` |
 | Opaque Android type ints alone | Clear `X-ME-Direction` / `X-ME-Message-Kind` (+ optional `X-ME-Android-Type`) |
@@ -77,7 +77,7 @@ Do **not** use the `X-smssync-*` header namespace. This format is not Plus-compa
 
 | Header | Rule |
 |--------|------|
-| `From` / `To` / `Cc` | Browse mapping (below); synthetic `+E164@sms.local`, handle, or `…@chat.local` |
+| `From` / `To` / `Cc` | Browse mapping (below); synthetic `+E164@sms.local`, identity, or `…@chat.local` |
 | `Date` | Message timestamp as RFC 5322 **UTC** |
 | `Subject` | `Message with {peer name \| group title \| chat id}` — **not** message-body preview; SMS subject stays in `X-ME-Subject` |
 | `Message-ID` | Stable, unique, deterministic (see below) |
@@ -88,7 +88,7 @@ Do **not** use the `X-smssync-*` header namespace. This format is not Plus-compa
 ### Synthetic addresses
 
 - Phone: `+15555550119@sms.local` (E.164 in local-part; `+` allowed in addr-spec via quoting if required by the builder).
-- Email / Apple handle: `user=example.com@handle.local` or a documented safe encoding of the raw handle — never name-only as the sole identifier.
+- Email / Apple identity: `user=example.com@identity.local` or a documented safe encoding of the raw identity — never name-only as the sole identifier.
 - Display name may appear in the phrase (`Alice <+1555…@sms.local>`).
 
 ### Message-ID
@@ -109,7 +109,7 @@ Browse-oriented so mail-client **Correspondents** / Subject columns stay readabl
 
 **Group outgoing:** `From` = `Me <owner>`; `To` = same conversation address; roster in `X-ME-Participants`.
 
-Empty owner handle falls back to `me@sms.local` with display name `Me`. Outgoing rows set `X-ME-Sender-*` from owner identity (same as common message / CSV). Owner is always mirrored in `X-ME-Owner-*` when known.
+Empty owner identity falls back to `me@sms.local` with display name `Me`. Outgoing rows set `X-ME-Sender-*` from owner identity (same as common message / CSV). Owner is always mirrored in `X-ME-Owner-*` when known.
 
 Reverse import (EML/MBOX → common-message JSON) is available via [`message-ir-format`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/) (`read_conversation_eml_dir` / `read_conversation_mbox`).
 
@@ -117,18 +117,20 @@ Reverse import (EML/MBOX → common-message JSON) is available via [`message-ir-
 
 Prefix: **`X-ME-`** (Message Crate). JSON header values are compact single-line JSON.
 
+A mail an earlier Message Crate wrote names its addresses with `X-ME-Sender-Handle`, `X-ME-Owner-Handle` or `X-ME-Message-Owner-Handle`. The reader refuses such a mail, naming the header, rather than read it with no sender: export the backup again. A mail that keeps its reactions in `X-ME-Tapbacks`, as an earlier Message Crate wrote them, is refused the same way rather than read with its reactions gone, and so is an `X-ME-Reactions` that does not read. A mail that keeps the deleted mark in `X-ME-Is-Deleted`, as an earlier Message Crate wrote it, is refused the same way rather than read with its mark gone, and so is an `X-ME-Deletion` that names neither mark. An `X-ME-Participants` roster that does not read, such as one whose entries say `handle`, is refused too, with the same advice, rather than read as nobody. The writer escapes `=?` in every JSON header as `=\u003f`, so a name that looks like an RFC 2047 encoded word is not decoded on the way back.
+
 | Header | Values | Notes |
 |--------|----------------|-------|
 | `X-ME-Chat-Identifier` | string | Same role as CSV `chat_identifier` |
 | `X-ME-Conversation-Type` | `individual` \| `group` | |
 | `X-ME-Group-Title` | string | Empty/absent for 1:1 |
-| `X-ME-Participants` | JSON `[{ "handle", "display_name" }]` | **Required for groups**; E.164 preferred for phones |
+| `X-ME-Participants` | JSON `[{ "identity", "display_name" }]` | **Required for groups**; E.164 preferred for phones |
 | `X-ME-Direction` | `incoming` \| `outgoing` | |
-| `X-ME-Sender-Handle` | string | Peer or owner (outgoing); omit when unknown |
+| `X-ME-Sender-Identity` | string | Peer or owner (outgoing); omit when unknown |
 | `X-ME-Sender-Display-Name` | string | |
-| `X-ME-Owner-Handle` | string | Export owner handle |
+| `X-ME-Owner-Identity` | string | Export owner identity |
 | `X-ME-Owner-Display-Name` | string | Export owner display (caller-id / `"Me"`) |
-| `X-ME-Message-Owner-Handle` | string | The owner's own address on this message (CSV `message_owner_handle`); omitted when the source records no owner per message |
+| `X-ME-Message-Owner-Identity` | string | The owner's own address on this message (CSV `message_owner_identity`); omitted when the source records no owner per message |
 | `X-ME-Service` | lowercase common-message vocabulary preferred (`sms` / `imessage` / …) | Older exports may use `SMS` / `iMessage` |
 | `X-ME-Message-Kind` | see taxonomy below | |
 | `X-ME-Timestamp-Unix-Ms` | integer string | Authoritative epoch ms (UTC) |
@@ -140,6 +142,8 @@ Prefix: **`X-ME-`** (Message Crate). JSON header values are compact single-line 
 | `X-ME-Android-Type` | integer string | Optional; SMS `type` / MMS `msg_box` |
 | `X-ME-Source-Fields` | JSON | Optional full-fidelity bag (CSV `source_fields_json` / PDU extras) |
 | `X-ME-Attachment-Meta` | JSON array | Parallel to MIME attachment parts (see Attachments) |
+| `X-ME-Reactions` | JSON array | The message's `reactions`, each a `Reaction` (see Reactions); omitted when it has none |
+| `X-ME-Deletion` | `deleted_in_source_app` \| `unsent` | The message's `deletion` mark; omitted when it has neither |
 
 ### Message-kind taxonomy (shared)
 
@@ -158,9 +162,9 @@ SMS writers use `sms` / `mms` only. Absence of iMessage-only headers means “no
 
 ## Group MMS rules
 
-1. Emit `X-ME-Participants` with every non-empty handle (sorted stably for hashing if needed).
+1. Emit `X-ME-Participants` with every non-empty identity (sorted stably for hashing if needed).
 2. Never drop the roster because `From`/`To` already list some addresses.
-3. Incoming sender must be the real sender handle when known (not an arbitrary group member).
+3. Incoming sender must be the real sender identity when known (not an arbitrary group member).
 4. Untitled groups: stem from sorted participant phones (same as CSV); title may still be empty.
 
 ## Attachments
@@ -222,11 +226,15 @@ Align with the unified CSV inventory in [`message_ir_format::CSV_HEADERS`](https
 
 Ordinary SMS leaves reply headers unset (no fake threads).
 
-### Tapbacks / reactions
+### Reactions
 
-Apple stores tapbacks as separate `message` rows (`associated_message_type` 2000–2005 add, 3000–3005 remove, plus sticker associations).
+A message's reactions travel on the message itself, in `X-ME-Reactions`: the common message's `reactions` list, one shape for every source, each entry naming the person who reacted. Removed reactions are already left out.
 
-**Preferred: one `.eml` per tapback.**
+```http title="X-ME-Reactions"
+X-ME-Reactions: [{"part_index":0,"kind":"loved","is_from_me":false,"reactor_identity":"+1555…","reactor_display_name":"Alex"}]
+```
+
+Apple stores tapbacks as separate `message` rows (`associated_message_type` 2000–2005 add, 3000–3005 remove, plus sticker associations), and each is written as a `.eml` of its own as well:
 
 | Header | Values |
 |--------|--------|
@@ -242,13 +250,7 @@ Body `text/plain`: short human line (`Loved a message`, `😂 reacted`) so clien
 
 Sticker tapback: include sticker image MIME part + `X-ME-Attachment-Meta` with `is_sticker: true`.
 
-**Optional aggregate on parent** (translator cache only):
-
-```http title="X-ME-Tapbacks"
-X-ME-Tapbacks: [{"part_index":0,"kind":"loved","is_from_me":false,"reactor_handle":"+1555…","reactor_display_name":"Alex"}]
-```
-
-Readers SHOULD prefer per-message tapback EMLs. Do **not** store reactions only as free text in the parent body.
+Do **not** store reactions only as free text in the parent body: no reader parses the body for them, so they could not be read back.
 
 ### Multipart bubbles (`X-ME-Parts`)
 
@@ -264,7 +266,7 @@ MIME: `multipart/mixed` (or `related`) with flattened `text/plain` first, then a
 
 - Body = **current** visible text (empty if unsent).
 - `X-ME-Edits`: JSON array aligned with CSV `EditEventRecord`: `{ part_index, status, text, timestamp?, timestamp_utc?, guid? }` with `status` ∈ `original` \| `edited` \| `unsent`.
-- `X-ME-Is-Deleted: true` when tombstoned/deleted in DB.
+- `X-ME-Deletion: deleted_in_source_app` for a message deleted in Messages, `X-ME-Deletion: unsent` for one unsent whole.
 - Do not invent separate “edit event” EMLs.
 
 ### Send effects
@@ -327,7 +329,7 @@ Normal sticker sends: image MIME part + `X-ME-Attachment-Meta` (`is_sticker`, `s
 | `timestamp` / `timestamp_utc` / `timestamp_unix_ms` | `Date` + `X-ME-Timestamp-Unix-Ms` |
 | `direction` | `X-ME-Direction` |
 | `service` | `X-ME-Service` |
-| `sender_handle` / `sender_display_name` | headers + `From` phrase |
+| `sender_identity` / `sender_display_name` | headers + `From` phrase |
 | `subject` | `Subject` / `X-ME-Subject` |
 | `text` | `text/plain` body |
 | `attachments_json` | MIME parts + `X-ME-Attachment-Meta` |
@@ -335,10 +337,11 @@ Normal sticker sends: image MIME part + `X-ME-Attachment-Meta` (`is_sticker`, `s
 | `android_type` | `X-ME-Android-Type` |
 | `source_fields_json` / PDU extras | `X-ME-Source-Fields` |
 | `export_*` | `X-ME-Export-*` |
-| `owner_handle` / `owner_display_name` | `X-ME-Owner-*` |
-| `message_owner_handle` | `X-ME-Message-Owner-Handle` |
+| `owner_identity` / `owner_display_name` | `X-ME-Owner-*` |
+| `message_owner_identity` | `X-ME-Message-Owner-Identity` |
 | `participants_json` (iMessage) | `X-ME-Participants` |
-| `tapbacks_json` | tapback EMLs (+ optional `X-ME-Tapbacks`) |
+| `reactions_json` | `X-ME-Reactions` |
+| `deletion` | `X-ME-Deletion` |
 | `parts_json` / `edits_json` / `app_json` | `X-ME-Parts` / `X-ME-Edits` / `X-ME-App` |
 | `send_effect` | `X-ME-Send-Effect` |
 | `thread_originator_*` | `In-Reply-To` + `X-ME-Thread-*` |

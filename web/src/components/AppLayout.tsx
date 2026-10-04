@@ -12,13 +12,14 @@ import {
   TAG_PARAM,
   VIEW_PARAM,
 } from "../lib/resultsView";
+import { useListQuery } from "../lib/searchFields";
 import { trashed } from "../lib/searchQuery";
 import type { Conversation } from "../lib/types";
 import { useContactGroups } from "../lib/useContactGroups";
 import { useMessageTags } from "../lib/useMessageTags";
 import ContactList from "../screens/ContactList";
 import ConversationList from "../screens/ConversationList";
-import AppHeader from "./AppHeader";
+import AppHeader, { type HeaderSearch } from "./AppHeader";
 import CheckedContactsPanel from "./CheckedContactsPanel";
 import { ColumnResizeProvider } from "./ColumnResizeContext";
 import ContactDrawer from "./ContactDrawer";
@@ -153,15 +154,20 @@ export default function AppLayout() {
 
   const trashMode = mode === "trash";
   const isFullScreen = mode === "import" || mode === "export" || mode === "settings";
-  // The full-screen routes have no list to search. Export carries `?q=` for
-  // its own scope box, which is not a header search.
-  const searchQuery = isFullScreen
-    ? ""
+  // The header search searches the list of the section the person is in.
+  // The full-screen routes have no list, so the header offers no search there:
+  // Export carries `?q=` for its own scope box, which typing in the header
+  // must never change.
+  const headerSearch: HeaderSearch | null = isFullScreen
+    ? null
     : trashMode
-      ? trashSearch
+      ? { target: "trash", query: trashSearch }
       : contactsMode
-        ? contactSearch
-        : conversationSearch;
+        ? { target: "contacts", query: contactSearch }
+        : {
+            target: resultsView(searchParams) === "messages" ? "messages" : "conversations",
+            query: conversationSearch,
+          };
 
   // `replace: true` is inherited from every other caller here and is
   // deliberate: typing in a search box must not fill the history with one
@@ -280,23 +286,22 @@ export default function AppLayout() {
   // What Export starts from: the conversation list's query, tag filter
   // included, and nothing when the person is on contacts, Trash, or a
   // full-screen route. A tag page with no list has nothing to export.
-  const browseQuery = mode === "conversations" && tagPage === null ? threadListQuery : "";
+  // Export runs on the Conversations list, so it leaves out the words the
+  // Conversations list leaves out (#1561). Until the lists' words are known,
+  // nothing is known to leave out, and Export starts from the search as typed.
+  const exportQuery = useListQuery(threadListQuery, "conversations", "messages");
+  const browseQuery =
+    mode === "conversations" && tagPage === null
+      ? exportQuery.ready
+        ? exportQuery.listQuery
+        : threadListQuery
+      : "";
 
   return (
     <RightToolbarProvider>
       <div className="flex h-screen flex-col bg-bg font-sans text-text">
         <AppHeader
-          searchQuery={searchQuery}
-          searchTarget={
-            trashMode
-              ? "trash"
-              : contactsMode
-                ? "contacts"
-                : resultsView(searchParams) === "messages"
-                  ? "messages"
-                  : "conversations"
-          }
-          fullScreen={isFullScreen}
+          search={headerSearch}
           onSearchChange={handleSearchChange}
           onSearch={handleSearch}
         />

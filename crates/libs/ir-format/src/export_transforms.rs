@@ -1,18 +1,17 @@
 //! Obfuscation, and dropping attachment paths when media is disabled, applied
 //! before writing files.
 
+use crate::placeholders::materialize_placeholders;
 use anyhow::Result;
 use media::MediaMode;
 use message_crate_core::{ExportTransforms, emit_log};
 use message_ir::{
     ConversationDocument, IrAttachment, IrDirection, IrImessage, IrParticipant, MessageGuid,
-    MessageIdentity,
+    MessageIdentity, Reaction,
 };
 use obfuscate::{
-    Obfuscator, classify_attachment, materialize_placeholders, placeholder_rel_path,
-    resolve_obfuscator_with_log,
+    Obfuscator, classify_attachment, placeholder_rel_path, resolve_obfuscator_with_log,
 };
-use serde_json::{Map, Value};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -83,17 +82,17 @@ fn obfuscate_document(doc: &mut ConversationDocument, anon: &mut Obfuscator) -> 
     for p in &mut doc.conversation.participants {
         obfuscate_participant(p, anon);
     }
-    if let Some(h) = doc.export.owner_handle.as_mut() {
+    if let Some(h) = doc.export.owner_identity.as_mut() {
         *h = anon.obfuscate_handle(h);
     }
     if let Some(n) = doc.export.owner_display_name.as_mut() {
         *n = anon.obfuscate_display_name(n);
     }
     for msg in &mut doc.messages {
-        if let Some(h) = msg.sender_handle.as_mut() {
+        if let Some(h) = msg.sender_identity.as_mut() {
             *h = anon.obfuscate_handle(h);
         }
-        if let Some(h) = msg.owner_handle.as_mut() {
+        if let Some(h) = msg.owner_identity.as_mut() {
             *h = anon.obfuscate_handle(h);
         }
         if let Some(n) = msg.sender_display_name.as_mut() {
@@ -107,6 +106,11 @@ fn obfuscate_document(doc: &mut ConversationDocument, anon: &mut Obfuscator) -> 
             *s = anon.obfuscate_text(s);
         }
         msg.text = anon.obfuscate_text(&msg.text);
+        // Reactions are imported, so they stay with only the reactor
+        // rewritten.
+        for reaction in &mut msg.reactions {
+            obfuscate_reactor(reaction, anon);
+        }
         if let Some(im) = msg.imessage.as_mut() {
             obfuscate_imessage(im, anon);
         }
@@ -145,7 +149,7 @@ fn obfuscate_guids(doc: &mut ConversationDocument, anon: &Obfuscator) -> Renamed
         msg.guid = MessageGuid::new(&MessageIdentity {
             chat: &chat,
             is_from_me: msg.direction == IrDirection::Outgoing,
-            sender: msg.sender_handle.as_deref(),
+            sender: msg.sender_identity.as_deref(),
             timestamp_unix_ms: msg.timestamp_unix_ms,
             text: &msg.text,
             attachment_digests: &digests,
@@ -169,7 +173,7 @@ fn reply_and_tapback_targets(doc: &mut ConversationDocument) -> impl Iterator<It
         .flatten()
 }
 
-/// Obfuscate the iMessage extension's announcement and tapback reactors.
+/// Obfuscate the iMessage extension's announcement.
 ///
 /// `parts` repeats the body, `edits` holds its earlier wording, `app` holds
 /// link previews, and `shared_location` holds a place. None of them is read
@@ -182,41 +186,24 @@ fn obfuscate_imessage(im: &mut IrImessage, anon: &mut Obfuscator) {
     im.edits = None;
     im.app = None;
     im.shared_location = None;
-    // Tapbacks are imported, so they stay with only the reactor rewritten.
-    // Every exporter writes them as a list of objects. Anything else goes.
-    match im.tapbacks.as_mut() {
-        Some(Value::Array(tapbacks)) => {
-            tapbacks.retain_mut(|tapback| match tapback {
-                Value::Object(fields) => {
-                    obfuscate_tapback(fields, anon);
-                    true
-                }
-                _ => false,
-            });
-        }
-        _ => im.tapbacks = None,
+}
+
+/// Obfuscate who reacted, and keep what the reaction was. The owner's own
+/// name, `Me`, stays as it is.
+fn obfuscate_reactor(reaction: &mut Reaction, anon: &mut Obfuscator) {
+    if let Some(identity) = reaction.reactor_identity.as_mut() {
+        *identity = anon.obfuscate_handle(identity);
+    }
+    if let Some(name) = reaction.reactor_display_name.as_mut()
+        && name != "Me"
+    {
+        *name = anon.obfuscate_display_name(name);
     }
 }
 
-/// Obfuscate who reacted, keep what the reaction was, and drop any other key.
-fn obfuscate_tapback(fields: &mut Map<String, Value>, anon: &mut Obfuscator) {
-    fields.retain(|key, value| {
-        match (key.as_str(), value) {
-            ("part_index" | "kind" | "emoji" | "is_from_me", _) => {}
-            ("reactor_handle", Value::String(h)) => *h = anon.obfuscate_handle(h),
-            ("reactor_display_name", Value::String(n)) if n != "Me" => {
-                *n = anon.obfuscate_display_name(n);
-            }
-            ("reactor_display_name", Value::String(_)) => {}
-            _ => return false,
-        }
-        true
-    });
-}
-
-/// Obfuscate one participant's handle and display name.
+/// Obfuscate one participant's identity and display name.
 fn obfuscate_participant(p: &mut IrParticipant, anon: &mut Obfuscator) {
-    if let Some(handle) = p.handle.as_mut() {
+    if let Some(handle) = p.identity.as_mut() {
         *handle = anon.obfuscate_handle(handle);
     }
     if let Some(n) = p.display_name.as_mut() {

@@ -1,10 +1,10 @@
 /** @vitest-environment jsdom */
 
 import { act, cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { importRunStore, initialImportRunState } from "../screens/import/importRunStore";
+import { setupUser } from "../test/user";
 import ImportExportRoute from "./ImportExportRoute";
 
 type Flags = { can_import: boolean; can_export: boolean; is_demo: boolean };
@@ -100,7 +100,7 @@ describe("ImportExportRoute", () => {
   });
 
   it("tells the Demo Account that importing needs another account, and logs out from there", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     state.profile = { can_import: false, can_export: true, is_demo: true };
     renderRoute("import");
     expect(screen.getByText(/The Demo Account can't import\./)).toBeTruthy();

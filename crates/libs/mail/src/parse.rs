@@ -2,9 +2,11 @@
 
 use crate::headers as hn;
 use crate::{MailAttachment, MailMessage, Participant};
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use mailparse::{MailHeader, MailHeaderMap, ParsedMail};
-use message_ir::{IrDirection, IrImessage, IrMessage, IrMessageKind, IrService, IrSource};
+use message_ir::{
+    Deletion, IrDirection, IrImessage, IrMessage, IrMessageKind, IrService, IrSource, Reaction,
+};
 use serde::Deserialize;
 use std::fs;
 use std::path::Path;
@@ -26,16 +28,41 @@ struct AttachmentMetaCell {
 ///
 /// # Errors
 ///
-/// Returns an error when the bytes are not a valid email or a required
-/// `X-ME-*` header is missing.
+/// Returns an error when the bytes are not a valid email, a required
+/// `X-ME-*` header is missing, the roster in `X-ME-Participants` does not
+/// read, or the mail names its addresses with the handle headers an earlier
+/// Message Crate wrote.
 pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     let mail = mailparse::parse_mail(bytes).context("parse eml bytes")?;
     let headers = &mail.headers;
+    if let Some(earlier) = hn::EARLIER_HANDLE_HEADERS
+        .iter()
+        .find(|name| headers.get_first_header(name).is_some())
+    {
+        bail!(
+            "This mail was written by an earlier Message Crate, which named each address a \
+             handle ({earlier}); export the backup again"
+        );
+    }
+    if headers.get_first_header(hn::EARLIER_TAPBACKS).is_some() {
+        bail!(
+            "This mail was written by an earlier Message Crate, which kept reactions in {}; \
+             export the backup again",
+            hn::EARLIER_TAPBACKS
+        );
+    }
+    if headers.get_first_header(hn::EARLIER_IS_DELETED).is_some() {
+        bail!(
+            "This mail was written by an earlier Message Crate, which kept the deleted mark in {}; \
+             export the backup again",
+            hn::EARLIER_IS_DELETED
+        );
+    }
 
     let chat_identifier = required_header(headers, hn::CHAT_IDENTIFIER)?;
     let conversation_type = header_or(headers, hn::CONVERSATION_TYPE, "individual");
     let group_title = optional_header(headers, hn::GROUP_TITLE);
-    let participants = parse_participants(headers);
+    let participants = parse_participants(headers)?;
     let guid = required_header(headers, hn::GUID)?;
     let timestamp_unix_ms = required_header(headers, hn::TIMESTAMP_UNIX_MS)?
         .parse::<i64>()
@@ -49,9 +76,9 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     };
     let service = IrService::parse(&header_or(headers, hn::SERVICE, "sms"));
     let message_kind = IrMessageKind::parse(&header_or(headers, hn::MESSAGE_KIND, "sms"));
-    let sender_handle = optional_header(headers, hn::SENDER_HANDLE);
+    let sender_identity = optional_header(headers, hn::SENDER_IDENTITY);
     let sender_display_name = optional_header(headers, hn::SENDER_DISPLAY_NAME);
-    let owner_handle = optional_header(headers, hn::OWNER_HANDLE).unwrap_or_default();
+    let owner_identity = optional_header(headers, hn::OWNER_IDENTITY).unwrap_or_default();
     let owner_display_name = optional_header(headers, hn::OWNER_DISPLAY_NAME);
     let subject = optional_header(headers, hn::SUBJECT);
     let export_source = header_or(headers, hn::EXPORT_SOURCE, "");
@@ -60,6 +87,8 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
 
     let text = extract_text_body(&mail).unwrap_or_default();
     let attachments = merge_attachments(&mail, headers);
+    let reactions = parse_reactions(headers)?;
+    let deletion = parse_deletion(headers)?;
 
     let source = {
         let android_type =
@@ -84,14 +113,12 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             in_reply_to_guid: optional_header(headers, hn::THREAD_ORIGINATOR_GUID),
             thread_originator_part: header_u32(headers, hn::THREAD_ORIGINATOR_PART),
             num_replies: header_u32(headers, hn::NUM_REPLIES),
-            is_deleted: header_bool(headers, hn::IS_DELETED),
             send_effect: optional_header(headers, hn::SEND_EFFECT),
             shared_location: optional_header(headers, hn::SHARED_LOCATION),
             announcement: optional_header(headers, hn::ANNOUNCEMENT),
             read_receipt_rfc3339: optional_header(headers, hn::READ_RECEIPT),
             parts: header_json(headers, hn::PARTS),
             edits: header_json(headers, hn::EDITS),
-            tapbacks: header_json(headers, hn::TAPBACKS),
             app: header_json(headers, hn::APP),
             balloon_bundle_id: optional_header(headers, hn::BALLOON_BUNDLE_ID),
             balloon_kind: optional_header(headers, hn::BALLOON_KIND),
@@ -109,7 +136,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
         conversation_type,
         group_title,
         participants,
-        owner_handle,
+        owner_identity,
         owner_display_name,
         export_source,
         export_tool,
@@ -121,14 +148,16 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             direction,
             service,
             message_kind,
-            sender_handle,
+            sender_identity,
             sender_display_name,
-            owner_handle: optional_header(headers, hn::MESSAGE_OWNER_HANDLE),
+            owner_identity: optional_header(headers, hn::MESSAGE_OWNER_IDENTITY),
             subject,
             text,
             // Attachment payloads live in `MailMessage::attachments`; readers
             // that build IR fill this list from there.
             attachments: Vec::new(),
+            reactions,
+            deletion,
             imessage,
             source,
         },
@@ -235,12 +264,42 @@ fn header_u32(headers: &[MailHeader<'_>], name: &str) -> Option<u32> {
     optional_header(headers, name)?.parse().ok()
 }
 
-/// Participants from the JSON header, or none when absent or malformed.
-fn parse_participants(headers: &[MailHeader<'_>]) -> Vec<Participant> {
-    let Some(raw) = optional_header(headers, hn::PARTICIPANTS) else {
-        return Vec::new();
+/// The message's mark from `X-ME-Deletion`, or none when the header is
+/// absent. A value that names neither mark is refused rather than dropped.
+fn parse_deletion(headers: &[MailHeader<'_>]) -> Result<Option<Deletion>> {
+    let Some(raw) = optional_header(headers, hn::DELETION) else {
+        return Ok(None);
     };
-    serde_json::from_str(&raw).unwrap_or_default()
+    message_ir::parse_deletion(&raw).with_context(|| format!("This mail's {} header", hn::DELETION))
+}
+
+/// The message's reactions from `X-ME-Reactions`, or none when the header is
+/// absent.
+fn parse_reactions(headers: &[MailHeader<'_>]) -> Result<Vec<Reaction>> {
+    let Some(raw) = optional_header(headers, hn::REACTIONS) else {
+        return Ok(Vec::new());
+    };
+    serde_json::from_str(&raw).with_context(|| {
+        format!(
+            "This mail's reactions ({}) do not read; export the backup again",
+            hn::REACTIONS
+        )
+    })
+}
+
+/// Participants from the JSON header, or none when it is absent.
+///
+/// A roster that does not read is refused rather than read as nobody: an
+/// earlier Message Crate wrote `handle` where this one reads `identity`, and
+/// read as empty such a conversation would lose everyone in it.
+fn parse_participants(headers: &[MailHeader<'_>]) -> Result<Vec<Participant>> {
+    let Some(raw) = optional_header(headers, hn::PARTICIPANTS) else {
+        return Ok(Vec::new());
+    };
+    serde_json::from_str(&raw).context(
+        "This mail's roster (X-ME-Participants) does not read; it may have been written by an \
+         earlier Message Crate, so export the backup again",
+    )
 }
 
 /// The message text: the body of a simple mail, or the first `text/plain` part.
@@ -353,10 +412,10 @@ mod tests {
             conversation_type: "individual".into(),
             group_title: None,
             participants: vec![Participant {
-                handle: "+15555550101".into(),
+                identity: "+15555550101".into(),
                 display_name: Some("Sam".into()),
             }],
-            owner_handle: "+15555550100".into(),
+            owner_identity: "+15555550100".into(),
             owner_display_name: Some("Me".into()),
             export_source: "sms-backup-restore".into(),
             export_tool: "SMS Backup & Restore".into(),
@@ -368,12 +427,14 @@ mod tests {
                 direction: IrDirection::Outgoing,
                 service: IrService::Sms,
                 message_kind: IrMessageKind::Sms,
-                sender_handle: Some("+15555550100".into()),
+                sender_identity: Some("+15555550100".into()),
                 sender_display_name: Some("Me".into()),
-                owner_handle: None,
+                owner_identity: None,
                 subject: None,
                 text: "hello roundtrip".into(),
                 attachments: Vec::new(),
+                reactions: Vec::new(),
+                deletion: None,
                 imessage: None,
                 source: Some(IrSource {
                     android_type: Some(2),
@@ -390,10 +451,10 @@ mod tests {
         assert_eq!(parsed.message.text, "hello roundtrip");
         assert_eq!(parsed.message.direction, IrDirection::Outgoing);
         assert_eq!(
-            parsed.message.sender_handle.as_deref(),
+            parsed.message.sender_identity.as_deref(),
             Some("+15555550100")
         );
-        assert_eq!(parsed.owner_handle, "+15555550100");
+        assert_eq!(parsed.owner_identity, "+15555550100");
         assert_eq!(parsed.owner_display_name.as_deref(), Some("Me"));
         assert_eq!(
             parsed.message.source.as_ref().and_then(|s| s.android_type),
@@ -403,22 +464,38 @@ mod tests {
 
     /// Every optional `X-ME-*` header pair the first roundtrip test leaves
     /// unexercised: group/roster headers, subject, source fields, the full
-    /// iMessage extension bag, and attachment metadata.
+    /// iMessage extension bag, the reactions, and attachment metadata.
     #[test]
     fn roundtrip_group_imessage_full_extension_bag() {
+        let reactions = vec![
+            Reaction {
+                part_index: 0,
+                kind: "loved".into(),
+                emoji: None,
+                is_from_me: false,
+                reactor_identity: Some("+15555550102".into()),
+                reactor_display_name: Some("=?utf-8?Q?=22?= Ray".into()),
+            },
+            Reaction {
+                part_index: 1,
+                kind: "emoji".into(),
+                emoji: Some("\u{1f525}".into()),
+                is_from_me: true,
+                reactor_identity: None,
+                reactor_display_name: Some("Me".into()),
+            },
+        ];
         let imessage = message_ir::IrImessage {
             is_reply: true,
             in_reply_to_guid: Some("parent-guid-1111".into()),
             thread_originator_part: Some(1),
             num_replies: Some(3),
-            is_deleted: true,
             send_effect: Some("Sent with Balloons".into()),
             shared_location: Some("Cupertino".into()),
             announcement: Some("named the conversation".into()),
             read_receipt_rfc3339: Some("2014-05-22T15:41:01Z".into()),
             parts: serde_json::from_str(r#"[{"index":0,"kind":"run","text":"hi"}]"#).ok(),
             edits: serde_json::from_str(r#"[{"part":0,"texts":["hi","hi!"]}]"#).ok(),
-            tapbacks: serde_json::from_str(r#"[{"part_index":0,"kind":"loved"}]"#).ok(),
             app: serde_json::from_str(r#"{"name":"Games"}"#).ok(),
             balloon_bundle_id: Some("com.apple.messages.URLBalloonProvider".into()),
             balloon_kind: Some("url".into()),
@@ -434,15 +511,15 @@ mod tests {
             group_title: Some("Family".into()),
             participants: vec![
                 Participant {
-                    handle: "+15555550101".into(),
+                    identity: "+15555550101".into(),
                     display_name: Some("Sam".into()),
                 },
                 Participant {
-                    handle: "+15555550102".into(),
+                    identity: "+15555550102".into(),
                     display_name: None,
                 },
             ],
-            owner_handle: "+15555550100".into(),
+            owner_identity: "+15555550100".into(),
             owner_display_name: Some("Me".into()),
             export_source: "imessage".into(),
             export_tool: "imessage-exporter".into(),
@@ -454,12 +531,14 @@ mod tests {
                 direction: IrDirection::Incoming,
                 service: IrService::IMessage,
                 message_kind: IrMessageKind::IMessage,
-                sender_handle: Some("+15555550101".into()),
+                sender_identity: Some("+15555550101".into()),
                 sender_display_name: Some("Sam".into()),
-                owner_handle: None,
+                owner_identity: None,
                 subject: Some("MMS subject".into()),
                 text: "full bag".into(),
                 attachments: Vec::new(),
+                reactions: reactions.clone(),
+                deletion: Some(message_ir::Deletion::Unsent),
                 imessage: Some(imessage.clone()),
                 source: Some(IrSource {
                     android_type: Some(1),
@@ -491,7 +570,7 @@ mod tests {
         assert_eq!(parsed.conversation_type, "group");
         assert_eq!(parsed.group_title.as_deref(), Some("Family"));
         assert_eq!(parsed.participants.len(), 2);
-        assert_eq!(parsed.participants[0].handle, "+15555550101");
+        assert_eq!(parsed.participants[0].identity, "+15555550101");
         assert_eq!(parsed.participants[0].display_name.as_deref(), Some("Sam"));
         assert_eq!(parsed.participants[1].display_name, None);
         assert_eq!(parsed.message.sender_display_name.as_deref(), Some("Sam"));
@@ -509,6 +588,12 @@ mod tests {
             serde_json::to_value(&source.fields).unwrap(),
             serde_json::json!({"address": "+15555550101"})
         );
+
+        assert_eq!(
+            parsed.message.reactions, reactions,
+            "each reaction keeps its reactor, even a name that looks like an encoded word"
+        );
+        assert_eq!(parsed.message.deletion, Some(message_ir::Deletion::Unsent));
 
         // The whole extension bag must survive field for field.
         let parsed_bag = parsed.message.imessage.as_ref().expect("imessage bag");
@@ -550,10 +635,10 @@ mod tests {
             conversation_type: "individual".into(),
             group_title: None,
             participants: vec![Participant {
-                handle: "+15555550101".into(),
+                identity: "+15555550101".into(),
                 display_name: Some("Sam".into()),
             }],
-            owner_handle: "+15555550100".into(),
+            owner_identity: "+15555550100".into(),
             owner_display_name: None,
             export_source: "imessage".into(),
             export_tool: "imessage-exporter".into(),
@@ -565,12 +650,14 @@ mod tests {
                 direction: IrDirection::Incoming,
                 service: IrService::IMessage,
                 message_kind: IrMessageKind::IMessage,
-                sender_handle: Some("+15555550101".into()),
+                sender_identity: Some("+15555550101".into()),
                 sender_display_name: Some("Sam".into()),
-                owner_handle: None,
+                owner_identity: None,
                 subject: None,
                 text: "the message text".into(),
                 attachments: Vec::new(),
+                reactions: Vec::new(),
+                deletion: None,
                 imessage: None,
                 source: None,
             },

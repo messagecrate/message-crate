@@ -10,10 +10,11 @@ import {
   TableLayout,
   Virtualizer,
 } from "react-aria-components";
+import { focusRing } from "../../lib/uiStyles";
 import { ChevronDownIcon, ChevronRightIcon } from "../icons";
 import PlainButton from "../PlainButton";
 import { groupImportIssues, type ImportIssueGroup } from "./groupImportIssues";
-import type { ImportIssue } from "./ImportSummaryPanel";
+import type { ImportIssue, ImportNote } from "./ImportSummaryPanel";
 import { ISSUE_STAGE_LABEL } from "./importIssueStage";
 import {
   COLLAPSED_ROW_HEIGHT,
@@ -34,16 +35,53 @@ const LAYOUT_OPTIONS = {
 
 type IssueRow = ImportIssueGroup & { id: string };
 
-function parseFileLabel(group: ImportIssueGroup): string {
+/** The words the table uses for its rows: Import Errors, or notes. */
+type TableWords = {
+  label: string;
+  itemHeader: string;
+  reasonHeader: string;
+  noun: string;
+  items: string;
+};
+
+const ERROR_WORDS: TableWords = {
+  label: "Import errors",
+  itemHeader: "Parse File",
+  reasonHeader: "Error Message",
+  noun: "error",
+  items: "files",
+};
+
+const NOTE_WORDS: TableWords = {
+  label: "Import notes",
+  itemHeader: "Item",
+  reasonHeader: "Note",
+  noun: "note",
+  items: "items",
+};
+
+function parseFileLabel(group: ImportIssueGroup, words: TableWords): string {
   if (group.items.length === 1) {
     return group.items[0] ?? "";
   }
-  return `${group.items.length} files`;
+  return `${group.items.length} ${words.items}`;
 }
 
-function rowAriaLabel(group: ImportIssueGroup, expanded: boolean): string {
+function rowAriaLabel(group: ImportIssueGroup, expanded: boolean, words: TableWords): string {
   const verb = expanded ? "Collapse" : "Expand";
-  return `${verb} error for ${parseFileLabel(group)}`;
+  return `${verb} ${words.noun} for ${parseFileLabel(group, words)}`;
+}
+
+/**
+ * The notes of an import, one row per distinct note, drawn the way the
+ * Import Errors are.
+ */
+export function VirtualizedImportNotesTable({ notes }: { notes: ImportNote[] }) {
+  const rows = useMemo<ImportIssue[]>(
+    () => notes.map(({ stage, item, text }) => ({ kind: "note", stage, item, reason: text })),
+    [notes],
+  );
+  return <IssuesTable issues={rows} words={NOTE_WORDS} />;
 }
 
 /**
@@ -53,6 +91,10 @@ function rowAriaLabel(group: ImportIssueGroup, expanded: boolean): string {
  * the whole error and, for a group, its file names.
  */
 export default function VirtualizedImportIssuesTable({ issues }: { issues: ImportIssue[] }) {
+  return <IssuesTable issues={issues} words={ERROR_WORDS} />;
+}
+
+function IssuesTable({ issues, words }: { issues: ImportIssue[]; words: TableWords }) {
   const rows = useMemo<IssueRow[]>(
     () => groupImportIssues(issues).map((group, index) => ({ ...group, id: String(index) })),
     [issues],
@@ -74,26 +116,26 @@ export default function VirtualizedImportIssuesTable({ issues }: { issues: Impor
     <div className="mt-2 w-full min-w-0 max-w-full overflow-hidden rounded-lg border border-border text-left text-[0.813rem]">
       <Virtualizer layout={TableLayout} layoutOptions={LAYOUT_OPTIONS}>
         <Table
-          aria-label="Import errors"
+          aria-label={words.label}
           onRowAction={toggleRow}
           className="block w-full overflow-x-hidden overflow-y-auto outline-none"
           style={{ height: HEADER_ROW_HEIGHT + viewportHeight }}
         >
           <TableHeader className="border-b border-border bg-elevated">
             <Column id="file" isRowHeader width="1fr" className={headerClass}>
-              Parse File
+              {words.itemHeader}
             </Column>
             <Column id="stage" width={72} className={headerClass}>
               Stage
             </Column>
             <Column id="reason" width="1.4fr" className={headerClass}>
-              Error Message
+              {words.reasonHeader}
             </Column>
           </TableHeader>
           <TableBody items={rows} dependencies={[expandedKey]}>
             {(row) => {
               const expanded = row.id === expandedKey;
-              const fileLabel = parseFileLabel(row);
+              const fileLabel = parseFileLabel(row, words);
               return (
                 <Row
                   id={row.id}
@@ -106,10 +148,10 @@ export default function VirtualizedImportIssuesTable({ issues }: { issues: Impor
                     <span className="flex min-w-0 items-start gap-1">
                       {/* The row is the press target; this button says the row expands, and whether it is. */}
                       <PlainButton
-                        aria-label={rowAriaLabel(row, expanded)}
+                        aria-label={rowAriaLabel(row, expanded, words)}
                         aria-expanded={expanded}
                         onPress={() => toggleRow(row.id)}
-                        className="mt-px flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-sm border-none bg-transparent p-0 text-muted outline-none hover:text-text focus-visible:ring-2 focus-visible:ring-accent"
+                        className={`mt-px flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded-sm border-none bg-transparent p-0 text-muted hover:text-text ${focusRing}`}
                       >
                         {expanded ? <ChevronDownIcon size={12} /> : <ChevronRightIcon size={12} />}
                       </PlainButton>

@@ -124,11 +124,216 @@ fn the_sweep_leaves_a_fresh_unnamed_preview_for_its_row() {
     }
     make_abandoned(&old);
 
-    let removed = sweep_store_dir(1, dir.path(), &HashSet::new(), PREVIEW_GRACE_SECS);
+    let paths = PathsConfig {
+        db: dir.path().join("db"),
+        data_dir: dir.path().join("data"),
+        assets_dir: "assets".to_string(),
+        assets_converted_dir: "assets_converted".to_string(),
+    };
+    let mut removal = RemovalDir::new(&paths, 1);
+    let removed = sweep_store_dir(
+        1,
+        dir.path(),
+        &HashSet::new(),
+        PREVIEW_GRACE_SECS,
+        &mut removal,
+    );
 
     assert_eq!(removed, 1);
     assert!(fresh.is_file(), "a Preview its row may not name yet stays");
     assert!(!old.exists(), "an old unnamed Preview goes");
+}
+
+/// The account the database-backed tests below remove files for.
+const ACCOUNT: i64 = 7;
+
+/// A fixture with [`ACCOUNT`]'s row in it.
+async fn fixture_with_removal_account() -> crate::test_support::TestFixture {
+    let fixture = crate::test_support::test_fixture().await;
+    fixture.account_with_id(ACCOUNT, "removals").await;
+    fixture
+}
+
+/// An unnamed original of [`ACCOUNT`] in its shard, returning its path.
+fn stored_original(paths: &PathsConfig) -> PathBuf {
+    let shard = paths.assets_dir_for_account(ACCOUNT).join(&SHA[..2]);
+    fs::create_dir_all(&shard).unwrap();
+    let original = shard.join(format!("{SHA}.jpg"));
+    fs::write(&original, b"jpeg bytes").unwrap();
+    original
+}
+
+/// Every entry under [`ACCOUNT`]'s `.removing/` directory.
+fn left_in_removing(paths: &PathsConfig) -> Vec<PathBuf> {
+    fs::read_dir(removing_dir(paths, ACCOUNT))
+        .map(|entries| entries.map(|e| e.unwrap().path()).collect())
+        .unwrap_or_default()
+}
+
+/// A deletion that says on the returned receiver when it has begun, then
+/// waits for the returned sender before it deletes anything.
+fn paused_deletion() -> (
+    impl FnOnce(i64, Vec<PathBuf>) + Send + 'static,
+    tokio::sync::oneshot::Receiver<()>,
+    std::sync::mpsc::Sender<()>,
+) {
+    let (started, deletion_started) = tokio::sync::oneshot::channel();
+    let (finish, finish_signal) = std::sync::mpsc::channel::<()>();
+    let delete = move |account_id, dirs| {
+        started.send(()).unwrap();
+        finish_signal.recv().unwrap();
+        delete_removed(account_id, dirs);
+    };
+    (delete, deletion_started, finish)
+}
+
+/// Whether a write transaction on `pool` begins and commits within two
+/// seconds, well inside the 15 s busy timeout.
+async fn writes_promptly(
+    pool: &SqlitePool,
+) -> Result<sqlx::Result<()>, tokio::time::error::Elapsed> {
+    tokio::time::timeout(Duration::from_secs(2), async {
+        let mut conn = pool.acquire().await?;
+        begin_write(&mut conn).await?.commit().await
+    })
+    .await
+}
+
+/// #1544: removing files holds the write lock while it moves them out of
+/// the store, and lets it go before it deletes them, so a delete on a slow
+/// disk does not make every other writer wait out the busy timeout.
+#[tokio::test]
+async fn another_writer_is_not_blocked_while_removed_files_are_deleted() {
+    let fixture = fixture_with_removal_account().await;
+    let pool = fixture.state.db.clone();
+    let paths = fixture.state.cfg.paths.clone();
+    let original = stored_original(&paths);
+    let (delete, deletion_started, finish) = paused_deletion();
+
+    let removal = tokio::spawn({
+        let (pool, paths, original) = (pool.clone(), paths.clone(), original.clone());
+        async move {
+            unless_import_running_then(
+                &pool,
+                &paths,
+                ACCOUNT,
+                move |removal| {
+                    take_out(ACCOUNT, &original, Some(removal), remove_file);
+                },
+                delete,
+            )
+            .await;
+        }
+    });
+    deletion_started.await.unwrap();
+    let wrote = writes_promptly(&pool).await;
+    finish.send(()).unwrap();
+    removal.await.unwrap();
+
+    assert!(
+        matches!(wrote, Ok(Ok(()))),
+        "another writer waited on the removal: {wrote:?}"
+    );
+    assert!(!original.exists(), "the original is gone");
+    assert_eq!(left_in_removing(&paths), Vec::<PathBuf>::new());
+}
+
+/// #1544: the sweep at a run's end, too, deletes what it moved out of the
+/// store only after it let go of the write lock.
+#[tokio::test]
+async fn another_writer_is_not_blocked_while_swept_files_are_deleted() {
+    let fixture = fixture_with_removal_account().await;
+    let pool = fixture.state.db.clone();
+    let paths = fixture.state.cfg.paths.clone();
+    let original = stored_original(&paths);
+    let (delete, deletion_started, finish) = paused_deletion();
+
+    let sweep = tokio::spawn({
+        let (pool, paths) = (pool.clone(), paths.clone());
+        async move { sweep_unreferenced_then(&pool, &paths, ACCOUNT, delete).await }
+    });
+    deletion_started.await.unwrap();
+    let wrote = writes_promptly(&pool).await;
+    finish.send(()).unwrap();
+    let removed = sweep.await.unwrap().unwrap();
+
+    assert!(
+        matches!(wrote, Ok(Ok(()))),
+        "another writer waited on the sweep: {wrote:?}"
+    );
+    assert_eq!(removed, 1);
+    assert!(!original.exists(), "the original is gone");
+    assert_eq!(left_in_removing(&paths), Vec::<PathBuf>::new());
+}
+
+/// A removal that finds nothing to move makes no `.removing/` directory.
+#[tokio::test]
+async fn a_removal_with_nothing_to_move_leaves_nothing_on_disk() {
+    let fixture = fixture_with_removal_account().await;
+    let paths = fixture.state.cfg.paths.clone();
+
+    let removed = sweep_unreferenced(&fixture.state.db, &paths, ACCOUNT)
+        .await
+        .unwrap();
+    unless_import_running(&fixture.state.db, &paths, ACCOUNT, |removal| {
+        take_out(
+            ACCOUNT,
+            &PathBuf::from("/nowhere/x.jpg"),
+            Some(removal),
+            remove_file,
+        );
+    })
+    .await;
+
+    assert_eq!(removed, 0);
+    assert!(
+        !account_dir(&paths, ACCOUNT).exists(),
+        "nothing is made on disk"
+    );
+}
+
+/// Deleting an account removes its directory with no lock held, after the
+/// row's delete commits. A removal that gets the lock meanwhile moves
+/// nothing, so it cannot put a `.removing/` directory where that removal
+/// has already looked and leave the account's directory behind.
+#[tokio::test]
+async fn a_removal_for_an_account_whose_row_is_gone_moves_nothing() {
+    let fixture = crate::test_support::test_fixture().await;
+    let paths = fixture.state.cfg.paths.clone();
+    let original = stored_original(&paths);
+
+    let removed = sweep_unreferenced(&fixture.state.db, &paths, ACCOUNT)
+        .await
+        .unwrap();
+    let moved = original.clone();
+    unless_import_running(&fixture.state.db, &paths, ACCOUNT, move |removal| {
+        take_out(ACCOUNT, &moved, Some(removal), remove_file);
+    })
+    .await;
+
+    assert_eq!(removed, 0);
+    assert!(original.is_file(), "the account's own delete removes it");
+    assert!(!removing_dir(&paths, ACCOUNT).exists());
+}
+
+/// #1544: a crash between moving files into `.removing/` and deleting them
+/// leaves them there, and the next sweep deletes them.
+#[tokio::test]
+async fn the_sweep_deletes_a_removing_directory_a_crash_left() {
+    let fixture = fixture_with_removal_account().await;
+    let paths = fixture.state.cfg.paths.clone();
+    let left = removing_dir(&paths, ACCOUNT).join("left-by-a-crash");
+    fs::create_dir_all(left.join("inside")).unwrap();
+    fs::write(left.join(format!("{SHA}.jpg")), b"jpeg bytes").unwrap();
+    let original = stored_original(&paths);
+
+    let removed = sweep_unreferenced(&fixture.state.db, &paths, ACCOUNT)
+        .await
+        .unwrap();
+
+    assert_eq!(removed, 1, "the unnamed original is swept");
+    assert!(!original.exists());
+    assert_eq!(left_in_removing(&paths), Vec::<PathBuf>::new());
 }
 
 /// An assets folder whose `.incoming/` holds one of each thing the sweep

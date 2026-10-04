@@ -139,6 +139,43 @@ async fn a_page_across_two_conversations_names_each_conversations_own_participan
     );
 }
 
+/// A message's conversation says whether it is a group as the conversation
+/// list does, so the browser never reads `conversation_type` to decide it
+/// again and the two lists cannot name one conversation two ways.
+#[tokio::test]
+async fn a_messages_conversation_says_whether_it_is_a_group_as_the_conversation_list_does() {
+    let (fixture, alice, direct, group) = seeded().await;
+    let messages: serde_json::Value = get_json(&fixture.state, "/v1/messages", &alice.token).await;
+    let conversations: serde_json::Value =
+        get_json(&fixture.state, "/v1/conversations", &alice.token).await;
+
+    let from_messages = |id: i64| {
+        messages["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|item| &item["conversation"])
+            .find(|c| c["id"] == serde_json::json!(id))
+            .unwrap_or_else(|| panic!("conversation {id} is on the Messages list: {messages}"))
+            ["is_group"]
+            .clone()
+    };
+    let from_conversations = |id: i64| {
+        conversations["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|c| c["id"] == serde_json::json!(id))
+            .unwrap_or_else(|| panic!("conversation {id} is listed: {conversations}"))["is_group"]
+            .clone()
+    };
+
+    assert_eq!(from_messages(direct), serde_json::json!(false));
+    assert_eq!(from_messages(group), serde_json::json!(true));
+    assert_eq!(from_messages(direct), from_conversations(direct));
+    assert_eq!(from_messages(group), from_conversations(group));
+}
+
 #[tokio::test]
 async fn a_query_narrows_to_matching_messages_and_never_leaks_another_account() {
     let (fixture, alice, _direct, _group) = seeded().await;
@@ -256,6 +293,7 @@ fn ir_message(
     ms: i64,
     text: &str,
     is_sticker: bool,
+    reactions: serde_json::Value,
     imessage: serde_json::Value,
 ) -> String {
     serde_json::json!({
@@ -264,7 +302,7 @@ fn ir_message(
         "direction": "incoming",
         "service": "imessage",
         "message_kind": "imessage",
-        "sender_handle": "+15555550123",
+        "sender_identity": "+15555550123",
         "sender_display_name": null,
         "subject": null,
         "text": text,
@@ -279,6 +317,7 @@ fn ir_message(
             "size_bytes": 12,
             "missing_reason": "not_found"
         }],
+        "reactions": reactions,
         "imessage": imessage,
         "source": null
     })
@@ -286,21 +325,21 @@ fn ir_message(
 }
 
 /// Import, through the whole pipeline, three messages into `account_id`: a
-/// reply carrying a sticker and a tapback array of two, an announcement
-/// carrying a single tapback object, and a plain message with none of these.
+/// reply carrying a sticker and two reactions, an announcement carrying one
+/// reaction, and a plain message with none of these.
 async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
     let header = serde_json::json!({
-        "schema_version": 4,
+        "schema_version": 7,
         "export": {"source": "imessage", "tool": "test", "tool_version": "0",
-                   "owner_handle": null, "owner_display_name": null},
+                   "owner_identity": null, "owner_display_name": null},
         "conversation": {
             "chat_identifier": "chat-reactions",
             "conversation_type": "group",
             "group_title": "Reactions",
             "participants": [
-                {"handle": "+15555550123", "display_name": null},
-                {"handle": "+15555550167", "display_name": null},
-                {"handle": "+15555550161", "display_name": null}
+                {"identity": "+15555550123", "display_name": null},
+                {"identity": "+15555550167", "display_name": null},
+                {"identity": "+15555550161", "display_name": null}
             ],
             "stats": {"message_count": 3, "attachment_count": 3,
                       "first_timestamp_unix_ms": 1426183462000_i64,
@@ -312,15 +351,14 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
         1_426_183_462_000,
         "a reply",
         true,
+        serde_json::json!([
+            {"kind": "liked", "emoji": null, "part_index": 0,
+             "is_from_me": false, "reactor_identity": "+15555550167"},
+            {"kind": "emoji", "emoji": "🎉", "part_index": 1,
+             "is_from_me": false, "reactor_identity": "+15555550161"}
+        ]),
         serde_json::json!({
-            "is_reply": true,
-            "is_deleted": false,
-            "tapbacks": [
-                {"kind": "liked", "emoji": null, "part_index": 0,
-                 "is_from_me": false, "reactor_handle": "+15555550167"},
-                {"kind": "emoji", "emoji": "🎉", "part_index": 1,
-                 "is_from_me": false, "reactor_handle": "+15555550161"}
-            ]
+            "is_reply": true
         }),
     );
     let announcement = ir_message(
@@ -328,12 +366,13 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
         1_426_183_463_000,
         "an announcement",
         false,
+        serde_json::json!([
+            {"kind": "loved", "emoji": null, "part_index": 2,
+             "is_from_me": false, "reactor_identity": "+15555550167"}
+        ]),
         serde_json::json!({
             "is_reply": false,
-            "is_deleted": false,
-            "announcement": "named the conversation Reactions",
-            "tapbacks": {"kind": "loved", "emoji": null, "part_index": 2,
-                         "is_from_me": false, "reactor_handle": "+15555550167"}
+            "announcement": "named the conversation Reactions"
         }),
     );
     let plain = ir_message(
@@ -341,6 +380,7 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
         1_426_183_464_000,
         "a plain message",
         false,
+        serde_json::json!([]),
         serde_json::Value::Null,
     );
     let dir = fixture.dir().join("reactions");
@@ -373,9 +413,131 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
     assert_eq!(stats.tapbacks, 3);
 }
 
-/// Tapbacks and the reply, announcement and sticker flags survive the trip
-/// from an import to the messages route, both when set and when not. A
-/// single tapback object is read the same as an array of one.
+/// An Apple Messages conversation file holding a message the owner deleted
+/// in Messages, one unsent whole, and one only partly unsent, as the Apple
+/// Messages exporter writes them from `chat-db-fixture`'s messages 16 to 18.
+const APPLE_MESSAGES_DELETIONS: &str =
+    include_str!("../../tests/fixtures/apple-messages-deletions.jsonl");
+
+/// Import [`APPLE_MESSAGES_DELETIONS`] into `account_id` through the whole
+/// pipeline.
+async fn import_deletions(fixture: &TestFixture, account_id: i64) {
+    let dir = fixture.dir().join("deletions");
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("deletions.jsonl");
+    std::fs::write(&path, APPLE_MESSAGES_DELETIONS).unwrap();
+    let assets = dir.join("assets");
+    let mut conn = fixture.conn().await;
+    let stats = crate::imports_api::import_jsonl_files_on_conn(
+        &mut conn,
+        &[path],
+        &crate::imports_api::ImportOptions::fixed(crate::imports_api::FixedImportArgs {
+            assets_dir: &assets,
+            asset_root: &dir,
+            mode: crate::imports_api::ImportMode::Append,
+            source: "imessage",
+            account_id,
+            fill_content_keys: false,
+            import_id: None,
+        }),
+        crate::imports_api::ImportSchemaMode::Ensure,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        stats.messages, 3,
+        "a marked message is imported like any other"
+    );
+}
+
+/// The guids of a messages page, in its order.
+fn guids(page: &serde_json::Value) -> Vec<String> {
+    page["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| m["guid"].as_str().unwrap().to_string())
+        .collect()
+}
+
+/// The deleted message imports as `deleted_in_source_app`, the one unsent
+/// whole as `unsent`, and the partly unsent one with no mark, and the
+/// messages route returns each mark as imported. No mark hides a message.
+#[tokio::test]
+async fn a_deleted_and_an_unsent_message_are_returned_with_their_mark() {
+    let (fixture, alice) = fixture_with_account().await;
+    import_deletions(&fixture, alice.account_id).await;
+
+    let page: serde_json::Value =
+        get_json(&fixture.state, "/v1/messages?sort=date", &alice.token).await;
+    let marks: Vec<(String, serde_json::Value)> = page["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|m| {
+            (
+                m["guid"].as_str().unwrap().to_string(),
+                m["deletion"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        marks,
+        [
+            (
+                "guid-16".to_string(),
+                serde_json::json!("deleted_in_source_app")
+            ),
+            ("guid-17".to_string(), serde_json::json!("unsent")),
+            ("guid-18".to_string(), serde_json::Value::Null),
+        ],
+        "{page}"
+    );
+}
+
+/// `deleted:yes` narrows the list to the messages carrying either mark and
+/// `deleted:no` to the rest; together they split it.
+#[tokio::test]
+async fn deleted_yes_and_no_split_the_messages_by_their_mark() {
+    let (fixture, alice) = fixture_with_account().await;
+    import_deletions(&fixture, alice.account_id).await;
+
+    let marked: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=deleted%3Ayes&sort=date",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(guids(&marked), ["guid-16", "guid-17"], "{marked}");
+    let unmarked: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=deleted%3Ano&sort=date",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(guids(&unmarked), ["guid-18"], "{unmarked}");
+    let negated: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=-deleted%3Ayes&sort=date",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(guids(&negated), ["guid-18"], "{negated}");
+    let found: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=delete&sort=date",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(
+        guids(&found),
+        ["guid-16"],
+        "a message deleted in the source app is found by its text: {found}"
+    );
+}
+
+/// Reactions and the reply, announcement and sticker flags survive the trip
+/// from an import to the messages route, both when set and when not.
 #[tokio::test]
 async fn reactions_and_message_flags_are_read_back_as_imported() {
     let (fixture, alice) = fixture_with_account().await;
@@ -468,12 +630,13 @@ async fn a_message_in_a_trashed_conversation_or_a_duplicate_is_read_by_id() {
     let (fixture, alice, direct, group) = seeded().await;
     {
         let mut conn = fixture.conn().await;
+        let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
         sqlx::query(
             "INSERT INTO trashed_conversations (account_id, conversation_id) VALUES ($1, $2)",
         )
         .bind(alice.account_id)
         .bind(group)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
         // The second message of the direct thread becomes a copy of the first.
@@ -484,9 +647,10 @@ async fn a_message_in_a_trashed_conversation_or_a_duplicate_is_read_by_id() {
              WHERE id = (SELECT MAX(id) FROM messages WHERE conversation_id = $1)",
         )
         .bind(direct)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
+        tx.commit().await.unwrap();
     }
 
     let trashed: serde_json::Value =

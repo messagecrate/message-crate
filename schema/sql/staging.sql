@@ -72,6 +72,8 @@ CREATE TABLE IF NOT EXISTS staging_messages (
     thread_originator_part INTEGER,
     -- Count of replies hanging off this message (denormalized from the source).
     num_replies INTEGER NOT NULL DEFAULT 0,
+    -- Deleted in the source app or Unsent, as `messages.deletion`.
+    deletion TEXT CHECK (deletion IN ('deleted_in_source_app', 'unsent')),
     -- Stable order within the conversation when timestamps collide.
     sort_order INTEGER NOT NULL,
     -- Import run that staged this row (`imports.id`).

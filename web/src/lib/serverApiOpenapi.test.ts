@@ -177,6 +177,7 @@ const EXERCISED: Record<string, () => unknown> = {
     }),
   renameApiToken: () => serverApi.renameApiToken(3, { label: "renamed" }),
   deleteApiToken: () => serverApi.deleteApiToken(3),
+  createMediaLink: () => serverApi.createMediaLink("abc"),
 
   // Browse
   listConversations: () =>
@@ -259,21 +260,22 @@ const EXERCISED: Record<string, () => unknown> = {
     serverApi.listImports(
       every<serverApi.ImportListParams>({ status: "completed", limit: 50, offset: 0 }),
     ),
+  listEveryImport: () => serverApi.listEveryImport(),
   getImport: () => serverApi.getImport(4),
   createImport: () => serverApi.createImport({ source: "iPhone" }),
   setImportStage: () => serverApi.setImportStage(4, { stage: "media" }),
   completeImport: () => serverApi.completeImport(4, { status: "completed" }),
-  discardImport: () => serverApi.discardImport(4, { issues: [] }),
+  discardImport: () => serverApi.discardImport(4, { issues: [], notes: [] }),
   getImportContacts: () =>
     serverApi.getImportContacts(4, every<serverApi.ImportContactsParams>({ limit: 50, offset: 0 })),
 };
 
 /**
- * Not a route function: it builds an asset URL and fetches it directly, so it
- * never reaches `apiClient` and has no single documented path to check. No test
- * covers its own behaviour: the screen tests that use it fake it by name.
+ * Not route functions: they build an asset URL and fetch it directly, so they
+ * never reach `apiClient` and have no single documented path to check here.
+ * `serverApi.test.ts` checks the addresses `fetchAsset` asks for.
  */
-const NOT_ROUTED = new Set(["fetchAssetObjectUrl"]);
+const NOT_ROUTED = new Set(["fetchAsset", "fetchAssetObjectUrl"]);
 
 beforeEach(() => {
   vi.clearAllMocks();

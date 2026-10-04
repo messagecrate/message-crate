@@ -128,27 +128,27 @@ fn a_group_mms_keeps_its_addresses_and_attachment() {
     doc.conversation.conversation_type = IrConversationType::Group;
     doc.conversation.participants = vec![
         message_ir::IrParticipant {
-            handle: Some("+15555550101".into()),
+            identity: Some("+15555550101".into()),
             display_name: Some("Ana".into()),
-            handle_type: Some(message_ir::HandleType::Phone),
+            identity_type: Some(message_ir::HandleType::Phone),
         },
         message_ir::IrParticipant {
-            handle: Some("+15555550102".into()),
+            identity: Some("+15555550102".into()),
             display_name: Some("Lee".into()),
-            handle_type: Some(message_ir::HandleType::Phone),
+            identity_type: Some(message_ir::HandleType::Phone),
         },
     ];
     let incoming = &mut doc.messages[0];
     incoming.message_kind = IrMessageKind::Mms;
     incoming.source = None;
-    incoming.sender_handle = Some("+15555550102".into());
+    incoming.sender_identity = Some("+15555550102".into());
     incoming.sender_display_name = Some("Lee".into());
     incoming.attachments = vec![ir_attachment("pic.jpg", b"first image")];
     let mut outgoing = incoming.clone();
     outgoing.guid = "outgoing".into();
     outgoing.timestamp_unix_ms += 1000;
     outgoing.direction = IrDirection::Outgoing;
-    outgoing.sender_handle = Some(OWNER.into());
+    outgoing.sender_identity = Some(OWNER.into());
     outgoing.sender_display_name = None;
     outgoing.text = "nice".into();
     outgoing.attachments.clear();
@@ -162,7 +162,7 @@ fn a_group_mms_keeps_its_addresses_and_attachment() {
 
     assert_eq!(incoming.direction, IrDirection::Incoming);
     assert_eq!(incoming.text, "look");
-    assert_eq!(incoming.sender_handle.as_deref(), Some("+15555550102"));
+    assert_eq!(incoming.sender_identity.as_deref(), Some("+15555550102"));
     // A group's `contact_name` holds the participants' names, as SMS Backup
     // & Restore writes it, so it names the group and not the sender.
     assert_eq!(contact_name(incoming), Some("Ana, Lee"));
@@ -204,7 +204,7 @@ fn an_incoming_sms_keeps_its_sender_and_contact_name() {
     let conversation = &read[0].conversation;
     assert_eq!(conversation.participants.len(), 1);
     assert_eq!(
-        conversation.participants[0].handle.as_deref(),
+        conversation.participants[0].identity.as_deref(),
         Some("+15555550101")
     );
     assert_eq!(
@@ -218,7 +218,7 @@ fn an_incoming_sms_keeps_its_sender_and_contact_name() {
         "a text stays an <sms>"
     );
     assert_eq!(msg.direction, IrDirection::Incoming);
-    assert_eq!(msg.sender_handle.as_deref(), Some("+15555550101"));
+    assert_eq!(msg.sender_identity.as_deref(), Some("+15555550101"));
     assert_eq!(contact_name(msg), Some("Sam"));
     assert_eq!(msg.text, "hello ir");
 }
@@ -253,7 +253,7 @@ fn a_direct_photo_from_another_app_keeps_its_chat_sender_subject_and_bytes() {
     );
     let msg = &read[0].messages[0];
     assert_eq!(msg.direction, IrDirection::Incoming);
-    assert_eq!(msg.sender_handle.as_deref(), Some("+15555550101"));
+    assert_eq!(msg.sender_identity.as_deref(), Some("+15555550101"));
     assert_eq!(msg.subject.as_deref(), Some("Holiday"));
     assert_eq!(msg.text, "look at this");
     assert_eq!(msg.attachments.len(), 1);
@@ -273,19 +273,19 @@ fn a_text_only_group_message_from_another_app_stays_in_its_group() {
     doc.conversation
         .participants
         .push(message_ir::IrParticipant {
-            handle: Some("+15555550102".into()),
+            identity: Some("+15555550102".into()),
             display_name: Some("Lee".into()),
-            handle_type: Some(message_ir::HandleType::Phone),
+            identity_type: Some(message_ir::HandleType::Phone),
         });
     let incoming = &mut doc.messages[0];
     incoming.source = None;
     incoming.message_kind = IrMessageKind::Sms;
-    incoming.sender_handle = Some("+15555550102".into());
+    incoming.sender_identity = Some("+15555550102".into());
     incoming.sender_display_name = Some("Lee".into());
     let mut outgoing = incoming.clone();
     outgoing.timestamp_unix_ms += 1000;
     outgoing.direction = IrDirection::Outgoing;
-    outgoing.sender_handle = Some(OWNER.into());
+    outgoing.sender_identity = Some(OWNER.into());
     outgoing.sender_display_name = None;
     outgoing.text = "me".into();
     doc.messages.push(outgoing);
@@ -297,7 +297,7 @@ fn a_text_only_group_message_from_another_app_stays_in_its_group() {
     let mut handles: Vec<_> = conversation
         .participants
         .iter()
-        .filter_map(|p| p.handle.as_deref())
+        .filter_map(|p| p.identity.as_deref())
         .collect();
     handles.sort_unstable();
     assert_eq!(handles, ["+15555550101", "+15555550102"]);
@@ -305,7 +305,7 @@ fn a_text_only_group_message_from_another_app_stays_in_its_group() {
         panic!("two messages: {:?}", read[0].messages)
     };
     assert_eq!(incoming.direction, IrDirection::Incoming);
-    assert_eq!(incoming.sender_handle.as_deref(), Some("+15555550102"));
+    assert_eq!(incoming.sender_identity.as_deref(), Some("+15555550102"));
     assert_eq!(contact_name(incoming), Some("Sam, Lee"));
     assert_eq!(incoming.sender_display_name, None);
     assert_eq!(incoming.text, "who is in?");
@@ -327,9 +327,9 @@ fn a_group_with_one_identified_participant_is_named_as_one_to_one() {
     doc.conversation
         .participants
         .push(message_ir::IrParticipant {
-            handle: None,
+            identity: None,
             display_name: Some("Lee".into()),
-            handle_type: None,
+            identity_type: None,
         });
     doc.messages[0].source = None;
 
@@ -357,9 +357,9 @@ fn a_group_the_reader_finds_one_peer_in_is_named_as_one_to_one() {
         doc.conversation
             .participants
             .push(message_ir::IrParticipant {
-                handle: Some(handle.into()),
+                identity: Some(handle.into()),
                 display_name: Some(name.into()),
-                handle_type: Some(message_ir::HandleType::Phone),
+                identity_type: Some(message_ir::HandleType::Phone),
             });
         doc.messages[0].source = None;
 
@@ -384,7 +384,7 @@ fn a_sent_sms_carrying_the_owners_address_stays_in_the_peers_chat() {
     let msg = &mut doc.messages[0];
     msg.source = None;
     msg.direction = IrDirection::Outgoing;
-    msg.sender_handle = Some(OWNER.into());
+    msg.sender_identity = Some(OWNER.into());
     msg.sender_display_name = Some("Me".into());
     msg.subject = Some("Tonight".into());
 
@@ -394,7 +394,7 @@ fn a_sent_sms_carrying_the_owners_address_stays_in_the_peers_chat() {
     assert_eq!(conversation.chat_identifier, "+15555550101");
     assert_eq!(conversation.participants.len(), 1);
     assert_eq!(
-        conversation.participants[0].handle.as_deref(),
+        conversation.participants[0].identity.as_deref(),
         Some("+15555550101")
     );
     assert_eq!(
@@ -415,7 +415,7 @@ fn a_received_message_with_an_empty_sender_address_is_from_the_peer() {
     let mut doc = message_ir::testutil::sample_document("text");
     let text = &mut doc.messages[0];
     text.source = None;
-    text.sender_handle = Some(String::new());
+    text.sender_identity = Some(String::new());
     let mut photo = text.clone();
     photo.timestamp_unix_ms += 1000;
     photo.text = "photo".into();
@@ -428,8 +428,8 @@ fn a_received_message_with_an_empty_sender_address_is_from_the_peer() {
     let [text, photo] = read[0].messages.as_slice() else {
         panic!("two messages: {:?}", read[0].messages)
     };
-    assert_eq!(text.sender_handle.as_deref(), Some("+15555550101"));
-    assert_eq!(photo.sender_handle.as_deref(), Some("+15555550101"));
+    assert_eq!(text.sender_identity.as_deref(), Some("+15555550101"));
+    assert_eq!(photo.sender_identity.as_deref(), Some("+15555550101"));
     assert_eq!(
         addrs(photo),
         [

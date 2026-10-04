@@ -4,7 +4,7 @@ use message_crate_core::{ExportReport, OutputFormat};
 use message_ir::{
     ConversationMeta, ConversationStats, ExportMeta, HandleType, IrConversationType, IrImessage,
     IrMessage, IrMessageKind, IrParticipant, IrService, IrSource, MessageGuid, MessageIdentity,
-    SCHEMA_VERSION,
+    Reaction, SCHEMA_VERSION,
 };
 use serde_json::{Value, json};
 use std::fs;
@@ -16,7 +16,7 @@ fn doc_with_image_attachment() -> ConversationDocument {
             source: "test".into(),
             tool: "test".into(),
             tool_version: "0".into(),
-            owner_handle: None,
+            owner_identity: None,
             owner_display_name: None,
         },
         conversation: ConversationMeta {
@@ -24,9 +24,9 @@ fn doc_with_image_attachment() -> ConversationDocument {
             conversation_type: IrConversationType::Individual,
             group_title: None,
             participants: vec![IrParticipant {
-                handle: Some("+15555550101".into()),
+                identity: Some("+15555550101".into()),
                 display_name: Some("Sam".into()),
-                handle_type: None,
+                identity_type: None,
             }],
             stats: ConversationStats::default(),
         },
@@ -36,9 +36,9 @@ fn doc_with_image_attachment() -> ConversationDocument {
             direction: IrDirection::Incoming,
             service: IrService::Sms,
             message_kind: IrMessageKind::Sms,
-            sender_handle: Some("+15555550101".into()),
+            sender_identity: Some("+15555550101".into()),
             sender_display_name: Some("Sam".into()),
-            owner_handle: None,
+            owner_identity: None,
             subject: None,
             text: "hi".into(),
             attachments: vec![IrAttachment {
@@ -53,6 +53,8 @@ fn doc_with_image_attachment() -> ConversationDocument {
                 missing_reason: None,
                 bytes: None,
             }],
+            reactions: vec![],
+            deletion: None,
             imessage: None,
             source: None,
         }],
@@ -80,14 +82,14 @@ fn obfuscate_drops_the_vendor_bag() {
 #[test]
 fn obfuscate_replaces_the_owner_address_on_each_message() {
     let mut doc = message_ir::testutil::sample_document("secret");
-    doc.messages[0].owner_handle = Some("+15555550100".into());
+    doc.messages[0].owner_identity = Some("+15555550100".into());
     let mut anon = Obfuscator::new([7u8; 32]);
     obfuscate_one(&mut doc, &mut anon);
-    let owner = doc.messages[0].owner_handle.as_deref();
+    let owner = doc.messages[0].owner_identity.as_deref();
     assert_ne!(owner, Some("+15555550100"));
     assert_eq!(
         owner,
-        doc.export.owner_handle.as_deref(),
+        doc.export.owner_identity.as_deref(),
         "one address becomes one fake address wherever it appears"
     );
 }
@@ -115,7 +117,7 @@ fn obfuscate_keeps_me_on_a_sent_message_and_replaces_a_real_name() {
 
 #[test]
 fn obfuscate_skips_staged_media_and_writes_placeholders() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::export_dir();
     let att = tmp.path().join("attachments");
     fs::create_dir_all(&att).unwrap();
     // Pretend an exporter staged a real file (should be removed).
@@ -145,7 +147,7 @@ fn obfuscate_skips_staged_media_and_writes_placeholders() {
 
 #[test]
 fn obfuscate_keeps_mime_when_media_disabled() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::export_dir();
     let mut docs = vec![doc_with_image_attachment()];
     let transforms = ExportTransforms {
         media: MediaMode::Disabled,
@@ -166,7 +168,7 @@ fn obfuscate_keeps_mime_when_media_disabled() {
 /// out, as its digest does, so it goes with the digest (#1564).
 #[test]
 fn obfuscate_drops_the_real_files_size() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::export_dir();
     let mut docs = vec![doc_with_image_attachment()];
     docs[0].messages[0].attachments[0].size_bytes = Some(5);
     let transforms = ExportTransforms {
@@ -183,7 +185,7 @@ fn obfuscate_drops_the_real_files_size() {
 
 #[test]
 fn convert_at_finish_leaves_cloned_file() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::export_dir();
     let att = tmp.path().join("attachments");
     fs::create_dir_all(&att).unwrap();
     fs::write(att.join("keep.bin"), b"already-cloned").unwrap();
@@ -212,7 +214,7 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
             source: "sms-backup-restore".into(),
             tool: "SMS Backup & Restore".into(),
             tool_version: "10.20".into(),
-            owner_handle: Some("LEAK-01".into()),
+            owner_identity: Some("LEAK-01".into()),
             owner_display_name: Some("LEAK-02".into()),
         },
         conversation: ConversationMeta {
@@ -220,9 +222,9 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
             conversation_type: IrConversationType::Group,
             group_title: Some("LEAK-04".into()),
             participants: vec![IrParticipant {
-                handle: Some("LEAK-05".into()),
+                identity: Some("LEAK-05".into()),
                 display_name: Some("LEAK-06".into()),
-                handle_type: Some(HandleType::Phone),
+                identity_type: Some(HandleType::Phone),
             }],
             stats: ConversationStats {
                 message_count: 1,
@@ -237,9 +239,9 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
             direction: IrDirection::Incoming,
             service: IrService::IMessage,
             message_kind: IrMessageKind::IMessage,
-            sender_handle: Some("LEAK-07".into()),
+            sender_identity: Some("LEAK-07".into()),
             sender_display_name: Some("LEAK-08".into()),
-            owner_handle: Some("LEAK-09".into()),
+            owner_identity: Some("LEAK-09".into()),
             subject: Some("LEAK-10".into()),
             text: "LEAK-11".into(),
             attachments: vec![IrAttachment {
@@ -254,28 +256,26 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
                 missing_reason: Some("file_missing".into()),
                 bytes: None,
             }],
+            reactions: vec![Reaction {
+                part_index: 0,
+                kind: "emoji".into(),
+                emoji: Some("👍".into()),
+                is_from_me: false,
+                reactor_identity: Some("LEAK-20".into()),
+                reactor_display_name: Some("LEAK-21".into()),
+            }],
+            deletion: None,
             imessage: Some(IrImessage {
                 is_reply: true,
                 in_reply_to_guid: Some("LEAK-28".into()),
                 thread_originator_part: Some(0),
                 num_replies: Some(1),
-                is_deleted: false,
                 send_effect: Some("slam".into()),
                 shared_location: Some("LEAK-16".into()),
                 announcement: Some("LEAK-17".into()),
                 read_receipt_rfc3339: Some("2014-05-22T12:21:01Z".into()),
                 parts: Some(json!([{ "text": "LEAK-18", "attachment_indices": [0] }])),
                 edits: Some(json!([{ "text": "LEAK-19", "timestamp_unix_ms": 1 }])),
-                tapbacks: Some(json!([{
-                    "part_index": 0,
-                    "kind": "emoji",
-                    "emoji": "👍",
-                    "is_from_me": false,
-                    "reactor_handle": "LEAK-20",
-                    "reactor_display_name": "LEAK-21",
-                    "sender": "LEAK-22",
-                    "unknown_key": "LEAK-23",
-                }])),
                 app: Some(json!({ "url": "https://LEAK-24.example/", "title": "LEAK-25" })),
                 balloon_bundle_id: Some("com.apple.DigitalTouchBalloonProvider".into()),
                 balloon_kind: Some("sketch".into()),
@@ -304,7 +304,7 @@ const KEPT_AS_IS: &[(&str, &str)] = &[
         "names the backup tool, not the person",
     ),
     ("conversation.conversation_type", "enum value"),
-    ("conversation.participants[].handle_type", "enum value"),
+    ("conversation.participants[].identity_type", "enum value"),
     ("messages[].direction", "enum value"),
     ("messages[].service", "enum value"),
     ("messages[].message_kind", "enum value"),
@@ -333,9 +333,9 @@ const KEPT_AS_IS: &[(&str, &str)] = &[
         "the reaction, not who made it",
     ),
     ("messages[].imessage.tapback_action", "tapback label"),
-    ("messages[].imessage.tapbacks[].kind", "tapback label"),
+    ("messages[].reactions[].kind", "reaction label"),
     (
-        "messages[].imessage.tapbacks[].emoji",
+        "messages[].reactions[].emoji",
         "the reaction, not who made it",
     ),
 ];
@@ -382,7 +382,7 @@ fn obfuscated_export_keeps_no_string_from_the_source() {
         );
     }
 
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::export_dir();
     let transforms = ExportTransforms {
         media: MediaMode::Disabled,
         obfuscate: true,
@@ -414,40 +414,40 @@ fn obfuscated_export_keeps_no_string_from_the_source() {
     assert!(leaked.is_empty(), "obfuscated export kept {leaked:?}");
 }
 
-/// Tapbacks are imported, so an obfuscated export must still say what each
+/// Reactions are imported, so an obfuscated export must still say what each
 /// reaction was; only who reacted is replaced.
 #[test]
-fn obfuscate_keeps_each_tapback_and_replaces_only_who_reacted() {
+fn obfuscate_keeps_each_reaction_and_replaces_only_who_reacted() {
     let mut doc = doc_with_a_marker_in_every_field();
     let mut anon = Obfuscator::new([7u8; 32]);
     obfuscate_one(&mut doc, &mut anon);
 
-    let tapbacks = doc.messages[0]
-        .imessage
-        .as_ref()
-        .unwrap()
-        .tapbacks
-        .as_ref()
-        .expect("tapbacks are kept");
-    let tapbacks = tapbacks.as_array().expect("tapbacks stay a list");
-    assert_eq!(tapbacks.len(), 1);
-    let tapback = &tapbacks[0];
-    assert_eq!(tapback["part_index"], json!(0));
-    assert_eq!(tapback["kind"], json!("emoji"));
-    assert_eq!(tapback["emoji"], json!("👍"));
-    assert_eq!(tapback["is_from_me"], json!(false));
-    let reactor = tapback["reactor_handle"]
-        .as_str()
-        .expect("reactor_handle is kept as a string");
+    let [reaction] = doc.messages[0].reactions.as_slice() else {
+        panic!("one reaction is kept: {:?}", doc.messages[0].reactions);
+    };
+    assert_eq!(reaction.part_index, 0);
+    assert_eq!(reaction.kind, "emoji");
+    assert_eq!(reaction.emoji.as_deref(), Some("👍"));
+    assert!(!reaction.is_from_me);
+    let reactor = reaction
+        .reactor_identity
+        .as_deref()
+        .expect("reactor_identity is kept");
     assert!(!reactor.is_empty());
-    assert!(!reactor.contains("LEAK-"), "reactor_handle kept {reactor}");
-    // `sender` is not a tapback key, so it goes with the other unknown keys.
-    assert!(tapback.get("sender").is_none(), "{tapback}");
+    assert!(
+        !reactor.contains("LEAK-"),
+        "reactor_identity kept {reactor}"
+    );
+    let name = reaction
+        .reactor_display_name
+        .as_deref()
+        .expect("reactor_display_name is kept");
+    assert!(!name.contains("LEAK-"), "reactor_display_name kept {name}");
 }
 
 #[test]
 fn media_disabled_clears_each_attachment_path_bytes_and_fingerprint() {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::export_dir();
     let mut docs = vec![doc_with_image_attachment()];
     let att = &mut docs[0].messages[0].attachments[0];
     att.bytes = Some(vec![1, 2, 3]);
@@ -547,7 +547,7 @@ fn two_conversations(link: impl FnOnce(String) -> IrImessage) -> Vec<Conversatio
 }
 
 fn obfuscate_all(docs: &mut [ConversationDocument]) {
-    let tmp = tempfile::tempdir().unwrap();
+    let tmp = crate::export_dir();
     let transforms = ExportTransforms {
         media: MediaMode::Disabled,
         obfuscate: true,

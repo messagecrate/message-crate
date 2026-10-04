@@ -1,7 +1,8 @@
 use super::*;
-use message_crate_core::{FormatConfig, MediaConfig, ObfuscateConfig, SourceConfig};
+use message_crate_core::{FormatConfig, LogSink, MediaConfig, ObfuscateConfig, SourceConfig};
 use message_ir::IrAttachment;
 use message_ir_format::{read_conversation_csv, read_conversation_json};
+use std::sync::{Arc, Mutex};
 
 fn write_fixture(dir: &Path, format: OutputFormat) {
     fs::create_dir_all(dir).unwrap();
@@ -26,6 +27,7 @@ fn config(input: &Path, output: &Path, output_format: OutputFormat) -> ExporterC
         cancel: None,
         log: None,
         progress: None,
+        issues: None,
         output_format,
         resume: false,
         source: SourceConfig::Format(FormatConfig::default()),
@@ -160,7 +162,7 @@ fn xml_writes_only_sms_and_mms_and_the_log_names_what_was_left_out() {
     clean_previous_ir_output(source.path()).unwrap();
     let mut imessage = message_ir::testutil::sample_imessage_document();
     imessage.conversation.chat_identifier = "+15555550103".into();
-    imessage.conversation.participants[0].handle = Some("+15555550103".into());
+    imessage.conversation.participants[0].identity = Some("+15555550103".into());
     let mut sink =
         FormatSink::open(source.path(), OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
     for doc in [
@@ -397,6 +399,89 @@ fn run_converts_an_export_and_reports_the_detected_format() {
     assert_eq!(
         read_conversation_csv(&csv).unwrap().messages[0].text,
         "hello reexport"
+    );
+}
+
+/// A committed SMS Backup & Restore backup under this crate's
+/// `tests/fixtures/`.
+fn sms_fixture(name: &str) -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name)
+}
+
+/// The config of a Convert from `input`, with every line it logs as it
+/// runs.
+fn logged_config(input: &Path, output: &Path) -> (ExporterConfig, Arc<Mutex<Vec<String>>>) {
+    let lines = Arc::new(Mutex::new(Vec::new()));
+    let sink_lines = Arc::clone(&lines);
+    let mut config = config(input, output, OutputFormat::Csv);
+    config.log = Some(LogSink::new(move |line: &str| {
+        sink_lines.lock().unwrap().push(line.to_string());
+    }));
+    (config, lines)
+}
+
+/// Convert from an SMS Backup & Restore backup says what its reader
+/// dropped and skipped, before the `Conversations:` line the desktop app
+/// shows as the run's summary, and names every file it could not read, not
+/// only the first five (#1603). The fixture holds one of each kind, and six
+/// files cut off partway.
+#[test]
+fn run_from_an_sms_backup_logs_the_reader_counts_and_every_error() {
+    let destination = tempfile::tempdir().unwrap();
+    let (config, logged) = logged_config(&sms_fixture("sms-backup-every-skip"), destination.path());
+
+    let result = run(&config).unwrap();
+
+    let logged = logged.lock().unwrap().clone();
+    for expected in [
+        "Dropped 1 repeated copy of a message",
+        "Skipped 1 message with an invalid date",
+        "Skipped 1 message with no usable address",
+        "Skipped 1 message of an unknown type",
+        "Skipped 1 draft or unsent message",
+        "Skipped 1 MMS with no participants",
+        "Skipped 1 message part that could not be read",
+        "Dropped 1 character reference that is not a character",
+    ] {
+        assert!(
+            logged.iter().any(|line| line == expected),
+            "{expected:?} in the log: {logged:#?}"
+        );
+    }
+    for n in 1..=6 {
+        let name = format!("broken-{n}.xml");
+        assert!(
+            logged
+                .iter()
+                .any(|line| line.starts_with("xml warning: ") && line.contains(&name)),
+            "an error for {name} in the log: {logged:#?}"
+        );
+    }
+    // The run's summary lines follow everything logged as it ran.
+    assert_eq!(
+        result.messages.first().map(String::as_str),
+        Some("Detected input format: xml")
+    );
+}
+
+/// A backup whose every message is skipped stops the run with no
+/// conversation, and the log still says why each was skipped (#1603).
+#[test]
+fn a_convert_that_keeps_no_message_still_logs_why() {
+    let destination = tempfile::tempdir().unwrap();
+    let (config, logged) =
+        logged_config(&sms_fixture("sms-backup-nothing-kept"), destination.path());
+
+    let err = run(&config).unwrap_err().to_string();
+
+    assert!(err.contains("no conversations loaded"), "{err}");
+    let logged = logged.lock().unwrap().clone();
+    assert!(
+        logged.contains(&"Skipped 1 message with no usable address".to_string())
+            && logged.contains(&"Skipped 1 message of an unknown type".to_string()),
+        "{logged:#?}"
     );
 }
 
@@ -745,7 +830,7 @@ fn a_json_that_is_not_an_ir_export_is_refused() {
         // The right version but missing a required section.
         (
             "partial.json",
-            r#"{"schema_version":4,"export":{},"messages":[]}"#,
+            r#"{"schema_version":7,"export":{},"messages":[]}"#,
         ),
         // Not JSON at all.
         ("broken.json", "{not json"),
@@ -767,7 +852,7 @@ fn a_jsonl_whose_first_line_is_not_a_conversation_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join("log.jsonl"),
-        "{\"level\":\"info\",\"msg\":\"started\"}\n         {\"schema_version\":4,\"export\":{},\"conversation\":{},\"messages\":[]}\n",
+        "{\"level\":\"info\",\"msg\":\"started\"}\n         {\"schema_version\":7,\"export\":{},\"conversation\":{},\"messages\":[]}\n",
     )
     .unwrap();
 
@@ -849,7 +934,7 @@ fn an_xml_that_is_not_an_smses_export_is_refused() {
 #[test]
 fn every_kind_of_sidecar_is_skipped() {
     let dir = tempfile::tempdir().unwrap();
-    let ir_json = r#"{"schema_version":4,"export":{},"conversation":{},"messages":[]}"#;
+    let ir_json = r#"{"schema_version":7,"export":{},"conversation":{},"messages":[]}"#;
     for name in [
         "conversation.meta.json",
         "conversation.json.tmp",
@@ -1015,7 +1100,7 @@ fn a_jsonl_file_with_a_json_name_is_not_a_jsonl_conversation() {
 
 /// Write `dir`'s conversation in `format` again as `name`, with its
 /// `schema_version` set to 3. The reader refuses the file before it parses
-/// anything else, so the rest can keep the version-4 shape.
+/// anything else, so the rest can keep the version-6 shape.
 fn write_version_3_copy(dir: &Path, format: OutputFormat, name: &str) {
     let scratch = tempfile::tempdir().unwrap();
     write_fixture(scratch.path(), format);
@@ -1053,7 +1138,7 @@ fn a_folder_of_version_3_files_is_refused_by_name() {
         .unwrap_err();
         let message = format!("{error:#}");
         assert!(
-            message.contains("This file is schema version 3; Message Crate reads version 4"),
+            message.contains("This file is schema version 3; Message Crate reads version 7"),
             "{message}"
         );
         assert!(
@@ -1063,10 +1148,10 @@ fn a_folder_of_version_3_files_is_refused_by_name() {
     }
 }
 
-/// One version-3 file among version-4 files stops the run before the output
+/// One version-3 file among version-6 files stops the run before the output
 /// is touched, so no conversation goes missing from the output unreported.
 #[test]
-fn a_version_3_file_among_version_4_files_stops_the_run_and_writes_nothing() {
+fn a_version_3_file_among_version_5_files_stops_the_run_and_writes_nothing() {
     let source = tempfile::tempdir().unwrap();
     write_fixture(source.path(), OutputFormat::Jsonl);
     write_version_3_copy(source.path(), OutputFormat::Jsonl, "old.jsonl");
@@ -1082,7 +1167,7 @@ fn a_version_3_file_among_version_4_files_stops_the_run_and_writes_nothing() {
     .unwrap_err();
     let message = format!("{error:#}");
     assert!(
-        message.contains("This file is schema version 3; Message Crate reads version 4"),
+        message.contains("This file is schema version 3; Message Crate reads version 7"),
         "{message}"
     );
     assert!(message.contains("old.jsonl"), "{message}");
@@ -1151,6 +1236,7 @@ fn convert_keeps_the_names_two_groups_with_one_title_were_given() {
 /// mail export of `format` into `dir`. The mail export embeds the bytes,
 /// so `dir` ends with no `attachments/` folder.
 fn write_mail_fixture(dir: &Path, format: OutputFormat, with_unsent: bool) {
+    clean_previous_ir_output(dir).unwrap();
     fs::create_dir_all(dir.join("attachments")).unwrap();
     fs::write(dir.join("attachments/note.txt"), b"hello attachment").unwrap();
     let mut document = message_ir::testutil::sample_document("with a note");
@@ -1306,17 +1392,18 @@ fn converting_a_mail_export_to_mail_keeps_its_attachments_embedded() {
 #[test]
 fn sms_backup_plus_writes_only_sms_and_mms_and_says_what_it_left_out() {
     let source = tempfile::tempdir().unwrap();
+    clean_previous_ir_output(source.path()).unwrap();
     let mut sink =
         FormatSink::open(source.path(), OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
     sink.write_document(message_ir::testutil::sample_document("an sms"))
         .unwrap();
     let mut imessage = message_ir::testutil::sample_imessage_document();
     imessage.conversation.chat_identifier = "+15555550102".into();
-    imessage.conversation.participants[0].handle = Some("+15555550102".into());
+    imessage.conversation.participants[0].identity = Some("+15555550102".into());
     sink.write_document(imessage).unwrap();
     let mut whatsapp = message_ir::testutil::sample_document("a whatsapp message");
     whatsapp.conversation.chat_identifier = "+15555550103".into();
-    whatsapp.conversation.participants[0].handle = Some("+15555550103".into());
+    whatsapp.conversation.participants[0].identity = Some("+15555550103".into());
     whatsapp.messages[0].service = message_ir::IrService::Whatsapp;
     sink.write_document(whatsapp).unwrap();
     sink.finish(&mut ExportReport::default()).unwrap();
@@ -1376,6 +1463,7 @@ fn sms_backup_plus_writes_only_sms_and_mms_and_says_what_it_left_out() {
 #[test]
 fn sms_backup_plus_mail_records_the_export_runs_start() {
     let source = tempfile::tempdir().unwrap();
+    clean_previous_ir_output(source.path()).unwrap();
     let mut sink =
         FormatSink::open(source.path(), OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
     sink.write_document(message_ir::testutil::sample_document("an sms"))

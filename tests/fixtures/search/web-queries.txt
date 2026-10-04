@@ -34,7 +34,9 @@ contacts	trashed:yes (gone or ada)
 contacts	trashed:yes (identity:"Book Club" first-message:<2022-01-01 messages:0 identity:none)
 contacts	trashed:yes (identity:"Say ""Hi""" service:whatsapp)
 conversations	
+conversations	(dinner)
 conversations	ada identity:"Ann Lee" kind:direct participants:>3
+conversations	dinner
 conversations	group:"#3"
 conversations	group:"Book Club"
 conversations	group:"Family (close)"
@@ -58,6 +60,7 @@ conversations	kind:direct (with:#42)
 conversations	kind:group
 conversations	kind:group (identity:"Book Club")
 conversations	kind:group (with:#42)
+conversations	kind:group dinner
 conversations	source:imessage,whatsapp,sms-backup-restore,imazing,openextract,go-sms-pro,sms-backup-plus
 conversations	tag:"#3"
 conversations	tag:"Book Club"

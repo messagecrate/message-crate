@@ -9,8 +9,8 @@ async fn import_one_message(conn: &mut SqliteConnection, dir: &std::path::Path, 
     std::fs::write(
         &path,
         format!(
-            r#"{{"schema_version":4,"export":{{"source":"sms-backup-restore","tool":"test","tool_version":"0","owner_handle":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"+15555550143","conversation_type":"individual","group_title":null,"participants":[{{"handle":"+15555550143","display_name":null}}],"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}
-{{"guid":"{guid}","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_handle":"+15555550143","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}}
+            r#"{{"schema_version":7,"export":{{"source":"sms-backup-restore","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"+15555550143","conversation_type":"individual","group_title":null,"participants":[{{"identity":"+15555550143","display_name":null}}],"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}
+{{"guid":"{guid}","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550143","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}}
 "#
         ),
     )
@@ -35,6 +35,34 @@ async fn import_one_message(conn: &mut SqliteConnection, dir: &std::path::Path, 
     assert_eq!(stats.messages, 1, "the import must insert its message");
 }
 
+/// Promotion reads only rows staging accepted, so a promote that fails is
+/// the server's fault: the import takes its error as internal, never as a
+/// refusal the sender could fix, and the cause survives for the log.
+#[tokio::test]
+async fn a_promote_that_fails_is_an_internal_import_failure() {
+    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    crate::db::schema::ensure_schema(&mut conn).await.unwrap();
+    sqlx::raw_sql("DROP TABLE staging_conversations")
+        .execute(&mut *conn)
+        .await
+        .unwrap();
+
+    let err: super::super::ImportError =
+        promote_append(&mut conn, ImportMode::Append, TEST_ACCOUNT, false, &[])
+            .await
+            .expect_err("promote fails")
+            .into();
+
+    match err {
+        super::super::ImportError::Internal(cause) => assert!(
+            format!("{cause:#}").contains("staging_conversations"),
+            "{cause:#}"
+        ),
+        other => panic!("expected an internal failure, got {other:?}"),
+    }
+}
+
 /// The import runs ANALYZE before it opens its transaction, so promote's
 /// guid join has statistics to plan with.
 #[tokio::test]
@@ -57,16 +85,35 @@ async fn an_import_analyzes_import_tables_before_begin() {
 
 #[tokio::test]
 async fn promote_message_map_ignores_other_accounts() {
-    let (pool, _dir) = crate::db::engine::test_pool().await;
-    let mut conn = pool.acquire().await.unwrap();
-    for statement in [
-        "CREATE TABLE messages (id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL)",
-        "INSERT INTO messages (id, account_id) VALUES
-            (1, 7),
-            (2, 8)",
-    ] {
-        sqlx::query(statement).execute(&mut *conn).await.unwrap();
+    use crate::test_support::{MessageRow, SeedConversation, seed_conversation, test_fixture};
+
+    let fixture = test_fixture().await;
+    let other_account = TEST_ACCOUNT + 1;
+    for (account_id, message_id) in [(TEST_ACCOUNT, 1), (other_account, 2)] {
+        fixture
+            .account_with_id(account_id, &format!("user{account_id}"))
+            .await;
+        let conversation_id = seed_conversation(
+            &fixture.state,
+            &SeedConversation {
+                account_id,
+                handle: "+15555550100",
+                conversation_type: "individual",
+                group_title: None,
+                source_file: "t.json",
+                messages: &[],
+            },
+        )
+        .await;
+        let mut conn = fixture.conn().await;
+        MessageRow {
+            id: Some(message_id),
+            ..MessageRow::new(account_id, conversation_id)
+        }
+        .insert(&mut conn)
+        .await;
     }
+    let mut conn = fixture.conn().await;
     let mut promote = Promote {
         tx: &mut conn,
         account_id: TEST_ACCOUNT,

@@ -94,9 +94,9 @@ impl MergedArchive for SmsBackupPlusArchive {
         Ok(output_dir.to_path_buf())
     }
 
-    /// None: the archive writes only folders of `.eml` files, and the next
-    /// clean of the folder removes every such folder as it does the EML
-    /// format's (`mail::clean_previous_mail_output`).
+    /// None: the archive writes only directories of `.eml` files, and the
+    /// next clean of the output directory removes every such directory as it
+    /// does the EML format's (`message_ir_format::clean_previous_ir_output`).
     fn file_names(&self) -> Vec<String> {
         Vec::new()
     }
@@ -238,7 +238,7 @@ impl<'a> Conversation<'a> {
     fn of(doc: &'a ConversationDocument) -> Self {
         let owner = doc
             .export
-            .owner_handle
+            .owner_identity
             .as_deref()
             .and_then(trimmed)
             .map(handle_key);
@@ -246,15 +246,19 @@ impl<'a> Conversation<'a> {
             .conversation
             .participants
             .iter()
-            .filter_map(|p| p.handle.as_deref().and_then(trimmed))
+            .filter_map(|p| p.identity.as_deref().and_then(trimmed))
             .filter(|handle| Some(handle_key(handle)) != owner)
             .collect();
         // A one-to-one conversation whose roster has no address is with the
         // address its chat id is, or, for a conversation keyed by a name,
         // with that name: the `name:` prefix is the key's, not the person's.
+        // The conversation that names nobody is with nobody: its mail has no
+        // address and no name, so the import keeps it as that conversation
+        // instead of making `nameless:` a person's address (#1591).
         let mut name_only = false;
         if peers.is_empty()
             && let Some(id) = trimmed(&doc.conversation.chat_identifier)
+                .filter(|id| *id != message_ir::NAMELESS_CHAT_ID)
         {
             let name = message_ir::name_of_chat_id(id);
             name_only = name.is_some();
@@ -291,7 +295,7 @@ impl<'a> Conversation<'a> {
             .conversation
             .participants
             .iter()
-            .find(|p| p.handle.as_deref() == Some(handle))
+            .find(|p| p.identity.as_deref() == Some(handle))
             .and_then(|p| p.display_name.as_deref())
             .and_then(trimmed)
     }
@@ -301,7 +305,7 @@ impl<'a> Conversation<'a> {
     /// group message whose sender is unknown.
     fn sender_of<'m>(&'m self, message: &'m IrMessage) -> Option<&'m str> {
         message
-            .sender_handle
+            .sender_identity
             .as_deref()
             .and_then(trimmed)
             .or_else(|| {
@@ -359,11 +363,11 @@ impl<'a> Conversation<'a> {
     /// `From` and `To`: the sender to the owner for an incoming message,
     /// the owner to the peers for an outgoing one.
     fn envelope(&self, message: &IrMessage) -> (Address<'static>, Address<'static>) {
-        let owner_handle = message
-            .owner_handle
+        let owner_identity = message
+            .owner_identity
             .as_deref()
             .and_then(trimmed)
-            .or_else(|| self.doc.export.owner_handle.as_deref().and_then(trimmed))
+            .or_else(|| self.doc.export.owner_identity.as_deref().and_then(trimmed))
             .unwrap_or("me");
         let owner_name = self
             .doc
@@ -372,7 +376,7 @@ impl<'a> Conversation<'a> {
             .as_deref()
             .and_then(trimmed)
             .unwrap_or("Me");
-        let owner = address(owner_handle, Some(owner_name));
+        let owner = address(owner_identity, Some(owner_name));
         match message.direction {
             IrDirection::Incoming => {
                 // A group message whose sender is unknown keeps it unknown: an

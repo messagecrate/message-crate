@@ -36,7 +36,7 @@ Import and view messages in SQLite
 ###### **Subcommands:**
 
 * `import` — Import a message-ir JSONL folder, one Import Run per source (source from export.source unless --source)
-* `imports` — Work on an account's import sessions (`discard` clears a stranded one)
+* `imports` — Work on an account's Import Runs (`discard` clears a stranded one)
 * `dedupe-cross-source` — Soft-hide the same SMS when it appears under more than one import source
 * `reset-demo` — Rebuild the Demo Account: generate Demo Data, clear the account, import, and process assets. Adds the account when it is not there
 * `create-database` — Create an empty database, with no Demo Account. `serve` adds the Demo Account only to a database that does not exist yet, so this is how a Message Crate starts empty
@@ -44,7 +44,7 @@ Import and view messages in SQLite
 * `dump-openapi` — Write the OpenAPI document (JSON) to stdout or --output. Does not open the database
 * `dump-cli-docs` — Write this CLI's docs-site reference page (Markdown) to stdout or --output. Does not open the database
 * `dump-error-docs` — Write one docs-site page per HTTP problem type (Markdown) into the --output directory, or all of them to stdout. Does not open the database
-* `process-assets` — Convert media under assets/ into browser previews under `assets_converted/`
+* `process-assets` — Make the Thumbnails and browser Previews of stored attachments under `assets_converted/`, for rebuilding and repair
 * `create-owner` — Claim an unclaimed Message Crate by creating its owner. Refuses one that already has an owner
 * `reset-owner-password` — Set a new password for the owner, ending their sessions. Refuses a Message Crate that has no owner yet
 
@@ -81,19 +81,19 @@ Import a message-ir JSONL folder, one Import Run per source (source from export.
 
 ## `message-crate-server imports`
 
-Work on an account's import sessions (`discard` clears a stranded one)
+Work on an account's Import Runs (`discard` clears a stranded one)
 
 **Usage:** `message-crate-server imports <COMMAND>`
 
 ###### **Subcommands:**
 
-* `discard` — Discard the account's active import session, if it has one. A killed `import` leaves its session open, and no later import can start until it is discarded
+* `discard` — Discard the account's running Import Run, if it has one. A killed `import` leaves its Import Run running, and no later import can start until it is discarded
 
 
 
 ## `message-crate-server imports discard`
 
-Discard the account's active import session, if it has one. A killed `import` leaves its session open, and no later import can start until it is discarded
+Discard the account's running Import Run, if it has one. A killed `import` leaves its Import Run running, and no later import can start until it is discarded
 
 **Usage:** `message-crate-server imports discard [OPTIONS] --account <ACCOUNT>`
 
@@ -103,7 +103,7 @@ Discard the account's active import session, if it has one. A killed `import` le
 
   Default value: `config/config.toml`
 * `--db <DB>` — Output SQLite database path (overrides config)
-* `--account <ACCOUNT>` — Account username or id whose active session is discarded
+* `--account <ACCOUNT>` — Account username or id whose running Import Run is discarded
 
 
 
@@ -220,7 +220,7 @@ Write one docs-site page per HTTP problem type (Markdown) into the --output dire
 
 ## `message-crate-server process-assets`
 
-Convert media under assets/ into browser previews under `assets_converted/`
+Make the Thumbnails and browser Previews of stored attachments under `assets_converted/`, for rebuilding and repair
 
 **Usage:** `message-crate-server process-assets [OPTIONS]`
 
@@ -229,7 +229,7 @@ Convert media under assets/ into browser previews under `assets_converted/`
 * `--config <CONFIG>` — Path to config.toml
 
   Default value: `config/config.toml`
-* `--force` — Re-convert even when a browser preview already exists
+* `--force` — Make every Thumbnail and Preview again, even ones that already exist
 * `--dry-run` — Convert and log without writing files or updating the DB
 * `--skip-image` — Skip image conversion
 * `--skip-video` — Skip video conversion

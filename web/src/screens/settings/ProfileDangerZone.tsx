@@ -5,8 +5,11 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import DeleteAccountDialog from "../../components/DeleteAccountDialog";
 import PlainButton from "../../components/PlainButton";
 import { useAuth } from "../../lib/auth";
-import { useRouteCache } from "../../lib/routeQuery";
+import { accountStagingDirectories } from "../../lib/importSession";
+import { keys } from "../../lib/queryKeys";
+import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
 import { deleteAccount, deleteAllMessages as deleteAllMessagesRoute } from "../../lib/serverApi";
+import { isTauri } from "../../lib/tauri-check";
 import { useDeleteAccount, useDeleteAccountMessages } from "../owner/useOwnerAccounts";
 import { dangerButtonClass } from "./profileStyles";
 
@@ -18,7 +21,10 @@ const dangerButton = `${dangerButtonClass} !box-border !w-auto !min-w-[10.5rem] 
  * Delete an account's messages, or the account.
  *
  * For the logged-in account, deleting the account asks for its password when
- * it has one (`hasPassword`) and logs out. Given `managedAccountId`, the owner is deleting someone
+ * it has one (`hasPassword`) and logs out. In the desktop app it also deletes
+ * the account's Staging Directories on this computer, which the dialog names
+ * first: the server deletes the account's Import Runs with it, so nothing
+ * would offer those folders again. Given `managedAccountId`, the owner is deleting someone
  * else's: no password is asked, because the owner does not know it, and the
  * owner lands back on User Accounts. The owner deletes on the strength of the
  * count and the account holder's word, so the confirmation states the count.
@@ -29,14 +35,18 @@ const dangerButton = `${dangerButtonClass} !box-border !w-auto !min-w-[10.5rem] 
  * either way.
  */
 export function ProfileDangerZone({
-  isDemo,
+  messagesFixed,
+  accountFixed,
   username,
   hasPassword,
   canDelete = true,
   managedAccountId,
   messageCount = 0,
 }: {
-  isDemo: boolean;
+  /** Nobody deletes the account's messages for good: `fixedSettings(profile).deleteMessages`. */
+  messagesFixed: boolean;
+  /** The account may not delete itself, and the owner still may: `fixedSettings(profile).deleteOwnAccount`. */
+  accountFixed: boolean;
   username: string;
   hasPassword: boolean;
   canDelete?: boolean;
@@ -57,16 +67,24 @@ export function ProfileDangerZone({
 
   const managed = managedAccountId !== undefined;
   const busy = deleting || deletingMessages;
-  // The demo lock is the account's own; the owner may delete the demo account.
-  const demoLocked = isDemo && !managed;
-  // Nobody empties the Demo Account: the owner deletes it or resets it.
-  const messagesLocked = isDemo;
+  const accountLocked = accountFixed && !managed;
   // An account the owner barred from deleting asks the owner instead.
   const notPermitted = !canDelete && !managed;
   const count = messageCount.toLocaleString();
+  // Only the desktop app can find and delete folders on this computer.
+  const checkDirectories = deleteDialogOpen && !managed && isTauri();
+  const stagingDirectories = useRouteQuery(
+    keys.imports.stagingDirectories,
+    (signal) => accountStagingDirectories(signal),
+    { enabled: checkDirectories, staleTime: 0 },
+  );
+  // A look that failed deletes nothing, as the dialog says, even with an
+  // earlier list still cached.
+  const directoriesToDelete =
+    checkDirectories && !stagingDirectories.isError ? (stagingDirectories.data ?? []) : [];
 
   const deleteAllMessages = async () => {
-    if (messagesLocked || notPermitted) return;
+    if (messagesFixed || notPermitted) return;
     setDeletingMessages(true);
     setDangerError("");
     try {
@@ -83,7 +101,7 @@ export function ProfileDangerZone({
   };
 
   const performDeleteAccount = async (currentPassword?: string) => {
-    if (demoLocked || notPermitted) return;
+    if (accountLocked || notPermitted) return;
     setDeleting(true);
     setDangerError("");
     try {
@@ -96,8 +114,12 @@ export function ProfileDangerZone({
       await deleteAccount({ confirm: true, current_password: currentPassword });
       setDeleteDialogOpen(false);
       // The account is gone, so there is nothing to go back to: an Upload
-      // still running is paused without asking, and its folder stays.
-      void logout({ ask: false });
+      // still running is paused without asking, and the folders the dialog
+      // named are deleted once the session is revoked.
+      void logout({
+        ask: false,
+        deletedAccountDirectories: directoriesToDelete,
+      });
     } catch (e) {
       setDangerError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -151,12 +173,12 @@ export function ProfileDangerZone({
               <div className="justify-self-end p-px">
                 <Button
                   variant="danger"
-                  disabled={busy || messagesLocked || notPermitted}
+                  disabled={busy || messagesFixed || notPermitted}
                   onClick={() => setConfirmDeleteMessagesOpen(true)}
                   className={dangerButton}
                   title={
-                    messagesLocked
-                      ? "Unavailable on the demo account"
+                    messagesFixed
+                      ? "Unavailable on the Demo Account"
                       : notPermitted
                         ? CANNOT_DELETE
                         : undefined
@@ -178,15 +200,15 @@ export function ProfileDangerZone({
               <div className="justify-self-end p-px">
                 <Button
                   variant="danger"
-                  disabled={busy || demoLocked || notPermitted}
+                  disabled={busy || accountLocked || notPermitted}
                   onClick={() => {
                     setDangerError("");
                     setDeleteDialogOpen(true);
                   }}
                   className={dangerButton}
                   title={
-                    demoLocked
-                      ? "Unavailable on the demo account"
+                    accountLocked
+                      ? "Unavailable on the Demo Account"
                       : notPermitted
                         ? CANNOT_DELETE
                         : undefined
@@ -225,6 +247,17 @@ export function ProfileDangerZone({
           open={deleteDialogOpen}
           username={username}
           hasPassword={hasPassword}
+          stagingDirectories={
+            checkDirectories
+              ? {
+                  // A look still under way holds the confirm, even with an earlier
+                  // list cached: that list may miss a folder made since.
+                  checking: stagingDirectories.isFetching,
+                  paths: directoriesToDelete,
+                  error: stagingDirectories.error?.message ?? "",
+                }
+              : undefined
+          }
           deleting={deleting}
           error={dangerError}
           onClose={() => {

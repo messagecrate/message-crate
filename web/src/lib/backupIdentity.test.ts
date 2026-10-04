@@ -57,9 +57,9 @@ describe("identityMessageCounts", () => {
   it("adds up sent and received across spellings of one address", () => {
     expect(
       identityMessageCounts("+15555550110", [
-        { handle: "+1 (555) 555-0110", sent: 3, received: 4 },
-        { handle: "5555550110", sent: 1, received: 0 },
-        { handle: "owner@example.com", sent: 9, received: 9 },
+        { identity: "+1 (555) 555-0110", sent: 3, received: 4 },
+        { identity: "5555550110", sent: 1, received: 0 },
+        { identity: "owner@example.com", sent: 9, received: 9 },
       ]),
     ).toEqual({ sent: 4, received: 4 });
   });

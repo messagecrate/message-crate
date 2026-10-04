@@ -1,15 +1,15 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { fill, setupUser } from "../test/user";
 import AddIdentityDialog from "./AddIdentityDialog";
 
 afterEach(cleanup);
 
 describe("AddIdentityDialog", () => {
   it("offers Text Message, Email and WhatsApp, and hands back the service picked", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     const onConfirm = vi.fn();
     render(<AddIdentityDialog open onClose={() => {}} onConfirm={onConfirm} />);
 
@@ -24,17 +24,17 @@ describe("AddIdentityDialog", () => {
       "placeholder",
       "you@example.com",
     );
-    await user.type(screen.getByRole("textbox", { name: "Identity" }), "Bob@Example.com");
+    await fill(user, screen.getByRole("textbox", { name: "Identity" }), "Bob@Example.com");
     await user.click(screen.getByRole("button", { name: "Add" }));
     expect(onConfirm).toHaveBeenCalledWith({ address: "Bob@Example.com", service: "email" });
   });
 
   it("refuses a value that is not a number or an address, before asking anyone", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     const onConfirm = vi.fn();
     render(<AddIdentityDialog open onClose={() => {}} onConfirm={onConfirm} />);
 
-    await user.type(screen.getByRole("textbox", { name: "Identity" }), "12");
+    await fill(user, screen.getByRole("textbox", { name: "Identity" }), "12");
     await user.click(screen.getByRole("button", { name: "Add" }));
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Enter a phone number like +1 555-555-0119.",
@@ -44,7 +44,7 @@ describe("AddIdentityDialog", () => {
     await user.click(screen.getByRole("button", { name: /Service/ }));
     await user.click(screen.getByRole("option", { name: "Email" }));
     await user.clear(screen.getByRole("textbox", { name: "Identity" }));
-    await user.type(screen.getByRole("textbox", { name: "Identity" }), "not-an-address");
+    await fill(user, screen.getByRole("textbox", { name: "Identity" }), "not-an-address");
     await user.keyboard("{Enter}");
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Enter an email address like you@example.com.",
@@ -53,7 +53,7 @@ describe("AddIdentityDialog", () => {
   });
 
   it("refuses an identity already in the list, on the same service only", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     const onConfirm = vi.fn();
     render(
       <AddIdentityDialog
@@ -64,7 +64,7 @@ describe("AddIdentityDialog", () => {
       />,
     );
 
-    await user.type(screen.getByRole("textbox", { name: "Identity" }), "+1 (555) 555-0100");
+    await fill(user, screen.getByRole("textbox", { name: "Identity" }), "+1 (555) 555-0100");
     expect(screen.getByRole("alert")).toHaveTextContent("This identity is already in the list.");
     expect(screen.getByRole("button", { name: "Add" })).toBeDisabled();
 

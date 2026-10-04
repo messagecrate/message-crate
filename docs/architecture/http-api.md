@@ -30,11 +30,12 @@ The one exception is an Asset, addressed by the SHA-256 of its contents:
 must know the hash before an upload can be deduplicated, and two uploads of
 one file must be one asset.
 
-An asset's Preview has no address of its own. It is
-`/v1/assets/{sha256}/preview`, under the hash of the original, and the
-attachment says whether there is one in `preview_mime_type`.
-Why: the client holds the original's hash and has no use for the preview's, and
-a second hash on the attachment would be a second thing to address by.
+An asset's Preview and Thumbnail have no address of their own. They are
+`/v1/assets/{sha256}/preview` and `/v1/assets/{sha256}/thumbnail`, under the
+hash of the original, and the attachment says whether each exists in
+`preview_mime_type` and `thumbnail_mime_type`.
+Why: the client holds the original's hash and has no use for theirs, and
+another hash on the attachment would be another thing to address by.
 
 Rejected: the name in the path for Contact Groups and Message Tags. It keeps
 every reference to a group the same kind of thing, and it makes the rule
@@ -153,7 +154,9 @@ current one, because that account reaches every other.
   database did not hold, and a claim that makes the owner's Session
   (`Location: /v1/session`), both answer `201`. A create that takes a batch
   answers `200 OK` with a summary of what was created, updated and skipped,
-  because no single resource was made.
+  because no single resource was made. A Media Link is made though nothing is
+  stored: `POST /v1/assets/{sha256}/media-links` answers `201 Created` with the link's
+  own URL in `Location`, which the Session that made it can `GET`.
 - A write with nothing to return answers `204 No Content`.
 - A write the server finishes after it answers is `202 Accepted`, with the
   resource in its body and a `status` that says the work is under way. The
@@ -197,6 +200,23 @@ current one, because that account reaches every other.
   caller does not hold breaks a rule rather than completing with an empty
   result.
 - `429 Too Many Requests` carries `Retry-After`.
+- The three routes that answer an asset's bytes, `GET /v1/assets/{sha256}`,
+  `GET /v1/assets/{sha256}/preview` and `GET /v1/assets/{sha256}/thumbnail`,
+  answer a `Range` of one byte range
+  (`bytes=0-499`, `bytes=500-`, `bytes=-500`) with `206 Partial Content`,
+  those bytes, and `Content-Range: bytes <first>-<last>/<length>`. A range
+  that selects no byte of the file answers `416 Range Not Satisfiable`
+  (`range-not-satisfiable`) with `Content-Range: bytes */<length>`. Any other
+  `Range` answers `200 OK` with the whole file, as RFC 9110 allows: another
+  unit, several ranges, a range that cannot be read, or an `If-Range` that
+  does not name this file. Every answer carries `Accept-Ranges: bytes`. The
+  original's `ETag` is its fingerprint, which `If-Range` may name; a Preview
+  and a Thumbnail have none, so a `Range` sent with `If-Range` gets the whole
+  file.
+  Why: a video plays from a media element that asks for the file a range at
+  a time and seeks by asking for another (`docs/architecture/media.md`).
+  Rejected: answering several ranges as `multipart/byteranges`. No media
+  element sends several, and the whole file is a correct answer to them.
 - An unknown `/v1` path answers `404` as a problem document, and a wrong method
   `405`, never Axum's plain text.
 
@@ -211,10 +231,11 @@ easier to hold than a line with one.
 ## Lists
 
 Every list route answers a page, `{items, total, limit, offset}`, and takes
-`offset` and `limit`. No exceptions: a list the person curates by hand
-(groups, tags, saved searches, API tokens), a fixed reference list
-(`/v1/search-fields/contacts`), and a `POST` that reads all answer a page. The
-list key is always `items`.
+`offset` and `limit`. A list the person curates by hand (groups, tags, saved
+searches, API tokens), a fixed reference list (`/v1/search-fields/contacts`),
+and a `POST` that reads all answer a page. The one exception is the server's
+log lines, which are written while they are read and page from a line (see
+below). The list key is always `items`.
 Why: the web app has one paged type and one hook, and a second shape is a
 second convention.
 
@@ -230,6 +251,23 @@ resource the set hangs off, not beside `items`. An Import Run's tally of
 contacts created and changed is on the run's own record, and the contacts are
 a page. Why: a page can only count its own rows, and a field beside `items`
 that counts something else is a second shape.
+
+A list's row carries nothing that grows without bound. Where a resource
+holds such a collection, as an Import Run holds its issues and its notes,
+the list answers how many in a count (`issue_count`, `note_count`) and the
+resource's own `GET` answers the collection. `GET /v1/imports` and an
+account's own `GET /v1/accounts/{id}/imports` answer each run as an
+`ImportRunSummary`, with the counts and without the issues or notes. The
+owner's `GET /v1/accounts/{id}/imports` answers each as an
+`OwnerImportRun`, which also counts them and never carries them.
+`GET /v1/imports/{id}` answers the issues and the notes. Each count is
+read in the list's own statement, never by a statement per row. Why: `limit` bounds a page's rows and nothing else, so a collection
+inside each row left a page's size to whatever the runs recorded. Forty
+WhatsApp runs of 20,000 skipped files each made one page of Settings →
+Storage carry about 800,000 issues, and one statement per row made a page of
+500 runs a thousand statements (#1559).
+Rejected: capping how many issues a run stores. It bounds the list by
+throwing away the diagnostics the run exists to keep.
 
 `limit` is at least 1 and at most 500, default 40, on every list including an
 Export Run's messages. `offset` is at most 50 000 on the browse lists. A value
@@ -259,20 +297,36 @@ descending. Each list declares the keys it accepts, and an unlisted key is
 
 Filtering is the search language in `q`, and nothing else. The one exception
 is a list with no search language, which may take a filter parameter whose
-values are the ones its rows store. The Import Run and Export Run lists and the
-Audit Trail are the only such lists: `GET /v1/imports?status=running`,
-`GET /v1/exports?status=completed` and their twins under an account, and
-`GET /v1/audit-trail?deleted_account_id=7`, which reads one deleted account's
-entries and runs by the id they keep. There is no `fields=` selection.
+values are the ones its rows store. The Import Run and Export Run lists, the
+Audit Trail and the server's log lines are the only such lists:
+`GET /v1/imports?status=running`, `GET /v1/exports?status=completed` and their
+twins under an account, `GET /v1/audit-trail?deleted_account_id=7`, which reads
+one deleted account's entries and runs by the id they keep, and
+`GET /v1/server/log-lines?level=warn&text=import`, where `level` keeps that
+level and the more severe ones and `text` keeps the lines whose text, after
+the time and the level, holds it, ignoring case. A log line is text, not a
+row with fields a search language could name, so `text` is the whole of its
+search. There is no `fields=` selection.
 
 A query parameter a route does not declare is `validation-failed`, naming the
-parameters the route accepts. Why: a typo (`limt=10`) or a guess at a
+parameters the route accepts. The `media_link` of a Media Link is declared by
+its security scheme, an API key in the query, and counts as declared on the
+three routes that take it. Why: a typo (`limt=10`) or a guess at a
 convention this file rejects (`order=`, `fields=`, `year=`) would otherwise be
 answered as though it had been obeyed.
 
 Rejected: cursor paging. Stable under concurrent inserts, but nothing inserts
 rows under a running read on a self-hosted server, and every screen that shows
 "51–100 of 4,213" needs `total`.
+
+The server's log lines, `GET /v1/server/log-lines`, are the one list that
+pages from a line instead: `{items, limit, has_more}`, newest first, and
+`after={id}` reads the lines older than the line with that id. It takes no
+`offset` and answers no `total`. Why: the server writes lines while the owner
+reads them, its answers to the reading included, so the reason above does not
+hold for it, and a `total` would mean counting up to 250 MB of files for every
+page. The id names a line, as `around`, `before` and `after` name a message,
+and is not an opaque token (`docs/architecture/server-log.md`).
 
 Rejected: a bare `{items}` for small lists. One justified exception is still
 two conventions, and a group's member list has no bound the server enforces.
@@ -325,18 +379,20 @@ member of it matches `application/json`, `application/problem+json`,
 `application/*`, or `*/*`. `application/*` is a media range that matches
 `application/json` (RFC 9110), so refusing it would refuse a client that asks
 for JSON. A missing `Accept` is a request for JSON. The check runs on every `/v1` route
-but the three that answer bytes: `GET /v1/assets/{sha256}`, which streams the
-asset's own contents, `GET /v1/assets/{sha256}/preview`, which streams its
-Preview, and `POST /v1/contacts/address-book`, which answers the address book
-as `text/csv`. Nothing outside `/v1` is checked.
+but the five that answer bytes: `GET /v1/assets/{sha256}`, which streams the
+asset's own contents, `GET /v1/assets/{sha256}/preview` and
+`GET /v1/assets/{sha256}/thumbnail`, which stream its Preview and its
+Thumbnail, `POST /v1/contacts/address-book`, which answers the address book
+as `text/csv`, and `GET /v1/server/log-files/{id}`, which answers a file of
+the server's log as `text/plain`. Nothing outside `/v1` is checked.
 
 Rejected: requiring `Accept: application/json`. None of the server's own clients
 send one, and the rule would refuse the web app on its first request.
 
 ## Credentials and reach
 
-Two credentials exist, and the OpenAPI document declares each as a security
-scheme with its scopes, so every route says which it accepts.
+Three credentials exist, and the OpenAPI document declares each as a
+security scheme with its scopes, so every route says which it accepts.
 
 - A **Session** is one per logged-in account or owner, made by
   `POST /v1/session` and ended by `DELETE /v1/session`. It carries the
@@ -359,6 +415,50 @@ scheme with its scopes, so every route says which it accepts.
   label their work with it. `DELETE /v1/session` refuses a token with `403`,
   because a token is not a Session and a `204` would say something ended when
   nothing did.
+- A **Media Link** reads one asset, its Preview and its Thumbnail, in the
+  account that made it, with no `Authorization` header. A Session makes it
+  with `POST /v1/assets/{sha256}/media-links`, which answers the URLs to
+  load: `/v1/assets/{sha256}?media_link=…` and its `/preview` and
+  `/thumbnail` twins. It is open for
+  one hour, and ends sooner when the Session that made it ends: by logout, a
+  new login, a password change, or the Session's expiry. A server restart
+  ends every Media Link too. Only `GET /v1/assets/{sha256}`,
+  `GET /v1/assets/{sha256}/preview` and `GET /v1/assets/{sha256}/thumbnail`
+  take one, and a request that sends
+  `Authorization` is judged by the header alone. A link that does not open
+  the asset answers `401 Unauthorized` with `media-link-invalid`, because its
+  remedy is a new link rather than a new login.
+  Why: a media element (`<img>`, `<video>`, `<audio>`) loads its own `src`
+  and cannot send a header, and a video that streams must be loaded by the
+  element itself (`docs/architecture/media.md`, rule 1).
+  How: the value is `<account_id>.<expires>.<signature>`, an HMAC-SHA256
+  under a key the server makes when it starts and never writes down, over
+  the account, the asset's fingerprint, the expiry and the hash of the
+  Session token that made it. The server stores nothing: it checks a link by
+  signing the same terms with the Session the account holds now, so a link
+  for another asset, another account, a later expiry or an ended Session
+  fails the same check. The server's log shows `media_link=[hidden]`,
+  because a credential is never logged.
+  Why an hour: a phone video is watched and sought in within minutes, and an
+  hour leaves room for a long one; a link copied out of the page stops
+  working soon after. The web app makes a new link whenever it opens an
+  attachment again.
+  Rejected: the Session token in the query string. It would write the
+  credential that reaches every message into URLs, the page and any log on
+  the way, where a Media Link reaches one asset for an hour.
+  Rejected: a cookie. The desktop app's page is served from
+  `tauri://localhost` and its server answers at `http://127.0.0.1:8080`, so
+  every request is cross-site, and a browser sends a cookie on a cross-site
+  request only with `SameSite=None; Secure`, which needs HTTPS. Docker and
+  the desktop app must work one way.
+  Rejected: fetching the file with the header and handing the element a
+  blob. The whole file loads before the first frame, which is what streaming
+  removes.
+  Rejected: a stored link, a row per link. It is a row for every attachment
+  opened and a table to prune, and the check reads the Session row either
+  way.
+  Rejected: one link per account for all its assets. A link copied out of
+  the page would read every attachment the account holds.
 
 What each reaches:
 
@@ -370,16 +470,20 @@ What each reaches:
   `HEAD /v1/assets/{sha256}`, need the `export` scope on either credential. A
   program with an export token reads messages only through an Export Run it
   started, so every read of message data by a program leaves a record.
-- `GET /v1/assets/{sha256}` takes any session, or a token with the `export`
-  scope. Why: a person looking at a photo in their own conversation is not
+- `GET /v1/assets/{sha256}` takes any session, a token with the `export`
+  scope, or a Media Link for that asset. Why: a person looking at a photo in their own conversation is not
   exporting it, so an account whose `export` permission is off still sees its
   attachments, as it still reads its messages. A token has no screen to show
   bytes on; fetching them with one is taking them out, which is what the
   `export` scope decides.
-- `GET /v1/assets/{sha256}/preview` is read under the same rule as the asset
-  it was made from, by the same account and nobody else. Why: a Preview is the
+- `GET /v1/assets/{sha256}/preview` and `GET /v1/assets/{sha256}/thumbnail`
+  are read under the same rule as the asset they were made from, by the same
+  account and nobody else. Why: a Preview and a Thumbnail are the
   attachment's content as much as the original is, so a caller who may not
-  read one may not read the other, and the owner reads neither.
+  read one may not read the others, and the owner reads none.
+- `POST /v1/assets/{sha256}/media-links` takes an account's Session only.
+  Why: only a screen has a media element to put a link in, and a program
+  sends its token in the header. The owner holds no attachment to read.
 - `HEAD /v1/assets/{sha256}` also accepts the `import` scope: a program that
   can only push may ask whether an asset exists, and may not read it.
 - Permanent deletion (`DELETE /v1/conversations/{id}`,
@@ -441,12 +545,14 @@ What each reaches:
   Rejected: narrowing by the username the entries keep, which reads two
   accounts that held one username as one, and takes in the logins refused for
   the username while no account held it.
-- The account reads its own runs in full. The owner reads each run as an
+- The account reads its own runs in full, a list's rows less what
+  [Lists](#lists) keeps out of a row. The owner reads each run as an
   `OwnerImportRun` or `OwnerExportRun`: the source, mode, tool, times,
   outcome and counts, with the counts an import's summary reported and how
   many issues it recorded, and for an export only which form its scope took.
   Why: a staging summary lists the addresses of everyone in the backup, an
-  issue names its conversation's file, and an export's query is a search over
+  issue names its conversation's file, a note names a file or an address, and
+  an export's query is a search over
   the account's messages, all content under
   `docs/adr/0008-the-owner-holds-no-messages.md`. The owner's view is a type
   of its own rather than the account's with fields removed, so a field added
@@ -454,6 +560,11 @@ What each reaches:
 - `GET /v1/server` and `POST /v1/server/claim` take no credential.
   `/v1/server/settings` and `GET /v1/server/storage` are the owner's: the
   storage totals sum every account, and no account holds more than its own.
+- The server's log, `GET /v1/server/log-lines`, `GET /v1/server/log-files`
+  and `GET /v1/server/log-files/{id}`, is the owner's alone. Why: it is every
+  account's requests in one stream, about the installation the owner runs,
+  and a line never holds content, so the owner may read all of it
+  (`docs/architecture/server-log.md`).
 - The attachment size limit is a server setting, `asset_max_bytes` in bytes,
   and the settings row is the only place it lives. The owner reads and
   changes it at `/v1/server/settings`; `GET /v1/server` reports it to any
@@ -479,7 +590,9 @@ What each reaches:
   with. Lowering the limit mid-upload otherwise refused every remaining part
   with `413 Payload Too Large`, and the push failed the conversation (#1179).
 
-The credential names the account. No route takes an `account=` parameter.
+The credential names the account. No route takes an `account=` parameter. A
+Media Link is a credential, so its `media_link` parameter names the account
+inside its signed value and is not a parameter of that kind.
 
 Rate limiting guards the three routes that take no credential and make one,
 over a 60-second window; the limit is documented in the developer reference.
@@ -573,7 +686,8 @@ handlers by `message-crate-server dump-openapi` and checked in; a test fails
 when the two differ, and CI checks the web app's generated types against it.
 
 An operation's error responses are built from shared parts, never written out
-by hand. The credential a route accepts brings its `401` and `403`; a request
+by hand. The credential a route accepts brings its `401` and `403`, and a
+Media Link brings `media-link-invalid`; a request
 body brings `400`, `413`, `415` and `422`; an id in the path brings `404` and
 `422`; every `/v1` route brings `422` for a query parameter it does not
 declare; and every `/v1` route that answers JSON brings `406` for an `Accept`
@@ -622,12 +736,20 @@ A `HEAD` handler takes the method's own verb, `head`: `head_asset`.
 A `POST` that reads is named for what it returns, as its route is:
 `list_contact_summaries`, `get_address_book`.
 
-A type on the wire is named one of two ways, and a reader can tell which from
-the name:
+A type on the wire is named one of three ways, and a reader can tell which
+from the name:
 
 - A thing the interface hands out is named for what it is, with no suffix:
-  `Message`, `Account`, `ApiToken`, `Contact`, `ContactSummary`, `Identity`,
-  `ImportRun`. It keeps that name wherever it appears.
+  `Message`, `Account`, `ApiToken`, `Contact`, `Identity`, `ImportRun`. It
+  keeps that name wherever it appears.
+- A projection of such a thing, a type that answers part of it where the
+  whole does not belong, is the thing's name with one word that says which
+  part, and is written down here with its reason. `Summary` is the thing as
+  a list answers it: `ContactSummary` is a contact's row in the Contacts
+  list, and `ImportRunSummary` is an Import Run without its issues and
+  notes, which `ImportRun` adds to it ([Lists](#lists)). `Owner` is the
+  thing as the owner reads it under another account: `OwnerImportRun` and
+  `OwnerExportRun` ([Credentials and reach](#credentials-and-reach)).
 - An action's input and output are named for the action:
   `VerbNounRequest` for a body sent in, `VerbNounResponse` for an answer that
   is not a thing (`CreateApiTokenRequest`, `DeleteMessagesResponse`), and

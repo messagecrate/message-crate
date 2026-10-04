@@ -30,7 +30,7 @@ fn sample_doc() -> ConversationDocument {
             source: "sms-backup-restore".into(),
             tool: "SMS Backup & Restore".into(),
             tool_version: "10.26.003".into(),
-            owner_handle: Some("+15555550100".into()),
+            owner_identity: Some("+15555550100".into()),
             owner_display_name: Some("Me".into()),
         },
         conversation: ConversationMeta {
@@ -38,9 +38,9 @@ fn sample_doc() -> ConversationDocument {
             conversation_type: IrConversationType::Individual,
             group_title: None,
             participants: vec![IrParticipant {
-                handle: Some("+15555550101".into()),
+                identity: Some("+15555550101".into()),
                 display_name: Some("Sam".into()),
-                handle_type: None,
+                identity_type: None,
             }],
             stats: ConversationStats::default(),
         },
@@ -50,12 +50,14 @@ fn sample_doc() -> ConversationDocument {
             direction: IrDirection::Incoming,
             service: IrService::Sms,
             message_kind: IrMessageKind::Sms,
-            sender_handle: Some("+15555550101".into()),
+            sender_identity: Some("+15555550101".into()),
             sender_display_name: Some("Sam".into()),
-            owner_handle: None,
+            owner_identity: None,
             subject: None,
             text: "hello there".into(),
             attachments: vec![],
+            reactions: Vec::new(),
+            deletion: None,
             imessage: None,
             source: None,
         }],
@@ -67,9 +69,9 @@ fn sample_doc() -> ConversationDocument {
 fn sample_doc_for(handle: &str, guid: &str) -> ConversationDocument {
     let mut doc = sample_doc();
     doc.conversation.chat_identifier = handle.into();
-    doc.conversation.participants[0].handle = Some(handle.into());
+    doc.conversation.participants[0].identity = Some(handle.into());
     doc.messages[0].guid = guid.into();
-    doc.messages[0].sender_handle = Some(handle.into());
+    doc.messages[0].sender_identity = Some(handle.into());
     doc
 }
 
@@ -1905,12 +1907,18 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
     cfg.asset_max_bytes = 16; // BIG exceeds; SMALL does not
 
     let mut issues = Vec::new();
+    let mut conversations = Vec::new();
     let report = {
         let mut progress = |event: ProgressEvent| {
             if let ProgressEvent::Issue {
-                kind, item, reason, ..
+                kind,
+                item,
+                reason,
+                conversation,
+                ..
             } = event
             {
+                conversations.push((item.clone(), conversation));
                 issues.push((kind, item, reason));
             }
         };
@@ -1934,6 +1942,15 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
                 && reason.contains("over the configured asset max")
         }),
         "expected skip issue for oversized attachment, got {issues:?}"
+    );
+    // The row names the conversation it is about, which tells the window
+    // whether a resumed Upload reads that conversation again (#1639).
+    assert_eq!(
+        conversations,
+        [(
+            "+15555550101.jsonl:attachments/big.bin".to_string(),
+            "+15555550101.jsonl".to_string()
+        )]
     );
 }
 
@@ -2994,4 +3011,161 @@ fn a_push_with_the_default_size_limit_uploads_a_photo_of_two_mebibytes() {
     assert!(report.ok, "{:?}", report.results);
     assert_eq!(put.calls(), 1);
     assert_eq!(report.assets_uploaded, 1);
+}
+
+/// A session the server stops accepting part-way through stops the push the
+/// way a cancel does (#1491): nothing after the refused batch is sent, no
+/// conversation is recorded as failed for the refusal, the report says the
+/// session was refused, and a later push sends what the refused batch
+/// carried and what came after it.
+///
+/// Guards against recording every remaining conversation as failed while the
+/// push keeps sending a token the server has ended.
+#[test]
+fn a_refused_session_stops_the_push_as_a_pause_and_fails_no_conversation() {
+    let server = MockServer::start();
+    let _auth = mock_session(&server);
+    let accepted = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/imports/7/batches")
+            .body_includes("guid-1");
+        then.status(200).json_body(json!({
+            "messages": 1,
+            "messages_appended": 1,
+            "conversations": 1
+        }));
+    });
+    let mut refused = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/imports/7/batches")
+            .body_excludes("guid-1");
+        then.status(401).json_body(json!({
+            "type": "about:blank",
+            "title": "Unauthorized",
+            "status": 401
+        }));
+    });
+
+    let dir = tempdir().unwrap();
+    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
+    let cfg = PushConfig {
+        batch_size: 1,
+        prepare_ahead: 1,
+        prepare_workers: 1,
+        import_id: Some(7),
+        ..text_only_config(dir.path(), server.base_url())
+    };
+
+    let report = run(&cfg, None).unwrap();
+
+    assert!(
+        report.session_refused,
+        "the report says the session was refused"
+    );
+    assert!(
+        report.cancelled,
+        "a refused session stops the push as a pause"
+    );
+    assert!(!report.ok);
+    assert_eq!(report.conversations_failed, 0, "{:?}", report.results);
+    assert_eq!(report.messages_failed, 0);
+    assert_eq!(report.conversations_ok, 1);
+    assert_eq!(report.conversations_cancelled, 2, "{:?}", report.results);
+    assert_eq!(accepted.calls(), 1);
+    assert_eq!(refused.calls(), 1, "nothing is sent after the refusal");
+    assert!(journal_events(dir.path(), "fail").is_empty());
+
+    refused.delete();
+    let resumed_import = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/imports/7/batches")
+            .body_excludes("guid-1");
+        then.status(200).json_body(json!({
+            "messages": 1,
+            "messages_appended": 1,
+            "conversations": 1
+        }));
+    });
+    let resumed = run(&cfg, None).unwrap();
+
+    assert!(resumed.ok, "{:?}", resumed.results);
+    assert!(!resumed.session_refused);
+    assert_eq!(resumed.conversations_skipped, 1);
+    assert_eq!(resumed.conversations_ok, 2);
+    assert_eq!(resumed_import.calls(), 2);
+}
+
+/// An attachment upload the server refuses because the session ended stops
+/// the push the same way: the conversation it belongs to is left for the
+/// next push, not recorded as failed (#1491).
+#[test]
+fn a_refused_attachment_upload_stops_the_push_and_fails_no_conversation() {
+    let server = MockServer::start();
+    let _auth = mock_session(&server);
+    let _head = server.mock(|when, then| {
+        when.method("HEAD").path_includes("/v1/assets/");
+        then.status(401);
+    });
+    let batches = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/7/batches");
+        then.status(200).json_body(json!({
+            "messages": 1,
+            "messages_appended": 1,
+            "conversations": 1
+        }));
+    });
+
+    let dir = tempdir().unwrap();
+    two_attachment_docs(dir.path(), "a.txt", b"first file", "b.txt", b"second file");
+    let cfg = PushConfig {
+        import_id: Some(7),
+        ..text_only_config(dir.path(), server.base_url())
+    };
+
+    let report = run(&cfg, None).unwrap();
+
+    assert!(report.session_refused);
+    assert!(report.cancelled);
+    assert_eq!(report.conversations_failed, 0, "{:?}", report.results);
+    assert_eq!(report.conversations_cancelled, 1, "{:?}", report.results);
+    assert_eq!(batches.calls(), 0);
+}
+
+/// A session that has already ended when the push starts is refused at its
+/// first request. That stops the push as a pause too, with every
+/// conversation left for the next push, rather than failing it (#1491).
+#[test]
+fn a_session_refused_at_login_stops_the_push_as_a_pause() {
+    let server = MockServer::start();
+    let _auth = server.mock(|when, then| {
+        when.method(GET).path("/v1/session");
+        then.status(401).json_body(json!({
+            "type": "about:blank",
+            "title": "Unauthorized",
+            "status": 401
+        }));
+    });
+    let batches = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/7/batches");
+        then.status(200);
+    });
+
+    let dir = tempdir().unwrap();
+    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
+    let cfg = PushConfig {
+        import_id: Some(7),
+        ..text_only_config(dir.path(), server.base_url())
+    };
+
+    let report = run(&cfg, None).unwrap();
+
+    assert!(report.session_refused);
+    assert!(report.cancelled);
+    assert_eq!(report.conversations_failed, 0);
+    assert_eq!(report.conversations_cancelled, 2);
+    assert_eq!(report.conversations_total, 2);
+    assert_eq!(batches.calls(), 0);
 }

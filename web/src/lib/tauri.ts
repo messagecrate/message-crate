@@ -6,6 +6,7 @@ import type {
   AttachmentMediaMode,
   ExtractConfig,
   ExtractErrorEvent,
+  ImportFileDoneEvent,
   ImportIssueEvent,
   ImportProgressEvent,
 } from "./types";
@@ -104,9 +105,9 @@ export interface AttachmentForecast {
   verdict: SizeVerdict;
 }
 
-/** How many messages one of the owner's handles sent and received. */
-export interface OwnerHandleCount {
-  handle: string;
+/** How many messages one of the owner's identities sent and received. */
+export interface OwnerIdentityCount {
+  identity: string;
   sent: number;
   received: number;
 }
@@ -116,8 +117,8 @@ export interface StagingSummary {
   conversations: number;
   messages: number;
   contactIdentifiers: string[];
-  /** Messages under the owner handle each was sent from or received at. */
-  ownerHandles: OwnerHandleCount[];
+  /** Messages under the owner identity each was sent from or received at. */
+  ownerIdentities: OwnerIdentityCount[];
   attachments: number;
   attachmentBytes: number;
   forecasts: AttachmentForecast[];
@@ -193,6 +194,11 @@ export interface PushFinishedReport {
   ok: boolean;
   /** The cancel flag stopped the push: a pause the run resumes from, not a failure. */
   cancelled: boolean;
+  /**
+   * The server refused the session the push sent (it expired or was ended),
+   * which stopped the push as a pause. The window ends the session too.
+   */
+  session_refused: boolean;
   messages_attempted: number;
   messages_inserted: number;
   messages_deduped: number;
@@ -403,6 +409,7 @@ export function onExtractEvents(callbacks: {
   onLog: (line: string) => void;
   onProgress?: (event: ImportProgressEvent) => void;
   onIssue?: (event: ImportIssueEvent) => void;
+  onFileDone?: (event: ImportFileDoneEvent) => void;
   onFinished: (summary: string) => void;
   onError: (err: ExtractErrorEvent) => void;
 }): Promise<UnlistenFn> {
@@ -410,6 +417,7 @@ export function onExtractEvents(callbacks: {
     listen<string>("extract:log", (e) => callbacks.onLog(e.payload)),
     listen<ImportProgressEvent>("extract:progress", (e) => callbacks.onProgress?.(e.payload)),
     listen<ImportIssueEvent>("extract:issue", (e) => callbacks.onIssue?.(e.payload)),
+    listen<ImportFileDoneEvent>("extract:file-done", (e) => callbacks.onFileDone?.(e.payload)),
     listen<string>("extract:finished", (e) => callbacks.onFinished(e.payload)),
     listen<ExtractErrorEvent>("extract:error", (e) => callbacks.onError(e.payload)),
   ]).then((unlisteners) => {
@@ -435,6 +443,7 @@ export async function awaitTauriJob(
   onLog?: (line: string) => void,
   onProgress?: (event: ImportProgressEvent) => void,
   onIssue?: (event: ImportIssueEvent) => void,
+  onFileDone?: (event: ImportFileDoneEvent) => void,
 ): Promise<TauriJobResult> {
   let unlisten: UnlistenFn | undefined;
   const release = holdDesktopJob(job);
@@ -446,6 +455,7 @@ export async function awaitTauriJob(
             onLog: (line) => onLog?.(line),
             onProgress,
             onIssue,
+            onFileDone,
             onFinished: (summary) => resolve(parseTauriJobResult(summary)),
             onError: (err) => reject(new Error(err.user_message ?? err.detail)),
           });
@@ -470,6 +480,7 @@ function isPushFinishedReport(value: unknown): value is PushFinishedReport {
   return (
     typeof value.ok === "boolean" &&
     typeof value.cancelled === "boolean" &&
+    typeof value.session_refused === "boolean" &&
     typeof value.messages_attempted === "number" &&
     typeof value.messages_inserted === "number" &&
     typeof value.messages_deduped === "number" &&

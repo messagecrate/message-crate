@@ -4,6 +4,7 @@ import FormField from "../../components/FormField";
 import PlainButton from "../../components/PlainButton";
 import { textInputClassName } from "../../components/TextField";
 import type { AttachmentMediaMode } from "../../lib/types";
+import { focusRing } from "../../lib/uiStyles";
 
 export const ATTACHMENT_OPTIONS: { id: AttachmentMediaMode; label: string }[] = [
   { id: "copy", label: "Copy" },
@@ -67,7 +68,7 @@ export function CollapsibleSection({
         <>
           <PlainButton
             slot="trigger"
-            className="flex w-full cursor-pointer items-center gap-2 rounded-none border-0 border-b border-border bg-transparent p-0 pb-2 pt-1 text-left text-[0.9375rem] font-semibold text-text outline-none hover:text-accent focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1"
+            className={`flex w-full cursor-pointer items-center gap-2 rounded-none border-0 border-b border-border bg-transparent p-0 pb-2 pt-1 text-left text-[0.9375rem] font-semibold text-text hover:text-accent ${focusRing}`}
           >
             <span
               aria-hidden

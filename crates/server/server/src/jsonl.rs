@@ -2,11 +2,41 @@
 
 use std::fs::File;
 use std::io::{BufRead, BufReader};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
-
+use crate::imports_api::ImportFailure;
 use crate::models::{self, ExportRecord};
+
+/// Why [`read_records`] could not read a file: a line the sender can fix, or
+/// a file the server cannot read.
+#[derive(Debug, thiserror::Error)]
+pub enum ReadRecordsError {
+    /// A line breaks a rule of message-ir, or is not text at all.
+    #[error("failed to parse message-ir JSONL in {}: {failure}", path.display())]
+    Rejected {
+        path: PathBuf,
+        failure: ImportFailure,
+    },
+    /// The file cannot be opened, or `line` cannot be read: nothing the
+    /// sender can change.
+    #[error("{}", unreadable_message(path, *line))]
+    Unreadable {
+        path: PathBuf,
+        /// The line the read stopped on, or `None` when the file did not open.
+        line: Option<usize>,
+        #[source]
+        source: std::io::Error,
+    },
+}
+
+/// What [`ReadRecordsError::Unreadable`] says: the file, and the line the
+/// read stopped on when it opened.
+fn unreadable_message(path: &Path, line: Option<usize>) -> String {
+    match line {
+        Some(line) => format!("failed to read line {line} of {}", path.display()),
+        None => format!("failed to open {}", path.display()),
+    }
+}
 
 /// Read a message-ir JSON Lines conversation file (one JSON object per line)
 /// into import records.
@@ -16,10 +46,20 @@ use crate::models::{self, ExportRecord};
 ///
 /// # Errors
 ///
-/// Returns an error when the file cannot be opened, a line cannot be read, or
-/// a line is not valid message-ir JSON.
-pub fn read_records(path: &Path) -> Result<Vec<ExportRecord>> {
-    let file = File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
+/// Returns [`ReadRecordsError::Rejected`] when a line is not valid
+/// message-ir JSON, and [`ReadRecordsError::Unreadable`] when the file cannot
+/// be opened or a line cannot be read.
+pub fn read_records(path: &Path) -> Result<Vec<ExportRecord>, ReadRecordsError> {
+    let unreadable = |line, source| ReadRecordsError::Unreadable {
+        path: path.to_path_buf(),
+        line,
+        source,
+    };
+    let rejected = |failure| ReadRecordsError::Rejected {
+        path: path.to_path_buf(),
+        failure,
+    };
+    let file = File::open(path).map_err(|source| unreadable(None, source))?;
     let reader = BufReader::new(file);
     let mut lines = Vec::new();
     for (line_no, line) in reader.lines().enumerate() {
@@ -28,36 +68,30 @@ pub fn read_records(path: &Path) -> Result<Vec<ExportRecord>> {
             // Bytes that are not UTF-8 are not text, so not JSON: the
             // sender's to fix, like any other line that cannot be read.
             Err(err) if err.kind() == std::io::ErrorKind::InvalidData => {
-                return Err(crate::imports_api::ImportFailure::NotJson {
+                return Err(rejected(ImportFailure::NotJson {
                     line: line_no + 1,
                     detail: "the line is not valid UTF-8".into(),
-                })
-                .with_context(|| format!("failed to read {}", path.display()));
+                }));
             }
-            Err(err) => {
-                return Err(err).with_context(|| {
-                    format!("failed to read line {} of {}", line_no + 1, path.display())
-                });
-            }
+            Err(err) => return Err(unreadable(Some(line_no + 1), err)),
         };
         // A blank line is kept: `parse_ir_lines` skips it but still counts
         // it, so a failure names the line as it is numbered in the file.
         lines.push(line);
     }
-    models::parse_ir_lines(lines)
-        .with_context(|| format!("failed to parse message-ir JSONL in {}", path.display()))
+    models::parse_ir_lines(lines).map_err(rejected)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::read_records;
+    use super::{ReadRecordsError, read_records};
     use crate::imports_api::ImportFailure;
 
-    const HEADER: &str = r#"{"schema_version":4,"export":{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"handle":"+15555550101","display_name":"Sam"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#;
+    const HEADER: &str = r#"{"schema_version":7,"export":{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Sam"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#;
 
     fn message(guid: &str) -> String {
         format!(
-            r#"{{"guid":"{guid}","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"sms","message_kind":"sms","sender_handle":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}}"#
+            r#"{{"guid":"{guid}","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}}"#
         )
     }
 
@@ -75,10 +109,33 @@ mod tests {
         lines.push("this is not json".to_string());
         std::fs::write(&path, lines.join("\n") + "\n").unwrap();
 
-        let err = read_records(&path).unwrap_err();
-        match ImportFailure::in_error(&err).expect("typed failure") {
-            ImportFailure::NotJson { line, .. } => assert_eq!(*line, 10),
+        match read_records(&path).unwrap_err() {
+            ReadRecordsError::Rejected {
+                failure: ImportFailure::NotJson { line, .. },
+                ..
+            } => assert_eq!(line, 10),
             other => panic!("expected NotJson, got {other:?}"),
+        }
+    }
+
+    /// A file the server cannot open is its own fault, not the sender's: the
+    /// error says the file is unreadable and carries no line to fix.
+    #[test]
+    fn a_file_that_cannot_be_opened_is_unreadable_not_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("gone.jsonl");
+
+        match read_records(&path).unwrap_err() {
+            ReadRecordsError::Unreadable {
+                path: named,
+                line,
+                source,
+            } => {
+                assert_eq!(named, path);
+                assert_eq!(line, None);
+                assert_eq!(source.kind(), std::io::ErrorKind::NotFound);
+            }
+            other => panic!("expected Unreadable, got {other:?}"),
         }
     }
 }

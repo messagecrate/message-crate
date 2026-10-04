@@ -2,11 +2,11 @@
 
 import { QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { keys } from "../../lib/queryKeys";
 import { renderWithProviders, testQueryClient } from "../../test/providers";
 import { freshEntries, seedEntries } from "../../test/staleEntries";
+import { fill, setupUser } from "../../test/user";
 import { ChangePasswordSection } from "./ChangePasswordSection";
 
 const changePassword = vi.hoisted(() => vi.fn());
@@ -39,11 +39,11 @@ describe("ChangePasswordSection", () => {
   });
 
   it("accepts a one-character password", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderWithProviders(<ChangePasswordSection />);
 
-    await user.type(screen.getByLabelText("New password"), "a");
-    await user.type(screen.getByLabelText("Confirm new password"), "a");
+    await fill(user, screen.getByLabelText("New password"), "a");
+    await fill(user, screen.getByLabelText("Confirm new password"), "a");
     await user.click(screen.getByRole("button", { name: "Change password" }));
 
     await waitFor(() =>
@@ -56,11 +56,11 @@ describe("ChangePasswordSection", () => {
     // The server checks the pair after the current password, so the screen
     // never judges it: the order of what a user hears is the server's.
     changePassword.mockRejectedValue(new Error("New passwords do not match."));
-    const user = userEvent.setup();
+    const user = setupUser();
     renderWithProviders(<ChangePasswordSection />);
 
-    await user.type(screen.getByLabelText("New password"), "first");
-    await user.type(screen.getByLabelText("Confirm new password"), "second");
+    await fill(user, screen.getByLabelText("New password"), "first");
+    await fill(user, screen.getByLabelText("Confirm new password"), "second");
     await user.click(screen.getByRole("button", { name: "Change password" }));
 
     expect(await screen.findByText("New passwords do not match.")).toBeInTheDocument();
@@ -72,7 +72,7 @@ describe("ChangePasswordSection", () => {
   });
 
   it("resets the password to none", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderWithProviders(<ChangePasswordSection />);
 
     await user.click(screen.getByRole("button", { name: "Reset password" }));
@@ -94,15 +94,15 @@ describe("ChangePasswordSection", () => {
   });
 
   it("asks the owner for the current password and sends it", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderWithProviders(<ChangePasswordSection canReset={false} requireCurrent />);
 
-    await user.type(screen.getByLabelText("New password"), "keeperschoice");
-    await user.type(screen.getByLabelText("Confirm new password"), "keeperschoice");
+    await fill(user, screen.getByLabelText("New password"), "keeperschoice");
+    await fill(user, screen.getByLabelText("Confirm new password"), "keeperschoice");
     // Nothing to send until the current password is typed.
     expect(screen.getByRole("button", { name: "Change password" })).toBeDisabled();
 
-    await user.type(screen.getByLabelText("Current password"), "hunter2hunter2");
+    await fill(user, screen.getByLabelText("Current password"), "hunter2hunter2");
     await user.click(screen.getByRole("button", { name: "Change password" }));
 
     await waitFor(() =>
@@ -122,15 +122,15 @@ describe("ChangePasswordSection", () => {
     const shown = [keys.apiTokens.all, keys.accountProfile.all];
     const client = testQueryClient();
     seedEntries(client, 101, shown);
-    const user = userEvent.setup();
+    const user = setupUser();
     render(
       <QueryClientProvider client={client}>
         <ChangePasswordSection />
       </QueryClientProvider>,
     );
 
-    await user.type(screen.getByLabelText("New password"), "a");
-    await user.type(screen.getByLabelText("Confirm new password"), "a");
+    await fill(user, screen.getByLabelText("New password"), "a");
+    await fill(user, screen.getByLabelText("Confirm new password"), "a");
     await user.click(screen.getByRole("button", { name: "Change password" }));
 
     expect(

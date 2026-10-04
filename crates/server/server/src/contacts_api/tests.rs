@@ -6,8 +6,8 @@ use message_ir::HandleType;
 
 use crate::db::account_profile;
 use crate::test_support::{
-    RegisteredAccount, TestFixture, fixture_with_account, post_json, post_status, register_via_api,
-    test_fixture,
+    MessageRow, RegisteredAccount, TestFixture, fixture_with_account, post_json, post_status,
+    register_via_api, test_fixture,
 };
 use axum::http::StatusCode;
 
@@ -565,31 +565,24 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
         ("hi", "2024-06-01T12:00:00Z"),
         ("there", "2024-06-01T13:00:00Z"),
     ] {
-        sqlx::query(
-            "INSERT INTO messages (
-                conversation_id, account_id, source, guid, timestamp, is_from_me,
-                sender_handle_id, sort_order, body
-             ) VALUES (1, $1, 'imessage', $5, $2, 0, $3, 0, $4)",
-        )
-        .bind(account)
-        .bind(ts)
-        .bind(peer)
-        .bind(body)
-        .bind(crate::test_support::unique_guid())
-        .execute(&mut *conn)
-        .await
-        .unwrap();
+        MessageRow {
+            timestamp: ts,
+            sender_handle_id: Some(peer),
+            body: Some(body),
+            ..MessageRow::new(account, 1)
+        }
+        .insert(&mut conn)
+        .await;
     }
     // A reply of yours: not a message Sam sent, so not in `total_messages`.
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
-         ) VALUES (1, $1, 'imessage', 'msg-9', '2024-06-01T14:00:00Z', 1, 0, 'back at you')",
-    )
-    .bind(account)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    MessageRow {
+        timestamp: "2024-06-01T14:00:00Z",
+        is_from_me: true,
+        body: Some("back at you"),
+        ..MessageRow::new(account, 1)
+    }
+    .insert(&mut conn)
+    .await;
 
     // Group conversation that includes Sam, with 1 message.
     let group_chat = account_profile::link_account_handle(
@@ -618,17 +611,14 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me,
-            sender_handle_id, sort_order, body
-         ) VALUES (2, $1, 'imessage', 'msg-8', '2024-07-01T12:00:00Z', 0, $2, 0, 'group hi')",
-    )
-    .bind(account)
-    .bind(peer)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    MessageRow {
+        timestamp: "2024-07-01T12:00:00Z",
+        sender_handle_id: Some(peer),
+        body: Some("group hi"),
+        ..MessageRow::new(account, 2)
+    }
+    .insert(&mut conn)
+    .await;
 
     // Unrelated conversation should not be counted.
     let other =
@@ -645,15 +635,13 @@ async fn get_contact_detail_counts_direct_group_and_messages() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
-         ) VALUES (9, $1, 'imessage', 'msg-7', '2024-08-01T12:00:00Z', 0, 0, 'nope')",
-    )
-    .bind(account)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    MessageRow {
+        timestamp: "2024-08-01T12:00:00Z",
+        body: Some("nope"),
+        ..MessageRow::new(account, 9)
+    }
+    .insert(&mut conn)
+    .await;
 
     let detail = get_contact_detail(&mut conn, account, contact_id)
         .await
@@ -734,20 +722,14 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
         ("hi", "2024-06-01T12:00:00Z"),
         ("there", "2024-06-01T13:00:00Z"),
     ] {
-        sqlx::query(
-            "INSERT INTO messages (
-                conversation_id, account_id, source, guid, timestamp, is_from_me,
-                sender_handle_id, sort_order, body
-             ) VALUES (1, $1, 'imessage', $5, $2, 0, $3, 0, $4)",
-        )
-        .bind(account)
-        .bind(ts)
-        .bind(sam_handle)
-        .bind(body)
-        .bind(crate::test_support::unique_guid())
-        .execute(&mut *conn)
-        .await
-        .unwrap();
+        MessageRow {
+            timestamp: ts,
+            sender_handle_id: Some(sam_handle),
+            body: Some(body),
+            ..MessageRow::new(account, 1)
+        }
+        .insert(&mut conn)
+        .await;
     }
     let group_chat = account_profile::link_account_handle(
         &mut conn,
@@ -775,17 +757,14 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me,
-            sender_handle_id, sort_order, body
-         ) VALUES (2, $1, 'imessage', 'msg-5', '2024-07-01T12:00:00Z', 0, $2, 0, 'group hi')",
-    )
-    .bind(account)
-    .bind(sam_handle)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    MessageRow {
+        timestamp: "2024-07-01T12:00:00Z",
+        sender_handle_id: Some(sam_handle),
+        body: Some("group hi"),
+        ..MessageRow::new(account, 2)
+    }
+    .insert(&mut conn)
+    .await;
 
     let pat_id: i64 = sqlx::query_scalar(
         "INSERT INTO contacts (account_id, preferred_name) VALUES ($1, 'Pat') RETURNING id",
@@ -826,17 +805,14 @@ async fn get_contact_summaries_counts_two_contacts_in_one_query() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me,
-            sender_handle_id, sort_order, body
-         ) VALUES (3, $1, 'imessage', 'msg-4', '2024-05-01T09:00:00Z', 0, $2, 0, 'hey')",
-    )
-    .bind(account)
-    .bind(pat_handle)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    MessageRow {
+        timestamp: "2024-05-01T09:00:00Z",
+        sender_handle_id: Some(pat_handle),
+        body: Some("hey"),
+        ..MessageRow::new(account, 3)
+    }
+    .insert(&mut conn)
+    .await;
 
     let summaries = get_contact_summaries(&mut conn, account, &[sam_id, pat_id, 99_999])
         .await
@@ -1017,23 +993,17 @@ async fn insert_held_message(
     sender: Option<i64>,
 ) {
     let ts = format!("{day}T{:02}:{:02}:00Z", minute / 60, minute % 60);
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me,
-            owner_handle_id, sender_handle_id, sort_order, body
-         ) VALUES ($1, $2, 'imessage', $8, $3, $4, $5, $6, $7, 'm')",
-    )
-    .bind(conversation)
-    .bind(account)
-    .bind(ts)
-    .bind(i64::from(sender.is_none()))
-    .bind(owner)
-    .bind(sender)
-    .bind(minute as i64)
-    .bind(crate::test_support::unique_guid())
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    MessageRow {
+        timestamp: &ts,
+        is_from_me: sender.is_none(),
+        owner_handle_id: Some(owner),
+        sender_handle_id: sender,
+        sort_order: minute as i64,
+        body: Some("m"),
+        ..MessageRow::new(account, conversation)
+    }
+    .insert(conn)
+    .await;
 }
 
 /// Jane sent 40 of the 100 messages in her direct conversation with the
@@ -1981,22 +1951,17 @@ async fn insert_direct_conversation(
     .unwrap();
     // Received messages, so the peer is their sender, as an import records.
     for (i, ts) in timestamps.iter().enumerate() {
-        sqlx::query(
-            "INSERT INTO messages (
-                conversation_id, account_id, source, guid, service, timestamp, is_from_me,
-                sender_handle_id, sort_order, body
-             ) VALUES ($1, $2, $3, $7, $3, $4, 0, $5, $6, 'hi')",
-        )
-        .bind(conversation_id)
-        .bind(account)
-        .bind(service)
-        .bind(ts)
-        .bind(handle_id)
-        .bind(i as i64)
-        .bind(crate::test_support::unique_guid())
-        .execute(&mut *conn)
-        .await
-        .unwrap();
+        MessageRow {
+            source: service,
+            service: Some(service),
+            timestamp: ts,
+            sender_handle_id: Some(handle_id),
+            sort_order: i as i64,
+            body: Some("hi"),
+            ..MessageRow::new(account, conversation_id)
+        }
+        .insert(&mut *conn)
+        .await;
     }
 }
 
@@ -2064,21 +2029,16 @@ async fn insert_message_from(
     .fetch_one(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, service, timestamp, is_from_me,
-            sender_handle_id, sort_order, body
-         ) VALUES ($1, $2, 'imessage', $6, 'imessage', $3, $4, $5, 0, 'hi')",
-    )
-    .bind(conversation_id)
-    .bind(account)
-    .bind(ts)
-    .bind(i64::from(is_from_me))
-    .bind(handle_id)
-    .bind(crate::test_support::unique_guid())
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    MessageRow {
+        service: Some("imessage"),
+        timestamp: ts,
+        is_from_me,
+        sender_handle_id: Some(handle_id),
+        body: Some("hi"),
+        ..MessageRow::new(account, conversation_id)
+    }
+    .insert(conn)
+    .await;
 }
 
 /// `last_heard_at` is the newest message the contact's own handles sent.
@@ -3444,8 +3404,8 @@ async fn ada_in_a_conversation(conn: &mut sqlx::SqliteConnection, account: i64) 
         conn,
         account,
         "imessage",
-        r#"{"schema_version":4,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550123","conversation_type":"individual","group_title":null,"participants":[{"handle":"+15555550123","display_name":"Ada"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}
-{"guid":"g-ada-1105","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_handle":"+15555550123","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}
+        r#"{"schema_version":7,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550123","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550123","display_name":"Ada"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}
+{"guid":"g-ada-1105","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}
 "#,
     )
     .await;

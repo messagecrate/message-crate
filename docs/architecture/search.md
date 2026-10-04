@@ -37,10 +37,24 @@ Each rule holds on every list, and each has its reason.
   reading is wrong.
 - **A word the list does not have is refused.** The query is refused whole,
   with a problem naming the word and the list, and a "did you mean" only when
-  a word on that list is within two edits. Nothing is searched as text or
-  dropped. The language keeps no table of spellings it used to have. Why: a
-  silently ignored word returns rows the person did not ask for, and they
-  cannot see why.
+  a word on that list is within two edits. The server never searches such a
+  word as text and never drops it. The language keeps no table of spellings
+  it used to have. Why: a silently ignored word returns rows the person did
+  not ask for, and they cannot see why.
+- **On the Messages screen, a word only the other list takes is marked, not
+  sent.** The screen's search box serves the Conversations and the Messages
+  list through one switch. A word the list picked does not take and the other
+  one does (`from:` while Conversations is picked) is underlined in the box,
+  and the web app sends the list the query without it (#1561). It is the only
+  place a word is left out, and the person sees it left out, so it is not
+  ignored silently. Until both lists' words are known, a list with a `word:`
+  in its query waits rather than send a word the server would refuse.
+  Leaving the word out is the one rewrite of a query outside this module:
+  `dropTokens` in `web/src/lib/searchQuery.ts` also drops a `not` that
+  negated the word and an `or`, `and` or pair of parentheses it leaves with
+  nothing to join, and keeps one that joined nothing before. Its results are
+  in `tests/fixtures/search/web-queries.txt`, which the server's tests parse,
+  so a change to the grammar that breaks the rewrite fails a test.
 - **A query only narrows.** Sort order is a request parameter (`sort`), never
   a word.
   Why: a Saved Search then holds only what to find, so it means the same thing
@@ -143,7 +157,7 @@ plus the keywords its registry entry lists.
 | Name | a name, `pre*`, `#id`, and the word's keywords | `#id` is that row by id, unquoted. `group:` and `tag:` match a name equal to the text, case-insensitively. Their `pre*` matches the start of the name or of any word in it, so `group:Club*` finds "Book Club". An account has few Contact Groups and Message Tags, so a match on the start of any word is what a person wants. `in:` matches a title or identity that contains the text, and its `pre*` matches the start of either or of any word in it. `import:` takes only `#id` and `last`. |
 | Person | a name, an identity, `pre*`, `#id`, `me` where listed | `#id` is a contact: one of their identities, or a participant linked to them. Text is contained in an identity's raw or normalized form, in the name of the contact linked to it, or in a participant's name; `pre*` matches the start of any of those instead. |
 | Choice | one of the word's fixed values | That value, compared case-insensitively. |
-| Flag | `yes`, `no`, `any` | `trashed:` only. |
+| Flag | `yes`, `no`, and `any` where listed | `trashed:` and `deleted:`. |
 | Date | a span, with `>`, `>=`, `<`, `<=`, or `a..b` | See below. |
 | Count | a whole number, with `=`, `>`, `>=`, `<`, `<=`, or `a..b` | A bare number is equality. A range is inclusive at both ends. |
 | Size | `500k`, `1M`, `2G`, or bytes, with the Count comparisons | 1024-based units, a trailing `b` allowed, decimals rounded to whole bytes. |
@@ -228,7 +242,7 @@ below use these phrases for them:
 | List | Base row | Plain text searches | Defaults | Lifted by |
 |---|---|---|---|---|
 | Contacts | one contact | the contact's name, and the raw and normalized form of each of its identities | a contact in the trash is left out | `trashed:` |
-| Conversations | one conversation | the title, the raw form of the conversation's own identity and of each participant's identity, and each participant's name | a conversation in the trash is left out; a conversation whose every message is a duplicate is left out | `trashed:` lifts the first; `source:` and `import:` lift the second |
+| Conversations | one conversation | the title, the conversation's own identity (its raw form, except for the keys below), the raw form of each participant's identity, and each participant's name. For a conversation known only by a name, its own identity is read as the name after the `name:` prefix; a group conversation's id, whatever its shape, and the `nameless:` key of the conversation that names nobody, are read as nothing (#1696, #1706). Why: every name key contains `name:`, so `nam` would find them all. A group conversation's id is the source's own id, which nobody knows it by. Every group conversation from one source shares the shape of its id (`group:…`, a WhatsApp `…@g.us`), so `group` or `g.us` would find them all. A group conversation is found by its title and its members | a conversation in the trash is left out; a conversation whose every message is a duplicate is left out | `trashed:` lifts the first; `source:` and `import:` lift the second |
 | Messages | one message | the full-text index (above) and attachment file names | a message whose conversation is in the trash is left out; a duplicate message is left out | `trashed:` lifts the first; `source:` and `import:` lift the second |
 
 A word lifts its default wherever it appears in the query, negated or inside
@@ -300,14 +314,14 @@ Text, `none`, `any`.
 Text, `none`, `any`. The raw or the normalized form of an identity.
 
 - **Contacts**: one of the contact's identities. `none` is a contact with no address: no identity, or only identities of type `other`, which hold a name the backup gave with no address.
-- **Conversations**: the conversation's own identity or a participant's. `none` is a conversation where no participant has an address (every participant's identity is of type `other`); `any` is one where some participant does.
+- **Conversations**: the conversation's own identity or a participant's. The conversation's own identity counts only when it is an address: a group conversation's id, whatever its shape, the `name:` key of a conversation known only by a name, and the `nameless:` key of one that names nobody, are not, as in `with:` (#1592, #1706). `none` is a conversation where no participant has an address (every participant's identity is of type `other`); `any` is one where some participant does.
 - **Messages**: the same, for the message's conversation.
 
 ### `with:`
 
 Person, `me`.
 
-- **Conversations**: this person is in the conversation: the conversation's own identity or a participant's identity is theirs, or a participant's name contains the text. A contact `#id` reaches a participant only through the identity the participant takes part as, on the contact it is on now. `me` is a conversation the account holder has with themselves: a one-to-one conversation whose own identity is one of the account's identities. It has no participants, so it is the only conversation `me` finds. Why: the holder is never a participant, so a conversation with themselves is the one place the holder is the other party (#1094).
+- **Conversations**: this person is in the conversation: the conversation's own identity or a participant's identity is theirs, or a participant's name contains the text. The conversation's own identity counts only when it is an address, not a group conversation's id, whatever its shape, nor the `name:` or `nameless:` key of a conversation known by a name or by nobody. Why: every name key contains `name:`, so `identity:nam` would find them all. Every group conversation from one source shares the shape of its id (`group:…`, a WhatsApp `…@g.us`), so `with:group` or `with:g.us` would find them all (#1706). Not every source writes the `group:` prefix, so the conversation being a group conversation is what decides. The people in such a conversation are found by their participant rows. A contact `#id` reaches a participant only through the identity the participant takes part as, on the contact it is on now. `me` is a conversation the account holder has with themselves: a one-to-one conversation whose own identity is one of the account's identities. It has no participants, so it is the only conversation `me` finds. Why: the holder is never a participant, so a conversation with themselves is the one place the holder is the other party (#1094).
 - **Messages**: the same, for the message's conversation.
 
 ### `from:`
@@ -326,7 +340,7 @@ Person, `me`.
 
 Name.
 
-- **Messages**: `#id` is the message's conversation. Text is contained in the conversation's title or in the raw form of its own identity.
+- **Messages**: `#id` is the message's conversation. Text is contained in the conversation's title or in its own identity: the raw form, except for the keys below. For a conversation known only by a name, its own identity is read as the name after the `name:` prefix, so `in:sarah` finds it with no title; a group conversation's id, whatever its shape, and the `nameless:` key of the conversation that names nobody, are read as nothing. Why: every name key contains `name:`, so `in:nam` would find them all (#1696). Every group conversation from one source shares the shape of its id, so `in:grou` or `in:g.us` would find them all (#1706).
 
 ### `group:`
 
@@ -464,6 +478,13 @@ Count.
 Count.
 
 - **Messages**: how many attachments the message has.
+
+### `deleted:`
+
+Flag: `yes`, `no`. No list leaves a marked message out, so the word lifts no
+default and takes no `any`: a search without it already sees every message.
+
+- **Messages**: `yes` is a message marked Deleted in the source app or Unsent, `no` one with neither mark. A message with no mark is `no`, so `deleted:yes` and `-deleted:yes` split the list. Why one word for both marks: either way the message's content is gone in the app it came from, and a person looking for what was taken away wants both (#1143).
 
 ### `trashed:`
 

@@ -2,6 +2,7 @@ import { Fragment } from "react";
 import type { ImportSummaryView } from "../../../components/import/ImportSummaryPanel";
 import PlainButton from "../../../components/PlainButton";
 import ScrollingTableCard from "../../../components/ScrollingTableCard";
+import { focusRing } from "../../../lib/uiStyles";
 import ImportDetailPanel from "./ImportDetailPanel";
 import PageControl from "./PageControl";
 import type { AccountImportRun, ListedImportRun } from "./storageUtils";
@@ -65,6 +66,7 @@ export default function ImportHistoryTable({
                   <th className={`${thStyle} text-right`}>Messages</th>
                   <th className={`${thStyle} text-right`}>Attachments</th>
                   <th className={`${thStyle} text-right`}>Uploaded size</th>
+                  <th className={`${thStyle} text-right`}>Issues</th>
                 </tr>
               </thead>
               <tbody>
@@ -83,7 +85,7 @@ export default function ImportHistoryTable({
                             aria-controls={detailId}
                             // React Aria stops the press here, so the row's own click does not toggle it back.
                             onPress={() => onToggle(row.id)}
-                            className="w-full rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                            className={`w-full rounded-sm text-left ${focusRing}`}
                           >
                             {formatImportDate(row.finished_at ?? row.started_at)}
                           </PlainButton>
@@ -98,10 +100,13 @@ export default function ImportHistoryTable({
                         <td className={`${tdStyle} text-right tabular-nums`}>
                           {formatBytes(row.bytes_uploaded)}
                         </td>
+                        <td className={`${tdStyle} text-right tabular-nums`}>
+                          {row.issue_count.toLocaleString()}
+                        </td>
                       </tr>
                       {isSelected ? (
                         <tr>
-                          <td colSpan={5} className="border-b border-border p-0">
+                          <td colSpan={6} className="border-b border-border p-0">
                             <ImportDetailPanel
                               detailId={detailId}
                               selectedImport={selectedImport}

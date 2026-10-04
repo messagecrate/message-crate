@@ -118,6 +118,33 @@ pub async fn lookup_session(conn: &mut SqliteConnection, token: &str) -> Result<
     }))
 }
 
+/// The hash of `account_id`'s live Session token, or `None` when the account
+/// has no Session or it has expired. A media link is signed over it, so the
+/// link ends when this Session does: by logout, a new login, a password
+/// change, or its expiry.
+///
+/// # Errors
+///
+/// Returns an error when the lookup fails.
+pub async fn live_session_hash(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+) -> Result<Option<String>> {
+    let found: Option<(String, String)> = sqlx::query_as(
+        "SELECT token_hash, expires_at FROM account_session_tokens WHERE account_id = $1",
+    )
+    .bind(account_id)
+    .fetch_optional(&mut *conn)
+    .await?;
+    let now = now_unix_secs();
+    Ok(found.and_then(|(token_hash, expires_at)| {
+        expires_at
+            .parse::<u64>()
+            .is_ok_and(|expires| expires > now)
+            .then_some(token_hash)
+    }))
+}
+
 /// Record the app a session's request came from, when it is not the one
 /// already recorded. In practice that is one write at login and one after an
 /// app update; every other request finds the same value and writes nothing.

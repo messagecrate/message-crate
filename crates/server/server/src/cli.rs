@@ -8,6 +8,8 @@
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::imports_api::ImportMode;
 use anyhow::{Result, bail};
@@ -34,7 +36,7 @@ pub enum Commands {
     /// Import a message-ir JSONL folder, one Import Run per source (source from export.source unless --source)
     Import(ImportArgs),
 
-    /// Work on an account's import sessions (`discard` clears a stranded one)
+    /// Work on an account's Import Runs (`discard` clears a stranded one)
     Imports(ImportsArgs),
 
     /// Soft-hide the same SMS when it appears under more than one import source
@@ -64,7 +66,7 @@ pub enum Commands {
     /// --output directory, or all of them to stdout. Does not open the database.
     DumpErrorDocs(DumpArgs),
 
-    /// Convert media under assets/ into browser previews under `assets_converted/`
+    /// Make the Thumbnails and browser Previews of stored attachments under `assets_converted/`, for rebuilding and repair
     ProcessAssets(ProcessAssetsArgs),
 
     /// Claim an unclaimed Message Crate by creating its owner. Refuses one
@@ -148,7 +150,7 @@ pub struct ImportArgs {
     pub account: String,
 }
 
-/// The `imports` group: one subcommand per operation on import sessions.
+/// The `imports` group: one subcommand per operation on Import Runs.
 #[derive(Debug, Args)]
 pub struct ImportsArgs {
     /// Which operation to run.
@@ -156,12 +158,12 @@ pub struct ImportsArgs {
     pub command: ImportsCommand,
 }
 
-/// Operations on an account's import sessions.
+/// Operations on an account's Import Runs.
 #[derive(Debug, Subcommand)]
 pub enum ImportsCommand {
-    /// Discard the account's active import session, if it has one. A killed
-    /// `import` leaves its session open, and no later import can start until
-    /// it is discarded.
+    /// Discard the account's running Import Run, if it has one. A killed
+    /// `import` leaves its Import Run running, and no later import can start
+    /// until it is discarded.
     Discard(ImportsDiscardArgs),
 }
 
@@ -176,7 +178,7 @@ pub struct ImportsDiscardArgs {
     #[arg(long)]
     pub db: Option<PathBuf>,
 
-    /// Account username or id whose active session is discarded
+    /// Account username or id whose running Import Run is discarded
     #[arg(long)]
     pub account: String,
 }
@@ -265,7 +267,7 @@ pub struct ProcessAssetsArgs {
     #[arg(long, default_value = "config/config.toml")]
     pub config: PathBuf,
 
-    /// Re-convert even when a browser preview already exists
+    /// Make every Thumbnail and Preview again, even ones that already exist
     #[arg(long)]
     pub force: bool,
 
@@ -414,7 +416,7 @@ async fn run_import(args: ImportArgs) -> Result<()> {
     Ok(())
 }
 
-/// Discard the account's active import session and say which one it was,
+/// Discard the account's running Import Run and say which one it was,
 /// or that there was none.
 async fn run_imports_discard(args: ImportsDiscardArgs) -> Result<()> {
     let cfg = Config::load_with_db(&args.config, args.db)?;
@@ -434,7 +436,7 @@ async fn run_imports_discard(args: ImportsDiscardArgs) -> Result<()> {
     Ok(())
 }
 
-/// What `imports discard` prints: the session it discarded, or that the
+/// What `imports discard` prints: the Import Run it discarded, or that the
 /// account had none.
 fn format_discarded_import(
     account: &str,
@@ -442,14 +444,14 @@ fn format_discarded_import(
 ) -> String {
     match discarded {
         Some(row) => format!(
-            "Discarded import session {} for account {account} (source {}, {} mode, started {}, stage {}).\n",
+            "Discarded Import Run {} for account {account} (source {}, {} mode, started {}, stage {}).\n",
             row.id,
             row.source,
             row.mode,
             row.started_at,
             row.stage.map_or("none", |stage| stage.as_str()),
         ),
-        None => format!("Account {account} has no active import session.\n"),
+        None => format!("Account {account} has no running Import Run.\n"),
     }
 }
 
@@ -648,15 +650,34 @@ fn serve_config(args: ServeArgs) -> Result<Config> {
     Ok(cfg.with_serve_overrides(&root, args.bind, args.static_dir, args.cors_origins))
 }
 
-/// Convert stored media into browser previews.
+/// Make the Thumbnails and browser Previews of stored attachments.
 ///
 /// # Errors
 ///
 /// Returns an error after the summary line when any conversion failed, so a
 /// cron job or script that runs the command sees a non-zero exit status.
+/// Returns an error too when Ctrl-C or SIGTERM stops it, after killing the
+/// ffmpeg that runs and removing what it wrote (#1729). A second Ctrl-C or
+/// SIGTERM ends it at once.
 async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
     let cfg = Config::load_with_db(&args.config, args.db)?;
     let opened = OpenDb::open(cfg).await?;
+    let stop = Arc::new(AtomicBool::new(false));
+    let stopper = tokio::spawn({
+        let stop = Arc::clone(&stop);
+        async move {
+            crate::server::stop_requested().await;
+            eprintln!(
+                "stopping: the conversion that runs is stopped and its part-made file removed"
+            );
+            stop.store(true, Ordering::Relaxed);
+            // The handlers stay installed, so without this a second Ctrl-C
+            // would do nothing. It ends the command at once, with 130, the
+            // status a shell gives a command Ctrl-C ended (128 + SIGINT).
+            crate::server::stop_requested().await;
+            std::process::exit(130);
+        }
+    });
     let stats = crate::process_assets::run(
         &opened,
         &crate::process_assets::ProcessAssetsOptions {
@@ -667,12 +688,15 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
             skip_audio: args.skip_audio,
             account: None,
         },
+        &stop,
     )
-    .await?;
+    .await;
+    stopper.abort();
+    let stats = stats?;
     opened.close().await;
     if stats.errors > 0 {
         bail!(
-            "{} conversion(s) failed; those originals stay without a browser preview",
+            "{} conversion(s) failed; those originals stay without a Thumbnail or a browser preview",
             stats.errors
         );
     }

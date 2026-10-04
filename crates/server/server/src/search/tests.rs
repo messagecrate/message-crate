@@ -208,24 +208,18 @@ pub(crate) fn msg<'a>(
 }
 
 pub(crate) async fn message(conn: &mut SqliteConnection, account: i64, m: Msg<'_>) -> i64 {
-    sqlx::query_scalar(
-        "INSERT INTO messages (conversation_id, account_id, source, guid, timestamp, is_from_me,
-                               sender_handle_id, service, subject, body, sort_order)
-         VALUES ($1, $2, $3, $10, $4, $5, $6, $7, $8, $9, 0) RETURNING id",
-    )
-    .bind(m.conversation)
-    .bind(account)
-    .bind(m.source)
-    .bind(m.timestamp)
-    .bind(i64::from(m.from_me))
-    .bind(m.sender)
-    .bind(m.service)
-    .bind(m.subject)
-    .bind(m.body)
-    .bind(crate::test_support::unique_guid())
-    .fetch_one(&mut *conn)
+    crate::test_support::MessageRow {
+        source: m.source,
+        timestamp: m.timestamp,
+        is_from_me: m.from_me,
+        sender_handle_id: m.sender,
+        service: Some(m.service),
+        subject: m.subject,
+        body: m.body,
+        ..crate::test_support::MessageRow::new(account, m.conversation)
+    }
+    .insert(conn)
     .await
-    .unwrap()
 }
 
 pub(crate) async fn attachment(
@@ -235,6 +229,7 @@ pub(crate) async fn attachment(
     mime: &str,
     size: i64,
 ) {
+    let mut tx = crate::db::begin_write(conn).await.unwrap();
     sqlx::query(
         "INSERT INTO attachments (message_id, original_name, mime_type, size_bytes)
          VALUES ($1, $2, $3, $4)",
@@ -243,9 +238,10 @@ pub(crate) async fn attachment(
     .bind(name)
     .bind(mime)
     .bind(size)
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await
     .unwrap();
+    tx.commit().await.unwrap();
 }
 
 pub(crate) async fn group(
@@ -649,12 +645,14 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
         ),
     )
     .await;
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query("UPDATE messages SET duplicate_of = $1 WHERE id = $2")
         .bind(f.dup_only_msg)
         .bind(f.dup_only_msg)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
+    tx.commit().await.unwrap();
 
     f.family = group(&mut conn, a, "Family", &[f.ana]).await;
     f.archive = tag(&mut conn, a, "Archive", &[f.archive_group]).await;
@@ -1830,10 +1828,11 @@ mod people_words {
         .fetch_one(&mut *conn)
         .await
         .unwrap();
+        let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
         sqlx::query("UPDATE messages SET import_id = $1 WHERE id = $2")
             .bind(run_id)
             .bind(f.bo_2023)
-            .execute(&mut *conn)
+            .execute(&mut *tx)
             .await
             .unwrap();
         // The duplicate-only message is part of this run too: a search about
@@ -1842,9 +1841,10 @@ mod people_words {
         sqlx::query("UPDATE messages SET import_id = $1 WHERE id = $2")
             .bind(run_id)
             .bind(f.dup_only_msg)
-            .execute(&mut *conn)
+            .execute(&mut *tx)
             .await
             .unwrap();
+        tx.commit().await.unwrap();
         assert_eq!(
             run(&mut conn, ListKind::Messages, "import:last").await,
             sorted(vec![f.bo_2023, f.dup_only_msg])
@@ -1965,12 +1965,12 @@ mod kind_words {
     ) -> (i64, i64) {
         let path = dir.join(format!("{chat}.jsonl"));
         let header = serde_json::json!({
-            "schema_version": 4,
+            "schema_version": 7,
             "export": {"source": source, "tool": "test", "tool_version": "0",
-                       "owner_handle": null, "owner_display_name": null},
+                       "owner_identity": null, "owner_display_name": null},
             "conversation": {
                 "chat_identifier": chat, "conversation_type": "individual", "group_title": null,
-                "participants": [{"handle": chat, "display_name": null}],
+                "participants": [{"identity": chat, "display_name": null}],
                 "stats": {"message_count": 1, "attachment_count": 0,
                           "first_timestamp_unix_ms": 1_426_183_462_000_i64,
                           "last_timestamp_unix_ms": 1_426_183_462_000_i64}
@@ -1979,7 +1979,7 @@ mod kind_words {
         let line = serde_json::json!({
             "guid": format!("{source}-{chat}"), "timestamp_unix_ms": 1_426_183_462_000_i64,
             "direction": "incoming", "service": "sms", "message_kind": "sms",
-            "sender_handle": chat, "sender_display_name": null, "subject": null,
+            "sender_identity": chat, "sender_display_name": null, "subject": null,
             "text": format!("hello from {source}"), "attachments": [],
             "imessage": null, "source": null
         });
@@ -2030,12 +2030,14 @@ mod kind_words {
         }
         for (i, (_, copy)) in copies.iter().enumerate() {
             let (_, original) = kept[(i + 1) % kept.len()];
+            let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
             sqlx::query("UPDATE messages SET duplicate_of = $1 WHERE id = $2")
                 .bind(original)
                 .bind(copy)
-                .execute(&mut *conn)
+                .execute(&mut *tx)
                 .await
                 .unwrap();
+            tx.commit().await.unwrap();
         }
         for (i, source) in IMPORT_SOURCES.iter().enumerate() {
             let q = format!("source:{source}");
@@ -2700,12 +2702,14 @@ mod measure_words {
             ),
         )
         .await;
+        let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
         sqlx::query("UPDATE messages SET duplicate_of = $1 WHERE id = $2")
             .bind(f.jane_2018)
             .bind(jane_dup)
-            .execute(&mut *conn)
+            .execute(&mut *tx)
             .await
             .unwrap();
+        tx.commit().await.unwrap();
         message(
             &mut conn,
             a,
@@ -3631,5 +3635,297 @@ mod name_keyed_conversation {
             .await
             .unwrap();
         assert_eq!(top[0].chat_identifier.as_deref(), Some("Sarah Vale"));
+    }
+
+    /// `identity:` reads a conversation's own identity only when it is an
+    /// address, as `with:` does: the `name:` key every name-keyed
+    /// conversation shares, and the `nameless:` key, are not anybody's
+    /// address (#1592).
+    #[tokio::test]
+    async fn identity_does_not_match_the_key() {
+        let (pool, _dir, _f) = seeded().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let key = handle(&mut conn, ACCOUNT, "name:Sarah Vale", "sms").await;
+        let sarah = conversation(&mut conn, ACCOUNT, key, "individual", None, &[]).await;
+        named_participant(&mut conn, sarah, "Sarah Vale").await;
+        let to_sarah = message(
+            &mut conn,
+            ACCOUNT,
+            msg(sarah, "2024-03-01T10:00:00Z", false, None, "hello"),
+        )
+        .await;
+        let nobody_key = handle(&mut conn, ACCOUNT, message_ir::NAMELESS_CHAT_ID, "sms").await;
+        let nobody = conversation(&mut conn, ACCOUNT, nobody_key, "individual", None, &[]).await;
+        let to_nobody = message(
+            &mut conn,
+            ACCOUNT,
+            msg(nobody, "2024-03-02T10:00:00Z", false, None, "hello"),
+        )
+        .await;
+
+        for query in ["identity:nam", "identity:nam*", "identity:\"name:\""] {
+            for (list, row) in [
+                (ListKind::Conversations, sarah),
+                (ListKind::Messages, to_sarah),
+            ] {
+                assert!(
+                    !run(&mut conn, list, query).await.contains(&row),
+                    "{list:?} {query} found the name-keyed conversation"
+                );
+            }
+        }
+        for query in ["identity:less", "identity:nameless*"] {
+            for (list, row) in [
+                (ListKind::Conversations, nobody),
+                (ListKind::Messages, to_nobody),
+            ] {
+                assert!(
+                    !run(&mut conn, list, query).await.contains(&row),
+                    "{list:?} {query} found the conversation that names nobody"
+                );
+            }
+        }
+    }
+
+    /// Plain text on Conversations and `in:` on Messages never read the
+    /// `name:` prefix of a conversation's key, nor the `nameless:` key:
+    /// every name key contains `name:`, so `nam` or `in:nam` would find them
+    /// all (#1696). The conversation is still found by the name after the
+    /// prefix, by its participant row, and by its title.
+    #[tokio::test]
+    async fn plain_text_and_in_read_the_name_not_the_key_prefix() {
+        let (pool, _dir, _f) = seeded().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let key = handle(&mut conn, ACCOUNT, "name:Sarah Vale", "sms").await;
+        let sarah = conversation(&mut conn, ACCOUNT, key, "individual", None, &[]).await;
+        named_participant(&mut conn, sarah, "Sarah Vale").await;
+        let to_sarah = message(
+            &mut conn,
+            ACCOUNT,
+            msg(sarah, "2024-03-01T10:00:00Z", false, None, "hello"),
+        )
+        .await;
+        let titled_key = handle(&mut conn, ACCOUNT, "name:Theo Marsh", "sms").await;
+        let theo = conversation(
+            &mut conn,
+            ACCOUNT,
+            titled_key,
+            "individual",
+            Some("Theo Marsh"),
+            &[],
+        )
+        .await;
+        named_participant(&mut conn, theo, "Theo Marsh").await;
+        let to_theo = message(
+            &mut conn,
+            ACCOUNT,
+            msg(theo, "2024-03-01T11:00:00Z", false, None, "hello"),
+        )
+        .await;
+        let nobody_key = handle(&mut conn, ACCOUNT, message_ir::NAMELESS_CHAT_ID, "sms").await;
+        let nobody = conversation(&mut conn, ACCOUNT, nobody_key, "individual", None, &[]).await;
+        let to_nobody = message(
+            &mut conn,
+            ACCOUNT,
+            msg(nobody, "2024-03-02T10:00:00Z", false, None, "hello"),
+        )
+        .await;
+
+        for query in ["nam", "nam*", "\"name:\""] {
+            let found = run(&mut conn, ListKind::Conversations, query).await;
+            for row in [sarah, theo] {
+                assert!(
+                    !found.contains(&row),
+                    "Conversations {query} found a name-keyed conversation"
+                );
+            }
+        }
+        for query in ["less", "nameless", "nameless*"] {
+            assert!(
+                !run(&mut conn, ListKind::Conversations, query)
+                    .await
+                    .contains(&nobody),
+                "Conversations {query} found the conversation that names nobody"
+            );
+        }
+        for query in ["in:nam", "in:nam*", "in:\"name:\""] {
+            let found = run(&mut conn, ListKind::Messages, query).await;
+            for row in [to_sarah, to_theo] {
+                assert!(
+                    !found.contains(&row),
+                    "Messages {query} found a name-keyed conversation"
+                );
+            }
+        }
+        for query in ["in:less", "in:nameless*"] {
+            assert!(
+                !run(&mut conn, ListKind::Messages, query)
+                    .await
+                    .contains(&to_nobody),
+                "Messages {query} found the conversation that names nobody"
+            );
+        }
+
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "sarah").await,
+            vec![sarah]
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "theo").await,
+            vec![theo]
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Messages, "in:theo").await,
+            vec![to_theo]
+        );
+        for query in ["in:sarah", "in:val*", "in:\"Sarah Vale\""] {
+            assert_eq!(
+                run(&mut conn, ListKind::Messages, query).await,
+                vec![to_sarah],
+                "{query}"
+            );
+        }
+    }
+}
+
+/// A group conversation's chat id is the source's own id for it, in a shape
+/// every group conversation from that source shares: for example `group:`
+/// and the id, a WhatsApp group JID (`…@g.us`), or an SMS Backup & Restore
+/// `chat-<key>`. Search reads that id as a key, not as text, or plain text
+/// `group` or `g.us`, `in:grou`, `with:group` and `identity:group` would
+/// find every group conversation of that shape (#1706). A group
+/// conversation is found by its title and its members.
+mod group_keyed_conversation {
+    use super::*;
+
+    #[tokio::test]
+    async fn is_found_by_its_title_and_members_not_its_key() {
+        let (pool, _dir, f) = seeded().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let key = handle(&mut conn, ACCOUNT, "group:chat8812", "imessage").await;
+        let untitled = conversation(&mut conn, ACCOUNT, key, "group", None, &[f.ana_handle]).await;
+        named_participant(&mut conn, untitled, "Robin Quill").await;
+        let in_untitled = message(
+            &mut conn,
+            ACCOUNT,
+            msg(untitled, "2024-03-01T10:00:00Z", false, None, "hello"),
+        )
+        .await;
+        let titled_key = handle(&mut conn, ACCOUNT, "group:chat8813", "imessage").await;
+        let titled = conversation(
+            &mut conn,
+            ACCOUNT,
+            titled_key,
+            "group",
+            Some("Hiking Crew"),
+            &[f.ana_handle],
+        )
+        .await;
+        let in_titled = message(
+            &mut conn,
+            ACCOUNT,
+            msg(titled, "2024-03-01T11:00:00Z", false, None, "hello"),
+        )
+        .await;
+        let whatsapp_key = handle(&mut conn, ACCOUNT, "120363042@g.us", "whatsapp").await;
+        let whatsapp = conversation(
+            &mut conn,
+            ACCOUNT,
+            whatsapp_key,
+            "group",
+            None,
+            &[f.ana_handle],
+        )
+        .await;
+        let in_whatsapp = message(
+            &mut conn,
+            ACCOUNT,
+            msg(whatsapp, "2024-03-01T12:00:00Z", false, None, "hello"),
+        )
+        .await;
+        let sbr_key = handle(&mut conn, ACCOUNT, "chat-1", "sms").await;
+        let sbr = conversation(&mut conn, ACCOUNT, sbr_key, "group", None, &[f.ana_handle]).await;
+        let in_sbr = message(
+            &mut conn,
+            ACCOUNT,
+            msg(sbr, "2024-03-01T13:00:00Z", false, None, "hello"),
+        )
+        .await;
+        let groups = [untitled, titled, whatsapp, sbr];
+        let group_messages = [in_untitled, in_titled, in_whatsapp, in_sbr];
+
+        for query in [
+            "group",
+            "grou*",
+            "\"group:\"",
+            "chat8812",
+            "with:group",
+            "with:grou*",
+            "identity:group",
+            "identity:grou*",
+            "identity:\"group:chat8812\"",
+            "g.us",
+            "120363042",
+            "chat-1",
+            "with:g.us",
+            "with:120363042*",
+            "with:chat-1",
+            "identity:g.us",
+            "identity:\"chat-1\"",
+        ] {
+            let found = run(&mut conn, ListKind::Conversations, query).await;
+            for row in groups {
+                assert!(
+                    !found.contains(&row),
+                    "Conversations {query} found a group through its key"
+                );
+            }
+        }
+        for query in [
+            "in:grou",
+            "in:grou*",
+            "in:\"group:\"",
+            "in:chat8812",
+            "in:g.us",
+            "in:chat-1",
+            "with:group",
+            "with:g.us",
+            "identity:group",
+            "identity:g.us",
+        ] {
+            let found = run(&mut conn, ListKind::Messages, query).await;
+            for row in group_messages {
+                assert!(
+                    !found.contains(&row),
+                    "Messages {query} found a group through its key"
+                );
+            }
+        }
+
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "hiking").await,
+            vec![titled]
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Messages, "in:hiking").await,
+            vec![in_titled]
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "robin quill").await,
+            vec![untitled]
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "with:\"Robin Quill\"").await,
+            vec![untitled]
+        );
+        for query in ["with:+15550001", "identity:+15550001"] {
+            let found = run(&mut conn, ListKind::Conversations, query).await;
+            for row in groups {
+                assert!(
+                    found.contains(&row),
+                    "{query} did not find a group conversation Ana is in"
+                );
+            }
+        }
     }
 }

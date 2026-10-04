@@ -663,11 +663,12 @@ async fn the_owner_reads_the_server_totals_summed_over_every_account() {
         .await;
     }
     let mut conn = fixture.conn().await;
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     for (account_id, size) in [(alice.account_id, 3000_i64), (bob.account_id, 1000)] {
         let message_id: i64 =
             sqlx::query_scalar("SELECT MIN(id) FROM messages WHERE account_id = $1")
                 .bind(account_id)
-                .fetch_one(&mut *conn)
+                .fetch_one(&mut *tx)
                 .await
                 .unwrap();
         sqlx::query(
@@ -676,10 +677,11 @@ async fn the_owner_reads_the_server_totals_summed_over_every_account() {
         )
         .bind(message_id)
         .bind(size)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
     }
+    tx.commit().await.unwrap();
     for (account_id, name) in [
         (alice.account_id, "Ada"),
         (alice.account_id, "Pat"),
@@ -1257,7 +1259,8 @@ fn a_demo_build_converts_no_other_accounts_attachments() {
             std::fs::write(&part, b"half an attachment").unwrap();
             let attachment: i64 = {
                 let mut conn = fixture.conn().await;
-                sqlx::query_scalar(
+                let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+                let id = sqlx::query_scalar(
                     "INSERT INTO attachments (message_id, sha256, assets_path)
                      SELECT id, $2, $3 FROM messages WHERE account_id = $1
                      RETURNING id",
@@ -1265,9 +1268,11 @@ fn a_demo_build_converts_no_other_accounts_attachments() {
                 .bind(other)
                 .bind(&sha)
                 .bind(format!("{}/{sha}.png", &sha[..2]))
-                .fetch_one(&mut *conn)
+                .fetch_one(&mut *tx)
                 .await
-                .unwrap()
+                .unwrap();
+                tx.commit().await.unwrap();
+                id
             };
 
             let (status, body) = start_demo_build(&state, &owner.token).await;

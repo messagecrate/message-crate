@@ -3,7 +3,7 @@
 use std::io::Write;
 use std::path::Path;
 
-use utoipa::openapi::security::{HttpAuthScheme, HttpBuilder, SecurityScheme};
+use utoipa::openapi::security::{ApiKey, ApiKeyValue, HttpAuthScheme, HttpBuilder, SecurityScheme};
 use utoipa::{Modify, OpenApi};
 use utoipa_axum::router::OpenApiRouter;
 use utoipa_axum::routes;
@@ -52,8 +52,8 @@ pub struct ApiDoc;
 struct BearerAddon;
 
 impl Modify for BearerAddon {
-    /// Register the two credentials a route may name, `session` and
-    /// `api-token`, and say which is which.
+    /// Register the three credentials a route may name, `session`,
+    /// `api-token` and `media-link`, and say which is which.
     ///
     /// Both are `Authorization: Bearer`, and the server tells them apart by
     /// the token's own prefix, so one scheme could have described the header.
@@ -64,6 +64,10 @@ impl Modify for BearerAddon {
     /// session, and `import`, `export` and `delete` for the three
     /// permissions a session carries. A token carries `import` and `export`
     /// only, so no route offers a token the `delete` scope.
+    ///
+    /// `media-link` is the third: a signed value in the `media_link` query
+    /// parameter, for a media element that cannot send a header. Only the
+    /// two routes that answer an asset's bytes take it.
     fn modify(&self, openapi: &mut utoipa::openapi::OpenApi) {
         let components = openapi.components.get_or_insert_default();
         components.add_security_scheme(
@@ -91,6 +95,17 @@ impl Modify for BearerAddon {
                     ))
                     .build(),
             ),
+        );
+        components.add_security_scheme(
+            "media-link",
+            SecurityScheme::ApiKey(ApiKey::Query(ApiKeyValue::with_description(
+                crate::assets_api::media_links::MEDIA_LINK_PARAM,
+                "A media link: the `media_link` value in the URLs \
+                 `POST /v1/assets/{sha256}/media-links` answers, for a media element that \
+                 cannot send `Authorization`. It reads one asset and its Preview, in the \
+                 account that made it, for an hour, and ends sooner with the Session that \
+                 made it. A request that sends `Authorization` is judged by the header alone.",
+            ))),
         );
     }
 }
@@ -134,6 +149,9 @@ pub fn api_openapi() -> OpenApiRouter<AppState> {
         .routes(routes!(crate::accounts_api::list_account_exports))
         .routes(routes!(crate::accounts_api::list_account_audit_trail))
         .routes(routes!(crate::audit_trail_api::list_audit_trail))
+        .routes(routes!(crate::server_api::log_lines::list_log_lines))
+        .routes(routes!(crate::server_api::log_files::list_log_files))
+        .routes(routes!(crate::server_api::log_files::get_log_file))
         .routes(routes!(crate::audit_trail_api::list_deleted_accounts))
         .routes(routes!(
             crate::accounts_api::api_tokens::list_api_tokens,
@@ -212,6 +230,8 @@ pub fn api_openapi() -> OpenApiRouter<AppState> {
         .routes(routes!(crate::assets_api::head_asset))
         .routes(routes!(crate::assets_api::get_asset))
         .routes(routes!(crate::assets_api::get_asset_preview))
+        .routes(routes!(crate::assets_api::get_asset_thumbnail))
+        .routes(routes!(crate::assets_api::media_links::create_media_link))
         .routes(routes!(crate::assets_api::replace_asset))
         .routes(routes!(crate::assets_api::create_asset_upload))
         .routes(routes!(crate::assets_api::replace_asset_upload_part))
@@ -316,8 +336,19 @@ mod tests {
                 for entry in requirements {
                     for (scheme, scopes) in entry.as_object().unwrap() {
                         assert!(
-                            scheme == "session" || scheme == "api-token",
+                            ["session", "api-token", "media-link"].contains(&scheme.as_str()),
                             "{method} {path} names an unknown credential {scheme}"
+                        );
+                        assert!(
+                            scheme != "media-link"
+                                || (method == "get"
+                                    && [
+                                        "/v1/assets/{sha256}",
+                                        "/v1/assets/{sha256}/preview",
+                                        "/v1/assets/{sha256}/thumbnail",
+                                    ]
+                                    .contains(&path.as_str())),
+                            "{method} {path} takes a media link, which only reads an asset"
                         );
                         for scope in scopes.as_array().unwrap() {
                             let scope = scope.as_str().unwrap();

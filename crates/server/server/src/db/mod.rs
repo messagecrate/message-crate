@@ -3,6 +3,7 @@
 pub mod account_profile;
 pub mod address_book;
 pub mod api_tokens;
+pub mod attachment_versions;
 pub mod audit_trail;
 pub mod contacts;
 pub mod conversation_messages;
@@ -15,6 +16,7 @@ pub mod handles;
 pub mod import_contacts;
 pub mod imports;
 pub mod maintenance;
+pub mod media_queue;
 pub mod named_membership;
 pub mod ownership;
 pub mod participant_names;
@@ -28,6 +30,8 @@ pub mod sqlite_functions;
 pub mod staging;
 pub mod storage;
 pub mod trash;
+#[cfg(test)]
+pub mod write_guard;
 pub mod write_tx;
 
 pub use write_tx::{WriteTx, begin_write};

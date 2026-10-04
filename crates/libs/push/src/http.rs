@@ -508,6 +508,8 @@ mod tests {
                 account_id: 1,
                 username: Some("alice".into()),
             },
+            stop: Default::default(),
+            refused: Default::default(),
         }
     }
 

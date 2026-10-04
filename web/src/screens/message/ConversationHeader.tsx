@@ -9,11 +9,11 @@ import { conversationServiceLabel } from "../../lib/serviceLabel";
 import { useTimeZone } from "../../lib/timeZone";
 import { useTrashConversation } from "../../lib/trash";
 import type { Conversation } from "../../lib/types";
+import { focusRing } from "../../lib/uiStyles";
 import ContactGroupFromConversation from "./ContactGroupFromConversation";
 import { useContactGroupMembers } from "./contactGroupMembers";
 
-const TOOL_CLASS =
-  "cursor-pointer rounded-md border border-border bg-panel px-2.5 py-[0.2rem] text-[0.813rem] text-text outline-none hover:bg-hover focus-visible:ring-2 focus-visible:ring-accent";
+const TOOL_CLASS = `cursor-pointer rounded-md border border-border bg-panel px-2.5 py-[0.2rem] text-[0.813rem] text-text hover:bg-hover ${focusRing}`;
 
 /** The menu rows for the people in the conversation; one with a contact opens it. */
 function participantItems(

@@ -207,14 +207,19 @@ async fn import_under_session(
         media: opts.media,
         wipe_sources: Some(vec![source.to_string()]),
     };
-    let result = imports_api::import_on_conn(
+    let result = imports_api::import_jsonl_files_on_conn(
         conn,
         paths,
         &import_opts,
         imports_api::ImportSchemaMode::AssumeReady,
     )
-    .await;
+    .await
+    .map_err(anyhow::Error::from);
+    let import_id = session.id;
     session.finish(conn, &result).await;
+    // No server runs the background pass here, so the Assets wait in the
+    // queue for the next `serve` (`docs/architecture/media.md`, rule 4).
+    crate::media_queue::queue_without_waking(conn, account_id, import_id).await;
     result
 }
 
@@ -306,8 +311,8 @@ mod tests {
     /// One incoming text from `phone`.
     fn conversation_with(phone: &str) -> String {
         format!(
-            r#"{{"schema_version":4,"export":{{"source":"sms-backup-restore","tool":"test","tool_version":"0","owner_handle":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{phone}","conversation_type":"individual","group_title":null,"participants":[{{"handle":"{phone}","display_name":null}}],"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}
-{{"guid":"g-contacts-1","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_handle":"{phone}","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}}
+            r#"{{"schema_version":7,"export":{{"source":"sms-backup-restore","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{phone}","conversation_type":"individual","group_title":null,"participants":[{{"identity":"{phone}","display_name":null}}],"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}
+{{"guid":"g-contacts-1","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"{phone}","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}}
 "#
         )
     }
@@ -503,13 +508,13 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         fs::write(
             tmp.path().join("a.jsonl"),
-            r#"{"schema_version":4,"export":{"source":"imessage","tool":"t","tool_version":"0","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"+1","conversation_type":"individual","group_title":null,"participants":[],"stats":{"message_count":0,"attachment_count":0,"first_timestamp_unix_ms":null,"last_timestamp_unix_ms":null}}}
+            r#"{"schema_version":7,"export":{"source":"imessage","tool":"t","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+1","conversation_type":"individual","group_title":null,"participants":[],"stats":{"message_count":0,"attachment_count":0,"first_timestamp_unix_ms":null,"last_timestamp_unix_ms":null}}}
 "#,
         )
         .unwrap();
         fs::write(
             tmp.path().join("b.jsonl"),
-            r#"{"schema_version":4,"export":{"source":"go-sms-pro","tool":"t","tool_version":"0","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"+2","conversation_type":"individual","group_title":null,"participants":[],"stats":{"message_count":0,"attachment_count":0,"first_timestamp_unix_ms":null,"last_timestamp_unix_ms":null}}}
+            r#"{"schema_version":7,"export":{"source":"go-sms-pro","tool":"t","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+2","conversation_type":"individual","group_title":null,"participants":[],"stats":{"message_count":0,"attachment_count":0,"first_timestamp_unix_ms":null,"last_timestamp_unix_ms":null}}}
 "#,
         )
         .unwrap();

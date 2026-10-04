@@ -2531,7 +2531,7 @@
           "Assets"
         ],
         "summary": "Download a previously stored content-addressed asset (read-only).",
-        "description": "The body streams the stored bytes; the URL is the SHA-256 fingerprint.",
+        "description": "The body streams the stored bytes; the URL is the SHA-256 fingerprint.\nA `Range` of one byte range answers `206 Partial Content` with those bytes, so a media\nelement streams a video and seeks in it; the `ETag` is the fingerprint,\nfor `If-Range`. A media element, which cannot send the `Authorization`\nheader, reads with the `media_link` a media link put in the URL\n(`POST /v1/assets/{sha256}/media-links`).",
         "operationId": "get_asset",
         "parameters": [
           {
@@ -2542,17 +2542,81 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "Range",
+            "in": "header",
+            "description": "One byte range, `bytes=<first>-<last>`, `bytes=<first>-` or `bytes=-<suffix>`; any other range answers the whole file",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "If-Range",
+            "in": "header",
+            "description": "The `ETag` the client's copy was read with; a range is served only when it names this file",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
           }
         ],
         "responses": {
           "200": {
             "description": "The asset's bytes, in the media type it was stored with, or `application/octet-stream` when none was stored",
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`bytes`"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "The fingerprint, quoted"
+              }
+            },
+            "content": {
+              "*/*": {}
+            }
+          },
+          "206": {
+            "description": "The byte range the `Range` header asked for",
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`bytes`"
+              },
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`bytes <first>-<last>/<length>`"
+              },
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "The fingerprint, quoted"
+              }
+            },
             "content": {
               "*/*": {}
             }
           },
           "401": {
-            "description": "[`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired.",
+            "description": "[`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired.\n\n[`media-link-invalid`](https://messagecrate.app/docs/developer/reference/errors/media-link-invalid): The `media_link` in the URL opens nothing here: it is not a media link, it was made for another asset or another account, it expired, or the Session that made it has ended.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2561,7 +2625,8 @@
               }
             },
             "x-problem-types": [
-              "https://messagecrate.app/docs/developer/reference/errors/authentication-required"
+              "https://messagecrate.app/docs/developer/reference/errors/authentication-required",
+              "https://messagecrate.app/docs/developer/reference/errors/media-link-invalid"
             ]
           },
           "403": {
@@ -2591,6 +2656,19 @@
               "https://messagecrate.app/docs/developer/reference/errors/not-found"
             ]
           },
+          "416": {
+            "description": "[`range-not-satisfiable`](https://messagecrate.app/docs/developer/reference/errors/range-not-satisfiable): The request's `Range` selects no byte of the file: it starts at or past the end, or asks for a suffix of no bytes.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/range-not-satisfiable"
+            ]
+          },
           "422": {
             "description": "[`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take.",
             "content": {
@@ -2613,6 +2691,9 @@
             "api-token": [
               "export"
             ]
+          },
+          {
+            "media-link": []
           }
         ]
       },
@@ -2903,19 +2984,19 @@
         ]
       }
     },
-    "/v1/assets/{sha256}/preview": {
-      "get": {
+    "/v1/assets/{sha256}/media-links": {
+      "post": {
         "tags": [
           "Assets"
         ],
-        "summary": "Download the preview of a stored asset: the JPEG, MP4 or MP3 that `process-assets` made from it for a browser to show.",
-        "description": "The URL is the SHA-256 fingerprint of the original, and the body streams\nthe preview's bytes in the preview's own media type. An asset with no\npreview answers `404`; the original is at `/v1/assets/{sha256}`.",
-        "operationId": "get_asset_preview",
+        "summary": "Make a media link: URLs that read one asset with no `Authorization` header, for a media element's `src`.",
+        "description": "A media element cannot send the Session's header, so the web app asks for\na link and loads the URLs it answers. The link opens this asset, its\nPreview and its Thumbnail, in this account's store, for an hour, and\nstops sooner when the Session that made it ends. Its URLs take `Range`\nlike any read of the asset. Only a Session makes one: a program sends its\ntoken in the header.",
+        "operationId": "create_media_link",
         "parameters": [
           {
             "name": "sha256",
             "in": "path",
-            "description": "Content SHA-256 hex of the original",
+            "description": "Content SHA-256 hex",
             "required": true,
             "schema": {
               "type": "string"
@@ -2923,10 +3004,22 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "The preview's bytes, in the preview's own media type, or `application/octet-stream` when none is stored",
+          "201": {
+            "description": "The media link was made",
+            "headers": {
+              "Location": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "The link's `url`, which reads the asset"
+              }
+            },
             "content": {
-              "*/*": {}
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaLink"
+                }
+              }
             }
           },
           "401": {
@@ -2969,6 +3062,172 @@
               "https://messagecrate.app/docs/developer/reference/errors/not-found"
             ]
           },
+          "406": {
+            "description": "[`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/not-acceptable"
+            ]
+          },
+          "422": {
+            "description": "[`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/validation-failed"
+            ]
+          }
+        },
+        "security": [
+          {
+            "session": []
+          }
+        ]
+      }
+    },
+    "/v1/assets/{sha256}/preview": {
+      "get": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Download the preview of a stored asset: the JPEG, MP4 or MP3 the server made from it for a browser to show.",
+        "description": "The URL is the SHA-256 fingerprint of the original, and the body streams\nthe preview's bytes in the preview's own media type. An asset with no\npreview answers `404 Not Found`; the original is at `/v1/assets/{sha256}`. A\n`Range` of one byte range answers `206 Partial Content` with those bytes. The preview has\nno `ETag`, so a `Range` sent with `If-Range` answers the whole preview. A\nmedia element reads with the `media_link` a media link put in the URL.",
+        "operationId": "get_asset_preview",
+        "parameters": [
+          {
+            "name": "sha256",
+            "in": "path",
+            "description": "Content SHA-256 hex of the original",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Range",
+            "in": "header",
+            "description": "One byte range, `bytes=<first>-<last>`, `bytes=<first>-` or `bytes=-<suffix>`; any other range answers the whole preview",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "If-Range",
+            "in": "header",
+            "description": "Never names a Preview, which has no `ETag`: a `Range` sent with it answers the whole preview",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The preview's bytes, in the preview's own media type, or `application/octet-stream` when none is stored",
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`bytes`"
+              }
+            },
+            "content": {
+              "*/*": {}
+            }
+          },
+          "206": {
+            "description": "The byte range the `Range` header asked for",
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`bytes`"
+              },
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`bytes <first>-<last>/<length>`"
+              }
+            },
+            "content": {
+              "*/*": {}
+            }
+          },
+          "401": {
+            "description": "[`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired.\n\n[`media-link-invalid`](https://messagecrate.app/docs/developer/reference/errors/media-link-invalid): The `media_link` in the URL opens nothing here: it is not a media link, it was made for another asset or another account, it expired, or the Session that made it has ended.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/authentication-required",
+              "https://messagecrate.app/docs/developer/reference/errors/media-link-invalid"
+            ]
+          },
+          "403": {
+            "description": "[`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.\n\n[`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/insufficient-scope",
+              "https://messagecrate.app/docs/developer/reference/errors/account-disabled"
+            ]
+          },
+          "404": {
+            "description": "[`not-found`](https://messagecrate.app/docs/developer/reference/errors/not-found): No resource at that address exists for this account.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/not-found"
+            ]
+          },
+          "416": {
+            "description": "[`range-not-satisfiable`](https://messagecrate.app/docs/developer/reference/errors/range-not-satisfiable): The request's `Range` selects no byte of the file: it starts at or past the end, or asks for a suffix of no bytes.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/range-not-satisfiable"
+            ]
+          },
           "422": {
             "description": "[`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take.",
             "content": {
@@ -2991,6 +3250,170 @@
             "api-token": [
               "export"
             ]
+          },
+          {
+            "media-link": []
+          }
+        ]
+      }
+    },
+    "/v1/assets/{sha256}/thumbnail": {
+      "get": {
+        "tags": [
+          "Assets"
+        ],
+        "summary": "Download the thumbnail of a stored image or video: a JPEG at most 560 pixels on its long side, the image scaled down or the video's first frame.",
+        "description": "The server makes it in the background after the Import Run that brought\nthe asset, and `process-assets` makes any that are missing. The URL is\nthe SHA-256 fingerprint of the original. An asset with no thumbnail yet\nanswers `404 Not Found`; the attachment's `thumbnail_mime_type` says\nwhether it has one. A `Range` of one byte range answers\n`206 Partial Content` with those bytes. The thumbnail has no `ETag`, so a\n`Range` sent with `If-Range` answers the whole thumbnail. A media element\nreads with the `media_link` a media link put in the URL.",
+        "operationId": "get_asset_thumbnail",
+        "parameters": [
+          {
+            "name": "sha256",
+            "in": "path",
+            "description": "Content SHA-256 hex of the original",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Range",
+            "in": "header",
+            "description": "One byte range, `bytes=<first>-<last>`, `bytes=<first>-` or `bytes=-<suffix>`; any other range answers the whole thumbnail",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          {
+            "name": "If-Range",
+            "in": "header",
+            "description": "Never names a Thumbnail, which has no `ETag`: a `Range` sent with it answers the whole thumbnail",
+            "required": false,
+            "schema": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The thumbnail's bytes, in the thumbnail's own media type",
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`bytes`"
+              }
+            },
+            "content": {
+              "*/*": {}
+            }
+          },
+          "206": {
+            "description": "The byte range the `Range` header asked for",
+            "headers": {
+              "Accept-Ranges": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`bytes`"
+              },
+              "Content-Range": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`bytes <first>-<last>/<length>`"
+              }
+            },
+            "content": {
+              "*/*": {}
+            }
+          },
+          "401": {
+            "description": "[`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired.\n\n[`media-link-invalid`](https://messagecrate.app/docs/developer/reference/errors/media-link-invalid): The `media_link` in the URL opens nothing here: it is not a media link, it was made for another asset or another account, it expired, or the Session that made it has ended.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/authentication-required",
+              "https://messagecrate.app/docs/developer/reference/errors/media-link-invalid"
+            ]
+          },
+          "403": {
+            "description": "[`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.\n\n[`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/insufficient-scope",
+              "https://messagecrate.app/docs/developer/reference/errors/account-disabled"
+            ]
+          },
+          "404": {
+            "description": "[`not-found`](https://messagecrate.app/docs/developer/reference/errors/not-found): No resource at that address exists for this account.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/not-found"
+            ]
+          },
+          "416": {
+            "description": "[`range-not-satisfiable`](https://messagecrate.app/docs/developer/reference/errors/range-not-satisfiable): The request's `Range` selects no byte of the file: it starts at or past the end, or asks for a suffix of no bytes.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/range-not-satisfiable"
+            ]
+          },
+          "422": {
+            "description": "[`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/validation-failed"
+            ]
+          }
+        },
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "api-token": [
+              "export"
+            ]
+          },
+          {
+            "media-link": []
           }
         ]
       }
@@ -7623,7 +8046,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Page_ImportRun"
+                  "$ref": "#/components/schemas/Page_ImportRunSummary"
                 }
               }
             }
@@ -11040,6 +11463,337 @@
         ]
       }
     },
+    "/v1/server/log-files": {
+      "get": {
+        "tags": [
+          "Server"
+        ],
+        "summary": "List the server's log files, newest first.",
+        "description": "The server writes to the newest, and starts the next before a line would\ncarry it past 50 MB. It keeps 5, and deletes the oldest when one more\nstarts. The owner's alone.",
+        "operationId": "list_log_files",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, default 40, at most 500",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "description": "Rows to skip",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Page_LogFile"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "[`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/authentication-required"
+            ]
+          },
+          "403": {
+            "description": "[`not-the-owner`](https://messagecrate.app/docs/developer/reference/errors/not-the-owner): This route belongs to the owner: creating accounts, changing server settings, or anything else only the owner may do.\n\n[`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.\n\n[`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/not-the-owner",
+              "https://messagecrate.app/docs/developer/reference/errors/insufficient-scope",
+              "https://messagecrate.app/docs/developer/reference/errors/account-disabled"
+            ]
+          },
+          "406": {
+            "description": "[`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/not-acceptable"
+            ]
+          },
+          "422": {
+            "description": "[`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/validation-failed"
+            ]
+          }
+        },
+        "security": [
+          {
+            "session": [
+              "owner"
+            ]
+          }
+        ]
+      }
+    },
+    "/v1/server/log-files/{id}": {
+      "get": {
+        "tags": [
+          "Server"
+        ],
+        "summary": "Download one of the server's log files whole, as it is on disk.",
+        "description": "The answer is `text/plain`, an attachment named for the file. The newest\nfile is answered as it stood when the download started; lines written\nwhile it downloads are in the next one. The owner's alone.",
+        "operationId": "get_log_file",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "description": "The file's id, from `GET /v1/server/log-files`",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The file, as an attachment named `server-<id>.log`",
+            "headers": {
+              "Content-Disposition": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "`attachment; filename=\"server-000001.log\"`, the file's name"
+              }
+            },
+            "content": {
+              "text/plain": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "[`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/authentication-required"
+            ]
+          },
+          "403": {
+            "description": "[`not-the-owner`](https://messagecrate.app/docs/developer/reference/errors/not-the-owner): This route belongs to the owner: creating accounts, changing server settings, or anything else only the owner may do.\n\n[`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.\n\n[`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/not-the-owner",
+              "https://messagecrate.app/docs/developer/reference/errors/insufficient-scope",
+              "https://messagecrate.app/docs/developer/reference/errors/account-disabled"
+            ]
+          },
+          "404": {
+            "description": "[`not-found`](https://messagecrate.app/docs/developer/reference/errors/not-found): No resource at that address exists for this account.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/not-found"
+            ]
+          },
+          "422": {
+            "description": "[`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/validation-failed"
+            ]
+          }
+        },
+        "security": [
+          {
+            "session": [
+              "owner"
+            ]
+          }
+        ]
+      }
+    },
+    "/v1/server/log-lines": {
+      "get": {
+        "tags": [
+          "Server"
+        ],
+        "summary": "Read the server's log lines, newest first.",
+        "description": "`after` reads the lines older than the line with that id, so the page\nafter this one starts at the id of its last line, and lines the server\nwrites in between do not move it. `level` keeps the lines at that level\nand the more severe ones. `text` keeps the lines whose text, after the\ntime and the level, holds it, ignoring case. A line never holds a\npassword, a token, message text or a contact's name or identities. The\nowner's alone, because the log is about the whole installation.",
+        "operationId": "list_log_lines",
+        "parameters": [
+          {
+            "name": "level",
+            "in": "query",
+            "description": "Only lines at this level or more severe: `error`, `warn` (errors too), `info`, `debug`, `trace` (every line)",
+            "required": false,
+            "schema": {
+              "$ref": "#/components/schemas/LogLevel"
+            }
+          },
+          {
+            "name": "text",
+            "in": "query",
+            "description": "Only lines whose text, after the time and the level, holds this, ignoring case",
+            "required": false,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "description": "Only lines older than the line with this id: the id of the last line of the page before",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, default 40, at most 500",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListLogLinesResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "[`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/authentication-required"
+            ]
+          },
+          "403": {
+            "description": "[`not-the-owner`](https://messagecrate.app/docs/developer/reference/errors/not-the-owner): This route belongs to the owner: creating accounts, changing server settings, or anything else only the owner may do.\n\n[`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.\n\n[`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/not-the-owner",
+              "https://messagecrate.app/docs/developer/reference/errors/insufficient-scope",
+              "https://messagecrate.app/docs/developer/reference/errors/account-disabled"
+            ]
+          },
+          "406": {
+            "description": "[`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/not-acceptable"
+            ]
+          },
+          "422": {
+            "description": "[`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "x-problem-types": [
+              "https://messagecrate.app/docs/developer/reference/errors/validation-failed"
+            ]
+          }
+        },
+        "security": [
+          {
+            "session": [
+              "owner"
+            ]
+          }
+        ]
+      }
+    },
     "/v1/server/settings": {
       "get": {
         "tags": [
@@ -11862,7 +12616,7 @@
       "AccountImportRuns": {
         "oneOf": [
           {
-            "$ref": "#/components/schemas/Page_ImportRun",
+            "$ref": "#/components/schemas/Page_ImportRunSummary",
             "description": "The account's own runs."
           },
           {
@@ -11870,7 +12624,7 @@
             "description": "Another account's runs, as the owner reads them."
           }
         ],
-        "description": "An account's Import Runs as its reader may see them: in full for the\naccount itself, each an `OwnerImportRun` for the owner."
+        "description": "An account's Import Runs as its reader may see them: each an\n`ImportRunSummary` for the account itself, an `OwnerImportRun` for the\nowner. Neither carries the run's issues."
       },
       "AccountMessages": {
         "type": "object",
@@ -12147,6 +12901,13 @@
               "null"
             ],
             "description": "Content fingerprint of the stored bytes."
+          },
+          "thumbnail_mime_type": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "MIME type of the attachment's thumbnail, once the server has made\nit; absent until then. The thumbnail's bytes are at\n`/v1/assets/{sha256}/thumbnail`."
           },
           "transcription": {
             "type": [
@@ -12499,6 +13260,13 @@
             "items": {
               "$ref": "#/components/schemas/ImportIssueRequest"
             }
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportNoteRequest"
+            },
+            "description": "The run's notes, apart from its Import Errors. A note never makes a\nrun `completed_with_issues`."
           },
           "parse_ms": {
             "type": [
@@ -13384,6 +14152,14 @@
           }
         }
       },
+      "Deletion": {
+        "type": "string",
+        "description": "Why a message's content is gone in the app it came from.",
+        "enum": [
+          "deleted_in_source_app",
+          "unsent"
+        ]
+      },
       "DemoAccount": {
         "type": "object",
         "description": "The Demo Account, as the owner manages it.",
@@ -13435,9 +14211,10 @@
       },
       "DiscardImportRequest": {
         "type": "object",
-        "description": "The Import Errors a discarded run recorded before it was given up. A run\nthat paused and is then discarded never posts `complete`, so its issues\ncome with the discard.",
+        "description": "The Import Errors a discarded run recorded before it was given up. A run\nthat paused and is then discarded never posts `complete`, so its issues\nand notes come with the discard.",
         "required": [
-          "issues"
+          "issues",
+          "notes"
         ],
         "properties": {
           "issues": {
@@ -13446,6 +14223,13 @@
               "$ref": "#/components/schemas/ImportIssueRequest"
             },
             "description": "The run's Import Errors so far. The list is empty when the run\nrecorded none."
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImportNoteRequest"
+            },
+            "description": "The run's notes so far. The list is empty when the run recorded none."
           }
         }
       },
@@ -13834,9 +14618,87 @@
           "append"
         ]
       },
-      "ImportRun": {
+      "ImportNote": {
         "type": "object",
-        "description": "An Import Run: one per import, the same record wherever the interface\nhands one out. It holds the counts Settings shows, everything the desktop\napp needs to resume a running run, and the issues the run recorded.",
+        "description": "One stored import note: something the run did with an item that is worth\nknowing but did not fail.",
+        "required": [
+          "stage",
+          "item",
+          "text"
+        ],
+        "properties": {
+          "item": {
+            "type": "string",
+            "description": "The file, message or address the note is about."
+          },
+          "stage": {
+            "$ref": "#/components/schemas/ImportIssueStage",
+            "description": "Stage the note came from."
+          },
+          "text": {
+            "type": "string",
+            "description": "What the run did with it."
+          }
+        }
+      },
+      "ImportNoteRequest": {
+        "type": "object",
+        "description": "One note a Stage of the Import Run recorded: something it did with an\nitem that is worth knowing but did not fail, such as a message it kept\nwith a caveat.",
+        "required": [
+          "stage",
+          "item",
+          "text"
+        ],
+        "properties": {
+          "item": {
+            "type": "string",
+            "description": "The file, message or address the note is about."
+          },
+          "stage": {
+            "$ref": "#/components/schemas/ImportIssueStage",
+            "description": "Stage the note came from."
+          },
+          "text": {
+            "type": "string",
+            "description": "What the run did with it, in one sentence."
+          }
+        }
+      },
+      "ImportRun": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ImportRunSummary",
+            "description": "Everything a list answers for the run: the counts Settings shows,\neverything the desktop app needs to resume a running run, and how\nmany issues it recorded."
+          },
+          {
+            "type": "object",
+            "required": [
+              "issues",
+              "notes"
+            ],
+            "properties": {
+              "issues": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ImportIssue"
+                },
+                "description": "Issues the run recorded, oldest first."
+              },
+              "notes": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ImportNote"
+                },
+                "description": "Notes the run recorded, oldest first, apart from its issues."
+              }
+            }
+          }
+        ],
+        "description": "An Import Run: one per import, the same record wherever the interface\nhands one run out. It is the run as a list answers it, the\n`ImportRunSummary`, with the issues and the notes the run recorded."
+      },
+      "ImportRunSummary": {
+        "type": "object",
+        "description": "An Import Run as a list of runs answers it: every field of the run but\nits issues and notes. A run may record any number of either, so a page\nthat carried them would have no bound on its size; `GET /v1/imports/{id}`\nanswers them (#1559,\n`docs/architecture/http-api.md`, \"Lists\").",
         "required": [
           "id",
           "source",
@@ -13851,7 +14713,8 @@
           "source_fingerprint",
           "source_identities",
           "summary",
-          "issues",
+          "issue_count",
+          "note_count",
           "contacts_new",
           "contacts_changed"
         ],
@@ -13920,12 +14783,11 @@
             "format": "int64",
             "description": "Import Run id."
           },
-          "issues": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ImportIssue"
-            },
-            "description": "Issues the run recorded, oldest first."
+          "issue_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many issues the run recorded.",
+            "minimum": 0
           },
           "message_count": {
             "type": "integer",
@@ -13935,6 +14797,12 @@
           "mode": {
             "type": "string",
             "description": "Import mode (`replace` or `append`)."
+          },
+          "note_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many notes the run recorded.",
+            "minimum": 0
           },
           "parse_ms": {
             "type": [
@@ -14188,6 +15056,33 @@
           "messages"
         ]
       },
+      "ListLogLinesResponse": {
+        "type": "object",
+        "description": "A page of the server's log lines, newest first.\n\nNot a `Page`: the log is written while it is read, so a count and an\noffset from the newest line would move under the reader, and counting a\n250 MB log for every page is the cost a line's id saves\n(`docs/architecture/http-api.md`, \"Lists\").",
+        "required": [
+          "items",
+          "limit",
+          "has_more"
+        ],
+        "properties": {
+          "has_more": {
+            "type": "boolean",
+            "description": "Whether older lines match too. Read them with `after` set to the id of\nthe last line here."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LogLine"
+            },
+            "description": "The lines, newest first."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "The most lines this page could hold.",
+            "minimum": 0
+          }
+        }
+      },
       "ListUnmatchedIdentitiesRequest": {
         "type": "object",
         "description": "Body for `POST /v1/contacts/unmatched-identities`.",
@@ -14211,6 +15106,105 @@
           "append",
           "edit"
         ]
+      },
+      "LogFile": {
+        "type": "object",
+        "description": "One file of the server's log.",
+        "required": [
+          "id",
+          "name",
+          "bytes",
+          "modified_at"
+        ],
+        "properties": {
+          "bytes": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The file's size when it was read.",
+            "minimum": 0
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The file's number. A larger number is a newer file, and the largest is\nthe one the server is writing to."
+          },
+          "modified_at": {
+            "type": "string",
+            "description": "When the last line was written to it, in UTC (RFC 3339)."
+          },
+          "name": {
+            "type": "string",
+            "description": "The file's name, as a download is named: `server-000001.log`."
+          }
+        }
+      },
+      "LogLevel": {
+        "type": "string",
+        "description": "How severe a line is, as `tracing` writes it.",
+        "enum": [
+          "error",
+          "warn",
+          "info",
+          "debug",
+          "trace"
+        ]
+      },
+      "LogLine": {
+        "type": "object",
+        "description": "One line of the server's log.",
+        "required": [
+          "id",
+          "time",
+          "level",
+          "text"
+        ],
+        "properties": {
+          "id": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Where the line is in the log. A larger id is a newer line. Send it as\n`after` to read the lines older than this one."
+          },
+          "level": {
+            "$ref": "#/components/schemas/LogLevel",
+            "description": "How severe the line is."
+          },
+          "text": {
+            "type": "string",
+            "description": "The line after its time and level: the request or work it belongs to,\nand what it says. A line break inside it is written as `\\n`."
+          },
+          "time": {
+            "type": "string",
+            "description": "When the line was written, in UTC, as RFC 3339 with microseconds."
+          }
+        }
+      },
+      "MediaLink": {
+        "type": "object",
+        "description": "A media link: the URLs a media element loads to read one asset with no\n`Authorization` header, and when they stop working.",
+        "required": [
+          "url",
+          "preview_url",
+          "thumbnail_url",
+          "expires_at"
+        ],
+        "properties": {
+          "expires_at": {
+            "type": "string",
+            "description": "When the link stops working, RFC 3339 UTC. It stops sooner if the\nSession that made it ends."
+          },
+          "preview_url": {
+            "type": "string",
+            "description": "`/v1/assets/{sha256}/preview?media_link=…`: the asset's Preview, which\nanswers `404 Not Found` when the asset has none (the attachment's\n`preview_mime_type` says whether it has one)."
+          },
+          "thumbnail_url": {
+            "type": "string",
+            "description": "`/v1/assets/{sha256}/thumbnail?media_link=…`: the asset's Thumbnail,\nwhich answers `404 Not Found` until the server has made one (the\nattachment's `thumbnail_mime_type` says whether it has one)."
+          },
+          "url": {
+            "type": "string",
+            "description": "`/v1/assets/{sha256}?media_link=…`: the asset's own bytes."
+          }
+        }
       },
       "Message": {
         "type": "object",
@@ -14240,6 +15234,17 @@
           "conversation": {
             "$ref": "#/components/schemas/MessageConversation",
             "description": "The conversation this message belongs to."
+          },
+          "deletion": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/Deletion",
+                "description": "`deleted_in_source_app` for a message the person deleted in the\napp it came from before the backup, `unsent` for one its sender\ntook back; `null` for neither. The message is listed and found\nlike any other either way."
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "guid": {
             "type": "string",
@@ -14346,6 +15351,7 @@
           "id",
           "chat_identifier",
           "conversation_type",
+          "is_group",
           "participants"
         ],
         "properties": {
@@ -14368,6 +15374,10 @@
             "type": "integer",
             "format": "int64",
             "description": "Conversation row id."
+          },
+          "is_group": {
+            "type": "boolean",
+            "description": "True for a group conversation, by the rule the conversation list's\n`is_group` follows, so a client never reads `conversation_type` to\ndecide it."
           },
           "label": {
             "type": [
@@ -14477,7 +15487,7 @@
       },
       "OwnerImportRun": {
         "type": "object",
-        "description": "An Import Run as the owner reads it under another account: its source,\nmode, times, outcome and counts, and nothing of what the backup held\n(`docs/adr/0008-the-owner-holds-no-messages.md`, \"What the owner may\nsee\"). The run's summary, its issues and its form say whom the account\ntalks to, so they stay out, and a field reaches the owner only by being\nadded here.",
+        "description": "An Import Run as the owner reads it under another account: its source,\nmode, times, outcome and counts, and nothing of what the backup held\n(`docs/adr/0008-the-owner-holds-no-messages.md`, \"What the owner may\nsee\"). The run's summary, its issues, its notes and its form say whom the\naccount talks to, so they stay out, and a field reaches the owner only by\nbeing added here.",
         "required": [
           "id",
           "source",
@@ -14489,6 +15499,7 @@
           "bytes_uploaded",
           "counts",
           "issue_count",
+          "note_count",
           "contacts_new",
           "contacts_changed"
         ],
@@ -14568,6 +15579,12 @@
           "mode": {
             "type": "string",
             "description": "Import mode (`replace` or `append`)."
+          },
+          "note_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Notes the run recorded. Each names a file or an address, so the owner\nreads how many and not which.",
+            "minimum": 0
           },
           "parse_ms": {
             "type": [
@@ -15852,7 +16869,7 @@
           }
         }
       },
-      "Page_ImportRun": {
+      "Page_ImportRunSummary": {
         "type": "object",
         "description": "One page of a list.",
         "required": [
@@ -15866,7 +16883,7 @@
             "type": "array",
             "items": {
               "type": "object",
-              "description": "An Import Run: one per import, the same record wherever the interface\nhands one out. It holds the counts Settings shows, everything the desktop\napp needs to resume a running run, and the issues the run recorded.",
+              "description": "An Import Run as a list of runs answers it: every field of the run but\nits issues and notes. A run may record any number of either, so a page\nthat carried them would have no bound on its size; `GET /v1/imports/{id}`\nanswers them (#1559,\n`docs/architecture/http-api.md`, \"Lists\").",
               "required": [
                 "id",
                 "source",
@@ -15881,7 +16898,8 @@
                 "source_fingerprint",
                 "source_identities",
                 "summary",
-                "issues",
+                "issue_count",
+                "note_count",
                 "contacts_new",
                 "contacts_changed"
               ],
@@ -15950,12 +16968,11 @@
                   "format": "int64",
                   "description": "Import Run id."
                 },
-                "issues": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ImportIssue"
-                  },
-                  "description": "Issues the run recorded, oldest first."
+                "issue_count": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "How many issues the run recorded.",
+                  "minimum": 0
                 },
                 "message_count": {
                   "type": "integer",
@@ -15965,6 +16982,12 @@
                 "mode": {
                   "type": "string",
                   "description": "Import mode (`replace` or `append`)."
+                },
+                "note_count": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "How many notes the run recorded.",
+                  "minimum": 0
                 },
                 "parse_ms": {
                   "type": [
@@ -16058,6 +17081,69 @@
           }
         }
       },
+      "Page_LogFile": {
+        "type": "object",
+        "description": "One page of a list.",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "description": "One file of the server's log.",
+              "required": [
+                "id",
+                "name",
+                "bytes",
+                "modified_at"
+              ],
+              "properties": {
+                "bytes": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "The file's size when it was read.",
+                  "minimum": 0
+                },
+                "id": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "The file's number. A larger number is a newer file, and the largest is\nthe one the server is writing to."
+                },
+                "modified_at": {
+                  "type": "string",
+                  "description": "When the last line was written to it, in UTC (RFC 3339)."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "The file's name, as a download is named: `server-000001.log`."
+                }
+              }
+            },
+            "description": "The rows on this page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Page size used.",
+            "minimum": 0
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Page offset used.",
+            "minimum": 0
+          },
+          "total": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Rows matching the query across every page.",
+            "minimum": 0
+          }
+        }
+      },
       "Page_Message": {
         "type": "object",
         "description": "One page of a list.",
@@ -16098,6 +17184,17 @@
                 "conversation": {
                   "$ref": "#/components/schemas/MessageConversation",
                   "description": "The conversation this message belongs to."
+                },
+                "deletion": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/Deletion",
+                      "description": "`deleted_in_source_app` for a message the person deleted in the\napp it came from before the backup, `unsent` for one its sender\ntook back; `null` for neither. The message is listed and found\nlike any other either way."
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "guid": {
                   "type": "string",
@@ -16385,7 +17482,7 @@
             "type": "array",
             "items": {
               "type": "object",
-              "description": "An Import Run as the owner reads it under another account: its source,\nmode, times, outcome and counts, and nothing of what the backup held\n(`docs/adr/0008-the-owner-holds-no-messages.md`, \"What the owner may\nsee\"). The run's summary, its issues and its form say whom the account\ntalks to, so they stay out, and a field reaches the owner only by being\nadded here.",
+              "description": "An Import Run as the owner reads it under another account: its source,\nmode, times, outcome and counts, and nothing of what the backup held\n(`docs/adr/0008-the-owner-holds-no-messages.md`, \"What the owner may\nsee\"). The run's summary, its issues, its notes and its form say whom the\naccount talks to, so they stay out, and a field reaches the owner only by\nbeing added here.",
               "required": [
                 "id",
                 "source",
@@ -16397,6 +17494,7 @@
                 "bytes_uploaded",
                 "counts",
                 "issue_count",
+                "note_count",
                 "contacts_new",
                 "contacts_changed"
               ],
@@ -16476,6 +17574,12 @@
                 "mode": {
                   "type": "string",
                   "description": "Import mode (`replace` or `append`)."
+                },
+                "note_count": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "Notes the run recorded. Each names a file or an address, so the owner\nreads how many and not which.",
+                  "minimum": 0
                 },
                 "parse_ms": {
                   "type": [
@@ -17485,6 +18589,12 @@
         "type": "http",
         "scheme": "bearer",
         "description": "A named API token: the `mc-api-` secret `POST /v1/accounts/{id}/api-tokens` returns once, carrying the import and export scopes it was created with; a token never carries delete. Only the routes listing it accept one; every other route answers 403."
+      },
+      "media-link": {
+        "type": "apiKey",
+        "in": "query",
+        "name": "media_link",
+        "description": "A media link: the `media_link` value in the URLs `POST /v1/assets/{sha256}/media-links` answers, for a media element that cannot send `Authorization`. It reads one asset and its Preview, in the account that made it, for an hour, and ends sooner with the Session that made it. A request that sends `Authorization` is judged by the header alone."
       },
       "session": {
         "type": "http",

@@ -83,6 +83,10 @@ CREATE TABLE IF NOT EXISTS messages (
     thread_originator_part INTEGER,
     -- Count of replies hanging off this message (denormalized from the source).
     num_replies INTEGER NOT NULL DEFAULT 0,
+    -- 'deleted_in_source_app': the person deleted it in the app it came from
+    -- before the backup; 'unsent': its sender took it back. NULL for neither.
+    -- The message is listed and searched like any other either way.
+    deletion TEXT CHECK (deletion IN ('deleted_in_source_app', 'unsent')),
     -- Stable order within the conversation when timestamps collide.
     sort_order INTEGER NOT NULL,
     -- Hash fingerprint for cross-source duplicate detection (chat/direction/time/body/attachments).
@@ -151,11 +155,32 @@ CREATE TABLE IF NOT EXISTS attachments (
     -- Path under the assets store for the derivative file.
     derived_assets_path TEXT,
     -- MIME type of the derivative file.
-    derived_mime_type TEXT
+    derived_mime_type TEXT,
+    -- SHA-256 hex of the Thumbnail: a small JPEG of an image, or a video's
+    -- first frame. NULL until the server has made it.
+    thumbnail_sha256 TEXT,
+    -- Path of the Thumbnail under the account's converted-media directory.
+    thumbnail_assets_path TEXT,
+    -- MIME type of the Thumbnail file.
+    thumbnail_mime_type TEXT
 );
 
 CREATE INDEX IF NOT EXISTS ix_attachments_sha256 ON attachments (sha256);
 CREATE INDEX IF NOT EXISTS ix_attachments_message_id ON attachments (message_id);
+
+-- Assets whose Thumbnail and Preview the server still has to make. An Import
+-- Run that ends adds the Assets its messages name, and the server works
+-- through the rows in the background, removing each when it is done, so the
+-- rows a stopped server leaves are worked on when it starts again.
+CREATE TABLE IF NOT EXISTS media_queue (
+    -- Account whose Asset this is (`accounts.id`).
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    -- SHA-256 hex of the original Asset.
+    sha256 TEXT NOT NULL,
+    -- When the Asset was queued, in Unix seconds.
+    queued_at INTEGER NOT NULL,
+    PRIMARY KEY (account_id, sha256)
+);
 
 -- Reaction (tapback) on a message part.
 CREATE TABLE IF NOT EXISTS tapbacks (

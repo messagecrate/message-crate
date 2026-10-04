@@ -103,13 +103,16 @@ With **Copy**, the Message Crate stores each file exactly as the backup held it.
 The server does not convert a file when it is uploaded.
 
 A photo in HEIC or a video in HEVC, the formats an iPhone uses, shows as it is only in a browser that can display that format itself.
-For every other browser the server keeps a preview: a JPEG of a photo, an MP4 of a video.
-A conversation shows the preview of an attachment that has one, and the original of one that has none.
-Opening a photo shows the original, and the preview when the browser cannot display the original.
-The original is never changed.
+So the server keeps a preview of every photo, video, and recording in a format browsers often can't show: a JPEG of a photo, an MP4 of a video, an MP3 of a recording.
+It also keeps a thumbnail of every photo and video, a JPEG at most 560 pixels on its long side, which is what a Conversation shows.
+Opening an attachment shows the original when it is a JPEG, PNG, GIF, WebP, MP3, or an MP4 every browser plays, and the preview otherwise, the same in every browser.
+Downloading an attachment always gives the original, which is never changed.
+[Browse](/docs/user/features/messages/browse/#photos-videos-and-recordings) describes what a Conversation and the viewer show.
 
-The server makes previews when `message-crate-server process-assets` runs, which needs ffmpeg on the server.
-An attachment imported since the last run has no preview yet, and until it has one a HEIC photo or an HEVC video does not show in a browser that cannot display it.
+The server makes the thumbnails and previews after each import, in the background, which needs ffmpeg on the server: the Docker image has it, and the desktop app's server uses the ffmpeg it finds on the computer.
+The import finishes without waiting for them, so for a while after an import a photo or video shows its file name in place of its thumbnail, and a HEIC photo or an HEVC video opens to a note that it has no copy a browser can show yet, with its download.
+A server without ffmpeg keeps the list of attachments still to do, and makes their thumbnails and previews once it finds ffmpeg, when it starts again or after the next import.
+`message-crate-server process-assets` makes any thumbnail or preview that is still missing.
 Importing with **Convert** stores a `.jpg` in place of the HEIC photo, which needs no preview.
 
 ## Obfuscate

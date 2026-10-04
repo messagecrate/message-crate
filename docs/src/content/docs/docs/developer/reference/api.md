@@ -43,7 +43,7 @@ Every import is an Import Run, and there is no import without one. A run takes f
 
 Between those steps, `PATCH /v1/imports/{id}` moves a live run to another stage, carrying the plan approved at the gate it just passed in `summary` when there is one. The desktop app uses the stage to resume an import after a restart. The stage is a field of the run, so it is written with a `PATCH` rather than posted to a `stage` sub-resource. The answer is the run, the same record `GET /v1/imports/{id}` returns.
 
-`GET /v1/imports` is a page of every run, newest first (`sort=started_at` for oldest first), narrowed by `status` to one of `running`, `completed`, `completed_with_issues`, `failed`, `cancelled`. `GET /v1/imports/{id}/contacts` lists the contacts a run created or changed. Messages promoted in a run store its id in `messages.import_id`, which is what the `import:` search word matches.
+`GET /v1/imports` is a page of every run, newest first (`sort=started_at` for oldest first), narrowed by `status` to one of `running`, `completed`, `completed_with_issues`, `failed`, `cancelled`. Each run on the page carries `issue_count`, how many issues it recorded, in place of the issues, so a page stays small however many a run recorded; `GET /v1/imports/{id}` answers them all. `GET /v1/imports/{id}/contacts` lists the contacts a run created or changed. Messages promoted in a run store its id in `messages.import_id`, which is what the `import:` search word matches.
 
 ### Import body
 
@@ -101,8 +101,9 @@ Every export route takes the `export` scope on a session or an API token. A prog
 - `size:` — an attachment's size, with comparisons and ranges.
 - `participants:` — how many people are in the conversation, with comparisons and ranges.
 - `attachments:` — how many attachments are on the message, with comparisons and ranges.
+- `deleted:` — `yes` or `no`: whether the message is marked Deleted in the source app or Unsent. Neither mark hides a message, so nothing is left out until it is used.
 - `trashed:` — `yes`, `no`, or `any`. Trash is excluded by default; `trashed:yes` or `trashed:any` lifts that.
 
-`messages:` belongs to the Contacts and Conversations lists, not Messages, so an Export Run takes it only in a query for the Conversations list. `conversations:` and `groups:` belong to the Contacts list alone, so export refuses them. A query for the Conversations list in turn refuses the words only Messages has: `from:`, `to:`, `in:`, and `attachments:`.
+`messages:` belongs to the Contacts and Conversations lists, not Messages, so an Export Run takes it only in a query for the Conversations list. `conversations:` and `groups:` belong to the Contacts list alone, so export refuses them. A query for the Conversations list in turn refuses the words only Messages has: `from:`, `to:`, `in:`, `attachments:`, and `deleted:`.
 
 Health check: <http://127.0.0.1:8080/health>

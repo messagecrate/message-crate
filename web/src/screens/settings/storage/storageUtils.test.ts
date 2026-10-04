@@ -33,7 +33,10 @@ function accountImportRun(partial: Partial<AccountImportRun> = {}): AccountImpor
     source_fingerprint: null,
     source_identities: null,
     summary: {},
+    issue_count: 0,
+    note_count: 0,
     issues: [],
+    notes: [],
     ...partial,
   };
 }
@@ -78,6 +81,13 @@ describe("formatImportDate", () => {
 });
 
 describe("toImportSummaryView", () => {
+  it("keeps the run's notes apart from its issues (#1626)", () => {
+    const note = { stage: "staging" as const, item: "1.eml", text: "kept under a name" };
+    const view = toImportSummaryView(accountImportRun({ notes: [note] }));
+    expect(view.notes).toEqual([note]);
+    expect(view.issues).toEqual([]);
+  });
+
   it("maps completed status and summary counts", () => {
     const view = toImportSummaryView(
       accountImportRun({
@@ -187,6 +197,7 @@ describe("toImportSummaryView for the owner", () => {
       bytes_uploaded: 0,
       counts: { messages_parsed: 12, messages_inserted: 10 },
       issue_count: 2,
+      note_count: 1,
       contacts_new: 0,
       contacts_changed: 0,
     });

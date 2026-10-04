@@ -1,10 +1,10 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockedAuth, Providers } from "../test/providers";
+import { setupUser } from "../test/user";
 import MessageTagsNav from "./MessageTagsNav";
 
 vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
@@ -65,7 +65,7 @@ describe("MessageTagsNav", () => {
   });
 
   it("closes the tag options menu on Escape", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderNav("/");
     await user.click(screen.getByRole("button", { name: "Message Tag options for Work" }));
     expect(screen.getByRole("menuitem", { name: "Rename…" })).toBeTruthy();

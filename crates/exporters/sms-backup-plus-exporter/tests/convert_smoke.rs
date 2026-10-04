@@ -24,6 +24,7 @@ fn convert(inputs: &[&Path], output_dir: &Path) -> Result<ExportReport> {
         output_format: OutputFormat::Csv,
         cancel: None,
         log: None,
+        issues: None,
         resume: false,
     })
 }
@@ -71,10 +72,10 @@ fn convert_smoke_writes_csv_not_json() {
             "timestamp_unix_ms",
             "android_type",
             "source_fields_json",
-            "owner_handle",
+            "owner_identity",
             "participants_json",
             "read_receipt", // unified header; empty for SMS
-            "tapbacks_json",
+            "reactions_json",
         ],
         &["date_ms", "contact_name", "xml_fields_json"],
         // The flat SMSSync message, read back out of the export. The previous
@@ -239,6 +240,7 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
             output_format: OutputFormat::Jsonl,
             cancel: None,
             log: None,
+            issues: None,
             resume,
         })
     });
@@ -361,6 +363,7 @@ fn a_run_that_copies_no_attachments_still_records_their_size() {
         output_format: OutputFormat::Jsonl,
         cancel: None,
         log: None,
+        issues: None,
         resume: false,
     })
     .unwrap();

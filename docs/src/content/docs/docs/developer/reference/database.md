@@ -61,9 +61,17 @@ optional `duplicate_of`).
 
 ### `attachments` / `tapbacks`
 
-Files and reactions tied to a message. Attachments may store `sha256` and
-derived (converted) paths for the browser. Reactions record `sender_handle_id`
+Files and reactions tied to a message. Attachments may store `sha256`, and
+the paths of the Preview (`derived_*`) and the Thumbnail (`thumbnail_*`) the
+server makes for the browser. Reactions record `sender_handle_id`
 → `handles`.
+
+### `media_queue`
+
+The Assets whose Thumbnail and Preview the server still has to make, one row
+per account and SHA-256. An Import Run adds the Assets its messages name when
+it ends, and the server works through the rows in the background, removing
+each when it is done, so a server stopped part-way picks up where it was.
 
 ## People and accounts
 
@@ -130,8 +138,9 @@ per handle per account).
 `origin` on both tables records what made the row: `import`, `user`, or
 `address_book`. An address book load writes `address_book` on a contact it
 creates and on every link it makes or moves. A contact a load only renames
-keeps its origin. Nothing reads `origin` to decide what a load may change:
-a load changes the contacts its file names, and no others.
+keeps its origin. Nothing reads `origin` to decide what a load or an
+import may change: a load changes the contacts its file names, and no others,
+and an import names a contact whose name is blank, whatever made it.
 
 ### The address book file
 

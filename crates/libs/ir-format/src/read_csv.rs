@@ -7,7 +7,7 @@ use message_csv::{AttachmentCell, ParticipantCell};
 use message_ir::{
     ConversationDocument, ConversationHeader, ConversationMeta, ConversationStats, ExportMeta,
     IrAttachment, IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind,
-    IrParticipant, IrService, SCHEMA_VERSION, nonempty, parse_android_type,
+    IrParticipant, IrService, Reaction, SCHEMA_VERSION, nonempty, parse_android_type,
 };
 use serde_json::Value;
 use std::collections::HashMap;
@@ -79,7 +79,7 @@ fn header_from_row(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> Conv
             source: get("export_source").to_string(),
             tool: get("export_tool").to_string(),
             tool_version: get("export_tool_version").to_string(),
-            owner_handle: nonempty(get("owner_handle")),
+            owner_identity: nonempty(get("owner_identity")),
             owner_display_name: nonempty(get("owner_display_name")),
         },
         conversation: ConversationMeta {
@@ -103,13 +103,15 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
         _ => IrDirection::Incoming,
     };
     let attachments = parse_attachments(get("attachments_json"))?;
+    let reactions = parse_reactions(get("reactions_json"))?;
     let source = source_from_parts(
         parse_android_type(get("android_type")),
         get("source_fields_json"),
     );
 
     let is_reply = message_csv::parse_bool(get("is_reply"));
-    let is_deleted = message_csv::parse_bool(get("is_deleted"));
+    // A mark the CSV names wrongly is refused rather than read as none.
+    let deletion = message_ir::parse_deletion(get("deletion")).context("bad deletion")?;
     let thread_originator_part = {
         let s = get("thread_originator_part");
         if s.is_empty() { None } else { s.parse().ok() }
@@ -127,14 +129,12 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
         in_reply_to_guid: nonempty(get("thread_originator_guid")),
         thread_originator_part,
         num_replies,
-        is_deleted,
         send_effect: nonempty(get("send_effect")),
         shared_location: nonempty(get("shared_location")),
         announcement: nonempty(get("announcement")),
         read_receipt_rfc3339: nonempty(get("read_receipt")),
         parts: parse_json_cell(get("parts_json")),
         edits: parse_json_cell(get("edits_json")),
-        tapbacks: parse_json_cell(get("tapbacks_json")),
         app: parse_json_cell(get("app_json")),
         balloon_bundle_id: nonempty(get("balloon_bundle_id")),
         balloon_kind: nonempty(get("balloon_kind")),
@@ -151,12 +151,14 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
         direction,
         service: IrService::parse(get("service")),
         message_kind: IrMessageKind::parse(get("message_kind")),
-        sender_handle: nonempty(get("sender_handle")),
+        sender_identity: nonempty(get("sender_identity")),
         sender_display_name: nonempty(get("sender_display_name")),
-        owner_handle: nonempty(get("message_owner_handle")),
+        owner_identity: nonempty(get("message_owner_identity")),
         subject: nonempty(get("subject")),
         text: get("text").to_string(),
         attachments,
+        reactions,
+        deletion,
         imessage,
         source,
     })
@@ -202,19 +204,27 @@ fn parse_participants(raw: &str) -> Vec<IrParticipant> {
     cells
         .into_iter()
         .map(|p| IrParticipant {
-            handle: if p.handle.is_empty() {
+            identity: if p.identity.is_empty() {
                 None
             } else {
-                Some(p.handle)
+                Some(p.identity)
             },
             display_name: if p.display_name.is_empty() {
                 None
             } else {
                 Some(p.display_name)
             },
-            handle_type: p.handle_type,
+            identity_type: p.identity_type,
         })
         .collect()
+}
+
+/// A `reactions_json` cell: blank for none, else the list the writer wrote.
+fn parse_reactions(raw: &str) -> Result<Vec<Reaction>> {
+    if raw.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    serde_json::from_str(raw).with_context(|| format!("parse reactions_json: {raw}"))
 }
 
 /// Attachments from the `attachments_json` cell.

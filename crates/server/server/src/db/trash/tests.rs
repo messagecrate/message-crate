@@ -344,18 +344,14 @@ async fn insert_message(
     conversation_id: i64,
     sort_order: i64,
 ) -> i64 {
-    sqlx::query_scalar(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
-         ) VALUES ($1, $2, 'imessage', $4, '2020-01-01T00:00:00Z', 1, $3, 'hi') RETURNING id",
-    )
-    .bind(conversation_id)
-    .bind(account_id)
-    .bind(sort_order)
-    .bind(crate::test_support::unique_guid())
-    .fetch_one(&mut *conn)
+    crate::test_support::MessageRow {
+        is_from_me: true,
+        sort_order,
+        body: Some("hi"),
+        ..crate::test_support::MessageRow::new(account_id, conversation_id)
+    }
+    .insert(conn)
     .await
-    .unwrap()
 }
 
 /// Attach a stored file to `message_id`: the original under `sha`, and a
@@ -366,6 +362,7 @@ async fn insert_attachment(
     sha: &str,
     derived: Option<&str>,
 ) {
+    let mut tx = crate::db::begin_write(conn).await.unwrap();
     sqlx::query(
         "INSERT INTO attachments (
             message_id, sha256, assets_path, derived_sha256, derived_assets_path
@@ -376,9 +373,10 @@ async fn insert_attachment(
     .bind(format!("{}/{sha}.jpg", &sha[..2]))
     .bind(derived)
     .bind(derived.map(|d| format!("{}/{d}.jpg", &d[..2])))
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await
     .unwrap();
+    tx.commit().await.unwrap();
 }
 
 async fn count(conn: &mut SqliteConnection, sql: &str, id: i64) -> i64 {
@@ -664,6 +662,76 @@ async fn delete_reports_only_the_files_no_remaining_message_uses() {
     );
 }
 
+/// A Thumbnail goes with the last message that names it, and stays while
+/// another names it as its Thumbnail or as its Preview: both live in the
+/// converted directory, so a file there is reported only when no row names
+/// it as either.
+#[tokio::test]
+async fn delete_reports_a_thumbnail_only_when_no_row_names_it() {
+    let fixture = crate::test_support::test_fixture().await;
+    fixture.account_with_id(ACCOUNT_A, "a").await;
+    let mut conn = fixture.conn().await;
+    let (alone, shared_original) = (sha('b'), sha('e'));
+    let (thumbnail, shared_thumbnail) = (sha('c'), sha('f'));
+
+    let doomed = insert_conversation_on(&mut conn, ACCOUNT_A, "+15550001").await;
+    let m1 = insert_message(&mut conn, ACCOUNT_A, doomed, 0).await;
+    insert_attachment(&mut conn, m1, &alone, None).await;
+    let m2 = insert_message(&mut conn, ACCOUNT_A, doomed, 1).await;
+    insert_attachment(&mut conn, m2, &shared_original, None).await;
+    let kept = insert_conversation_on(&mut conn, ACCOUNT_A, "+15550002").await;
+    let k1 = insert_message(&mut conn, ACCOUNT_A, kept, 0).await;
+    // Another file whose Preview has the very bytes of a Thumbnail of the
+    // conversation deleted.
+    insert_attachment(&mut conn, k1, &sha('g'), Some(&shared_thumbnail)).await;
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    for (original, thumbnail) in [(&alone, &thumbnail), (&shared_original, &shared_thumbnail)] {
+        sqlx::query(
+            "UPDATE attachments
+             SET thumbnail_sha256 = $1, thumbnail_assets_path = $2,
+                 thumbnail_mime_type = 'image/jpeg'
+             WHERE sha256 = $3",
+        )
+        .bind(thumbnail)
+        .bind(format!("{}/{thumbnail}.jpg", &thumbnail[..2]))
+        .bind(original)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    }
+    tx.commit().await.unwrap();
+
+    move_to_trash(&mut conn, ACCOUNT_A, Trashable::Conversation(doomed))
+        .await
+        .unwrap();
+    let outcome = delete_trashed(
+        &mut conn,
+        ACCOUNT_A,
+        Trashable::Conversation(doomed),
+        AuditActor::Holder,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        outcome,
+        DeleteOutcome::Deleted(vec![
+            OrphanedFile::Original {
+                sha256: alone.clone(),
+                assets_path: format!("bb/{alone}.jpg"),
+            },
+            OrphanedFile::Original {
+                sha256: shared_original.clone(),
+                assets_path: format!("ee/{shared_original}.jpg"),
+            },
+            OrphanedFile::Derived {
+                assets_path: format!("cc/{thumbnail}.jpg"),
+            },
+        ]),
+        "a file another row names as its Preview is not reported"
+    );
+}
+
 /// The account stores one file for every source, so a file a message of
 /// another source still names is not reported, and its Preview stays too.
 #[tokio::test]
@@ -681,11 +749,13 @@ async fn delete_keeps_a_file_a_message_of_another_source_still_names() {
     let kept = insert_conversation_on(&mut conn, ACCOUNT_A, "+15550002").await;
     let k1 = insert_message(&mut conn, ACCOUNT_A, kept, 0).await;
     insert_attachment(&mut conn, k1, &shared, Some(&derived)).await;
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query("UPDATE messages SET source = 'sms' WHERE id = $1")
         .bind(k1)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
+    tx.commit().await.unwrap();
 
     move_to_trash(&mut conn, ACCOUNT_A, Trashable::Conversation(doomed))
         .await
@@ -816,6 +886,46 @@ async fn delete_trashed_contact_makes_it_unknown_and_leaves_its_conversations() 
         .await,
         1,
         "the conversation and its messages are untouched"
+    );
+}
+
+/// The blank name a delete for good leaves is what lets the next import that
+/// knows the person name the contact again.
+#[tokio::test]
+async fn a_contact_deleted_for_good_takes_the_next_imported_name() {
+    let fixture = crate::test_support::test_fixture().await;
+    fixture.account_with_id(ACCOUNT_A, "a").await;
+    let mut conn = fixture.conn().await;
+    let (contact_id, _) =
+        insert_named_contact_in_a_conversation(&mut conn, ACCOUNT_A, "+15550001").await;
+    move_to_trash(&mut conn, ACCOUNT_A, Trashable::Contact(contact_id))
+        .await
+        .unwrap();
+    delete_trashed(
+        &mut conn,
+        ACCOUNT_A,
+        Trashable::Contact(contact_id),
+        AuditActor::Holder,
+    )
+    .await
+    .unwrap();
+
+    assert!(
+        crate::db::contacts::propose_name(
+            &mut conn,
+            ACCOUNT_A,
+            contact_id,
+            "Pat Lee",
+            crate::db::contacts::Origin::Import
+        )
+        .await
+        .unwrap()
+    );
+    assert_eq!(
+        contact_row(&mut conn, contact_id)
+            .await
+            .map(|(name, _)| name),
+        Some("Pat Lee".into())
     );
 }
 

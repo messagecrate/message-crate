@@ -408,6 +408,42 @@ api_shape! {
         pub attachments: Vec<Attachment>,
         /// Reactions on this message.
         pub tapbacks: Vec<Tapback>,
+        /// `deleted_in_source_app` for a message the person deleted in the
+        /// app it came from before the backup, `unsent` for one its sender
+        /// took back; `null` for neither. The message is listed and found
+        /// like any other either way.
+        pub deletion: Option<Deletion>,
+    }
+}
+
+/// Why a message's content is gone in the app it came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schema", derive(utoipa::ToSchema))]
+#[serde(rename_all = "snake_case")]
+pub enum Deletion {
+    /// Deleted in the source app: the person deleted it there before the
+    /// backup was made, and the backup still holds it.
+    DeletedInSourceApp,
+    /// Unsent: its sender took it back for everyone, and nothing of it is
+    /// left.
+    Unsent,
+}
+
+impl Deletion {
+    /// Both marks.
+    pub const ALL: [Self; 2] = [Self::DeletedInSourceApp, Self::Unsent];
+
+    /// The mark as the wire and the database spell it.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::DeletedInSourceApp => "deleted_in_source_app",
+            Self::Unsent => "unsent",
+        }
+    }
+
+    /// Read a sent or stored value; anything else names no mark.
+    pub fn parse(value: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|d| d.as_str() == value)
     }
 }
 
@@ -420,6 +456,10 @@ api_shape! {
         pub chat_identifier: String,
         /// `individual` or `group`.
         pub conversation_type: String,
+        /// True for a group conversation, by the rule the conversation list's
+        /// `is_group` follows, so a client never reads `conversation_type` to
+        /// decide it.
+        pub is_group: bool,
         /// The title the export gave the conversation, when it gave one.
         pub group_title: Option<String>,
         /// The title the conversation is shown by, as the conversation list's
@@ -463,6 +503,11 @@ api_shape! {
         /// preview's bytes are at `/v1/assets/{sha256}/preview`.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub preview_mime_type: Option<String>,
+        /// MIME type of the attachment's thumbnail, once the server has made
+        /// it; absent until then. The thumbnail's bytes are at
+        /// `/v1/assets/{sha256}/thumbnail`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        pub thumbnail_mime_type: Option<String>,
     }
 }
 
@@ -531,6 +576,7 @@ mod tests {
                 id: 9,
                 chat_identifier: "+15555550100".into(),
                 conversation_type: "individual".into(),
+                is_group: false,
                 group_title: None,
                 label: None,
                 participants: vec![Participant {
@@ -549,6 +595,7 @@ mod tests {
                 transcription: None,
                 missing_reason: None,
                 preview_mime_type: None,
+                thumbnail_mime_type: None,
             }],
             tapbacks: vec![Tapback {
                 part_index: 0,
@@ -557,6 +604,7 @@ mod tests {
                 is_from_me: true,
                 sender: None,
             }],
+            deletion: Some(Deletion::DeletedInSourceApp),
         };
 
         let json = serde_json::to_string(&message).expect("serializes");
@@ -577,6 +625,8 @@ mod tests {
         assert_eq!(read.conversation.participants[0].identity, None);
         assert_eq!(read.attachments.len(), 1);
         assert_eq!(read.tapbacks[0].kind, "loved");
+        assert_eq!(written["deletion"], "deleted_in_source_app");
+        assert_eq!(read.deletion, Some(Deletion::DeletedInSourceApp));
     }
 }
 

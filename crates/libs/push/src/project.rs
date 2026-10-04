@@ -136,7 +136,7 @@ mod tests {
                 source: "sms-backup-restore".into(),
                 tool: "SMS Backup & Restore".into(),
                 tool_version: "10.26.003".into(),
-                owner_handle: Some("+15555550100".into()),
+                owner_identity: Some("+15555550100".into()),
                 owner_display_name: Some("Me".into()),
             },
             conversation: ConversationMeta {
@@ -144,9 +144,9 @@ mod tests {
                 conversation_type: IrConversationType::Individual,
                 group_title: None,
                 participants: vec![IrParticipant {
-                    handle: Some("+15555550101".into()),
+                    identity: Some("+15555550101".into()),
                     display_name: Some("Sam".into()),
-                    handle_type: None,
+                    identity_type: None,
                 }],
                 stats: ConversationStats::default(),
             },
@@ -154,7 +154,7 @@ mod tests {
             packaging_stem_suffix: None,
         };
         let header = String::from_utf8(document_header_line(&doc).unwrap()).unwrap();
-        assert!(header.contains(r#""schema_version":4"#));
+        assert!(header.contains(r#""schema_version":7"#));
         assert!(header.contains(r#""sms-backup-restore""#));
         assert!(!header.contains(r#""record":"conversation""#));
 
@@ -164,12 +164,14 @@ mod tests {
             direction: IrDirection::Incoming,
             service: IrService::Sms,
             message_kind: IrMessageKind::Sms,
-            sender_handle: Some("+15555550101".into()),
+            sender_identity: Some("+15555550101".into()),
             sender_display_name: Some("Sam".into()),
-            owner_handle: None,
+            owner_identity: None,
             subject: None,
             text: "hello".into(),
             attachments: vec![],
+            reactions: Vec::new(),
+            deletion: None,
             imessage: None,
             source: None,
         };
@@ -188,9 +190,9 @@ mod tests {
             direction: IrDirection::Incoming,
             service: IrService::Sms,
             message_kind: IrMessageKind::Sms,
-            sender_handle: None,
+            sender_identity: None,
             sender_display_name: None,
-            owner_handle: None,
+            owner_identity: None,
             subject: None,
             text: "with attachment".into(),
             attachments: vec![IrAttachment {
@@ -205,6 +207,8 @@ mod tests {
                 missing_reason: None,
                 bytes: None,
             }],
+            reactions: Vec::new(),
+            deletion: None,
             imessage: None,
             source: None,
         };

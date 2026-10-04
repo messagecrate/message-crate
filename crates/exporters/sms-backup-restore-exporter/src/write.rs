@@ -84,7 +84,7 @@ pub(crate) fn document_to_sbr_messages(
 ) -> Result<Vec<SbrMessage>> {
     let owner = doc
         .export
-        .owner_handle
+        .owner_identity
         .as_deref()
         .and_then(nonempty)
         .unwrap_or_default();
@@ -333,7 +333,7 @@ fn synthesize_addrs(
         // Every other party is a recipient, as SMS Backup & Restore writes a
         // group MMS in either direction.
         for p in &doc.conversation.participants {
-            let Some(handle) = p.handle.as_deref() else {
+            let Some(handle) = p.identity.as_deref() else {
                 continue;
             };
             if handle != owner && handle != from {
@@ -359,7 +359,7 @@ fn addr_entry(address: &str, addr_type: &str) -> BTreeMap<String, String> {
 /// The other party's address: the sender for incoming messages, else the chat identifier.
 fn peer_address(doc: &ConversationDocument, msg: &IrMessage) -> String {
     if let Some(h) = msg
-        .sender_handle
+        .sender_identity
         .as_deref()
         .filter(|s| !s.is_empty())
         .filter(|_| msg.direction == IrDirection::Incoming)
@@ -370,7 +370,7 @@ fn peer_address(doc: &ConversationDocument, msg: &IrMessage) -> String {
         .conversation
         .participants
         .first()
-        .and_then(|p| p.handle.clone())
+        .and_then(|p| p.identity.clone())
     {
         return handle;
     }
@@ -383,14 +383,14 @@ fn mms_address_field(doc: &ConversationDocument) -> String {
         doc.conversation
             .participants
             .iter()
-            .filter_map(|p| p.handle.as_deref())
+            .filter_map(|p| p.identity.as_deref())
             .collect::<Vec<_>>()
             .join("~")
     } else if let Some(handle) = doc
         .conversation
         .participants
         .first()
-        .and_then(|p| p.handle.clone())
+        .and_then(|p| p.identity.clone())
     {
         handle
     } else {
@@ -441,7 +441,7 @@ fn participants_read_back<'a>(
         .participants
         .iter()
         .filter(|p| {
-            let Some(handle) = p.handle.as_deref().and_then(sbr::address_handle) else {
+            let Some(handle) = p.identity.as_deref().and_then(sbr::address_handle) else {
                 return false;
             };
             !owners.as_ref().is_some_and(|o| o.is_owner(&handle))

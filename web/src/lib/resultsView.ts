@@ -25,6 +25,14 @@ export const AT_PARAM = "at";
  */
 export const TAG_PARAM = "tag";
 
+/**
+ * The other list of the switch. A word only that list takes stays in the
+ * search box, marked, and this list searches without it (#1561).
+ */
+export function otherResultsView(view: ResultsView): ResultsView {
+  return view === "messages" ? "conversations" : "messages";
+}
+
 /** Which results `params` asks for. */
 export function resultsView(params: URLSearchParams): ResultsView {
   return params.get(VIEW_PARAM) === "messages" ? "messages" : "conversations";

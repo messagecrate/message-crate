@@ -1,11 +1,12 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockedAuth, Providers } from "../test/providers";
+import { fill, setupUser } from "../test/user";
 import LeftPanel from "./LeftPanel";
+import { LEFT_PANEL_STORAGE_KEY } from "./leftPanelWidth";
 
 const profileState = vi.hoisted(() => ({
   profile: null as object | null,
@@ -115,7 +116,7 @@ describe("LeftPanel", () => {
     savedSearchState.savedSearches = [
       { id: 1, name: "From Alice", query: "from:alice", kind: "manual" },
     ];
-    const user = userEvent.setup();
+    const user = setupUser();
     renderPanel();
     await user.click(screen.getByRole("button", { name: "Saved search options for From Alice" }));
     expect(screen.getByRole("menuitem", { name: "Rename…" })).toBeTruthy();
@@ -127,11 +128,11 @@ describe("LeftPanel", () => {
     savedSearchActions.create.mockRejectedValue(
       new Error("a saved search named 'From Alice' already exists"),
     );
-    const user = userEvent.setup();
+    const user = setupUser();
     renderPanel();
     await user.click(screen.getByRole("button", { name: "Create saved search" }));
-    await user.type(screen.getByRole("textbox", { name: "Name" }), "From Alice");
-    await user.type(screen.getByRole("textbox", { name: "Query" }), "from:alice");
+    await fill(user, screen.getByRole("textbox", { name: "Name" }), "From Alice");
+    await fill(user, screen.getByRole("textbox", { name: "Query" }), "from:alice");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -143,11 +144,11 @@ describe("LeftPanel", () => {
   });
 
   it("closes the form once a Saved Search is created", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderPanel();
     await user.click(screen.getByRole("button", { name: "Create saved search" }));
-    await user.type(screen.getByRole("textbox", { name: "Name" }), "From Alice");
-    await user.type(screen.getByRole("textbox", { name: "Query" }), "from:alice");
+    await fill(user, screen.getByRole("textbox", { name: "Name" }), "From Alice");
+    await fill(user, screen.getByRole("textbox", { name: "Query" }), "from:alice");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -160,13 +161,13 @@ describe("LeftPanel", () => {
     savedSearchActions.update.mockRejectedValue(
       new Error("a saved search named 'Work' already exists"),
     );
-    const user = userEvent.setup();
+    const user = setupUser();
     renderPanel();
     await user.click(screen.getByRole("button", { name: "Saved search options for From Alice" }));
     await user.click(screen.getByRole("menuitem", { name: "Rename…" }));
     const name = screen.getByRole("textbox", { name: "Name" });
     await user.clear(name);
-    await user.type(name, "Work");
+    await fill(user, name, "Work");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -181,7 +182,7 @@ describe("LeftPanel", () => {
       { id: 1, name: "From Alice", query: "from:alice", kind: "manual" },
     ];
     savedSearchActions.remove.mockRejectedValue(new Error("saved search not found"));
-    const user = userEvent.setup();
+    const user = setupUser();
     renderPanel();
     await user.click(screen.getByRole("button", { name: "Saved search options for From Alice" }));
     await user.click(screen.getByRole("menuitem", { name: "Delete" }));
@@ -254,7 +255,7 @@ describe("LeftPanel", () => {
       // `?q=` and opens in its Search scope with that text. `list` says the
       // query is the Conversations list's: without it Export would read
       // `messages:>100` as a Messages query, which the server refuses (#959).
-      const user = userEvent.setup();
+      const user = setupUser();
       renderPanel(["/?q=messages%3A%3E100"], "messages:>100 tag:Work");
       await user.click(screen.getByRole("button", { name: "Export" }));
       expect(screen.getByTestId("location").textContent).toBe(
@@ -263,14 +264,14 @@ describe("LeftPanel", () => {
     });
 
     it("opens Export plain when no conversation list is showing", async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderPanel(["/contacts?cq=ann"]);
       await user.click(screen.getByRole("button", { name: "Export" }));
       expect(screen.getByTestId("location")).toHaveTextContent("/export");
     });
 
     it("hides Import and Export when the Messages heading collapses", async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderPanel();
       expect(screen.getByRole("button", { name: "Import" })).toBeTruthy();
       expect(screen.getByRole("button", { name: "Export" })).toBeTruthy();
@@ -290,5 +291,45 @@ describe("LeftPanel", () => {
       expect(browse?.className).not.toContain("pl-[calc(15px+0.5rem)]");
       expect(browse?.querySelector('[class*="size-[15px]"]')).not.toBeNull();
     });
+  });
+});
+
+describe("LeftPanel in a narrow window (#1718)", () => {
+  const wideWindow = window.innerWidth;
+
+  function setWindowWidth(width: number) {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+    act(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
+  }
+
+  afterEach(() => {
+    setWindowWidth(wideWindow);
+  });
+
+  it("takes at most half the window and keeps the stored width for a wider one", () => {
+    localStorage.setItem(LEFT_PANEL_STORAGE_KEY, "300");
+    setWindowWidth(390);
+    renderPanel();
+    const handle = screen.getByRole("separator", { name: "Resize navigation panel" });
+    const panel = handle.parentElement as HTMLElement;
+    expect(panel.style.width).toBe("195px");
+    expect(handle).toHaveAttribute("aria-valuemax", "195");
+
+    setWindowWidth(1400);
+    expect(panel.style.width).toBe("300px");
+    expect(handle).toHaveAttribute("aria-valuemax", "520");
+  });
+
+  it("stops End at the width the window allows", async () => {
+    const user = setupUser();
+    setWindowWidth(390);
+    renderPanel();
+    const handle = screen.getByRole("separator", { name: "Resize navigation panel" });
+    handle.focus();
+    await user.keyboard("{End}");
+    expect((handle.parentElement as HTMLElement).style.width).toBe("195px");
+    expect(localStorage.getItem(LEFT_PANEL_STORAGE_KEY)).toBe("195");
   });
 });

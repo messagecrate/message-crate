@@ -216,7 +216,9 @@ pub fn run_attachment_jobs(
 /// Size hints for the progress totals come from each attachment's
 /// `size_bytes` (falling back to in-memory `bytes` length when present);
 /// path-backed exporters whose attachments carry no size get unhinted totals
-/// that grow as files load.
+/// that grow as files load. A caller that knows better hints, such as which
+/// attachments have no file, builds the jobs itself and calls
+/// [`stage_attachment_jobs`].
 ///
 /// # Errors
 ///
@@ -232,7 +234,33 @@ pub fn stage_conversation_attachments<'a>(
     progress: Option<&ProgressSink>,
     cancel: Option<&CancelFlag>,
 ) -> Result<u64, String> {
-    let mut jobs = attachment_jobs(messages);
+    stage_attachment_jobs(
+        attachment_jobs(messages),
+        attachments_dir,
+        media,
+        load,
+        log,
+        progress,
+        cancel,
+    )
+}
+
+/// [`stage_conversation_attachments`] over jobs the caller built, with the
+/// size hints it chose: `load(i)` is called with the job's position in
+/// `jobs`.
+///
+/// # Errors
+///
+/// As [`stage_conversation_attachments`].
+pub fn stage_attachment_jobs(
+    mut jobs: Vec<AttachmentJob<'_>>,
+    attachments_dir: &Path,
+    media: &MediaConfig,
+    load: impl FnMut(usize) -> Result<Option<Vec<u8>>, LoadError>,
+    log: Option<&LogSink>,
+    progress: Option<&ProgressSink>,
+    cancel: Option<&CancelFlag>,
+) -> Result<u64, String> {
     run_attachment_jobs(
         &mut jobs,
         attachments_dir,

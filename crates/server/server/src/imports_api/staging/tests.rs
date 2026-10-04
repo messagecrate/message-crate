@@ -3,11 +3,11 @@ use std::path::Path;
 use sqlx::SqliteConnection;
 use tempfile::TempDir;
 
-use super::{is_orphaned_export, store_claimed_or_path};
+use super::{StagingError, is_orphaned_export, store_claimed_or_path};
 use crate::assets_api::{self, AssetStats};
 use crate::imports_api::{
-    FixedImportArgs, ImportMode, ImportOptions, ImportSchemaMode, ImportStats,
-    import_jsonl_files_on_conn,
+    FixedImportArgs, ImportError, ImportFailure, ImportMode, ImportOptions, ImportSchemaMode,
+    ImportStats, import_jsonl_files_on_conn,
 };
 use crate::models::AttachmentRecord;
 
@@ -15,13 +15,13 @@ const TEST_ACCOUNT: i64 = 7;
 
 /// The header demo-seed writes for `orphaned.jsonl`: an `individual`
 /// conversation whose chat id is `orphaned` and which names nobody.
-const ORPHANED_HEADER: &str = r#"{"schema_version":4,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"orphaned","conversation_type":"individual","group_title":null,"participants":[],"stats":{"message_count":2,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}
+const ORPHANED_HEADER: &str = r#"{"schema_version":7,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"orphaned","conversation_type":"individual","group_title":null,"participants":[],"stats":{"message_count":2,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}
 "#;
 
 /// An incoming iMessage line from `sender`.
 fn incoming(guid: &str, sender: &str) -> String {
     format!(
-        r#"{{"guid":"{guid}","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_handle":"{sender}","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}}"#
+        r#"{{"guid":"{guid}","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"{sender}","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}}"#
     ) + "\n"
 }
 
@@ -36,16 +36,23 @@ async fn import_one(
     let path = tmp.path().join(name);
     std::fs::write(&path, body).unwrap();
     let assets = tmp.path().join("assets");
-    let opts = ImportOptions::fixed(FixedImportArgs {
-        assets_dir: &assets,
-        asset_root: tmp.path(),
+    let opts = append_opts(&assets, tmp.path(), "sms-backup-restore");
+    Ok(import_jsonl_files_on_conn(conn, &[path], &opts, ImportSchemaMode::Ensure).await?)
+}
+
+/// Append-mode options for one test import into [`TEST_ACCOUNT`] under the
+/// fixed `source`, storing assets in `assets` and reading attachments from
+/// `root`.
+fn append_opts<'a>(assets: &'a Path, root: &'a Path, source: &'a str) -> ImportOptions<'a> {
+    ImportOptions::fixed(FixedImportArgs {
+        assets_dir: assets,
+        asset_root: root,
         mode: ImportMode::Append,
-        source: "sms-backup-restore",
+        source,
         account_id: TEST_ACCOUNT,
         fill_content_keys: false,
         import_id: None,
-    });
-    Ok(import_jsonl_files_on_conn(conn, &[path], &opts, ImportSchemaMode::Ensure).await?)
+    })
 }
 
 /// The reason an import was refused: its error text after the file's temp
@@ -143,6 +150,13 @@ fn a_path_that_leaves_the_export_folder_is_refused_whether_or_not_its_fingerprin
 
         let err = store_claimed_or_path(&att, &export_dir, &assets_dir, &mut stats, 2)
             .expect_err("the path is refused");
+        assert!(
+            matches!(
+                err,
+                StagingError::Rejected(ImportFailure::UnsafeAttachmentPath { .. })
+            ),
+            "{err:?}"
+        );
 
         assert_eq!(
             err.to_string(),
@@ -152,6 +166,156 @@ fn a_path_that_leaves_the_export_folder_is_refused_whether_or_not_its_fingerprin
             )
         );
         assert_eq!(stats.deduped, 0);
+    }
+}
+
+/// A refusal staging finds is the sender's to fix: the import returns it as
+/// a rejection that names the file it was in, which the HTTP interface
+/// answers with the failure's own status rather than `500`.
+#[tokio::test]
+async fn an_attachment_staging_refuses_is_a_rejection_naming_its_file() {
+    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let tmp = TempDir::new().unwrap();
+    let header = ORPHANED_HEADER.replace("orphaned", "+15555550154");
+    let message = incoming("g-escape", "+15555550154").replace(
+        r#""attachments":[]"#,
+        r#""attachments":[{"path":"../escape.txt","original_name":null,"mime_type":null,"is_sticker":false,"transcription":null,"sticker_effect":null}]"#,
+    );
+    let path = tmp.path().join("+15555550154.jsonl");
+    std::fs::write(&path, format!("{header}{message}")).unwrap();
+    let assets = tmp.path().join("assets");
+    let opts = append_opts(&assets, tmp.path(), "imessage");
+
+    let err = import_jsonl_files_on_conn(
+        &mut conn,
+        std::slice::from_ref(&path),
+        &opts,
+        ImportSchemaMode::Ensure,
+    )
+    .await
+    .expect_err("the path is refused");
+
+    match err {
+        ImportError::Rejected {
+            failure: ImportFailure::UnsafeAttachmentPath { line, .. },
+            file,
+        } => {
+            assert_eq!(line, 2);
+            assert_eq!(file, path);
+        }
+        other => panic!("expected a rejection, got {other:?}"),
+    }
+}
+
+/// An asset store the server cannot write to is the server's fault, not the
+/// sender's: staging returns it as internal, so it answers `500` however the
+/// attachment was written.
+#[test]
+fn an_asset_store_that_cannot_be_written_is_an_internal_failure() {
+    let tmp = TempDir::new().unwrap();
+    let export_dir = tmp.path().join("export");
+    std::fs::create_dir_all(&export_dir).unwrap();
+    std::fs::write(export_dir.join("photo.png"), b"some bytes").unwrap();
+    // A file where the store's directory should be.
+    let assets_dir = tmp.path().join("assets");
+    std::fs::write(&assets_dir, b"not a directory").unwrap();
+    let att = AttachmentRecord {
+        path: Some("photo.png".to_string()),
+        sha256: None,
+        ..claimed("", None)
+    };
+
+    let err = store_claimed_or_path(
+        &att,
+        &export_dir,
+        &assets_dir,
+        &mut AssetStats::default(),
+        2,
+    )
+    .expect_err("the store cannot be written");
+
+    assert!(
+        matches!(err, StagingError::Internal(_)),
+        "expected an internal failure, got {err:?}"
+    );
+}
+
+/// A file the server cannot open is its own fault: the import returns it as
+/// internal, and a command line that prints it shows the whole chain, the
+/// file and the operating system's reason both.
+#[tokio::test]
+async fn a_file_that_cannot_be_opened_is_internal_with_its_whole_cause() {
+    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let tmp = TempDir::new().unwrap();
+    let path = tmp.path().join("gone.jsonl");
+    let assets = tmp.path().join("assets");
+    let opts = append_opts(&assets, tmp.path(), "imessage");
+
+    let err = import_jsonl_files_on_conn(
+        &mut conn,
+        std::slice::from_ref(&path),
+        &opts,
+        ImportSchemaMode::Ensure,
+    )
+    .await
+    .expect_err("the file is not there");
+
+    assert!(matches!(err, ImportError::Internal(_)), "{err:?}");
+    let printed = format!("{:#}", anyhow::Error::from(err));
+    let reason = std::fs::File::open(&path).unwrap_err().to_string();
+    assert_eq!(
+        printed,
+        format!("failed to open {}: {reason}", path.display())
+    );
+}
+
+/// A directory import takes each conversation's source from its header, so
+/// a header with none is the sender's to fix: it is refused on its line,
+/// not answered as a fault of the server.
+#[tokio::test]
+async fn a_directory_import_refuses_a_header_without_a_source() {
+    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let tmp = TempDir::new().unwrap();
+    let header = ORPHANED_HEADER
+        .replace("orphaned", "+15555550154")
+        .replace(r#""source":"imessage""#, r#""source":"  ""#);
+    let path = tmp.path().join("+15555550154.jsonl");
+    std::fs::write(
+        &path,
+        format!("{header}{}", incoming("g-source", "+15555550154")),
+    )
+    .unwrap();
+    let assets = tmp.path().join("assets");
+    let opts = ImportOptions {
+        source_from_jsonl: true,
+        ..append_opts(&assets, tmp.path(), "")
+    };
+
+    let err = import_jsonl_files_on_conn(
+        &mut conn,
+        std::slice::from_ref(&path),
+        &opts,
+        ImportSchemaMode::Ensure,
+    )
+    .await
+    .expect_err("the header has no source");
+
+    match err {
+        ImportError::Rejected {
+            failure: ImportFailure::Invalid { line, detail },
+            file,
+        } => {
+            assert_eq!(line, 1);
+            assert_eq!(file, path);
+            assert_eq!(
+                detail,
+                "conversation '+15555550154' has no export.source, which a directory import needs"
+            );
+        }
+        other => panic!("expected a rejection, got {other:?}"),
     }
 }
 
@@ -169,19 +333,11 @@ async fn a_file_that_does_not_match_its_claimed_sha256_fails_the_import_and_is_n
     let claimed_sha = assets_api::Sha256::of_bytes(b"the bytes the export saw");
     let header = ORPHANED_HEADER.replace("orphaned", "+15555550154");
     let message = format!(
-        r#"{{"guid":"g-mismatch","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_handle":"+15555550154","sender_display_name":null,"subject":null,"text":"hi","attachments":[{{"path":"photo.bin","original_name":"photo.bin","mime_type":"application/octet-stream","digest_sha256":"{claimed_sha}","is_sticker":false,"transcription":null,"sticker_effect":null}}],"imessage":null,"source":null}}"#
+        r#"{{"guid":"g-mismatch","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550154","sender_display_name":null,"subject":null,"text":"hi","attachments":[{{"path":"photo.bin","original_name":"photo.bin","mime_type":"application/octet-stream","digest_sha256":"{claimed_sha}","is_sticker":false,"transcription":null,"sticker_effect":null}}],"imessage":null,"source":null}}"#
     );
     let path = tmp.path().join("mismatch.jsonl");
     std::fs::write(&path, format!("{header}{message}\n")).unwrap();
-    let opts = ImportOptions::fixed(FixedImportArgs {
-        assets_dir: &assets,
-        asset_root: tmp.path(),
-        mode: ImportMode::Append,
-        source: "imessage",
-        account_id: TEST_ACCOUNT,
-        fill_content_keys: false,
-        import_id: None,
-    });
+    let opts = append_opts(&assets, tmp.path(), "imessage");
 
     let err = import_jsonl_files_on_conn(&mut conn, &[path], &opts, ImportSchemaMode::Ensure)
         .await
@@ -289,7 +445,7 @@ async fn a_file_with_neither_header_nor_messages_is_refused() {
 /// participants JSON array `participants`.
 fn whatsapp_header(chat_identifier: &str, kind: &str, participants: &str) -> String {
     format!(
-        r#"{{"schema_version":4,"export":{{"source":"whatsapp","tool":"test","tool_version":"0","owner_handle":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{chat_identifier}","conversation_type":"{kind}","group_title":null,"participants":{participants},"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
+        r#"{{"schema_version":7,"export":{{"source":"whatsapp","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{chat_identifier}","conversation_type":"{kind}","group_title":null,"participants":{participants},"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
     ) + "\n"
 }
 
@@ -320,7 +476,7 @@ async fn a_group_chat_id_is_stored_as_other_whatever_its_shape() {
     let body = whatsapp_header(
         "120363042@g.us",
         "group",
-        r#"[{"handle":"+15555550156","display_name":null,"handle_type":"phone"}]"#,
+        r#"[{"identity":"+15555550156","display_name":null,"identity_type":"phone"}]"#,
     ) + &incoming_whatsapp("g-group-1", "+15555550156");
     import_one(&mut conn, "120363042@g.us.jsonl", &body)
         .await
@@ -346,7 +502,7 @@ async fn an_individual_chat_id_takes_the_type_its_participant_has_in_the_header(
     let body = whatsapp_header(
         "123456@lid",
         "individual",
-        r#"[{"handle":"123456@lid","display_name":null,"handle_type":"other"}]"#,
+        r#"[{"identity":"123456@lid","display_name":null,"identity_type":"other"}]"#,
     ) + &incoming_whatsapp("g-lid-1", "123456@lid");
     import_one(&mut conn, "123456@lid.jsonl", &body)
         .await
@@ -392,7 +548,7 @@ async fn a_participants_message_on_an_unknown_service_is_from_the_participant() 
     let body = imessage_header(
         "+15555550101",
         "individual",
-        r#"[{"handle":"+15555550101","display_name":"Sam","handle_type":"phone"}]"#,
+        r#"[{"identity":"+15555550101","display_name":"Sam","identity_type":"phone"}]"#,
     ) + &incoming("g-sat-1", "+15555550101")
         + &incoming_unknown_service("g-sat-2", "+15555550101");
     import_one(&mut conn, "+15555550101.jsonl", &body)
@@ -425,7 +581,7 @@ async fn a_number_is_one_type_as_a_sender_and_as_an_untyped_participant() {
     let body = imessage_header(
         "chat1000000006",
         "group",
-        r#"[{"handle":"tel:+15555550157","display_name":null,"handle_type":null}]"#,
+        r#"[{"identity":"tel:+15555550157","display_name":null,"identity_type":null}]"#,
     ) + &incoming("g-tel-1", "+15555550157");
     import_one(&mut conn, "chat1000000006.jsonl", &body)
         .await
@@ -455,7 +611,7 @@ async fn a_sender_who_is_not_a_participant_is_typed_by_the_address_not_the_servi
     let body = imessage_header(
         "chat1000000005",
         "group",
-        r#"[{"handle":"+15555550156","display_name":null,"handle_type":"phone"}]"#,
+        r#"[{"identity":"+15555550156","display_name":null,"identity_type":"phone"}]"#,
     ) + &incoming_unknown_service("g-sat-3", "+15555550199");
     import_one(&mut conn, "chat1000000005.jsonl", &body)
         .await

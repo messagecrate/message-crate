@@ -5,7 +5,9 @@ use anyhow::{Context, Result, bail};
 use mail::{MailAttachment, MailMessage, MailPackage, Participant, write_mail_package};
 use message_crate_core::OutputFormat;
 use message_csv::{AttachmentCell, ParticipantCell, format_local_ts, json_cell};
-use message_ir::{ConversationDocument, ConversationHeader, IrImessage, IrMessage, IrMessageKind};
+use message_ir::{
+    ConversationDocument, ConversationHeader, Deletion, IrImessage, IrMessage, IrMessageKind,
+};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
 
@@ -26,23 +28,24 @@ pub const CSV_HEADERS: &[&str] = &[
     "timestamp_unix_ms",
     "direction",
     "service",
-    "sender_handle",
+    "sender_identity",
     "sender_display_name",
-    "handle_type",
+    "identity_type",
     "subject",
     "text",
     "attachments_json",
+    "reactions_json",
+    "deletion",
     "message_kind",
     "export_source",
     "export_tool",
     "export_tool_version",
-    "owner_handle",
+    "owner_identity",
     "owner_display_name",
-    "message_owner_handle",
+    "message_owner_identity",
     "android_type",
     "source_fields_json",
     "read_receipt",
-    "is_deleted",
     "send_effect",
     "shared_location",
     "is_announcement",
@@ -53,7 +56,6 @@ pub const CSV_HEADERS: &[&str] = &[
     "num_replies",
     "parts_json",
     "edits_json",
-    "tapbacks_json",
     "app_json",
     "balloon_bundle_id",
     "balloon_kind",
@@ -181,11 +183,11 @@ pub(crate) fn parts_are_trivial_text_duplicate(message_text: &str, parts: Option
     )
 }
 
-/// CSV `handle_type` cell: the sender's handle type, inferred from the sender
-/// handle with the same rules the EML/mbox reader uses on re-import. Empty
-/// when the message has no sender handle.
-fn sender_handle_type_cell(sender_handle: Option<&str>) -> &'static str {
-    match sender_handle {
+/// CSV `identity_type` cell: the sender's identity type, inferred from the
+/// sender identity with the same rules the EML/mbox reader uses on re-import.
+/// Empty when the message has no sender identity.
+fn sender_identity_type_cell(sender_identity: Option<&str>) -> &'static str {
+    match sender_identity {
         Some(handle) => crate::util::infer_handle_type(handle).as_str(),
         None => "",
     }
@@ -207,9 +209,9 @@ pub(crate) fn write_conversation_csv(
             .participants
             .iter()
             .map(|p| ParticipantCell {
-                handle: p.handle.clone().unwrap_or_default(),
+                identity: p.identity.clone().unwrap_or_default(),
                 display_name: p.display_name.clone().unwrap_or_default(),
-                handle_type: p.handle_type,
+                identity_type: p.identity_type,
             })
             .collect::<Vec<_>>(),
     );
@@ -238,6 +240,7 @@ struct MessageCells {
     ts_display: String,
     timestamp_unix_ms: String,
     attachments_json: String,
+    reactions_json: String,
     android_type: String,
     source_fields_json: String,
     imessage: ImessageCells,
@@ -268,6 +271,11 @@ impl MessageCells {
             ts_display,
             timestamp_unix_ms: msg.timestamp_unix_ms.to_string(),
             attachments_json: json_cell(&attachment_cells),
+            reactions_json: if msg.reactions.is_empty() {
+                String::new()
+            } else {
+                json_cell(&msg.reactions)
+            },
             android_type: msg
                 .source
                 .as_ref()
@@ -290,7 +298,6 @@ impl MessageCells {
 #[derive(Default)]
 struct ImessageCells {
     read_receipt: String,
-    is_deleted: bool,
     send_effect: String,
     shared_location: String,
     announcement: String,
@@ -300,7 +307,6 @@ struct ImessageCells {
     num_replies: String,
     parts_json: String,
     edits_json: String,
-    tapbacks_json: String,
     app_json: String,
     balloon_bundle_id: String,
     balloon_kind: String,
@@ -323,7 +329,6 @@ impl ImessageCells {
         };
         Self {
             read_receipt: text_cell(im.read_receipt_rfc3339.as_deref()),
-            is_deleted: im.is_deleted,
             send_effect: text_cell(im.send_effect.as_deref()),
             shared_location: text_cell(im.shared_location.as_deref()),
             announcement: text_cell(im.announcement.as_deref()),
@@ -333,7 +338,6 @@ impl ImessageCells {
             num_replies: number_cell(im.num_replies),
             parts_json: parts_cell_for_csv(text, im.parts.as_ref()),
             edits_json: value_cell(im.edits.as_ref()),
-            tapbacks_json: value_cell(im.tapbacks.as_ref()),
             app_json: value_cell(im.app.as_ref()),
             balloon_bundle_id: text_cell(im.balloon_bundle_id.as_deref()),
             balloon_kind: text_cell(im.balloon_kind.as_deref()),
@@ -381,23 +385,24 @@ fn csv_record<'a>(
         cells.timestamp_unix_ms.as_str(),
         msg.direction.as_str(),
         msg.service.as_str(),
-        msg.sender_handle.as_deref().unwrap_or(""),
+        msg.sender_identity.as_deref().unwrap_or(""),
         msg.sender_display_name.as_deref().unwrap_or(""),
-        sender_handle_type_cell(msg.sender_handle.as_deref()),
+        sender_identity_type_cell(msg.sender_identity.as_deref()),
         msg.subject.as_deref().unwrap_or(""),
         msg.text.as_str(),
         cells.attachments_json.as_str(),
+        cells.reactions_json.as_str(),
+        msg.deletion.map_or("", Deletion::as_str),
         msg.message_kind.as_str(),
         doc.export.source.as_str(),
         doc.export.tool.as_str(),
         doc.export.tool_version.as_str(),
-        doc.export.owner_handle.as_deref().unwrap_or(""),
+        doc.export.owner_identity.as_deref().unwrap_or(""),
         doc.export.owner_display_name.as_deref().unwrap_or(""),
-        msg.owner_handle.as_deref().unwrap_or(""),
+        msg.owner_identity.as_deref().unwrap_or(""),
         cells.android_type.as_str(),
         cells.source_fields_json.as_str(),
         im.read_receipt.as_str(),
-        bool_cell(im.is_deleted),
         im.send_effect.as_str(),
         im.shared_location.as_str(),
         bool_cell(msg.message_kind == IrMessageKind::Announcement),
@@ -408,7 +413,6 @@ fn csv_record<'a>(
         im.num_replies.as_str(),
         im.parts_json.as_str(),
         im.edits_json.as_str(),
-        im.tapbacks_json.as_str(),
         im.app_json.as_str(),
         im.balloon_bundle_id.as_str(),
         im.balloon_kind.as_str(),
@@ -447,7 +451,7 @@ pub fn document_to_mail_messages(
         .participants
         .iter()
         .map(|p| Participant {
-            handle: p.handle.clone().unwrap_or_default(),
+            identity: p.identity.clone().unwrap_or_default(),
             display_name: p.display_name.clone(),
         })
         .collect();
@@ -471,7 +475,7 @@ pub fn document_to_mail_messages(
             conversation_type: doc.conversation.conversation_type.as_str().to_string(),
             group_title: doc.conversation.group_title.clone(),
             participants: participants.clone(),
-            owner_handle: doc.export.owner_handle.clone().unwrap_or_default(),
+            owner_identity: doc.export.owner_identity.clone().unwrap_or_default(),
             owner_display_name: doc.export.owner_display_name.clone(),
             export_source: doc.export.source.clone(),
             export_tool: doc.export.tool.clone(),

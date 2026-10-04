@@ -48,6 +48,31 @@ pub const SHRUNK_GROUP_IDENTIFIER: &str = "chat200";
 /// The name the group chat was given.
 pub const GROUP_TITLE: &str = "Weekend plans";
 
+/// The guid of the message two people react to. Apple's guids are 36
+/// characters, and a reaction names its target by that length.
+pub const REACTED_GUID: &str = "00000000-0000-4000-8000-000000000013";
+
+/// The emoji the owner reacts to message 13 with.
+pub const REACTION_EMOJI: &str = "🔥";
+
+/// The guid of message 16, which the owner deleted in Messages: it is in
+/// the chat's recently deleted list, with its text still there.
+pub const DELETED_GUID: &str = "guid-16";
+
+/// The text message 16 still holds.
+pub const DELETED_TEXT: &str = "Delete me";
+
+/// The guid of message 17, which the owner unsent whole: its one part is
+/// unsent and it has no text left.
+pub const UNSENT_GUID: &str = "guid-17";
+
+/// The guid of message 18, whose sender unsent one of its two parts: the
+/// other part's text is left.
+pub const PARTLY_UNSENT_GUID: &str = "guid-18";
+
+/// The text message 18 still holds.
+pub const PARTLY_UNSENT_TEXT: &str = "Still here";
+
 /// The bytes of the one attachment on disk.
 pub const PHOTO_BYTES: &[u8] = b"not really a jpeg";
 
@@ -59,7 +84,7 @@ pub fn apple_nanos(seconds_since_2001: i64) -> i64 {
 
 /// Write a Mac `chat.db` into `dir` and return its path.
 ///
-/// The database holds four handles, six chats, twelve messages, and one
+/// The database holds four handles, six chats, eighteen messages, and one
 /// attachment whose file (`photo.jpg`) is written beside the database. The
 /// owner sends from two addresses: the phone ([`OWNER`]) and the email
 /// ([`OWNER_EMAIL`]), each stored the way Apple stores it, `P:`-prefixed and
@@ -108,6 +133,21 @@ pub fn apple_nanos(seconds_since_2001: i64) -> i64 {
 /// - message 11: the same "Note to self" received in chat 6 from the
 ///   owner's handle, the second row Apple writes for a message to oneself
 /// - message 12: incoming "Lost" from [`FRIEND_EMAIL`] in no chat
+/// - message 13: incoming "Pizza?" from [`FRIEND_EMAIL`] in chat 2, whose
+///   guid is [`REACTED_GUID`]
+/// - message 14: [`FRIEND_PHONE`] loves message 13, a tapback
+///   (`associated_message_type` 2000) whose reactor is not the author
+/// - message 15: the owner reacts to message 13 with the emoji
+///   [`REACTION_EMOJI`] (`associated_message_type` 2006)
+/// - message 16: incoming [`DELETED_TEXT`] from [`FRIEND_PHONE`], which the
+///   owner deleted: Messages moved it from chat 1's `chat_message_join` to
+///   its `chat_recoverable_message_join`, the recently deleted list
+/// - message 17: outgoing in chat 1, unsent whole: `date_edited` is set and
+///   `message_summary_info` lists one part (`otr`) and that part as unsent
+///   (`rp`), and the row has no text
+/// - message 18: incoming [`PARTLY_UNSENT_TEXT`] from [`FRIEND_PHONE`] in
+///   chat 1, which had two parts; `message_summary_info` lists the second as
+///   unsent, and the first part's text is left
 ///
 /// The photo message has no `text` and no `attributedBody`. A real row
 /// carries the attachment as a placeholder range inside `attributedBody`;
@@ -179,8 +219,22 @@ pub fn write_chat_db(dir: &Path) -> PathBuf {
             VALUES (11, 'guid-11', 'Note to self', 'iMessage', 4, '{owner}', {d11}, 0, 0, 0);
         INSERT INTO message (ROWID, guid, text, service, handle_id, destination_caller_id, date, is_from_me, item_type, associated_message_type)
             VALUES (12, 'guid-12', 'Lost', 'iMessage', 2, '{owner}', {d12}, 0, 0, 0);
+        INSERT INTO message (ROWID, guid, text, service, handle_id, destination_caller_id, date, is_from_me, item_type, associated_message_type)
+            VALUES (13, '{reacted_guid}', 'Pizza?', 'iMessage', 2, '{owner}', {d13}, 0, 0, 0);
+        INSERT INTO message (ROWID, guid, text, service, handle_id, destination_caller_id, date, is_from_me, item_type, associated_message_type, associated_message_guid)
+            VALUES (14, 'guid-14', 'Loved “Pizza?”', 'iMessage', 1, '{owner}', {d14}, 0, 0, 2000, 'p:0/{reacted_guid}');
+        INSERT INTO message (ROWID, guid, text, service, handle_id, destination_caller_id, date, is_from_me, item_type, associated_message_type, associated_message_guid, associated_message_emoji)
+            VALUES (15, 'guid-15', 'Reacted {reaction_emoji} to “Pizza?”', 'iMessage', 0, '{owner}', {d15}, 1, 0, 2006, 'p:0/{reacted_guid}', '{reaction_emoji}');
+        INSERT INTO message (ROWID, guid, text, service, handle_id, destination_caller_id, date, is_from_me, item_type, associated_message_type)
+            VALUES (16, '{deleted_guid}', '{deleted_text}', 'iMessage', 1, '{owner}', {d16}, 0, 0, 0);
+        INSERT INTO message (ROWID, guid, text, service, handle_id, destination_caller_id, date, is_from_me, item_type, associated_message_type, date_edited, message_summary_info)
+            VALUES (17, '{unsent_guid}', NULL, 'iMessage', 0, '{owner}', {d17}, 1, 0, 0, {d17_edit}, CAST('{unsent_whole}' AS BLOB));
+        INSERT INTO message (ROWID, guid, text, service, handle_id, destination_caller_id, date, is_from_me, item_type, associated_message_type, date_edited, message_summary_info)
+            VALUES (18, '{partly_unsent_guid}', '{partly_unsent_text}', 'iMessage', 1, '{owner}', {d18}, 0, 0, 0, {d18_edit}, CAST('{unsent_second_of_two}' AS BLOB));
         INSERT INTO chat_message_join VALUES (1, 1, {d1}), (1, 2, {d2}), (2, 3, {d3}), (3, 4, {d4}), (1, 5, {d5}), (1, 6, {d6}),
-            (5, 7, {d7}), (4, 8, {d8}), (2, 9, {d9}), (6, 10, {d10}), (6, 11, {d11});
+            (5, 7, {d7}), (4, 8, {d8}), (2, 9, {d9}), (6, 10, {d10}), (6, 11, {d11}), (2, 13, {d13}), (2, 14, {d14}), (2, 15, {d15}),
+            (1, 17, {d17}), (1, 18, {d18});
+        INSERT INTO chat_recoverable_message_join VALUES (1, 16);
 
         INSERT INTO attachment VALUES (1, 'att-1', '{photo}', 'public.jpeg', 'image/jpeg', 'photo.jpg', {photo_len}, 0, 0, NULL);
         INSERT INTO message_attachment_join VALUES (1, 1);
@@ -206,12 +260,46 @@ pub fn write_chat_db(dir: &Path) -> PathBuf {
         d10 = apple_nanos(600_000_540),
         d11 = apple_nanos(600_000_541),
         d12 = apple_nanos(600_000_600),
+        d13 = apple_nanos(600_000_660),
+        d14 = apple_nanos(600_000_720),
+        d15 = apple_nanos(600_000_780),
+        d16 = apple_nanos(600_000_840),
+        d17 = apple_nanos(600_000_900),
+        d17_edit = apple_nanos(600_000_910),
+        d18 = apple_nanos(600_000_960),
+        d18_edit = apple_nanos(600_000_970),
+        reacted_guid = REACTED_GUID,
+        reaction_emoji = REACTION_EMOJI,
+        deleted_guid = DELETED_GUID,
+        deleted_text = DELETED_TEXT,
+        unsent_guid = UNSENT_GUID,
+        partly_unsent_guid = PARTLY_UNSENT_GUID,
+        partly_unsent_text = PARTLY_UNSENT_TEXT,
+        unsent_whole = summary_info_unsending(1, &[0]),
+        unsent_second_of_two = summary_info_unsending(2, &[1]),
         photo = photo.display(),
         photo_len = PHOTO_BYTES.len(),
     ))
     .expect("fill chat.db");
     drop(db);
     db_path
+}
+
+/// A `message_summary_info` property list, as XML, for a message of `parts`
+/// parts of which those in `unsent` were unsent: `otr` holds one entry per
+/// part and `rp` lists the unsent ones, the two keys Messages reads for an
+/// unsent part.
+fn summary_info_unsending(parts: usize, unsent: &[usize]) -> String {
+    let otr: String = (0..parts)
+        .map(|i| format!("<key>{i}</key><dict><key>lo</key><integer>0</integer><key>le</key><integer>1</integer></dict>"))
+        .collect();
+    let rp: String = unsent
+        .iter()
+        .map(|i| format!("<integer>{i}</integer>"))
+        .collect();
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>otr</key><dict>{otr}</dict><key>rp</key><array>{rp}</array></dict></plist>"#
+    )
 }
 
 #[cfg(test)]
@@ -226,7 +314,15 @@ mod tests {
         let count = |sql: &str| db.query_row(sql, [], |row| row.get::<_, i64>(0)).unwrap();
         assert_eq!(count("SELECT count(*) FROM chat"), 6);
         assert_eq!(count("SELECT count(*) FROM handle"), 4);
-        assert_eq!(count("SELECT count(*) FROM message"), 12);
+        assert_eq!(count("SELECT count(*) FROM message"), 18);
+        assert_eq!(
+            count(&format!(
+                "SELECT count(*) FROM message WHERE associated_message_guid = 'p:0/{REACTED_GUID}' \
+                 AND associated_message_type IN (2000, 2006)"
+            )),
+            2,
+            "message 13 carries a tapback and an emoji reaction"
+        );
         assert_eq!(
             count("SELECT count(*) FROM handle WHERE person_centric_id = 'person-sam'"),
             2,
@@ -249,10 +345,27 @@ mod tests {
         );
         assert_eq!(
             count(
-                "SELECT count(*) FROM message WHERE ROWID NOT IN (SELECT message_id FROM chat_message_join)"
+                "SELECT count(*) FROM message WHERE ROWID NOT IN (SELECT message_id FROM chat_message_join) \
+                 AND ROWID NOT IN (SELECT message_id FROM chat_recoverable_message_join)"
             ),
             1,
             "one message belongs to no chat"
+        );
+        assert_eq!(
+            count(&format!(
+                "SELECT count(*) FROM chat_recoverable_message_join JOIN message ON message.ROWID = message_id \
+                 WHERE guid = '{DELETED_GUID}'"
+            )),
+            1,
+            "message 16 is in the recently deleted list"
+        );
+        assert_eq!(
+            count(
+                "SELECT count(*) FROM message WHERE date_edited != 0 \
+                 AND message_summary_info IS NOT NULL"
+            ),
+            2,
+            "messages 17 and 18 carry an unsent part"
         );
         assert_eq!(
             count(

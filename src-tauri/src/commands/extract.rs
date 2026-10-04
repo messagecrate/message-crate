@@ -4,8 +4,9 @@
 //! immediately. Progress is sent back as Tauri events:
 //! `extract:log` (one human-readable log line), `extract:progress` (one
 //! typed [`ExtractProgressEvent`], mapped from the exporter's
-//! `ProgressEvent`), `extract:finished` (a summary string or JSON object),
-//! and `extract:error` ([`ExtractErrorEvent`]).
+//! `ProgressEvent`), `extract:issue` (one row for the Import Run's record,
+//! sent the moment the exporter records it), `extract:finished` (a summary
+//! string or JSON object), and `extract:error` ([`ExtractErrorEvent`]).
 //!
 //! `cancel` sets the cancel flag of the job that is running (see
 //! `commands::jobs`). The exporter checks it between steps through
@@ -128,10 +129,13 @@ pub struct ExtractArgs {
 
 /// Ask this process to parse a phone backup and write conversation files.
 ///
-/// Returns as soon as the background thread starts. Log lines, progress, and
-/// the final summary are sent as `extract:log`, `extract:progress`,
-/// `extract:finished`, and `extract:error`. Output is JSON Lines (one JSON
-/// object per line) so the Import screen's upload step can read it later.
+/// Returns as soon as the background thread starts. Log lines, progress,
+/// issues, and the final summary are sent as `extract:log`,
+/// `extract:progress`, `extract:issue`, `extract:finished`, and
+/// `extract:error`. Each issue goes out the moment the exporter records it,
+/// so the window has written it into the run record before an app that
+/// closes mid-Staging stops. Output is JSON Lines (one JSON object per line)
+/// so the Import screen's upload step can read it later.
 ///
 /// This is where an Import Run's media settings are decided: the mode the
 /// person chose and the compress fields are parsed here, before anything is
@@ -205,21 +209,13 @@ pub fn extract(
             ExtractProgressEvent::from(event),
         );
     }));
+    config.issues = Some(events::issue_sink(&app_handle));
 
     spawn_job(app, job, move || {
         let run_result = run_staging(&config, &output_dir, &media_settings)?;
         let payload = finished_payload(&run_result);
         for line in run_result.messages {
             events::emit(&app_handle, events::LOG, line);
-        }
-        // Before `extract:finished`, so the Import Run holds them when it
-        // moves on.
-        for issue in &run_result.issues {
-            events::emit(
-                &app_handle,
-                events::ISSUE,
-                events::ExtractIssueEvent::from(issue),
-            );
         }
         Ok(payload)
     });

@@ -1,6 +1,7 @@
-import type { ImportIssue } from "../../components/import/ImportSummaryPanel";
+import type { ImportIssue, ImportNote } from "../../components/import/ImportSummaryPanel";
 import { isIssueStage } from "../../components/import/importIssueStage";
 import type { PushFinishedReport } from "../../lib/tauri";
+import type { ConversationStatus } from "../../lib/types";
 
 /**
  * What an Import Run has recorded so far, across every part it ran in.
@@ -8,7 +9,7 @@ import type { PushFinishedReport } from "../../lib/tauri";
  * A run runs in parts when it pauses, or stops at a Review, and resumes
  * later, perhaps after the app closed. The server takes the run's record
  * only with `/complete`, which a paused run never posts, so the window keeps
- * the record of the earlier parts in the staging folder
+ * the record of the earlier parts in the Staging Directory
  * (`read_import_run_record`, `save_import_run_record`) and the completion
  * the last part posts covers the whole run: its Import Errors, timings,
  * bytes and counts.
@@ -20,12 +21,19 @@ import type { PushFinishedReport } from "../../lib/tauri";
 export type RunRecord = {
   issues: ImportIssue[];
   /**
-   * The issues of the latest stopped part that `issues` leaves out, because
-   * a resume reports them again or because they explain the stop
-   * (`recordToCarry`). A resume never carries them. A Discard sends them,
+   * The issues `issues` leaves out because a resume may report them again
+   * (an Upload's rows about a conversation not yet on the server) or because
+   * they explain the latest stop (`recordToCarry`). A resume carries them
+   * only once their conversation is on the server. A Discard sends them,
    * since a discarded run is never resumed (`issuesToDiscard`).
    */
   lastStopIssues?: ImportIssue[];
+  /**
+   * The run's notes, apart from its Import Errors; absent when it noted
+   * nothing. A note is about an item a stage read, never about whether a
+   * conversation reached the server, so every part's notes are kept.
+   */
+  notes?: ImportNote[];
   durationMs?: number;
   parseMs?: number;
   attachmentsMs?: number;
@@ -61,29 +69,49 @@ const COUNT_FIELDS = [
   "attachmentsUploaded",
 ] as const;
 
-function isIssue(value: unknown): value is ImportIssue {
-  if (typeof value !== "object" || value === null) return false;
+/** One issue read back from disk, or `undefined` when it is not one. */
+function readIssue(value: unknown): ImportIssue | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
   const r = value as Record<string, unknown>;
-  return (
-    typeof r.kind === "string" &&
-    isIssueStage(r.stage) &&
-    typeof r.item === "string" &&
-    typeof r.reason === "string"
-  );
+  if (
+    typeof r.kind !== "string" ||
+    !isIssueStage(r.stage) ||
+    typeof r.item !== "string" ||
+    typeof r.reason !== "string"
+  ) {
+    return undefined;
+  }
+  const issue: ImportIssue = { kind: r.kind, stage: r.stage, item: r.item, reason: r.reason };
+  if (typeof r.conversation === "string") issue.conversation = r.conversation;
+  return issue;
+}
+
+function readIssues(value: unknown): ImportIssue[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => readIssue(entry) ?? []);
+}
+
+/** One note read back from disk, or `undefined` when it is not one. */
+function readNote(value: unknown): ImportNote | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const r = value as Record<string, unknown>;
+  if (!isIssueStage(r.stage) || typeof r.item !== "string" || typeof r.text !== "string") {
+    return undefined;
+  }
+  return { stage: r.stage, item: r.item, text: r.text };
 }
 
 /**
- * Read a record back from the staging folder. The file is the app's own,
+ * Read a record back from the Staging Directory. The file is the app's own,
  * but it is read from disk, so each field is checked: an unreadable field
  * is left out, and anything that is not a record reads as no earlier part.
  */
 export function parseRunRecord(raw: unknown): RunRecord {
   if (typeof raw !== "object" || raw === null) return EMPTY_RUN_RECORD;
   const r = raw as Record<string, unknown>;
-  const record: RunRecord = {
-    issues: Array.isArray(r.issues) ? r.issues.filter(isIssue) : [],
-  };
-  if (Array.isArray(r.lastStopIssues)) record.lastStopIssues = r.lastStopIssues.filter(isIssue);
+  const record: RunRecord = { issues: readIssues(r.issues) };
+  if (Array.isArray(r.lastStopIssues)) record.lastStopIssues = readIssues(r.lastStopIssues);
+  if (Array.isArray(r.notes)) record.notes = r.notes.flatMap((entry) => readNote(entry) ?? []);
   for (const field of COUNT_FIELDS) {
     const value = r[field];
     if (typeof value === "number" && Number.isFinite(value)) record[field] = value;
@@ -94,6 +122,8 @@ export function parseRunRecord(raw: unknown): RunRecord {
 /** The part of the run on screen now, as the window measured it. */
 export type RunPart = {
   issues: readonly ImportIssue[];
+  /** The notes this part's stages sent; absent when they sent none. */
+  notes?: readonly ImportNote[];
   durationMs: number;
   parseMs: number | null;
   attachmentsMs: number | null;
@@ -101,6 +131,11 @@ export type RunPart = {
   uploadMs: number | null;
   filesParsed?: number;
   messagesParsed?: number;
+  /**
+   * What this part's Upload said of each conversation file it finished so
+   * far (`extract:file-done`), by file: `ok`, `skipped` or `failed`.
+   */
+  conversations: ReadonlyMap<string, ConversationStatus>;
   /** This part's push report, when it ran an Upload that reported. */
   report: PushFinishedReport | null;
 };
@@ -114,11 +149,138 @@ function sum(a: number | undefined, b: number | null | undefined): number | unde
   return Math.round((a ?? 0) + (b ?? 0));
 }
 
-/** The whole run so far: the earlier parts' record with this part added. */
+/** Two issues are one row when every field matches. */
+function issueKey(issue: ImportIssue): string {
+  return JSON.stringify([issue.kind, issue.stage, issue.item, issue.reason, issue.conversation]);
+}
+
+/** Two notes are one row when every field matches. */
+function noteKey(note: ImportNote): string {
+  return JSON.stringify([note.stage, note.item, note.text]);
+}
+
+/**
+ * `earlier`, then the rows of `later` that are not already in it, as `keyOf`
+ * tells rows apart. Counted, so a row `earlier` holds twice absorbs two of
+ * `later`'s and no more.
+ */
+function mergeOnce<T>(earlier: readonly T[], later: readonly T[], keyOf: (row: T) => string): T[] {
+  const unmatched = new Map<string, number>();
+  for (const row of earlier) {
+    const key = keyOf(row);
+    unmatched.set(key, (unmatched.get(key) ?? 0) + 1);
+  }
+  const merged = [...earlier];
+  for (const row of later) {
+    const key = keyOf(row);
+    const count = unmatched.get(key) ?? 0;
+    if (count > 0) unmatched.set(key, count - 1);
+    else merged.push(row);
+  }
+  return merged;
+}
+
+/**
+ * `earlier`, then the rows of `later` that are not already in it. A stage
+ * that resumes reads again what it had not finished, and reports the same
+ * rows again: each is kept once.
+ */
+export function mergeIssues(
+  earlier: readonly ImportIssue[],
+  later: readonly ImportIssue[],
+): ImportIssue[] {
+  return mergeOnce(earlier, later, issueKey);
+}
+
+/** `earlier`, then the notes of `later` it does not already hold (`mergeIssues`). */
+function mergeNotes(
+  earlier: readonly ImportNote[] | undefined,
+  later: readonly ImportNote[] | undefined,
+): ImportNote[] | undefined {
+  const merged = mergeOnce(earlier ?? [], later ?? [], noteKey);
+  return merged.length > 0 ? merged : undefined;
+}
+
+/** The `item` of the error a stage records about the run as a whole. */
+export const RUN_ERROR_ITEM = "Import";
+
+function isRunError(issue: ImportIssue): boolean {
+  return issue.kind === "error" && issue.item === RUN_ERROR_ITEM;
+}
+
+/**
+ * What this part's Upload said of each conversation: the files it finished
+ * as they finished, and every file its report lists, which adds the ones a
+ * stop left unsent (`cancelled`).
+ */
+function conversationStatuses(part: RunPart): Map<string, ConversationStatus> {
+  const statuses = new Map(part.conversations);
+  for (const result of part.report?.results ?? []) {
+    if (isConversationStatus(result.status)) statuses.set(result.file, result.status);
+  }
+  return statuses;
+}
+
+const CONVERSATION_STATUSES: readonly string[] = ["ok", "skipped", "failed", "cancelled"];
+
+/** A report's status for a conversation, as one the record knows. */
+function isConversationStatus(status: string): status is ConversationStatus {
+  return CONVERSATION_STATUSES.includes(status);
+}
+
+/** On the server: sent by this part, or by an earlier one (the journal skipped it). */
+function isOnServer(status: ConversationStatus | undefined): boolean {
+  return status === "ok" || status === "skipped";
+}
+
+/**
+ * Sort an earlier stop's rows by what this part's Upload said of their
+ * conversation. A row about a whole conversation this Upload reported on is
+ * stale, and goes: this Upload reports that conversation itself. A
+ * conversation this Upload sent (`ok`) was read again, so its other earlier
+ * rows were reported afresh, and go. Those of a conversation an earlier
+ * part sent (`skipped`) are true and final, and are promoted. The rest
+ * still wait: a `failed` conversation may have failed before it was read,
+ * and rows this part reported again are merged with them (`mergeIssues`).
+ */
+function sortEarlierStop(
+  carried: RunRecord,
+  statuses: ReadonlyMap<string, ConversationStatus>,
+): { promoted: ImportIssue[]; waiting: ImportIssue[] } {
+  const promoted: ImportIssue[] = [];
+  const waiting: ImportIssue[] = [];
+  for (const issue of carried.lastStopIssues ?? []) {
+    if (isRunError(issue)) continue;
+    const status = issue.conversation == null ? undefined : statuses.get(issue.conversation);
+    const wholeConversation = issue.item === issue.conversation;
+    if (status === "ok" || (wholeConversation && status != null)) continue;
+    if (status === "skipped") promoted.push(issue);
+    else waiting.push(issue);
+  }
+  return { promoted, waiting };
+}
+
+/**
+ * The whole run so far, as a completion posts it: the earlier parts' record
+ * with this part added. Its issues take in every row of an earlier stop
+ * that still stands (`sortEarlierStop`), promoted or waiting, since a run
+ * that completes is never resumed.
+ */
 export function wholeRun(carried: RunRecord, part: RunPart): RunRecord {
+  const { promoted, waiting } = sortEarlierStop(carried, conversationStatuses(part));
+  return combine(carried, part, [...promoted, ...waiting]);
+}
+
+/**
+ * The earlier parts' record with this part added, taking in `earlier`, the
+ * rows of the earlier stop that join `issues`.
+ */
+function combine(carried: RunRecord, part: RunPart, earlier: ImportIssue[]): RunRecord {
   const report = part.report;
+  const notes = mergeNotes(carried.notes, part.notes);
   return {
-    issues: [...carried.issues, ...part.issues],
+    issues: mergeIssues(carried.issues, mergeIssues(earlier, part.issues)),
+    ...(notes ? { notes } : {}),
     durationMs: sum(carried.durationMs, part.durationMs),
     parseMs: sum(carried.parseMs, part.parseMs),
     attachmentsMs: sum(carried.attachmentsMs, part.attachmentsMs),
@@ -135,43 +297,55 @@ export function wholeRun(carried: RunRecord, part: RunPart): RunRecord {
   };
 }
 
-/** The `item` of the error a stage records about the run as a whole. */
-export const RUN_ERROR_ITEM = "Import";
-
 /**
- * The record a stopped part leaves for the next one.
+ * The record for the next part of the run, as the run stands now: written
+ * when a part stops, and while a stage runs, as each issue arrives, so an
+ * app that closes mid-stage leaves it in the Staging Directory.
  *
  * Two kinds of issue are left out of its `issues`, and kept in
- * `lastStopIssues` for a Discard instead. An Upload's row for a whole
- * conversation (failed, or left unsent by a stop) is left out because the
- * resumed Upload sends that conversation again and reports it afresh. The
- * run-level error a stage records when it stops (item `Import`) is left out
- * because it explains the stop, not the run. An Upload's attachment skips
- * are kept, because the resumed Upload does not read those conversations
- * again.
+ * `lastStopIssues` for a Discard instead. An Upload's row about a
+ * conversation not yet on the server is left out, because a resumed Upload
+ * reads that conversation again and reports it afresh; it moves to `issues`
+ * once its conversation is sent. The run-level error a stage records when
+ * it stops (item `Import`) is left out because it explains the stop, not
+ * the run. An earlier stop's rows are sorted as `sortEarlierStop` says.
  */
 export function recordToCarry(carried: RunRecord, part: RunPart): RunRecord {
-  const sentAgain = new Set(
-    (part.report?.results ?? [])
-      .filter((result) => result.status === "failed" || result.status === "cancelled")
-      .map((result) => result.file),
-  );
-  const leftOut = (issue: ImportIssue) =>
-    (issue.kind === "error" && issue.item === RUN_ERROR_ITEM) ||
-    (issue.stage === "upload" && sentAgain.has(issue.item));
-  const issues = part.issues.filter((issue) => !leftOut(issue));
-  // An earlier stop's conversation rows stand until an Upload reports on
-  // that conversation again: a part that stopped before its push reported
-  // anything says nothing about them. Its run error explained that stop
-  // only, and goes.
-  const reported = new Set((part.report?.results ?? []).map((result) => result.file));
-  const earlier = (carried.lastStopIssues ?? []).filter(
-    (issue) => issue.item !== RUN_ERROR_ITEM && !reported.has(issue.item),
-  );
+  const statuses = conversationStatuses(part);
+  const waits = (issue: ImportIssue) =>
+    issue.conversation != null && !isOnServer(statuses.get(issue.conversation));
+  const rows = part.issues.filter((issue) => !isRunError(issue));
+  const { promoted, waiting } = sortEarlierStop(carried, statuses);
   return {
-    ...wholeRun(carried, { ...part, issues }),
-    lastStopIssues: [...earlier, ...part.issues.filter(leftOut)],
+    ...combine(carried, { ...part, issues: rows.filter((issue) => !waits(issue)) }, promoted),
+    lastStopIssues: [
+      ...mergeIssues(waiting, rows.filter(waits)),
+      ...part.issues.filter(isRunError),
+    ],
   };
+}
+
+/**
+ * `rows` without those `resolved` says no longer hold: the rows with its
+ * stage and item.
+ */
+export function withoutResolved(
+  rows: readonly ImportIssue[],
+  resolved: Pick<ImportIssue, "stage" | "item">,
+): ImportIssue[] {
+  return rows.filter((row) => row.stage !== resolved.stage || row.item !== resolved.item);
+}
+
+/** `record` without the rows `resolved` says no longer hold (`withoutResolved`). */
+export function resolveInRecord(
+  record: RunRecord,
+  resolved: Pick<ImportIssue, "stage" | "item">,
+): RunRecord {
+  const next: RunRecord = { ...record, issues: withoutResolved(record.issues, resolved) };
+  if (record.lastStopIssues != null) {
+    next.lastStopIssues = withoutResolved(record.lastStopIssues, resolved);
+  }
+  return next;
 }
 
 /**
@@ -179,7 +353,20 @@ export function recordToCarry(carried: RunRecord, part: RunPart): RunRecord {
  * record's, with the latest stop's that a resume would have reported again.
  */
 export function issuesToDiscard(record: RunRecord): ImportIssue[] {
-  return [...record.issues, ...(record.lastStopIssues ?? [])];
+  return mergeIssues(record.issues, record.lastStopIssues ?? []);
+}
+
+/** The notes a Discard sends with the cancelled run: every part's. */
+export function notesToDiscard(record: RunRecord): ImportNote[] {
+  return record.notes ?? [];
+}
+
+/**
+ * The issues as the server takes them, without the conversation an Upload
+ * row names for the record's own use.
+ */
+export function issueRequests(issues: readonly ImportIssue[]): ImportIssue[] {
+  return issues.map(({ kind, stage, item, reason }) => ({ kind, stage, item, reason }));
 }
 
 /**

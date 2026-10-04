@@ -41,7 +41,10 @@ fn reads_then_writes_source_fields_and_attachment() {
         .collect();
     assert_eq!(staged.len(), 1);
     assert_eq!(fs::metadata(&staged[0]).unwrap().len(), 5);
-    assert_eq!(docs[0].export.owner_handle.as_deref(), Some("+15555550100"));
+    assert_eq!(
+        docs[0].export.owner_identity.as_deref(),
+        Some("+15555550100")
+    );
     assert_eq!(
         docs[0].messages[0].attachments[0].size_bytes,
         Some(5),
@@ -123,12 +126,12 @@ fn group_mms_sender_direction_and_conversation() {
         doc.conversation.chat_identifier,
         "chat-group-+15555550101_+15555550102_+15555550103"
     );
-    assert_eq!(doc.export.owner_handle.as_deref(), Some("+15555550100"));
+    assert_eq!(doc.export.owner_identity.as_deref(), Some("+15555550100"));
     let mut participants: Vec<_> = doc
         .conversation
         .participants
         .iter()
-        .filter_map(|p| p.handle.as_deref())
+        .filter_map(|p| p.identity.as_deref())
         .collect();
     participants.sort_unstable();
     assert_eq!(
@@ -139,7 +142,7 @@ fn group_mms_sender_direction_and_conversation() {
     let seen: Vec<(&str, IrDirection, Option<&str>)> = doc
         .messages
         .iter()
-        .map(|m| (m.text.as_str(), m.direction, m.sender_handle.as_deref()))
+        .map(|m| (m.text.as_str(), m.direction, m.sender_identity.as_deref()))
         .collect();
     assert_eq!(
         seen,
@@ -164,7 +167,10 @@ fn owner_inference_tolerates_malformed_files() {
     .unwrap();
     fs::write(input.join("broken.xml"), "<smses><mms date=").unwrap();
     let (docs, report) = read_backup(&input, opts(&[], None, None)).unwrap();
-    assert_eq!(docs[0].export.owner_handle.as_deref(), Some("+15555550100"));
+    assert_eq!(
+        docs[0].export.owner_identity.as_deref(),
+        Some("+15555550100")
+    );
     assert_eq!(report.errors.len(), 1);
 }
 
@@ -273,7 +279,7 @@ fn roster(doc: &ConversationDocument) -> Vec<(&str, Option<&str>)> {
     doc.conversation
         .participants
         .iter()
-        .map(|p| (p.handle.as_deref().unwrap(), p.display_name.as_deref()))
+        .map(|p| (p.identity.as_deref().unwrap(), p.display_name.as_deref()))
         .collect()
 }
 
@@ -392,7 +398,10 @@ fn the_first_owner_number_given_is_the_owner_handle() {
         .map(|i| format!("+1555555010{i}"))
         .collect();
     let (docs, _) = read_backup(&input, opts(&owners, None, None)).unwrap();
-    assert_eq!(docs[0].export.owner_handle.as_deref(), Some("+15555550109"));
+    assert_eq!(
+        docs[0].export.owner_identity.as_deref(),
+        Some("+15555550109")
+    );
 }
 
 #[test]
@@ -414,10 +423,13 @@ fn an_email_sender_is_an_email_identity() {
     );
     assert_eq!(docs[0].conversation.chat_identifier, "john1985@example.com");
     let participant = &docs[0].conversation.participants[0];
-    assert_eq!(participant.handle.as_deref(), Some("john1985@example.com"));
-    assert_eq!(participant.handle_type, Some(HandleType::Email));
     assert_eq!(
-        docs[0].messages[0].sender_handle.as_deref(),
+        participant.identity.as_deref(),
+        Some("john1985@example.com")
+    );
+    assert_eq!(participant.identity_type, Some(HandleType::Email));
+    assert_eq!(
+        docs[0].messages[0].sender_identity.as_deref(),
         Some("john1985@example.com")
     );
 }
@@ -428,8 +440,8 @@ fn a_sender_name_is_an_identity_of_type_other() {
         r#"<sms protocol="0" address="AMAZON" date="1400773261000" type="1" body="Your parcel"/>"#,
     );
     let participant = &docs[0].conversation.participants[0];
-    assert_eq!(participant.handle.as_deref(), Some("AMAZON"));
-    assert_eq!(participant.handle_type, Some(HandleType::Other));
+    assert_eq!(participant.identity.as_deref(), Some("AMAZON"));
+    assert_eq!(participant.identity_type, Some(HandleType::Other));
 }
 
 /// With no owner on the form, the owner comes from the sent MMS, and a
@@ -441,7 +453,7 @@ fn an_inferred_owner_outside_the_us_keeps_its_country() {
     fs::write(&input, r#"<smses><mms date="1400773400000" msg_box="2" address="+447700900123"><parts><part ct="text/plain" text="hi"/></parts><addrs><addr address="+447911123456" type="137"/><addr address="+447700900123" type="151"/></addrs></mms></smses>"#).unwrap();
     let (docs, _) = read_backup(&input, opts(&[], None, None)).unwrap();
     assert_eq!(
-        docs[0].export.owner_handle.as_deref(),
+        docs[0].export.owner_identity.as_deref(),
         Some("+447911123456")
     );
     assert_eq!(docs[0].conversation.chat_identifier, "+447700900123");

@@ -19,7 +19,7 @@ mod transforms;
 pub use attachment_jobs::{
     AttachmentJob, AttachmentProgress, LoadError, attachment_jobs, attachment_size_hint,
     document_messages, mime_for_rel, report_attachment_progress, run_attachment_jobs,
-    stage_conversation_attachments,
+    stage_attachment_jobs, stage_conversation_attachments,
 };
 pub use attachments::{attachment_date_prefix, attachment_dest_name, digest_prefix};
 pub use config::{
@@ -32,9 +32,9 @@ pub use exporters::{
     WhatsappPlatform, ensure_output_dir,
 };
 pub use pipeline::{
-    ATTACHMENTS_MISSING, ExportReport, NOT_SMS_OR_MMS_LEFT_OUT, RunIssue, RunResult,
-    discover_files, export_meta, prepare_outputs, project_conversation,
-    prune_and_finish_conversation,
+    ATTACHMENTS_MISSING, CSV_NOT_READ, ExportReport, IssueSink, NAME_ONLY_CHAT,
+    NAME_ONLY_CHAT_NOTE, NOT_SMS_OR_MMS_LEFT_OUT, NOTE, RunIssue, RunResult, discover_files,
+    emit_issue, export_meta, prepare_outputs, project_conversation, prune_and_finish_conversation,
 };
 pub use process::{
     CancelFlag, Cancelled, LogSink, check_cancel, emit_log, is_cancelled, parallel_for_each,

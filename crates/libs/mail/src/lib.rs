@@ -29,15 +29,15 @@ pub use parse::{mail_message_from_eml_bytes, mail_messages_from_mbox};
 const MESSAGE_ID_DOMAIN_DEFAULT: &str = "message-crate.local";
 const MESSAGE_ID_DOMAIN_IMESSAGE: &str = "imessage.local";
 const SMS_ADDRESS_DOMAIN: &str = "sms.local";
-const HANDLE_ADDRESS_DOMAIN: &str = "handle.local";
+const IDENTITY_ADDRESS_DOMAIN: &str = "identity.local";
 const CHAT_ADDRESS_DOMAIN: &str = "chat.local";
 const OWNER_DISPLAY_NAME: &str = "Me";
 
 /// One participant in a conversation roster.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Participant {
-    /// Phone, email, or chat handle; also used for peer matching in From/To mapping.
-    pub handle: String,
+    /// Phone, email, or chat identity; also used for peer matching in From/To mapping.
+    pub identity: String,
     /// Optional display name, omitted from the JSON header when `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
@@ -102,7 +102,7 @@ pub struct MailMessage {
     /// Roster → `X-ME-Participants` JSON.
     pub participants: Vec<Participant>,
     /// Owner E.164 (or handle) used for From/To mapping.
-    pub owner_handle: String,
+    pub owner_identity: String,
     /// Outgoing From display name; defaults to `"Me"` when absent.
     pub owner_display_name: Option<String>,
     /// → `X-ME-Export-Source`.
@@ -126,69 +126,6 @@ impl MailMessage {
     fn im(&self) -> Option<&message_ir::IrImessage> {
         self.message.imessage.as_ref()
     }
-}
-
-/// Remove prior mail-archive artifacts under `output_dir` (`.mbox` files and
-/// directories that contain `.eml`). Leaves `attachments/` alone.
-///
-/// # Errors
-///
-/// Returns an error when a directory cannot be read or a file cannot be removed.
-pub fn clean_previous_mail_output(output_dir: &Path) -> Result<()> {
-    if !output_dir.is_dir() {
-        return Ok(());
-    }
-    for entry in
-        fs::read_dir(output_dir).with_context(|| format!("read {}", output_dir.display()))?
-    {
-        let path = entry?.path();
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if path.is_file()
-            && path
-                .extension()
-                .and_then(|e| e.to_str())
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("mbox"))
-        {
-            fs::remove_file(&path).with_context(|| format!("remove {}", path.display()))?;
-            continue;
-        }
-        if path.is_dir() && name != "attachments" {
-            let entries =
-                fs::read_dir(&path).with_context(|| format!("read {}", path.display()))?;
-            if holds_eml(&path, entries.map(|entry| entry.map(|e| e.path())))? {
-                fs::remove_dir_all(&path).with_context(|| format!("remove {}", path.display()))?;
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Whether `entries`, the paths of `dir`, include an `.eml` file.
-///
-/// An entry that cannot be read fails the check, with `dir` named. Skipping
-/// it could make a folder of an earlier export read as holding no `.eml`, and
-/// that folder would then stay beside the new export. The server's `import`
-/// command and the Upload fail the same way.
-///
-/// # Errors
-///
-/// Returns an error for the first entry that cannot be read before an `.eml`
-/// is found.
-fn holds_eml(
-    dir: &Path,
-    entries: impl IntoIterator<Item = std::io::Result<PathBuf>>,
-) -> Result<bool> {
-    for entry in entries {
-        let path = entry.with_context(|| format!("read an entry of {}", dir.display()))?;
-        if path
-            .extension()
-            .and_then(|x| x.to_str())
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("eml"))
-        {
-            return Ok(true);
-        }
-    }
-    Ok(false)
 }
 
 /// Write one conversation as EML folders or a single mboxrd file.
@@ -224,8 +161,11 @@ struct AttachmentMetaCell<'a> {
 
 /// Conversation directory stem (shared per-conversation filename stem).
 fn conversation_stem(msg: &MailMessage) -> String {
-    let participant_handles: Vec<String> =
-        msg.participants.iter().map(|p| p.handle.clone()).collect();
+    let participant_handles: Vec<String> = msg
+        .participants
+        .iter()
+        .map(|p| p.identity.clone())
+        .collect();
     message_ir::conversation_stem(
         &msg.conversation_type,
         &msg.chat_identifier,
@@ -388,19 +328,19 @@ fn envelope_sender(msg: &MailMessage) -> String {
     let handle = match msg.message.direction {
         IrDirection::Incoming => msg
             .message
-            .sender_handle
+            .sender_identity
             .as_deref()
             .and_then(message_ir::trimmed)
             .or_else(|| peer_handle(msg).and_then(message_ir::trimmed))
             .unwrap_or("unknown"),
         IrDirection::Outgoing => {
-            let owner = msg.owner_handle.trim();
+            let owner = msg.owner_identity.trim();
             if owner.is_empty() { "me" } else { owner }
         }
     };
     // Envelope address must not contain spaces.
     if handle.contains('@') {
-        format!("{}@{HANDLE_ADDRESS_DOMAIN}", handle.replace('@', "="))
+        format!("{}@{IDENTITY_ADDRESS_DOMAIN}", handle.replace('@', "="))
     } else if handle
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '_' | '.'))
@@ -458,14 +398,14 @@ fn guid_prefix8(guid: &str) -> String {
 /// Synthetic RFC5322 address for a phone or Apple handle.
 ///
 /// Phones → `+E164@sms.local`. Email / other handles containing `@` →
-/// `local=domain@handle.local` (`MAIL_ARCHIVE` encoding).
+/// `local=domain@identity.local` (`MAIL_ARCHIVE` encoding).
 fn synthetic_address(handle: &str, display_name: Option<&str>) -> Address<'static> {
     let handle = handle.trim();
     let email = if handle.is_empty() {
         format!("unknown@{SMS_ADDRESS_DOMAIN}")
     } else if handle.contains('@') {
         let encoded = handle.replace('@', "=");
-        format!("{encoded}@{HANDLE_ADDRESS_DOMAIN}")
+        format!("{encoded}@{IDENTITY_ADDRESS_DOMAIN}")
     } else {
         format!("{handle}@{SMS_ADDRESS_DOMAIN}")
     };
@@ -476,7 +416,7 @@ fn synthetic_address(handle: &str, display_name: Option<&str>) -> Address<'stati
 /// The owner's address: their handle (or `me`) with their display name (or
 /// `Me`).
 fn owner_address(msg: &MailMessage) -> Address<'static> {
-    let handle = msg.owner_handle.trim();
+    let handle = msg.owner_identity.trim();
     let handle = if handle.is_empty() { "me" } else { handle };
     let display = msg
         .owner_display_name
@@ -525,7 +465,7 @@ fn sanitize_addr_local(raw: &str) -> Option<String> {
 fn peer_display_name<'a>(msg: &'a MailMessage, peer: &str) -> Option<&'a str> {
     msg.participants
         .iter()
-        .find(|p| p.handle == peer)
+        .find(|p| p.identity == peer)
         .and_then(|p| p.display_name.as_deref())
         .and_then(message_ir::trimmed)
         .or_else(|| {
@@ -535,7 +475,7 @@ fn peer_display_name<'a>(msg: &'a MailMessage, peer: &str) -> Option<&'a str> {
                 .and_then(message_ir::trimmed)
                 .filter(|_| {
                     msg.message
-                        .sender_handle
+                        .sender_identity
                         .as_deref()
                         .is_some_and(|h| h == peer)
                 })
@@ -568,11 +508,11 @@ fn peer_handle(msg: &MailMessage) -> Option<&str> {
     }
     msg.participants
         .iter()
-        .map(|p| p.handle.as_str())
-        .find(|h| *h != msg.owner_handle)
+        .map(|p| p.identity.as_str())
+        .find(|h| *h != msg.owner_identity)
         .or_else(|| {
             let id = msg.chat_identifier.as_str();
-            if id != msg.owner_handle {
+            if id != msg.owner_identity {
                 Some(id)
             } else {
                 None
@@ -586,7 +526,20 @@ fn value_as_string(v: Option<&serde_json::Value>) -> Option<String> {
     if v.is_null() {
         return None;
     }
-    Some(serde_json::to_string(v).unwrap_or_default()).filter(|s| !s.is_empty())
+    Some(header_safe_json(
+        serde_json::to_string(v).unwrap_or_default(),
+    ))
+    .filter(|s| !s.is_empty())
+}
+
+/// JSON text a mail header reader gives back unchanged.
+///
+/// A header reader decodes RFC 2047 encoded words (`=?utf-8?Q?…?=`), so a
+/// name that looks like one would come back decoded, and a decoded `"` or `\`
+/// breaks the JSON. `=?` can only occur inside a JSON string, where `\u003f`
+/// is the same `?` and starts no encoded word.
+fn header_safe_json(json: String) -> String {
+    json.replace("=?", "=\\u003f")
 }
 
 /// Add `name: value` when the value is present and non-empty.
@@ -697,7 +650,7 @@ fn envelope_addresses(msg: &MailMessage) -> (Address<'static>, Address<'static>)
             IrDirection::Incoming => {
                 let sender = msg
                     .message
-                    .sender_handle
+                    .sender_identity
                     .as_deref()
                     .and_then(message_ir::trimmed)
                     .unwrap_or("unknown");
@@ -775,29 +728,45 @@ fn conversation_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> M
         );
     builder = opt_header(builder, headers::GROUP_TITLE, msg.group_title.as_deref());
     if msg.conversation_type.eq_ignore_ascii_case("group") || !msg.participants.is_empty() {
-        let participants_json =
-            serde_json::to_string(&msg.participants).unwrap_or_else(|_| "[]".into());
+        let participants_json = header_safe_json(
+            serde_json::to_string(&msg.participants).unwrap_or_else(|_| "[]".into()),
+        );
         builder = builder.header(headers::PARTICIPANTS, Text::new(participants_json));
     }
     let source = msg.message.source.as_ref();
     optional_headers(
         builder,
         [
-            (headers::SENDER_HANDLE, msg.message.sender_handle.clone()),
+            (
+                headers::SENDER_IDENTITY,
+                msg.message.sender_identity.clone(),
+            ),
             (
                 headers::SENDER_DISPLAY_NAME,
                 msg.message.sender_display_name.clone(),
             ),
             (
-                headers::OWNER_HANDLE,
-                Some(msg.owner_handle.trim().to_string()),
+                headers::OWNER_IDENTITY,
+                Some(msg.owner_identity.trim().to_string()),
             ),
             (headers::OWNER_DISPLAY_NAME, msg.owner_display_name.clone()),
             (
-                headers::MESSAGE_OWNER_HANDLE,
-                msg.message.owner_handle.clone(),
+                headers::MESSAGE_OWNER_IDENTITY,
+                msg.message.owner_identity.clone(),
             ),
             (headers::SUBJECT, msg.message.subject.clone()),
+            (
+                headers::REACTIONS,
+                (!msg.message.reactions.is_empty()).then(|| {
+                    header_safe_json(
+                        serde_json::to_string(&msg.message.reactions).unwrap_or_default(),
+                    )
+                }),
+            ),
+            (
+                headers::DELETION,
+                msg.message.deletion.map(|d| d.as_str().to_string()),
+            ),
             (
                 headers::ANDROID_TYPE,
                 source
@@ -806,16 +775,16 @@ fn conversation_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> M
             ),
             (
                 headers::SOURCE_FIELDS,
-                source
-                    .filter(|src| !src.fields.is_empty())
-                    .map(|src| serde_json::to_string(&src.fields).unwrap_or_default()),
+                source.filter(|src| !src.fields.is_empty()).map(|src| {
+                    header_safe_json(serde_json::to_string(&src.fields).unwrap_or_default())
+                }),
             ),
         ],
     )
 }
 
 /// The headers only iMessage rows carry: reply threading, effects, edits,
-/// tapbacks, and app balloons. Rows from other services add nothing here.
+/// the reaction a tapback row is, and app balloons. Rows from other services add nothing here.
 fn imessage_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> MessageBuilder<'m> {
     let Some(im) = msg.im() else {
         return builder;
@@ -836,10 +805,6 @@ fn imessage_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> Messa
                 im.thread_originator_part.map(|p| p.to_string()),
             ),
             (headers::NUM_REPLIES, im.num_replies.map(|n| n.to_string())),
-            (
-                headers::IS_DELETED,
-                im.is_deleted.then(|| "true".to_string()),
-            ),
             (headers::SEND_EFFECT, im.send_effect.clone()),
             (headers::SHARED_LOCATION, im.shared_location.clone()),
             (headers::ANNOUNCEMENT, im.announcement.clone()),
@@ -849,7 +814,6 @@ fn imessage_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> Messa
             (headers::APP, value_as_string(im.app.as_ref())),
             (headers::BALLOON_BUNDLE_ID, im.balloon_bundle_id.clone()),
             (headers::BALLOON_KIND, im.balloon_kind.clone()),
-            (headers::TAPBACKS, value_as_string(im.tapbacks.as_ref())),
             (headers::ASSOCIATED_GUID, im.associated_guid.clone()),
             (
                 headers::ASSOCIATED_PART,
@@ -886,7 +850,7 @@ fn attachment_meta_header<'m>(
             missing_reason: a.meta.missing_reason.as_deref(),
         })
         .collect();
-    let meta_json = serde_json::to_string(&meta).unwrap_or_else(|_| "[]".into());
+    let meta_json = header_safe_json(serde_json::to_string(&meta).unwrap_or_else(|_| "[]".into()));
     builder.header(headers::ATTACHMENT_META, Text::new(meta_json))
 }
 

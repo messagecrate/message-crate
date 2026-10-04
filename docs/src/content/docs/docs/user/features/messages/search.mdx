@@ -30,6 +30,14 @@ With **Conversations**, plain words match a Conversation's title and the people 
 With **Messages**, the same box lists every message that matches, from every Conversation, and plain words match what was said.
 [Browse messages](/docs/user/features/messages/browse/#the-messages-list) describes that list.
 
+Some words work on only one of the two lists: `from:`, `to:`, `in:` and `attachments:` only on Messages, and `messages:` only on Conversations.
+Such a word stays in the box when the switch changes, underlined with a red wavy line, and the list searches with the other words.
+So `from:me dinner` on Conversations lists the Conversations that match `dinner`, and switching back to Messages searches `from:me dinner` again.
+Clicking an underlined word opens a note that names the list it works in, such as "`from:` works only in Messages", with a **Remove** button that deletes that word from the box.
+Typing over the word works too.
+When every word works only in Conversations, Messages says so instead of listing anything.
+[Export](/docs/user/features/messages/export/) from the Conversations list leaves the underlined words out too.
+
 The list narrows as the search is typed.
 A search the server refuses is answered with a message that gives the reason.
 
@@ -85,7 +93,8 @@ Everything else is a word, a colon, and a value.
 
 A word the list does not have is refused with a message that says so.
 The message names the lists the word works on, or offers the nearest word when the word is a misspelling.
-`from:me` on Conversations answers "from: is not a Conversations word. It works on Messages."
+`from:me` on Contacts answers "from: is not a Contacts word. It works on Messages."
+On **Messages**, a word that works only in the other list of the switch is underlined instead, as [Where a search runs](#where-a-search-runs) says.
 
 A search is at most 2,048 bytes, 32 plain words, and 32 levels of parentheses.
 A longer search is refused with a message that says so.
@@ -135,6 +144,7 @@ The tiles mark which lists accept the word: <ListTiles on="C" /> Contacts, <List
 | `groups:` | how many Contact Groups | count | <ListTiles on="C" /> |
 | `participants:` | how many people in the conversation | count | <ListTiles on="V M" /> |
 | `attachments:` | how many attachments on the message | count | <ListTiles on="M" /> |
+| `deleted:` | Deleted in the source app or Unsent: `yes` is a message with either mark, `no` one with neither | `yes`, `no` | <ListTiles on="M" /> |
 | `trashed:` | in the Trash | `yes`, `no`, `any` | <ListTiles on="C V M" /> |
 
 ### Examples

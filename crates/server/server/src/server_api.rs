@@ -19,9 +19,25 @@
 use axum::extract::State;
 use serde::{Deserialize, Serialize};
 
+pub(crate) mod log_files;
+pub(crate) mod log_lines;
+
 use crate::db::{account_profile, server_settings, storage};
 use crate::extract::Json;
 use crate::server::{ApiError, AppState, Created, Owner};
+
+/// Run `read`, a blocking read of the server's log files, off the async
+/// threads, and answer an I/O failure as a `500 Internal Server Error` with `what` as
+/// its cause.
+async fn read_log<T: Send + 'static>(
+    what: &'static str,
+    read: impl FnOnce() -> std::io::Result<T> + Send + 'static,
+) -> Result<T, ApiError> {
+    tokio::task::spawn_blocking(read)
+        .await
+        .map_err(|error| ApiError::Internal(error.into()))?
+        .map_err(|error| ApiError::Internal(anyhow::Error::from(error).context(what)))
+}
 
 /// What state a Message Crate is in, from outside.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -460,6 +476,10 @@ struct DemoBuildShared {
     task: std::sync::Mutex<Option<tokio::task::JoinHandle<()>>>,
     /// Cancelled when the server stops.
     stopping: tokio_util::sync::CancellationToken,
+    /// Set when the server stops, so the ffmpeg a build runs is killed: the
+    /// build runs it to its end without an `await`, so cancelling the task
+    /// alone waits for the conversion (#1729).
+    conversions_stopped: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// Why the build failed, when the server stopped during it.
@@ -571,10 +591,27 @@ impl DemoBuild {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(task);
     }
 
+    /// The flag that stops the conversions of a build, for
+    /// [`crate::reset_demo::build_demo_account`].
+    pub(crate) fn conversions_stopped(&self) -> std::sync::Arc<std::sync::atomic::AtomicBool> {
+        std::sync::Arc::clone(&self.0.conversions_stopped)
+    }
+
+    /// Kill the ffmpeg a running build runs, and every one it would start,
+    /// without waiting: the server calls this when the stop signal comes,
+    /// before it drains its requests, so a terminal's Ctrl-C reaching that
+    /// ffmpeg is not read as a failed conversion.
+    pub(crate) fn stop_conversions(&self) {
+        self.0
+            .conversions_stopped
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
     /// Stop a running build and wait until it has removed what it wrote.
     /// The server calls this once it has stopped serving, so the build does
     /// not end part-way when the process exits.
     pub(crate) async fn stop(&self) {
+        self.stop_conversions();
         self.0.stopping.cancel();
         let task = self
             .0
@@ -708,6 +745,7 @@ pub async fn replace_demo_account(
         state.cfg.clone(),
         req.size.into(),
         state.demo_bundle_generator,
+        state.demo_build.conversions_stopped(),
     );
     state
         .demo_build

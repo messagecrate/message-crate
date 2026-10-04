@@ -42,6 +42,7 @@ async fn reset_for_account_leaves_other_accounts() {
                 thread_originator_guid: None,
                 thread_originator_part: None,
                 num_replies: 0,
+                deletion: None,
                 sort_order: 0,
                 import_id: None,
             }],

@@ -16,6 +16,7 @@ mod process;
 #[cfg(any(test, feature = "testutil"))]
 pub mod testutil;
 mod tools;
+mod versions;
 
 pub use estimate::{SizeVerdict, classify_probed, estimate_bytes, needs_probe};
 pub use mime::{Kind, ext_for_mime, kind_for_ext, kind_for_mime, mime_for_ext};
@@ -26,6 +27,10 @@ pub use process::{
     transcode_file_as,
 };
 pub use tools::{FfmpegToolsProbe, ffmpeg_available, probe_ffmpeg_tools, set_tools_dir, tools_dir};
+pub use versions::{
+    THUMBNAIL_LONG_EDGE, browser_shows, make_preview, make_thumbnail, media_type_of,
+    preview_extension,
+};
 
 use std::fmt;
 use std::str::FromStr;

@@ -5,10 +5,17 @@
 //! internal failure (I/O or the database) the sender cannot fix by changing
 //! the file. The HTTP interface maps each kind to a status once, in
 //! `server.rs`, and no handler picks a status from an `anyhow` error.
+//! Nothing here looks inside an `anyhow` error for a kind: each stage's
+//! error type keeps the two apart from the line that raises them.
 
-use crate::assets_api::Sha256;
-use message_ir::{UnsafeAttachmentPath, UnsupportedSchemaVersion};
 use std::fmt;
+use std::path::{Path, PathBuf};
+
+use message_ir::{UnsafeAttachmentPath, UnsupportedSchemaVersion};
+
+use super::promote::PromoteError;
+use super::staging::StagingError;
+use crate::assets_api::Sha256;
 
 /// A reason an import stopped that the sender can fix by changing the file.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -144,50 +151,55 @@ impl ImportFailure {
             }
         }
     }
-
-    /// The person-actionable failure inside `err`, if there is one.
-    ///
-    /// The import pipeline wraps errors in `anyhow` context on the way up;
-    /// `downcast_ref` looks through every layer of context, so the parser can
-    /// raise this type and the pipeline's entry point can find it without the
-    /// layers in between knowing about it.
-    pub fn in_error(err: &anyhow::Error) -> Option<&ImportFailure> {
-        err.downcast_ref::<ImportFailure>()
-    }
 }
 
 /// What the import pipeline returns when it stops.
+///
+/// Each stage returns its own error type, and each one says whether the
+/// sender can fix what stopped it: [`crate::jsonl::ReadRecordsError`],
+/// [`super::staging::StagingError`] and [`super::promote::PromoteError`],
+/// while `models::parse_ir_lines` refuses with an [`ImportFailure`] alone.
+/// The conversions below sort them into these kinds by variant, so a stage
+/// that adds a refusal changes a type, and the compiler names every place
+/// that has to decide what it is.
 #[derive(Debug, thiserror::Error)]
 pub enum ImportError {
     /// The sender can fix it by changing the file. `failure` is what the
-    /// sender is told; `cause` keeps the whole chain, with the file the
-    /// failure was in, for a command line or a log.
-    #[error("{cause:#}")]
+    /// sender is told; `file` is the file it was in, for a command line or a
+    /// log.
+    #[error("{}: {failure}", file.display())]
     Rejected {
         failure: ImportFailure,
-        cause: anyhow::Error,
+        file: PathBuf,
     },
     /// The import run was discarded or completed while the batch uploaded,
     /// found when the run is checked again under the write lock. It is
     /// refused as the check before the body refuses it.
     #[error(transparent)]
-    Run(crate::db::imports::ImportLookupError),
+    Run(#[from] crate::db::imports::ImportLookupError),
     /// I/O, the database, or a bug: nothing the sender can change.
     #[error(transparent)]
     Internal(anyhow::Error),
 }
 
-/// The stages of the pipeline return `anyhow` and raise an [`ImportFailure`]
-/// inside it; the pipeline's entry point sorts the two apart here, once.
-impl From<anyhow::Error> for ImportError {
-    fn from(cause: anyhow::Error) -> Self {
-        let cause = match cause.downcast::<crate::db::imports::ImportLookupError>() {
-            Ok(lookup) => return Self::Run(lookup),
-            Err(cause) => cause,
-        };
-        match ImportFailure::in_error(&cause).cloned() {
-            Some(failure) => Self::Rejected { failure, cause },
-            None => Self::Internal(cause),
+impl From<PromoteError> for ImportError {
+    fn from(err: PromoteError) -> Self {
+        match err {
+            PromoteError::Internal(err) => Self::Internal(err),
+        }
+    }
+}
+
+impl ImportError {
+    /// What staging `file` stopped on, sorted by its kind, with the file a
+    /// refusal was in.
+    pub(super) fn staging(file: &Path, err: StagingError) -> Self {
+        match err {
+            StagingError::Rejected(failure) => Self::Rejected {
+                failure,
+                file: file.to_path_buf(),
+            },
+            StagingError::Internal(err) => Self::Internal(err),
         }
     }
 }
@@ -204,7 +216,7 @@ mod tests {
         };
         assert_eq!(
             f.to_string(),
-            "This file is schema version 3; Message Crate reads version 4 (line 1 of the file)."
+            "This file is schema version 3; Message Crate reads version 7 (line 1 of the file)."
         );
     }
 
@@ -271,30 +283,20 @@ mod tests {
         );
     }
 
+    /// The `import` command and `reset-demo` print an error as `anyhow`
+    /// does: a refusal names the file it was in before the sentence.
     #[test]
-    fn in_error_finds_the_failure_under_anyhow_context() {
-        let root: anyhow::Error = ImportFailure::Invalid {
-            line: 2,
-            detail: "boom".into(),
-        }
-        .into();
-        let wrapped = root
-            .context("failed to parse message-ir JSONL in /tmp/x.jsonl")
-            .context("import failed");
-        let found = ImportFailure::in_error(&wrapped).expect("failure survives context");
-        assert_eq!(
-            *found,
-            ImportFailure::Invalid {
+    fn a_command_line_prints_a_rejection_with_its_file() {
+        let err = anyhow::Error::from(ImportError::Rejected {
+            failure: ImportFailure::Invalid {
                 line: 2,
-                detail: "boom".into()
-            }
+                detail: "boom".into(),
+            },
+            file: "export/+15555550101.jsonl".into(),
+        });
+        assert_eq!(
+            format!("{err:#}"),
+            "export/+15555550101.jsonl: Line 2 of the file: boom."
         );
-    }
-
-    #[test]
-    fn an_error_without_a_failure_is_internal() {
-        let err = anyhow::anyhow!("disk full");
-        assert!(ImportFailure::in_error(&err).is_none());
-        assert!(matches!(ImportError::from(err), ImportError::Internal(_)));
     }
 }

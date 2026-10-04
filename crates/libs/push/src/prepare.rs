@@ -338,6 +338,7 @@ fn scan_one_attachment(
             // defect, so it earns an Import Errors row; a deliberate skip
             // does not.
             scan.skips.push(AttachmentSkip {
+                conversation: name.to_string(),
                 item: format!("{name}:{}", attachment_label(att, index)),
                 reason: "attachment has no file path in the export".into(),
             });
@@ -351,6 +352,7 @@ fn scan_one_attachment(
     let Some(abs) = resolve_attachment(ctx.input, rel)? else {
         scan.skipped += 1;
         scan.skips.push(AttachmentSkip {
+            conversation: name.to_string(),
             item: format!("{name}:{rel}"),
             reason: "attachment file not found on disk".into(),
         });
@@ -366,6 +368,7 @@ fn scan_one_attachment(
     if file_len > ctx.cfg.asset_max_bytes {
         scan.skipped += 1;
         scan.skips.push(AttachmentSkip {
+            conversation: name.to_string(),
             item: format!("{name}:{rel}"),
             reason: format!(
                 "attachment is {} bytes ({} MiB), over the configured asset max of {} MiB",
@@ -893,8 +896,7 @@ fn preflight_existing_asset(ctx: &PrepareContext<'_>, digest: &str) -> Result<()
     }
     *done = true;
     let session = ctx.session;
-    let present =
-        message_crate_http::with_retries(ctx.cfg.max_retries, || session.head_asset(digest))?;
+    let present = session.request(ctx.cfg.max_retries, |session| session.head_asset(digest))?;
     if present {
         ctx.probe_existing.store(true, Ordering::Relaxed);
     }
@@ -908,7 +910,7 @@ fn preflight_existing_asset(ctx: &PrepareContext<'_>, digest: &str) -> Result<()
 /// Returns the last HTTP error once retries are exhausted.
 fn upload_one_asset(ctx: &PrepareContext<'_>, job: &AssetUploadJob) -> Result<Asset> {
     let session = ctx.session;
-    message_crate_http::with_retries(ctx.cfg.max_retries, || {
+    session.request(ctx.cfg.max_retries, |session| {
         if ctx.probe_existing.load(Ordering::Relaxed) && session.head_asset(&job.digest)? {
             return Ok(Asset {
                 already_present: true,
@@ -942,6 +944,10 @@ pub(crate) enum PrepareOutcome {
     Prepared(PreparedFile),
     /// Reading, hashing, or uploading failed.
     Failed(String),
+    /// The run was told to stop (a cancel, or a session the server refused)
+    /// before this conversation was ready. It is left for the next push, so
+    /// a request the stop cut short fails no conversation.
+    Stopped,
 }
 
 /// Result coming back from a prepare worker (may finish out of order).
@@ -992,6 +998,9 @@ impl PrepareQueue {
                     };
                     let outcome = match prepare_file(ctx, &job.path, &job.name) {
                         Ok(prepared) => PrepareOutcome::Prepared(prepared),
+                        Err(_) if check_cancel(ctx.cfg.cancel.as_ref()).is_err() => {
+                            PrepareOutcome::Stopped
+                        }
                         Err(error) => PrepareOutcome::Failed(error.to_string()),
                     };
                     let _ = result_tx.send(PrepareResult {

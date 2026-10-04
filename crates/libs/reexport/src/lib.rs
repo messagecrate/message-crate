@@ -348,11 +348,15 @@ impl SmsBackupRead {
     }
 
     /// Read every conversation in the backup without writing to the output
-    /// outside the spool.
+    /// outside the spool. What the reader dropped, skipped and could not
+    /// read goes to the log the moment the read returns, so a run that then
+    /// fails, such as one that found no conversation, still says why. It
+    /// comes before every line of the run's summary, `Conversations:`
+    /// included.
     fn read(&self, config: &ExporterConfig) -> Result<Vec<ConversationDocument>> {
         let (documents, report) = read_backup(&self.input, self.options(config))?;
-        for error in report.errors.iter().take(5) {
-            config.emit_log(format!("xml warning: {error}"));
+        for line in report.log_lines() {
+            config.emit_log(line);
         }
         Ok(documents)
     }

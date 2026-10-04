@@ -41,6 +41,7 @@ fn finished_push_events(
         ),
         "ok": report.ok,
         "cancelled": report.cancelled,
+        "session_refused": report.session_refused,
         "messages_attempted": report.messages_attempted,
         "messages_inserted": report.messages_inserted,
         "messages_deduped": report.messages_deduped,
@@ -189,22 +190,29 @@ fn forward_push_event(app: &tauri::AppHandle, event: ProgressEvent) {
         }
         ProgressEvent::FileDone { file, status } => {
             events::emit(app, events::LOG, format!("Done: {file} ({status})"));
+            events::emit(
+                app,
+                events::FILE_DONE,
+                events::ExtractFileDoneEvent { file, status },
+            );
         }
         ProgressEvent::Issue {
             kind,
             step,
             item,
             reason,
+            conversation,
         } => {
             events::emit(
                 app,
                 events::ISSUE,
-                serde_json::json!({
-                    "kind": kind,
-                    "step": step,
-                    "item": item,
-                    "reason": reason,
-                }),
+                events::ExtractIssueEvent {
+                    kind,
+                    step,
+                    item,
+                    reason,
+                    conversation: Some(conversation),
+                },
             );
         }
         ProgressEvent::Finished(report) => {
@@ -311,7 +319,7 @@ mod tests {
                 source: "sms-backup-restore".into(),
                 tool: "SMS Backup & Restore".into(),
                 tool_version: "10.26.003".into(),
-                owner_handle: Some("+15555550100".into()),
+                owner_identity: Some("+15555550100".into()),
                 owner_display_name: Some("Me".into()),
             },
             "conversation": ConversationMeta {
@@ -319,9 +327,9 @@ mod tests {
                 conversation_type: IrConversationType::Individual,
                 group_title: None,
                 participants: vec![IrParticipant {
-                    handle: Some("+15555550101".into()),
+                    identity: Some("+15555550101".into()),
                     display_name: Some("Sam".into()),
-                    handle_type: None,
+                    identity_type: None,
                 }],
                 stats: ConversationStats::default(),
             },
@@ -332,12 +340,14 @@ mod tests {
             direction: IrDirection::Incoming,
             service: IrService::Sms,
             message_kind: IrMessageKind::Sms,
-            sender_handle: Some("+15555550101".into()),
+            sender_identity: Some("+15555550101".into()),
             sender_display_name: Some("Sam".into()),
-            owner_handle: None,
+            owner_identity: None,
             subject: None,
             text: "hello there".into(),
             attachments: vec![],
+            reactions: vec![],
+            deletion: None,
             imessage: None,
             source: None,
         });
@@ -378,6 +388,7 @@ mod tests {
         let report = PushReport {
             ok: true,
             cancelled: false,
+            session_refused: false,
             account: 1,
             username: "user".into(),
             mode: ImportMode::Append,
@@ -428,5 +439,7 @@ mod tests {
         assert_eq!(summary["conversations_ok"], 2);
         assert_eq!(summary["conversations_total"], 3);
         assert_eq!(summary["cancelled"], false);
+        // The window ends the session when the push says it was refused.
+        assert_eq!(summary["session_refused"], false);
     }
 }

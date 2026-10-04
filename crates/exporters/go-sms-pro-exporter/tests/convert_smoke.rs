@@ -32,6 +32,7 @@ fn convert(input_dir: &Path, output_dir: &Path) -> Result<ExportReport> {
         output_format: OutputFormat::Csv,
         cancel: None,
         resume: false,
+        issues: None,
     })
 }
 
@@ -57,7 +58,7 @@ fn convert_smoke_writes_csv_not_json() {
             // the export must carry the decoded character, not the escape.
             ("text", "smoke hello \u{1f44b}"),
             ("direction", "incoming"),
-            ("sender_handle", "+14075550107"),
+            ("sender_identity", "+14075550107"),
             ("timestamp_unix_ms", "1609459200000"),
             ("chat_identifier", "+14075550107"),
         ],
@@ -80,7 +81,7 @@ fn convert_smoke_writes_csv_not_json() {
         &[
             ("text", "Hello one to one"),
             ("direction", "incoming"),
-            ("sender_handle", "+14075550107"),
+            ("sender_identity", "+14075550107"),
         ],
     );
 }
@@ -118,6 +119,7 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
             output_format: OutputFormat::Jsonl,
             cancel: None,
             resume,
+            issues: None,
         })
     });
 }

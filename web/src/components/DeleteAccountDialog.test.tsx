@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { fill, setupUser } from "../test/user";
 import DeleteAccountDialog from "./DeleteAccountDialog";
 
 afterEach(cleanup);
@@ -11,7 +11,7 @@ const deleteButton = () => screen.getByRole("button", { name: "Permanently delet
 
 describe("DeleteAccountDialog", () => {
   it("asks an account with no password for its username only", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     const onConfirm = vi.fn();
     render(
       <DeleteAccountDialog
@@ -26,14 +26,14 @@ describe("DeleteAccountDialog", () => {
     expect(screen.queryByLabelText("Current password")).toBeNull();
     expect(deleteButton()).toBeDisabled();
 
-    await user.type(screen.getByRole("textbox", { name: /Type your username carol/ }), "carol");
+    await fill(user, screen.getByRole("textbox", { name: /Type your username carol/ }), "carol");
     expect(deleteButton()).toBeEnabled();
     await user.click(deleteButton());
     expect(onConfirm).toHaveBeenCalledWith(undefined);
   });
 
   it("requires the current password from an account that has one", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     const onConfirm = vi.fn();
     render(
       <DeleteAccountDialog
@@ -45,10 +45,10 @@ describe("DeleteAccountDialog", () => {
       />,
     );
 
-    await user.type(screen.getByRole("textbox", { name: /Type your username carol/ }), "carol");
+    await fill(user, screen.getByRole("textbox", { name: /Type your username carol/ }), "carol");
     expect(deleteButton()).toBeDisabled();
 
-    await user.type(screen.getByLabelText("Current password"), "hunter2");
+    await fill(user, screen.getByLabelText("Current password"), "hunter2");
     expect(deleteButton()).toBeEnabled();
     await user.click(deleteButton());
     expect(onConfirm).toHaveBeenCalledWith("hunter2");
@@ -60,7 +60,7 @@ describe("DeleteAccountDialog", () => {
    * password, even before an effect clears it, is recorded in the DOM.
    */
   it("forgets the typed password when it closes", async () => {
-    const user = userEvent.setup({ delay: null });
+    const user = setupUser();
     const dialog = (open: boolean) => (
       <DeleteAccountDialog
         open={open}
@@ -71,7 +71,7 @@ describe("DeleteAccountDialog", () => {
       />
     );
     const { rerender } = render(dialog(true));
-    await user.type(screen.getByLabelText("Current password"), "hunter2");
+    await fill(user, screen.getByLabelText("Current password"), "hunter2");
 
     rerender(dialog(false));
     const seen: string[] = [];

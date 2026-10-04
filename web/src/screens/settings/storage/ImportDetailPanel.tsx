@@ -31,7 +31,14 @@ export default function ImportDetailPanel({
   onClose: () => void;
 }) {
   return (
-    <div id={detailId} className="bg-surface p-4">
+    // contain-inline-size: the panel takes the width the history table's columns give it,
+    // and its content adds nothing to that width. The panel sits in a colSpan cell of the
+    // history table, and the table's card is as wide as the table's content. Without it,
+    // the card grows to the panel's content. In Chrome the summary's fixed-layout table has
+    // a max-content width of 1,000,000 px. React Aria sizes the errors and notes tables to
+    // their own box, so they then grow every frame, and since React Aria draws only the
+    // columns inside the box's scroll view, each shows only its first column (#1708).
+    <div id={detailId} className="bg-surface p-4 contain-inline-size">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h3 className={sectionTitle}>Import details</h3>
@@ -98,13 +105,10 @@ export default function ImportDetailPanel({
               <dt className="text-muted">Bytes uploaded</dt>
               <dd className="mt-1">{formatBytes(selectedImport.bytes_uploaded)}</dd>
             </div>
-            {"issue_count" in selectedImport ? (
-              // The owner reads how many issues, not what each was about.
-              <div>
-                <dt className="text-muted">Issues</dt>
-                <dd className="mt-1">{selectedImport.issue_count.toLocaleString()}</dd>
-              </div>
-            ) : null}
+            <div>
+              <dt className="text-muted">Issues</dt>
+              <dd className="mt-1">{selectedImport.issue_count.toLocaleString()}</dd>
+            </div>
           </dl>
           <ImportSummaryPanel summary={selectedImportSummary} />
           <div className="mt-4">

@@ -17,6 +17,7 @@ use std::sync::atomic::AtomicBool;
 
 use httpmock::prelude::*;
 use message_crate_pull::{ExportQueryList, ProgressEvent, PullConfig, PullReport, journal, run};
+use message_ir::{Deletion, Reaction};
 use message_ir_format::{EXPORT_SENTINEL, read_conversation_jsonl};
 use serde_json::{Value, json};
 use tempfile::tempdir;
@@ -87,9 +88,10 @@ fn message(
             "id": 9,
             "chat_identifier": "+15555550101",
             "conversation_type": "individual",
+            "is_group": false,
             "group_title": null,
             "participants": [
-                { "name": "Sam", "handle": "+15555550101", "service": "sms", "contact_id": 3 }
+                { "name": "Sam", "identity": "+15555550101", "service": "sms", "contact_id": 3 }
             ]
         },
         "attachments": attachments,
@@ -317,11 +319,11 @@ fn a_pull_records_one_run_and_writes_the_conversation_and_every_asset_once_acros
     assert_eq!(
         doc.messages
             .iter()
-            .map(|m| m.owner_handle.as_deref())
+            .map(|m| m.owner_identity.as_deref())
             .collect::<Vec<_>>(),
         [Some("+15555550100"); 3]
     );
-    assert_eq!(doc.export.owner_handle.as_deref(), Some("+15555550100"));
+    assert_eq!(doc.export.owner_identity.as_deref(), Some("+15555550100"));
     assert_eq!(
         doc.messages[0].attachments[0].digest_sha256.as_deref(),
         Some(MENU_SHA)
@@ -573,6 +575,7 @@ fn two_groups_with_one_title_are_both_written() {
         message["conversation"]["id"] = json!(conversation_id);
         message["conversation"]["chat_identifier"] = json!(chat);
         message["conversation"]["conversation_type"] = json!("group");
+        message["conversation"]["is_group"] = json!(true);
         message["conversation"]["group_title"] = json!("Family");
         message
     };
@@ -949,4 +952,162 @@ fn every_path_a_message_names_exists_after_a_pull() {
             msg.guid
         );
     }
+}
+
+/// Export keeps the reactions the server stored: a message whose stored
+/// reactions are a friend's heart and the owner's emoji, as the export route
+/// serializes them, is written with both in its `reactions`, each under the
+/// person who reacted, in the shape an import reads back.
+#[test]
+fn a_pulled_message_keeps_its_reactions_under_each_reactor() {
+    let server = MockServer::start();
+    let _auth = mock_auth(&server);
+    let _run = mock_run(&server);
+    let mut reacted = message(
+        1,
+        "sms-backup-restore",
+        "guid-1",
+        "2015-03-12T18:05:01Z",
+        "Pizza?",
+        json!([]),
+    );
+    reacted["tapbacks"] = json!([
+        { "part_index": 0, "kind": "loved", "is_from_me": false, "sender": "+15555550107" },
+        { "part_index": 0, "kind": "emoji", "emoji": "🔥", "is_from_me": true }
+    ]);
+    let _page = server.mock(|when, then| {
+        when.method(GET)
+            .path(format!("/v1/exports/{EXPORT_ID}/messages"))
+            .query_param("offset", "0");
+        then.status(200).json_body(json!({
+            "items": [reacted],
+            "total": 1,
+            "limit": 2,
+            "offset": 0
+        }));
+    });
+    let dir = tempdir().unwrap();
+    let out = dir.path().join("pulled");
+
+    run(&config(&out, server.base_url()), None).unwrap();
+
+    let written = fs::read_to_string(out.join(CONVERSATION_FILE)).unwrap();
+    let line: Value = serde_json::from_str(written.lines().nth(1).unwrap()).unwrap();
+    assert_eq!(
+        line["reactions"],
+        json!([
+            { "part_index": 0, "kind": "loved", "is_from_me": false,
+              "reactor_identity": "+15555550107" },
+            { "part_index": 0, "kind": "emoji", "emoji": "🔥", "is_from_me": true }
+        ]),
+        "{line}"
+    );
+    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    assert_eq!(
+        doc.messages[0].reactions,
+        [
+            Reaction {
+                part_index: 0,
+                kind: "loved".into(),
+                emoji: None,
+                is_from_me: false,
+                reactor_identity: Some("+15555550107".into()),
+                reactor_display_name: None,
+            },
+            Reaction {
+                part_index: 0,
+                kind: "emoji".into(),
+                emoji: Some("🔥".into()),
+                is_from_me: true,
+                reactor_identity: None,
+                reactor_display_name: None,
+            },
+        ],
+        "the file reads back as the same reactions"
+    );
+}
+
+/// Export keeps each message's mark: a message the server returns as
+/// `deleted_in_source_app`, one returned as `unsent`, and one with no mark
+/// are written with `deletion` set to the same mark, and left out for the
+/// last, in the shape an import reads back.
+#[test]
+fn a_pulled_message_keeps_its_deletion_mark() {
+    let server = MockServer::start();
+    let _auth = mock_auth(&server);
+    let _run = mock_run(&server);
+    let mut deleted = message(
+        1,
+        "sms-backup-restore",
+        "guid-16",
+        "2020-01-06T12:14:00Z",
+        "Delete me",
+        json!([]),
+    );
+    deleted["deletion"] = json!("deleted_in_source_app");
+    let mut unsent = message(
+        2,
+        "sms-backup-restore",
+        "guid-17",
+        "2020-01-06T12:15:00Z",
+        "",
+        json!([]),
+    );
+    unsent["deletion"] = json!("unsent");
+    let mut kept = message(
+        3,
+        "sms-backup-restore",
+        "guid-18",
+        "2020-01-06T12:16:00Z",
+        "Still here",
+        json!([]),
+    );
+    kept["deletion"] = Value::Null;
+    let _first = server.mock(|when, then| {
+        when.method(GET)
+            .path(format!("/v1/exports/{EXPORT_ID}/messages"))
+            .query_param("offset", "0");
+        then.status(200).json_body(json!({
+            "items": [deleted, unsent],
+            "total": 3,
+            "limit": 2,
+            "offset": 0
+        }));
+    });
+    let _second = server.mock(|when, then| {
+        when.method(GET)
+            .path(format!("/v1/exports/{EXPORT_ID}/messages"))
+            .query_param("offset", "2");
+        then.status(200).json_body(json!({
+            "items": [kept],
+            "total": 3,
+            "limit": 2,
+            "offset": 2
+        }));
+    });
+    let dir = tempdir().unwrap();
+    let out = dir.path().join("pulled");
+
+    run(&config(&out, server.base_url()), None).unwrap();
+
+    let written = fs::read_to_string(out.join(CONVERSATION_FILE)).unwrap();
+    let lines: Vec<Value> = written
+        .lines()
+        .skip(1)
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    assert_eq!(lines[0]["deletion"], "deleted_in_source_app", "{written}");
+    assert_eq!(lines[1]["deletion"], "unsent", "{written}");
+    assert!(lines[2].get("deletion").is_none(), "{written}");
+    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    let marks: Vec<Option<Deletion>> = doc.messages.iter().map(|m| m.deletion).collect();
+    assert_eq!(
+        marks,
+        [
+            Some(Deletion::DeletedInSourceApp),
+            Some(Deletion::Unsent),
+            None
+        ],
+        "the file reads back as the same marks"
+    );
 }

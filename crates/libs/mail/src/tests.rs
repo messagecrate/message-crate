@@ -7,10 +7,10 @@ fn base_sms() -> MailMessage {
         conversation_type: "individual".into(),
         group_title: None,
         participants: vec![Participant {
-            handle: "+15555550101".into(),
+            identity: "+15555550101".into(),
             display_name: Some("Sam".into()),
         }],
-        owner_handle: "+15555550100".into(),
+        owner_identity: "+15555550100".into(),
         owner_display_name: None,
         export_source: "sms-backup-restore".into(),
         export_tool: "SMS Backup & Restore".into(),
@@ -22,12 +22,14 @@ fn base_sms() -> MailMessage {
             direction: IrDirection::Incoming,
             service: message_ir::IrService::Sms,
             message_kind: message_ir::IrMessageKind::Sms,
-            sender_handle: Some("+15555550101".into()),
+            sender_identity: Some("+15555550101".into()),
             sender_display_name: Some("Sam".into()),
-            owner_handle: None,
+            owner_identity: None,
             subject: None,
             text: "hello from sms".into(),
             attachments: Vec::new(),
+            reactions: Vec::new(),
+            deletion: None,
             imessage: None,
             source: Some(message_ir::IrSource {
                 android_type: Some(1),
@@ -116,11 +118,11 @@ fn writes_group_mms_with_image_part() {
     msg.message.message_kind = message_ir::IrMessageKind::Mms;
     msg.participants = vec![
         Participant {
-            handle: "+15555550101".into(),
+            identity: "+15555550101".into(),
             display_name: Some("Sam".into()),
         },
         Participant {
-            handle: "+15555550102".into(),
+            identity: "+15555550102".into(),
             display_name: Some("Alex".into()),
         },
     ];
@@ -192,11 +194,11 @@ fn encodes_email_handles_and_imessage_message_id() {
     let mut msg = base_sms();
     msg.chat_identifier = "friend@example.com".into();
     msg.participants = vec![Participant {
-        handle: "friend@example.com".into(),
+        identity: "friend@example.com".into(),
         display_name: Some("Friend".into()),
     }];
-    msg.message.sender_handle = Some("friend@example.com".into());
-    msg.owner_handle = "me@example.com".into();
+    msg.message.sender_identity = Some("friend@example.com".into());
+    msg.owner_identity = "me@example.com".into();
     msg.message.service = message_ir::IrService::IMessage;
     msg.message.message_kind = message_ir::IrMessageKind::IMessage;
     msg.message.guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into();
@@ -209,11 +211,11 @@ fn encodes_email_handles_and_imessage_message_id() {
     let headers = mail.get_headers();
     let from = headers.get_first_value("From").unwrap();
     assert!(
-        from.contains("friend=example.com@handle.local"),
+        from.contains("friend=example.com@identity.local"),
         "From was {from}"
     );
     let to = headers.get_first_value("To").unwrap();
-    assert!(to.contains("me=example.com@handle.local"), "To was {to}");
+    assert!(to.contains("me=example.com@identity.local"), "To was {to}");
     let mid = headers.get_first_value("Message-ID").unwrap();
     assert!(
         mid.contains("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE@imessage.local"),
@@ -225,7 +227,7 @@ fn encodes_email_handles_and_imessage_message_id() {
 fn outgoing_uses_me_and_stable_subject() {
     let mut msg = base_sms();
     msg.message.direction = IrDirection::Outgoing;
-    msg.message.sender_handle = Some("+15555550100".into());
+    msg.message.sender_identity = Some("+15555550100".into());
     msg.message.sender_display_name = Some("Me".into());
     msg.message.text = "body must not become subject".into();
 
@@ -249,11 +251,11 @@ fn outgoing_uses_me_and_stable_subject() {
             .contains("body must not")
     );
     assert_eq!(
-        headers.get_first_value("X-ME-Sender-Handle").as_deref(),
+        headers.get_first_value("X-ME-Sender-Identity").as_deref(),
         Some("+15555550100")
     );
     assert_eq!(
-        headers.get_first_value("X-ME-Owner-Handle").as_deref(),
+        headers.get_first_value("X-ME-Owner-Identity").as_deref(),
         Some("+15555550100")
     );
     assert_eq!(
@@ -283,7 +285,7 @@ fn outgoing_to_a_peer_with_no_name_is_titled_with_the_peer_handle() {
     let mut msg = base_sms();
     msg.participants[0].display_name = None;
     msg.message.direction = IrDirection::Outgoing;
-    msg.message.sender_handle = Some("+15555550100".into());
+    msg.message.sender_identity = Some("+15555550100".into());
     msg.message.sender_display_name = Some("Me".into());
 
     let (subject, to) = subject_and_to(&msg);
@@ -297,12 +299,12 @@ fn a_roster_that_lists_the_owner_first_still_addresses_the_other_person() {
     msg.participants.insert(
         0,
         Participant {
-            handle: "+15555550100".into(),
+            identity: "+15555550100".into(),
             display_name: Some("Owner".into()),
         },
     );
     msg.message.direction = IrDirection::Outgoing;
-    msg.message.sender_handle = Some("+15555550100".into());
+    msg.message.sender_identity = Some("+15555550100".into());
     msg.message.sender_display_name = Some("Me".into());
 
     let (subject, to) = subject_and_to(&msg);
@@ -316,7 +318,7 @@ fn a_roster_that_lists_the_owner_first_still_addresses_the_other_person() {
 fn an_empty_roster_takes_the_peer_from_the_chat_identifier() {
     let mut msg = base_sms();
     msg.participants.clear();
-    msg.message.sender_handle = None;
+    msg.message.sender_identity = None;
 
     let tmp = tempfile::tempdir().unwrap();
     let path = write_conversation_mbox(tmp.path(), &[msg]).unwrap();
@@ -331,7 +333,7 @@ fn an_empty_roster_takes_the_peer_from_the_chat_identifier() {
 fn caller_id_owner_display_and_imessage_extension_headers() {
     let mut msg = base_sms();
     msg.message.direction = IrDirection::Outgoing;
-    msg.message.sender_handle = Some("+15555550100".into());
+    msg.message.sender_identity = Some("+15555550100".into());
     msg.message.sender_display_name = Some("+15555550100".into());
     msg.owner_display_name = Some("+15555550100".into());
     msg.export_source = "imessage".into();
@@ -342,7 +344,6 @@ fn caller_id_owner_display_and_imessage_extension_headers() {
     im_mut(&mut msg).num_replies = Some(2);
     im_mut(&mut msg).send_effect = Some("Sent with Balloons".into());
     msg.message.text = "hello\n\nSent with Balloons".into();
-    im_mut(&mut msg).tapbacks = serde_json::from_str(r#"[{"part_index":0,"kind":"loved"}]"#).ok();
     im_mut(&mut msg).parts =
         serde_json::from_str(r#"[{"index":0,"kind":"run","text":"hello"}]"#).ok();
     im_mut(&mut msg).announcement = None;
@@ -356,7 +357,7 @@ fn caller_id_owner_display_and_imessage_extension_headers() {
     assert!(from.contains("+15555550100"), "From was {from}");
     assert!(!from.contains("Me <"), "From was {from}");
     assert_eq!(
-        headers.get_first_value("X-ME-Sender-Handle").as_deref(),
+        headers.get_first_value("X-ME-Sender-Identity").as_deref(),
         Some("+15555550100")
     );
     assert_eq!(
@@ -459,7 +460,7 @@ fn each_mbox_record_starts_with_its_sender_and_utc_date() {
     outgoing.message.timestamp_unix_ms = 1_401_700_000_000; // 2014-06-02 09:06:40 UTC
     let mut from_email = base_sms();
     from_email.message.guid = "ccddeeff00112233445566778899aabb".into();
-    from_email.message.sender_handle = Some("sam@example.com".into());
+    from_email.message.sender_identity = Some("sam@example.com".into());
     from_email.message.timestamp_unix_ms = 1_401_700_001_000;
 
     let tmp = tempfile::tempdir().unwrap();
@@ -474,7 +475,7 @@ fn each_mbox_record_starts_with_its_sender_and_utc_date() {
             // The owner sent it. asctime pads a one-digit day with a space.
             "From +15555550100@sms.local Mon Jun  2 09:06:40 2014",
             // An address may not hold a second `@`, so it becomes `=`.
-            "From sam=example.com@handle.local Mon Jun  2 09:06:41 2014",
+            "From sam=example.com@identity.local Mon Jun  2 09:06:41 2014",
         ]
     );
 }
@@ -514,114 +515,19 @@ fn writes_conversation_mboxrd() {
 }
 
 #[test]
-fn clean_previous_mail_output_removes_only_mail_archives() {
-    let tmp = tempfile::tempdir().unwrap();
-    let dir = tmp.path();
-    fs::write(dir.join("+15555550101.mbox"), "From x\n").unwrap();
-    fs::write(dir.join("Old.MBOX"), "From x\n").unwrap();
-    fs::create_dir(dir.join("+15555550102")).unwrap();
-    fs::write(dir.join("+15555550102/0001.eml"), "Subject: x\n").unwrap();
-    // An email kept as an attachment is not a previous export.
-    fs::create_dir(dir.join("attachments")).unwrap();
-    fs::write(dir.join("attachments/forwarded.eml"), "Subject: x\n").unwrap();
-    fs::create_dir(dir.join("photos")).unwrap();
-    fs::write(dir.join("photos/a.jpg"), "jpg").unwrap();
-    fs::write(dir.join("notes.txt"), "mine").unwrap();
-
-    clean_previous_mail_output(dir).unwrap();
-
-    let mut left: Vec<String> = fs::read_dir(dir)
-        .unwrap()
-        .map(|e| e.unwrap().file_name().into_string().unwrap())
-        .collect();
-    left.sort();
-    assert_eq!(left, ["attachments", "notes.txt", "photos"]);
-    assert!(dir.join("attachments/forwarded.eml").is_file());
-    assert!(dir.join("photos/a.jpg").is_file());
-}
-
-#[test]
-fn clean_previous_mail_output_accepts_a_missing_folder() {
-    let tmp = tempfile::tempdir().unwrap();
-    clean_previous_mail_output(&tmp.path().join("missing")).unwrap();
-}
-
-/// An entry of a subfolder that cannot be read fails the clean-up with the
-/// folder named, rather than reading the folder as holding no `.eml` and
-/// leaving an earlier export's folder beside the new one (#1563).
-#[test]
-fn an_entry_that_cannot_be_read_fails_the_eml_check_and_names_the_folder() {
-    let dir = Path::new("/exports/+15555550102");
-    let entries = vec![
-        Ok(dir.join("notes.txt")),
-        Err(std::io::Error::other("stale file handle")),
-        Ok(dir.join("0001.eml")),
-    ];
-
-    let error = holds_eml(dir, entries).unwrap_err();
-
-    let message = format!("{error:#}");
-    assert!(message.contains("/exports/+15555550102"), "{message}");
-    assert!(message.contains("stale file handle"), "{message}");
-}
-
-/// Run `f` with the permissions of `folder` set to `mode`, then set them back
-/// to `0o755` before returning, so the temporary folder can still be removed.
-///
-/// `None`, with a line on stderr, when `folder` can still be listed under
-/// `mode`: a user such as root cannot exercise the failure, so the test has
-/// nothing to check.
-#[cfg(unix)]
-fn with_folder_mode<T>(folder: &Path, mode: u32, f: impl FnOnce() -> T) -> Option<T> {
-    use std::os::unix::fs::PermissionsExt;
-
-    fs::set_permissions(folder, fs::Permissions::from_mode(mode)).expect("set the folder's mode");
-    let result = if fs::read_dir(folder).is_ok() {
-        eprintln!(
-            "skipped: {} can still be listed with mode {mode:o}",
-            folder.display()
-        );
-        None
-    } else {
-        Some(f())
-    };
-    fs::set_permissions(folder, fs::Permissions::from_mode(0o755))
-        .expect("restore the folder's mode");
-    result
-}
-
-/// A subfolder the clean-up cannot list fails it with the subfolder named.
-#[cfg(unix)]
-#[test]
-fn a_subfolder_that_cannot_be_read_fails_the_clean_up_and_names_it() {
-    let tmp = tempfile::tempdir().unwrap();
-    let folder = tmp.path().join("+15555550102");
-    fs::create_dir(&folder).unwrap();
-    fs::write(folder.join("0001.eml"), "Subject: x\n").unwrap();
-    let Some(result) = with_folder_mode(&folder, 0o000, || clean_previous_mail_output(tmp.path()))
-    else {
-        return;
-    };
-
-    let message = format!("{:#}", result.unwrap_err());
-    assert!(message.contains("+15555550102"), "{message}");
-    assert!(folder.join("0001.eml").is_file());
-}
-
-#[test]
 fn a_messages_own_owner_survives_an_mbox_round_trip() {
     let mut msg = base_sms();
     msg.message.direction = IrDirection::Outgoing;
-    msg.message.owner_handle = Some("me@example.com".into());
+    msg.message.owner_identity = Some("me@example.com".into());
     let tmp = tempfile::tempdir().unwrap();
     let path = write_conversation_mbox(tmp.path(), &[msg]).unwrap();
     let parsed = mail_messages_from_mbox(&path).unwrap();
     assert_eq!(
-        parsed[0].message.owner_handle.as_deref(),
+        parsed[0].message.owner_identity.as_deref(),
         Some("me@example.com")
     );
     // The conversation's owner stays where it was.
-    assert_eq!(parsed[0].owner_handle, "+15555550100");
+    assert_eq!(parsed[0].owner_identity, "+15555550100");
 }
 
 #[test]
@@ -647,4 +553,173 @@ fn an_mbox_keeps_the_bytes_of_a_text_attachment() {
     let path = write_conversation_mbox(tmp.path(), &[msg]).unwrap();
     let parsed = mail_messages_from_mbox(&path).unwrap();
     assert_eq!(parsed[0].attachments[0].bytes, card);
+}
+
+/// A mail an earlier Message Crate wrote names each address a handle
+/// (`X-ME-Sender-Handle`, `[{"handle": …}]`). Read as it is, it would come back
+/// with no sender and no one in the conversation, so it is refused instead.
+#[test]
+fn a_mail_that_names_addresses_handles_is_refused() {
+    let eml = concat!(
+        "From: sam=example.com@handle.local\r\n",
+        "X-ME-Chat-Identifier: sam@example.com\r\n",
+        "X-ME-Guid: g1\r\n",
+        "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
+        "X-ME-Participants: [{\"handle\":\"sam@example.com\"}]\r\n",
+        "X-ME-Sender-Handle: sam@example.com\r\n",
+        "\r\n",
+        "hello\r\n",
+    );
+    let err = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap_err();
+    assert_eq!(
+        format!("{err:#}"),
+        "This mail was written by an earlier Message Crate, which named each address a \
+         handle (X-ME-Sender-Handle); export the backup again"
+    );
+}
+
+/// An earlier mail with no owner and no sender address carries none of the
+/// `X-ME-*-Handle` headers, but its roster still says `handle`. A roster that
+/// does not read is refused rather than read as nobody.
+#[test]
+fn a_mail_whose_roster_does_not_read_is_refused() {
+    let eml = concat!(
+        "X-ME-Chat-Identifier: chat1000000005\r\n",
+        "X-ME-Conversation-Type: group\r\n",
+        "X-ME-Guid: g1\r\n",
+        "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
+        "X-ME-Direction: outgoing\r\n",
+        "X-ME-Participants: [{\"handle\":\"+15555550101\"},{\"handle\":\"+15555550102\"}]\r\n",
+        "\r\n",
+        "hello\r\n",
+    );
+    let err = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap_err();
+    assert!(
+        format!("{err:#}").starts_with(
+            "This mail's roster (X-ME-Participants) does not read; it may have been written by an earlier Message Crate, so export the backup again"
+        ),
+        "{err:#}"
+    );
+}
+
+/// A display name that looks like an RFC 2047 encoded word is the person's
+/// name, not an encoding: a mail header reader would decode it, and the
+/// decoded `"` would break the roster's JSON. It reads back as it was written.
+#[test]
+fn a_name_that_looks_like_an_encoded_word_reads_back_as_written() {
+    let mut msg = base_sms();
+    msg.participants[0].display_name = Some("=?utf-8?Q?=22?= x".into());
+    let eml = build_eml(&msg).unwrap();
+    let back = crate::mail_message_from_eml_bytes(&eml).unwrap();
+    assert_eq!(
+        back.participants[0].display_name.as_deref(),
+        Some("=?utf-8?Q?=22?= x")
+    );
+}
+
+/// An earlier Message Crate kept a message's reactions in `X-ME-Tapbacks`,
+/// which no reader looks for now, so the mail is refused rather than read
+/// with its reactions gone.
+#[test]
+fn a_mail_that_keeps_reactions_in_x_me_tapbacks_is_refused() {
+    let eml = concat!(
+        "X-ME-Chat-Identifier: +15555550101\r\n",
+        "X-ME-Guid: g1\r\n",
+        "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
+        "X-ME-Tapbacks: [{\"part_index\":0,\"kind\":\"loved\",\"is_from_me\":false,\"reactor_identity\":\"+15555550101\"}]\r\n",
+        "\r\n",
+        "hello\r\n",
+    );
+    let err = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap_err();
+    assert_eq!(
+        format!("{err:#}"),
+        "This mail was written by an earlier Message Crate, which kept reactions in \
+         X-ME-Tapbacks; export the backup again"
+    );
+}
+
+/// A reactions header that does not read is refused rather than read as no
+/// reactions.
+#[test]
+fn a_mail_whose_reactions_do_not_read_is_refused() {
+    let eml = concat!(
+        "X-ME-Chat-Identifier: +15555550101\r\n",
+        "X-ME-Guid: g1\r\n",
+        "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
+        "X-ME-Reactions: [{\"part_index\":0}]\r\n",
+        "\r\n",
+        "hello\r\n",
+    );
+    let err = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap_err();
+    assert!(
+        format!("{err:#}").starts_with(
+            "This mail's reactions (X-ME-Reactions) do not read; export the backup again"
+        ),
+        "{err:#}"
+    );
+}
+
+/// Each mark a message carries is written in `X-ME-Deletion` and read back
+/// as the same mark; a message with none writes no header.
+#[test]
+fn a_deletion_mark_reads_back_as_written() {
+    for deletion in message_ir::Deletion::ALL {
+        let mut msg = base_sms();
+        msg.message.deletion = Some(deletion);
+        let eml = build_eml(&msg).unwrap();
+        let back = crate::mail_message_from_eml_bytes(&eml).unwrap();
+        assert_eq!(back.message.deletion, Some(deletion));
+    }
+    let eml = build_eml(&base_sms()).unwrap();
+    assert!(
+        !String::from_utf8_lossy(&eml).contains("X-ME-Deletion"),
+        "a message with no mark writes no header"
+    );
+    assert_eq!(
+        crate::mail_message_from_eml_bytes(&eml)
+            .unwrap()
+            .message
+            .deletion,
+        None
+    );
+}
+
+/// An earlier Message Crate kept the Apple Messages deleted mark in
+/// `X-ME-Is-Deleted`, which no reader looks for now, so the mail is refused
+/// rather than read with its mark gone.
+#[test]
+fn a_mail_that_keeps_the_deleted_mark_in_x_me_is_deleted_is_refused() {
+    let eml = concat!(
+        "X-ME-Chat-Identifier: +15555550101\r\n",
+        "X-ME-Guid: g1\r\n",
+        "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
+        "X-ME-Is-Deleted: true\r\n",
+        "\r\n",
+        "hello\r\n",
+    );
+    let err = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap_err();
+    assert_eq!(
+        format!("{err:#}"),
+        "This mail was written by an earlier Message Crate, which kept the deleted mark in \
+         X-ME-Is-Deleted; export the backup again"
+    );
+}
+
+/// A mark that names neither Deleted in the source app nor Unsent is
+/// refused rather than read as no mark.
+#[test]
+fn a_mail_whose_deletion_names_no_mark_is_refused() {
+    let eml = concat!(
+        "X-ME-Chat-Identifier: +15555550101\r\n",
+        "X-ME-Guid: g1\r\n",
+        "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
+        "X-ME-Deletion: trashed\r\n",
+        "\r\n",
+        "hello\r\n",
+    );
+    let err = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap_err();
+    assert_eq!(
+        format!("{err:#}"),
+        "This mail's X-ME-Deletion header: \"trashed\" is neither deleted_in_source_app nor unsent"
+    );
 }

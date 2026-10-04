@@ -9,12 +9,12 @@ What each converter writes (and where it falls short). Marks: **yes** / **partia
 
 ## Shared model
 
-All converters build a **common message** per conversation (`ConversationDocument`, schema version 4 in [`message-ir`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir)), then project the user-picked format via `FormatSink` in [`message-ir-format`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir-format) (default **JSON**). When packaging is CSV, columns follow [`CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs). Across the board:
+All converters build a **common message** per conversation (`ConversationDocument`, schema version 7 in [`message-ir`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir)), then project the user-picked format via `FormatSink` in [`message-ir-format`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir-format) (default **JSON**). When packaging is CSV, columns follow [`CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs). Across the board:
 
 - The peer is `chat_identifier` — there is **no** dedicated receiver-phone column
-- Every participant is a **typed handle**: `handle_type` (`phone` / `email` / `username` / `other`) on each JSON/JSONL participant and inside `participants_json`; the CSV `handle_type` column carries the sender's type, inferred from the handle when the source doesn't supply it
+- Every participant is a **typed identity**: `identity_type` (`phone` / `email` / `username` / `other`) on each JSON/JSONL participant and inside `participants_json`; the CSV `identity_type` column carries the sender's type, inferred from the identity when the source doesn't supply it
 - Direction is `direction` (`incoming` / `outgoing`) — there is **no** `is_from_me` column
-- Outgoing rows fill `sender_handle` / `sender_display_name` from owner identity (`owner_handle` / `owner_display_name` columns)
+- Outgoing rows fill `sender_identity` / `sender_display_name` from owner identity (`owner_identity` / `owner_display_name` columns)
 - Vendor leftovers live in `source_fields_json` (not `xml_fields_json`)
 
 ## Capabilities
@@ -23,7 +23,7 @@ All converters build a **common message** per conversation (`ConversationDocumen
 |---|---|---|---|---|---|---|---|
 | **Output** | Per-chat CSV / EML / MBOX / JSON(+L) / **XML** | Per-chat CSV / EML / MBOX / JSON(+L) / **XML** | Per-chat CSV / EML / MBOX / JSON(+L) / **XML** | Per-chat CSV / EML / MBOX / JSON(+L) / **XML** | Per-chat CSV / EML / MBOX / JSON(+L) / **XML** (`__whatsapp` for WA) | Per-chat CSV / EML / MBOX / JSON(+L) / **XML** (`__whatsapp`) | Per-chat CSV / EML / MBOX / JSON(+L) / **XML** |
 | **Peer phone** (`chat_identifier`) | yes | yes | yes (`name:` and the name when only a name is known) | partial (`name:` and the name if unresolved, `nameless:` for sent rows naming nobody) | partial (`name:` and the name if unresolved) | yes (JID → E.164) | yes (Apple chat id) |
-| **Sender phone** (`sender_handle`, incoming) | yes | yes | yes | yes | yes | yes (groups via sender JID) | yes |
+| **Sender phone** (`sender_identity`, incoming) | yes | yes | yes | yes | yes | yes (groups via sender JID) | yes |
 | **Names** | yes (`<contactName>` in the XML) | yes (`contact_name` in the XML) | yes (mail headers) | partial (the rows; a name-only chat has no address) | yes (`Sender Name` on the rows) | yes (`wa.db` via wtsexporter) | yes (AddressBook) |
 | **Direction** | yes | yes | yes | yes (`Is From Me` / Direction) | yes (`Type`) | yes (`from_me`) | yes (`is_from_me` in DB) |
 | **Groups** | partial (PDU MMS) | yes (MMS) | partial (flat multi-address) | partial (two or more people wrote; no title) | partial (WhatsApp roster weak) | yes (title + sender phones) | yes (full DB roster) |
@@ -47,7 +47,7 @@ The rule "The address book is a file for editing contacts, not a source of them"
 | **SMS Backup+** | Offline `.eml` only (no IMAP); call-log mails skipped; archive attachment→message pairing is guesswork; a peer known only by name gets a conversation of its own; a mail naming nobody is skipped and counted as a parse error |
 | **OpenExtract** | No media extraction; a group is known only from two or more people writing in it, so one where only one other person wrote is read as one-to-one; thin source format; a chat the export names by a person's name only is matched to a contact by that name on import, or stays Unknown |
 | **iMazing** | Reactions/replies are free text; WhatsApp groups lack full roster; naive dates are read in the zone chosen in the Import form's **Time zone of the messages** field |
-| **WhatsApp** | Requires external `wtsexporter` (pip or bundled binary); a one-to-one chat whose JID is not a phone number (an `@lid` id) keeps the raw id, written as its participant with `handle_type` `other`; Status updates (`status@broadcast`) and Channel posts (`@newsletter`) are skipped and counted as `skipped_status_updates` and `skipped_channel_posts`; full group roster depends on upstream JSON |
+| **WhatsApp** | Requires external `wtsexporter` (pip or bundled binary); a one-to-one chat whose JID is not a phone number (an `@lid` id) keeps the raw id, written as its participant with `identity_type` `other`; Status updates (`status@broadcast`) and Channel posts (`@newsletter`) are skipped and counted as `skipped_status_updates` and `skipped_channel_posts`; full group roster depends on upstream JSON |
 | **iMessage** (`imessage-ir-exporter`) | No WhatsApp; reads the database through the separate `imessage-reader` program (GPL, shipped beside the app) because `imessage-database` is GPL and the app is not; needs Mac/`chat.db` or iOS backup; no TXT/HTML |
 
 ## Other dimensions
@@ -60,7 +60,8 @@ The rule "The address book is a file for editing contacts, not a source of them"
 | **Telegram** | no | no | no | no | no | no | no |
 | **Slack** | no | no | no | no | no | no | no |
 | **`participants_json`** | yes (unified CSV) | yes | yes | yes | yes | yes | yes |
-| **Reactions / tapbacks** | no | no | no | no | free-text in `source_fields_json` | reactions in `source_fields_json` | structured `tapbacks_json` |
+| **Reactions / tapbacks** | no | no | no | no | free-text in `source_fields_json` | reactions in `source_fields_json` | each message's `reactions` (`reactions_json` in CSV) |
+| **Deleted in the source app / Unsent** | no | no | no | no | no | no | each message's `deletion` (`deletion` in CSV) |
 | **Edits / replies** | no | no | no | no | raw dates / free-text | reply in `source_fields_json` | `edits_json` / thread GUIDs |
 | **Source extras** | `pdu_*` (in `source_fields_json`) | `subject`, `message_kind`, `source_fields_json` | `smssync_id`, `eml_path` (in `source_fields_json`) | `source_kind`, `has_attachments` (in `source_fields_json`) | vendor cols (in `source_fields_json`) | `jid` / `key_id` (in `source_fields_json`) | `parts_json`, `app_json`, … |
 | **Timezone** | XML/PDU epoch | XML epoch | EML dates | vendor `Date` | naive, zone from the Import form | epoch from wtsexporter | DB epoch + offset |

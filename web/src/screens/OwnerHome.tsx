@@ -7,11 +7,13 @@ import {
   LEFT_PANEL_MAX_WIDTH,
   LEFT_PANEL_MIN_WIDTH,
   LEFT_PANEL_STORAGE_KEY,
+  leftPanelWindowMaxWidth,
 } from "../components/leftPanelWidth";
 import { NAV_LEADING_ROW_CLASS } from "../components/navSectionLayout";
 import PlainButton from "../components/PlainButton";
 import { useAuth } from "../lib/auth";
 import { parseSelectKey } from "../lib/selectKey";
+import { useWindowWidth } from "../lib/useWindowWidth";
 import { OwnerAccountsPanel } from "./owner/OwnerAccountsPanel";
 import { OwnerAuditTrailPanel } from "./owner/OwnerAuditTrailPanel";
 import { OwnerDashboardPanel } from "./owner/OwnerDashboardPanel";
@@ -75,6 +77,8 @@ export default function OwnerHome() {
       LEFT_PANEL_MAX_WIDTH,
     ),
   );
+  // Capped for this window as the message shell's panel is (#1718).
+  const navMax = leftPanelWindowMaxWidth(useWindowWidth());
 
   // `/owner` and any unknown section land on User Accounts, and the address
   // bar says so, so a reload comes back to the same place.
@@ -108,9 +112,7 @@ export default function OwnerHome() {
   return (
     <div className="flex h-screen flex-col bg-bg font-sans text-text">
       <AppHeader
-        searchQuery={accountSearch}
-        searchTarget="accounts"
-        fullScreen={false}
+        search={{ target: "accounts", query: accountSearch }}
         onSearchChange={handleSearchChange}
         onSearch={handleSearchChange}
       />
@@ -118,7 +120,7 @@ export default function OwnerHome() {
         <nav
           aria-label="Owner Home sections"
           className="flex h-full shrink-0 flex-col gap-0.5 overflow-auto border-r border-border bg-panel px-3 py-2"
-          style={{ width: navWidth }}
+          style={{ width: Math.min(navWidth, navMax) }}
         >
           {SECTIONS.map((id) => (
             <PlainButton

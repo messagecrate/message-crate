@@ -1,9 +1,10 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { holdDesktopJob } from "../../lib/desktopJob";
 import type { ActiveImportSession } from "../../lib/importSession";
+import { fill, setupUser } from "../../test/user";
 import ResumeImportPanel from "./ResumeImportPanel";
 import type { ResumeDecision } from "./resumeDecision";
 
@@ -39,7 +40,7 @@ describe("ResumeImportPanel", () => {
   });
 
   it("offers to resume the upload and calls back on the user's choice", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
     const decision: ResumeDecision = { kind: "resume_push", session: session() };
@@ -61,7 +62,7 @@ describe("ResumeImportPanel", () => {
   });
 
   it("offers to start over when the extract never finished", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
@@ -85,7 +86,7 @@ describe("ResumeImportPanel", () => {
   });
 
   it("offers to show the summary again for a session waiting at a gate", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
@@ -109,7 +110,7 @@ describe("ResumeImportPanel", () => {
   });
 
   it("offers to carry on for a session that died mid media pass", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
@@ -133,7 +134,7 @@ describe("ResumeImportPanel", () => {
   });
 
   it("offers discard alone, naming the path, when the staged files are gone", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
@@ -157,7 +158,7 @@ describe("ResumeImportPanel", () => {
   });
 
   it("does not name a path when the session never recorded one", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
     // Every Import Run created outside the desktop app — the CLI importer,
@@ -183,7 +184,7 @@ describe("ResumeImportPanel", () => {
   });
 
   it("says the folder could not be checked rather than calling it gone", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
@@ -206,7 +207,7 @@ describe("ResumeImportPanel", () => {
   });
 
   it("offers discard alone when the session belongs to another install", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
@@ -228,7 +229,7 @@ describe("ResumeImportPanel", () => {
   });
 
   it("offers discard alone when the stored settings can't be read", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
@@ -261,7 +262,7 @@ describe("ResumeImportPanel", () => {
   });
 
   it("surfaces a failed resume attempt without blocking the retry", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onResume = vi.fn();
     const decision: ResumeDecision = {
       kind: "resume_review",
@@ -284,7 +285,7 @@ describe("ResumeImportPanel", () => {
     expect(onResume).toHaveBeenCalledTimes(1);
   });
   it("offers to pick up a copy that did not finish", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
@@ -308,7 +309,7 @@ describe("ResumeImportPanel", () => {
   });
 
   it("names the backup that changed, and offers to start over", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
@@ -351,7 +352,7 @@ describe("ResumeImportPanel", () => {
   });
 
   it("asks for the backup password and holds Pick up until it is filled", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
@@ -372,7 +373,7 @@ describe("ResumeImportPanel", () => {
     expect(resume).toBeDisabled();
     expect(screen.getByRole("button", { name: "Discard this import" })).toBeEnabled();
 
-    await user.type(field, "hunter2");
+    await fill(user, field, "hunter2");
     expect(resume).toBeEnabled();
     await user.click(resume);
     expect(onResume).toHaveBeenCalledTimes(1);
@@ -380,7 +381,7 @@ describe("ResumeImportPanel", () => {
   });
 
   it("asks for the backup password and holds Start over until it is filled", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onResume = vi.fn();
     const decision: ResumeDecision = { kind: "restart", session: session({ stage: "parse" }) };
     render(
@@ -395,7 +396,7 @@ describe("ResumeImportPanel", () => {
     const resume = screen.getByRole("button", { name: "Start over" });
     expect(resume).toBeDisabled();
     // Spaces alone are not a password: the extract trims it to nothing.
-    await user.type(screen.getByLabelText("Encryption password"), "   ");
+    await fill(user, screen.getByLabelText("Encryption password"), "   ");
     expect(resume).toBeDisabled();
 
     await user.type(screen.getByLabelText("Encryption password"), "hunter2");
@@ -409,7 +410,7 @@ describe("ResumeImportPanel", () => {
   ] as const)(
     "asks for the WhatsApp key on %s and holds the button until it is filled",
     async (kind, stage, label) => {
-      const user = userEvent.setup();
+      const user = setupUser();
       const onResume = vi.fn();
       const decision: ResumeDecision = { kind, session: session({ source: "whatsapp", stage }) };
       render(
@@ -425,7 +426,7 @@ describe("ResumeImportPanel", () => {
       const resume = screen.getByRole("button", { name: label });
       expect(resume).toBeDisabled();
 
-      await user.type(screen.getByLabelText("Decryption key"), "0123abcd");
+      await fill(user, screen.getByLabelText("Decryption key"), "0123abcd");
       await user.click(resume);
       expect(onResume).toHaveBeenCalledWith("0123abcd");
     },
@@ -441,5 +442,45 @@ describe("ResumeImportPanel", () => {
     expect(screen.queryByLabelText("Encryption password")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Decryption key")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Pick up" })).toBeEnabled();
+  });
+  // Resuming starts a Stage, which the desktop refuses while another job
+  // runs, so the button waits for it and says which job it waits for, as
+  // the Import form does (#1629).
+  it("holds the resume while another desktop job runs and says which one", async () => {
+    const user = setupUser();
+    const onResume = vi.fn();
+    const onDiscard = vi.fn();
+    const decision: ResumeDecision = { kind: "resume_push", session: session() };
+    const release = holdDesktopJob("Export");
+    try {
+      render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
+
+      expect(screen.getByRole("button", { name: "Resume" })).toBeDisabled();
+      expect(screen.getByRole("status")).toHaveTextContent(
+        "An export is running. Resume can start once it ends.",
+      );
+      await user.click(screen.getByRole("button", { name: "Discard this import" }));
+      expect(onDiscard).toHaveBeenCalledTimes(1);
+    } finally {
+      act(() => release());
+    }
+
+    expect(screen.getByRole("button", { name: "Resume" })).toBeEnabled();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Resume" }));
+    expect(onResume).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a discard-only decision alone while another desktop job runs", () => {
+    const decision: ResumeDecision = { kind: "other_device", session: session() };
+    const release = holdDesktopJob("Convert");
+    try {
+      render(<ResumeImportPanel decision={decision} onResume={vi.fn()} onDiscard={vi.fn()} />);
+
+      expect(screen.getByRole("button", { name: "Discard this import" })).toBeEnabled();
+      expect(screen.queryByRole("status")).not.toBeInTheDocument();
+    } finally {
+      release();
+    }
   });
 });

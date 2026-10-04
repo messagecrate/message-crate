@@ -674,6 +674,90 @@ async fn an_upload_answers_its_state() {
     crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::NotFound);
 }
 
+/// The upload routes that do not install anything never read the stored
+/// file, even when one with the upload's fingerprint is already stored:
+/// reading an upload's state, writing a part and ending an upload answer
+/// from the upload's own files, so a client polling a large video's upload
+/// does not pay a read of the whole file each time. Starting an upload
+/// reads the stored file once, to answer that it is already there.
+#[tokio::test]
+async fn the_upload_routes_read_a_stored_file_only_to_start_an_upload() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let mut state = fixture.state.clone();
+    state.asset_part_size = 16;
+    let bytes: Vec<u8> = (0u8..40).collect();
+    let sha = sha256_hex(&bytes);
+
+    let (_, started): (String, serde_json::Value) = crate::test_support::post_created_json(
+        &state,
+        &format!("/v1/assets/{sha}/uploads"),
+        &user.token,
+        serde_json::json!({ "bytes": 40 }),
+    )
+    .await;
+    let upload_id = started["upload_id"].as_str().unwrap();
+    let (status, text) = crate::test_support::put_raw(
+        &state,
+        &format!("/v1/assets/{sha}"),
+        &user.token,
+        "application/octet-stream",
+        bytes.clone(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED, "{text}");
+    let stored = state
+        .cfg
+        .paths
+        .assets_dir_for_account(user.account_id)
+        .join(shard_rel_path(&Sha256::parse(&sha).unwrap(), ""));
+    assert!(stored.is_file());
+    let before = hashed::count(&stored);
+
+    let upload: serde_json::Value = crate::test_support::get_json(
+        &state,
+        &format!("/v1/assets/{sha}/uploads/{upload_id}"),
+        &user.token,
+    )
+    .await;
+    assert_eq!(upload["received_parts"], serde_json::json!([]));
+    let (status, text) = crate::test_support::put_raw(
+        &state,
+        &format!("/v1/assets/{sha}/uploads/{upload_id}/parts/1"),
+        &user.token,
+        "application/octet-stream",
+        bytes[..16].to_vec(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    let (status, text) = crate::test_support::delete_raw(
+        &state,
+        &format!("/v1/assets/{sha}/uploads/{upload_id}"),
+        &user.token,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "{text}");
+    assert_eq!(
+        hashed::count(&stored),
+        before,
+        "reading, writing a part of and ending an upload read the stored file"
+    );
+
+    let (status, text) = crate::test_support::post_raw(
+        &state,
+        &format!("/v1/assets/{sha}/uploads"),
+        &user.token,
+        "application/json",
+        serde_json::to_vec(&serde_json::json!({ "bytes": 40 })).unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{text}");
+    assert_eq!(
+        hashed::count(&stored),
+        before + 1,
+        "starting an upload of a stored file reads it once"
+    );
+}
+
 /// The attachment size limit is read from the Server Settings on each upload:
 /// the owner lowers it, and the next upload over it is refused by the server
 /// that was already running, whether it is sent as one `PUT` or opened as a
@@ -1389,19 +1473,22 @@ async fn completing_an_upload_for_a_blob_a_put_stored_first_answers_200() {
 
 /// An account's conversation with two stored photos: the first has a preview
 /// that `process-assets` would have written, the second has none.
-struct PreviewFixture {
-    conversation_id: i64,
+pub(crate) struct PreviewFixture {
+    pub(crate) conversation_id: i64,
     /// Fingerprint of the original that has a preview.
-    with_preview: String,
+    pub(crate) with_preview: String,
     /// Fingerprint of the original that has none.
-    without_preview: String,
+    pub(crate) without_preview: String,
 }
 
-const ORIGINAL_BYTES: &[u8] = b"a photo as the phone took it";
-const UNCONVERTED_BYTES: &[u8] = b"a photo with no preview";
-const PREVIEW_BYTES: &[u8] = b"the same photo as a jpeg";
+pub(crate) const ORIGINAL_BYTES: &[u8] = b"a photo as the phone took it";
+pub(crate) const UNCONVERTED_BYTES: &[u8] = b"a photo with no preview";
+pub(crate) const PREVIEW_BYTES: &[u8] = b"the same photo as a jpeg";
 
-async fn seed_attachment_with_preview(state: &AppState, account_id: i64) -> PreviewFixture {
+pub(crate) async fn seed_attachment_with_preview(
+    state: &AppState,
+    account_id: i64,
+) -> PreviewFixture {
     let conversation_id = crate::test_support::seed_conversation(
         state,
         &crate::test_support::SeedConversation {
@@ -1446,6 +1533,7 @@ async fn seed_attachment_with_preview(state: &AppState, account_id: i64) -> Prev
     fs::create_dir_all(preview.parent().unwrap()).unwrap();
     fs::write(preview, PREVIEW_BYTES).unwrap();
 
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     for (sha, derived) in [(&with_preview, true), (&without_preview, false)] {
         sqlx::query(
             "INSERT INTO attachments (
@@ -1459,10 +1547,11 @@ async fn seed_attachment_with_preview(state: &AppState, account_id: i64) -> Prev
         .bind(derived.then_some(preview_sha.as_str()))
         .bind(derived.then_some(preview_path.as_str()))
         .bind(derived.then_some("image/jpeg"))
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
     }
+    tx.commit().await.unwrap();
     PreviewFixture {
         conversation_id,
         with_preview: with_preview.to_string(),
@@ -1828,5 +1917,223 @@ async fn a_fingerprint_in_capitals_is_stored_under_its_lower_case_name() {
     assert_eq!(
         response.headers()[header::LOCATION],
         format!("/v1/assets/{sha}").as_str()
+    );
+}
+
+/// One answer to a GET, read whole: the status, the headers and the body.
+pub(crate) struct Fetched {
+    pub(crate) status: StatusCode,
+    pub(crate) headers: reqwest::header::HeaderMap,
+    pub(crate) body: Vec<u8>,
+}
+
+impl Fetched {
+    pub(crate) fn header(&self, name: &str) -> Option<&str> {
+        self.headers.get(name).and_then(|v| v.to_str().ok())
+    }
+
+    pub(crate) fn text(&self) -> String {
+        String::from_utf8_lossy(&self.body).into_owned()
+    }
+}
+
+/// GET `path` as a media element does: no `Accept` that names JSON, with
+/// `headers` added, and with `token` as the Bearer credential when there is
+/// one.
+pub(crate) async fn fetch(
+    state: &AppState,
+    path: &str,
+    token: Option<&str>,
+    headers: &[(&str, &str)],
+) -> Fetched {
+    let server = crate::test_support::serve(state).await;
+    let mut request = reqwest::Client::new()
+        .get(format!("{}{path}", server.base()))
+        .header(reqwest::header::ACCEPT, "*/*");
+    if let Some(token) = token {
+        request = request.bearer_auth(token);
+    }
+    for (name, value) in headers {
+        request = request.header(*name, *value);
+    }
+    let response = request.send().await.unwrap();
+    let status = response.status();
+    let headers = response.headers().clone();
+    let body = response.bytes().await.unwrap().to_vec();
+    Fetched {
+        status,
+        headers,
+        body,
+    }
+}
+
+/// A video plays from a media element that asks for the file a range at a
+/// time and seeks by asking for another (`docs/architecture/media.md`), so
+/// both routes that answer an attachment's bytes answer a byte range: a
+/// closed one, an open-ended one and a suffix, each as `206` with the bytes
+/// and a `Content-Range` that places them.
+#[tokio::test]
+async fn both_asset_routes_answer_a_byte_range() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let state = &fixture.state;
+    let seeded = seed_attachment_with_preview(state, user.account_id).await;
+    let sha = &seeded.with_preview;
+
+    for (path, bytes) in [
+        (format!("/v1/assets/{sha}"), ORIGINAL_BYTES),
+        (format!("/v1/assets/{sha}/preview"), PREVIEW_BYTES),
+    ] {
+        let len = bytes.len();
+        let whole = fetch(state, &path, Some(&user.token), &[]).await;
+        assert_eq!(whole.status, StatusCode::OK, "{path}: {}", whole.text());
+        assert_eq!(whole.body, bytes, "{path}");
+        assert_eq!(whole.header("accept-ranges"), Some("bytes"), "{path}");
+
+        for (range, start, end) in [
+            ("bytes=2-5", 2, 5),
+            ("bytes=3-", 3, len - 1),
+            ("bytes=-4", len - 4, len - 1),
+            // A last position past the end is cut to the end.
+            ("bytes=1-100000", 1, len - 1),
+        ] {
+            let part = fetch(state, &path, Some(&user.token), &[("range", range)]).await;
+            assert_eq!(
+                part.status,
+                StatusCode::PARTIAL_CONTENT,
+                "{path} {range}: {}",
+                part.text()
+            );
+            assert_eq!(part.body, &bytes[start..=end], "{path} {range}");
+            assert_eq!(
+                part.header("content-range"),
+                Some(format!("bytes {start}-{end}/{len}").as_str()),
+                "{path} {range}"
+            );
+            assert_eq!(
+                part.header("content-length"),
+                Some((end - start + 1).to_string().as_str()),
+                "{path} {range}"
+            );
+            assert_eq!(part.header("accept-ranges"), Some("bytes"), "{path}");
+        }
+    }
+}
+
+/// A range that starts past the end of the file, or a suffix of nothing,
+/// selects no byte: `416` as a problem document, with the `Content-Range`
+/// that tells the client how long the file is.
+#[tokio::test]
+async fn an_unsatisfiable_range_answers_416_with_the_length() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let state = &fixture.state;
+    let seeded = seed_attachment_with_preview(state, user.account_id).await;
+    let sha = &seeded.with_preview;
+
+    for (path, len) in [
+        (format!("/v1/assets/{sha}"), ORIGINAL_BYTES.len()),
+        (format!("/v1/assets/{sha}/preview"), PREVIEW_BYTES.len()),
+    ] {
+        for range in [format!("bytes={len}-"), "bytes=-0".to_string()] {
+            let answer = fetch(state, &path, Some(&user.token), &[("range", &range)]).await;
+            crate::test_support::expect_problem(
+                answer.status,
+                &answer.text(),
+                crate::problem::ProblemType::RangeNotSatisfiable,
+            );
+            assert_eq!(
+                answer.header("content-range"),
+                Some(format!("bytes */{len}").as_str()),
+                "{path} {range}"
+            );
+        }
+    }
+}
+
+/// A `Range` the server does not serve as one range (another unit, several
+/// ranges, a range that ends before it starts) is ignored, as RFC 9110
+/// allows, and the whole file is answered. So is a range under an
+/// `If-Range` that does not name this file: the client holds another
+/// version, and a part of this one would corrupt it.
+#[tokio::test]
+async fn a_range_the_server_does_not_serve_answers_the_whole_file() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let state = &fixture.state;
+    let seeded = seed_attachment_with_preview(state, user.account_id).await;
+    let sha = &seeded.with_preview;
+    let path = format!("/v1/assets/{sha}");
+
+    for headers in [
+        vec![("range", "items=0-3")],
+        vec![("range", "bytes=0-1, 4-5")],
+        vec![("range", "bytes=5-2")],
+        vec![("range", "bytes=0-3"), ("if-range", "\"another-version\"")],
+    ] {
+        let answer = fetch(state, &path, Some(&user.token), &headers).await;
+        assert_eq!(answer.status, StatusCode::OK, "{headers:?}");
+        assert_eq!(answer.body, ORIGINAL_BYTES, "{headers:?}");
+    }
+
+    // The original is named by its fingerprint, so its `ETag` is the
+    // fingerprint, and an `If-Range` naming it gets the range.
+    let whole = fetch(state, &path, Some(&user.token), &[]).await;
+    let etag = format!("\"{sha}\"");
+    assert_eq!(whole.header("etag"), Some(etag.as_str()));
+    let part = fetch(
+        state,
+        &path,
+        Some(&user.token),
+        &[("range", "bytes=0-3"), ("if-range", &etag)],
+    )
+    .await;
+    assert_eq!(part.status, StatusCode::PARTIAL_CONTENT);
+    assert_eq!(part.body, &ORIGINAL_BYTES[..4]);
+}
+
+/// A Preview has no `ETag`, so no `If-Range` can name it: a `Range` sent with
+/// one answers the whole Preview, even when it names the original's tag, and
+/// so do several ranges.
+#[tokio::test]
+async fn a_preview_under_if_range_answers_the_whole_preview() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let state = &fixture.state;
+    let seeded = seed_attachment_with_preview(state, user.account_id).await;
+    let sha = &seeded.with_preview;
+    let path = format!("/v1/assets/{sha}/preview");
+    let original_tag = format!("\"{sha}\"");
+
+    let whole = fetch(state, &path, Some(&user.token), &[]).await;
+    assert_eq!(whole.header("etag"), None, "a Preview has no ETag");
+    for headers in [
+        vec![("range", "bytes=0-3"), ("if-range", original_tag.as_str())],
+        vec![("range", "bytes=0-3"), ("if-range", "\"anything\"")],
+        vec![("range", "bytes=0-1, 4-5")],
+    ] {
+        let answer = fetch(state, &path, Some(&user.token), &headers).await;
+        assert_eq!(answer.status, StatusCode::OK, "{headers:?}");
+        assert_eq!(answer.body, PREVIEW_BYTES, "{headers:?}");
+    }
+}
+
+/// The asset store never follows a symlink, so a read of an asset whose path
+/// holds one answers `404 Not Found`, not the file it points at.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_symlink_at_an_assets_path_reads_as_no_file() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let state = &fixture.state;
+    let seeded = seed_attachment_with_preview(state, user.account_id).await;
+    let sha = Sha256::parse(&seeded.with_preview).unwrap();
+    let assets_dir = state.cfg.paths.assets_dir_for_account(user.account_id);
+    let stored = assets_dir.join(shard_rel_path(&sha, ""));
+    let elsewhere = fixture.dir().join("elsewhere");
+    fs::write(&elsewhere, b"a file outside the store").unwrap();
+    fs::remove_file(&stored).unwrap();
+    std::os::unix::fs::symlink(&elsewhere, &stored).unwrap();
+
+    let answer = fetch(state, &format!("/v1/assets/{sha}"), Some(&user.token), &[]).await;
+    crate::test_support::expect_problem(
+        answer.status,
+        &answer.text(),
+        crate::problem::ProblemType::NotFound,
     );
 }

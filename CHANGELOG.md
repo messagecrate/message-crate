@@ -21,6 +21,54 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-04 **A message deleted in Apple Messages, or unsent, is kept and
+  marked.** A message deleted in Apple Messages that its recently deleted
+  list still holds is imported with its text and marked Deleted in the
+  source app. A message its sender unsent is imported as Unsent, rather than
+  as a line saying someone unsent a message. A message only partly unsent
+  keeps what is left and has no mark. Search finds marked messages like any
+  other, and `deleted:yes` or `deleted:no` on Messages narrows to them or
+  away from them. Nothing is hidden. A later import of the same message
+  that carries the mark adds it to the message already there. Export keeps
+  the mark, so a conversation exported and imported again keeps it too. The
+  conversation shows the mark in a coming release.
+- 2026-10-04 **A long conversation scrolls without downloading its photos,
+  and videos and voice notes play in place.** A photo or video shows as a
+  small thumbnail, loaded only when its message scrolls near the screen,
+  with its file name in its place until the server has made it. A video
+  shows a play button and loads nothing until it is pressed; then it plays
+  in the conversation and seeking loads only the part sought to, where
+  before a video downloaded whole before its first frame. A voice note has a
+  play button of its own. The viewer keeps the thumbnail up while the full
+  photo loads and has the next and previous photos ready. A HEIC photo, a
+  HEVC video or an AMR voice note opens as the copy every browser can show,
+  the same in every browser, and says so when that copy is not made yet.
+  Every attachment has a download button, which always saves the original
+  under its own name; the desktop app asks where to save it.
+- 2026-10-04 **Photos and videos get their browser copies after every
+  import, without anyone asking.** Once an import ends, the server makes a
+  small thumbnail of every photo and video it brought, and a copy every
+  browser can show of each HEIC photo, HEVC video, voice note and other file
+  browsers often cannot play. It works in the background, so the import
+  finishes as soon as its messages are in, and a server stopped part-way
+  finishes the rest when it starts again. Until now those copies existed
+  only after someone ran a command on the server.
+- 2026-10-04 **The server keeps its log in files the owner can read.** Docker
+  and the desktop app's server now write their log to a `logs` directory
+  beside the database, as well as to their output, so the lines that explain a
+  failure are still there after a restart. It keeps at most 250 MB, in five
+  files of 50 MB, and deletes the oldest file when a new one starts. The owner
+  can read it through the server's interface, newest first, narrow it to
+  errors or warnings, search it, and download a whole file. No other account
+  can. A Logs screen on Owner Home that shows it comes next. The log never
+  holds a password, a token, a search, message text, an attachment or a contact's
+  name, phone number or email address.
+- 2026-10-04 **A search word the other list takes stays in the box.**
+  Switching between Conversations and Messages with a word only one of them
+  takes, such as `from:me` on Conversations, no longer shows an error. The
+  word is underlined with a red wavy line and the list searches with the rest.
+  Click the word to see which list it works in, and **Remove** it there if you
+  no longer want it. Switching back searches with it again.
 - 2026-10-04 **Notes you sent to yourself are their own conversation.** A chat
   with your own number or email, such as Apple Messages to yourself or
   WhatsApp's "Message yourself", imports with no one else in it and no
@@ -126,12 +174,13 @@ released versions carry their date on the heading.
   also makes each contact in the file match its rows, so deleting a row
   takes that identity off the contact. Contacts the file does not mention
   are left alone. A load does exactly what the file says and never corrects
-  it: a row moves only the identity it lists, so to move a number on both
-  Text Message and WhatsApp, give each its own row. A file with a mistake in
-  it is refused whole, and each row at fault is listed with its reason, so
-  nothing is half loaded. Message Crate no longer reads a phone's vCard
-  file, which put every number on a card into your contacts whether or not
-  a message ever used it.
+  it: a name in the file replaces the contact's name, even one you typed in
+  the app, and a row moves only the identity it lists, so to move a number
+  on both Text Message and WhatsApp, give each its own row. A file with a
+  mistake in it is refused whole, and each row at fault is listed with its
+  reason, so nothing is half loaded. Message Crate no longer reads a phone's
+  vCard file, which put every number on a card into your contacts whether
+  or not a message ever used it.
 - 2026-10-01 **The Demo Account has Contact Groups.** Demo Data is now built
   the way your own Message Crate is: its messages are imported first, and an
   Address Book then names the people in them and puts them in Family, Work,
@@ -159,6 +208,23 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-04 **A reaction travels on the message it reacts to.** An Apple
+  Messages tapback or emoji reaction is written into an export on the
+  message it reacts to, with the person who reacted named, and an import
+  stores it under that person. Export writes the reactions the server keeps
+  the same way, so a conversation exported and imported again keeps them.
+  Every app's reactions will take this one shape; Apple Messages is the first,
+  and WhatsApp follows in a coming release.
+- 2026-10-04 **The server sends an attachment a piece at a time.** A video
+  or voice note can start playing before the whole file has arrived, and a
+  player can jump to any point in it without downloading what comes before.
+  The server also hands the app a short-lived link to one attachment, which
+  works for an hour and ends when you log out, so a player built into the
+  page can load it. The app's players start using both in a coming release;
+  nothing on screen changes yet. The architecture notes record how
+  attachments are to be shown: a small thumbnail in the conversation, the
+  original or a browser-ready copy chosen by file type when one is opened,
+  and the original whenever one is downloaded.
 - 2026-09-22 **An account identity means ownership.** The Profile tab now
   says what the identities are for: your phone numbers and emails, which
   Import uses to determine which messages belong to you. The glossary and
@@ -222,7 +288,7 @@ released versions carry their date on the heading.
   Upload's button now pauses the Import Run and keeps what it staged, and
   the next visit to Import offers to resume it, sending only the
   conversations not yet sent. Before, the run was recorded as completed, the
-  staged folder was deleted, and the conversations it had not reached were
+  staged files were deleted, and the conversations it had not reached were
   never imported. The run's report now puts every conversation in exactly
   one count, and names the ones the stop left unsent. An Upload that fails,
   or sends some conversations and fails the rest, is paused the same way
@@ -230,11 +296,11 @@ released versions carry their date on the heading.
   reads Paused. Logging out during an Upload asks first, then pauses the
   Upload before the session ends, so the same account can resume it after
   logging in; before, every conversation left was recorded as failed. When
-  the server doesn't record a run as finished, the staged folder is kept and
+  the server doesn't record a run as finished, the staged files are kept and
   the next visit resumes the run, which then gets its Saved Search and
   Contact Group. A resumed run's report covers every part of the run, not
-  only the last. A Staging or Media stage that fails deletes its staged
-  folder at once, since nothing can resume it, instead of leaving a full
+  only the last. A Staging or Media Stage that fails deletes its staged
+  files at once, since nothing can resume it, instead of leaving a full
   unencrypted copy of your messages in the Staging Directory.
 - 2026-10-02 **One desktop job runs at a time.** An export won't start while
   an Import Run's job runs, and the reverse, and the screen says why. Before,
@@ -251,6 +317,70 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **An import lists every backup file it could not read, and
+  notes what it kept with a caveat.** A CSV, XML, mail or MMS file in the
+  backup that the importer could not read, which before showed only in the
+  import log, is now an error in the finished run that names the file.
+  Something the import did with an item that is worth knowing but is not a
+  failure is now a note in a **Notes** list of its own under the errors:
+  an iMazing Live Photo video that two rows claim, an SMS Backup+ message
+  that lost a part it could not read, a message that records no
+  phone number for the other person, a group message that names none of
+  your numbers, a group member kept by an email address, a chat kept under a
+  name alone, and a WhatsApp attachment whose file is not in the backup,
+  each named. The notes are kept with the run, so Storage shows them later
+  too, and a run with notes and no errors still reads as completed.
+- 2026-10-04 **Staging's progress no longer jumps forward when a file the
+  backup names is not there.** The byte total counted such a file's size
+  and took it off only when Staging reached it, so the percentage leapt
+  ahead partway through. A file that is not on disk, and an attachment
+  with no bytes, are now left out of the total before Staging starts.
+  Apple Messages from an encrypted iPhone backup is the one exception:
+  its files are inside the backup, so one that is missing there is still
+  found only when Staging reaches it.
+- 2026-10-04 **Resuming an import waits while another job runs.** The
+  Import screen offered to resume a paused or waiting import while an
+  export or a conversion was running, and the desktop app then refused
+  it. The resume button now stays off until that job ends and says which
+  job it is waiting for, as the Import form does.
+- 2026-10-04 **An import whose app closes or crashes keeps every Error
+  found so far.** Staging reported its Errors only when it finished, Media
+  reported none, and an Upload's skipped attachments waited for the end of
+  the Upload, so an app that closed partway lost them. Every Error now
+  reaches the run the moment it is found. A file Media could not convert,
+  or left out because it was still too large after converting, is listed
+  as an Error with the file and the reason; one it could not convert keeps
+  its original, and its Error goes when a resumed Media converts it. A
+  resumed run lists an Error it finds again once. Discarding a run after
+  a crash during a resumed Upload no longer records a conversation as
+  failed when that Upload had already sent it.
+- 2026-10-04 **The server's `import` command names the file it refuses an
+  attachment in.** When an attachment broke a rule, such as a path that
+  leaves the export directory or bytes that do not match the fingerprint
+  the file states, the `import` command stopped with the line and the rule
+  but not the file. Every refusal now prints the same way: the file, then
+  the line and the rule.
+- 2026-10-04 **A group text from an SMS Backup+ archive stays one
+  conversation when a member's contact gained an email address.** SMS
+  Backup+ names a person by their email address when their contact on the
+  phone had one at backup time, and by their number otherwise, so one group
+  could split in two. The import now learns each address's number from that
+  person's own texts in the archive and keys the group member by the number.
+  A member the archive never gives a number for keeps their email address,
+  and so does one whose address it gives two numbers, as a contact card
+  two people share does. The run's summary counts both.
+- 2026-10-04 **A received SMS Backup+ group text that doesn't name you shows
+  its sender's name.** Such a text is filed under its sender, who showed up
+  as a bare address. The sender now gets the name the mail gives them.
+- 2026-10-04 **Logging out during an Upload waits at most 15 seconds, and
+  an Upload whose session ends pauses cleanly.** Logging out during an
+  Upload waited for the Upload to pause for as long as that took, and an
+  Upload that did not stop kept you logged in. Logout now waits at most 15
+  seconds, with a **Log out now** button, and then logs out anyway and
+  says the Upload resumes from what it had sent. When your session ended
+  while an Upload ran and nothing else noticed, the Upload kept going and
+  recorded every remaining conversation as failed. It now pauses at once,
+  records none of them as failed, and logs you out.
 - 2026-10-04 **A group imported from two backups takes its current name,
   however the backups arrive.** When two copies of one group chat became
   one conversation, the name it ended with depended on whether they came
@@ -346,7 +476,7 @@ released versions carry their date on the heading.
   own. Such a person also became two contacts on import, one holding their
   name and one with no name; they are now one contact.
 - 2026-10-03 **A video, photo or audio file that cannot be converted says
-  why, briefly.** The error for a file the Media stage of an Import Run
+  why, briefly.** The error for a file the Media Stage of an Import Run
   could not convert held the converter's version, build settings and progress
   lines, with the reason at the end of several kilobytes. It now holds only
   the lines that say why the conversion failed.
@@ -588,6 +718,40 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-04 How an exporter writing a format other than JSON Lines counts
+  the size of an attachment with no file was reworked to match Staging,
+  with nothing visible.
+- 2026-10-04 **Converting an SMS Backup & Restore backup says what it
+  left out.** The log said nothing about the repeated copies it dropped,
+  the messages with an invalid date, a date outside the range, no usable
+  address or an unknown type, the drafts, the picture messages with nobody
+  on them, the message parts it could not read, or the character codes
+  that stand for no character, and it named
+  only the first five files it could not read. It now lists each count
+  as soon as the backup is read, even when the conversion then stops, and
+  names every file it could not read.
+- 2026-10-04 **Exporting from a second server or account no longer makes
+  the first download every attachment again.** When Export from two
+  servers, or two accounts, wrote into one directory, the run that
+  finished last forgot which attachments the other had already
+  downloaded, so the other's next Export downloaded all of them again. Each
+  server and account now keeps its own record.
+- 2026-10-04 **Nothing an export did not write is ever removed.** Every
+  step that removes or replaces files from an earlier export, including
+  the obfuscated export's placeholders, now checks for itself that an
+  export wrote the directory, and refuses one that it did not. Before,
+  three of those steps relied on the step before them to check.
+- 2026-10-04 **Messages sent to nobody survive an export as SMS Backup+
+  mail.** OpenExtract keeps sent texts that name no recipient in one
+  conversation. Exported as **EML (SMS Backup+)** and imported again, they
+  came back as a conversation with a made-up person, who was then added
+  to Contacts. They now come back as the same conversation with no one in
+  it.
+- 2026-10-04 **A person known only by a name that looks like a number keeps
+  their messages through an SMS Backup+ export.** A person a backup named
+  "+1 555 0101", with no address, lost every message when exported as
+  **EML (SMS Backup+)** and imported again. The import now keeps them in
+  that person's conversation.
 - 2026-10-04 **Every format checks for room before it writes.** Only an
   import to the server used to check for free disk space; writing CSV,
   JSON, EML, MBOX or SMS Backup & Restore XML, and **Convert** in
@@ -686,6 +850,29 @@ released versions carry their date on the heading.
   for a search. The tag now stays out of the box: the box shows only what
   was typed, and the lists are the same in the conversation as on the tag
   page.
+- 2026-10-04 **Searching for part of a group conversation's id no longer
+  lists every group conversation.** Each source gives its group
+  conversations ids of one shape, such as `group:…`, `chat-…` or `…@g.us`.
+  So typing `group`, `chat` or `g.us` on Conversations listed every group
+  conversation from that source, whatever its title. `in:`, `with:` and
+  `identity:` found them the same way. A group conversation is now found by
+  its title and by the people in it.
+- 2026-10-04 **Searching Conversations for `name` no longer lists every
+  conversation known only by a name.** Typing `name` on Conversations listed
+  every conversation whose backup gave a name and no address, and `less` the
+  conversation that names nobody; `in:nam` on Messages listed every message in
+  them. Each is now found by the name of the person in it or by its title,
+  with plain text on Conversations and with `in:` on Messages.
+- 2026-10-04 **`identity:` no longer lists every conversation known only
+  by a name.** `identity:nam` listed every conversation whose backup gave a
+  name and no address, and `identity:less` the conversation that names
+  nobody. Neither search lists them now, unless someone in them has an
+  identity that matches.
+- 2026-10-04 **Import, Export and Settings show no search box.** The search
+  at the top searches the list of the section you are in, and these screens
+  have no list yet, so the box there searched nothing. On Export, typing in it
+  changed which conversations Export would export. The box is gone
+  from these three screens and comes back when you return to a list.
 - 2026-10-03 **A search pasted and run at once is the search that runs.**
   Pasting a search and pressing Enter straight away searched for nothing.
   Typing very fast lost letters, and the search ran on the last letter
@@ -754,6 +941,11 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-04 **An import names a nameless contact, whatever made it.** A
+  contact with a number and no name stayed Unknown after an import that knew
+  the number's name, when an Address Book load or you had made it rather
+  than an earlier import. An import now fills in any contact's missing name.
+  It still never changes a name a contact already has.
 - 2026-10-04 **A misspelt service no longer puts an identity on Text
   Message.** Adding, swapping or removing a contact's identity, or one of your
   own, takes Text Message or WhatsApp and nothing else. Any other service used
@@ -869,6 +1061,63 @@ released versions carry their date on the heading.
   dark theme's dark surfaces. The dark theme now has its own, darker
   shadows, and the drawer that slides in from the right has a thin light
   edge.
+- 2026-10-04 **Settings fits a phone-width window.** In a window as narrow as
+  a phone, Settings scrolled sideways, because its row of tabs was wider than
+  the page and the navigation panel kept its full width. The tabs now wrap
+  onto more lines, the navigation panel takes at most half the window, and the
+  System and Appearance settings and the Storage page buttons stack to fit.
+  Wider windows look as before.
+- 2026-10-04 **A focused button shows no white line in the dark theme.**
+  The keyboard focus ring on buttons, the contact drawer's close button,
+  the date field's calendar buttons and the import form's section headings
+  had a thin white line between the button and the ring. The gap now shows
+  the colour behind the button, in every theme.
+- 2026-10-04 **The focus ring in an import's results and the contact
+  drawer sits 1 pixel from the edge.** The sections of an import's results
+  and the conversation counts in the contact drawer drew their keyboard
+  focus ring 2 pixels out, further than most buttons draw theirs.
+- 2026-10-04 **Every button and tab draws its focus ring 1 pixel from its
+  edge.** The search box's clear button and its Clear all, the sort button,
+  the account menu, the phone numbers in a phone field, the theme choices in
+  Appearance, the tabs in Settings and on the login card, the buttons above a
+  conversation, the Import history dates and the expand buttons in an
+  import's errors and notes drew their keyboard focus ring flush against the
+  edge, unlike every other button. They now leave the same 1-pixel gap. The
+  day the date picker's keyboard cursor is on shows a 2-pixel ring inside it,
+  the same as a focused table row, where it showed a 1-pixel one.
+- 2026-10-04 **A Settings tab that can't be opened yet shows the not-allowed
+  pointer.** While the owner adds an account, Profile, Storage and Audit
+  Trail are greyed out until the account exists, but the pointer over them
+  was the plain arrow. It is now the not-allowed pointer every other control
+  that is turned off shows.
+- 2026-10-04 **The panel resize grips move by exactly 8 pixels.** Each
+  arrow key on the grip of the left panel or the list column moved the
+  panel 9 pixels wider or 7 narrower, and pressing the grip without moving
+  it widened the panel by 1 pixel. Arrow keys now move the panel 8 pixels,
+  or 24 with Shift. Pressing the grip leaves the width as it was. A screen
+  reader hears the panel's own width.
+- 2026-10-04 **Opening an Import Run in Settings → Storage → Import
+  history keeps the list inside the page.** Opening any Import Run made the
+  Import history table about a million pixels wide. Every column but Date
+  sat far off to the side. Opening one that recorded errors or skipped
+  items made the table keep getting wider while it stayed open, and its
+  Import Errors and Notes tables showed only their first column, so no
+  error or note could be read. The run's details now open below its row at
+  the table's own width, and its errors, skipped items and notes show every
+  column and scroll inside their own box.
+- 2026-10-04 **Import history in Settings → Storage loads quickly however
+  many problems your imports recorded.** The list used to bring every error
+  and skipped item of every import on the page, so a few large WhatsApp
+  imports with thousands of skipped files each could make it slow to open.
+  It now shows how many each import recorded, in a new Issues column, and
+  reads the problems themselves only when you open that import.
+- 2026-10-04 **Deleting your account in the desktop app deletes its
+  Staging Directories on this computer.** Deleting your own account during
+  or after an import left that import's Staging Directory on disk, with
+  nothing to offer it again. The delete dialog now names the account's
+  Staging Directories on this computer, deleting the account deletes them,
+  and one that cannot be deleted is named afterwards so you can remove it
+  by hand.
 - 2026-10-03 **An expired session says to log in again.** When your
   session had expired, or was ended from another window, an Upload or an
   Export said "invalid API key", though the app sends no API key. It now
@@ -976,6 +1225,17 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-04 **Stopping the server stops the conversion it was running.** A
+  server stopped with Ctrl-C or `docker stop` while it made a browser copy
+  of a video left that conversion running after the server had stopped,
+  using the computer for nothing. It now stops the conversion, removes the
+  part-made copy, and makes the copy again when it next starts. Stopping
+  the command that rebuilds the copies does the same.
+- 2026-10-04 **A video's browser copy plays in every browser.** The copy
+  the server made of a HEVC video, the format an iPhone records in, was HEVC
+  as well, which most browsers cannot play. It is now H.264, which they all
+  can. A photo or MP3 that every browser shows as it is no longer gets a
+  copy it does not need.
 - 2026-10-01 **Docker Compose runs as a real user when UID and GID aren't
   set.** It ran the container with an empty user and printed warnings.
 - 2026-10-02 **Long conversations can be read to the end.** Messages past
@@ -1053,10 +1313,16 @@ released versions carry their date on the heading.
   when there is no message to date them.
 - 2026-10-04 **Removing or changing messages right after an import no
   longer fails with "no such table: messages".** It failed now and then
-  when an import had just finished on the same server. On a first start, a
-  Demo Account that failed to build then could not be removed, and its
-  files stayed behind. Now the Demo Account is removed and leaves nothing
-  behind.
+  when an import had just finished on the same server.
+- 2026-10-04 **A Demo Account that fails to build on a first start is
+  removed and leaves nothing behind.** On a first start, a Demo Account that
+  failed to build then could not be removed, and its files stayed behind.
+- 2026-10-04 **The configuration reference states each request body limit as
+  the server applies it.** It said the attachment size limit was also the
+  limit on every other request body. It limits only an attachment upload.
+  Logging in, creating an account, claiming a Message Crate, an address book
+  load and every other request each have a limit fixed in the server, which
+  the page now lists.
 - 2026-10-04 **A Preview cut short is made again without `--force`.** A
   Preview left part-written by a stopped `process-assets` run was kept and
   shown as it was until someone ran the command with `--force`. Every run
@@ -1072,6 +1338,34 @@ released versions carry their date on the heading.
   messages, and the files in other accounts' folders. The reset stops if any
   of them changed. On a database of about 1.3 million messages the check
   takes about 14 seconds.
+- 2026-10-04 **Deleting attachments no longer holds up everyone else.**
+  Emptying the Trash, deleting a conversation or all of an account's
+  messages, and the clean-up at the end of an import deleted every file
+  while keeping all other changes waiting. With many files on a slow disk,
+  another person's import, a sign-in or media conversion could wait 15
+  seconds and fail. The files are now set aside in a moment and deleted
+  afterwards, while everything else goes on.
+- 2026-10-04 **Checking on an attachment upload no longer reads the whole
+  file again.** When the file being uploaded was already stored, asking
+  how far the upload had got, sending one of its parts or cancelling it
+  read and checked every byte of the stored file first, and threw the
+  answer away. For a large video that was the whole file on every check.
+  Those steps now read only the upload's own record.
+- 2026-10-04 **The server refuses an attachment directory setting that is a
+  path.** The configuration's `assets_dir` and `assets_converted_dir` each
+  name one directory inside every account's directory, but an absolute path
+  was accepted there. It put every account's attachments in one directory,
+  and `reset-demo` failed with "prepared reset state is incomplete". The
+  server now refuses to start when either is absolute, contains a
+  separator or a `:`, starts with `.` (as `.` and `..` do), ends in `.` or
+  a space, or is empty, or when both are the same name in any letter case,
+  and the message names the setting.
+- 2026-10-04 **A damaged Preview whose original is gone is no longer
+  shown.** When `process-assets` found a Preview that does not match its
+  contents and the original it was made from was missing, it could not make
+  the Preview again, and the attachment went on showing the damaged one.
+  The run now deletes that Preview, so the attachment shows as one with no
+  Preview, and still reports it among the failures.
 
 ### Upgrading
 
@@ -1119,7 +1413,7 @@ released versions carry their date on the heading.
   `last_message_at` in place of `date_range_end`. The old names are gone.
   Expect both to be missing when the conversation has no message left once
   duplicates are set aside.
-- An Import Run left waiting at a Staging Review or at its Media stage by an
+- An Import Run left waiting at a Staging Review or at its Media Stage by an
   earlier build can't go on, and says its Staging did not finish. Discard it
   and start the import again. Do the same with a paused Apple Messages run
   from an earlier build: its staged files don't say which reactions are
@@ -1127,6 +1421,24 @@ released versions carry their date on the heading.
 - An Address Book exported by an earlier build calls its fifth column
   `handle_type`, and loading it is refused. Rename that column to
   `identity_type` in the file, or export the Address Book again.
+- Message files exported by an earlier build are refused when you import
+  or convert them: each phone number and email address in them is now
+  written as an identity, and the old files say "handle". This holds for
+  JSON, JSONL, CSV, EML and mbox exports, and for an Import Run an earlier
+  build left paused. Export the backup again with this build, then import
+  or convert the new files; discard a paused run and start the import again.
+- Message files exported before reactions moved onto the message they react
+  to are refused when you import or convert them, rather than read with their
+  Apple Messages reactions lost. This holds for JSON, JSONL, CSV, EML and mbox
+  exports, and for an Import Run an earlier build left paused. Export the
+  backup again with this build, then import or convert the new files; discard
+  a paused run and start the import again.
+- Message files exported before a message could be marked Deleted in the
+  source app or Unsent are refused when you import or convert them, rather
+  than read with the mark lost. This holds for JSON, JSONL, CSV, EML and mbox
+  exports, and for an Import Run an earlier build left paused. Export the
+  backup again with this build, then import or convert the new files; discard
+  a paused run and start the import again.
 - `reset-demo` no longer writes a configuration file, and reads the one given
   with `--config`. If an earlier `reset-demo` replaced your configuration
   file, the server stops at startup with a missing `[server]` section: put

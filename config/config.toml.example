@@ -8,8 +8,13 @@
 # Import API token (the desktop app).
 #
 # The desktop app writes JSONL + attachments and uploads with a source name.
-# Source folders are not listed here — each import registers its own source for
-# that account under data/<account_id>/<source_id>/.
+# Sources are not listed here — each import registers its own source for that
+# account in the database.
+#
+# assets_dir and assets_converted_dir are each one directory name inside every
+# account's directory (data/<account_id>/assets/), and the two differ in more
+# than letter case. An absolute path, a separator, a `:`, a name starting with
+# `.` (such as `..`) or ending in `.` or a space, or an empty name is refused.
 #
 # The address book is loaded in the app, under Settings, or with
 # `POST /v1/contacts`. It is Message Crate's own CSV.

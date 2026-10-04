@@ -67,6 +67,7 @@ mod tests {
             cancel: None,
             log: None,
             progress: None,
+            issues: None,
             output_format: OutputFormat::Jsonl,
             resume: false,
             source: SourceConfig::Format(FormatConfig::default()),

@@ -35,6 +35,7 @@ fn real_backup_exports_clean_conversations() {
         output_format: OutputFormat::Csv,
         cancel: None,
         resume: false,
+        issues: None,
     })
     .unwrap();
     println!("{report:#?}");
@@ -56,7 +57,7 @@ fn real_backup_exports_clean_conversations() {
             let members: Vec<serde_json::Value> =
                 serde_json::from_str(&row["participants_json"]).unwrap();
             for m in members {
-                let handle = m["handle"].as_str().unwrap();
+                let handle = m["identity"].as_str().unwrap();
                 let digits = handle.trim_start_matches('+');
                 assert!(
                     (10..=11).contains(&digits.len()) && digits.bytes().all(|b| b.is_ascii_digit()),

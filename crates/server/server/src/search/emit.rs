@@ -243,13 +243,13 @@ fn emit_text(ctx: &ListCtx, out: &mut Sql, term: &TextTerm) {
         ListKind::Conversations => {
             out.push("(");
             free_text_match(out, &conversation_title_text(), term);
-            out.push(" OR EXISTS (SELECT 1 FROM handles hc WHERE hc.id = c.chat_handle_id AND ");
-            free_text_match(out, "hc.raw", term);
+            out.push(" OR ");
+            free_text_match(out, &conversation_identity_text(), term);
             // The handle join is a LEFT join: a source may name a participant
             // and record no address for them, and that person is searchable by
             // the name the source gave.
             out.push(&format!(
-                ") OR EXISTS (SELECT 1 FROM {} LEFT JOIN handles ph ON ph.id = p.handle_id WHERE p.conversation_id = c.id AND (",
+                " OR EXISTS (SELECT 1 FROM {} LEFT JOIN handles ph ON ph.id = p.handle_id WHERE p.conversation_id = c.id AND (",
                 participants_with_contact(ctx.trash)
             ));
             free_text_match(out, "coalesce(ph.raw, '')", term);
@@ -305,6 +305,7 @@ fn emit_one(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result
         }
         "date" | "first-message" | "last-message" | "messages" | "conversations" | "groups"
         | "participants" | "attachments" => emit_measure_word(ctx, out, term, v),
+        "deleted" => emit_deleted_word(ctx, out, term, v),
         other => Err(QueryError::new(
             QueryErrorKind::BadValue,
             term.span.clone(),
@@ -431,10 +432,15 @@ fn emit_text_word(
             Value::Keyword("any") => o.push(
                 "EXISTS (SELECT 1 FROM participants p JOIN handles h ON h.id = p.handle_id WHERE p.conversation_id = c.id AND h.handle_type <> 'other')",
             ),
+            // The conversation's own identity counts only when it is an
+            // address: a group conversation's id, a `name:` key and the
+            // `nameless:` key are shared in shape by every conversation
+            // keyed that way, as in `with:` (#1592, #1706).
             Value::Text(_) | Value::Prefix(_) => {
-                o.push(
-                    "EXISTS (SELECT 1 FROM handles h WHERE (h.id = c.chat_handle_id OR EXISTS (SELECT 1 FROM participants p WHERE p.conversation_id = c.id AND p.handle_id = h.id)) AND (",
-                );
+                o.push(&format!(
+                    "EXISTS (SELECT 1 FROM handles h WHERE ((h.id = c.chat_handle_id AND NOT {}) OR EXISTS (SELECT 1 FROM participants p WHERE p.conversation_id = c.id AND p.handle_id = h.id)) AND (",
+                    chat_handle_is_a_key("c", "h.raw")
+                ));
                 result = text_match(o, "h.raw", term, v);
                 o.push(" OR ");
                 if result.is_ok() {
@@ -532,18 +538,73 @@ fn conversation_title_text() -> String {
     format!("coalesce({}, '')", conversation_title_sql("c"))
 }
 
-/// SQL that holds when the handle `handle_id_expr` is a conversation key
-/// rather than anybody's address: `name:` and a name, or `nameless:`. Such a
-/// chat handle is never matched as a person, because every name key
-/// contains `name:` and `with:nam` would find them all; the person a
-/// name-keyed conversation is with is found by their participant row.
-fn is_a_key_handle(handle_id_expr: &str) -> String {
-    let prefix = message_ir::NAME_CHAT_ID_PREFIX;
-    let nameless = message_ir::NAMELESS_CHAT_ID;
+/// The text of conversation `c`'s own identity, as plain text on
+/// Conversations and `in:` on Messages read it: an address as it is, the
+/// name a `name:` key holds without the prefix, and nothing for a group
+/// conversation's id or the `nameless:` key. Every name key contains `name:`,
+/// so reading the prefix would make `nam` or `in:nam` find them all (#1696);
+/// the name after it is the name the conversation is known by, so
+/// `in:sarah` still finds Sarah's conversation when it has no title. A group
+/// conversation's id is the source's own id for it, which nobody knows the
+/// group conversation by, and its shape is shared by every group
+/// conversation from that source (`group:…`, a WhatsApp `…@g.us`), so
+/// `group` or `in:g.us` would find them all (#1706): a group conversation is
+/// found by its title and its members.
+fn conversation_identity_text() -> String {
     format!(
-        "EXISTS (SELECT 1 FROM handles hk WHERE hk.id = {handle_id_expr} AND (substr(hk.raw, 1, {}) = '{prefix}' OR hk.raw = '{nameless}'))",
-        prefix.len()
+        "coalesce((SELECT CASE WHEN {} THEN substr(hc.raw, {}) WHEN {} THEN '' \
+           ELSE hc.raw END FROM handles hc WHERE hc.id = c.chat_handle_id), '')",
+        is_a_name_key("hc.raw"),
+        message_ir::NAME_CHAT_ID_PREFIX.len() + 1,
+        chat_handle_is_a_key("c", "hc.raw")
     )
+}
+
+/// SQL that holds when the chat handle of the conversation row `conv`, whose
+/// text is `raw_col`, is a conversation key rather than anybody's address:
+/// the id of a group conversation, whatever its shape, or a key of a shape
+/// [`is_a_key_raw`] knows. Such a chat handle is never matched as a person
+/// or read as text, because every key of one shape would match the same
+/// words: `with:nam` every name key, `with:g.us` every WhatsApp group
+/// conversation. The people in such a conversation are found by their
+/// participant rows. Not every exporter writes a group conversation's id
+/// with the `group:` prefix, so the conversation's type decides too.
+fn chat_handle_is_a_key(conv: &str, raw_col: &str) -> String {
+    format!(
+        "({conv}.conversation_type = 'group' OR {})",
+        is_a_key_raw(raw_col)
+    )
+}
+
+/// SQL that holds when the handle text `raw_col` is a conversation key:
+/// `group:` and the source's id for a group conversation, `name:` and a
+/// name, or `nameless:`. With [`is_the_nameless_key`] and
+/// [`starts_with_prefix`], the one place that knows the key shapes, so
+/// `with:`, `identity:`, plain text and `in:` agree on what a key is.
+fn is_a_key_raw(raw_col: &str) -> String {
+    format!(
+        "({} OR {} OR {})",
+        starts_with_prefix(raw_col, message_ir::GROUP_CHAT_ID_PREFIX),
+        is_a_name_key(raw_col),
+        is_the_nameless_key(raw_col)
+    )
+}
+
+/// SQL that holds when the handle text `raw_col` is a `name:` key.
+fn is_a_name_key(raw_col: &str) -> String {
+    starts_with_prefix(raw_col, message_ir::NAME_CHAT_ID_PREFIX)
+}
+
+/// SQL that holds when the handle text `raw_col` starts with the key prefix
+/// `prefix`, compared as written: the exporters write the prefixes from the
+/// `message_ir` constants.
+fn starts_with_prefix(raw_col: &str, prefix: &str) -> String {
+    format!("substr({raw_col}, 1, {}) = '{prefix}'", prefix.len())
+}
+
+/// SQL that holds when the handle text `raw_col` is the `nameless:` key.
+fn is_the_nameless_key(raw_col: &str) -> String {
+    format!("{raw_col} = '{}'", message_ir::NAMELESS_CHAT_ID)
 }
 
 /// Some party to conversation `c` is `v`: its chat handle when that is an
@@ -563,8 +624,8 @@ fn with_person(
     let mut result = Ok(());
     ctx.conversation(out, |o| {
         o.push(&format!(
-            "(((NOT {}) AND ",
-            is_a_key_handle("c.chat_handle_id")
+            "(((NOT EXISTS (SELECT 1 FROM handles hk WHERE hk.id = c.chat_handle_id AND {})) AND ",
+            chat_handle_is_a_key("c", "hk.raw")
         ));
         result = person_matches(ctx, o, "c.chat_handle_id", term, v);
         o.push(&format!(
@@ -737,7 +798,8 @@ fn emit_to(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<
 }
 
 /// `in:#id` names a conversation; `in:<text>` matches its title
-/// (`conversation_title_sql`) or its chat handle.
+/// (`conversation_title_sql`) or its own identity
+/// (`conversation_identity_text`).
 fn emit_in(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<(), QueryError> {
     match v {
         Value::Id(id) => {
@@ -750,9 +812,9 @@ fn emit_in(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<
             ctx.conversation(out, |o| {
                 o.push("(");
                 like_contains(o, &conversation_title_text(), t, prefix);
-                o.push(" OR EXISTS (SELECT 1 FROM handles hc WHERE hc.id = c.chat_handle_id AND ");
-                like_contains(o, "hc.raw", t, prefix);
-                o.push("))");
+                o.push(" OR ");
+                like_contains(o, &conversation_identity_text(), t, prefix);
+                o.push(")");
             });
             Ok(())
         }
@@ -983,6 +1045,29 @@ fn emit_kind_word(
             Ok(())
         }
         _ => Err(bad_value(term, "needs a value this word accepts.")),
+    }
+}
+
+/// `deleted:`, a Messages word: `yes` is a message marked Deleted in the
+/// source app or Unsent, `no` one with neither mark. It reads the base row's
+/// own `m.deletion`, so it needs no bridge, and a NULL column is `no`, which
+/// keeps `deleted:yes` and `-deleted:yes` a split of the list.
+fn emit_deleted_word(
+    ctx: &ListCtx,
+    out: &mut Sql,
+    term: &FieldTerm,
+    v: &Value,
+) -> Result<(), QueryError> {
+    match (ctx.list, v) {
+        (ListKind::Messages, Value::Choice("yes")) => {
+            out.push("m.deletion IS NOT NULL");
+            Ok(())
+        }
+        (ListKind::Messages, Value::Choice("no")) => {
+            out.push("m.deletion IS NULL");
+            Ok(())
+        }
+        _ => Err(bad_value(term, "needs yes or no.")),
     }
 }
 

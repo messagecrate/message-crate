@@ -9,10 +9,10 @@ CSV output contains one row per message. Conversation and export identity are re
 
 | Column | Meaning |
 | --- | --- |
-| `chat_identifier` | Identifier for the conversation, usually a peer handle or group identifier. |
+| `chat_identifier` | Identifier for the conversation, usually a peer identity or group identifier. |
 | `conversation_type` | `individual` or `group`. |
 | `group_title` | Group name, or empty when none is known. |
-| `participants_json` | JSON array of participant handles and display names. |
+| `participants_json` | JSON array of participant identities and display names. |
 | `guid` | Stable message identifier. |
 | `message_kind` | Kind such as `sms`, `mms`, `imessage`, or `tapback`. |
 
@@ -26,11 +26,14 @@ CSV output contains one row per message. Conversation and export identity are re
 | `timestamp_unix_ms` | Unix time in milliseconds. |
 | `direction` | `incoming` or `outgoing`. |
 | `service` | `sms`, `imessage`, `whatsapp`, `rcs`, `discord`, `signal`, `telegram`, `slack`, or `unknown`. |
-| `sender_handle` | Sender phone number, email, or other handle. Outgoing rows use the export owner when known. |
-| `sender_display_name` | Sender name. Outgoing rows default to `Me` when an owner handle is known. |
+| `sender_identity` | Sender phone number, email, or other identity. Outgoing rows use the export owner when known. |
+| `identity_type` | The sender identity's type: `phone`, `email`, `username`, or `other`, inferred from `sender_identity`. Empty when the message has no sender identity. |
+| `sender_display_name` | Sender name. Outgoing rows default to `Me` when an owner identity is known. |
 | `subject` | Message subject when present. |
 | `text` | Message body. |
 | `attachments_json` | JSON array with attachment path, original name, media type, and available file fingerprints and media details. An attachment whose file was not copied keeps its `size_bytes` and its `missing_reason` (`file_missing`, `too_large`, `not_copied`, or `convert_failed: <detail>`). |
+| `reactions_json` | JSON array of the message's reactions, each with `part_index`, `kind`, `emoji` for an emoji reaction, `is_from_me`, and the person who reacted (`reactor_identity`, `reactor_display_name`). Empty when the message has none. |
+| `deletion` | `deleted_in_source_app` for a message deleted in the app it came from before the backup, `unsent` for one its sender took back, or empty for neither. A file with any other value is refused. |
 
 ## Source and owner
 
@@ -39,9 +42,9 @@ CSV output contains one row per message. Conversation and export identity are re
 | `export_source` | Source family used for the import. |
 | `export_tool` | Name of the source tool or format. |
 | `export_tool_version` | Source version recorded by the importer. |
-| `owner_handle` | Phone number or email for the person whose backup was exported. |
+| `owner_identity` | Phone number or email for the person whose backup was exported. |
 | `owner_display_name` | Display name for the owner. |
-| `message_owner_handle` | The owner's own address on this message: the one it was sent from or received at. Apple Messages records it per message, so one conversation can hold rows from a phone number and an Apple ID. Empty when the source records no owner per message, and `owner_handle` then stands for the row. |
+| `message_owner_identity` | The owner's own address on this message: the one it was sent from or received at. Apple Messages records it per message, so one conversation can hold rows from a phone number and an Apple ID. Empty when the source records no owner per message, and `owner_identity` then stands for the row. |
 | `android_type` | Original Android SMS type or MMS box number, or empty for other sources. |
 | `source_fields_json` | Compact JSON containing source-specific fields that do not have shared columns. |
 
@@ -49,17 +52,17 @@ CSV output contains one row per message. Conversation and export identity are re
 
 The remaining columns hold iMessage features. They are empty or `false` for sources that do not provide those features:
 
-- `read_receipt`, `is_deleted`, `send_effect`, and `shared_location`;
+- `read_receipt`, `send_effect`, and `shared_location`;
 - `is_announcement` and `announcement`;
 - `is_reply`, `thread_originator_guid`, `thread_originator_part`, and `num_replies`;
-- `parts_json`, `edits_json`, `tapbacks_json`, and `app_json`;
+- `parts_json`, `edits_json`, and `app_json`;
 - `balloon_bundle_id` and `balloon_kind`; and
 - `associated_guid`, `associated_part`, `tapback_kind`, `tapback_emoji`, and `tapback_action`.
 
 ## How values are written
 
-Nested values use compact JSON. When `source_fields_json`, `parts_json`, `edits_json`, `tapbacks_json`, or `app_json` has no value, the cell is empty rather than the word `null`.
+Nested values use compact JSON. When `source_fields_json`, `reactions_json`, `parts_json`, `edits_json`, or `app_json` has no value, the cell is empty rather than the word `null`.
 
-The boolean columns `is_deleted`, `is_reply`, and `is_announcement` contain `true` or `false`. A simple Apple text part that only repeats the `text` column is omitted from `parts_json`; richer or multi-part bodies keep it.
+The boolean columns `is_reply` and `is_announcement` contain `true` or `false`. A simple Apple text part that only repeats the `text` column is omitted from `parts_json`; richer or multi-part bodies keep it.
 
 Older columns named `date_ms`, `contact_name`, and `xml_fields_json` are not written.

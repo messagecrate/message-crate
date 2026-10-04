@@ -1,10 +1,12 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { SearchList } from "../lib/searchFields";
 import { mockedAuth, Providers } from "../test/providers";
+import { searchFieldsFor } from "../test/searchFields";
+import { setupUser } from "../test/user";
 import AppLayout from "./AppLayout";
 
 // The lists, the header and the drawers fetch their own data; this file is
@@ -43,15 +45,32 @@ vi.mock("../screens/MessageSearchList", () => ({
     </div>
   ),
 }));
-// The header stands in as the words in its box and one button that searches
-// for "ada".
+// The header stands in as the list it was told to search, the words in its
+// box, and two buttons: one types "ada" into the search box, the other
+// searches for it. A screen with nothing to search gets neither button.
 vi.mock("./AppHeader", () => ({
-  default: ({ searchQuery, onSearch }: { searchQuery: string; onSearch: (q: string) => void }) => (
+  default: ({
+    search,
+    onSearchChange,
+    onSearch,
+  }: {
+    search: { target: string; query: string } | null;
+    onSearchChange: (q: string) => void;
+    onSearch: (q: string) => void;
+  }) => (
     <>
-      <output data-testid="header-search">{searchQuery}</output>
-      <button type="button" onClick={() => onSearch("ada")}>
-        Search for ada
-      </button>
+      <output data-testid="header-search-target">{search?.target ?? "null"}</output>
+      <output data-testid="header-search">{search?.query ?? ""}</output>
+      {search !== null && (
+        <>
+          <button type="button" onClick={() => onSearchChange("ada")}>
+            Type ada
+          </button>
+          <button type="button" onClick={() => onSearch("ada")}>
+            Search for ada
+          </button>
+        </>
+      )}
     </>
   ),
 }));
@@ -59,8 +78,10 @@ vi.mock("./ContactDrawer", () => ({ default: () => null }));
 vi.mock("./CheckedContactsPanel", () => ({ default: () => null }));
 
 vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
+// The desktop app with a profile shows Export in the left panel.
+const desktop = vi.hoisted(() => ({ on: false }));
 vi.mock("../lib/useAccountProfile", () => ({
-  useAccountProfile: () => ({ profile: null }),
+  useAccountProfile: () => ({ profile: desktop.on ? {} : null }),
 }));
 const sets = vi.hoisted(() => ({
   groups: [] as string[],
@@ -74,7 +95,11 @@ vi.mock("../lib/useContactGroups", () => ({
 vi.mock("../lib/useMessageTags", () => ({
   useMessageTags: () => ({ tags: sets.tags, loading: sets.tagsLoading }),
 }));
-vi.mock("../lib/tauri-check", () => ({ isTauri: () => false }));
+vi.mock("../lib/tauri-check", () => ({ isTauri: () => desktop.on }));
+vi.mock("../lib/serverApi", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../lib/serverApi")>()),
+  listSearchFields: vi.fn(async (list: SearchList) => searchFieldsFor(list)),
+}));
 vi.mock("../screens/import/useImportAttention", () => ({
   useImportAttention: () => null,
 }));
@@ -94,6 +119,7 @@ vi.mock("../lib/savedSearches", () => ({
 
 afterEach(() => {
   cleanup();
+  desktop.on = false;
   sets.groups = [];
   sets.groupsLoading = false;
   sets.tags = [];
@@ -133,7 +159,7 @@ describe("AppLayout", () => {
   it.each(["/contacts?cq=alice", "/trash?tq=bob&tsel=7"])(
     "leaves %s as it was when a Saved Search is opened from it",
     async (entry) => {
-      const user = userEvent.setup();
+      const user = setupUser();
       renderLayout(entry);
 
       await user.click(screen.getByRole("button", { name: "Groups" }));
@@ -149,11 +175,80 @@ describe("AppLayout", () => {
     ["a contact's conversations", "?q=with%3A%2342&f=with%3A%2342"],
     ["the Messages list's picked sort", "?q=dentist&sort=date"],
   ])("keeps %s when a conversation in the list is opened", async (_name, search) => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderLayout(`/${search}`);
 
-    await user.click(screen.getByRole("button", { name: "First result" }));
+    // A search with a `word:` waits for the lists' words.
+    await user.click(await screen.findByRole("button", { name: "First result" }));
     expect(screen.getByTestId("location").textContent).toBe(`/messages/6${search}`);
+  });
+});
+
+describe("AppLayout's Conversations / Messages switch", () => {
+  it("keeps a word only Messages takes, and Conversations searches without it", async () => {
+    // #1561: switching used to show the server's refusal of `from:`.
+    const user = setupUser();
+    renderLayout("/?q=from%3Aann+hello&view=messages");
+    expect((await screen.findByTestId("message-search-list")).textContent).toBe(
+      "query: from:ann hello",
+    );
+
+    await user.click(screen.getByRole("radio", { name: "Conversations" }));
+    expect((await screen.findByTestId("conversation-list")).textContent).toBe("query: hello");
+    expect(screen.getByTestId("location").textContent).toBe("/?q=from%3Aann+hello");
+
+    await user.click(screen.getByRole("radio", { name: "Messages" }));
+    expect((await screen.findByTestId("message-search-list")).textContent).toBe(
+      "query: from:ann hello",
+    );
+  });
+
+  it("says why Messages lists nothing when every word works only in Conversations", async () => {
+    renderLayout("/?q=messages%3A%3E5&view=messages");
+    expect(
+      await screen.findByText(/Every word of this search works only in Conversations/),
+    ).toBeTruthy();
+    expect(screen.queryByTestId("message-search-list")).toBeNull();
+  });
+
+  it("exports the conversations the list shows, without a word only Messages takes", async () => {
+    desktop.on = true;
+    const user = setupUser();
+    renderLayout("/?q=from%3Aann+hello");
+    await screen.findByTestId("conversation-list");
+
+    await user.click(screen.getByRole("button", { name: "Export" }));
+    expect(screen.getByTestId("location").textContent).toBe("/export?q=hello&list=conversations");
+  });
+});
+
+describe("AppLayout's header search on a screen with no list", () => {
+  // The header search searches the list of the section the person is in.
+  // Import, Export and Settings have none, so the header offers no search
+  // there, and nothing typed in the header can reach Export's `?q=`, which is
+  // Export's own scope (#1568).
+  it.each(["/export?q=dentist", "/import", "/settings"])(
+    "gives the header nothing to search on %s, so nothing can type into its address",
+    (entry) => {
+      renderLayout(entry);
+
+      expect(screen.getByTestId("header-search-target").textContent).toBe("null");
+      expect(screen.queryByRole("button", { name: "Type ada" })).toBeNull();
+      expect(screen.getByTestId("location").textContent).toBe(entry);
+    },
+  );
+
+  it.each([
+    ["/?q=dentist", "conversations", "/?q=ada"],
+    ["/contacts", "contacts", "/contacts?cq=ada"],
+    ["/trash", "trash", "/trash?tq=ada"],
+  ])("gives the header the list on %s to search", async (entry, target, typed) => {
+    const user = setupUser();
+    renderLayout(entry);
+
+    expect(screen.getByTestId("header-search-target").textContent).toBe(target);
+    await user.click(screen.getByRole("button", { name: "Type ada" }));
+    expect(screen.getByTestId("location").textContent).toBe(typed);
   });
 });
 
@@ -194,7 +289,7 @@ describe("AppLayout on a Contact Group or Message Tag page", () => {
 
   it("keeps a group whose name holds a question mark when the list is searched", async () => {
     sets.groups = ["Why?"];
-    const user = userEvent.setup();
+    const user = setupUser();
     renderLayout(`/group/${encodeURIComponent("Why?")}`);
 
     await user.click(screen.getByRole("button", { name: "Search for ada" }));
@@ -203,23 +298,23 @@ describe("AppLayout on a Contact Group or Message Tag page", () => {
 
   it("keeps a tag whose name holds a number sign when the list is searched", async () => {
     sets.tags = ["#1"];
-    const user = userEvent.setup();
+    const user = setupUser();
     renderLayout(`/tag/${encodeURIComponent("#1")}`);
 
     await user.click(screen.getByRole("button", { name: "Search for ada" }));
     expect(screen.getByTestId("location").textContent).toBe("/tag/%231?q=ada");
   });
 
-  it("on a tag page with nothing typed, the Messages list asks for a search", () => {
+  it("on a tag page with nothing typed, the Messages list asks for a search", async () => {
     sets.tags = ["Holiday"];
     renderLayout("/tag/Holiday?view=messages");
-    expect(screen.getByTestId("message-search-list").textContent).toBe("query: ");
+    expect((await screen.findByTestId("message-search-list")).textContent).toBe("query: ");
   });
 
-  it("on a tag page with a typed search, the Messages list searches the tag", () => {
+  it("on a tag page with a typed search, the Messages list searches the tag", async () => {
     sets.tags = ["Holiday"];
     renderLayout("/tag/Holiday?q=ada&view=messages");
-    const list = screen.getByTestId("message-search-list").textContent ?? "";
+    const list = (await screen.findByTestId("message-search-list")).textContent ?? "";
     expect(list).toContain("Holiday");
     expect(list).toContain("ada");
   });
@@ -232,31 +327,31 @@ describe("AppLayout on a Contact Group or Message Tag page", () => {
     ["the No Tag page", "/no-tag", "?tag=none"],
   ])("opens a conversation from %s with the header box empty", async (_name, page, search) => {
     sets.tags = ["Holiday"];
-    const user = userEvent.setup();
+    const user = setupUser();
     renderLayout(page);
     expect(screen.getByTestId("header-search").textContent).toBe("");
 
-    await user.click(screen.getByRole("button", { name: "First result" }));
+    await user.click(await screen.findByRole("button", { name: "First result" }));
     expect(screen.getByTestId("location").textContent).toBe(`/messages/6${search}`);
     expect(screen.getByTestId("header-search").textContent).toBe("");
   });
 
   it("opens a conversation from a tag page with only the typed words in the header box", async () => {
     sets.tags = ["Holiday"];
-    const user = userEvent.setup();
+    const user = setupUser();
     renderLayout("/tag/Holiday?q=ada");
 
-    await user.click(screen.getByRole("button", { name: "First result" }));
+    await user.click(await screen.findByRole("button", { name: "First result" }));
     expect(screen.getByTestId("location").textContent).toBe("/messages/6?q=ada&tag=Holiday");
     expect(screen.getByTestId("header-search").textContent).toBe("ada");
   });
 
   it("opens a Messages result from a tag page with only the typed words in the header box", async () => {
     sets.tags = ["Holiday"];
-    const user = userEvent.setup();
+    const user = setupUser();
     renderLayout("/tag/Holiday?q=ada&view=messages");
 
-    await user.click(screen.getByRole("button", { name: "Message result" }));
+    await user.click(await screen.findByRole("button", { name: "Message result" }));
     expect(screen.getByTestId("location").textContent).toBe(
       "/messages/6?q=ada&tag=Holiday&view=messages&at=77",
     );
@@ -264,7 +359,7 @@ describe("AppLayout on a Contact Group or Message Tag page", () => {
   });
 
   it("keeps the tag when the header searches in a conversation opened from a tag page", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     renderLayout("/messages/6?tag=Holiday");
 
     await user.click(screen.getByRole("button", { name: "Search for ada" }));

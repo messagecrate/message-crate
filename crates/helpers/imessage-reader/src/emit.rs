@@ -9,7 +9,10 @@
 use std::collections::HashSet;
 
 use imessage_database::{
-    message_types::variants::{Announcement, Tapback, TapbackAction, Variant},
+    message_types::{
+        edited::EditStatus,
+        variants::{Announcement, Tapback, TapbackAction, Variant},
+    },
     tables::{
         chat::Chat,
         messages::{
@@ -21,8 +24,8 @@ use imessage_database::{
     util::dates::TIMESTAMP_FACTOR,
 };
 use imessage_reader_protocol::{
-    Conversation as ConversationRecord, Event, Imessage as ImessageRecord,
-    Message as MessageRecord, Participant, Progress, bare_address,
+    Conversation as ConversationRecord, Deletion, Event, Imessage as ImessageRecord,
+    Message as MessageRecord, Participant, Progress, Reaction, bare_address,
 };
 use serde_json::Value;
 
@@ -31,7 +34,7 @@ use crate::{
     body::apply_body,
     error::RuntimeError,
     fields::{
-        TapbackCell, balloon_kind_label, balloon_summary, build_balloon_value, build_edit_records,
+        balloon_kind_label, balloon_summary, build_balloon_value, build_edit_records,
         expressive_label, parse_thread_part, shared_location_label,
     },
     log::emit,
@@ -174,12 +177,12 @@ fn participants_for(session: &MailSession, chatroom: &Chat) -> (Vec<Participant>
         let address = address.trim();
         if address.is_empty()
             || session.is_owner(address)
-            || records.iter().any(|p| p.handle == address)
+            || records.iter().any(|p| p.identity == address)
         {
             return;
         }
         records.push(Participant {
-            handle: address.to_string(),
+            identity: address.to_string(),
             display_name,
         });
     };
@@ -306,10 +309,13 @@ fn tapback_kind(kind: Tapback<'_>) -> (&'static str, Option<String>) {
     }
 }
 
-/// JSON array of tapbacks on this message, if any exist.
-fn build_parent_tapbacks(session: &MailSession, message: &Message) -> Option<Value> {
-    let parts = session.tapbacks.get(&message.guid)?;
-    let mut sortable: Vec<(usize, i64, i32, TapbackCell)> = Vec::new();
+/// The reactions that stand on this message, in part, date and row order.
+/// A removed reaction is left out, so the list needs no action.
+fn build_reactions(session: &MailSession, message: &Message) -> Vec<Reaction> {
+    let Some(parts) = session.tapbacks.get(&message.guid) else {
+        return Vec::new();
+    };
+    let mut sortable: Vec<(usize, i64, i32, Reaction)> = Vec::new();
     for (&part_index, tapbacks) in parts {
         for tapback in tapbacks {
             let Variant::Tapback(_, action, kind) = tapback.variant() else {
@@ -318,8 +324,11 @@ fn build_parent_tapbacks(session: &MailSession, message: &Message) -> Option<Val
             if matches!(action, TapbackAction::Removed) {
                 continue;
             }
+            let Ok(part) = u32::try_from(part_index) else {
+                continue;
+            };
             let (kind, emoji) = tapback_kind(kind);
-            let (reactor_handle, reactor_display_name) = if tapback.is_from_me() {
+            let (reactor_identity, reactor_display_name) = if tapback.is_from_me() {
                 (
                     None,
                     Some(owner_display_name(session, tapback).unwrap_or_else(|| ME.to_string())),
@@ -336,30 +345,26 @@ fn build_parent_tapbacks(session: &MailSession, message: &Message) -> Option<Val
                 part_index,
                 tapback.date,
                 tapback.rowid,
-                TapbackCell {
-                    part_index,
-                    kind,
-                    emoji,
+                Reaction {
+                    part_index: part,
+                    kind: kind.to_string(),
+                    emoji: trimmed(emoji),
                     is_from_me: tapback.is_from_me(),
-                    reactor_handle,
+                    reactor_identity,
                     reactor_display_name,
                 },
             ));
         }
     }
-    if sortable.is_empty() {
-        return None;
-    }
     sortable.sort_by_key(|(part, date, rowid, _)| (*part, *date, *rowid));
-    let cells: Vec<_> = sortable.into_iter().map(|(_, _, _, c)| c).collect();
-    serde_json::to_value(&cells).ok()
+    sortable.into_iter().map(|(_, _, _, r)| r).collect()
 }
 
 /// Chat id, roster and sender fields for one row.
 struct RowContext {
     conversation: ConversationRecord,
     is_from_me: bool,
-    sender_handle: Option<String>,
+    sender_identity: Option<String>,
     sender_display_name: Option<String>,
     service: String,
 }
@@ -394,7 +399,7 @@ fn resolve_context(session: &MailSession, message: &Message) -> RowContext {
     };
 
     let is_from_me = message.is_from_me();
-    let (sender_handle, sender_display_name) = if is_from_me {
+    let (sender_identity, sender_display_name) = if is_from_me {
         (None, None)
     } else if let Some(handle_id) = message.handle_id {
         (
@@ -413,7 +418,7 @@ fn resolve_context(session: &MailSession, message: &Message) -> RowContext {
     RowContext {
         conversation,
         is_from_me,
-        sender_handle,
+        sender_identity,
         sender_display_name,
         service,
     }
@@ -430,9 +435,22 @@ fn build_record(
 ) -> Result<(ConversationRecord, MessageRecord), RuntimeError> {
     let context = resolve_context(session, message);
     let (parts, attachments) = collect_parts_and_attachments(session, message)?;
-    let mut row = classify_row(session, message, &context.service, !attachments.is_empty());
+    let deletion = deletion(message, !attachments.is_empty());
+    let mut row = classify_row(
+        session,
+        message,
+        &context.service,
+        !attachments.is_empty(),
+        deletion,
+    );
     let kind = row.kind;
     let text = std::mem::take(&mut row.text);
+    // A tapback has no reactions of its own.
+    let reactions = if row.tapback.is_some() {
+        Vec::new()
+    } else {
+        build_reactions(session, message)
+    };
     let imessage = imessage_fields(session, message, row, &parts);
 
     let record = MessageRecord {
@@ -442,16 +460,49 @@ fn build_record(
         outgoing: context.is_from_me,
         service: context.service,
         message_kind: kind.to_string(),
-        sender_handle: context.sender_handle,
+        sender_identity: context.sender_identity,
         sender_display_name: context.sender_display_name,
         subject: message.subject.clone().filter(|s| !s.is_empty()),
         text,
-        owner_handle: owner_address(message).unwrap_or_default(),
+        reactions,
+        deletion,
+        owner_identity: owner_address(message).unwrap_or_default(),
         owner_display_name: owner_display_name(session, message),
         imessage: (!is_empty(&imessage)).then_some(imessage),
         attachments,
     };
     Ok((context.conversation, record))
+}
+
+/// Deleted in the source app, Unsent, or neither.
+///
+/// A row in a chat's recently deleted list (`chat_recoverable_message_join`)
+/// was deleted in Messages, and keeps whatever text the database still
+/// holds. A row is Unsent when every part of it was unsent, or when some
+/// part was and nothing is left in any part: no text and no attachment. A
+/// row whose every part was unsent is Unsent even when attachment rows are
+/// still joined to it, because those files were unsent with their parts. A
+/// row only partly unsent keeps what is left and is not marked. A row both
+/// deleted and unsent is Unsent, which is why nothing of it is left.
+fn deletion(message: &Message, has_attachments: bool) -> Option<Deletion> {
+    let some_part_unsent = message.edited_parts.as_ref().is_some_and(|edited| {
+        edited
+            .parts
+            .iter()
+            .any(|part| matches!(part.status, EditStatus::Unsent))
+    });
+    // U+FFFC stands in for an attachment in the text, so it is not text.
+    let text_left = message
+        .text
+        .as_deref()
+        .is_some_and(|text| text.chars().any(|c| !c.is_whitespace() && c != '\u{FFFC}'));
+    if message.is_fully_unsent() || (some_part_unsent && !text_left && !has_attachments) {
+        Some(Deletion::Unsent)
+    } else if message.is_deleted() {
+        Some(Deletion::DeletedInSourceApp)
+    } else {
+        None
+    }
 }
 
 /// Which of the message kinds a row is, the text that stands for it, and the
@@ -524,6 +575,7 @@ fn classify_row(
     message: &Message,
     service: &str,
     has_attachments: bool,
+    deletion: Option<Deletion>,
 ) -> RowKind {
     let shared_location = message
         .shared_location_kind()
@@ -539,7 +591,10 @@ fn classify_row(
         } else if message.is_shareplay() {
             let text = "SharePlay Message Ended".to_string();
             ("announcement", text.clone(), Some(text), None)
-        } else if message.is_announcement() {
+        } else if message.is_announcement() && deletion != Some(Deletion::Unsent) {
+            // A message marked Unsent is the message itself (see
+            // `deletion`), not a line saying someone unsent it. The one
+            // decision makes both, so the mark and the kind never disagree.
             let text = announcement_text(session, message).unwrap_or_default();
             ("announcement", text.clone(), Some(text), None)
         } else if let Some(location) = shared_location.as_deref() {
@@ -638,26 +693,18 @@ fn imessage_fields(
         .map(|edited| build_edit_records(edited, &session.offset))
         .unwrap_or_default();
     let read_receipt = read_receipt_rfc3339(message, session.offset);
-    // A tapback has no tapbacks of its own.
-    let tapbacks = if row.tapback.is_some() {
-        None
-    } else {
-        build_parent_tapbacks(session, message)
-    };
     let tapback = row.tapback.as_ref();
     ImessageRecord {
         is_reply: thread.is_reply,
         in_reply_to_guid: trimmed(thread.in_reply_to_guid),
         thread_originator_part: thread.thread_originator_part,
         num_replies: (message.num_replies > 0).then_some(message.num_replies as u32),
-        is_deleted: message.is_deleted(),
         send_effect: trimmed(row.send_effect),
         shared_location: trimmed(row.shared_location),
         announcement: trimmed(row.announcement),
         read_receipt_rfc3339: trimmed(read_receipt),
         parts: json_if_any(parts),
         edits: json_if_any(&edits),
-        tapbacks,
         balloon_kind: trimmed(row.app.as_ref().and_then(balloon_kind_label)),
         balloon_bundle_id: trimmed(message.balloon_bundle_id.clone()),
         associated_guid: trimmed(tapback.and_then(|t| t.associated_guid.clone())),
@@ -675,14 +722,12 @@ fn is_empty(fields: &ImessageRecord) -> bool {
         && fields.in_reply_to_guid.is_none()
         && fields.thread_originator_part.is_none()
         && fields.num_replies.is_none()
-        && !fields.is_deleted
         && fields.send_effect.is_none()
         && fields.shared_location.is_none()
         && fields.announcement.is_none()
         && fields.read_receipt_rfc3339.is_none()
         && fields.parts.is_none()
         && fields.edits.is_none()
-        && fields.tapbacks.is_none()
         && fields.app.is_none()
         && fields.balloon_bundle_id.is_none()
         && fields.balloon_kind.is_none()
@@ -711,15 +756,16 @@ mod tests {
     use super::*;
     use crate::test_support::FixtureDb;
     use chat_db_fixture::{
-        FRIEND_EMAIL, FRIEND_PHONE, FRIEND_PHONE_EMAIL, GROUP_CHAT_IDENTIFIER, GROUP_TITLE, OWNER,
-        OWNER_EMAIL, SHRUNK_GROUP_IDENTIFIER,
+        DELETED_GUID, DELETED_TEXT, FRIEND_EMAIL, FRIEND_PHONE, FRIEND_PHONE_EMAIL,
+        GROUP_CHAT_IDENTIFIER, GROUP_TITLE, OWNER, OWNER_EMAIL, PARTLY_UNSENT_GUID,
+        PARTLY_UNSENT_TEXT, SHRUNK_GROUP_IDENTIFIER, UNSENT_GUID,
     };
     use imessage_reader_protocol::AttachmentSource;
     use std::collections::HashMap;
 
     /// The handles of a roster, in roster order.
     fn handles_of(participants: &[Participant]) -> Vec<&str> {
-        participants.iter().map(|p| p.handle.as_str()).collect()
+        participants.iter().map(|p| p.identity.as_str()).collect()
     }
 
     #[test]
@@ -741,7 +787,7 @@ mod tests {
     fn empty_fields_are_dropped() {
         assert!(is_empty(&ImessageRecord::default()));
         let fields = ImessageRecord {
-            is_deleted: true,
+            is_reply: true,
             ..ImessageRecord::default()
         };
         assert!(!is_empty(&fields));
@@ -878,9 +924,9 @@ mod tests {
         assert!(!photo.outgoing);
         assert_eq!(photo.message_kind, "imessage");
         assert_eq!(photo.service, "iMessage");
-        assert_eq!(photo.sender_handle.as_deref(), Some(FRIEND_PHONE));
+        assert_eq!(photo.sender_identity.as_deref(), Some(FRIEND_PHONE));
         assert_eq!(photo.sender_display_name.as_deref(), Some("Sam Example"));
-        assert_eq!(photo.owner_handle, OWNER);
+        assert_eq!(photo.owner_identity, OWNER);
         assert_eq!(photo.owner_display_name.as_deref(), Some(OWNER));
         assert_eq!(photo.attachments.len(), 1);
         assert_eq!(
@@ -899,7 +945,7 @@ mod tests {
         let (_, reply) = build_record(&session, &messages[1]).unwrap();
         assert!(reply.outgoing);
         assert_eq!(reply.text, "Nice");
-        assert_eq!(reply.sender_handle, None);
+        assert_eq!(reply.sender_identity, None);
         let fields = reply.imessage.expect("the parsed body is one part");
         assert_eq!(
             fields.parts,
@@ -917,7 +963,7 @@ mod tests {
         let mut handles: Vec<_> = group
             .participants
             .iter()
-            .map(|p| p.handle.as_str())
+            .map(|p| p.identity.as_str())
             .collect();
         handles.sort_unstable();
         assert_eq!(handles, vec![FRIEND_PHONE, FRIEND_EMAIL]);
@@ -989,10 +1035,10 @@ mod tests {
 
         let (direct, photo) = build_record(&session, &messages[0]).unwrap();
         assert_eq!(handles_of(&direct.participants), vec![FRIEND_PHONE]);
-        assert_eq!(photo.sender_handle.as_deref(), Some(FRIEND_PHONE));
+        assert_eq!(photo.sender_identity.as_deref(), Some(FRIEND_PHONE));
         let (_, new_address) = build_record(&session, &messages[6]).unwrap();
         assert_eq!(
-            new_address.sender_handle.as_deref(),
+            new_address.sender_identity.as_deref(),
             Some(FRIEND_PHONE_EMAIL)
         );
 
@@ -1003,9 +1049,15 @@ mod tests {
             messages[1].guid.clone(),
             HashMap::from([(0usize, vec![heart])]),
         );
-        let cells = build_parent_tapbacks(&session, &messages[1]).unwrap();
-        assert_eq!(cells[0]["reactor_handle"], FRIEND_PHONE_EMAIL);
-        assert_eq!(cells[0]["reactor_display_name"], "Sam Example");
+        let reactions = build_reactions(&session, &messages[1]);
+        assert_eq!(
+            reactions[0].reactor_identity.as_deref(),
+            Some(FRIEND_PHONE_EMAIL)
+        );
+        assert_eq!(
+            reactions[0].reactor_display_name.as_deref(),
+            Some("Sam Example")
+        );
     }
 
     /// A received row with handle 0 has no sender, in a group as in a
@@ -1020,13 +1072,13 @@ mod tests {
         let (_, in_group) = build_record(&session, &messages[8]).unwrap();
         assert_eq!(in_group.text, "No sender");
         assert!(!in_group.outgoing);
-        assert_eq!(in_group.sender_handle, None);
+        assert_eq!(in_group.sender_identity, None);
         assert_eq!(in_group.sender_display_name, None);
 
         let mut in_direct = FixtureDb::messages(&session).remove(0);
         in_direct.handle_id = Some(0);
         let (_, record) = build_record(&session, &in_direct).unwrap();
-        assert_eq!(record.sender_handle, None, "not inferred from the chat");
+        assert_eq!(record.sender_identity, None, "not inferred from the chat");
         assert_eq!(record.sender_display_name, None);
     }
 
@@ -1066,7 +1118,7 @@ mod tests {
 
         let (lost, record) = build_record(&session, &messages[11]).unwrap();
         assert_eq!(lost.chat_identifier, ORPHANED);
-        assert_eq!(record.sender_handle.as_deref(), Some(FRIEND_EMAIL));
+        assert_eq!(record.sender_identity.as_deref(), Some(FRIEND_EMAIL));
 
         // A group with no handle rows lists nobody; its sender is still named.
         rusqlite::Connection::open(&fixture.db_path)
@@ -1078,7 +1130,7 @@ mod tests {
         assert_eq!(shrunk.chat_identifier, SHRUNK_GROUP_IDENTIFIER);
         assert_eq!(shrunk.conversation_type, "group");
         assert!(shrunk.participants.is_empty());
-        assert_eq!(record.sender_handle.as_deref(), Some(FRIEND_EMAIL));
+        assert_eq!(record.sender_identity.as_deref(), Some(FRIEND_EMAIL));
     }
 
     /// The owner's chat with the owner's own number keeps that identifier
@@ -1151,7 +1203,7 @@ mod tests {
         let handles: Vec<_> = conversation
             .participants
             .iter()
-            .map(|p| p.handle.as_str())
+            .map(|p| p.identity.as_str())
             .collect();
         assert_eq!(
             handles,
@@ -1160,16 +1212,16 @@ mod tests {
         );
         assert!(from_mac.outgoing);
         assert_eq!(from_mac.text, "From my Mac");
-        assert_eq!(from_mac.sender_handle, None);
-        assert_eq!(from_mac.owner_handle, OWNER_EMAIL);
+        assert_eq!(from_mac.sender_identity, None);
+        assert_eq!(from_mac.owner_identity, OWNER_EMAIL);
         assert_eq!(from_mac.owner_display_name.as_deref(), Some(OWNER_EMAIL));
 
         let (conversation, still_me) = build_record(&session, &messages[4]).unwrap();
         assert_eq!(conversation.chat_identifier, FRIEND_PHONE);
         assert!(still_me.outgoing);
         assert_eq!(still_me.text, "Still me");
-        assert_eq!(still_me.sender_handle, None);
-        assert_eq!(still_me.owner_handle, "", "NULL comes through as empty");
+        assert_eq!(still_me.sender_identity, None);
+        assert_eq!(still_me.owner_identity, "", "NULL comes through as empty");
         assert_eq!(still_me.owner_display_name.as_deref(), Some(ME));
     }
 
@@ -1187,7 +1239,7 @@ mod tests {
         assert_eq!(conversation.chat_identifier, FRIEND_PHONE);
         assert!(from_the_car.outgoing);
         assert_eq!(from_the_car.text, "From the car");
-        assert_eq!(from_the_car.owner_handle, OWNER);
+        assert_eq!(from_the_car.owner_identity, OWNER);
         assert_eq!(from_the_car.owner_display_name.as_deref(), Some(OWNER));
     }
 
@@ -1231,10 +1283,16 @@ mod tests {
         assert!(context.conversation.participants.is_empty());
         assert_eq!(context.service, "SMS");
 
-        assert_eq!(classify_row(&session, &message, "SMS", false).kind, "sms");
-        assert_eq!(classify_row(&session, &message, "SMS", true).kind, "mms");
         assert_eq!(
-            classify_row(&session, &message, "iMessage", true).kind,
+            classify_row(&session, &message, "SMS", false, None).kind,
+            "sms"
+        );
+        assert_eq!(
+            classify_row(&session, &message, "SMS", true, None).kind,
+            "mms"
+        );
+        assert_eq!(
+            classify_row(&session, &message, "iMessage", true, None).kind,
             "imessage"
         );
     }
@@ -1252,7 +1310,7 @@ mod tests {
         rename.item_type = 2;
         rename.group_title = Some("New name".to_string());
         assert!(rename.is_announcement());
-        let row = classify_row(&session, &rename, "iMessage", false);
+        let row = classify_row(&session, &rename, "iMessage", false, None);
         assert_eq!(row.kind, "announcement");
         assert_eq!(row.text, "Robin named the conversation New name");
         assert_eq!(
@@ -1282,7 +1340,7 @@ mod tests {
         location.share_status = false;
         location.share_direction = Some(true);
         location.text = None;
-        let row = classify_row(&session, &location, "iMessage", false);
+        let row = classify_row(&session, &location, "iMessage", false, None);
         assert_eq!(row.kind, "location_share");
         assert!(row.text.starts_with("Shared location "), "{}", row.text);
         assert!(row.shared_location.is_some());
@@ -1290,7 +1348,7 @@ mod tests {
         let mut balloon = FixtureDb::messages(&session).remove(2);
         balloon.balloon_bundle_id =
             Some("com.apple.PassbookUIService.PeerPaymentMessagesExtension".to_string());
-        let row = classify_row(&session, &balloon, "iMessage", false);
+        let row = classify_row(&session, &balloon, "iMessage", false, None);
         assert_eq!(row.kind, "balloon");
         assert_eq!(row.text, "Saturday works");
         assert_eq!(
@@ -1301,7 +1359,7 @@ mod tests {
         let mut slam = base;
         slam.expressive_send_style_id =
             Some("com.apple.MobileSMS.expressivesend.impact".to_string());
-        let row = classify_row(&session, &slam, "iMessage", false);
+        let row = classify_row(&session, &slam, "iMessage", false, None);
         assert_eq!(row.text, "Saturday works\n\nSent with Slam");
         assert_eq!(row.send_effect.as_deref(), Some("Sent with Slam"));
         let fields = imessage_fields(&session, &slam, row, &[]);
@@ -1309,11 +1367,11 @@ mod tests {
         assert!(!is_empty(&fields));
     }
 
-    /// Tapbacks on a parent are listed in part, date and rowid order, with
+    /// Reactions on a parent are listed in part, date and rowid order, with
     /// the reactor named and whether the owner reacted; a removed tapback is
     /// left out.
     #[test]
-    fn parent_tapbacks_are_listed_in_order_and_named() {
+    fn a_parents_reactions_are_listed_in_order_and_named() {
         let fixture = FixtureDb::write();
         let mut session = fixture.session_with_contacts();
         let messages = FixtureDb::messages(&session);
@@ -1337,22 +1395,98 @@ mod tests {
             HashMap::from([(0usize, vec![heart, fire, removed])]),
         );
 
-        let value = build_parent_tapbacks(&session, parent).expect("two tapbacks");
-        let cells = value.as_array().unwrap();
-        assert_eq!(cells.len(), 2, "{value}");
-        assert_eq!(cells[0]["kind"], "emoji");
-        assert_eq!(cells[0]["emoji"], "🔥");
-        assert_eq!(cells[0]["reactor_display_name"], OWNER);
-        assert_eq!(cells[0]["is_from_me"], true);
-        assert_eq!(cells[1]["kind"], "loved");
-        assert_eq!(cells[1]["reactor_handle"], FRIEND_PHONE);
-        assert_eq!(cells[1]["is_from_me"], false);
-        assert_eq!(cells[1]["reactor_display_name"], "Sam Example");
+        assert_eq!(
+            build_reactions(&session, parent),
+            [
+                Reaction {
+                    part_index: 0,
+                    kind: "emoji".into(),
+                    emoji: Some("🔥".into()),
+                    is_from_me: true,
+                    reactor_identity: None,
+                    reactor_display_name: Some(OWNER.into()),
+                },
+                Reaction {
+                    part_index: 0,
+                    kind: "loved".into(),
+                    emoji: None,
+                    is_from_me: false,
+                    reactor_identity: Some(FRIEND_PHONE.into()),
+                    reactor_display_name: Some("Sam Example".into()),
+                },
+            ]
+        );
 
-        assert_eq!(build_parent_tapbacks(&session, &messages[0]), None);
+        assert!(build_reactions(&session, &messages[0]).is_empty());
     }
 
-    /// The whole stream over the fixture: twelve rows seen, none skipped.
+    /// A message the owner deleted in Messages is Deleted in the source app,
+    /// in its chat and with the text the database still holds. A message
+    /// unsent whole is Unsent, with no text, and is a message rather than an
+    /// announcement. A message only partly unsent keeps the text left and
+    /// carries no mark.
+    #[test]
+    fn a_deleted_and_an_unsent_message_carry_their_mark_and_a_partly_unsent_one_none() {
+        let fixture = FixtureDb::write();
+        let session = fixture.session();
+        let messages = FixtureDb::messages(&session);
+        let record = |guid: &str| {
+            let message = messages.iter().find(|m| m.guid == guid).unwrap();
+            build_record(&session, message).unwrap().1
+        };
+
+        let deleted = record(DELETED_GUID);
+        assert_eq!(deleted.deletion, Some(Deletion::DeletedInSourceApp));
+        assert_eq!(deleted.text, DELETED_TEXT);
+        assert_eq!(deleted.chat_identifier, FRIEND_PHONE);
+
+        let unsent = record(UNSENT_GUID);
+        assert_eq!(unsent.deletion, Some(Deletion::Unsent));
+        assert_eq!(unsent.text, "");
+        assert_eq!(unsent.message_kind, "imessage");
+        assert!(
+            unsent
+                .imessage
+                .as_ref()
+                .is_none_or(|im| im.announcement.is_none()),
+            "an unsent message is not an announcement"
+        );
+
+        let partly = record(PARTLY_UNSENT_GUID);
+        assert_eq!(partly.deletion, None);
+        assert_eq!(partly.text, PARTLY_UNSENT_TEXT);
+    }
+
+    /// A row whose every part was unsent is Unsent even when attachment rows
+    /// are still joined to it, and is not the "unsent a message"
+    /// announcement either, so the fact it was unsent is never lost. A row
+    /// only partly unsent with an attachment left, and no text, is not
+    /// marked: the attachment is what is left.
+    #[test]
+    fn a_fully_unsent_row_is_unsent_whatever_attachment_rows_remain() {
+        let fixture = FixtureDb::write();
+        let session = fixture.session();
+        let by_guid = |guid: &str| {
+            FixtureDb::messages(&session)
+                .into_iter()
+                .find(|m| m.guid == guid)
+                .unwrap()
+        };
+
+        let unsent = by_guid(UNSENT_GUID);
+        let mark = deletion(&unsent, true);
+        assert_eq!(mark, Some(Deletion::Unsent));
+        let row = classify_row(&session, &unsent, "iMessage", true, mark);
+        assert_eq!(row.kind, "imessage");
+        assert_eq!(row.announcement, None);
+
+        let mut partly = by_guid(PARTLY_UNSENT_GUID);
+        partly.text = None;
+        assert_eq!(deletion(&partly, true), None);
+        assert_eq!(deletion(&partly, false), Some(Deletion::Unsent));
+    }
+
+    /// The whole stream over the fixture: eighteen rows seen, none skipped.
     /// Each conversation is announced once, before its first message, and
     /// the stream ends with the full parse count and the done event. The
     /// chat with no handle rows is its own conversation, apart from the
@@ -1393,17 +1527,23 @@ mod tests {
                 r#"message "guid-11" in "+15555550106""#,
                 r#"conversation "orphaned""#,
                 r#"message "guid-12" in "orphaned""#,
+                r#"message "00000000-0000-4000-8000-000000000013" in "chat100""#,
+                r#"message "guid-14" in "chat100""#,
+                r#"message "guid-15" in "chat100""#,
+                r#"message "guid-16" in "+15555550107""#,
+                r#"message "guid-17" in "+15555550107""#,
+                r#"message "guid-18" in "+15555550107""#,
                 "progress",
                 "export_done",
             ]
         );
         assert_eq!(
-            events[19],
-            serde_json::json!({"event": "progress", "stage": "parse", "done": 12, "total": 12})
+            events[25],
+            serde_json::json!({"event": "progress", "stage": "parse", "done": 18, "total": 18})
         );
         assert_eq!(
-            events[20],
-            serde_json::json!({"event": "export_done", "messages_seen": 12, "failures": 0})
+            events[26],
+            serde_json::json!({"event": "export_done", "messages_seen": 18, "failures": 0})
         );
     }
 

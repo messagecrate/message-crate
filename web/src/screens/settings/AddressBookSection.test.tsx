@@ -1,10 +1,10 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/api";
 import { loadAddressBook } from "../../lib/serverApi";
+import { setupUser } from "../../test/user";
 import { AddressBookSection } from "./AddressBookSection";
 
 vi.mock("../../lib/serverApi", () => ({ loadAddressBook: vi.fn() }));
@@ -55,9 +55,10 @@ describe("AddressBookSection", () => {
     render(<AddressBookSection />);
     const group = screen.getByRole("radiogroup", { name: "How to load it" });
 
-    await userEvent.tab();
+    const user = setupUser();
+    await user.tab();
     expect(within(group).getByRole("radio", { name: /^Append/ })).toHaveFocus();
-    await userEvent.keyboard("{ArrowDown}");
+    await user.keyboard("{ArrowDown}");
 
     expect(within(group).getByRole("radio", { name: /^Edit/ })).toBeChecked();
     expect(within(group).getByRole("radio", { name: /^Append/ })).not.toBeChecked();

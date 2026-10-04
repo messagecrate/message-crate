@@ -105,6 +105,21 @@ async fn who_may_name_a_contact() {
     );
     assert_eq!(name_of(&mut conn, nameless).await, "Bob Smith");
 
+    // A blank name has nothing to protect, so an import names a nameless
+    // contact whatever made it.
+    for origin in [Origin::AddressBook, Origin::User] {
+        let made = create_contact(&mut conn, TEST_ACCOUNT_ID, "", origin)
+            .await
+            .unwrap();
+        assert!(
+            propose_name(&mut conn, TEST_ACCOUNT_ID, made, "Ann", Origin::Import)
+                .await
+                .unwrap(),
+            "{origin:?}"
+        );
+        assert_eq!(name_of(&mut conn, made).await, "Ann", "{origin:?}");
+    }
+
     // An empty name says nothing about who someone is.
     let blank = create_contact(&mut conn, TEST_ACCOUNT_ID, "", Origin::Import)
         .await

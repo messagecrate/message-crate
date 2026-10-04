@@ -29,7 +29,7 @@ import {
   getToken,
   problemFromBody,
 } from "./api";
-import { buildAssetPath, buildAssetPreviewPath } from "./assetUrl";
+import { type AssetVersion, buildAssetPath } from "./assetUrl";
 import { PAGE_SIZE_MAX } from "./listPaging";
 import type { components, paths } from "./serverApi.types";
 
@@ -425,29 +425,56 @@ export function deleteApiToken(id: number, accountId?: number): Promise<void> {
 // ── Assets ──────────────────────────────────────────────────────────────────
 
 /**
- * Download an attachment by its content hash and return a temporary blob URL:
- * the original bytes, or with `preview` the preview the server holds of them.
- * The caller must call `URL.revokeObjectURL` when the URL is no longer needed.
+ * Download one version of an attachment by its content hash: the original
+ * bytes, or the Preview or Thumbnail the server holds of them.
+ *
+ * Attachment bytes are a blob, not JSON, so this is the one route that goes
+ * around `apiClient` and calls `fetch` itself, with the Session's header.
  */
-export async function fetchAssetObjectUrl(
+export async function fetchAsset(
   sha256: string,
-  { preview = false, signal }: { preview?: boolean; signal?: AbortSignal } = {},
-): Promise<string> {
-  const path = preview ? buildAssetPreviewPath(sha256) : buildAssetPath(sha256);
+  { version = "original", signal }: { version?: AssetVersion; signal?: AbortSignal } = {},
+): Promise<Blob> {
+  const path = buildAssetPath(sha256, version);
   const headers: Record<string, string> = {};
   const token = getToken();
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
-  // Attachment bytes are a blob, not JSON, so this is the one route that goes
-  // around `apiClient` and calls `fetch` itself.
   const res = await fetch(`${getBaseUrl()}${path}`, { method: "GET", headers, signal });
   if (!res.ok) {
     const text = await res.text();
     throw problemFromBody(res.status, text);
   }
-  const blob = await res.blob();
-  return URL.createObjectURL(blob);
+  return res.blob();
+}
+
+/**
+ * `fetchAsset`, handed back as a temporary blob URL. The caller must call
+ * `URL.revokeObjectURL` when the URL is no longer needed.
+ */
+export async function fetchAssetObjectUrl(
+  sha256: string,
+  options: { version?: AssetVersion; signal?: AbortSignal } = {},
+): Promise<string> {
+  return URL.createObjectURL(await fetchAsset(sha256, options));
+}
+
+/**
+ * Make a Media Link for one attachment: URLs a `<video>` or `<audio>` element
+ * loads with no header, so it streams the file a range at a time
+ * (`docs/architecture/media.md`, rule 1). The server answers paths; they come
+ * back here resolved against the server's address, ready for `src`.
+ */
+export async function createMediaLink(sha256: string): Promise<Schema["MediaLink"]> {
+  const link = await apiClient.post<Schema["MediaLink"]>(`${buildAssetPath(sha256)}/media-links`);
+  const base = getBaseUrl();
+  return {
+    ...link,
+    url: `${base}${link.url}`,
+    preview_url: `${base}${link.preview_url}`,
+    thumbnail_url: `${base}${link.thumbnail_url}`,
+  };
 }
 
 // ── Conversations ───────────────────────────────────────────────────────────
@@ -818,10 +845,22 @@ export type ImportListParams = {
 export function listImports(
   params: ImportListParams = {},
   opts?: RequestOptions,
-): Promise<Schema["Page_ImportRun"]> {
-  return apiClient.get<Schema["Page_ImportRun"]>(withQuery("/v1/imports", query(params)), opts);
+): Promise<Schema["Page_ImportRunSummary"]> {
+  return apiClient.get<Schema["Page_ImportRunSummary"]>(
+    withQuery("/v1/imports", query(params)),
+    opts,
+  );
 }
 
+/**
+ * Every Import Run of the account, newest first, read page by page. Each run
+ * carries how many issues it recorded; {@link getImport} reads the issues.
+ */
+export function listEveryImport(opts?: RequestOptions): Promise<Schema["ImportRunSummary"][]> {
+  return readEveryPage<Schema["Page_ImportRunSummary"]>("/v1/imports", opts);
+}
+
+/** One Import Run with every issue it recorded. */
 export function getImport(id: number, opts?: RequestOptions): Promise<Schema["ImportRun"]> {
   return apiClient.get<Schema["ImportRun"]>(`/v1/imports/${id}`, opts);
 }

@@ -2,14 +2,17 @@
 //! then write the chosen output format via [`ExportWriter`].
 
 use crate::attachments_emit::queue_attachments;
+use crate::email_numbers::{
+    EmailNumbers, KeptByEmail, key_members_by_number, names_a_member_by_email,
+};
 use crate::flat_eml::Owner;
 use crate::identity::{chat_id_for, timestamp_ms};
 use crate::parse_emit::{ParsedEmlKind, collect_eml_paths, parse_one_eml};
 use crate::types::ParsedMessage;
 use anyhow::{Result, bail};
 use message_crate_core::{
-    CancelFlag, ExportReport, ExportTransforms, LogSink, OutputFormat, RunIssue, emit_log,
-    prepare_outputs, project_conversation,
+    CancelFlag, ExportReport, ExportTransforms, IssueSink, LogSink, OutputFormat, RunIssue,
+    emit_issue, emit_log, prepare_outputs, project_conversation,
 };
 use message_ir::{
     ConversationDocument, ExportMeta, IrConversationType, IrDirection, IrParticipant, IrService,
@@ -34,8 +37,28 @@ const GROUP_MESSAGES_WITHOUT_SENDER: &str = "group_messages_without_sender";
 /// Report counter: received MMS whose `To` names a group but none of the
 /// owner's numbers or email addresses, filed one-to-one under `From` instead,
 /// or under `X-smssync-address` when `From` gives no address. Counted after
-/// copies are reduced to one.
+/// copies are reduced to one, and each one is also a note in the Import Run.
 const GROUP_MESSAGES_OWNER_NOT_NAMED: &str = "group_messages_owner_not_named";
+
+/// Report counter: messages that record no address for the other person,
+/// kept in a conversation under the name the mail gives, or in the one that
+/// names nobody. Counted after copies are reduced to one, and each one is
+/// also a note in the Import Run.
+const UNKNOWN_CHAT_MESSAGES: &str = "unknown_chat_messages";
+
+/// Report counter: group members the archive names only by email address,
+/// never with a number, so the address stays their key. Each is counted
+/// once, however many mails name them (#1545), and is a note in the Import
+/// Run.
+const GROUP_MEMBERS_WITHOUT_NUMBER: &str = "group_members_without_number";
+
+/// Report counter: group members whose email address the archive gives two
+/// or more numbers, as a contact card two people share does, so the address
+/// stays their key. Each is counted once. One number written in national
+/// form in some mails and international form in others (`07700900123`,
+/// `+447700900123`) counts as two, since only a `+` number is read as
+/// international. Each is a note in the Import Run.
+const GROUP_MEMBERS_WITH_SEVERAL_NUMBERS: &str = "group_members_with_several_numbers";
 
 /// The EML's path relative to the input root it was found under, for the vendor `source` bag.
 ///
@@ -102,7 +125,7 @@ fn pending_from_parsed(msg: ParsedMessage, pending_atts: Vec<PendingAttachment>)
     PendingMessage {
         sort_key: msg.timestamp_secs as i64,
         is_from_me: msg.is_from_me,
-        sender_handle: msg.sender.map(Handle::into_key).unwrap_or_default(),
+        sender_identity: msg.sender.map(Handle::into_key).unwrap_or_default(),
         sender_display_name: msg.name_alias,
         text: msg.text,
         attachments: pending_atts,
@@ -181,8 +204,8 @@ impl ProjectionHooks for SbpProjection {
     fn participants(&self, chat_id: &str, convo: &PendingConversation) -> Vec<IrParticipant> {
         let mut participants = default_participants(chat_id, convo, &str::to_string);
         for p in &mut participants {
-            if let Some(handle) = p.handle.as_deref().and_then(Handle::parse) {
-                p.handle_type = Some(handle.kind());
+            if let Some(handle) = p.identity.as_deref().and_then(Handle::parse) {
+                p.identity_type = Some(handle.kind());
             }
         }
         participants
@@ -224,14 +247,27 @@ impl ProjectionHooks for SbpProjection {
     }
 }
 
-/// Project one conversation, then count the messages it kept that did not
-/// name the owner, and the group messages it kept with no sender, from the
-/// messages written: copies dropped by the projection are not counted.
+/// The mails, by EML path, whose messages are kept with a caveat. The
+/// messages are counted, and a note sent for each, once the projection has
+/// reduced copies to one ([`project_and_count`]).
+#[derive(Default)]
+struct Caveats {
+    /// Received MMS whose `To` named none of the owner's addresses.
+    owner_not_named: HashSet<String>,
+    /// Messages that record no address for the other person.
+    unknown_chat: HashSet<String>,
+}
+
+/// Project one conversation, then count the messages it kept with a caveat,
+/// and the group messages it kept with no sender, from the messages
+/// written: copies dropped by the projection are not counted. Each is sent
+/// to the report's issue sink as it is counted: a group message with no
+/// sender as a skip, the others as notes.
 fn project_and_count(
     chat_id: &str,
     convo: &mut PendingConversation,
     hooks: &SbpProjection,
-    owner_not_named: &HashSet<String>,
+    caveats: &Caveats,
     report: &mut ExportReport,
 ) -> Option<ConversationDocument> {
     let doc = project_conversation(chat_id, convo, hooks, report)?;
@@ -243,12 +279,28 @@ fn project_and_count(
             .and_then(|s| s.fields.get("eml_path"))
             .and_then(|v| v.as_str())
             .unwrap_or_default();
-        if owner_not_named.contains(eml_path) {
-            report.bump(GROUP_MESSAGES_OWNER_NOT_NAMED, 1);
+        if caveats.owner_not_named.contains(eml_path) {
+            report.caveat(
+                GROUP_MESSAGES_OWNER_NOT_NAMED,
+                1,
+                eml_path,
+                "This group message names none of your phone numbers or email addresses, so it \
+                 is kept as a one-to-one message from its sender.",
+            );
         }
-        if is_group && msg.direction == IrDirection::Incoming && msg.sender_handle.is_none() {
+        if caveats.unknown_chat.contains(eml_path) {
+            report.caveat(
+                UNKNOWN_CHAT_MESSAGES,
+                1,
+                eml_path,
+                "This message records no phone number or email address for the other person, \
+                 so it is kept in a conversation under the name the message gives, or with \
+                 nobody.",
+            );
+        }
+        if is_group && msg.direction == IrDirection::Incoming && msg.sender_identity.is_none() {
             report.bump(GROUP_MESSAGES_WITHOUT_SENDER, 1);
-            report.issues.push(RunIssue {
+            emit_issue(report.issues.as_ref(), RunIssue {
                 kind: "skip".into(),
                 step: "parse".into(),
                 item: format!("{eml_path} (sender)"),
@@ -318,6 +370,8 @@ pub(crate) struct ConvertExportArgs<'a, P: AsRef<Path>> {
     pub output_format: OutputFormat,
     pub cancel: Option<&'a CancelFlag>,
     pub log: Option<&'a LogSink>,
+    /// Where each row for the Import Run's record goes as it is recorded.
+    pub issues: Option<&'a IssueSink>,
     /// Continue an interrupted export: keep previous output and skip the
     /// conversations already written.
     pub resume: bool,
@@ -350,6 +404,7 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
         output_format,
         cancel,
         log,
+        issues,
         resume,
     } = args;
     // Checked before the output folder is cleaned, so a refused run leaves it.
@@ -361,7 +416,7 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
         log,
     };
     let owner = Owner::new(OwnerHandleSet::from_phones(owner_phones)?, owner_emails);
-    let owner_handle = owner
+    let owner_identity = owner
         .primary_handle()
         .expect("from_phones guarantees a phone owner handle");
     verbose.line(format!("owner phones: {}", owner_phones.len()));
@@ -385,13 +440,14 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
         input_roots: inputs,
         owner,
     };
-    let mut ingest = EmlIngest::new(writer.spool(), eml_paths.len());
+    let mut ingest = EmlIngest::new(writer.spool(), eml_paths.len(), issues);
     parse_all_emls(&eml_paths, &parse, cancel, verbose, &mut ingest)?;
+    ingest.add_members_by_number(verbose);
     verbose.line(ingest.parse_summary());
     let EmlIngest {
         conversations,
         mut report,
-        owner_not_named,
+        caveats,
         ..
     } = ingest;
 
@@ -400,16 +456,14 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
             EXPORT_SOURCE,
             EXPORT_TOOL,
             EXPORT_TOOL_VERSION,
-            Some(owner_handle),
+            Some(owner_identity),
             None,
         ),
     };
     let mut documents = Vec::new();
     for (chat_id, mut convo) in conversations {
         message_crate_core::check_cancel(cancel)?;
-        if let Some(doc) =
-            project_and_count(&chat_id, &mut convo, &hooks, &owner_not_named, &mut report)
-        {
+        if let Some(doc) = project_and_count(&chat_id, &mut convo, &hooks, &caveats, &mut report) {
             documents.push(doc);
         }
     }
@@ -508,19 +562,32 @@ struct EmlIngest<'a> {
     spool: Option<&'a AttachmentSpool>,
     conversations: HashMap<String, PendingConversation>,
     report: ExportReport,
-    /// EML paths of received MMS whose `To` named none of the owner's
-    /// addresses, counted once the copies are reduced to one.
-    owner_not_named: HashSet<String>,
+    /// The mails whose messages are kept with a caveat.
+    caveats: Caveats,
+    /// The number each email address stands for, from the one-to-one mails
+    /// that give both.
+    email_numbers: EmailNumbers,
+    /// Messages that name a group member by email address, held until the
+    /// whole archive has been read and the member can be keyed by number.
+    /// Their attachments are already queued.
+    by_email: Vec<(ParsedMessage, Vec<PendingAttachment>)>,
 }
 
 impl<'a> EmlIngest<'a> {
-    /// Empty state, pre-sized for the typical ratio of chats to EML files.
-    fn new(spool: Option<&'a AttachmentSpool>, eml_count: usize) -> Self {
+    /// Empty state, pre-sized for the typical ratio of chats to EML files,
+    /// whose report sends its rows to `issues`.
+    fn new(
+        spool: Option<&'a AttachmentSpool>,
+        eml_count: usize,
+        issues: Option<&IssueSink>,
+    ) -> Self {
         Self {
             spool,
             conversations: HashMap::with_capacity((eml_count / 4).min(50_000)),
-            report: ExportReport::default(),
-            owner_not_named: HashSet::new(),
+            report: ExportReport::with_issues(issues.cloned()),
+            caveats: Caveats::default(),
+            email_numbers: EmailNumbers::default(),
+            by_email: Vec::new(),
         }
     }
 
@@ -536,18 +603,37 @@ impl<'a> EmlIngest<'a> {
             ParsedEmlKind::Flat { msg } => {
                 self.report.bump("flat_eml", 1);
                 if msg.unreadable_parts > 0 {
-                    self.report
-                        .bump("skipped_unreadable_part", msg.unreadable_parts);
+                    let text = match msg.unreadable_parts {
+                        1 => "1 part of this message could not be read and was left out. The \
+                              message itself is kept."
+                            .to_string(),
+                        n => format!(
+                            "{n} parts of this message could not be read and were left out. \
+                             The message itself is kept."
+                        ),
+                    };
+                    self.report.caveat(
+                        "skipped_unreadable_part",
+                        msg.unreadable_parts,
+                        msg.eml_path.as_str(),
+                        text,
+                    );
                 }
                 self.add_parsed(*msg)?;
             }
             ParsedEmlKind::FlatNone => self.report.bump("skipped_parse_error", 1),
             ParsedEmlKind::CallLog => self.report.bump("skipped_call_log", 1),
             ParsedEmlKind::NotSms => self.report.bump("skipped_not_sms_backup_plus", 1),
-            ParsedEmlKind::IoError(msg) => self.report.errors.push(msg),
-            ParsedEmlKind::ParseError(msg) => {
+            ParsedEmlKind::IoError { path, reason } => self.report.error(
+                path,
+                format!("This file could not be read and was left out: {reason}"),
+            ),
+            ParsedEmlKind::ParseError { path, reason } => {
                 self.report.bump("skipped_parse_error", 1);
-                self.report.errors.push(msg);
+                self.report.error(
+                    path,
+                    format!("This file could not be read as a mail and was left out: {reason}"),
+                );
             }
         }
         Ok(())
@@ -558,16 +644,67 @@ impl<'a> EmlIngest<'a> {
     /// # Errors
     ///
     /// Returns an error when an attachment cannot be written to the spool.
-    fn add_parsed(&mut self, msg: ParsedMessage) -> Result<()> {
+    fn add_parsed(&mut self, mut msg: ParsedMessage) -> Result<()> {
+        let atts = queue_attachments(&std::mem::take(&mut msg.attachments), self.spool)?;
+        if let Some(pair) = msg.email_number.take() {
+            self.email_numbers.record(pair);
+        }
+        if names_a_member_by_email(&msg) {
+            self.by_email.push((msg, atts));
+        } else {
+            self.add_to_conversation(msg, atts);
+        }
+        Ok(())
+    }
+
+    /// Add the messages held for naming a group member by email address,
+    /// each member keyed by the one number the archive gives that address,
+    /// and count the members it gives none, or several.
+    fn add_members_by_number(&mut self, verbose: Verbose<'_>) {
+        let numbers = std::mem::take(&mut self.email_numbers).into_numbers();
+        let mut kept = KeptByEmail::default();
+        for (mut msg, atts) in std::mem::take(&mut self.by_email) {
+            key_members_by_number(&mut msg, &numbers, &mut kept);
+            self.add_to_conversation(msg, atts);
+        }
+        for (counter, addresses, what, text) in [
+            (
+                GROUP_MEMBERS_WITHOUT_NUMBER,
+                kept.without_number,
+                "no number",
+                "The backup gives this group member no phone number, so they are kept by this \
+                 email address.",
+            ),
+            (
+                GROUP_MEMBERS_WITH_SEVERAL_NUMBERS,
+                kept.several_numbers,
+                "more than one number",
+                "The backup gives this email address more than one phone number, so the group \
+                 member is kept by the email address.",
+            ),
+        ] {
+            if addresses.is_empty() {
+                continue;
+            }
+            for address in &addresses {
+                self.report.caveat(counter, 1, address.as_str(), text);
+            }
+            verbose.line(format!(
+                "group members with {what} in the archive, kept by email address: {}",
+                addresses.into_iter().collect::<Vec<_>>().join(", ")
+            ));
+        }
+    }
+
+    /// Count one message and add it to its conversation.
+    fn add_to_conversation(&mut self, msg: ParsedMessage, atts: Vec<PendingAttachment>) {
         if msg.chat_key.is_empty() {
-            self.report.bump("unknown_chat_messages", 1);
+            self.caveats.unknown_chat.insert(msg.eml_path.clone());
         }
         if msg.owner_not_named {
-            self.owner_not_named.insert(msg.eml_path.clone());
+            self.caveats.owner_not_named.insert(msg.eml_path.clone());
         }
-        let atts = queue_attachments(&msg.attachments, self.spool)?;
         add_message(&mut self.conversations, msg, atts, &mut self.report);
-        Ok(())
     }
 
     /// One line of parse counters for the verbose log.
@@ -576,7 +713,7 @@ impl<'a> EmlIngest<'a> {
             "parsed: flat_eml={} messages={} unknown_chat={} skipped_call_log={} skipped_not_sms_backup_plus={} skipped_parse_error={}",
             self.report.extra("flat_eml"),
             self.report.extra("messages_before_dedupe"),
-            self.report.extra("unknown_chat_messages"),
+            self.caveats.unknown_chat.len(),
             self.report.extra("skipped_call_log"),
             self.report.extra("skipped_not_sms_backup_plus"),
             self.report.extra("skipped_parse_error"),
@@ -647,7 +784,7 @@ mod tests {
                 source: String::new(),
                 tool: String::new(),
                 tool_version: String::new(),
-                owner_handle: None,
+                owner_identity: None,
                 owner_display_name: None,
             },
             conversation: ConversationMeta {
@@ -663,12 +800,14 @@ mod tests {
                 direction: IrDirection::Incoming,
                 service: IrService::Sms,
                 message_kind: IrMessageKind::Mms,
-                sender_handle: None,
+                sender_identity: None,
                 sender_display_name: None,
-                owner_handle: None,
+                owner_identity: None,
                 subject: None,
                 text: "hi".into(),
                 attachments: std::mem::take(&mut atts),
+                reactions: Vec::new(),
+                deletion: None,
                 imessage: None,
                 source: None,
             }],
@@ -707,7 +846,7 @@ mod tests {
     /// The messages of every conversation as the shared projection writes
     /// them, with the copies of one message reduced to one.
     fn project(parsed: Vec<ParsedMessage>) -> (Vec<IrMessage>, ExportReport) {
-        let mut ingest = EmlIngest::new(None, parsed.len());
+        let mut ingest = EmlIngest::new(None, parsed.len(), None);
         for msg in parsed {
             ingest.add_parsed(msg).unwrap();
         }
@@ -721,13 +860,13 @@ mod tests {
             ),
         };
         let mut report = ingest.report;
-        let owner_not_named = ingest.owner_not_named;
+        let caveats = ingest.caveats;
         let mut messages = Vec::new();
         let mut conversations: Vec<_> = ingest.conversations.into_iter().collect();
         conversations.sort_by(|a, b| a.0.cmp(&b.0));
         for (chat_id, mut convo) in conversations {
             if let Some(doc) =
-                project_and_count(&chat_id, &mut convo, &hooks, &owner_not_named, &mut report)
+                project_and_count(&chat_id, &mut convo, &hooks, &caveats, &mut report)
             {
                 messages.extend(doc.messages);
             }
@@ -754,13 +893,14 @@ mod tests {
             android_type: "1".into(),
             eml_path: eml_path.into(),
             owner_not_named: false,
+            email_number: None,
         }
     }
 
     /// A MIME part that could not be decoded reaches the run's report by name.
     #[test]
     fn unreadable_parts_are_counted_in_the_report() {
-        let mut ingest = EmlIngest::new(None, 2);
+        let mut ingest = EmlIngest::new(None, 2, None);
         for unreadable_parts in [2, 1] {
             let msg = ParsedMessage {
                 unreadable_parts,

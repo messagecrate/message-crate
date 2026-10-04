@@ -1,11 +1,11 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MessageSearchSort } from "../lib/messageSearchSort";
 import { listMessages } from "../lib/serverApi";
 import { mockedAuth, Providers } from "../test/providers";
+import { setupUser } from "../test/user";
 import MessageSearchList from "./MessageSearchList";
 
 vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
@@ -53,7 +53,7 @@ function renderList(query: string, sortPick: MessageSearchSort | null = null) {
 
 /** The labels of the sort menu's choices, Sort By then Order, once it is open. */
 async function sortChoices(): Promise<string[]> {
-  await userEvent.setup().click(screen.getByRole("button", { name: /^Sort messages by/ }));
+  await setupUser().click(screen.getByRole("button", { name: /^Sort messages by/ }));
   const menu = await screen.findByRole("menu");
   return [...menu.querySelectorAll('[role="menuitemradio"]')].map((item) => item.textContent ?? "");
 }
@@ -98,7 +98,7 @@ describe("MessageSearchList", () => {
         expect.anything(),
       ),
     );
-    const user = userEvent.setup();
+    const user = setupUser();
     await user.click(screen.getByRole("button", { name: "Sort messages by Date, Oldest first" }));
     await user.click(screen.getByRole("menuitemradio", { name: "Relevance" }));
     expect(onSortPick).toHaveBeenCalledWith({ sort: "relevance", order: "asc" });

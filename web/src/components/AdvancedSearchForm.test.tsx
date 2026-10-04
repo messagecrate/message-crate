@@ -1,15 +1,15 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { setupUser } from "../test/user";
 import AdvancedSearchForm from "./AdvancedSearchForm";
 
 afterEach(cleanup);
 
 describe("AdvancedSearchForm on Messages", () => {
   it("offers every source an import writes, by the name a person knows it by", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     render(<AdvancedSearchForm mode="messages" onApply={vi.fn()} onClose={vi.fn()} />);
 
     await user.click(screen.getByRole("button", { name: /Source/ }));
@@ -27,7 +27,7 @@ describe("AdvancedSearchForm on Messages", () => {
   });
 
   it("searches the ticked sources by the id an import writes", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onApply = vi.fn();
     render(<AdvancedSearchForm mode="messages" onApply={onApply} onClose={vi.fn()} />);
 
@@ -42,7 +42,7 @@ describe("AdvancedSearchForm on Messages", () => {
 
 describe("AdvancedSearchForm on Contacts", () => {
   it("names the iMessage service by its app, and still searches it as imessage", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onApply = vi.fn();
     render(<AdvancedSearchForm mode="contacts" onApply={onApply} onClose={vi.fn()} />);
 

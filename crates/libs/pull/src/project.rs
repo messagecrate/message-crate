@@ -8,11 +8,11 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, NaiveDateTime};
 use message_ir::{
-    ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IrAttachment,
+    ConversationDocument, ConversationMeta, ConversationStats, Deletion, ExportMeta, IrAttachment,
     IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind, IrParticipant,
-    IrService, IrSource, SCHEMA_VERSION,
+    IrService, IrSource, Reaction, SCHEMA_VERSION,
 };
-use serde_json::{Value, json};
+use serde_json::json;
 
 use message_crate_api_types::{Attachment, Message, Tapback};
 
@@ -27,7 +27,13 @@ pub fn build_document(
     seed: &Message,
     messages: Vec<IrMessage>,
 ) -> ConversationDocument {
-    let conversation_type = IrConversationType::parse(&seed.conversation.conversation_type);
+    // The server says whether the conversation is a group; the pull does
+    // not read `conversation_type` to decide it again.
+    let conversation_type = if seed.conversation.is_group {
+        IrConversationType::Group
+    } else {
+        IrConversationType::Individual
+    };
     let participants = participants_from_seed(seed);
     let mut attachment_count = 0u64;
     let mut first_ts = None;
@@ -44,7 +50,7 @@ pub fn build_document(
             source: source.to_string(),
             tool: "message-crate".into(),
             tool_version: env!("CARGO_PKG_VERSION").into(),
-            owner_handle: shared_owner(&messages),
+            owner_identity: shared_owner(&messages),
             owner_display_name: Some("Me".into()),
         },
         conversation: ConversationMeta {
@@ -102,7 +108,6 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
             .is_announcement
             .then(|| msg.text.clone().unwrap_or_default())
             .filter(|text| !text.is_empty()),
-        tapbacks: tapbacks_json(&msg.tapbacks),
         ..Default::default()
     };
 
@@ -118,12 +123,14 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
         direction,
         service,
         message_kind,
-        sender_handle: msg.sender.clone(),
+        sender_identity: msg.sender.clone(),
         sender_display_name: None,
-        owner_handle: msg.owner.clone().filter(|o| !o.trim().is_empty()),
+        owner_identity: msg.owner.clone().filter(|o| !o.trim().is_empty()),
         subject: msg.subject.clone(),
         text: msg.text.clone().unwrap_or_default(),
         attachments,
+        reactions: msg.tapbacks.iter().filter_map(reaction_from_row).collect(),
+        deletion: msg.deletion.map(deletion_from_api),
         imessage: imessage.into_option(),
         source: IrSource {
             android_type: None,
@@ -133,15 +140,23 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
     })
 }
 
+/// The mark a server message carries, as the conversation file writes it.
+fn deletion_from_api(deletion: message_crate_api_types::Deletion) -> Deletion {
+    match deletion {
+        message_crate_api_types::Deletion::DeletedInSourceApp => Deletion::DeletedInSourceApp,
+        message_crate_api_types::Deletion::Unsent => Deletion::Unsent,
+    }
+}
+
 /// The owner address every message of a conversation carries, when they all
 /// carry the same one; `None` when one has none or two differ. Each message
 /// keeps its own address either way, so a conversation held at two of the
 /// holder's addresses keeps the split.
 fn shared_owner(messages: &[IrMessage]) -> Option<String> {
-    let first = messages.first()?.owner_handle.as_deref()?;
+    let first = messages.first()?.owner_identity.as_deref()?;
     messages
         .iter()
-        .all(|m| m.owner_handle.as_deref() == Some(first))
+        .all(|m| m.owner_identity.as_deref() == Some(first))
         .then(|| first.to_string())
 }
 
@@ -150,7 +165,7 @@ fn participants_from_seed(seed: &Message) -> Vec<IrParticipant> {
     let mut participants = Vec::with_capacity(seed.conversation.participants.len());
     for p in &seed.conversation.participants {
         participants.push(IrParticipant {
-            handle: p.identity.clone(),
+            identity: p.identity.clone(),
             // `name` falls back to the raw handle when nothing names the
             // person (ADR-0006). Carrying a bare handle through as a display
             // name would let a later import write it onto a Contact as that
@@ -159,7 +174,7 @@ fn participants_from_seed(seed: &Message) -> Vec<IrParticipant> {
             // counts as a display name here. A participant with no handle at
             // all has nothing to be identical to, so their name always counts.
             display_name: (p.identity.as_deref() != Some(p.name.as_str())).then(|| p.name.clone()),
-            handle_type: None,
+            identity_type: None,
         });
     }
     participants
@@ -229,22 +244,19 @@ fn to_ir_attachment(att: &Attachment) -> IrAttachment {
     }
 }
 
-/// JSON array of tapbacks (reactions), or `None` when the message has none.
-fn tapbacks_json(tapbacks: &[Tapback]) -> Option<Value> {
-    if tapbacks.is_empty() {
-        return None;
-    }
-    let mut items = Vec::with_capacity(tapbacks.len());
-    for t in tapbacks {
-        items.push(json!({
-            "part_index": t.part_index,
-            "kind": t.kind,
-            "emoji": t.emoji,
-            "is_from_me": t.is_from_me,
-            "reactor_handle": t.sender,
-        }));
-    }
-    Some(Value::Array(items))
+/// One stored reaction as the conversation file's [`Reaction`]. The server
+/// keeps no reactor name, so none is written. A part index no message can
+/// have (below zero, or past `u32`) leaves the reaction out rather than
+/// moving it onto another part.
+fn reaction_from_row(row: &Tapback) -> Option<Reaction> {
+    Some(Reaction {
+        part_index: u32::try_from(row.part_index).ok()?,
+        kind: row.kind.clone(),
+        emoji: row.emoji.clone(),
+        is_from_me: row.is_from_me,
+        reactor_identity: row.sender.clone(),
+        reactor_display_name: None,
+    })
 }
 
 /// Choose SMS, MMS, iMessage, or announcement from service and attachments.
@@ -354,6 +366,7 @@ mod tests {
             "id": 9,
             "chat_identifier": "chat9000",
             "conversation_type": "group",
+            "is_group": true,
             "group_title": "Book Club",
             "participants": [
               { "name": "Robert Smith", "identity": "+15555550100", "service": "imessage", "contact_id": 3 },
@@ -390,17 +403,17 @@ mod tests {
 
         let participants = participants_from_seed(&page.items[0]);
         assert_eq!(participants.len(), 3);
-        assert_eq!(participants[0].handle.as_deref(), Some("+15555550100"));
+        assert_eq!(participants[0].identity.as_deref(), Some("+15555550100"));
         assert_eq!(
             participants[0].display_name.as_deref(),
             Some("Robert Smith")
         );
         // No address at all: the name is all the server has for this person, so
         // it carries through as their display name.
-        assert_eq!(participants[1].handle, None);
+        assert_eq!(participants[1].identity, None);
         assert_eq!(participants[1].display_name.as_deref(), Some("Sarah Vale"));
         // A name that is only the handle is still not a display name.
-        assert_eq!(participants[2].handle.as_deref(), Some("+15555550135"));
+        assert_eq!(participants[2].identity.as_deref(), Some("+15555550135"));
         assert_eq!(participants[2].display_name, None);
     }
 
@@ -446,13 +459,13 @@ mod tests {
         assert_eq!(
             messages
                 .iter()
-                .map(|m| m.owner_handle.as_deref())
+                .map(|m| m.owner_identity.as_deref())
                 .collect::<Vec<_>>(),
             [Some("+15555550100"), Some("me@example.com"), None]
         );
 
         let doc = build_document("imessage", &by_phone, messages);
-        assert_eq!(doc.export.owner_handle, None);
+        assert_eq!(doc.export.owner_identity, None);
     }
 
     /// RFC 3339, whole seconds and milliseconds all land on the same instant,
@@ -477,10 +490,11 @@ mod tests {
         );
     }
 
-    /// Reply threading, reactions and an announcement's text come through
-    /// the pull into the message's iMessage fields.
+    /// Reply threading comes through the pull into the message's iMessage
+    /// fields, and the stored reactions into the message's `reactions`, each
+    /// under the person who reacted.
     #[test]
-    fn a_reply_with_tapbacks_keeps_its_threading_and_reactions() {
+    fn a_reply_with_reactions_keeps_its_threading_and_reactions() {
         let mut msg = seed_message_with_participant(Participant {
             identity: Some("+1".into()),
             name: "Sam".into(),
@@ -519,11 +533,25 @@ mod tests {
         assert_eq!(imessage.num_replies, Some(3));
         assert_eq!(imessage.announcement, None);
         assert_eq!(
-            imessage.tapbacks,
-            Some(json!([
-                { "part_index": 0, "kind": "loved", "emoji": null, "is_from_me": true, "reactor_handle": null },
-                { "part_index": 1, "kind": "emoji", "emoji": "🎉", "is_from_me": false, "reactor_handle": "+2" },
-            ]))
+            ir.reactions,
+            [
+                Reaction {
+                    part_index: 0,
+                    kind: "loved".into(),
+                    emoji: None,
+                    is_from_me: true,
+                    reactor_identity: None,
+                    reactor_display_name: None,
+                },
+                Reaction {
+                    part_index: 1,
+                    kind: "emoji".into(),
+                    emoji: Some("🎉".into()),
+                    is_from_me: false,
+                    reactor_identity: Some("+2".into()),
+                    reactor_display_name: None,
+                },
+            ]
         );
     }
 
@@ -551,6 +579,33 @@ mod tests {
         assert_eq!(doc.conversation.stats.message_count, 2);
     }
 
+    /// Whether the conversation is a group comes from the server's
+    /// `is_group`, never from reading `conversation_type` again.
+    #[test]
+    fn a_document_is_a_group_when_the_server_says_so() {
+        let mut seed = seed_message_with_participant(Participant {
+            identity: Some("+1".into()),
+            name: "Sam".into(),
+            service: None,
+            contact_id: None,
+        });
+        seed.conversation.conversation_type = " group ".into();
+        seed.conversation.is_group = false;
+        let doc = build_document("imessage", &seed, vec![]);
+        assert_eq!(
+            doc.conversation.conversation_type,
+            IrConversationType::Individual
+        );
+
+        seed.conversation.conversation_type = "individual".into();
+        seed.conversation.is_group = true;
+        let doc = build_document("imessage", &seed, vec![]);
+        assert_eq!(
+            doc.conversation.conversation_type,
+            IrConversationType::Group
+        );
+    }
+
     /// An announcement keeps its text; one with no text carries nothing.
     #[test]
     fn an_announcement_keeps_its_text() {
@@ -573,7 +628,7 @@ mod tests {
             imessage.announcement.as_deref(),
             Some("Sam named the conversation \"Book Club\"")
         );
-        assert_eq!(imessage.tapbacks, None);
+        assert!(ir.reactions.is_empty());
 
         msg.text = None;
         let ir = to_ir_message(&msg, false).unwrap();
@@ -603,6 +658,7 @@ mod tests {
                 id: 9,
                 chat_identifier: "+1".into(),
                 conversation_type: "individual".into(),
+                is_group: false,
                 group_title: None,
                 label: None,
                 participants: vec![Participant {
@@ -614,11 +670,53 @@ mod tests {
             },
             attachments: vec![],
             tapbacks: vec![],
+            deletion: None,
         };
         let ir = to_ir_message(&msg, false).unwrap();
         assert_eq!(ir.guid, "g1");
         assert_eq!(ir.text, "hi");
         assert_eq!(ir.service, IrService::IMessage);
+    }
+
+    /// The server's mark and the conversation file's are two types, one per
+    /// crate, so each mark of either must have a counterpart in the other
+    /// spelled the same, or a new one would be dropped on the way through.
+    #[test]
+    fn every_mark_has_a_counterpart_spelled_the_same() {
+        for mark in Deletion::ALL {
+            let api = message_crate_api_types::Deletion::parse(mark.as_str())
+                .unwrap_or_else(|| panic!("the server has no mark {:?}", mark.as_str()));
+            assert_eq!(deletion_from_api(api), mark);
+        }
+        for api in message_crate_api_types::Deletion::ALL {
+            assert_eq!(deletion_from_api(api).as_str(), api.as_str());
+        }
+    }
+
+    /// Each mark the server returns is written on the exported message as
+    /// the same mark, and a message with none carries none.
+    #[test]
+    fn a_deletion_mark_is_exported_as_the_same_mark() {
+        let mut msg = seed_message_with_participant(Participant {
+            identity: Some("+1".into()),
+            name: "Sam".into(),
+            service: None,
+            contact_id: None,
+        });
+        assert_eq!(to_ir_message(&msg, false).unwrap().deletion, None);
+        for (api, ir) in [
+            (
+                message_crate_api_types::Deletion::DeletedInSourceApp,
+                message_ir::Deletion::DeletedInSourceApp,
+            ),
+            (
+                message_crate_api_types::Deletion::Unsent,
+                message_ir::Deletion::Unsent,
+            ),
+        ] {
+            msg.deletion = Some(api);
+            assert_eq!(to_ir_message(&msg, false).unwrap().deletion, Some(ir));
+        }
     }
 
     /// A participant `name` distinct from the handle carries through as the
@@ -632,7 +730,7 @@ mod tests {
             contact_id: None,
         });
         let participants = participants_from_seed(&seed);
-        assert_eq!(participants[0].handle.as_deref(), Some("+1"));
+        assert_eq!(participants[0].identity.as_deref(), Some("+1"));
         assert_eq!(participants[0].display_name.as_deref(), Some("Sam"));
     }
 
@@ -674,12 +772,14 @@ mod tests {
                 id: 9,
                 chat_identifier: "+1".into(),
                 conversation_type: "individual".into(),
+                is_group: false,
                 group_title: None,
                 label: None,
                 participants: vec![participant],
             },
             attachments: vec![],
             tapbacks: vec![],
+            deletion: None,
         }
     }
 }

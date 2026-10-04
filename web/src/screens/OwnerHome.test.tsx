@@ -245,6 +245,7 @@ const anImport = {
   message_count: 1234,
   attachment_count: 7,
   bytes_uploaded: 2048,
+  issue_count: 0,
 };
 
 /** The same run in full, which is what opening its row reads. */
@@ -521,7 +522,7 @@ describe("OwnerHome", () => {
     renderHome();
 
     await screen.findByText("bob");
-    await user.type(screen.getByRole("combobox", { name: "Search accounts" }), "CAR");
+    await fill(user, screen.getByRole("combobox", { name: "Search accounts" }), "CAR");
 
     expect(screen.getByText("carol")).toBeInTheDocument();
     expect(screen.queryByText("bob")).not.toBeInTheDocument();
@@ -533,7 +534,7 @@ describe("OwnerHome", () => {
     const user = setupUser();
     renderHome(["/owner/settings"]);
 
-    await user.type(screen.getByRole("combobox", { name: "Search accounts" }), "b");
+    await fill(user, screen.getByRole("combobox", { name: "Search accounts" }), "b");
 
     expect(selectedSection()).toBe("User Accounts");
     expect(await screen.findByText("bob")).toBeInTheDocument();
@@ -574,7 +575,7 @@ describe("OwnerHome", () => {
     renderHome();
 
     expect(await screen.findByText("Bob Archer")).toBeInTheDocument();
-    await user.type(screen.getByRole("combobox", { name: "Search accounts" }), "archer");
+    await fill(user, screen.getByRole("combobox", { name: "Search accounts" }), "archer");
 
     // The header names the logged-in owner, root, so the search is checked in the table alone.
     const table = within(screen.getByRole("table"));
@@ -877,8 +878,8 @@ describe("OwnerHome", () => {
     // The server judges the pair, so a differing one goes to it and its
     // sentence comes back to the screen.
     setAccountPassword.mockRejectedValueOnce(new Error("New passwords do not match."));
-    await user.type(await screen.findByLabelText("New password"), "correct horse");
-    await user.type(screen.getByLabelText("Confirm new password"), "correct hors");
+    await fill(user, await screen.findByLabelText("New password"), "correct horse");
+    await fill(user, screen.getByLabelText("Confirm new password"), "correct hors");
     await user.click(screen.getByRole("button", { name: "Change password" }));
     expect(await screen.findByText("New passwords do not match.")).toBeInTheDocument();
     expect(setAccountPassword).toHaveBeenCalledWith(101, {
@@ -953,9 +954,9 @@ describe("OwnerHome", () => {
     // The answer to Create is written to the cache before its screen mounts.
     renderHome(["/owner/accounts/new"], { keepUnread: true });
 
-    await user.type(await screen.findByLabelText("Username"), "carol");
-    await user.type(screen.getByLabelText("Password"), "hunter2hunter2");
-    await user.type(screen.getByLabelText("Confirm password"), "hunter2hunter");
+    await fill(user, await screen.findByLabelText("Username"), "carol");
+    await fill(user, screen.getByLabelText("Password"), "hunter2hunter2");
+    await fill(user, screen.getByLabelText("Confirm password"), "hunter2hunter");
     await user.click(screen.getByRole("button", { name: "Create" }));
     expect(await screen.findByText("Passwords do not match.")).toBeInTheDocument();
     expect(createAccount).not.toHaveBeenCalled();
@@ -1006,9 +1007,9 @@ describe("OwnerHome", () => {
     );
     renderHome(["/owner/accounts/new"]);
 
-    await user.type(await screen.findByLabelText("Username"), "bob");
-    await user.type(screen.getByLabelText("Password"), "hunter2hunter2");
-    await user.type(screen.getByLabelText("Confirm password"), "hunter2hunter2");
+    await fill(user, await screen.findByLabelText("Username"), "bob");
+    await fill(user, screen.getByLabelText("Password"), "hunter2hunter2");
+    await fill(user, screen.getByLabelText("Confirm password"), "hunter2hunter2");
     await user.click(screen.getByRole("button", { name: "Create" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Invalid username.");

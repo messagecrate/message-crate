@@ -15,10 +15,14 @@ use std::{
     },
 };
 
-use chat_db_fixture::{FRIEND_EMAIL, FRIEND_PHONE, OWNER, OWNER_EMAIL, PHOTO_BYTES, write_chat_db};
+use chat_db_fixture::{
+    DELETED_GUID, DELETED_TEXT, FRIEND_EMAIL, FRIEND_PHONE, GROUP_CHAT_IDENTIFIER, OWNER,
+    OWNER_EMAIL, PARTLY_UNSENT_GUID, PARTLY_UNSENT_TEXT, PHOTO_BYTES, REACTED_GUID, REACTION_EMOJI,
+    UNSENT_GUID, write_chat_db,
+};
 use common::{config, helper_binary};
 use message_crate_core::{ExporterConfig, OutputFormat};
-use message_ir::{ConversationDocument, IrDirection, IrMessage};
+use message_ir::{ConversationDocument, Deletion, IrDirection, IrMessage};
 use message_ir_format::{
     read_conversation_csv, read_conversation_eml_dir, read_conversation_jsonl,
     read_conversation_mbox,
@@ -127,52 +131,139 @@ fn messages_from_either_owner_address_are_sent_by_the_owner() {
     imessage_ir_exporter::run(&config(&db_path, &output, None)).unwrap();
 
     let phone_chat = document_for(&output, FRIEND_PHONE);
-    assert_eq!(phone_chat.export.owner_handle.as_deref(), Some(OWNER));
+    assert_eq!(phone_chat.export.owner_identity.as_deref(), Some(OWNER));
     let nice = message(&phone_chat, "guid-2");
     assert_eq!(nice.direction, IrDirection::Outgoing);
-    assert_eq!(nice.sender_handle.as_deref(), Some(OWNER));
-    assert_eq!(nice.owner_handle.as_deref(), Some(OWNER));
+    assert_eq!(nice.sender_identity.as_deref(), Some(OWNER));
+    assert_eq!(nice.owner_identity.as_deref(), Some(OWNER));
     let still_me = message(&phone_chat, "guid-5");
     assert_eq!(still_me.direction, IrDirection::Outgoing);
     assert_eq!(
-        still_me.sender_handle.as_deref(),
+        still_me.sender_identity.as_deref(),
         Some(OWNER),
         "a NULL caller id falls back to the conversation's owner"
     );
     let from_the_car = message(&phone_chat, "guid-6");
     assert_eq!(from_the_car.direction, IrDirection::Outgoing);
     assert_eq!(
-        from_the_car.sender_handle.as_deref(),
+        from_the_car.sender_identity.as_deref(),
         Some(OWNER),
         "a `tel:`-prefixed caller id is the same owner address, spelled as \
          the identities list spells it (#686)"
     );
-    assert_eq!(from_the_car.owner_handle.as_deref(), Some(OWNER));
+    assert_eq!(from_the_car.owner_identity.as_deref(), Some(OWNER));
     let photo = message(&phone_chat, "guid-1");
     assert_eq!(photo.direction, IrDirection::Incoming);
-    assert_eq!(photo.sender_handle.as_deref(), Some(FRIEND_PHONE));
+    assert_eq!(photo.sender_identity.as_deref(), Some(FRIEND_PHONE));
 
     let email_chat = document_for(&output, FRIEND_EMAIL);
     assert_eq!(
-        email_chat.export.owner_handle.as_deref(),
+        email_chat.export.owner_identity.as_deref(),
         Some(OWNER_EMAIL),
         "the email account's chat is owned by the email, with no `E:` prefix"
     );
     let from_mac = message(&email_chat, "guid-4");
     assert_eq!(from_mac.direction, IrDirection::Outgoing);
-    assert_eq!(from_mac.sender_handle.as_deref(), Some(OWNER_EMAIL));
-    assert_eq!(from_mac.owner_handle.as_deref(), Some(OWNER_EMAIL));
+    assert_eq!(from_mac.sender_identity.as_deref(), Some(OWNER_EMAIL));
+    assert_eq!(from_mac.owner_identity.as_deref(), Some(OWNER_EMAIL));
     let roster: Vec<_> = email_chat
         .conversation
         .participants
         .iter()
-        .filter_map(|p| p.handle.as_deref())
+        .filter_map(|p| p.identity.as_deref())
         .collect();
     assert_eq!(
         roster,
         vec![FRIEND_EMAIL],
         "the owner's email is not a participant of the owner's own chat"
     );
+}
+
+/// A tapback and an emoji reaction on one message reach the conversation
+/// file as that message's `reactions`, each naming the person who reacted
+/// rather than the author of the message reacted to. Removed reactions and
+/// the reaction rows themselves are not reactions of the message.
+#[test]
+fn a_tapback_and_an_emoji_reaction_are_the_messages_reactions() {
+    helper_binary();
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = write_chat_db(dir.path());
+    let output = dir.path().join("out");
+
+    imessage_ir_exporter::run(&config(&db_path, &output, None)).unwrap();
+
+    // Read the line as written, so the test checks the file's own shape.
+    let group = jsonl_files(&output)
+        .into_iter()
+        .map(|path| fs::read_to_string(path).unwrap())
+        .find(|text| text.contains(GROUP_CHAT_IDENTIFIER))
+        .expect("the group's conversation file");
+    let pizza: serde_json::Value = group
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+        .find(|line| line["guid"] == REACTED_GUID)
+        .expect("the message reacted to");
+    assert_eq!(
+        pizza["reactions"],
+        serde_json::json!([
+            {
+                "part_index": 0,
+                "kind": "loved",
+                "is_from_me": false,
+                "reactor_identity": FRIEND_PHONE,
+                // The fixture has no address book, so the name is the address.
+                "reactor_display_name": FRIEND_PHONE,
+            },
+            {
+                "part_index": 0,
+                "kind": "emoji",
+                "emoji": REACTION_EMOJI,
+                "is_from_me": true,
+                "reactor_display_name": OWNER,
+            },
+        ]),
+        "{pizza}"
+    );
+    assert!(
+        pizza["imessage"].get("tapbacks").is_none(),
+        "reactions are not kept a second time in the Apple fields: {pizza}"
+    );
+}
+
+/// A message the owner deleted in Messages, one unsent whole, and one only
+/// partly unsent reach the conversation file as `deleted_in_source_app`
+/// with its text, `unsent` with none, and no mark with the text left.
+#[test]
+fn a_deleted_and_an_unsent_message_carry_their_mark_in_the_file() {
+    helper_binary();
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = write_chat_db(dir.path());
+    let output = dir.path().join("out");
+
+    imessage_ir_exporter::run(&config(&db_path, &output, None)).unwrap();
+
+    // Read the lines as written, so the test checks the file's own shape.
+    let chat = jsonl_files(&output)
+        .into_iter()
+        .map(|path| fs::read_to_string(path).unwrap())
+        .find(|text| text.contains(DELETED_GUID))
+        .expect("the conversation file holding the deleted message");
+    let line = |guid: &str| {
+        chat.lines()
+            .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
+            .find(|line| line["guid"] == guid)
+            .unwrap_or_else(|| panic!("no line for {guid}"))
+    };
+    let deleted = line(DELETED_GUID);
+    assert_eq!(deleted["deletion"], "deleted_in_source_app", "{deleted}");
+    assert_eq!(deleted["text"], DELETED_TEXT, "{deleted}");
+    let unsent = line(UNSENT_GUID);
+    assert_eq!(unsent["deletion"], "unsent", "{unsent}");
+    assert_eq!(unsent["text"], "", "{unsent}");
+    assert_eq!(unsent["message_kind"], "imessage", "{unsent}");
+    let partly = line(PARTLY_UNSENT_GUID);
+    assert!(partly.get("deletion").is_none(), "{partly}");
+    assert_eq!(partly["text"], PARTLY_UNSENT_TEXT, "{partly}");
 }
 
 /// The exporter's config for `format` rather than JSON Lines.
@@ -237,7 +328,17 @@ fn a_csv_export_writes_each_conversation_and_copies_the_photo() {
     assert_eq!(fs::read(&staged[0]).unwrap(), PHOTO_BYTES);
 
     let phone_chat = read_conversation_csv(&output.join(format!("{FRIEND_PHONE}.csv"))).unwrap();
-    assert_eq!(phone_chat.messages.len(), 4);
+    assert_eq!(phone_chat.messages.len(), 7);
+    assert_eq!(
+        message(&phone_chat, DELETED_GUID).deletion,
+        Some(Deletion::DeletedInSourceApp),
+        "the CSV keeps the mark"
+    );
+    assert_eq!(
+        message(&phone_chat, UNSENT_GUID).deletion,
+        Some(Deletion::Unsent)
+    );
+    assert_eq!(message(&phone_chat, PARTLY_UNSENT_GUID).deletion, None);
     let photo = message(&phone_chat, "guid-1");
     assert_eq!(photo.attachments.len(), 1);
     let path = photo.attachments[0]

@@ -27,6 +27,7 @@ cors_origins = [
 ```
 
 - A relative path resolves against the folder above the config file's folder: the repository root for `config/config.toml`. The rule holds for every path in the file (`db`, `data_dir`, `static_dir`) and for the flags that replace one of them (`--db`, `--static-dir`), so `--db data/messagecrate.db` names the same file as `db = "data/messagecrate.db"` whatever directory the command runs in. `serve --data-dir` reads no config file, so there `--data-dir` and `--static-dir` resolve against the directory the server is started in.
+- `assets_dir` and `assets_converted_dir` are each one directory name, not a path: an account's originals are in `data_dir/<account_id>/<assets_dir>` and its Previews in `data_dir/<account_id>/<assets_converted_dir>`. The server refuses a value that is absolute, contains a `/`, `\` or `:`, starts with `.` (`.` and `..` included), ends in `.` or a space, or is empty, with an error naming the key, and refuses the two keys being the same name in any letter case. Why: an absolute path, or a Windows drive such as `C:assets`, would put every account's attachments in one directory; a separator or `..` would reach outside the account's own; the server keeps `.removing` beside the attachments and deletes what is in it; Windows drops a trailing `.` or space, and macOS and Windows ignore letter case by default, so `assets.` or `Assets` could be another key's directory; and originals and Previews are cleaned up under different rules, so they need a directory each.
 - `[server]` is required for `serve`.
 - `reset-demo` rebuilds the Demo Account in the database `db` names and never writes the config file.
 - `cors_origins` lists origins allowed on top of the three the packaged desktop app runs from (`tauri://localhost`, `http://tauri.localhost`, `https://tauri.localhost`), which the server allows whether or not you name them. The website the server serves is same-origin and needs no entry either, so an empty list is the right setting for most installs. Add the Vite origins (`http://localhost:5173`, `http://127.0.0.1:5173`) when running the dev UI against this server.
@@ -60,7 +61,7 @@ Every command that loads the file, `serve` included, stops with an error that na
 Why: a misspelt key would otherwise load as its default, and a removed key would sit in the file looking as though it still held.
 
 The attachment size limit is not a config key, and a file that still sets `[server] asset_max_bytes` is refused with a message saying where the limit is set now.
-It is the largest attachment the server accepts, as a single `PUT /v1/assets/{sha256}` body or as the total declared bytes of a multipart upload, and it is also the cap on every other request body.
+It is the largest attachment the server accepts, as a single `PUT /v1/assets/{sha256}` body or as the total declared bytes of a multipart upload.
 It is a Server Setting stored in the database: 512 MiB until the Owner changes it under **Server Settings**, or a program with the Owner's Session sends `PATCH /v1/server/settings` with `asset_max_bytes` in bytes.
 A change holds from the next upload, with no restart.
 A multipart upload already in progress keeps the part size it started with, so lowering the limit does not break it.
@@ -71,9 +72,17 @@ A limit below `asset_part_size` is accepted, and the server then hands out parts
 The part size is worked out on each upload, so neither a change to the limit nor an edit to `asset_part_size` can leave a server that does not start.
 The server refuses only a limit of zero, or one above 9223372036854775807, with `422 Unprocessable Entity`.
 
+No other request body is held to the attachment size limit.
+Each part of a multipart upload is held to the part size the upload was given when it started.
+Every other request body has a cap fixed in the server: 32 KiB for `POST /v1/session`, `POST /v1/accounts` and `POST /v1/server/claim`, 32 MiB for any other JSON body, 8 MiB for an address book loaded with `POST /v1/contacts`, and 512 MiB for an import batch or any other body.
+Why: the Owner's limit must never reach the login, or the settings change that would raise it again.
+A body over its cap is refused with `413 Payload Too Large` and the [`payload-too-large`](/docs/developer/reference/errors/payload-too-large/) problem type.
+
 ### Logging
 
 The server writes its log to stderr through `tracing`: one `INFO` line per HTTP response with the method, path, status and latency, an `ERROR` line with the full cause chain behind every `500`, and `WARN` lines for work the server could not complete but did not fail the request over. `RUST_LOG` sets the level and accepts the usual filter syntax, for example `RUST_LOG=debug` or `RUST_LOG=message_crate_server=debug,tower_http=info`. Unset, the level is `info`. The `import`, `dedupe-cross-source`, `process-assets` and `reset-demo` subcommands print their progress to stdout as before; that is their output, not the log.
+
+`serve` also writes every line to files in the `logs` directory of the Data Directory (`[paths] data_dir`, or `serve --data-dir`): `server-000001.log`, `server-000002.log` and so on, the highest number the newest. It starts the next file before a line would carry the newest past 50 MB, keeps at most 5 files (250 MB in all), and deletes the oldest when one more starts. No config key changes these limits. `RUST_LOG` decides how many lines there are, not how much disk they may take. Docker and the desktop app write the same files, the first in its data volume and the second in its app-data directory. A line is one event, with a line break inside it written as `\n`, and its query string keeps only numbers and fixed words, so no search, password, token, message text or contact name reaches the files. The owner reads them through `GET /v1/server/log-lines` (newest first, with `level`, `text` and `after`), `GET /v1/server/log-files` and `GET /v1/server/log-files/{id}`. No other account can. Why, and the rest of the rules: `docs/architecture/server-log.md` in the repository.
 
 ## Per-account asset files
 
@@ -84,7 +93,9 @@ Created on first use if missing:
 
 An attachment file is named by the SHA-256 of its bytes, so a file imported
 from two sources is stored once. It is removed when no message of the
-account, from any source, still names it.
+account, from any source, still names it. `assets_converted/` holds what the
+server makes from the originals: a Thumbnail of every image and video, and a
+Preview of each attachment browsers often cannot show.
 
 ## Accounts
 

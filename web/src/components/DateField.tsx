@@ -18,7 +18,7 @@ import {
   Popover,
 } from "react-aria-components";
 
-import { popupShadow } from "../lib/uiStyles";
+import { focusRing, popupShadow } from "../lib/uiStyles";
 import { Z_POPOVER } from "../lib/zLayers";
 
 function CalendarIcon() {
@@ -91,7 +91,7 @@ export default function DateField({
           </DateInput>
           <Button
             aria-label={`Pick ${pickLabel}`}
-            className="ml-1 flex shrink-0 items-center justify-center rounded border-0 bg-transparent p-0.5 text-muted outline-none hover:text-accent focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1"
+            className={`ml-1 flex shrink-0 items-center justify-center rounded border-0 bg-transparent p-0.5 text-muted hover:text-accent ${focusRing}`}
           >
             <CalendarIcon />
           </Button>
@@ -105,14 +105,14 @@ export default function DateField({
               <div className="flex items-center justify-between pb-2">
                 <Button
                   slot="previous"
-                  className="flex h-6 w-6 items-center justify-center rounded border-0 bg-transparent text-muted outline-none hover:text-accent focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1"
+                  className={`flex h-6 w-6 items-center justify-center rounded border-0 bg-transparent text-muted hover:text-accent ${focusRing}`}
                 >
                   ‹
                 </Button>
                 <CalendarHeading className="text-[0.875rem] font-medium text-text" />
                 <Button
                   slot="next"
-                  className="flex h-6 w-6 items-center justify-center rounded border-0 bg-transparent text-muted outline-none hover:text-accent focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1"
+                  className={`flex h-6 w-6 items-center justify-center rounded border-0 bg-transparent text-muted hover:text-accent ${focusRing}`}
                 >
                   ›
                 </Button>
@@ -141,7 +141,7 @@ export default function DateField({
                         (isOutsideMonth || isDisabled ? "text-muted opacity-50" : "text-text") +
                         (isHovered || isPressed ? " bg-hover" : "") +
                         (isSelected ? " bg-accent text-sent-text" : "") +
-                        (isFocused ? " ring-1 ring-accent ring-inset" : "")
+                        (isFocused ? " ring-2 ring-inset ring-accent" : "")
                       }
                     />
                   )}

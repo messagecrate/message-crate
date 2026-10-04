@@ -16,8 +16,9 @@ use std::collections::HashMap;
 use sqlx::SqliteConnection;
 use sqlx::{Executor, Row};
 
-pub use message_crate_api_types::{Attachment, Message, MessageConversation, Tapback};
+pub use message_crate_api_types::{Attachment, Deletion, Message, MessageConversation, Tapback};
 
+use crate::db::conversations::is_group_type;
 use crate::db::ownership::owns_conversation;
 use crate::db::participant_names::load_for_conversations;
 use crate::db::sql::{SqlParam, bind_all, bind_args, group_rows_by_id};
@@ -50,6 +51,7 @@ struct RawRow {
     thread_originator_guid: Option<String>,
     thread_originator_part: Option<i64>,
     num_replies: i64,
+    deletion: Option<String>,
     chat_identifier: String,
     conversation_type: String,
     group_title: Option<String>,
@@ -309,7 +311,7 @@ fn message_page_sql(
                 m.is_announcement, m.is_reply, m.thread_originator_guid,
                 m.thread_originator_part, m.num_replies,
                 hc.raw AS chat_identifier, c.conversation_type, c.group_title,
-                ho.raw AS owner, {label} AS label
+                ho.raw AS owner, {label} AS label, m.deletion
          {from_sql}
          WHERE {where_sql}
          ORDER BY {order_by} LIMIT ? OFFSET ?",
@@ -355,6 +357,7 @@ async fn fetch_message_page(
                 group_title: row.try_get(18)?,
                 owner: row.try_get(19)?,
                 label: row.try_get(20)?,
+                deletion: row.try_get(21)?,
             })
         })
         .collect::<Result<Vec<RawRow>, ApiError>>()?;
@@ -392,6 +395,7 @@ async fn fetch_message_page(
                 conversation: MessageConversation {
                     id: r.conversation_id,
                     chat_identifier: r.chat_identifier,
+                    is_group: is_group_type(&r.conversation_type),
                     conversation_type: r.conversation_type,
                     group_title: r.group_title,
                     label: r.label,
@@ -399,6 +403,8 @@ async fn fetch_message_page(
                 },
                 attachments: attachments.get(&r.id).cloned().unwrap_or_default(),
                 tapbacks: tapbacks.get(&r.id).cloned().unwrap_or_default(),
+                // The column's CHECK admits only the two marks or NULL.
+                deletion: r.deletion.as_deref().and_then(Deletion::parse),
             }
         })
         .collect())
@@ -415,7 +421,7 @@ async fn load_attachments(
         |placeholders| {
             format!(
                 "SELECT message_id, path, original_name, mime_type, sha256, is_sticker, transcription,
-                    missing_reason, derived_mime_type
+                    missing_reason, derived_mime_type, thumbnail_mime_type
              FROM attachments
              WHERE message_id IN ({placeholders})
              ORDER BY message_id, id"
@@ -433,39 +439,12 @@ async fn load_attachments(
                     transcription: row.try_get(6)?,
                     missing_reason: row.try_get(7)?,
                     preview_mime_type: row.try_get(8)?,
+                    thumbnail_mime_type: row.try_get(9)?,
                 },
             ))
         },
     )
     .await
-}
-
-/// Where the preview of one of the account's assets is stored, and its MIME
-/// type: the path under the account's converted-assets directory. `None` when
-/// the account holds no attachment with that fingerprint, or `process-assets`
-/// wrote no preview for it.
-pub async fn attachment_preview(
-    conn: &mut SqliteConnection,
-    account_id: i64,
-    sha256: &str,
-) -> Result<Option<(String, Option<String>)>, ApiError> {
-    // The account stores one file per fingerprint, whatever the source, and
-    // every attachment row that names it carries the same preview, so any
-    // one of them answers.
-    let row = sqlx::query_as::<_, (String, Option<String>)>(
-        "SELECT a.derived_assets_path, a.derived_mime_type
-         FROM attachments a
-         JOIN messages m ON m.id = a.message_id
-         JOIN conversations c ON c.id = m.conversation_id
-         WHERE c.account_id = $1 AND a.sha256 = $2
-           AND a.derived_assets_path IS NOT NULL AND a.derived_assets_path != ''
-         LIMIT 1",
-    )
-    .bind(account_id)
-    .bind(sha256)
-    .fetch_optional(&mut *conn)
-    .await?;
-    Ok(row)
 }
 
 /// Tapback rows for these messages, grouped by message id.

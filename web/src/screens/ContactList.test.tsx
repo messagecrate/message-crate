@@ -12,7 +12,6 @@
  */
 
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import RightPane from "../components/RightPane";
 import { RightToolbarProvider } from "../components/RightToolbarContext";
@@ -36,9 +35,9 @@ vi.mock("../lib/serverApi", () => ({
   exportAddressBook: vi.fn(),
 }));
 
-vi.mock("../lib/saveTextFile", () => ({ saveTextFile: vi.fn().mockResolvedValue(true) }));
+vi.mock("../lib/saveFile", () => ({ saveFile: vi.fn().mockResolvedValue(true) }));
 
-import { saveTextFile } from "../lib/saveTextFile";
+import { saveFile } from "../lib/saveFile";
 import {
   createContactGroup,
   exportAddressBook,
@@ -46,6 +45,7 @@ import {
   listContacts,
   updateContactGroupMembers,
 } from "../lib/serverApi";
+import { setupUser } from "../test/user";
 
 const listContactsMock = vi.mocked(listContacts);
 const listContactGroupsMock = vi.mocked(listContactGroups);
@@ -135,7 +135,7 @@ describe("ContactList", () => {
     const refusal =
       'name can\'t hold ";", because the address book separates Contact Group names with it';
     createGroupMock.mockRejectedValue(new ApiError(422, refusal));
-    const user = userEvent.setup();
+    const user = setupUser();
 
     render(
       <Providers>
@@ -159,7 +159,7 @@ describe("ContactList", () => {
   });
 
   it("refuses a reserved Contact Group name from the Groups menu without asking the server to create it", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
 
     render(
       <Providers>
@@ -195,14 +195,14 @@ describe("ContactList", () => {
     const rowCheckbox = await screen.findByRole("checkbox", { name: "Select Alice" });
 
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
-    await waitFor(() => expect(saveTextFile).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(saveFile).toHaveBeenCalledTimes(1));
     // The same search the list sends the server for this group.
     expect(exportMock).toHaveBeenLastCalledWith({ q: groupListQuery("Family", "") });
 
     fireEvent.click(rowCheckbox);
     await waitFor(() => expect(rowCheckbox).toBeChecked());
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
-    await waitFor(() => expect(saveTextFile).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(saveFile).toHaveBeenCalledTimes(2));
     expect(exportMock).toHaveBeenLastCalledWith({ ids: [1] });
   });
 
@@ -321,7 +321,8 @@ describe("ContactList", () => {
       const avatar = box.closest("label");
       expect(avatar).not.toBeNull();
 
-      await userEvent.click(avatar as HTMLElement);
+      const user = setupUser();
+      await user.click(avatar as HTMLElement);
 
       await waitFor(() => expect(box).toBeChecked());
       expect(onSelect).not.toHaveBeenCalled();

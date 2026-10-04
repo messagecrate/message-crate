@@ -1,10 +1,11 @@
 /** @vitest-environment jsdom */
 
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { type ComponentProps, useRef, useState } from "react";
 import { MemoryRouter, useLocation, useSearchParams } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SearchList } from "../lib/searchFields";
+import { fill, setupUser } from "../test/user";
 import SearchBar from "./SearchBar";
 
 const recentsMock = vi.hoisted(() => ({ current: ["ada", "grace"] as string[] }));
@@ -36,6 +37,26 @@ vi.mock("../lib/useSearchSuggestions", async (importOriginal) => ({
   useSearchSuggestions: () => suggestionsMock.current,
 }));
 
+// The words each list takes come from the server; here, from the fixture,
+// marked by the real rule.
+vi.mock("../lib/searchFields", async (importOriginal) => {
+  const real = await importOriginal<typeof import("../lib/searchFields")>();
+  const { searchFieldsFor } = await import("../test/searchFields");
+  return {
+    ...real,
+    useMarkedWords: (query: string, list: SearchList | null, otherList: SearchList | null) => ({
+      marked:
+        list && otherList
+          ? real.markedWords(query, searchFieldsFor(list), {
+              list: otherList,
+              fields: searchFieldsFor(otherList),
+            })
+          : [],
+      ready: true,
+    }),
+  };
+});
+
 function renderSearch(props: Partial<ComponentProps<typeof SearchBar>> = {}) {
   const onSubmit = props.onSubmit ?? vi.fn();
   const onChange = props.onChange ?? vi.fn();
@@ -49,6 +70,7 @@ function renderSearch(props: Partial<ComponentProps<typeof SearchBar>> = {}) {
       list={props.list ?? "contacts"}
       placeholder={placeholder}
       advancedMode={props.advancedMode ?? "contacts"}
+      otherList={props.otherList ?? null}
     />,
   );
   return { onSubmit, onChange, input: screen.getByRole("combobox", { name: placeholder }) };
@@ -162,7 +184,7 @@ describe("SearchBar", () => {
   });
 
   it("walks the recent searches with arrow keys and reports the active row", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { input } = renderSearch();
 
     await user.click(input);
@@ -180,7 +202,7 @@ describe("SearchBar", () => {
   });
 
   it("submits the highlighted recent search on Enter", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { input, onSubmit } = renderSearch();
 
     await user.click(input);
@@ -190,7 +212,7 @@ describe("SearchBar", () => {
   });
 
   it("runs the query the box shows when Enter is pressed a second time", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onSubmit = vi.fn();
     function Controlled() {
       const [value, setValue] = useState("");
@@ -219,7 +241,7 @@ describe("SearchBar", () => {
   });
 
   it("runs a search typed after a row was clicked on the first Enter", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onSubmit = vi.fn();
     function Controlled() {
       const [value, setValue] = useState("");
@@ -242,14 +264,14 @@ describe("SearchBar", () => {
     await user.click(screen.getByRole("option", { name: "ada" }));
     expect(onSubmit).toHaveBeenLastCalledWith("ada");
     await user.clear(input);
-    await user.type(input, "bob");
+    await fill(user, input, "bob");
     await user.keyboard("{Escape}{Enter}");
 
     expect(onSubmit).toHaveBeenLastCalledWith("bob");
   });
 
   it("submits the typed text when no row is highlighted", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { input, onSubmit } = renderSearch({ value: "typed" });
 
     await user.click(input);
@@ -259,7 +281,7 @@ describe("SearchBar", () => {
   });
 
   it("reaches the advanced-search row by keyboard", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { input } = renderSearch();
 
     await user.click(input);
@@ -270,7 +292,7 @@ describe("SearchBar", () => {
   });
 
   it("keeps the advanced panel open, with no popdown over it, when the box is focused again", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { input } = renderSearch();
 
     await user.click(input);
@@ -285,7 +307,7 @@ describe("SearchBar", () => {
   });
 
   it("wraps from the last row back to the first", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { input } = renderSearch();
 
     await user.click(input);
@@ -297,7 +319,7 @@ describe("SearchBar", () => {
   });
 
   it("opens on the last row with the up arrow", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { input } = renderSearch();
 
     await user.click(input);
@@ -311,7 +333,7 @@ describe("SearchBar", () => {
   });
 
   it("closes the popdown on Escape", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { input } = renderSearch();
 
     await user.click(input);
@@ -327,7 +349,7 @@ describe("SearchBar", () => {
   });
 
   it("namespaces row ids per scope so two bars never collide", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { input } = renderSearch({ scope: "message", placeholder: "Search messages" });
 
     await user.click(input);
@@ -338,7 +360,7 @@ describe("SearchBar", () => {
 
   it("shows word autocomplete instead of recents while a token is being typed", async () => {
     suggestionsMock.current = [{ id: "identity:", label: "identity:", insert: "identity: " }];
-    const user = userEvent.setup();
+    const user = setupUser();
     const { input } = renderSearch({
       value: "ide",
       scope: "message",
@@ -353,7 +375,7 @@ describe("SearchBar", () => {
 
   it("inserts a suggestion into the query without running the search", async () => {
     suggestionsMock.current = [{ id: "identity:", label: "identity:", insert: "identity: " }];
-    const user = userEvent.setup();
+    const user = setupUser();
     const { input, onChange, onSubmit } = renderSearch({
       value: "ide",
       scope: "message",
@@ -374,7 +396,7 @@ describe("SearchBar", () => {
     });
 
     it("searches for a paste followed at once by Enter", async () => {
-      const user = userEvent.setup({ delay: null });
+      const user = setupUser();
       const { onSubmit, input } = renderLateSearch(LaggingSearch);
 
       await user.click(input);
@@ -389,7 +411,7 @@ describe("SearchBar", () => {
     });
 
     it("keeps every key of text typed with no delay", async () => {
-      const user = userEvent.setup({ delay: null });
+      const user = setupUser();
       const { input } = renderLateSearch(LaggingSearch);
 
       await user.type(input, "attachment:any");
@@ -401,7 +423,7 @@ describe("SearchBar", () => {
     });
 
     it("shows a search set from outside the box, such as a Saved Search", async () => {
-      const user = userEvent.setup();
+      const user = setupUser();
       const { input } = renderLateSearch(LaggingSearch);
 
       await user.type(input, "ada");
@@ -415,7 +437,7 @@ describe("SearchBar", () => {
       // The router can apply several changes as one: `a` then Backspace
       // leaves the address at "" and nothing is echoed. A Saved Search for
       // `a` afterwards is the person's choice, not an echo of the `a` typed.
-      const user = userEvent.setup({ delay: null });
+      const user = setupUser();
       const { input } = renderLateSearch(MergingSearch);
 
       await user.type(input, "a{Backspace}");
@@ -427,7 +449,7 @@ describe("SearchBar", () => {
   });
 
   it("writes a paste run at once into the address the box reads from", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const onSubmit = vi.fn();
     render(
       <MemoryRouter initialEntries={["/"]}>
@@ -443,5 +465,136 @@ describe("SearchBar", () => {
     expect(onSubmit).toHaveBeenLastCalledWith("attachment:any");
     expect(screen.getByTestId("location").textContent).toBe("?q=attachment%3Aany");
     expect(input).toHaveValue("attachment:any");
+  });
+
+  describe("a word only the other list takes", () => {
+    /** The Conversations box, as the header passes it, holding `value`. */
+    const conversationsBox = (value: string) =>
+      renderSearch({
+        value,
+        scope: "message",
+        list: "conversations",
+        otherList: "messages",
+        placeholder: "Search conversations",
+        advancedMode: null,
+      });
+
+    /** The words the layer behind the text underlines, as they read. */
+    const markedTexts = () =>
+      [...screen.getByTestId("search-marks").querySelectorAll("[data-marked-word]")].map(
+        (span) => span.textContent,
+      );
+
+    it("is marked, and a word the list takes or no list has is not", () => {
+      const { input } = conversationsBox("from:ann hello note:x -from:bob body:hi");
+
+      expect(markedTexts()).toEqual(["from:ann", "-from:bob"]);
+      // The layer draws the box's text itself, so each mark sits under its word.
+      expect(screen.getByTestId("search-marks").textContent).toBe(
+        "from:ann hello note:x -from:bob body:hi",
+      );
+      expect(input).toHaveAccessibleDescription(
+        expect.stringContaining("from: works only in Messages"),
+      );
+    });
+
+    it("is not marked in a box with no other list", () => {
+      renderSearch({ value: "from:ann hello" });
+      expect(markedTexts()).toEqual([]);
+    });
+
+    it("opens a note on a click inside it, and Remove deletes only that word", async () => {
+      const user = setupUser();
+      const { input, onChange } = conversationsBox("hello from:ann world");
+
+      await user.pointer({ target: input, offset: 9, keys: "[MouseLeft]" });
+      const note = screen.getByRole("dialog");
+      expect(note).toHaveTextContent("from: works only in Messages");
+
+      await user.click(within(note).getByRole("button", { name: "Remove" }));
+      expect(onChange).toHaveBeenLastCalledWith("hello world");
+      expect(input).toHaveValue("hello world");
+      expect(markedTexts()).toEqual([]);
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("Remove leaves an or the word joined, as typed", async () => {
+      const user = setupUser();
+      const { input, onChange } = conversationsBox("from:ann or hello");
+
+      await user.pointer({ target: input, offset: 3, keys: "[MouseLeft]" });
+      await user.click(screen.getByRole("button", { name: "Remove" }));
+      expect(onChange).toHaveBeenLastCalledWith("or hello");
+    });
+
+    it("is not marked once the box searches the list that takes it", () => {
+      const props = {
+        value: "from:ann hello",
+        onChange: vi.fn(),
+        onSubmit: vi.fn(),
+        scope: "message",
+        advancedMode: null,
+      } as const;
+      const { rerender } = render(
+        <SearchBar
+          {...props}
+          list="conversations"
+          otherList="messages"
+          placeholder="Search conversations"
+        />,
+      );
+      expect(markedTexts()).toEqual(["from:ann"]);
+
+      rerender(
+        <SearchBar
+          {...props}
+          list="messages"
+          otherList="conversations"
+          placeholder="Search messages"
+        />,
+      );
+      expect(markedTexts()).toEqual([]);
+    });
+
+    it("opens no note on a click outside it", async () => {
+      const user = setupUser();
+      const { input } = conversationsBox("from:ann hello");
+
+      await user.pointer({ target: input, offset: 11, keys: "[MouseLeft]" });
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("leaves typing, pasting, the cursor and the selection as they are", async () => {
+      const user = setupUser();
+      const { input, onChange } = conversationsBox("from:ann hello");
+      const box = input as HTMLInputElement;
+
+      await user.pointer({ target: input, offset: 14, keys: "[MouseLeft]" });
+      await user.keyboard(" world");
+      expect(input).toHaveValue("from:ann hello world");
+      expect(box.selectionStart).toBe(20);
+
+      await user.keyboard("{ArrowLeft>6/}");
+      await user.paste(" big");
+      expect(input).toHaveValue("from:ann hello big world");
+      expect(box.selectionStart).toBe(18);
+
+      // Dragging across the marked word selects it, and opens no note.
+      await user.pointer([
+        { target: input, offset: 0, keys: "[MouseLeft>]" },
+        { offset: 8 },
+        { keys: "[/MouseLeft]" },
+      ]);
+      expect([box.selectionStart, box.selectionEnd]).toEqual([0, 8]);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(markedTexts()).toEqual(["from:ann"]);
+
+      // Typing over the marked word replaces it like any other text.
+      await user.keyboard("with:ann");
+      expect(input).toHaveValue("with:ann hello big world");
+      expect(onChange).toHaveBeenLastCalledWith("with:ann hello big world");
+      expect(markedTexts()).toEqual([]);
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
   });
 });

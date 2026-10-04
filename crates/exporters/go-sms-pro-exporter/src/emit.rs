@@ -7,7 +7,8 @@ use crate::xml::{SkippedBadAddrDetail, XmlMessage, parse_xml_file};
 use anyhow::{Context, Result, bail};
 use go_sms_mms::{ParsedPdu, PduError, parse_pdu_file};
 use message_crate_core::{
-    CancelFlag, ExportReport, ExportTransforms, OutputFormat, prepare_outputs, project_conversation,
+    CancelFlag, ExportReport, ExportTransforms, IssueSink, OutputFormat, prepare_outputs,
+    project_conversation,
 };
 use message_ir::{
     ExportMeta, IrParticipant, IrService, IrSource, PendingAttachment, PendingConversation,
@@ -74,7 +75,7 @@ fn add_xml_messages(
         convo.messages.push(PendingMessage {
             sort_key: msg.timestamp_secs as i64,
             is_from_me: msg.is_from_me,
-            sender_handle: if msg.is_from_me {
+            sender_identity: if msg.is_from_me {
                 String::new()
             } else {
                 msg.other.into_key()
@@ -231,7 +232,7 @@ fn pdu_pending_message(
 ) -> PendingMessage {
     // The projection names the owner as the sender of every outgoing message
     // itself, so only a received PDU carries its sender here.
-    let sender_handle = match sender {
+    let sender_identity = match sender {
         Some(sender) if !parsed.is_sent => sender.into_key(),
         _ => String::new(),
     };
@@ -250,7 +251,7 @@ fn pdu_pending_message(
     PendingMessage {
         sort_key: parsed.timestamp,
         is_from_me: parsed.is_sent,
-        sender_handle,
+        sender_identity,
         sender_display_name: None,
         text: parsed.body,
         attachments,
@@ -297,8 +298,8 @@ impl ProjectionHooks for GoSmsProjection {
     fn participants(&self, chat_id: &str, convo: &PendingConversation) -> Vec<IrParticipant> {
         let mut participants = default_participants(chat_id, convo, &str::to_string);
         for p in &mut participants {
-            if let Some(handle) = p.handle.as_deref().and_then(Handle::parse) {
-                p.handle_type = Some(handle.kind());
+            if let Some(handle) = p.identity.as_deref().and_then(Handle::parse) {
+                p.identity_type = Some(handle.kind());
             }
         }
         participants
@@ -358,6 +359,8 @@ pub(crate) struct ConvertExportArgs<'a> {
     /// Continue an interrupted export: keep previous output and skip the
     /// conversations already written.
     pub resume: bool,
+    /// Where each Import Error and note goes as the run records it.
+    pub issues: Option<&'a IssueSink>,
 }
 
 /// Convert a GO SMS Pro export directory into the shared conversation structure
@@ -380,6 +383,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         output_format,
         cancel,
         resume,
+        issues,
     } = args;
     if !input_dir.is_dir() {
         bail!("input is not a directory: {}", input_dir.display());
@@ -387,7 +391,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     let (inputs, output_dir) = prepare_outputs(&[input_dir.to_path_buf()], output_dir)?;
     let input_dir = &inputs[0];
     let owners = OwnerHandleSet::from_phones(owner_phones)?;
-    let owner_handle = owners
+    let owner_identity = owners
         .primary_owner_handle()
         .expect("from_phones guarantees a phone owner handle");
 
@@ -398,7 +402,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         owners: &owners,
         spool: writer.spool(),
         conversations: BTreeMap::new(),
-        report: ExportReport::default(),
+        report: ExportReport::with_issues(issues.cloned()),
         skips: SkipDetails::default(),
     };
     for xml_path in sorted_files(input_dir, &is_xml_file)? {
@@ -422,7 +426,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
             EXPORT_SOURCE,
             EXPORT_TOOL,
             EXPORT_TOOL_VERSION,
-            Some(owner_handle),
+            Some(owner_identity),
             None,
         ),
     };
@@ -480,9 +484,10 @@ impl Ingest<'_> {
         let (msgs, stats) = match parse_xml_file(xml_path) {
             Ok(parsed) => parsed,
             Err(err) => {
-                self.report
-                    .errors
-                    .push(format!("{}: {err:#}", xml_path.display()));
+                self.report.error(
+                    xml_path.display().to_string(),
+                    format!("This file could not be read and was left out: {err:#}"),
+                );
                 return;
             }
         };
@@ -507,8 +512,8 @@ impl Ingest<'_> {
 
     /// Add the MMS in one PDU file. A stub (the placeholder GO SMS Pro
     /// writes for an MMS it never downloaded) is counted and listed; a file
-    /// that breaks the MMS rules is counted, and the first twenty are named
-    /// in the report.
+    /// that breaks the MMS rules is counted, and named in the report and as
+    /// an Import Error.
     ///
     /// # Errors
     ///
@@ -533,11 +538,10 @@ impl Ingest<'_> {
             }
             Err(err) => {
                 self.report.bump("skipped_unparseable_pdu", 1);
-                if self.report.errors.len() < 20 {
-                    self.report
-                        .errors
-                        .push(format!("{}: {err}", pdu_path.display()));
-                }
+                self.report.error(
+                    pdu_path.display().to_string(),
+                    format!("This MMS could not be read and was left out: {err}"),
+                );
                 return Ok(());
             }
         };
@@ -800,7 +804,7 @@ mod tests {
         PendingMessage {
             sort_key: 1_609_459_200,
             is_from_me: true,
-            sender_handle: String::new(),
+            sender_identity: String::new(),
             sender_display_name: None,
             text: text.into(),
             attachments: digests

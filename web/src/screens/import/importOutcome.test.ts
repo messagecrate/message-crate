@@ -12,6 +12,7 @@ function report(overrides: Partial<PushFinishedReport> = {}): PushFinishedReport
   return {
     ok: true,
     cancelled: false,
+    session_refused: false,
     messages_attempted: 100,
     messages_inserted: 100,
     messages_deduped: 0,
@@ -56,7 +57,7 @@ function approvedPlan(counts: { tooLarge?: number } = {}): StagingSummary {
     conversations: 1,
     messages: 1,
     contactIdentifiers: [],
-    ownerHandles: [],
+    ownerIdentities: [],
     attachments: forecasts.length,
     attachmentBytes: 0,
     forecasts,

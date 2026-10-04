@@ -1,9 +1,9 @@
 /** @vitest-environment jsdom */
 
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Providers } from "../../test/providers";
+import { setupUser } from "../../test/user";
 import { DemoAccountCard } from "./DemoAccountCard";
 
 const getDemoAccount = vi.hoisted(() => vi.fn());
@@ -47,7 +47,8 @@ describe("DemoAccountCard", () => {
     getDemoAccount.mockReturnValue(new Promise(() => {}));
     renderCard();
 
-    await userEvent.click(await screen.findByRole("button", { name: "Add Demo Account" }));
+    const user = setupUser();
+    await user.click(await screen.findByRole("button", { name: "Add Demo Account" }));
 
     expect(replaceDemoAccount).toHaveBeenCalledWith({ size: "medium" });
     expect(await screen.findByRole("status")).toHaveTextContent("Building the Demo Account");
@@ -58,12 +59,13 @@ describe("DemoAccountCard", () => {
     getDemoAccount.mockResolvedValue(ready);
     renderCard();
 
-    await userEvent.click(await screen.findByRole("button", { name: "Reset Demo Account" }));
+    const user = setupUser();
+    await user.click(await screen.findByRole("button", { name: "Reset Demo Account" }));
     expect(replaceDemoAccount).not.toHaveBeenCalled();
 
     const dialog = await screen.findByRole("dialog");
     expect(dialog).toHaveTextContent("No other account is touched.");
-    await userEvent.click(within(dialog).getByRole("button", { name: "Reset Demo Account" }));
+    await user.click(within(dialog).getByRole("button", { name: "Reset Demo Account" }));
 
     await waitFor(() => expect(replaceDemoAccount).toHaveBeenCalledWith({ size: "medium" }));
   });

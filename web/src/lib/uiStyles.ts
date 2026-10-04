@@ -72,10 +72,22 @@ export const popupShadow = "shadow-popup";
 
 /**
  * The keyboard focus ring of an element that takes DOM focus itself, such as
- * a button or a list row (`web/STYLE_GUIDE.md`, "Focus").
+ * a button or a list row (`web/STYLE_GUIDE.md`, "Focus"). It is an outline,
+ * like the theme's own `:focus-visible` rule, so the 1px gap between the
+ * element and the ring shows the surface behind it. A ring offset has a colour
+ * of its own, white unless set, which drew a white line in the dark theme.
  */
 export const focusRing =
-  "outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-1";
+  "outline-none focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-offset-1 focus-visible:outline-accent";
+
+/**
+ * `focusRing`'s outline with no variant, for an element whose focus sits on a
+ * hidden input, such as React Aria's `Radio`: the caller shows it when React
+ * Aria's `isFocusVisible` render prop is true. Tailwind reads class names from
+ * the source as written, so the two strings are spelt out, and
+ * `src/styleTokens.test.ts` checks that they agree.
+ */
+export const focusOutline = "outline-2 outline-solid outline-offset-1 outline-accent";
 
 /** A menu item without its text colour. The focused one (arrow keys or hover) takes the hover background. */
 export const menuItemClass =

@@ -55,22 +55,6 @@ pub(crate) struct PartRecord {
     pub emoji_image: bool,
 }
 
-/// Compact tapback row for parent `X-ME-Tapbacks`.
-#[derive(Serialize)]
-pub(crate) struct TapbackCell {
-    pub part_index: usize,
-    pub kind: &'static str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub emoji: Option<String>,
-    /// True when the owner reacted, so a reader never has to guess it from
-    /// the message reacted to.
-    pub is_from_me: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reactor_handle: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub reactor_display_name: Option<String>,
-}
-
 /// Local and UTC RFC 3339 strings from a date result, or `(None, None)` on error.
 pub(crate) fn optional_rfc3339(
     result: Result<

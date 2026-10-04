@@ -1,10 +1,9 @@
 //! Remove leftover files from a previous export in the same directory.
 
 use anyhow::{Context, Result, bail};
-use mail::clean_previous_mail_output;
 use std::fs;
 use std::io::Write;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Sentinel file written into export directories so `clean_previous_ir_output` can
 /// distinguish a real export directory from a person's own folder that was
@@ -12,6 +11,37 @@ use std::path::Path;
 /// archive wrote into the folder ([`record_archive_files`]), which the next
 /// clean removes.
 pub const EXPORT_SENTINEL: &str = ".message-crate-export";
+
+/// Whether `output_dir` holds the sentinel, which only an export writes.
+pub(crate) fn has_export_sentinel(output_dir: &Path) -> bool {
+    output_dir.join(EXPORT_SENTINEL).is_file()
+}
+
+/// Refuse `output_dir` unless it holds the sentinel. Every path in this crate
+/// that removes files from an output directory reaches the sentinel check
+/// before it removes anything: the mail clean and the placeholders call
+/// this, [`clean_previous_ir_output`] marks a directory without one that is
+/// empty apart from operating-system files and refuses any other, and
+/// [`FormatSink::finish`] runs only on a sink
+/// [`FormatSink::open`] checked. So none of them can remove a person's own
+/// files, whoever calls it.
+///
+/// [`FormatSink::finish`]: crate::FormatSink::finish
+/// [`FormatSink::open`]: crate::FormatSink::open
+///
+/// # Errors
+///
+/// Returns an error when the directory has no sentinel.
+pub(crate) fn require_export_directory(output_dir: &Path) -> Result<()> {
+    if has_export_sentinel(output_dir) {
+        return Ok(());
+    }
+    bail!(
+        "{} has no {EXPORT_SENTINEL} file, so Message Crate did not write it. \
+         Refusing to remove anything in it.",
+        output_dir.display()
+    )
+}
 
 /// Write an empty sentinel marking `output_dir` as an export target, with no
 /// archive files listed. Outside tests, [`mark_export_folder`] calls it after
@@ -41,7 +71,7 @@ const OPERATING_SYSTEM_FILES: [&str; 3] = [".DS_Store", "Thumbs.db", "desktop.in
 /// Returns an error when the directory cannot be read, the sentinel cannot be
 /// written, or the directory has no sentinel and is not empty.
 pub fn mark_export_folder(output_dir: &Path) -> Result<()> {
-    if output_dir.join(EXPORT_SENTINEL).is_file() {
+    if has_export_sentinel(output_dir) {
         return Ok(());
     }
     for entry in read_dir(output_dir)? {
@@ -74,7 +104,7 @@ pub fn clean_previous_ir_output(output_dir: &Path) -> Result<()> {
     if !output_dir.is_dir() {
         return Ok(());
     }
-    if !output_dir.join(EXPORT_SENTINEL).is_file() {
+    if !has_export_sentinel(output_dir) {
         return mark_export_folder(output_dir);
     }
     for name in recorded_archive_files(output_dir)? {
@@ -108,6 +138,67 @@ pub fn clean_previous_ir_output(output_dir: &Path) -> Result<()> {
     clean_previous_mail_output(output_dir)?;
     // The archive files the sentinel listed are gone, so it starts with no list.
     write_export_sentinel(output_dir)
+}
+
+/// Remove the mail archives an earlier export left in `output_dir`: `.mbox`
+/// files, and directories that hold an `.eml` file. Leaves `attachments/`
+/// alone. Reached only through [`clean_previous_ir_output`], and refuses a
+/// directory without the sentinel itself as well.
+///
+/// # Errors
+///
+/// Returns an error when the directory has no sentinel, a directory cannot
+/// be read, or a file cannot be removed.
+fn clean_previous_mail_output(output_dir: &Path) -> Result<()> {
+    require_export_directory(output_dir)?;
+    for entry in read_dir(output_dir)? {
+        let path = entry?.path();
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if path.is_file()
+            && path
+                .extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|ext| ext.eq_ignore_ascii_case("mbox"))
+        {
+            fs::remove_file(&path).with_context(|| format!("remove {}", path.display()))?;
+            continue;
+        }
+        if path.is_dir() && name != "attachments" {
+            let entries = read_dir(&path)?;
+            if holds_eml(&path, entries.map(|entry| entry.map(|e| e.path())))? {
+                fs::remove_dir_all(&path).with_context(|| format!("remove {}", path.display()))?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Whether `entries`, the paths of `dir`, include an `.eml` file.
+///
+/// An entry that cannot be read fails the check, with `dir` named. Skipping
+/// it could make a directory of an earlier export read as holding no `.eml`,
+/// and that directory would then stay beside the new export. The server's
+/// `import` command and the Upload fail the same way.
+///
+/// # Errors
+///
+/// Returns an error for the first entry that cannot be read before an `.eml`
+/// is found.
+fn holds_eml(
+    dir: &Path,
+    entries: impl IntoIterator<Item = std::io::Result<PathBuf>>,
+) -> Result<bool> {
+    for entry in entries {
+        let path = entry.with_context(|| format!("read an entry of {}", dir.display()))?;
+        if path
+            .extension()
+            .and_then(|x| x.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("eml"))
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 fn read_dir(dir: &Path) -> Result<fs::ReadDir> {
@@ -171,169 +262,4 @@ fn is_export_artifact(name: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn names(dir: &Path) -> Vec<String> {
-        let mut out: Vec<String> = fs::read_dir(dir)
-            .unwrap()
-            .map(|e| e.unwrap().file_name().into_string().unwrap())
-            .collect();
-        out.sort();
-        out
-    }
-
-    #[test]
-    fn refuses_a_folder_of_the_persons_own_files() {
-        let tmp = tempfile::tempdir().unwrap();
-        fs::write(tmp.path().join("notes.txt"), "mine").unwrap();
-
-        let err = clean_previous_ir_output(tmp.path()).unwrap_err();
-
-        assert!(
-            err.to_string().contains("Refusing to write into it"),
-            "{err}"
-        );
-        assert_eq!(names(tmp.path()), ["notes.txt"]);
-    }
-
-    #[test]
-    fn removes_only_export_files_from_a_marked_folder() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path();
-        write_export_sentinel(dir).unwrap();
-        for name in [
-            "a.jsonl",
-            "b.csv",
-            "c.json",
-            "c.meta.json",
-            "d.jsonl.tmp",
-            "notes.txt",
-        ] {
-            fs::write(dir.join(name), "x").unwrap();
-        }
-        fs::create_dir(dir.join("attachments")).unwrap();
-        fs::write(dir.join("attachments").join("a.jpg"), "x").unwrap();
-        // A folder named like an export file is not an export file.
-        fs::create_dir(dir.join("kept.json")).unwrap();
-
-        clean_previous_ir_output(dir).unwrap();
-
-        assert_eq!(names(dir), [EXPORT_SENTINEL, "kept.json", "notes.txt"]);
-    }
-
-    #[test]
-    fn cleans_a_marked_folder_that_holds_no_export_files() {
-        let tmp = tempfile::tempdir().unwrap();
-        write_export_sentinel(tmp.path()).unwrap();
-        fs::write(tmp.path().join("notes.txt"), "mine").unwrap();
-
-        clean_previous_ir_output(tmp.path()).unwrap();
-
-        assert_eq!(names(tmp.path()), [EXPORT_SENTINEL, "notes.txt"]);
-    }
-
-    #[test]
-    fn refuses_an_unmarked_folder_that_holds_export_like_files() {
-        let tmp = tempfile::tempdir().unwrap();
-        fs::write(tmp.path().join("budget.csv"), "mine").unwrap();
-        fs::write(tmp.path().join("settings.json"), "{}").unwrap();
-        fs::write(tmp.path().join("notes.txt"), "mine").unwrap();
-        fs::create_dir_all(tmp.path().join("attachments")).unwrap();
-        fs::write(tmp.path().join("attachments/holiday.jpg"), "mine").unwrap();
-
-        let err = clean_previous_ir_output(tmp.path()).unwrap_err();
-
-        assert!(
-            err.to_string().contains(&tmp.path().display().to_string()),
-            "{err}"
-        );
-        assert_eq!(
-            names(tmp.path()),
-            ["attachments", "budget.csv", "notes.txt", "settings.json"]
-        );
-        assert!(tmp.path().join("attachments/holiday.jpg").exists());
-    }
-
-    /// Every exporter cleans through here, so the files a merged archive
-    /// recorded go whatever the next run writes, and an XML file nothing
-    /// recorded, such as a person's own backup, stays.
-    #[test]
-    fn removes_the_files_an_archive_recorded_and_nothing_else() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path().join("export");
-        fs::create_dir(&dir).unwrap();
-        let dir = dir.as_path();
-        write_export_sentinel(dir).unwrap();
-        let recorded = ["archive.xml", "archive.xml.tmp"].map(String::from);
-        record_archive_files(dir, &recorded).unwrap();
-        // A damaged list cannot reach outside the folder.
-        record_archive_files(dir, &["../outside.xml".to_string()]).unwrap();
-        let outside = tmp.path().join("outside.xml");
-        fs::write(&outside, "mine").unwrap();
-        for name in ["archive.xml", "archive.xml.tmp", "sms-20261001.xml"] {
-            fs::write(dir.join(name), "x").unwrap();
-        }
-
-        clean_previous_ir_output(dir).unwrap();
-
-        assert_eq!(names(dir), [EXPORT_SENTINEL, "sms-20261001.xml"]);
-        assert!(outside.is_file(), "a file outside the folder is kept");
-        assert_eq!(fs::read_to_string(dir.join(EXPORT_SENTINEL)).unwrap(), "");
-    }
-
-    /// Pull and WhatsApp mark a folder without cleaning it, so marking it
-    /// again keeps the archive files an earlier export listed for the next
-    /// clean.
-    #[test]
-    fn marking_a_folder_again_keeps_the_archive_files_it_lists() {
-        let tmp = tempfile::tempdir().unwrap();
-        let dir = tmp.path();
-        write_export_sentinel(dir).unwrap();
-        record_archive_files(dir, &["archive.xml".to_string()]).unwrap();
-        fs::write(dir.join("archive.xml"), "x").unwrap();
-
-        mark_export_folder(dir).unwrap();
-        clean_previous_ir_output(dir).unwrap();
-
-        assert_eq!(names(dir), [EXPORT_SENTINEL]);
-    }
-
-    #[test]
-    fn marks_an_empty_folder() {
-        let tmp = tempfile::tempdir().unwrap();
-
-        clean_previous_ir_output(tmp.path()).unwrap();
-
-        assert_eq!(names(tmp.path()), [EXPORT_SENTINEL]);
-    }
-
-    #[test]
-    fn export_artifacts_are_recognised_by_name() {
-        for name in [
-            "a.csv",
-            "a.csv.tmp",
-            "a.meta.json",
-            "a.meta.json.tmp",
-            "a.json",
-            "a.json.tmp",
-            "a.jsonl",
-            "a.jsonl.tmp",
-        ] {
-            assert!(is_export_artifact(name), "{name} is an export file");
-        }
-        for name in ["notes.txt", "photo.jpg", "other.xml", "a.csv.bak", ""] {
-            assert!(!is_export_artifact(name), "{name} is not an export file");
-        }
-    }
-
-    #[test]
-    fn marks_a_folder_that_holds_only_operating_system_files() {
-        let tmp = tempfile::tempdir().unwrap();
-        fs::write(tmp.path().join(".DS_Store"), "finder").unwrap();
-
-        clean_previous_ir_output(tmp.path()).unwrap();
-
-        assert_eq!(names(tmp.path()), [".DS_Store", EXPORT_SENTINEL]);
-    }
-}
+mod tests;

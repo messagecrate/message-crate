@@ -14,7 +14,6 @@
 // through approve first, because there is no other way to reach it.
 
 import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { currentDesktopJob } from "../../lib/desktopJob";
 import type { ActiveImportSession } from "../../lib/importSession";
@@ -24,7 +23,13 @@ import type {
   StagingSummary,
   TauriJobResult,
 } from "../../lib/tauri";
-import type { AttachmentMediaMode, ImportIssueEvent, ImportProgressEvent } from "../../lib/types";
+import type {
+  AttachmentMediaMode,
+  ImportFileDoneEvent,
+  ImportIssueEvent,
+  ImportProgressEvent,
+} from "../../lib/types";
+import { fill, setupUser } from "../../test/user";
 import { restoreFormFromSnapshot, snapshotSecret } from "./formSnapshot";
 import { importRunStore } from "./importRunStore";
 
@@ -181,6 +186,7 @@ function failedReport(): PushFinishedReport {
   return {
     ok: false,
     cancelled: false,
+    session_refused: false,
     messages_attempted: 8_000,
     messages_inserted: 0,
     messages_deduped: 0,
@@ -200,6 +206,7 @@ function okReport(overrides: Partial<PushFinishedReport> = {}): PushFinishedRepo
   return {
     ok: true,
     cancelled: false,
+    session_refused: false,
     messages_attempted: 10,
     messages_inserted: 10,
     messages_deduped: 0,
@@ -221,7 +228,7 @@ function stagingSummary(overrides: Partial<StagingSummary> = {}): StagingSummary
     conversations: 1,
     messages: 10,
     contactIdentifiers: [],
-    ownerHandles: [],
+    ownerIdentities: [],
     attachments: 0,
     attachmentBytes: 0,
     forecasts: [],
@@ -792,7 +799,7 @@ describe("useImportJob wiring", () => {
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.cancelRun());
-    expect(discardImportSessionMock).toHaveBeenCalledWith(1, []);
+    expect(discardImportSessionMock).toHaveBeenCalledWith(1, [], []);
     expect(invokeDeleteStagingMock).toHaveBeenCalledWith({ staging_dir: "/staging/run-1" });
     expect(result.current.phase).toBe("form");
   });
@@ -817,11 +824,62 @@ describe("useImportJob wiring", () => {
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     await act(() => result.current.cancelRun());
 
-    expect(discardImportSessionMock).toHaveBeenCalledWith(1, [
-      { kind: "error", stage: "staging", item: "IMG_2.HEIC", reason: "could not be decrypted" },
-    ]);
+    expect(discardImportSessionMock).toHaveBeenCalledWith(
+      1,
+      [{ kind: "error", stage: "staging", item: "IMG_2.HEIC", reason: "could not be decrypted" }],
+      [],
+    );
     expect(readRunRecordMock.mock.invocationCallOrder.at(-1)).toBeLessThan(
       invokeDeleteStagingMock.mock.invocationCallOrder[0] ?? 0,
+    );
+  });
+
+  it("lists a Staging note apart from the Import Errors and still completes the run clean (#1626)", async () => {
+    const noteEvent: ImportIssueEvent = {
+      kind: "note",
+      step: "parse",
+      item: "IMG_0002.jpg",
+      reason: "2 rows name this picture; its Live Photo video goes to the first of them in the CSV",
+    };
+    const note = { stage: "staging", item: noteEvent.item, text: noteEvent.reason };
+    runMock.mockReset();
+    runMock.mockImplementationOnce(runResultWithIssue(EXTRACT_RESULT, noteEvent));
+    runMock.mockImplementationOnce(runResult({ summary: "Push finished.", report: okReport() }));
+    const { result } = renderHook(() => useImportJob());
+    await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
+    await act(() => result.current.approve());
+
+    expect(result.current.summaryView?.status).toBe("completed");
+    expect(result.current.summaryView?.issues).toEqual([]);
+    expect(result.current.summaryView?.notes).toEqual([note]);
+    expect(completeImportMock).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ status: "completed", issues: [], notes: [note] }),
+    );
+  });
+
+  it("sends the run's notes with the cancelled run when a review is cancelled (#1626)", async () => {
+    const noteEvent: ImportIssueEvent = {
+      kind: "note",
+      step: "parse",
+      item: "1.eml",
+      reason: "kept as a one-to-one message from its sender",
+    };
+    let stored: unknown = null;
+    saveRunRecordMock.mockImplementation(async ({ record }: { record: unknown }) => {
+      stored = record;
+    });
+    readRunRecordMock.mockImplementation(async () => stored);
+    runMock.mockReset();
+    runMock.mockImplementationOnce(runResultWithIssue(EXTRACT_RESULT, noteEvent));
+    const { result } = renderHook(() => useImportJob());
+    await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
+    await act(() => result.current.cancelRun());
+
+    expect(discardImportSessionMock).toHaveBeenCalledWith(
+      1,
+      [],
+      [{ stage: "staging", item: "1.eml", text: noteEvent.reason }],
     );
   });
 
@@ -837,7 +895,7 @@ describe("useImportJob wiring", () => {
     await act(() => result.current.discardRun(7, "/staging/paused"));
 
     expect(readRunRecordMock).toHaveBeenCalledWith({ staging_dir: "/staging/paused" });
-    expect(discardImportSessionMock).toHaveBeenCalledWith(7, [carried]);
+    expect(discardImportSessionMock).toHaveBeenCalledWith(7, [carried], []);
     expect(invokeDeleteStagingMock).toHaveBeenCalledWith({ staging_dir: "/staging/paused" });
     expect(readRunRecordMock.mock.invocationCallOrder[0]).toBeLessThan(
       invokeDeleteStagingMock.mock.invocationCallOrder[0] ?? 0,
@@ -856,7 +914,7 @@ describe("useImportJob wiring", () => {
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.discardRun(7, "/staging/paused"));
 
-    expect(discardImportSessionMock).toHaveBeenCalledWith(7, [carried, failed]);
+    expect(discardImportSessionMock).toHaveBeenCalledWith(7, [carried, failed], []);
   });
 
   it("still discards a paused run, with no Import Errors, when its record cannot be read", async () => {
@@ -864,7 +922,7 @@ describe("useImportJob wiring", () => {
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.discardRun(7, "/staging/paused"));
 
-    expect(discardImportSessionMock).toHaveBeenCalledWith(7, []);
+    expect(discardImportSessionMock).toHaveBeenCalledWith(7, [], []);
     expect(invokeDeleteStagingMock).toHaveBeenCalledWith({ staging_dir: "/staging/paused" });
   });
 
@@ -873,7 +931,7 @@ describe("useImportJob wiring", () => {
     await act(() => result.current.discardRun(7, null));
 
     expect(readRunRecordMock).not.toHaveBeenCalled();
-    expect(discardImportSessionMock).toHaveBeenCalledWith(7, []);
+    expect(discardImportSessionMock).toHaveBeenCalledWith(7, [], []);
     expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
   });
 
@@ -898,7 +956,7 @@ describe("useImportJob wiring", () => {
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.cancelRun());
-    expect(discardImportSessionMock).toHaveBeenCalledWith(1, []);
+    expect(discardImportSessionMock).toHaveBeenCalledWith(1, [], []);
     expect(result.current.phase).toBe("form");
     // The folder is still on disk, and the screen says so (#1154).
     expect(result.current.stagingDeleteFailure).toEqual({
@@ -919,7 +977,7 @@ describe("useImportJob wiring", () => {
 
     await act(() => result.current.cancelRun());
 
-    expect(discardImportSessionMock).toHaveBeenCalledWith(1, []);
+    expect(discardImportSessionMock).toHaveBeenCalledWith(1, [], []);
     expect(invokeDeleteStagingMock).toHaveBeenCalledWith({ staging_dir: "/staging/run-2" });
     expect(result.current.phase).toBe("form");
   });
@@ -1021,12 +1079,14 @@ describe("useImportJob wiring", () => {
       step: "upload",
       item: "a.jsonl:attachments/big.mov",
       reason: "too large",
+      conversation: "a.jsonl",
     };
     const conversationRow: ImportIssueEvent = {
       kind: "error",
       step: "upload",
       item: "b.jsonl",
       reason: "connection refused",
+      conversation: "b.jsonl",
     };
     runMock.mockReset();
     runMock.mockImplementationOnce(runResultWithIssue(EXTRACT_RESULT, stagingIssue));
@@ -1067,7 +1127,13 @@ describe("useImportJob wiring", () => {
     expect(staging_dir).toBe("/home/sam/message-crate/staging-iphone");
     expect(record.issues).toEqual([
       { kind: "skip", stage: "staging", item: "IMG_1.HEIC", reason: "missing" },
-      { kind: "skip", stage: "upload", item: "a.jsonl:attachments/big.mov", reason: "too large" },
+      {
+        kind: "skip",
+        stage: "upload",
+        item: "a.jsonl:attachments/big.mov",
+        reason: "too large",
+        conversation: "a.jsonl",
+      },
     ]);
     expect(record.bytesUploaded).toBe(4_096);
     expect(record.filesSucceeded).toBe(1);
@@ -1902,10 +1968,10 @@ describe("useImportJob wiring", () => {
   describe("the desktop job between stages (#1407)", () => {
     /** Settings → Convert with both folders filled, so only a running job keeps it off. */
     async function renderConvert() {
-      const user = userEvent.setup();
+      const user = setupUser();
       const view = render(<ConvertSection />);
-      await user.type(screen.getByLabelText("Input folder"), "/home/demo/export-json");
-      await user.type(screen.getByLabelText("Output folder"), "/home/demo/export-csv");
+      await fill(user, screen.getByLabelText("Input folder"), "/home/demo/export-json");
+      await fill(user, screen.getByLabelText("Output folder"), "/home/demo/export-csv");
       return { view, convert: screen.getByRole("button", { name: "Convert" }) };
     }
 
@@ -2335,6 +2401,112 @@ describe("useImportJob resume path", () => {
     expect(invokeDeleteStagingMock).toHaveBeenCalled();
   });
 
+  /**
+   * A push that stands in for `awaitTauriJob`: it calls the invoke function,
+   * sends `events` to the job's listeners, and returns what the Staging Directory held
+   * once the window wrote the record they lead to. That is what an app that
+   * closed at that moment, before the Upload ended, would leave.
+   */
+  function pushThatSends(
+    events: (
+      onIssue: (event: ImportIssueEvent) => void,
+      onFileDone: (event: ImportFileDoneEvent) => void,
+    ) => void,
+    recorded: (record: Record<string, unknown>) => boolean,
+    seen: { record?: Record<string, unknown> },
+  ) {
+    return async (
+      fn: () => Promise<unknown>,
+      _onLog?: (line: string) => void,
+      _onProgress?: (event: ImportProgressEvent) => void,
+      onIssue?: (event: ImportIssueEvent) => void,
+      onFileDone?: (event: ImportFileDoneEvent) => void,
+    ) => {
+      await fn();
+      events(
+        (event) => onIssue?.(event),
+        (event) => onFileDone?.(event),
+      );
+      await waitFor(() => {
+        const last = saveRunRecordMock.mock.lastCall?.[0] as
+          | { record: Record<string, unknown> }
+          | undefined;
+        expect(last != null && recorded(last.record)).toBe(true);
+        seen.record = last?.record;
+      });
+      return { summary: "Push finished.", report: failedReport() };
+    };
+  }
+
+  it("writes an Upload issue into the Staging Directory before the Upload ends (#1639)", async () => {
+    const skip: ImportIssueEvent = {
+      kind: "skip",
+      step: "upload",
+      item: "a.jsonl:attachments/big.mov",
+      reason: "too large",
+      conversation: "a.jsonl",
+    };
+    readRunRecordMock.mockResolvedValue({ issues: [] });
+    const seen: { record?: Record<string, unknown> } = {};
+    runMock.mockImplementation(
+      pushThatSends(
+        (onIssue, onFileDone) => {
+          onIssue(skip);
+          onFileDone({ file: "a.jsonl", status: "ok" });
+        },
+        (record) => (record.issues as unknown[]).length > 0,
+        seen,
+      ),
+    );
+    const { result } = renderHook(() => useImportJob());
+    await act(async () => {
+      await result.current.startImport(baseForm, { sessionId: 7, stagingDir: "/staging/paused" });
+    });
+
+    expect(seen.record?.issues).toEqual([
+      {
+        kind: "skip",
+        stage: "upload",
+        item: "a.jsonl:attachments/big.mov",
+        reason: "too large",
+        conversation: "a.jsonl",
+      },
+    ]);
+  });
+
+  it("does not send with a Discard a failure the resumed Upload undid before the app closed (#1639)", async () => {
+    // Pause 1 left a.jsonl failed. The resumed Upload sends it, and the app
+    // closes before that Upload ends, so the Staging Directory keeps the record written
+    // while it ran.
+    const failed = {
+      kind: "error",
+      stage: "upload",
+      item: "a.jsonl",
+      reason: "connection refused",
+      conversation: "a.jsonl",
+    };
+    readRunRecordMock.mockResolvedValue({ issues: [], lastStopIssues: [failed] });
+    const seen: { record?: Record<string, unknown> } = {};
+    runMock.mockImplementation(
+      pushThatSends(
+        (_onIssue, onFileDone) => onFileDone({ file: "a.jsonl", status: "ok" }),
+        (record) => (record.lastStopIssues as unknown[]).length === 0,
+        seen,
+      ),
+    );
+    const { result } = renderHook(() => useImportJob());
+    await act(async () => {
+      await result.current.startImport(baseForm, { sessionId: 7, stagingDir: "/staging/paused" });
+    });
+    expect(seen.record).toBeDefined();
+    readRunRecordMock.mockResolvedValue(seen.record);
+    discardImportSessionMock.mockClear();
+
+    await act(() => result.current.discardRun(7, "/staging/paused"));
+
+    expect(discardImportSessionMock).toHaveBeenCalledWith(7, [], []);
+  });
+
   it("still posts /complete against the resumed run id", async () => {
     const { result } = renderHook(() => useImportJob());
 
@@ -2576,6 +2748,45 @@ describe("useImportJob resumeAtReview", () => {
     // plan stored at the last gate.
     expect(setImportStageMock).toHaveBeenCalledWith(1, "media", approved);
     expect(setImportStageMock).toHaveBeenCalledWith(1, "media_review", approved);
+  });
+
+  it("drops an earlier part's Media row once the resumed pass converts that file (#1639)", async () => {
+    // Part 1's pass could not convert IMG_4.MOV. The resumed pass converts
+    // it, and the app may close before that pass ends.
+    const earlier = {
+      kind: "skip",
+      stage: "media",
+      item: "a.jsonl:IMG_4.MOV",
+      reason: "could not be converted",
+    };
+    readRunRecordMock.mockResolvedValue({ issues: [earlier] });
+    const seen: { record?: { issues: unknown[] } } = {};
+    runMock.mockImplementationOnce(
+      async (
+        fn: () => Promise<unknown>,
+        _onLog?: (line: string) => void,
+        _onProgress?: (event: ImportProgressEvent) => void,
+        onIssue?: (event: ImportIssueEvent) => void,
+      ) => {
+        const before = saveRunRecordMock.mock.calls.length;
+        await fn();
+        onIssue?.({ kind: "resolved", step: "media", item: "a.jsonl:IMG_4.MOV", reason: "" });
+        await waitFor(() => expect(saveRunRecordMock.mock.calls.length).toBeGreaterThan(before));
+        seen.record = saveRunRecordMock.mock.lastCall?.[0].record;
+        return { summary: "Transcode finished.", transcode: undefined };
+      },
+    );
+    const approved = stagingSummary({ mediaMode: "convert", conversations: 7 });
+    invokeSummarizeStagingMock.mockResolvedValueOnce(approved);
+    const { result } = renderHook(() => useImportJob());
+    await act(async () => {
+      await result.current.resumeAtReview(
+        activeSession({ stage: "media", summary: approved }),
+        form({ attachmentMedia: "convert" }),
+      );
+    });
+
+    expect(seen.record?.issues).toEqual([]);
   });
 
   it("shows a 3-row list with the Media row active while the pass re-runs on a media resume", async () => {

@@ -3,11 +3,11 @@ import { useEffect, useRef, useState } from "react";
 import { clampWidth, loadWidth, saveWidth } from "./columnResize";
 
 export type ColumnResizeHandleProps = {
-  onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => void;
-  onPointerMove: (e: ReactPointerEvent<HTMLDivElement>) => void;
-  onPointerUp: (e: ReactPointerEvent<HTMLDivElement>) => void;
-  onPointerCancel: (e: ReactPointerEvent<HTMLDivElement>) => void;
-  onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => void;
+  onPointerDown: (e: ReactPointerEvent<HTMLElement>) => void;
+  onPointerMove: (e: ReactPointerEvent<HTMLElement>) => void;
+  onPointerUp: (e: ReactPointerEvent<HTMLElement>) => void;
+  onPointerCancel: (e: ReactPointerEvent<HTMLElement>) => void;
+  onKeyDown: (e: KeyboardEvent<HTMLElement>) => void;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
 };
@@ -17,6 +17,12 @@ export type UseColumnResizeOptions = {
   defaultWidth: number;
   minWidth: number;
   maxWidth: number;
+  /**
+   * The widest the column may be in this window, when that is less than
+   * `maxWidth`. The returned `width`, a drag and a key all stop there, while a
+   * stored width wider than it is kept for a wider window.
+   */
+  windowMaxWidth?: number;
   /** Called when a drag starts (true) or ends (false). */
   onDraggingChange?: (dragging: boolean) => void;
 };
@@ -35,15 +41,27 @@ function clearBodyDragStyles(): void {
 }
 
 /**
- * On-screen width of the column that owns the resize handle.
+ * Width of the column that owns the resize handle, as its `width` style
+ * counts it, so a narrow window that squeezes the column is seen. The left
+ * panel and the list column are content-box with a 1px right border, which the
+ * browser paints outside that width, so the border and any padding come off
+ * the painted width rather than adding 1px to every resize.
  * Falls back to preferredWidth when the parent is missing (tests / detached nodes).
  */
 export function measureColumnWidth(handle: HTMLElement, preferredWidth: number): number {
   const parent = handle.parentElement;
   if (!parent) return preferredWidth;
-  const measured = parent.getBoundingClientRect().width;
-  if (!Number.isFinite(measured) || measured <= 0) return preferredWidth;
-  return measured;
+  const painted = parent.getBoundingClientRect().width;
+  if (!Number.isFinite(painted) || painted <= 0) return preferredWidth;
+  const style = getComputedStyle(parent);
+  if (style.boxSizing === "border-box") return painted;
+  const px = (value: string) => Number.parseFloat(value) || 0;
+  const outside =
+    px(style.borderLeftWidth) +
+    px(style.borderRightWidth) +
+    px(style.paddingLeft) +
+    px(style.paddingRight);
+  return painted - outside;
 }
 
 /** Drag and keyboard resize for a vertical column, with localStorage persistence. */
@@ -52,9 +70,11 @@ export function useColumnResize({
   defaultWidth,
   minWidth,
   maxWidth,
+  windowMaxWidth,
   onDraggingChange,
 }: UseColumnResizeOptions): UseColumnResizeResult {
   const [width, setWidth] = useState(() => loadWidth(storageKey, defaultWidth, minWidth, maxWidth));
+  const effectiveMaxWidth = Math.min(maxWidth, windowMaxWidth ?? maxWidth);
   const [dragging, setDragging] = useState(false);
   const [handleHover, setHandleHover] = useState(false);
 
@@ -91,43 +111,44 @@ export function useColumnResize({
     saveWidth(storageKey, widthRef.current);
   };
 
-  const onResizePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+  const onResizePointerDown = (e: ReactPointerEvent<HTMLElement>) => {
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     startXRef.current = e.clientX;
-    // Use the painted width so a flex-shrunk column does not jump to preferred.
+    // Start from the column's measured width (`measureColumnWidth`), so a
+    // flex-shrunk column does not jump to its preferred width.
     startWidthRef.current = measureColumnWidth(e.currentTarget, widthRef.current);
     setDraggingState(true);
     document.body.style.userSelect = "none";
     document.body.style.cursor = "col-resize";
   };
 
-  const onResizePointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+  const onResizePointerMove = (e: ReactPointerEvent<HTMLElement>) => {
     if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
     const next = clampWidth(
       startWidthRef.current + (e.clientX - startXRef.current),
       minWidth,
-      maxWidth,
+      effectiveMaxWidth,
     );
     widthRef.current = next;
     setWidth(next);
   };
 
-  const onResizePointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+  const onResizePointerUp = (e: ReactPointerEvent<HTMLElement>) => {
     endDrag(e.currentTarget, e.pointerId);
   };
 
-  const onResizeKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+  const onResizeKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     const step = e.shiftKey ? 24 : 8;
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
-      // Start from the painted width, as a drag does, so a flex-shrunk column
-      // moves on the first key press.
+      // Start from the column's measured width, as a drag does, so a
+      // flex-shrunk column moves on the first key press.
       const from = measureColumnWidth(e.currentTarget, widthRef.current);
       const next = clampWidth(
         e.key === "ArrowLeft" ? from - step : from + step,
         minWidth,
-        maxWidth,
+        effectiveMaxWidth,
       );
       widthRef.current = next;
       setWidth(next);
@@ -139,14 +160,14 @@ export function useColumnResize({
       saveWidth(storageKey, minWidth);
     } else if (e.key === "End") {
       e.preventDefault();
-      widthRef.current = maxWidth;
-      setWidth(maxWidth);
-      saveWidth(storageKey, maxWidth);
+      widthRef.current = effectiveMaxWidth;
+      setWidth(effectiveMaxWidth);
+      saveWidth(storageKey, effectiveMaxWidth);
     }
   };
 
   return {
-    width,
+    width: Math.min(width, effectiveMaxWidth),
     dragging,
     handleHover,
     handleProps: {

@@ -198,10 +198,13 @@ carrier texting transports only, and the underlying `service` value still
 records `imessage`, `sms`, and `mms` — only the presentation collapses.
 
 One thing carries two names on purpose. A phone number, email address, or
-username a person is reached at is a **handle** in the code and the database
-(`handles`, `contact_handles`) and an **Identity** in the UI and the published
-documentation. Neither is a stale name: backend code is not renamed to
-`identity`, and UI copy does not say "handle".
+username a person is reached at is a **handle** in the database (`handles`,
+`contact_handles`) and the server code over those tables, and an **Identity**
+in the UI, the published documentation, the HTTP API and the conversation
+file. The conversation file, its CSV, EML and mbox forms, the Apple Messages
+Reader's protocol and the staging summary say `identity`, in their Rust
+fields as on disk. Neither is a stale name: the database and the code over it
+are not renamed to `identity`, and UI copy does not say "handle".
 
 A stale name met in passing is fixed, not matched.
 

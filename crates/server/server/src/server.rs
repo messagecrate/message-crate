@@ -355,12 +355,6 @@ auth_guard!(
     require_export_access
 );
 auth_guard!(
-    /// Logged-in session, or an API token that may export; wraps
-    /// [`require_asset_read_access`].
-    AssetReadAccess,
-    require_asset_read_access
-);
-auth_guard!(
     /// Credential that may import or export, for asset probes; wraps
     /// [`require_import_or_export_access`].
     ImportOrExportAccess,
@@ -405,6 +399,14 @@ pub struct AppState {
     /// Writes the demo bundle a build imports. A test swaps in one that
     /// writes a few conversations.
     pub(crate) demo_bundle_generator: crate::reset_demo::BundleGenerator,
+    /// The key media links are signed with, made when the process starts and
+    /// never written anywhere, so a restart ends every media link
+    /// (`docs/architecture/http-api.md`, "Credentials and reach").
+    pub(crate) media_link_key: crate::assets_api::media_links::MediaLinkKey,
+    /// Wakes the background pass that makes Thumbnails and Previews after
+    /// each Import Run. `serve` starts the pass; the test harness does not,
+    /// so a test sees the queue as an Import Run leaves it.
+    pub(crate) media_queue: crate::media_queue::MediaQueue,
 }
 
 impl AppState {
@@ -421,6 +423,8 @@ impl AppState {
             asset_part_size,
             demo_build: crate::server_api::DemoBuild::default(),
             demo_bundle_generator: crate::reset_demo::generate_bundle,
+            media_link_key: crate::assets_api::media_links::MediaLinkKey::random(),
+            media_queue: crate::media_queue::MediaQueue::default(),
         }
     }
 
@@ -546,6 +550,16 @@ pub enum ApiError {
     MethodNotAllowed(String),
     /// `406` — `Accept` names nothing the route can produce.
     NotAcceptable(String),
+    /// `401` — the `media_link` in the URL opens nothing here.
+    MediaLinkInvalid(String),
+    /// `416` — the `Range` selects no byte of a file `length` bytes long. The
+    /// answer carries `Content-Range: bytes */<length>`.
+    RangeNotSatisfiable {
+        /// The sentence, naming the range.
+        detail: String,
+        /// The file's length in bytes.
+        length: u64,
+    },
     /// `500` — unexpected failure. The whole context chain goes to the log;
     /// the client sees a fixed sentence and `about:blank`.
     Internal(anyhow::Error),
@@ -583,6 +597,8 @@ impl ApiError {
             Self::NotFound(_) => ProblemType::NotFound,
             Self::MethodNotAllowed(_) => ProblemType::MethodNotAllowed,
             Self::NotAcceptable(_) => ProblemType::NotAcceptable,
+            Self::MediaLinkInvalid(_) => ProblemType::MediaLinkInvalid,
+            Self::RangeNotSatisfiable { .. } => ProblemType::RangeNotSatisfiable,
             Self::Internal(_) => return None,
         })
     }
@@ -650,6 +666,7 @@ impl ApiError {
                 problem.detail = Some(detail.clone());
                 problem.line = Some(*line as u64);
             }
+            Self::RangeNotSatisfiable { detail, .. } => problem.detail = Some(detail.clone()),
             Self::InvalidImportLines { errors, line } => {
                 problem.errors = Some(errors.clone());
                 problem.line = Some(*line as u64);
@@ -670,7 +687,8 @@ impl ApiError {
             | Self::AssetUploadInvalid(m)
             | Self::NotFound(m)
             | Self::MethodNotAllowed(m)
-            | Self::NotAcceptable(m) => problem.detail = Some(m.clone()),
+            | Self::NotAcceptable(m)
+            | Self::MediaLinkInvalid(m) => problem.detail = Some(m.clone()),
             Self::Internal(_) => unreachable!("handled above"),
         }
         problem
@@ -692,9 +710,9 @@ impl std::fmt::Display for ApiError {
                 f,
                 "too many authentication attempts; try again in {retry_after_secs} seconds"
             ),
-            Self::SearchQueryInvalid { detail, .. } | Self::MalformedImportLine { detail, .. } => {
-                f.write_str(detail)
-            }
+            Self::SearchQueryInvalid { detail, .. }
+            | Self::MalformedImportLine { detail, .. }
+            | Self::RangeNotSatisfiable { detail, .. } => f.write_str(detail),
             Self::MalformedBody(m)
             | Self::UnsupportedMediaType(m)
             | Self::PayloadTooLarge(m)
@@ -711,7 +729,8 @@ impl std::fmt::Display for ApiError {
             | Self::AssetUploadInvalid(m)
             | Self::NotFound(m)
             | Self::MethodNotAllowed(m)
-            | Self::NotAcceptable(m) => f.write_str(m),
+            | Self::NotAcceptable(m)
+            | Self::MediaLinkInvalid(m) => f.write_str(m),
         }
     }
 }
@@ -719,6 +738,11 @@ impl std::fmt::Display for ApiError {
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let problem = self.to_problem();
+        // RFC 9110, section 15.5.17: a `416` says how long the file is.
+        let content_range = match &self {
+            Self::RangeNotSatisfiable { length, .. } => Some(format!("bytes */{length}")),
+            _ => None,
+        };
         let status = StatusCode::from_u16(problem.status).expect("a registered status");
         let mut response = (
             status,
@@ -730,6 +754,12 @@ impl IntoResponse for ApiError {
             response.headers_mut().insert(
                 header::RETRY_AFTER,
                 HeaderValue::from_str(&secs.to_string()).expect("digits are a valid header value"),
+            );
+        }
+        if let Some(content_range) = content_range {
+            response.headers_mut().insert(
+                header::CONTENT_RANGE,
+                HeaderValue::from_str(&content_range).expect("digits are a valid header value"),
             );
         }
         response
@@ -1007,14 +1037,18 @@ async fn limit_request_body(
 ///
 /// Applied to the `/v1` routes only, through `route_layer`; the static app,
 /// `/health` and the OpenAPI UI are mounted outside it, so they keep
-/// producing what they produce. Three routes answer bytes, not JSON, and are
-/// let through here by path: the asset download and its preview stream the
-/// file's own bytes, and the address book export answers `text/csv`.
+/// producing what they produce. Five routes answer bytes, not JSON, and are
+/// let through here by path: the asset download, its preview and its
+/// thumbnail stream a file's own bytes, the address book export answers
+/// `text/csv`, and a file of the server's log downloads as `text/plain`.
 async fn require_json_acceptable(
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
-    if is_asset_download(&request) || is_address_book_export(&request) {
+    if is_asset_download(&request)
+        || is_address_book_export(&request)
+        || is_log_file_download(&request)
+    {
         return next.run(request).await;
     }
     if let Some(accept) = request
@@ -1031,8 +1065,9 @@ async fn require_json_acceptable(
     next.run(request).await
 }
 
-/// `GET /v1/assets/{sha256}` and `GET /v1/assets/{sha256}/preview`: the
-/// asset's own bytes or its preview's, each in its own media type.
+/// `GET /v1/assets/{sha256}`, `GET /v1/assets/{sha256}/preview` and
+/// `GET /v1/assets/{sha256}/thumbnail`: the asset's own bytes, its
+/// preview's or its thumbnail's, each in its own media type.
 fn is_asset_download(request: &axum::extract::Request) -> bool {
     request.method() == axum::http::Method::GET
         && request
@@ -1040,7 +1075,10 @@ fn is_asset_download(request: &axum::extract::Request) -> bool {
             .path()
             .strip_prefix("/v1/assets/")
             .is_some_and(|rest| {
-                let sha256 = rest.strip_suffix("/preview").unwrap_or(rest);
+                let sha256 = rest
+                    .strip_suffix("/preview")
+                    .or_else(|| rest.strip_suffix("/thumbnail"))
+                    .unwrap_or(rest);
                 !sha256.is_empty() && !sha256.contains('/')
             })
 }
@@ -1081,6 +1119,16 @@ fn is_address_book_export(request: &axum::extract::Request) -> bool {
         && request.uri().path() == "/v1/contacts/address-book"
 }
 
+/// `GET /v1/server/log-files/{id}`: one file of the server's log as `text/plain`.
+fn is_log_file_download(request: &axum::extract::Request) -> bool {
+    request.method() == axum::http::Method::GET
+        && request
+            .uri()
+            .path()
+            .strip_prefix("/v1/server/log-files/")
+            .is_some_and(|id| !id.is_empty() && !id.contains('/'))
+}
+
 /// Whether an `Accept` header admits a JSON answer.
 fn accepts_json(accept: &str) -> bool {
     accept
@@ -1093,6 +1141,62 @@ fn accepts_json(accept: &str) -> bool {
                 || media.eq_ignore_ascii_case("application/json")
                 || media.eq_ignore_ascii_case(Problem::CONTENT_TYPE)
         })
+}
+
+/// The query parameters whose values a log line keeps: each is a number, an
+/// id or a fixed word, so none can carry a credential, message text or a
+/// contact's name.
+const LOGGED_QUERY_VALUES: [&str; 10] = [
+    "after",
+    "around",
+    "before",
+    "deleted_account_id",
+    "level",
+    "limit",
+    "mode",
+    "offset",
+    "sort",
+    "status",
+];
+
+/// A query parameter's name, as it is written in the URL, decoded as the
+/// server reads every query. `None` when it cannot be read.
+fn decoded_query_name(raw_name: &str) -> Option<String> {
+    let uri = format!("/?{raw_name}=").parse::<axum::http::Uri>().ok()?;
+    axum::extract::Query::<Vec<(String, String)>>::try_from_uri(&uri)
+        .ok()?
+        .0
+        .into_iter()
+        .next()
+        .map(|(name, _)| name)
+}
+
+/// The request's URI as the log line names it: the path and the query, with
+/// every value hidden but those of [`LOGGED_QUERY_VALUES`]. A `media_link` is
+/// a credential that travels in the URL, because a media element can send it
+/// nowhere else, and `q` is a search over what the messages say; the log
+/// holds neither (`docs/architecture/server-log.md`). A parameter added
+/// later is hidden until it is added to the list.
+pub(crate) fn logged_uri(uri: &axum::http::Uri) -> String {
+    let Some(query) = uri.query() else {
+        return uri.path().to_string();
+    };
+    let query = query
+        .split('&')
+        .map(|pair| match pair.split_once('=') {
+            // The name as the server reads it, percent-decoded, so no
+            // spelling of a hidden name the server accepts reaches the log.
+            Some((name, _))
+                if !decoded_query_name(name)
+                    .is_some_and(|name| LOGGED_QUERY_VALUES.contains(&name.as_str())) =>
+            {
+                format!("{name}=[hidden]")
+            }
+            _ => pair.to_string(),
+        })
+        .collect::<Vec<_>>()
+        .join("&");
+    format!("{}?{query}", uri.path())
 }
 
 /// Assemble the full router: API routes, auth routes, the optional OpenAPI UI, CORS, and the static web app.
@@ -1176,7 +1280,7 @@ pub(crate) fn http_app(state: AppState) -> Router {
                     tracing::info_span!(
                         "request",
                         method = %request.method(),
-                        uri = %request.uri(),
+                        uri = %logged_uri(request.uri()),
                         request_id = request
                             .headers()
                             .get(crate::request_id::HEADER)
@@ -1201,6 +1305,15 @@ pub(crate) fn http_app(state: AppState) -> Router {
 pub async fn run(cfg: Config) -> anyhow::Result<()> {
     let server = cfg.require_server()?.clone();
     let bind = server.bind.clone();
+    // Before the database is opened, so a database that fails to open is in
+    // the server's log as well as on stderr.
+    let log = crate::logging::write_files_in(&cfg.paths.data_dir).map_err(|error| {
+        anyhow::Error::from(error).context(format!(
+            "could not open the server's log in {}",
+            crate::logging::log_dir(&cfg.paths.data_dir).display()
+        ))
+    })?;
+    eprintln!("  log:  {}", log.dir().display());
     let _operation_lock = crate::operation_lock::acquire_for_serve(&cfg.paths.db)?;
 
     // Every new Message Crate starts with the Demo Account: seed first, then
@@ -1225,6 +1338,11 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
             "  demo: the server stopped during a Demo Account build; the part-built Demo Account was removed"
         );
     }
+    // Works through what earlier Import Runs queued, a server stopped
+    // part-way included, then waits for the next run to end.
+    state
+        .media_queue
+        .start(state.db.clone(), Arc::clone(&state.cfg));
     // Reported as they stand now; each upload reads them again. Any stored
     // limit starts the server: a part is never larger than the limit.
     let upload_limits = state.upload_limits().await?;
@@ -1235,6 +1353,7 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
     );
 
     let demo_build = state.demo_build.clone();
+    let media_queue = state.media_queue.clone();
     let app = http_app(state);
     let listener = tokio::net::TcpListener::bind(&bind).await?;
     eprintln!(
@@ -1244,29 +1363,57 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
     eprintln!(
         "  routes: `message-crate-server dump-openapi` lists them all; set [server] openapi_ui = true for /docs"
     );
-    let served = serve_until_shutdown(listener, app).await;
+    let on_signal = {
+        let demo_build = demo_build.clone();
+        let media_queue = media_queue.clone();
+        move || {
+            media_queue.ask_to_stop();
+            demo_build.stop_conversions();
+        }
+    };
+    let served = serve_until_shutdown(listener, app, on_signal).await;
     // A Demo Account build the owner started would otherwise end part-way
     // when the process exits (#1215).
     demo_build.stop().await;
+    // An ffmpeg the pass started would otherwise go on converting after the
+    // process exits (#1729). The pass was told to stop when the signal came;
+    // this waits for it.
+    media_queue.stop().await;
     served?;
     Ok(())
 }
 
 /// Serve `app` on `listener` until a shutdown signal arrives, then stop
 /// accepting connections and return once the requests in flight have finished.
+///
+/// `on_signal` runs as the signal arrives, before the requests drain. The
+/// server stops its conversions there: Ctrl-C in a terminal reaches the
+/// ffmpeg they run as well, and a conversion not yet told to stop would read
+/// that ffmpeg's exit as a failure, take the Asset off the queue, and start
+/// the next one (#1729).
 async fn serve_until_shutdown(
     listener: tokio::net::TcpListener,
     app: Router,
+    on_signal: impl FnOnce() + Send + 'static,
 ) -> std::io::Result<()> {
     axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(async move {
+            shutdown_signal().await;
+            on_signal();
+        })
         .await
 }
 
 /// Resolve on Ctrl-C, or on SIGTERM on Unix, so axum drains in-flight
-/// requests before exiting. `docker stop` and a service manager send SIGTERM,
-/// not Ctrl-C (#1218).
+/// requests before exiting.
 async fn shutdown_signal() {
+    stop_requested().await;
+    eprintln!("shutting down");
+}
+
+/// Resolve on Ctrl-C, or on SIGTERM on Unix. `docker stop` and a service
+/// manager send SIGTERM, not Ctrl-C (#1218).
+pub(crate) async fn stop_requested() {
     let ctrl_c = async {
         let _ = tokio::signal::ctrl_c().await;
     };
@@ -1290,7 +1437,6 @@ async fn shutdown_signal() {
         () = ctrl_c => {}
         () = terminate => {}
     }
-    eprintln!("shutting down");
 }
 
 /// Report process liveness.

@@ -1,4 +1,4 @@
-import type { ImportIssue } from "../../components/import/ImportSummaryPanel";
+import type { ImportIssue, ImportNote } from "../../components/import/ImportSummaryPanel";
 import type { ImportIssueStage } from "../../components/import/importIssueStage";
 import { formatAttachmentProgress } from "../../lib/attachmentProgressCopy";
 import type { AttachmentMediaMode, ImportIssueEvent, ImportProgressEvent } from "../../lib/types";
@@ -92,14 +92,24 @@ export function stageForStep(step: ImportProgressEvent["step"]): ImportIssueStag
   return "staging";
 }
 
-/** An issue the desktop app reported, as the run records it and the server stores it. */
+/**
+ * An issue the desktop app reported, as the run records it. The server takes
+ * it without `conversation` (`issueRequests`).
+ */
 export function issueFromEvent(event: ImportIssueEvent): ImportIssue {
-  return {
+  const issue: ImportIssue = {
     kind: event.kind,
     stage: stageForStep(event.step),
     item: event.item,
     reason: event.reason,
   };
+  if (event.conversation != null) issue.conversation = event.conversation;
+  return issue;
+}
+
+/** A note the desktop app reported, as the run records it. */
+export function noteFromEvent(event: ImportIssueEvent): ImportNote {
+  return { stage: stageForStep(event.step), item: event.item, text: event.reason };
 }
 
 /**
