@@ -292,7 +292,7 @@ Text, `none`, `any`.
 
 Text, `none`, `any`.
 
-- **Conversations**: the conversation's title. `none` is a conversation with no title.
+- **Conversations**: the conversation's title: for a conversation the account holder has with themselves, the account's display name, else its own address, whatever title the backup gave it; for any other, the title the backup gave it. The first is worked out when the query runs, so it follows a change of the display name. `none` is a conversation with no title.
 - **Messages**: the title of the message's conversation.
 
 ### `identity:`
@@ -305,9 +305,9 @@ Text, `none`, `any`. The raw or the normalized form of an identity.
 
 ### `with:`
 
-Person.
+Person, `me`.
 
-- **Conversations**: this person is in the conversation: the conversation's own identity or a participant's identity is theirs, or a participant's name contains the text. A contact `#id` reaches a participant only through the identity the participant takes part as, on the contact it is on now.
+- **Conversations**: this person is in the conversation: the conversation's own identity or a participant's identity is theirs, or a participant's name contains the text. A contact `#id` reaches a participant only through the identity the participant takes part as, on the contact it is on now. `me` is a conversation the account holder has with themselves: a one-to-one conversation whose own identity is one of the account's identities. It has no participants, so it is the only conversation `me` finds. Why: the holder is never a participant, so a conversation with themselves is the one place the holder is the other party (#1094).
 - **Messages**: the same, for the message's conversation.
 
 ### `from:`

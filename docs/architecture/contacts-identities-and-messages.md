@@ -356,11 +356,24 @@ imported after does not; without this their messages would not pair.
 their own address are a conversation whose chat handle is one of the holder's
 identities. It has no participants and makes no contact. Both rows of each note
 are kept, the sent and the received, and the received row has no sender. Its
-title is the account's display name, or the address when there is none, computed
-when it is shown. `with:me` finds it. Why: the other person in it is the holder,
-and the holder is never a participant. A contact for the holder would be a
-second record of the account. Not built yet:
-[#1094](https://github.com/messagecrate/message-crate/issues/1094).
+title is the account's display name, or the address when there is none,
+computed when it is shown, even when the backup gave the chat a name. `with:me`
+finds it. Why: the other person in it is the holder, and the holder is never a
+participant. A contact for the holder would be a second record of the account.
+
+Import decides it by the chat's own identity, against the identities it loads
+once per run: a one-to-one chat whose identifier is one of them gets no contact
+for that identifier, drops the senders of its received rows, and marks a
+reaction in it as the holder's own (`imports_api/staging.rs`,
+`FileStaging::stage`). The header's participant, if the source lists the holder
+as one (WhatsApp's "Message yourself" does), is dropped as any account identity
+is. A read asks the same question of the identities the account has now
+(`db/conversations.rs`, `is_with_yourself_sql`): the conversation list and the
+conversation page do not read its chat handle back as a participant
+(`db/participant_names.rs`), and the title (`conversation_title_sql`) is the
+one expression the conversation list, the conversation page, the Messages list,
+`title:`, `in:` and plain text all read
+([#1094](https://github.com/messagecrate/message-crate/issues/1094)).
 
 **Orphaned messages sit in conversations of their own kind.** A backup can hold
 a message without recording which conversation it was said in. The ones one

@@ -53,6 +53,7 @@ struct RawRow {
     chat_identifier: String,
     conversation_type: String,
     group_title: Option<String>,
+    label: Option<String>,
 }
 
 /// FROM clause for message queries. The compiled filter mentions only `m`;
@@ -308,10 +309,11 @@ fn message_page_sql(
                 m.is_announcement, m.is_reply, m.thread_originator_guid,
                 m.thread_originator_part, m.num_replies,
                 hc.raw AS chat_identifier, c.conversation_type, c.group_title,
-                ho.raw AS owner
+                ho.raw AS owner, {label} AS label
          {from_sql}
          WHERE {where_sql}
-         ORDER BY {order_by} LIMIT ? OFFSET ?"
+         ORDER BY {order_by} LIMIT ? OFFSET ?",
+        label = crate::db::conversations::conversation_title_sql("c")
     );
     let mut params = params.to_vec();
     // An `offset` too large for SQLite's `i64` is past the end of any table,
@@ -352,6 +354,7 @@ async fn fetch_message_page(
                 conversation_type: row.try_get(17)?,
                 group_title: row.try_get(18)?,
                 owner: row.try_get(19)?,
+                label: row.try_get(20)?,
             })
         })
         .collect::<Result<Vec<RawRow>, ApiError>>()?;
@@ -391,6 +394,7 @@ async fn fetch_message_page(
                     chat_identifier: r.chat_identifier,
                     conversation_type: r.conversation_type,
                     group_title: r.group_title,
+                    label: r.label,
                     participants: parts,
                 },
                 attachments: attachments.get(&r.id).cloned().unwrap_or_default(),
