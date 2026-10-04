@@ -33,8 +33,8 @@ pub fn write_address_book(config_dir: &Path, roster: &Roster) -> Result<()> {
     out.push('\n');
     for (index, c) in roster.contacts.iter().enumerate() {
         let lead = format!(
-            "demo-{},{},{}",
-            index + 1,
+            "{},{},{}",
+            contact_id(index),
             csv_field(&c.display_hint()),
             csv_field(&c.groups.join(";"))
         );
@@ -51,6 +51,12 @@ pub fn write_address_book(config_dir: &Path, roster: &Roster) -> Result<()> {
     }
     fs::write(&contacts_path, out).with_context(|| format!("write {}", contacts_path.display()))?;
     Ok(())
+}
+
+/// The address book's own key for the contact at `index` of the roster:
+/// `demo-1`, `demo-2`, ...
+fn contact_id(index: usize) -> String {
+    format!("demo-{}", index + 1)
 }
 
 /// One CSV field: quoted when it holds a comma, a quote, or a line break.
@@ -93,9 +99,19 @@ username = "demo"
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::config::{DemoSize, SeedConfig};
     use crate::names::NameBank;
     use crate::seeded_roster;
+
+    /// A name holding a comma or a quote stays one field, so the server's
+    /// load reads the name and the groups from their own columns.
+    #[test]
+    fn csv_field_quotes_a_comma_and_doubles_a_quote() {
+        assert_eq!(csv_field("Ann Lee"), "Ann Lee");
+        assert_eq!(csv_field("Ann \"Nan\", Lee"), "\"Ann \"\"Nan\"\", Lee\"");
+        assert_eq!(csv_field("two\nlines"), "\"two\nlines\"");
+    }
 
     /// The server's load names an Unknown only with the name its row gives,
     /// so a row with a blank name names nobody and leaves its number on an
@@ -114,7 +130,7 @@ mod tests {
                 .iter()
                 .enumerate()
                 .filter(|(_, c)| c.display_hint().trim().is_empty())
-                .map(|(index, _)| format!("demo-{}", index + 1))
+                .map(|(index, _)| contact_id(index))
                 .collect();
             assert!(
                 blank.is_empty(),

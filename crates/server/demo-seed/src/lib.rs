@@ -230,9 +230,6 @@ fn generate_into(cfg: &SeedConfig, out: &Path, cancel: &AtomicBool) -> Result<Ge
 /// The generator's random sequence for `cfg`, and the roster drawn first from
 /// it. The rest of the bundle draws from the sequence the roster leaves.
 ///
-/// `generate_into` starts here, and so does the address book test, so the
-/// test checks the roster the generated address book holds.
-///
 /// # Errors
 ///
 /// Returns the errors of [`personas::build_roster`].
