@@ -32,10 +32,11 @@ export default function ImportDetailPanel({
 }) {
   return (
     // contain-inline-size: the panel takes the width the history table's columns give it,
-    // and its content adds nothing to that width. Without it, the table's card, which is as
-    // wide as the table's content, grows to the panel's: 1,000,000 px for the summary's
-    // fixed-layout table in Chrome, and wider every frame for the issues table, which
-    // React Aria sizes to the width of its own box.
+    // and its content adds nothing to that width. The panel sits in a colSpan cell of the
+    // history table, and the table's card is as wide as the table's content. Without it,
+    // the card grows to the panel's content. In Chrome the summary's fixed-layout table has
+    // a max-content width of 1,000,000 px. React Aria sizes the issues table to its own box,
+    // so that table then grows every frame.
     <div id={detailId} className="bg-surface p-4 contain-inline-size">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
