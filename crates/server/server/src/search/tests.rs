@@ -3784,11 +3784,13 @@ mod name_keyed_conversation {
     }
 }
 
-/// A group conversation's chat id is `group:` and the id the source gave the
-/// group. Search reads that key as a key, not as text: every group key
-/// starts with `group:`, so plain text `group`, `in:grou`, `with:group` and
-/// `identity:group` would find every group conversation (#1706). A group is
-/// found by its title and its members.
+/// A group conversation's chat id is the source's own id for it: `group:`
+/// and that id from the exporters that write the prefix, a WhatsApp group
+/// JID (`…@g.us`) or an SMS Backup & Restore `chat-<key>` from the others.
+/// Search reads that id as a key, not as text: every id of one shape shares
+/// its text, so plain text `group` or `g.us`, `in:grou`, `with:group` and
+/// `identity:group` would find every group conversation of that shape
+/// (#1706). A group conversation is found by its title and its members.
 mod group_keyed_conversation {
     use super::*;
 
@@ -3821,6 +3823,32 @@ mod group_keyed_conversation {
             msg(titled, "2024-03-01T11:00:00Z", false, None, "hello"),
         )
         .await;
+        let whatsapp_key = handle(&mut conn, ACCOUNT, "120363042@g.us", "whatsapp").await;
+        let whatsapp = conversation(
+            &mut conn,
+            ACCOUNT,
+            whatsapp_key,
+            "group",
+            None,
+            &[f.ana_handle],
+        )
+        .await;
+        let in_whatsapp = message(
+            &mut conn,
+            ACCOUNT,
+            msg(whatsapp, "2024-03-01T12:00:00Z", false, None, "hello"),
+        )
+        .await;
+        let sbr_key = handle(&mut conn, ACCOUNT, "chat-1", "sms").await;
+        let sbr = conversation(&mut conn, ACCOUNT, sbr_key, "group", None, &[f.ana_handle]).await;
+        let in_sbr = message(
+            &mut conn,
+            ACCOUNT,
+            msg(sbr, "2024-03-01T13:00:00Z", false, None, "hello"),
+        )
+        .await;
+        let groups = [untitled, titled, whatsapp, sbr];
+        let group_messages = [in_untitled, in_titled, in_whatsapp, in_sbr];
 
         for query in [
             "group",
@@ -3832,9 +3860,17 @@ mod group_keyed_conversation {
             "identity:group",
             "identity:grou*",
             "identity:\"group:chat8812\"",
+            "g.us",
+            "120363042",
+            "chat-1",
+            "with:g.us",
+            "with:120363042*",
+            "with:chat-1",
+            "identity:g.us",
+            "identity:\"chat-1\"",
         ] {
             let found = run(&mut conn, ListKind::Conversations, query).await;
-            for row in [untitled, titled] {
+            for row in groups {
                 assert!(
                     !found.contains(&row),
                     "Conversations {query} found a group through its key"
@@ -3846,11 +3882,15 @@ mod group_keyed_conversation {
             "in:grou*",
             "in:\"group:\"",
             "in:chat8812",
+            "in:g.us",
+            "in:chat-1",
             "with:group",
+            "with:g.us",
             "identity:group",
+            "identity:g.us",
         ] {
             let found = run(&mut conn, ListKind::Messages, query).await;
-            for row in [in_untitled, in_titled] {
+            for row in group_messages {
                 assert!(
                     !found.contains(&row),
                     "Messages {query} found a group through its key"
@@ -3876,10 +3916,12 @@ mod group_keyed_conversation {
         );
         for query in ["with:+15550001", "identity:+15550001"] {
             let found = run(&mut conn, ListKind::Conversations, query).await;
-            assert!(
-                found.contains(&untitled) && found.contains(&titled),
-                "{query} did not find the groups Ana is in"
-            );
+            for row in groups {
+                assert!(
+                    found.contains(&row),
+                    "{query} did not find a group conversation Ana is in"
+                );
+            }
         }
     }
 }
