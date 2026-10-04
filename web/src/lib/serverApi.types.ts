@@ -1938,10 +1938,11 @@ export interface components {
         };
         /** @description Conversation row for the list: participants, counts, tags. */
         ConversationSummary: {
-            /** @description Timestamp of the conversation's last message. */
-            date_range_end?: string | null;
-            /** @description Timestamp of the conversation's first message. */
-            date_range_start?: string | null;
+            /**
+             * @description Timestamp of the conversation's first message. Left out when every
+             *     message in the conversation is a duplicate, so none is left to date it.
+             */
+            first_message_at?: string | null;
             /**
              * Format: int64
              * @description The conversation's id; search for it as `in:#<id>`.
@@ -1952,10 +1953,10 @@ export interface components {
             /** @description Group label from the export, when present. */
             label?: string | null;
             /**
-             * @description Timestamp of the last message; `null` when every message in the
-             *     conversation is a duplicate, so none is left to date it.
+             * @description Timestamp of the conversation's last message. Left out when every
+             *     message in the conversation is a duplicate, so none is left to date it.
              */
-            last_message_at: string | null;
+            last_message_at?: string | null;
             /**
              * Format: int64
              * @description Messages in the conversation (excluding hidden duplicates).
@@ -3246,10 +3247,11 @@ export interface components {
         Page_ConversationSummary: {
             /** @description The rows on this page. */
             items: {
-                /** @description Timestamp of the conversation's last message. */
-                date_range_end?: string | null;
-                /** @description Timestamp of the conversation's first message. */
-                date_range_start?: string | null;
+                /**
+                 * @description Timestamp of the conversation's first message. Left out when every
+                 *     message in the conversation is a duplicate, so none is left to date it.
+                 */
+                first_message_at?: string | null;
                 /**
                  * Format: int64
                  * @description The conversation's id; search for it as `in:#<id>`.
@@ -3260,10 +3262,10 @@ export interface components {
                 /** @description Group label from the export, when present. */
                 label?: string | null;
                 /**
-                 * @description Timestamp of the last message; `null` when every message in the
-                 *     conversation is a duplicate, so none is left to date it.
+                 * @description Timestamp of the conversation's last message. Left out when every
+                 *     message in the conversation is a duplicate, so none is left to date it.
                  */
-                last_message_at: string | null;
+                last_message_at?: string | null;
                 /**
                  * Format: int64
                  * @description Messages in the conversation (excluding hidden duplicates).

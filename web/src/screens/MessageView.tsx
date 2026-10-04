@@ -37,8 +37,8 @@ export default function MessageView({
 
   const zone = useTimeZone();
   const years = useMemo(
-    () => conversationYears(conversation.date_range_start, conversation.date_range_end, zone),
-    [conversation.date_range_start, conversation.date_range_end, zone],
+    () => conversationYears(conversation.first_message_at, conversation.last_message_at, zone),
+    [conversation.first_message_at, conversation.last_message_at, zone],
   );
 
   // Open the image viewer at the clicked photo. Previous/next walks the loaded messages' images.

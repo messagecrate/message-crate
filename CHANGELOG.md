@@ -895,6 +895,12 @@ released versions carry their date on the heading.
   and changing them changed nothing. The database and the data folder come
   from `[paths]` in the configuration, and the address the server listens
   on from `[server]`, as they always did.
+- 2026-10-04 **Programs using the HTTP API get a conversation's first and
+  last message times once each.** A conversation carried its last message's
+  time twice. When no message was left once duplicates are set aside, it
+  sent one of those times with no value rather than leaving it out. It now
+  carries its first and last message times once each, and leaves both out
+  when there is no message to date them.
 
 ### Upgrading
 
@@ -937,6 +943,11 @@ released versions carry their date on the heading.
   3. Import those backups again.
 - The server's `process-assets` command no longer takes `--source`: it
   makes previews for every attachment of each account.
+- If you have a program that reads a conversation from the HTTP API, it
+  must read `first_message_at` in place of `date_range_start` and
+  `last_message_at` in place of `date_range_end`. The old names are gone.
+  Expect both to be missing when the conversation has no message left once
+  duplicates are set aside.
 - An Import Run left waiting at a Staging Review or at its Media stage by an
   earlier build can't go on, and says its Staging did not finish. Discard it
   and start the import again. Do the same with a paused Apple Messages run
