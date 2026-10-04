@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS staging_conversations (
     -- Group display title; NULL for 1:1 chats.
     group_title TEXT,
     -- The latest message time of the copy that gave group_title, in the form
-    -- messages.timestamp holds; NULL with no title, or when that copy had no
+    -- staging_messages.timestamp holds; NULL with no title, or when that copy had no
     -- messages. A merge compares an incoming copy's latest message with it
     -- (docs/architecture/contacts-identities-and-messages.md).
     group_title_at TEXT,

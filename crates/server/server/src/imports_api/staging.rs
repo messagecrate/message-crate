@@ -366,7 +366,9 @@ impl StagedConversation {
             chat_identifier: record.chat_identifier,
             platform_service: record.service,
             conversation_type: record.conversation_type,
-            group_title: record.group_title,
+            // A title of blanks is no title, as the conversation list shows
+            // it, so it never replaces a real one in a merge.
+            group_title: record.group_title.filter(|t| !t.trim().is_empty()),
             participants: record
                 .participants
                 .into_iter()
@@ -403,13 +405,16 @@ impl FileStaging<'_> {
         messages: Vec<MessageRecord>,
     ) -> Result<()> {
         let mut stats = ImportStats::default();
-        // Every timestamp has one fixed RFC 3339 form, so the greatest string
-        // is the latest instant.
-        let latest_message_at = messages
-            .iter()
-            .map(|m| m.timestamp.as_str())
-            .max()
-            .map(str::to_owned);
+        // The title's time: the latest message of this copy, when it has a
+        // title. Every timestamp has one fixed RFC 3339 form, so the greatest
+        // string is the latest instant.
+        let group_title_at = conversation.group_title.as_ref().and_then(|_| {
+            messages
+                .iter()
+                .map(|m| m.timestamp.as_str())
+                .max()
+                .map(str::to_owned)
+        });
         let platform = platform_for(
             conversation.platform_service.as_deref(),
             &conversation.source,
@@ -494,7 +499,7 @@ impl FileStaging<'_> {
                 chat_handle_id,
                 conversation_type: &conversation.conversation_type,
                 group_title: conversation.group_title.as_deref(),
-                latest_message_at: latest_message_at.as_deref(),
+                group_title_at: group_title_at.as_deref(),
                 source_file: &self.source_file,
             },
         )

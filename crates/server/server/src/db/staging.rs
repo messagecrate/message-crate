@@ -46,11 +46,11 @@ pub struct StagingConversation<'a> {
     pub conversation_type: &'a str,
     /// Group label, when set.
     pub group_title: Option<&'a str>,
-    /// The latest timestamp among the conversation's messages, in the form
-    /// `staging_messages.timestamp` holds, or `None` when it has none. It is
-    /// the title's time (`group_title_at`), which decides the title when two
+    /// The title's time: the latest timestamp among the conversation's
+    /// messages, in the form `staging_messages.timestamp` holds, when it has
+    /// a title and a message, else `None`. It decides the title when two
     /// copies of one conversation merge.
-    pub latest_message_at: Option<&'a str>,
+    pub group_title_at: Option<&'a str>,
     /// Name of the file the thread came from.
     pub source_file: &'a str,
 }
@@ -84,7 +84,7 @@ pub async fn insert_conversation(
         INSERT INTO staging_conversations (
             account_id, chat_handle_id, conversation_type, group_title, group_title_at,
             source_file
-        ) VALUES ($1, $2, $3, $4, CASE WHEN $4 IS NULL THEN NULL ELSE $6 END, $5)
+        ) VALUES ($1, $2, $3, $4, $5, $6)
         ON CONFLICT(account_id, chat_handle_id) DO UPDATE SET
             group_title = CASE WHEN
                 excluded.group_title IS NOT NULL
@@ -105,8 +105,8 @@ pub async fn insert_conversation(
     .bind(row.chat_handle_id)
     .bind(row.conversation_type)
     .bind(row.group_title)
+    .bind(row.group_title_at)
     .bind(row.source_file)
-    .bind(row.latest_message_at)
     .fetch_one(&mut *conn)
     .await?)
 }
@@ -473,6 +473,8 @@ pub async fn max_conversation_id(conn: &mut SqliteConnection) -> Result<i64> {
 ///
 /// Returns an error when the statement fails.
 pub async fn upsert_conversations(conn: &mut SqliteConnection, account_id: i64) -> Result<()> {
+    // `group_title_at` is the latest message time of the copy that gave the
+    // title, as in `insert_conversation`. Both columns take the same condition.
     // The rule and its reason: docs/architecture/contacts-identities-and-messages.md,
     // under Two copies of one conversation take the later copy's title.
     sqlx::query(

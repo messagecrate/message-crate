@@ -3882,6 +3882,27 @@ async fn a_later_copy_with_no_title_keeps_the_stored_title() {
     }
 }
 
+/// #1408: a later copy titled only with spaces has no title, so it keeps the
+/// title the group already has, in one batch and in two.
+#[tokio::test]
+async fn a_later_copy_titled_with_spaces_keeps_the_stored_title() {
+    let old = titled_group_copy(Some("Old"), "m-old", 1_426_183_462_000);
+    let blank = titled_group_copy(Some("   "), "m-new", 1_426_269_862_000);
+    let arrivals = [
+        ("one batch", vec![format!("{old}{blank}")]),
+        ("two batches", vec![old.clone(), blank.clone()]),
+    ];
+    for (arrival, bodies) in arrivals {
+        let (state, _fixture, token) = importer().await;
+        post_batches_of_one_run(&state, &token, bodies).await;
+        assert_eq!(
+            the_one_group_title(&state).await.as_deref(),
+            Some("Old"),
+            "{arrival}"
+        );
+    }
+}
+
 /// #1408: three copies of one group, "Y" ending first, "Z" ending later,
 /// and an untitled copy ending last, end titled "Z" in every order, in one
 /// batch and in three. The untitled copy's later messages don't stop a newer
