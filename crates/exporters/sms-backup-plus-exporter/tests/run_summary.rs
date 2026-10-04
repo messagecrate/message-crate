@@ -3,7 +3,7 @@
 //! wrote nothing, or dropped its summary, passed them.
 
 use message_crate_core::testutil::{assert_run_wrote_jsonl, collect_issues, jsonl_run_config};
-use message_crate_core::{SmsBackupPlusConfig, SourceConfig};
+use message_crate_core::{RunIssue, SmsBackupPlusConfig, SourceConfig};
 use std::fs;
 use std::path::Path;
 
@@ -176,7 +176,7 @@ fn a_group_message_with_no_readable_sender_is_kept_and_counted_once() {
 /// A received group MMS whose `To` names none of the owner's addresses is
 /// filed one-to-one under its `From`, and the summary counts it once, even
 /// when the archive holds two copies of the mail. Its sender was read, so it
-/// is not an issue.
+/// is no Import Error: the run sends one note naming the mail kept (#1535).
 #[test]
 fn a_group_message_not_naming_the_owner_is_counted_once() {
     let tmp = tempfile::tempdir().unwrap();
@@ -209,8 +209,76 @@ fn a_group_message_not_naming_the_owner_is_counted_once() {
         "{:?}",
         result.messages
     );
+    // Carol's mail gives her no number, so she is kept by her address too.
     let issues = issues.lock().unwrap();
-    assert!(issues.is_empty(), "{issues:?}");
+    assert_eq!(
+        *issues,
+        [
+            note(
+                "carol@example.org",
+                "The backup gives this group member no phone number, so they are kept by this \
+                 email address."
+            ),
+            note(
+                "1.eml",
+                "This group message names none of your phone numbers or email addresses, so it \
+                 is kept as a one-to-one message from its sender."
+            )
+        ]
+    );
+}
+
+/// The note the run sends about `item`.
+fn note(item: &str, text: &str) -> RunIssue {
+    RunIssue {
+        kind: "note".into(),
+        step: "parse".into(),
+        item: item.into(),
+        reason: text.into(),
+    }
+}
+
+/// A mail with no address for the other person is kept in a conversation
+/// under the name the mail gives, and the run sends a note naming the mail
+/// (#1535).
+#[test]
+fn a_message_with_no_address_for_the_other_person_is_a_note() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("backup");
+    fs::create_dir_all(&input).unwrap();
+    let mail = "From: alice@unknown.email\n\
+         To: me@example.com\n\
+         Subject: SMS with Alice\n\
+         X-smssync-type: 1\n\
+         X-smssync-address: \n\
+         X-smssync-date: 1609459200000\n\
+         Content-Type: text/plain; charset=utf-8\n\
+         \n\
+         No number on this one\n";
+    fs::write(input.join("1.eml"), mail).unwrap();
+    fs::write(input.join("2.eml"), mail).unwrap();
+    let output = tmp.path().join("out");
+    let mut config = jsonl_run_config(&[&input], &output, source(true));
+    let issues = collect_issues(&mut config);
+
+    let result = crate::run(&config).expect("run");
+
+    assert!(
+        result
+            .messages
+            .iter()
+            .any(|l| l == "  unknown_chat_messages: 1"),
+        "{:?}",
+        result.messages
+    );
+    assert_eq!(
+        *issues.lock().unwrap(),
+        [note(
+            "1.eml",
+            "This message records no phone number or email address for the other person, so \
+             it is kept in a conversation under the name the message gives, or with nobody."
+        )]
+    );
 }
 
 /// A group member the archive names only by email address keeps the address
@@ -236,8 +304,10 @@ fn a_group_member_with_no_number_in_the_archive_is_counted_once() {
         fs::write(input.join(name), mail).unwrap();
     }
     let output = tmp.path().join("out");
+    let mut config = jsonl_run_config(&[&input], &output, source(true));
+    let issues = collect_issues(&mut config);
 
-    let result = crate::run(&jsonl_run_config(&[&input], &output, source(true))).expect("run");
+    let result = crate::run(&config).expect("run");
 
     let written = assert_run_wrote_jsonl(&result, &output, 1);
     assert!(written.contains("dave@example.com"), "{written}");
@@ -248,6 +318,14 @@ fn a_group_member_with_no_number_in_the_archive_is_counted_once() {
             .any(|l| l == "  group_members_without_number: 1"),
         "{:?}",
         result.messages
+    );
+    assert_eq!(
+        *issues.lock().unwrap(),
+        [note(
+            "dave@example.com",
+            "The backup gives this group member no phone number, so they are kept by this email \
+             address."
+        )]
     );
 }
 
@@ -295,8 +373,10 @@ fn a_group_member_whose_address_has_two_numbers_keeps_the_address() {
     )
     .unwrap();
     let output = tmp.path().join("out");
+    let mut config = jsonl_run_config(&[&input], &output, source(true));
+    let issues = collect_issues(&mut config);
 
-    let result = crate::run(&jsonl_run_config(&[&input], &output, source(true))).expect("run");
+    let result = crate::run(&config).expect("run");
 
     let group = fs::read_dir(&output)
         .unwrap()
@@ -312,5 +392,13 @@ fn a_group_member_whose_address_has_two_numbers_keeps_the_address() {
             .any(|l| l == "  group_members_with_several_numbers: 1"),
         "{:?}",
         result.messages
+    );
+    assert_eq!(
+        *issues.lock().unwrap(),
+        [note(
+            "smiths@example.com",
+            "The backup gives this email address more than one phone number, so the group \
+             member is kept by the email address."
+        )]
     );
 }

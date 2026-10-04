@@ -11,7 +11,8 @@ use crate::parse_emit::{
 use crate::unnamed_files::{FolderRows, UnnamedFile, unnamed_files};
 use anyhow::Result;
 use message_crate_core::{
-    CancelFlag, ExportReport, ExportTransforms, OutputFormat, prepare_outputs, project_conversation,
+    CancelFlag, ExportReport, ExportTransforms, IssueSink, OutputFormat, prepare_outputs,
+    project_conversation,
 };
 use message_csv::Zone;
 use message_ir::{
@@ -44,6 +45,8 @@ pub(crate) struct ConvertExportArgs<'a> {
     /// Continue an interrupted export: keep previous output and skip the
     /// conversations already written.
     pub resume: bool,
+    /// Where each Import Error and note goes as the run records it.
+    pub issues: Option<&'a IssueSink>,
 }
 
 /// Convert iMazing Messages / WhatsApp CSV(s) under `input`.
@@ -66,6 +69,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         output_format,
         cancel,
         resume,
+        issues,
     } = args;
     let tz = Zone::parse(timezone)?;
     let (inputs, output) = prepare_outputs(&[input.to_path_buf()], output)?;
@@ -80,7 +84,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         claims: Vec::new(),
         folder_texts: BTreeMap::new(),
         whatsapp_folders: HashSet::new(),
-        report: ExportReport::default(),
+        report: ExportReport::with_issues(issues.cloned()),
     };
     for (csv_index, discovered) in discover_csv_files(input)?.iter().enumerate() {
         message_crate_core::check_cancel(cancel)?;
@@ -351,9 +355,10 @@ impl Ingest {
         let rows = match parse_csv_file(&discovered.path, discovered.kind) {
             Ok(rows) => rows,
             Err(e) => {
-                self.report
-                    .errors
-                    .push(format!("{}: {e:#}", discovered.path.display()));
+                self.report.error(
+                    discovered.path.display().to_string(),
+                    format!("This CSV could not be read and was left out: {e:#}"),
+                );
                 return Ok(());
             }
         };
@@ -413,13 +418,23 @@ impl Ingest {
     ) {
         let session_rows: Vec<&RawRow> = rows.iter().map(|(_, row)| *row).collect();
         let session = session_key(discovered.kind, session_name, &session_rows);
+        let csv_path = discovered.path.display();
         if session.key.is_name_only() {
-            self.report.bump("name_only_chat", 1);
+            self.report.caveat(
+                "name_only_chat",
+                format!("{csv_path} ({session_name})"),
+                "This chat names its person with no phone number or email address, so the \
+                 conversation is kept under the name alone.",
+            );
         }
-        self.report.bump(
-            "unresolved_group_participants",
-            session.unresolved_roster_labels,
-        );
+        for label in &session.unresolved_roster_labels {
+            self.report.caveat(
+                "unresolved_group_participants",
+                format!("{csv_path} ({label})"),
+                "The group's name lists this member, but no message gives their phone number or \
+                 email address, so they are kept by name.",
+            );
+        }
         let chat_id = session.key.chat_id();
         let convo_key = ConvoKey {
             family: TransportFamily::from_kind(discovered.kind),
@@ -599,11 +614,13 @@ impl Ingest {
     fn attach_live_photo_video(&mut self, video: &Path, picture: &Path, rows: &[usize]) {
         let first = &self.claims[rows[0]];
         if rows.len() > 1 {
-            self.report.notes.push(format!(
-                "{}: {} rows name this picture; its Live Photo video goes to the first of them in the CSV",
-                picture.display(),
-                rows.len()
-            ));
+            self.report.note(
+                picture.display().to_string(),
+                format!(
+                    "{} rows name this picture; its Live Photo video goes to the first of them in the CSV",
+                    rows.len()
+                ),
+            );
         }
         // The picture's name as the row gives it, with the video's extension:
         // the name the phone gave the video.

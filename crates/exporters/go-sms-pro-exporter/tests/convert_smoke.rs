@@ -32,6 +32,7 @@ fn convert(input_dir: &Path, output_dir: &Path) -> Result<ExportReport> {
         output_format: OutputFormat::Csv,
         cancel: None,
         resume: false,
+        issues: None,
     })
 }
 
@@ -118,6 +119,7 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
             output_format: OutputFormat::Jsonl,
             cancel: None,
             resume,
+            issues: None,
         })
     });
 }

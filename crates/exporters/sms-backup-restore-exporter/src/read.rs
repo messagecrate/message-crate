@@ -56,8 +56,32 @@ pub struct ReadReport {
     pub dropped_character_references: u64,
     /// Repeated copies of a message dropped, one copy of each kept.
     pub duplicates_dropped: u64,
-    /// Per-file error messages from parsing/staging.
-    pub errors: Vec<String>,
+    /// What could not be read, each with the file it was in.
+    pub errors: Vec<ReadError>,
+}
+
+/// Something in one backup file the reader could not read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ReadError {
+    /// The file, as a path.
+    pub file: String,
+    /// Why, as the parser said it.
+    pub reason: String,
+}
+
+impl ReadError {
+    fn new(path: &Path, error: &anyhow::Error) -> Self {
+        Self {
+            file: path.display().to_string(),
+            reason: format!("{error:#}"),
+        }
+    }
+}
+
+impl std::fmt::Display for ReadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}: {}", self.file, self.reason)
+    }
 }
 
 /// Options for [`read_backup`].
@@ -565,7 +589,7 @@ pub fn read_backup(
                 Err(error) => {
                     // Keep parsing the rest of the file; one bad record
                     // must not abort the whole backup.
-                    report.errors.push(format!("{}: {error:#}", path.display()));
+                    report.errors.push(ReadError::new(&path, &error));
                     Ok(())
                 }
             }
@@ -578,7 +602,7 @@ pub fn read_backup(
             if is_cancelled(options.cancel) || error.to_string() == "cancelled" {
                 return Err(error);
             }
-            report.errors.push(format!("{}: {error:#}", path.display()));
+            report.errors.push(ReadError::new(&path, &error));
         }
     }
     check_cancel(options.cancel)?;

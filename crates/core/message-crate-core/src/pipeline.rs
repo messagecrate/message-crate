@@ -88,16 +88,26 @@ impl RunResult {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RunIssue {
     /// What the row is: `skip` when the item was left out, `error` when it
-    /// failed. `resolved` says an earlier row with the same step and item no
-    /// longer holds, as when Media converts a file on a later try.
+    /// failed, [`NOTE`] when the run did something with it worth knowing that
+    /// is not a failure. `resolved` says an earlier row with the same step
+    /// and item no longer holds, as when Media converts a file on a later try.
     pub kind: String,
     /// The step that raised it, such as `attachments`.
     pub step: String,
     /// What was affected, such as an attachment's path in the backup.
     pub item: String,
-    /// Why, in one sentence.
+    /// Why, in one sentence; for a note, what the run did.
     pub reason: String,
 }
+
+/// The [`RunIssue::kind`] of a note: something the run did with an item that
+/// is worth knowing but did not fail, such as a message it kept with a
+/// caveat. The Import Run lists notes apart from its Import Errors.
+pub const NOTE: &str = "note";
+
+/// The [`RunIssue::step`] of a row an exporter records while it reads the
+/// backup.
+const READ_STEP: &str = "parse";
 
 /// Callback that receives each [`RunIssue`] the moment a run records it.
 ///
@@ -174,6 +184,11 @@ pub struct ExportReport {
     pub notes: Vec<String>,
     /// Per-exporter extension counters keyed by name.
     pub extra: std::collections::BTreeMap<String, u64>,
+    /// Where [`ExportReport::error`], [`ExportReport::note`] and
+    /// [`ExportReport::caveat`] send each row the moment the run records it.
+    /// `None` sends the rows nowhere, and the lines in `errors` and `notes`
+    /// are all that is kept.
+    pub issues: Option<IssueSink>,
 }
 
 /// The report counter for messages an export left out because its format
@@ -186,6 +201,51 @@ pub const NOT_SMS_OR_MMS_LEFT_OUT: &str = "messages_not_sms_or_mms_left_out";
 pub const ATTACHMENTS_MISSING: &str = "attachments_missing";
 
 impl ExportReport {
+    /// An empty report that sends its rows to `issues`.
+    pub fn with_issues(issues: Option<IssueSink>) -> Self {
+        Self {
+            issues,
+            ..Self::default()
+        }
+    }
+
+    /// Record that the run could not read `item` and why: a line in
+    /// `errors`, and an Import Error sent to `issues` at once.
+    pub fn error(&mut self, item: impl Into<String>, reason: impl Into<String>) {
+        let (item, reason) = (item.into(), reason.into());
+        self.errors.push(format!("{item}: {reason}"));
+        self.send("error", item, reason);
+    }
+
+    /// Record something the run did with `item` that is worth knowing but
+    /// did not fail: a line in `notes`, and a note sent to `issues` at once.
+    pub fn note(&mut self, item: impl Into<String>, text: impl Into<String>) {
+        let (item, text) = (item.into(), text.into());
+        self.notes.push(format!("{item}: {text}"));
+        self.send(NOTE, item, text);
+    }
+
+    /// Count one item the run kept with a caveat under `counter`, and send a
+    /// note that names it to `issues`. The log keeps the count, which says
+    /// as much as a line per item would.
+    pub fn caveat(&mut self, counter: &str, item: impl Into<String>, text: impl Into<String>) {
+        self.bump(counter, 1);
+        self.send(NOTE, item.into(), text.into());
+    }
+
+    /// Send one row about an item of the backup to `issues`.
+    fn send(&self, kind: &str, item: String, reason: String) {
+        emit_issue(
+            self.issues.as_ref(),
+            RunIssue {
+                kind: kind.into(),
+                step: READ_STEP.into(),
+                item,
+                reason,
+            },
+        );
+    }
+
     /// The run's log line for [`NOT_SMS_OR_MMS_LEFT_OUT`]: how many messages
     /// were left out of `format`, the format that holds only SMS and MMS, and
     /// why. `None` when none were left out.

@@ -19,6 +19,7 @@ fn convert_fixture_json_individual_and_group() {
         output_format: OutputFormat::Csv,
         cancel: None,
         resume: false,
+        issues: None,
     })
     .expect("convert");
 
@@ -88,6 +89,7 @@ fn copies_ios_style_media_true_data_paths() {
         output_format: OutputFormat::Csv,
         cancel: None,
         resume: false,
+        issues: None,
     })
     .expect("convert");
 
@@ -131,6 +133,7 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
             output_format: OutputFormat::Jsonl,
             cancel: None,
             resume,
+            issues: None,
         })
     });
     assert_eq!(report.conversations, 2, "one individual chat and one group");
@@ -157,6 +160,7 @@ fn convert_to_documents(
         output_format: OutputFormat::Json,
         cancel: None,
         resume: false,
+        issues: None,
     })
     .expect("convert");
     let documents = fs::read_dir(&out)
@@ -349,6 +353,7 @@ fn a_media_path_in_the_media_field_is_copied() {
         output_format: OutputFormat::Csv,
         cancel: None,
         resume: false,
+        issues: None,
     })
     .expect("convert");
     assert_eq!(report.attachments_saved, 1);
@@ -398,6 +403,7 @@ fn a_media_file_not_found_is_kept_as_file_missing_and_the_guid_does_not_change()
         output_format: OutputFormat::Json,
         cancel: None,
         resume: false,
+        issues: None,
     })
     .expect("convert");
     assert_eq!(report.attachments_saved, 1);

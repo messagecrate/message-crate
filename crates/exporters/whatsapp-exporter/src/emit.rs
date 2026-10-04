@@ -7,7 +7,7 @@ use crate::parse::{
 };
 use anyhow::{Context, Result};
 use message_crate_core::{
-    CancelFlag, ExportReport, ExportTransforms, OutputFormat, project_conversation,
+    CancelFlag, ExportReport, ExportTransforms, IssueSink, OutputFormat, project_conversation,
 };
 use message_csv::{format_local_ts, json_cell};
 use message_ir::{
@@ -44,6 +44,8 @@ pub(crate) struct ConvertRequest<'a> {
     /// Checked between chats (cooperative cancellation).
     pub cancel: Option<&'a CancelFlag>,
     pub resume: bool,
+    /// Where each note goes as the run records it.
+    pub issues: Option<&'a IssueSink>,
 }
 
 /// Convert a wtsexporter `result.json` into the shared conversation structure,
@@ -63,6 +65,7 @@ pub(crate) fn convert_json(request: ConvertRequest<'_>) -> Result<ExportReport> 
         output_format,
         cancel,
         resume,
+        issues,
     } = request;
     fs::create_dir_all(output).with_context(|| format!("create {}", output.display()))?;
     // Load the chat store BEFORE cleaning the output directory. The JSON may live
@@ -71,7 +74,7 @@ pub(crate) fn convert_json(request: ConvertRequest<'_>) -> Result<ExportReport> 
     let store = load_chat_store(json_path)?;
     let writer = ExportWriter::open(output, output_format, transforms, resume)?;
     let copy_attachments = writer.copies_attachments();
-    let mut report = ExportReport::default();
+    let mut report = ExportReport::with_issues(issues.cloned());
     let mut conversations: BTreeMap<String, PendingConversation> = BTreeMap::new();
 
     for (jid, chat) in store {
@@ -304,7 +307,11 @@ fn queue_media(
     }
     let src_path = resolve_media_file(src, media_base, media_search_roots);
     if src_path.is_none() {
-        report.bump(message_crate_core::ATTACHMENTS_MISSING, 1);
+        report.caveat(
+            message_crate_core::ATTACHMENTS_MISSING,
+            src,
+            "This attachment's file is not in the backup, so its message is kept without it.",
+        );
     }
     (vec![pending], src_path)
 }
