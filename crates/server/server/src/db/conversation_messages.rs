@@ -417,7 +417,7 @@ async fn load_attachments(
         |placeholders| {
             format!(
                 "SELECT message_id, path, original_name, mime_type, sha256, is_sticker, transcription,
-                    missing_reason, derived_mime_type
+                    missing_reason, derived_mime_type, thumbnail_mime_type
              FROM attachments
              WHERE message_id IN ({placeholders})
              ORDER BY message_id, id"
@@ -435,6 +435,7 @@ async fn load_attachments(
                     transcription: row.try_get(6)?,
                     missing_reason: row.try_get(7)?,
                     preview_mime_type: row.try_get(8)?,
+                    thumbnail_mime_type: row.try_get(9)?,
                 },
             ))
         },
@@ -461,6 +462,32 @@ pub async fn attachment_preview(
          JOIN conversations c ON c.id = m.conversation_id
          WHERE c.account_id = $1 AND a.sha256 = $2
            AND a.derived_assets_path IS NOT NULL AND a.derived_assets_path != ''
+         LIMIT 1",
+    )
+    .bind(account_id)
+    .bind(sha256)
+    .fetch_optional(&mut *conn)
+    .await?;
+    Ok(row)
+}
+
+/// Where the Thumbnail of one of the account's assets is stored, and its
+/// MIME type: the path under the account's converted-assets directory.
+/// `None` when the account holds no attachment with that fingerprint, or the
+/// server has made no Thumbnail of it yet.
+pub async fn attachment_thumbnail(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    sha256: &str,
+) -> Result<Option<(String, Option<String>)>, ApiError> {
+    // Every attachment row that names the fingerprint carries the same
+    // Thumbnail, so any one of them answers.
+    let row = sqlx::query_as::<_, (String, Option<String>)>(
+        "SELECT a.thumbnail_assets_path, a.thumbnail_mime_type
+         FROM attachments a
+         JOIN messages m ON m.id = a.message_id
+         WHERE m.account_id = $1 AND a.sha256 = $2
+           AND a.thumbnail_assets_path IS NOT NULL AND a.thumbnail_assets_path != ''
          LIMIT 1",
     )
     .bind(account_id)

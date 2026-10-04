@@ -275,7 +275,7 @@ pub enum OrphanedFile {
     /// directory, plus the `.<sha256>.mime` sidecar beside it when one was
     /// written.
     Original { sha256: String, assets_path: String },
-    /// A browser derivative: `assets_path` under the account's converted
+    /// A Preview or a Thumbnail: `assets_path` under the account's converted
     /// directory.
     Derived { assets_path: String },
 }
@@ -401,8 +401,11 @@ pub struct EmptiedTrash {
 
 /// One attachment's stored files, read before its message is deleted so the
 /// reference check afterwards knows what to look for: sha256, assets_path,
-/// derived_sha256, derived_assets_path.
+/// derived_sha256, derived_assets_path, thumbnail_sha256,
+/// thumbnail_assets_path.
 type AttachmentFilesRow = (
+    Option<String>,
+    Option<String>,
     Option<String>,
     Option<String>,
     Option<String>,
@@ -430,11 +433,13 @@ async fn delete_conversations(
         let placeholders = in_placeholders(1, chunk.len());
         let sql = format!(
             "SELECT DISTINCT a.sha256, a.assets_path,
-                    a.derived_sha256, a.derived_assets_path
+                    a.derived_sha256, a.derived_assets_path,
+                    a.thumbnail_sha256, a.thumbnail_assets_path
              FROM attachments a
              JOIN messages m ON m.id = a.message_id
              WHERE m.conversation_id IN ({placeholders})
-               AND (a.sha256 IS NOT NULL OR a.derived_sha256 IS NOT NULL)"
+               AND (a.sha256 IS NOT NULL OR a.derived_sha256 IS NOT NULL
+                    OR a.thumbnail_sha256 IS NOT NULL)"
         );
         let mut q = sqlx::query_as::<_, AttachmentFilesRow>(&sql);
         for id in chunk {
@@ -479,19 +484,34 @@ async fn orphaned_files(
     candidates: Vec<AttachmentFilesRow>,
 ) -> Result<Vec<OrphanedFile>, sqlx::Error> {
     let mut out = Vec::new();
-    for (sha256, assets_path, derived_sha256, derived_assets_path) in candidates {
+    for (
+        sha256,
+        assets_path,
+        derived_sha256,
+        derived_assets_path,
+        thumbnail_sha256,
+        thumbnail_path,
+    ) in candidates
+    {
         if let (Some(sha256), Some(assets_path)) = (sha256, assets_path)
-            && !asset_is_referenced(conn, account_id, "sha256", &sha256).await?
+            && !asset_is_referenced(conn, account_id, &["sha256"], &sha256).await?
         {
             out.push(OrphanedFile::Original {
                 sha256,
                 assets_path,
             });
         }
-        if let (Some(derived_sha256), Some(assets_path)) = (derived_sha256, derived_assets_path)
-            && !asset_is_referenced(conn, account_id, "derived_sha256", &derived_sha256).await?
-        {
-            out.push(OrphanedFile::Derived { assets_path });
+        // A Preview and a Thumbnail share the converted directory, so a file
+        // there goes only when no row names it as either.
+        for (sha256, assets_path) in [
+            (derived_sha256, derived_assets_path),
+            (thumbnail_sha256, thumbnail_path),
+        ] {
+            if let (Some(sha256), Some(assets_path)) = (sha256, assets_path)
+                && !asset_is_referenced(conn, account_id, &CONVERTED_COLUMNS, &sha256).await?
+            {
+                out.push(OrphanedFile::Derived { assets_path });
+            }
         }
     }
     out.sort();
@@ -499,25 +519,39 @@ async fn orphaned_files(
     Ok(out)
 }
 
+/// The columns that name a file in the converted directory: a Preview's
+/// fingerprint and a Thumbnail's.
+const CONVERTED_COLUMNS: [&str; 2] = ["derived_sha256", "thumbnail_sha256"];
+
 /// True when any attachment of `account_id`, from any source, promoted or in
-/// staging, still carries `sha256` in `column` — `sha256` or
-/// `derived_sha256`, a literal chosen by the caller. Staging is included so
-/// an import that has already uploaded a file it is about to promote does
-/// not lose it.
+/// staging, still carries `sha256` in one of `columns` — literals chosen by
+/// the caller. Staging is included so an import that has already uploaded a
+/// file it is about to promote does not lose it. Staging never names a
+/// Thumbnail, so only the promoted rows are asked about one.
 async fn asset_is_referenced(
     conn: &mut SqliteConnection,
     account_id: i64,
-    column: &'static str,
+    columns: &[&'static str],
     sha256: &str,
 ) -> Result<bool, sqlx::Error> {
+    let any_of = |table: &str, staged: bool| {
+        columns
+            .iter()
+            .filter(|column| !staged || **column != "thumbnail_sha256")
+            .map(|column| format!("{table}.{column} = $2"))
+            .collect::<Vec<_>>()
+            .join(" OR ")
+    };
+    let promoted = any_of("a", false);
+    let staged = any_of("sa", true);
     let sql = format!(
         "SELECT 1 FROM attachments a
          JOIN messages m ON m.id = a.message_id
-         WHERE m.account_id = $1 AND a.{column} = $2
+         WHERE m.account_id = $1 AND ({promoted})
          UNION ALL
          SELECT 1 FROM staging_attachments sa
          JOIN staging_messages sm ON sm.id = sa.message_id
-         WHERE sm.account_id = $1 AND sa.{column} = $2
+         WHERE sm.account_id = $1 AND ({staged})
          LIMIT 1"
     );
     let found: Option<i64> = sqlx::query_scalar(&sql)

@@ -61,9 +61,17 @@ optional `duplicate_of`).
 
 ### `attachments` / `tapbacks`
 
-Files and reactions tied to a message. Attachments may store `sha256` and
-derived (converted) paths for the browser. Reactions record `sender_handle_id`
+Files and reactions tied to a message. Attachments may store `sha256`, and
+the paths of the Preview (`derived_*`) and the Thumbnail (`thumbnail_*`) the
+server makes for the browser. Reactions record `sender_handle_id`
 → `handles`.
+
+### `media_queue`
+
+The Assets whose Thumbnail and Preview the server still has to make, one row
+per account and SHA-256. An Import Run adds the Assets its messages name when
+it ends, and the server works through the rows in the background, removing
+each when it is done, so a server stopped part-way picks up where it was.
 
 ## People and accounts
 

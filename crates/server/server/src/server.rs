@@ -403,6 +403,10 @@ pub struct AppState {
     /// never written anywhere, so a restart ends every media link
     /// (`docs/architecture/http-api.md`, "Credentials and reach").
     pub(crate) media_link_key: crate::assets_api::media_links::MediaLinkKey,
+    /// Wakes the background pass that makes Thumbnails and Previews after
+    /// each Import Run. `serve` starts the pass; the test harness does not,
+    /// so a test sees the queue as an Import Run leaves it.
+    pub(crate) media_queue: crate::media_queue::MediaQueue,
 }
 
 impl AppState {
@@ -420,6 +424,7 @@ impl AppState {
             demo_build: crate::server_api::DemoBuild::default(),
             demo_bundle_generator: crate::reset_demo::generate_bundle,
             media_link_key: crate::assets_api::media_links::MediaLinkKey::random(),
+            media_queue: crate::media_queue::MediaQueue::default(),
         }
     }
 
@@ -1032,9 +1037,10 @@ async fn limit_request_body(
 ///
 /// Applied to the `/v1` routes only, through `route_layer`; the static app,
 /// `/health` and the OpenAPI UI are mounted outside it, so they keep
-/// producing what they produce. Three routes answer bytes, not JSON, and are
-/// let through here by path: the asset download and its preview stream the
-/// file's own bytes, and the address book export answers `text/csv`.
+/// producing what they produce. Four routes answer bytes, not JSON, and are
+/// let through here by path: the asset download, its preview and its
+/// thumbnail stream a file's own bytes, and the address book export answers
+/// `text/csv`.
 async fn require_json_acceptable(
     request: axum::extract::Request,
     next: axum::middleware::Next,
@@ -1056,8 +1062,9 @@ async fn require_json_acceptable(
     next.run(request).await
 }
 
-/// `GET /v1/assets/{sha256}` and `GET /v1/assets/{sha256}/preview`: the
-/// asset's own bytes or its preview's, each in its own media type.
+/// `GET /v1/assets/{sha256}`, `GET /v1/assets/{sha256}/preview` and
+/// `GET /v1/assets/{sha256}/thumbnail`: the asset's own bytes, its
+/// preview's or its thumbnail's, each in its own media type.
 fn is_asset_download(request: &axum::extract::Request) -> bool {
     request.method() == axum::http::Method::GET
         && request
@@ -1065,7 +1072,10 @@ fn is_asset_download(request: &axum::extract::Request) -> bool {
             .path()
             .strip_prefix("/v1/assets/")
             .is_some_and(|rest| {
-                let sha256 = rest.strip_suffix("/preview").unwrap_or(rest);
+                let sha256 = rest
+                    .strip_suffix("/preview")
+                    .or_else(|| rest.strip_suffix("/thumbnail"))
+                    .unwrap_or(rest);
                 !sha256.is_empty() && !sha256.contains('/')
             })
 }
@@ -1273,6 +1283,11 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
             "  demo: the server stopped during a Demo Account build; the part-built Demo Account was removed"
         );
     }
+    // Works through what earlier Import Runs queued, a server stopped
+    // part-way included, then waits for the next run to end.
+    state
+        .media_queue
+        .start(state.db.clone(), Arc::clone(&state.cfg));
     // Reported as they stand now; each upload reads them again. Any stored
     // limit starts the server: a part is never larger than the limit.
     let upload_limits = state.upload_limits().await?;

@@ -1,4 +1,5 @@
-//! The Assets and Previews on disk, and the code that removes them.
+//! The Assets, Previews and Thumbnails on disk, and the code that removes
+//! them.
 //!
 //! An account's files sit under `data_dir/<account>/`, in one set of
 //! folders for all of the account's sources, so one file imported from two
@@ -10,7 +11,8 @@
 //!   original whose name carries no type.
 //! - `<assets_dir>/.incoming/` holds uploads in progress: `{sha256}-*.part`
 //!   files and multipart folders `{sha256}/{upload_id}/`.
-//! - `<assets_converted_dir>/<aa>/<sha256><ext>` is a Preview.
+//! - `<assets_converted_dir>/<aa>/<sha256><ext>` is a Preview or a
+//!   Thumbnail, named by the fingerprint of its own bytes.
 //! - `.removing/<id>/` beside the two holds files on their way out: see
 //!   below.
 //!
@@ -23,8 +25,9 @@
 //! lock and no run is running. Starting a run writes its row, so no run can
 //! start between that check and the last file taken out. While a run is
 //! running the original stays, and [`sweep_unreferenced`] removes it when
-//! the run ends. A Preview is never kept for a run, because an import never
-//! names one: the server makes Previews from originals after the fact.
+//! the run ends. A Preview or a Thumbnail is never kept for a run, because
+//! an import never names one: the server makes them from originals after
+//! the fact.
 //!
 //! Every other writer on the server waits while the write lock is held, for
 //! no longer than the 15 s busy timeout. So under the lock a file is only
@@ -267,9 +270,9 @@ fn gone_is_ok(result: io::Result<()>) -> io::Result<()> {
     }
 }
 
-/// Remove the files a delete reported as unreferenced: each Preview, and
-/// each original with its MIME sidecar unless the account has a running
-/// Import Run (see the module notes). Call it after the delete committed.
+/// Remove the files a delete reported as unreferenced: each Preview and
+/// Thumbnail, and each original with its MIME sidecar unless the account has
+/// a running Import Run (see the module notes). Call it after the delete committed.
 /// Never fails: a file that cannot be removed, or a lock that cannot be
 /// taken, is logged and the originals stay for [`sweep_unreferenced`].
 pub(crate) async fn remove_unreferenced(
@@ -340,10 +343,10 @@ fn paths_of(paths: &PathsConfig, account_id: i64, file: &OrphanedFile) -> Vec<Pa
     std::iter::once(path).chain(sidecar).collect()
 }
 
-/// Remove every Asset and Preview of `account_id` after its messages were
-/// deleted: the account's Preview folder, and its originals folder unless
-/// the account has a running Import Run (see the module notes). A folder
-/// that cannot be removed is logged.
+/// Remove every Asset, Preview and Thumbnail of `account_id` after its
+/// messages were deleted: the account's converted directory, and its
+/// originals directory unless the account has a running Import Run (see the
+/// module notes). A directory that cannot be removed is logged.
 pub(crate) async fn remove_all_attachment_files(
     pool: &SqlitePool,
     cfg: Arc<Config>,
@@ -471,10 +474,10 @@ pub(crate) fn remove_account_dir(paths: &PathsConfig, account_id: i64) -> io::Re
     remove_tree(&account_dir(paths, account_id))
 }
 
-/// Remove every original, sidecar and Preview of `account_id` that no
-/// attachment row names, and return how many files went. Does nothing while
-/// the account has a running Import Run, because that run may hold files it
-/// has not named yet.
+/// Remove every original, sidecar, Preview and Thumbnail of `account_id`
+/// that no attachment row names, and return how many files went. Does
+/// nothing while the account has a running Import Run, because that run may
+/// hold files it has not named yet.
 ///
 /// The check and the walk happen inside one write transaction, so no run
 /// can start and no batch can name a file between them. The transaction
@@ -487,14 +490,14 @@ pub(crate) fn remove_account_dir(paths: &PathsConfig, account_id: i64) -> io::Re
 /// [`unless_import_running`], it runs in a task that owns its connection,
 /// and the caller must hold no connection from `pool` while it waits.
 ///
-/// A Preview written in the last [`PREVIEW_GRACE_SECS`] is left alone:
-/// `process-assets` writes a Preview before the row that names it, and a
-/// sweep between the two would remove it.
+/// A Preview or Thumbnail written in the last [`PREVIEW_GRACE_SECS`] is left
+/// alone: the server writes one before the row that names it, and a sweep
+/// between the two would remove it.
 ///
 /// A file is named when its fingerprint, the part of its name before the
-/// first dot, is the `sha256` or `derived_sha256` of an attachment of the
-/// account, or the name of a file an `assets_path` or `derived_assets_path`
-/// points at. A name that is not a 64-hex fingerprint is not the server's,
+/// first dot, is the `sha256`, `derived_sha256` or `thumbnail_sha256` of an
+/// attachment of the account, or the name of a file an `assets_path`,
+/// `derived_assets_path` or `thumbnail_assets_path` points at. A name that is not a 64-hex fingerprint is not the server's,
 /// and is left alone, as is `.incoming/`.
 ///
 /// # Errors
@@ -596,8 +599,8 @@ pub(crate) async fn sweep_after_run(pool: &SqlitePool, paths: &PathsConfig, acco
     }
 }
 
-/// Age under which the sweep leaves a Preview alone, because
-/// `process-assets` may not have written the row that names it yet.
+/// Age under which the sweep leaves a Preview or a Thumbnail alone, because
+/// the server may not have written the row that names it yet.
 pub(crate) const PREVIEW_GRACE_SECS: u64 = 60 * 60;
 
 /// What one attachment row says about the files it names.
@@ -607,6 +610,8 @@ struct NamingRow {
     assets_path: Option<String>,
     derived_sha256: Option<String>,
     derived_assets_path: Option<String>,
+    thumbnail_sha256: Option<String>,
+    thumbnail_assets_path: Option<String>,
 }
 
 /// Every fingerprint an attachment of `account_id` names, promoted or in
@@ -616,12 +621,14 @@ async fn named_fingerprints(
     account_id: i64,
 ) -> Result<HashSet<String>, sqlx::Error> {
     let rows: Vec<NamingRow> = sqlx::query_as(
-        "SELECT a.sha256, a.assets_path, a.derived_sha256, a.derived_assets_path
+        "SELECT a.sha256, a.assets_path, a.derived_sha256, a.derived_assets_path,
+                a.thumbnail_sha256, a.thumbnail_assets_path
              FROM attachments a
              JOIN messages m ON m.id = a.message_id
              WHERE m.account_id = $1
              UNION ALL
-             SELECT sa.sha256, sa.assets_path, sa.derived_sha256, sa.derived_assets_path
+             SELECT sa.sha256, sa.assets_path, sa.derived_sha256, sa.derived_assets_path,
+                NULL, NULL
              FROM staging_attachments sa
              JOIN staging_messages sm ON sm.id = sa.message_id
              WHERE sm.account_id = $1",
@@ -631,12 +638,19 @@ async fn named_fingerprints(
     .await?;
     let mut named = HashSet::new();
     for row in rows {
-        for sha in [row.sha256, row.derived_sha256].into_iter().flatten() {
-            named.insert(sha.to_ascii_lowercase());
-        }
-        for path in [row.assets_path, row.derived_assets_path]
+        for sha in [row.sha256, row.derived_sha256, row.thumbnail_sha256]
             .into_iter()
             .flatten()
+        {
+            named.insert(sha.to_ascii_lowercase());
+        }
+        for path in [
+            row.assets_path,
+            row.derived_assets_path,
+            row.thumbnail_assets_path,
+        ]
+        .into_iter()
+        .flatten()
         {
             if let Some(fingerprint) = Path::new(&path)
                 .file_name()

@@ -30,11 +30,12 @@ The one exception is an Asset, addressed by the SHA-256 of its contents:
 must know the hash before an upload can be deduplicated, and two uploads of
 one file must be one asset.
 
-An asset's Preview has no address of its own. It is
-`/v1/assets/{sha256}/preview`, under the hash of the original, and the
-attachment says whether there is one in `preview_mime_type`.
-Why: the client holds the original's hash and has no use for the preview's, and
-a second hash on the attachment would be a second thing to address by.
+An asset's Preview and Thumbnail have no address of their own. They are
+`/v1/assets/{sha256}/preview` and `/v1/assets/{sha256}/thumbnail`, under the
+hash of the original, and the attachment says whether each exists in
+`preview_mime_type` and `thumbnail_mime_type`.
+Why: the client holds the original's hash and has no use for theirs, and
+another hash on the attachment would be another thing to address by.
 
 Rejected: the name in the path for Contact Groups and Message Tags. It keeps
 every reference to a group the same kind of thing, and it makes the rule
@@ -199,8 +200,9 @@ current one, because that account reaches every other.
   caller does not hold breaks a rule rather than completing with an empty
   result.
 - `429 Too Many Requests` carries `Retry-After`.
-- The two routes that answer an asset's bytes, `GET /v1/assets/{sha256}` and
-  `GET /v1/assets/{sha256}/preview`, answer a `Range` of one byte range
+- The three routes that answer an asset's bytes, `GET /v1/assets/{sha256}`,
+  `GET /v1/assets/{sha256}/preview` and `GET /v1/assets/{sha256}/thumbnail`,
+  answer a `Range` of one byte range
   (`bytes=0-499`, `bytes=500-`, `bytes=-500`) with `206 Partial Content`,
   those bytes, and `Content-Range: bytes <first>-<last>/<length>`. A range
   that selects no byte of the file answers `416 Range Not Satisfiable`
@@ -209,7 +211,8 @@ current one, because that account reaches every other.
   unit, several ranges, a range that cannot be read, or an `If-Range` that
   does not name this file. Every answer carries `Accept-Ranges: bytes`. The
   original's `ETag` is its fingerprint, which `If-Range` may name; a Preview
-  has none, so a `Range` sent with `If-Range` gets the whole Preview.
+  and a Thumbnail have none, so a `Range` sent with `If-Range` gets the whole
+  file.
   Why: a video plays from a media element that asks for the file a range at
   a time and seeks by asking for another (`docs/architecture/media.md`).
   Rejected: answering several ranges as `multipart/byteranges`. No media
@@ -302,7 +305,7 @@ entries and runs by the id they keep. There is no `fields=` selection.
 A query parameter a route does not declare is `validation-failed`, naming the
 parameters the route accepts. The `media_link` of a Media Link is declared by
 its security scheme, an API key in the query, and counts as declared on the
-two routes that take it. Why: a typo (`limt=10`) or a guess at a
+three routes that take it. Why: a typo (`limt=10`) or a guess at a
 convention this file rejects (`order=`, `fields=`, `year=`) would otherwise be
 answered as though it had been obeyed.
 
@@ -361,10 +364,11 @@ member of it matches `application/json`, `application/problem+json`,
 `application/*`, or `*/*`. `application/*` is a media range that matches
 `application/json` (RFC 9110), so refusing it would refuse a client that asks
 for JSON. A missing `Accept` is a request for JSON. The check runs on every `/v1` route
-but the three that answer bytes: `GET /v1/assets/{sha256}`, which streams the
-asset's own contents, `GET /v1/assets/{sha256}/preview`, which streams its
-Preview, and `POST /v1/contacts/address-book`, which answers the address book
-as `text/csv`. Nothing outside `/v1` is checked.
+but the four that answer bytes: `GET /v1/assets/{sha256}`, which streams the
+asset's own contents, `GET /v1/assets/{sha256}/preview` and
+`GET /v1/assets/{sha256}/thumbnail`, which stream its Preview and its
+Thumbnail, and `POST /v1/contacts/address-book`, which answers the address
+book as `text/csv`. Nothing outside `/v1` is checked.
 
 Rejected: requiring `Accept: application/json`. None of the server's own clients
 send one, and the rule would refuse the web app on its first request.
@@ -395,14 +399,16 @@ security scheme with its scopes, so every route says which it accepts.
   label their work with it. `DELETE /v1/session` refuses a token with `403`,
   because a token is not a Session and a `204` would say something ended when
   nothing did.
-- A **Media Link** reads one asset and its Preview, in the account that made
-  it, with no `Authorization` header. A Session makes it with
-  `POST /v1/assets/{sha256}/media-links`, which answers the URLs to load:
-  `/v1/assets/{sha256}?media_link=…` and its `/preview` twin. It is open for
+- A **Media Link** reads one asset, its Preview and its Thumbnail, in the
+  account that made it, with no `Authorization` header. A Session makes it
+  with `POST /v1/assets/{sha256}/media-links`, which answers the URLs to
+  load: `/v1/assets/{sha256}?media_link=…` and its `/preview` and
+  `/thumbnail` twins. It is open for
   one hour, and ends sooner when the Session that made it ends: by logout, a
   new login, a password change, or the Session's expiry. A server restart
-  ends every Media Link too. Only `GET /v1/assets/{sha256}` and
-  `GET /v1/assets/{sha256}/preview` take one, and a request that sends
+  ends every Media Link too. Only `GET /v1/assets/{sha256}`,
+  `GET /v1/assets/{sha256}/preview` and `GET /v1/assets/{sha256}/thumbnail`
+  take one, and a request that sends
   `Authorization` is judged by the header alone. A link that does not open
   the asset answers `401 Unauthorized` with `media-link-invalid`, because its
   remedy is a new link rather than a new login.
@@ -454,10 +460,11 @@ What each reaches:
   attachments, as it still reads its messages. A token has no screen to show
   bytes on; fetching them with one is taking them out, which is what the
   `export` scope decides.
-- `GET /v1/assets/{sha256}/preview` is read under the same rule as the asset
-  it was made from, by the same account and nobody else. Why: a Preview is the
+- `GET /v1/assets/{sha256}/preview` and `GET /v1/assets/{sha256}/thumbnail`
+  are read under the same rule as the asset they were made from, by the same
+  account and nobody else. Why: a Preview and a Thumbnail are the
   attachment's content as much as the original is, so a caller who may not
-  read one may not read the other, and the owner reads neither.
+  read one may not read the others, and the owner reads none.
 - `POST /v1/assets/{sha256}/media-links` takes an account's Session only.
   Why: only a screen has a media element to put a link in, and a program
   sends its token in the header. The owner holds no attachment to read.

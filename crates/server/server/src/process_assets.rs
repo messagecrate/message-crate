@@ -1,10 +1,20 @@
-//! Generate browser-friendly derived media under `assets_converted/`.
+//! Make the Thumbnail and the Preview of stored attachments under
+//! `assets_converted/` (`docs/architecture/media.md`, rules 3 and 4).
 //!
-//! Keeps originals intact, writes content-addressed JPEG/MP4/MP3 blobs, and
-//! updates `attachments.derived_*`. The conversions are the `media` crate's,
-//! which finds ffmpeg and ffprobe beside the binary, in `MESSAGE_CRATE_BIN`,
-//! or on `PATH`.
+//! Every image and video gets a Thumbnail, and every image, video or audio
+//! file of a type a browser often cannot show gets a Preview
+//! ([`media::browser_shows`]). Originals are never changed. Each version is
+//! stored under the fingerprint of its own bytes and named by the
+//! attachment rows of its original (`attachments.thumbnail_*` and
+//! `attachments.derived_*`). The conversions are the `media` crate's, which
+//! finds ffmpeg and ffprobe beside the binary, in `MESSAGE_CRATE_BIN`, or on
+//! `PATH`.
+//!
+//! Two callers run it: the `process-assets` command over every attachment,
+//! for rebuilding and repair, and the server's background pass over the
+//! Assets an Import Run brought ([`crate::media_queue`]).
 
+use std::fmt;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -15,28 +25,23 @@ use tempfile::TempDir;
 
 use crate::config::Config;
 use crate::db::schema;
-use crate::media_options::server_compress_options;
 use crate::open_db::OpenDb;
-use media::{Kind, MediaMode, TranscodeOutcome};
+use media::Kind;
 
-/// Browser previews use the `media` crate's compress recipe, with the
-/// options the server names for the media it converts itself
-/// ([`server_compress_options`]).
-const PREVIEW_MODE: MediaMode = MediaMode::Compress;
-
-/// Options for one derived-media processing pass.
+/// Options for one processing pass.
 #[derive(Debug, Clone, Default)]
 pub struct ProcessAssetsOptions {
-    /// Re-convert even when a browser preview already exists and hashes to
-    /// the fingerprint in its name.
+    /// Make every Thumbnail and Preview again, even one that exists and
+    /// hashes to the fingerprint in its name. A Preview of an original that
+    /// every browser shows is kept, not made again.
     pub force: bool,
     /// Convert and log without writing files or updating the database.
     pub dry_run: bool,
-    /// Skip image conversion.
+    /// Leave images alone.
     pub skip_image: bool,
-    /// Skip video conversion.
+    /// Leave videos alone.
     pub skip_video: bool,
-    /// Skip audio conversion.
+    /// Leave audio alone.
     pub skip_audio: bool,
     /// Only process this account. `None` processes every account, which is
     /// what the `process-assets` command does. A Demo Account build names
@@ -45,17 +50,104 @@ pub struct ProcessAssetsOptions {
     pub account: Option<i64>,
 }
 
-/// Counts reported by one derived-media processing pass.
+/// Counts reported by one processing pass.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct ProcessAssetsStats {
-    /// Attachments examined.
+    /// Stored originals examined.
     pub scanned: u64,
-    /// Browser previews written (JPEG/MP4/MP3).
+    /// Previews written (JPEG/MP4/MP3).
     pub derived: u64,
-    /// Attachments left as-is (already converted, non-media, or small JPEG).
+    /// Thumbnails written.
+    pub thumbnails: u64,
+    /// Originals for which nothing was written: not media, already done, or
+    /// of a kind the options leave alone.
     pub skipped: u64,
-    /// Conversions that failed.
+    /// Originals for which a version could not be made.
     pub errors: u64,
+}
+
+impl ProcessAssetsStats {
+    /// Add the counts of another pass.
+    pub(crate) fn add(&mut self, other: &Self) {
+        self.scanned += other.scanned;
+        self.derived += other.derived;
+        self.thumbnails += other.thumbnails;
+        self.skipped += other.skipped;
+        self.errors += other.errors;
+    }
+
+    /// Count what processing one original did.
+    fn count(&mut self, outcome: &Outcome) {
+        self.scanned += 1;
+        if outcome.preview {
+            self.derived += 1;
+        }
+        if outcome.thumbnail {
+            self.thumbnails += 1;
+        }
+        if outcome.error.is_some() {
+            self.errors += 1;
+        } else if !outcome.preview && !outcome.thumbnail {
+            self.skipped += 1;
+        }
+    }
+}
+
+/// Where a pass says what it does: on standard output, for the
+/// `process-assets` command, or in the server's log, for the background
+/// pass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Log {
+    Print,
+    Trace,
+}
+
+impl Log {
+    fn say(self, line: impl fmt::Display) {
+        match self {
+            Self::Print => println!("{line}"),
+            Self::Trace => tracing::info!("{line}"),
+        }
+    }
+
+    fn fail(self, line: impl fmt::Display) {
+        match self {
+            Self::Print => eprintln!("{line}"),
+            Self::Trace => tracing::warn!("{line}"),
+        }
+    }
+}
+
+/// One of the two versions the server makes of an original.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Version {
+    /// A copy every browser shows, in `attachments.derived_*`.
+    Preview,
+    /// A small picture, in `attachments.thumbnail_*`.
+    Thumbnail,
+}
+
+impl Version {
+    /// The columns that name this version: fingerprint, path, media type.
+    fn columns(self) -> [&'static str; 3] {
+        match self {
+            Self::Preview => ["derived_sha256", "derived_assets_path", "derived_mime_type"],
+            Self::Thumbnail => [
+                "thumbnail_sha256",
+                "thumbnail_assets_path",
+                "thumbnail_mime_type",
+            ],
+        }
+    }
+}
+
+impl fmt::Display for Version {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(match self {
+            Self::Preview => "Preview",
+            Self::Thumbnail => "Thumbnail",
+        })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -63,6 +155,17 @@ struct DerivedBlob {
     sha256: String,
     assets_path: String,
     mime_type: String,
+}
+
+/// What the rows of one original say about one of its versions.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct Named {
+    sha256: Option<String>,
+    assets_path: Option<String>,
+    mime_type: Option<String>,
+    /// Rows of the original that name no such version yet, such as the rows
+    /// of a source imported after it was made.
+    rows_without: i64,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -74,9 +177,11 @@ struct AssetRow {
     /// The Preview's fingerprint and type, as the rows that name it say.
     derived_sha256: Option<String>,
     derived_mime_type: Option<String>,
-    /// Rows of the blob that name no Preview yet, such as the rows of a
-    /// source imported after the Preview was made.
     rows_without_preview: i64,
+    thumbnail_assets_path: Option<String>,
+    thumbnail_sha256: Option<String>,
+    thumbnail_mime_type: Option<String>,
+    rows_without_thumbnail: i64,
     /// Attachment file name from the export (`attachments.original_name`).
     original_name: Option<String>,
     /// Attachment path inside the export (`attachments.path`).
@@ -88,17 +193,51 @@ impl AssetRow {
     fn name_hints(&self) -> [Option<&str>; 2] {
         [self.original_name.as_deref(), self.source_path.as_deref()]
     }
+
+    /// The original's media type, from everything known about it.
+    fn media_type(&self) -> Option<String> {
+        media::media_type_of(
+            Path::new(&self.assets_path),
+            self.mime_type.as_deref(),
+            &self.name_hints(),
+        )
+    }
+
+    /// What the rows say about `version`.
+    fn named(&self, version: Version) -> Named {
+        let (sha256, assets_path, mime_type, rows_without) = match version {
+            Version::Preview => (
+                &self.derived_sha256,
+                &self.derived_assets_path,
+                &self.derived_mime_type,
+                self.rows_without_preview,
+            ),
+            Version::Thumbnail => (
+                &self.thumbnail_sha256,
+                &self.thumbnail_assets_path,
+                &self.thumbnail_mime_type,
+                self.rows_without_thumbnail,
+            ),
+        };
+        Named {
+            sha256: sha256.clone(),
+            assets_path: assets_path.clone(),
+            mime_type: mime_type.clone(),
+            rows_without,
+        }
+    }
 }
 
-/// Run derived-media conversion for the account `opts` names, or for every
-/// account in the database when it names none. An account's attachments from
-/// every source share one originals folder and one Preview folder, so each
-/// account is one pass.
+/// Make the versions of every stored original of the account `opts` names,
+/// or of every account in the database when it names none, saying what it
+/// does on standard output. An account's attachments from every source share
+/// one originals directory and one converted directory, so each account is
+/// one pass.
 ///
 /// # Errors
 ///
 /// Returns an error when no account is named and the database has none, a
-/// query fails, or an account's asset folders cannot be prepared. A
+/// query fails, or an account's asset directories cannot be prepared. A
 /// conversion that fails for one attachment is counted in `errors` and
 /// printed, and the run goes on.
 pub async fn run(opened: &OpenDb, opts: &ProcessAssetsOptions) -> Result<ProcessAssetsStats> {
@@ -120,24 +259,15 @@ pub async fn run(opened: &OpenDb, opts: &ProcessAssetsOptions) -> Result<Process
         let Some(pass) = AccountPass::open(cfg, opts, work.path(), account_id)? else {
             continue;
         };
-        let rows = list_attachments(&mut conn, account_id).await?;
-        for row in rows {
-            stats.scanned += 1;
-            match pass.process(&mut conn, &row).await {
-                Ok(Outcome::Derived) => stats.derived += 1,
-                Ok(Outcome::Skipped) => stats.skipped += 1,
-                Err(err) => {
-                    stats.errors += 1;
-                    eprintln!("failed {}: {err:#}", pass.label(&row));
-                }
-            }
-        }
+        let rows = list_attachments(&mut conn, account_id, None).await?;
+        stats.add(&pass.process_rows(&mut conn, &rows).await);
     }
 
     println!(
-        "done: scanned={} converted_for_web={} left_as_is={} conversion_failures={}{}",
+        "done: scanned={} converted_for_web={} thumbnails={} left_as_is={} conversion_failures={}{}",
         stats.scanned,
         stats.derived,
+        stats.thumbnails,
         stats.skipped,
         stats.errors,
         if opts.dry_run { " (dry-run)" } else { "" }
@@ -145,41 +275,72 @@ pub async fn run(opened: &OpenDb, opts: &ProcessAssetsOptions) -> Result<Process
     Ok(stats)
 }
 
-enum Outcome {
-    Derived,
-    Skipped,
+/// Make the versions of one stored original, `sha256` of `account_id`, as
+/// the background pass does after an Import Run, saying what it does in the
+/// server's log. Unlike [`run`] it sweeps nothing, because it runs once for
+/// each Asset an Import Run brought. An account with no originals directory,
+/// or an original no attachment names any more, is nothing to do.
+///
+/// # Errors
+///
+/// Returns an error when a query fails or the converted directory cannot be
+/// made. A version that cannot be made is counted in `errors` and logged.
+pub(crate) async fn process_one_asset(
+    cfg: &Config,
+    conn: &mut SqliteConnection,
+    work_dir: &Path,
+    account_id: i64,
+    sha256: &str,
+) -> Result<ProcessAssetsStats> {
+    let opts = ProcessAssetsOptions::default();
+    let Some(pass) = AccountPass::new(cfg, &opts, work_dir, account_id, Log::Trace)? else {
+        return Ok(ProcessAssetsStats::default());
+    };
+    let rows = list_attachments(conn, account_id, Some(sha256)).await?;
+    Ok(pass.process_rows(conn, &rows).await)
 }
 
-/// One account's asset folders being processed: where its originals are,
-/// where the derived files go, and the options every attachment shares.
+/// What processing one stored original did.
+#[derive(Debug, Default)]
+struct Outcome {
+    /// A Preview was written, or would be in a dry run.
+    preview: bool,
+    /// A Thumbnail was written, or would be in a dry run.
+    thumbnail: bool,
+    /// Why a version that was wanted was not made.
+    error: Option<anyhow::Error>,
+}
+
+/// One account's asset directories being processed: where its originals
+/// are, where the versions go, and the options every attachment shares.
 struct AccountPass<'a> {
     opts: &'a ProcessAssetsOptions,
     work_dir: &'a Path,
     account_id: i64,
     assets_dir: PathBuf,
     converted_dir: PathBuf,
+    log: Log,
 }
 
-/// What deriving one attachment produced.
+/// What making one version produced.
 #[derive(Debug, PartialEq, Eq)]
 enum Derived {
-    /// The original is not converted: unsupported, already small, or declined.
-    Skipped,
     /// A dry run: said what it would write and stored nothing.
     DryRun,
     Stored(DerivedBlob),
 }
 
 impl<'a> AccountPass<'a> {
-    /// Find the folders, remove abandoned upload temps and the temporary
-    /// files a killed write left in the shard folders, and make the
-    /// converted folder. `None` when the account has no assets folder to
-    /// process.
+    /// Find the directories, remove abandoned upload temps and the temporary
+    /// files a killed write left in the shard directories, and make the
+    /// converted directory. `None` when the account has no assets directory
+    /// to process.
     ///
     /// # Errors
     ///
-    /// Returns an error when the converted folder cannot be made. A failed
-    /// removal of a temporary file is logged and does not stop the pass.
+    /// Returns an error when the converted directory cannot be made. A
+    /// failed removal of a temporary file is logged and does not stop the
+    /// pass.
     fn open(
         cfg: &Config,
         opts: &'a ProcessAssetsOptions,
@@ -209,6 +370,28 @@ impl<'a> AccountPass<'a> {
                 "  {cleaned_verb} {left} temporary file(s) a killed write left in the shard folders"
             );
         }
+        Self::new(cfg, opts, work_dir, account_id, Log::Print)
+    }
+
+    /// The pass over `account_id`'s directories, making the converted
+    /// directory, and sweeping nothing. `None` when the account has no
+    /// assets directory.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the converted directory cannot be made.
+    fn new(
+        cfg: &Config,
+        opts: &'a ProcessAssetsOptions,
+        work_dir: &'a Path,
+        account_id: i64,
+        log: Log,
+    ) -> Result<Option<Self>> {
+        let assets_dir = cfg.paths.assets_dir_for_account(account_id);
+        if !assets_dir.is_dir() {
+            return Ok(None);
+        }
+        let converted_dir = cfg.paths.assets_converted_dir_for_account(account_id);
         fs::create_dir_all(&converted_dir)
             .with_context(|| format!("create converted dir {}", converted_dir.display()))?;
         Ok(Some(Self {
@@ -217,6 +400,7 @@ impl<'a> AccountPass<'a> {
             account_id,
             assets_dir,
             converted_dir,
+            log,
         }))
     }
 
@@ -225,82 +409,151 @@ impl<'a> AccountPass<'a> {
         format!("{}/{}", self.account_id, row.assets_path)
     }
 
-    /// Derive a browser preview for one stored blob and record it, or report why it was left as-is.
-    ///
-    /// Reads the two facts only the disk can supply, lets [`plan`] decide,
-    /// then does what the plan says. An existing Preview is hashed, so one
-    /// cut short by a killed run is converted again.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when the original is missing, a conversion fails, or
-    /// the row cannot be updated.
-    async fn process(&self, conn: &mut SqliteConnection, row: &AssetRow) -> Result<Outcome> {
-        let source_path = self.assets_dir.join(&row.assets_path);
-        let on_disk = OnDisk {
-            original_exists: source_path.is_file(),
-            // `--force` converts again whatever the Preview's state, so it
-            // reads no Preview and counts each as missing.
-            preview: if self.opts.force {
-                PreviewFile::Missing
-            } else {
-                preview_file(row.derived_assets_path.as_deref(), &self.converted_dir)
-            },
-        };
-        let kind = match plan(row, self.opts, on_disk) {
-            Plan::RemoveIncomplete => return self.remove_incomplete(row, &source_path),
-            Plan::Skip(SkipReason::AlreadyDerived) => {
-                self.share_existing_preview(conn, row).await?;
-                return Ok(Outcome::Skipped);
+    /// Process each of `rows` and count what happened, logging each failure.
+    async fn process_rows(
+        &self,
+        conn: &mut SqliteConnection,
+        rows: &[AssetRow],
+    ) -> ProcessAssetsStats {
+        let mut stats = ProcessAssetsStats::default();
+        for row in rows {
+            let outcome = self.process(conn, row).await;
+            if let Some(err) = &outcome.error {
+                self.log
+                    .fail(format!("failed {}: {err:#}", self.label(row)));
             }
-            Plan::Skip(_) => return Ok(Outcome::Skipped),
-            Plan::MissingOriginal { damaged_preview } => {
-                if damaged_preview {
-                    self.drop_damaged_preview(conn, row).await?;
-                }
-                bail!("missing original");
-            }
-            Plan::Derive(kind) => kind,
-        };
-        if let (PreviewFile::Damaged, Some(rel)) =
-            (on_disk.preview, row.derived_assets_path.as_deref())
-        {
-            println!(
-                "{}: Preview {rel} does not hash to the fingerprint in its name; converting again",
-                self.label(row)
-            );
+            stats.count(&outcome);
         }
-        let blob = match self.derive(kind, &source_path, row)? {
-            Derived::Skipped => return Ok(Outcome::Skipped),
-            Derived::DryRun => return Ok(Outcome::Derived),
-            Derived::Stored(blob) => blob,
-        };
-        update_derived(conn, self.account_id, &row.sha256, &blob).await?;
-        println!("{} -> {}", self.label(row), blob.assets_path);
-        Ok(Outcome::Derived)
+        stats
     }
 
-    /// Point the rows of `row`'s blob that name no Preview at the Preview
+    /// Make what one stored original still needs, or say why nothing.
+    ///
+    /// Reads the facts only the disk can supply, lets [`plan`] decide, then
+    /// does what the plan says. An existing version is hashed, so one cut
+    /// short by a killed run is made again.
+    async fn process(&self, conn: &mut SqliteConnection, row: &AssetRow) -> Outcome {
+        let source_path = self.assets_dir.join(&row.assets_path);
+        let state = |version: Version| {
+            preview_file(
+                row.named(version).assets_path.as_deref(),
+                &self.converted_dir,
+            )
+        };
+        let on_disk = OnDisk {
+            original_exists: source_path.is_file(),
+            preview: state(Version::Preview),
+            thumbnail: state(Version::Thumbnail),
+            browser_shows: media::browser_shows(&source_path, row.media_type().as_deref()),
+        };
+        let versions = match plan(row, self.opts, on_disk) {
+            Plan::RemoveIncomplete => {
+                return Outcome {
+                    error: self.remove_incomplete(row, &source_path).err(),
+                    ..Outcome::default()
+                };
+            }
+            Plan::Skip(_) => return Outcome::default(),
+            Plan::Versions(versions) => versions,
+        };
+        let mut outcome = Outcome::default();
+        let mut failures = Vec::new();
+        for (version, need, made) in [
+            (
+                Version::Thumbnail,
+                versions.thumbnail,
+                &mut outcome.thumbnail,
+            ),
+            (Version::Preview, versions.preview, &mut outcome.preview),
+        ] {
+            let damaged = match version {
+                Version::Preview => on_disk.preview,
+                Version::Thumbnail => on_disk.thumbnail,
+            } == PreviewFile::Damaged;
+            let done = match need {
+                Need::Nothing => Ok(false),
+                Need::Share => self
+                    .share_existing(conn, row, version)
+                    .await
+                    .map(|()| false),
+                Need::Drop => self.drop_damaged(conn, row, version).await.map(|()| false),
+                Need::NoOriginal { damaged } => {
+                    let dropped = if damaged {
+                        self.drop_damaged(conn, row, version).await
+                    } else {
+                        Ok(())
+                    };
+                    dropped.and(Err(anyhow::anyhow!("missing original")))
+                }
+                Need::Make => {
+                    self.make(conn, row, version, versions.kind, &source_path, damaged)
+                        .await
+                }
+            };
+            match done {
+                Ok(written) => *made = written,
+                Err(err) => failures.push(format!("{version}: {err:#}")),
+            }
+        }
+        if !failures.is_empty() {
+            outcome.error = Some(anyhow::anyhow!(failures.join("; ")));
+        }
+        outcome
+    }
+
+    /// Make `version` of the original at `source_path`, a `kind` file, store
+    /// it and point every row of the original at it. True when it was
+    /// written, or would be in a dry run.
+    async fn make(
+        &self,
+        conn: &mut SqliteConnection,
+        row: &AssetRow,
+        version: Version,
+        kind: Kind,
+        source_path: &Path,
+        damaged: bool,
+    ) -> Result<bool> {
+        if damaged && let Some(rel) = row.named(version).assets_path.as_deref() {
+            self.log.say(format!(
+                "{}: {version} {rel} does not hash to the fingerprint in its name; making it again",
+                self.label(row)
+            ));
+        }
+        let blob = match self.derive(version, kind, source_path, row)? {
+            Derived::DryRun => return Ok(true),
+            Derived::Stored(blob) => blob,
+        };
+        update_version(conn, version, self.account_id, &row.sha256, &blob).await?;
+        self.log.say(format!(
+            "{} -> {} ({version})",
+            self.label(row),
+            blob.assets_path
+        ));
+        Ok(true)
+    }
+
+    /// Point the rows of `row`'s original that name no `version` at the one
     /// the other rows already name. A file imported from a second source
-    /// after its Preview was made has such rows; without this they would
-    /// never say a Preview exists, because the blob is not converted again.
+    /// after its versions were made has such rows; without this they would
+    /// never say a version exists, because the original is not converted
+    /// again.
     ///
     /// # Errors
     ///
     /// Returns an error when the rows cannot be updated.
-    async fn share_existing_preview(
+    async fn share_existing(
         &self,
         conn: &mut SqliteConnection,
         row: &AssetRow,
+        version: Version,
     ) -> Result<()> {
-        if row.rows_without_preview == 0 {
+        let named = row.named(version);
+        if named.rows_without == 0 {
             return Ok(());
         }
-        let (Some(sha256), Some(assets_path), Some(mime_type)) = (
-            row.derived_sha256.clone(),
-            row.derived_assets_path.clone(),
-            row.derived_mime_type.clone(),
-        ) else {
+        let (Some(sha256), Some(assets_path), Some(mime_type)) =
+            (named.sha256, named.assets_path, named.mime_type)
+        else {
             return Ok(());
         };
         let blob = DerivedBlob {
@@ -309,126 +562,131 @@ impl<'a> AccountPass<'a> {
             mime_type,
         };
         if self.opts.dry_run {
-            println!(
-                "[dry-run] would point {} at {} (existing preview)",
+            self.log.say(format!(
+                "[dry-run] would point {} at {} (existing {version})",
                 self.label(row),
                 blob.assets_path
-            );
+            ));
             return Ok(());
         }
-        update_derived(conn, self.account_id, &row.sha256, &blob).await?;
-        println!(
-            "{} -> {} (existing preview)",
+        update_version(conn, version, self.account_id, &row.sha256, &blob).await?;
+        self.log.say(format!(
+            "{} -> {} (existing {version})",
             self.label(row),
             blob.assets_path
-        );
+        ));
         Ok(())
     }
 
-    /// Stop naming the damaged Preview `row` names and delete it, or say so
-    /// in a dry run. Its original is missing, so it cannot be converted
-    /// again, and the rows must not go on naming a Preview the server would
-    /// serve as if whole. Every row of the account that names it is cleared,
+    /// Stop naming the damaged `version` that `row` names and delete it, or
+    /// say so in a dry run. It is not made again, because its original is
+    /// missing or the original no longer gets such a version, and the rows
+    /// must not go on naming a file the server would serve as if whole. Every row of the account that names it is cleared,
     /// then the file is deleted.
     ///
     /// # Errors
     ///
     /// Returns an error when the rows cannot be updated or the file cannot
     /// be deleted.
-    async fn drop_damaged_preview(
+    async fn drop_damaged(
         &self,
         conn: &mut SqliteConnection,
         row: &AssetRow,
+        version: Version,
     ) -> Result<()> {
-        let Some(rel) = row.derived_assets_path.as_deref() else {
+        let Some(rel) = row.named(version).assets_path else {
             return Ok(());
         };
         if self.opts.dry_run {
-            println!(
-                "[dry-run] would drop the damaged Preview {rel} of {}: its original is missing",
+            self.log.say(format!(
+                "[dry-run] would drop the damaged {version} {rel} of {}",
                 self.label(row)
-            );
+            ));
             return Ok(());
         }
-        clear_derived(conn, self.account_id, rel).await?;
-        if let Some(path) = crate::asset_store::join_under(&self.converted_dir, rel)
+        clear_version(conn, version, self.account_id, &rel).await?;
+        if let Some(path) = crate::asset_store::join_under(&self.converted_dir, &rel)
             && path.is_file()
         {
             crate::asset_store::remove_file(&path)
-                .with_context(|| format!("remove damaged Preview {}", path.display()))?;
+                .with_context(|| format!("remove damaged {version} {}", path.display()))?;
         }
-        println!(
-            "{}: Preview {rel} does not hash to the fingerprint in its name and the original \
-             is missing; dropped the Preview",
+        self.log.say(format!(
+            "{}: {version} {rel} does not hash to the fingerprint in its name and is not made \
+             again; dropped the {version}",
             self.label(row)
-        );
+        ));
         Ok(())
     }
 
     /// Delete a `.part` left by an interrupted upload, or say so in a dry
-    /// run. Always counts as skipped.
-    fn remove_incomplete(&self, row: &AssetRow, source_path: &Path) -> Result<Outcome> {
+    /// run.
+    fn remove_incomplete(&self, row: &AssetRow, source_path: &Path) -> Result<()> {
         if source_path.is_file() {
             if self.opts.dry_run {
-                println!("[dry-run] would remove incomplete {}", self.label(row));
+                self.log.say(format!(
+                    "[dry-run] would remove incomplete {}",
+                    self.label(row)
+                ));
             } else {
                 crate::asset_store::remove_file(source_path)
                     .with_context(|| format!("remove incomplete {}", source_path.display()))?;
-                println!("removed incomplete {}", self.label(row));
+                self.log
+                    .say(format!("removed incomplete {}", self.label(row)));
             }
         }
-        Ok(Outcome::Skipped)
+        Ok(())
     }
 
-    /// Convert one original by kind into the work folder, then store it.
-    fn derive(&self, kind: Kind, source_path: &Path, row: &AssetRow) -> Result<Derived> {
-        let (what, format) = match kind {
-            Kind::Image => ("image", "jpg"),
-            Kind::Video => ("video", "mp4"),
-            Kind::Audio => ("audio", "mp3"),
+    /// Make `version` of one original into the work directory, then store
+    /// it.
+    fn derive(
+        &self,
+        version: Version,
+        kind: Kind,
+        source_path: &Path,
+        row: &AssetRow,
+    ) -> Result<Derived> {
+        let ext = match version {
+            Version::Thumbnail => ".jpg",
+            Version::Preview => media::preview_extension(kind),
         };
         let token = row.sha256.get(..12).unwrap_or(&row.sha256);
-        let out = self.work_dir.join(format!("out-{token}.{format}"));
-        let outcome = media::transcode_file_as(
-            source_path,
-            kind,
-            &out,
-            PREVIEW_MODE,
-            &server_compress_options(),
-        )
-        .with_context(|| format!("{what} preview for {}", self.label(row)))?;
-        let out = match outcome {
-            TranscodeOutcome::Produced => Some(out),
-            TranscodeOutcome::Skipped => None,
+        let out = self.work_dir.join(format!("{version}-{token}{ext}"));
+        let made = match version {
+            Version::Thumbnail => media::make_thumbnail(source_path, &out),
+            Version::Preview => media::make_preview(source_path, kind, &out),
         };
-        self.store_work_file(out, what, format, &format!(".{format}"), row)
+        if let Err(err) = made {
+            let _ = fs::remove_file(&out);
+            return Err(err);
+        }
+        self.store_work_file(&out, version, ext, row)
     }
 
-    /// Store a derivative the media pass wrote to the work folder, then remove
-    /// the work file. `None` means the pass left the original alone.
+    /// Store a version the media pass wrote to the work directory, then
+    /// remove the work file.
     fn store_work_file(
         &self,
-        out: Option<PathBuf>,
-        what: &str,
-        format: &str,
+        out: &Path,
+        version: Version,
         ext: &str,
         row: &AssetRow,
     ) -> Result<Derived> {
-        let Some(out) = out else {
-            return Ok(Derived::Skipped);
-        };
         if self.opts.dry_run {
-            println!("[dry-run] {what} {} -> {format}", self.label(row));
-            let _ = fs::remove_file(&out);
+            self.log
+                .say(format!("[dry-run] {version} {} -> {ext}", self.label(row)));
+            let _ = fs::remove_file(out);
             return Ok(Derived::DryRun);
         }
-        let blob = store_derived_file(&self.converted_dir, &out, ext);
-        let _ = fs::remove_file(&out);
+        let blob = store_derived_file(&self.converted_dir, out, ext);
+        let _ = fs::remove_file(out);
         Ok(Derived::Stored(blob?))
     }
 }
 
-/// Account ids from the database, falling back to the folder names under `data_dir` when the table does not exist yet.
+/// Account ids from the database, falling back to the directory names under
+/// `data_dir` when the table does not exist yet.
 async fn list_account_ids(conn: &mut SqliteConnection, data_dir: &Path) -> Result<Vec<i64>> {
     let mut ids = Vec::new();
     if schema::table_exists(conn, "accounts").await? {
@@ -438,8 +696,8 @@ async fn list_account_ids(conn: &mut SqliteConnection, data_dir: &Path) -> Resul
         ids = rows;
     }
     if ids.is_empty() && data_dir.is_dir() {
-        // Account folders are named by id; anything else under `data/` is
-        // not an account.
+        // Account directories are named by id; anything else under `data/`
+        // is not an account.
         for entry in fs::read_dir(data_dir)? {
             let entry = entry?;
             if entry.file_type()?.is_dir()
@@ -453,13 +711,18 @@ async fn list_account_ids(conn: &mut SqliteConnection, data_dir: &Path) -> Resul
     Ok(ids)
 }
 
-/// One row per stored blob of this account, from every source, with the
-/// names that could hint at its media type.
-async fn list_attachments(conn: &mut SqliteConnection, account_id: i64) -> Result<Vec<AssetRow>> {
-    // One row per stored blob. Several messages, from one source or several,
-    // can share a blob under different names, and only one derived file per
-    // blob is ever produced, so collapse those rows and keep any name that
-    // could identify the media type.
+/// One row per stored original of this account, from every source, with the
+/// names that could hint at its media type: every original, or only the one
+/// `only` names.
+async fn list_attachments(
+    conn: &mut SqliteConnection,
+    account_id: i64,
+    only: Option<&str>,
+) -> Result<Vec<AssetRow>> {
+    // One row per stored original. Several messages, from one source or
+    // several, can share it under different names, and only one version of
+    // each kind per original is ever made, so collapse those rows and keep
+    // any name that could identify the media type.
     let rows = sqlx::query_as::<_, AssetRow>(
         r"
         SELECT
@@ -471,12 +734,18 @@ async fn list_attachments(conn: &mut SqliteConnection, account_id: i64) -> Resul
             MAX(a.derived_mime_type) AS derived_mime_type,
             SUM(CASE WHEN COALESCE(a.derived_assets_path, '') = '' THEN 1 ELSE 0 END)
                 AS rows_without_preview,
+            MAX(a.thumbnail_assets_path) AS thumbnail_assets_path,
+            MAX(a.thumbnail_sha256) AS thumbnail_sha256,
+            MAX(a.thumbnail_mime_type) AS thumbnail_mime_type,
+            SUM(CASE WHEN COALESCE(a.thumbnail_assets_path, '') = '' THEN 1 ELSE 0 END)
+                AS rows_without_thumbnail,
             MAX(a.original_name) AS original_name,
             MAX(a.path) AS source_path
         FROM attachments a
         JOIN messages m ON m.id = a.message_id
         JOIN conversations c ON c.id = m.conversation_id
         WHERE c.account_id = $1
+          AND ($2 IS NULL OR a.sha256 = $2)
           AND a.sha256 IS NOT NULL AND a.sha256 != ''
           AND a.assets_path IS NOT NULL AND a.assets_path != ''
         GROUP BY a.sha256, a.assets_path
@@ -484,31 +753,34 @@ async fn list_attachments(conn: &mut SqliteConnection, account_id: i64) -> Resul
         ",
     )
     .bind(account_id)
+    .bind(only)
     .fetch_all(&mut *conn)
     .await?;
     Ok(rows)
 }
 
 /// Point every attachment row of the account for `original_sha`, from every
-/// source, at its new derived blob.
-async fn update_derived(
+/// source, at its new `version`.
+async fn update_version(
     conn: &mut SqliteConnection,
+    version: Version,
     account_id: i64,
     original_sha: &str,
     blob: &DerivedBlob,
 ) -> Result<()> {
-    sqlx::query(
+    let [sha_column, path_column, mime_column] = version.columns();
+    sqlx::query(&format!(
         r"
         UPDATE attachments
-        SET derived_sha256 = $1, derived_assets_path = $2, derived_mime_type = $3
+        SET {sha_column} = $1, {path_column} = $2, {mime_column} = $3
         WHERE sha256 = $4
           AND message_id IN (
             SELECT m.id FROM messages m
             JOIN conversations c ON c.id = m.conversation_id
             WHERE c.account_id = $5
           )
-        ",
-    )
+        "
+    ))
     .bind(&blob.sha256)
     .bind(&blob.assets_path)
     .bind(&blob.mime_type)
@@ -519,26 +791,28 @@ async fn update_derived(
     Ok(())
 }
 
-/// Clear the derived columns of every attachment row of the account that
-/// names the Preview at `derived_assets_path`, from every source.
-async fn clear_derived(
+/// Clear the `version` columns of every attachment row of the account that
+/// names the file at `assets_path`, from every source.
+async fn clear_version(
     conn: &mut SqliteConnection,
+    version: Version,
     account_id: i64,
-    derived_assets_path: &str,
+    assets_path: &str,
 ) -> Result<()> {
-    sqlx::query(
+    let [sha_column, path_column, mime_column] = version.columns();
+    sqlx::query(&format!(
         r"
         UPDATE attachments
-        SET derived_sha256 = NULL, derived_assets_path = NULL, derived_mime_type = NULL
-        WHERE derived_assets_path = $1
+        SET {sha_column} = NULL, {path_column} = NULL, {mime_column} = NULL
+        WHERE {path_column} = $1
           AND message_id IN (
             SELECT m.id FROM messages m
             JOIN conversations c ON c.id = m.conversation_id
             WHERE c.account_id = $2
           )
-        ",
-    )
-    .bind(derived_assets_path)
+        "
+    ))
+    .bind(assets_path)
     .bind(account_id)
     .execute(&mut *conn)
     .await?;
@@ -550,65 +824,96 @@ fn is_part_path(path: &str) -> bool {
     crate::asset_store::has_part_extension(Path::new(path))
 }
 
-/// What one stored blob needs, decided before any file is touched.
+/// What one stored original needs, decided before any file is touched.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Plan {
     /// A `.part` left by an interrupted transfer: delete it, never hand it to ffmpeg.
     RemoveIncomplete,
-    /// Leave the original as it is.
+    /// Leave the original and its versions as they are.
     Skip(SkipReason),
-    /// Convert the original for the browser as this kind of media.
-    Derive(Kind),
-    /// A conversion is wanted and the original is missing: count the
-    /// attachment as a failure. When the Preview is damaged it cannot be
-    /// converted again, so stop naming it and delete it first.
-    MissingOriginal { damaged_preview: bool },
+    /// What each version needs.
+    Versions(Versions),
 }
 
-/// Why a blob is left as it is.
+/// What the two versions of one media original need.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Versions {
+    /// The kind of media the original is.
+    kind: Kind,
+    thumbnail: Need,
+    preview: Need,
+}
+
+/// What one version of an original needs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Need {
+    /// Nothing: this original gets no such version, or it has one that its
+    /// rows all name.
+    Nothing,
+    /// An intact one exists: point the rows that name none at it.
+    Share,
+    /// Make it from the original.
+    Make,
+    /// This original gets no such version, and the rows name one that is
+    /// damaged: stop naming it and delete it.
+    Drop,
+    /// It must be made and the original is missing: count the original as a
+    /// failure. When the version on disk is damaged it cannot be made again,
+    /// so stop naming it and delete it first.
+    NoOriginal { damaged: bool },
+}
+
+/// Why an original is left as it is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SkipReason {
-    /// Not an image, video or audio file, or a GIF, which is never converted.
+    /// Not an image, video or audio file.
     NotMedia,
     /// The options turn this kind off (`--skip-image` and friends).
     KindDisabled,
-    /// An intact Preview already exists, and `--force` was not given.
-    AlreadyDerived,
 }
 
-/// The two facts about one blob that only the filesystem can supply.
+/// The facts about one original that only the filesystem can supply.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct OnDisk {
-    /// The stored original is present under the assets folder.
+    /// The stored original is present under the assets directory.
     original_exists: bool,
-    /// The state of the Preview the row points at.
+    /// The state of the Preview the rows name.
     preview: PreviewFile,
+    /// The state of the Thumbnail the rows name.
+    thumbnail: PreviewFile,
+    /// Every browser shows the original as it is ([`media::browser_shows`]),
+    /// so it needs no Preview.
+    browser_shows: bool,
 }
 
-/// The state of the Preview a row points at, under the converted folder.
+/// The state of a version a row names, under the converted directory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PreviewFile {
-    /// No Preview is named, or no file is at the path named.
+    /// None is named, or no file is at the path named.
     Missing,
     /// A file is there, but its bytes do not hash to the fingerprint in its
-    /// name, such as a Preview cut short by a killed run. It is converted
-    /// again as if missing, or dropped when its original is missing.
+    /// name, such as one cut short by a killed run. It is made again as if
+    /// missing, or dropped when its original is missing.
     Damaged,
     /// A file is there and its bytes hash to the fingerprint in its name.
     Intact,
 }
 
-/// Decide what one blob needs from the row, the options and what is on disk.
-/// No IO happens here: `on_disk` carries the facts the caller read.
+/// Decide what one original needs from the row, the options and what is on
+/// disk. No IO happens here: `on_disk` carries the facts the caller read.
 fn plan(row: &AssetRow, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> Plan {
     if is_part_path(&row.assets_path) {
         return Plan::RemoveIncomplete;
     }
-    let Some(kind) = media::kind_of(
+    // A GIF is an animation, so it gets no still Preview, but it is an image
+    // and gets a Thumbnail like any other.
+    let preview_kind = media::kind_of(
         Path::new(&row.assets_path),
         row.mime_type.as_deref(),
         &row.name_hints(),
-    ) else {
+    );
+    let is_gif = row.media_type().as_deref() == Some("image/gif");
+    let Some(kind) = preview_kind.or(is_gif.then_some(Kind::Image)) else {
         return Plan::Skip(SkipReason::NotMedia);
     };
     let wanted = match kind {
@@ -619,24 +924,41 @@ fn plan(row: &AssetRow, opts: &ProcessAssetsOptions, on_disk: OnDisk) -> Plan {
     if !wanted {
         return Plan::Skip(SkipReason::KindDisabled);
     }
-    if on_disk.preview == PreviewFile::Intact && !opts.force {
-        return Plan::Skip(SkipReason::AlreadyDerived);
-    }
-    if !on_disk.original_exists {
-        return Plan::MissingOriginal {
-            damaged_preview: on_disk.preview == PreviewFile::Damaged,
-        };
-    }
-    Plan::Derive(kind)
+    // An intact version is kept, made again only under `--force`, and one
+    // this original would no longer get is kept even then.
+    let need = |wanted: bool, state: PreviewFile| {
+        if state == PreviewFile::Intact && !(opts.force && wanted) {
+            Need::Share
+        } else if !wanted {
+            if state == PreviewFile::Damaged {
+                Need::Drop
+            } else {
+                Need::Nothing
+            }
+        } else if on_disk.original_exists {
+            Need::Make
+        } else {
+            Need::NoOriginal {
+                damaged: state == PreviewFile::Damaged,
+            }
+        }
+    };
+    Plan::Versions(Versions {
+        kind,
+        thumbnail: need(matches!(kind, Kind::Image | Kind::Video), on_disk.thumbnail),
+        preview: need(
+            preview_kind.is_some() && !on_disk.browser_shows,
+            on_disk.preview,
+        ),
+    })
 }
 
-/// The state of the Preview `derived_assets_path` names under
-/// `converted_dir`. A path that is empty or leaves `converted_dir` names no
-/// file there, and a name that carries no fingerprint, which the server
-/// never writes, is damaged.
-fn preview_file(derived_assets_path: Option<&str>, converted_dir: &Path) -> PreviewFile {
-    let Some(path) =
-        derived_assets_path.and_then(|rel| crate::asset_store::join_under(converted_dir, rel))
+/// The state of the version `assets_path` names under `converted_dir`. A
+/// path that is empty or leaves `converted_dir` names no file there, and a
+/// name that carries no fingerprint, which the server never writes, is
+/// damaged.
+fn preview_file(assets_path: Option<&str>, converted_dir: &Path) -> PreviewFile {
+    let Some(path) = assets_path.and_then(|rel| crate::asset_store::join_under(converted_dir, rel))
     else {
         return PreviewFile::Missing;
     };
@@ -671,10 +993,10 @@ fn mime_for_ext(ext: &str) -> &'static str {
 /// Write derived bytes into the content-addressed store; the same bytes always land at the same path.
 ///
 /// A file already at that path is kept only when its bytes hash to the
-/// fingerprint in its name. Anything else, such as a preview cut short by an
-/// interrupted run, is replaced. The bytes go to a synced temporary file in the
-/// same folder first and are renamed over the path, so a run killed partway
-/// never leaves a partial file under a content-addressed name.
+/// fingerprint in its name. Anything else, such as a version cut short by an
+/// interrupted run, is replaced. The bytes go to a synced temporary file in
+/// the same directory first and are renamed over the path, so a run killed
+/// partway never leaves a partial file under a content-addressed name.
 fn store_derived_bytes(derived_dir: &Path, buf: &[u8], ext: &str) -> Result<DerivedBlob> {
     let sha = crate::assets_api::Sha256::of_bytes(buf);
     let rel = derived_rel_path(&sha, ext);
@@ -685,22 +1007,22 @@ fn store_derived_bytes(derived_dir: &Path, buf: &[u8], ext: &str) -> Result<Deri
     fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     if !crate::assets_api::hash_file(&dest).is_ok_and(|actual| actual == sha.as_str()) {
         let mut temporary = crate::asset_store::shard_temp_file(parent)
-            .with_context(|| format!("create temporary preview in {}", parent.display()))?;
+            .with_context(|| format!("create temporary file in {}", parent.display()))?;
         temporary
             .write_all(buf)
-            .with_context(|| format!("write temporary preview in {}", parent.display()))?;
+            .with_context(|| format!("write temporary file in {}", parent.display()))?;
         temporary
             .as_file()
             .sync_all()
-            .with_context(|| format!("sync temporary preview in {}", parent.display()))?;
+            .with_context(|| format!("sync temporary file in {}", parent.display()))?;
         temporary
             .persist(&dest)
             .map_err(|err| err.error)
             .with_context(|| format!("install {}", dest.display()))?;
     } else {
         // The file is reused, so it gets a fresh modified time: the sweep at
-        // an Import Run's end leaves a young unnamed Preview alone until
-        // `update_derived` names it.
+        // an Import Run's end leaves a young unnamed version alone until
+        // `update_version` names it.
         fs::File::options()
             .write(true)
             .open(&dest)

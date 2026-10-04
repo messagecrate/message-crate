@@ -6,9 +6,9 @@ note reaches its player. The words Asset, Preview, Thumbnail and Media Link
 are defined in `CONTEXT.md`. The maintainer decided the five rules below on
 #1029, on 2026-10-04; each carries its reason.
 
-The server side of rule 1 is built (#1658). Rules 3 and 4, making the
-Thumbnails and Previews after each import, are #1659. The web app's half of
-rules 1, 2 and 5 is #1660, which follows both.
+The server side of rule 1 is built (#1658), and so are rules 3 and 4, the
+Thumbnails and Previews the server makes after each import (#1659). The web
+app's half of rules 1, 2 and 5 is #1660.
 
 Every rule holds for the server in Docker and for the server the desktop app
 starts alike. They are one binary, and no rule here depends on which one
@@ -16,8 +16,9 @@ answers.
 
 ## 1. A video or a voice note streams
 
-The two routes that answer an attachment's bytes, `GET /v1/assets/{sha256}`
-and `GET /v1/assets/{sha256}/preview`, answer HTTP range requests. A video
+The three routes that answer an attachment's bytes, `GET /v1/assets/{sha256}`,
+`GET /v1/assets/{sha256}/preview` and `GET /v1/assets/{sha256}/thumbnail`,
+answer HTTP range requests. A video
 and a voice note play from a `<video>` or `<audio>` element that loads its
 own `src`, never from a whole file fetched first and handed over as a blob.
 
@@ -31,7 +32,8 @@ How the server answers a range, and why, is a rule of the HTTP interface:
 
 A media element cannot send the Session's `Authorization` header, so the web
 app puts a Media Link in `src`: `POST /v1/assets/{sha256}/media-links`
-answers URLs that read the asset and its Preview with no header. What a Media
+answers URLs that read the asset, its Preview and its Thumbnail with no
+header. What a Media
 Link is, why it was chosen over a cookie or the Session token in the URL, and
 what it reaches is in `docs/architecture/http-api.md`, "Credentials and
 reach".
@@ -45,6 +47,18 @@ when it is of a type browsers often cannot show: HEIC, HEVC video in a
 the viewer says so and offers the download. Downloading always gives the
 original.
 
+The server makes Previews by the same rule, in `media::browser_shows`: the
+types every browser shows are exactly JPEG, PNG, GIF and WebP images, MP3
+audio, and MP4 with H.264 video, and every other image, video or audio file
+gets a Preview. The type comes from the stored file's extension, then the
+type the import declared, then the name the export gave the file, the order
+the server reads a type everywhere. Only an MP4 is opened, by ffprobe, to read
+its video codec, so a HEVC video in an `.mp4` gets a Preview too. The list is
+exact rather than generous: AAC audio in an `.m4a` plays in most browsers and
+still gets a Preview, because a list that holds a type most browsers show
+would fail in the one that does not, and an MP3 copy of a voice note costs
+little.
+
 Why: the viewer used to fetch the original and fall back to the Preview only
 when the browser failed to show it. The result depended on the browser, so a
 HEIC photo opened as its Preview in Chrome and as the original in Safari, and
@@ -57,12 +71,28 @@ metadata.
 
 ## 3. An attachment has up to three versions
 
-- The **Thumbnail**, about 560 pixels across and under 100 kilobytes: the image
-  scaled down, or a video's first frame. Every image and video has one. The
-  conversation shows it.
-- The **Preview**, a copy a browser can play or show. Only an attachment of a
-  type in rule 2 that browsers often cannot show has one.
+- The **Thumbnail**, a JPEG at most 560 pixels on its long side and tens of
+  kilobytes: the image scaled down, never enlarged, or a video's first frame.
+  Every image and video has one, a GIF included. The conversation shows it.
+- The **Preview**, a copy a browser can play or show: a JPEG of an image, an
+  MP4 of a video with H.264 video at most 1080p and AAC audio, an MP3 of
+  audio. Only an attachment of a type in rule 2 that browsers often cannot
+  show has one. A GIF has none, because a still copy of an animation is not
+  the animation.
 - The **original**, as it was imported, never changed.
+
+The Thumbnail and the Preview are stored in the account's converted
+directory, each named by the SHA-256 of its own bytes, and the attachment
+rows of the original name them. A client addresses both by the original's
+fingerprint, `GET /v1/assets/{sha256}/thumbnail` and
+`GET /v1/assets/{sha256}/preview`, and an attachment says each exists in
+`thumbnail_mime_type` and `preview_mime_type`. A route answers
+`404 Not Found` until its version is made.
+
+Why a JPEG Thumbnail and not a WebP: every ffmpeg build writes JPEG, and a
+Thumbnail of 560 pixels is tens of kilobytes either way. Why the Preview of a
+video is H.264 and not HEVC: browsers that play HEVC are the exception, and a
+Preview exists for the browser that cannot play the original.
 
 Why a Thumbnail: a conversation shows many attachments at once, and a phone
 photo or video is megabytes. A Thumbnail is enough for the size the
@@ -81,6 +111,27 @@ in the background, so the Import Run finishes without waiting for it. The
 server in Docker and the server the desktop app starts both do it.
 `process-assets` stays, for rebuilding the Thumbnails and Previews and for
 repairing missing ones.
+
+How: an Import Run that ends, completed or discarded, adds the Assets its
+messages name to the `media_queue` table, one row per account and
+fingerprint, and wakes the pass. The `import` command adds its run's Assets
+the same way, and the next `serve` works on them. The pass runs on a thread
+of its own, so a long conversion never holds a request. It takes the Assets
+oldest first, makes what each still needs, shares a Thumbnail or Preview the
+original already has with rows that do not name it yet, and removes the row.
+An Asset whose conversion fails leaves the queue too, with the failure in the
+server's log, and `process-assets` tries it again.
+
+Why a table: the queue outlives the process, so a server stopped part-way
+works through what was left when it starts again, with nothing to redo and no
+Import Run to replay.
+
+Without ffmpeg the pass makes nothing and leaves the queue as it is, so the
+Assets wait for a server that has it, at its next start or after the next
+Import Run. The Docker image has ffmpeg. The desktop app's server looks for
+it where the `media` crate does: beside the program, in `MESSAGE_CRATE_BIN`,
+then on `PATH` (`docs/adr/0019-the-desktop-app-downloads-the-programs-it-needs.md`
+is the decided way it gets there).
 
 Why after each import: a Preview existed only once someone ran
 `process-assets` by hand, so an attachment imported with **Attachments →

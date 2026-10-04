@@ -17,16 +17,38 @@ fn row(assets_path: &str) -> AssetRow {
         derived_sha256: None,
         derived_mime_type: None,
         rows_without_preview: 1,
+        thumbnail_assets_path: None,
+        thumbnail_sha256: None,
+        thumbnail_mime_type: None,
+        rows_without_thumbnail: 1,
         original_name: None,
         source_path: None,
     }
 }
 
-/// The original is on disk and no preview exists: the state a fresh import leaves.
+/// The original is on disk, of a type browsers often cannot show, and has
+/// no versions yet: the state a fresh import of a HEIC photo leaves.
 const FRESH: OnDisk = OnDisk {
     original_exists: true,
     preview: PreviewFile::Missing,
+    thumbnail: PreviewFile::Missing,
+    browser_shows: false,
 };
+
+/// [`FRESH`], of a type every browser shows as it is.
+const FRESH_SHOWN: OnDisk = OnDisk {
+    browser_shows: true,
+    ..FRESH
+};
+
+/// What the plan says each version of a `kind` original needs.
+fn versions(kind: Kind, thumbnail: Need, preview: Need) -> Plan {
+    Plan::Versions(Versions {
+        kind,
+        thumbnail,
+        preview,
+    })
+}
 
 /// A pass over `assets_dir` for account 7.
 fn pass<'a>(
@@ -41,6 +63,7 @@ fn pass<'a>(
         account_id: 7,
         assets_dir: assets_dir.to_path_buf(),
         converted_dir: converted_dir.to_path_buf(),
+        log: Log::Print,
     }
 }
 
@@ -67,7 +90,7 @@ fn a_part_path_is_removed_and_never_converted() {
     // deals with an absent file.
     let gone = OnDisk {
         original_exists: false,
-        preview: PreviewFile::Missing,
+        ..FRESH
     };
     assert_eq!(plan(&part, &opts, gone), Plan::RemoveIncomplete);
 }
@@ -86,188 +109,223 @@ fn a_blob_that_is_not_media_is_skipped() {
 }
 
 #[test]
-fn a_gif_is_skipped_because_an_animation_gets_no_still_preview() {
+fn a_gif_gets_a_thumbnail_and_no_preview_because_it_is_an_animation() {
     let opts = ProcessAssetsOptions::default();
-    assert_eq!(
-        plan(&row("aa/photo.gif"), &opts, FRESH),
-        Plan::Skip(SkipReason::NotMedia)
-    );
+    let want = versions(Kind::Image, Need::Make, Need::Nothing);
+    assert_eq!(plan(&row("aa/photo.gif"), &opts, FRESH_SHOWN), want);
     let mut declared = row(&format!("ab/{SHA}"));
     declared.mime_type = Some("image/gif".to_string());
-    assert_eq!(
-        plan(&declared, &opts, FRESH),
-        Plan::Skip(SkipReason::NotMedia)
-    );
+    assert_eq!(plan(&declared, &opts, FRESH_SHOWN), want);
 }
 
 #[test]
-fn each_kind_is_derived_when_nothing_stands_in_the_way() {
+fn an_image_or_a_video_gets_a_thumbnail_and_audio_none() {
     let opts = ProcessAssetsOptions::default();
     assert_eq!(
-        plan(&row("aa/photo.jpg"), &opts, FRESH),
-        Plan::Derive(Kind::Image)
+        plan(&row("aa/photo.heic"), &opts, FRESH),
+        versions(Kind::Image, Need::Make, Need::Make)
     );
     assert_eq!(
-        plan(&row("aa/clip.mp4"), &opts, FRESH),
-        Plan::Derive(Kind::Video)
+        plan(&row("aa/clip.mov"), &opts, FRESH),
+        versions(Kind::Video, Need::Make, Need::Make)
     );
     assert_eq!(
-        plan(&row("aa/memo.m4a"), &opts, FRESH),
-        Plan::Derive(Kind::Audio)
+        plan(&row("aa/memo.amr"), &opts, FRESH),
+        versions(Kind::Audio, Need::Nothing, Need::Make)
     );
 }
 
 #[test]
-fn an_extensionless_blob_is_derived_by_its_declared_mime_or_its_attachment_name() {
+fn an_original_every_browser_shows_gets_no_preview() {
+    let opts = ProcessAssetsOptions::default();
+    assert_eq!(
+        plan(&row("aa/photo.jpg"), &opts, FRESH_SHOWN),
+        versions(Kind::Image, Need::Make, Need::Nothing)
+    );
+    assert_eq!(
+        plan(&row("aa/clip.mp4"), &opts, FRESH_SHOWN),
+        versions(Kind::Video, Need::Make, Need::Nothing)
+    );
+    assert_eq!(
+        plan(&row("aa/song.mp3"), &opts, FRESH_SHOWN),
+        versions(Kind::Audio, Need::Nothing, Need::Nothing)
+    );
+}
+
+#[test]
+fn an_extensionless_blob_is_planned_by_its_declared_mime_or_its_attachment_name() {
     let opts = ProcessAssetsOptions::default();
     let mut by_mime = row(&format!("ab/{SHA}"));
     by_mime.mime_type = Some("image/heic".to_string());
-    assert_eq!(plan(&by_mime, &opts, FRESH), Plan::Derive(Kind::Image));
+    assert_eq!(
+        plan(&by_mime, &opts, FRESH),
+        versions(Kind::Image, Need::Make, Need::Make)
+    );
     let mut by_name = row(&format!("ab/{SHA}"));
     by_name.original_name = Some("voice-note.amr".to_string());
-    assert_eq!(plan(&by_name, &opts, FRESH), Plan::Derive(Kind::Audio));
-}
-
-#[test]
-fn skip_image_turns_off_images_and_nothing_else() {
-    let opts = ProcessAssetsOptions {
-        skip_image: true,
-        ..Default::default()
-    };
     assert_eq!(
-        plan(&row("aa/photo.jpg"), &opts, FRESH),
-        Plan::Skip(SkipReason::KindDisabled)
-    );
-    assert_eq!(
-        plan(&row("aa/clip.mp4"), &opts, FRESH),
-        Plan::Derive(Kind::Video)
-    );
-    assert_eq!(
-        plan(&row("aa/memo.m4a"), &opts, FRESH),
-        Plan::Derive(Kind::Audio)
+        plan(&by_name, &opts, FRESH),
+        versions(Kind::Audio, Need::Nothing, Need::Make)
     );
 }
 
 #[test]
-fn skip_video_turns_off_videos_and_nothing_else() {
-    let opts = ProcessAssetsOptions {
-        skip_video: true,
-        ..Default::default()
-    };
-    assert_eq!(
-        plan(&row("aa/clip.mp4"), &opts, FRESH),
-        Plan::Skip(SkipReason::KindDisabled)
-    );
-    assert_eq!(
-        plan(&row("aa/photo.jpg"), &opts, FRESH),
-        Plan::Derive(Kind::Image)
-    );
-    assert_eq!(
-        plan(&row("aa/memo.m4a"), &opts, FRESH),
-        Plan::Derive(Kind::Audio)
-    );
+fn each_skip_option_turns_off_its_kind_and_nothing_else() {
+    let photo = row("aa/photo.heic");
+    let clip = row("aa/clip.mov");
+    let memo = row("aa/memo.amr");
+    let off = Plan::Skip(SkipReason::KindDisabled);
+    let image = versions(Kind::Image, Need::Make, Need::Make);
+    let video = versions(Kind::Video, Need::Make, Need::Make);
+    let audio = versions(Kind::Audio, Need::Nothing, Need::Make);
+    for (opts, want) in [
+        (
+            ProcessAssetsOptions {
+                skip_image: true,
+                ..Default::default()
+            },
+            [off, video, audio],
+        ),
+        (
+            ProcessAssetsOptions {
+                skip_video: true,
+                ..Default::default()
+            },
+            [image, off, audio],
+        ),
+        (
+            ProcessAssetsOptions {
+                skip_audio: true,
+                ..Default::default()
+            },
+            [image, video, off],
+        ),
+    ] {
+        let got = [&photo, &clip, &memo].map(|row| plan(row, &opts, FRESH));
+        assert_eq!(got, want, "{opts:?}");
+    }
 }
 
 #[test]
-fn skip_audio_turns_off_audio_and_nothing_else() {
-    let opts = ProcessAssetsOptions {
-        skip_audio: true,
-        ..Default::default()
-    };
-    assert_eq!(
-        plan(&row("aa/memo.m4a"), &opts, FRESH),
-        Plan::Skip(SkipReason::KindDisabled)
-    );
-    assert_eq!(
-        plan(&row("aa/photo.jpg"), &opts, FRESH),
-        Plan::Derive(Kind::Image)
-    );
-    assert_eq!(
-        plan(&row("aa/clip.mp4"), &opts, FRESH),
-        Plan::Derive(Kind::Video)
-    );
-}
-
-#[test]
-fn an_existing_preview_is_kept_unless_force_is_given() {
-    let derived = OnDisk {
-        original_exists: true,
+fn an_existing_version_is_kept_unless_force_is_given() {
+    let made = OnDisk {
         preview: PreviewFile::Intact,
+        thumbnail: PreviewFile::Intact,
+        ..FRESH
     };
-    let mut photo = row("aa/photo.jpg");
-    photo.derived_assets_path = Some(format!("ab/{SHA}.jpg"));
+    let photo = row("aa/photo.heic");
     assert_eq!(
-        plan(&photo, &ProcessAssetsOptions::default(), derived),
-        Plan::Skip(SkipReason::AlreadyDerived)
+        plan(&photo, &ProcessAssetsOptions::default(), made),
+        versions(Kind::Image, Need::Share, Need::Share)
     );
     let force = ProcessAssetsOptions {
         force: true,
         ..Default::default()
     };
-    assert_eq!(plan(&photo, &force, derived), Plan::Derive(Kind::Image));
+    assert_eq!(
+        plan(&photo, &force, made),
+        versions(Kind::Image, Need::Make, Need::Make)
+    );
     let damaged = OnDisk {
-        original_exists: true,
         preview: PreviewFile::Damaged,
+        thumbnail: PreviewFile::Damaged,
+        ..FRESH
     };
     assert_eq!(
         plan(&photo, &ProcessAssetsOptions::default(), damaged),
-        Plan::Derive(Kind::Image),
-        "a damaged Preview is converted again without --force"
+        versions(Kind::Image, Need::Make, Need::Make),
+        "a damaged version is made again without --force"
     );
 }
 
 #[test]
-fn a_disabled_kind_is_reported_before_an_existing_preview() {
+fn a_preview_the_original_would_no_longer_get_is_kept_or_dropped_when_damaged() {
+    let photo = row("aa/photo.png");
+    let kept = OnDisk {
+        preview: PreviewFile::Intact,
+        ..FRESH_SHOWN
+    };
+    let force = ProcessAssetsOptions {
+        force: true,
+        ..Default::default()
+    };
+    assert_eq!(
+        plan(&photo, &force, kept),
+        versions(Kind::Image, Need::Make, Need::Share),
+        "--force does not make again a Preview the original no longer gets"
+    );
+    let damaged = OnDisk {
+        preview: PreviewFile::Damaged,
+        ..FRESH_SHOWN
+    };
+    assert_eq!(
+        plan(&photo, &ProcessAssetsOptions::default(), damaged),
+        versions(Kind::Image, Need::Make, Need::Drop)
+    );
+}
+
+#[test]
+fn a_disabled_kind_is_reported_before_an_existing_version() {
     let opts = ProcessAssetsOptions {
         skip_image: true,
         ..Default::default()
     };
-    let derived = OnDisk {
-        original_exists: true,
+    let made = OnDisk {
         preview: PreviewFile::Intact,
+        thumbnail: PreviewFile::Intact,
+        ..FRESH
     };
     assert_eq!(
-        plan(&row("aa/photo.jpg"), &opts, derived),
+        plan(&row("aa/photo.heic"), &opts, made),
         Plan::Skip(SkipReason::KindDisabled)
     );
 }
 
 #[test]
-fn a_missing_original_is_an_error_only_when_a_conversion_is_wanted() {
+fn a_missing_original_is_an_error_only_when_a_version_is_wanted() {
     let opts = ProcessAssetsOptions::default();
     let missing = OnDisk {
         original_exists: false,
-        preview: PreviewFile::Missing,
+        ..FRESH
     };
+    let no_original = Need::NoOriginal { damaged: false };
     assert_eq!(
-        plan(&row("aa/photo.jpg"), &opts, missing),
-        Plan::MissingOriginal {
-            damaged_preview: false
-        }
+        plan(&row("aa/photo.heic"), &opts, missing),
+        versions(Kind::Image, no_original, no_original)
     );
-    // A preview already on disk, or a kind nobody wants, needs no original.
-    let missing_but_derived = OnDisk {
+    // A version already on disk, or one nobody wants, needs no original.
+    let missing_but_made = OnDisk {
         original_exists: false,
         preview: PreviewFile::Intact,
+        thumbnail: PreviewFile::Intact,
+        browser_shows: false,
     };
     assert_eq!(
-        plan(&row("aa/photo.jpg"), &opts, missing_but_derived),
-        Plan::Skip(SkipReason::AlreadyDerived)
+        plan(&row("aa/photo.heic"), &opts, missing_but_made),
+        versions(Kind::Image, Need::Share, Need::Share)
+    );
+    let missing_shown = OnDisk {
+        original_exists: false,
+        ..FRESH_SHOWN
+    };
+    assert_eq!(
+        plan(&row("aa/song.mp3"), &opts, missing_shown),
+        versions(Kind::Audio, Need::Nothing, Need::Nothing)
     );
     assert_eq!(
         plan(&row("aa/notes.txt"), &opts, missing),
         Plan::Skip(SkipReason::NotMedia)
     );
-    // A damaged Preview with no original to convert it from again is dropped.
+    // A damaged version with no original to make it from again is dropped.
     let missing_and_damaged = OnDisk {
         original_exists: false,
         preview: PreviewFile::Damaged,
+        thumbnail: PreviewFile::Missing,
+        browser_shows: false,
     };
     assert_eq!(
-        plan(&row("aa/photo.jpg"), &opts, missing_and_damaged),
-        Plan::MissingOriginal {
-            damaged_preview: true
-        }
+        plan(&row("aa/photo.heic"), &opts, missing_and_damaged),
+        versions(Kind::Image, no_original, Need::NoOriginal { damaged: true })
     );
 }
 
@@ -334,17 +392,13 @@ fn removing_an_incomplete_upload_deletes_the_part_file() {
     fs::write(&part, b"half").unwrap();
     let pass = pass(&opts, dir.path(), &assets, dir.path());
 
-    let outcome = pass
-        .remove_incomplete(&row("aa/upload.part"), &part)
+    pass.remove_incomplete(&row("aa/upload.part"), &part)
         .unwrap();
 
-    assert!(matches!(outcome, Outcome::Skipped));
     assert!(!part.exists());
     // A file that is already gone is not an error.
-    let outcome = pass
-        .remove_incomplete(&row("aa/upload.part"), &part)
+    pass.remove_incomplete(&row("aa/upload.part"), &part)
         .unwrap();
-    assert!(matches!(outcome, Outcome::Skipped));
 }
 
 #[test]
@@ -360,23 +414,10 @@ fn a_dry_run_leaves_the_part_file_in_place() {
     fs::write(&part, b"half").unwrap();
     let pass = pass(&opts, dir.path(), &assets, dir.path());
 
-    let outcome = pass
-        .remove_incomplete(&row("aa/upload.part"), &part)
+    pass.remove_incomplete(&row("aa/upload.part"), &part)
         .unwrap();
 
-    assert!(matches!(outcome, Outcome::Skipped));
     assert!(part.is_file());
-}
-
-#[test]
-fn a_work_file_the_media_pass_did_not_write_means_the_original_stays() {
-    let opts = ProcessAssetsOptions::default();
-    let dir = tempfile::tempdir().unwrap();
-    let pass = pass(&opts, dir.path(), dir.path(), dir.path());
-    let stored = pass
-        .store_work_file(None, "image", "jpg", ".jpg", &row("aa/photo.jpg"))
-        .unwrap();
-    assert_eq!(stored, Derived::Skipped);
 }
 
 #[test]
@@ -390,13 +431,7 @@ fn a_work_file_is_stored_content_addressed_and_then_removed() {
     let pass = pass(&opts, dir.path(), dir.path(), &converted);
 
     let stored = pass
-        .store_work_file(
-            Some(out.clone()),
-            "image",
-            "jpg",
-            ".jpg",
-            &row("aa/photo.jpg"),
-        )
+        .store_work_file(&out, Version::Thumbnail, ".jpg", &row("aa/photo.jpg"))
         .unwrap();
 
     let expected = DerivedBlob {
@@ -426,13 +461,7 @@ fn a_dry_run_stores_nothing_and_still_removes_the_work_file() {
     let pass = pass(&opts, dir.path(), dir.path(), &converted);
 
     let stored = pass
-        .store_work_file(
-            Some(out.clone()),
-            "image",
-            "jpg",
-            ".jpg",
-            &row("aa/photo.jpg"),
-        )
+        .store_work_file(&out, Version::Thumbnail, ".jpg", &row("aa/photo.jpg"))
         .unwrap();
 
     assert_eq!(stored, Derived::DryRun);
@@ -452,6 +481,16 @@ pub(crate) const PNG_1X1_RGB: &[u8] = &[
     0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
     0x00, 0x03, 0x01, 0x01, 0x00, 0xc9, 0xfe, 0x92, 0xef, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
     0x44, 0xae, 0x42, 0x60, 0x82,
+];
+
+/// A 1x1 24-bit BMP: an image browsers often cannot show, so it gets a
+/// Preview as well as a Thumbnail.
+#[rustfmt::skip]
+pub(crate) const BMP_1X1: &[u8] = &[
+    0x42, 0x4d, 0x3a, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00, 0x00, 0x28, 0x00,
+    0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x18, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x13, 0x0b, 0x00, 0x00, 0x13, 0x0b, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x40, 0x80, 0x00,
 ];
 
 /// An opened fresh database with the schema applied and its data folder
@@ -542,16 +581,36 @@ pub(crate) async fn attach_stored_blob(
     .unwrap()
 }
 
-/// A database with one account and one PNG attachment on a message of
-/// `source`.
-async fn fixture_with_png(source: &str) -> (OpenDb, tempfile::TempDir, i64) {
+/// A database with one account and one attachment on a message of
+/// `source`, stored as `<sha><ext>` with `bytes`.
+async fn fixture_with(source: &str, ext: &str, bytes: &[u8]) -> (OpenDb, tempfile::TempDir, i64) {
     let (opened, dir) = open_db().await;
     let mut conn = opened.conn().await.unwrap();
     seed_account(&mut conn, ACCOUNT).await;
     let message_id = seed_message(&mut conn, source).await;
-    let attachment_id =
-        attach_stored_blob(&opened, &mut conn, message_id, SHA, ".png", PNG_1X1_RGB).await;
+    let attachment_id = attach_stored_blob(&opened, &mut conn, message_id, SHA, ext, bytes).await;
     (opened, dir, attachment_id)
+}
+
+/// [`fixture_with`] a BMP, which gets a Preview and a Thumbnail.
+async fn fixture_with_bmp(source: &str) -> (OpenDb, tempfile::TempDir, i64) {
+    fixture_with(source, ".bmp", BMP_1X1).await
+}
+
+/// The Thumbnail columns of one attachment row, `None` until one is recorded.
+async fn thumbnail_of(
+    conn: &mut SqliteConnection,
+    attachment_id: i64,
+) -> Option<(String, String, String)> {
+    let (sha, path, mime): (Option<String>, Option<String>, Option<String>) = sqlx::query_as(
+        "SELECT thumbnail_sha256, thumbnail_assets_path, thumbnail_mime_type
+         FROM attachments WHERE id = $1",
+    )
+    .bind(attachment_id)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    Some((sha?, path?, mime?))
 }
 
 /// The derived columns of one attachment row, `None` until a preview is recorded.
@@ -584,10 +643,17 @@ fn with_real_ffmpeg(test: impl Future<Output = ()>) {
         .block_on(test);
 }
 
-fn stats(scanned: u64, derived: u64, skipped: u64, errors: u64) -> ProcessAssetsStats {
+fn stats(
+    scanned: u64,
+    derived: u64,
+    thumbnails: u64,
+    skipped: u64,
+    errors: u64,
+) -> ProcessAssetsStats {
     ProcessAssetsStats {
         scanned,
         derived,
+        thumbnails,
         skipped,
         errors,
     }
@@ -606,7 +672,7 @@ async fn store_and_update_derived_db() {
     let blob = store_derived_bytes(&converted, b"jpeg-bytes", ".jpg").unwrap();
     assert!(converted.join(&blob.assets_path).is_file());
 
-    update_derived(&mut conn, ACCOUNT, SHA, &blob)
+    update_version(&mut conn, Version::Preview, ACCOUNT, SHA, &blob)
         .await
         .unwrap();
 
@@ -633,11 +699,11 @@ async fn listed_attachments_carry_name_hints_for_extensionless_blobs() {
     .await
     .unwrap();
 
-    let rows = list_attachments(&mut conn, ACCOUNT).await.unwrap();
+    let rows = list_attachments(&mut conn, ACCOUNT, None).await.unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(
         plan(&rows[0], &ProcessAssetsOptions::default(), FRESH),
-        Plan::Derive(Kind::Audio),
+        versions(Kind::Audio, Need::Nothing, Need::Make),
         "an extensionless blob with no declared MIME must classify from its attachment name"
     );
 }
@@ -645,12 +711,12 @@ async fn listed_attachments_carry_name_hints_for_extensionless_blobs() {
 #[test]
 fn a_run_writes_a_jpeg_preview_under_the_converted_folder_and_records_it() {
     with_real_ffmpeg(async {
-        let (opened, _dir, attachment_id) = fixture_with_png("imessage").await;
+        let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
         let opts = ProcessAssetsOptions::default();
 
         let first = run(&opened, &opts).await.unwrap();
 
-        assert_eq!(first, stats(1, 1, 0, 0));
+        assert_eq!(first, stats(1, 1, 1, 0, 0));
         let mut conn = opened.conn().await.unwrap();
         let (sha, rel, mime) = derived_of(&mut conn, attachment_id)
             .await
@@ -670,25 +736,25 @@ fn a_run_writes_a_jpeg_preview_under_the_converted_folder_and_records_it() {
         assert_eq!(mime, "image/jpeg");
 
         // A second run leaves the preview alone; `force` makes it again.
-        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 0, 1, 0));
+        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 0, 0, 1, 0));
         let force = ProcessAssetsOptions {
             force: true,
             ..Default::default()
         };
-        assert_eq!(run(&opened, &force).await.unwrap(), stats(1, 1, 0, 0));
+        assert_eq!(run(&opened, &force).await.unwrap(), stats(1, 1, 1, 0, 0));
     });
 }
 
 #[test]
 fn a_dry_run_counts_the_preview_it_would_write_and_writes_nothing() {
     with_real_ffmpeg(async {
-        let (opened, _dir, attachment_id) = fixture_with_png("imessage").await;
+        let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
         let opts = ProcessAssetsOptions {
             dry_run: true,
             ..Default::default()
         };
 
-        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 1, 0, 0));
+        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 1, 1, 0, 0));
 
         let converted = opened.cfg.paths.assets_converted_dir_for_account(ACCOUNT);
         assert_eq!(fs::read_dir(&converted).unwrap().count(), 0);
@@ -718,14 +784,14 @@ async fn preview_on_disk(opened: &OpenDb, attachment_id: i64) -> (String, PathBu
 #[test]
 fn a_plain_run_converts_again_a_preview_cut_short() {
     with_real_ffmpeg(async {
-        let (opened, _dir, attachment_id) = fixture_with_png("imessage").await;
+        let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
         let opts = ProcessAssetsOptions::default();
-        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 1, 0, 0));
+        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 1, 1, 0, 0));
         let (sha, preview) = preview_on_disk(&opened, attachment_id).await;
         let whole = fs::read(&preview).unwrap();
         fs::write(&preview, &whole[..whole.len() / 2]).unwrap();
 
-        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 1, 0, 0));
+        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 1, 0, 0, 0));
 
         let (sha_after, preview_after) = preview_on_disk(&opened, attachment_id).await;
         let bytes = fs::read(&preview_after).unwrap();
@@ -743,13 +809,13 @@ fn a_plain_run_converts_again_a_preview_cut_short() {
 #[test]
 fn a_plain_run_skips_a_preview_that_hashes_to_its_name() {
     with_real_ffmpeg(async {
-        let (opened, _dir, attachment_id) = fixture_with_png("imessage").await;
+        let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
         let opts = ProcessAssetsOptions::default();
-        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 1, 0, 0));
+        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 1, 1, 0, 0));
         let (_, preview) = preview_on_disk(&opened, attachment_id).await;
         let written = fs::metadata(&preview).unwrap().modified().unwrap();
 
-        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 0, 1, 0));
+        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 0, 0, 1, 0));
 
         assert_eq!(
             fs::metadata(&preview).unwrap().modified().unwrap(),
@@ -766,20 +832,90 @@ fn a_plain_run_skips_a_preview_that_hashes_to_its_name() {
 #[test]
 fn a_second_source_imported_after_the_preview_was_made_gets_the_preview() {
     with_real_ffmpeg(async {
-        let (opened, _dir, imessage_attachment) = fixture_with_png("imessage").await;
+        let (opened, _dir, imessage_attachment) = fixture_with_bmp("imessage").await;
         let opts = ProcessAssetsOptions::default();
-        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 1, 0, 0));
+        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 1, 1, 0, 0));
         let mut conn = opened.conn().await.unwrap();
         let message_id = seed_message(&mut conn, "whatsapp").await;
         let whatsapp_attachment =
-            attach_stored_blob(&opened, &mut conn, message_id, SHA, ".png", PNG_1X1_RGB).await;
+            attach_stored_blob(&opened, &mut conn, message_id, SHA, ".bmp", BMP_1X1).await;
         assert_eq!(derived_of(&mut conn, whatsapp_attachment).await, None);
 
-        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 0, 1, 0));
+        assert_eq!(run(&opened, &opts).await.unwrap(), stats(1, 0, 0, 1, 0));
 
         let preview = derived_of(&mut conn, imessage_attachment).await;
         assert!(preview.is_some());
         assert_eq!(derived_of(&mut conn, whatsapp_attachment).await, preview);
+        let thumbnail = thumbnail_of(&mut conn, imessage_attachment).await;
+        assert!(thumbnail.is_some());
+        assert_eq!(
+            thumbnail_of(&mut conn, whatsapp_attachment).await,
+            thumbnail
+        );
+    });
+}
+
+/// An image every browser shows, such as a PNG, gets a Thumbnail and no
+/// Preview: the Thumbnail is a JPEG under the converted directory, named by
+/// the fingerprint of its own bytes, and the row says so.
+#[test]
+fn a_png_gets_a_thumbnail_and_no_preview() {
+    with_real_ffmpeg(async {
+        let (opened, _dir, attachment_id) = fixture_with("imessage", ".png", PNG_1X1_RGB).await;
+
+        assert_eq!(
+            run(&opened, &ProcessAssetsOptions::default())
+                .await
+                .unwrap(),
+            stats(1, 0, 1, 0, 0)
+        );
+
+        let mut conn = opened.conn().await.unwrap();
+        assert_eq!(derived_of(&mut conn, attachment_id).await, None);
+        let (sha, rel, mime) = thumbnail_of(&mut conn, attachment_id)
+            .await
+            .expect("the row names its Thumbnail");
+        assert_eq!(mime, "image/jpeg");
+        let bytes = fs::read(
+            opened
+                .cfg
+                .paths
+                .assets_converted_dir_for_account(ACCOUNT)
+                .join(&rel),
+        )
+        .unwrap();
+        assert_eq!(&bytes[..2], [0xff, 0xd8], "a JPEG starts with SOI");
+        assert_eq!(sha, crate::assets_api::sha256_hex(&bytes));
+    });
+}
+
+/// The background pass processes one queued Asset, and no other attachment
+/// of the account.
+#[test]
+fn one_asset_is_processed_alone() {
+    with_real_ffmpeg(async {
+        let (opened, _dir, queued) = fixture_with("imessage", ".png", PNG_1X1_RGB).await;
+        let mut conn = opened.conn().await.unwrap();
+        let message_id = seed_message(&mut conn, "sms").await;
+        let other_sha = "b".repeat(64);
+        let other = attach_stored_blob(
+            &opened,
+            &mut conn,
+            message_id,
+            &other_sha,
+            ".png",
+            PNG_1X1_RGB,
+        )
+        .await;
+        let work = tempfile::tempdir().unwrap();
+
+        let made = process_one_asset(&opened.cfg, &mut conn, work.path(), ACCOUNT, SHA)
+            .await
+            .unwrap();
+
+        assert_eq!(made, stats(1, 0, 1, 0, 0));
+        assert!(thumbnail_of(&mut conn, queued).await.is_some());
+        assert_eq!(thumbnail_of(&mut conn, other).await, None);
     });
 }
 
@@ -789,17 +925,17 @@ fn a_second_source_imported_after_the_preview_was_made_gets_the_preview() {
 #[test]
 fn a_file_two_sources_share_is_converted_once_for_both() {
     with_real_ffmpeg(async {
-        let (opened, _dir, imessage_attachment) = fixture_with_png("imessage").await;
+        let (opened, _dir, imessage_attachment) = fixture_with_bmp("imessage").await;
         let mut conn = opened.conn().await.unwrap();
         let message_id = seed_message(&mut conn, "sms").await;
         let sms_attachment =
-            attach_stored_blob(&opened, &mut conn, message_id, SHA, ".png", PNG_1X1_RGB).await;
+            attach_stored_blob(&opened, &mut conn, message_id, SHA, ".bmp", BMP_1X1).await;
 
         assert_eq!(
             run(&opened, &ProcessAssetsOptions::default())
                 .await
                 .unwrap(),
-            stats(1, 1, 0, 0)
+            stats(1, 1, 1, 0, 0)
         );
 
         let preview = derived_of(&mut conn, imessage_attachment).await;
@@ -832,7 +968,7 @@ async fn an_account_without_an_assets_folder_is_passed_over() {
         run(&opened, &ProcessAssetsOptions::default())
             .await
             .unwrap(),
-        stats(0, 0, 0, 0)
+        stats(0, 0, 0, 0, 0)
     );
 }
 
@@ -849,20 +985,20 @@ async fn a_blob_that_is_not_media_is_left_as_is_by_the_run() {
         run(&opened, &ProcessAssetsOptions::default())
             .await
             .unwrap(),
-        stats(1, 0, 1, 0)
+        stats(1, 0, 0, 1, 0)
     );
     assert_eq!(derived_of(&mut conn, attachment_id).await, None);
 }
 
 #[tokio::test]
 async fn a_missing_original_is_counted_as_a_failure_and_the_run_goes_on() {
-    let (opened, _dir, attachment_id) = fixture_with_png("imessage").await;
+    let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
     let mut conn = opened.conn().await.unwrap();
     let original = opened
         .cfg
         .paths
         .assets_dir_for_account(ACCOUNT)
-        .join(format!("ab/{SHA}.png"));
+        .join(format!("ab/{SHA}.bmp"));
     fs::remove_file(&original).unwrap();
     let message_id = seed_message(&mut conn, "sms").await;
     attach_stored_blob(
@@ -879,7 +1015,7 @@ async fn a_missing_original_is_counted_as_a_failure_and_the_run_goes_on() {
         run(&opened, &ProcessAssetsOptions::default())
             .await
             .unwrap(),
-        stats(2, 0, 1, 1)
+        stats(2, 0, 0, 1, 1)
     );
     assert_eq!(derived_of(&mut conn, attachment_id).await, None);
 }
@@ -891,11 +1027,11 @@ async fn a_missing_original_is_counted_as_a_failure_and_the_run_goes_on() {
 /// as a failure. A dry run says so and changes nothing.
 #[tokio::test]
 async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_failure() {
-    let (opened, _dir, imessage_attachment) = fixture_with_png("imessage").await;
+    let (opened, _dir, imessage_attachment) = fixture_with_bmp("imessage").await;
     let mut conn = opened.conn().await.unwrap();
     let message_id = seed_message(&mut conn, "sms").await;
     let sms_attachment =
-        attach_stored_blob(&opened, &mut conn, message_id, SHA, ".png", PNG_1X1_RGB).await;
+        attach_stored_blob(&opened, &mut conn, message_id, SHA, ".bmp", BMP_1X1).await;
     let preview_sha = "c".repeat(64);
     let rel = format!("cc/{preview_sha}.jpg");
     let preview = opened
@@ -919,7 +1055,7 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
             .cfg
             .paths
             .assets_dir_for_account(ACCOUNT)
-            .join(format!("ab/{SHA}.png")),
+            .join(format!("ab/{SHA}.bmp")),
     )
     .unwrap();
     let named = Some((preview_sha, rel, "image/jpeg".to_string()));
@@ -928,7 +1064,7 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
         dry_run: true,
         ..Default::default()
     };
-    assert_eq!(run(&opened, &dry_run).await.unwrap(), stats(1, 0, 0, 1));
+    assert_eq!(run(&opened, &dry_run).await.unwrap(), stats(1, 0, 0, 0, 1));
     assert!(preview.is_file(), "a dry run deletes nothing");
     assert_eq!(derived_of(&mut conn, imessage_attachment).await, named);
 
@@ -936,7 +1072,7 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
         run(&opened, &ProcessAssetsOptions::default())
             .await
             .unwrap(),
-        stats(1, 0, 0, 1)
+        stats(1, 0, 0, 0, 1)
     );
     assert!(!preview.exists(), "the damaged Preview is deleted");
     assert_eq!(derived_of(&mut conn, imessage_attachment).await, None);

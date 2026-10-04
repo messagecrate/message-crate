@@ -728,8 +728,8 @@ pub(crate) async fn get_asset(
     .await
 }
 
-/// Download the preview of a stored asset: the JPEG, MP4 or MP3 that
-/// `process-assets` made from it for a browser to show.
+/// Download the preview of a stored asset: the JPEG, MP4 or MP3 the server
+/// made from it for a browser to show.
 ///
 /// The URL is the SHA-256 fingerprint of the original, and the body streams
 /// the preview's bytes in the preview's own media type. An asset with no
@@ -789,6 +789,77 @@ pub(crate) async fn get_asset_preview(
 
     let converted_dir = state.cfg.paths.assets_converted_dir_for_account(account);
     stream_file(&converted_dir.join(preview_path), mime_type, &headers, None).await
+}
+
+/// Download the thumbnail of a stored image or video: a JPEG at most 560
+/// pixels on its long side, the image scaled down or the video's first frame.
+///
+/// The server makes it in the background after the Import Run that brought
+/// the asset, and `process-assets` makes any that are missing. The URL is
+/// the SHA-256 fingerprint of the original. An asset with no thumbnail yet
+/// answers `404 Not Found`; the attachment's `thumbnail_mime_type` says
+/// whether it has one. A `Range` of one byte range answers
+/// `206 Partial Content` with those bytes. The thumbnail has no `ETag`, so a
+/// `Range` sent with `If-Range` answers the whole thumbnail. A media element
+/// reads with the `media_link` a media link put in the URL.
+#[utoipa::path(
+    get,
+    path = "/v1/assets/{sha256}/thumbnail",
+    tag = "Assets",
+    security(("session" = []), ("api-token" = ["export"]), ("media-link" = [])),
+    params(
+        ("sha256" = String, Path, description = "Content SHA-256 hex of the original"),
+        ("Range" = Option<String>, Header, description = "One byte range, `bytes=<first>-<last>`, `bytes=<first>-` or `bytes=-<suffix>`; any other range answers the whole thumbnail"),
+        ("If-Range" = Option<String>, Header, description = "Never names a Thumbnail, which has no `ETag`: a `Range` sent with it answers the whole thumbnail")
+    ),
+    responses(
+        (
+            status = 200,
+            description = "The thumbnail's bytes, in the thumbnail's own media type",
+            content_type = "*/*",
+            headers(("Accept-Ranges" = String, description = "`bytes`"))
+        ),
+        (
+            status = 206,
+            description = "The byte range the `Range` header asked for",
+            content_type = "*/*",
+            headers(
+                ("Content-Range" = String, description = "`bytes <first>-<last>/<length>`"),
+                ("Accept-Ranges" = String, description = "`bytes`")
+            )
+        ),
+        crate::problem::openapi::RangeNotSatisfiable
+    )
+)]
+pub(crate) async fn get_asset_thumbnail(
+    State(state): State<AppState>,
+    reader: AssetReadAccess,
+    headers: HeaderMap,
+    AxumPath(sha256): AxumPath<Sha256>,
+) -> Result<Response, ApiError> {
+    // The same lookup as the original: the reader's own store, so another
+    // account's fingerprint names nothing here.
+    let account = reader.account_id;
+    let Some(stored) = lookup_for_read(&state, account, &sha256).await? else {
+        return Err(ApiError::NotFound("asset not found".into()));
+    };
+    let mut conn = state.db.acquire().await?;
+    let thumbnail =
+        crate::db::conversation_messages::attachment_thumbnail(&mut conn, account, &stored.sha256)
+            .await?;
+    drop(conn);
+    let Some((thumbnail_path, mime_type)) = thumbnail else {
+        return Err(ApiError::NotFound("asset has no thumbnail yet".into()));
+    };
+
+    let converted_dir = state.cfg.paths.assets_converted_dir_for_account(account);
+    stream_file(
+        &converted_dir.join(thumbnail_path),
+        mime_type,
+        &headers,
+        None,
+    )
+    .await
 }
 
 /// Find `sha256` in `account`'s store without hashing the file. A read

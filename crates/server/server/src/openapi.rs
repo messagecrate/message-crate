@@ -227,6 +227,7 @@ pub fn api_openapi() -> OpenApiRouter<AppState> {
         .routes(routes!(crate::assets_api::head_asset))
         .routes(routes!(crate::assets_api::get_asset))
         .routes(routes!(crate::assets_api::get_asset_preview))
+        .routes(routes!(crate::assets_api::get_asset_thumbnail))
         .routes(routes!(crate::assets_api::media_links::create_media_link))
         .routes(routes!(crate::assets_api::replace_asset))
         .routes(routes!(crate::assets_api::create_asset_upload))
@@ -338,8 +339,12 @@ mod tests {
                         assert!(
                             scheme != "media-link"
                                 || (method == "get"
-                                    && ["/v1/assets/{sha256}", "/v1/assets/{sha256}/preview"]
-                                        .contains(&path.as_str())),
+                                    && [
+                                        "/v1/assets/{sha256}",
+                                        "/v1/assets/{sha256}/preview",
+                                        "/v1/assets/{sha256}/thumbnail",
+                                    ]
+                                    .contains(&path.as_str())),
                             "{method} {path} takes a media link, which only reads an asset"
                         );
                         for scope in scopes.as_array().unwrap() {

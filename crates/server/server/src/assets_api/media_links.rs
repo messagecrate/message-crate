@@ -147,7 +147,8 @@ fn now_unix() -> i64 {
 /// The account whose store an asset read reaches: the one the
 /// `Authorization` header names, or, when the request sends none, the one
 /// its `media_link` names. Taken by `GET /v1/assets/{sha256}` and
-/// `GET /v1/assets/{sha256}/preview`, the two routes a media element loads.
+/// `GET /v1/assets/{sha256}/preview` and `GET /v1/assets/{sha256}/thumbnail`,
+/// the three routes a media element loads.
 ///
 /// A request that sends the header is judged by the header alone, as on
 /// every other route: a session, or an API token with the export scope
@@ -265,6 +266,10 @@ pub(crate) struct MediaLink {
     /// answers `404 Not Found` when the asset has none (the attachment's
     /// `preview_mime_type` says whether it has one).
     preview_url: String,
+    /// `/v1/assets/{sha256}/thumbnail?media_link=…`: the asset's Thumbnail,
+    /// which answers `404 Not Found` until the server has made one (the
+    /// attachment's `thumbnail_mime_type` says whether it has one).
+    thumbnail_url: String,
     /// When the link stops working, RFC 3339 UTC. It stops sooner if the
     /// Session that made it ends.
     expires_at: String,
@@ -274,10 +279,11 @@ pub(crate) struct MediaLink {
 /// header, for a media element's `src`.
 ///
 /// A media element cannot send the Session's header, so the web app asks for
-/// a link and loads the URLs it answers. The link opens this asset and its
-/// Preview, in this account's store, for an hour, and stops sooner when the
-/// Session that made it ends. Its URLs take `Range` like any read of the
-/// asset. Only a Session makes one: a program sends its token in the header.
+/// a link and loads the URLs it answers. The link opens this asset, its
+/// Preview and its Thumbnail, in this account's store, for an hour, and
+/// stops sooner when the Session that made it ends. Its URLs take `Range`
+/// like any read of the asset. Only a Session makes one: a program sends its
+/// token in the header.
 #[utoipa::path(
     post,
     path = "/v1/assets/{sha256}/media-links",
@@ -320,6 +326,7 @@ pub(crate) async fn create_media_link(
     let url = format!("/v1/assets/{sha256}?{MEDIA_LINK_PARAM}={link}");
     let body = MediaLink {
         preview_url: format!("/v1/assets/{sha256}/preview?{MEDIA_LINK_PARAM}={link}"),
+        thumbnail_url: format!("/v1/assets/{sha256}/thumbnail?{MEDIA_LINK_PARAM}={link}"),
         expires_at: chrono::DateTime::from_timestamp(expires, 0)
             .unwrap_or_default()
             .to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
