@@ -4,34 +4,34 @@ import Button from "../../components/Button";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import IdentityTable, { type IdentityRow } from "../../components/IdentityTable";
 import type { AccountProfile } from "../../lib/account";
-import { identityService } from "../../lib/backupIdentity";
-import { type HandleService, serverService } from "../../lib/handleService";
+import { identityType } from "../../lib/backupIdentity";
+import { type HandleService, listedServerService, serverService } from "../../lib/handleService";
 import { phonesMatch } from "../../lib/phoneTokens";
 import { keys } from "../../lib/queryKeys";
 import { useRouteQuery } from "../../lib/routeQuery";
 import { listAccountIdentities } from "../../lib/serverApi";
-import type { components } from "../../lib/serverApi.types";
 import { useUpdateSettingsProfile } from "../../lib/useSettingsAccount";
 import { type Identity, removeBody } from "./identities";
 import { sectionTitleClass } from "./profileStyles";
 
-type IdentityService = components["schemas"]["IdentityService"];
-
 /**
- * Whether `rows` hold `address` on `service`, however the address was typed.
+ * Whether `rows` hold `address` as `listedAs`, however the address was typed.
  *
  * An add and a removal are judged here rather than by `profile.phones`,
  * because one number can be a Text Message identity and a WhatsApp identity
- * at once, and `profile.phones` lists it for each with no service. The list
- * names an email address by its type, `email`, on whatever service it was
- * sent, so an email address is found by its type and a number by its service.
+ * at once, and `profile.phones` lists it for each with no service. `listedAs`
+ * is the `service` the list gives the identity: its service for a number, and
+ * `email`, its type, for an email address on any service.
  */
-function listsIdentity(rows: Identity[], address: string, service: IdentityService): boolean {
-  if (identityService(address) === "email") {
-    const needle = address.trim().toLowerCase();
-    return rows.some((row) => row.service === "email" && row.address.toLowerCase() === needle);
-  }
-  return rows.some((row) => row.service === service && phonesMatch(address, row.address));
+function listsIdentity(rows: Identity[], address: string, listedAs: string): boolean {
+  const needle = address.trim().toLowerCase();
+  return rows.some(
+    (row) =>
+      row.service === listedAs &&
+      (listedAs === "email"
+        ? row.address.toLowerCase() === needle
+        : phonesMatch(address, row.address)),
+  );
 }
 
 /** The profile's own identities as placeholder rows, shown until the server lists them. */
@@ -95,7 +95,7 @@ export function IdentitiesSection({
 
   /**
    * Send `body`, then read the identities list again and require that it now
-   * holds `address` on `service` (`listed`) or no longer does. The change is
+   * holds `address` as `listedAs` (`listed`) or no longer does. The change is
    * judged by the list, not by the profile the server answered, because the
    * profile names no service for a number.
    *
@@ -106,7 +106,7 @@ export function IdentitiesSection({
    */
   const changeAndCheck = async (
     body: Parameters<typeof updateProfile.mutateAsync>[0],
-    { address, service }: { address: string; service: IdentityService },
+    { address, listedAs }: { address: string; listedAs: string },
     { listed, notChanged }: { listed: boolean; notChanged: string },
   ) => {
     await updateProfile.mutateAsync(body);
@@ -119,7 +119,7 @@ export function IdentitiesSection({
         `The server answered, but Identities could not be loaded again to check the change: ${reason}. Try again.`,
       );
     }
-    if (listsIdentity(rows, address, service) !== listed) {
+    if (listsIdentity(rows, address, listedAs) !== listed) {
       throw new Error(notChanged);
     }
   };
@@ -127,11 +127,16 @@ export function IdentitiesSection({
   const confirmAdd = async ({ address, service }: { address: string; service: HandleService }) => {
     setAddError("");
     const identity = { address, service: serverService(service) };
+    const listedAs = identityType(address) === "email" ? "email" : identity.service;
     try {
-      await changeAndCheck({ identities: [identity] }, identity, {
-        listed: true,
-        notChanged: "The server did not add that identity.",
-      });
+      await changeAndCheck(
+        { identities: [identity] },
+        { address, listedAs },
+        {
+          listed: true,
+          notChanged: "The server did not add that identity.",
+        },
+      );
       setAdding(false);
     } catch (e) {
       setAddError(e instanceof Error ? e.message : String(e));
@@ -140,16 +145,21 @@ export function IdentitiesSection({
 
   const confirmRemove = async () => {
     if (!removeTarget) return;
-    const identity = {
-      address: removeTarget.address,
-      service: serverService(removeTarget.service),
-    };
+    const { address, service: listedAs } = removeTarget;
     setRemoveError("");
     try {
-      await changeAndCheck({ remove_identities: [identity] }, identity, {
-        listed: false,
-        notChanged: "The server did not remove that identity.",
-      });
+      const service = listedServerService(listedAs);
+      if (service === undefined) {
+        throw new Error(`The server listed ${address} on a service it does not take: ${listedAs}.`);
+      }
+      await changeAndCheck(
+        { remove_identities: [{ address, service }] },
+        { address, listedAs },
+        {
+          listed: false,
+          notChanged: "The server did not remove that identity.",
+        },
+      );
       setRemoveTarget(null);
     } catch (e) {
       setRemoveError(e instanceof Error ? e.message : String(e));

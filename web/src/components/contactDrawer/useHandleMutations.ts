@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { type ContactHandle, useUpdateContact } from "../../lib/contactDetail";
-import { serverService } from "../../lib/handleService";
-import { formatHandleServiceLabel, inferService } from "./contactDrawerTypes";
+import { type HandleService, listedServerService, serverService } from "../../lib/handleService";
+import { formatHandleServiceLabel } from "./contactDrawerTypes";
 import type { RemoveIdentityTarget } from "./handleTableLogic";
 
 /**
@@ -29,14 +29,16 @@ export function useHandleMutations({ contactId }: { contactId: string }) {
   const confirmRemoveHandle = () => {
     if (!removeTarget || busy) return;
     const address = removeTarget.address;
-    const service = serverService(inferService(address, removeTarget.service));
+    // With no service the server takes, none is named, and the server finds
+    // the identity on the phone service first, then WhatsApp.
+    const service = listedServerService(removeTarget.service);
     updateContact.mutate(
       { contactId, body: { remove_identity: { address, service } } },
       { onSuccess: () => setRemoveTarget(null) },
     );
   };
 
-  const confirmAdd = (args: { address: string; service: string }) => {
+  const confirmAdd = (args: { address: string; service: HandleService }) => {
     if (busy) return;
     updateContact.mutate(
       {
