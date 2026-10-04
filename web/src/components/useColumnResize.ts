@@ -3,11 +3,11 @@ import { useEffect, useRef, useState } from "react";
 import { clampWidth, loadWidth, saveWidth } from "./columnResize";
 
 export type ColumnResizeHandleProps = {
-  onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => void;
-  onPointerMove: (e: ReactPointerEvent<HTMLDivElement>) => void;
-  onPointerUp: (e: ReactPointerEvent<HTMLDivElement>) => void;
-  onPointerCancel: (e: ReactPointerEvent<HTMLDivElement>) => void;
-  onKeyDown: (e: KeyboardEvent<HTMLDivElement>) => void;
+  onPointerDown: (e: ReactPointerEvent<HTMLElement>) => void;
+  onPointerMove: (e: ReactPointerEvent<HTMLElement>) => void;
+  onPointerUp: (e: ReactPointerEvent<HTMLElement>) => void;
+  onPointerCancel: (e: ReactPointerEvent<HTMLElement>) => void;
+  onKeyDown: (e: KeyboardEvent<HTMLElement>) => void;
   onMouseEnter: () => void;
   onMouseLeave: () => void;
 };
@@ -91,7 +91,7 @@ export function useColumnResize({
     saveWidth(storageKey, widthRef.current);
   };
 
-  const onResizePointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+  const onResizePointerDown = (e: ReactPointerEvent<HTMLElement>) => {
     e.preventDefault();
     e.currentTarget.setPointerCapture(e.pointerId);
     startXRef.current = e.clientX;
@@ -102,7 +102,7 @@ export function useColumnResize({
     document.body.style.cursor = "col-resize";
   };
 
-  const onResizePointerMove = (e: ReactPointerEvent<HTMLDivElement>) => {
+  const onResizePointerMove = (e: ReactPointerEvent<HTMLElement>) => {
     if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
     const next = clampWidth(
       startWidthRef.current + (e.clientX - startXRef.current),
@@ -113,11 +113,11 @@ export function useColumnResize({
     setWidth(next);
   };
 
-  const onResizePointerUp = (e: ReactPointerEvent<HTMLDivElement>) => {
+  const onResizePointerUp = (e: ReactPointerEvent<HTMLElement>) => {
     endDrag(e.currentTarget, e.pointerId);
   };
 
-  const onResizeKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+  const onResizeKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     const step = e.shiftKey ? 24 : 8;
     if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
       e.preventDefault();
