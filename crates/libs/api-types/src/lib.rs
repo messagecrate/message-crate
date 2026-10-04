@@ -422,13 +422,14 @@ api_shape! {
         pub conversation_type: String,
         /// The title the export gave the conversation, when it gave one.
         pub group_title: Option<String>,
-        /// The title the conversation is shown by: the export's title, else,
-        /// for a conversation the account holder has with themselves, the
-        /// account's display name or, without one, the conversation's own
-        /// address. Left out when there is neither, and the conversation goes
-        /// by its participants.
+        /// The title the conversation is shown by, as the conversation list's
+        /// `label` gives it: for a conversation the account holder has with
+        /// themselves, the account's display name or, without one, the
+        /// conversation's own address; for any other, the export's title.
+        /// Left out when there is none, and the conversation goes by its
+        /// participants.
         #[serde(default, skip_serializing_if = "Option::is_none")]
-        pub title: Option<String>,
+        pub label: Option<String>,
         /// Participants of the conversation.
         pub participants: Vec<Participant>,
     }
@@ -531,7 +532,7 @@ mod tests {
                 chat_identifier: "+15555550100".into(),
                 conversation_type: "individual".into(),
                 group_title: None,
-                title: None,
+                label: None,
                 participants: vec![Participant {
                     name: "Sarah Vale".into(),
                     identity: None,

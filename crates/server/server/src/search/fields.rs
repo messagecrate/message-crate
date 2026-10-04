@@ -88,7 +88,7 @@ pub(crate) static FIELDS: &[FieldSpec] = &[
         value_type: ValueType::Person,
         lists: &[V, M],
         values: &["me"],
-        help: "this person is a participant",
+        help: "this person is in the conversation; me is a conversation with yourself",
         example: "with:jane",
     },
     FieldSpec {

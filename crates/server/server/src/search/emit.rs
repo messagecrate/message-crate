@@ -242,11 +242,7 @@ fn emit_text(ctx: &ListCtx, out: &mut Sql, term: &TextTerm) {
         }
         ListKind::Conversations => {
             out.push("(");
-            free_text_match(
-                out,
-                &format!("coalesce({}, '')", conversation_title_sql("c")),
-                term,
-            );
+            free_text_match(out, &conversation_title_text(), term);
             out.push(" OR EXISTS (SELECT 1 FROM handles hc WHERE hc.id = c.chat_handle_id AND ");
             free_text_match(out, "hc.raw", term);
             // The handle join is a LEFT join: a source may name a participant
@@ -382,7 +378,7 @@ fn emit_text_word(
         ("title", _) => ctx.conversation(out, |o| {
             result = text_match(
                 o,
-                &format!("coalesce({}, '')", conversation_title_sql("c")),
+                &conversation_title_text(),
                 term,
                 v,
             );
@@ -526,6 +522,14 @@ fn participant_matches(out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<(),
         }
         _ => Err(bad_value(term, "needs a name, an identity, or #id.")),
     }
+}
+
+/// Conversation `c`'s title as text to match, `''` when it has none: the one
+/// expression the conversation list shows (`conversation_title_sql`), so
+/// plain text, `title:` and `in:` find a conversation by the name it is
+/// shown by.
+fn conversation_title_text() -> String {
+    format!("coalesce({}, '')", conversation_title_sql("c"))
 }
 
 /// SQL that holds when the handle `handle_id_expr` is a conversation key
@@ -745,12 +749,7 @@ fn emit_in(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<
             let prefix = matches!(v, Value::Prefix(_));
             ctx.conversation(out, |o| {
                 o.push("(");
-                like_contains(
-                    o,
-                    &format!("coalesce({}, '')", conversation_title_sql("c")),
-                    t,
-                    prefix,
-                );
+                like_contains(o, &conversation_title_text(), t, prefix);
                 o.push(" OR EXISTS (SELECT 1 FROM handles hc WHERE hc.id = c.chat_handle_id AND ");
                 like_contains(o, "hc.raw", t, prefix);
                 o.push("))");

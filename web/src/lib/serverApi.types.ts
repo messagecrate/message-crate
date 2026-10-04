@@ -1973,10 +1973,10 @@ export interface components {
             /** @description True for group conversations. */
             is_group: boolean;
             /**
-             * @description The title the conversation is shown by: the export's title, else, for
-             *     a conversation the account holder has with themselves, the account's
-             *     display name or, without one, the conversation's own address. Left
-             *     out when there is neither, and the conversation goes by its
+             * @description The title the conversation is shown by: for a conversation the account
+             *     holder has with themselves, the account's display name or, without
+             *     one, the conversation's own address; for any other, the export's
+             *     title. Left out when there is none, and the conversation goes by its
              *     participants.
              */
             label?: string | null;
@@ -2809,16 +2809,17 @@ export interface components {
              * @description Conversation row id.
              */
             id: number;
+            /**
+             * @description The title the conversation is shown by, as the conversation list's
+             *     `label` gives it: for a conversation the account holder has with
+             *     themselves, the account's display name or, without one, the
+             *     conversation's own address; for any other, the export's title.
+             *     Left out when there is none, and the conversation goes by its
+             *     participants.
+             */
+            label?: string | null;
             /** @description Participants of the conversation. */
             participants: components["schemas"]["Participant"][];
-            /**
-             * @description The title the conversation is shown by: the export's title, else,
-             *     for a conversation the account holder has with themselves, the
-             *     account's display name or, without one, the conversation's own
-             *     address. Left out when there is neither, and the conversation goes
-             *     by its participants.
-             */
-            title?: string | null;
         };
         /** @description One Contact Group or Message Tag: its id and name. */
         NamedSet: {
@@ -3340,10 +3341,10 @@ export interface components {
                 /** @description True for group conversations. */
                 is_group: boolean;
                 /**
-                 * @description The title the conversation is shown by: the export's title, else, for
-                 *     a conversation the account holder has with themselves, the account's
-                 *     display name or, without one, the conversation's own address. Left
-                 *     out when there is neither, and the conversation goes by its
+                 * @description The title the conversation is shown by: for a conversation the account
+                 *     holder has with themselves, the account's display name or, without
+                 *     one, the conversation's own address; for any other, the export's
+                 *     title. Left out when there is none, and the conversation goes by its
                  *     participants.
                  */
                 label?: string | null;

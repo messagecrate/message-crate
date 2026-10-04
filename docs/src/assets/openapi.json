@@ -12783,7 +12783,7 @@
               "string",
               "null"
             ],
-            "description": "The title the conversation is shown by: the export's title, else, for\na conversation the account holder has with themselves, the account's\ndisplay name or, without one, the conversation's own address. Left\nout when there is neither, and the conversation goes by its\nparticipants."
+            "description": "The title the conversation is shown by: for a conversation the account\nholder has with themselves, the account's display name or, without\none, the conversation's own address; for any other, the export's\ntitle. Left out when there is none, and the conversation goes by its\nparticipants."
           },
           "last_message_at": {
             "type": [
@@ -14357,19 +14357,19 @@
             "format": "int64",
             "description": "Conversation row id."
           },
+          "label": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The title the conversation is shown by, as the conversation list's\n`label` gives it: for a conversation the account holder has with\nthemselves, the account's display name or, without one, the\nconversation's own address; for any other, the export's title.\nLeft out when there is none, and the conversation goes by its\nparticipants."
+          },
           "participants": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/Participant"
             },
             "description": "Participants of the conversation."
-          },
-          "title": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The title the conversation is shown by: the export's title, else,\nfor a conversation the account holder has with themselves, the\naccount's display name or, without one, the conversation's own\naddress. Left out when there is neither, and the conversation goes\nby its participants."
           }
         }
       },
@@ -15415,7 +15415,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "The title the conversation is shown by: the export's title, else, for\na conversation the account holder has with themselves, the account's\ndisplay name or, without one, the conversation's own address. Left\nout when there is neither, and the conversation goes by its\nparticipants."
+                  "description": "The title the conversation is shown by: for a conversation the account\nholder has with themselves, the account's display name or, without\none, the conversation's own address; for any other, the export's\ntitle. Left out when there is none, and the conversation goes by its\nparticipants."
                 },
                 "last_message_at": {
                   "type": [

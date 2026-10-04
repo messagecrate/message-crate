@@ -522,11 +522,14 @@ impl FileStaging<'_> {
             .await?;
         }
 
-        // The received copy of a note to yourself was sent by the holder,
-        // who is nobody's sender here.
+        // The received copy of a note to yourself, and a reaction to one,
+        // came from the holder, who is nobody's sender here.
         if with_yourself {
             for (msg, _) in &mut prepared_messages {
                 msg.sender = None;
+                for tapback in &mut msg.tapbacks {
+                    tapback.sender = None;
+                }
             }
         }
         let first_sort_order =

@@ -4470,23 +4470,24 @@ async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accoun
         ),
     ] {
         let path = batches_path(&state, &token, source).await;
-        let header = |chat: &str, participants: &str| {
+        let header = |chat: &str, title: &str, participants: &str| {
             format!(
                 concat!(
                     r#"{{"schema_version":4,"export":{{"source":"{source}","tool":"t","tool_version":"1","owner_handle":null,"owner_display_name":null}},"#,
-                    r#""conversation":{{"chat_identifier":"{chat}","conversation_type":"individual","group_title":null,"participants":[{participants}],"#,
+                    r#""conversation":{{"chat_identifier":"{chat}","conversation_type":"individual","group_title":{title},"participants":[{participants}],"#,
                     r#""stats":{{"message_count":2,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773262000}}}}}}"#,
                     "\n"
                 ),
                 source = source,
                 chat = chat,
+                title = title,
                 participants = participants,
             )
         };
-        let message = |guid: &str, direction: &str, sender: &str, text: &str| {
+        let message = |guid: &str, direction: &str, sender: &str, text: &str, imessage: &str| {
             format!(
                 concat!(
-                    r#"{{"guid":"{guid}","timestamp_unix_ms":1400773261000,"direction":"{direction}","service":"{service}","message_kind":"unknown","sender_handle":{sender},"sender_display_name":null,"subject":null,"text":"{text}","attachments":[],"imessage":null,"source":null}}"#,
+                    r#"{{"guid":"{guid}","timestamp_unix_ms":1400773261000,"direction":"{direction}","service":"{service}","message_kind":"unknown","sender_handle":{sender},"sender_display_name":null,"subject":null,"text":"{text}","attachments":[],"imessage":{imessage},"source":null}}"#,
                     "\n"
                 ),
                 guid = guid,
@@ -4494,24 +4495,37 @@ async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accoun
                 service = service,
                 sender = sender,
                 text = text,
+                imessage = imessage,
             )
         };
+        // The holder's own reaction to the received copy of a note.
+        let own_tapback = TAPBACK_IMESSAGE.replace("+15555550167", "+15555550199");
+        // Apple Messages can carry a name the holder gave the chat; the
+        // account's name still titles it.
+        let self_title = if source == "imessage" {
+            r#""Notes""#
+        } else {
+            "null"
+        };
         let body = [
-            header("+15555550199", self_participants),
+            header("+15555550199", self_title, self_participants),
             message(
                 &format!("{source}-note-sent"),
                 "outgoing",
                 "null",
                 "Note to self",
+                "null",
             ),
             message(
                 &format!("{source}-note-received"),
                 "incoming",
                 r#""+15555550199""#,
                 "Note to self",
+                &own_tapback,
             ),
             header(
                 "+15555550101",
+                "null",
                 r#"{"handle":"+15555550101","display_name":"Ada"}"#,
             ),
             message(
@@ -4519,6 +4533,7 @@ async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accoun
                 "incoming",
                 r#""+15555550101""#,
                 "hi",
+                "null",
             ),
         ]
         .concat();
@@ -4577,6 +4592,19 @@ async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accoun
             "conversation {id} keeps both rows, and the received one has no sender"
         );
     }
+    let tapback_senders: Vec<Option<i64>> = sqlx::query_scalar(
+        "SELECT t.sender_handle_id FROM tapbacks t JOIN messages m ON m.id = t.message_id
+         WHERE m.conversation_id = $1",
+    )
+    .bind(self_conversations[0])
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(
+        tapback_senders,
+        [None],
+        "the holder's reaction in a conversation with yourself has no sender either"
+    );
     drop(conn);
 
     let titles = |page: &serde_json::Value| -> Vec<(i64, String)> {
@@ -4602,6 +4630,14 @@ async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accoun
             .map(|&id| (id, "+15555550199".to_string()))
             .collect::<Vec<_>>(),
         "with:me finds the two conversations with yourself, titled by the address: {page}"
+    );
+    assert!(
+        page["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|c| c["participants"] == serde_json::json!([])),
+        "the holder is not read back as a participant from the chat's own identity: {page}"
     );
 
     let _: serde_json::Value = patch_json(
@@ -4634,7 +4670,7 @@ async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accoun
     assert_eq!(messages.len(), 4, "{page}");
     for message in messages {
         assert_eq!(message["text"], "Note to self", "{message}");
-        assert_eq!(message["conversation"]["title"], "Sam Holder", "{message}");
+        assert_eq!(message["conversation"]["label"], "Sam Holder", "{message}");
         assert!(
             message.get("sender").is_none_or(serde_json::Value::is_null),
             "{message}"

@@ -83,10 +83,10 @@ pub struct ConversationSummary {
     pub service: String,
     /// True for group conversations.
     pub is_group: bool,
-    /// The title the conversation is shown by: the export's title, else, for
-    /// a conversation the account holder has with themselves, the account's
-    /// display name or, without one, the conversation's own address. Left
-    /// out when there is neither, and the conversation goes by its
+    /// The title the conversation is shown by: for a conversation the account
+    /// holder has with themselves, the account's display name or, without
+    /// one, the conversation's own address; for any other, the export's
+    /// title. Left out when there is none, and the conversation goes by its
     /// participants.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
@@ -97,7 +97,7 @@ pub struct ConversationSummary {
 struct RawConversation {
     id: i64,
     conversation_type: String,
-    group_title: Option<String>,
+    title: Option<String>,
     message_count: i64,
     first_message_at: Option<String>,
     last_message_at: Option<String>,
@@ -200,22 +200,22 @@ pub fn is_with_yourself_sql(c: &str) -> String {
     )
 }
 
-/// The title conversation `c` is shown by, as a SQL expression: the title the
-/// export gave it; else, for a conversation with yourself
-/// ([`is_with_yourself_sql`]), the account's display name, or its own
-/// address when the account has none. NULL when there is neither, and the
-/// conversation goes by its participants. Computed on every read, so it
-/// follows a change of the display name. The list, the single-conversation
-/// read, the message rows and `title:` all read this one expression.
+/// The title conversation `c` is shown by, as a SQL expression. A
+/// conversation with yourself ([`is_with_yourself_sql`]) goes by the
+/// account's display name, or its own address when the account has none,
+/// whatever title the export gave it. Any other conversation goes by the
+/// export's title, and is NULL without one, going by its participants.
+/// Computed on every read, so it follows a change of the display name. The
+/// list, the single-conversation read, the message rows, `title:`, `in:` and
+/// plain text all read this one expression.
 #[must_use]
 pub fn conversation_title_sql(c: &str) -> String {
     format!(
-        "COALESCE(NULLIF(trim({c}.group_title), ''),
-                  CASE WHEN {with_yourself} THEN COALESCE(
-                      (SELECT NULLIF(trim(ay.preferred_name), '') FROM accounts ay
-                       WHERE ay.id = {c}.account_id),
-                      (SELECT hy.raw FROM handles hy WHERE hy.id = {c}.chat_handle_id))
-                  END)",
+        "CASE WHEN {with_yourself} THEN COALESCE(
+                  (SELECT NULLIF(trim(ay.preferred_name), '') FROM accounts ay
+                   WHERE ay.id = {c}.account_id),
+                  (SELECT hy.raw FROM handles hy WHERE hy.id = {c}.chat_handle_id))
+              ELSE NULLIF(trim({c}.group_title), '') END",
         with_yourself = is_with_yourself_sql(c)
     )
 }
@@ -228,7 +228,7 @@ fn conversation_row_select() -> String {
     format!(
         "SELECT c.id,
                 c.conversation_type,
-                {title} AS group_title,
+                {title} AS title,
                 (SELECT COUNT(*) FROM messages m
                  WHERE m.conversation_id = c.id AND m.duplicate_of IS NULL) AS message_count,
                 (SELECT MIN(m.timestamp) FROM messages m
@@ -256,20 +256,15 @@ async fn load_conversation_rows(
     let rows: Vec<RawConversation> = rows
         .into_iter()
         .map(
-            |(
-                id,
-                conversation_type,
-                group_title,
-                message_count,
-                first_message_at,
-                last_message_at,
-            )| RawConversation {
-                id,
-                conversation_type,
-                group_title,
-                message_count,
-                first_message_at,
-                last_message_at,
+            |(id, conversation_type, title, message_count, first_message_at, last_message_at)| {
+                RawConversation {
+                    id,
+                    conversation_type,
+                    title,
+                    message_count,
+                    first_message_at,
+                    last_message_at,
+                }
             },
         )
         .collect();
@@ -305,7 +300,7 @@ async fn load_conversation_rows(
             service,
             is_group,
             label: row
-                .group_title
+                .title
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty()),
             tags: tag_sets.remove(&row.id).unwrap_or_default(),

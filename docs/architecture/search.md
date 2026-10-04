@@ -292,7 +292,7 @@ Text, `none`, `any`.
 
 Text, `none`, `any`.
 
-- **Conversations**: the conversation's title: the one the backup gave it, or, for a conversation the account holder has with themselves, the account's display name, else its own address. The second is worked out when the query runs, so it follows a change of the display name. `none` is a conversation with no title.
+- **Conversations**: the conversation's title: for a conversation the account holder has with themselves, the account's display name, else its own address, whatever title the backup gave it; for any other, the title the backup gave it. The first is worked out when the query runs, so it follows a change of the display name. `none` is a conversation with no title.
 - **Messages**: the title of the message's conversation.
 
 ### `identity:`

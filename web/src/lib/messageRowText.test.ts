@@ -43,7 +43,7 @@ describe("messageConversationName", () => {
     // it has no participants to fall back on.
     expect(
       messageConversationName(
-        conversation({ chat_identifier: "+15555550199", participants: [], title: "Sam Holder" }),
+        conversation({ chat_identifier: "+15555550199", participants: [], label: "Sam Holder" }),
       ),
     ).toBe("Sam Holder");
   });
@@ -55,7 +55,7 @@ describe("messageConversationName", () => {
     ];
     expect(
       messageConversationName(
-        conversation({ conversation_type: "group", title: " Family ", participants: people }),
+        conversation({ conversation_type: "group", label: " Family ", participants: people }),
       ),
     ).toBe("Family");
     expect(
