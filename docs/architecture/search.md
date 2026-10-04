@@ -314,7 +314,7 @@ Text, `none`, `any`.
 Text, `none`, `any`. The raw or the normalized form of an identity.
 
 - **Contacts**: one of the contact's identities. `none` is a contact with no address: no identity, or only identities of type `other`, which hold a name the backup gave with no address.
-- **Conversations**: the conversation's own identity or a participant's. `none` is a conversation where no participant has an address (every participant's identity is of type `other`); `any` is one where some participant does.
+- **Conversations**: the conversation's own identity or a participant's. The conversation's own identity counts only when it is an address: the `name:` key of a conversation known only by a name, and the `nameless:` key of one that names nobody, are not, as in `with:` (#1592). `none` is a conversation where no participant has an address (every participant's identity is of type `other`); `any` is one where some participant does.
 - **Messages**: the same, for the message's conversation.
 
 ### `with:`

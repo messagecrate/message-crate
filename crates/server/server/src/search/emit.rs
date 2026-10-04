@@ -431,10 +431,14 @@ fn emit_text_word(
             Value::Keyword("any") => o.push(
                 "EXISTS (SELECT 1 FROM participants p JOIN handles h ON h.id = p.handle_id WHERE p.conversation_id = c.id AND h.handle_type <> 'other')",
             ),
+            // The conversation's own identity counts only when it is an
+            // address: a `name:` or `nameless:` key is shared by every
+            // conversation keyed that way, as in `with:` (#1592).
             Value::Text(_) | Value::Prefix(_) => {
-                o.push(
-                    "EXISTS (SELECT 1 FROM handles h WHERE (h.id = c.chat_handle_id OR EXISTS (SELECT 1 FROM participants p WHERE p.conversation_id = c.id AND p.handle_id = h.id)) AND (",
-                );
+                o.push(&format!(
+                    "EXISTS (SELECT 1 FROM handles h WHERE ((h.id = c.chat_handle_id AND NOT {}) OR EXISTS (SELECT 1 FROM participants p WHERE p.conversation_id = c.id AND p.handle_id = h.id)) AND (",
+                    is_a_key_handle("h.id")
+                ));
                 result = text_match(o, "h.raw", term, v);
                 o.push(" OR ");
                 if result.is_ok() {

@@ -3632,4 +3632,54 @@ mod name_keyed_conversation {
             .unwrap();
         assert_eq!(top[0].chat_identifier.as_deref(), Some("Sarah Vale"));
     }
+
+    /// `identity:` reads a conversation's own identity only when it is an
+    /// address, as `with:` does: the `name:` key every name-keyed
+    /// conversation shares, and the `nameless:` key, are not identities a
+    /// person typed (#1592).
+    #[tokio::test]
+    async fn identity_does_not_match_the_key() {
+        let (pool, _dir, _f) = seeded().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let key = handle(&mut conn, ACCOUNT, "name:Sarah Vale", "sms").await;
+        let sarah = conversation(&mut conn, ACCOUNT, key, "individual", None, &[]).await;
+        named_participant(&mut conn, sarah, "Sarah Vale").await;
+        let to_sarah = message(
+            &mut conn,
+            ACCOUNT,
+            msg(sarah, "2024-03-01T10:00:00Z", false, None, "hello"),
+        )
+        .await;
+        let nobody_key = handle(&mut conn, ACCOUNT, message_ir::NAMELESS_CHAT_ID, "sms").await;
+        let nobody = conversation(&mut conn, ACCOUNT, nobody_key, "individual", None, &[]).await;
+        let to_nobody = message(
+            &mut conn,
+            ACCOUNT,
+            msg(nobody, "2024-03-02T10:00:00Z", false, None, "hello"),
+        )
+        .await;
+
+        for query in ["identity:nam", "identity:nam*", "identity:\"name:\""] {
+            for (list, row) in [
+                (ListKind::Conversations, sarah),
+                (ListKind::Messages, to_sarah),
+            ] {
+                assert!(
+                    !run(&mut conn, list, query).await.contains(&row),
+                    "{list:?} {query} found the name-keyed conversation"
+                );
+            }
+        }
+        for query in ["identity:less", "identity:nameless*"] {
+            for (list, row) in [
+                (ListKind::Conversations, nobody),
+                (ListKind::Messages, to_nobody),
+            ] {
+                assert!(
+                    !run(&mut conn, list, query).await.contains(&row),
+                    "{list:?} {query} found the conversation that names nobody"
+                );
+            }
+        }
+    }
 }
