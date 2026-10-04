@@ -1,11 +1,12 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockedAuth, Providers } from "../test/providers";
 import { fill, setupUser } from "../test/user";
 import LeftPanel from "./LeftPanel";
+import { LEFT_PANEL_STORAGE_KEY } from "./leftPanelWidth";
 
 const profileState = vi.hoisted(() => ({
   profile: null as object | null,
@@ -290,5 +291,45 @@ describe("LeftPanel", () => {
       expect(browse?.className).not.toContain("pl-[calc(15px+0.5rem)]");
       expect(browse?.querySelector('[class*="size-[15px]"]')).not.toBeNull();
     });
+  });
+});
+
+describe("LeftPanel in a narrow window (#1718)", () => {
+  const wideWindow = window.innerWidth;
+
+  function setWindowWidth(width: number) {
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+    act(() => {
+      window.dispatchEvent(new Event("resize"));
+    });
+  }
+
+  afterEach(() => {
+    setWindowWidth(wideWindow);
+  });
+
+  it("takes at most half the window and keeps the stored width for a wider one", () => {
+    localStorage.setItem(LEFT_PANEL_STORAGE_KEY, "300");
+    setWindowWidth(390);
+    renderPanel();
+    const handle = screen.getByRole("separator", { name: "Resize navigation panel" });
+    const panel = handle.parentElement as HTMLElement;
+    expect(panel.style.width).toBe("195px");
+    expect(handle).toHaveAttribute("aria-valuemax", "195");
+
+    setWindowWidth(1400);
+    expect(panel.style.width).toBe("300px");
+    expect(handle).toHaveAttribute("aria-valuemax", "520");
+  });
+
+  it("stops End at the width the window allows", async () => {
+    const user = setupUser();
+    setWindowWidth(390);
+    renderPanel();
+    const handle = screen.getByRole("separator", { name: "Resize navigation panel" });
+    handle.focus();
+    await user.keyboard("{End}");
+    expect((handle.parentElement as HTMLElement).style.width).toBe("195px");
+    expect(localStorage.getItem(LEFT_PANEL_STORAGE_KEY)).toBe("195");
   });
 });

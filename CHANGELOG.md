@@ -1014,6 +1014,12 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-04 **Settings fits a phone-width window.** In a window as narrow as
+  a phone, Settings scrolled sideways, because its row of tabs was wider than
+  the page and the navigation panel kept its full width. The tabs now wrap
+  onto more lines, the navigation panel takes at most half the window, and the
+  System and Appearance settings and the Storage page buttons stack to fit.
+  Wider windows look as before.
 - 2026-10-04 **A focused button shows no white line in the dark theme.**
   The keyboard focus ring on buttons, the contact drawer's close button,
   the date field's calendar buttons and the import form's section headings
