@@ -471,9 +471,10 @@ async fn an_account_patches_its_own_profile_and_reads_it_back() {
 }
 
 /// An account's identity is typed by its address, never by the service the
-/// request names: `ada@example.com` under `phone` is an email address. Typed
-/// by the service it was stored as a phone number (#1432). An email address
-/// on WhatsApp is refused with the reason, as a contact edit refuses it.
+/// request names: `ada@example.com` under `phone` is an email address. When
+/// the service decided the type, it was stored as a phone number (#1432). An
+/// email address on WhatsApp is refused with the reason, as a contact edit
+/// refuses it.
 #[tokio::test]
 async fn an_account_identity_takes_its_type_from_its_address_not_the_service() {
     let (fixture, account) = fixture_with_account().await;

@@ -555,9 +555,9 @@ enum ProfileUpdateError {
     #[error("unsupported identity service: {0}")]
     UnsupportedService(String),
     /// The service cannot carry an identity of the address's type: an email
-    /// address on WhatsApp. The sentence names the address and the reason.
-    #[error("{0}")]
-    ServiceCannotCarry(String),
+    /// address on WhatsApp.
+    #[error(transparent)]
+    ServiceCannotCarry(#[from] handles::EmailOnWhatsapp),
     /// The client named a time zone chrono-tz does not know.
     #[error("unknown time zone: {0}; use an IANA name such as America/New_York")]
     UnknownTimeZone(String),
@@ -631,11 +631,7 @@ async fn apply_profile_update(
         }
         let service = parse_profile_service(&entry.service)?;
         let handle_type = handles::handle_type_of(raw);
-        if let Some(reason) = handles::why_service_cannot_carry(service, handle_type) {
-            return Err(ProfileUpdateError::ServiceCannotCarry(format!(
-                "{raw} {reason}"
-            )));
-        }
+        handles::check_service_carries(raw, service, handle_type)?;
         account_profile::link_account_handle_with_service(
             conn,
             account_id,

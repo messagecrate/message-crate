@@ -1574,8 +1574,8 @@ export interface components {
             /** @description The address to link. */
             address: string;
             /**
-             * @description Platform service, `phone` or `whatsapp`; the phone service when
-             *     omitted. It never decides the identity's type, which comes from the
+             * @description Platform service, `phone` or `whatsapp` (any other value is read as
+             *     `phone`); the phone service when omitted. It never decides the identity's type, which comes from the
              *     address. A new email address on WhatsApp is refused.
              */
             service?: string | null;

@@ -30,8 +30,8 @@ use edit::mutate_contact;
 pub struct AddContactIdentityRequest {
     /// The address to link.
     pub address: String,
-    /// Platform service, `phone` or `whatsapp`; the phone service when
-    /// omitted. It never decides the identity's type, which comes from the
+    /// Platform service, `phone` or `whatsapp` (any other value is read as
+    /// `phone`); the phone service when omitted. It never decides the identity's type, which comes from the
     /// address. A new email address on WhatsApp is refused.
     #[serde(default)]
     pub service: Option<String>,

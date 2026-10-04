@@ -312,9 +312,8 @@ impl ContactEditor<'_> {
             return Ok(id);
         }
         let handle_type = handles::handle_type_of(raw);
-        if let Some(reason) = handles::why_service_cannot_carry(platform, handle_type) {
-            refuse!("{raw} {reason}");
-        }
+        handles::check_service_carries(raw, platform, handle_type)
+            .map_err(|refusal| ContactEditError::Refused(refusal.to_string()))?;
         let (id, _) = handles::upsert_handle_row(
             &mut *self.conn,
             self.account_id,

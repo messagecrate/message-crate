@@ -32,20 +32,34 @@ pub fn handle_type_of(address: &str) -> HandleType {
     phone::Handle::parse(address).map_or(HandleType::Other, |handle| handle.kind())
 }
 
-/// Why `service` cannot carry an identity of `handle_type`, or `None` when it
-/// can. WhatsApp reaches a person by phone number, and keeps an internal id
-/// for one it knows by no number as `other`, so it carries no email address.
-/// The phone service carries every type: iMessage reaches an email address
-/// too. The reason completes a sentence that starts with the address.
-pub fn why_service_cannot_carry(
+/// A new identity refused because its service cannot carry its type: an
+/// email address on WhatsApp, the one pair refused. WhatsApp reaches a person
+/// by phone number, and keeps an internal id for one it knows by no number as
+/// `other`, so it carries no email address. The phone service carries every
+/// type: iMessage reaches an email address too.
+#[derive(Debug, thiserror::Error)]
+#[error("{address} is an email address, and WhatsApp carries no email addresses")]
+pub struct EmailOnWhatsapp {
+    /// The address as the request gave it.
+    pub address: String,
+}
+
+/// Refuse a new identity of `handle_type` on `service` when the service
+/// cannot carry it.
+///
+/// # Errors
+///
+/// [`EmailOnWhatsapp`] for an email address on WhatsApp.
+pub fn check_service_carries(
+    address: &str,
     service: HandleService,
     handle_type: HandleType,
-) -> Option<&'static str> {
+) -> std::result::Result<(), EmailOnWhatsapp> {
     match (service, handle_type) {
-        (HandleService::Whatsapp, HandleType::Email) => {
-            Some("is an email address, and WhatsApp carries no email addresses")
-        }
-        _ => None,
+        (HandleService::Whatsapp, HandleType::Email) => Err(EmailOnWhatsapp {
+            address: address.to_string(),
+        }),
+        _ => Ok(()),
     }
 }
 

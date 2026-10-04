@@ -677,8 +677,9 @@ released versions carry their date on the heading.
   written with `tel:` in front, in a backup that gave no type for it, became
   a separate identity from the same number as a message sender, on a contact
   of its own. An email address added to a contact under iMessage, or to
-  your own identities as a phone number, was saved as a phone number. Every address is now typed by what it is, whatever
-  service it came over or was added under.
+  your own identities under Phone, was saved as a phone number. Every
+  address is now typed by what it is, whatever service it came over or was
+  added under.
 - 2026-10-04 **Changing a contact's identity can move it to another
   service.** Changing a WhatsApp number to a Text Message number in one edit
   was refused with "previous address not found on contact". The old
