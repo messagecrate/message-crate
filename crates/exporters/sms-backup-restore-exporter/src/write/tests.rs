@@ -48,7 +48,7 @@ fn read_options<'a>(owners: &'a [String], spool: &'a AttachmentSpool) -> crate::
         owner_phones: owners,
         attachments_dir: None,
         spool: Some(spool),
-        stage_attachments: false,
+        exclude_dir: None,
         media: media::MediaMode::Disabled,
         compress: media::CompressOptions::default(),
         log: None,
