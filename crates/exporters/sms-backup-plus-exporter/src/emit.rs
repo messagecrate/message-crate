@@ -2,7 +2,9 @@
 //! then write the chosen output format via [`ExportWriter`].
 
 use crate::attachments_emit::queue_attachments;
-use crate::email_numbers::{EmailNumbers, key_members_by_number, names_a_member_by_email};
+use crate::email_numbers::{
+    EmailNumbers, KeptByEmail, key_members_by_number, names_a_member_by_email,
+};
 use crate::flat_eml::Owner;
 use crate::identity::{chat_id_for, timestamp_ms};
 use crate::parse_emit::{ParsedEmlKind, collect_eml_paths, parse_one_eml};
@@ -20,7 +22,7 @@ use message_ir::{
 use message_staging::{AttachmentSource, AttachmentSpool, ExportWriter};
 use phone::{Handle, OwnerHandleSet};
 use rayon::prelude::*;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 const EXPORT_SOURCE: &str = "sms-backup-plus";
@@ -42,6 +44,11 @@ const GROUP_MESSAGES_OWNER_NOT_NAMED: &str = "group_messages_owner_not_named";
 /// never with a number, so the address stays their key. Each is counted
 /// once, however many mails name them (#1545).
 const GROUP_MEMBERS_WITHOUT_NUMBER: &str = "group_members_without_number";
+
+/// Report counter: group members whose email address the archive gives two
+/// or more numbers, as a contact card two people share does, so the address
+/// stays their key. Each is counted once.
+const GROUP_MEMBERS_WITH_SEVERAL_NUMBERS: &str = "group_members_with_several_numbers";
 
 /// The EML's path relative to the input root it was found under, for the vendor `source` bag.
 ///
@@ -576,8 +583,8 @@ impl<'a> EmlIngest<'a> {
     /// Returns an error when an attachment cannot be written to the spool.
     fn add_parsed(&mut self, mut msg: ParsedMessage) -> Result<()> {
         let atts = queue_attachments(&std::mem::take(&mut msg.attachments), self.spool)?;
-        if let Some((email, number)) = msg.email_number.take() {
-            self.email_numbers.record(email, number);
+        if let Some(pair) = msg.email_number.take() {
+            self.email_numbers.record(pair);
         }
         if names_a_member_by_email(&msg) {
             self.by_email.push((msg, atts));
@@ -588,21 +595,34 @@ impl<'a> EmlIngest<'a> {
     }
 
     /// Add the messages held for naming a group member by email address,
-    /// each member keyed by the number the archive gives that address, and
-    /// count the members it gives none.
+    /// each member keyed by the one number the archive gives that address,
+    /// and count the members it gives none, or several.
     fn add_members_by_number(&mut self, verbose: Verbose<'_>) {
-        let numbers = std::mem::take(&mut self.email_numbers).into_map();
-        let mut without_number = BTreeSet::new();
+        let numbers = std::mem::take(&mut self.email_numbers).into_numbers();
+        let mut kept = KeptByEmail::default();
         for (mut msg, atts) in std::mem::take(&mut self.by_email) {
-            key_members_by_number(&mut msg, &numbers, &mut without_number);
+            key_members_by_number(&mut msg, &numbers, &mut kept);
             self.add_to_conversation(msg, atts);
         }
-        if !without_number.is_empty() {
-            self.report
-                .bump(GROUP_MEMBERS_WITHOUT_NUMBER, without_number.len() as u64);
+        for (counter, addresses, what) in [
+            (
+                GROUP_MEMBERS_WITHOUT_NUMBER,
+                kept.without_number,
+                "no number",
+            ),
+            (
+                GROUP_MEMBERS_WITH_SEVERAL_NUMBERS,
+                kept.several_numbers,
+                "more than one number",
+            ),
+        ] {
+            if addresses.is_empty() {
+                continue;
+            }
+            self.report.bump(counter, addresses.len() as u64);
             verbose.line(format!(
-                "group members with no number in the archive, kept by email address: {}",
-                without_number.into_iter().collect::<Vec<_>>().join(", ")
+                "group members with {what} in the archive, kept by email address: {}",
+                addresses.into_iter().collect::<Vec<_>>().join(", ")
             ));
         }
     }

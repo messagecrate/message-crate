@@ -241,9 +241,15 @@ fn mail_participants(headers: &MailHeaders, sent: bool, owner: &Owner) -> MailPa
     }
 }
 
-/// True for a name written like a number: `+` first, or digits only.
+/// True for a name written like a number: `+` first, or digits once the
+/// spaces, dashes, dots and brackets Android may store a number with are
+/// left out (`(407) 555-0108`).
 fn is_written_like_a_number(name: &str) -> bool {
-    name.starts_with('+') || name.chars().all(|c| c.is_ascii_digit())
+    let mut digits = name
+        .chars()
+        .filter(|c| !matches!(c, ' ' | '-' | '.' | '(' | ')'))
+        .peekable();
+    name.starts_with('+') || (digits.peek().is_some() && digits.all(|c| c.is_ascii_digit()))
 }
 
 /// The contact name from an `SMS with <name>` subject.
@@ -275,6 +281,14 @@ fn from_display_name(from: &str) -> Option<String> {
     (!name.is_empty() && !is_written_like_a_number(name)).then(|| name.to_string())
 }
 
+/// An email address and the number a mail says it stands for.
+#[derive(Debug, Clone)]
+pub(crate) struct EmailNumber {
+    /// The email address's handle key.
+    pub email: String,
+    pub number: Handle,
+}
+
 /// An email address and the number it stands for, from a one-to-one mail
 /// that gives both: SMS Backup+ writes the other person as their email
 /// address in `From` (received) or `To` (sent) when their contact has one,
@@ -285,7 +299,7 @@ pub(crate) fn email_and_number(
     headers: &MailHeaders,
     sent: bool,
     owner: &Owner,
-) -> Option<(String, Handle)> {
+) -> Option<EmailNumber> {
     let to = to_addresses(&headers.to);
     if to.len() >= GROUP_MIN_TO_ADDRESSES {
         return None;
@@ -306,7 +320,15 @@ pub(crate) fn email_and_number(
         return None;
     }
     let email = mail_address_handle(&other)?;
-    (email.kind() == HandleType::Email).then(|| (email.into_key(), number))
+    (email.kind() == HandleType::Email).then(|| EmailNumber {
+        email: email.into_key(),
+        number,
+    })
+}
+
+/// True when `members`, the owner left out, are enough people for a group.
+pub(crate) fn names_a_group(members: &[Handle]) -> bool {
+    members.len() >= GROUP_MIN_PARTICIPANTS
 }
 
 /// A group's key and title from its members' keys.
@@ -501,7 +523,7 @@ impl FlatAddresses {
     /// `chat_id_for` then keys the conversation by the subject's name, or
     /// as the conversation that names nobody.
     fn conversation(&self, headers: &MailHeaders, sent: bool) -> FlatConversation {
-        if self.non_owner.len() >= GROUP_MIN_PARTICIPANTS {
+        if names_a_group(&self.non_owner) {
             let (chat_key, title) = group_key(&self.non_owner);
             return FlatConversation {
                 chat_key,

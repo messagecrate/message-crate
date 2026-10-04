@@ -258,7 +258,8 @@ released versions carry their date on the heading.
   could split in two. The import now learns each address's number from that
   person's own texts in the archive and keys the group member by the number.
   A member the archive never gives a number for keeps their email address,
-  and the run's summary counts them.
+  and so does one whose address it gives two numbers, as a contact card
+  two people share does. The run's summary counts both.
 - 2026-10-04 **A received SMS Backup+ group text that doesn't name you shows
   its sender's name.** Such a text is filed under its sender, who showed up
   as a bare address. The sender now gets the name the mail gives them.

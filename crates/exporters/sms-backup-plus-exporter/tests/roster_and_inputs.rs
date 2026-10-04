@@ -419,3 +419,43 @@ fn a_group_member_named_by_email_address_is_keyed_by_their_number() {
         "Carol's own conversation"
     );
 }
+
+/// A group mail that names one person twice, by email address and by
+/// number, is that person's one-to-one conversation once the address is
+/// keyed by the number (#1545).
+#[test]
+fn a_group_of_one_person_named_twice_is_their_one_to_one_conversation() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let input = tmp.path().join("in");
+    fs::create_dir_all(&input).expect("input dir");
+    let mails = [
+        (
+            "1.eml",
+            mail(
+                "From: \"Carol\" <carol@example.com>\nTo: owner@example.com\nSubject: SMS with Carol\nX-smssync-type: 1\nX-smssync-address: 4075550111",
+                "Carol alone",
+            ),
+        ),
+        (
+            "2.eml",
+            mail(
+                "From: owner@example.com\nTo: \"Carol\" <carol@example.com>, <+14075550111@unknown.email>\nSubject: SMS with Carol\nX-smssync-type: 128\nX-smssync-address: 4075550111",
+                "to Carol twice",
+            ),
+        ),
+    ];
+    for (name, body) in &mails {
+        fs::write(input.join(name), body).expect("write mail");
+    }
+    let out = tmp.path().join("out");
+
+    convert(&input, &out);
+
+    let docs = documents(&out);
+    assert_eq!(
+        docs.keys().collect::<Vec<_>>(),
+        ["+14075550111"],
+        "one conversation, Carol's"
+    );
+    assert_eq!(docs["+14075550111"].messages.len(), 2);
+}

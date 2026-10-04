@@ -20,7 +20,8 @@ use message_ir::{ConversationKey, NAMELESS_CHAT_ID};
 /// A mail that names nobody, with no address and no name, is keyed
 /// [`NAMELESS_CHAT_ID`], the key every exporter gives the conversation that
 /// names nobody, so it can never take a person's key. The export writes that
-/// conversation's mail so (#1591).
+/// conversation's mail with an empty `X-smssync-address` and the subject
+/// `SMS`, so a second import keys it here again (#1591).
 pub(crate) fn chat_id_for(msg: &ParsedMessage) -> String {
     if msg.is_group() {
         format!("chat-{}", msg.chat_key)

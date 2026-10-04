@@ -449,6 +449,25 @@ fn a_group_mms_not_naming_the_owner_names_its_sender_from_the_from_header() {
     assert_eq!(msg.name_alias.as_deref(), Some("Carol"));
 }
 
+/// SMS Backup+ gives a sender it has no name for their number as the
+/// display name, written as Android stored it. That is no name.
+#[test]
+fn a_from_display_name_written_like_a_number_is_no_name() {
+    for name in [
+        "+14075550111",
+        "4075550111",
+        "407-555-0111",
+        "(407) 555-0111",
+    ] {
+        let msg = parse(
+            &format!("From: \"{name}\" <carol@example.com>\nTo: <me@icloud.example>, <+14075550150@unknown.email>\nSubject: SMS with Alice\nX-smssync-type: 132\nX-smssync-address: 4075550150\nX-smssync-date: 1609459260000\nContent-Type: text/plain; charset=utf-8\n\nhello\n"),
+            &["5555550100"],
+        )
+        .unwrap();
+        assert_eq!(msg.name_alias, None, "{name}");
+    }
+}
+
 /// A mail with no address is keyed by the name in its subject, even a name
 /// written like a number: with no address beside it, the name cannot be
 /// mistaken for one (#1593).

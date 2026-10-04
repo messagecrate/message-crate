@@ -244,3 +244,73 @@ fn a_group_member_with_no_number_in_the_archive_is_counted_once() {
         result.messages
     );
 }
+
+/// An email address the archive gives two numbers, as a contact card two
+/// people share does, is neither person's: a group member named by it keeps
+/// the address, and the summary counts them (#1545 review).
+#[test]
+fn a_group_member_whose_address_has_two_numbers_keeps_the_address() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = tmp.path().join("backup");
+    fs::create_dir_all(&input).unwrap();
+    let one_to_one = |number: &str, date: &str| {
+        format!(
+            "From: \"Smiths\" <smiths@example.com>\n\
+             To: me@example.com\n\
+             Subject: SMS with Smiths\n\
+             X-smssync-type: 1\n\
+             X-smssync-address: {number}\n\
+             X-smssync-date: {date}\n\
+             Content-Type: text/plain; charset=utf-8\n\
+             \n\
+             Hello from {number}\n"
+        )
+    };
+    fs::write(
+        input.join("1.eml"),
+        one_to_one("4075550111", "1609459100000"),
+    )
+    .unwrap();
+    fs::write(
+        input.join("2.eml"),
+        one_to_one("4075550111", "1609459150000"),
+    )
+    .unwrap();
+    fs::write(
+        input.join("3.eml"),
+        one_to_one("4075550112", "1609459170000"),
+    )
+    .unwrap();
+    fs::write(
+        input.join("4.eml"),
+        "From: me@example.com\n\
+         To: <smiths@example.com>, <+14075550108@unknown.email>\n\
+         Subject: SMS with Smiths\n\
+         X-smssync-type: 128\n\
+         X-smssync-address: 4075550108\n\
+         X-smssync-date: 1609459200000\n\
+         Content-Type: text/plain; charset=utf-8\n\
+         \n\
+         Hello group\n",
+    )
+    .unwrap();
+    let output = tmp.path().join("out");
+
+    let result = crate::run(&jsonl_run_config(&[&input], &output, source(true))).expect("run");
+
+    let group = fs::read_dir(&output)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .find(|p| fs::read_to_string(p).is_ok_and(|t| t.contains("Hello group")))
+        .expect("the group's file");
+    let written = fs::read_to_string(group).unwrap();
+    assert!(written.contains("smiths@example.com"), "{written}");
+    assert!(
+        result
+            .messages
+            .iter()
+            .any(|l| l == "  group_members_with_several_numbers: 1"),
+        "{:?}",
+        result.messages
+    );
+}

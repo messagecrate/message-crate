@@ -9,43 +9,62 @@
 //! read first, and each group member it names by an address is then keyed
 //! by the number that address stands for.
 
-use crate::flat_eml::group_key;
+use crate::flat_eml::{EmailNumber, group_key, names_a_group};
 use crate::types::ParsedMessage;
 use message_ir::{HandleType, IrConversationType};
 use phone::Handle;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-/// The numbers the archive gives each email address, and how many mails
-/// give each.
+/// The numbers the archive gives each email address.
 #[derive(Default)]
 pub(crate) struct EmailNumbers {
-    seen: HashMap<String, HashMap<String, (Handle, u64)>>,
+    seen: HashMap<String, HashMap<String, Handle>>,
 }
 
 impl EmailNumbers {
-    /// Count one mail that gives `email` as `number`.
-    pub(crate) fn record(&mut self, email: String, number: Handle) {
-        let numbers = self.seen.entry(email).or_default();
-        numbers
-            .entry(number.key().to_string())
-            .or_insert((number, 0))
-            .1 += 1;
+    /// Note one mail that gives an email address as a number.
+    pub(crate) fn record(&mut self, pair: EmailNumber) {
+        self.seen
+            .entry(pair.email)
+            .or_default()
+            .entry(pair.number.key().to_string())
+            .or_insert(pair.number);
     }
 
-    /// Each email address with the number most mails give it. Of two numbers
-    /// given equally often, the smaller key wins, so the choice never
-    /// depends on the order the files were read in.
-    pub(crate) fn into_map(self) -> HashMap<String, Handle> {
-        self.seen
-            .into_iter()
-            .filter_map(|(email, numbers)| {
-                numbers
-                    .into_iter()
-                    .max_by(|(a_key, (_, a)), (b_key, (_, b))| a.cmp(b).then(b_key.cmp(a_key)))
-                    .map(|(_, (number, _))| (email, number))
-            })
-            .collect()
+    /// The number of each email address the archive gives exactly one
+    /// number. An address it gives two or more is left out: one contact card
+    /// can hold two people's numbers under one address, such as a family's,
+    /// and choosing one would credit one person's messages to the other.
+    pub(crate) fn into_numbers(self) -> Numbers {
+        let mut numbers = Numbers::default();
+        for (email, by_key) in self.seen {
+            if by_key.len() == 1 {
+                let number = by_key.into_values().next().expect("one number");
+                numbers.by_email.insert(email, number);
+            } else {
+                numbers.several.insert(email);
+            }
+        }
+        numbers
     }
+}
+
+/// What the archive says about each email address.
+#[derive(Default)]
+pub(crate) struct Numbers {
+    /// The one number each of these addresses stands for.
+    by_email: HashMap<String, Handle>,
+    /// Addresses the archive gives two or more numbers.
+    several: HashSet<String>,
+}
+
+/// The group members that keep their email address as their key.
+#[derive(Default)]
+pub(crate) struct KeptByEmail {
+    /// Addresses the archive gives no number.
+    pub without_number: BTreeSet<String>,
+    /// Addresses the archive gives two or more numbers.
+    pub several_numbers: BTreeSet<String>,
 }
 
 /// True when `msg` names a group member by email address: a group's member
@@ -60,25 +79,31 @@ pub(crate) fn names_a_member_by_email(msg: &ParsedMessage) -> bool {
             .any(|h| h.kind() == HandleType::Email)
 }
 
-/// Key every member `msg` names by email address by the number `numbers`
-/// gives that address, and work the conversation's key out again. An address
-/// with no number keeps its place and is added to `without_number`.
+/// Key every member `msg` names by email address by the one number
+/// `numbers` gives that address, and work the conversation's key out again.
+/// An address with no number, or with several, keeps its place and is noted
+/// in `kept`.
 ///
 /// Two members that turn out to be one person are one member, and a group
 /// left with a single member is that person's one-to-one conversation.
 pub(crate) fn key_members_by_number(
     msg: &mut ParsedMessage,
-    numbers: &HashMap<String, Handle>,
-    without_number: &mut BTreeSet<String>,
+    numbers: &Numbers,
+    kept: &mut KeptByEmail,
 ) {
     let mut by_number = |handle: &Handle| -> Handle {
         if handle.kind() != HandleType::Email {
             return handle.clone();
         }
-        if let Some(number) = numbers.get(handle.key()) {
+        if let Some(number) = numbers.by_email.get(handle.key()) {
             return number.clone();
         }
-        without_number.insert(handle.key().to_string());
+        let key = handle.key().to_string();
+        if numbers.several.contains(&key) {
+            kept.several_numbers.insert(key);
+        } else {
+            kept.without_number.insert(key);
+        }
         handle.clone()
     };
     let mut seen = HashSet::new();
@@ -89,7 +114,7 @@ pub(crate) fn key_members_by_number(
         .filter(|h| seen.insert(h.key().to_string()))
         .collect();
     msg.sender = msg.sender.as_ref().map(&mut by_number);
-    if msg.is_group() && participants.len() >= 2 {
+    if msg.is_group() && names_a_group(&participants) {
         let (chat_key, title) = group_key(&participants);
         msg.chat_key = chat_key;
         msg.group_title = Some(title);
@@ -105,35 +130,33 @@ pub(crate) fn key_members_by_number(
 mod tests {
     use super::*;
 
-    fn handle(raw: &str) -> Handle {
-        Handle::parse(raw).unwrap()
+    fn pair(number: &str) -> EmailNumber {
+        EmailNumber {
+            email: "smiths@example.com".into(),
+            number: Handle::parse(number).unwrap(),
+        }
     }
 
-    /// A person with two numbers is keyed by the one more of their mails
-    /// give, and on a tie by the smaller, whatever order the mails came in.
+    /// One address on a card two people share is no one's number: it is
+    /// never mapped, however many more mails give one of them.
     #[test]
-    fn an_address_with_two_numbers_takes_the_one_most_mails_give() {
-        for order in [
-            ["+14075550111", "+14075550112", "+14075550112"],
-            ["+14075550112", "+14075550111", "+14075550112"],
-        ] {
-            let mut numbers = EmailNumbers::default();
-            for number in order {
-                numbers.record("carol@example.com".into(), handle(number));
-            }
-            let map = numbers.into_map();
-            assert_eq!(map["carol@example.com"].key(), "+14075550112");
+    fn an_address_with_two_numbers_is_not_given_either() {
+        let mut numbers = EmailNumbers::default();
+        for number in ["+14075550111", "+14075550111", "+14075550112"] {
+            numbers.record(pair(number));
         }
-        for order in [
-            ["+14075550112", "+14075550111"],
-            ["+14075550111", "+14075550112"],
-        ] {
-            let mut numbers = EmailNumbers::default();
-            for number in order {
-                numbers.record("carol@example.com".into(), handle(number));
-            }
-            let map = numbers.into_map();
-            assert_eq!(map["carol@example.com"].key(), "+14075550111");
-        }
+        let numbers = numbers.into_numbers();
+        assert!(numbers.by_email.is_empty());
+        assert!(numbers.several.contains("smiths@example.com"));
+    }
+
+    /// Two spellings of one number are one number.
+    #[test]
+    fn an_address_given_one_number_twice_is_that_number() {
+        let mut numbers = EmailNumbers::default();
+        numbers.record(pair("+14075550111"));
+        numbers.record(pair("4075550111"));
+        let numbers = numbers.into_numbers();
+        assert_eq!(numbers.by_email["smiths@example.com"].key(), "+14075550111");
     }
 }
