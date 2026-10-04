@@ -244,7 +244,7 @@ released versions carry their date on the heading.
   each. The Import Run ended looking like a run with many missing
   attachments. It now stops at that point with an error that says the
   reader stopped and why. No attachment is recorded missing because of it,
-  so the run can be started again once the cause is gone.
+  so the import can be run again once the cause is gone.
 - 2026-10-04 **A person known only by name keeps a conversation of their
   own.** SMS Backup+, iMazing and OpenExtract backups sometimes name a person
   without recording a number or address. That person's conversation could

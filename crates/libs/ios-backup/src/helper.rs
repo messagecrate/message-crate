@@ -271,15 +271,24 @@ impl Helper {
     /// The error for a program that exited without reading a request. The
     /// program reports a failure as an `error` event on stdout before it
     /// exits, and nothing on stderr, so that event, still unread, is the
-    /// only place the reason is.
+    /// only place the reason is. Log and progress lines before it are
+    /// passed on as [`Helper::next_event`] passes them, since they are often
+    /// what explains the failure.
     fn stopped_unread(&mut self) -> anyhow::Error {
-        let reason =
-            self.stdout.by_ref().map_while(Result::ok).find_map(
-                |line| match serde_json::from_str::<Event>(&line) {
-                    Ok(Event::Error { message }) => Some(message),
-                    _ => None,
-                },
-            );
+        let mut reason = None;
+        for line in self.stdout.by_ref().map_while(Result::ok) {
+            match serde_json::from_str::<Event>(&line) {
+                Ok(Event::Log { line }) => emit_log(self.log.as_ref(), line),
+                Ok(Event::Progress(progress)) => {
+                    emit_progress(self.progress.as_ref(), progress_event(progress));
+                }
+                Ok(Event::Error { message }) => {
+                    reason = Some(message);
+                    break;
+                }
+                _ => {}
+            }
+        }
         let stopped = self.exited_early();
         match reason {
             Some(message) => anyhow!(message).context(stopped.to_string()),
