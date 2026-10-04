@@ -2085,6 +2085,7 @@ async fn the_identities_route_counts_the_direct_and_group_messages_held_at_each_
     // The group used both of the holder's addresses: "e" was received at the
     // email, everything else at the phone. Each message counts once, under
     // the address it used.
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     for (conversation_id, body, owner) in [
         (direct, "a", phone_id),
         (direct, "b", phone_id),
@@ -2101,10 +2102,11 @@ async fn the_identities_route_counts_the_direct_and_group_messages_held_at_each_
         .bind(owner)
         .bind(conversation_id)
         .bind(body)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
     }
+    tx.commit().await.unwrap();
     sqlx::query(
         "INSERT INTO trashed_conversations (account_id, conversation_id, trashed_at)
          VALUES ($1, $2, '2021-01-01T00:00:00Z')",
@@ -2188,6 +2190,7 @@ async fn the_storage_route_sums_attachment_bytes_and_lists_the_largest_first() {
         .fetch_one(&mut *conn)
         .await
         .unwrap();
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     for (name, mime, size) in [
         ("big.mov", "video/quicktime", Some(3000_i64)),
         ("small.jpg", "image/jpeg", Some(1000_i64)),
@@ -2201,10 +2204,11 @@ async fn the_storage_route_sums_attachment_bytes_and_lists_the_largest_first() {
         .bind(name)
         .bind(mime)
         .bind(size)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
     }
+    tx.commit().await.unwrap();
     for name in ["Ada", "Pat"] {
         sqlx::query("INSERT INTO contacts (account_id, preferred_name) VALUES ($1, $2)")
             .bind(account.account_id)

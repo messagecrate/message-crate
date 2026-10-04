@@ -4,9 +4,9 @@ use crate::db::exports::ExportCounts;
 use crate::paging::SortKey;
 use crate::problem::ProblemType;
 use crate::test_support::{
-    RegisteredAccount, SeedConversation, SeedMessage, TestFixture, delete_status, expect_problem,
-    fixture_with_account, get_json, get_raw, get_status, post_created_json, post_json, post_raw,
-    post_status, register_via_api, seed_conversation, test_fixture,
+    MessageRow, RegisteredAccount, SeedConversation, SeedMessage, TestFixture, delete_status,
+    expect_problem, fixture_with_account, get_json, get_raw, get_status, post_created_json,
+    post_json, post_raw, post_status, register_via_api, seed_conversation, test_fixture,
 };
 use axum::http::StatusCode;
 use message_crate_api_types::ExportQueryList;
@@ -124,7 +124,7 @@ async fn a_query_scope_takes_the_search_language() {
 /// first, "hello two" in the second) with ids 1 and 2. Returns the
 /// conversation ids the seeder made.
 ///
-/// The messages are seeded with an explicit SQL insert rather than through
+/// The messages are seeded through `MessageRow` rather than
 /// `seed_conversation`, because `SeedMessage` has no `service` field and a
 /// test below asserts `message.service == Some("sms")`.
 async fn seeded_export_fixture() -> (TestFixture, i64, i64) {
@@ -156,16 +156,25 @@ async fn seeded_export_fixture() -> (TestFixture, i64, i64) {
     .await;
 
     let mut conn = fixture.conn().await;
-    sqlx::query(
-        "INSERT INTO messages (id, conversation_id, account_id, source, guid, service, timestamp, is_from_me, sort_order, body)
-         VALUES (1, $1, 101, 'sms', 'msg-5', 'sms', '2020-01-01T00:00:00Z', 0, 0, 'hello one'),
-                (2, $2, 101, 'sms', 'msg-6', 'sms', '2020-01-02T00:00:00Z', 0, 0, 'hello two')",
-    )
-    .bind(conv1)
-    .bind(conv2)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    MessageRow {
+        id: Some(1),
+        source: "sms",
+        service: Some("sms"),
+        body: Some("hello one"),
+        ..MessageRow::new(101, conv1)
+    }
+    .insert(&mut conn)
+    .await;
+    MessageRow {
+        id: Some(2),
+        source: "sms",
+        service: Some("sms"),
+        timestamp: "2020-01-02T00:00:00Z",
+        body: Some("hello two"),
+        ..MessageRow::new(101, conv2)
+    }
+    .insert(&mut conn)
+    .await;
 
     (fixture, conv1, conv2)
 }
@@ -173,20 +182,17 @@ async fn seeded_export_fixture() -> (TestFixture, i64, i64) {
 /// Add message `id` to `conversation` for account 101, dated on `day` of
 /// January 2020.
 async fn add_message(conn: &mut SqliteConnection, id: i64, conversation: i64, day: u8, body: &str) {
-    sqlx::query(
-        "INSERT INTO messages (
-            id, conversation_id, account_id, source, guid, service, timestamp,
-            is_from_me, sort_order, body
-         ) VALUES ($1, $2, 101, 'sms', $5, 'sms', $3, 0, 0, $4)",
-    )
-    .bind(id)
-    .bind(conversation)
-    .bind(format!("2020-01-{day:02}T00:00:00Z"))
-    .bind(body)
-    .bind(crate::test_support::unique_guid())
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    let timestamp = format!("2020-01-{day:02}T00:00:00Z");
+    MessageRow {
+        id: Some(id),
+        source: "sms",
+        service: Some("sms"),
+        timestamp: &timestamp,
+        body: Some(body),
+        ..MessageRow::new(101, conversation)
+    }
+    .insert(conn)
+    .await;
 }
 
 /// The bug of #959: the Conversations list handed Export a query the Messages
@@ -284,20 +290,24 @@ async fn a_conversations_query_hides_what_the_conversations_list_hides() {
     )
     .await;
     let mut conn = fixture.conn().await;
-    sqlx::query(
-        "INSERT INTO messages (id, conversation_id, account_id, source, guid, service, timestamp, is_from_me, sort_order, body)
-         VALUES (9, $1, 202, 'sms', 'msg-3', 'sms', '2020-01-05T00:00:00Z', 0, 0, 'hello bob')",
-    )
-    .bind(bobs)
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    MessageRow {
+        id: Some(9),
+        source: "sms",
+        service: Some("sms"),
+        timestamp: "2020-01-05T00:00:00Z",
+        body: Some("hello bob"),
+        ..MessageRow::new(202, bobs)
+    }
+    .insert(&mut conn)
+    .await;
     add_message(&mut conn, 3, conv2, 3, "hello three").await;
     add_message(&mut conn, 4, conv2, 4, "hello three again").await;
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query("UPDATE messages SET duplicate_of = 3 WHERE id = 4")
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
+    tx.commit().await.unwrap();
     sqlx::query("INSERT INTO trashed_conversations (account_id, conversation_id) VALUES (101, $1)")
         .bind(conv1)
         .execute(&mut *conn)
@@ -360,10 +370,12 @@ async fn a_selection_scope_matches_by_conversation_or_message_with_the_browse_de
         .execute(&mut *conn)
         .await
         .unwrap();
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query("UPDATE messages SET duplicate_of = 2 WHERE id = 3")
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
+    tx.commit().await.unwrap();
     let found = page(&mut conn, 101, &picked, 100, 0).await.unwrap();
     assert!(found.items.is_empty(), "{:?}", ids(&found));
     assert_eq!(found.total, 0);
@@ -389,13 +401,16 @@ async fn a_selection_refuses_ids_the_account_does_not_hold_naming_them() {
     .execute(&mut *conn)
     .await
     .unwrap();
-    sqlx::query(
-        "INSERT INTO messages (id, conversation_id, account_id, source, guid, service, timestamp, is_from_me, sort_order, body)
-         VALUES (99, 99, 102, 'sms', 'msg-2', 'sms', '2020-02-01T00:00:00Z', 0, 0, 'bob secret')",
-    )
-    .execute(&mut *conn)
-    .await
-    .unwrap();
+    MessageRow {
+        id: Some(99),
+        source: "sms",
+        service: Some("sms"),
+        timestamp: "2020-02-01T00:00:00Z",
+        body: Some("bob secret"),
+        ..MessageRow::new(102, 99)
+    }
+    .insert(&mut conn)
+    .await;
 
     let scope = ExportScope::Selection {
         conversation_ids: vec![conv1, 99, 4242],
@@ -457,6 +472,7 @@ async fn export_counts_count_messages_conversations_and_distinct_attachments() {
     // The same file on two messages is one attachment, counted at its
     // largest known size; a file with no fingerprint is not an attachment
     // the export can fetch, so it is not counted.
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query(
         "INSERT INTO attachments (message_id, path, original_name, mime_type, sha256, is_sticker, size_bytes)
          VALUES (1, 'attachments/a.pdf', 'a.pdf', 'application/pdf', 'ABC123', 0, 100),
@@ -464,9 +480,10 @@ async fn export_counts_count_messages_conversations_and_distinct_attachments() {
                 (2, 'attachments/b.png', 'b.png', 'image/png', 'def456', 0, 7),
                 (2, 'attachments/gone.bin', 'gone.bin', 'image/png', NULL, 0, 2048)",
     )
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await
     .unwrap();
+    tx.commit().await.unwrap();
 
     assert_eq!(
         counts_of(&mut conn, &ExportScope::Everything).await,
@@ -493,15 +510,17 @@ async fn export_counts_count_messages_conversations_and_distinct_attachments() {
 async fn export_includes_attachment_missing_reason() {
     let (fixture, conv1, _conv2) = seeded_export_fixture().await;
     let mut conn = fixture.conn().await;
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query(
         "INSERT INTO attachments (
             message_id, path, original_name, mime_type, sha256, is_sticker,
             size_bytes, missing_reason
          ) VALUES (1, 'attachments/gone.bin', 'gone.bin', 'image/png', NULL, 0, 2048, 'file_missing')",
     )
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await
     .unwrap();
+    tx.commit().await.unwrap();
 
     let res = page(&mut conn, 101, &query(&format!("in:#{conv1}")), 100, 0)
         .await
@@ -520,14 +539,16 @@ async fn export_includes_attachment_missing_reason() {
 async fn export_boolean_queries_preserve_or_and_and_not() {
     let (fixture, conv1, _conv2) = seeded_export_fixture().await;
     let mut conn = fixture.conn().await;
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query("UPDATE messages SET body = 'foo' WHERE id = 1")
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
     sqlx::query("UPDATE messages SET body = 'bar' WHERE id = 2")
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
+    tx.commit().await.unwrap();
     add_message(&mut conn, 3, conv1, 3, "foo bar").await;
 
     for (q, expected) in [
@@ -702,15 +723,17 @@ async fn fixture_with_two_conversations() -> (TestFixture, RegisteredAccount, i6
     )
     .await;
     let mut conn = fixture.conn().await;
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query(
         "INSERT INTO attachments (message_id, path, original_name, mime_type, sha256, is_sticker, size_bytes)
          SELECT id, 'attachments/menu.pdf', 'menu.pdf', 'application/pdf', 'abc123', 0, 13
          FROM messages WHERE conversation_id = $1",
     )
     .bind(menu)
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await
     .unwrap();
+    tx.commit().await.unwrap();
     (fixture, alice, dinner, menu)
 }
 
@@ -1298,12 +1321,14 @@ async fn a_run_returns_the_owner_address_of_each_message() {
     .fetch_one(&mut *conn)
     .await
     .unwrap();
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query("UPDATE messages SET owner_handle_id = $1 WHERE conversation_id = $2")
         .bind(owner)
         .bind(dinner)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
+    tx.commit().await.unwrap();
     drop(conn);
     let run = create_run(&fixture, &alice.token, json!({ "kind": "everything" })).await;
     let id = run["id"].as_i64().unwrap();
@@ -1339,21 +1364,15 @@ async fn insert_message(
     import_id: Option<i64>,
 ) -> i64 {
     let mut conn = fixture.conn().await;
-    sqlx::query_scalar(
-        "INSERT INTO messages (
-            conversation_id, account_id, source, guid, service, timestamp,
-            is_from_me, sort_order, body, import_id
-         ) VALUES ($1, $2, 'imessage', $5, 'imessage', $3, 0, 0, 'arrived', $4)
-         RETURNING id",
-    )
-    .bind(conversation)
-    .bind(account)
-    .bind(timestamp)
-    .bind(import_id)
-    .bind(crate::test_support::unique_guid())
-    .fetch_one(&mut *conn)
+    MessageRow {
+        service: Some("imessage"),
+        timestamp,
+        body: Some("arrived"),
+        import_id,
+        ..MessageRow::new(account, conversation)
+    }
+    .insert(&mut conn)
     .await
-    .unwrap()
 }
 
 /// Record a completed Import Run for `account` and return its id.
