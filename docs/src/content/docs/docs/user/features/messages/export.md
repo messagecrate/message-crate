@@ -32,7 +32,7 @@ The Export screen has five fields.
 
 **Export** starts the run and **Cancel** stops it.
 The **Export** button stays disabled until **Save to** holds a folder, and under **Search** until the search box holds a search.
-The desktop app runs one job at a time, so Export waits while an Import Run is running, and **Export** stays disabled while **Convert** in Settings runs. The screen names the job it waits for.
+The desktop app runs one job at a time, so Export waits from the start of an Import Run to its end, its Reviews included, and **Export** stays disabled while **Convert** in Settings runs. A Review holds it back only for the account that started the run; another account logged in on the same desktop app can use it. The screen names the job it waits for.
 A log under the buttons shows what the run is doing.
 A finished run reads `Export complete.` followed by the format and the folder.
 
