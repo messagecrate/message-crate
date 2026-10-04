@@ -813,10 +813,12 @@ async fn repeated_append_keeps_one_fts_posting_per_message() {
     .unwrap();
     assert_eq!(matches, 1);
 
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query("DELETE FROM messages WHERE guid = 'g-fts'")
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
+    tx.commit().await.unwrap();
     assert_eq!(
         term_entries(&mut conn).await,
         (0, 0),
@@ -2527,15 +2529,17 @@ async fn a_replace_run_deletes_only_its_own_sources_old_messages() {
             .unwrap();
         assert_eq!(n, 2, "both accounts' g-gone carry one row in {table}");
     }
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
     sqlx::query(
         "UPDATE messages SET duplicate_of = (
              SELECT id FROM messages WHERE guid = 'g-gone' AND account_id != $1
          ) WHERE guid = 'g-sms'",
     )
     .bind(other.account_id)
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await
     .unwrap();
+    tx.commit().await.unwrap();
     drop(conn);
 
     import_one_batch(

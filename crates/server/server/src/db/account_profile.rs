@@ -1130,28 +1130,23 @@ mod tests {
         .execute(&mut *conn)
         .await
         .unwrap();
-        sqlx::query(
-            "INSERT INTO messages (
-                conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
-             ) VALUES (1, $1, 'imessage', 'msg-1', '2020-01-01T00:00:00Z', 1, 0, 'hi')",
-        )
-        .bind(ACCOUNT_ID)
-        .execute(&mut *conn)
-        .await
-        .unwrap();
-        let msg_id: i64 = sqlx::query_scalar("SELECT id FROM messages WHERE account_id = $1")
-            .bind(ACCOUNT_ID)
-            .fetch_one(&mut *conn)
-            .await
-            .unwrap();
+        let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+        let msg_id = crate::test_support::MessageRow {
+            is_from_me: true,
+            body: Some("hi"),
+            ..crate::test_support::MessageRow::new(ACCOUNT_ID, 1)
+        }
+        .insert_in(&mut tx)
+        .await;
         sqlx::query(
             "INSERT INTO attachments (message_id, path, original_name, mime_type)
              VALUES ($1, 'a.jpg', 'a.jpg', 'image/jpeg')",
         )
         .bind(msg_id)
-        .execute(&mut *conn)
+        .execute(&mut *tx)
         .await
         .unwrap();
+        tx.commit().await.unwrap();
 
         let stats = delete_all_messages_for_account(
             &mut conn,
