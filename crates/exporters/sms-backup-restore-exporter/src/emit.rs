@@ -19,6 +19,7 @@ fn to_core_report(report: ReadReport) -> ExportReport {
         received: report.received,
         skipped_invalid_date: report.skipped_invalid_date,
         skipped_out_of_range: report.skipped_out_of_range,
+        duplicates_dropped: report.duplicates_dropped,
         errors: report.errors,
         ..ExportReport::default()
     };

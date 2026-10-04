@@ -9,9 +9,11 @@ use message_crate_core::{ExportTransforms, OutputFormat, SmsBackupRestoreConfig,
 use std::fs;
 use std::path::Path;
 
-/// One row for every reason a record is skipped, around two good messages.
+/// One row for every reason a record is skipped, around two good messages,
+/// one of them repeated.
 const SKIPS_XML: &str = r#"<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
-<smses count="8">
+<smses count="9">
+  <sms address="+15555550101" date="1400773261000" type="1" body="hello" contact_name="Sam" />
   <sms address="+15555550101" date="1400773261000" type="1" body="hello" contact_name="Sam" />
   <sms address="+15555550101" date="1400773321000" type="2" body="hey" contact_name="Sam" />
   <sms address="+15555550101" date="soon" type="1" body="bad date" />
@@ -65,13 +67,14 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
     assert!(written.contains("broken photo"), "{written}");
     for line in [
         "  skipped 1 invalid-date rows",
+        "  dropped 1 duplicate rows",
         "  mms_seen: 2",
         "  skipped_unreadable_part: 1",
         "  skipped_draft_or_outbox: 1",
         "  skipped_empty_participants: 1",
         "  skipped_unknown_address: 1",
         "  skipped_unknown_type: 1",
-        "  sms_seen: 6",
+        "  sms_seen: 7",
     ] {
         assert!(
             result.messages.iter().any(|l| l == line),
