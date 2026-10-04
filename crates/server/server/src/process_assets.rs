@@ -16,11 +16,11 @@ use tempfile::TempDir;
 use crate::config::Config;
 use crate::db::schema;
 use crate::open_db::OpenDb;
-use media::{CompressOptions, Kind, MediaMode, TranscodeOutcome};
+use media::{Kind, MediaMode, TranscodeOutcome};
 
-/// Browser previews use the `media` crate's compress recipe, the same one the
-/// desktop export applies, so a preview and an exported copy of the same
-/// source are the same bytes.
+/// Browser previews use the `media` crate's compress recipe, with the
+/// options the server names for the media it converts itself
+/// (`import_media::server_compress_options`).
 const PREVIEW_MODE: MediaMode = MediaMode::Compress;
 
 /// Options for one derived-media processing pass.
@@ -321,7 +321,7 @@ impl<'a> AccountPass<'a> {
             kind,
             &out,
             PREVIEW_MODE,
-            &CompressOptions::default(),
+            &crate::import_media::server_compress_options(),
         )
         .with_context(|| format!("{what} preview for {}", self.label(row)))?;
         let out = match outcome {

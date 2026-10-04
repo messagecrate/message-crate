@@ -831,10 +831,6 @@ released versions carry their date on the heading.
 
 #### The server
 
-- 2026-10-04 **Video previews are capped at 720p, like a compressed import.**
-  The previews the server makes for browsers capped a video's longer side
-  at 1920 pixels, while the Import form's **Compress & Convert** starts at
-  720p, a longer side of 1280 pixels. Previews now use 720p too.
 - 2026-10-01 **Docker Compose runs as a real user when UID and GID aren't
   set.** It ran the container with an empty user and printed warnings.
 - 2026-10-02 **Long conversations can be read to the end.** Messages past
