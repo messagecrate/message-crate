@@ -1125,19 +1125,16 @@ describe("useImportJob wiring", () => {
       { staging_dir: string; record: Record<string, unknown> },
     ];
     expect(staging_dir).toBe("/home/sam/message-crate/staging-iphone");
-    expect(record.issues).toEqual(
-      [
-        { kind: "skip", stage: "staging", item: "IMG_1.HEIC", reason: "missing" },
-        {
-          kind: "skip",
-          stage: "upload",
-          item: "a.jsonl:attachments/big.mov",
-          reason: "too large",
-          conversation: "a.jsonl",
-        },
-      ],
-      [],
-    );
+    expect(record.issues).toEqual([
+      { kind: "skip", stage: "staging", item: "IMG_1.HEIC", reason: "missing" },
+      {
+        kind: "skip",
+        stage: "upload",
+        item: "a.jsonl:attachments/big.mov",
+        reason: "too large",
+        conversation: "a.jsonl",
+      },
+    ]);
     expect(record.bytesUploaded).toBe(4_096);
     expect(record.filesSucceeded).toBe(1);
     expect(typeof record.uploadMs).toBe("number");
