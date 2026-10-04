@@ -46,8 +46,11 @@ pub struct StagingConversation<'a> {
     pub conversation_type: &'a str,
     /// Group label, when set.
     pub group_title: Option<&'a str>,
-    /// When the export was produced, when known.
-    pub exported_at: Option<&'a str>,
+    /// The title's time: the latest timestamp among the conversation's
+    /// messages, in the form `staging_messages.timestamp` holds, when it has
+    /// a title and a message, else `None`. It decides the title when two
+    /// copies of one conversation merge.
+    pub group_title_at: Option<&'a str>,
     /// Name of the file the thread came from.
     pub source_file: &'a str,
 }
@@ -57,9 +60,12 @@ pub struct StagingConversation<'a> {
 /// Two chat ids that differ as written can normalise to one handle, such as
 /// `+15555550119` and `5555550119`. A conversation on a handle the account
 /// has already staged in this import merges into that row, the way promote
-/// merges into `conversations` on the same key: the id returned is the
-/// staged row's, and that row keeps its title and export time unless it
-/// has none.
+/// merges into `conversations` on the same key, and the id returned is the
+/// staged row's. The merged row keeps the title of the copy whose latest
+/// message is later; a copy with no title never clears one, and on a tie
+/// the staged title stays, as in [`upsert_conversations`]
+/// (`docs/architecture/contacts-identities-and-messages.md`, "Two copies of
+/// one conversation take the later copy's title").
 ///
 /// # Errors
 ///
@@ -68,14 +74,30 @@ pub async fn insert_conversation(
     conn: &mut SqliteConnection,
     row: &StagingConversation<'_>,
 ) -> Result<i64> {
+    // `group_title_at` is the latest message time of the copy that gave the
+    // title, so a later copy with no title cannot hide a titled one that is
+    // newer than the title held. Both columns take the same condition.
+    // The rule and its reason: docs/architecture/contacts-identities-and-messages.md,
+    // under Two copies of one conversation take the later copy's title.
     Ok(sqlx::query_scalar(
         r"
         INSERT INTO staging_conversations (
-            account_id, chat_handle_id, conversation_type, group_title, exported_at, source_file
+            account_id, chat_handle_id, conversation_type, group_title, group_title_at,
+            source_file
         ) VALUES ($1, $2, $3, $4, $5, $6)
         ON CONFLICT(account_id, chat_handle_id) DO UPDATE SET
-            group_title = COALESCE(staging_conversations.group_title, excluded.group_title),
-            exported_at = COALESCE(staging_conversations.exported_at, excluded.exported_at)
+            group_title = CASE WHEN
+                excluded.group_title IS NOT NULL
+                AND (staging_conversations.group_title IS NULL
+                     OR COALESCE(excluded.group_title_at, '')
+                        > COALESCE(staging_conversations.group_title_at, ''))
+            THEN excluded.group_title ELSE staging_conversations.group_title END,
+            group_title_at = CASE WHEN
+                excluded.group_title IS NOT NULL
+                AND (staging_conversations.group_title IS NULL
+                     OR COALESCE(excluded.group_title_at, '')
+                        > COALESCE(staging_conversations.group_title_at, ''))
+            THEN excluded.group_title_at ELSE staging_conversations.group_title_at END
         RETURNING id
         ",
     )
@@ -83,7 +105,7 @@ pub async fn insert_conversation(
     .bind(row.chat_handle_id)
     .bind(row.conversation_type)
     .bind(row.group_title)
-    .bind(row.exported_at)
+    .bind(row.group_title_at)
     .bind(row.source_file)
     .fetch_one(&mut *conn)
     .await?)
@@ -440,28 +462,46 @@ pub async fn max_conversation_id(conn: &mut SqliteConnection) -> Result<i64> {
 }
 
 /// Upsert the account's staged conversations into `conversations`, keyed by
-/// `(account_id, chat_handle_id)`. A row already there keeps its title and
-/// export time when the staged row has none.
+/// `(account_id, chat_handle_id)`. A row already there takes the staged
+/// title when the copy that gave it ends later than the copy that gave its
+/// own, or when it has no title; a staged row with no title never clears
+/// one, and on a tie the stored title stays, as in [`insert_conversation`]
+/// (`docs/architecture/contacts-identities-and-messages.md`, "Two copies of
+/// one conversation take the later copy's title").
 ///
 /// # Errors
 ///
 /// Returns an error when the statement fails.
 pub async fn upsert_conversations(conn: &mut SqliteConnection, account_id: i64) -> Result<()> {
+    // `group_title_at` is the latest message time of the copy that gave the
+    // title, as in `insert_conversation`. Both columns take the same condition.
+    // The rule and its reason: docs/architecture/contacts-identities-and-messages.md,
+    // under Two copies of one conversation take the later copy's title.
     sqlx::query(
         r"
         INSERT INTO conversations (
-            account_id, chat_handle_id, conversation_type,
-            group_title, exported_at, source_file
+            account_id, chat_handle_id, conversation_type, group_title, group_title_at,
+            source_file
         )
         SELECT
-            account_id, chat_handle_id, conversation_type,
-            group_title, exported_at, source_file
+            account_id, chat_handle_id, conversation_type, group_title, group_title_at,
+            source_file
         FROM staging_conversations
         WHERE account_id = $1
         ON CONFLICT(account_id, chat_handle_id) DO UPDATE SET
             conversation_type = excluded.conversation_type,
-            group_title = COALESCE(excluded.group_title, conversations.group_title),
-            exported_at = COALESCE(excluded.exported_at, conversations.exported_at),
+            group_title = CASE WHEN
+                excluded.group_title IS NOT NULL
+                AND (conversations.group_title IS NULL
+                     OR COALESCE(excluded.group_title_at, '')
+                        > COALESCE(conversations.group_title_at, ''))
+            THEN excluded.group_title ELSE conversations.group_title END,
+            group_title_at = CASE WHEN
+                excluded.group_title IS NOT NULL
+                AND (conversations.group_title IS NULL
+                     OR COALESCE(excluded.group_title_at, '')
+                        > COALESCE(conversations.group_title_at, ''))
+            THEN excluded.group_title_at ELSE conversations.group_title_at END,
             source_file = excluded.source_file
         ",
     )

@@ -32,8 +32,6 @@ pub struct ConversationRecord {
     pub group_title: Option<String>,
     /// Participants of the conversation.
     pub participants: Vec<ParticipantRecord>,
-    /// UTC time the export was produced.
-    pub exported_at: Option<String>,
     /// IR `export.source` — used as `messages.source` for directory import.
     pub export_source: Option<String>,
 }
@@ -280,7 +278,6 @@ fn conversation_from_ir(header: &ConversationHeader) -> ConversationRecord {
             .iter()
             .filter_map(participant_from_ir)
             .collect(),
-        exported_at: None,
         export_source,
     }
 }
