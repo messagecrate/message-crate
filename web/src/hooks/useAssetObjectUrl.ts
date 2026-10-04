@@ -31,17 +31,26 @@ export function useAssetObjectUrls(
     ReadonlyMap<string, { url: string | null; error: string | null }>
   >(() => new Map());
   const held = useRef(new Map<string, Held>());
-  const wanted = [
-    ...new Set(requests.filter((r) => r.sha256.trim()).map((r) => keyOf(r.sha256, r.version))),
-  ]
-    .sort()
-    .join("|");
+  // The requests by key. The map is replaced only when the set of keys
+  // changes, so the effect below runs when something is wanted or released,
+  // not on every render. Setting state while rendering is React's way to
+  // keep a value derived from earlier renders.
+  const next = new Map(
+    requests
+      .filter((r) => r.sha256.trim())
+      .map((r) => [keyOf(r.sha256, r.version), { sha256: r.sha256.trim(), version: r.version }]),
+  );
+  const nextKeys = [...next.keys()].sort().join("|");
+  const [latest, setLatest] = useState<{ keys: string; map: ReadonlyMap<string, AssetRequest> }>(
+    () => ({ keys: nextKeys, map: next }),
+  );
+  if (latest.keys !== nextKeys) setLatest({ keys: nextKeys, map: next });
+  const wanted = latest.keys === nextKeys ? latest.map : next;
 
   useEffect(() => {
-    const keys = new Set(wanted ? wanted.split("|") : []);
     const dropped: string[] = [];
     for (const [key, entry] of held.current) {
-      if (keys.has(key)) continue;
+      if (wanted.has(key)) continue;
       entry.controller.abort();
       if (entry.url) URL.revokeObjectURL(entry.url);
       held.current.delete(key);
@@ -54,11 +63,8 @@ export function useAssetObjectUrls(
         return next;
       });
     }
-    for (const key of keys) {
+    for (const [key, { sha256, version }] of wanted) {
       if (held.current.has(key)) continue;
-      const split = key.indexOf(":");
-      const version = key.slice(0, split) as AssetVersion;
-      const sha256 = key.slice(split + 1);
       const entry: Held = { controller: new AbortController(), url: null };
       held.current.set(key, entry);
       fetchAssetObjectUrl(sha256, { version, signal: entry.controller.signal })
@@ -100,7 +106,7 @@ export function useAssetObjectUrls(
       const key = keyOf(sha256, version);
       const entry = entries.get(key);
       if (entry) return { ...entry, loading: false };
-      return { url: null, error: null, loading: wanted.split("|").includes(key) };
+      return { url: null, error: null, loading: wanted.has(key) };
     },
     [entries, wanted],
   );
