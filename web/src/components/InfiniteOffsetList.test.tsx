@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Z_LIFT } from "../lib/zLayers";
 import InfiniteOffsetList from "./InfiniteOffsetList";
 
@@ -137,6 +137,7 @@ function renderList(
     sectioned?: boolean;
     lead?: boolean;
     total?: number;
+    selectedId?: string | null;
   },
 ) {
   return render(listElement(items, extra));
@@ -155,6 +156,7 @@ function listElement(items: Item[], extra?: Parameters<typeof renderList>[1]) {
         requestMore={extra?.requestMore ?? (() => {})}
         estimateSize={49}
         getId={(c) => c.id}
+        selectedId={extra?.selectedId}
         onSelect={extra?.onSelect ?? (() => {})}
         selectAll={{ onChange: () => {}, label: "Select all contacts" }}
         renderRow={(c) => <span>{c.name}</span>}
@@ -456,5 +458,122 @@ describe("InfiniteOffsetList choosing a row", () => {
 
     await user.click(screen.getByRole("checkbox", { name: "Select Alice" }));
     expect(onSelect).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The open row is drawn with a stronger fill, which a screen reader cannot see.
+ * Every path marks it with `aria-current="true"` instead of listbox selection,
+ * because a selection mode would make a row open on a double click (#1245, #1413).
+ */
+describe("InfiniteOffsetList marking the open row", () => {
+  const people: Item[] = [
+    { id: "1", name: "Alice" },
+    { id: "2", name: "Bob" },
+    { id: "3", name: "Carol" },
+  ];
+
+  /** Every row element of the rendered path, by the name it shows. */
+  function currentRows(role: "button" | "option"): string[] {
+    return screen
+      .getAllByRole(role)
+      .filter((row) => row.hasAttribute("aria-current"))
+      .map((row) => `${row.textContent}=${row.getAttribute("aria-current")}`);
+  }
+
+  for (const lead of [false, true]) {
+    describe(lead ? "in the browser, with a lead cell" : "in the browser", () => {
+      // TanStack Virtual draws no rows until it has a viewport to fill.
+      let restore = () => {};
+      beforeEach(() => {
+        restore = layOutViewport();
+      });
+      afterEach(() => restore());
+
+      it("marks only the open row as current", () => {
+        renderList(people, { sectioned: false, lead, selectedId: "2" });
+        // A lead cell's checkbox is not a row; only the row buttons count.
+        expect(currentRows("button")).toEqual(["Bob=true"]);
+      });
+
+      it("moves the mark when another row opens", () => {
+        const { rerender } = renderList(people, { sectioned: false, lead, selectedId: "2" });
+        rerender(listElement(people, { sectioned: false, lead, selectedId: "3" }));
+        expect(currentRows("button")).toEqual(["Carol=true"]);
+      });
+
+      it("opens a closed row on one click while another row is open", async () => {
+        const onSelect = vi.fn();
+        renderList(people, { sectioned: false, lead, selectedId: "2", onSelect });
+        await userEvent.click(screen.getByRole("button", { name: "Carol" }));
+        expect(onSelect).toHaveBeenCalledTimes(1);
+        expect(onSelect).toHaveBeenCalledWith({ id: "3", name: "Carol" });
+      });
+    });
+  }
+
+  it("marks only the open row as current in the list sorted by name", () => {
+    const { rerender } = renderList(people, { lead: true, selectedId: "1" });
+    expect(currentRows("button")).toEqual(["Alice=true"]);
+    rerender(listElement(people, { lead: true, selectedId: "3" }));
+    expect(currentRows("button")).toEqual(["Carol=true"]);
+  });
+
+  describe("in the desktop app", () => {
+    function withViewport(run: () => Promise<void>) {
+      return async () => {
+        tauriMock.current = true;
+        // jsdom lays out nothing; give the virtualizer a viewport to fill.
+        const heights = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(400);
+        const widths = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300);
+        try {
+          await run();
+        } finally {
+          heights.mockRestore();
+          widths.mockRestore();
+        }
+      };
+    }
+
+    it(
+      "marks only the open row as current",
+      withViewport(async () => {
+        renderList(people, { sectioned: false, selectedId: "2" });
+        await screen.findByRole("option", { name: "Bob" });
+        expect(currentRows("option")).toEqual(["Bob=true"]);
+        // Listbox selection stays off, so nothing claims to be selected.
+        for (const row of screen.getAllByRole("option")) {
+          expect(row).not.toHaveAttribute("aria-selected", "true");
+        }
+      }),
+    );
+
+    it(
+      "moves the mark when another row opens",
+      withViewport(async () => {
+        const { rerender } = renderList(people, { sectioned: false, selectedId: "2" });
+        await screen.findByRole("option", { name: "Bob" });
+        rerender(listElement(people, { sectioned: false, selectedId: "3" }));
+        await waitFor(() => expect(currentRows("option")).toEqual(["Carol=true"]));
+        // The fill follows the mark: the list redraws its rows for the new open row.
+        expect(screen.getByRole("option", { name: "Carol" }).className).toContain(
+          "bg-hover-strong",
+        );
+        expect(screen.getByRole("option", { name: "Bob" }).className).not.toContain(
+          "bg-hover-strong",
+        );
+      }),
+    );
+
+    it(
+      "opens a closed row on one click while another row is open",
+      withViewport(async () => {
+        const onSelect = vi.fn();
+        renderList(people, { sectioned: false, selectedId: "2", onSelect });
+        await userEvent.click(await screen.findByText("Carol"));
+        expect(onSelect).toHaveBeenCalledTimes(1);
+        expect(onSelect).toHaveBeenCalledWith({ id: "3", name: "Carol" });
+      }),
+    );
   });
 });

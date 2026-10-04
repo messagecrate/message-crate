@@ -1,5 +1,6 @@
 import type { AriaAttributes, Ref } from "react";
 import { Button as RACButton, type ButtonProps as RACButtonProps } from "react-aria-components";
+import { keepAttribute } from "../lib/keepAttribute";
 
 export type PlainButtonProps = RACButtonProps & {
   /** Hover text. React Aria's Button drops `title`, so it is set on the element here. */
@@ -8,15 +9,6 @@ export type PlainButtonProps = RACButtonProps & {
   "aria-current"?: AriaAttributes["aria-current"];
   ref?: Ref<HTMLButtonElement>;
 };
-
-/** Sets `name` on `el` to `value`, or removes it when there is none. */
-function keepAttribute(el: HTMLElement, name: string, value: string | boolean | undefined): void {
-  if (value === undefined || value === false || value === "") {
-    el.removeAttribute(name);
-  } else if (el.getAttribute(name) !== String(value)) {
-    el.setAttribute(name, String(value));
-  }
-}
 
 /**
  * React Aria's `Button` with no look of its own, for a control its caller draws
