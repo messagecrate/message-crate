@@ -18,7 +18,7 @@ fn writes_json_csv_jsonl_and_eml() {
     assert!(json_path.ends_with("+15555550101.json"));
     let raw = fs::read_to_string(&json_path).unwrap();
     let parsed: ConversationDocument = serde_json::from_str(&raw).unwrap();
-    assert_eq!(parsed.schema_version, 4);
+    assert_eq!(parsed.schema_version, 5);
     assert_eq!(parsed.messages[0].text, "hello ir");
     assert!(parsed.messages[0].attachments.is_empty());
     assert_eq!(
@@ -34,7 +34,7 @@ fn writes_json_csv_jsonl_and_eml() {
             .contains_key("address")
     );
     assert_eq!(
-        parsed.messages[0].sender_handle.as_deref(),
+        parsed.messages[0].sender_identity.as_deref(),
         Some("+15555550101")
     );
     assert_eq!(parsed.conversation.stats.message_count, 1);
@@ -49,7 +49,7 @@ fn writes_json_csv_jsonl_and_eml() {
     let jsonl = fs::read_to_string(&jsonl_path).unwrap();
     let mut lines = jsonl.lines();
     let header: Value = serde_json::from_str(lines.next().unwrap()).unwrap();
-    assert_eq!(header["schema_version"], 4);
+    assert_eq!(header["schema_version"], 5);
     assert!(header.get("messages").is_none());
     assert_eq!(header["conversation"]["stats"]["message_count"], 1);
     let msg_line: Value = serde_json::from_str(lines.next().unwrap()).unwrap();
@@ -63,7 +63,7 @@ fn writes_json_csv_jsonl_and_eml() {
     assert!(csv.contains("sms-backup-restore"));
     assert!(csv.contains("source_fields_json"));
     assert!(csv.contains("timestamp_unix_ms"));
-    assert!(csv.contains("+15555550100")); // owner handle filled
+    assert!(csv.contains("+15555550100")); // owner identity filled
 
     let eml_dir = write_format(tmp.path(), OutputFormat::Eml, doc).unwrap();
     assert!(eml_dir.is_dir());
@@ -114,7 +114,7 @@ fn imessage_bag_restores_mail_extension_headers() {
     assert_eq!(tapback_im.tapback_action.as_deref(), Some("add"));
     assert_eq!(tapback.owner_display_name.as_deref(), Some("Me"));
     assert_eq!(
-        tapback.message.sender_handle.as_deref(),
+        tapback.message.sender_identity.as_deref(),
         Some("+15555550100")
     );
 }
@@ -130,7 +130,7 @@ fn unified_csv_headers_for_all_sources() {
     assert_eq!(header_line, CSV_HEADERS.join(","));
     assert!(csv.contains("timestamp_unix_ms"));
     assert!(csv.contains("source_fields_json"));
-    assert!(csv.contains("owner_handle"));
+    assert!(csv.contains("owner_identity"));
     assert!(!header_line.contains("date_ms"));
     assert!(!header_line.contains("contact_name"));
     assert!(!header_line.contains("xml_fields_json"));
@@ -227,9 +227,9 @@ fn csv_omits_trivial_parts_json_keeps_rich_parts() {
         direction: IrDirection::Incoming,
         service: IrService::IMessage,
         message_kind: IrMessageKind::IMessage,
-        sender_handle: Some("+15555550101".into()),
+        sender_identity: Some("+15555550101".into()),
         sender_display_name: Some("Sam".into()),
-        owner_handle: None,
+        owner_identity: None,
         subject: None,
         text: "hello".into(),
         attachments: vec![],
@@ -294,7 +294,7 @@ fn roundtrip_json_and_jsonl() {
 }
 
 #[test]
-fn csv_serializes_handle_type_in_cell_and_column() {
+fn csv_serializes_identity_type_in_cell_and_column() {
     fn first_row_cols(csv: &str) -> (Vec<String>, csv::StringRecord) {
         let mut lines = csv.lines();
         let headers = lines.next().unwrap().to_string();
@@ -315,23 +315,23 @@ fn csv_serializes_handle_type_in_cell_and_column() {
     let csv = fs::read_to_string(&csv_path).unwrap();
     let (cols, row) = first_row_cols(&csv);
     let participants_idx = cols.iter().position(|c| c == "participants_json").unwrap();
-    let handle_type_idx = cols.iter().position(|c| c == "handle_type").unwrap();
+    let handle_type_idx = cols.iter().position(|c| c == "identity_type").unwrap();
     // Participants cell carries the typed participant.
     assert!(
         row.get(participants_idx)
             .unwrap()
-            .contains(r#""handle_type":"phone""#),
-        "participants_json must carry handle_type"
+            .contains(r#""identity_type":"phone""#),
+        "participants_json must carry identity_type"
     );
-    // Dedicated column carries the sender handle type.
+    // Dedicated column carries the sender identity type.
     assert_eq!(row.get(handle_type_idx).unwrap(), "phone");
-    // Empty sender handle yields an empty cell, never "other".
+    // Empty sender identity yields an empty cell, never "other".
     let mut doc = message_ir::testutil::sample_document("hello ir");
-    doc.messages[0].sender_handle = None;
+    doc.messages[0].sender_identity = None;
     let csv_path = write_conversation_csv(tmp.path(), &doc).unwrap();
     let csv = fs::read_to_string(&csv_path).unwrap();
     let (cols, row) = first_row_cols(&csv);
-    let handle_type_idx = cols.iter().position(|c| c == "handle_type").unwrap();
+    let handle_type_idx = cols.iter().position(|c| c == "identity_type").unwrap();
     assert_eq!(row.get(handle_type_idx).unwrap(), "");
 }
 
@@ -362,8 +362,8 @@ fn roundtrip_eml_and_mbox() {
                 })
                 .expect("outgoing eml");
             let outgoing_text = fs::read_to_string(&outgoing_eml).unwrap();
-            assert!(outgoing_text.contains("X-ME-Sender-Handle:"));
-            assert!(outgoing_text.contains("X-ME-Owner-Handle:"));
+            assert!(outgoing_text.contains("X-ME-Sender-Identity:"));
+            assert!(outgoing_text.contains("X-ME-Owner-Identity:"));
         }
 
         assert_docs_equal_after_normalize(doc.clone(), back_eml);
@@ -376,7 +376,7 @@ fn roundtrip_eml_and_mbox() {
 
 /// A version-3 file is refused by its version, not by whichever field fails
 /// to parse first: the reader peeks at `schema_version` before parsing the
-/// rest, so the fields below are deliberately not a valid version-4 shape.
+/// rest, so the fields below are deliberately not a valid version-5 shape.
 #[test]
 fn json_refuses_a_version_3_file_by_name() {
     let tmp = tempfile::tempdir().unwrap();
@@ -393,7 +393,7 @@ fn json_refuses_a_version_3_file_by_name() {
     assert_eq!(refusal.found, 3);
     assert_eq!(
         refusal.to_string(),
-        "This file is schema version 3; Message Crate reads version 4"
+        "This file is schema version 3; Message Crate reads version 5"
     );
 }
 
@@ -412,6 +412,34 @@ fn jsonl_refuses_a_version_3_file_by_name() {
         .expect("typed refusal");
     assert_eq!(refusal.found, 3);
     assert!(format!("{err:#}").contains("schema version 3"), "{err:#}");
+}
+
+/// A version-4 file names each identity a `handle`; version 5 says
+/// `identity`. The reader refuses it by its version rather than reading a
+/// participant with no identity.
+#[test]
+fn jsonl_refuses_a_version_4_file_by_name() {
+    let tmp = tempfile::tempdir().unwrap();
+    let path = tmp.path().join("v4.jsonl");
+    fs::write(
+        &path,
+        concat!(
+            r#"{"schema_version":4,"export":{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_handle":"+15555550100","owner_display_name":null},"#,
+            r#""conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"handle":"+15555550101","display_name":"Sam","handle_type":"phone"}],"#,
+            r#""stats":{"message_count":0,"attachment_count":0,"first_timestamp_unix_ms":null,"last_timestamp_unix_ms":null}}}"#,
+            "\n",
+        ),
+    )
+    .unwrap();
+    let err = read_conversation_jsonl(&path).unwrap_err();
+    let refusal = err
+        .downcast_ref::<message_ir::UnsupportedSchemaVersion>()
+        .expect("typed refusal");
+    assert_eq!(refusal.found, 4);
+    assert_eq!(
+        refusal.to_string(),
+        "This file is schema version 4; Message Crate reads version 5"
+    );
 }
 
 /// Message texts that a careless writer or reader damages: line endings a
@@ -639,7 +667,7 @@ fn document_with_hard_fields() -> ConversationDocument {
     let first = &mut doc.messages[0];
     first.service = IrService::IMessage;
     first.message_kind = IrMessageKind::IMessage;
-    first.owner_handle = Some("+15555550100".into());
+    first.owner_identity = Some("+15555550100".into());
     first.source = None;
     first.attachments = [
         ("movie.mov", "video/quicktime", 3_221_225_472, "too_large"),
@@ -664,9 +692,9 @@ fn document_with_hard_fields() -> ConversationDocument {
     second.guid = "bbccddeeff0011223344556677889900".into();
     second.timestamp_unix_ms += 60_000;
     second.direction = IrDirection::Outgoing;
-    second.sender_handle = Some("me@example.com".into());
+    second.sender_identity = Some("me@example.com".into());
     second.sender_display_name = Some("Me".into());
-    second.owner_handle = Some("me@example.com".into());
+    second.owner_identity = Some("me@example.com".into());
     second.text = "from my Apple ID".into();
     second.attachments = vec![message_ir::IrAttachment {
         // The SHA-256 of `card`.

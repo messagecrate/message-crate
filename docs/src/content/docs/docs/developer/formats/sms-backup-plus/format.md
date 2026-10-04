@@ -68,7 +68,7 @@ Every mail carries `Subject` (`SMS with <name>`: the sender of a received messag
 | `X-smssync-type` | `1` received or `2` sent for SMS; `132` received or `128` sent for MMS |
 | `X-smssync-backup-time` | The start of the Export Run that wrote the file, or of the Convert run, in epoch milliseconds |
 
-`From` and `To` name a phone number as `<number>@unknown.email` and an email address as itself, as SMS Backup+ does, so the import reads each handle back as it went out.
+`From` and `To` name a phone number as `<number>@unknown.email` and an email address as itself, as SMS Backup+ does, so the import reads each identity back as it went out.
 A received group message whose sender is unknown names an address no member has, and comes back with no sender. So does a received message in the conversation that names nobody, which comes back as that conversation, with no participant.
 
 An SMS is `text/plain`. An MMS is `multipart/mixed`: the text, then each stored attachment with its content type and file name.

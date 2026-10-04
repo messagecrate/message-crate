@@ -39,13 +39,13 @@ Diagnostic skip lists (`skipped_invalid_address.csv`, `skipped_empty_pdu.csv`, `
 </GoSms>
 ```
 
-Each `<SMS>` becomes one message in a shared conversation. `chat_identifier` holds the peer’s handle key.
+Each `<SMS>` becomes one message in a shared conversation. `chat_identifier` holds the peer’s identity key.
 
 ## Known XML children → shared fields
 
 | XML child | Shared field(s) | Notes |
 |-----------|------------------|--------|
-| `<address>` | `chat_identifier`, `sender_handle` | Classified once by `phone::Handle::parse`: a number keeps the country its `+` names and is otherwise read as a US number, an address with `@` is an email address, and anything else (such as `AMAZON`) is a sender name, an identity of type `other`. For sent (`type=2`), address is the peer (not the sender). For received (`type=1`), address is also `sender_handle`. A voicemail notice from Google Voice is an SMS from the Google Voice number like any other; Message Crate does not read who called out of its body. |
+| `<address>` | `chat_identifier`, `sender_identity` | Classified once by `phone::Handle::parse`: a number keeps the country its `+` names and is otherwise read as a US number, an address with `@` is an email address, and anything else (such as `AMAZON`) is a sender name, an identity of type `other`. For sent (`type=2`), address is the peer (not the sender). For received (`type=1`), address is also `sender_identity`. A voicemail notice from Google Voice is an SMS from the Google Voice number like any other; Message Crate does not read who called out of its body. |
 | `<contactName>` | `sender_display_name` | Display name filled for incoming when present. |
 | `<date>` | `timestamp_unix_ms`, `timestamp`, `timestamp_utc`, `timestamp_display` | Raw ms in `timestamp_unix_ms`. Converted to local/UTC RFC3339 and a human display string. |
 | `<type>` | `android_type`, `direction` | `1` → `incoming`, `2` → `outgoing`. Other values are skipped. |
@@ -58,14 +58,14 @@ Each `<SMS>` becomes one message in a shared conversation. `chat_identifier` hol
 |---------------|--------|
 | `conversation_type` | Always `individual` for XML SMS; `group` for a PDU with two or more people besides the owner |
 | `group_title` | Derived for PDU groups; empty for XML |
-| `participants_json` | Peer handles for the conversation |
+| `participants_json` | Peer identities for the conversation |
 | `guid` | SHA-256 of the message identity (`MessageGuid`): chat id, direction, sender, UTC milliseconds, collapsed text, sorted attachment digests. A PDU file records whole seconds, so its milliseconds are zero unless its XML row supplied them |
 | `service` | Always `sms` |
-| `sender_handle` / `sender_display_name` | Outgoing uses export owner; incoming from address / contactName |
+| `sender_identity` / `sender_display_name` | Outgoing uses export owner; incoming from address / contactName |
 | `attachments_json` | `[]` for XML; media paths for PDU |
 | `message_kind` | `sms` or `mms` (PDU with attachments → `mms`) |
 | `export_source` / `export_tool` / `export_tool_version` | `go-sms-pro` / `GO SMS Pro` / the `go-sms-pro-exporter` crate version |
-| `owner_handle` / `owner_display_name` | Export owner |
+| `owner_identity` / `owner_display_name` | Export owner |
 | `android_type` | Raw `<type>` (`1`/`2`); empty for PDU |
 | `source_fields_json` | Vendor bag (below) |
 
@@ -113,7 +113,7 @@ MMS from `I_<unix>_*.pdu` (received) and `S_<unix>_*.pdu` (sent) files use the s
 | Shared field | PDU behavior |
 |---------------|--------------|
 | `direction` | `m-send-req` is outgoing, `m-retrieve-conf` is incoming. The file name prefix says the same thing and is not consulted. |
-| `sender_handle` | The From header's address on a received message, classified like an XML `<address>`. A sent message carries the Insert-address-token instead of a number, so the export owner is the sender. |
+| `sender_identity` | The From header's address on a received message, classified like an XML `<address>`. A sent message carries the Insert-address-token instead of a number, so the export owner is the sender. |
 | `chat_identifier` / `conversation_type` / `group_title` | From the From, To, Cc and Bcc addresses that are not the owner's: one is a 1:1 chat, two or more a group with a `chat-group-…` id. |
 | `timestamp*` / `timestamp_unix_ms` | The MMS `Date` header; the file name's seconds when the header is absent. |
 | `text` | Every `text/plain` part joined with a newline, with GO SMS Pro emoji codes decoded: the parts the SMIL names in its order, then the rest in wire order. When there is no text part, the Subject. |

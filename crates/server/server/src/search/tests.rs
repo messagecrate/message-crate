@@ -1965,12 +1965,12 @@ mod kind_words {
     ) -> (i64, i64) {
         let path = dir.join(format!("{chat}.jsonl"));
         let header = serde_json::json!({
-            "schema_version": 4,
+            "schema_version": 5,
             "export": {"source": source, "tool": "test", "tool_version": "0",
-                       "owner_handle": null, "owner_display_name": null},
+                       "owner_identity": null, "owner_display_name": null},
             "conversation": {
                 "chat_identifier": chat, "conversation_type": "individual", "group_title": null,
-                "participants": [{"handle": chat, "display_name": null}],
+                "participants": [{"identity": chat, "display_name": null}],
                 "stats": {"message_count": 1, "attachment_count": 0,
                           "first_timestamp_unix_ms": 1_426_183_462_000_i64,
                           "last_timestamp_unix_ms": 1_426_183_462_000_i64}
@@ -1979,7 +1979,7 @@ mod kind_words {
         let line = serde_json::json!({
             "guid": format!("{source}-{chat}"), "timestamp_unix_ms": 1_426_183_462_000_i64,
             "direction": "incoming", "service": "sms", "message_kind": "sms",
-            "sender_handle": chat, "sender_display_name": null, "subject": null,
+            "sender_identity": chat, "sender_display_name": null, "subject": null,
             "text": format!("hello from {source}"), "attachments": [],
             "imessage": null, "source": null
         });

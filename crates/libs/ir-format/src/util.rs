@@ -7,9 +7,9 @@ use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-/// Guess the handle type of a raw handle string when no type is known.
+/// Guess the identity type of a raw identity string when no type is known.
 ///
-/// Rules (mirrored by the CSV `handle_type` cell and the EML/mbox reader):
+/// Rules (mirrored by the CSV `identity_type` cell and the EML/mbox reader):
 /// - empty → [`HandleType::Other`]
 /// - contains `@` → [`HandleType::Email`]
 /// - digit-heavy string (digits, `+`, `-`, spaces, parentheses, dots, `#`,

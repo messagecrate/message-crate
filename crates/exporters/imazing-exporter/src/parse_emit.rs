@@ -226,9 +226,9 @@ fn group_members(
     let mut members: BTreeMap<String, IrParticipant> = BTreeMap::new();
     let mut add = |handle: String, name: &str, handle_type: HandleType| {
         let member = members.entry(handle.clone()).or_insert(IrParticipant {
-            handle: Some(handle),
+            identity: Some(handle),
             display_name: None,
-            handle_type: Some(handle_type),
+            identity_type: Some(handle_type),
         });
         let name = name.trim();
         if member.display_name.is_none() && !name.is_empty() {
@@ -281,9 +281,9 @@ fn group_members(
                 if !already {
                     unresolved.push(label.to_string());
                     named_only.push(IrParticipant {
-                        handle: None,
+                        identity: None,
                         display_name: Some(label.to_string()),
-                        handle_type: None,
+                        identity_type: None,
                     });
                 }
             }

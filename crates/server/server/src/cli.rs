@@ -34,7 +34,7 @@ pub enum Commands {
     /// Import a message-ir JSONL folder, one Import Run per source (source from export.source unless --source)
     Import(ImportArgs),
 
-    /// Work on an account's import sessions (`discard` clears a stranded one)
+    /// Work on an account's Import Runs (`discard` clears a stranded one)
     Imports(ImportsArgs),
 
     /// Soft-hide the same SMS when it appears under more than one import source
@@ -148,7 +148,7 @@ pub struct ImportArgs {
     pub account: String,
 }
 
-/// The `imports` group: one subcommand per operation on import sessions.
+/// The `imports` group: one subcommand per operation on Import Runs.
 #[derive(Debug, Args)]
 pub struct ImportsArgs {
     /// Which operation to run.
@@ -156,12 +156,12 @@ pub struct ImportsArgs {
     pub command: ImportsCommand,
 }
 
-/// Operations on an account's import sessions.
+/// Operations on an account's Import Runs.
 #[derive(Debug, Subcommand)]
 pub enum ImportsCommand {
-    /// Discard the account's active import session, if it has one. A killed
-    /// `import` leaves its session open, and no later import can start until
-    /// it is discarded.
+    /// Discard the account's running Import Run, if it has one. A killed
+    /// `import` leaves its Import Run running, and no later import can start
+    /// until it is discarded.
     Discard(ImportsDiscardArgs),
 }
 
@@ -176,7 +176,7 @@ pub struct ImportsDiscardArgs {
     #[arg(long)]
     pub db: Option<PathBuf>,
 
-    /// Account username or id whose active session is discarded
+    /// Account username or id whose running Import Run is discarded
     #[arg(long)]
     pub account: String,
 }
@@ -414,7 +414,7 @@ async fn run_import(args: ImportArgs) -> Result<()> {
     Ok(())
 }
 
-/// Discard the account's active import session and say which one it was,
+/// Discard the account's running Import Run and say which one it was,
 /// or that there was none.
 async fn run_imports_discard(args: ImportsDiscardArgs) -> Result<()> {
     let cfg = Config::load_with_db(&args.config, args.db)?;
@@ -434,7 +434,7 @@ async fn run_imports_discard(args: ImportsDiscardArgs) -> Result<()> {
     Ok(())
 }
 
-/// What `imports discard` prints: the session it discarded, or that the
+/// What `imports discard` prints: the Import Run it discarded, or that the
 /// account had none.
 fn format_discarded_import(
     account: &str,
@@ -442,14 +442,14 @@ fn format_discarded_import(
 ) -> String {
     match discarded {
         Some(row) => format!(
-            "Discarded import session {} for account {account} (source {}, {} mode, started {}, stage {}).\n",
+            "Discarded Import Run {} for account {account} (source {}, {} mode, started {}, stage {}).\n",
             row.id,
             row.source,
             row.mode,
             row.started_at,
             row.stage.map_or("none", |stage| stage.as_str()),
         ),
-        None => format!("Account {account} has no active import session.\n"),
+        None => format!("Account {account} has no running Import Run.\n"),
     }
 }
 

@@ -62,15 +62,15 @@ pub struct AttachmentForecast {
     pub verdict: SizeVerdict,
 }
 
-/// How many messages one of the owner's handles sent and received.
+/// How many messages one of the owner's identities sent and received.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct OwnerHandleCount {
-    /// The handle as the staged messages record it.
-    pub handle: String,
-    /// Outgoing messages sent from this handle.
+pub struct OwnerIdentityCount {
+    /// The identity as the staged messages record it.
+    pub identity: String,
+    /// Outgoing messages sent from this identity.
     pub sent: u64,
-    /// Incoming messages received at this handle.
+    /// Incoming messages received at this identity.
     pub received: u64,
 }
 
@@ -85,11 +85,11 @@ pub struct StagingSummary {
     /// Distinct participant identifiers, sorted. The server decides which of
     /// these it already knows.
     pub contact_identifiers: Vec<String>,
-    /// Messages counted under the owner handle each was sent from or
-    /// received at, sorted by handle. The screen sets these beside the
+    /// Messages counted under the owner identity each was sent from or
+    /// received at, sorted by identity. The screen sets these beside the
     /// backup's identities, so a person sees how much of the backup each one
     /// carries.
-    pub owner_handles: Vec<OwnerHandleCount>,
+    pub owner_identities: Vec<OwnerIdentityCount>,
     /// Attachments referenced by the documents, including ones already marked
     /// missing and every reference to a shared, content-addressed file.
     pub attachments: usize,
@@ -200,12 +200,12 @@ pub fn summarize_staging(
         summary.conversations += 1;
         summary.messages += doc.messages.len() as u64;
         for participant in &doc.conversation.participants {
-            if let Some(handle) = participant.handle.clone() {
+            if let Some(handle) = participant.identity.clone() {
                 contacts.insert(handle);
             }
         }
         for msg in &doc.messages {
-            if let Some(handle) = owner_handle_of(msg, doc.export.owner_handle.as_deref()) {
+            if let Some(handle) = owner_handle_of(msg, doc.export.owner_identity.as_deref()) {
                 let (sent, received) = owner.entry(handle.to_string()).or_insert((0, 0));
                 match msg.direction {
                     IrDirection::Outgoing => *sent += 1,
@@ -222,10 +222,10 @@ pub fn summarize_staging(
         }
     }
     summary.contact_identifiers = contacts.into_iter().collect();
-    summary.owner_handles = owner
+    summary.owner_identities = owner
         .into_iter()
-        .map(|(handle, (sent, received))| OwnerHandleCount {
-            handle,
+        .map(|(identity, (sent, received))| OwnerIdentityCount {
+            identity,
             sent,
             received,
         })
@@ -277,10 +277,10 @@ struct AttachmentRef {
 /// are blank.
 fn owner_handle_of<'a>(msg: &'a IrMessage, export_owner: Option<&'a str>) -> Option<&'a str> {
     let outgoing_sender = match msg.direction {
-        IrDirection::Outgoing => msg.sender_handle.as_deref(),
+        IrDirection::Outgoing => msg.sender_identity.as_deref(),
         IrDirection::Incoming => None,
     };
-    [msg.owner_handle.as_deref(), outgoing_sender, export_owner]
+    [msg.owner_identity.as_deref(), outgoing_sender, export_owner]
         .into_iter()
         .flatten()
         .map(str::trim)

@@ -29,9 +29,9 @@ fn staged_fixture() -> tempfile::TempDir {
     let mut doc_a = message_ir::testutil::sample_document("hi from conversation A");
     doc_a.conversation.chat_identifier = "+15550101".into();
     doc_a.conversation.participants = vec![IrParticipant {
-        handle: Some("+15550101".into()),
+        identity: Some("+15550101".into()),
         display_name: Some("A".into()),
-        handle_type: Some(HandleType::Phone),
+        identity_type: Some(HandleType::Phone),
     }];
     let mut second = doc_a.messages[0].clone();
     second.guid = "guid-a2".into();
@@ -63,14 +63,14 @@ fn staged_fixture() -> tempfile::TempDir {
     doc_b.conversation.chat_identifier = "+15550100".into();
     doc_b.conversation.participants = vec![
         IrParticipant {
-            handle: Some("+15550101".into()),
+            identity: Some("+15550101".into()),
             display_name: None,
-            handle_type: Some(HandleType::Phone),
+            identity_type: Some(HandleType::Phone),
         },
         IrParticipant {
-            handle: Some("+15550100".into()),
+            identity: Some("+15550100".into()),
             display_name: Some("B".into()),
-            handle_type: Some(HandleType::Phone),
+            identity_type: Some(HandleType::Phone),
         },
     ];
     let mut second_b = doc_b.messages[0].clone();
@@ -481,9 +481,9 @@ fn messages_are_counted_under_the_owner_handle_that_sent_or_received_them() {
         msg.guid = guid.into();
         msg.direction = direction;
         if direction == message_ir::IrDirection::Outgoing {
-            msg.sender_handle = sender.map(str::to_string);
+            msg.sender_identity = sender.map(str::to_string);
         }
-        msg.owner_handle = owner.map(str::to_string);
+        msg.owner_identity = owner.map(str::to_string);
         msg
     };
     use message_ir::IrDirection::{Incoming, Outgoing};
@@ -509,20 +509,20 @@ fn messages_are_counted_under_the_owner_handle_that_sent_or_received_them() {
     let summary = summarize_staging(dir.path(), &summary_options(), &mut |_| {}).unwrap();
 
     assert_eq!(
-        summary.owner_handles,
+        summary.owner_identities,
         vec![
-            OwnerHandleCount {
-                handle: "+15555550100".into(),
+            OwnerIdentityCount {
+                identity: "+15555550100".into(),
                 sent: 3,
                 received: 1,
             },
-            OwnerHandleCount {
-                handle: "other@example.com".into(),
+            OwnerIdentityCount {
+                identity: "other@example.com".into(),
                 sent: 0,
                 received: 1,
             },
-            OwnerHandleCount {
-                handle: "owner@example.com".into(),
+            OwnerIdentityCount {
+                identity: "owner@example.com".into(),
                 sent: 2,
                 received: 1,
             },

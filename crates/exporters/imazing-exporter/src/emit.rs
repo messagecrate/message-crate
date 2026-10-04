@@ -283,7 +283,7 @@ fn merge_group_into(into: &mut Conversation, other: Conversation) {
     {
         for member in other_members {
             let same = |held: &IrParticipant| {
-                held.handle == member.handle && held.display_name == member.display_name
+                held.identity == member.identity && held.display_name == member.display_name
             };
             if !members.iter().any(same) {
                 members.push(member);
@@ -506,7 +506,7 @@ impl Ingest {
         };
         let is_notification = is_notification(&row.msg_type);
         let is_from_me = !is_notification && is_outgoing(&row.msg_type);
-        let (sender_handle, sender_display_name) =
+        let (sender_identity, sender_display_name) =
             resolve_sender(row, is_from_me, is_notification, session);
         let (attachments, attachment_extra) =
             attachment_for_row(row, csv.sources[row_index].as_deref());
@@ -543,7 +543,7 @@ impl Ingest {
         Some(PendingMessage {
             sort_key: secs,
             is_from_me,
-            sender_handle,
+            sender_identity,
             sender_display_name: (!sender_display_name.is_empty()).then_some(sender_display_name),
             text: row.text.clone(),
             attachments,
@@ -773,14 +773,14 @@ impl ProjectionHooks for ImazingProjection<'_> {
         match self.key {
             ConversationKey::Group { members, .. } => members.clone(),
             ConversationKey::OneToOne(handle) => vec![IrParticipant {
-                handle: Some(handle.clone()),
+                identity: Some(handle.clone()),
                 display_name: convo.first_contact_name(),
-                handle_type: Some(handle_type_for(handle)),
+                identity_type: Some(handle_type_for(handle)),
             }],
             ConversationKey::NameOnly(_) => vec![IrParticipant {
-                handle: None,
+                identity: None,
                 display_name: convo.first_contact_name(),
-                handle_type: None,
+                identity_type: None,
             }],
         }
     }

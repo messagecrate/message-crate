@@ -1,9 +1,9 @@
 ---
 title: Export structure
-description: The JSONL format Message Crate imports — schema version 4, one file per conversation.
+description: The JSONL format Message Crate imports — schema version 5, one file per conversation.
 ---
 
-Message Crate imports JSONL (JSON Lines) exports at schema version 4. Version 3 is refused, never upgraded. This page describes the format for CLI users and tool authors.
+Message Crate imports JSONL (JSON Lines) exports at schema version 5. Version 4 and older are refused, never upgraded. This page describes the format for CLI users and tool authors.
 
 ## Happy path
 
@@ -29,7 +29,7 @@ Attachment records may include `digest_sha256` so clients can upload by hash (`P
 
 ## Schema compatibility
 
-The server reads one schema version, currently 4. A file written at any other version is refused, with an error naming both the file's version and the version the server expects. To import an older export, re-export it with the current desktop app.
+The server reads one schema version, currently 5. Version 5 calls every address an identity (`identity`, `identity_type`, `owner_identity`, `sender_identity`, `reactor_identity`) where version 4 said `handle`, `handle_type`, `owner_handle`, `sender_handle` and `reactor_handle`. A file written at any other version is refused, with an error naming both the file's version and the version the server expects. To import an older export, re-export it with the current desktop app.
 
 ## Related
 

@@ -90,7 +90,7 @@ fn message(
             "is_group": false,
             "group_title": null,
             "participants": [
-                { "name": "Sam", "handle": "+15555550101", "service": "sms", "contact_id": 3 }
+                { "name": "Sam", "identity": "+15555550101", "service": "sms", "contact_id": 3 }
             ]
         },
         "attachments": attachments,
@@ -318,11 +318,11 @@ fn a_pull_records_one_run_and_writes_the_conversation_and_every_asset_once_acros
     assert_eq!(
         doc.messages
             .iter()
-            .map(|m| m.owner_handle.as_deref())
+            .map(|m| m.owner_identity.as_deref())
             .collect::<Vec<_>>(),
         [Some("+15555550100"); 3]
     );
-    assert_eq!(doc.export.owner_handle.as_deref(), Some("+15555550100"));
+    assert_eq!(doc.export.owner_identity.as_deref(), Some("+15555550100"));
     assert_eq!(
         doc.messages[0].attachments[0].digest_sha256.as_deref(),
         Some(MENU_SHA)

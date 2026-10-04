@@ -228,7 +228,7 @@ impl Ingest {
         };
         let chat_id = conversation.chat_id();
         let is_from_me = resolve_is_from_me(&row);
-        let (sender_handle, sender_display_name) = resolve_sender(&row, is_from_me, conversation);
+        let (sender_identity, sender_display_name) = resolve_sender(&row, is_from_me, conversation);
 
         let report = &mut self.report;
         let pending = self
@@ -264,7 +264,7 @@ impl Ingest {
         pending.convo.messages.push(PendingMessage {
             sort_key: secs,
             is_from_me,
-            sender_handle,
+            sender_identity,
             sender_display_name: (!sender_display_name.is_empty()).then_some(sender_display_name),
             text: row.text,
             attachments: Vec::new(),
@@ -336,14 +336,14 @@ fn address(sender: &str) -> Option<Handle> {
 fn member(party: &str) -> IrParticipant {
     match address(party) {
         Some(address) => IrParticipant {
-            handle_type: Some(address.kind()),
-            handle: Some(address.into_key()),
+            identity_type: Some(address.kind()),
+            identity: Some(address.into_key()),
             display_name: None,
         },
         None => IrParticipant {
-            handle: None,
+            identity: None,
             display_name: Some(party.to_string()),
-            handle_type: None,
+            identity_type: None,
         },
     }
 }
@@ -543,14 +543,14 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
             None => Vec::new(),
             Some(ConversationKey::Group { members, .. }) => members.clone(),
             Some(ConversationKey::OneToOne(handle)) => vec![IrParticipant {
-                handle: Some(handle.clone()),
+                identity: Some(handle.clone()),
                 display_name: convo.first_contact_name(),
-                handle_type: Handle::parse(handle).map(|handle| handle.kind()),
+                identity_type: Handle::parse(handle).map(|handle| handle.kind()),
             }],
             Some(ConversationKey::NameOnly(_)) => vec![IrParticipant {
-                handle: None,
+                identity: None,
                 display_name: convo.first_contact_name(),
-                handle_type: None,
+                identity_type: None,
             }],
         }
     }

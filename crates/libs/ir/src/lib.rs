@@ -44,8 +44,8 @@ pub use schema_version::{
     UnsupportedSchemaVersion, check_schema_version, check_schema_version_in_json,
 };
 
-/// Schema version written into every [`ConversationDocument`] (currently 4).
-pub const SCHEMA_VERSION: u32 = 4;
+/// Schema version written into every [`ConversationDocument`] (currently 5).
+pub const SCHEMA_VERSION: u32 = 5;
 
 /// One exported chat: export metadata, conversation roster and stats, and messages.
 ///
@@ -53,7 +53,7 @@ pub const SCHEMA_VERSION: u32 = 4;
 /// parses. See the [common message](https://messagecrate.app/docs/developer/architecture/common-message/) page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationDocument {
-    /// Schema version written into this document (currently 4).
+    /// Schema version written into this document (currently 5).
     pub schema_version: u32,
     /// Where and how this export was produced.
     pub export: ExportMeta,
@@ -75,8 +75,8 @@ pub struct ExportMeta {
     pub tool: String,
     /// Version string of the tool.
     pub tool_version: String,
-    /// Owner handle used for outgoing rows; `None` when the backup has no owner identity.
-    pub owner_handle: Option<String>,
+    /// The owner's identity used for outgoing rows; `None` when the backup has no owner identity.
+    pub owner_identity: Option<String>,
     /// Outgoing display name. Set when known (iMessage caller-id or `"Me"`).
     pub owner_display_name: Option<String>,
 }
@@ -109,7 +109,7 @@ impl IrConversationType {
     }
 }
 
-/// Kind of a participant handle.
+/// Kind of a participant identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum HandleType {
@@ -119,7 +119,7 @@ pub enum HandleType {
     Email,
     /// App username (e.g. Telegram `@user`).
     Username,
-    /// Any handle that is not phone, email, or username.
+    /// Any identity that is not phone, email, or username.
     Other,
 }
 
@@ -154,7 +154,7 @@ pub struct ConversationMeta {
     pub conversation_type: IrConversationType,
     /// Group display title; `None` for individuals and untitled groups.
     pub group_title: Option<String>,
-    /// Roster of handles and display names.
+    /// Roster of identities and display names.
     pub participants: Vec<IrParticipant>,
     /// Computed counts and first/last timestamps.
     pub stats: ConversationStats,
@@ -176,7 +176,7 @@ pub struct ConversationStats {
 
 /// One chat member: an identity, a display name, or both.
 ///
-/// `handle` is `None` when the source named a person without recording any
+/// `identity` is `None` when the source named a person without recording any
 /// address for them — the rescue exporters (iMazing, OpenExtract, SMS
 /// Backup+) read formats that identify the other party by name alone. Such a
 /// participant always carries a `display_name`; the server reconciles it
@@ -186,12 +186,12 @@ pub struct IrParticipant {
     /// Phone, email, or username string; `None` when the source recorded no
     /// address for this person.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub handle: Option<String>,
+    pub identity: Option<String>,
     /// Display name shown in UIs; `None` when the source has none.
     pub display_name: Option<String>,
-    /// Known kind of `handle`; `None` when the source did not record one.
+    /// Known kind of `identity`; `None` when the source did not record one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub handle_type: Option<HandleType>,
+    pub identity_type: Option<HandleType>,
 }
 
 /// Transport a message arrived on.
@@ -370,15 +370,15 @@ pub struct IrMessage {
     pub service: IrService,
     /// Row shape.
     pub message_kind: IrMessageKind,
-    /// Handle of the actual sender (the owner's handle for outgoing).
-    pub sender_handle: Option<String>,
+    /// Identity of the actual sender (the owner's identity for outgoing).
+    pub sender_identity: Option<String>,
     /// Display name of the actual sender.
     pub sender_display_name: Option<String>,
     /// The owner's own address on this message: the one it was sent from
     /// (outgoing) or received at (incoming). `None` when the source knows
-    /// only one owner address, which is then `export.owner_handle`.
+    /// only one owner address, which is then `export.owner_identity`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub owner_handle: Option<String>,
+    pub owner_identity: Option<String>,
     /// Message subject line (rare).
     pub subject: Option<String>,
     /// Plain-text body; never includes attachment data.
@@ -547,7 +547,7 @@ pub struct IrImessage {
     /// Apple `edits` blob as a JSON value.
     pub edits: Option<Value>,
     /// Apple `tapbacks` blob as a JSON value: a list of reactions, each with
-    /// `part_index`, `kind`, `emoji`, `is_from_me`, `reactor_handle` and
+    /// `part_index`, `kind`, `emoji`, `is_from_me`, `reactor_identity` and
     /// `reactor_display_name`. Each entry names its own reactor, who is
     /// rarely the author of the message.
     pub tapbacks: Option<Value>,
@@ -607,7 +607,7 @@ impl ConversationDocument {
             .conversation
             .participants
             .iter()
-            .filter_map(|p| p.handle.clone())
+            .filter_map(|p| p.identity.clone())
             .collect();
         conversation_stem(
             self.conversation.conversation_type.as_str(),
@@ -860,9 +860,9 @@ pub fn valid_filename(value: &str) -> Option<String> {
 /// One mebibyte, for byte counts shown or compared in MiB.
 pub const MIB: u64 = 1024 * 1024;
 
-/// Owner identity for outgoing rows: handle + display (`"Me"` if handle set but name missing).
+/// Owner identity for outgoing rows: identity + display (`"Me"` if identity set but name missing).
 pub fn owner_sender(export: &ExportMeta) -> (Option<String>, Option<String>) {
-    let handle = export.owner_handle.as_deref().and_then(nonempty);
+    let handle = export.owner_identity.as_deref().and_then(nonempty);
     let display = export
         .owner_display_name
         .as_deref()
@@ -934,8 +934,8 @@ pub struct PendingMessage {
     pub sort_key: i64,
     /// Whether the owner sent the message.
     pub is_from_me: bool,
-    /// Handle of the sender (the owner's handle when `is_from_me`).
-    pub sender_handle: String,
+    /// Identity of the sender (the owner's identity when `is_from_me`).
+    pub sender_identity: String,
     /// Display name of the sender; `None` when the source has none.
     pub sender_display_name: Option<String>,
     /// Plain-text body; never includes attachment data.
@@ -1277,7 +1277,7 @@ mod pending_message_tests {
         let msg = PendingMessage {
             sort_key: 0,
             is_from_me: false,
-            sender_handle: String::new(),
+            sender_identity: String::new(),
             sender_display_name: None,
             text: String::new(),
             attachments: Vec::new(),

@@ -7,10 +7,10 @@ fn base_sms() -> MailMessage {
         conversation_type: "individual".into(),
         group_title: None,
         participants: vec![Participant {
-            handle: "+15555550101".into(),
+            identity: "+15555550101".into(),
             display_name: Some("Sam".into()),
         }],
-        owner_handle: "+15555550100".into(),
+        owner_identity: "+15555550100".into(),
         owner_display_name: None,
         export_source: "sms-backup-restore".into(),
         export_tool: "SMS Backup & Restore".into(),
@@ -22,9 +22,9 @@ fn base_sms() -> MailMessage {
             direction: IrDirection::Incoming,
             service: message_ir::IrService::Sms,
             message_kind: message_ir::IrMessageKind::Sms,
-            sender_handle: Some("+15555550101".into()),
+            sender_identity: Some("+15555550101".into()),
             sender_display_name: Some("Sam".into()),
-            owner_handle: None,
+            owner_identity: None,
             subject: None,
             text: "hello from sms".into(),
             attachments: Vec::new(),
@@ -116,11 +116,11 @@ fn writes_group_mms_with_image_part() {
     msg.message.message_kind = message_ir::IrMessageKind::Mms;
     msg.participants = vec![
         Participant {
-            handle: "+15555550101".into(),
+            identity: "+15555550101".into(),
             display_name: Some("Sam".into()),
         },
         Participant {
-            handle: "+15555550102".into(),
+            identity: "+15555550102".into(),
             display_name: Some("Alex".into()),
         },
     ];
@@ -192,11 +192,11 @@ fn encodes_email_handles_and_imessage_message_id() {
     let mut msg = base_sms();
     msg.chat_identifier = "friend@example.com".into();
     msg.participants = vec![Participant {
-        handle: "friend@example.com".into(),
+        identity: "friend@example.com".into(),
         display_name: Some("Friend".into()),
     }];
-    msg.message.sender_handle = Some("friend@example.com".into());
-    msg.owner_handle = "me@example.com".into();
+    msg.message.sender_identity = Some("friend@example.com".into());
+    msg.owner_identity = "me@example.com".into();
     msg.message.service = message_ir::IrService::IMessage;
     msg.message.message_kind = message_ir::IrMessageKind::IMessage;
     msg.message.guid = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE".into();
@@ -209,11 +209,11 @@ fn encodes_email_handles_and_imessage_message_id() {
     let headers = mail.get_headers();
     let from = headers.get_first_value("From").unwrap();
     assert!(
-        from.contains("friend=example.com@handle.local"),
+        from.contains("friend=example.com@identity.local"),
         "From was {from}"
     );
     let to = headers.get_first_value("To").unwrap();
-    assert!(to.contains("me=example.com@handle.local"), "To was {to}");
+    assert!(to.contains("me=example.com@identity.local"), "To was {to}");
     let mid = headers.get_first_value("Message-ID").unwrap();
     assert!(
         mid.contains("AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE@imessage.local"),
@@ -225,7 +225,7 @@ fn encodes_email_handles_and_imessage_message_id() {
 fn outgoing_uses_me_and_stable_subject() {
     let mut msg = base_sms();
     msg.message.direction = IrDirection::Outgoing;
-    msg.message.sender_handle = Some("+15555550100".into());
+    msg.message.sender_identity = Some("+15555550100".into());
     msg.message.sender_display_name = Some("Me".into());
     msg.message.text = "body must not become subject".into();
 
@@ -249,11 +249,11 @@ fn outgoing_uses_me_and_stable_subject() {
             .contains("body must not")
     );
     assert_eq!(
-        headers.get_first_value("X-ME-Sender-Handle").as_deref(),
+        headers.get_first_value("X-ME-Sender-Identity").as_deref(),
         Some("+15555550100")
     );
     assert_eq!(
-        headers.get_first_value("X-ME-Owner-Handle").as_deref(),
+        headers.get_first_value("X-ME-Owner-Identity").as_deref(),
         Some("+15555550100")
     );
     assert_eq!(
@@ -283,7 +283,7 @@ fn outgoing_to_a_peer_with_no_name_is_titled_with_the_peer_handle() {
     let mut msg = base_sms();
     msg.participants[0].display_name = None;
     msg.message.direction = IrDirection::Outgoing;
-    msg.message.sender_handle = Some("+15555550100".into());
+    msg.message.sender_identity = Some("+15555550100".into());
     msg.message.sender_display_name = Some("Me".into());
 
     let (subject, to) = subject_and_to(&msg);
@@ -297,12 +297,12 @@ fn a_roster_that_lists_the_owner_first_still_addresses_the_other_person() {
     msg.participants.insert(
         0,
         Participant {
-            handle: "+15555550100".into(),
+            identity: "+15555550100".into(),
             display_name: Some("Owner".into()),
         },
     );
     msg.message.direction = IrDirection::Outgoing;
-    msg.message.sender_handle = Some("+15555550100".into());
+    msg.message.sender_identity = Some("+15555550100".into());
     msg.message.sender_display_name = Some("Me".into());
 
     let (subject, to) = subject_and_to(&msg);
@@ -316,7 +316,7 @@ fn a_roster_that_lists_the_owner_first_still_addresses_the_other_person() {
 fn an_empty_roster_takes_the_peer_from_the_chat_identifier() {
     let mut msg = base_sms();
     msg.participants.clear();
-    msg.message.sender_handle = None;
+    msg.message.sender_identity = None;
 
     let tmp = tempfile::tempdir().unwrap();
     let path = write_conversation_mbox(tmp.path(), &[msg]).unwrap();
@@ -331,7 +331,7 @@ fn an_empty_roster_takes_the_peer_from_the_chat_identifier() {
 fn caller_id_owner_display_and_imessage_extension_headers() {
     let mut msg = base_sms();
     msg.message.direction = IrDirection::Outgoing;
-    msg.message.sender_handle = Some("+15555550100".into());
+    msg.message.sender_identity = Some("+15555550100".into());
     msg.message.sender_display_name = Some("+15555550100".into());
     msg.owner_display_name = Some("+15555550100".into());
     msg.export_source = "imessage".into();
@@ -356,7 +356,7 @@ fn caller_id_owner_display_and_imessage_extension_headers() {
     assert!(from.contains("+15555550100"), "From was {from}");
     assert!(!from.contains("Me <"), "From was {from}");
     assert_eq!(
-        headers.get_first_value("X-ME-Sender-Handle").as_deref(),
+        headers.get_first_value("X-ME-Sender-Identity").as_deref(),
         Some("+15555550100")
     );
     assert_eq!(
@@ -459,7 +459,7 @@ fn each_mbox_record_starts_with_its_sender_and_utc_date() {
     outgoing.message.timestamp_unix_ms = 1_401_700_000_000; // 2014-06-02 09:06:40 UTC
     let mut from_email = base_sms();
     from_email.message.guid = "ccddeeff00112233445566778899aabb".into();
-    from_email.message.sender_handle = Some("sam@example.com".into());
+    from_email.message.sender_identity = Some("sam@example.com".into());
     from_email.message.timestamp_unix_ms = 1_401_700_001_000;
 
     let tmp = tempfile::tempdir().unwrap();
@@ -474,7 +474,7 @@ fn each_mbox_record_starts_with_its_sender_and_utc_date() {
             // The owner sent it. asctime pads a one-digit day with a space.
             "From +15555550100@sms.local Mon Jun  2 09:06:40 2014",
             // An address may not hold a second `@`, so it becomes `=`.
-            "From sam=example.com@handle.local Mon Jun  2 09:06:41 2014",
+            "From sam=example.com@identity.local Mon Jun  2 09:06:41 2014",
         ]
     );
 }
@@ -517,16 +517,16 @@ fn writes_conversation_mboxrd() {
 fn a_messages_own_owner_survives_an_mbox_round_trip() {
     let mut msg = base_sms();
     msg.message.direction = IrDirection::Outgoing;
-    msg.message.owner_handle = Some("me@example.com".into());
+    msg.message.owner_identity = Some("me@example.com".into());
     let tmp = tempfile::tempdir().unwrap();
     let path = write_conversation_mbox(tmp.path(), &[msg]).unwrap();
     let parsed = mail_messages_from_mbox(&path).unwrap();
     assert_eq!(
-        parsed[0].message.owner_handle.as_deref(),
+        parsed[0].message.owner_identity.as_deref(),
         Some("me@example.com")
     );
     // The conversation's owner stays where it was.
-    assert_eq!(parsed[0].owner_handle, "+15555550100");
+    assert_eq!(parsed[0].owner_identity, "+15555550100");
 }
 
 #[test]
@@ -552,4 +552,27 @@ fn an_mbox_keeps_the_bytes_of_a_text_attachment() {
     let path = write_conversation_mbox(tmp.path(), &[msg]).unwrap();
     let parsed = mail_messages_from_mbox(&path).unwrap();
     assert_eq!(parsed[0].attachments[0].bytes, card);
+}
+
+/// A mail an earlier Message Crate wrote names each address a handle
+/// (`X-ME-Sender-Handle`, `[{"handle": …}]`). Read as it is, it would come back
+/// with no sender and no one in the conversation, so it is refused instead.
+#[test]
+fn a_mail_that_names_addresses_handles_is_refused() {
+    let eml = concat!(
+        "From: sam=example.com@handle.local\r\n",
+        "X-ME-Chat-Identifier: sam@example.com\r\n",
+        "X-ME-Guid: g1\r\n",
+        "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
+        "X-ME-Participants: [{\"handle\":\"sam@example.com\"}]\r\n",
+        "X-ME-Sender-Handle: sam@example.com\r\n",
+        "\r\n",
+        "hello\r\n",
+    );
+    let err = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap_err();
+    assert_eq!(
+        format!("{err:#}"),
+        "This mail was written by an earlier Message Crate, which named each address a \
+         handle (X-ME-Sender-Handle); export the backup again"
+    );
 }

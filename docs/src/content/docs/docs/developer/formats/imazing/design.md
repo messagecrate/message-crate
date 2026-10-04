@@ -112,7 +112,7 @@ Non-senders are invisible in the CSV.
 
 ## Future work (not yet implemented)
 
-- An optional owner phone number on the Import form to annotate the outgoing sender handle.
+- An optional owner phone number on the Import form to annotate the outgoing sender identity.
 - Structured parse of reactions / replies if a stable grammar is confirmed.
 
 ## Related docs

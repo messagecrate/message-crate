@@ -29,15 +29,15 @@ pub use parse::{mail_message_from_eml_bytes, mail_messages_from_mbox};
 const MESSAGE_ID_DOMAIN_DEFAULT: &str = "message-crate.local";
 const MESSAGE_ID_DOMAIN_IMESSAGE: &str = "imessage.local";
 const SMS_ADDRESS_DOMAIN: &str = "sms.local";
-const HANDLE_ADDRESS_DOMAIN: &str = "handle.local";
+const IDENTITY_ADDRESS_DOMAIN: &str = "identity.local";
 const CHAT_ADDRESS_DOMAIN: &str = "chat.local";
 const OWNER_DISPLAY_NAME: &str = "Me";
 
 /// One participant in a conversation roster.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Participant {
-    /// Phone, email, or chat handle; also used for peer matching in From/To mapping.
-    pub handle: String,
+    /// Phone, email, or chat identity; also used for peer matching in From/To mapping.
+    pub identity: String,
     /// Optional display name, omitted from the JSON header when `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
@@ -102,7 +102,7 @@ pub struct MailMessage {
     /// Roster → `X-ME-Participants` JSON.
     pub participants: Vec<Participant>,
     /// Owner E.164 (or handle) used for From/To mapping.
-    pub owner_handle: String,
+    pub owner_identity: String,
     /// Outgoing From display name; defaults to `"Me"` when absent.
     pub owner_display_name: Option<String>,
     /// → `X-ME-Export-Source`.
@@ -161,8 +161,11 @@ struct AttachmentMetaCell<'a> {
 
 /// Conversation directory stem (shared per-conversation filename stem).
 fn conversation_stem(msg: &MailMessage) -> String {
-    let participant_handles: Vec<String> =
-        msg.participants.iter().map(|p| p.handle.clone()).collect();
+    let participant_handles: Vec<String> = msg
+        .participants
+        .iter()
+        .map(|p| p.identity.clone())
+        .collect();
     message_ir::conversation_stem(
         &msg.conversation_type,
         &msg.chat_identifier,
@@ -325,19 +328,19 @@ fn envelope_sender(msg: &MailMessage) -> String {
     let handle = match msg.message.direction {
         IrDirection::Incoming => msg
             .message
-            .sender_handle
+            .sender_identity
             .as_deref()
             .and_then(message_ir::trimmed)
             .or_else(|| peer_handle(msg).and_then(message_ir::trimmed))
             .unwrap_or("unknown"),
         IrDirection::Outgoing => {
-            let owner = msg.owner_handle.trim();
+            let owner = msg.owner_identity.trim();
             if owner.is_empty() { "me" } else { owner }
         }
     };
     // Envelope address must not contain spaces.
     if handle.contains('@') {
-        format!("{}@{HANDLE_ADDRESS_DOMAIN}", handle.replace('@', "="))
+        format!("{}@{IDENTITY_ADDRESS_DOMAIN}", handle.replace('@', "="))
     } else if handle
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '_' | '.'))
@@ -395,14 +398,14 @@ fn guid_prefix8(guid: &str) -> String {
 /// Synthetic RFC5322 address for a phone or Apple handle.
 ///
 /// Phones → `+E164@sms.local`. Email / other handles containing `@` →
-/// `local=domain@handle.local` (`MAIL_ARCHIVE` encoding).
+/// `local=domain@identity.local` (`MAIL_ARCHIVE` encoding).
 fn synthetic_address(handle: &str, display_name: Option<&str>) -> Address<'static> {
     let handle = handle.trim();
     let email = if handle.is_empty() {
         format!("unknown@{SMS_ADDRESS_DOMAIN}")
     } else if handle.contains('@') {
         let encoded = handle.replace('@', "=");
-        format!("{encoded}@{HANDLE_ADDRESS_DOMAIN}")
+        format!("{encoded}@{IDENTITY_ADDRESS_DOMAIN}")
     } else {
         format!("{handle}@{SMS_ADDRESS_DOMAIN}")
     };
@@ -413,7 +416,7 @@ fn synthetic_address(handle: &str, display_name: Option<&str>) -> Address<'stati
 /// The owner's address: their handle (or `me`) with their display name (or
 /// `Me`).
 fn owner_address(msg: &MailMessage) -> Address<'static> {
-    let handle = msg.owner_handle.trim();
+    let handle = msg.owner_identity.trim();
     let handle = if handle.is_empty() { "me" } else { handle };
     let display = msg
         .owner_display_name
@@ -462,7 +465,7 @@ fn sanitize_addr_local(raw: &str) -> Option<String> {
 fn peer_display_name<'a>(msg: &'a MailMessage, peer: &str) -> Option<&'a str> {
     msg.participants
         .iter()
-        .find(|p| p.handle == peer)
+        .find(|p| p.identity == peer)
         .and_then(|p| p.display_name.as_deref())
         .and_then(message_ir::trimmed)
         .or_else(|| {
@@ -472,7 +475,7 @@ fn peer_display_name<'a>(msg: &'a MailMessage, peer: &str) -> Option<&'a str> {
                 .and_then(message_ir::trimmed)
                 .filter(|_| {
                     msg.message
-                        .sender_handle
+                        .sender_identity
                         .as_deref()
                         .is_some_and(|h| h == peer)
                 })
@@ -505,11 +508,11 @@ fn peer_handle(msg: &MailMessage) -> Option<&str> {
     }
     msg.participants
         .iter()
-        .map(|p| p.handle.as_str())
-        .find(|h| *h != msg.owner_handle)
+        .map(|p| p.identity.as_str())
+        .find(|h| *h != msg.owner_identity)
         .or_else(|| {
             let id = msg.chat_identifier.as_str();
-            if id != msg.owner_handle {
+            if id != msg.owner_identity {
                 Some(id)
             } else {
                 None
@@ -634,7 +637,7 @@ fn envelope_addresses(msg: &MailMessage) -> (Address<'static>, Address<'static>)
             IrDirection::Incoming => {
                 let sender = msg
                     .message
-                    .sender_handle
+                    .sender_identity
                     .as_deref()
                     .and_then(message_ir::trimmed)
                     .unwrap_or("unknown");
@@ -720,19 +723,22 @@ fn conversation_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> M
     optional_headers(
         builder,
         [
-            (headers::SENDER_HANDLE, msg.message.sender_handle.clone()),
+            (
+                headers::SENDER_IDENTITY,
+                msg.message.sender_identity.clone(),
+            ),
             (
                 headers::SENDER_DISPLAY_NAME,
                 msg.message.sender_display_name.clone(),
             ),
             (
-                headers::OWNER_HANDLE,
-                Some(msg.owner_handle.trim().to_string()),
+                headers::OWNER_IDENTITY,
+                Some(msg.owner_identity.trim().to_string()),
             ),
             (headers::OWNER_DISPLAY_NAME, msg.owner_display_name.clone()),
             (
-                headers::MESSAGE_OWNER_HANDLE,
-                msg.message.owner_handle.clone(),
+                headers::MESSAGE_OWNER_IDENTITY,
+                msg.message.owner_identity.clone(),
             ),
             (headers::SUBJECT, msg.message.subject.clone()),
             (

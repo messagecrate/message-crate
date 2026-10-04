@@ -219,8 +219,8 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
         .map(|msg| {
             let (timestamp_unix_ms, precision) = message_time(msg, unit);
             Prepared {
-                sender: (!msg.sender_handle.is_empty())
-                    .then(|| hooks.normalize_handle(&msg.sender_handle)),
+                sender: (!msg.sender_identity.is_empty())
+                    .then(|| hooks.normalize_handle(&msg.sender_identity)),
                 timestamp_unix_ms,
                 precision,
                 attachment_digests: hooks.attachment_digests(msg),
@@ -271,7 +271,7 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
         .into_string();
 
         let outgoing = role == ProjectedRole::Outgoing;
-        let (sender_handle, sender_display_name) = if outgoing {
+        let (sender_identity, sender_display_name) = if outgoing {
             (owner_sender_handle.clone(), owner_sender_display.clone())
         } else {
             (p.sender.clone(), msg.sender_display_name.clone())
@@ -292,9 +292,9 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
             },
             service: hooks.service(msg),
             message_kind: hooks.message_kind(msg),
-            sender_handle,
+            sender_identity,
             sender_display_name,
-            owner_handle: None,
+            owner_identity: None,
             subject: hooks.subject(msg),
             text: msg.text.clone(),
             attachments,
@@ -333,8 +333,8 @@ pub fn display_names_for_handles(
 ) -> HashMap<String, String> {
     let mut names = HashMap::new();
     for msg in &convo.messages {
-        if !msg.sender_handle.is_empty() {
-            let handle = normalize_handle(&msg.sender_handle);
+        if !msg.sender_identity.is_empty() {
+            let handle = normalize_handle(&msg.sender_identity);
             if let Some(name) = msg.sender_display_name.as_deref().and_then(crate::trimmed) {
                 names.entry(handle).or_insert_with(|| name.to_string());
             }
@@ -369,9 +369,9 @@ pub fn default_participants(
         .iter()
         .filter(|h| !h.is_empty())
         .map(|h| IrParticipant {
-            handle: Some(h.clone()),
+            identity: Some(h.clone()),
             display_name: name_by_handle.get(h).cloned(),
-            handle_type: Some(HandleType::Phone),
+            identity_type: Some(HandleType::Phone),
         })
         .collect();
     if participants.is_empty()
@@ -384,18 +384,18 @@ pub fn default_participants(
             // so the chat id is made from the name — not something to store
             // as an identity.
             participants.push(IrParticipant {
-                handle: None,
+                identity: None,
                 display_name: convo.first_contact_name(),
-                handle_type: None,
+                identity_type: None,
             });
         } else {
             participants.push(IrParticipant {
-                handle: Some(chat_id.to_string()),
+                identity: Some(chat_id.to_string()),
                 display_name: name_by_handle
                     .get(chat_id)
                     .cloned()
                     .or_else(|| convo.first_contact_name()),
-                handle_type: Some(HandleType::Phone),
+                identity_type: Some(HandleType::Phone),
             });
         }
     }
@@ -457,7 +457,7 @@ mod tests {
                 source: "test".into(),
                 tool: "Test".into(),
                 tool_version: "0".into(),
-                owner_handle: Some("+15555550100".into()),
+                owner_identity: Some("+15555550100".into()),
                 owner_display_name: None,
             }
         }
@@ -475,7 +475,7 @@ mod tests {
         PendingMessage {
             sort_key: secs,
             is_from_me: from_me,
-            sender_handle: if from_me {
+            sender_identity: if from_me {
                 String::new()
             } else {
                 "+15555550122".into()
@@ -503,12 +503,12 @@ mod tests {
         assert_eq!(doc.messages.len(), 2);
         assert_eq!(doc.messages[0].direction, IrDirection::Incoming);
         assert_eq!(
-            doc.messages[0].sender_handle.as_deref(),
+            doc.messages[0].sender_identity.as_deref(),
             Some("+15555550122")
         );
         assert_eq!(doc.messages[1].direction, IrDirection::Outgoing);
         assert_eq!(
-            doc.messages[1].sender_handle.as_deref(),
+            doc.messages[1].sender_identity.as_deref(),
             Some("+15555550100")
         );
         assert_eq!(doc.messages[1].sender_display_name.as_deref(), Some("Me"));
@@ -527,7 +527,7 @@ mod tests {
     fn single_peer_fallback_uses_chat_id_and_contact_name() {
         let mut convo = PendingConversation::new("+15555550122", false, None, Vec::new());
         let mut m = msg(1_609_459_200, false, "hi");
-        m.sender_handle = String::new();
+        m.sender_identity = String::new();
         m.sender_display_name = None;
         m.extra.insert("contact_name".into(), "Bob".into());
         convo.messages = vec![m];
@@ -535,7 +535,7 @@ mod tests {
         let (doc, _) = pending_to_document("+15555550122", &convo, &TestHooks);
         assert_eq!(doc.conversation.participants.len(), 1);
         assert_eq!(
-            doc.conversation.participants[0].handle.as_deref(),
+            doc.conversation.participants[0].identity.as_deref(),
             Some("+15555550122")
         );
         assert_eq!(
@@ -550,7 +550,7 @@ mod tests {
     fn the_conversation_that_names_nobody_has_no_fallback_participant() {
         let mut convo = PendingConversation::new(crate::NAMELESS_CHAT_ID, false, None, Vec::new());
         let mut m = msg(1_609_459_200, true, "hi");
-        m.sender_handle = String::new();
+        m.sender_identity = String::new();
         convo.messages = vec![m];
 
         let (doc, _) = pending_to_document(crate::NAMELESS_CHAT_ID, &convo, &TestHooks);
@@ -717,9 +717,9 @@ mod tests {
     fn p1_1_two_senders_same_second_same_text_get_their_own_guids() {
         let mut convo = PendingConversation::new("group-1", true, None, Vec::new());
         let mut alice = msg(1_609_459_200, false, "lol");
-        alice.sender_handle = "+15555550122".into();
+        alice.sender_identity = "+15555550122".into();
         let mut bob = msg(1_609_459_200, false, "lol");
-        bob.sender_handle = "+15555550133".into();
+        bob.sender_identity = "+15555550133".into();
         convo.messages = vec![alice, bob];
         let (doc, _) = pending_to_document("group-1", &convo, &TestHooks);
         assert_eq!(doc.messages.len(), 2);

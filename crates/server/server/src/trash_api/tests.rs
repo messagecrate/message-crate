@@ -193,11 +193,11 @@ async fn start_run(fixture: &TestFixture, account: &RegisteredAccount) -> i64 {
 /// One batch of one incoming message whose attachment is the file `sha`.
 fn batch_naming(sha: &str) -> String {
     let message = format!(
-        r#"{{"guid":"g-new","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_handle":"+15555550123","sender_display_name":null,"subject":null,"text":"new","attachments":[{{"path":"attachments/photo.bin","original_name":"photo.bin","mime_type":"application/octet-stream","digest_sha256":"{sha}","is_sticker":false,"transcription":null,"sticker_effect":null}}],"imessage":null,"source":null}}"#
+        r#"{{"guid":"g-new","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"new","attachments":[{{"path":"attachments/photo.bin","original_name":"photo.bin","mime_type":"application/octet-stream","digest_sha256":"{sha}","is_sticker":false,"transcription":null,"sticker_effect":null}}],"imessage":null,"source":null}}"#
     );
     format!(
         "{}\n{message}\n",
-        r#"{"schema_version":4,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550123","conversation_type":"individual","group_title":null,"participants":[{"handle":"+15555550123","display_name":null}],"stats":{"message_count":1,"attachment_count":1,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}"#,
+        r#"{"schema_version":5,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550123","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550123","display_name":null}],"stats":{"message_count":1,"attachment_count":1,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}"#,
     )
 }
 
@@ -419,10 +419,10 @@ async fn a_short_stored_fingerprint_does_not_stop_empty_trash() {
 /// attachment is the file `sha`.
 fn batch_from_source(source: &str, handle: &str, sha: &str) -> String {
     let header = format!(
-        r#"{{"schema_version":4,"export":{{"source":"{source}","tool":"test","tool_version":"0","owner_handle":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{handle}","conversation_type":"individual","group_title":null,"participants":[{{"handle":"{handle}","display_name":null}}],"stats":{{"message_count":1,"attachment_count":1,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
+        r#"{{"schema_version":5,"export":{{"source":"{source}","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{handle}","conversation_type":"individual","group_title":null,"participants":[{{"identity":"{handle}","display_name":null}}],"stats":{{"message_count":1,"attachment_count":1,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
     );
     let message = format!(
-        r#"{{"guid":"g-{source}","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_handle":"{handle}","sender_display_name":null,"subject":null,"text":"from {source}","attachments":[{{"path":"attachments/photo.jpg","original_name":"photo.jpg","mime_type":"image/jpeg","digest_sha256":"{sha}","is_sticker":false,"transcription":null,"sticker_effect":null}}],"imessage":null,"source":null}}"#
+        r#"{{"guid":"g-{source}","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"{handle}","sender_display_name":null,"subject":null,"text":"from {source}","attachments":[{{"path":"attachments/photo.jpg","original_name":"photo.jpg","mime_type":"image/jpeg","digest_sha256":"{sha}","is_sticker":false,"transcription":null,"sticker_effect":null}}],"imessage":null,"source":null}}"#
     );
     format!("{header}\n{message}\n")
 }

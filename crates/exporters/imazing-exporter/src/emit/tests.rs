@@ -471,7 +471,7 @@ fn a_number_in_the_chat_name_is_the_roster() {
             .conversation
             .participants
             .iter()
-            .filter_map(|p| p.handle.as_deref())
+            .filter_map(|p| p.identity.as_deref())
             .collect();
         assert_eq!(roster, vec!["+13215550100"], "{session}");
     }
@@ -518,7 +518,7 @@ Bob,2020-01-01 12:01:00,SMS,Notification,,,,,,Bob left the conversation,,,\n",
         .iter()
         .find(|m| m.text == "Bob left the conversation")
         .unwrap();
-    assert_eq!(notification.sender_handle, None);
+    assert_eq!(notification.sender_identity, None);
     assert_eq!(notification.sender_display_name, None);
 }
 
@@ -539,7 +539,7 @@ Bob Mail,2020-01-01 12:01:00,iMessage,Incoming,,,Read,,,Still me,,,\n",
         .map(|m| {
             (
                 m.text.as_str(),
-                m.sender_handle.as_deref(),
+                m.sender_identity.as_deref(),
                 m.sender_display_name.as_deref(),
             )
         })
@@ -560,7 +560,7 @@ fn roster(doc: &message_ir::ConversationDocument) -> Vec<Option<&str>> {
     doc.conversation
         .participants
         .iter()
-        .map(|p| p.handle.as_deref())
+        .map(|p| p.identity.as_deref())
         .collect()
 }
 
@@ -627,7 +627,7 @@ fn an_incoming_row_without_a_sender_in_a_short_code_chat_is_from_the_short_code(
     let documents = convert_rows("262966,2020-01-01 12:00:00,SMS,Incoming,,,Read,,,Your code,,,\n");
     assert_eq!(documents[0].conversation.chat_identifier, "262966");
     assert_eq!(
-        documents[0].messages[0].sender_handle.as_deref(),
+        documents[0].messages[0].sender_identity.as_deref(),
         Some("262966")
     );
 }
@@ -746,9 +746,9 @@ Alice Example & Bob Example,2020-01-01 12:01:00,iMessage,Outgoing,,,Sent,,,Hey,,
         .iter()
         .map(|p| {
             (
-                p.handle.as_deref(),
+                p.identity.as_deref(),
                 p.display_name.as_deref(),
-                p.handle_type,
+                p.identity_type,
             )
         })
         .collect();
@@ -1075,7 +1075,7 @@ fn an_incoming_group_row_without_a_sender_has_no_made_up_sender() {
             .iter()
             .find(|m| m.text == "Who")
             .unwrap();
-        assert_eq!(who.sender_handle, None, "{session}");
+        assert_eq!(who.sender_identity, None, "{session}");
         assert_eq!(who.sender_display_name, None, "{session}");
     }
 }
@@ -1117,9 +1117,9 @@ Alice Example & Bob Example & Carol Silent,2020-01-01 12:01:00,iMessage,Incoming
         .iter()
         .map(|p| {
             (
-                p.handle.as_deref(),
+                p.identity.as_deref(),
                 p.display_name.as_deref(),
-                p.handle_type,
+                p.identity_type,
             )
         })
         .collect();
@@ -1254,7 +1254,7 @@ Climbing,2020-01-01 12:08:00,iMessage,Incoming,+15555550144,Dan,Read,,,Cheers,,,
             .into_iter()
             .map(|doc| {
                 (
-                    doc.conversation.participants[0].handle.clone().unwrap(),
+                    doc.conversation.participants[0].identity.clone().unwrap(),
                     doc.conversation.chat_identifier,
                 )
             })

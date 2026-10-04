@@ -55,7 +55,8 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         .map(owner_from_form)
         .transpose()?;
 
-    let (json_path, media_roots, owner_handle, _work_keep_alive) = if let Some(json) = &source.json
+    let (json_path, media_roots, owner_identity, _work_keep_alive) = if let Some(json) =
+        &source.json
     {
         // Allowed roots are only the backup input and the JSON parent — never
         // the process CWD, which would let crafted paths copy arbitrary files.
@@ -124,7 +125,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         media_roots.sort();
         media_roots.dedup();
 
-        let owner_handle = match platform {
+        let owner_identity = match platform {
             // wtsexporter copies the whole app-group domain into the work
             // dir, preferences plist included; a backup someone extracted by
             // hand has it under the input folder. The form's number covers a
@@ -144,7 +145,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
             }
         };
 
-        (kept, media_roots, Some(owner_handle), Some(work))
+        (kept, media_roots, Some(owner_identity), Some(work))
     };
 
     if !json_path.is_file() {
@@ -159,7 +160,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         output: &config.output,
         transforms,
         media_search_roots: &media_roots,
-        owner_handle,
+        owner_identity,
         output_format: config.output_format,
         cancel: config.cancel.as_ref(),
         resume: config.resume,
