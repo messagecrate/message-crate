@@ -491,33 +491,6 @@ mod tests {
         assert!(message.contains("stale file handle"), "{message}");
     }
 
-    /// Run `f` with the permissions of `dir` set to `mode`, then set them
-    /// back to `0o755` before returning, so the temporary directory can still
-    /// be removed.
-    ///
-    /// `None`, with a line on stderr, when `dir` can still be listed under
-    /// `mode`: a user such as root cannot exercise the failure, so the test
-    /// has nothing to check.
-    #[cfg(unix)]
-    fn with_directory_mode<T>(dir: &Path, mode: u32, f: impl FnOnce() -> T) -> Option<T> {
-        use std::os::unix::fs::PermissionsExt;
-
-        fs::set_permissions(dir, fs::Permissions::from_mode(mode))
-            .expect("set the directory's mode");
-        let result = if fs::read_dir(dir).is_ok() {
-            eprintln!(
-                "skipped: {} can still be listed with mode {mode:o}",
-                dir.display()
-            );
-            None
-        } else {
-            Some(f())
-        };
-        fs::set_permissions(dir, fs::Permissions::from_mode(0o755))
-            .expect("restore the directory's mode");
-        result
-    }
-
     /// A subdirectory the mail clean cannot list fails it with the
     /// subdirectory named.
     #[cfg(unix)]
@@ -529,7 +502,7 @@ mod tests {
         fs::create_dir(&sub).unwrap();
         fs::write(sub.join("0001.eml"), "Subject: x\n").unwrap();
         let Some(result) =
-            with_directory_mode(&sub, 0o000, || clean_previous_mail_output(tmp.path()))
+            crate::with_directory_mode(&sub, 0o000, || clean_previous_mail_output(tmp.path()))
         else {
             return;
         };

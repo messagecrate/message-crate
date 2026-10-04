@@ -58,26 +58,6 @@ fn materializing_placeholders_twice_keeps_them() {
     assert!(attachments.join("placeholder.bin").is_file());
 }
 
-/// Run `materialize_placeholders` on `output_dir` with `dir` read-only, so a
-/// delete inside it fails on Unix, and put the permissions back. `None` when
-/// the user can delete from a read-only directory (root): such a user cannot
-/// exercise the failure, so the test has nothing to check.
-#[cfg(unix)]
-fn materialize_with_directory_read_only(dir: &Path, output_dir: &Path) -> Option<Result<()>> {
-    use std::os::unix::fs::PermissionsExt;
-
-    fs::set_permissions(dir, fs::Permissions::from_mode(0o555)).expect("read-only");
-    let probe = dir.join("probe");
-    let result = if fs::write(&probe, b"").is_ok() {
-        let _ = fs::remove_file(&probe);
-        None
-    } else {
-        Some(materialize_placeholders(output_dir))
-    };
-    fs::set_permissions(dir, fs::Permissions::from_mode(0o755)).expect("restore");
-    result
-}
-
 /// A real attachment the pass cannot delete stays in the obfuscated
 /// export, and that export exists to be shared without the real content.
 /// The pass must fail and name the file, not report success (#1139).
@@ -90,7 +70,9 @@ fn a_real_attachment_that_cannot_be_removed_fails_the_pass_and_names_the_file() 
     let photo = attachments.join("IMG_0001.jpg");
     fs::write(&photo, b"real photo bytes").expect("write");
 
-    let Some(result) = materialize_with_directory_read_only(&attachments, dir.path()) else {
+    let Some(result) =
+        crate::with_directory_mode(&attachments, 0o555, || materialize_placeholders(dir.path()))
+    else {
         return;
     };
 
@@ -117,7 +99,9 @@ fn a_file_in_a_subdirectory_that_cannot_be_removed_is_the_one_the_error_names() 
     let photo = sub.join("photo.jpg");
     fs::write(&photo, b"real photo bytes").expect("write");
 
-    let Some(result) = materialize_with_directory_read_only(&sub, dir.path()) else {
+    let Some(result) =
+        crate::with_directory_mode(&sub, 0o555, || materialize_placeholders(dir.path()))
+    else {
         return;
     };
 
