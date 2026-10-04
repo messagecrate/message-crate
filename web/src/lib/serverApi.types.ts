@@ -1434,9 +1434,9 @@ export interface paths {
          *     after this one starts at the id of its last line, and lines the server
          *     writes in between do not move it. `level` keeps the lines at that level
          *     and the more severe ones. `text` keeps the lines whose text, after the
-         *     time and the level, holds it, ignoring case. A line never holds a password, a token, message text or a contact's
-         *     name or identities. The owner's alone, because the log is about the whole
-         *     installation.
+         *     time and the level, holds it, ignoring case. A line never holds a
+         *     password, a token, message text or a contact's name or identities. The
+         *     owner's alone, because the log is about the whole installation.
          */
         get: operations["list_log_lines"];
         put?: never;

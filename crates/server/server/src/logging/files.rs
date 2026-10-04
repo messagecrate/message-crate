@@ -46,8 +46,8 @@ struct Newest {
     number: u64,
     file: File,
     bytes: u64,
-    /// Its last line was cut short, so the next line starts a new file
-    /// rather than run on from the middle of it.
+    /// Its last line was cut short and could not be cut off, so the next
+    /// line starts a new file rather than run on from the middle of it.
     cut_short: bool,
 }
 
@@ -120,9 +120,15 @@ impl LogFiles {
             self.trim()?;
         }
         if let Err(error) = newest.file.write_all(&line) {
-            // Part of the line may be on disk, so the file no longer ends
-            // where a line does.
-            newest.cut_short = true;
+            // Part of the line may be on disk: cut it off, so the file ends
+            // where a line does and the next line goes on the end of it. A
+            // full disk then loses the lines it could not hold and nothing
+            // else. Only when the cut fails too does the next line start a
+            // file of its own.
+            let bytes = newest.bytes;
+            if newest.file.set_len(bytes).is_err() {
+                newest.cut_short = true;
+            }
             return Err(error);
         }
         newest.bytes += len;
@@ -141,6 +147,13 @@ impl LogFiles {
         }
         Ok(())
     }
+}
+
+/// The path of the log file `id` names in `dir`, or `None` when `id` cannot
+/// name one, being 0 or less. The file may not exist.
+pub(crate) fn log_file_path(dir: &Path, id: i64) -> Option<PathBuf> {
+    let number = u64::try_from(id).ok().filter(|number| *number > 0)?;
+    Some(file_path(dir, number))
 }
 
 /// The path of file `number` in `dir`.

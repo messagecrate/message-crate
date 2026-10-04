@@ -11516,7 +11516,7 @@
           "Server"
         ],
         "summary": "Read the server's log lines, newest first.",
-        "description": "`after` reads the lines older than the line with that id, so the page\nafter this one starts at the id of its last line, and lines the server\nwrites in between do not move it. `level` keeps the lines at that level\nand the more severe ones. `text` keeps the lines whose text, after the\ntime and the level, holds it, ignoring case. A line never holds a password, a token, message text or a contact's\nname or identities. The owner's alone, because the log is about the whole\ninstallation.",
+        "description": "`after` reads the lines older than the line with that id, so the page\nafter this one starts at the id of its last line, and lines the server\nwrites in between do not move it. `level` keeps the lines at that level\nand the more severe ones. `text` keeps the lines whose text, after the\ntime and the level, holds it, ignoring case. A line never holds a\npassword, a token, message text or a contact's name or identities. The\nowner's alone, because the log is about the whole installation.",
         "operationId": "list_log_lines",
         "parameters": [
           {

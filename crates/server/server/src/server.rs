@@ -1151,7 +1151,7 @@ const LOGGED_QUERY_VALUES: [&str; 10] = [
 ];
 
 /// A query parameter's name, as it is written in the URL, decoded as the
-/// server reads every query; `None` when it cannot be read.
+/// server reads every query. `None` when it cannot be read.
 fn decoded_query_name(raw_name: &str) -> Option<String> {
     let uri = format!("/?{raw_name}=").parse::<axum::http::Uri>().ok()?;
     axum::extract::Query::<Vec<(String, String)>>::try_from_uri(&uri)

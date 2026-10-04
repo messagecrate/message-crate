@@ -22,8 +22,13 @@ use serde::{Deserialize, Serialize};
 pub(crate) mod log_files;
 pub(crate) mod log_lines;
 
+use crate::db::{account_profile, server_settings, storage};
+use crate::extract::Json;
+use crate::server::{ApiError, AppState, Created, Owner};
+
 /// Run `read`, a blocking read of the server's log files, off the async
-/// threads, and answer an I/O failure as a `500` with `what` as its cause.
+/// threads, and answer an I/O failure as a `500 Internal Server Error` with `what` as
+/// its cause.
 async fn read_log<T: Send + 'static>(
     what: &'static str,
     read: impl FnOnce() -> std::io::Result<T> + Send + 'static,
@@ -33,10 +38,6 @@ async fn read_log<T: Send + 'static>(
         .map_err(|error| ApiError::Internal(error.into()))?
         .map_err(|error| ApiError::Internal(anyhow::Error::from(error).context(what)))
 }
-
-use crate::db::{account_profile, server_settings, storage};
-use crate::extract::Json;
-use crate::server::{ApiError, AppState, Created, Owner};
 
 /// What state a Message Crate is in, from outside.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]

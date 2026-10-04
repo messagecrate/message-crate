@@ -54,10 +54,12 @@ reading the downloaded file with `grep` gets whole events too.
 A file is closed and the next one started before a line would carry it past
 50 MB (50,000,000 bytes). At most 5 files are kept, 250 MB in all: when one
 more starts, the oldest is deleted. A restarted server writes on the end of the
-newest file while it has room. A file whose last line was cut short, by a full
-disk or a server that stopped mid-write, is not written on again: the next
-line starts a new file, so it is not joined to the half line before it.
-Nothing is deleted for its age.
+newest file while it has room. A write that fails part-way, on a full disk,
+is cut off the file again, so the file still ends where a line does and a full
+disk loses only the lines it could not hold. A file a stopped server left
+ending part-way through a line is not written on again: the next start begins
+a new file, so no line is joined to the half line before it. Nothing is
+deleted for its age.
 
 Why size: the disk is what a log can run out of, and a size limit is the only
 one that bounds it. A Message Crate on a small disk or a Raspberry Pi cannot

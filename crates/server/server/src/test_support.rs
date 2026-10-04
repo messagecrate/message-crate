@@ -1011,11 +1011,18 @@ pub fn small_log_files(state: &AppState) -> crate::logging::LogFiles {
 /// Write line `n` at `level` saying `text` and ending `n=<n>`, as the
 /// server's subscriber writes an event.
 pub fn write_log_line(files: &crate::logging::LogFiles, n: usize, level: &str, text: &str) {
-    let line = format!(
-        "2026-10-04T12:00:{:02}.000000Z {level:>5} {text} n={n}\n",
-        n % 60
-    );
+    let line = log_event(n, level, &format!("{text} n={n}"));
     files.write_event(line.as_bytes()).unwrap();
+}
+
+/// An event at second `second` of a fixed minute, at `level`, saying
+/// `text`, as `tracing_subscriber`'s `fmt` layer formats one for the
+/// server's log: the time, the level padded to five, the text, a line break.
+pub fn log_event(second: usize, level: &str, text: &str) -> String {
+    format!(
+        "2026-10-04T12:00:{:02}.000000Z {level:>5} {text}\n",
+        second % 60
+    )
 }
 
 #[cfg(test)]

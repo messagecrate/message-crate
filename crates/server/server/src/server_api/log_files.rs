@@ -77,8 +77,11 @@ pub(crate) async fn get_log_file(
     Path(id): Path<i64>,
 ) -> Result<Response, ApiError> {
     let not_found = || ApiError::NotFound(format!("the server's log has no file {id}"));
-    let (path, name) =
-        log_file_path(&log_dir(&state.cfg.paths.data_dir), id).ok_or_else(not_found)?;
+    let path = log_file_path(&log_dir(&state.cfg.paths.data_dir), id).ok_or_else(not_found)?;
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let file = match tokio::fs::File::open(&path).await {
         Ok(file) => file,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Err(not_found()),

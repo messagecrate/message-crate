@@ -187,13 +187,6 @@ pub fn list_files(dir: &Path) -> io::Result<Vec<LogFile>> {
     Ok(files)
 }
 
-/// The path and name of the log file `id` names in `dir`, or `None` when
-/// `id` cannot name one. The file may not exist.
-pub fn log_file_path(dir: &Path, id: i64) -> Option<(std::path::PathBuf, String)> {
-    let number = u64::try_from(id).ok().filter(|number| *number > 0)?;
-    Some((file_path(dir, number), super::files::file_name(number)))
-}
-
 /// `raw`, found at `offset` in file `number`, as a line, or `None` when it
 /// does not start with an RFC 3339 time and a level.
 fn parse_line(number: u64, offset: u64, raw: &str) -> Option<LogLine> {

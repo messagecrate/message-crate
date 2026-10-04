@@ -23,10 +23,9 @@ use tracing_subscriber::EnvFilter;
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::layer::SubscriberExt;
 
+pub(crate) use files::log_file_path;
 pub use files::{LogFiles, LogLimits, SERVER_LOG_LIMITS};
-pub(crate) use read::{
-    LogFile, LogLevel, LogLine, LogLinesQuery, list_files, log_file_path, read_lines,
-};
+pub(crate) use read::{LogFile, LogLevel, LogLine, LogLinesQuery, list_files, read_lines};
 
 /// The directory of the server's log inside a Data Directory.
 pub fn log_dir(data_dir: &Path) -> PathBuf {

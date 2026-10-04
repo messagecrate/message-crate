@@ -7,13 +7,16 @@ use tempfile::TempDir;
 
 use super::files::{file_name, file_numbers};
 use super::{LogFiles, LogLevel, LogLimits, LogLinesQuery, SERVER_LOG_LIMITS, read_lines};
+use crate::test_support::log_event;
 
 /// A line as `tracing_subscriber`'s `fmt` layer writes it, `n` naming it.
 fn event(level: &str, n: usize) -> String {
-    format!(
-        "2026-10-04T12:00:{:02}.000000Z {level:>5} line {n}\n",
-        n % 60
-    )
+    log_event(n, level, &format!("line {n}"))
+}
+
+/// The line `log_event` makes, with no line break: a write cut short.
+fn half_line() -> String {
+    log_event(9, "INFO", "half").trim_end().to_string()
 }
 
 /// The size of each file in `dir`, oldest first.
@@ -159,7 +162,7 @@ fn a_file_cut_short_mid_line_is_not_written_on() {
     let tmp = TempDir::new().unwrap();
     std::fs::write(
         tmp.path().join(file_name(1)),
-        format!("{}2026-10-04T12:00:09.000000Z  INFO half", event("INFO", 0)),
+        format!("{}{}", event("INFO", 0), half_line()),
     )
     .unwrap();
 
@@ -297,7 +300,7 @@ fn text_matches_anywhere_in_a_lines_text_ignoring_case() {
         .iter()
         .enumerate()
     {
-        let line = format!("2026-10-04T12:00:0{n}.000000Z  INFO {text}\n");
+        let line = log_event(n, "INFO", text);
         files.write_event(line.as_bytes()).unwrap();
     }
 
@@ -346,9 +349,10 @@ fn an_unfinished_line_and_a_line_with_no_time_are_left_out() {
     std::fs::write(
         tmp.path().join(file_name(1)),
         format!(
-            "not a log line\n{}{}2026-10-04T12:00:09.000000Z  INFO half",
+            "not a log line\n{}{}{}",
             event("INFO", 0),
-            event("WARN", 1)
+            event("WARN", 1),
+            half_line()
         ),
     )
     .unwrap();
