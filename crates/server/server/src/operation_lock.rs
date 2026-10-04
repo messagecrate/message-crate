@@ -18,18 +18,30 @@ pub(crate) struct OperationLock {
     _file: File,
 }
 
-/// Take the lock for the HTTP server. Fails if reset-demo or another server
-/// already holds it.
+/// Another server, or reset-demo, holds the operation lock of the database
+/// `serve` was asked to open. `main` exits with
+/// [`DATA_FOLDER_IN_USE_EXIT_CODE`](message_crate_api_types::serve::DATA_FOLDER_IN_USE_EXIT_CODE)
+/// when a command fails with it, which is how the desktop app tells the
+/// server of a second window from a failed start (#1416).
+#[derive(Debug, thiserror::Error)]
+#[error("cannot start serve for {} while reset-demo or another server is active", .db.display())]
+pub(crate) struct DataFolderInUse {
+    db: PathBuf,
+}
+
+/// Take the lock for the HTTP server. Fails with [`DataFolderInUse`] if
+/// reset-demo or another server already holds it.
 ///
 /// # Errors
 ///
-/// Returns an error when the lock file cannot be created or is already held.
+/// Returns [`DataFolderInUse`] when the lock is held, and another error when
+/// the lock file cannot be created or locked.
 pub(crate) fn acquire_for_serve(db: &Path) -> Result<OperationLock> {
-    acquire(db).with_context(|| {
-        format!(
-            "cannot start serve for {} while reset-demo or another server is active",
-            db.display()
-        )
+    acquire(db)?.ok_or_else(|| {
+        DataFolderInUse {
+            db: db.to_path_buf(),
+        }
+        .into()
     })
 }
 
@@ -39,7 +51,7 @@ pub(crate) fn acquire_for_serve(db: &Path) -> Result<OperationLock> {
 ///
 /// Returns an error when the lock file cannot be created or is already held.
 pub(crate) fn acquire_for_reset(db: &Path) -> Result<OperationLock> {
-    acquire(db).with_context(|| {
+    acquire(db)?.with_context(|| {
         format!(
             "cannot reset demo while serve is active for {}; stop the server and run reset-demo offline",
             db.display()
@@ -47,8 +59,9 @@ pub(crate) fn acquire_for_reset(db: &Path) -> Result<OperationLock> {
     })
 }
 
-/// Take the exclusive lock file next to the database, creating its folder if needed.
-fn acquire(db: &Path) -> Result<OperationLock> {
+/// Take the exclusive lock file next to the database, creating its folder if
+/// needed. `None` when another process holds it.
+fn acquire(db: &Path) -> Result<Option<OperationLock>> {
     let lock_path = lock_path(db);
     if let Some(parent) = lock_path.parent() {
         std::fs::create_dir_all(parent)
@@ -61,9 +74,15 @@ fn acquire(db: &Path) -> Result<OperationLock> {
         .write(true)
         .open(&lock_path)
         .with_context(|| format!("open operation lock {}", lock_path.display()))?;
-    file.try_lock_exclusive()
-        .with_context(|| format!("acquire operation lock {}", lock_path.display()))?;
-    Ok(OperationLock { _file: file })
+    match file.try_lock_exclusive() {
+        Ok(()) => Ok(Some(OperationLock { _file: file })),
+        Err(error) if error.raw_os_error() == fs2::lock_contended_error().raw_os_error() => {
+            Ok(None)
+        }
+        Err(error) => {
+            Err(error).with_context(|| format!("acquire operation lock {}", lock_path.display()))
+        }
+    }
 }
 
 /// `<db>.operation.lock` next to the database file.

@@ -992,6 +992,13 @@ released versions carry their date on the heading.
   Demo Account that failed to build then could not be removed, and its
   files stayed behind. Now the Demo Account is removed and leaves nothing
   behind.
+- 2026-10-04 **Two desktop app windows opened at once still share one
+  Message Crate when the server's messages are reworded.** The second
+  window's server stops because the first one holds the data folder, and the
+  app waits for the first one to answer. The app told that stop from a
+  failure by the words the server printed, so a change to those words would
+  have made the second window report a failed start. The server now ends
+  with an exit code that says so, and the app reads that code.
 
 ### Upgrading
 

@@ -2302,6 +2302,7 @@ dependencies = [
  "imessage-ir-exporter",
  "ios-backup",
  "media",
+ "message-crate-api-types",
  "message-crate-core",
  "message-crate-http",
  "message-crate-pull",

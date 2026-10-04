@@ -42,6 +42,7 @@ message-reexport = { path = "../crates/libs/reexport" }
 message-crate-push = { path = "../crates/libs/push" }
 message-crate-pull = { path = "../crates/libs/pull" }
 message-crate-http = { path = "../crates/libs/http" }
+message-crate-api-types = { path = "../crates/libs/api-types" }
 
 [dev-dependencies]
 tempfile = "3"
