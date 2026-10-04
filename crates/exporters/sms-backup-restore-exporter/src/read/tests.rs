@@ -31,7 +31,7 @@ fn reads_then_writes_source_fields_and_attachment() {
     fs::write(&input, r#"<smses><mms date="1400773400000" msg_box="2" address="+15555550101" extra="yes"><parts><part seq="0" ct="image/jpeg" name="pic.jpg" data="aGVsbG8="/></parts><addrs><addr address="+15555550100" type="137" charset="106"/><addr address="+15555550101" type="151"/></addrs></mms></smses>"#).unwrap();
     let output = dir.path().join("output");
     let stage = output.join("attachments");
-    let spool = AttachmentSpool::open(dir.path()).unwrap();
+    let spool = AttachmentSpool::new(dir.path());
     let (mut docs, _) = read_backup(&input, opts(&[], Some(&stage), Some(&spool))).unwrap();
     stage_read_attachments(&mut docs, &opts(&[], Some(&stage), Some(&spool))).unwrap();
     assert_eq!(fs::read_dir(&stage).unwrap().count(), 1, "one file staged");
@@ -72,7 +72,7 @@ fn write_back_matches_parts_to_attachments_by_digest() {
     .unwrap();
     let output = dir.path().join("output");
     let stage = output.join("attachments");
-    let spool = AttachmentSpool::open(dir.path()).unwrap();
+    let spool = AttachmentSpool::new(dir.path());
     let (mut docs, _) = read_backup(&input, opts(&[], Some(&stage), Some(&spool))).unwrap();
     stage_read_attachments(&mut docs, &opts(&[], Some(&stage), Some(&spool))).unwrap();
     assert_eq!(fs::read_dir(&stage).unwrap().count(), 1, "one file staged");
@@ -96,7 +96,7 @@ fn a_contact_card_is_read_as_an_attachment_and_written_back() {
     .unwrap();
     let output = dir.path().join("output");
     let stage = output.join("attachments");
-    let spool = AttachmentSpool::open(dir.path()).unwrap();
+    let spool = AttachmentSpool::new(dir.path());
     let (mut docs, _) = read_backup(&input, opts(&[], Some(&stage), Some(&spool))).unwrap();
     stage_read_attachments(&mut docs, &opts(&[], Some(&stage), Some(&spool))).unwrap();
     assert_eq!(fs::read_dir(&stage).unwrap().count(), 1, "one file staged");
@@ -198,7 +198,7 @@ fn reading_a_backup_spools_every_payload_and_holds_none() {
     let input = dir.path().join("input.xml");
     fs::write(&input, r#"<smses><mms date="1400773400000" msg_box="1" address="+15555550101"><parts><part ct="image/jpeg" name="a.jpg" data="aGVsbG8="/></parts><addrs><addr address="+15555550101" type="137"/></addrs></mms><mms date="1400773500000" msg_box="1" address="+15555550101"><parts><part ct="image/jpeg" name="b.jpg" data="d29ybGQ="/></parts><addrs><addr address="+15555550101" type="137"/></addrs></mms></smses>"#).unwrap();
     let stage = dir.path().join("output").join("attachments");
-    let spool = AttachmentSpool::open(dir.path()).unwrap();
+    let spool = AttachmentSpool::new(dir.path());
     let owner = vec!["+15555550100".to_string()];
 
     let (docs, _) = read_backup(&input, opts(&owner, Some(&stage), Some(&spool))).unwrap();

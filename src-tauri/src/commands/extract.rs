@@ -34,6 +34,7 @@ use super::events;
 use super::events::ExtractProgressEvent;
 use super::jobs::{cancel_running_job, spawn_job, start_job};
 use super::last_log_line_or;
+use super::paths::app_cache_dir;
 use crate::staging_folders::StagingFolders;
 use crate::state::AppState;
 
@@ -177,6 +178,7 @@ pub fn extract(
 
     let media_settings = media_settings_for(&options, args.asset_max_bytes)?;
     let mut config = build_exporter_config(
+        &app_cache_dir(&app)?,
         &args.source,
         &args.path,
         &output_dir.display().to_string(),
@@ -373,7 +375,8 @@ fn run_staging(
     Ok(run_result)
 }
 
-/// Build the exporter config the background thread will run.
+/// Build the exporter config the background thread will run, with its
+/// scratch data under `cache_dir`, the app's cache folder.
 ///
 /// Every source maps its UI key to an [`Exporter`] variant, fills the shared
 /// [`Form`], and goes through `Form::to_config` — so the Form builders in
@@ -388,6 +391,7 @@ fn run_staging(
 /// checked here: `Form` sees Clone for a real Compress choice, and
 /// [`media_settings_for`] checks them against the real one.
 fn build_exporter_config(
+    cache_dir: &Path,
     source: &str,
     path: &str,
     output_dir: &str,
@@ -482,7 +486,8 @@ fn build_exporter_config(
         _ => return Err(format!("unsupported source '{source}'")),
     };
 
-    form.to_config(exporter).map_err(|errors| errors.join("; "))
+    form.to_config(exporter, cache_dir)
+        .map_err(|errors| errors.join("; "))
 }
 
 /// Call the exporter that matches `config.source`.

@@ -5,15 +5,16 @@ use media::{CompressOptions, MediaMode};
 pub use message_crate_core::RunResult;
 use message_crate_core::{
     ATTACHMENTS_MISSING, ExportReport, ExportTransforms, ExporterConfig, MediaConfig, OutputFormat,
-    SourceConfig, document_messages, prepare_outputs, stage_conversation_attachments,
+    SourceConfig, attachment_size_hint, document_messages, prepare_outputs,
+    stage_conversation_attachments,
 };
 use message_ir::{ConversationDocument, IrMessage};
 use message_ir_format::{
-    CSV_HEADERS, FormatSink, MergedArchive, clean_previous_ir_output, mark_export_folder,
-    read_conversation_csv, read_conversation_eml_dir, read_conversation_json,
-    read_conversation_jsonl, read_conversation_mbox,
+    CSV_HEADERS, FormatSink, MergedArchive, clean_previous_ir_output, read_conversation_csv,
+    read_conversation_eml_dir, read_conversation_json, read_conversation_jsonl,
+    read_conversation_mbox,
 };
-use message_staging::AttachmentSpool;
+use message_staging::{AttachmentSpool, Disk, check_headroom};
 use sms_backup_plus_exporter::SmsBackupPlusArchive;
 use sms_backup_restore_exporter::{ReadOptions, SbrArchive, read_backup, stage_read_attachments};
 use std::collections::HashSet;
@@ -99,13 +100,27 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
     // refuses, such as a file of another schema version or a broken SMS
     // backup, stops the run with the previous output left as it was.
     let (mut documents, sms_backup) = if detected.format == OutputFormat::Xml {
-        let backup = SmsBackupRead::open(&inputs[0], output, copy_attachments)?;
+        let backup = SmsBackupRead::open(&inputs[0], output, &config.cache_dir, copy_attachments);
         (backup.read(config)?, Some(backup))
     } else {
         (read_conversation_files(input_dir, detected.format)?, None)
     };
     if documents.is_empty() {
         bail!("no conversations loaded from {}", input_dir.display());
+    }
+
+    // Every attachment the conversion copies is counted against the disk
+    // that holds the output before anything is written there: the files
+    // copied from the input, the spooled ones staged from a backup, and the
+    // bytes a mail export held.
+    if copy_attachments {
+        let needed: u64 = documents
+            .iter()
+            .flat_map(|doc| doc.messages.iter())
+            .flat_map(|msg| msg.attachments.iter())
+            .filter_map(attachment_size_hint)
+            .sum();
+        check_headroom(&config.output, needed, Disk::Staging)?;
     }
 
     clean_previous_ir_output(&config.output)?;
@@ -266,26 +281,17 @@ struct SmsBackupRead {
 
 impl SmsBackupRead {
     /// Prepare to read the backup in `input` for a conversion into
-    /// `output`, both resolved by `prepare_outputs`.
-    fn open(input: &Path, output: PathBuf, copy_attachments: bool) -> Result<Self> {
-        // Each payload goes to disk as its record is read, so the backup's
-        // attachments are never all in memory. The spool lives under the
-        // output, so the output is marked as an export's folder first: a
-        // folder the person owns is refused before the spool is written
-        // into it, and the clean then leaves the spool alone rather than
-        // refusing a folder that is no longer empty.
-        let spool = if copy_attachments {
-            mark_export_folder(&output)?;
-            Some(AttachmentSpool::open(&output)?)
-        } else {
-            None
-        };
-        Ok(Self {
+    /// `output`, both resolved by `prepare_outputs`. Each payload goes to
+    /// a spool under `cache_dir`, the app's cache folder, as its record is
+    /// read, so the backup's attachments are never all in memory and never
+    /// in the output before they are staged.
+    fn open(input: &Path, output: PathBuf, cache_dir: &Path, copy_attachments: bool) -> Self {
+        Self {
             input: input.to_path_buf(),
             attachments_dir: output.join("attachments"),
             output,
-            spool,
-        })
+            spool: copy_attachments.then(|| AttachmentSpool::new(cache_dir)),
+        }
     }
 
     /// The options the read and the staging share. The read leaves the

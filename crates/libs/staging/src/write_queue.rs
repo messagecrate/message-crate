@@ -31,6 +31,7 @@ use message_crate_core::{
 };
 use message_ir::{ConversationDocument, IrAttachment, give_each_document_its_own_file};
 
+use crate::headroom::{Disk, check_headroom};
 use crate::transcode::{TranscodeOptions, transcode_staged};
 use message_ir_format::{is_complete_file, write_format};
 
@@ -302,7 +303,7 @@ pub fn drain_write_queue_with_loader(
     cancel: Option<&CancelFlag>,
 ) -> Result<WriteQueueReport> {
     give_each_unit_its_own_file(&mut units)?;
-    check_headroom(output_dir, &units, options.media)?;
+    check_units_headroom(output_dir, &units, options.media)?;
     let attachments_dir = output_dir.join("attachments");
     let mut report = WriteQueueReport::default();
 
@@ -394,7 +395,7 @@ pub fn drain_write_queue(
     cancel: Option<&CancelFlag>,
 ) -> Result<WriteQueueReport> {
     give_each_unit_its_own_file(&mut units)?;
-    check_headroom(output_dir, &units, options.media)?;
+    check_units_headroom(output_dir, &units, options.media)?;
 
     let attachments_dir = output_dir.join("attachments");
     // Idempotent, but doing it once here keeps every worker's first write
@@ -585,10 +586,6 @@ fn run_media_post_pass(
     Ok(media)
 }
 
-/// Slack above the measured need, for the derivative a convert holds in
-/// flight and for whatever else shares the disk.
-const DISK_HEADROOM_SLACK: u64 = 64 * 1024 * 1024;
-
 /// Refuse a drain the staging disk plainly cannot hold.
 ///
 /// `needed` counts the originals the run will copy. Peak usage is those plus
@@ -598,7 +595,11 @@ const DISK_HEADROOM_SLACK: u64 = 64 * 1024 * 1024;
 /// With media turned off nothing is copied, so nothing is counted. A
 /// `Missing` source is never copied either, and [`ConversationUnit::from_doc`]
 /// already drops its hint, so the sum leaves it out.
-fn check_headroom(output_dir: &Path, units: &[ConversationUnit], media: MediaMode) -> Result<()> {
+fn check_units_headroom(
+    output_dir: &Path,
+    units: &[ConversationUnit],
+    media: MediaMode,
+) -> Result<()> {
     if media == MediaMode::Disabled {
         return Ok(());
     }
@@ -610,27 +611,7 @@ fn check_headroom(output_dir: &Path, units: &[ConversationUnit], media: MediaMod
         .flat_map(|u| u.attachments.iter())
         .filter_map(|a| a.size_hint)
         .sum();
-    // A filesystem that cannot answer must not block an export.
-    let Ok(available) = fs2::available_space(output_dir) else {
-        return Ok(());
-    };
-    match headroom_shortfall(needed, available) {
-        Some(message) => anyhow::bail!(message),
-        None => Ok(()),
-    }
-}
-
-/// `None` when `available` covers `needed` plus slack; otherwise what to say.
-fn headroom_shortfall(needed: u64, available: u64) -> Option<String> {
-    let required = needed.saturating_add(DISK_HEADROOM_SLACK);
-    if available >= required {
-        return None;
-    }
-    Some(format!(
-        "Not enough space on the staging disk: this backup needs about {}, and {} is free.",
-        media::format_bytes(required),
-        media::format_bytes(available)
-    ))
+    check_headroom(output_dir, needed, Disk::Staging)
 }
 
 /// Say that the write queue is starting on `units` conversations: a log

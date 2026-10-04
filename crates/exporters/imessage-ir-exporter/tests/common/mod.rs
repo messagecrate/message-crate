@@ -23,6 +23,7 @@ pub fn config(db_path: &Path, output: &Path, cancel: Option<Arc<AtomicBool>>) ->
     ExporterConfig {
         inputs: vec![db_path.to_path_buf()],
         output: output.to_path_buf(),
+        cache_dir: output.with_extension("cache"),
         timezone: None,
         obfuscate: Default::default(),
         media: MediaConfig::default(),

@@ -349,6 +349,8 @@ impl ProjectionHooks for GoSmsProjection {
 pub(crate) struct ConvertExportArgs<'a> {
     pub input_dir: &'a Path,
     pub output_dir: &'a Path,
+    /// The app's cache folder, which the run's attachment spool goes under.
+    pub cache_dir: &'a Path,
     pub owner_phones: &'a [String],
     pub transforms: ExportTransforms,
     pub output_format: OutputFormat,
@@ -372,6 +374,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     let ConvertExportArgs {
         input_dir,
         output_dir,
+        cache_dir,
         owner_phones,
         transforms,
         output_format,
@@ -389,10 +392,11 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         .expect("from_phones guarantees a phone owner handle");
 
     // Clean the previous run's output, or keep it when `resume` is set.
-    let writer = ExportWriter::open(&output_dir, output_format, transforms, resume)?;
+    let writer =
+        ExportWriter::open(&output_dir, output_format, transforms, resume)?.with_spool(cache_dir);
     let mut ingest = Ingest {
         owners: &owners,
-        spool: writer.copies_attachments().then(|| writer.spool()),
+        spool: writer.spool(),
         conversations: BTreeMap::new(),
         report: ExportReport::default(),
         skips: SkipDetails::default(),

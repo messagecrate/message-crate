@@ -242,6 +242,19 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **Working files from reading a backup no longer stay behind
+  when an import is stopped, and every output format checks for room
+  first.** Reading an encrypted iPhone backup decrypts its message
+  database, and reading an SMS Backup & Restore, GO SMS Pro or SMS Backup+
+  file sets its attachments aside, both as plain copies. These working
+  files used to sit in the output folder, and an app closed or stopped
+  mid-run left them there until a later run used the same folder. They now
+  sit in the app's cache folder, are deleted when the run ends, whether it
+  finished or failed, and are deleted when the app next starts if it was
+  stopped. Before it writes, every output format now checks that the disk
+  holding the output and the disk holding the cache folder have room, and
+  stops with the space it needs; before, only an import to the server
+  checked, after the attachments were already set aside.
 - 2026-10-04 An internal fix to how an upload finishes an Import Run;
   nothing you see changes.
 - 2026-10-04 **An iMazing import no longer reports a Live Photo choice as an

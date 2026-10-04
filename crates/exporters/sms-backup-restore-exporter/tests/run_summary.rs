@@ -95,9 +95,11 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
 fn the_report_counts_conversations_and_directions() {
     let tmp = tempfile::tempdir().unwrap();
     let input = backup_folder(tmp.path());
+    let cache = tempfile::tempdir().unwrap();
     let report = convert_export(ConvertExportArgs {
         input: &input,
         output_dir: &tmp.path().join("out"),
+        cache_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
         transforms: ExportTransforms::none(),
         output_format: OutputFormat::Jsonl,

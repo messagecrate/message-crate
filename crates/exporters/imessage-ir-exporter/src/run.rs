@@ -11,12 +11,13 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, anyhow, bail};
 use imessage_reader_protocol::{ExportRequest, Platform, Request, Source};
-use ios_backup::{Helper, ScratchDir, ios_backup_encrypted_flag};
+use ios_backup::{Helper, ios_backup_encrypted_flag};
 use message_crate_core::{
-    AppleConfig, ApplePlatform, CancelFlag, ExportTransforms, ExporterConfig, LogSink,
-    OutputFormat, ProgressEvent, ProgressSink, RunResult, SourceConfig, emit_progress,
-    prepare_outputs,
+    AppleConfig, ApplePlatform, CancelFlag, ExportTransforms, ExporterConfig,
+    IMESSAGE_READER_FOLDER, LogSink, OutputFormat, ProgressEvent, ProgressSink, RunResult,
+    ScratchDir, SourceConfig, emit_progress, prepare_outputs,
 };
+use message_staging::{Disk, check_headroom};
 
 use crate::convert;
 
@@ -34,8 +35,9 @@ pub(crate) const NOT_AN_IPHONE_BACKUP: &str =
 /// domain and path, under a folder named by its first two characters.
 const MESSAGES_DB_IN_IOS_BACKUP: &str = "3d/3d0d7e5fb2ce288813306e4d4636395e047a3d28";
 
-/// The folder under the output folder that the program decrypts into.
-const SCRATCH_FOLDER: &str = ".imessage-reader";
+/// Where an iPhone backup keeps the Contacts database, which the program
+/// decrypts beside the Messages database.
+const CONTACTS_DB_IN_IOS_BACKUP: &str = "31/31bb7ba8914766d4ba40d6dfb6113c8b614be442";
 
 /// Where the Messages database lives on a Mac.
 fn default_macos_db_path() -> PathBuf {
@@ -80,6 +82,8 @@ pub(crate) struct ExportOptions {
     /// [`ExportRequest::use_caller_id`].
     pub use_caller_id: bool,
     pub export_path: PathBuf,
+    /// The app's cache folder; the program decrypts into a folder under it.
+    pub cache_dir: PathBuf,
     pub attachment_embed: AttachmentEmbed,
     /// Media / obfuscate transforms applied by [`message_ir_format::FormatSink`].
     pub transforms: ExportTransforms,
@@ -145,15 +149,21 @@ fn run_with(
     options.check_cancel()?;
     let output = convert::open_output(&options)?;
 
-    // The program writes decrypted files into a folder under the output
-    // folder, on the disk the write step checks for room, rather than the
-    // system's temporary folder, which can be a small RAM disk that no
-    // check measures (#1134). The request's folder in it is deleted when
-    // the run ends, whichever way it ends, and the next run deletes what a
-    // killed one left there.
-    let scratch_root = options.export_path.join(SCRATCH_FOLDER);
+    // The program writes decrypted files into a folder of this run's own
+    // under the app's cache folder, beside the identities request's: not
+    // the system's temporary folder, which can be a small RAM disk that no
+    // check measures (#1134), and not the output folder, which holds only
+    // output (#1402). The folder is deleted when the run ends, whichever
+    // way it ends; what a killed run left is deleted by the next request
+    // and by the sweep when the app starts.
+    let scratch_root = options.cache_dir.join(IMESSAGE_READER_FOLDER);
     let report = {
         let scratch = ScratchDir::create(&scratch_root)?;
+        check_headroom(
+            scratch.path(),
+            decrypted_bytes(&options.source),
+            Disk::Cache,
+        )?;
         let mut helper = spawn(
             &options.export_request(scratch.path()),
             options.log.clone(),
@@ -163,8 +173,6 @@ fn run_with(
         helper.finish()?;
         report
     };
-    // Only this run uses the folder, so its lock file goes too.
-    let _ = std::fs::remove_dir_all(&scratch_root);
     options.check_cancel()?;
 
     message_crate_core::finish_run(config, &report, config.media.mode.needs_tools())
@@ -221,6 +229,7 @@ fn options_from_export_config(config: &ExporterConfig) -> Result<ExportOptions> 
         contacts_path: source.apple_contacts.clone(),
         use_caller_id: source.use_caller_id,
         export_path: config.output.clone(),
+        cache_dir: config.cache_dir.clone(),
         attachment_embed,
         transforms: ExportTransforms::from_config(config),
         output_format: config.output_format,
@@ -229,6 +238,23 @@ fn options_from_export_config(config: &ExporterConfig) -> Result<ExportOptions> 
         cancel: config.cancel.clone(),
         resume: config.resume,
     })
+}
+
+/// The bytes the program decrypts into its scratch folder before it reads
+/// anything: an encrypted iPhone backup's Messages and Contacts databases,
+/// each about the size of its encrypted copy in the backup. Attachments are
+/// decrypted one at a time and deleted once read, which the check's slack
+/// covers. Nothing is decrypted from a Mac database or a backup that is not
+/// encrypted.
+fn decrypted_bytes(source: &Source) -> u64 {
+    if source.platform != Platform::Ios || source.backup_password.is_none() {
+        return 0;
+    }
+    [MESSAGES_DB_IN_IOS_BACKUP, CONTACTS_DB_IN_IOS_BACKUP]
+        .iter()
+        .filter_map(|file| std::fs::metadata(source.db_path.join(file)).ok())
+        .map(|meta| meta.len())
+        .fold(0, u64::saturating_add)
 }
 
 /// The input the person chose, or this Mac's own Messages database when

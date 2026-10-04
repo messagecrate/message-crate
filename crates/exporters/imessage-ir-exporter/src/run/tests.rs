@@ -6,6 +6,7 @@ fn apple_cfg(input: &Path, apple: AppleConfig) -> ExporterConfig {
     ExporterConfig {
         inputs: vec![input.to_path_buf()],
         output: input.with_extension("export_out"),
+        cache_dir: input.with_extension("cache"),
         timezone: None,
         obfuscate: Default::default(),
         media: MediaConfig::default(),
@@ -667,12 +668,12 @@ fn a_reader_that_stops_during_the_attachments_stops_the_run() {
     }
 }
 
-/// The program decrypts into a folder under the output folder, on the
-/// disk the run checks for space before it writes, and the folder is
-/// gone once the run ends (#1134).
+/// The program decrypts into a folder under the app's cache folder,
+/// beside the identities request's, never into the output folder, and the
+/// folder is gone once the run ends (#1402).
 #[cfg(unix)]
 #[test]
-fn the_scratch_folder_is_under_the_output_folder_and_deleted_after() {
+fn the_scratch_folder_is_under_the_cache_folder_and_deleted_after() {
     use ios_backup::testutil::{fake_helper, spawn_fake};
 
     let dir = tempfile::tempdir().unwrap();
@@ -703,13 +704,18 @@ fn the_scratch_folder_is_under_the_output_folder_and_deleted_after() {
     let Ok(Request::Export(sent)) = serde_json::from_str::<Request>(&sent) else {
         panic!("the program was sent an export request: {sent}");
     };
-    assert!(
-        sent.scratch_dir.starts_with(&config.output),
-        "{} is not under {}",
+    let reader_root = config
+        .cache_dir
+        .join(message_crate_core::IMESSAGE_READER_FOLDER);
+    assert_eq!(
+        sent.scratch_dir.parent(),
+        Some(reader_root.as_path()),
+        "{} is not in {}",
         sent.scratch_dir.display(),
-        config.output.display()
+        reader_root.display()
     );
     assert!(!sent.scratch_dir.exists());
+    assert_eq!(entries(&reader_root), [".lock"]);
     let mut left: Vec<String> = fs::read_dir(&config.output)
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
@@ -719,4 +725,153 @@ fn the_scratch_folder_is_under_the_output_folder_and_deleted_after() {
         left,
         ["+15555550122.jsonl", ".message-crate-export", "attachments"]
     );
+}
+
+/// The names in `dir`, sorted.
+fn entries(dir: &Path) -> Vec<String> {
+    let mut names: Vec<String> = fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    names
+}
+
+/// A run that fails removes its scratch folder, as one that completes
+/// does, and never leaves one in the output folder (#1402).
+#[cfg(unix)]
+#[test]
+fn a_failed_run_leaves_no_scratch_folder() {
+    use ios_backup::testutil::{fake_helper, spawn_fake};
+
+    let dir = tempfile::tempdir().unwrap();
+    let chat = dir.path().join("chat.db");
+    fs::write(&chat, b"sqlite").unwrap();
+    let body = encrypted_export_script(
+        dir.path(),
+        r#"echo video > "$scratch/video.mov"; echo "{\"event\":\"attachment\",\"outcome\":\"ready\",\"path\":\"$scratch/video.mov\"}""#,
+        "exit 3",
+    );
+    let program = fake_helper(dir.path(), &body);
+    let config = apple_cfg(
+        &chat,
+        AppleConfig {
+            platform: Some(ApplePlatform::MacOs),
+            ..AppleConfig::default()
+        },
+    );
+
+    run_with(&config, |request, _, _| Ok(spawn_fake(&program, request)))
+        .expect_err("a run whose reader stopped fails");
+
+    assert!(
+        !config.output.join(".imessage-reader").exists(),
+        "{:?}",
+        entries(&config.output)
+    );
+    let reader_root = config
+        .cache_dir
+        .join(message_crate_core::IMESSAGE_READER_FOLDER);
+    assert_eq!(entries(&reader_root), [".lock"]);
+}
+
+/// The databases the reader decrypts out of an encrypted backup are
+/// counted against the disk that holds the cache folder before the reader
+/// starts, so a short disk fails the run with the space it needs rather
+/// than part-way through a decrypt (#1402).
+#[cfg(unix)]
+#[test]
+fn a_decrypt_the_cache_disk_cannot_hold_is_refused_before_the_reader_starts() {
+    let dir = tempfile::tempdir().unwrap();
+    let backup = dir.path().join("backup");
+    fs::create_dir_all(&backup).unwrap();
+    fs::write(
+        backup.join("Manifest.plist"),
+        br#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict><key>IsEncrypted</key><true/></dict></plist>"#,
+    )
+    .unwrap();
+    let hashed = backup.join(MESSAGES_DB_IN_IOS_BACKUP);
+    fs::create_dir_all(hashed.parent().unwrap()).unwrap();
+    // A sparse file: it says 8 TiB and takes no room.
+    fs::File::create(&hashed).unwrap().set_len(8 << 40).unwrap();
+    let config = apple_cfg(
+        &backup,
+        AppleConfig {
+            platform: Some(ApplePlatform::Ios),
+            backup_password: Some("secret".into()),
+            ..AppleConfig::default()
+        },
+    );
+
+    let err = run_with(&config, |_, _, _| panic!("the reader is not started"))
+        .expect_err("the decrypt does not fit");
+
+    assert!(
+        err.to_string().starts_with(
+            "Not enough space on the disk that holds the app's cache folder: \
+             reading this backup needs about "
+        ),
+        "{err:#}"
+    );
+    let reader_root = config
+        .cache_dir
+        .join(message_crate_core::IMESSAGE_READER_FOLDER);
+    assert_eq!(entries(&reader_root), [".lock"]);
+}
+
+/// Every format the Apple Messages export writes checks the staging disk
+/// for room before it writes an attachment, as the JSON Lines queue does
+/// (#1421).
+#[cfg(unix)]
+#[test]
+fn every_format_refuses_attachments_the_staging_disk_cannot_hold() {
+    use ios_backup::testutil::{fake_helper, spawn_fake};
+
+    for format in [
+        OutputFormat::Csv,
+        OutputFormat::Json,
+        OutputFormat::Eml,
+        OutputFormat::Mbox,
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        let chat = dir.path().join("chat.db");
+        fs::write(&chat, b"sqlite").unwrap();
+        let body = encrypted_export_script(
+            dir.path(),
+            r#"echo '{"event":"attachment","outcome":"missing"}'"#,
+            r#"echo '{"event":"attachment","outcome":"missing"}'"#,
+        )
+        .replace(r#""size_hint":10"#, r#""size_hint":4611686018427387903"#);
+        let program = fake_helper(dir.path(), &body);
+        let config = ExporterConfig {
+            output_format: format,
+            ..apple_cfg(
+                &chat,
+                AppleConfig {
+                    platform: Some(ApplePlatform::MacOs),
+                    ..AppleConfig::default()
+                },
+            )
+        };
+
+        let err = run_with(&config, |request, _, _| Ok(spawn_fake(&program, request)))
+            .expect_err("the attachments do not fit");
+
+        assert!(
+            format!("{err:#}")
+                .contains("Not enough space on the staging disk: this backup needs about "),
+            "{format:?}: {err:#}"
+        );
+        assert_eq!(
+            entries(&config.output),
+            [".message-crate-export", "attachments"],
+            "{format:?}"
+        );
+        assert!(
+            entries(&config.output.join("attachments")).is_empty(),
+            "{format:?}"
+        );
+    }
 }

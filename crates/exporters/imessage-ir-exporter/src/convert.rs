@@ -32,7 +32,8 @@ use message_ir::{
 };
 use message_ir_format::FormatSink;
 use message_staging::{
-    AttachmentSource, ConversationUnit, ExportWriter, ExportWriterParts, WriteQueueOptions,
+    AttachmentSource, ConversationUnit, Disk, ExportWriter, ExportWriterParts, WriteQueueOptions,
+    check_headroom,
 };
 
 use crate::run::{AttachmentEmbed, ExportOptions};
@@ -91,8 +92,8 @@ struct Collected {
 /// prior IR artifacts (including stale `attachments/`) must be cleaned
 /// first, the same pattern as WhatsApp and SMS Backup & Restore. A resumed
 /// run is the exception: what the interrupted run wrote is exactly the work
-/// this one gets to skip. The run makes the program's scratch folder inside
-/// the output folder only after this, so the clean never meets it.
+/// this one gets to skip. The program's scratch folder is under the app's
+/// cache folder, so the clean never meets it.
 ///
 /// # Errors
 ///
@@ -146,8 +147,19 @@ pub(crate) fn export(
         .map(|convo| convo.messages.len() as u64)
         .sum();
 
+    // Every format checks the staging disk for room before it writes an
+    // attachment. The queue arm's drain makes the same check itself.
+    let embeds = format.is_mail_archive() && options.attachment_embed == AttachmentEmbed::Embed;
+    if !use_queue && (embeds || stages_attachment_files(options)) {
+        check_headroom(
+            &options.export_path,
+            attachment_bytes(&collected),
+            Disk::Staging,
+        )?;
+    }
+
     let mut not_decrypted = NotDecrypted::default();
-    if format.is_mail_archive() && options.attachment_embed == AttachmentEmbed::Embed {
+    if embeds {
         embed_attachment_bytes(helper, options, &mut collected, &mut not_decrypted)?;
     }
 
@@ -180,6 +192,21 @@ pub(crate) fn export(
     }
     not_decrypted.report_into(&mut report);
     Ok(report)
+}
+
+/// The bytes of every attachment collected, as far as the program could
+/// say: what a staging step or a mail archive writes.
+fn attachment_bytes(collected: &Collected) -> u64 {
+    collected
+        .conversations
+        .values()
+        .flat_map(|convo| convo.attachment_loads.iter())
+        .map(|load| match load {
+            AttachmentLoad::Path { size_hint, .. } => size_hint.unwrap_or(0),
+            AttachmentLoad::Bytes(bytes) => bytes.len() as u64,
+            AttachmentLoad::Missing => 0,
+        })
+        .fold(0, u64::saturating_add)
 }
 
 /// Formats whose attachments are files under `attachments/` rather than
@@ -798,6 +825,7 @@ mod tests {
             contacts_path: None,
             use_caller_id: false,
             export_path: PathBuf::from("/nowhere/out"),
+            cache_dir: PathBuf::from("/nowhere/cache"),
             attachment_embed: AttachmentEmbed::Embed,
             transforms: message_crate_core::ExportTransforms {
                 obfuscate,

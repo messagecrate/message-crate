@@ -20,6 +20,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         convert_export(ConvertExportArgs {
             input_dir: input,
             output_dir: &config.output,
+            cache_dir: &config.cache_dir,
             owner_phones: &source.owner_phones,
             transforms,
             output_format: config.output_format,

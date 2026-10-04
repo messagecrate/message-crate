@@ -5,8 +5,11 @@ one holds a single job.
 
 - **`message-crate-core`** is the run model: the configuration a run is given,
   the report it produces, the shared run skeleton, and the one function that
-  stages a conversation's attachments. It also holds the desktop app's form
-  model: `Form`, its labels and its validation, in `src/exporters.rs`. The
+  stages a conversation's attachments. It holds `ScratchDir` too, the
+  locked folder under the desktop app's cache folder that a run writes its
+  scratch data into (the attachment spool, the databases `imessage-reader`
+  decrypts), because the staging library and the exporters both make one.
+  It also holds the desktop app's form model: `Form`, its labels and its validation, in `src/exporters.rs`. The
   form's only job is to produce that configuration. Every backup type
   validates its form the same way before a run starts.
 - **`message-ir-format`** reads and writes the formats Message Crate itself

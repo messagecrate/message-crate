@@ -19,6 +19,7 @@ fn config(input: &Path, output: &Path, output_format: OutputFormat) -> ExporterC
     ExporterConfig {
         inputs: vec![input.to_path_buf()],
         output: output.to_path_buf(),
+        cache_dir: std::env::temp_dir().join("message-crate-test-cache"),
         timezone: None,
         obfuscate: ObfuscateConfig::default(),
         media: MediaConfig::default(),
@@ -1424,4 +1425,38 @@ fn a_missing_attachment_converted_to_sms_backup_plus_is_counted_once() {
     .unwrap();
 
     assert_eq!(report.report.extra(ATTACHMENTS_MISSING), 1);
+}
+
+/// A conversion whose attachments the output's disk cannot hold stops
+/// before anything is written, with the space it needs, and leaves the
+/// previous output as it was (#1421).
+#[test]
+fn a_conversion_the_staging_disk_cannot_hold_is_refused_before_writing() {
+    let source = tempfile::tempdir().unwrap();
+    fs::create_dir_all(source.path()).unwrap();
+    clean_previous_ir_output(source.path()).unwrap();
+    let mut doc = message_ir::testutil::sample_document("a huge video");
+    let mut video = attachment("video.mov", Some("attachments/video.mov"));
+    video.size_bytes = Some(u64::MAX / 2);
+    doc.messages[0].attachments = vec![video];
+    let mut sink =
+        FormatSink::open(source.path(), OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
+    sink.write_document(doc).unwrap();
+    sink.finish(&mut ExportReport::default()).unwrap();
+    let destination = tempfile::tempdir().unwrap();
+    write_fixture(destination.path(), OutputFormat::Json);
+    let previous = snapshot(destination.path());
+
+    let err = convert_export(
+        source.path(),
+        &config(source.path(), destination.path(), OutputFormat::Csv),
+    )
+    .unwrap_err();
+
+    assert!(
+        err.to_string()
+            .starts_with("Not enough space on the staging disk: this backup needs about "),
+        "{err}"
+    );
+    assert_eq!(snapshot(destination.path()), previous);
 }
