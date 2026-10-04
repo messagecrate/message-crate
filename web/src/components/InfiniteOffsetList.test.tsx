@@ -16,20 +16,31 @@ afterEach(() => {
   tauriMock.current = false;
 });
 
+/** The height of the viewport every layout helper below gives jsdom. */
+const VIEWPORT = 400;
+
 /**
- * Runs `run` as the desktop app, with a 400px by 300px viewport. jsdom lays
- * out nothing, so without one React Aria's Virtualizer draws no rows.
+ * Gives every element a 400px by 300px client area and returns the restore.
+ * jsdom lays out nothing, so without one neither virtualizer draws a row.
  */
+function spyViewport(): () => void {
+  const heights = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(VIEWPORT);
+  const widths = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300);
+  return () => {
+    heights.mockRestore();
+    widths.mockRestore();
+  };
+}
+
+/** Runs `run` as the desktop app, inside `spyViewport`. */
 function inDesktopViewport(run: () => Promise<void>) {
   return async () => {
     tauriMock.current = true;
-    const heights = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(400);
-    const widths = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300);
+    const restore = spyViewport();
     try {
       await run();
     } finally {
-      heights.mockRestore();
-      widths.mockRestore();
+      restore();
     }
   };
 }
@@ -108,9 +119,8 @@ describe("InfiniteOffsetList in the desktop app", () => {
  * pixels apart, whatever height the virtualizer itself assumed.
  */
 function layOutDrawnRows(height: number) {
-  const viewport = 400;
-  const heights = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(viewport);
-  const widths = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300);
+  const viewport = VIEWPORT;
+  const restoreViewport = spyViewport();
   const rects = vi
     .spyOn(HTMLElement.prototype, "getBoundingClientRect")
     .mockImplementation(function (this: HTMLElement) {
@@ -130,8 +140,7 @@ function layOutDrawnRows(height: number) {
       } as DOMRect;
     });
   return () => {
-    heights.mockRestore();
-    widths.mockRestore();
+    restoreViewport();
     rects.mockRestore();
   };
 }
@@ -372,9 +381,8 @@ describe("InfiniteOffsetList asking for more without sections", () => {
  * estimated height and the scroller's `scrollTop`.
  */
 function layOutViewport() {
-  const viewport = 400;
-  const heights = vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockReturnValue(viewport);
-  const widths = vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(300);
+  const viewport = VIEWPORT;
+  const restoreViewport = spyViewport();
   const offsets = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(viewport);
   const rects = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
     top: 0,
@@ -385,8 +393,7 @@ function layOutViewport() {
     height: viewport,
   } as DOMRect);
   return () => {
-    heights.mockRestore();
-    widths.mockRestore();
+    restoreViewport();
     offsets.mockRestore();
     rects.mockRestore();
   };
@@ -573,6 +580,10 @@ describe("InfiniteOffsetList marking the open row", () => {
         await screen.findByRole("option", { name: /Bob/ });
         expect(currentRows("option")).toEqual(["Bob=true"]);
         expect(screen.getByRole("option", { name: /Alice/ }).className).toContain(
+          "bg-hover-strong",
+        );
+        // The open row is not checked, so it is not drawn highlighted.
+        expect(screen.getByRole("option", { name: /Bob/ }).className).not.toContain(
           "bg-hover-strong",
         );
       }),
