@@ -217,32 +217,6 @@ fn read_error_marks_file_missing_and_continues() {
     assert!(b.path.is_some());
 }
 
-#[test]
-fn cancelled_error_from_the_loader_still_aborts() {
-    let dir = tempfile::tempdir().unwrap();
-    let att_dir = dir.path().join("attachments");
-    std::fs::create_dir_all(&att_dir).unwrap();
-    let mut a = empty_att("a.jpg");
-    let err = {
-        let mut jobs = [AttachmentJob {
-            attachment: &mut a,
-            timestamp_unix_ms: 0,
-            size_hint: Some(1),
-        }];
-        run_attachment_jobs(
-            &mut jobs,
-            &att_dir,
-            &media_cfg(MediaMode::Clone),
-            |_| Err(LoadError::Fatal("cancelled".into())),
-            |_| {},
-            None,
-            None,
-        )
-        .unwrap_err()
-    };
-    assert_eq!(err, "cancelled");
-}
-
 /// A loader that can read nothing more stops the run (#1442). Before, the
 /// run recorded the failing attachment and every one after it
 /// `file_missing`, so a run whose `imessage-reader` had died ended looking

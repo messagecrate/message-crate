@@ -51,8 +51,8 @@ pub enum LoadError {
     /// This one file could not be read. The attachment is recorded
     /// `file_missing` and the run goes on.
     Unreadable(String),
-    /// Nothing more can be loaded. The run stops with this message, so it
-    /// can be resumed once the cause is gone.
+    /// Nothing more can be loaded. The run stops with this message, rather
+    /// than record every later attachment missing.
     Fatal(String),
 }
 
