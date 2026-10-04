@@ -29,7 +29,7 @@ import type {
   ImportIssueEvent,
   ImportProgressEvent,
 } from "../../lib/types";
-import { setupUser } from "../../test/user";
+import { fill, setupUser } from "../../test/user";
 import { restoreFormFromSnapshot, snapshotSecret } from "./formSnapshot";
 import { importRunStore } from "./importRunStore";
 
@@ -1970,8 +1970,8 @@ describe("useImportJob wiring", () => {
     async function renderConvert() {
       const user = setupUser();
       const view = render(<ConvertSection />);
-      await user.type(screen.getByLabelText("Input folder"), "/home/demo/export-json");
-      await user.type(screen.getByLabelText("Output folder"), "/home/demo/export-csv");
+      await fill(user, screen.getByLabelText("Input folder"), "/home/demo/export-json");
+      await fill(user, screen.getByLabelText("Output folder"), "/home/demo/export-csv");
       return { view, convert: screen.getByRole("button", { name: "Convert" }) };
     }
 

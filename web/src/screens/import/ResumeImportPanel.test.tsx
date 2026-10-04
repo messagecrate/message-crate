@@ -4,7 +4,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { holdDesktopJob } from "../../lib/desktopJob";
 import type { ActiveImportSession } from "../../lib/importSession";
-import { setupUser } from "../../test/user";
+import { fill, setupUser } from "../../test/user";
 import ResumeImportPanel from "./ResumeImportPanel";
 import type { ResumeDecision } from "./resumeDecision";
 
@@ -373,7 +373,7 @@ describe("ResumeImportPanel", () => {
     expect(resume).toBeDisabled();
     expect(screen.getByRole("button", { name: "Discard this import" })).toBeEnabled();
 
-    await user.type(field, "hunter2");
+    await fill(user, field, "hunter2");
     expect(resume).toBeEnabled();
     await user.click(resume);
     expect(onResume).toHaveBeenCalledTimes(1);
@@ -396,7 +396,7 @@ describe("ResumeImportPanel", () => {
     const resume = screen.getByRole("button", { name: "Start over" });
     expect(resume).toBeDisabled();
     // Spaces alone are not a password: the extract trims it to nothing.
-    await user.type(screen.getByLabelText("Encryption password"), "   ");
+    await fill(user, screen.getByLabelText("Encryption password"), "   ");
     expect(resume).toBeDisabled();
 
     await user.type(screen.getByLabelText("Encryption password"), "hunter2");
@@ -426,7 +426,7 @@ describe("ResumeImportPanel", () => {
       const resume = screen.getByRole("button", { name: label });
       expect(resume).toBeDisabled();
 
-      await user.type(screen.getByLabelText("Decryption key"), "0123abcd");
+      await fill(user, screen.getByLabelText("Decryption key"), "0123abcd");
       await user.click(resume);
       expect(onResume).toHaveBeenCalledWith("0123abcd");
     },

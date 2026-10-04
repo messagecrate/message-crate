@@ -6,7 +6,7 @@ import { setBaseUrl } from "../../lib/api";
 import { APP_BUILD } from "../../lib/build";
 import { getOpenToNetwork } from "../../lib/localServer";
 import { readerLicenseUrl, readerSourceUrl } from "../../lib/thirdPartySoftware";
-import { setupUser } from "../../test/user";
+import { fill, setupUser } from "../../test/user";
 import { SystemSection } from "./SystemSection";
 
 const tauriState = vi.hoisted(() => ({ isTauri: true }));
@@ -206,7 +206,7 @@ describe("SystemSection", () => {
     const stagingInput = await screen.findByDisplayValue("/home/demo/message-crate");
 
     await user.clear(stagingInput);
-    await user.type(stagingInput, "/tmp/my-staging");
+    await fill(user, stagingInput, "/tmp/my-staging");
 
     await waitFor(() => expect(desktopStaging.root).toBe("/tmp/my-staging"));
     expect(setStagingRoot).toHaveBeenLastCalledWith("/tmp/my-staging");
@@ -321,7 +321,7 @@ describe("SystemSection", () => {
     });
 
     const ffmpegInput = screen.getByLabelText("ffmpeg directory");
-    await user.type(ffmpegInput, "/opt/no-ffmpeg");
+    await fill(user, ffmpegInput, "/opt/no-ffmpeg");
     await waitFor(() => {
       expect(probeFfmpegTools).toHaveBeenCalledWith("/opt/no-ffmpeg");
     });

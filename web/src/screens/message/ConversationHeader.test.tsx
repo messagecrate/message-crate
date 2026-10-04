@@ -12,7 +12,7 @@ import {
 } from "../../lib/serverApi";
 import type { Conversation } from "../../lib/types";
 import { mockedAuth, Providers } from "../../test/providers";
-import { setupUser } from "../../test/user";
+import { fill, setupUser } from "../../test/user";
 import ConversationHeader from "./ConversationHeader";
 
 vi.mock("../../lib/auth", () => ({ useAuth: () => mockedAuth }));
@@ -189,7 +189,7 @@ describe("ConversationHeader", () => {
       // The chat's label is offered as the name.
       const input = screen.getByDisplayValue("Book Club");
       await user.clear(input);
-      await user.type(input, "Readers");
+      await fill(user, input, "Readers");
       await user.click(screen.getByRole("button", { name: "Create" }));
 
       await waitFor(() => {
@@ -213,7 +213,7 @@ describe("ConversationHeader", () => {
       await openMenuItem(user, "Make a Contact Group");
       const input = await screen.findByDisplayValue("Book Club");
       await user.clear(input);
-      await user.type(input, "readers");
+      await fill(user, input, "readers");
       await user.click(screen.getByRole("button", { name: "Create" }));
 
       await waitFor(() => {

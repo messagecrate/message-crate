@@ -10,7 +10,7 @@ import { keys } from "../lib/queryKeys";
 import { routeQueryKey } from "../lib/routeQueryKey";
 import { focusRing } from "../lib/uiStyles";
 import { inTimeZone } from "../test/timeZone";
-import { setupUser } from "../test/user";
+import { fill, setupUser } from "../test/user";
 import ContactDrawer from "./ContactDrawer";
 
 vi.mock("../lib/auth", () => ({ useAuth: () => ({ accountId: 7 }) }));
@@ -585,7 +585,7 @@ describe("ContactDrawer", () => {
     const user = setupUser();
     const input = await openNameEditor(user);
     await user.clear(input);
-    await user.type(input, "Renamed");
+    await fill(user, input, "Renamed");
     await user.keyboard("{Escape}");
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Contact a" })).toBeTruthy();
@@ -598,7 +598,7 @@ describe("ContactDrawer", () => {
     const user = setupUser();
     const input = await openNameEditor(user);
     await user.clear(input);
-    await user.type(input, "Renamed");
+    await fill(user, input, "Renamed");
     await user.tab();
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Contact a" })).toBeTruthy();
@@ -611,7 +611,7 @@ describe("ContactDrawer", () => {
     const user = setupUser();
     const input = await openNameEditor(user);
     await user.clear(input);
-    await user.type(input, "Renamed");
+    await fill(user, input, "Renamed");
     await user.click(screen.getByText("Contact Groups"));
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Contact a" })).toBeTruthy();
@@ -624,7 +624,7 @@ describe("ContactDrawer", () => {
     const user = setupUser();
     const input = await openNameEditor(user);
     await user.clear(input);
-    await user.type(input, "Renamed");
+    await fill(user, input, "Renamed");
     await user.keyboard("{Enter}");
     input.blur();
     await waitFor(() => {

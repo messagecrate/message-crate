@@ -2,7 +2,7 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { setupUser } from "../test/user";
+import { fill, setupUser } from "../test/user";
 import AddIdentityDialog from "./AddIdentityDialog";
 
 afterEach(cleanup);
@@ -24,7 +24,7 @@ describe("AddIdentityDialog", () => {
       "placeholder",
       "you@example.com",
     );
-    await user.type(screen.getByRole("textbox", { name: "Identity" }), "Bob@Example.com");
+    await fill(user, screen.getByRole("textbox", { name: "Identity" }), "Bob@Example.com");
     await user.click(screen.getByRole("button", { name: "Add" }));
     expect(onConfirm).toHaveBeenCalledWith({ address: "Bob@Example.com", service: "email" });
   });
@@ -34,7 +34,7 @@ describe("AddIdentityDialog", () => {
     const onConfirm = vi.fn();
     render(<AddIdentityDialog open onClose={() => {}} onConfirm={onConfirm} />);
 
-    await user.type(screen.getByRole("textbox", { name: "Identity" }), "12");
+    await fill(user, screen.getByRole("textbox", { name: "Identity" }), "12");
     await user.click(screen.getByRole("button", { name: "Add" }));
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Enter a phone number like +1 555-555-0119.",
@@ -44,7 +44,7 @@ describe("AddIdentityDialog", () => {
     await user.click(screen.getByRole("button", { name: /Service/ }));
     await user.click(screen.getByRole("option", { name: "Email" }));
     await user.clear(screen.getByRole("textbox", { name: "Identity" }));
-    await user.type(screen.getByRole("textbox", { name: "Identity" }), "not-an-address");
+    await fill(user, screen.getByRole("textbox", { name: "Identity" }), "not-an-address");
     await user.keyboard("{Enter}");
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Enter an email address like you@example.com.",
@@ -64,7 +64,7 @@ describe("AddIdentityDialog", () => {
       />,
     );
 
-    await user.type(screen.getByRole("textbox", { name: "Identity" }), "+1 (555) 555-0100");
+    await fill(user, screen.getByRole("textbox", { name: "Identity" }), "+1 (555) 555-0100");
     expect(screen.getByRole("alert")).toHaveTextContent("This identity is already in the list.");
     expect(screen.getByRole("button", { name: "Add" })).toBeDisabled();
 

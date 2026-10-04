@@ -5,7 +5,7 @@ import { type ComponentProps, useRef, useState } from "react";
 import { MemoryRouter, useLocation, useSearchParams } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SearchList } from "../lib/searchFields";
-import { setupUser } from "../test/user";
+import { fill, setupUser } from "../test/user";
 import SearchBar from "./SearchBar";
 
 const recentsMock = vi.hoisted(() => ({ current: ["ada", "grace"] as string[] }));
@@ -264,7 +264,7 @@ describe("SearchBar", () => {
     await user.click(screen.getByRole("option", { name: "ada" }));
     expect(onSubmit).toHaveBeenLastCalledWith("ada");
     await user.clear(input);
-    await user.type(input, "bob");
+    await fill(user, input, "bob");
     await user.keyboard("{Escape}{Enter}");
 
     expect(onSubmit).toHaveBeenLastCalledWith("bob");

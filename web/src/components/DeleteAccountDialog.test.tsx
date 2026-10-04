@@ -2,7 +2,7 @@
 
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { setupUser } from "../test/user";
+import { fill, setupUser } from "../test/user";
 import DeleteAccountDialog from "./DeleteAccountDialog";
 
 afterEach(cleanup);
@@ -26,7 +26,7 @@ describe("DeleteAccountDialog", () => {
     expect(screen.queryByLabelText("Current password")).toBeNull();
     expect(deleteButton()).toBeDisabled();
 
-    await user.type(screen.getByRole("textbox", { name: /Type your username carol/ }), "carol");
+    await fill(user, screen.getByRole("textbox", { name: /Type your username carol/ }), "carol");
     expect(deleteButton()).toBeEnabled();
     await user.click(deleteButton());
     expect(onConfirm).toHaveBeenCalledWith(undefined);
@@ -45,10 +45,10 @@ describe("DeleteAccountDialog", () => {
       />,
     );
 
-    await user.type(screen.getByRole("textbox", { name: /Type your username carol/ }), "carol");
+    await fill(user, screen.getByRole("textbox", { name: /Type your username carol/ }), "carol");
     expect(deleteButton()).toBeDisabled();
 
-    await user.type(screen.getByLabelText("Current password"), "hunter2");
+    await fill(user, screen.getByLabelText("Current password"), "hunter2");
     expect(deleteButton()).toBeEnabled();
     await user.click(deleteButton());
     expect(onConfirm).toHaveBeenCalledWith("hunter2");
@@ -71,7 +71,7 @@ describe("DeleteAccountDialog", () => {
       />
     );
     const { rerender } = render(dialog(true));
-    await user.type(screen.getByLabelText("Current password"), "hunter2");
+    await fill(user, screen.getByLabelText("Current password"), "hunter2");
 
     rerender(dialog(false));
     const seen: string[] = [];

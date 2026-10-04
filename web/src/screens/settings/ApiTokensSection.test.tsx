@@ -5,7 +5,7 @@ import type { ReactElement, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiTokenRevealProvider } from "../../components/ApiTokenRevealDialog";
 import { mockedAuth, Providers } from "../../test/providers";
-import { setupUser } from "../../test/user";
+import { fill, setupUser } from "../../test/user";
 import { ApiTokensSection } from "./ApiTokensSection";
 
 /** The app renders the reveal dialog above Settings, so the tests do too. */
@@ -64,7 +64,7 @@ describe("ApiTokensSection create form", () => {
     });
 
     const user = await openComposeForm();
-    await user.type(screen.getByLabelText("API Token name"), "My token");
+    await fill(user, screen.getByLabelText("API Token name"), "My token");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -119,7 +119,7 @@ describe("ApiTokensSection create form", () => {
       token: "mc-api-secret3",
       token_hint: "mc-api-se..t3",
     });
-    await user.type(screen.getByLabelText("API Token name"), "No import");
+    await fill(user, screen.getByLabelText("API Token name"), "No import");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -202,7 +202,7 @@ describe("ApiTokensSection table", () => {
     await user.click(screen.getByRole("button", { name: "Cancel" }));
 
     await user.click(screen.getByRole("button", { name: "Add" }));
-    await user.type(screen.getByLabelText("API Token name"), "Phone");
+    await fill(user, screen.getByLabelText("API Token name"), "Phone");
     await user.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByRole("dialog", { name: "API Token created" })).toBeTruthy();
     expect(wording()).not.toMatch(/API keys?|(this|delete) key/i);
@@ -224,7 +224,7 @@ describe("ApiTokensSection reveal", () => {
     const { rerender } = render(screenWith(true));
     await waitFor(() => expect(apiGet).toHaveBeenCalled());
     await user.click(screen.getByRole("button", { name: "Add" }));
-    await user.type(screen.getByLabelText("API Token name"), "Phone");
+    await fill(user, screen.getByLabelText("API Token name"), "Phone");
     await user.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(apiPost).toHaveBeenCalled());
 

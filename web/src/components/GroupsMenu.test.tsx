@@ -4,7 +4,7 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../lib/api";
 import { CONTACT_GROUP_MENU_COPY, MESSAGE_TAG_MENU_COPY } from "../lib/namedSetCopy";
-import { setupUser } from "../test/user";
+import { fill, setupUser } from "../test/user";
 import GroupsMenu from "./GroupsMenu";
 
 afterEach(() => {
@@ -35,7 +35,7 @@ describe("GroupsMenu", () => {
     expect(screen.getByText("Family")).toBeTruthy();
     expect(screen.getByText("Work")).toBeTruthy();
 
-    await user.type(screen.getByRole("searchbox", { name: "Search Contact Groups…" }), "fam");
+    await fill(user, screen.getByRole("searchbox", { name: "Search Contact Groups…" }), "fam");
     expect(screen.queryByText("College")).toBeNull();
     expect(screen.getByText("Family")).toBeTruthy();
     expect(screen.queryByText("Work")).toBeNull();
@@ -52,7 +52,7 @@ describe("GroupsMenu", () => {
       expect(groupRow?.className).toContain(token);
     }
 
-    await user.type(screen.getByRole("searchbox", { name: "Search Contact Groups…" }), "zzz");
+    await fill(user, screen.getByRole("searchbox", { name: "Search Contact Groups…" }), "zzz");
     const empty = screen.getByRole("status");
     expect(empty.tagName).toBe("DIV");
     expect(empty.textContent).toContain("No matching Contact Groups");
@@ -80,7 +80,7 @@ describe("GroupsMenu", () => {
     renderMenu(false);
 
     await user.click(screen.getByRole("button", { name: "Message Tags" }));
-    await user.type(screen.getByRole("searchbox", { name: "Search Message Tags…" }), "wor");
+    await fill(user, screen.getByRole("searchbox", { name: "Search Message Tags…" }), "wor");
     expect(screen.getByText("Work")).toBeTruthy();
     expect(screen.queryByText("College")).toBeNull();
     expect(screen.queryByText("Family")).toBeNull();
@@ -95,7 +95,7 @@ describe("GroupsMenu", () => {
 
     await user.click(screen.getByRole("button", { name: "Contact Groups" }));
     await user.click(screen.getByRole("button", { name: /Create Contact Group$/ }));
-    await user.type(screen.getByPlaceholderText("Contact Group name"), "Work; 2024");
+    await fill(user, screen.getByPlaceholderText("Contact Group name"), "Work; 2024");
     await user.click(screen.getByRole("button", { name: "Create" }));
 
     expect(onCreate).toHaveBeenCalledWith("Work; 2024");
@@ -140,7 +140,7 @@ describe("GroupsMenu", () => {
     // A new form, with "B" typed and Create ready to press.
     await user.click(screen.getByRole("button", { name: "Contact Groups" }));
     await user.click(screen.getByRole("button", { name: /Create Contact Group$/ }));
-    await user.type(screen.getByPlaceholderText("Contact Group name"), "B");
+    await fill(user, screen.getByPlaceholderText("Contact Group name"), "B");
     expect(screen.getByRole("button", { name: "Create" })).toBeEnabled();
 
     await act(async () => refuse(new ApiError(422, "name must be at most 80 characters")));

@@ -4,7 +4,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../../lib/api";
 import { Providers } from "../../test/providers";
-import { setupUser } from "../../test/user";
+import { fill, setupUser } from "../../test/user";
 import { ServerSettingsPanel } from "./ServerSettingsPanel";
 
 const getServerSettings = vi.hoisted(() => vi.fn());
@@ -71,7 +71,7 @@ describe("ServerSettingsPanel attachment size limit", () => {
 
     const user = setupUser();
     await user.clear(field);
-    await user.type(field, "100");
+    await fill(user, field, "100");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(updateServerSettings).toHaveBeenCalledWith({ asset_max_bytes: 100 * MIB });
@@ -86,7 +86,7 @@ describe("ServerSettingsPanel attachment size limit", () => {
     const user = setupUser();
     await user.clear(field);
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
-    await user.type(field, "0");
+    await fill(user, field, "0");
     expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
     expect(updateServerSettings).not.toHaveBeenCalled();
   });
@@ -100,7 +100,7 @@ describe("ServerSettingsPanel attachment size limit", () => {
 
     const user = setupUser();
     await user.clear(field);
-    await user.type(field, "99999999999999");
+    await fill(user, field, "99999999999999");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(

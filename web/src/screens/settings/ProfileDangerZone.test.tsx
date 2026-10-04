@@ -8,7 +8,7 @@ import { keys } from "../../lib/queryKeys";
 import { routeQueryKey } from "../../lib/routeQueryKey";
 import { testQueryClient } from "../../test/providers";
 import { freshEntries, seedEntries } from "../../test/staleEntries";
-import { setupUser } from "../../test/user";
+import { fill, setupUser } from "../../test/user";
 import { ProfileDangerZone } from "./ProfileDangerZone";
 
 const deleteAccount = vi.hoisted(() => vi.fn());
@@ -71,8 +71,8 @@ describe("ProfileDangerZone", () => {
     await user.click(screen.getByRole("button", { name: /Danger zone/ }));
     await user.click(screen.getByRole("button", { name: "Delete account" }));
     const dialog = screen.getByRole("dialog");
-    await user.type(within(dialog).getByRole("textbox", { name: /Type your username/ }), "carol");
-    await user.type(within(dialog).getByLabelText("Current password"), "wrong");
+    await fill(user, within(dialog).getByRole("textbox", { name: /Type your username/ }), "carol");
+    await fill(user, within(dialog).getByLabelText("Current password"), "wrong");
     await user.click(within(dialog).getByRole("button", { name: "Permanently delete my account" }));
 
     expect(deleteAccount).toHaveBeenCalledWith({ confirm: true, current_password: "wrong" });
@@ -109,7 +109,7 @@ describe("ProfileDangerZone", () => {
     expect(dialog).toHaveTextContent(
       "Deleting the account also deletes its Staging Directories on this computer:",
     );
-    await user.type(within(dialog).getByRole("textbox", { name: /Type your username/ }), "carol");
+    await fill(user, within(dialog).getByRole("textbox", { name: /Type your username/ }), "carol");
     await user.click(within(dialog).getByRole("button", { name: "Permanently delete my account" }));
 
     await waitFor(() =>
@@ -146,7 +146,7 @@ describe("ProfileDangerZone", () => {
     await user.click(screen.getByRole("button", { name: /Danger zone/ }));
     await user.click(screen.getByRole("button", { name: "Delete account" }));
     const dialog = screen.getByRole("dialog");
-    await user.type(within(dialog).getByRole("textbox", { name: /Type your username/ }), "carol");
+    await fill(user, within(dialog).getByRole("textbox", { name: /Type your username/ }), "carol");
 
     expect(accountStagingDirectories).toHaveBeenCalled();
     expect(
@@ -180,7 +180,7 @@ describe("ProfileDangerZone", () => {
     await user.click(screen.getByRole("button", { name: "Delete account" }));
     const dialog = screen.getByRole("dialog");
     expect(await within(dialog).findByText(/so it deletes none/)).toBeInTheDocument();
-    await user.type(within(dialog).getByRole("textbox", { name: /Type your username/ }), "carol");
+    await fill(user, within(dialog).getByRole("textbox", { name: /Type your username/ }), "carol");
     await user.click(within(dialog).getByRole("button", { name: "Permanently delete my account" }));
 
     await waitFor(() =>
@@ -208,7 +208,7 @@ describe("ProfileDangerZone", () => {
     await user.click(screen.getByRole("button", { name: "Delete account" }));
     const dialog = screen.getByRole("dialog");
     expect(dialog).not.toHaveTextContent(/Staging Director/);
-    await user.type(within(dialog).getByRole("textbox", { name: /Type your username/ }), "carol");
+    await fill(user, within(dialog).getByRole("textbox", { name: /Type your username/ }), "carol");
     await user.click(within(dialog).getByRole("button", { name: "Permanently delete my account" }));
 
     await waitFor(() =>

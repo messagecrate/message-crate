@@ -12,7 +12,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { mockedAuth, Providers } from "../test/providers";
-import { setupUser } from "../test/user";
+import { fill, setupUser } from "../test/user";
 import GroupsNav from "./GroupsNav";
 import MessageTagsNav from "./MessageTagsNav";
 
@@ -101,7 +101,7 @@ describe("NavEntityList navigation", () => {
     await user.click(screen.getByRole("menuitem", { name: "Rename…" }));
     const input = screen.getByPlaceholderText("Contact Group name");
     await user.clear(input);
-    await user.type(input, "Fam");
+    await fill(user, input, "Fam");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     // The page moves once the rename is written and the cache has read the
@@ -131,7 +131,7 @@ describe("NavEntityList navigation", () => {
     await user.click(screen.getByRole("menuitem", { name: "Rename…" }));
     const input = screen.getByPlaceholderText("Message Tag name");
     await user.clear(input);
-    await user.type(input, "Vacation");
+    await fill(user, input, "Vacation");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(screen.getByTestId("location")).toHaveTextContent("/tag/Vacation"));
@@ -229,7 +229,7 @@ describe("NavEntityList navigation", () => {
     await user.click(screen.getByRole("menuitem", { name: "Rename…" }));
     const input = screen.getByPlaceholderText("Contact Group name");
     await user.clear(input);
-    await user.type(input, "Old Friends");
+    await fill(user, input, "Old Friends");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>

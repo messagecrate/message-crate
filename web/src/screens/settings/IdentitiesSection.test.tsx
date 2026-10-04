@@ -184,7 +184,7 @@ describe("IdentitiesSection", () => {
 
     await user.click(screen.getByRole("button", { name: "Add identity" }));
     const dialog = await screen.findByRole("dialog", { name: "Add identity" });
-    await user.type(within(dialog).getByRole("textbox", { name: "Identity" }), "+1 555 555 0199");
+    await fill(user, within(dialog).getByRole("textbox", { name: "Identity" }), "+1 555 555 0199");
     await user.click(within(dialog).getByRole("button", { name: "Add" }));
 
     expect(
@@ -256,7 +256,7 @@ describe("IdentitiesSection", () => {
 
     await user.click(await screen.findByRole("button", { name: "Add identity" }));
     const dialog = await screen.findByRole("dialog", { name: "Add identity" });
-    await user.type(within(dialog).getByRole("textbox", { name: "Identity" }), "+1 555 555 0199");
+    await fill(user, within(dialog).getByRole("textbox", { name: "Identity" }), "+1 555 555 0199");
     await user.click(within(dialog).getByRole("button", { name: "Add" }));
 
     expect(
@@ -277,7 +277,7 @@ describe("IdentitiesSection", () => {
     const dialog = await screen.findByRole("dialog", { name: "Add identity" });
     await user.click(within(dialog).getByRole("button", { name: /Service/ }));
     await user.click(screen.getByRole("option", { name: "WhatsApp" }));
-    await user.type(within(dialog).getByRole("textbox", { name: "Identity" }), "+15555550100");
+    await fill(user, within(dialog).getByRole("textbox", { name: "Identity" }), "+15555550100");
     await user.click(within(dialog).getByRole("button", { name: "Add" }));
 
     expect(mutateAsync).toHaveBeenCalledWith({

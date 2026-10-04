@@ -4,7 +4,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockedAuth, Providers } from "../test/providers";
-import { setupUser } from "../test/user";
+import { fill, setupUser } from "../test/user";
 import LeftPanel from "./LeftPanel";
 
 const profileState = vi.hoisted(() => ({
@@ -130,8 +130,8 @@ describe("LeftPanel", () => {
     const user = setupUser();
     renderPanel();
     await user.click(screen.getByRole("button", { name: "Create saved search" }));
-    await user.type(screen.getByRole("textbox", { name: "Name" }), "From Alice");
-    await user.type(screen.getByRole("textbox", { name: "Query" }), "from:alice");
+    await fill(user, screen.getByRole("textbox", { name: "Name" }), "From Alice");
+    await fill(user, screen.getByRole("textbox", { name: "Query" }), "from:alice");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
@@ -146,8 +146,8 @@ describe("LeftPanel", () => {
     const user = setupUser();
     renderPanel();
     await user.click(screen.getByRole("button", { name: "Create saved search" }));
-    await user.type(screen.getByRole("textbox", { name: "Name" }), "From Alice");
-    await user.type(screen.getByRole("textbox", { name: "Query" }), "from:alice");
+    await fill(user, screen.getByRole("textbox", { name: "Name" }), "From Alice");
+    await fill(user, screen.getByRole("textbox", { name: "Query" }), "from:alice");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
@@ -166,7 +166,7 @@ describe("LeftPanel", () => {
     await user.click(screen.getByRole("menuitem", { name: "Rename…" }));
     const name = screen.getByRole("textbox", { name: "Name" });
     await user.clear(name);
-    await user.type(name, "Work");
+    await fill(user, name, "Work");
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
