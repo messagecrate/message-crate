@@ -237,6 +237,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **iMazing and Apple Messages imports name a folder they cannot
+  read in full.** When an iMazing chat folder held an entry that could not
+  be read, the rows whose files were in it came through with no photo or
+  file, and a Live Photo video in it was dropped, without a word. On a Mac,
+  a Contacts account folder that could not be read left that account's
+  names out of an Apple Messages import with no message. The iMazing import
+  now stops and names the folder. The Apple Messages import now names the
+  Contacts folder in its log and carries on without contact names, as it
+  already did when an Address Book could not be read.
 - 2026-10-04 **A resumed Import Run follows the attachment setting Staging
   recorded.** An Import Run resumed after the app closed decided from its
   saved form whether it had a Media Stage, and its Upload took the size
@@ -516,6 +525,12 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-04 **An export stops when it cannot read an earlier export's
+  email folder.** An export or conversion written into a folder an earlier
+  one used first removes the earlier one's email conversation folders. A
+  conversation folder holding an entry that could not be read could look
+  as if it held no email, and then stayed beside the new export. The
+  export now stops and names the folder.
 - 2026-10-04 **An obfuscated export keeps a reply to a message in another
   conversation.** Apple Messages can reply or react to a message in another
   conversation. In an obfuscated export, that reply or reaction pointed at

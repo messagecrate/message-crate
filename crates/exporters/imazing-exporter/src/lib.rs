@@ -7,6 +7,7 @@
 
 mod attachments;
 mod attachments_emit;
+mod chat_folder;
 mod emit;
 mod parse;
 mod parse_emit;

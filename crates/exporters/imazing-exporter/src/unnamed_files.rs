@@ -7,6 +7,8 @@
 //! them. This module sorts each such file into what it is, so the emitter can
 //! attach the video to its picture's message and count the rest.
 
+use crate::chat_folder::regular_files;
+use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -47,20 +49,16 @@ pub(crate) struct FolderRows<'a> {
 ///
 /// CSV files are the folder's own exports, and a name starting with `.` is
 /// the file system's (`.DS_Store`), so neither is a file iMazing wrote for a
-/// message. Symbolic links are skipped, as the row lookup skips them.
-pub(crate) fn unnamed_files(folder: &Path, rows: &FolderRows<'_>) -> Vec<UnnamedFile> {
+/// message. Symbolic links are skipped, as the row lookup skips them
+/// ([`crate::chat_folder::regular_files`]).
+///
+/// # Errors
+///
+/// Returns an error, with `folder` named, when `folder` or one of its
+/// entries cannot be read.
+pub(crate) fn unnamed_files(folder: &Path, rows: &FolderRows<'_>) -> Result<Vec<UnnamedFile>> {
     let mut files: Vec<(String, PathBuf)> = Vec::new();
-    let Ok(entries) = fs::read_dir(folder) else {
-        return Vec::new();
-    };
-    for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
-        if file_type.is_symlink() || !file_type.is_file() {
-            continue;
-        }
-        let path = entry.path();
+    for path in regular_files(folder)? {
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
             continue;
         };
@@ -70,10 +68,10 @@ pub(crate) fn unnamed_files(folder: &Path, rows: &FolderRows<'_>) -> Vec<Unnamed
         files.push((name.to_string(), path));
     }
     files.sort();
-    files
+    Ok(files
         .into_iter()
         .map(|(name, path)| classify(&name, path, rows))
-        .collect()
+        .collect())
 }
 
 fn classify(name: &str, path: PathBuf, rows: &FolderRows<'_>) -> UnnamedFile {
@@ -151,6 +149,42 @@ mod tests {
         // A name shorter than a second, or with a character longer than one
         // byte where the second ends, gives none rather than a panic.
         assert_eq!(message_second("2020-01-01 12 01 0é - x"), None);
+    }
+
+    /// A chat folder that cannot be listed fails the search for files no
+    /// row names, with the folder named, rather than reading as holding no
+    /// such file and dropping a Live Photo video without a word (#1563).
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_that_cannot_be_listed_fails_and_is_named() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempfile::tempdir().unwrap();
+        let chat = dir.path().join("chat");
+        fs::create_dir(&chat).unwrap();
+        fs::write(
+            chat.join("2020-01-01 12 00 00 - Bob - IMG_0001.mov"),
+            b"mov",
+        )
+        .unwrap();
+        let (named, pictures, texts_at) = (HashSet::new(), HashMap::new(), HashMap::new());
+        let rows = FolderRows {
+            named: &named,
+            pictures: &pictures,
+            texts_at: &texts_at,
+        };
+        fs::set_permissions(&chat, fs::Permissions::from_mode(0o000)).unwrap();
+        // A user who can list a folder with no permissions (root) cannot
+        // exercise the failure, so the test has nothing to check.
+        let listable = fs::read_dir(&chat).is_ok();
+        let result = (!listable).then(|| unnamed_files(&chat, &rows));
+        fs::set_permissions(&chat, fs::Permissions::from_mode(0o755)).unwrap();
+        let Some(result) = result else {
+            return;
+        };
+
+        let message = format!("{:#}", result.unwrap_err());
+        assert!(message.contains(&chat.display().to_string()), "{message}");
     }
 
     #[test]

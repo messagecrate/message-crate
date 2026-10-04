@@ -309,6 +309,44 @@ Bob Sample,2020-01-01 12:00:00,,,,,SMS,Incoming,+15555550100,Bob,Read,,,Hi,,imag
     assert!(body.contains("attachments/"));
 }
 
+/// A chat folder the conversion can open files in but cannot list fails
+/// the conversion with the folder named, rather than reading as holding no
+/// files and importing every row without its attachment (#1563).
+#[cfg(unix)]
+#[test]
+fn a_chat_folder_that_cannot_be_listed_fails_the_conversion_and_names_it() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let chat = dir.path().join("chat");
+    fs::create_dir_all(&chat).unwrap();
+    let csv = chat.join("Messages - Bob.csv");
+    fs::write(
+        &csv,
+        "Chat Session,Message Date,Delivered Date,Read Date,Edited Date,Deleted Date,Service,Type,Sender ID,Sender Name,Status,Replying to,Subject,Text,Reactions,Attachment,Attachment type\n\
+Bob Sample,2020-01-01 12:00:00,,,,,SMS,Incoming,+15555550100,Bob,Read,,,Hi,,image000000.jpg,Image\n",
+    )
+    .unwrap();
+    fs::write(
+        chat.join("2020-01-01 12 00 00 - Bob Sample - image000000.jpg"),
+        b"fake-jpeg-bytes",
+    )
+    .unwrap();
+    // Write and search but no read: the CSV opens, the listing does not.
+    fs::set_permissions(&chat, fs::Permissions::from_mode(0o300)).unwrap();
+    // A user who can list a folder without read permission (root) cannot
+    // exercise the failure, so the test has nothing to check.
+    let listable = fs::read_dir(&chat).is_ok();
+    let result = (!listable).then(|| convert(&csv, &dir.path().join("out")));
+    fs::set_permissions(&chat, fs::Permissions::from_mode(0o755)).unwrap();
+    let Some(result) = result else {
+        return;
+    };
+
+    let message = format!("{:#}", result.unwrap_err());
+    assert!(message.contains(&chat.display().to_string()), "{message}");
+}
+
 #[test]
 fn email_sender_with_digits_stays_email() {
     let dir = tempfile::tempdir().unwrap();

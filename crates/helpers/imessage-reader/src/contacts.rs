@@ -2,7 +2,7 @@
 
 use std::{
     collections::HashMap,
-    fs,
+    fs, io,
     path::{Path, PathBuf},
 };
 
@@ -82,7 +82,9 @@ impl ContactsIndex {
     ///
     /// # Errors
     ///
-    /// Returns an error when a database cannot be opened or queried.
+    /// Returns an error when a database cannot be opened or queried, or when
+    /// the macOS Sources folder exists but it or one of its entries cannot be
+    /// read.
     pub fn build(path: Option<&Path>) -> Result<Self, TableError> {
         if let Some(path) = path {
             let conn = get_connection(path)?;
@@ -94,7 +96,7 @@ impl ContactsIndex {
 
         let mut idx: HashMap<String, Name> = HashMap::new();
 
-        for db_path in find_macos_addressbook_db_paths(&macos_sources_dir()) {
+        for db_path in find_macos_addressbook_db_paths(&macos_sources_dir())? {
             if let Ok(local_conn) = get_connection(&db_path) {
                 let sub = Self::build_from_macos(&local_conn)?;
 
@@ -318,20 +320,61 @@ fn to_phone_digits(raw: &str) -> String {
 // MARK: macOS Dirs
 /// Scans a macOS Contacts Sources directory ([`macos_sources_dir`]) for
 /// the AddressBook-v22.abcddb database each source folder holds.
-fn find_macos_addressbook_db_paths(sources_dir: &Path) -> Vec<PathBuf> {
+///
+/// A Mac with no Contacts sources has no Sources folder, so a folder that
+/// does not exist is an empty list.
+///
+/// # Errors
+///
+/// Returns an error, with `sources_dir` named, when the folder exists but
+/// cannot be read, or one of its entries cannot be read (see
+/// [`addressbook_db_paths`]).
+fn find_macos_addressbook_db_paths(sources_dir: &Path) -> Result<Vec<PathBuf>, TableError> {
+    let entries = match fs::read_dir(sources_dir) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => {
+            return Err(named_read_error(
+                &format!("read {}", sources_dir.display()),
+                &e,
+            ));
+        }
+    };
+    addressbook_db_paths(sources_dir, entries.map(|entry| entry.map(|e| e.path())))
+}
+
+/// The AddressBook-v22.abcddb database of each source folder among
+/// `entries`, the paths of `sources_dir`.
+///
+/// An entry that cannot be read fails the scan, with `sources_dir` named.
+/// Skipping it would leave that source's contacts unnamed in the export with
+/// no message.
+///
+/// # Errors
+///
+/// Returns an error for the first entry that cannot be read.
+fn addressbook_db_paths(
+    sources_dir: &Path,
+    entries: impl IntoIterator<Item = io::Result<PathBuf>>,
+) -> Result<Vec<PathBuf>, TableError> {
     let mut results = Vec::new();
-    if let Ok(entries) = fs::read_dir(sources_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                let db_path = path.join("AddressBook-v22.abcddb");
-                if db_path.is_file() {
-                    results.push(db_path);
-                }
+    for entry in entries {
+        let path = entry.map_err(|e| {
+            named_read_error(&format!("read an entry of {}", sources_dir.display()), &e)
+        })?;
+        if path.is_dir() {
+            let db_path = path.join("AddressBook-v22.abcddb");
+            if db_path.is_file() {
+                results.push(db_path);
             }
         }
     }
-    results
+    Ok(results)
+}
+
+/// `error` with `what` in front of its message, keeping its kind.
+fn named_read_error(what: &str, error: &io::Error) -> TableError {
+    TableError::CannotRead(io::Error::new(error.kind(), format!("{what}: {error}")))
 }
 
 /// Resolve the standard macOS Contacts Sources directory: `~/Library/Application Support/AddressBook/Sources`
@@ -405,7 +448,7 @@ mod tests {
         fs::create_dir(sources.path().join("empty")).unwrap();
         fs::write(sources.path().join("AddressBook-v22.abcddb"), b"").unwrap();
 
-        let mut found = find_macos_addressbook_db_paths(sources.path());
+        let mut found = find_macos_addressbook_db_paths(sources.path()).unwrap();
         found.sort();
         assert_eq!(
             found,
@@ -414,7 +457,53 @@ mod tests {
                 sources.path().join("icloud/AddressBook-v22.abcddb"),
             ]
         );
-        assert!(find_macos_addressbook_db_paths(&sources.path().join("missing")).is_empty());
+        assert!(
+            find_macos_addressbook_db_paths(&sources.path().join("missing"))
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    /// An entry of the Sources folder that cannot be read fails the scan
+    /// with the folder named, rather than leaving that source's contacts
+    /// unnamed with no message (#1563).
+    #[test]
+    fn an_entry_of_the_sources_folder_that_cannot_be_read_fails_the_scan_and_names_it() {
+        let sources = Path::new("/Users/sam/Library/Application Support/AddressBook/Sources");
+        let entries = vec![Err(io::Error::other("stale file handle"))];
+
+        let error = addressbook_db_paths(sources, entries)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains(&sources.display().to_string()), "{error}");
+        assert!(error.contains("stale file handle"), "{error}");
+    }
+
+    /// A Sources folder that exists but cannot be read fails the scan with
+    /// the folder named, rather than reading as a Mac with no contacts.
+    #[cfg(unix)]
+    #[test]
+    fn a_sources_folder_that_cannot_be_read_fails_the_scan_and_names_it() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let sources = tempfile::tempdir().unwrap();
+        fs::create_dir(sources.path().join("icloud")).unwrap();
+        fs::set_permissions(sources.path(), fs::Permissions::from_mode(0o000)).unwrap();
+        // A user who can list a folder with no permissions (root) cannot
+        // exercise the failure, so the test has nothing to check.
+        let listable = fs::read_dir(sources.path()).is_ok();
+        let result = (!listable).then(|| find_macos_addressbook_db_paths(sources.path()));
+        fs::set_permissions(sources.path(), fs::Permissions::from_mode(0o755)).unwrap();
+        let Some(result) = result else {
+            return;
+        };
+
+        let error = result.unwrap_err().to_string();
+        assert!(
+            error.contains(&sources.path().display().to_string()),
+            "{error}"
+        );
     }
 
     #[test]
