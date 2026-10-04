@@ -14654,6 +14654,7 @@
           "id",
           "chat_identifier",
           "conversation_type",
+          "is_group",
           "participants"
         ],
         "properties": {
@@ -14676,6 +14677,10 @@
             "type": "integer",
             "format": "int64",
             "description": "Conversation row id."
+          },
+          "is_group": {
+            "type": "boolean",
+            "description": "True for a group conversation, by the rule the conversation list's\n`is_group` follows, so a client never reads `conversation_type` to\ndecide it."
           },
           "label": {
             "type": [

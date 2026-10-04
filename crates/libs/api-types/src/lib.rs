@@ -420,6 +420,10 @@ api_shape! {
         pub chat_identifier: String,
         /// `individual` or `group`.
         pub conversation_type: String,
+        /// True for a group conversation, by the rule the conversation list's
+        /// `is_group` follows, so a client never reads `conversation_type` to
+        /// decide it.
+        pub is_group: bool,
         /// The title the export gave the conversation, when it gave one.
         pub group_title: Option<String>,
         /// The title the conversation is shown by, as the conversation list's
@@ -531,6 +535,7 @@ mod tests {
                 id: 9,
                 chat_identifier: "+15555550100".into(),
                 conversation_type: "individual".into(),
+                is_group: false,
                 group_title: None,
                 label: None,
                 participants: vec![Participant {

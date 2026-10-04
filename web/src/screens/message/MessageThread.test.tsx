@@ -30,6 +30,7 @@ function message(partial: Partial<Message> = {}): Message {
       id: 1,
       chat_identifier: "x",
       conversation_type: "individual",
+      is_group: false,
       group_title: null,
       participants: [{ identity: "+1555", name: "Ada", contact_id: null }],
     },
@@ -85,6 +86,7 @@ describe("MessageThread", () => {
       id: 1,
       chat_identifier: "x",
       conversation_type: "group",
+      is_group: true,
       group_title: null,
       participants: [
         { identity: "+15555550101", name: "Ada", contact_id: null },

@@ -7,6 +7,7 @@ function conversation(over: Partial<MessageConversation> = {}): MessageConversat
     id: 1,
     chat_identifier: "+15555550100",
     conversation_type: "individual",
+    is_group: false,
     group_title: null,
     participants: [{ name: "Alice", identity: "+15555550100", contact_id: 4, service: "imessage" }],
     ...over,
@@ -55,15 +56,32 @@ describe("messageConversationName", () => {
     ];
     expect(
       messageConversationName(
-        conversation({ conversation_type: "group", label: " Family ", participants: people }),
+        conversation({
+          conversation_type: "group",
+          is_group: true,
+          label: " Family ",
+          participants: people,
+        }),
       ),
     ).toBe("Family");
     expect(
-      messageConversationName(conversation({ conversation_type: "group", participants: people })),
+      messageConversationName(
+        conversation({ conversation_type: "group", is_group: true, participants: people }),
+      ),
     ).toBe("Alice, Bob");
-    // The server reads the type ignoring case, and so does the row.
+  });
+
+  it("takes whether a conversation is a group from the server, never from its type", () => {
+    // The server decides `is_group` for both lists, so a type the browser
+    // does not know still names the conversation as the conversation list does.
+    const people = [
+      { name: "Alice", identity: "+1" },
+      { name: "Bob", identity: "+2" },
+    ];
     expect(
-      messageConversationName(conversation({ conversation_type: "Group", participants: people })),
+      messageConversationName(
+        conversation({ conversation_type: "chat", is_group: true, participants: people }),
+      ),
     ).toBe("Alice, Bob");
   });
 });

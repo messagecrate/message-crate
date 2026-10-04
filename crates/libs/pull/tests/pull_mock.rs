@@ -87,6 +87,7 @@ fn message(
             "id": 9,
             "chat_identifier": "+15555550101",
             "conversation_type": "individual",
+            "is_group": false,
             "group_title": null,
             "participants": [
                 { "name": "Sam", "handle": "+15555550101", "service": "sms", "contact_id": 3 }
@@ -573,6 +574,7 @@ fn two_groups_with_one_title_are_both_written() {
         message["conversation"]["id"] = json!(conversation_id);
         message["conversation"]["chat_identifier"] = json!(chat);
         message["conversation"]["conversation_type"] = json!("group");
+        message["conversation"]["is_group"] = json!(true);
         message["conversation"]["group_title"] = json!("Family");
         message
     };
