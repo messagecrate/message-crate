@@ -25,7 +25,7 @@ fn row(assets_path: &str) -> AssetRow {
 /// The original is on disk and no preview exists: the state a fresh import leaves.
 const FRESH: OnDisk = OnDisk {
     original_exists: true,
-    derived_intact: false,
+    preview: PreviewFile::Missing,
 };
 
 /// A pass over `assets_dir` for account 7.
@@ -67,7 +67,7 @@ fn a_part_path_is_removed_and_never_converted() {
     // deals with an absent file.
     let gone = OnDisk {
         original_exists: false,
-        derived_intact: false,
+        preview: PreviewFile::Missing,
     };
     assert_eq!(plan(&part, &opts, gone).unwrap(), Plan::RemoveIncomplete);
 }
@@ -201,7 +201,7 @@ fn skip_audio_turns_off_audio_and_nothing_else() {
 fn an_existing_preview_is_kept_unless_force_is_given() {
     let derived = OnDisk {
         original_exists: true,
-        derived_intact: true,
+        preview: PreviewFile::Intact,
     };
     let mut photo = row("aa/photo.jpg");
     photo.derived_assets_path = Some(format!("ab/{SHA}.jpg"));
@@ -217,6 +217,15 @@ fn an_existing_preview_is_kept_unless_force_is_given() {
         plan(&photo, &force, derived).unwrap(),
         Plan::Derive(Kind::Image)
     );
+    let damaged = OnDisk {
+        original_exists: true,
+        preview: PreviewFile::Damaged,
+    };
+    assert_eq!(
+        plan(&photo, &ProcessAssetsOptions::default(), damaged).unwrap(),
+        Plan::Derive(Kind::Image),
+        "a damaged Preview is converted again without --force"
+    );
 }
 
 #[test]
@@ -227,7 +236,7 @@ fn a_disabled_kind_is_reported_before_an_existing_preview() {
     };
     let derived = OnDisk {
         original_exists: true,
-        derived_intact: true,
+        preview: PreviewFile::Intact,
     };
     assert_eq!(
         plan(&row("aa/photo.jpg"), &opts, derived).unwrap(),
@@ -240,14 +249,14 @@ fn a_missing_original_is_an_error_only_when_a_conversion_is_wanted() {
     let opts = ProcessAssetsOptions::default();
     let missing = OnDisk {
         original_exists: false,
-        derived_intact: false,
+        preview: PreviewFile::Missing,
     };
     let err = plan(&row("aa/photo.jpg"), &opts, missing).unwrap_err();
     assert_eq!(err.to_string(), "missing original");
     // A preview already on disk, or a kind nobody wants, needs no original.
     let missing_but_derived = OnDisk {
         original_exists: false,
-        derived_intact: true,
+        preview: PreviewFile::Intact,
     };
     assert_eq!(
         plan(&row("aa/photo.jpg"), &opts, missing_but_derived).unwrap(),
@@ -260,7 +269,7 @@ fn a_missing_original_is_an_error_only_when_a_conversion_is_wanted() {
 }
 
 #[test]
-fn derived_file_intact_hashes_the_preview_against_its_name() {
+fn preview_file_hashes_the_preview_against_its_name() {
     let dir = tempfile::tempdir().unwrap();
     let bytes = b"jpeg-bytes";
     let sha = crate::assets_api::sha256_hex(bytes);
@@ -268,21 +277,32 @@ fn derived_file_intact_hashes_the_preview_against_its_name() {
     let dest = dir.path().join(&rel);
     fs::create_dir_all(dest.parent().unwrap()).unwrap();
     fs::write(&dest, bytes).unwrap();
-    assert!(derived_file_intact(Some(&rel), dir.path()));
+    assert_eq!(preview_file(Some(&rel), dir.path()), PreviewFile::Intact);
 
     fs::write(&dest, &bytes[..4]).unwrap();
-    assert!(
-        !derived_file_intact(Some(&rel), dir.path()),
-        "a preview cut short does not hash to its name"
+    assert_eq!(
+        preview_file(Some(&rel), dir.path()),
+        PreviewFile::Damaged,
+        "a Preview cut short does not hash to its name"
     );
 
     let unnamed = "ab/preview.jpg";
     fs::create_dir_all(dir.path().join("ab")).unwrap();
     fs::write(dir.path().join(unnamed), bytes).unwrap();
-    assert!(!derived_file_intact(Some(unnamed), dir.path()));
-    assert!(!derived_file_intact(Some("missing.jpg"), dir.path()));
-    assert!(!derived_file_intact(Some(""), dir.path()));
-    assert!(!derived_file_intact(None, dir.path()));
+    assert_eq!(
+        preview_file(Some(unnamed), dir.path()),
+        PreviewFile::Damaged
+    );
+    assert_eq!(
+        preview_file(Some("missing.jpg"), dir.path()),
+        PreviewFile::Missing
+    );
+    assert_eq!(
+        preview_file(Some("../escape.jpg"), dir.path()),
+        PreviewFile::Missing
+    );
+    assert_eq!(preview_file(Some(""), dir.path()), PreviewFile::Missing);
+    assert_eq!(preview_file(None, dir.path()), PreviewFile::Missing);
 }
 
 #[test]
