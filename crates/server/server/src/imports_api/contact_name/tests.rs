@@ -560,8 +560,32 @@ async fn a_second_spelling_does_not_rename_anyone() {
     assert_eq!(name, "Ada Lovelace", "first backup wins");
 }
 
-/// A name the person typed carries `origin = 'user'` and outranks any
-/// backup, however many imports later run.
+/// A contact the person made in the app, holding `handle_id`, under `name`.
+/// A non-empty name is typed the way the contact drawer types it.
+async fn made_by_the_person(conn: &mut sqlx::SqliteConnection, handle_id: i64, name: &str) -> i64 {
+    use crate::db::contacts::{self, Origin};
+    let contact_id = contacts::create_contact(conn, TEST_ACCOUNT, "", Origin::User)
+        .await
+        .unwrap();
+    contacts::link_handle_to_contact(conn, TEST_ACCOUNT, handle_id, contact_id, Origin::User)
+        .await
+        .unwrap();
+    contacts::propose_name(conn, TEST_ACCOUNT, contact_id, name, Origin::User)
+        .await
+        .unwrap();
+    contact_id
+}
+
+async fn name_of(conn: &mut sqlx::SqliteConnection, contact_id: i64) -> String {
+    sqlx::query_scalar("SELECT preferred_name FROM contacts WHERE id = $1")
+        .bind(contact_id)
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap()
+}
+
+/// A name the person typed outranks any backup, however many imports later
+/// run.
 #[tokio::test]
 async fn an_import_does_not_overwrite_a_name_the_person_typed() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
@@ -570,31 +594,8 @@ async fn an_import_does_not_overwrite_a_name_the_person_typed() {
     crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
         .await
         .unwrap();
-    let handle_id: i64 = sqlx::query_scalar(
-        "INSERT INTO handles (account_id, raw, normalized, handle_type, service)
-         VALUES ($1, '+15555550168', '+15555550168', 'phone', 'imessage') RETURNING id",
-    )
-    .bind(TEST_ACCOUNT)
-    .fetch_one(&mut *conn)
-    .await
-    .unwrap();
-    let contact_id = crate::db::contacts::create_contact(
-        &mut conn,
-        TEST_ACCOUNT,
-        "",
-        crate::db::contacts::Origin::User,
-    )
-    .await
-    .unwrap();
-    crate::db::contacts::link_handle_to_contact(
-        &mut conn,
-        TEST_ACCOUNT,
-        handle_id,
-        contact_id,
-        crate::db::contacts::Origin::User,
-    )
-    .await
-    .unwrap();
+    let handle_id = insert_handle(&mut conn, "+15555550168", "imessage").await;
+    let contact_id = made_by_the_person(&mut conn, handle_id, "Ada Lovelace").await;
 
     let mut stats = ImportStats::default();
     ensure_contact_for_handle(
@@ -608,12 +609,82 @@ async fn an_import_does_not_overwrite_a_name_the_person_typed() {
     .await
     .unwrap();
 
-    let name: String = sqlx::query_scalar("SELECT preferred_name FROM contacts WHERE id = $1")
-        .bind(contact_id)
-        .fetch_one(&mut *conn)
+    assert_eq!(name_of(&mut conn, contact_id).await, "Ada Lovelace");
+}
+
+/// A blank name has nothing to protect, so an import names a nameless
+/// contact whatever made it: here the person, with no name.
+#[tokio::test]
+async fn an_import_names_a_nameless_contact_the_person_made() {
+    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    schema::ensure_schema(&mut conn).await.unwrap();
+    crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
         .await
         .unwrap();
-    assert_eq!(name, "", "the person's contact is not the import's to name");
+    let handle_id = insert_handle(&mut conn, "+15555550169", "imessage").await;
+    let contact_id = made_by_the_person(&mut conn, handle_id, "").await;
+
+    let mut stats = ImportStats::default();
+    let met = ensure_contact_for_handle(
+        &mut conn,
+        TEST_ACCOUNT,
+        None,
+        handle_id,
+        Some("Ann"),
+        &mut stats,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(met, contact_id);
+    assert_eq!(name_of(&mut conn, contact_id).await, "Ann");
+}
+
+/// An address book load can make a contact that holds a number and has no
+/// name. A later import that knows the number's name fills it in, as it
+/// does for a nameless contact an import made.
+#[tokio::test]
+async fn an_import_names_a_nameless_contact_a_load_made() {
+    use crate::db::address_book::{LoadMode, load};
+    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    schema::ensure_schema(&mut conn).await.unwrap();
+    crate::db::account_profile::ensure_account_row(&mut conn, TEST_ACCOUNT)
+        .await
+        .unwrap();
+    let text = "contact_id,display_name,groups,service,identity_type,identity\n\
+                ,,,phone,phone,+15555550170\n";
+    load(&mut conn, TEST_ACCOUNT, text, LoadMode::Append)
+        .await
+        .unwrap();
+    let (contact_id, handle_id, origin): (i64, i64, String) = sqlx::query_as(
+        "SELECT c.id, h.id, c.origin FROM handles h
+         JOIN contact_handles ch ON ch.handle_id = h.id
+         JOIN contacts c ON c.id = ch.contact_id
+         WHERE h.account_id = $1 AND h.normalized = '+15555550170'",
+    )
+    .bind(TEST_ACCOUNT)
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(origin, "address_book");
+    assert_eq!(name_of(&mut conn, contact_id).await, "");
+
+    let mut stats = ImportStats::default();
+    let met = ensure_contact_for_handle(
+        &mut conn,
+        TEST_ACCOUNT,
+        None,
+        handle_id,
+        Some("Ann"),
+        &mut stats,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(met, contact_id);
+    assert_eq!(name_of(&mut conn, contact_id).await, "Ann");
 }
 
 #[tokio::test]
