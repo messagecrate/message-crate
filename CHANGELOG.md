@@ -182,9 +182,9 @@ released versions carry their date on the heading.
   every existing token stops working and everyone logs in again. The
   database file is `data/messagecrate.db` and several tables are renamed, so
   an existing database is rebuilt empty and needs a fresh import. The
-  staging folder defaults to `~/message-crate`. The Docker environment
-  variables are `MC_DB` and `MC_DATA_DIR`, the compose service is `server`,
-  and the desktop app installs as a new application beside any older copy.
+  staging folder defaults to `~/message-crate`. The compose service is
+  `server`, and the desktop app installs as a new application beside any
+  older copy.
 - 2026-10-01 **The user guide starts with the desktop app.** It is now in
   two parts. Try Message Crate installs the desktop app and looks around the
   Demo Account. Your own messages creates the Owner and an account, backs up
@@ -837,6 +837,12 @@ released versions carry their date on the heading.
   the build, and could leave a folder of part-written Demo Data behind. It
   now stops as soon as the conversation it is writing is done, and leaves
   nothing behind.
+- 2026-10-04 **The Docker image no longer sets settings that do nothing.**
+  The image set `MC_DB` and `MC_DATA_DIR`, which the server never read, so
+  changing them moved nothing. The database and the data folder come from
+  `[paths]` in the configuration, as they always did.
+  `./scripts/run-dev.sh --reset-demo` also no longer converts the Demo
+  Account's media a second time after building it, so it finishes sooner.
 
 ### Upgrading
 
