@@ -426,6 +426,110 @@ fn generate_replaces_an_earlier_bundle_and_removes_its_backup() {
     assert!(!out.join(".previous-active").exists());
 }
 
+/// Generation whose cancel flag is set stops with [`Cancelled`], leaves the
+/// earlier bundle at `out` as it was, and removes its temporary directory,
+/// so a server that stops during a Demo Account build neither waits for the
+/// whole data set nor leaves a part-written one behind (#1431).
+#[test]
+fn a_cancelled_generation_stops_and_leaves_no_temporary_directory() {
+    let temp = tempfile::tempdir().expect("create test directory");
+    let cfg = small_config(temp.path());
+    let out = Path::new(&cfg.out);
+    fs::create_dir_all(out).expect("create the earlier bundle");
+    fs::write(out.join("README.md"), b"old readme").expect("write old readme");
+
+    let error =
+        generate_cancellable(&cfg, &AtomicBool::new(true)).expect_err("a cancelled run fails");
+
+    assert!(error.downcast_ref::<Cancelled>().is_some(), "{error:#}");
+    assert_eq!(
+        fs::read(out.join("README.md")).expect("read README.md"),
+        b"old readme",
+        "the earlier bundle is kept"
+    );
+    let left: Vec<_> = fs::read_dir(temp.path())
+        .expect("list the output parent")
+        .map(|entry| entry.expect("read entry").file_name())
+        .filter(|name| name.to_string_lossy().starts_with(".demo-seed-"))
+        .collect();
+    assert!(left.is_empty(), "temporary directories left: {left:?}");
+}
+
+/// How many conversation files the `.demo-seed-*` folders in `parent` hold
+/// so far, across the three backup sources.
+fn prepared_conversations(parent: &Path) -> usize {
+    let Ok(entries) = fs::read_dir(parent) else {
+        return 0;
+    };
+    entries
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with(".demo-seed-")
+        })
+        .flat_map(|entry| {
+            [IMESSAGE_SOURCE, SBR_SOURCE, WHATSAPP_SOURCE]
+                .map(|source| entry.path().join("staging").join(source))
+        })
+        .filter_map(|staging| fs::read_dir(staging).ok())
+        .flatten()
+        .filter_map(Result::ok)
+        .filter(|entry| is_jsonl_file(&entry.path()))
+        .count()
+}
+
+/// The large data set, cancelled once its first conversation is written,
+/// stops part-way and removes its temporary directory. The count of files
+/// it wrote is the guard: with a check at the start and in the final
+/// validation walk alone, the run would still end `Cancelled`, but only
+/// after writing every conversation, far more than a quarter of the
+/// contacts (#1431).
+#[test]
+fn a_large_generation_cancelled_part_way_stops_and_leaves_no_temporary_directory() {
+    let temp = tempfile::tempdir().expect("create test directory");
+    let out = temp.path().join("demo");
+    let contacts = SeedConfig::for_size(DemoSize::Large)
+        .expect("large settings")
+        .contacts
+        .count;
+    let cancel = AtomicBool::new(false);
+    let finished = AtomicBool::new(false);
+
+    let (generated, most_written) = std::thread::scope(|scope| {
+        let generating = scope.spawn(|| {
+            let generated = generate_size_to(DemoSize::Large, &out, &cancel);
+            finished.store(true, Ordering::Relaxed);
+            generated
+        });
+        while prepared_conversations(temp.path()) == 0 && !finished.load(Ordering::Relaxed) {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        cancel.store(true, Ordering::Relaxed);
+        let mut most_written = 0;
+        while !finished.load(Ordering::Relaxed) {
+            most_written = most_written.max(prepared_conversations(temp.path()));
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        let generated = generating.join().expect("the generator does not panic");
+        (generated, most_written)
+    });
+
+    let error = generated.expect_err("a run cancelled part-way fails");
+    assert!(error.downcast_ref::<Cancelled>().is_some(), "{error:#}");
+    assert!(
+        most_written < contacts / 4,
+        "{most_written} conversations were written after the stop"
+    );
+    assert!(!out.exists(), "no bundle is put in place");
+    let left: Vec<_> = fs::read_dir(temp.path())
+        .expect("list the output parent")
+        .map(|entry| entry.expect("read entry").file_name())
+        .collect();
+    assert!(left.is_empty(), "temporary directories left: {left:?}");
+}
+
 #[test]
 fn generate_to_loads_the_seed_file_and_writes_the_bundle_at_out() {
     let temp = tempfile::tempdir().expect("create test directory");
@@ -468,7 +572,7 @@ fn failed_generation_preserves_existing_bundle() {
     let original = b"existing demo bytes\n";
     fs::write(&existing_file, original).expect("write existing file");
 
-    let result = prepare_and_replace(&active, &prepared, |root| {
+    let result = prepare_and_replace(&active, &prepared, &AtomicBool::new(false), |root| {
         fs::create_dir_all(root.join("staging").join(IMESSAGE_SOURCE))?;
         fs::write(
             root.join("staging")
@@ -713,7 +817,8 @@ fn the_validator_refuses_a_bundle_with_a_staging_folder_missing() {
     let whatsapp = out.join("staging").join(WHATSAPP_SOURCE);
     fs::remove_dir_all(&whatsapp).expect("remove the whatsapp staging folder");
 
-    let err = validate_generated_bundle(&out).expect_err("a missing source must be refused");
+    let err = validate_generated_bundle(&out, &AtomicBool::new(false))
+        .expect_err("a missing source must be refused");
     let text = format!("{err:#}");
     assert!(text.contains("missing"), "{text}");
     assert!(text.contains(WHATSAPP_SOURCE), "{text}");
@@ -731,7 +836,7 @@ fn the_validator_refuses_a_bundle_with_a_config_file_missing() {
         let kept = fs::read(&path).expect("read before removing");
         fs::remove_file(&path).expect("remove the file");
 
-        let err = validate_generated_bundle(&out)
+        let err = validate_generated_bundle(&out, &AtomicBool::new(false))
             .expect_err("a bundle missing a required file must be refused");
         let text = format!("{err:#}");
         assert!(text.contains("missing"), "{relative}: {text}");
@@ -741,7 +846,8 @@ fn the_validator_refuses_a_bundle_with_a_config_file_missing() {
         );
 
         fs::write(&path, kept).expect("put it back");
-        validate_generated_bundle(&out).expect("valid again once the file is back");
+        validate_generated_bundle(&out, &AtomicBool::new(false))
+            .expect("valid again once the file is back");
     }
 }
 
@@ -776,7 +882,8 @@ fn the_validator_refuses_a_conversation_file_that_is_not_json() {
     broken.extend_from_slice(b"{ this line is not JSON\n");
     fs::write(&path, &broken).expect("append a broken line");
 
-    let err = validate_generated_bundle(&out).expect_err("a broken JSONL line must be refused");
+    let err = validate_generated_bundle(&out, &AtomicBool::new(false))
+        .expect_err("a broken JSONL line must be refused");
     let text = format!("{err:#}");
     assert!(
         text.contains(&relative) || text.contains("parse"),
@@ -784,7 +891,8 @@ fn the_validator_refuses_a_conversation_file_that_is_not_json() {
     );
 
     fs::write(&path, kept).expect("put it back");
-    validate_generated_bundle(&out).expect("the restored bundle is valid again");
+    validate_generated_bundle(&out, &AtomicBool::new(false))
+        .expect("the restored bundle is valid again");
 }
 
 /// Only `.jsonl` files are parsed. A README or a `.csv` full of text that is
@@ -798,11 +906,12 @@ fn the_validator_reads_only_json_lines_files() {
 
     // The bundle already contains a README and a CSV, neither of which is
     // JSON, and it validates.
-    validate_generated_bundle(&out).expect("a generated bundle is valid");
+    validate_generated_bundle(&out, &AtomicBool::new(false)).expect("a generated bundle is valid");
 
     // A stray text file with a name that is not `.jsonl` is left alone.
     fs::write(out.join("notes.txt"), b"not json, not checked\n").expect("write notes");
-    validate_generated_bundle(&out).expect("a non-JSONL file is not parsed");
+    validate_generated_bundle(&out, &AtomicBool::new(false))
+        .expect("a non-JSONL file is not parsed");
 }
 
 /// `output_parent_dir` decides where the temp directory for a generation goes.
@@ -834,7 +943,8 @@ fn every_message_of_the_medium_set_falls_between_8am_and_11pm_utc_and_not_after_
 
     let temp = tempfile::tempdir().expect("create test directory");
     let out = temp.path().join("demo");
-    generate_size_to(DemoSize::Medium, &out).expect("generate the medium bundle");
+    generate_size_to(DemoSize::Medium, &out, &AtomicBool::new(false))
+        .expect("generate the medium bundle");
     let reference_ms = SeedConfig::for_size(DemoSize::Medium)
         .expect("medium settings")
         .reference_time
@@ -932,7 +1042,7 @@ fn every_phone_number_in_the_medium_and_large_sets_is_in_a_range_reserved_for_fi
     for size in [DemoSize::Medium, DemoSize::Large] {
         let temp = tempfile::tempdir().expect("create test directory");
         let out = temp.path().join("demo");
-        generate_size_to(size, &out).expect("generate the bundle");
+        generate_size_to(size, &out, &AtomicBool::new(false)).expect("generate the bundle");
 
         let numbers = phone_numbers_in_bundle(&out);
         assert!(

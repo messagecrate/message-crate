@@ -1,4 +1,5 @@
 use axum::http::StatusCode;
+use std::sync::atomic::AtomicBool;
 
 use super::*;
 use crate::test_support::{
@@ -783,19 +784,61 @@ async fn only_the_owner_reaches_the_server_totals() {
 }
 
 /// Writes a few conversations in place of the built-in data set.
-fn tiny_bundle(_size: demo_seed::DemoSize, bundle: &std::path::Path) -> anyhow::Result<()> {
+fn tiny_bundle(
+    _size: demo_seed::DemoSize,
+    bundle: &std::path::Path,
+    _cancel: &AtomicBool,
+) -> anyhow::Result<()> {
     crate::reset_demo::tests::write_tiny_reset_bundle(bundle);
     Ok(())
 }
 
 /// [`tiny_bundle`], slowly, so a test can act while the build is running.
-fn slow_tiny_bundle(size: demo_seed::DemoSize, bundle: &std::path::Path) -> anyhow::Result<()> {
+fn slow_tiny_bundle(
+    size: demo_seed::DemoSize,
+    bundle: &std::path::Path,
+    cancel: &AtomicBool,
+) -> anyhow::Result<()> {
     std::thread::sleep(std::time::Duration::from_millis(400));
-    tiny_bundle(size, bundle)
+    tiny_bundle(size, bundle, cancel)
 }
 
-fn no_bundle(_size: demo_seed::DemoSize, _bundle: &std::path::Path) -> anyhow::Result<()> {
+fn no_bundle(
+    _size: demo_seed::DemoSize,
+    _bundle: &std::path::Path,
+    _cancel: &AtomicBool,
+) -> anyhow::Result<()> {
     anyhow::bail!("the generator has nothing to write")
+}
+
+/// The folder [`long_bundle`] was last given, so a test can look for it
+/// once the build has stopped.
+static LONG_BUNDLE: std::sync::Mutex<Option<std::path::PathBuf>> = std::sync::Mutex::new(None);
+
+/// Writes one small file into the bundle every few milliseconds for half a
+/// minute, the way the Large set keeps the generator busy. Like the real
+/// generator, which checks the flag between conversations, it checks the
+/// flag once every 20 files, and stops with an error once it is set. Each
+/// file recreates the folder it goes in, so a generator still writing after
+/// its folder was removed leaves the folder behind.
+fn long_bundle(
+    _size: demo_seed::DemoSize,
+    bundle: &std::path::Path,
+    cancel: &AtomicBool,
+) -> anyhow::Result<()> {
+    *LONG_BUNDLE.lock().unwrap() = Some(bundle.to_path_buf());
+    let started = std::time::Instant::now();
+    let mut written = 0u64;
+    while started.elapsed() < std::time::Duration::from_secs(30) {
+        if written.is_multiple_of(20) && cancel.load(std::sync::atomic::Ordering::Relaxed) {
+            anyhow::bail!("the generator was stopped");
+        }
+        std::fs::create_dir_all(bundle)?;
+        std::fs::write(bundle.join(format!("{written}.jsonl")), b"{}\n")?;
+        written += 1;
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+    Ok(())
 }
 
 /// Ask for a build of the medium set and return the answer.
@@ -1054,6 +1097,59 @@ async fn stopping_the_server_during_a_demo_build_leaves_no_demo_account() {
     let demo: DemoAccount = get_json(&next, "/v1/server/demo-account", &owner.token).await;
     assert_eq!(demo.status, DemoAccountStatus::Failed);
     assert!(!demo_build_is_unfinished(&fixture).await);
+}
+
+/// Stopping the server while a build generates its bundle stops the
+/// generator within moments, and leaves no temporary bundle folder. The
+/// generator runs as a blocking task, which the server's shutdown waits for,
+/// so without a flag the server waits for the whole data set, and the
+/// generator writes on into a folder the build already removed (#1431).
+#[test]
+fn stopping_the_server_during_generation_stops_the_generator_and_leaves_no_bundle() {
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap();
+    let (stopping, bundle) = runtime.block_on(async {
+        let fixture = test_fixture().await;
+        let mut state = fixture.state.clone();
+        state.demo_bundle_generator = long_bundle;
+        let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
+
+        let (status, body) = start_demo_build(&state, &owner.token).await;
+        assert_eq!(status, StatusCode::ACCEPTED, "{body}");
+        let mut waited = 0;
+        let bundle = loop {
+            let given = LONG_BUNDLE.lock().unwrap().clone();
+            if let Some(bundle) = given.filter(|bundle| bundle.join("0.jsonl").is_file()) {
+                break bundle;
+            }
+            waited += 1;
+            assert!(waited < 400, "the generator never started writing");
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        };
+
+        let stopping = std::time::Instant::now();
+        state.demo_build.stop().await;
+        (stopping, bundle)
+    });
+    // What `main` does once `serve` returns: dropping the runtime waits for
+    // every blocking task, the generator among them.
+    drop(runtime);
+
+    assert!(
+        stopping.elapsed() < std::time::Duration::from_secs(10),
+        "the server took {:?} to stop",
+        stopping.elapsed()
+    );
+    let work = bundle
+        .parent()
+        .expect("the bundle sits in the build's folder");
+    assert!(
+        !work.exists(),
+        "the temporary bundle folder {} is left",
+        work.display()
+    );
 }
 
 /// A build task that panics ends the build as failed, and the next build

@@ -2424,7 +2424,7 @@ async fn seed_bulky_demo(db: &Path) {
 }
 
 /// A bundle generator for a running server's build: the tiny bundle.
-fn tiny_bundle(_size: DemoSize, bundle: &Path) -> Result<()> {
+fn tiny_bundle(_size: DemoSize, bundle: &Path, _cancel: &AtomicBool) -> Result<()> {
     write_tiny_reset_bundle(bundle);
     Ok(())
 }
