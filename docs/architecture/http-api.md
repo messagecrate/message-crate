@@ -228,10 +228,11 @@ easier to hold than a line with one.
 ## Lists
 
 Every list route answers a page, `{items, total, limit, offset}`, and takes
-`offset` and `limit`. No exceptions: a list the person curates by hand
-(groups, tags, saved searches, API tokens), a fixed reference list
-(`/v1/search-fields/contacts`), and a `POST` that reads all answer a page. The
-list key is always `items`.
+`offset` and `limit`. A list the person curates by hand (groups, tags, saved
+searches, API tokens), a fixed reference list (`/v1/search-fields/contacts`),
+and a `POST` that reads all answer a page. The one exception is the server's
+log lines, which are written while they are read and page from a line (see
+below). The list key is always `items`.
 Why: the web app has one paged type and one hook, and a second shape is a
 second convention.
 
@@ -293,11 +294,16 @@ descending. Each list declares the keys it accepts, and an unlisted key is
 
 Filtering is the search language in `q`, and nothing else. The one exception
 is a list with no search language, which may take a filter parameter whose
-values are the ones its rows store. The Import Run and Export Run lists and the
-Audit Trail are the only such lists: `GET /v1/imports?status=running`,
-`GET /v1/exports?status=completed` and their twins under an account, and
-`GET /v1/audit-trail?deleted_account_id=7`, which reads one deleted account's
-entries and runs by the id they keep. There is no `fields=` selection.
+values are the ones its rows store. The Import Run and Export Run lists, the
+Audit Trail and the server's log lines are the only such lists:
+`GET /v1/imports?status=running`, `GET /v1/exports?status=completed` and their
+twins under an account, `GET /v1/audit-trail?deleted_account_id=7`, which reads
+one deleted account's entries and runs by the id they keep, and
+`GET /v1/server/log-lines?level=warn&text=import`, where `level` keeps that
+level and the more severe ones and `text` keeps the lines that hold it,
+ignoring case. A log line is text, not a row with fields a search language
+could name, so `text` is the whole of its search. There is no `fields=`
+selection.
 
 A query parameter a route does not declare is `validation-failed`, naming the
 parameters the route accepts. The `media_link` of a Media Link is declared by
@@ -309,6 +315,15 @@ answered as though it had been obeyed.
 Rejected: cursor paging. Stable under concurrent inserts, but nothing inserts
 rows under a running read on a self-hosted server, and every screen that shows
 "51–100 of 4,213" needs `total`.
+
+The server's log lines, `GET /v1/server/log-lines`, are the one list that
+pages from a line instead: `{items, limit, has_more}`, newest first, and
+`after={id}` reads the lines older than the line with that id. It takes no
+`offset` and answers no `total`. Why: the server writes lines while the owner
+reads them, its answers to the reading included, so the reason above does not
+hold for it, and a `total` would mean counting up to 250 MB of files for every
+page. The id names a line, as `around`, `before` and `after` name a message,
+and is not an opaque token (`docs/architecture/server-log.md`).
 
 Rejected: a bare `{items}` for small lists. One justified exception is still
 two conventions, and a group's member list has no bound the server enforces.
@@ -361,10 +376,11 @@ member of it matches `application/json`, `application/problem+json`,
 `application/*`, or `*/*`. `application/*` is a media range that matches
 `application/json` (RFC 9110), so refusing it would refuse a client that asks
 for JSON. A missing `Accept` is a request for JSON. The check runs on every `/v1` route
-but the three that answer bytes: `GET /v1/assets/{sha256}`, which streams the
+but the four that answer bytes: `GET /v1/assets/{sha256}`, which streams the
 asset's own contents, `GET /v1/assets/{sha256}/preview`, which streams its
-Preview, and `POST /v1/contacts/address-book`, which answers the address book
-as `text/csv`. Nothing outside `/v1` is checked.
+Preview, `POST /v1/contacts/address-book`, which answers the address book
+as `text/csv`, and `GET /v1/server/log-files/{id}`, which answers a file of
+the server's log as `text/plain`. Nothing outside `/v1` is checked.
 
 Rejected: requiring `Accept: application/json`. None of the server's own clients
 send one, and the rule would refuse the web app on its first request.
@@ -536,6 +552,11 @@ What each reaches:
 - `GET /v1/server` and `POST /v1/server/claim` take no credential.
   `/v1/server/settings` and `GET /v1/server/storage` are the owner's: the
   storage totals sum every account, and no account holds more than its own.
+- The server's log, `GET /v1/server/log-lines`, `GET /v1/server/log-files`
+  and `GET /v1/server/log-files/{id}`, is the owner's alone. Why: it is every
+  account's requests in one stream, about the installation the owner runs,
+  and a line never holds content, so the owner may read all of it
+  (`docs/architecture/server-log.md`).
 - The attachment size limit is a server setting, `asset_max_bytes` in bytes,
   and the settings row is the only place it lives. The owner reads and
   changes it at `/v1/server/settings`; `GET /v1/server` reports it to any

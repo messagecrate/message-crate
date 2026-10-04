@@ -21,6 +21,16 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-04 **The server keeps its log in files the owner can read.** Docker
+  and the desktop app's server now write their log to a `logs` directory
+  beside the database, as well as to their output, so the lines that explain a
+  failure are still there after a restart. It keeps at most 250 MB, in five
+  files of 50 MB, and deletes the oldest file when a new one starts. The owner
+  can read it through the server's interface, newest first, narrow it to
+  errors or warnings, search it, and download a whole file; no other account
+  can. A Logs screen on Owner Home that shows it comes next. The log never
+  holds a password, a token, a search, message text, an attachment or a contact's
+  name, phone number or email address.
 - 2026-10-04 **A search word the other list takes stays in the box.**
   Switching between Conversations and Messages with a word only one of them
   takes, such as `from:me` on Conversations, no longer shows an error. The

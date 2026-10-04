@@ -197,12 +197,13 @@ fn query_pairs(query: &str) -> Vec<(String, String)> {
         .unwrap_or_default()
 }
 
-/// Whether a query parameter's name, as it is written in the URL, reads as
-/// `media_link` once decoded.
-pub(crate) fn names_a_media_link(raw_name: &str) -> bool {
+/// A query parameter's name, as it is written in the URL, decoded as the
+/// server reads it; `None` when it cannot be read.
+pub(crate) fn decoded_query_name(raw_name: &str) -> Option<String> {
     query_pairs(&format!("{raw_name}="))
-        .first()
-        .is_some_and(|(name, _)| name == MEDIA_LINK_PARAM)
+        .into_iter()
+        .next()
+        .map(|(name, _)| name)
 }
 
 /// The first `media_link` in a query string, decoded.

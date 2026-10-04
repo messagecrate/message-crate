@@ -19,6 +19,9 @@
 use axum::extract::State;
 use serde::{Deserialize, Serialize};
 
+pub(crate) mod log_files;
+pub(crate) mod log_lines;
+
 use crate::db::{account_profile, server_settings, storage};
 use crate::extract::Json;
 use crate::server::{ApiError, AppState, Created, Owner};
@@ -740,3 +743,6 @@ async fn end_demo_sessions(state: &AppState) -> Result<(), ApiError> {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod log_tests;

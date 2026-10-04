@@ -1377,6 +1377,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/server/log-files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List the Server Log's files, newest first.
+         * @description The server writes to the newest, and starts the next before a line would
+         *     carry it past 50 MB. It keeps 5, and deletes the oldest when one more
+         *     starts. The owner's alone.
+         */
+        get: operations["list_log_files"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/server/log-files/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download one of the Server Log's files whole, as it is on disk.
+         * @description The answer is `text/plain`, an attachment named for the file. The newest
+         *     file is answered as it stood when the download started; lines written
+         *     while it downloads are in the next one. The owner's alone.
+         */
+        get: operations["get_log_file"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/server/log-lines": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the Server Log's lines, newest first.
+         * @description `after` reads the lines older than the line with that id, so the page
+         *     after this one starts at the id of its last line, and lines the server
+         *     writes in between do not move it. `level` keeps the lines at that level
+         *     and the more severe ones; `text` keeps the lines that hold it, ignoring
+         *     case. A line never holds a password, a token, message text or a contact's
+         *     name or identities. The owner's alone, because the log is about the whole
+         *     installation.
+         */
+        get: operations["list_log_lines"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/server/settings": {
         parameters: {
             query?: never;
@@ -2768,6 +2838,25 @@ export interface components {
          * @enum {string}
          */
         ListKind: "contacts" | "conversations" | "messages";
+        /**
+         * @description A page of the Server Log's lines, newest first.
+         *
+         *     Not a `Page`: the log is written while it is read, so a count and an
+         *     offset from the newest line would move under the reader, and counting a
+         *     250 MB log for every page is the cost a cursor saves
+         *     (`docs/architecture/http-api.md`, "Lists").
+         */
+        ListLogLinesResponse: {
+            /**
+             * @description Whether older lines match too. Read them with `after` set to the id of
+             *     the last line here.
+             */
+            has_more: boolean;
+            /** @description The lines, newest first. */
+            items: components["schemas"]["LogLine"][];
+            /** @description The most lines this page could hold. */
+            limit: number;
+        };
         /** @description Body for `POST /v1/contacts/unmatched-identities`. */
         ListUnmatchedIdentitiesRequest: {
             /** @description Raw identifiers — phone numbers, emails — as they appear in an export. */
@@ -2778,6 +2867,47 @@ export interface components {
          * @enum {string}
          */
         LoadMode: "append" | "edit";
+        /** @description One file of the Server Log. */
+        LogFile: {
+            /**
+             * Format: int64
+             * @description The file's size when it was read.
+             */
+            bytes: number;
+            /**
+             * Format: int64
+             * @description The file's number. A larger number is a newer file, and the largest is
+             *     the one the server is writing to.
+             */
+            id: number;
+            /** @description When the last line was written to it, in UTC (RFC 3339). */
+            modified_at: string;
+            /** @description The file's name, as a download is named: `server-000001.log`. */
+            name: string;
+        };
+        /**
+         * @description How severe a line is, as `tracing` writes it.
+         * @enum {string}
+         */
+        LogLevel: "error" | "warn" | "info" | "debug" | "trace";
+        /** @description One line of the Server Log. */
+        LogLine: {
+            /**
+             * Format: int64
+             * @description Where the line is in the log. A larger id is a newer line. Send it as
+             *     `after` to read the lines older than this one.
+             */
+            id: number;
+            /** @description How severe the line is. */
+            level: components["schemas"]["LogLevel"];
+            /**
+             * @description The line after its time and level: the request or work it belongs to,
+             *     and what it says. A line break inside it is written as `\n`.
+             */
+            text: string;
+            /** @description When the line was written, in UTC, as RFC 3339 with microseconds. */
+            time: string;
+        };
         /**
          * @description A media link: the URLs a media element loads to read one asset with no
          *     `Authorization` header, and when they stop working.
@@ -3732,6 +3862,36 @@ export interface components {
                  * @description Time spent uploading, when finished.
                  */
                 upload_ms?: number | null;
+            }[];
+            /** @description Page size used. */
+            limit: number;
+            /** @description Page offset used. */
+            offset: number;
+            /**
+             * Format: int64
+             * @description Rows matching the query across every page.
+             */
+            total: number;
+        };
+        /** @description One page of a list. */
+        Page_LogFile: {
+            /** @description The rows on this page. */
+            items: {
+                /**
+                 * Format: int64
+                 * @description The file's size when it was read.
+                 */
+                bytes: number;
+                /**
+                 * Format: int64
+                 * @description The file's number. A larger number is a newer file, and the largest is
+                 *     the one the server is writing to.
+                 */
+                id: number;
+                /** @description When the last line was written to it, in UTC (RFC 3339). */
+                modified_at: string;
+                /** @description The file's name, as a download is named: `server-000001.log`. */
+                name: string;
             }[];
             /** @description Page size used. */
             limit: number;
@@ -11919,6 +12079,211 @@ export interface operations {
             };
             /** @description [`unsupported-media-type`](https://messagecrate.app/docs/developer/reference/errors/unsupported-media-type): The request's `Content-Type` is absent or not one this route accepts. */
             415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_log_files: {
+        parameters: {
+            query?: {
+                /** @description Page size, default 40, at most 500 */
+                limit?: number;
+                /** @description Rows to skip */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Page_LogFile"];
+                };
+            };
+            /** @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /**
+             * @description [`not-the-owner`](https://messagecrate.app/docs/developer/reference/errors/not-the-owner): This route belongs to the owner: creating accounts, changing server settings, or anything else only the owner may do.
+             *
+             *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
+             *
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
+            406: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    get_log_file: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description The file's id, from `GET /v1/server/log-files` */
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The file, as an attachment named `server-<id>.log` */
+            200: {
+                headers: {
+                    /** @description `attachment; filename="server-000001.log"`, the file's name */
+                    "Content-Disposition"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/plain": string;
+                };
+            };
+            /** @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /**
+             * @description [`not-the-owner`](https://messagecrate.app/docs/developer/reference/errors/not-the-owner): This route belongs to the owner: creating accounts, changing server settings, or anything else only the owner may do.
+             *
+             *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
+             *
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`not-found`](https://messagecrate.app/docs/developer/reference/errors/not-found): No resource at that address exists for this account. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`validation-failed`](https://messagecrate.app/docs/developer/reference/errors/validation-failed): A query parameter, path segment or body field was read and then broke a rule: a `limit` of zero, an id that is not a number, a name that is blank or too long, an unknown `sort` key or `status` value, a required parameter or body field that is missing or blank, a query parameter the route does not take. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_log_lines: {
+        parameters: {
+            query?: {
+                /** @description Only lines at this level or more severe: `error`, `warn` (errors too), `info`, `debug`, `trace` (every line) */
+                level?: components["schemas"]["LogLevel"];
+                /** @description Only lines that hold this text, ignoring case */
+                text?: string;
+                /** @description Only lines older than the line with this id: the id of the last line of the page before */
+                after?: number;
+                /** @description Page size, default 40, at most 500 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListLogLinesResponse"];
+                };
+            };
+            /** @description [`authentication-required`](https://messagecrate.app/docs/developer/reference/errors/authentication-required): The request carried no usable credential: the `Authorization: Bearer <token>` header is missing, malformed, unknown or expired. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /**
+             * @description [`not-the-owner`](https://messagecrate.app/docs/developer/reference/errors/not-the-owner): This route belongs to the owner: creating accounts, changing server settings, or anything else only the owner may do.
+             *
+             *     [`insufficient-scope`](https://messagecrate.app/docs/developer/reference/errors/insufficient-scope): The credential was accepted but may not do this.
+             *
+             *     [`account-disabled`](https://messagecrate.app/docs/developer/reference/errors/account-disabled): The account exists but the owner has disabled it, so it may not log in or act.
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description [`not-acceptable`](https://messagecrate.app/docs/developer/reference/errors/not-acceptable): The request's `Accept` header named nothing this route can produce. */
+            406: {
                 headers: {
                     [name: string]: unknown;
                 };
