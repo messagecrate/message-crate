@@ -483,15 +483,13 @@ released versions carry their date on the heading.
 #### Exporting and converting
 
 - 2026-10-04 **GO SMS Pro and SMS Backup+ attachments keep their size when
-  their files are left out.** A run set to "Do not copy" photos and files
-  wrote each GO SMS Pro and SMS Backup+ attachment without its size. Each
-  one now carries its size, as SMS Backup & Restore attachments already
-  did.
+  their files are left out.** A run with Attachments set to Skip wrote each
+  GO SMS Pro and SMS Backup+ attachment without its size. Each one now
+  carries its size, as SMS Backup & Restore attachments already did.
 - 2026-10-04 **An obfuscated export no longer records the real size of each
   photo or file.** Obfuscate replaces every attachment with a placeholder,
-  but an SMS Backup & Restore attachment kept the size of the real file,
-  which can be enough to recognise it. An obfuscated attachment now carries
-  no size.
+  but the attachment kept the size of the real file, which can be enough
+  to recognise it. An obfuscated attachment now carries no size.
 - 2026-10-03 **An obfuscated export leaves out attachments in subfolders
   too.** A real photo or file inside a subfolder of the export's
   attachments stayed in the export that exists to leave it out. A shortcut
