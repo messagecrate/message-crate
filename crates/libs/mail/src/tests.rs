@@ -576,3 +576,25 @@ fn a_mail_that_names_addresses_handles_is_refused() {
          handle (X-ME-Sender-Handle); export the backup again"
     );
 }
+
+/// An earlier mail with no owner and no sender address carries none of the
+/// `X-ME-*-Handle` headers, but its roster still says `handle`. A roster that
+/// does not read is refused rather than read as nobody.
+#[test]
+fn a_mail_whose_roster_does_not_read_is_refused() {
+    let eml = concat!(
+        "X-ME-Chat-Identifier: chat1000000005\r\n",
+        "X-ME-Conversation-Type: group\r\n",
+        "X-ME-Guid: g1\r\n",
+        "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
+        "X-ME-Direction: outgoing\r\n",
+        "X-ME-Participants: [{\"handle\":\"+15555550101\"},{\"handle\":\"+15555550102\"}]\r\n",
+        "\r\n",
+        "hello\r\n",
+    );
+    let err = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap_err();
+    assert!(
+        format!("{err:#}").starts_with("read X-ME-Participants"),
+        "{err:#}"
+    );
+}

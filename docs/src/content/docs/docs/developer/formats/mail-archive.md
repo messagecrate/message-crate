@@ -117,7 +117,7 @@ Reverse import (EML/MBOX → common-message JSON) is available via [`message-ir-
 
 Prefix: **`X-ME-`** (Message Crate). JSON header values are compact single-line JSON.
 
-A mail an earlier Message Crate wrote names its addresses with `X-ME-Sender-Handle`, `X-ME-Owner-Handle` or `X-ME-Message-Owner-Handle`. The reader refuses such a mail, naming the header, rather than read it with no sender: export the backup again.
+A mail an earlier Message Crate wrote names its addresses with `X-ME-Sender-Handle`, `X-ME-Owner-Handle` or `X-ME-Message-Owner-Handle`. The reader refuses such a mail, naming the header, rather than read it with no sender: export the backup again. An `X-ME-Participants` roster that does not read, such as one whose entries say `handle`, is refused the same way rather than read as nobody.
 
 | Header | Values | Notes |
 |--------|----------------|-------|

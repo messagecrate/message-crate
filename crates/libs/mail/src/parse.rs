@@ -27,8 +27,9 @@ struct AttachmentMetaCell {
 /// # Errors
 ///
 /// Returns an error when the bytes are not a valid email, a required
-/// `X-ME-*` header is missing, or the mail names its addresses with the
-/// handle headers an earlier Message Crate wrote.
+/// `X-ME-*` header is missing, the roster in `X-ME-Participants` does not
+/// read, or the mail names its addresses with the handle headers an earlier
+/// Message Crate wrote.
 pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     let mail = mailparse::parse_mail(bytes).context("parse eml bytes")?;
     let headers = &mail.headers;
@@ -45,7 +46,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     let chat_identifier = required_header(headers, hn::CHAT_IDENTIFIER)?;
     let conversation_type = header_or(headers, hn::CONVERSATION_TYPE, "individual");
     let group_title = optional_header(headers, hn::GROUP_TITLE);
-    let participants = parse_participants(headers);
+    let participants = parse_participants(headers)?;
     let guid = required_header(headers, hn::GUID)?;
     let timestamp_unix_ms = required_header(headers, hn::TIMESTAMP_UNIX_MS)?
         .parse::<i64>()
@@ -245,12 +246,16 @@ fn header_u32(headers: &[MailHeader<'_>], name: &str) -> Option<u32> {
     optional_header(headers, name)?.parse().ok()
 }
 
-/// Participants from the JSON header, or none when absent or malformed.
-fn parse_participants(headers: &[MailHeader<'_>]) -> Vec<Participant> {
+/// Participants from the JSON header, or none when it is absent.
+///
+/// A roster that does not read is refused rather than read as nobody: an
+/// earlier Message Crate wrote `handle` where this one reads `identity`, and
+/// read as empty such a conversation would lose everyone in it.
+fn parse_participants(headers: &[MailHeader<'_>]) -> Result<Vec<Participant>> {
     let Some(raw) = optional_header(headers, hn::PARTICIPANTS) else {
-        return Vec::new();
+        return Ok(Vec::new());
     };
-    serde_json::from_str(&raw).unwrap_or_default()
+    serde_json::from_str(&raw).context("read X-ME-Participants")
 }
 
 /// The message text: the body of a simple mail, or the first `text/plain` part.
