@@ -243,7 +243,12 @@ fn emit_text(ctx: &ListCtx, out: &mut Sql, term: &TextTerm) {
         ListKind::Conversations => {
             out.push("(");
             free_text_match(out, &conversation_title_text(), term);
-            out.push(" OR EXISTS (SELECT 1 FROM handles hc WHERE hc.id = c.chat_handle_id AND ");
+            // The conversation's own identity counts only when it is an
+            // address, as in `with:` and `identity:` (#1696).
+            out.push(&format!(
+                " OR EXISTS (SELECT 1 FROM handles hc WHERE hc.id = c.chat_handle_id AND NOT {} AND ",
+                is_a_key_raw("hc.raw")
+            ));
             free_text_match(out, "hc.raw", term);
             // The handle join is a LEFT join: a source may name a participant
             // and record no address for them, and that person is searchable by
@@ -750,7 +755,8 @@ fn emit_to(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<
 }
 
 /// `in:#id` names a conversation; `in:<text>` matches its title
-/// (`conversation_title_sql`) or its chat handle.
+/// (`conversation_title_sql`) or its chat handle when that is an address,
+/// never a `name:` or `nameless:` key (#1696).
 fn emit_in(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<(), QueryError> {
     match v {
         Value::Id(id) => {
@@ -763,7 +769,10 @@ fn emit_in(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result<
             ctx.conversation(out, |o| {
                 o.push("(");
                 like_contains(o, &conversation_title_text(), t, prefix);
-                o.push(" OR EXISTS (SELECT 1 FROM handles hc WHERE hc.id = c.chat_handle_id AND ");
+                o.push(&format!(
+                    " OR EXISTS (SELECT 1 FROM handles hc WHERE hc.id = c.chat_handle_id AND NOT {} AND ",
+                    is_a_key_raw("hc.raw")
+                ));
                 like_contains(o, "hc.raw", t, prefix);
                 o.push("))");
             });
