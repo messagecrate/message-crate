@@ -139,14 +139,8 @@ export default function ConversationList({
           const on = tagChecks[name] === "on";
           void applyMembership(name, !on);
         }}
-        onCreate={(name) => {
-          void (async () => {
-            const existing = allTags.find((t) => t.toLowerCase() === name.toLowerCase());
-            if (!existing) {
-              await tagActions.create(name);
-            }
-            await applyMembership(existing ?? name, true);
-          })();
+        onCreate={async (name) => {
+          await applyMembership(await tagActions.ensure(name), true);
         }}
         onClearAll={() => {
           const names = new Set<string>();
@@ -168,7 +162,7 @@ export default function ConversationList({
     setRightToolbar,
     tagChecks,
     targetConversations,
-    tagActions.create,
+    tagActions.ensure,
   ]);
 
   // The box reads as ticked only when every conversation the list holds is

@@ -588,6 +588,12 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-04 **The Contact Groups and Message Tags menus say why a name is
+  refused.** Creating a Contact Group from the Contact Groups menu on the
+  contacts list, or a Message Tag from the Message Tags menu on the
+  conversation list, did nothing when the server refused the name, such as a
+  Contact Group name holding `;` or a name over 80 characters. The menu now
+  keeps the typed name and shows the reason, as the sidebar already did.
 - 2026-10-04 **A screen reader says which contact is open.** The open
   contact in the Contacts list was shown only by its highlight, so a screen
   reader gave no sign of which one was open. The open contact is now
