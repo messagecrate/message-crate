@@ -121,7 +121,7 @@ Apple Messages also writes each reaction as a row of its own (`message_kind` `ta
 | Value | Meaning |
 |-------|---------|
 | `deleted_in_source_app` | The person deleted the message in the source app before the backup was made, and the backup still holds it. `text` is whatever text the backup kept. |
-| `unsent` | The sender took the message back for everyone: some part of it was unsent and no part has anything left, so `text` is empty and there are no attachments. |
+| `unsent` | The sender took the message back for everyone: every part of it was unsent, or some part was and no part has text or an attachment left, so `text` is empty. |
 
 A message with neither leaves `deletion` out of the file. A message only partly unsent, with text or an attachment left in another part, carries no mark. A marked message is imported, listed and searched like any other; the search word `deleted:` narrows to or away from marked messages.
 

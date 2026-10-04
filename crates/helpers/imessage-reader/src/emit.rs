@@ -436,7 +436,13 @@ fn build_record(
     let context = resolve_context(session, message);
     let (parts, attachments) = collect_parts_and_attachments(session, message)?;
     let deletion = deletion(message, !attachments.is_empty());
-    let mut row = classify_row(session, message, &context.service, !attachments.is_empty());
+    let mut row = classify_row(
+        session,
+        message,
+        &context.service,
+        !attachments.is_empty(),
+        deletion,
+    );
     let kind = row.kind;
     let text = std::mem::take(&mut row.text);
     // A tapback has no reactions of its own.
@@ -472,10 +478,12 @@ fn build_record(
 ///
 /// A row in a chat's recently deleted list (`chat_recoverable_message_join`)
 /// was deleted in Messages, and keeps whatever text the database still
-/// holds. A row is Unsent when some part of it was unsent and nothing is
-/// left in any part: no text and no attachment. A row only partly unsent
-/// keeps what is left and is not marked. A row both deleted and unsent is
-/// Unsent, which is why nothing of it is left.
+/// holds. A row is Unsent when every part of it was unsent, or when some
+/// part was and nothing is left in any part: no text and no attachment. A
+/// row whose every part was unsent is Unsent even when attachment rows are
+/// still joined to it, because those files were unsent with their parts. A
+/// row only partly unsent keeps what is left and is not marked. A row both
+/// deleted and unsent is Unsent, which is why nothing of it is left.
 fn deletion(message: &Message, has_attachments: bool) -> Option<Deletion> {
     let some_part_unsent = message.edited_parts.as_ref().is_some_and(|edited| {
         edited
@@ -488,7 +496,7 @@ fn deletion(message: &Message, has_attachments: bool) -> Option<Deletion> {
         .text
         .as_deref()
         .is_some_and(|text| text.chars().any(|c| !c.is_whitespace() && c != '\u{FFFC}'));
-    if some_part_unsent && !text_left && !has_attachments {
+    if message.is_fully_unsent() || (some_part_unsent && !text_left && !has_attachments) {
         Some(Deletion::Unsent)
     } else if message.is_deleted() {
         Some(Deletion::DeletedInSourceApp)
@@ -567,6 +575,7 @@ fn classify_row(
     message: &Message,
     service: &str,
     has_attachments: bool,
+    deletion: Option<Deletion>,
 ) -> RowKind {
     let shared_location = message
         .shared_location_kind()
@@ -582,9 +591,10 @@ fn classify_row(
         } else if message.is_shareplay() {
             let text = "SharePlay Message Ended".to_string();
             ("announcement", text.clone(), Some(text), None)
-        } else if message.is_announcement() && !message.is_fully_unsent() {
-            // A message unsent whole is the message itself, marked Unsent
-            // (see `deletion`), not a line saying someone unsent it.
+        } else if message.is_announcement() && deletion != Some(Deletion::Unsent) {
+            // A message marked Unsent is the message itself (see
+            // `deletion`), not a line saying someone unsent it. The one
+            // decision makes both, so the mark and the kind never disagree.
             let text = announcement_text(session, message).unwrap_or_default();
             ("announcement", text.clone(), Some(text), None)
         } else if let Some(location) = shared_location.as_deref() {
@@ -1273,10 +1283,16 @@ mod tests {
         assert!(context.conversation.participants.is_empty());
         assert_eq!(context.service, "SMS");
 
-        assert_eq!(classify_row(&session, &message, "SMS", false).kind, "sms");
-        assert_eq!(classify_row(&session, &message, "SMS", true).kind, "mms");
         assert_eq!(
-            classify_row(&session, &message, "iMessage", true).kind,
+            classify_row(&session, &message, "SMS", false, None).kind,
+            "sms"
+        );
+        assert_eq!(
+            classify_row(&session, &message, "SMS", true, None).kind,
+            "mms"
+        );
+        assert_eq!(
+            classify_row(&session, &message, "iMessage", true, None).kind,
             "imessage"
         );
     }
@@ -1294,7 +1310,7 @@ mod tests {
         rename.item_type = 2;
         rename.group_title = Some("New name".to_string());
         assert!(rename.is_announcement());
-        let row = classify_row(&session, &rename, "iMessage", false);
+        let row = classify_row(&session, &rename, "iMessage", false, None);
         assert_eq!(row.kind, "announcement");
         assert_eq!(row.text, "Robin named the conversation New name");
         assert_eq!(
@@ -1324,7 +1340,7 @@ mod tests {
         location.share_status = false;
         location.share_direction = Some(true);
         location.text = None;
-        let row = classify_row(&session, &location, "iMessage", false);
+        let row = classify_row(&session, &location, "iMessage", false, None);
         assert_eq!(row.kind, "location_share");
         assert!(row.text.starts_with("Shared location "), "{}", row.text);
         assert!(row.shared_location.is_some());
@@ -1332,7 +1348,7 @@ mod tests {
         let mut balloon = FixtureDb::messages(&session).remove(2);
         balloon.balloon_bundle_id =
             Some("com.apple.PassbookUIService.PeerPaymentMessagesExtension".to_string());
-        let row = classify_row(&session, &balloon, "iMessage", false);
+        let row = classify_row(&session, &balloon, "iMessage", false, None);
         assert_eq!(row.kind, "balloon");
         assert_eq!(row.text, "Saturday works");
         assert_eq!(
@@ -1343,7 +1359,7 @@ mod tests {
         let mut slam = base;
         slam.expressive_send_style_id =
             Some("com.apple.MobileSMS.expressivesend.impact".to_string());
-        let row = classify_row(&session, &slam, "iMessage", false);
+        let row = classify_row(&session, &slam, "iMessage", false, None);
         assert_eq!(row.text, "Saturday works\n\nSent with Slam");
         assert_eq!(row.send_effect.as_deref(), Some("Sent with Slam"));
         let fields = imessage_fields(&session, &slam, row, &[]);
@@ -1439,6 +1455,35 @@ mod tests {
         let partly = record(PARTLY_UNSENT_GUID);
         assert_eq!(partly.deletion, None);
         assert_eq!(partly.text, PARTLY_UNSENT_TEXT);
+    }
+
+    /// A row whose every part was unsent is Unsent even when attachment rows
+    /// are still joined to it, and is not the "unsent a message"
+    /// announcement either, so the fact it was unsent is never lost. A row
+    /// only partly unsent with an attachment left, and no text, is not
+    /// marked: the attachment is what is left.
+    #[test]
+    fn a_fully_unsent_row_is_unsent_whatever_attachment_rows_remain() {
+        let fixture = FixtureDb::write();
+        let session = fixture.session();
+        let by_guid = |guid: &str| {
+            FixtureDb::messages(&session)
+                .into_iter()
+                .find(|m| m.guid == guid)
+                .unwrap()
+        };
+
+        let unsent = by_guid(UNSENT_GUID);
+        let mark = deletion(&unsent, true);
+        assert_eq!(mark, Some(Deletion::Unsent));
+        let row = classify_row(&session, &unsent, "iMessage", true, mark);
+        assert_eq!(row.kind, "imessage");
+        assert_eq!(row.announcement, None);
+
+        let mut partly = by_guid(PARTLY_UNSENT_GUID);
+        partly.text = None;
+        assert_eq!(deletion(&partly, true), None);
+        assert_eq!(deletion(&partly, false), Some(Deletion::Unsent));
     }
 
     /// The whole stream over the fixture: eighteen rows seen, none skipped.
