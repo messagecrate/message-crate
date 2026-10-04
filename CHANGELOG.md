@@ -1040,6 +1040,11 @@ released versions carry their date on the heading.
   edge, unlike every other button. They now leave the same 1-pixel gap. The
   day the date picker's keyboard cursor is on shows a 2-pixel ring inside it,
   the same as a focused table row, where it showed a 1-pixel one.
+- 2026-10-04 **A Settings tab that can't be opened yet shows the not-allowed
+  pointer.** While the owner adds an account, Profile, Storage and Audit
+  Trail are greyed out until the account exists, but the pointer over them
+  was the plain arrow. It is now the not-allowed pointer every other control
+  that is turned off shows.
 - 2026-10-04 **The panel resize grips move by exactly 8 pixels.** Each
   arrow key on the grip of the left panel or the list column moved the
   panel 9 pixels wider or 7 narrower, and pressing the grip without moving
