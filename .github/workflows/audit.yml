@@ -28,6 +28,7 @@ on:
       - "docs/package-lock.json"
       - "docs/package.json"
       - ".github/workflows/audit.yml"
+      - "scripts/audit-docs.sh"
   schedule:
     # Mondays 09:13 UTC. An off-hour minute avoids the on-the-hour spike.
     - cron: "13 9 * * 1"
@@ -81,8 +82,10 @@ jobs:
           npm ci
           npm audit --audit-level=high
 
+      # The script holds the list of advisories accepted with no patched
+      # version, each with its reason, and fails on any other high or
+      # critical one.
       - name: Audit docs site
         run: |
-          cd docs
-          npm ci
-          npm audit --audit-level=high
+          (cd docs && npm ci)
+          ./scripts/audit-docs.sh

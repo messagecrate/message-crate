@@ -42,8 +42,10 @@ because its build needs the webkit and gtk system packages that job already
 installs; a second install would double the cost for no coverage.
 
 The dependency audits live in `audit.yml`, not `ci.yml`. That workflow runs
-`cargo deny check advisories` and `npm audit --audit-level=high` for `web/` and
-`docs/`, triggered by a pull request that touches `Cargo.lock`,
+`cargo deny check advisories`, `npm audit --audit-level=high` for `web/`, and
+`scripts/audit-docs.sh` for `docs/`, which fails on the same advisories
+except the ones it lists as having no patched version. It is
+triggered by a pull request that touches `Cargo.lock`,
 `web/package-lock.json` or `docs/package-lock.json`, and by a weekly schedule.
 
 Test coverage lives in `coverage.yml` for the same reason seen from the other
