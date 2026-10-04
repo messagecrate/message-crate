@@ -544,14 +544,12 @@ fn conversation_title_text() -> String {
 /// the name the conversation is known by, so `in:sarah` still finds Sarah's
 /// conversation when it has no title.
 fn conversation_identity_text() -> String {
-    let prefix = message_ir::NAME_CHAT_ID_PREFIX;
-    let nameless = message_ir::NAMELESS_CHAT_ID;
     format!(
-        "coalesce((SELECT CASE WHEN hc.raw = '{nameless}' THEN '' \
-           WHEN substr(hc.raw, 1, {len}) = '{prefix}' THEN substr(hc.raw, {after}) \
+        "coalesce((SELECT CASE WHEN {} THEN '' WHEN {} THEN substr(hc.raw, {}) \
            ELSE hc.raw END FROM handles hc WHERE hc.id = c.chat_handle_id), '')",
-        len = prefix.len(),
-        after = prefix.len() + 1
+        is_the_nameless_key("hc.raw"),
+        is_a_name_key("hc.raw"),
+        message_ir::NAME_CHAT_ID_PREFIX.len() + 1
     )
 }
 
@@ -570,12 +568,24 @@ fn is_a_key_handle(handle_id_expr: &str) -> String {
 /// SQL that holds when the handle text `raw_col` is a conversation key, for
 /// a query that already holds the handle row (see `is_a_key_handle`).
 fn is_a_key_raw(raw_col: &str) -> String {
-    let prefix = message_ir::NAME_CHAT_ID_PREFIX;
-    let nameless = message_ir::NAMELESS_CHAT_ID;
     format!(
-        "(substr({raw_col}, 1, {}) = '{prefix}' OR {raw_col} = '{nameless}')",
-        prefix.len()
+        "({} OR {})",
+        is_a_name_key(raw_col),
+        is_the_nameless_key(raw_col)
     )
+}
+
+/// SQL that holds when the handle text `raw_col` is a `name:` key. With
+/// [`is_the_nameless_key`], the one place that knows the key shapes, so
+/// `with:`, `identity:`, plain text and `in:` agree on what a key is.
+fn is_a_name_key(raw_col: &str) -> String {
+    let prefix = message_ir::NAME_CHAT_ID_PREFIX;
+    format!("substr({raw_col}, 1, {}) = '{prefix}'", prefix.len())
+}
+
+/// SQL that holds when the handle text `raw_col` is the `nameless:` key.
+fn is_the_nameless_key(raw_col: &str) -> String {
+    format!("{raw_col} = '{}'", message_ir::NAMELESS_CHAT_ID)
 }
 
 /// Some party to conversation `c` is `v`: its chat handle when that is an

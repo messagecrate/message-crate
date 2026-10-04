@@ -3689,7 +3689,7 @@ mod name_keyed_conversation {
     /// all (#1696). The conversation is still found by the name after the
     /// prefix, by its participant row, and by its title.
     #[tokio::test]
-    async fn plain_text_and_in_do_not_match_the_key() {
+    async fn plain_text_and_in_read_the_name_not_the_key_prefix() {
         let (pool, _dir, _f) = seeded().await;
         let mut conn = pool.acquire().await.unwrap();
         let key = handle(&mut conn, ACCOUNT, "name:Sarah Vale", "sms").await;
