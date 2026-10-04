@@ -30,15 +30,33 @@ use crate::db::engine::BEGIN_IMMEDIATE_SQL;
 pub struct WriteTx<'c>(Transaction<'c, Sqlite>);
 
 /// Begin a write transaction on `conn`, waiting on the busy timeout while
-/// another connection holds the write lock.
+/// another connection holds the write lock, and bring the connection's copy
+/// of the schema up to date before the first statement runs.
+///
+/// `BEGIN IMMEDIATE` does not check the schema, so a connection that idled
+/// while another changed it (a promote drops and re-creates the full-text
+/// search triggers) still holds the old copy. When the transaction's first
+/// statement fires a full-text search trigger on such a connection, SQLite
+/// connects to `messages_fts` while that statement is being prepared, and
+/// cannot reload the schema until it is prepared: the connection to
+/// `messages_fts` fails, and the statement with it, as "no such table"
+/// (#1600). [`SCHEMA_CHECK_SQL`] reads the schema table, which makes SQLite
+/// compare its copy with the file and reload it. Nothing can change the
+/// schema after that while the write lock is held.
 ///
 /// # Errors
 ///
 /// Returns the database error when the lock is not granted within the busy
 /// timeout, or when `conn` is already inside a transaction.
 pub async fn begin_write(conn: &mut SqliteConnection) -> sqlx::Result<WriteTx<'_>> {
-    Ok(WriteTx(conn.begin_with(BEGIN_IMMEDIATE_SQL).await?))
+    let mut tx = conn.begin_with(BEGIN_IMMEDIATE_SQL).await?;
+    sqlx::query(SCHEMA_CHECK_SQL).execute(&mut *tx).await?;
+    Ok(WriteTx(tx))
 }
+
+/// A statement that reads the schema table and nothing else, so running it
+/// reloads a connection's copy of the schema when the file's is newer.
+const SCHEMA_CHECK_SQL: &str = "SELECT 1 FROM sqlite_schema LIMIT 1";
 
 impl WriteTx<'_> {
     /// Commit the transaction and release the write lock.
@@ -82,4 +100,48 @@ pub(crate) async fn commit_during<F: std::future::Future>(other: WriteTx<'_>, op
     });
     committed.expect("the second connection's write commits");
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::schema;
+
+    /// A connection that sat idle while another changed the schema begins a
+    /// write transaction and deletes a message, which fires the full-text
+    /// search trigger. The delete goes through (#1600).
+    #[tokio::test]
+    async fn a_write_after_another_connection_changed_the_schema_sees_the_new_schema() {
+        let (pool, _dir) = crate::db::engine::test_pool().await;
+        let mut other = pool.acquire().await.expect("first connection");
+        schema::ensure_schema(&mut other)
+            .await
+            .expect("create the schema");
+        // A second connection that loads the schema and never uses the
+        // full-text search table, so it has not connected to it.
+        let mut stale = pool.acquire().await.expect("second connection");
+        sqlx::query("SELECT count(*) FROM accounts")
+            .execute(&mut *stale)
+            .await
+            .expect("read before the schema changes");
+
+        // What a promote does on the first connection while the second idles.
+        let mut tx = begin_write(&mut other).await.expect("begin on the first");
+        schema::drop_messages_fts_triggers(&mut tx)
+            .await
+            .expect("drop triggers");
+        schema::install_messages_fts_triggers(&mut tx)
+            .await
+            .expect("install triggers");
+        tx.commit().await.expect("commit the schema change");
+
+        let mut tx = begin_write(&mut stale).await.expect("begin on the second");
+        sqlx::query(
+            "DELETE FROM messages WHERE id IN (SELECT id FROM messages WHERE account_id = 1)",
+        )
+        .execute(&mut *tx)
+        .await
+        .expect("delete after the schema changed");
+        tx.commit().await.expect("commit the delete");
+    }
 }
