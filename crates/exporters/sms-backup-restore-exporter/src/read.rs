@@ -552,6 +552,7 @@ fn ir_message(
         subject: (!message.subject.is_empty()).then(|| message.subject.clone()),
         text: message.text.clone(),
         attachments: message.attachments.iter().map(ir_attachment).collect(),
+        reactions: Vec::new(),
         imessage: None,
         source: IrSource {
             android_type: message.android_type.trim().parse().ok(),

@@ -22,7 +22,7 @@ use imessage_database::{
 };
 use imessage_reader_protocol::{
     Conversation as ConversationRecord, Event, Imessage as ImessageRecord,
-    Message as MessageRecord, Participant, Progress, bare_address,
+    Message as MessageRecord, Participant, Progress, Reaction, bare_address,
 };
 use serde_json::Value;
 
@@ -31,7 +31,7 @@ use crate::{
     body::apply_body,
     error::RuntimeError,
     fields::{
-        TapbackCell, balloon_kind_label, balloon_summary, build_balloon_value, build_edit_records,
+        balloon_kind_label, balloon_summary, build_balloon_value, build_edit_records,
         expressive_label, parse_thread_part, shared_location_label,
     },
     log::emit,
@@ -306,10 +306,13 @@ fn tapback_kind(kind: Tapback<'_>) -> (&'static str, Option<String>) {
     }
 }
 
-/// JSON array of tapbacks on this message, if any exist.
-fn build_parent_tapbacks(session: &MailSession, message: &Message) -> Option<Value> {
-    let parts = session.tapbacks.get(&message.guid)?;
-    let mut sortable: Vec<(usize, i64, i32, TapbackCell)> = Vec::new();
+/// The reactions that stand on this message, in part, date and row order.
+/// A removed reaction is left out, so the list needs no action.
+fn build_reactions(session: &MailSession, message: &Message) -> Vec<Reaction> {
+    let Some(parts) = session.tapbacks.get(&message.guid) else {
+        return Vec::new();
+    };
+    let mut sortable: Vec<(usize, i64, i32, Reaction)> = Vec::new();
     for (&part_index, tapbacks) in parts {
         for tapback in tapbacks {
             let Variant::Tapback(_, action, kind) = tapback.variant() else {
@@ -318,6 +321,9 @@ fn build_parent_tapbacks(session: &MailSession, message: &Message) -> Option<Val
             if matches!(action, TapbackAction::Removed) {
                 continue;
             }
+            let Ok(part) = u32::try_from(part_index) else {
+                continue;
+            };
             let (kind, emoji) = tapback_kind(kind);
             let (reactor_identity, reactor_display_name) = if tapback.is_from_me() {
                 (
@@ -336,10 +342,10 @@ fn build_parent_tapbacks(session: &MailSession, message: &Message) -> Option<Val
                 part_index,
                 tapback.date,
                 tapback.rowid,
-                TapbackCell {
-                    part_index,
-                    kind,
-                    emoji,
+                Reaction {
+                    part_index: part,
+                    kind: kind.to_string(),
+                    emoji: trimmed(emoji),
                     is_from_me: tapback.is_from_me(),
                     reactor_identity,
                     reactor_display_name,
@@ -347,12 +353,8 @@ fn build_parent_tapbacks(session: &MailSession, message: &Message) -> Option<Val
             ));
         }
     }
-    if sortable.is_empty() {
-        return None;
-    }
     sortable.sort_by_key(|(part, date, rowid, _)| (*part, *date, *rowid));
-    let cells: Vec<_> = sortable.into_iter().map(|(_, _, _, c)| c).collect();
-    serde_json::to_value(&cells).ok()
+    sortable.into_iter().map(|(_, _, _, r)| r).collect()
 }
 
 /// Chat id, roster and sender fields for one row.
@@ -433,6 +435,12 @@ fn build_record(
     let mut row = classify_row(session, message, &context.service, !attachments.is_empty());
     let kind = row.kind;
     let text = std::mem::take(&mut row.text);
+    // A tapback has no reactions of its own.
+    let reactions = if row.tapback.is_some() {
+        Vec::new()
+    } else {
+        build_reactions(session, message)
+    };
     let imessage = imessage_fields(session, message, row, &parts);
 
     let record = MessageRecord {
@@ -446,6 +454,7 @@ fn build_record(
         sender_display_name: context.sender_display_name,
         subject: message.subject.clone().filter(|s| !s.is_empty()),
         text,
+        reactions,
         owner_identity: owner_address(message).unwrap_or_default(),
         owner_display_name: owner_display_name(session, message),
         imessage: (!is_empty(&imessage)).then_some(imessage),
@@ -638,12 +647,6 @@ fn imessage_fields(
         .map(|edited| build_edit_records(edited, &session.offset))
         .unwrap_or_default();
     let read_receipt = read_receipt_rfc3339(message, session.offset);
-    // A tapback has no tapbacks of its own.
-    let tapbacks = if row.tapback.is_some() {
-        None
-    } else {
-        build_parent_tapbacks(session, message)
-    };
     let tapback = row.tapback.as_ref();
     ImessageRecord {
         is_reply: thread.is_reply,
@@ -657,7 +660,6 @@ fn imessage_fields(
         read_receipt_rfc3339: trimmed(read_receipt),
         parts: json_if_any(parts),
         edits: json_if_any(&edits),
-        tapbacks,
         balloon_kind: trimmed(row.app.as_ref().and_then(balloon_kind_label)),
         balloon_bundle_id: trimmed(message.balloon_bundle_id.clone()),
         associated_guid: trimmed(tapback.and_then(|t| t.associated_guid.clone())),
@@ -682,7 +684,6 @@ fn is_empty(fields: &ImessageRecord) -> bool {
         && fields.read_receipt_rfc3339.is_none()
         && fields.parts.is_none()
         && fields.edits.is_none()
-        && fields.tapbacks.is_none()
         && fields.app.is_none()
         && fields.balloon_bundle_id.is_none()
         && fields.balloon_kind.is_none()
@@ -1003,9 +1004,15 @@ mod tests {
             messages[1].guid.clone(),
             HashMap::from([(0usize, vec![heart])]),
         );
-        let cells = build_parent_tapbacks(&session, &messages[1]).unwrap();
-        assert_eq!(cells[0]["reactor_identity"], FRIEND_PHONE_EMAIL);
-        assert_eq!(cells[0]["reactor_display_name"], "Sam Example");
+        let reactions = build_reactions(&session, &messages[1]);
+        assert_eq!(
+            reactions[0].reactor_identity.as_deref(),
+            Some(FRIEND_PHONE_EMAIL)
+        );
+        assert_eq!(
+            reactions[0].reactor_display_name.as_deref(),
+            Some("Sam Example")
+        );
     }
 
     /// A received row with handle 0 has no sender, in a group as in a
@@ -1309,11 +1316,11 @@ mod tests {
         assert!(!is_empty(&fields));
     }
 
-    /// Tapbacks on a parent are listed in part, date and rowid order, with
+    /// Reactions on a parent are listed in part, date and rowid order, with
     /// the reactor named and whether the owner reacted; a removed tapback is
     /// left out.
     #[test]
-    fn parent_tapbacks_are_listed_in_order_and_named() {
+    fn a_parents_reactions_are_listed_in_order_and_named() {
         let fixture = FixtureDb::write();
         let mut session = fixture.session_with_contacts();
         let messages = FixtureDb::messages(&session);
@@ -1337,22 +1344,32 @@ mod tests {
             HashMap::from([(0usize, vec![heart, fire, removed])]),
         );
 
-        let value = build_parent_tapbacks(&session, parent).expect("two tapbacks");
-        let cells = value.as_array().unwrap();
-        assert_eq!(cells.len(), 2, "{value}");
-        assert_eq!(cells[0]["kind"], "emoji");
-        assert_eq!(cells[0]["emoji"], "🔥");
-        assert_eq!(cells[0]["reactor_display_name"], OWNER);
-        assert_eq!(cells[0]["is_from_me"], true);
-        assert_eq!(cells[1]["kind"], "loved");
-        assert_eq!(cells[1]["reactor_identity"], FRIEND_PHONE);
-        assert_eq!(cells[1]["is_from_me"], false);
-        assert_eq!(cells[1]["reactor_display_name"], "Sam Example");
+        assert_eq!(
+            build_reactions(&session, parent),
+            [
+                Reaction {
+                    part_index: 0,
+                    kind: "emoji".into(),
+                    emoji: Some("🔥".into()),
+                    is_from_me: true,
+                    reactor_identity: None,
+                    reactor_display_name: Some(OWNER.into()),
+                },
+                Reaction {
+                    part_index: 0,
+                    kind: "loved".into(),
+                    emoji: None,
+                    is_from_me: false,
+                    reactor_identity: Some(FRIEND_PHONE.into()),
+                    reactor_display_name: Some("Sam Example".into()),
+                },
+            ]
+        );
 
-        assert_eq!(build_parent_tapbacks(&session, &messages[0]), None);
+        assert!(build_reactions(&session, &messages[0]).is_empty());
     }
 
-    /// The whole stream over the fixture: twelve rows seen, none skipped.
+    /// The whole stream over the fixture: fifteen rows seen, none skipped.
     /// Each conversation is announced once, before its first message, and
     /// the stream ends with the full parse count and the done event. The
     /// chat with no handle rows is its own conversation, apart from the
@@ -1393,17 +1410,20 @@ mod tests {
                 r#"message "guid-11" in "+15555550106""#,
                 r#"conversation "orphaned""#,
                 r#"message "guid-12" in "orphaned""#,
+                r#"message "00000000-0000-4000-8000-000000000013" in "chat100""#,
+                r#"message "guid-14" in "chat100""#,
+                r#"message "guid-15" in "chat100""#,
                 "progress",
                 "export_done",
             ]
         );
         assert_eq!(
-            events[19],
-            serde_json::json!({"event": "progress", "stage": "parse", "done": 12, "total": 12})
+            events[22],
+            serde_json::json!({"event": "progress", "stage": "parse", "done": 15, "total": 15})
         );
         assert_eq!(
-            events[20],
-            serde_json::json!({"event": "export_done", "messages_seen": 12, "failures": 0})
+            events[23],
+            serde_json::json!({"event": "export_done", "messages_seen": 15, "failures": 0})
         );
     }
 

@@ -18,7 +18,7 @@ fn writes_json_csv_jsonl_and_eml() {
     assert!(json_path.ends_with("+15555550101.json"));
     let raw = fs::read_to_string(&json_path).unwrap();
     let parsed: ConversationDocument = serde_json::from_str(&raw).unwrap();
-    assert_eq!(parsed.schema_version, 5);
+    assert_eq!(parsed.schema_version, 6);
     assert_eq!(parsed.messages[0].text, "hello ir");
     assert!(parsed.messages[0].attachments.is_empty());
     assert_eq!(
@@ -49,7 +49,7 @@ fn writes_json_csv_jsonl_and_eml() {
     let jsonl = fs::read_to_string(&jsonl_path).unwrap();
     let mut lines = jsonl.lines();
     let header: Value = serde_json::from_str(lines.next().unwrap()).unwrap();
-    assert_eq!(header["schema_version"], 5);
+    assert_eq!(header["schema_version"], 6);
     assert!(header.get("messages").is_none());
     assert_eq!(header["conversation"]["stats"]["message_count"], 1);
     let msg_line: Value = serde_json::from_str(lines.next().unwrap()).unwrap();
@@ -85,14 +85,8 @@ fn imessage_bag_restores_mail_extension_headers() {
     assert_eq!(reply_im.thread_originator_part, Some(0));
     assert_eq!(reply_im.num_replies, Some(2));
     assert_eq!(reply_im.send_effect.as_deref(), Some("Sent with Balloons"));
-    assert!(
-        reply_im
-            .tapbacks
-            .as_ref()
-            .unwrap()
-            .to_string()
-            .contains("loved")
-    );
+    assert_eq!(reply.message.reactions, doc.messages[0].reactions);
+    assert_eq!(reply.message.reactions[0].kind, "loved");
     assert!(
         reply_im
             .parts
@@ -191,7 +185,7 @@ fn roundtrip_csv_sms_and_imessage() {
             "source_fields_json",
             "parts_json",
             "edits_json",
-            "tapbacks_json",
+            "reactions_json",
             "app_json",
         ];
         for line in csv.lines().skip(1) {
@@ -233,6 +227,7 @@ fn csv_omits_trivial_parts_json_keeps_rich_parts() {
         subject: None,
         text: "hello".into(),
         attachments: vec![],
+        reactions: vec![],
         imessage: Some(IrImessage {
             parts: Some(json!([
                 {"index": 0, "kind": "run", "text": "hello"},
@@ -376,7 +371,7 @@ fn roundtrip_eml_and_mbox() {
 
 /// A version-3 file is refused by its version, not by whichever field fails
 /// to parse first: the reader peeks at `schema_version` before parsing the
-/// rest, so the fields below are deliberately not a valid version-5 shape.
+/// rest, so the fields below are deliberately not a valid version-6 shape.
 #[test]
 fn json_refuses_a_version_3_file_by_name() {
     let tmp = tempfile::tempdir().unwrap();
@@ -393,7 +388,7 @@ fn json_refuses_a_version_3_file_by_name() {
     assert_eq!(refusal.found, 3);
     assert_eq!(
         refusal.to_string(),
-        "This file is schema version 3; Message Crate reads version 5"
+        "This file is schema version 3; Message Crate reads version 6"
     );
 }
 
@@ -414,19 +409,22 @@ fn jsonl_refuses_a_version_3_file_by_name() {
     assert!(format!("{err:#}").contains("schema version 3"), "{err:#}");
 }
 
-/// A version-4 file names each identity a `handle`; version 5 says
-/// `identity`. The reader refuses it by its version rather than reading a
-/// participant with no identity.
+/// A version-5 file keeps a message's reactions in `imessage.tapbacks`;
+/// version 6 keeps them in the message's `reactions`. The reader refuses it
+/// by its version rather than reading the message with its reactions gone.
 #[test]
-fn jsonl_refuses_a_version_4_file_by_name() {
+fn jsonl_refuses_a_version_5_file_by_name() {
     let tmp = tempfile::tempdir().unwrap();
-    let path = tmp.path().join("v4.jsonl");
+    let path = tmp.path().join("v5.jsonl");
     fs::write(
         &path,
         concat!(
-            r#"{"schema_version":4,"export":{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_handle":"+15555550100","owner_display_name":null},"#,
-            r#""conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"handle":"+15555550101","display_name":"Sam","handle_type":"phone"}],"#,
-            r#""stats":{"message_count":0,"attachment_count":0,"first_timestamp_unix_ms":null,"last_timestamp_unix_ms":null}}}"#,
+            r#"{"schema_version":5,"export":{"source":"imessage","tool":"t","tool_version":"1","owner_identity":"+15555550100","owner_display_name":null},"#,
+            r#""conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Sam","identity_type":"phone"}],"#,
+            r#""stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#,
+            "\n",
+            r#"{"guid":"g1","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hi","attachments":[],"#,
+            r#""imessage":{"is_reply":false,"is_deleted":false,"tapbacks":[{"part_index":0,"kind":"loved","is_from_me":true}]},"source":null}"#,
             "\n",
         ),
     )
@@ -435,10 +433,10 @@ fn jsonl_refuses_a_version_4_file_by_name() {
     let refusal = err
         .downcast_ref::<message_ir::UnsupportedSchemaVersion>()
         .expect("typed refusal");
-    assert_eq!(refusal.found, 4);
+    assert_eq!(refusal.found, 5);
     assert_eq!(
         refusal.to_string(),
-        "This file is schema version 4; Message Crate reads version 5"
+        "This file is schema version 5; Message Crate reads version 6"
     );
 }
 

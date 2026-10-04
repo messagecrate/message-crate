@@ -9,6 +9,10 @@ license = "LicenseRef-FCL-1.0-ALv2"
 anyhow = { workspace = true }
 chrono = { workspace = true }
 hex = { workspace = true }
+# For `Reaction` alone, which is defined there so the GPL Apple Messages
+# Reader can write it too. The crate is MIT OR Apache-2.0 and links nothing
+# GPL. Why: docs/adr/0014-gpl-code-only-behind-a-process-boundary.md.
+imessage-reader-protocol = { path = "../../helpers/imessage-reader-protocol" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }

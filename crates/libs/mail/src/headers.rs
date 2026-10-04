@@ -29,6 +29,8 @@ pub(crate) const GROUP_TITLE: &str = "X-ME-Group-Title";
 pub(crate) const PARTICIPANTS: &str = "X-ME-Participants";
 /// Sender identity.
 pub(crate) const SENDER_IDENTITY: &str = "X-ME-Sender-Identity";
+/// The message's reactions as JSON, a list of `message_ir::Reaction`.
+pub(crate) const REACTIONS: &str = "X-ME-Reactions";
 /// The headers an earlier Message Crate wrote for the sender and the owner,
 /// when it named each address a handle. The reader refuses a mail that
 /// carries one: nothing reads them, so the mail would lose its sender.
@@ -74,8 +76,10 @@ pub(crate) const READ_RECEIPT: &str = "X-ME-Read-Receipt";
 pub(crate) const PARTS: &str = "X-ME-Parts";
 /// Edit history as JSON.
 pub(crate) const EDITS: &str = "X-ME-Edits";
-/// Tapbacks on this message as JSON.
-pub(crate) const TAPBACKS: &str = "X-ME-Tapbacks";
+/// The header an earlier Message Crate kept Apple Messages reactions in.
+/// The reader refuses a mail that carries it: nothing reads it, so the mail
+/// would lose its reactions.
+pub(crate) const EARLIER_TAPBACKS: &str = "X-ME-Tapbacks";
 /// App/balloon payload as JSON.
 pub(crate) const APP: &str = "X-ME-App";
 /// Balloon bundle id.

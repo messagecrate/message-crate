@@ -30,7 +30,7 @@ username = "demo"
     .expect("write contacts");
     let conversation = |source: &str, chat: &str, guid: &str| {
         format!(
-            r#"{{"schema_version":5,"export":{{"source":"{source}","tool":"t","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{chat}","conversation_type":"individual","group_title":null,"participants":[{{"identity":"{chat}","display_name":null}}],"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}
+            r#"{{"schema_version":6,"export":{{"source":"{source}","tool":"t","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{chat}","conversation_type":"individual","group_title":null,"participants":[{{"identity":"{chat}","display_name":null}}],"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}
 {{"guid":"{guid}","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"{chat}","sender_display_name":null,"subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}}
 "#
         )
@@ -1456,14 +1456,12 @@ fn read_generated_bundle(bundle: &Path) -> BundleContents {
                 let message: message_ir::IrMessage = serde_json::from_str(line)
                     .unwrap_or_else(|error| panic!("parse {}: {error}", path.display()));
                 contents.messages += 1;
+                contents.tapbacks += message.reactions.len();
                 let Some(im) = message.imessage.as_ref() else {
                     continue;
                 };
                 if im.is_reply {
                     contents.replies += 1;
-                }
-                if let Some(serde_json::Value::Array(items)) = &im.tapbacks {
-                    contents.tapbacks += items.len();
                 }
             }
         }
@@ -1858,7 +1856,7 @@ async fn the_demo_address_book_names_the_unknowns_the_imports_made() {
 /// dedupe has something to hide.
 fn write_overlap_conversation(bundle: &Path) {
     let overlap = concat!(
-        r#"{"schema_version":5,"export":{"source":"sms-backup-restore","tool":"t","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":null}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}"#,
+        r#"{"schema_version":6,"export":{"source":"sms-backup-restore","tool":"t","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":null}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}"#,
         "\n",
         r#"{"guid":"pg-demo-sbr-overlap","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":null,"subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}"#,
         "\n",

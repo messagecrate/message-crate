@@ -30,13 +30,13 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
 
 - **Common-message path** (`ConversationDocument` → `message_ir_format::FormatSink`, one of json/jsonl/csv/eml/mbox/xml): all exporters, including iMessage (`imessage-ir-exporter`). Per-chat formats also accept `write_format`; XML uses a single `smses.xml` via the sink.
 - **Media + obfuscate** run inside `FormatSink::finish` for every format (`message_crate_core::ExportTransforms`: none / copy / convert / compress, plus optional obfuscate). When obfuscate is on, exporters skip staging real attachment bytes and convert/compress is not run — only placeholder files are written. Exporters pass transforms from `ExporterConfig.media` / `.obfuscate`; there is no CSV-only post-step. EML / MBOX / XML embed media and drop the staged `attachments/` directory afterward.
-- **Schema version 5 only** (breaking). Version 5 names every address an identity (`identity`, `identity_type`, `owner_identity`, `sender_identity`, `reactor_identity`) where version 4 said `handle`, `handle_type`, `owner_handle`, `sender_handle` and `reactor_handle`. Version 4 and older are refused, never upgraded. Typed enums/bags, filled outgoing identity, conversation stats, stable null/`[]` keys. Older common-message JSON is not read — regenerate exports after schema changes.
+- **Schema version 6 only** (breaking). Version 6 keeps a message's reactions in its own `reactions` list, one shape for every source, where version 5 kept Apple Messages reactions as a JSON value in `imessage.tapbacks`. Version 5 had named every address an identity (`identity`, `identity_type`, `owner_identity`, `sender_identity`, `reactor_identity`) where version 4 said `handle`. Version 5 and older are refused, never upgraded. Typed enums/bags, filled outgoing identity, conversation stats, stable null/`[]` keys. Older common-message JSON is not read — regenerate exports after schema changes.
 
-## Document schema (`schema_version: 5`)
+## Document schema (`schema_version: 6`)
 
 ```json
 {
-  "schema_version": 5,
+  "schema_version": 6,
   "export": {
     "source": "sms-backup-restore",
     "tool": "SMS Backup & Restore",
@@ -83,7 +83,7 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
 | Tier | Contents |
 |------|----------|
 | Core | typed conversation + message fields |
-| `imessage` | typed Apple extensions (`IrImessage`); nested `parts` / `edits` / `tapbacks` / `app` are JSON values |
+| `imessage` | typed Apple extensions (`IrImessage`); nested `parts` / `edits` / `app` are JSON values |
 | `source` | `android_type` (`i32` or null) + vendor `fields` object |
 
 ### Identity
@@ -94,6 +94,25 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
 - Display names are not duplicated under `source`.
 - `guid` is Apple's own id for Apple Messages. Every other source's `guid` is a `MessageGuid`: SHA-256 of the chat id, the direction, the sender of an incoming message, the UTC instant in milliseconds, the text with whitespace collapsed, the sorted attachment digests, and the source's own key where it has one (WhatsApp's `key_id`). It reads no time zone and no display format, so one backup gives the same ids on any computer. The server refuses a message whose `guid` is empty.
 - Two records a backup cannot tell apart are one message, and the exporter keeps one (`message_ir::one_copy_per_message`). The server's content key, which matches one message across sources, is the same identity at whole seconds.
+
+### Reactions
+
+`reactions` is the list of reactions that stand on a message, the same shape for every source. Each one is a `Reaction`:
+
+| Field | Meaning |
+|-------|---------|
+| `part_index` | The part of the message reacted to; `0` for the first or only part |
+| `kind` | `loved`, `liked`, `disliked`, `laughed`, `emphasized`, `questioned`, `sticker`, or `emoji` |
+| `emoji` | For an `emoji` reaction, the emoji; left out otherwise |
+| `is_from_me` | `true` when the owner reacted |
+| `reactor_identity` | The identity of the person who reacted, when someone other than the owner did and the source names them; left out otherwise |
+| `reactor_display_name` | The name of the person who reacted, when the source knows one; left out otherwise |
+
+Each reaction names its own reactor, who is rarely the author of the message, and the server stores it under that person. Adds and removes are resolved before the list is written, so a reaction has no action and a removed one is not in the list. A message with no reactions leaves `reactions` out of the file.
+
+`Reaction` is defined once, in `imessage-reader-protocol`, and `message_ir::Reaction` is that type. It lives there because the Apple Messages Reader is GPL and runs as its own process, and the protocol crate (MIT OR Apache-2.0) is the one crate both it and the rest of Message Crate may link ([ADR 0014](https://github.com/messagecrate/message-crate/blob/main/docs/adr/0014-gpl-code-only-behind-a-process-boundary.md)). Apple Messages fills it. Every other source writes none yet.
+
+Apple Messages also writes each reaction as a row of its own (`message_kind` `tapback` or `sticker_tapback`), with `imessage.associated_guid`, `tapback_kind` and `tapback_action`. The server reads reactions from `reactions` and skips those rows.
 
 ### Attachments
 
@@ -108,7 +127,7 @@ Attachment **bytes** are never stored in JSON/JSONL (`#[serde(skip)]`). Paths + 
 ### Serialization rules
 
 - Optional strings / bags serialize as `null` when absent (stable keys).
-- Empty `participants` / `attachments` serialize as `[]`.
+- Empty `participants` / `attachments` serialize as `[]`. An empty `reactions` list is left out.
 - Packaging stem suffix is not part of the document (internal `packaging_stem_suffix` only).
 
 ### Conversation stats
@@ -118,7 +137,7 @@ Attachment **bytes** are never stored in JSON/JSONL (`#[serde(skip)]`). Paths + 
 ## JSONL layout
 
 ```text
-{"schema_version":5,"export":{…},"conversation":{…}}
+{"schema_version":6,"export":{…},"conversation":{…}}
 {"guid":"…","timestamp_unix_ms":…, …}
 …
 ```

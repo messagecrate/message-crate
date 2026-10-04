@@ -263,6 +263,7 @@ fn every_conversation_file_is_a_current_schema_document_and_the_counts_match_the
     for (source, doc) in &documents {
         let mut written = std::collections::HashSet::new();
         for message in &doc.messages {
+            tapbacks += message.reactions.len();
             let Some(im) = message.imessage.as_ref() else {
                 written.insert(message.guid.as_str());
                 continue;
@@ -276,9 +277,6 @@ fn every_conversation_file_is_a_current_schema_document_and_the_counts_match_the
                     doc.conversation.chat_identifier,
                     message.guid
                 );
-            }
-            if let Some(serde_json::Value::Array(items)) = &im.tapbacks {
-                tapbacks += items.len();
             }
             written.insert(message.guid.as_str());
         }

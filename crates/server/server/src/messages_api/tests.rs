@@ -293,6 +293,7 @@ fn ir_message(
     ms: i64,
     text: &str,
     is_sticker: bool,
+    reactions: serde_json::Value,
     imessage: serde_json::Value,
 ) -> String {
     serde_json::json!({
@@ -316,6 +317,7 @@ fn ir_message(
             "size_bytes": 12,
             "missing_reason": "not_found"
         }],
+        "reactions": reactions,
         "imessage": imessage,
         "source": null
     })
@@ -323,11 +325,11 @@ fn ir_message(
 }
 
 /// Import, through the whole pipeline, three messages into `account_id`: a
-/// reply carrying a sticker and a tapback array of two, an announcement
-/// carrying a single tapback object, and a plain message with none of these.
+/// reply carrying a sticker and two reactions, an announcement carrying one
+/// reaction, and a plain message with none of these.
 async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
     let header = serde_json::json!({
-        "schema_version": 5,
+        "schema_version": 6,
         "export": {"source": "imessage", "tool": "test", "tool_version": "0",
                    "owner_identity": null, "owner_display_name": null},
         "conversation": {
@@ -349,15 +351,15 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
         1_426_183_462_000,
         "a reply",
         true,
+        serde_json::json!([
+            {"kind": "liked", "emoji": null, "part_index": 0,
+             "is_from_me": false, "reactor_identity": "+15555550167"},
+            {"kind": "emoji", "emoji": "🎉", "part_index": 1,
+             "is_from_me": false, "reactor_identity": "+15555550161"}
+        ]),
         serde_json::json!({
             "is_reply": true,
-            "is_deleted": false,
-            "tapbacks": [
-                {"kind": "liked", "emoji": null, "part_index": 0,
-                 "is_from_me": false, "reactor_identity": "+15555550167"},
-                {"kind": "emoji", "emoji": "🎉", "part_index": 1,
-                 "is_from_me": false, "reactor_identity": "+15555550161"}
-            ]
+            "is_deleted": false
         }),
     );
     let announcement = ir_message(
@@ -365,12 +367,14 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
         1_426_183_463_000,
         "an announcement",
         false,
+        serde_json::json!([
+            {"kind": "loved", "emoji": null, "part_index": 2,
+             "is_from_me": false, "reactor_identity": "+15555550167"}
+        ]),
         serde_json::json!({
             "is_reply": false,
             "is_deleted": false,
-            "announcement": "named the conversation Reactions",
-            "tapbacks": {"kind": "loved", "emoji": null, "part_index": 2,
-                         "is_from_me": false, "reactor_identity": "+15555550167"}
+            "announcement": "named the conversation Reactions"
         }),
     );
     let plain = ir_message(
@@ -378,6 +382,7 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
         1_426_183_464_000,
         "a plain message",
         false,
+        serde_json::json!([]),
         serde_json::Value::Null,
     );
     let dir = fixture.dir().join("reactions");
@@ -410,9 +415,8 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
     assert_eq!(stats.tapbacks, 3);
 }
 
-/// Tapbacks and the reply, announcement and sticker flags survive the trip
-/// from an import to the messages route, both when set and when not. A
-/// single tapback object is read the same as an array of one.
+/// Reactions and the reply, announcement and sticker flags survive the trip
+/// from an import to the messages route, both when set and when not.
 #[tokio::test]
 async fn reactions_and_message_flags_are_read_back_as_imported() {
     let (fixture, alice) = fixture_with_account().await;
