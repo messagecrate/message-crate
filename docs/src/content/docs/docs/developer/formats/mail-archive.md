@@ -249,7 +249,7 @@ Body `text/plain`: short human line (`Loved a message`, `😂 reacted`) so clien
 
 Sticker tapback: include sticker image MIME part + `X-ME-Attachment-Meta` with `is_sticker: true`.
 
-Do **not** store reactions only as free text in the parent body.
+Do **not** store reactions only as free text in the parent body: no reader parses the body for them, so they could not be read back.
 
 ### Multipart bubbles (`X-ME-Parts`)
 

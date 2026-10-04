@@ -218,7 +218,6 @@ fn parse_participants(raw: &str) -> Vec<IrParticipant> {
         .collect()
 }
 
-/// Attachments from the `attachments_json` cell.
 /// A `reactions_json` cell: blank for none, else the list the writer wrote.
 fn parse_reactions(raw: &str) -> Result<Vec<Reaction>> {
     if raw.trim().is_empty() {
@@ -227,6 +226,7 @@ fn parse_reactions(raw: &str) -> Result<Vec<Reaction>> {
     serde_json::from_str(raw).with_context(|| format!("parse reactions_json: {raw}"))
 }
 
+/// Attachments from the `attachments_json` cell.
 fn parse_attachments(raw: &str) -> Result<Vec<IrAttachment>> {
     let cells: Vec<AttachmentCell> =
         serde_json::from_str(raw).with_context(|| format!("parse attachments_json: {raw}"))?;
