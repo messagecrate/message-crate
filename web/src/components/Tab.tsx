@@ -15,6 +15,11 @@ import { focusRing } from "../lib/uiStyles";
  *
  * Its `TabList` draws the `border-b border-border` rule; the tab's `-mb-px`
  * lays the accent line over it.
+ *
+ * Biome's `noRestrictedImports` refuses React Aria's `Tab` everywhere but here.
+ * This file's override in `web/biome.json` replaces the root rule's paths
+ * rather than adding to them, so it copies every root path except
+ * `react-aria-components`; a path added to the root rule is added there too.
  */
 export type TabProps = {
   id: Key;
