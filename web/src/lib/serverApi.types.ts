@@ -1385,7 +1385,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * List the Server Log's files, newest first.
+         * List the server's log files, newest first.
          * @description The server writes to the newest, and starts the next before a line would
          *     carry it past 50 MB. It keeps 5, and deletes the oldest when one more
          *     starts. The owner's alone.
@@ -1407,7 +1407,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Download one of the Server Log's files whole, as it is on disk.
+         * Download one of the server's log files whole, as it is on disk.
          * @description The answer is `text/plain`, an attachment named for the file. The newest
          *     file is answered as it stood when the download started; lines written
          *     while it downloads are in the next one. The owner's alone.
@@ -1429,7 +1429,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Read the Server Log's lines, newest first.
+         * Read the server's log lines, newest first.
          * @description `after` reads the lines older than the line with that id, so the page
          *     after this one starts at the id of its last line, and lines the server
          *     writes in between do not move it. `level` keeps the lines at that level
@@ -2878,7 +2878,7 @@ export interface components {
          */
         ListKind: "contacts" | "conversations" | "messages";
         /**
-         * @description A page of the Server Log's lines, newest first.
+         * @description A page of the server's log lines, newest first.
          *
          *     Not a `Page`: the log is written while it is read, so a count and an
          *     offset from the newest line would move under the reader, and counting a
@@ -2906,7 +2906,7 @@ export interface components {
          * @enum {string}
          */
         LoadMode: "append" | "edit";
-        /** @description One file of the Server Log. */
+        /** @description One file of the server's log. */
         LogFile: {
             /**
              * Format: int64
@@ -2929,7 +2929,7 @@ export interface components {
          * @enum {string}
          */
         LogLevel: "error" | "warn" | "info" | "debug" | "trace";
-        /** @description One line of the Server Log. */
+        /** @description One line of the server's log. */
         LogLine: {
             /**
              * Format: int64

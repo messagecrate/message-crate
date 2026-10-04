@@ -11307,7 +11307,7 @@
         "tags": [
           "Server"
         ],
-        "summary": "List the Server Log's files, newest first.",
+        "summary": "List the server's log files, newest first.",
         "description": "The server writes to the newest, and starts the next before a line would\ncarry it past 50 MB. It keeps 5, and deletes the oldest when one more\nstarts. The owner's alone.",
         "operationId": "list_log_files",
         "parameters": [
@@ -11412,7 +11412,7 @@
         "tags": [
           "Server"
         ],
-        "summary": "Download one of the Server Log's files whole, as it is on disk.",
+        "summary": "Download one of the server's log files whole, as it is on disk.",
         "description": "The answer is `text/plain`, an attachment named for the file. The newest\nfile is answered as it stood when the download started; lines written\nwhile it downloads are in the next one. The owner's alone.",
         "operationId": "get_log_file",
         "parameters": [
@@ -11515,7 +11515,7 @@
         "tags": [
           "Server"
         ],
-        "summary": "Read the Server Log's lines, newest first.",
+        "summary": "Read the server's log lines, newest first.",
         "description": "`after` reads the lines older than the line with that id, so the page\nafter this one starts at the id of its last line, and lines the server\nwrites in between do not move it. `level` keeps the lines at that level\nand the more severe ones; `text` keeps the lines that hold it, ignoring\ncase. A line never holds a password, a token, message text or a contact's\nname or identities. The owner's alone, because the log is about the whole\ninstallation.",
         "operationId": "list_log_lines",
         "parameters": [
@@ -14882,7 +14882,7 @@
       },
       "ListLogLinesResponse": {
         "type": "object",
-        "description": "A page of the Server Log's lines, newest first.\n\nNot a `Page`: the log is written while it is read, so a count and an\noffset from the newest line would move under the reader, and counting a\n250 MB log for every page is the cost a cursor saves\n(`docs/architecture/http-api.md`, \"Lists\").",
+        "description": "A page of the server's log lines, newest first.\n\nNot a `Page`: the log is written while it is read, so a count and an\noffset from the newest line would move under the reader, and counting a\n250 MB log for every page is the cost a cursor saves\n(`docs/architecture/http-api.md`, \"Lists\").",
         "required": [
           "items",
           "limit",
@@ -14933,7 +14933,7 @@
       },
       "LogFile": {
         "type": "object",
-        "description": "One file of the Server Log.",
+        "description": "One file of the server's log.",
         "required": [
           "id",
           "name",
@@ -14975,7 +14975,7 @@
       },
       "LogLine": {
         "type": "object",
-        "description": "One line of the Server Log.",
+        "description": "One line of the server's log.",
         "required": [
           "id",
           "time",
@@ -16903,7 +16903,7 @@
             "type": "array",
             "items": {
               "type": "object",
-              "description": "One file of the Server Log.",
+              "description": "One file of the server's log.",
               "required": [
                 "id",
                 "name",
