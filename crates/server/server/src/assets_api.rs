@@ -380,7 +380,7 @@ fn copy_to_verified_temp(
     shard: &Path,
     claimed_sha256: &Sha256,
 ) -> Result<tempfile::NamedTempFile, AssetError> {
-    let mut temporary = tempfile::NamedTempFile::new_in(shard)
+    let mut temporary = crate::asset_store::shard_temp_file(shard)
         .with_context(|| format!("create temporary asset in {}", shard.display()))?;
     let mut src =
         open_nofollow_read(source).with_context(|| format!("open source {}", source.display()))?;
@@ -486,7 +486,7 @@ fn store_mime_metadata(assets_root: &Path, sha: &Sha256, mime: &str) -> Result<(
     let Some(parent) = path.parent() else {
         return Err(anyhow::anyhow!("asset MIME metadata has no parent"));
     };
-    let mut temporary = tempfile::NamedTempFile::new_in(parent)
+    let mut temporary = crate::asset_store::shard_temp_file(parent)
         .with_context(|| format!("create MIME metadata in {}", parent.display()))?;
     temporary.write_all(mime.as_bytes())?;
     temporary.flush()?;

@@ -40,6 +40,7 @@ toml = "1.1.2"
 tower-http = { version = "0.7.1", features = ["limit", "cors", "fs", "trace"] }
 uuid = { version = "1.18.1", features = ["v4"] }
 message-crate-api-types = { path = "../../libs/api-types", features = ["schema"] }
+message-crate-serve-protocol = { path = "../../libs/serve-protocol" }
 utoipa = { version = "6", features = ["axum_extras"] }
 utoipa-axum = "0.3"
 utoipa-swagger-ui = { version = "10", features = ["axum"] }

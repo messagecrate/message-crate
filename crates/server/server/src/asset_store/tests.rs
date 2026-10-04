@@ -214,9 +214,15 @@ fn a_part_file_idle_for_23_hours_is_kept_and_one_idle_for_25_is_removed() {
     let now = SystemTime::now();
     let hours = |n: u64| Duration::from_secs(n * 3600);
 
-    assert_eq!(remove_stale_parts(&listed, now + hours(23), false), 0);
+    assert_eq!(
+        remove_stale_files(&listed, now + hours(23), STALE_UPLOAD_SECS, false),
+        0
+    );
     assert!(part.exists(), "a .part file 23 hours old is kept");
-    assert_eq!(remove_stale_parts(&listed, now + hours(25), false), 1);
+    assert_eq!(
+        remove_stale_files(&listed, now + hours(25), STALE_UPLOAD_SECS, false),
+        1
+    );
     assert!(!part.exists(), "a .part file 25 hours old is removed");
 }
 
@@ -235,7 +241,7 @@ fn a_part_file_gone_between_the_listing_and_the_removal_does_not_stop_the_sweep(
     let listed = [gone.clone(), left.clone()];
     fs::remove_file(&gone).unwrap();
 
-    let removed = remove_stale_parts(&listed, SystemTime::now(), false);
+    let removed = remove_stale_files(&listed, SystemTime::now(), STALE_UPLOAD_SECS, false);
 
     assert_eq!(removed, 1, "only the file still there counts");
     assert!(!left.exists(), "the sweep went on past the missing file");

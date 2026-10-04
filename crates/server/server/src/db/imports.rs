@@ -579,7 +579,8 @@ async fn not_running(
 
 /// Close a running Import Run the user gave up on.
 ///
-/// Records `cancelled` and clears `stage`, which frees the account's
+/// Records `cancelled` with `issues`, the Import Errors the run recorded
+/// before it was given up, and clears `stage`, which frees the account's
 /// single active slot. Nothing reclaims a run on a timer — a run
 /// is broken by an explicit discard or not at all.
 ///
@@ -591,7 +592,14 @@ pub async fn discard_import(
     conn: &mut SqliteConnection,
     account_id: i64,
     import_id: i64,
+    issues: &[ImportIssueInput],
 ) -> std::result::Result<(), ImportLookupError> {
+    for issue in issues {
+        validate_issue_kind(&issue.kind)?;
+    }
+    // The update and the issue inserts are one write transaction, so a
+    // discarded run never lands without the issues it was discarded with.
+    let mut tx = begin_write(conn).await?;
     // The status check is in the update, so a run that completed after the
     // caller read it keeps its record instead of being rewritten as cancelled.
     let updated = sqlx::query(
@@ -602,11 +610,14 @@ pub async fn discard_import(
     .bind(Utc::now().to_rfc3339())
     .bind(import_id)
     .bind(account_id)
-    .execute(&mut *conn)
+    .execute(&mut *tx)
     .await?;
     if updated.rows_affected() == 0 {
+        drop(tx);
         return Err(not_running(conn, account_id, import_id).await);
     }
+    insert_issues(&mut tx, import_id, issues).await?;
+    tx.commit().await?;
     Ok(())
 }
 
@@ -639,7 +650,7 @@ pub async fn discard_running_import(
         return Ok(None);
     };
     let running = import_from_row(&row)?;
-    discard_import(conn, account_id, running.id)
+    discard_import(conn, account_id, running.id, &[])
         .await
         .map_err(|err| anyhow::anyhow!(err))?;
     Ok(Some(running))

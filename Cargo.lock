@@ -1908,6 +1908,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "message-crate-serve-protocol"
+version = "0.1.0"
+
+[[package]]
 name = "message-crate-server"
 version = "0.10.0"
 dependencies = [
@@ -1928,6 +1932,7 @@ dependencies = [
  "libsqlite3-sys",
  "media",
  "message-crate-api-types",
+ "message-crate-serve-protocol",
  "message-ir",
  "phone",
  "rand 0.10.3",
