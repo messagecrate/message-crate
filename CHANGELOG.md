@@ -1186,6 +1186,27 @@ released versions carry their date on the heading.
   another person's import, a sign-in or media conversion could wait 15
   seconds and fail. The files are now set aside in a moment and deleted
   afterwards, while everything else goes on.
+- 2026-10-04 **Checking on an attachment upload no longer reads the whole
+  file again.** When the file being uploaded was already stored, asking
+  how far the upload had got, sending one of its parts or cancelling it
+  read and checked every byte of the stored file first, and threw the
+  answer away. For a large video that was the whole file on every check.
+  Those steps now read only the upload's own record.
+- 2026-10-04 **The server refuses an attachment directory setting that is a
+  path.** The configuration's `assets_dir` and `assets_converted_dir` each
+  name one directory inside every account's directory, but an absolute path
+  was accepted there. It put every account's attachments in one directory,
+  and `reset-demo` failed with "prepared reset state is incomplete". The
+  server now refuses to start when either is absolute, contains a
+  separator or a `:`, starts with `.` (as `.` and `..` do), ends in `.` or
+  a space, or is empty, or when both are the same name in any letter case,
+  and the message names the setting.
+- 2026-10-04 **A damaged Preview whose original is gone is no longer
+  shown.** When `process-assets` found a Preview that does not match its
+  contents and the original it was made from was missing, it could not make
+  the Preview again, and the attachment went on showing the damaged one.
+  The run now deletes that Preview, so the attachment shows as one with no
+  Preview, and still reports it among the failures.
 
 ### Upgrading
 
