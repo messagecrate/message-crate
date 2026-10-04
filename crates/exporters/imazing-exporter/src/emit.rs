@@ -79,6 +79,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         conversations: BTreeMap::new(),
         claims: Vec::new(),
         folder_texts: BTreeMap::new(),
+        whatsapp_folders: HashSet::new(),
         report: ExportReport::default(),
     };
     for (csv_index, discovered) in discover_csv_files(input)?.iter().enumerate() {
@@ -294,12 +295,14 @@ struct Ingest {
     conversations: BTreeMap<ConvoKey, Conversation>,
     /// Every row matched to a file, in the order the rows were read.
     claims: Vec<FileClaim>,
-    /// Each Messages chat folder's row texts, keyed by the row's
-    /// `Message Date` as iMazing writes it into a file name. A chat folder is
-    /// one that holds a CSV. A WhatsApp chat folder is left out, because the
-    /// files iMazing writes there without a row (Live Photo videos, link
-    /// previews) are a Messages export's.
+    /// Each chat folder's row texts, keyed by the row's `Message Date` as
+    /// iMazing writes it into a file name. A chat folder is one that holds a
+    /// CSV.
     folder_texts: BTreeMap<PathBuf, HashMap<String, Vec<String>>>,
+    /// Every chat folder that holds a WhatsApp CSV. The files iMazing writes
+    /// without a row (Live Photo videos, link previews) are a Messages
+    /// export's, so `attach_unnamed_files` leaves these folders alone.
+    whatsapp_folders: HashSet<PathBuf>,
     report: ExportReport,
 }
 
@@ -337,6 +340,10 @@ impl Ingest {
             SourceKind::Messages => self.report.bump("messages_files", 1),
             SourceKind::WhatsApp => self.report.bump("whatsapp_files", 1),
         }
+        if discovered.kind == SourceKind::WhatsApp {
+            self.whatsapp_folders
+                .insert(csv_folder(discovered).to_path_buf());
+        }
         let rows = match parse_csv_file(&discovered.path, discovered.kind) {
             Ok(rows) => rows,
             Err(e) => {
@@ -359,15 +366,13 @@ impl Ingest {
         } else {
             vec![None; rows.len()]
         };
-        // Only a run that copies attachments looks at the folder's files
-        // (`attach_unnamed_files`), and only in a Messages chat folder, so
-        // only they need the texts.
-        let mut texts = (self.copy_attachments && discovered.kind == SourceKind::Messages)
-            .then(|| self.folder_texts.entry(folder).or_default());
+        let texts = self.folder_texts.entry(folder).or_default();
         let mut by_session: BTreeMap<String, Vec<(usize, &RawRow)>> = BTreeMap::new();
         for (row_index, row) in rows.iter().enumerate() {
+            // Only a run that copies attachments looks at the folder's files
+            // (`attach_unnamed_files`), so only it needs the texts.
             if let Some(second) = &seconds[row_index]
-                && let Some(texts) = texts.as_mut()
+                && self.copy_attachments
                 && !row.text.is_empty()
             {
                 texts
@@ -525,9 +530,10 @@ impl Ingest {
         })
     }
 
-    /// Deal with the files in each Messages chat folder that no row names: attach a
-    /// Live Photo's video to the message of the row that names its picture,
-    /// and count link previews and every other such file in the report.
+    /// Deal with the files that no row names in each chat folder that holds
+    /// no WhatsApp CSV: attach a Live Photo's video to the message of the row
+    /// that names its picture, and count link previews and every other such
+    /// file in the report.
     ///
     /// Runs only when attachments are copied, because only then is any row
     /// matched to a file, so only then is "named by no row" known.
@@ -541,7 +547,7 @@ impl Ingest {
         // Each picture an Image row names, with those rows in CSV order.
         let mut pictures: HashMap<PathBuf, Vec<usize>> = HashMap::new();
         for (index, claim) in self.claims.iter().enumerate() {
-            if claim.is_image && claim.convo_key.family == TransportFamily::Messages {
+            if claim.is_image {
                 pictures
                     .entry(claim.source.clone())
                     .or_default()
@@ -552,7 +558,11 @@ impl Ingest {
             rows.sort_by_key(|&index| self.claims[index].order);
         }
         let mut found = Vec::new();
-        for (folder, texts_at) in &self.folder_texts {
+        let messages_folders = self
+            .folder_texts
+            .iter()
+            .filter(|(folder, _)| !self.whatsapp_folders.contains(*folder));
+        for (folder, texts_at) in messages_folders {
             let rows = FolderRows {
                 named: &named,
                 pictures: &pictures,

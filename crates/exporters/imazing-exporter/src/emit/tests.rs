@@ -187,8 +187,9 @@ Bob,2020-01-01 12:00:00,,,,,SMS,Incoming,+15555550100,Bob,Read,,,SMS hi,,,\n",
     write(
         &dir,
         "WhatsApp/chat/WhatsApp - Bob.csv",
-        "Chat Session,Message Date,Sent Date,Type,Sender ID,Sender Name,Status,Forwarded,Replying to,Text,Reactions,Attachment,Attachment type,Attachment info\n\
-Bob,2020-01-01 12:05:00,,Incoming,+15555550100,Bob,Read,,,WA hi,,,,\n",
+        &format!(
+            "{WHATSAPP_ATTACHMENTS_HEADER}Bob,2020-01-01 12:05:00,,Incoming,+15555550100,Bob,Read,,,WA hi,,,,\n"
+        ),
     );
     let out = dir.path().join("out");
     let report = convert(dir.path(), &out).unwrap();
@@ -922,6 +923,39 @@ fn a_live_photo_video_of_a_picture_two_rows_name_goes_to_the_first_row() {
     );
 }
 
+/// The iMazing WhatsApp CSV header with its reply, reaction and attachment
+/// columns.
+const WHATSAPP_ATTACHMENTS_HEADER: &str = "Chat Session,Message Date,Sent Date,Type,Sender ID,Sender Name,Status,Forwarded,Replying to,Text,Reactions,Attachment,Attachment type,Attachment info\n";
+
+/// A WhatsApp photo row and a WhatsApp row with a link, for the folder
+/// files below.
+const WHATSAPP_PHOTO_AND_LINK_ROWS: &str = "Bob,2020-01-01 12:00:00,,Incoming,+15555550100,Bob,Read,,,photo,,IMG_0001.jpg,Image,\n\
+Bob,2020-01-01 12:01:00,,Incoming,+15555550100,Bob,Read,,,See https://example.com/page,,,,\n";
+
+/// Files no row names beside the rows of [`WHATSAPP_PHOTO_AND_LINK_ROWS`]:
+/// what a Messages chat folder's Live Photo video, link preview and stray
+/// file would look like.
+const UNNAMED_FILES_BESIDE_A_WHATSAPP_PHOTO: [(&str, &str); 4] = [
+    ("2020-01-01 12 00 00 - Bob - IMG_0001.jpg", "picture"),
+    ("2020-01-01 12 00 00 - Bob - IMG_0001.mov", "video"),
+    (
+        "2020-01-01 12 01 00 - Bob - Web link.url",
+        "[InternetShortcut]\r\nURL=https://example.com/page\r\n",
+    ),
+    ("2020-01-01 12 02 00 - Bob - stray.bin", "stray"),
+];
+
+/// The photo row's message has its picture alone, and the report counts no
+/// Live Photo video, link preview or file named by no row.
+fn assert_whatsapp_folder_left_alone(export: &ChatFolderExport) {
+    assert_eq!(export.attachment_bodies("photo"), vec!["picture"]);
+    let report = &export.report;
+    assert_eq!(report.attachments_saved, 1);
+    assert_eq!(report.extra("live_photo_videos"), 0);
+    assert_eq!(report.extra("link_previews_already_in_message"), 0);
+    assert_eq!(report.extra("files_named_by_no_row"), 0);
+}
+
 /// The pass over files no row names is for what iMazing writes into a
 /// Messages chat folder. A WhatsApp chat folder's extra files are neither
 /// counted nor attached, and a `.mov` beside a picture there is not a Live
@@ -931,27 +965,33 @@ fn a_whatsapp_chat_folder_gets_no_live_photo_video_and_no_unnamed_file_count() {
     let export = convert_chat_folder_with(
         (
             "WhatsApp.csv",
-            "Chat Session,Message Date,Sent Date,Type,Sender ID,Sender Name,Status,Forwarded,Replying to,Text,Reactions,Attachment,Attachment type,Attachment info\n\
-Bob,2020-01-01 12:00:00,,Incoming,+15555550100,Bob,Read,,,photo,,IMG_0001.jpg,Image,\n\
-Bob,2020-01-01 12:01:00,,Incoming,+15555550100,Bob,Read,,,See https://example.com/page,,,,\n",
+            &format!("{WHATSAPP_ATTACHMENTS_HEADER}{WHATSAPP_PHOTO_AND_LINK_ROWS}"),
         ),
-        &[
-            ("2020-01-01 12 00 00 - Bob - IMG_0001.jpg", "picture"),
-            ("2020-01-01 12 00 00 - Bob - IMG_0001.mov", "video"),
-            (
-                "2020-01-01 12 01 00 - Bob - Web link.url",
-                "[InternetShortcut]\r\nURL=https://example.com/page\r\n",
-            ),
-            ("2020-01-01 12 02 00 - Bob - stray.bin", "stray"),
-        ],
+        &UNNAMED_FILES_BESIDE_A_WHATSAPP_PHOTO,
         "+15555550100__whatsapp.json",
     );
-    assert_eq!(export.attachment_bodies("photo"), vec!["picture"]);
-    let report = &export.report;
-    assert_eq!(report.attachments_saved, 1);
-    assert_eq!(report.extra("live_photo_videos"), 0);
-    assert_eq!(report.extra("link_previews_already_in_message"), 0);
-    assert_eq!(report.extra("files_named_by_no_row"), 0);
+    assert_whatsapp_folder_left_alone(&export);
+}
+
+/// A chat folder that holds a WhatsApp CSV is left alone even when a
+/// Messages CSV sits beside it, so the report's counts do not depend on
+/// whether one does.
+#[test]
+fn a_chat_folder_with_a_whatsapp_and_a_messages_csv_gets_no_unnamed_file_count() {
+    let messages_csv = format!(
+        "{MESSAGES_HEADER}Bob,2020-01-01 12:03:00,iMessage,Incoming,+15555550100,Bob,Read,,,hi,,,\n"
+    );
+    let mut files = UNNAMED_FILES_BESIDE_A_WHATSAPP_PHOTO.to_vec();
+    files.push(("Messages.csv", &messages_csv));
+    let export = convert_chat_folder_with(
+        (
+            "WhatsApp.csv",
+            &format!("{WHATSAPP_ATTACHMENTS_HEADER}{WHATSAPP_PHOTO_AND_LINK_ROWS}"),
+        ),
+        &files,
+        "+15555550100__whatsapp.json",
+    );
+    assert_whatsapp_folder_left_alone(&export);
 }
 
 /// #1080: a group's key is not built from who wrote, so a group in which one
