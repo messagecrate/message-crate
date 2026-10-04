@@ -2503,6 +2503,7 @@ async fn every_import_contact_group_of_a_built_demo_has_members() {
         DEMO_ACCOUNT_ID,
         AuditActor::CommandLine,
         Vacuum::Skip,
+        &AtomicBool::new(false),
     )
     .await
     .expect("build the demo account");
@@ -2558,6 +2559,7 @@ async fn another_account_writes_between_the_demo_wipes_delete_batches() {
         DEMO_ACCOUNT_ID,
         AuditActor::Server,
         Vacuum::Skip,
+        &AtomicBool::new(false),
     )
     .await
     .expect("build the demo account");
@@ -2715,6 +2717,7 @@ async fn a_running_servers_demo_build_runs_no_vacuum() {
         std::sync::Arc::new(cfg.clone()),
         DemoSize::Medium,
         tiny_bundle,
+        std::sync::Arc::default(),
     )
     .await
     .expect("build the demo account");

@@ -76,6 +76,7 @@ use sqlx::{SqliteConnection, SqlitePool};
 
 use crate::assets_api::Sha256;
 use crate::config::{Config, PathsConfig};
+use crate::db::account_profile::account_exists;
 use crate::db::imports::has_running_import;
 use crate::db::trash::OrphanedFile;
 use crate::db::write_tx::begin_write;
@@ -368,12 +369,7 @@ pub(crate) async fn remove_all_attachment_files(
 /// account row exists and it has no running Import Run. Call it with the
 /// write lock held (see the module notes).
 async fn may_take_out(conn: &mut SqliteConnection, account_id: i64) -> Result<bool, sqlx::Error> {
-    let exists = sqlx::query("SELECT 1 FROM accounts WHERE id = $1")
-        .bind(account_id)
-        .fetch_optional(&mut *conn)
-        .await?
-        .is_some();
-    Ok(exists && !has_running_import(conn, account_id).await?)
+    Ok(account_exists(conn, account_id).await? && !has_running_import(conn, account_id).await?)
 }
 
 /// Run `move_out` on the blocking pool while a connection from `pool`

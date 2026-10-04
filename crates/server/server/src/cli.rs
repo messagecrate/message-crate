@@ -8,6 +8,8 @@
 
 use std::fmt::Write as _;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crate::imports_api::ImportMode;
 use anyhow::{Result, bail};
@@ -654,9 +656,28 @@ fn serve_config(args: ServeArgs) -> Result<Config> {
 ///
 /// Returns an error after the summary line when any conversion failed, so a
 /// cron job or script that runs the command sees a non-zero exit status.
+/// Returns an error too when Ctrl-C or SIGTERM stops it, after killing the
+/// ffmpeg that runs and removing what it wrote (#1729). A second Ctrl-C or
+/// SIGTERM ends it at once.
 async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
     let cfg = Config::load_with_db(&args.config, args.db)?;
     let opened = OpenDb::open(cfg).await?;
+    let stop = Arc::new(AtomicBool::new(false));
+    let stopper = tokio::spawn({
+        let stop = Arc::clone(&stop);
+        async move {
+            crate::server::stop_requested().await;
+            eprintln!(
+                "stopping: the conversion that runs is stopped and its part-made file removed"
+            );
+            stop.store(true, Ordering::Relaxed);
+            // The handlers stay installed, so without this a second Ctrl-C
+            // would do nothing. It ends the command at once, with 130, the
+            // status a shell gives a command Ctrl-C ended (128 + SIGINT).
+            crate::server::stop_requested().await;
+            std::process::exit(130);
+        }
+    });
     let stats = crate::process_assets::run(
         &opened,
         &crate::process_assets::ProcessAssetsOptions {
@@ -667,8 +688,11 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
             skip_audio: args.skip_audio,
             account: None,
         },
+        &stop,
     )
-    .await?;
+    .await;
+    stopper.abort();
+    let stats = stats?;
     opened.close().await;
     if stats.errors > 0 {
         bail!(

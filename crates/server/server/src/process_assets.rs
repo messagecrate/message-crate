@@ -18,6 +18,7 @@ use std::fmt;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
 use sqlx::{SqliteConnection, SqlitePool};
@@ -25,7 +26,7 @@ use tempfile::TempDir;
 
 use crate::config::Config;
 use crate::db::attachment_versions::{self as versions_db, StoredOriginal, Version, VersionFile};
-use crate::db::schema;
+use crate::db::{account_profile, schema};
 use crate::open_db::OpenDb;
 use media::Kind;
 
@@ -140,7 +141,11 @@ fn media_type(row: &StoredOriginal) -> Option<String> {
 /// query fails, or an account's asset directories cannot be prepared. A
 /// conversion that fails for one attachment is counted in `errors` and
 /// printed, and the run goes on.
-pub async fn run(opened: &OpenDb, opts: &ProcessAssetsOptions) -> Result<ProcessAssetsStats> {
+pub async fn run(
+    opened: &OpenDb,
+    opts: &ProcessAssetsOptions,
+    stop: &AtomicBool,
+) -> Result<ProcessAssetsStats> {
     let cfg = &opened.cfg;
     let account_ids = match opts.account {
         Some(account_id) => vec![account_id],
@@ -154,12 +159,23 @@ pub async fn run(opened: &OpenDb, opts: &ProcessAssetsOptions) -> Result<Process
     let mut stats = ProcessAssetsStats::default();
 
     for &account_id in &account_ids {
-        let Some(pass) = AccountPass::open(cfg, opts, work.path(), account_id)? else {
+        if stop.load(Ordering::Relaxed) {
+            break;
+        }
+        let Some(pass) = AccountPass::open(cfg, opts, work.path(), account_id, stop)? else {
             continue;
         };
         let rows =
             versions_db::stored_originals(&mut *opened.conn().await?, account_id, None).await?;
         stats.add(&pass.process_rows(&opened.db, &rows).await);
+    }
+    if stop.load(Ordering::Relaxed) {
+        // The work directory, with what the stopped conversion wrote, is
+        // removed as `work` drops.
+        bail!(
+            "stopped before every attachment was processed; what was made is kept, and running \
+             process-assets again makes the rest"
+        );
     }
 
     println!(
@@ -178,7 +194,9 @@ pub async fn run(opened: &OpenDb, opts: &ProcessAssetsOptions) -> Result<Process
 /// the background pass does after an Import Run, saying what it does in the
 /// server's log. Unlike [`run`] it sweeps nothing, because it runs once for
 /// each Asset an Import Run brought. An account with no originals directory,
-/// or an original no attachment names any more, is nothing to do.
+/// or an original no attachment names any more, is nothing to do. Setting
+/// `stop` kills the conversion that runs and starts no other; the part-made
+/// file is removed.
 ///
 /// # Errors
 ///
@@ -190,9 +208,10 @@ pub(crate) async fn process_one_asset(
     work_dir: &Path,
     account_id: i64,
     sha256: &str,
+    stop: &AtomicBool,
 ) -> Result<ProcessAssetsStats> {
     let opts = ProcessAssetsOptions::default();
-    let Some(pass) = AccountPass::new(cfg, &opts, work_dir, account_id, Log::Trace)? else {
+    let Some(pass) = AccountPass::new(cfg, &opts, work_dir, account_id, stop, Log::Trace)? else {
         return Ok(ProcessAssetsStats::default());
     };
     let rows =
@@ -260,6 +279,9 @@ struct Outcome {
 struct AccountPass<'a> {
     opts: &'a ProcessAssetsOptions,
     work_dir: &'a Path,
+    /// Set to stop the pass: the conversion that runs is killed, and no
+    /// other starts.
+    stop: &'a AtomicBool,
     account_id: i64,
     assets_dir: PathBuf,
     converted_dir: PathBuf,
@@ -290,6 +312,7 @@ impl<'a> AccountPass<'a> {
         opts: &'a ProcessAssetsOptions,
         work_dir: &'a Path,
         account_id: i64,
+        stop: &'a AtomicBool,
     ) -> Result<Option<Self>> {
         let assets_dir = cfg.paths.assets_dir_for_account(account_id);
         let converted_dir = cfg.paths.assets_converted_dir_for_account(account_id);
@@ -314,7 +337,7 @@ impl<'a> AccountPass<'a> {
                 "  {cleaned_verb} {left} temporary file(s) a killed write left in the shard folders"
             );
         }
-        Self::new(cfg, opts, work_dir, account_id, Log::Print)
+        Self::new(cfg, opts, work_dir, account_id, stop, Log::Print)
     }
 
     /// The pass over `account_id`'s directories, making the converted
@@ -329,6 +352,7 @@ impl<'a> AccountPass<'a> {
         opts: &'a ProcessAssetsOptions,
         work_dir: &'a Path,
         account_id: i64,
+        stop: &'a AtomicBool,
         log: Log,
     ) -> Result<Option<Self>> {
         let assets_dir = cfg.paths.assets_dir_for_account(account_id);
@@ -341,6 +365,7 @@ impl<'a> AccountPass<'a> {
         Ok(Some(Self {
             opts,
             work_dir,
+            stop,
             account_id,
             assets_dir,
             converted_dir,
@@ -357,11 +382,19 @@ impl<'a> AccountPass<'a> {
     async fn process_rows(&self, db: &SqlitePool, rows: &[StoredOriginal]) -> ProcessAssetsStats {
         let mut stats = ProcessAssetsStats::default();
         for row in rows {
+            if self.stop.load(Ordering::Relaxed) {
+                break;
+            }
             // A work directory whose time is a day old counts as left by a
             // stopped pass, so a live one is touched before each original.
             let _ = fs::File::open(self.work_dir)
                 .and_then(|dir| dir.set_modified(std::time::SystemTime::now()));
             let outcome = self.process(db, row).await;
+            if outcome.error.is_some() && self.stop.load(Ordering::Relaxed) {
+                // A conversion the stop killed is not a failure: it is made
+                // again by the next pass.
+                break;
+            }
             if let Some(err) = &outcome.error {
                 self.log
                     .fail(format!("failed {}: {err:#}", self.label(row)));
@@ -621,8 +654,8 @@ impl<'a> AccountPass<'a> {
         let token = row.sha256.get(..12).unwrap_or(&row.sha256);
         let out = self.work_dir.join(format!("{version}-{token}{ext}"));
         let made = match version {
-            Version::Thumbnail => media::make_thumbnail(source_path, &out),
-            Version::Preview => media::make_preview(source_path, kind, &out),
+            Version::Thumbnail => media::make_thumbnail(source_path, &out, self.stop),
+            Version::Preview => media::make_preview(source_path, kind, &out, self.stop),
         };
         if let Err(err) = made {
             let _ = fs::remove_file(&out);
@@ -663,10 +696,7 @@ impl<'a> AccountPass<'a> {
 async fn list_account_ids(conn: &mut SqliteConnection, data_dir: &Path) -> Result<Vec<i64>> {
     let mut ids = Vec::new();
     if schema::table_exists(conn, "accounts").await? {
-        let rows = sqlx::query_scalar::<_, i64>("SELECT id FROM accounts ORDER BY id")
-            .fetch_all(&mut *conn)
-            .await?;
-        ids = rows;
+        ids = account_profile::account_ids(conn).await?;
     }
     if ids.is_empty() && data_dir.is_dir() {
         // Account directories are named by id; anything else under `data/`
