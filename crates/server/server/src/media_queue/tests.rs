@@ -340,3 +340,36 @@ fn without_ffmpeg_the_queue_waits() {
     assert_eq!(made, ProcessAssetsStats::default());
     assert_eq!(runtime.block_on(queued(state)), 3);
 }
+
+/// An Import Run that ends while the pass works on one of its Assets queues
+/// it again, and the pass, when it is done with the old row, leaves the new
+/// one: the run's new rows still get the versions.
+#[tokio::test]
+async fn an_asset_queued_again_while_it_is_worked_on_stays_queued() {
+    let (fixture, alice) = fixture_with_account().await;
+    let state = &fixture.state;
+    import_three(&fixture, &alice).await;
+    let run: i64 = sqlx::query_scalar("SELECT id FROM imports WHERE account_id = $1")
+        .bind(alice.account_id)
+        .fetch_one(&state.db)
+        .await
+        .unwrap();
+    let mut conn = state.db.acquire().await.unwrap();
+    let worked_on = crate::db::media_queue::first(&mut conn)
+        .await
+        .unwrap()
+        .unwrap();
+
+    crate::db::media_queue::queue_import_run(&mut conn, alice.account_id, run)
+        .await
+        .unwrap();
+    crate::db::media_queue::remove(&mut conn, &worked_on)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        queued(state).await,
+        3,
+        "the Asset queued again is still queued"
+    );
+}

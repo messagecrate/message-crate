@@ -219,14 +219,7 @@ async fn import_under_session(
     session.finish(conn, &result).await;
     // No server runs the background pass here, so the Assets wait in the
     // queue for the next `serve` (`docs/architecture/media.md`, rule 4).
-    if let Err(error) = crate::db::media_queue::queue_import_run(conn, account_id, import_id).await
-    {
-        tracing::warn!(
-            import_id,
-            %error,
-            "the Import Run's Assets could not be queued for Thumbnails and Previews"
-        );
-    }
+    crate::media_queue::queue_import_run_on(conn, account_id, import_id).await;
     result
 }
 

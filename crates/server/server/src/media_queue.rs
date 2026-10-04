@@ -16,12 +16,12 @@
 
 use std::sync::Arc;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use sqlx::SqlitePool;
 use tokio::sync::Notify;
 
 use crate::config::Config;
-use crate::db::media_queue::{self, QueuedAsset};
+use crate::db::media_queue;
 use crate::process_assets::ProcessAssetsStats;
 
 /// The handle that wakes the background pass. Every clone wakes the same
@@ -88,36 +88,64 @@ pub(crate) async fn queue_import_run(
     account_id: i64,
     import_id: i64,
 ) {
-    let queued = async {
-        let mut conn = pool.acquire().await?;
-        media_queue::queue_import_run(&mut conn, account_id, import_id).await
-    }
-    .await;
-    match queued {
-        Ok(0) => {}
-        Ok(count) => {
-            tracing::info!(
-                account_id,
-                import_id,
-                count,
-                "queued Assets for Thumbnails and Previews"
-            );
-            queue.wake();
+    let queued = match pool.acquire().await {
+        Ok(mut conn) => queue_import_run_on(&mut conn, account_id, import_id).await,
+        Err(error) => {
+            log_not_queued(account_id, import_id, &error);
+            0
         }
-        Err(error) => tracing::warn!(
-            account_id,
-            import_id,
-            %error,
-            "the Import Run's Assets could not be queued for Thumbnails and Previews"
-        ),
+    };
+    if queued > 0 {
+        queue.wake();
     }
+}
+
+/// Queue the Assets Import Run `import_id` of `account_id` brought, on
+/// `conn`, without waking a pass: the `import` command runs none, and the
+/// next `serve` works on them. Answers how many were queued; a failure is
+/// logged and answers none.
+pub(crate) async fn queue_import_run_on(
+    conn: &mut sqlx::SqliteConnection,
+    account_id: i64,
+    import_id: i64,
+) -> u64 {
+    match media_queue::queue_import_run(conn, account_id, import_id).await {
+        Ok(count) => {
+            if count > 0 {
+                tracing::info!(
+                    account_id,
+                    import_id,
+                    count,
+                    "queued Assets for Thumbnails and Previews"
+                );
+            }
+            count
+        }
+        Err(error) => {
+            log_not_queued(account_id, import_id, &error);
+            0
+        }
+    }
+}
+
+fn log_not_queued(account_id: i64, import_id: i64, error: &sqlx::Error) {
+    tracing::warn!(
+        account_id,
+        import_id,
+        %error,
+        "the Import Run's Assets could not be queued for Thumbnails and Previews"
+    );
 }
 
 /// Make the Thumbnail and Preview of every queued Asset, oldest first, until
 /// the queue is empty, and answer what was made. Each Asset leaves the queue
 /// once it is processed, whether or not every version could be made; a
-/// failure is logged, and `process-assets` tries it again. Without ffmpeg
-/// nothing is made and the queue is left as it is.
+/// failure is logged, and `process-assets` tries it again. An Asset queued
+/// again while it was worked on stays queued. Without ffmpeg nothing is made
+/// and the queue is left as it is.
+///
+/// A connection is taken for each query and given back after it, so the
+/// pass holds none of the pool's connections while ffmpeg runs.
 ///
 /// # Errors
 ///
@@ -136,15 +164,16 @@ pub(crate) async fn work_through(pool: &SqlitePool, cfg: &Config) -> Result<Proc
         );
         return Ok(stats);
     }
-    let work = tempfile::TempDir::new().context("make a work directory for Thumbnails")?;
-    // A connection is taken for each Asset and given back after it, so the
-    // pass holds none of the pool's connections between Assets.
-    loop {
-        let mut conn = pool.acquire().await?;
-        let Some(asset) = media_queue::first(&mut conn).await? else {
-            break;
-        };
-        let done = process(cfg, &mut conn, work.path(), &asset).await;
+    let work = crate::process_assets::work_dir(&cfg.paths.data_dir)?;
+    while let Some(asset) = media_queue::first(&mut *pool.acquire().await?).await? {
+        let done = crate::process_assets::process_one_asset(
+            cfg,
+            pool,
+            work.path(),
+            asset.account_id,
+            &asset.sha256,
+        )
+        .await;
         match done {
             Ok(made) => stats.add(&made),
             Err(error) => {
@@ -157,7 +186,7 @@ pub(crate) async fn work_through(pool: &SqlitePool, cfg: &Config) -> Result<Proc
                 );
             }
         }
-        media_queue::remove(&mut conn, &asset).await?;
+        media_queue::remove(&mut *pool.acquire().await?, &asset).await?;
     }
     tracing::info!(
         thumbnails = stats.thumbnails,
@@ -166,17 +195,6 @@ pub(crate) async fn work_through(pool: &SqlitePool, cfg: &Config) -> Result<Proc
         "the queued Assets are done"
     );
     Ok(stats)
-}
-
-/// Make what one queued Asset needs.
-async fn process(
-    cfg: &Config,
-    conn: &mut sqlx::SqliteConnection,
-    work_dir: &std::path::Path,
-    asset: &QueuedAsset,
-) -> Result<ProcessAssetsStats> {
-    crate::process_assets::process_one_asset(cfg, conn, work_dir, asset.account_id, &asset.sha256)
-        .await
 }
 
 #[cfg(test)]

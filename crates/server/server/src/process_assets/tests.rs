@@ -434,7 +434,7 @@ fn a_work_file_is_stored_content_addressed_and_then_removed() {
         .store_work_file(&out, Version::Thumbnail, ".jpg", &row("aa/photo.jpg"))
         .unwrap();
 
-    let expected = DerivedBlob {
+    let expected = VersionFile {
         sha256: crate::assets_api::sha256_hex(b"jpeg-bytes"),
         assets_path: derived_rel_path(&crate::assets_api::Sha256::of_bytes(b"jpeg-bytes"), ".jpg"),
         mime_type: "image/jpeg".to_string(),
@@ -672,7 +672,7 @@ async fn store_and_update_derived_db() {
     let blob = store_derived_bytes(&converted, b"jpeg-bytes", ".jpg").unwrap();
     assert!(converted.join(&blob.assets_path).is_file());
 
-    update_version(&mut conn, Version::Preview, ACCOUNT, SHA, &blob)
+    versions_db::record(&mut conn, Version::Preview, ACCOUNT, SHA, &blob)
         .await
         .unwrap();
 
@@ -699,7 +699,9 @@ async fn listed_attachments_carry_name_hints_for_extensionless_blobs() {
     .await
     .unwrap();
 
-    let rows = list_attachments(&mut conn, ACCOUNT, None).await.unwrap();
+    let rows = versions_db::stored_originals(&mut conn, ACCOUNT, None)
+        .await
+        .unwrap();
     assert_eq!(rows.len(), 1);
     assert_eq!(
         plan(&rows[0], &ProcessAssetsOptions::default(), FRESH),
@@ -909,7 +911,7 @@ fn one_asset_is_processed_alone() {
         .await;
         let work = tempfile::tempdir().unwrap();
 
-        let made = process_one_asset(&opened.cfg, &mut conn, work.path(), ACCOUNT, SHA)
+        let made = process_one_asset(&opened.cfg, &opened.db, work.path(), ACCOUNT, SHA)
             .await
             .unwrap();
 
@@ -1256,4 +1258,76 @@ fn storing_a_derived_file_leaves_only_the_file() {
         .collect();
     assert_eq!(names, vec![dest.file_name().unwrap().to_owned()]);
     assert_eq!(std::fs::read(&dest).unwrap(), buf);
+}
+
+/// The Trash is emptied while the pass makes a Thumbnail: the rows that
+/// named the original are gone before the Thumbnail is recorded, and no
+/// delete can report a file that did not exist yet. The pass removes it, so
+/// nothing of a deleted attachment stays on disk.
+#[test]
+fn a_version_made_after_its_rows_were_deleted_is_not_kept() {
+    with_real_ffmpeg(async {
+        let (opened, _dir, _) = fixture_with("imessage", ".png", PNG_1X1_RGB).await;
+        let rows = versions_db::stored_originals(&mut opened.conn().await.unwrap(), ACCOUNT, None)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM attachments")
+            .execute(&opened.db)
+            .await
+            .unwrap();
+        let opts = ProcessAssetsOptions::default();
+        let work = tempfile::tempdir().unwrap();
+        let pass = AccountPass::new(&opened.cfg, &opts, work.path(), ACCOUNT, Log::Print)
+            .unwrap()
+            .unwrap();
+
+        let made = pass.process_rows(&opened.db, &rows).await;
+
+        assert_eq!(made, stats(1, 0, 0, 1, 0));
+        let converted = opened.cfg.paths.assets_converted_dir_for_account(ACCOUNT);
+        let left: Vec<_> = walk(&converted);
+        assert!(
+            left.is_empty(),
+            "nothing of the deleted attachment stays: {left:?}"
+        );
+    });
+}
+
+/// Every file under `dir`, at any depth.
+fn walk(dir: &Path) -> Vec<PathBuf> {
+    let mut files = Vec::new();
+    for entry in fs::read_dir(dir).into_iter().flatten().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            files.extend(walk(&path));
+        } else {
+            files.push(path);
+        }
+    }
+    files
+}
+
+/// A pass stopped part-way leaves its work directory, with part-made copies
+/// of attachments in it. The next pass removes one older than a day, and
+/// leaves a younger one, which a pass running now may be using.
+#[test]
+fn a_work_directory_a_stopped_pass_left_is_removed_by_the_next() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join(".media-work");
+    let (stale, live) = (root.join("pass-old"), root.join("pass-new"));
+    for path in [&stale, &live] {
+        fs::create_dir_all(path).unwrap();
+        fs::write(path.join("Thumbnail-abc.jpg"), b"half").unwrap();
+    }
+    let two_days_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 86_400);
+    fs::File::open(&stale)
+        .unwrap()
+        .set_modified(two_days_ago)
+        .unwrap();
+
+    let work = work_dir(dir.path()).unwrap();
+
+    assert!(!stale.exists(), "the stopped pass's directory is removed");
+    assert!(live.exists(), "a young directory is left alone");
+    assert!(work.path().starts_with(&root));
 }

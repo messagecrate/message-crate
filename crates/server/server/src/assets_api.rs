@@ -16,6 +16,7 @@ use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Deserializer, Serialize};
 use sha2::{Digest, Sha256 as Sha256Hasher};
 
+use crate::db::attachment_versions::Version;
 use crate::extract::{Json, Path as AxumPath};
 use axum::extract::{Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
@@ -772,23 +773,7 @@ pub(crate) async fn get_asset_preview(
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
 ) -> Result<Response, ApiError> {
-    // The same lookup as the original: the reader's own store, so another
-    // account's fingerprint names nothing here.
-    let account = reader.account_id;
-    let Some(stored) = lookup_for_read(&state, account, &sha256).await? else {
-        return Err(ApiError::NotFound("asset not found".into()));
-    };
-    let mut conn = state.db.acquire().await?;
-    let preview =
-        crate::db::conversation_messages::attachment_preview(&mut conn, account, &stored.sha256)
-            .await?;
-    drop(conn);
-    let Some((preview_path, mime_type)) = preview else {
-        return Err(ApiError::NotFound("asset has no preview".into()));
-    };
-
-    let converted_dir = state.cfg.paths.assets_converted_dir_for_account(account);
-    stream_file(&converted_dir.join(preview_path), mime_type, &headers, None).await
+    stream_version(&state, reader, &headers, &sha256, Version::Preview).await
 }
 
 /// Download the thumbnail of a stored image or video: a JPEG at most 560
@@ -837,29 +822,38 @@ pub(crate) async fn get_asset_thumbnail(
     headers: HeaderMap,
     AxumPath(sha256): AxumPath<Sha256>,
 ) -> Result<Response, ApiError> {
-    // The same lookup as the original: the reader's own store, so another
-    // account's fingerprint names nothing here.
+    stream_version(&state, reader, &headers, &sha256, Version::Thumbnail).await
+}
+
+/// Answer the `version` of the original `sha256` in the reader's own store,
+/// so another account's fingerprint names nothing here: `404 Not Found` for
+/// an original the account does not hold, or one with no such version yet.
+async fn stream_version(
+    state: &AppState,
+    reader: AssetReadAccess,
+    headers: &HeaderMap,
+    sha256: &Sha256,
+    version: Version,
+) -> Result<Response, ApiError> {
     let account = reader.account_id;
-    let Some(stored) = lookup_for_read(&state, account, &sha256).await? else {
+    let Some(stored) = lookup_for_read(state, account, sha256).await? else {
         return Err(ApiError::NotFound("asset not found".into()));
     };
-    let mut conn = state.db.acquire().await?;
-    let thumbnail =
-        crate::db::conversation_messages::attachment_thumbnail(&mut conn, account, &stored.sha256)
-            .await?;
-    drop(conn);
-    let Some((thumbnail_path, mime_type)) = thumbnail else {
-        return Err(ApiError::NotFound("asset has no thumbnail yet".into()));
-    };
-
-    let converted_dir = state.cfg.paths.assets_converted_dir_for_account(account);
-    stream_file(
-        &converted_dir.join(thumbnail_path),
-        mime_type,
-        &headers,
-        None,
+    let file = crate::db::attachment_versions::file_of(
+        &mut *state.db.acquire().await?,
+        version,
+        account,
+        &stored.sha256,
     )
-    .await
+    .await?;
+    let Some((path, mime_type)) = file else {
+        return Err(ApiError::NotFound(format!(
+            "asset has no {} yet",
+            version.to_string().to_lowercase()
+        )));
+    };
+    let converted_dir = state.cfg.paths.assets_converted_dir_for_account(account);
+    stream_file(&converted_dir.join(path), mime_type, headers, None).await
 }
 
 /// Find `sha256` in `account`'s store without hashing the file. A read

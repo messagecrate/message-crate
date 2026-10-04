@@ -120,7 +120,13 @@ of its own, so a long conversion never holds a request. It takes the Assets
 oldest first, makes what each still needs, shares a Thumbnail or Preview the
 original already has with rows that do not name it yet, and removes the row.
 An Asset whose conversion fails leaves the queue too, with the failure in the
-server's log, and `process-assets` tries it again.
+server's log, and `process-assets` tries it again. An Asset a later Import
+Run queues while the pass works on it is queued again rather than dropped,
+so the new run's rows get the versions too. The pass holds no database
+connection while ffmpeg runs, and writes its part-made files in a work
+directory under the data directory, which the next pass removes when a
+stopped server left it behind. A version made for an attachment deleted
+meanwhile is removed rather than kept.
 
 Why a table: the queue outlives the process, so a server stopped part-way
 works through what was left when it starts again, with nothing to redo and no

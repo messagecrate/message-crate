@@ -97,9 +97,9 @@ original, and downloading always gives the original.
 _Avoid_: Derived asset, Converted file
 
 **Thumbnail**:
-A small picture of an image or video Asset, about 560 pixels across and under
-100 kilobytes, made by the server: the image scaled down, or a video's first
-frame. A Conversation shows the Thumbnail, never the original, so a long
+A small picture of an image or video Asset, a JPEG at most 560 pixels on its
+long side and tens of kilobytes, made by the server: the image scaled down,
+or a video's first frame. A Conversation shows the Thumbnail, never the original, so a long
 conversation loads quickly.
 _Avoid_: Preview (a Preview is a full copy, not a small one)
 

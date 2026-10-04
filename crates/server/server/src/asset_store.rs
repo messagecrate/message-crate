@@ -603,65 +603,20 @@ pub(crate) async fn sweep_after_run(pool: &SqlitePool, paths: &PathsConfig, acco
 /// the server may not have written the row that names it yet.
 pub(crate) const PREVIEW_GRACE_SECS: u64 = 60 * 60;
 
-/// What one attachment row says about the files it names.
-#[derive(sqlx::FromRow)]
-struct NamingRow {
-    sha256: Option<String>,
-    assets_path: Option<String>,
-    derived_sha256: Option<String>,
-    derived_assets_path: Option<String>,
-    thumbnail_sha256: Option<String>,
-    thumbnail_assets_path: Option<String>,
-}
-
 /// Every fingerprint an attachment of `account_id` names, promoted or in
 /// staging, lowercased.
 async fn named_fingerprints(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<HashSet<String>, sqlx::Error> {
-    let rows: Vec<NamingRow> = sqlx::query_as(
-        "SELECT a.sha256, a.assets_path, a.derived_sha256, a.derived_assets_path,
-                a.thumbnail_sha256, a.thumbnail_assets_path
-             FROM attachments a
-             JOIN messages m ON m.id = a.message_id
-             WHERE m.account_id = $1
-             UNION ALL
-             SELECT sa.sha256, sa.assets_path, sa.derived_sha256, sa.derived_assets_path,
-                NULL, NULL
-             FROM staging_attachments sa
-             JOIN staging_messages sm ON sm.id = sa.message_id
-             WHERE sm.account_id = $1",
-    )
-    .bind(account_id)
-    .fetch_all(&mut *conn)
-    .await?;
-    let mut named = HashSet::new();
-    for row in rows {
-        for sha in [row.sha256, row.derived_sha256, row.thumbnail_sha256]
+    Ok(
+        crate::db::attachment_versions::named_files(conn, account_id)
+            .await?
             .into_iter()
-            .flatten()
-        {
-            named.insert(sha.to_ascii_lowercase());
-        }
-        for path in [
-            row.assets_path,
-            row.derived_assets_path,
-            row.thumbnail_assets_path,
-        ]
-        .into_iter()
-        .flatten()
-        {
-            if let Some(fingerprint) = Path::new(&path)
-                .file_name()
-                .and_then(|n| n.to_str())
-                .and_then(fingerprint_of)
-            {
-                named.insert(fingerprint);
-            }
-        }
-    }
-    Ok(named)
+            .flat_map(crate::db::attachment_versions::NamedFiles::fingerprints)
+            .map(|fingerprint| fingerprint.to_ascii_lowercase())
+            .collect(),
+    )
 }
 
 /// The 64-hex fingerprint a stored file's name starts with, lowercased:

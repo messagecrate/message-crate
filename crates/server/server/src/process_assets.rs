@@ -20,10 +20,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use sqlx::SqliteConnection;
+use sqlx::{SqliteConnection, SqlitePool};
 use tempfile::TempDir;
 
 use crate::config::Config;
+use crate::db::attachment_versions::{
+    self as versions_db, StoredOriginal as AssetRow, Version, VersionFile,
+};
 use crate::db::schema;
 use crate::open_db::OpenDb;
 use media::Kind;
@@ -118,116 +121,6 @@ impl Log {
     }
 }
 
-/// One of the two versions the server makes of an original.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Version {
-    /// A copy every browser shows, in `attachments.derived_*`.
-    Preview,
-    /// A small picture, in `attachments.thumbnail_*`.
-    Thumbnail,
-}
-
-impl Version {
-    /// The columns that name this version: fingerprint, path, media type.
-    fn columns(self) -> [&'static str; 3] {
-        match self {
-            Self::Preview => ["derived_sha256", "derived_assets_path", "derived_mime_type"],
-            Self::Thumbnail => [
-                "thumbnail_sha256",
-                "thumbnail_assets_path",
-                "thumbnail_mime_type",
-            ],
-        }
-    }
-}
-
-impl fmt::Display for Version {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Preview => "Preview",
-            Self::Thumbnail => "Thumbnail",
-        })
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-struct DerivedBlob {
-    sha256: String,
-    assets_path: String,
-    mime_type: String,
-}
-
-/// What the rows of one original say about one of its versions.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-struct Named {
-    sha256: Option<String>,
-    assets_path: Option<String>,
-    mime_type: Option<String>,
-    /// Rows of the original that name no such version yet, such as the rows
-    /// of a source imported after it was made.
-    rows_without: i64,
-}
-
-#[derive(Debug, sqlx::FromRow)]
-struct AssetRow {
-    sha256: String,
-    assets_path: String,
-    mime_type: Option<String>,
-    derived_assets_path: Option<String>,
-    /// The Preview's fingerprint and type, as the rows that name it say.
-    derived_sha256: Option<String>,
-    derived_mime_type: Option<String>,
-    rows_without_preview: i64,
-    thumbnail_assets_path: Option<String>,
-    thumbnail_sha256: Option<String>,
-    thumbnail_mime_type: Option<String>,
-    rows_without_thumbnail: i64,
-    /// Attachment file name from the export (`attachments.original_name`).
-    original_name: Option<String>,
-    /// Attachment path inside the export (`attachments.path`).
-    source_path: Option<String>,
-}
-
-impl AssetRow {
-    /// Extension sources to fall back on when the stored blob has none.
-    fn name_hints(&self) -> [Option<&str>; 2] {
-        [self.original_name.as_deref(), self.source_path.as_deref()]
-    }
-
-    /// The original's media type, from everything known about it.
-    fn media_type(&self) -> Option<String> {
-        media::media_type_of(
-            Path::new(&self.assets_path),
-            self.mime_type.as_deref(),
-            &self.name_hints(),
-        )
-    }
-
-    /// What the rows say about `version`.
-    fn named(&self, version: Version) -> Named {
-        let (sha256, assets_path, mime_type, rows_without) = match version {
-            Version::Preview => (
-                &self.derived_sha256,
-                &self.derived_assets_path,
-                &self.derived_mime_type,
-                self.rows_without_preview,
-            ),
-            Version::Thumbnail => (
-                &self.thumbnail_sha256,
-                &self.thumbnail_assets_path,
-                &self.thumbnail_mime_type,
-                self.rows_without_thumbnail,
-            ),
-        };
-        Named {
-            sha256: sha256.clone(),
-            assets_path: assets_path.clone(),
-            mime_type: mime_type.clone(),
-            rows_without,
-        }
-    }
-}
-
 /// Make the versions of every stored original of the account `opts` names,
 /// or of every account in the database when it names none, saying what it
 /// does on standard output. An account's attachments from every source share
@@ -242,25 +135,24 @@ impl AssetRow {
 /// printed, and the run goes on.
 pub async fn run(opened: &OpenDb, opts: &ProcessAssetsOptions) -> Result<ProcessAssetsStats> {
     let cfg = &opened.cfg;
-    let mut conn = opened.conn().await?;
-
     let account_ids = match opts.account {
         Some(account_id) => vec![account_id],
-        None => list_account_ids(&mut conn, &cfg.paths.data_dir).await?,
+        None => list_account_ids(&mut *opened.conn().await?, &cfg.paths.data_dir).await?,
     };
     if account_ids.is_empty() {
         bail!("no accounts found — create an account or run reset-demo first");
     }
 
-    let work = TempDir::new().context("create temp dir for derived media")?;
+    let work = work_dir(&cfg.paths.data_dir)?;
     let mut stats = ProcessAssetsStats::default();
 
     for &account_id in &account_ids {
         let Some(pass) = AccountPass::open(cfg, opts, work.path(), account_id)? else {
             continue;
         };
-        let rows = list_attachments(&mut conn, account_id, None).await?;
-        stats.add(&pass.process_rows(&mut conn, &rows).await);
+        let rows =
+            versions_db::stored_originals(&mut *opened.conn().await?, account_id, None).await?;
+        stats.add(&pass.process_rows(&opened.db, &rows).await);
     }
 
     println!(
@@ -287,7 +179,7 @@ pub async fn run(opened: &OpenDb, opts: &ProcessAssetsOptions) -> Result<Process
 /// made. A version that cannot be made is counted in `errors` and logged.
 pub(crate) async fn process_one_asset(
     cfg: &Config,
-    conn: &mut SqliteConnection,
+    db: &SqlitePool,
     work_dir: &Path,
     account_id: i64,
     sha256: &str,
@@ -296,8 +188,53 @@ pub(crate) async fn process_one_asset(
     let Some(pass) = AccountPass::new(cfg, &opts, work_dir, account_id, Log::Trace)? else {
         return Ok(ProcessAssetsStats::default());
     };
-    let rows = list_attachments(conn, account_id, Some(sha256)).await?;
-    Ok(pass.process_rows(conn, &rows).await)
+    let rows =
+        versions_db::stored_originals(&mut *db.acquire().await?, account_id, Some(sha256)).await?;
+    Ok(pass.process_rows(db, &rows).await)
+}
+
+/// The directory under `data_dir` that holds the work directories of every
+/// pass, `process-assets` and the server's alike.
+const WORK_DIRS: &str = ".media-work";
+
+/// Age after which a work directory under [`WORK_DIRS`] is left over from a
+/// pass that was stopped: no pass spends a day on one file.
+const STALE_WORK_SECS: u64 = 24 * 60 * 60;
+
+/// A new work directory for one pass under `data_dir/.media-work/`, removed
+/// when the pass is done. A pass stopped part-way, by a server stopped or
+/// killed, cannot remove its own, so the work directories older than a day
+/// are removed first. They hold part-made copies of attachments, and live
+/// beside the data rather than in the system's temporary directory so they
+/// are never left where nothing looks again.
+///
+/// # Errors
+///
+/// Returns an error when the directory cannot be made.
+pub(crate) fn work_dir(data_dir: &Path) -> Result<TempDir> {
+    let root = data_dir.join(WORK_DIRS);
+    fs::create_dir_all(&root).with_context(|| format!("create {}", root.display()))?;
+    let now = std::time::SystemTime::now();
+    for entry in fs::read_dir(&root).into_iter().flatten().flatten() {
+        let stale = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .is_ok_and(|modified| {
+                now.duration_since(modified)
+                    .is_ok_and(|age| age.as_secs() >= STALE_WORK_SECS)
+            });
+        if stale && let Err(error) = fs::remove_dir_all(entry.path()) {
+            tracing::warn!(
+                path = %entry.path().display(),
+                %error,
+                "a work directory a stopped pass left could not be removed"
+            );
+        }
+    }
+    tempfile::Builder::new()
+        .prefix("pass-")
+        .tempdir_in(&root)
+        .with_context(|| format!("make a work directory in {}", root.display()))
 }
 
 /// What processing one stored original did.
@@ -327,7 +264,7 @@ struct AccountPass<'a> {
 enum Derived {
     /// A dry run: said what it would write and stored nothing.
     DryRun,
-    Stored(DerivedBlob),
+    Stored(VersionFile),
 }
 
 impl<'a> AccountPass<'a> {
@@ -410,14 +347,10 @@ impl<'a> AccountPass<'a> {
     }
 
     /// Process each of `rows` and count what happened, logging each failure.
-    async fn process_rows(
-        &self,
-        conn: &mut SqliteConnection,
-        rows: &[AssetRow],
-    ) -> ProcessAssetsStats {
+    async fn process_rows(&self, db: &SqlitePool, rows: &[AssetRow]) -> ProcessAssetsStats {
         let mut stats = ProcessAssetsStats::default();
         for row in rows {
-            let outcome = self.process(conn, row).await;
+            let outcome = self.process(db, row).await;
             if let Some(err) = &outcome.error {
                 self.log
                     .fail(format!("failed {}: {err:#}", self.label(row)));
@@ -432,7 +365,7 @@ impl<'a> AccountPass<'a> {
     /// Reads the facts only the disk can supply, lets [`plan`] decide, then
     /// does what the plan says. An existing version is hashed, so one cut
     /// short by a killed run is made again.
-    async fn process(&self, conn: &mut SqliteConnection, row: &AssetRow) -> Outcome {
+    async fn process(&self, db: &SqlitePool, row: &AssetRow) -> Outcome {
         let source_path = self.assets_dir.join(&row.assets_path);
         let state = |version: Version| {
             preview_file(
@@ -472,21 +405,18 @@ impl<'a> AccountPass<'a> {
             } == PreviewFile::Damaged;
             let done = match need {
                 Need::Nothing => Ok(false),
-                Need::Share => self
-                    .share_existing(conn, row, version)
-                    .await
-                    .map(|()| false),
-                Need::Drop => self.drop_damaged(conn, row, version).await.map(|()| false),
+                Need::Share => self.share_existing(db, row, version).await.map(|()| false),
+                Need::Drop => self.drop_damaged(db, row, version).await.map(|()| false),
                 Need::NoOriginal { damaged } => {
                     let dropped = if damaged {
-                        self.drop_damaged(conn, row, version).await
+                        self.drop_damaged(db, row, version).await
                     } else {
                         Ok(())
                     };
                     dropped.and(Err(anyhow::anyhow!("missing original")))
                 }
                 Need::Make => {
-                    self.make(conn, row, version, versions.kind, &source_path, damaged)
+                    self.make(db, row, version, versions.kind, &source_path, damaged)
                         .await
                 }
             };
@@ -506,7 +436,7 @@ impl<'a> AccountPass<'a> {
     /// written, or would be in a dry run.
     async fn make(
         &self,
-        conn: &mut SqliteConnection,
+        db: &SqlitePool,
         row: &AssetRow,
         version: Version,
         kind: Kind,
@@ -523,7 +453,27 @@ impl<'a> AccountPass<'a> {
             Derived::DryRun => return Ok(true),
             Derived::Stored(blob) => blob,
         };
-        update_version(conn, version, self.account_id, &row.sha256, &blob).await?;
+        let mut conn = db.acquire().await?;
+        let named =
+            versions_db::record(&mut conn, version, self.account_id, &row.sha256, &blob).await?;
+        if named == 0 {
+            // Every row of the original was deleted while the version was
+            // made, so the delete could not report the file. Remove it here,
+            // unless another row names the same bytes.
+            if !versions_db::converted_file_is_named(&mut conn, self.account_id, &blob.sha256)
+                .await?
+                && let Some(path) =
+                    crate::asset_store::join_under(&self.converted_dir, &blob.assets_path)
+            {
+                crate::asset_store::remove_file(&path)
+                    .with_context(|| format!("remove unnamed {version} {}", path.display()))?;
+            }
+            self.log.say(format!(
+                "{}: deleted while its {version} was made; the {version} is not kept",
+                self.label(row)
+            ));
+            return Ok(false);
+        }
         self.log.say(format!(
             "{} -> {} ({version})",
             self.label(row),
@@ -543,7 +493,7 @@ impl<'a> AccountPass<'a> {
     /// Returns an error when the rows cannot be updated.
     async fn share_existing(
         &self,
-        conn: &mut SqliteConnection,
+        db: &SqlitePool,
         row: &AssetRow,
         version: Version,
     ) -> Result<()> {
@@ -556,7 +506,7 @@ impl<'a> AccountPass<'a> {
         else {
             return Ok(());
         };
-        let blob = DerivedBlob {
+        let blob = VersionFile {
             sha256,
             assets_path,
             mime_type,
@@ -569,7 +519,14 @@ impl<'a> AccountPass<'a> {
             ));
             return Ok(());
         }
-        update_version(conn, version, self.account_id, &row.sha256, &blob).await?;
+        versions_db::record(
+            &mut *db.acquire().await?,
+            version,
+            self.account_id,
+            &row.sha256,
+            &blob,
+        )
+        .await?;
         self.log.say(format!(
             "{} -> {} (existing {version})",
             self.label(row),
@@ -588,12 +545,7 @@ impl<'a> AccountPass<'a> {
     ///
     /// Returns an error when the rows cannot be updated or the file cannot
     /// be deleted.
-    async fn drop_damaged(
-        &self,
-        conn: &mut SqliteConnection,
-        row: &AssetRow,
-        version: Version,
-    ) -> Result<()> {
+    async fn drop_damaged(&self, db: &SqlitePool, row: &AssetRow, version: Version) -> Result<()> {
         let Some(rel) = row.named(version).assets_path else {
             return Ok(());
         };
@@ -604,7 +556,7 @@ impl<'a> AccountPass<'a> {
             ));
             return Ok(());
         }
-        clear_version(conn, version, self.account_id, &rel).await?;
+        versions_db::clear(&mut *db.acquire().await?, version, self.account_id, &rel).await?;
         if let Some(path) = crate::asset_store::join_under(&self.converted_dir, &rel)
             && path.is_file()
         {
@@ -679,6 +631,12 @@ impl<'a> AccountPass<'a> {
             let _ = fs::remove_file(out);
             return Ok(Derived::DryRun);
         }
+        // A deleted account's directory is gone, and storing would make it
+        // again with nothing to remove it.
+        if !self.assets_dir.is_dir() {
+            let _ = fs::remove_file(out);
+            bail!("the account's directory is gone");
+        }
         let blob = store_derived_file(&self.converted_dir, out, ext);
         let _ = fs::remove_file(out);
         Ok(Derived::Stored(blob?))
@@ -709,114 +667,6 @@ async fn list_account_ids(conn: &mut SqliteConnection, data_dir: &Path) -> Resul
         ids.sort_unstable();
     }
     Ok(ids)
-}
-
-/// One row per stored original of this account, from every source, with the
-/// names that could hint at its media type: every original, or only the one
-/// `only` names.
-async fn list_attachments(
-    conn: &mut SqliteConnection,
-    account_id: i64,
-    only: Option<&str>,
-) -> Result<Vec<AssetRow>> {
-    // One row per stored original. Several messages, from one source or
-    // several, can share it under different names, and only one version of
-    // each kind per original is ever made, so collapse those rows and keep
-    // any name that could identify the media type.
-    let rows = sqlx::query_as::<_, AssetRow>(
-        r"
-        SELECT
-            a.sha256 AS sha256,
-            a.assets_path AS assets_path,
-            MAX(a.mime_type) AS mime_type,
-            MAX(a.derived_assets_path) AS derived_assets_path,
-            MAX(a.derived_sha256) AS derived_sha256,
-            MAX(a.derived_mime_type) AS derived_mime_type,
-            SUM(CASE WHEN COALESCE(a.derived_assets_path, '') = '' THEN 1 ELSE 0 END)
-                AS rows_without_preview,
-            MAX(a.thumbnail_assets_path) AS thumbnail_assets_path,
-            MAX(a.thumbnail_sha256) AS thumbnail_sha256,
-            MAX(a.thumbnail_mime_type) AS thumbnail_mime_type,
-            SUM(CASE WHEN COALESCE(a.thumbnail_assets_path, '') = '' THEN 1 ELSE 0 END)
-                AS rows_without_thumbnail,
-            MAX(a.original_name) AS original_name,
-            MAX(a.path) AS source_path
-        FROM attachments a
-        JOIN messages m ON m.id = a.message_id
-        JOIN conversations c ON c.id = m.conversation_id
-        WHERE c.account_id = $1
-          AND ($2 IS NULL OR a.sha256 = $2)
-          AND a.sha256 IS NOT NULL AND a.sha256 != ''
-          AND a.assets_path IS NOT NULL AND a.assets_path != ''
-        GROUP BY a.sha256, a.assets_path
-        ORDER BY a.sha256
-        ",
-    )
-    .bind(account_id)
-    .bind(only)
-    .fetch_all(&mut *conn)
-    .await?;
-    Ok(rows)
-}
-
-/// Point every attachment row of the account for `original_sha`, from every
-/// source, at its new `version`.
-async fn update_version(
-    conn: &mut SqliteConnection,
-    version: Version,
-    account_id: i64,
-    original_sha: &str,
-    blob: &DerivedBlob,
-) -> Result<()> {
-    let [sha_column, path_column, mime_column] = version.columns();
-    sqlx::query(&format!(
-        r"
-        UPDATE attachments
-        SET {sha_column} = $1, {path_column} = $2, {mime_column} = $3
-        WHERE sha256 = $4
-          AND message_id IN (
-            SELECT m.id FROM messages m
-            JOIN conversations c ON c.id = m.conversation_id
-            WHERE c.account_id = $5
-          )
-        "
-    ))
-    .bind(&blob.sha256)
-    .bind(&blob.assets_path)
-    .bind(&blob.mime_type)
-    .bind(original_sha)
-    .bind(account_id)
-    .execute(&mut *conn)
-    .await?;
-    Ok(())
-}
-
-/// Clear the `version` columns of every attachment row of the account that
-/// names the file at `assets_path`, from every source.
-async fn clear_version(
-    conn: &mut SqliteConnection,
-    version: Version,
-    account_id: i64,
-    assets_path: &str,
-) -> Result<()> {
-    let [sha_column, path_column, mime_column] = version.columns();
-    sqlx::query(&format!(
-        r"
-        UPDATE attachments
-        SET {sha_column} = NULL, {path_column} = NULL, {mime_column} = NULL
-        WHERE {path_column} = $1
-          AND message_id IN (
-            SELECT m.id FROM messages m
-            JOIN conversations c ON c.id = m.conversation_id
-            WHERE c.account_id = $2
-          )
-        "
-    ))
-    .bind(assets_path)
-    .bind(account_id)
-    .execute(&mut *conn)
-    .await?;
-    Ok(())
 }
 
 /// Incomplete iMessage/SMS transfers and aborted uploads use a `.part` suffix.
@@ -997,7 +847,7 @@ fn mime_for_ext(ext: &str) -> &'static str {
 /// interrupted run, is replaced. The bytes go to a synced temporary file in
 /// the same directory first and are renamed over the path, so a run killed
 /// partway never leaves a partial file under a content-addressed name.
-fn store_derived_bytes(derived_dir: &Path, buf: &[u8], ext: &str) -> Result<DerivedBlob> {
+fn store_derived_bytes(derived_dir: &Path, buf: &[u8], ext: &str) -> Result<VersionFile> {
     let sha = crate::assets_api::Sha256::of_bytes(buf);
     let rel = derived_rel_path(&sha, ext);
     let dest = derived_dir.join(&rel);
@@ -1022,14 +872,14 @@ fn store_derived_bytes(derived_dir: &Path, buf: &[u8], ext: &str) -> Result<Deri
     } else {
         // The file is reused, so it gets a fresh modified time: the sweep at
         // an Import Run's end leaves a young unnamed version alone until
-        // `update_version` names it.
+        // `attachment_versions::record` names it.
         fs::File::options()
             .write(true)
             .open(&dest)
             .and_then(|file| file.set_modified(std::time::SystemTime::now()))
             .with_context(|| format!("touch {}", dest.display()))?;
     }
-    Ok(DerivedBlob {
+    Ok(VersionFile {
         sha256: sha.to_string(),
         assets_path: rel,
         mime_type: mime_for_ext(ext).to_string(),
@@ -1037,7 +887,7 @@ fn store_derived_bytes(derived_dir: &Path, buf: &[u8], ext: &str) -> Result<Deri
 }
 
 /// Read a derived file from `work_dir` and store it like [`store_derived_bytes`].
-fn store_derived_file(derived_dir: &Path, file_path: &Path, ext: &str) -> Result<DerivedBlob> {
+fn store_derived_file(derived_dir: &Path, file_path: &Path, ext: &str) -> Result<VersionFile> {
     let buf = fs::read(file_path)?;
     store_derived_bytes(derived_dir, &buf, ext)
 }

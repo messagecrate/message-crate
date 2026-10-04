@@ -494,7 +494,7 @@ async fn orphaned_files(
     ) in candidates
     {
         if let (Some(sha256), Some(assets_path)) = (sha256, assets_path)
-            && !asset_is_referenced(conn, account_id, &["sha256"], &sha256).await?
+            && !original_is_referenced(conn, account_id, &sha256).await?
         {
             out.push(OrphanedFile::Original {
                 sha256,
@@ -508,7 +508,8 @@ async fn orphaned_files(
             (thumbnail_sha256, thumbnail_path),
         ] {
             if let (Some(sha256), Some(assets_path)) = (sha256, assets_path)
-                && !asset_is_referenced(conn, account_id, &CONVERTED_COLUMNS, &sha256).await?
+                && !super::attachment_versions::converted_file_is_named(conn, account_id, &sha256)
+                    .await?
             {
                 out.push(OrphanedFile::Derived { assets_path });
             }
@@ -519,42 +520,24 @@ async fn orphaned_files(
     Ok(out)
 }
 
-/// The columns that name a file in the converted directory: a Preview's
-/// fingerprint and a Thumbnail's.
-const CONVERTED_COLUMNS: [&str; 2] = ["derived_sha256", "thumbnail_sha256"];
-
 /// True when any attachment of `account_id`, from any source, promoted or in
-/// staging, still carries `sha256` in one of `columns` — literals chosen by
-/// the caller. Staging is included so an import that has already uploaded a
-/// file it is about to promote does not lose it. Staging never names a
-/// Thumbnail, so only the promoted rows are asked about one.
-async fn asset_is_referenced(
+/// staging, still names the original `sha256`. Staging is included so an
+/// import that has already uploaded a file it is about to promote does not
+/// lose it.
+async fn original_is_referenced(
     conn: &mut SqliteConnection,
     account_id: i64,
-    columns: &[&'static str],
     sha256: &str,
 ) -> Result<bool, sqlx::Error> {
-    let any_of = |table: &str, staged: bool| {
-        columns
-            .iter()
-            .filter(|column| !staged || **column != "thumbnail_sha256")
-            .map(|column| format!("{table}.{column} = $2"))
-            .collect::<Vec<_>>()
-            .join(" OR ")
-    };
-    let promoted = any_of("a", false);
-    let staged = any_of("sa", true);
-    let sql = format!(
-        "SELECT 1 FROM attachments a
+    let sql = "SELECT 1 FROM attachments a
          JOIN messages m ON m.id = a.message_id
-         WHERE m.account_id = $1 AND ({promoted})
+         WHERE m.account_id = $1 AND a.sha256 = $2
          UNION ALL
          SELECT 1 FROM staging_attachments sa
          JOIN staging_messages sm ON sm.id = sa.message_id
-         WHERE sm.account_id = $1 AND ({staged})
-         LIMIT 1"
-    );
-    let found: Option<i64> = sqlx::query_scalar(&sql)
+         WHERE sm.account_id = $1 AND sa.sha256 = $2
+         LIMIT 1";
+    let found: Option<i64> = sqlx::query_scalar(sql)
         .bind(account_id)
         .bind(sha256)
         .fetch_optional(&mut *conn)
