@@ -526,7 +526,20 @@ fn value_as_string(v: Option<&serde_json::Value>) -> Option<String> {
     if v.is_null() {
         return None;
     }
-    Some(serde_json::to_string(v).unwrap_or_default()).filter(|s| !s.is_empty())
+    Some(header_safe_json(
+        serde_json::to_string(v).unwrap_or_default(),
+    ))
+    .filter(|s| !s.is_empty())
+}
+
+/// JSON text a mail header reader gives back unchanged.
+///
+/// A header reader decodes RFC 2047 encoded words (`=?utf-8?Q?…?=`), so a
+/// name that looks like one would come back decoded, and a decoded `"` or `\`
+/// breaks the JSON. `=?` can only occur inside a JSON string, where `\u003f`
+/// is the same `?` and starts no encoded word.
+fn header_safe_json(json: String) -> String {
+    json.replace("=?", "=\\u003f")
 }
 
 /// Add `name: value` when the value is present and non-empty.
@@ -715,8 +728,9 @@ fn conversation_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> M
         );
     builder = opt_header(builder, headers::GROUP_TITLE, msg.group_title.as_deref());
     if msg.conversation_type.eq_ignore_ascii_case("group") || !msg.participants.is_empty() {
-        let participants_json =
-            serde_json::to_string(&msg.participants).unwrap_or_else(|_| "[]".into());
+        let participants_json = header_safe_json(
+            serde_json::to_string(&msg.participants).unwrap_or_else(|_| "[]".into()),
+        );
         builder = builder.header(headers::PARTICIPANTS, Text::new(participants_json));
     }
     let source = msg.message.source.as_ref();
@@ -749,9 +763,9 @@ fn conversation_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> M
             ),
             (
                 headers::SOURCE_FIELDS,
-                source
-                    .filter(|src| !src.fields.is_empty())
-                    .map(|src| serde_json::to_string(&src.fields).unwrap_or_default()),
+                source.filter(|src| !src.fields.is_empty()).map(|src| {
+                    header_safe_json(serde_json::to_string(&src.fields).unwrap_or_default())
+                }),
             ),
         ],
     )
@@ -829,7 +843,7 @@ fn attachment_meta_header<'m>(
             missing_reason: a.meta.missing_reason.as_deref(),
         })
         .collect();
-    let meta_json = serde_json::to_string(&meta).unwrap_or_else(|_| "[]".into());
+    let meta_json = header_safe_json(serde_json::to_string(&meta).unwrap_or_else(|_| "[]".into()));
     builder.header(headers::ATTACHMENT_META, Text::new(meta_json))
 }
 

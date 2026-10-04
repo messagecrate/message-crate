@@ -594,7 +594,45 @@ fn a_mail_whose_roster_does_not_read_is_refused() {
     );
     let err = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap_err();
     assert!(
-        format!("{err:#}").starts_with("read X-ME-Participants"),
+        format!("{err:#}").starts_with(
+            "This mail's roster (X-ME-Participants) does not read; it may have been written by an earlier Message Crate, so export the backup again"
+        ),
         "{err:#}"
+    );
+}
+
+/// A display name that looks like an RFC 2047 encoded word is the person's
+/// name, not an encoding: a mail header reader would decode it, and the
+/// decoded `"` would break the roster's JSON. It reads back as it was written.
+#[test]
+fn a_name_that_looks_like_an_encoded_word_reads_back_as_written() {
+    let mut msg = base_sms();
+    msg.participants[0].display_name = Some("=?utf-8?Q?=22?= x".into());
+    let eml = build_eml(&msg).unwrap();
+    let back = crate::mail_message_from_eml_bytes(&eml).unwrap();
+    assert_eq!(
+        back.participants[0].display_name.as_deref(),
+        Some("=?utf-8?Q?=22?= x")
+    );
+}
+
+/// An earlier mail's tapbacks name each reactor `reactor_handle`, which no
+/// reader looks for now, so the mail is refused rather than read with every
+/// reactor gone.
+#[test]
+fn a_mail_whose_tapbacks_say_reactor_handle_is_refused() {
+    let eml = concat!(
+        "X-ME-Chat-Identifier: +15555550101\r\n",
+        "X-ME-Guid: g1\r\n",
+        "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
+        "X-ME-Tapbacks: [{\"part_index\":0,\"kind\":\"loved\",\"is_from_me\":false,\"reactor_handle\":\"+15555550101\"}]\r\n",
+        "\r\n",
+        "hello\r\n",
+    );
+    let err = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap_err();
+    assert_eq!(
+        format!("{err:#}"),
+        "This mail was written by an earlier Message Crate, which named each address a \
+         handle (X-ME-Tapbacks); export the backup again"
     );
 }

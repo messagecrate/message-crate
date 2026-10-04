@@ -33,10 +33,16 @@ struct AttachmentMetaCell {
 pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     let mail = mailparse::parse_mail(bytes).context("parse eml bytes")?;
     let headers = &mail.headers;
-    if let Some(earlier) = hn::EARLIER_HANDLE_HEADERS
+    let earlier = hn::EARLIER_HANDLE_HEADERS
         .iter()
         .find(|name| headers.get_first_header(name).is_some())
-    {
+        .copied()
+        .or_else(|| {
+            optional_header(headers, hn::TAPBACKS)
+                .is_some_and(|raw| raw.contains("\"reactor_handle\""))
+                .then_some(hn::TAPBACKS)
+        });
+    if let Some(earlier) = earlier {
         bail!(
             "This mail was written by an earlier Message Crate, which named each address a \
              handle ({earlier}); export the backup again"
@@ -255,7 +261,10 @@ fn parse_participants(headers: &[MailHeader<'_>]) -> Result<Vec<Participant>> {
     let Some(raw) = optional_header(headers, hn::PARTICIPANTS) else {
         return Ok(Vec::new());
     };
-    serde_json::from_str(&raw).context("read X-ME-Participants")
+    serde_json::from_str(&raw).context(
+        "This mail's roster (X-ME-Participants) does not read; it may have been written by an \
+         earlier Message Crate, so export the backup again",
+    )
 }
 
 /// The message text: the body of a simple mail, or the first `text/plain` part.
