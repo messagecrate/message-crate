@@ -148,6 +148,7 @@ async fn dedupe_and_process_assets(
     cfg: &Config,
     db: &SqlitePool,
     account_id: i64,
+    stop: &AtomicBool,
 ) -> Result<(dedupe::DedupeStats, process_assets::ProcessAssetsStats)> {
     let dedupe_stats = {
         let mut conn = db.acquire().await?;
@@ -175,9 +176,7 @@ async fn dedupe_and_process_assets(
             skip_audio: false,
             account: Some(account_id),
         },
-        // Never set: a build the server stops is dropped, which ends the
-        // pass once the conversion that runs is done.
-        &AtomicBool::new(false),
+        stop,
     )
     .await
     .context("process-assets after prepared demo import")?;
@@ -476,13 +475,16 @@ impl Drop for CancelOnDrop {
 ///
 /// # Errors
 ///
-/// Returns an error when generation, import or media processing fails; the
-/// partly built Demo Account is removed first.
+/// Returns an error when generation, import or media processing fails, or
+/// `stop` is set while it converts the Demo Data's media; the partly built
+/// Demo Account is removed first. Setting `stop` kills the ffmpeg the build
+/// runs, which the build's task cannot be dropped in the middle of (#1729).
 pub async fn build_demo_account(
     db: SqlitePool,
     cfg: Arc<Config>,
     size: DemoSize,
     generate: BundleGenerator,
+    stop: Arc<AtomicBool>,
 ) -> Result<u64> {
     let outcome = async {
         // Recorded before generating, so a server stopped at any point of
@@ -506,7 +508,14 @@ pub async fn build_demo_account(
         .await
         .context("the demo bundle generator stopped")?;
         generated.context("generate demo bundle (demo-seed)")?;
-        build_from_bundle(&cfg, &db, &work.path().join("bundle"), AuditActor::Owner).await
+        build_from_bundle(
+            &cfg,
+            &db,
+            &work.path().join("bundle"),
+            AuditActor::Owner,
+            &stop,
+        )
+        .await
     }
     .await;
     whole_demo_account_or_none(&cfg, &db, outcome).await
@@ -522,7 +531,16 @@ where
         let work = tempfile::tempdir().context("create temporary demo bundle directory")?;
         let bundle = work.path().join("bundle");
         generate(&bundle).context("generate demo bundle (demo-seed)")?;
-        build_from_bundle(cfg, db, &bundle, AuditActor::Server).await
+        // Nothing stops it: it runs before the server listens or handles a
+        // signal.
+        build_from_bundle(
+            cfg,
+            db,
+            &bundle,
+            AuditActor::Server,
+            &AtomicBool::new(false),
+        )
+        .await
     }
     .await;
     whole_demo_account_or_none(cfg, db, outcome).await
@@ -559,9 +577,19 @@ async fn build_from_bundle(
     db: &SqlitePool,
     bundle: &Path,
     actor: AuditActor,
+    stop: &AtomicBool,
 ) -> Result<ResetPreparedStats> {
     let prepared = validate_prepared_bundle(bundle)?;
-    rebuild_demo_account(cfg, db, &prepared, DEMO_ACCOUNT_ID, actor, Vacuum::Skip).await
+    rebuild_demo_account(
+        cfg,
+        db,
+        &prepared,
+        DEMO_ACCOUNT_ID,
+        actor,
+        Vacuum::Skip,
+        stop,
+    )
+    .await
 }
 
 /// Build the new state in a prepared database next to the active one, prove
@@ -621,6 +649,7 @@ async fn reset_prepared_bundle_with(
         // writes is a copy swapped in afterwards, so rewriting the file
         // holds up no other writer.
         Vacuum::Run,
+        &AtomicBool::new(false),
     )
     .await
     {
@@ -691,6 +720,7 @@ async fn rebuild_demo_account(
     account_id: i64,
     actor: AuditActor,
     vacuum: Vacuum,
+    stop: &AtomicBool,
 ) -> Result<ResetPreparedStats> {
     begin_demo_build(db).await?;
     wipe_demo_account(cfg, db, account_id, actor).await?;
@@ -698,7 +728,8 @@ async fn rebuild_demo_account(
     seed_demo_account(db, account_id, &prepared.seed).await?;
     let import = import_demo_sources(cfg, db, prepared, account_id).await?;
     let address_book = load_demo_address_book(db, prepared, account_id).await?;
-    let (dedupe_stats, process_stats) = dedupe_and_process_assets(cfg, db, account_id).await?;
+    let (dedupe_stats, process_stats) =
+        dedupe_and_process_assets(cfg, db, account_id, stop).await?;
     if vacuum == Vacuum::Run {
         vacuum_after_demo(db).await;
     }
