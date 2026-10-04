@@ -200,58 +200,27 @@ pub fn run_attachment_jobs(
 
 /// Write queued attachment bytes after parse and before conversation files.
 ///
-/// The one non-queue staging step: assemble one [`AttachmentJob`] per
-/// attachment across `messages` in the order given, run
-/// [`run_attachment_jobs`] with the standard progress report (a log line for
-/// people and a [`ProgressEvent::Attachments`] for the progress bar), drop
-/// any in-memory `bytes` left on the attachments, and return how many
-/// distinct files were written. Two attachments with the same bytes share
-/// one content-addressed file, so they count once.
+/// The one non-queue staging step: run [`run_attachment_jobs`] over `jobs`
+/// with the standard progress report (a log line for people and a
+/// [`ProgressEvent::Attachments`] for the progress bar), drop any in-memory
+/// `bytes` left on the attachments, and return how many distinct files were
+/// written. Two attachments with the same bytes share one content-addressed
+/// file, so they count once.
 ///
-/// `load(i)` is the per-exporter payload hook: `i` is the flat attachment
-/// index in message order. `Ok(None)` or [`LoadError::Unreadable`] marks that
-/// attachment `file_missing` and the run continues; [`LoadError::Fatal`]
-/// stops the run.
+/// `load(i)` is the per-exporter payload hook: `i` is the job's position in
+/// `jobs`. `Ok(None)` or [`LoadError::Unreadable`] marks that attachment
+/// `file_missing` and the run continues; [`LoadError::Fatal`] stops the run.
 ///
-/// Size hints for the progress totals come from each attachment's
-/// `size_bytes` (falling back to in-memory `bytes` length when present);
-/// path-backed exporters whose attachments carry no size get unhinted totals
-/// that grow as files load. A caller that knows better hints, such as which
-/// attachments have no file, builds the jobs itself and calls
-/// [`stage_attachment_jobs`].
+/// Each job's `size_hint` goes into the progress totals as it is. A run
+/// leaves every attachment known to have no file out of those totals from
+/// the start by giving it no hint, which `message-staging`'s
+/// `CountedAttachments` does for every caller.
 ///
 /// # Errors
 ///
 /// Returns `"cancelled"` when the user cancels, the message of a
 /// [`LoadError::Fatal`] from `load(i)`, or an I/O / convert error string when
 /// the staging directory cannot be used.
-pub fn stage_conversation_attachments<'a>(
-    messages: impl IntoIterator<Item = &'a mut IrMessage>,
-    attachments_dir: &Path,
-    media: &MediaConfig,
-    load: impl FnMut(usize) -> Result<Option<Vec<u8>>, LoadError>,
-    log: Option<&LogSink>,
-    progress: Option<&ProgressSink>,
-    cancel: Option<&CancelFlag>,
-) -> Result<u64, String> {
-    stage_attachment_jobs(
-        attachment_jobs(messages),
-        attachments_dir,
-        media,
-        load,
-        log,
-        progress,
-        cancel,
-    )
-}
-
-/// [`stage_conversation_attachments`] over jobs the caller built, with the
-/// size hints it chose: `load(i)` is called with the job's position in
-/// `jobs`.
-///
-/// # Errors
-///
-/// As [`stage_conversation_attachments`].
 pub fn stage_attachment_jobs(
     mut jobs: Vec<AttachmentJob<'_>>,
     attachments_dir: &Path,
@@ -282,8 +251,8 @@ pub fn stage_attachment_jobs(
 }
 
 /// Every message of every document, in document order: the `messages`
-/// argument of [`stage_conversation_attachments`] for a caller that holds
-/// finished documents.
+/// argument of [`attachment_jobs`] for a caller that holds finished
+/// documents.
 pub fn document_messages(
     documents: &mut [ConversationDocument],
 ) -> impl Iterator<Item = &mut IrMessage> {

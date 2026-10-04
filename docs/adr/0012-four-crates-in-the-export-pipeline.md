@@ -189,7 +189,11 @@ case into Convert would have to be undone.
 - Progress, by step: (1) the path check is `message_ir::safe_attachment_path`,
   PR #638. (2) `stage_conversation_attachments` takes the messages and returns
   the count of distinct files written; `message-reexport`, the SBR reader and
-  the iMessage exporter call it, and the copies are gone, PR #639. (3) The
+  the iMessage exporter call it, and the copies are gone, PR #639. Since
+  #1727 they and `ExportWriter` stage through `message-staging`'s
+  `CountedAttachments`, which counts every attachment's source before any
+  byte total is summed and then runs `message-crate-core`'s
+  `stage_attachment_jobs`. (3) The
   seam is the `MergedArchive` trait in `ir-format`, handed to
   `FormatSink::with_archive` or `ExportWriter::with_archive` by the caller
   that wants a merged file; `is_sbr_xml()` and `xml_path` are gone, and the

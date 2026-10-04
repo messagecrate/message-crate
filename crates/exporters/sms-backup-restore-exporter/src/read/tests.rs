@@ -467,3 +467,62 @@ fn verify_e1_4_two_group_senders_in_one_second_get_two_guids() {
     assert_eq!(docs[0].messages.len(), 2, "the exporter keeps both");
     assert_ne!(docs[0].messages[0].guid, docs[0].messages[1].guid);
 }
+
+/// Staging a backup's attachments knows before it starts which ones the
+/// spool holds no file for. Its byte total leaves them out from the first
+/// event and never drops mid-run (#1727).
+#[test]
+fn the_byte_total_stays_the_same_when_the_spool_holds_no_file() {
+    use message_crate_core::{ProgressEvent, ProgressSink};
+    use std::sync::{Arc, Mutex};
+
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("input.xml");
+    fs::write(&input, r#"<smses><mms date="1400773400000" msg_box="2" address="+15555550101"><parts><part seq="0" ct="image/jpeg" name="pic.jpg" data="aGVsbG8="/></parts><addrs><addr address="+15555550100" type="137" charset="106"/><addr address="+15555550101" type="151"/></addrs></mms></smses>"#).unwrap();
+    let stage = dir.path().join("output").join("attachments");
+    let spool = AttachmentSpool::new(dir.path());
+    let (mut docs, _) = read_backup(&input, opts(&[], Some(&stage), Some(&spool))).unwrap();
+    // A second attachment whose record gives a size, with no file spooled.
+    let mut unspooled = docs[0].messages[0].attachments[0].clone();
+    unspooled.digest_sha256 = Some("0".repeat(64));
+    unspooled.size_bytes = Some(700);
+    docs[0].messages[0].attachments.push(unspooled);
+    let seen = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
+    let sink_seen = Arc::clone(&seen);
+    let progress = ProgressSink::unpaced(move |event| sink_seen.lock().unwrap().push(event));
+
+    stage_read_attachments(
+        &mut docs,
+        &ReadOptions {
+            progress: Some(&progress),
+            ..opts(&[], Some(&stage), Some(&spool))
+        },
+    )
+    .unwrap();
+
+    let totals: Vec<(usize, u64, u64)> = seen
+        .lock()
+        .unwrap()
+        .iter()
+        .filter_map(|event| match *event {
+            ProgressEvent::Attachments {
+                done,
+                bytes_done,
+                bytes_total,
+                ..
+            } => Some((done, bytes_done, bytes_total)),
+            _ => None,
+        })
+        .collect();
+    assert!(totals.len() > 1, "{totals:?}");
+    assert!(
+        totals.iter().all(|&(_, _, bytes_total)| bytes_total == 5),
+        "every total: {totals:?}"
+    );
+    assert_eq!(
+        totals
+            .last()
+            .map(|&(done, bytes_done, _)| (done, bytes_done)),
+        Some((2, 5))
+    );
+}

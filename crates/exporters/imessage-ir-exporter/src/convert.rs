@@ -23,7 +23,6 @@ use imessage_reader_protocol::{
 use ios_backup::Helper;
 use message_crate_core::{
     ExportReport, LoadError, MediaConfig, OutputFormat, ProgressEvent, RunIssue,
-    stage_conversation_attachments,
 };
 use message_ir::{
     ConversationDocument, ConversationMeta, ExportMeta, HandleType, IrAttachment,
@@ -32,8 +31,8 @@ use message_ir::{
 };
 use message_ir_format::FormatSink;
 use message_staging::{
-    AttachmentSource, ConversationUnit, Disk, ExportWriter, ExportWriterParts, WriteQueueOptions,
-    bytes_embedded, bytes_to_write, check_headroom,
+    AttachmentSource, ConversationUnit, CountedAttachments, Disk, ExportWriter, ExportWriterParts,
+    PathSources, WriteQueueOptions, bytes_embedded, check_headroom, load_attachment_source,
 };
 
 use crate::run::{AttachmentEmbed, ExportOptions};
@@ -148,12 +147,14 @@ pub(crate) fn export(
         .sum();
 
     // Every format checks the staging disk for room before it writes an
-    // attachment. The queue arm's drain makes the same check itself.
+    // attachment. The queue arm's drain makes the same check itself, and
+    // `stage_attachments` makes it for the files staged under
+    // `attachments/`.
     let embeds = format.is_mail_archive() && options.attachment_embed == AttachmentEmbed::Embed;
-    if !use_queue && (embeds || stages_attachment_files(options)) {
+    if !use_queue && embeds {
         check_headroom(
             &options.export_path,
-            attachment_bytes(&collected, format),
+            embedded_bytes(&collected),
             Disk::Staging,
         )?;
     }
@@ -194,26 +195,21 @@ pub(crate) fn export(
     Ok(report)
 }
 
-/// The bytes the output gets for every attachment collected: one copy each
-/// under `attachments/`, or one base64 copy per message in a mail archive.
-/// None has a digest before it is read, so each occurrence is counted.
-fn attachment_bytes(collected: &Collected, format: OutputFormat) -> u64 {
-    let sizes: Vec<(Option<&str>, u64)> = collected
-        .conversations
-        .values()
-        .flat_map(|convo| convo.attachment_loads.iter())
-        .map(|load| match load {
-            AttachmentLoad::Path { size_hint, .. } => (None, size_hint.unwrap_or(0)),
-            AttachmentLoad::Bytes(bytes) => (None, bytes.len() as u64),
-            AttachmentLoad::Missing => (None, 0),
-        })
-        .collect();
-    if format.is_mail_archive() {
-        // A mail archive embeds the bytes and stages no files.
-        bytes_embedded(sizes)
-    } else {
-        bytes_to_write(format, &sizes)
-    }
+/// The bytes a mail archive embeds for every attachment collected: one
+/// base64 copy per message. None has a digest before it is read, so each
+/// occurrence is counted.
+fn embedded_bytes(collected: &Collected) -> u64 {
+    bytes_embedded(
+        collected
+            .conversations
+            .values()
+            .flat_map(|convo| convo.attachment_loads.iter())
+            .map(|load| match load {
+                AttachmentLoad::Path { size_hint, .. } => (None, size_hint.unwrap_or(0)),
+                AttachmentLoad::Bytes(bytes) => (None, bytes.len() as u64),
+                AttachmentLoad::Missing => (None, 0),
+            }),
+    )
 }
 
 /// Formats whose attachments are files under `attachments/` rather than
@@ -672,14 +668,22 @@ fn pending_to_unit(
     let loads = std::mem::take(&mut convo.attachment_loads);
     let doc = pending_to_document(chat_identifier, convo, use_caller_id);
     let mut loads = loads.into_iter();
-    ConversationUnit::from_doc(doc, |_, att| match loads.next() {
+    ConversationUnit::from_doc(doc, |_, att| attachment_source(loads.next(), att))
+}
+
+/// The source and size hint of the attachment `load` was collected for.
+fn attachment_source(
+    load: Option<AttachmentLoad>,
+    att: &IrAttachment,
+) -> (AttachmentSource, Option<u64>) {
+    match load {
         Some(AttachmentLoad::Path { path, size_hint }) => (AttachmentSource::Path(path), size_hint),
         Some(AttachmentLoad::Bytes(bytes)) => {
             let hint = Some(bytes.len() as u64);
             (AttachmentSource::Bytes(bytes), hint)
         }
         Some(AttachmentLoad::Missing) | None => (AttachmentSource::Missing, att.size_bytes),
-    })
+    }
 }
 
 /// Write every conversation through the shared write queue.
@@ -745,9 +749,12 @@ fn drain_conversations(
 }
 
 /// Write staged attachment bytes after the stream and before conversation
-/// files, through the shared step every exporter uses. The loads travel in
-/// the same order as the flattened `messages[].attachments`, which is the
-/// order the step hands out indexes in.
+/// files, through the shared step every exporter uses, once the staging
+/// disk is checked for room. The loads travel in the same order as the
+/// flattened `messages[].attachments`, which is the order the step pairs
+/// them with attachments in. A path in an encrypted backup is read by the
+/// program, so only a path in an unencrypted one is checked on disk before
+/// the run.
 fn stage_attachments(
     helper: &mut Helper,
     options: &ExportOptions,
@@ -764,37 +771,54 @@ fn stage_attachments(
     for convo in collected.conversations.values_mut() {
         loads.append(&mut convo.attachment_loads);
     }
-
-    // The shared step calls the loader from one thread, so the program
-    // handle can be borrowed by the closure for the whole pass.
-    let helper = std::cell::RefCell::new(helper);
-    let saved = stage_conversation_attachments(
+    let mut loads = loads.into_iter();
+    let counted = CountedAttachments::new(
         collected
             .conversations
             .values_mut()
             .flat_map(|convo| convo.messages.iter_mut()),
-        attachments_dir,
-        &media,
-        |i| match loads.get(i) {
-            Some(AttachmentLoad::Path { path, .. }) => {
-                let bytes = read_attachment(
-                    &mut helper.borrow_mut(),
-                    options,
-                    encrypted,
-                    path,
-                    not_decrypted,
-                )?;
-                Ok((!bytes.is_empty()).then_some(bytes))
-            }
-            Some(AttachmentLoad::Bytes(bytes)) => Ok(Some(bytes.clone())),
-            _ => Ok(None),
+        media,
+        if encrypted {
+            PathSources::ReadByLoader
+        } else {
+            PathSources::OnDisk
         },
+        |att| attachment_source(loads.next(), att),
         options.log.as_ref(),
-        options.progress.as_ref(),
-        options.cancel.as_ref(),
-    )
-    .map_err(|e| anyhow!(e))
-    .context("stage attachments")?;
+    );
+    if stages_attachment_files(options) {
+        check_headroom(
+            &options.export_path,
+            counted.bytes_to_write(options.output_format),
+            Disk::Staging,
+        )?;
+    }
+
+    // The shared step calls the loader from one thread, so the program
+    // handle can be borrowed by the closure for the whole pass.
+    let helper = std::cell::RefCell::new(helper);
+    let saved = counted
+        .stage(
+            attachments_dir,
+            |source| match source {
+                AttachmentSource::Path(path) => {
+                    let bytes = read_attachment(
+                        &mut helper.borrow_mut(),
+                        options,
+                        encrypted,
+                        path,
+                        not_decrypted,
+                    )?;
+                    Ok((!bytes.is_empty()).then_some(bytes))
+                }
+                other => load_attachment_source(other),
+            },
+            options.log.as_ref(),
+            options.progress.as_ref(),
+            options.cancel.as_ref(),
+        )
+        .map_err(|e| anyhow!(e))
+        .context("stage attachments")?;
     Ok(saved)
 }
 

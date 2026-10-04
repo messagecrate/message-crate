@@ -695,6 +695,14 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-04 **Converting, and exporting Apple Messages to a format other
+  than JSON Lines, no longer count an attachment with no file.** The byte total in the progress and in
+  Convert's log counted the size such an attachment's record gave and
+  took it off only when the run reached it, so the total dropped partway
+  through, and the check for room on the disk counted it too. Every
+  attachment known to have no file is now left out of both before the
+  run starts, as Staging already does. Convert's log also names each file
+  it found missing, as Staging's does.
 - 2026-10-04 How an exporter writing a format other than JSON Lines counts
   the size of an attachment with no file was reworked to match Staging,
   with nothing visible.
