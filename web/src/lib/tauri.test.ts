@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { currentDesktopJob } from "./desktopJob";
+import { currentDesktopJob, holdDesktopJob } from "./desktopJob";
 import type { PushFinishedReport } from "./tauri";
 import {
   awaitTauriJob,
@@ -208,6 +208,21 @@ describe("awaitTauriJob", () => {
     });
     await done;
     expect(seenWhileRunning).toBe("Export");
+    expect(currentDesktopJob()).toBeNull();
+  });
+
+  it("leaves the hold of the run it is part of in place when it ends", async () => {
+    // An Import Run or an Export holds the desktop across all its jobs; one
+    // job ending must not release it before the next job starts (#1407).
+    const releaseRun = holdDesktopJob("Import Run");
+    try {
+      await awaitTauriJob("Import Run", async () => {
+        queueMicrotask(() => listeners.get("extract:finished")?.({ payload: "Staged" }));
+      });
+      expect(currentDesktopJob()).toBe("Import Run");
+    } finally {
+      releaseRun();
+    }
     expect(currentDesktopJob()).toBeNull();
   });
 

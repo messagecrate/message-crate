@@ -5,6 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ImportSummaryView } from "../../components/import/ImportSummaryPanel";
+import { holdDesktopJob } from "../../lib/desktopJob";
 import type { AttachmentForecast, StagingSummary } from "../../lib/tauri";
 import { Providers } from "../../test/providers";
 import ImportRunView from "./ImportRunView";
@@ -283,6 +284,34 @@ describe("ImportRunView", () => {
   it("keeps Cancel on screen while running with no stage active", () => {
     renderView({ steps: stepsAt("convert", { Staging: "done" }), cancelDisabled: true });
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+  });
+
+  it("keeps Approve off at a Review while another desktop job runs, and names it (#1407)", async () => {
+    // Another account logged in on the same app can start a Convert while
+    // this run waits at its Review; approving then would start a Stage the
+    // desktop refuses.
+    const release = holdDesktopJob("Convert");
+    try {
+      renderView({
+        phase: "staging_review",
+        running: false,
+        form: form({ attachmentMedia: "copy" }),
+        steps: stepsAt("copy", { Staging: "done" }),
+        stagingSummary: staged(),
+        reviewWaiting: "staging",
+      });
+      const review = within(stageRow(WAITING_STAGING));
+      expect(review.getByRole("button", { name: "Upload to Message Crate" })).toBeDisabled();
+      expect(review.getByRole("button", { name: "Cancel this import" })).toBeEnabled();
+      expect(review.getByRole("status")).toHaveTextContent(
+        "A conversion in Settings is running. Upload to Message Crate can start once it ends.",
+      );
+    } finally {
+      release();
+    }
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Upload to Message Crate" })).toBeEnabled(),
+    );
   });
 
   it("waits at the Staging Review with the staged facts, the limit and the decision", async () => {
