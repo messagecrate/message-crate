@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, bail};
+use anyhow::{Result, anyhow};
 use message_ir::{HandleService, HandleType, nonempty, trimmed};
 use sqlx::SqliteConnection;
 
@@ -16,7 +16,7 @@ use crate::db::staging::{
     self as db_staging, StagingAttachment, StagingConversation, StagingMessage, StagingTapback,
 };
 use crate::import_media;
-use crate::jsonl;
+use crate::jsonl::{self, ReadRecordsError};
 use crate::models::{
     AttachmentRecord, ConversationRecord, ExportRecord, MessageRecord, TapbackRecord, clean_body,
 };
@@ -27,6 +27,30 @@ use super::contact_name::{
     resolve_incoming_sender_handle,
 };
 use super::{ImportFailure, ImportOptions, ImportStats};
+
+/// Why staging a file stopped: a refusal the sender can fix by changing the
+/// file, or a fault of the server.
+///
+/// Only the line that finds the problem decides which, by the variant it
+/// builds; nothing later looks inside an error to sort it.
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum StagingError {
+    /// A line of the file breaks a rule the sender can fix.
+    #[error(transparent)]
+    Rejected(#[from] ImportFailure),
+    /// I/O, the asset store, or the database: nothing the sender can change.
+    #[error(transparent)]
+    Internal(anyhow::Error),
+}
+
+impl From<ReadRecordsError> for StagingError {
+    fn from(err: ReadRecordsError) -> Self {
+        match err {
+            ReadRecordsError::Rejected { failure, .. } => Self::Rejected(failure),
+            err @ ReadRecordsError::Unreadable { .. } => Self::Internal(err.into()),
+        }
+    }
+}
 
 struct PreparedAttachment {
     record: AttachmentRecord,
@@ -42,9 +66,9 @@ fn stored_size_bytes(assets_dir: &Path, assets_path: Option<&str>) -> Option<i64
 
 /// The file an attachment path names inside `export_dir`, refusing a path
 /// that could leave it, for the message on `line`.
-fn safe_source(export_dir: &Path, rel: &str, line: usize) -> Result<PathBuf> {
-    Ok(message_ir::safe_attachment_path(export_dir, rel)
-        .map_err(|refusal| ImportFailure::UnsafeAttachmentPath { refusal, line })?)
+fn safe_source(export_dir: &Path, rel: &str, line: usize) -> Result<PathBuf, ImportFailure> {
+    message_ir::safe_attachment_path(export_dir, rel)
+        .map_err(|refusal| ImportFailure::UnsafeAttachmentPath { refusal, line })
 }
 
 /// Convert/compress when requested; `None` means fall through to claimed-sha / path store.
@@ -56,7 +80,7 @@ fn try_store_converted(
     media: MediaMode,
     media_work: &Path,
     line: usize,
-) -> Result<Option<StoredAsset>> {
+) -> Result<Option<StoredAsset>, StagingError> {
     if !matches!(media, MediaMode::Convert | MediaMode::Compress) {
         return Ok(None);
     }
@@ -70,7 +94,8 @@ fn try_store_converted(
         return Ok(None);
     }
     let Some(resolved) =
-        import_media::resolve_for_store(&source, att.mime_type.as_deref(), media, media_work)?
+        import_media::resolve_for_store(&source, att.mime_type.as_deref(), media, media_work)
+            .map_err(StagingError::Internal)?
     else {
         return Ok(None);
     };
@@ -83,6 +108,7 @@ fn try_store_converted(
         att.mime_type.as_deref(),
         asset_stats,
     )
+    .map_err(StagingError::Internal)
 }
 
 /// Store an attachment by the sha256 the export claims (reusing an existing blob) or by
@@ -93,7 +119,7 @@ fn store_claimed_or_path(
     assets_dir: &Path,
     asset_stats: &mut AssetStats,
     line: usize,
-) -> Result<Option<StoredAsset>> {
+) -> Result<Option<StoredAsset>, StagingError> {
     // Checked before the stored-fingerprint lookup, which never reads the
     // file: `attachments.path` keeps the path as sent, and an Export writes
     // the file there, so a path the check refuses is never stored. A path of
@@ -163,7 +189,7 @@ fn store_claimed_or_path(
                     }
                     .into())
                 }
-                Err(err) => Err(err.into()),
+                Err(err) => Err(StagingError::Internal(err.into())),
             };
         }
         asset_stats.missing += 1;
@@ -176,7 +202,8 @@ fn store_claimed_or_path(
             assets_dir,
             att.mime_type.as_deref(),
             asset_stats,
-        );
+        )
+        .map_err(StagingError::Internal);
     }
     asset_stats.missing += 1;
     Ok(None)
@@ -191,7 +218,7 @@ fn prepare_attachments(
     media: MediaMode,
     media_work: &Path,
     line: usize,
-) -> Result<Vec<PreparedAttachment>> {
+) -> Result<Vec<PreparedAttachment>, StagingError> {
     if media == MediaMode::Disabled {
         return Ok(Vec::new());
     }
@@ -259,26 +286,32 @@ impl StagingInserts {
 type StagedParticipant = (String, Option<String>, Option<HandleType>);
 
 /// The source id for a conversation: its header's `export.source` when sources come from the files, else the fixed override.
+///
+/// # Errors
+///
+/// Refuses a header, when sources come from the files, whose
+/// `export.source` is missing or is not a valid source id: the sender's to
+/// fix in the file.
 fn resolve_conversation_source(
     opts: &ImportOptions<'_>,
-    path: &Path,
-    chat_identifier: &str,
-    export_source: Option<&str>,
-) -> Result<String> {
-    if opts.source_from_jsonl {
-        let Some(source) = export_source.and_then(trimmed) else {
-            bail!(
-                "{}: conversation '{}' is missing export.source \
-                 (required for CLI directory import)",
-                path.display(),
-                chat_identifier
-            );
-        };
-        validate_source_id(source)?;
-        Ok(source.to_string())
-    } else {
-        Ok(opts.source.to_string())
+    conversation: &ConversationRecord,
+) -> Result<String, ImportFailure> {
+    if !opts.source_from_jsonl {
+        return Ok(opts.source.to_string());
     }
+    let refuse = |detail: String| ImportFailure::Invalid {
+        line: conversation.line,
+        detail,
+    };
+    let Some(source) = conversation.export_source.as_deref().and_then(trimmed) else {
+        return Err(refuse(format!(
+            "conversation '{}' has no export.source, which a directory import needs",
+            conversation.chat_identifier
+        )));
+    };
+    validate_source_id(source)
+        .map_err(|err| refuse(format!("export.source '{source}' is not valid: {err:#}")))?;
+    Ok(source.to_string())
 }
 
 /// Messages with no conversation of their own live in `orphaned.jsonl`
@@ -296,8 +329,9 @@ fn is_orphaned_export(path: &Path) -> bool {
 ///
 /// # Errors
 ///
-/// Returns an error when the file cannot be read or a conversation cannot
-/// be staged.
+/// Returns [`StagingError::Rejected`] when a line breaks a rule the sender
+/// can fix, and [`StagingError::Internal`] when the file cannot be read or a
+/// file or row cannot be written.
 pub(super) async fn import_file_to_staging(
     tx: &mut SqliteConnection,
     stmts: &mut StagingInserts,
@@ -305,7 +339,7 @@ pub(super) async fn import_file_to_staging(
     path: &Path,
     asset_stats: &mut AssetStats,
     media_work: &Path,
-) -> Result<ImportStats> {
+) -> Result<ImportStats, StagingError> {
     let mut staging = FileStaging {
         tx,
         stmts,
@@ -330,12 +364,7 @@ pub(super) async fn import_file_to_staging(
                 if let Some(header) = pending.take() {
                     staging.stage(header, std::mem::take(&mut messages)).await?;
                 }
-                let source = resolve_conversation_source(
-                    opts,
-                    path,
-                    &c.chat_identifier,
-                    c.export_source.as_deref(),
-                )?;
+                let source = resolve_conversation_source(opts, &c)?;
                 pending = Some(StagedConversation::from_record(c, source));
             }
             ExportRecord::Message(m) => messages.push(m),
@@ -343,7 +372,10 @@ pub(super) async fn import_file_to_staging(
     }
 
     let Some(header) = pending else {
-        bail!("{} has no conversation header", path.display());
+        return Err(StagingError::Internal(anyhow!(
+            "{} has no conversation header",
+            path.display()
+        )));
     };
     staging.stage(header, messages).await?;
     Ok(staging.stats)
@@ -398,20 +430,48 @@ impl FileStaging<'_> {
     ///
     /// # Errors
     ///
-    /// Returns an error when a media file cannot be stored or a row cannot be written.
+    /// Returns [`StagingError::Rejected`] when an attachment breaks a rule
+    /// the sender can fix, and [`StagingError::Internal`] when a media file
+    /// cannot be stored or a row cannot be written.
     async fn stage(
         &mut self,
         conversation: StagedConversation,
         messages: Vec<MessageRecord>,
+    ) -> Result<(), StagingError> {
+        // Copy or convert media first: it needs no database rows, and a failure
+        // here leaves nothing half-written.
+        let prepared_messages = prepare_message_attachments(
+            self.opts,
+            self.opts.assets_dir,
+            messages,
+            self.asset_stats,
+            self.media_work,
+        )?;
+        self.write_rows(conversation, prepared_messages)
+            .await
+            .map_err(StagingError::Internal)
+    }
+
+    /// Write one conversation's handle, conversation row, participants, and
+    /// message rows, its media already stored. Every row it writes was
+    /// accepted when it was read, so any error here is the server's.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when a row cannot be written.
+    async fn write_rows(
+        &mut self,
+        conversation: StagedConversation,
+        mut prepared_messages: Vec<(MessageRecord, Vec<PreparedAttachment>)>,
     ) -> Result<()> {
         let mut stats = ImportStats::default();
         // The title's time: the latest message of this copy, when it has a
         // title. Every timestamp has one fixed RFC 3339 form, so the greatest
         // string is the latest instant.
         let group_title_at = conversation.group_title.as_ref().and_then(|_| {
-            messages
+            prepared_messages
                 .iter()
-                .map(|m| m.timestamp.as_str())
+                .map(|(m, _)| m.timestamp.as_str())
                 .max()
                 .map(str::to_owned)
         });
@@ -419,16 +479,6 @@ impl FileStaging<'_> {
             conversation.platform_service.as_deref(),
             &conversation.source,
         );
-
-        // Copy or convert media first: it needs no database rows, and a failure
-        // here leaves nothing half-written.
-        let mut prepared_messages = prepare_message_attachments(
-            self.opts,
-            self.opts.assets_dir,
-            messages,
-            self.asset_stats,
-            self.media_work,
-        )?;
 
         // What the header says each participant's address is. The exporter
         // knows its source's ids, and `Handle::parse` does not: a WhatsApp
@@ -603,14 +653,16 @@ fn platform_for(platform_service: Option<&str>, source: &str) -> HandleService {
 ///
 /// # Errors
 ///
-/// Returns an error when a media file cannot be copied or converted.
+/// Returns [`StagingError::Rejected`] when an attachment's path or stated
+/// SHA-256 is wrong, and [`StagingError::Internal`] when a media file cannot
+/// be copied or converted.
 fn prepare_message_attachments(
     opts: &ImportOptions<'_>,
     assets_dir: &Path,
     messages: Vec<MessageRecord>,
     asset_stats: &mut AssetStats,
     media_work: &Path,
-) -> Result<Vec<(MessageRecord, Vec<PreparedAttachment>)>> {
+) -> Result<Vec<(MessageRecord, Vec<PreparedAttachment>)>, StagingError> {
     let mut prepared = Vec::with_capacity(messages.len());
     for mut msg in messages {
         let attachments = prepare_attachments(

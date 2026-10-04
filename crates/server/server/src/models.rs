@@ -10,6 +10,8 @@ use phone::Handle;
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::imports_api::ImportFailure;
+
 /// One JSONL conversation after IR → database-row mapping.
 #[derive(Debug, Clone)]
 pub enum ExportRecord {
@@ -22,6 +24,9 @@ pub enum ExportRecord {
 /// The conversation header of one JSONL conversation.
 #[derive(Debug, Clone)]
 pub struct ConversationRecord {
+    /// The line the header is on in its file or batch, counted from 1 with
+    /// blank lines included, so a refusal of the header names it.
+    pub line: usize,
     /// The conversation's identifier as the export wrote it.
     pub chat_identifier: String,
     /// Platform service, e.g. `imessage`.
@@ -143,10 +148,17 @@ pub fn clean_body(text: Option<&str>) -> Option<String> {
 ///
 /// Accepts one or more concatenated conversations (each: header line, then
 /// message lines). Remote push clients batch multiple conversations this way.
+///
+/// # Errors
+///
+/// Returns the [`ImportFailure`] the first broken line gives, or one naming
+/// every message without a guid. Parsing reads nothing but `lines`, so every
+/// way it can stop is the sender's to fix, and the error type has no other
+/// kind.
 pub fn parse_ir_lines(
     lines: impl IntoIterator<Item = impl AsRef<str>>,
-) -> Result<Vec<ExportRecord>> {
-    use crate::imports_api::{ImportFailure, MISSING_GUID_LINES_NAMED};
+) -> Result<Vec<ExportRecord>, ImportFailure> {
+    use crate::imports_api::MISSING_GUID_LINES_NAMED;
 
     let mut out = Vec::new();
     let mut saw_header = false;
@@ -180,7 +192,9 @@ pub fn parse_ir_lines(
                     line: line_no,
                     detail: format!("the conversation header is not valid: {e}"),
                 })?;
-            out.push(ExportRecord::Conversation(conversation_from_ir(&header)));
+            out.push(ExportRecord::Conversation(conversation_from_ir(
+                &header, line_no,
+            )));
             header_owner = header
                 .export
                 .owner_handle
@@ -192,8 +206,7 @@ pub fn parse_ir_lines(
                 return Err(ImportFailure::Invalid {
                     line: line_no,
                     detail: "a message appears before the conversation header".into(),
-                }
-                .into());
+                });
             }
             let msg: IrMessage =
                 serde_json::from_value(value).map_err(|e| ImportFailure::Invalid {
@@ -229,15 +242,13 @@ pub fn parse_ir_lines(
         return Err(ImportFailure::MissingGuid {
             lines: missing_guid_lines,
             total: missing_guid_total,
-        }
-        .into());
+        });
     }
     if out.is_empty() {
         return Err(ImportFailure::Invalid {
             line: 1,
             detail: "the file has no conversation header".into(),
-        }
-        .into());
+        });
     }
     Ok(out)
 }
@@ -248,7 +259,7 @@ fn is_ir_header(value: &Value) -> bool {
 }
 
 /// Map a JSON Lines header onto the server's conversation record.
-fn conversation_from_ir(header: &ConversationHeader) -> ConversationRecord {
+fn conversation_from_ir(header: &ConversationHeader, line: usize) -> ConversationRecord {
     let export_source = {
         let s = header.export.source.trim();
         if s.is_empty() {
@@ -258,6 +269,7 @@ fn conversation_from_ir(header: &ConversationHeader) -> ConversationRecord {
         }
     };
     ConversationRecord {
+        line,
         chat_identifier: header.conversation.chat_identifier.clone(),
         // Platform identity for handles (phone | whatsapp), not SMS/iMessage/RCS.
         service: Some(
@@ -634,10 +646,9 @@ mod tests {
     #[test]
     fn parse_ir_lines_refuses_schema_3_as_a_failure() {
         let header = r#"{"schema_version":3,"export":{"source":"whatsapp","tool":"t","owner_handle":"+1","owner_display_name":"Me"},"conversation":{"chat_identifier":"+2","conversation_type":"individual","participants":[]}}"#;
-        let err = parse_ir_lines([header]).unwrap_err();
-        let failure = crate::imports_api::ImportFailure::in_error(&err).expect("typed failure");
+        let failure = parse_ir_lines([header]).unwrap_err();
         assert_eq!(
-            *failure,
+            failure,
             crate::imports_api::ImportFailure::SchemaVersion {
                 refusal: message_ir::UnsupportedSchemaVersion { found: 3 },
                 line: 1
@@ -647,21 +658,19 @@ mod tests {
 
     #[test]
     fn parse_ir_lines_reports_a_non_json_line_as_a_failure() {
-        let err = parse_ir_lines(["this is not json"]).unwrap_err();
-        let failure = crate::imports_api::ImportFailure::in_error(&err).expect("typed failure");
+        let failure = parse_ir_lines(["this is not json"]).unwrap_err();
         match failure {
-            crate::imports_api::ImportFailure::NotJson { line, .. } => assert_eq!(*line, 1),
+            crate::imports_api::ImportFailure::NotJson { line, .. } => assert_eq!(line, 1),
             other => panic!("expected NotJson, got {other:?}"),
         }
     }
 
     #[test]
     fn parse_ir_lines_reports_a_message_before_any_header_as_a_failure() {
-        let err = parse_ir_lines([r#"{"guid":"m1"}"#]).unwrap_err();
-        let failure = crate::imports_api::ImportFailure::in_error(&err).expect("typed failure");
+        let failure = parse_ir_lines([r#"{"guid":"m1"}"#]).unwrap_err();
         match failure {
             crate::imports_api::ImportFailure::Invalid { line, detail } => {
-                assert_eq!(*line, 1);
+                assert_eq!(line, 1);
                 assert!(
                     detail.contains("before the conversation header"),
                     "{detail}"
@@ -675,10 +684,9 @@ mod tests {
     fn parse_ir_lines_reports_a_message_with_an_impossible_timestamp_as_a_failure() {
         let header = r#"{"schema_version":4,"export":{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_handle":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"handle":"+15555550101","display_name":"Sam"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#;
         let msg = r#"{"guid":"g1","timestamp_unix_ms":9223372036854775807,"direction":"incoming","service":"sms","message_kind":"sms","sender_handle":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}"#;
-        let err = parse_ir_lines([header, msg]).unwrap_err();
-        let failure = crate::imports_api::ImportFailure::in_error(&err).expect("typed failure");
+        let failure = parse_ir_lines([header, msg]).unwrap_err();
         match failure {
-            crate::imports_api::ImportFailure::Invalid { line, .. } => assert_eq!(*line, 2),
+            crate::imports_api::ImportFailure::Invalid { line, .. } => assert_eq!(line, 2),
             other => panic!("expected Invalid, got {other:?}"),
         }
     }
@@ -694,10 +702,9 @@ mod tests {
             )
         };
         let lines = [header.to_string(), msg("g1"), msg(""), msg("   ")];
-        let err = parse_ir_lines(lines).unwrap_err();
-        let failure = crate::imports_api::ImportFailure::in_error(&err).expect("typed failure");
+        let failure = parse_ir_lines(lines).unwrap_err();
         assert_eq!(
-            *failure,
+            failure,
             crate::imports_api::ImportFailure::MissingGuid {
                 lines: vec![3, 4],
                 total: 2

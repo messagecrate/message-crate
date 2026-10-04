@@ -3,11 +3,11 @@ use std::path::Path;
 use sqlx::SqliteConnection;
 use tempfile::TempDir;
 
-use super::{is_orphaned_export, store_claimed_or_path};
+use super::{StagingError, is_orphaned_export, store_claimed_or_path};
 use crate::assets_api::{self, AssetStats};
 use crate::imports_api::{
-    FixedImportArgs, ImportMode, ImportOptions, ImportSchemaMode, ImportStats,
-    import_jsonl_files_on_conn,
+    FixedImportArgs, ImportError, ImportFailure, ImportMode, ImportOptions, ImportSchemaMode,
+    ImportStats, import_jsonl_files_on_conn,
 };
 use crate::models::AttachmentRecord;
 
@@ -36,16 +36,23 @@ async fn import_one(
     let path = tmp.path().join(name);
     std::fs::write(&path, body).unwrap();
     let assets = tmp.path().join("assets");
-    let opts = ImportOptions::fixed(FixedImportArgs {
-        assets_dir: &assets,
-        asset_root: tmp.path(),
+    let opts = append_opts(&assets, tmp.path(), "sms-backup-restore");
+    Ok(import_jsonl_files_on_conn(conn, &[path], &opts, ImportSchemaMode::Ensure).await?)
+}
+
+/// Append-mode options for one test import into [`TEST_ACCOUNT`] under the
+/// fixed `source`, storing assets in `assets` and reading attachments from
+/// `root`.
+fn append_opts<'a>(assets: &'a Path, root: &'a Path, source: &'a str) -> ImportOptions<'a> {
+    ImportOptions::fixed(FixedImportArgs {
+        assets_dir: assets,
+        asset_root: root,
         mode: ImportMode::Append,
-        source: "sms-backup-restore",
+        source,
         account_id: TEST_ACCOUNT,
         fill_content_keys: false,
         import_id: None,
-    });
-    Ok(import_jsonl_files_on_conn(conn, &[path], &opts, ImportSchemaMode::Ensure).await?)
+    })
 }
 
 /// The reason an import was refused: its error text after the file's temp
@@ -143,6 +150,13 @@ fn a_path_that_leaves_the_export_folder_is_refused_whether_or_not_its_fingerprin
 
         let err = store_claimed_or_path(&att, &export_dir, &assets_dir, &mut stats, 2)
             .expect_err("the path is refused");
+        assert!(
+            matches!(
+                err,
+                StagingError::Rejected(ImportFailure::UnsafeAttachmentPath { .. })
+            ),
+            "{err:?}"
+        );
 
         assert_eq!(
             err.to_string(),
@@ -152,6 +166,156 @@ fn a_path_that_leaves_the_export_folder_is_refused_whether_or_not_its_fingerprin
             )
         );
         assert_eq!(stats.deduped, 0);
+    }
+}
+
+/// A refusal staging finds is the sender's to fix: the import returns it as
+/// a rejection that names the file it was in, which the HTTP interface
+/// answers with the failure's own status rather than `500`.
+#[tokio::test]
+async fn an_attachment_staging_refuses_is_a_rejection_naming_its_file() {
+    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let tmp = TempDir::new().unwrap();
+    let header = ORPHANED_HEADER.replace("orphaned", "+15555550154");
+    let message = incoming("g-escape", "+15555550154").replace(
+        r#""attachments":[]"#,
+        r#""attachments":[{"path":"../escape.txt","original_name":null,"mime_type":null,"is_sticker":false,"transcription":null,"sticker_effect":null}]"#,
+    );
+    let path = tmp.path().join("+15555550154.jsonl");
+    std::fs::write(&path, format!("{header}{message}")).unwrap();
+    let assets = tmp.path().join("assets");
+    let opts = append_opts(&assets, tmp.path(), "imessage");
+
+    let err = import_jsonl_files_on_conn(
+        &mut conn,
+        std::slice::from_ref(&path),
+        &opts,
+        ImportSchemaMode::Ensure,
+    )
+    .await
+    .expect_err("the path is refused");
+
+    match err {
+        ImportError::Rejected {
+            failure: ImportFailure::UnsafeAttachmentPath { line, .. },
+            file,
+        } => {
+            assert_eq!(line, 2);
+            assert_eq!(file, path);
+        }
+        other => panic!("expected a rejection, got {other:?}"),
+    }
+}
+
+/// An asset store the server cannot write to is the server's fault, not the
+/// sender's: staging returns it as internal, so it answers `500` however the
+/// attachment was written.
+#[test]
+fn an_asset_store_that_cannot_be_written_is_an_internal_failure() {
+    let tmp = TempDir::new().unwrap();
+    let export_dir = tmp.path().join("export");
+    std::fs::create_dir_all(&export_dir).unwrap();
+    std::fs::write(export_dir.join("photo.png"), b"some bytes").unwrap();
+    // A file where the store's directory should be.
+    let assets_dir = tmp.path().join("assets");
+    std::fs::write(&assets_dir, b"not a directory").unwrap();
+    let att = AttachmentRecord {
+        path: Some("photo.png".to_string()),
+        sha256: None,
+        ..claimed("", None)
+    };
+
+    let err = store_claimed_or_path(
+        &att,
+        &export_dir,
+        &assets_dir,
+        &mut AssetStats::default(),
+        2,
+    )
+    .expect_err("the store cannot be written");
+
+    assert!(
+        matches!(err, StagingError::Internal(_)),
+        "expected an internal failure, got {err:?}"
+    );
+}
+
+/// A file the server cannot open is its own fault: the import returns it as
+/// internal, and a command line that prints it shows the whole chain, the
+/// file and the operating system's reason both.
+#[tokio::test]
+async fn a_file_that_cannot_be_opened_is_internal_with_its_whole_cause() {
+    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let tmp = TempDir::new().unwrap();
+    let path = tmp.path().join("gone.jsonl");
+    let assets = tmp.path().join("assets");
+    let opts = append_opts(&assets, tmp.path(), "imessage");
+
+    let err = import_jsonl_files_on_conn(
+        &mut conn,
+        std::slice::from_ref(&path),
+        &opts,
+        ImportSchemaMode::Ensure,
+    )
+    .await
+    .expect_err("the file is not there");
+
+    assert!(matches!(err, ImportError::Internal(_)), "{err:?}");
+    let printed = format!("{:#}", anyhow::Error::from(err));
+    let reason = std::fs::File::open(&path).unwrap_err().to_string();
+    assert_eq!(
+        printed,
+        format!("failed to open {}: {reason}", path.display())
+    );
+}
+
+/// A directory import takes each conversation's source from its header, so
+/// a header with none is the sender's to fix: it is refused on its line,
+/// not answered as a fault of the server.
+#[tokio::test]
+async fn a_directory_import_refuses_a_header_without_a_source() {
+    let (pool, _dir) = crate::db::engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let tmp = TempDir::new().unwrap();
+    let header = ORPHANED_HEADER
+        .replace("orphaned", "+15555550154")
+        .replace(r#""source":"imessage""#, r#""source":"  ""#);
+    let path = tmp.path().join("+15555550154.jsonl");
+    std::fs::write(
+        &path,
+        format!("{header}{}", incoming("g-source", "+15555550154")),
+    )
+    .unwrap();
+    let assets = tmp.path().join("assets");
+    let opts = ImportOptions {
+        source_from_jsonl: true,
+        ..append_opts(&assets, tmp.path(), "")
+    };
+
+    let err = import_jsonl_files_on_conn(
+        &mut conn,
+        std::slice::from_ref(&path),
+        &opts,
+        ImportSchemaMode::Ensure,
+    )
+    .await
+    .expect_err("the header has no source");
+
+    match err {
+        ImportError::Rejected {
+            failure: ImportFailure::Invalid { line, detail },
+            file,
+        } => {
+            assert_eq!(line, 1);
+            assert_eq!(file, path);
+            assert_eq!(
+                detail,
+                "conversation '+15555550154' has no export.source, which a directory import needs"
+            );
+        }
+        other => panic!("expected a rejection, got {other:?}"),
     }
 }
 
@@ -173,15 +337,7 @@ async fn a_file_that_does_not_match_its_claimed_sha256_fails_the_import_and_is_n
     );
     let path = tmp.path().join("mismatch.jsonl");
     std::fs::write(&path, format!("{header}{message}\n")).unwrap();
-    let opts = ImportOptions::fixed(FixedImportArgs {
-        assets_dir: &assets,
-        asset_root: tmp.path(),
-        mode: ImportMode::Append,
-        source: "imessage",
-        account_id: TEST_ACCOUNT,
-        fill_content_keys: false,
-        import_id: None,
-    });
+    let opts = append_opts(&assets, tmp.path(), "imessage");
 
     let err = import_jsonl_files_on_conn(&mut conn, &[path], &opts, ImportSchemaMode::Ensure)
         .await
