@@ -844,12 +844,11 @@ released versions carry their date on the heading.
   the build, and could leave a folder of part-written Demo Data behind. It
   now stops as soon as the conversation it is writing is done, and leaves
   nothing behind.
-- 2026-10-04 **The Docker image no longer sets settings that do nothing.**
-  The image set `MC_DB` and `MC_DATA_DIR`, which the server never read, so
-  changing them moved nothing. The database and the data folder come from
-  `[paths]` in the configuration, as they always did.
-  `./scripts/run-dev.sh --reset-demo` also no longer converts the Demo
-  Account's media a second time after building it, so it finishes sooner.
+- 2026-10-04 **The Docker image no longer sets environment variables the
+  server never reads.** The image set `MC_DB`, `MC_DATA_DIR` and `HOSTNAME`,
+  and changing them moved nothing. The database and the data folder come
+  from `[paths]` in the configuration, and the address the server listens
+  on from `[server]`, as they always did.
 
 ### Upgrading
 
