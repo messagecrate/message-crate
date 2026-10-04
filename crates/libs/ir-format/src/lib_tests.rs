@@ -315,7 +315,7 @@ fn csv_serializes_identity_type_in_cell_and_column() {
     let csv = fs::read_to_string(&csv_path).unwrap();
     let (cols, row) = first_row_cols(&csv);
     let participants_idx = cols.iter().position(|c| c == "participants_json").unwrap();
-    let handle_type_idx = cols.iter().position(|c| c == "identity_type").unwrap();
+    let identity_type_idx = cols.iter().position(|c| c == "identity_type").unwrap();
     // Participants cell carries the typed participant.
     assert!(
         row.get(participants_idx)
@@ -324,15 +324,15 @@ fn csv_serializes_identity_type_in_cell_and_column() {
         "participants_json must carry identity_type"
     );
     // Dedicated column carries the sender identity type.
-    assert_eq!(row.get(handle_type_idx).unwrap(), "phone");
+    assert_eq!(row.get(identity_type_idx).unwrap(), "phone");
     // Empty sender identity yields an empty cell, never "other".
     let mut doc = message_ir::testutil::sample_document("hello ir");
     doc.messages[0].sender_identity = None;
     let csv_path = write_conversation_csv(tmp.path(), &doc).unwrap();
     let csv = fs::read_to_string(&csv_path).unwrap();
     let (cols, row) = first_row_cols(&csv);
-    let handle_type_idx = cols.iter().position(|c| c == "identity_type").unwrap();
-    assert_eq!(row.get(handle_type_idx).unwrap(), "");
+    let identity_type_idx = cols.iter().position(|c| c == "identity_type").unwrap();
+    assert_eq!(row.get(identity_type_idx).unwrap(), "");
 }
 
 #[test]

@@ -1186,7 +1186,7 @@ mod storage_id_round_trip_tests {
     }
 
     #[test]
-    fn handle_type() {
+    fn identity_type() {
         for v in [
             HandleType::Phone,
             HandleType::Email,

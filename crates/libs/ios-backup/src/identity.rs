@@ -1,7 +1,7 @@
 //! Read which addresses a backup's device sent from, before any parsing.
 //!
 //! The Import screen's identity check calls [`backup_identities`] right after
-//! the user starts an iMessage import, before the import session is created.
+//! the user starts an iMessage import, before the Import Run is created.
 //! The values come from the `imessage-reader` program, which opens the
 //! source the same way the real run does, so every method (Mac `chat.db`,
 //! iPhone backup folder, jailbreak `sms.db`) and both encryption states go

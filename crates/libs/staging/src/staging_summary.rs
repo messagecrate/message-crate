@@ -200,13 +200,13 @@ pub fn summarize_staging(
         summary.conversations += 1;
         summary.messages += doc.messages.len() as u64;
         for participant in &doc.conversation.participants {
-            if let Some(handle) = participant.identity.clone() {
-                contacts.insert(handle);
+            if let Some(identity) = participant.identity.clone() {
+                contacts.insert(identity);
             }
         }
         for msg in &doc.messages {
-            if let Some(handle) = owner_handle_of(msg, doc.export.owner_identity.as_deref()) {
-                let (sent, received) = owner.entry(handle.to_string()).or_insert((0, 0));
+            if let Some(identity) = owner_identity_of(msg, doc.export.owner_identity.as_deref()) {
+                let (sent, received) = owner.entry(identity.to_string()).or_insert((0, 0));
                 match msg.direction {
                     IrDirection::Outgoing => *sent += 1,
                     IrDirection::Incoming => *received += 1,
@@ -275,7 +275,7 @@ struct AttachmentRef {
 /// The owner's address on `msg`: its own record, then the sender of an
 /// outgoing message, then the export's one owner address. `None` when all
 /// are blank.
-fn owner_handle_of<'a>(msg: &'a IrMessage, export_owner: Option<&'a str>) -> Option<&'a str> {
+fn owner_identity_of<'a>(msg: &'a IrMessage, export_owner: Option<&'a str>) -> Option<&'a str> {
     let outgoing_sender = match msg.direction {
         IrDirection::Outgoing => msg.sender_identity.as_deref(),
         IrDirection::Incoming => None,
@@ -284,7 +284,7 @@ fn owner_handle_of<'a>(msg: &'a IrMessage, export_owner: Option<&'a str>) -> Opt
         .into_iter()
         .flatten()
         .map(str::trim)
-        .find(|handle| !handle.is_empty())
+        .find(|identity| !identity.is_empty())
 }
 
 /// Measure and classify one physical file, folding its bytes and verdict

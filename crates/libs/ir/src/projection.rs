@@ -210,7 +210,7 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
     hooks: &H,
 ) -> (ConversationDocument, ProjectionTally) {
     let export = hooks.export();
-    let (owner_sender_handle, owner_sender_display) = owner_sender(&export);
+    let (owner_sender_identity, owner_sender_display) = owner_sender(&export);
     let unit = hooks.sort_key_unit();
 
     let prepared: Vec<Prepared> = convo
@@ -272,7 +272,7 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
 
         let outgoing = role == ProjectedRole::Outgoing;
         let (sender_identity, sender_display_name) = if outgoing {
-            (owner_sender_handle.clone(), owner_sender_display.clone())
+            (owner_sender_identity.clone(), owner_sender_display.clone())
         } else {
             (p.sender.clone(), msg.sender_display_name.clone())
         };
