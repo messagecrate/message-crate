@@ -1,8 +1,8 @@
 /** @vitest-environment jsdom */
 
 import { fireEvent, render } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { setupUser } from "../test/user";
 import ColumnResizeHandle from "./ColumnResizeHandle";
 
 function handleProps() {
@@ -17,15 +17,18 @@ function handleProps() {
   };
 }
 
-function renderHandle(props: ReturnType<typeof handleProps>) {
+function renderHandle(
+  props: ReturnType<typeof handleProps>,
+  { dragging = false, handleHover = false } = {},
+) {
   return render(
     <ColumnResizeHandle
       ariaLabel="Resize navigation panel"
       width={220}
       minWidth={160}
       maxWidth={520}
-      dragging={false}
-      handleHover={false}
+      dragging={dragging}
+      handleHover={handleHover}
       handleProps={props}
     />,
   );
@@ -38,6 +41,44 @@ beforeEach(() => {
 });
 
 describe("ColumnResizeHandle", () => {
+  it("is a native separator element, so it carries no role attribute of its own", () => {
+    const { getByRole } = renderHandle(props);
+
+    const handle = getByRole("separator", { name: "Resize navigation panel" });
+    expect(handle.tagName).toBe("HR");
+    expect(handle).not.toHaveAttribute("role");
+    expect(handle).toHaveAttribute("tabindex", "0");
+    expect(handle).toHaveAttribute("aria-orientation", "vertical");
+    expect(handle).toHaveAttribute("aria-valuenow", "220");
+    expect(handle).toHaveAttribute("aria-valuemin", "160");
+    expect(handle).toHaveAttribute("aria-valuemax", "520");
+  });
+
+  /**
+   * The accent line is the grip's ::after, which the stylesheet colours only
+   * while `data-active` is set. Without the attribute the line never shows.
+   */
+  it.each([
+    { state: "hovered", dragging: false, handleHover: true },
+    { state: "dragged", dragging: true, handleHover: false },
+  ])(
+    "marks the grip active while it is $state, which draws the accent line",
+    ({ dragging, handleHover }) => {
+      const { getByRole } = renderHandle(props, { dragging, handleHover });
+
+      const handle = getByRole("separator", { name: "Resize navigation panel" });
+      expect(handle).toHaveAttribute("data-active");
+    },
+  );
+
+  it("leaves the grip inactive at rest, so no accent line shows", () => {
+    const { getByRole } = renderHandle(props);
+
+    expect(getByRole("separator", { name: "Resize navigation panel" })).not.toHaveAttribute(
+      "data-active",
+    );
+  });
+
   it("keeps the grip on the inner right edge so the next column cannot cover it", () => {
     const { getByRole } = renderHandle(props);
 
@@ -71,7 +112,7 @@ describe("ColumnResizeHandle", () => {
   });
 
   it("forwards the hover handlers, which is what draws the accent line", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { getByRole } = renderHandle(props);
     const handle = getByRole("separator", { name: "Resize navigation panel" });
 
@@ -83,7 +124,7 @@ describe("ColumnResizeHandle", () => {
   });
 
   it("takes focus and forwards keys, so the column can be resized without a mouse", async () => {
-    const user = userEvent.setup();
+    const user = setupUser();
     const { getByRole } = renderHandle(props);
     const handle = getByRole("separator", { name: "Resize navigation panel" });
 
