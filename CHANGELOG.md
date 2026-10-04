@@ -237,12 +237,12 @@ released versions carry their date on the heading.
 
 #### Importing
 
-- 2026-10-04 **An attachment too large after conversion says so after a
-  stopped Media stage resumes.** When two conversations shared one
-  attachment that came out of Media over the size limit, and the stage
-  stopped while converting it for one of them, the resumed stage could
-  record it as missing in that conversation instead of too large. It now
-  records it as too large, with the converted size.
+- 2026-10-04 **An attachment too large after conversion says so when an
+  interrupted Media Stage resumes.** When two messages shared one attachment
+  whose converted copy came out right at the size limit, and the app closed
+  while the Media Stage converted it, the resumed Media Stage could record it
+  as missing for one message instead of too large. It now records it as too
+  large, with the converted size.
 - 2026-10-04 **A person known only by name keeps a conversation of their
   own.** SMS Backup+, iMazing and OpenExtract backups sometimes name a person
   without recording a number or address. That person's conversation could

@@ -346,7 +346,12 @@ fn pending_in(
                 // patching the conversation file and renaming the
                 // derivative into place.
                 // The original may instead have been dropped for size by
-                // another conversation sharing it, which leaves its note.
+                // another attachment sharing it, which leaves its note. The
+                // pass reaches that state only when two conversions of the
+                // one original disagree about the size limit (a derivative
+                // whose size varies right at the limit): the same run's
+                // settings and the sorted order otherwise heal this
+                // attachment before any other attachment touches the original.
                 let orig_stem = &stem[..stem.len() - COMMITTED_SUFFIX.len()];
                 if let Some(found) = find_recoverable_original(staging_dir, orig_stem, mode)? {
                     out.push(PendingWork::HealTranscode {
@@ -411,26 +416,12 @@ fn find_recoverable_original(
     orig_stem: &str,
     mode: MediaMode,
 ) -> Result<Option<PathBuf>> {
-    let attachments_dir = staging_dir.join("attachments");
-    if !attachments_dir.is_dir() {
-        return Ok(None);
-    }
-    for entry in std::fs::read_dir(&attachments_dir)
-        .with_context(|| format!("read {}", attachments_dir.display()))?
-    {
-        let path = entry
-            .with_context(|| format!("read entry in {}", attachments_dir.display()))?
-            .path();
-        if !path.is_file() {
-            continue;
-        }
-        if path.file_stem().and_then(|s| s.to_str()) == Some(orig_stem)
-            && media::derivative_name(&path, mode).is_some()
-        {
-            return Ok(Some(path));
-        }
-    }
-    Ok(None)
+    find_in_attachments(staging_dir, |path| {
+        (path.is_file()
+            && path.file_stem().and_then(|s| s.to_str()) == Some(orig_stem)
+            && media::derivative_name(path, mode).is_some())
+        .then(|| path.to_path_buf())
+    })
 }
 
 /// The derivative size recorded in the too-large note of the original that
@@ -445,31 +436,41 @@ fn find_too_large_note(
     committed: &Path,
     mode: MediaMode,
 ) -> Result<Option<u64>> {
+    let Some(committed_name) = committed.file_name().and_then(|n| n.to_str()) else {
+        return Ok(None);
+    };
+    find_in_attachments(staging_dir, |path| {
+        let original_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .and_then(|n| n.strip_suffix(TOO_LARGE_SUFFIX))?;
+        let original = path.with_file_name(original_name);
+        if final_derivative_name_for_missing(&original, mode).as_deref() != Some(committed_name) {
+            return None;
+        }
+        read_too_large_note(&original)
+    })
+}
+
+/// The first `Some` that `found` returns for an entry of
+/// `staging_dir/attachments`, or `None` when no entry gives one or the folder
+/// does not exist.
+fn find_in_attachments<T>(
+    staging_dir: &Path,
+    mut found: impl FnMut(&Path) -> Option<T>,
+) -> Result<Option<T>> {
     let attachments_dir = staging_dir.join("attachments");
     if !attachments_dir.is_dir() {
         return Ok(None);
     }
-    let Some(committed_name) = committed.file_name().and_then(|n| n.to_str()) else {
-        return Ok(None);
-    };
     for entry in std::fs::read_dir(&attachments_dir)
         .with_context(|| format!("read {}", attachments_dir.display()))?
     {
         let path = entry
             .with_context(|| format!("read entry in {}", attachments_dir.display()))?
             .path();
-        let Some(original_name) = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .and_then(|n| n.strip_suffix(TOO_LARGE_SUFFIX))
-        else {
-            continue;
-        };
-        let original = attachments_dir.join(original_name);
-        if final_derivative_name_for_missing(&original, mode).as_deref() == Some(committed_name)
-            && let Some(size) = read_too_large_note(&original)
-        {
-            return Ok(Some(size));
+        if let Some(value) = found(&path) {
+            return Ok(Some(value));
         }
     }
     Ok(None)
