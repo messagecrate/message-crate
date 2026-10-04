@@ -1,10 +1,10 @@
 /** @vitest-environment jsdom */
 
 import { act, cleanup, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { AccountProfile } from "../../lib/account";
 import { mockedAuth, renderWithProviders as render } from "../../test/providers";
+import { fill, setupUser } from "../../test/user";
 import { ProfileSettingsPanel } from "./ProfileSettingsPanel";
 
 const getAccountProfile = vi.hoisted(() => vi.fn());
@@ -55,16 +55,22 @@ function zoneField() {
 }
 
 describe("ProfileSettingsPanel", () => {
-  it("keeps a typed, unsaved display name when the time zone changes", async () => {
+  // Focusing the time zone field draws all of its ~320 rows before the search
+  // narrows them, inside the whole settings panel. The test takes about 0.5 s
+  // on an idle machine and 3.3 to 5.4 s at a load average near 100, past the
+  // 5000 ms test budget (#1417).
+  it("keeps a typed, unsaved display name when the time zone changes", {
+    timeout: 15_000,
+  }, async () => {
+    const user = setupUser();
     render(<ProfileSettingsPanel />);
     await waitFor(() => expect(nameField().value).toBe("Stored Name"));
 
-    await userEvent.clear(nameField());
-    await userEvent.type(nameField(), "Typed Name");
+    await user.clear(nameField());
+    await fill(user, nameField(), "Typed Name");
 
-    await userEvent.click(zoneField());
-    await userEvent.keyboard("dallas");
-    await userEvent.click(within(screen.getByRole("listbox")).getAllByRole("option")[0]);
+    await fill(user, zoneField(), "dallas");
+    await user.click(within(screen.getByRole("listbox")).getAllByRole("option")[0]);
     expect(updateAccountProfile).toHaveBeenCalledWith({ time_zone: "America/Chicago" });
     // The server's answer has reached the profile entry the panel reads.
     await waitFor(() => expect(zoneField().value).toMatch(/Central Time/));
@@ -73,11 +79,12 @@ describe("ProfileSettingsPanel", () => {
   });
 
   it("clears the display name when an emptied field is saved", async () => {
+    const user = setupUser();
     render(<ProfileSettingsPanel />);
     await waitFor(() => expect(nameField().value).toBe("Stored Name"));
 
-    await userEvent.clear(nameField());
-    await userEvent.click(screen.getByRole("button", { name: "Save" }));
+    await user.clear(nameField());
+    await user.click(screen.getByRole("button", { name: "Save" }));
 
     // The server clears the name on `null`; leaving the field out keeps it.
     expect(updateAccountProfile).toHaveBeenCalledWith({ preferred_name: null });
