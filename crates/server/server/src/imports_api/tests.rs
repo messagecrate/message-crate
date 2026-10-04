@@ -597,6 +597,73 @@ async fn staging_keeps_both_rows_when_guids_differ_only_by_whitespace() {
     assert_eq!(names, vec!["pad.bin".to_string(), "trim.bin".to_string()]);
 }
 
+/// The stored mark of the message `g-mark`.
+async fn mark(conn: &mut sqlx::SqliteConnection) -> Option<String> {
+    sqlx::query_scalar("SELECT deletion FROM messages WHERE guid = 'g-mark'")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap()
+}
+
+/// A message imported before it was deleted takes the mark when a later
+/// append-mode import carries it, and a third import that carries no mark
+/// leaves the mark in place: the mark adds to a stored message as its
+/// reactions do, and a file without it never takes it away.
+#[tokio::test]
+async fn append_adds_a_later_deletion_mark_to_a_stored_message_and_keeps_it() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("messagecrate.db");
+    let assets = tmp.path().join("assets");
+    let header = r#"{"schema_version":7,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550123","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550123","display_name":null}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}"#;
+    let line = |deletion: &str| {
+        format!(
+            r#"{{"guid":"g-mark","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"later deleted","attachments":[],{deletion}"imessage":null,"source":null}}"#
+        )
+    };
+    let options = ImportOptions::fixed(FixedImportArgs {
+        assets_dir: &assets,
+        asset_root: tmp.path(),
+        mode: ImportMode::Append,
+        source: "imessage",
+        account_id: TEST_ACCOUNT,
+        fill_content_keys: false,
+        import_id: None,
+    });
+
+    let before = write_jsonl(
+        tmp.path(),
+        "before.jsonl",
+        &format!("{header}\n{}\n", line("")),
+    );
+    import_jsonl_files(&db, std::slice::from_ref(&before), &options)
+        .await
+        .unwrap();
+    let after = write_jsonl(
+        tmp.path(),
+        "after.jsonl",
+        &format!(
+            "{header}\n{}\n",
+            line(r#""deletion":"deleted_in_source_app","#)
+        ),
+    );
+    import_jsonl_files(&db, &[after], &options).await.unwrap();
+    {
+        let (_pool, mut conn) = open_verify(&db).await;
+        assert_eq!(
+            mark(&mut conn).await.as_deref(),
+            Some("deleted_in_source_app")
+        );
+    }
+
+    import_jsonl_files(&db, &[before], &options).await.unwrap();
+    let (_pool, mut conn) = open_verify(&db).await;
+    assert_eq!(
+        mark(&mut conn).await.as_deref(),
+        Some("deleted_in_source_app"),
+        "a file without the mark leaves it in place"
+    );
+}
+
 #[tokio::test]
 async fn append_existing_guid_adds_missing_children() {
     let tmp = TempDir::new().unwrap();
