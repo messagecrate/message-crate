@@ -846,7 +846,7 @@ released versions carry their date on the heading.
   nothing behind.
 - 2026-10-04 **The Docker image no longer sets environment variables the
   server never reads.** The image set `MC_DB`, `MC_DATA_DIR` and `HOSTNAME`,
-  and changing them moved nothing. The database and the data folder come
+  and changing them changed nothing. The database and the data folder come
   from `[paths]` in the configuration, and the address the server listens
   on from `[server]`, as they always did.
 
