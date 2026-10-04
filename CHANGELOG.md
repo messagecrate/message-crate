@@ -262,6 +262,12 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **The server's `import` command names the file it refuses an
+  attachment in.** When an attachment broke a rule, such as a path that
+  leaves the export directory or bytes that do not match the fingerprint
+  the file states, the `import` command stopped with the line and the rule
+  but not the file. Every refusal now prints the same way: the file, then
+  the line and the rule.
 - 2026-10-04 **A group text from an SMS Backup+ archive stays one
   conversation when a member's contact gained an email address.** SMS
   Backup+ names a person by their email address when their contact on the
