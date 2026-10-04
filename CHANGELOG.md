@@ -730,14 +730,13 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
-- 2026-10-04 **An Address Book load keeps a number's Text Message and
-  WhatsApp identities on one contact.** A file that moved a number's Text
-  Message identity to a contact, and had no row for the same number on
-  WhatsApp, left the WhatsApp identity behind, so one person showed as two
-  contacts. The identity on the other service now goes with the one the file
-  moves, in Append and Edit alike, unless the file has a row of its own for
-  it. A named contact the file does not mention keeps it, and the load says
-  so.
+- 2026-10-04 **An Address Book load does exactly what the file says.** A
+  row moves only the identity it lists: a file that moves a number's Text
+  Message identity to a contact, with no row for the same number on
+  WhatsApp, leaves the WhatsApp identity where it is, in Append and Edit
+  alike. To move both, give each its own row, and in Edit a contact keeps
+  both only when its rows list both. A load never corrects what looks like a
+  mistake in the file.
 - 2026-10-04 **One number is one identity however it arrives.** A number
   written with `tel:` in front, in a backup that gave no type for it, became
   a separate identity from the same number as a message sender, on a contact
