@@ -60,12 +60,17 @@ fn doc_with_image_attachment() -> ConversationDocument {
     }
 }
 
+/// Obfuscate one document as an export of it alone.
+fn obfuscate_one(doc: &mut ConversationDocument, anon: &mut Obfuscator) {
+    obfuscate_documents(std::slice::from_mut(doc), anon);
+}
+
 #[test]
 fn obfuscate_drops_the_vendor_bag() {
     let mut doc = message_ir::testutil::sample_document("secret");
     assert!(doc.messages[0].source.is_some());
     let mut anon = Obfuscator::new([7u8; 32]);
-    obfuscate_document(&mut doc, &mut anon);
+    obfuscate_one(&mut doc, &mut anon);
     assert!(
         doc.messages[0].source.is_none(),
         "obfuscated output must not carry vendor fields"
@@ -77,7 +82,7 @@ fn obfuscate_replaces_the_owner_address_on_each_message() {
     let mut doc = message_ir::testutil::sample_document("secret");
     doc.messages[0].owner_handle = Some("+15555550100".into());
     let mut anon = Obfuscator::new([7u8; 32]);
-    obfuscate_document(&mut doc, &mut anon);
+    obfuscate_one(&mut doc, &mut anon);
     let owner = doc.messages[0].owner_handle.as_deref();
     assert_ne!(owner, Some("+15555550100"));
     assert_eq!(
@@ -100,7 +105,7 @@ fn obfuscate_keeps_me_on_a_sent_message_and_replaces_a_real_name() {
     doc.messages = vec![labelled, named];
 
     let mut anon = Obfuscator::new([7u8; 32]);
-    obfuscate_document(&mut doc, &mut anon);
+    obfuscate_one(&mut doc, &mut anon);
 
     assert_eq!(doc.messages[0].sender_display_name.as_deref(), Some("Me"));
     let replaced = doc.messages[1].sender_display_name.as_deref().unwrap();
@@ -415,7 +420,7 @@ fn obfuscated_export_keeps_no_string_from_the_source() {
 fn obfuscate_keeps_each_tapback_and_replaces_only_who_reacted() {
     let mut doc = doc_with_a_marker_in_every_field();
     let mut anon = Obfuscator::new([7u8; 32]);
-    obfuscate_document(&mut doc, &mut anon);
+    obfuscate_one(&mut doc, &mut anon);
 
     let tapbacks = doc.messages[0]
         .imessage
@@ -498,7 +503,7 @@ fn obfuscate_makes_each_guid_again_and_keeps_replies_pointing_at_their_target() 
 
     let obfuscated = |doc: &ConversationDocument| {
         let mut doc = doc.clone();
-        obfuscate_document(&mut doc, &mut Obfuscator::new([7u8; 32]));
+        obfuscate_one(&mut doc, &mut Obfuscator::new([7u8; 32]));
         doc
     };
     let after = obfuscated(&doc);
@@ -523,6 +528,145 @@ fn obfuscate_makes_each_guid_again_and_keeps_replies_pointing_at_their_target() 
         "one seed gives one guid"
     );
     let mut other_seed = doc.clone();
-    obfuscate_document(&mut other_seed, &mut Obfuscator::new([8u8; 32]));
+    obfuscate_one(&mut other_seed, &mut Obfuscator::new([8u8; 32]));
     assert_ne!(other_seed.messages[0].guid, after.messages[0].guid);
+}
+
+/// Two conversations for the cross-conversation tests: A holds one message,
+/// and B holds one whose iMessage extension is `link` with A's message's id.
+fn two_conversations(link: impl FnOnce(String) -> IrImessage) -> Vec<ConversationDocument> {
+    let mut a = doc_with_image_attachment();
+    a.messages[0].attachments.clear();
+    a.messages[0].guid = "a-target".into();
+    let mut b = doc_with_image_attachment();
+    b.conversation.chat_identifier = "+15555550102".into();
+    b.messages[0].attachments.clear();
+    b.messages[0].guid = "b-link".into();
+    b.messages[0].imessage = Some(link("a-target".into()));
+    vec![a, b]
+}
+
+fn obfuscate_all(docs: &mut [ConversationDocument]) {
+    let tmp = tempfile::tempdir().unwrap();
+    let transforms = ExportTransforms {
+        media: MediaMode::Disabled,
+        obfuscate: true,
+        obfuscate_seed: Some(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef".into(),
+        ),
+        ..ExportTransforms::none()
+    };
+    apply_transforms(docs, tmp.path(), &transforms).unwrap();
+}
+
+/// A reply (`in_reply_to_guid`) or a tapback (`associated_guid`).
+#[derive(Clone, Copy, Debug)]
+enum Link {
+    Reply,
+    Tapback,
+}
+
+impl Link {
+    /// The extension that makes this link name `target`.
+    fn to(self, target: &str) -> IrImessage {
+        let target = Some(target.to_owned());
+        match self {
+            Link::Reply => IrImessage {
+                is_reply: true,
+                in_reply_to_guid: target,
+                ..IrImessage::default()
+            },
+            Link::Tapback => IrImessage {
+                associated_guid: target,
+                ..IrImessage::default()
+            },
+        }
+    }
+
+    /// The id this link names in `msg`.
+    fn target(self, msg: &IrMessage) -> Option<&str> {
+        let im = msg.imessage.as_ref()?;
+        match self {
+            Link::Reply => im.in_reply_to_guid.as_deref(),
+            Link::Tapback => im.associated_guid.as_deref(),
+        }
+    }
+}
+
+/// Apple Messages can reply or react to a message in another conversation,
+/// and each conversation is its own document, so the target is found across
+/// every document of the export, not only its own.
+#[test]
+fn obfuscate_points_a_reply_or_tapback_at_its_target_in_another_conversation() {
+    for link in [Link::Reply, Link::Tapback] {
+        let mut docs = two_conversations(|target| link.to(&target));
+        obfuscate_all(&mut docs);
+        assert_ne!(docs[0].messages[0].guid, "a-target", "{link:?}");
+        assert_eq!(
+            link.target(&docs[1].messages[0]),
+            Some(docs[0].messages[0].guid.as_str()),
+            "{link:?} points at its target's new guid"
+        );
+    }
+}
+
+/// One source message can sit in two documents, and each copy gets its own
+/// new `guid`. A reply or tapback keeps pointing at the copy in its own
+/// document, whichever document the export holds first.
+#[test]
+fn obfuscate_points_a_reply_or_tapback_at_the_copy_in_its_own_conversation() {
+    for link in [Link::Reply, Link::Tapback] {
+        for linking_first in [true, false] {
+            let mut docs = two_conversations(|_| IrImessage::default());
+            let mut copy = docs[0].messages[0].clone();
+            copy.imessage = None;
+            docs[1].messages.insert(0, copy);
+            docs[1].messages[1].imessage = Some(link.to("a-target"));
+            if linking_first {
+                docs.reverse();
+            }
+            obfuscate_all(&mut docs);
+            let (linking, other) = if linking_first {
+                (&docs[0], &docs[1])
+            } else {
+                (&docs[1], &docs[0])
+            };
+            let case = format!("{link:?}, linking_first={linking_first}");
+            assert_ne!(
+                linking.messages[0].guid, other.messages[0].guid,
+                "{case}: each copy gets its own guid"
+            );
+            assert_eq!(
+                link.target(&linking.messages[1]),
+                Some(linking.messages[0].guid.as_str()),
+                "{case}: the link points at the copy in its own conversation"
+            );
+        }
+    }
+}
+
+/// A target in no document of the export, such as one the date range left
+/// out, keeps the keyed stand-in: its original id does not survive.
+#[test]
+fn obfuscate_replaces_a_target_outside_the_export_with_its_stand_in() {
+    let mut docs = two_conversations(|_| IrImessage {
+        is_reply: true,
+        in_reply_to_guid: Some("not-exported".into()),
+        ..IrImessage::default()
+    });
+    obfuscate_all(&mut docs);
+    let target = docs[1].messages[0]
+        .imessage
+        .as_ref()
+        .unwrap()
+        .in_reply_to_guid
+        .clone()
+        .unwrap();
+    assert_ne!(target, "not-exported");
+    assert_eq!(target.len(), 64);
+    assert!(
+        docs.iter()
+            .flat_map(|d| &d.messages)
+            .all(|m| m.guid != target)
+    );
 }
