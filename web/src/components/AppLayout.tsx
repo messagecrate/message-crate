@@ -148,16 +148,16 @@ export default function AppLayout() {
   // The full-screen routes have no list, so the header offers no search there:
   // Export carries `?q=` for its own scope box, which typing in the header
   // must never change.
-  const searchTarget: HeaderSearchTarget | null = isFullScreen
+  const headerSearch: { target: HeaderSearchTarget; query: string } | null = isFullScreen
     ? null
     : trashMode
-      ? "trash"
+      ? { target: "trash", query: trashSearch }
       : contactsMode
-        ? "contacts"
-        : resultsView(searchParams) === "messages"
-          ? "messages"
-          : "conversations";
-  const searchQuery = trashMode ? trashSearch : contactsMode ? contactSearch : conversationSearch;
+        ? { target: "contacts", query: contactSearch }
+        : {
+            target: resultsView(searchParams) === "messages" ? "messages" : "conversations",
+            query: conversationSearch,
+          };
 
   // `replace: true` is inherited from every other caller here and is
   // deliberate: typing in a search box must not fill the history with one
@@ -284,8 +284,8 @@ export default function AppLayout() {
     <RightToolbarProvider>
       <div className="flex h-screen flex-col bg-bg font-sans text-text">
         <AppHeader
-          searchQuery={searchQuery}
-          searchTarget={searchTarget}
+          searchQuery={headerSearch?.query ?? ""}
+          searchTarget={headerSearch?.target ?? null}
           onSearchChange={handleSearchChange}
           onSearch={handleSearch}
         />
