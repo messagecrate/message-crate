@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { SearchScope } from "../lib/recentSearches";
 import { otherResultsView } from "../lib/resultsView";
 import type { SearchList } from "../lib/searchFields";
+import { useWindowWidth } from "../lib/useWindowWidth";
 import { Z_APP_HEADER } from "../lib/zLayers";
 import type { AdvancedSearchMode } from "./AdvancedSearchForm";
 import AppAccountMenu from "./AppAccountMenu";
@@ -12,6 +13,7 @@ import {
   LEFT_PANEL_MIN_WIDTH,
   LEFT_PANEL_STORAGE_KEY,
   LEFT_PANEL_WIDTH_VAR,
+  leftPanelWindowMaxWidth,
 } from "./leftPanelWidth";
 import SearchBar from "./SearchBar";
 import VersionNotice from "./VersionNotice";
@@ -110,6 +112,9 @@ export default function AppHeader({
       LEFT_PANEL_MAX_WIDTH,
     ),
   );
+  // Capped for this window as the navigation panel is, for a screen with no
+  // panel to set the width.
+  const brandMax = leftPanelWindowMaxWidth(useWindowWidth());
 
   return (
     <>
@@ -118,7 +123,7 @@ export default function AppHeader({
       >
         <div
           className="box-border flex h-12 shrink-0 items-center px-3"
-          style={{ width: `var(${LEFT_PANEL_WIDTH_VAR}, ${brandWidth}px)` }}
+          style={{ width: `var(${LEFT_PANEL_WIDTH_VAR}, ${Math.min(brandWidth, brandMax)}px)` }}
         >
           <span className="text-[0.875rem] font-bold text-text">Message Crate</span>
         </div>
