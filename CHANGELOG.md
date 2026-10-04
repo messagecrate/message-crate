@@ -1036,6 +1036,13 @@ released versions carry their date on the heading.
   the attachment folders.
 - 2026-10-04 **How the desktop app checks that its server started was
   reworked, with nothing visible.**
+- 2026-10-04 **The server's `reset-demo` command checks more of what it
+  must leave alone.** Before it puts the rebuilt Demo Account in place, it
+  checks that nothing else changed. That check now also covers the Audit
+  Trail of deleted accounts, what a search finds in other accounts'
+  messages, and the files in other accounts' folders. The reset stops if any
+  of them changed. On a database of about 1.3 million messages the check
+  takes about 14 seconds.
 
 ### Upgrading
 
