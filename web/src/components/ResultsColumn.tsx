@@ -9,6 +9,7 @@ import {
   pickedMessageSort,
   type ResultsView,
   resultsView,
+  TAG_PARAM,
   VIEW_PARAM,
 } from "../lib/resultsView";
 import type { Conversation } from "../lib/types";
@@ -62,12 +63,18 @@ export function ResultsViewSwitch({
  */
 export default function ResultsColumn({
   query,
+  tag,
   searchTyped,
   selectedConversationId,
   onSelectConversation,
 }: {
   /** The search both lists run: the typed search, with a page's tag or filter in it. */
   query: string;
+  /**
+   * The Message Tag in `query`, or `none` on the No Tag page, or null. A
+   * result opened from the Messages list carries it apart from `q` (#1562).
+   */
+  tag: string | null;
   /**
    * Whether the header box holds a search. Without one the Messages list asks
    * for a search, even on a tag page whose `query` holds the tag (#313: an
@@ -101,11 +108,11 @@ export default function ResultsColumn({
           onSortPick={(next) => setParam(MESSAGE_SORT_PARAM, messageSortParam(next))}
           selectedId={openedAt(searchParams)}
           onSelect={(message) =>
-            // The conversation route lists by `q` alone, so the list's whole
-            // query, a tag page's tag included, goes into it.
+            // `q` stays what the person typed, and the tag rides beside it,
+            // so the conversation route lists what this list searched.
             navigate(
               `/messages/${message.conversation.id}${messagesSearch(searchParams, {
-                q: query,
+                [TAG_PARAM]: tag ?? "",
                 [AT_PARAM]: String(message.id),
               })}`,
             )

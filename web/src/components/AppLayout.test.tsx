@@ -28,16 +28,31 @@ vi.mock("../screens/ConversationList", () => ({
   ),
 }));
 vi.mock("../screens/MessageSearchList", () => ({
-  default: ({ query }: { query: string }) => (
-    <div data-testid="message-search-list">{`query: ${query}`}</div>
+  default: ({
+    query,
+    onSelect,
+  }: {
+    query: string;
+    onSelect: (m: { id: number; conversation: { id: number } }) => void;
+  }) => (
+    <div>
+      <div data-testid="message-search-list">{`query: ${query}`}</div>
+      <button type="button" onClick={() => onSelect({ id: 77, conversation: { id: 6 } })}>
+        Message result
+      </button>
+    </div>
   ),
 }));
-// The header stands in as one button that searches for "ada".
+// The header stands in as the words in its box and one button that searches
+// for "ada".
 vi.mock("./AppHeader", () => ({
-  default: ({ onSearch }: { onSearch: (q: string) => void }) => (
-    <button type="button" onClick={() => onSearch("ada")}>
-      Search for ada
-    </button>
+  default: ({ searchQuery, onSearch }: { searchQuery: string; onSearch: (q: string) => void }) => (
+    <>
+      <output data-testid="header-search">{searchQuery}</output>
+      <button type="button" onClick={() => onSearch("ada")}>
+        Search for ada
+      </button>
+    </>
   ),
 }));
 vi.mock("./ContactDrawer", () => ({ default: () => null }));
@@ -207,5 +222,52 @@ describe("AppLayout on a Contact Group or Message Tag page", () => {
     const list = screen.getByTestId("message-search-list").textContent ?? "";
     expect(list).toContain("Holiday");
     expect(list).toContain("ada");
+  });
+
+  // #1562: the tag rides apart from the typed words, so the header box and
+  // the Messages list's empty state are the same in a conversation opened
+  // from the tag page as on the page itself.
+  it.each([
+    ["a tag page", "/tag/Holiday", "?tag=Holiday"],
+    ["the No Tag page", "/no-tag", "?tag=none"],
+  ])("opens a conversation from %s with the header box empty", async (_name, page, search) => {
+    sets.tags = ["Holiday"];
+    const user = userEvent.setup();
+    renderLayout(page);
+    expect(screen.getByTestId("header-search").textContent).toBe("");
+
+    await user.click(screen.getByRole("button", { name: "First result" }));
+    expect(screen.getByTestId("location").textContent).toBe(`/messages/6${search}`);
+    expect(screen.getByTestId("header-search").textContent).toBe("");
+  });
+
+  it("opens a conversation from a tag page with only the typed words in the header box", async () => {
+    sets.tags = ["Holiday"];
+    const user = userEvent.setup();
+    renderLayout("/tag/Holiday?q=ada");
+
+    await user.click(screen.getByRole("button", { name: "First result" }));
+    expect(screen.getByTestId("location").textContent).toBe("/messages/6?q=ada&tag=Holiday");
+    expect(screen.getByTestId("header-search").textContent).toBe("ada");
+  });
+
+  it("opens a Messages result from a tag page with only the typed words in the header box", async () => {
+    sets.tags = ["Holiday"];
+    const user = userEvent.setup();
+    renderLayout("/tag/Holiday?q=ada&view=messages");
+
+    await user.click(screen.getByRole("button", { name: "Message result" }));
+    expect(screen.getByTestId("location").textContent).toBe(
+      "/messages/6?q=ada&tag=Holiday&view=messages&at=77",
+    );
+    expect(screen.getByTestId("header-search").textContent).toBe("ada");
+  });
+
+  it("keeps the tag when the header searches in a conversation opened from a tag page", async () => {
+    const user = userEvent.setup();
+    renderLayout("/messages/6?tag=Holiday");
+
+    await user.click(screen.getByRole("button", { name: "Search for ada" }));
+    expect(screen.getByTestId("location").textContent).toBe("/messages/6?q=ada&tag=Holiday");
   });
 });
