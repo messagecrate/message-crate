@@ -11,6 +11,8 @@ use std::ffi::OsString;
 use std::fs;
 use std::num::NonZeroU32;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
 use demo_seed::DemoSize;
@@ -235,8 +237,10 @@ pub async fn run_reset_demo(size: DemoSize, cfg: &Config) -> Result<ResetDemoSta
     let work = tempfile::tempdir().context("create temporary demo bundle directory")?;
     let bundle = work.path().join("bundle");
     println!("Reset demo — generating the {size} data set");
-    let seed_stats =
-        demo_seed::generate_size_to(size, &bundle).context("generate demo bundle (demo-seed)")?;
+    // `reset-demo` runs in the foreground and stops with its process, so
+    // nothing sets the flag.
+    let seed_stats = demo_seed::generate_size_to(size, &bundle, &AtomicBool::new(false))
+        .context("generate demo bundle (demo-seed)")?;
     let reset_stats = reset_prepared_bundle(cfg, &bundle, DEMO_ACCOUNT_ID).await?;
 
     Ok(ResetDemoStats {
@@ -278,8 +282,10 @@ pub async fn seed_new_database(cfg: &Config) {
     let size = DemoSize::Medium;
     eprintln!("New database: adding the Demo Account ({size} data set)…");
     let started = std::time::Instant::now();
+    // Seeding runs before the server listens, on this thread, so no stop
+    // can arrive while it generates and nothing sets the flag.
     if let Some(messages) = seed_new_database_with(cfg, |bundle| {
-        demo_seed::generate_size_to(size, bundle).map(|_| ())
+        demo_seed::generate_size_to(size, bundle, &AtomicBool::new(false)).map(|_| ())
     })
     .await
     {
@@ -437,14 +443,26 @@ pub async fn remove_stopped_demo_build(cfg: &Config, db: &SqlitePool) -> Result<
     Ok(unfinished)
 }
 
-/// Writes a demo bundle of the given size into the given folder. The server
-/// holds the real one ([`generate_bundle`]); a test holds one that writes a
-/// few conversations.
-pub type BundleGenerator = fn(DemoSize, &Path) -> Result<()>;
+/// Writes a demo bundle of the given size into the given folder, and stops
+/// part-way with an error once the flag is set. The server holds the real
+/// one ([`generate_bundle`]); a test holds one that writes a few
+/// conversations.
+pub type BundleGenerator = fn(DemoSize, &Path, &AtomicBool) -> Result<()>;
 
 /// The generator a running server uses: the built-in data set of the size.
-pub fn generate_bundle(size: DemoSize, bundle: &Path) -> Result<()> {
-    demo_seed::generate_size_to(size, bundle).map(|_| ())
+pub fn generate_bundle(size: DemoSize, bundle: &Path, cancel: &AtomicBool) -> Result<()> {
+    demo_seed::generate_size_to(size, bundle, cancel).map(|_| ())
+}
+
+/// Sets the flag it holds when it is dropped. A build holds one for its
+/// generator, so a build that is dropped part-way, the way the server drops
+/// it when it stops, stops the generator too (#1431).
+struct CancelOnDrop(Arc<AtomicBool>);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
 }
 
 /// Build the Demo Account in the server's database `db` while the server is
@@ -459,7 +477,7 @@ pub fn generate_bundle(size: DemoSize, bundle: &Path) -> Result<()> {
 /// partly built Demo Account is removed first.
 pub async fn build_demo_account(
     db: SqlitePool,
-    cfg: std::sync::Arc<Config>,
+    cfg: Arc<Config>,
     size: DemoSize,
     generate: BundleGenerator,
 ) -> Result<u64> {
@@ -468,15 +486,24 @@ pub async fn build_demo_account(
         // the build removes the Demo Account it was replacing.
         begin_demo_build(&db).await?;
         let work = tempfile::tempdir().context("create temporary demo bundle directory")?;
-        let bundle = work.path().join("bundle");
+        // A blocking task cannot be aborted, so the generator checks this
+        // flag instead. Dropping the build sets it, so a server that stops
+        // mid-generation waits for one file, not the whole data set.
+        let cancel = Arc::new(AtomicBool::new(false));
+        let _stop_generator = CancelOnDrop(Arc::clone(&cancel));
         // Generating is CPU work with no await in it, so it runs off the
-        // request-serving threads.
-        let target = bundle.clone();
-        tokio::task::spawn_blocking(move || generate(size, &target))
-            .await
-            .context("the demo bundle generator stopped")?
-            .context("generate demo bundle (demo-seed)")?;
-        build_from_bundle(&cfg, &db, &bundle, AuditActor::Owner).await
+        // request-serving threads. The temporary folder moves into the task
+        // and comes back with its result: when the build is dropped while
+        // the task runs, the folder is removed once the generator has
+        // returned, never while it is still writing into it.
+        let (work, generated) = tokio::task::spawn_blocking(move || {
+            let generated = generate(size, &work.path().join("bundle"), &cancel);
+            (work, generated)
+        })
+        .await
+        .context("the demo bundle generator stopped")?;
+        generated.context("generate demo bundle (demo-seed)")?;
+        build_from_bundle(&cfg, &db, &work.path().join("bundle"), AuditActor::Owner).await
     }
     .await;
     whole_demo_account_or_none(&cfg, &db, outcome).await
