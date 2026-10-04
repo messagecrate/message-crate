@@ -3,8 +3,9 @@ import { Outlet, useLocation, useNavigate, useSearchParams } from "react-router-
 import { contactBrowseQuery } from "../lib/contactBrowseQuery";
 import { groupFromSlug, slugFromPath, slugPath } from "../lib/contactGroups";
 import { asMessagesLocationState } from "../lib/messagesLocationState";
-import { tagFromSlug, tagListQuery } from "../lib/messageTags";
+import { tagFromSlug } from "../lib/messageTags";
 import {
+  conversationListQuery,
   listedTag,
   MESSAGE_SORT_PARAM,
   messagesSearch,
@@ -234,7 +235,7 @@ export default function AppLayout() {
 
   const trashListQuery = trashed(trashSearch);
 
-  const threadListQuery = tagListQuery(tagFilter, conversationFilter || conversationSearch);
+  const threadListQuery = conversationListQuery(searchParams, tagFilter);
 
   // The message route filters its list by `q`, `f` and the tag, so the
   // conversation opened carries the list's query in them. Its path has no

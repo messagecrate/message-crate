@@ -1,9 +1,8 @@
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
 import { asMessagesLocationState } from "../lib/messagesLocationState";
-import { tagListQuery } from "../lib/messageTags";
 import { keys } from "../lib/queryKeys";
-import { AT_PARAM, listedTag, openedAt } from "../lib/resultsView";
+import { AT_PARAM, conversationListQuery, listedTag, openedAt } from "../lib/resultsView";
 import { useRouteQuery } from "../lib/routeQuery";
 import { getConversation } from "../lib/serverApi";
 import MessageView from "../screens/MessageView";
@@ -29,10 +28,9 @@ export default function MessageRoute() {
   const [searchParams] = useSearchParams();
 
   const conversationSearch = searchParams.get("q") || "";
-  const conversationFilter = searchParams.get("f") || "";
   // A conversation opened from a tag page names the tag apart from `q`.
   const tag = listedTag(searchParams);
-  const query = tagListQuery(tag, conversationFilter || conversationSearch);
+  const query = conversationListQuery(searchParams, tag);
   // A result in the Messages list opens its conversation at the message.
   const at = openedAt(searchParams);
 

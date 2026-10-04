@@ -1,4 +1,5 @@
 import { type MessageSearchSort, messageSortFromParam } from "./messageSearchSort";
+import { tagListQuery } from "./messageTags";
 
 /**
  * What the Messages screen's results list: the conversations a search
@@ -46,6 +47,15 @@ export function pickedMessageSort(params: URLSearchParams): MessageSearchSort | 
 /** The Message Tag `params` lists by on `/messages/:id`, or null for none. */
 export function listedTag(params: URLSearchParams): string | null {
   return params.get(TAG_PARAM) || null;
+}
+
+/**
+ * The conversations list's query on a page of the Messages screen: what was
+ * typed in `q`, or `f` when a contact's link set it, within `tag`. Every page
+ * builds it here, so none can leave one of the three out (#1562).
+ */
+export function conversationListQuery(params: URLSearchParams, tag: string | null): string {
+  return tagListQuery(tag, params.get("f") || params.get("q") || "");
 }
 
 /** The message a search result opened at: a positive integer, or null. */
