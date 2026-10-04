@@ -3594,3 +3594,41 @@ mod refusals {
         }
     }
 }
+
+/// A conversation keyed by a name is found by the person's name, never by
+/// its `name:` key, which every such conversation shares; and Storage labels
+/// its attachments with the name.
+mod name_keyed_conversation {
+    use super::*;
+
+    #[tokio::test]
+    async fn is_found_and_labelled_by_the_name_not_the_key() {
+        let (pool, _dir, _f) = seeded().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let key = handle(&mut conn, ACCOUNT, "name:Sarah Vale", "sms").await;
+        let sarah = conversation(&mut conn, ACCOUNT, key, "individual", None, &[]).await;
+        named_participant(&mut conn, sarah, "Sarah Vale").await;
+        let photo = message(
+            &mut conn,
+            ACCOUNT,
+            msg(sarah, "2024-03-01T10:00:00Z", false, None, "photo"),
+        )
+        .await;
+        attachment(&mut conn, photo, "huge.jpg", "image/jpeg", 1 << 40).await;
+
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "with:sarah").await,
+            vec![sarah]
+        );
+        assert!(
+            !run(&mut conn, ListKind::Conversations, "with:nam")
+                .await
+                .contains(&sarah)
+        );
+
+        let top = crate::db::imports::top_attachments_by_size(&mut conn, ACCOUNT, 1)
+            .await
+            .unwrap();
+        assert_eq!(top[0].chat_identifier.as_deref(), Some("Sarah Vale"));
+    }
+}

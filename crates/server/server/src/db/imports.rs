@@ -1024,7 +1024,12 @@ pub async fn top_attachments_by_size(
                 size_bytes,
                 conversation_id: Some(conversation_id),
                 conversation_title,
-                chat_identifier: Some(chat_identifier),
+                // A conversation keyed by a name is labelled with the name,
+                // not with its `name:` key.
+                chat_identifier: Some(
+                    message_ir::name_of_chat_id(&chat_identifier)
+                        .map_or_else(|| chat_identifier.clone(), str::to_string),
+                ),
             },
         )
         .collect())
