@@ -21,6 +21,15 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-04 **Photos and videos get their browser copies after every
+  import, without anyone asking.** Once an import ends, the server makes a
+  small thumbnail of every photo and video it brought, and a copy every
+  browser can show of each HEIC photo, HEVC video, voice note and other file
+  browsers often cannot play. It works in the background, so the import
+  finishes as soon as its messages are in, and a server stopped part-way
+  finishes the rest when it starts again. Until now those copies existed
+  only after someone ran a command on the server. The conversation starts
+  showing the thumbnails in a coming release.
 - 2026-10-04 **The server keeps its log in files the owner can read.** Docker
   and the desktop app's server now write their log to a `logs` directory
   beside the database, as well as to their output, so the lines that explain a
@@ -1166,6 +1175,11 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-04 **A video's browser copy plays in every browser.** The copy
+  the server made of a HEVC video, the format an iPhone records in, was HEVC
+  as well, which most browsers cannot play. It is now H.264, which they all
+  can. A photo or MP3 that every browser shows as it is no longer gets a
+  copy it does not need.
 - 2026-10-01 **Docker Compose runs as a real user when UID and GID aren't
   set.** It ran the container with an empty user and printed warnings.
 - 2026-10-02 **Long conversations can be read to the end.** Messages past

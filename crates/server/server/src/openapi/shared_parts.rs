@@ -233,8 +233,8 @@ fn failures(path: &str, op: &mut Operation) {
 
 /// Whether the operation answers bytes rather than JSON: its `200` declares
 /// content and none of it is `application/json`. The asset download, its
-/// preview and the address book export are the three, and the `Accept`
-/// check lets them through.
+/// preview, its thumbnail, the address book export and a file of the
+/// server's log are the five, and the `Accept` check lets them through.
 fn answers_bytes(op: &Operation) -> bool {
     let Some(RefOr::T(ok)) = op.responses.responses.get("200") else {
         return false;

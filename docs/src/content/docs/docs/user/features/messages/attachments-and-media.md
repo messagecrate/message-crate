@@ -108,8 +108,10 @@ A conversation shows the preview of an attachment that has one, and the original
 Opening a photo shows the original, and the preview when the browser cannot display the original.
 The original is never changed.
 
-The server makes previews when `message-crate-server process-assets` runs, which needs ffmpeg on the server.
-An attachment imported since the last run has no preview yet, and until it has one a HEIC photo or an HEVC video does not show in a browser that cannot display it.
+The server makes the previews after each import, in the background, which needs ffmpeg on the server: the Docker image has it, and the desktop app's server uses the ffmpeg it finds on the computer.
+The import finishes without waiting for them, so for a while after an import a HEIC photo or an HEVC video may not show yet in a browser that cannot display it.
+A server without ffmpeg keeps the list of attachments still to do, and makes their previews once it finds ffmpeg, when it starts again or after the next import.
+`message-crate-server process-assets` makes any preview that is still missing.
 Importing with **Convert** stores a `.jpg` in place of the HEIC photo, which needs no preview.
 
 ## Obfuscate

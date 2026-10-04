@@ -93,7 +93,9 @@ Created on first use if missing:
 
 An attachment file is named by the SHA-256 of its bytes, so a file imported
 from two sources is stored once. It is removed when no message of the
-account, from any source, still names it.
+account, from any source, still names it. `assets_converted/` holds what the
+server makes from the originals: a Thumbnail of every image and video, and a
+Preview of each attachment browsers often cannot show.
 
 ## Accounts
 
