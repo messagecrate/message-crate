@@ -25,8 +25,11 @@ describe("stripFieldTokens", () => {
     expect(stripFieldTokens('identity:"+1 555" bo -tag:x')).toBe("bo");
     expect(stripFieldTokens("just words")).toBe("just words");
   });
-  it("drops a token a bracket opens too", () => {
-    expect(stripFieldTokens("(kind:group or kind:direct)")).toBe("or");
+  it("drops a token a bracket opens too, and keeps the brackets", () => {
+    expect(stripFieldTokens("(kind:group or kind:direct)")).toBe("( or )");
+  });
+  it("keeps a colon inside a quoted phrase", () => {
+    expect(stripFieldTokens('"re: dinner" kind:group')).toBe('"re: dinner"');
   });
 });
 

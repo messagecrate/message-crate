@@ -21,32 +21,17 @@ export type SearchField = Schema["FieldDoc"];
 export type SearchList = SearchFieldList;
 
 /**
- * A `word:` token: a field name followed by a colon, at the start or after a
- * space or an opening bracket, with or without a leading minus. Quoted phrases
- * are removed first so a colon inside one does not count.
+ * True when the query has a `word:` token, which only the server can apply.
+ * The tokens are read as the server's lexer reads them (`fieldTokens`), so a
+ * colon inside a quoted phrase or a pasted `http://` address is not one.
  */
-// The bracket matters because `(kind:group or kind:direct)` is a real query.
-// The value must not start with `/`, so a pasted URL like `http://x` is a word.
-const FIELD_TOKEN_RE = /(^|[\s(])-?[a-z][a-z-]*:(?!\/)/i;
-const PHRASE_RE = /"(?:[^"]|"")*"/g;
-
-/** True when the query has a `word:` token, which only the server can apply. */
 export function hasFieldToken(q: string): boolean {
-  return FIELD_TOKEN_RE.test(q.replace(PHRASE_RE, " "));
+  return fieldTokens(q).length > 0;
 }
 
-/**
- * The field words a query carries, lower-cased and without the leading minus,
- * in order of appearance. Quoted phrases are removed first, as in
- * `hasFieldToken`, so a colon inside one does not read as a word.
- */
+/** The field words a query carries, lower-cased and without the leading minus, in order of appearance. */
 export function fieldWords(q: string): string[] {
-  const words: string[] = [];
-  for (const match of q.replace(PHRASE_RE, " ").matchAll(/(^|[\s(])-?([a-z][a-z-]*):(?!\/)/gi)) {
-    const word = match[2].toLowerCase();
-    if (!words.includes(word)) words.push(word);
-  }
-  return words;
+  return [...new Set(fieldTokens(q).map((t) => t.word))];
 }
 
 /**
@@ -61,10 +46,13 @@ export function unsupportedFieldWords(q: string, fields: readonly SearchField[])
 
 /** The free-text words of a query, with every `word:value` token removed. */
 export function stripFieldTokens(q: string): string {
-  return q
-    .replace(/(^|[\s(])-?[a-z][a-z-]*:(?!\/)("(?:[^"]|"")*"|\S*)/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  let out = "";
+  let from = 0;
+  for (const token of fieldTokens(q)) {
+    out += `${q.slice(from, token.start)} `;
+    from = token.end;
+  }
+  return (out + q.slice(from)).replace(/\s+/g, " ").trim();
 }
 
 /**
