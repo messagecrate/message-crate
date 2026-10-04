@@ -27,7 +27,8 @@ pub(crate) fn regular_files(folder: &Path) -> Result<Vec<PathBuf>> {
 /// An entry that cannot be read, or whose type cannot be read, fails the
 /// listing. Skipping it would leave a row whose file was in that entry with
 /// no file, or drop a Live Photo video, and the conversion would give no
-/// reason. Reading the rest of the export's folders fails the same way.
+/// reason. The search for the export's CSV files
+/// (`message_crate_core::discover_files`) fails the same way.
 ///
 /// # Errors
 ///
@@ -48,6 +49,31 @@ fn regular_files_of(
         files.push(entry.path());
     }
     Ok(files)
+}
+
+/// Run `f` with the permissions of `folder` set to `mode`, then set them back
+/// to `0o755` before returning, so the temporary folder can still be removed.
+///
+/// `None`, with a line on stderr, when `folder` can still be listed under
+/// `mode`: a user such as root cannot exercise the failure, so the test has
+/// nothing to check.
+#[cfg(all(test, unix))]
+pub(crate) fn with_folder_mode<T>(folder: &Path, mode: u32, f: impl FnOnce() -> T) -> Option<T> {
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::set_permissions(folder, fs::Permissions::from_mode(mode)).expect("set the folder's mode");
+    let result = if fs::read_dir(folder).is_ok() {
+        eprintln!(
+            "skipped: {} can still be listed with mode {mode:o}",
+            folder.display()
+        );
+        None
+    } else {
+        Some(f())
+    };
+    fs::set_permissions(folder, fs::Permissions::from_mode(0o755))
+        .expect("restore the folder's mode");
+    result
 }
 
 #[cfg(test)]

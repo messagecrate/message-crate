@@ -157,8 +157,6 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_folder_that_cannot_be_listed_fails_and_is_named() {
-        use std::os::unix::fs::PermissionsExt;
-
         let dir = tempfile::tempdir().unwrap();
         let chat = dir.path().join("chat");
         fs::create_dir(&chat).unwrap();
@@ -173,13 +171,9 @@ mod tests {
             pictures: &pictures,
             texts_at: &texts_at,
         };
-        fs::set_permissions(&chat, fs::Permissions::from_mode(0o000)).unwrap();
-        // A user who can list a folder with no permissions (root) cannot
-        // exercise the failure, so the test has nothing to check.
-        let listable = fs::read_dir(&chat).is_ok();
-        let result = (!listable).then(|| unnamed_files(&chat, &rows));
-        fs::set_permissions(&chat, fs::Permissions::from_mode(0o755)).unwrap();
-        let Some(result) = result else {
+        let Some(result) =
+            crate::chat_folder::with_folder_mode(&chat, 0o000, || unnamed_files(&chat, &rows))
+        else {
             return;
         };
 

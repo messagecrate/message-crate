@@ -315,8 +315,6 @@ Bob Sample,2020-01-01 12:00:00,,,,,SMS,Incoming,+15555550100,Bob,Read,,,Hi,,imag
 #[cfg(unix)]
 #[test]
 fn a_chat_folder_that_cannot_be_listed_fails_the_conversion_and_names_it() {
-    use std::os::unix::fs::PermissionsExt;
-
     let dir = tempfile::tempdir().unwrap();
     let chat = dir.path().join("chat");
     fs::create_dir_all(&chat).unwrap();
@@ -333,13 +331,9 @@ Bob Sample,2020-01-01 12:00:00,,,,,SMS,Incoming,+15555550100,Bob,Read,,,Hi,,imag
     )
     .unwrap();
     // Write and search but no read: the CSV opens, the listing does not.
-    fs::set_permissions(&chat, fs::Permissions::from_mode(0o300)).unwrap();
-    // A user who can list a folder without read permission (root) cannot
-    // exercise the failure, so the test has nothing to check.
-    let listable = fs::read_dir(&chat).is_ok();
-    let result = (!listable).then(|| convert(&csv, &dir.path().join("out")));
-    fs::set_permissions(&chat, fs::Permissions::from_mode(0o755)).unwrap();
-    let Some(result) = result else {
+    let Some(result) = crate::chat_folder::with_folder_mode(&chat, 0o300, || {
+        convert(&csv, &dir.path().join("out"))
+    }) else {
         return;
     };
 
