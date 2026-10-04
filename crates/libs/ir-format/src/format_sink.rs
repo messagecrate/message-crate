@@ -2,7 +2,9 @@
 //! (JSON, JSON Lines, CSV, EML, MBOX), or one merged archive supplied by
 //! the crate that owns that archive's format.
 
-use crate::clean::{clean_previous_ir_output, record_archive_files};
+use crate::clean::{
+    clean_previous_ir_output, has_export_sentinel, record_archive_files, require_export_directory,
+};
 use crate::export_transforms::apply_transforms;
 use crate::write::write_format;
 use anyhow::{Context, Result};
@@ -58,16 +60,25 @@ pub struct FormatSink {
 }
 
 impl FormatSink {
-    /// Open a sink that buffers documents until [`finish`](Self::finish).
+    /// Open a sink into `output_dir`, an export directory: one that holds
+    /// the sentinel `.message-crate-export`, which
+    /// [`clean_previous_ir_output`] or [`mark_export_folder`] writes. The
+    /// sink buffers documents until [`finish`](Self::finish), which can
+    /// replace and remove files there, so a directory without the sentinel
+    /// is refused whoever calls this. [`open_prepared`](Self::open_prepared)
+    /// cleans and opens in one call.
+    ///
+    /// [`mark_export_folder`]: crate::mark_export_folder
     ///
     /// # Errors
     ///
-    /// Currently always succeeds. The `Result` matches the other constructors.
+    /// Returns an error when `output_dir` has no sentinel.
     pub fn open(
         output_dir: &Path,
         format: OutputFormat,
         transforms: ExportTransforms,
     ) -> Result<Self> {
+        require_export_directory(output_dir)?;
         Ok(Self {
             output_dir: output_dir.to_path_buf(),
             format,
@@ -132,7 +143,7 @@ impl FormatSink {
         format: OutputFormat,
         transforms: ExportTransforms,
     ) -> Result<(Self, PathBuf)> {
-        if !output.join(crate::clean::EXPORT_SENTINEL).is_file() {
+        if !has_export_sentinel(output) {
             anyhow::bail!(
                 "cannot resume into {}: it is not a staging folder from a previous run",
                 output.display()
@@ -268,7 +279,7 @@ mod tests {
         use message_crate_core::{ProgressEvent, ProgressSink};
         use std::sync::{Arc, Mutex};
 
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = crate::export_dir();
         let sink =
             FormatSink::open(tmp.path(), OutputFormat::Json, ExportTransforms::none()).unwrap();
         let seen = Arc::new(Mutex::new(Vec::<ProgressEvent>::new()));
@@ -298,7 +309,7 @@ mod tests {
 
     #[test]
     fn two_groups_with_one_title_are_both_written() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = crate::export_dir();
         let mut sink =
             FormatSink::open(tmp.path(), OutputFormat::Json, ExportTransforms::none()).unwrap();
         for chat in ["chat1", "chat2"] {
@@ -321,7 +332,7 @@ mod tests {
 
     #[test]
     fn format_sink_csv_writes_per_conversation() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = crate::export_dir();
         let mut sink =
             FormatSink::open(tmp.path(), OutputFormat::Csv, ExportTransforms::none()).unwrap();
         sink.write_document(message_ir::testutil::sample_document("hello"))
@@ -363,7 +374,7 @@ mod tests {
 
     #[test]
     fn format_sink_writes_a_merged_archive_and_drops_the_staging_folder() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = crate::export_dir();
         fs::create_dir_all(tmp.path().join("attachments")).unwrap();
         let mut sink = FormatSink::open(tmp.path(), OutputFormat::Xml, ExportTransforms::none())
             .unwrap()
@@ -386,7 +397,7 @@ mod tests {
 
     #[test]
     fn a_merged_format_without_its_archive_is_refused_at_finish() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = crate::export_dir();
         let mut sink =
             FormatSink::open(tmp.path(), OutputFormat::Xml, ExportTransforms::none()).unwrap();
         sink.write_document(message_ir::testutil::sample_document("one"))
@@ -404,7 +415,7 @@ mod tests {
     #[test]
     fn mail_archives_embed_the_staged_bytes_and_drop_attachments_dir() {
         for format in [OutputFormat::Eml, OutputFormat::Mbox] {
-            let tmp = tempfile::tempdir().unwrap();
+            let tmp = crate::export_dir();
             let att_dir = tmp.path().join("attachments");
             fs::create_dir_all(&att_dir).unwrap();
             let rel = "attachments/photo.jpg";
@@ -452,7 +463,7 @@ mod tests {
 
     #[test]
     fn format_sink_csv_keeps_attachments_dir() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = crate::export_dir();
         let att_dir = tmp.path().join("attachments");
         fs::create_dir_all(&att_dir).unwrap();
         fs::write(att_dir.join("photo.jpg"), b"jpeg-bytes").unwrap();
@@ -467,7 +478,7 @@ mod tests {
 
     #[test]
     fn format_sink_obfuscate_rewrites_handles() {
-        let tmp = tempfile::tempdir().unwrap();
+        let tmp = crate::export_dir();
         let transforms = ExportTransforms {
             obfuscate: true,
             obfuscate_seed: Some(
@@ -528,5 +539,26 @@ mod tests {
             att_dir2.join("keep.jpg").is_file(),
             "and the attachments they point at"
         );
+    }
+
+    /// A directory without the `.message-crate-export` sentinel belongs to
+    /// the person who chose it, so a sink is not opened into it and nothing
+    /// in it is removed: `finish` would otherwise remove its `attachments/`
+    /// after writing an MBOX file (#1531).
+    #[test]
+    fn open_refuses_a_directory_without_the_sentinel_and_removes_nothing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path();
+        fs::create_dir(dir.join("attachments")).unwrap();
+        fs::write(dir.join("attachments/photo.jpg"), "mine").unwrap();
+
+        let opened = FormatSink::open(dir, OutputFormat::Mbox, ExportTransforms::none());
+        let refused = opened.is_err();
+        if let Ok(sink) = opened {
+            let _ = sink.finish(&mut ExportReport::default());
+        }
+
+        assert!(refused, "a directory without the sentinel was opened");
+        assert!(dir.join("attachments/photo.jpg").is_file());
     }
 }

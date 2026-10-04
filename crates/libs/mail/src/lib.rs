@@ -128,69 +128,6 @@ impl MailMessage {
     }
 }
 
-/// Remove prior mail-archive artifacts under `output_dir` (`.mbox` files and
-/// directories that contain `.eml`). Leaves `attachments/` alone.
-///
-/// # Errors
-///
-/// Returns an error when a directory cannot be read or a file cannot be removed.
-pub fn clean_previous_mail_output(output_dir: &Path) -> Result<()> {
-    if !output_dir.is_dir() {
-        return Ok(());
-    }
-    for entry in
-        fs::read_dir(output_dir).with_context(|| format!("read {}", output_dir.display()))?
-    {
-        let path = entry?.path();
-        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if path.is_file()
-            && path
-                .extension()
-                .and_then(|e| e.to_str())
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("mbox"))
-        {
-            fs::remove_file(&path).with_context(|| format!("remove {}", path.display()))?;
-            continue;
-        }
-        if path.is_dir() && name != "attachments" {
-            let entries =
-                fs::read_dir(&path).with_context(|| format!("read {}", path.display()))?;
-            if holds_eml(&path, entries.map(|entry| entry.map(|e| e.path())))? {
-                fs::remove_dir_all(&path).with_context(|| format!("remove {}", path.display()))?;
-            }
-        }
-    }
-    Ok(())
-}
-
-/// Whether `entries`, the paths of `dir`, include an `.eml` file.
-///
-/// An entry that cannot be read fails the check, with `dir` named. Skipping
-/// it could make a folder of an earlier export read as holding no `.eml`, and
-/// that folder would then stay beside the new export. The server's `import`
-/// command and the Upload fail the same way.
-///
-/// # Errors
-///
-/// Returns an error for the first entry that cannot be read before an `.eml`
-/// is found.
-fn holds_eml(
-    dir: &Path,
-    entries: impl IntoIterator<Item = std::io::Result<PathBuf>>,
-) -> Result<bool> {
-    for entry in entries {
-        let path = entry.with_context(|| format!("read an entry of {}", dir.display()))?;
-        if path
-            .extension()
-            .and_then(|x| x.to_str())
-            .is_some_and(|ext| ext.eq_ignore_ascii_case("eml"))
-        {
-            return Ok(true);
-        }
-    }
-    Ok(false)
-}
-
 /// Write one conversation as EML folders or a single mboxrd file.
 ///
 /// # Errors
