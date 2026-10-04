@@ -63,7 +63,8 @@
   --avatar-8: #b85c8a;
   --avatar-text: #ffffff;
 
-  /* Shadows, the same in both themes. Mapped to shadow-* utilities below. */
+  /* Shadows for the light theme; the dark theme sets its own. Mapped to
+     shadow-* utilities below. */
   --elevation-card: 0 4px 24px rgb(0 0 0 / 0.15);
   --elevation-popup: 0 10px 32px rgb(0 0 0 / 0.28), 0 2px 8px rgb(0 0 0 / 0.14);
   --elevation-modal: 0 16px 48px rgb(0 0 0 / 0.25);
@@ -107,6 +108,20 @@
   --sms-sent-text: #ffffff;
   --bubble-received: #3a3a3c;
   --bubble-received-text: #ffffff;
+
+  /*
+    Shadows. A black shadow at the light theme's strength all but vanishes on
+    these dark surfaces, so each is darker here. The drawer, which has no
+    border, gets a light hairline on its open edge, and both drawers cast
+    toward their open left edge.
+  */
+  --elevation-card: 0 8px 32px rgb(0 0 0 / 0.5);
+  --elevation-popup: 0 12px 36px rgb(0 0 0 / 0.6), 0 2px 8px rgb(0 0 0 / 0.45);
+  --elevation-modal: 0 20px 56px rgb(0 0 0 / 0.6);
+  --elevation-drawer: -1px 0 0 rgb(255 255 255 / 0.1), -4px 0 20px rgb(0 0 0 / 0.5);
+  --elevation-contact-drawer: -4px 0 20px rgb(0 0 0 / 0.55);
+  --elevation-pill: 0 2px 12px rgb(0 0 0 / 0.5);
+  --elevation-bubble: 0 0.5px 0 rgb(0 0 0 / 0.35);
 }
 
 /* Light: header is chrome; open up toward white for panels */
