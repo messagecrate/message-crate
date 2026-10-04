@@ -100,6 +100,7 @@ function message(id: number, conversationId: number): Message {
   return {
     id,
     source: "imessage",
+    guid: `g${id}`,
     timestamp: "2024-01-01T10:00:00Z",
     sort_order: 0,
     is_from_me: false,

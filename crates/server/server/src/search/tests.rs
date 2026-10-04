@@ -209,9 +209,9 @@ pub(crate) fn msg<'a>(
 
 pub(crate) async fn message(conn: &mut SqliteConnection, account: i64, m: Msg<'_>) -> i64 {
     sqlx::query_scalar(
-        "INSERT INTO messages (conversation_id, account_id, source, timestamp, is_from_me,
+        "INSERT INTO messages (conversation_id, account_id, source, guid, timestamp, is_from_me,
                                sender_handle_id, service, subject, body, sort_order)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0) RETURNING id",
+         VALUES ($1, $2, $3, $10, $4, $5, $6, $7, $8, $9, 0) RETURNING id",
     )
     .bind(m.conversation)
     .bind(account)
@@ -222,6 +222,7 @@ pub(crate) async fn message(conn: &mut SqliteConnection, account: i64, m: Msg<'_
     .bind(m.service)
     .bind(m.subject)
     .bind(m.body)
+    .bind(crate::test_support::unique_guid())
     .fetch_one(&mut *conn)
     .await
     .unwrap()

@@ -1132,8 +1132,8 @@ mod tests {
         .unwrap();
         sqlx::query(
             "INSERT INTO messages (
-                conversation_id, account_id, source, timestamp, is_from_me, sort_order, body
-             ) VALUES (1, $1, 'imessage', '2020-01-01T00:00:00Z', 1, 0, 'hi')",
+                conversation_id, account_id, source, guid, timestamp, is_from_me, sort_order, body
+             ) VALUES (1, $1, 'imessage', 'msg-1', '2020-01-01T00:00:00Z', 1, 0, 'hi')",
         )
         .bind(ACCOUNT_ID)
         .execute(&mut *conn)

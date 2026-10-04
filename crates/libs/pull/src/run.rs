@@ -954,6 +954,7 @@ mod asset_ref_tests {
         serde_json::from_value(json!({
             "id": 1,
             "source": source,
+            "guid": "g1",
             "timestamp": "2015-03-12T18:05:22Z",
             "sort_order": 0,
             "is_from_me": false,

@@ -106,12 +106,6 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
         ..Default::default()
     };
 
-    let guid = msg
-        .guid
-        .clone()
-        .filter(|g| !g.trim().is_empty())
-        .unwrap_or_else(|| format!("server:{}", msg.id));
-
     // Keep the server's row id and source name so a later push can trace
     // each message back to the server it came from.
     let mut source_fields = serde_json::Map::new();
@@ -119,7 +113,7 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
     source_fields.insert("server_source".into(), json!(msg.source));
 
     Ok(IrMessage {
-        guid,
+        guid: msg.guid.clone(),
         timestamp_unix_ms,
         direction,
         service,
@@ -592,7 +586,7 @@ mod tests {
             id: 1,
             source: "imessage".into(),
             service: Some("iMessage".into()),
-            guid: Some("g1".into()),
+            guid: "g1".into(),
             timestamp: "2015-03-12T18:05:22Z".into(),
             is_from_me: false,
             sender: Some("+1".into()),
@@ -662,7 +656,7 @@ mod tests {
             id: 1,
             source: "imessage".into(),
             service: Some("iMessage".into()),
-            guid: Some("g1".into()),
+            guid: "g1".into(),
             timestamp: "2015-03-12T18:05:22Z".into(),
             is_from_me: false,
             sender: Some("+1".into()),
