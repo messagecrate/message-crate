@@ -817,6 +817,29 @@ async fn delete_trashed_contact_makes_it_unknown_and_leaves_its_conversations() 
         1,
         "the conversation and its messages are untouched"
     );
+}
+
+/// The blank name a delete for good leaves is what lets the next import that
+/// knows the person name the contact again.
+#[tokio::test]
+async fn a_contact_deleted_for_good_takes_the_next_imported_name() {
+    let fixture = crate::test_support::test_fixture().await;
+    fixture.account_with_id(ACCOUNT_A, "a").await;
+    let mut conn = fixture.conn().await;
+    let (contact_id, _) =
+        insert_named_contact_in_a_conversation(&mut conn, ACCOUNT_A, "+15550001").await;
+    move_to_trash(&mut conn, ACCOUNT_A, Trashable::Contact(contact_id))
+        .await
+        .unwrap();
+    delete_trashed(
+        &mut conn,
+        ACCOUNT_A,
+        Trashable::Contact(contact_id),
+        AuditActor::Holder,
+    )
+    .await
+    .unwrap();
+
     assert!(
         crate::db::contacts::propose_name(
             &mut conn,
@@ -826,8 +849,13 @@ async fn delete_trashed_contact_makes_it_unknown_and_leaves_its_conversations() 
             crate::db::contacts::Origin::Import
         )
         .await
-        .unwrap(),
-        "the next import that knows the name may name it again"
+        .unwrap()
+    );
+    assert_eq!(
+        contact_row(&mut conn, contact_id)
+            .await
+            .map(|(name, _)| name),
+        Some("Pat Lee".into())
     );
 }
 
