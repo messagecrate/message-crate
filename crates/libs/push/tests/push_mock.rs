@@ -1513,7 +1513,7 @@ fn verify_digests_fails_on_mismatch() {
         path: Some("attachments/fixture.txt".into()),
         original_name: Some("fixture.txt".into()),
         mime_type: Some("text/plain".into()),
-        digest_sha256: Some(wrong_digest),
+        digest_sha256: Some(wrong_digest.clone()),
         is_sticker: false,
         transcription: None,
         sticker_effect: None,
@@ -1529,6 +1529,16 @@ fn verify_digests_fails_on_mismatch() {
     assert!(!report.ok);
     assert_eq!(report.conversations_failed, 1);
     assert_eq!(put.calls(), 0, "mismatch must fail before upload");
+    let disk_digest = hex::encode(Sha256::digest(ASSET_BYTES));
+    let error = report.results[0].error.as_deref().unwrap_or_default();
+    assert!(
+        error.contains(&format!(
+            "attachment attachments/fixture.txt hashes to {disk_digest}, \
+             not the {wrong_digest} its conversation file records"
+        )),
+        "{error}"
+    );
+    assert!(!error.contains("uses the file's own hash"), "{error}");
 }
 
 /// Without `verify_digests`, a recorded SHA-256 that is malformed or does not
@@ -1590,7 +1600,7 @@ fn a_digest_that_does_not_match_its_file_is_a_sentence_in_the_log() {
             "{name}: attachment attachments/mismatch.txt hashes to {disk_digest}, \
              not the {wrong_digest} its conversation file records. \
              Its size changed from 4 to {} bytes. \
-             The Upload sends it as Asset {disk_digest}\n",
+             The Upload uses the file's own hash, Asset {disk_digest}\n",
             ASSET_BYTES.len()
         )),
         "{log}"
@@ -1598,7 +1608,7 @@ fn a_digest_that_does_not_match_its_file_is_a_sentence_in_the_log() {
     assert!(
         log.contains(&format!(
             "{name}: the SHA-256 recorded for attachment attachments/malformed.txt \
-             is not 64 hexadecimal digits, so the Upload hashed the file instead\n"
+             is not 64 hexadecimal digits, so the Upload hashes the file instead\n"
         )),
         "{log}"
     );

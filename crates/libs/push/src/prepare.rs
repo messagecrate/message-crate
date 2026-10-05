@@ -557,15 +557,15 @@ impl DigestResolver {
             return Ok(digest);
         }
 
-        let claimed = claimed_raw.and_then(|raw| match normalize_digest_sha256(raw) {
-            Ok(digest) => Some(digest),
-            Err(_) => {
+        let claimed = claimed_raw.and_then(|raw| {
+            let digest = normalize_digest_sha256(raw);
+            if digest.is_none() {
                 warn(format!(
                     "{name}: the SHA-256 recorded for attachment {rel} is not \
-                     64 hexadecimal digits, so the Upload hashed the file instead"
+                     64 hexadecimal digits, so the Upload hashes the file instead"
                 ));
-                None
             }
+            digest
         });
 
         let disk_size = std::fs::metadata(abs)
@@ -600,7 +600,9 @@ impl DigestResolver {
             if self.verify_digests {
                 bail!("{msg}");
             }
-            warn(format!("{msg}. The Upload sends it as Asset {disk_digest}"));
+            warn(format!(
+                "{msg}. The Upload uses the file's own hash, Asset {disk_digest}"
+            ));
         }
         self.remember(abs, &disk_digest);
         Ok(disk_digest)
@@ -624,17 +626,12 @@ impl DigestResolver {
     }
 }
 
-/// Check that a SHA-256 fingerprint is exactly 64 hex digits; return lowercase form.
-///
-/// # Errors
-///
-/// Returns an error when the string is not 64 hexadecimal characters.
-fn normalize_digest_sha256(digest: &str) -> Result<String> {
+/// The lowercase form of a SHA-256 fingerprint, or `None` when it is not
+/// exactly 64 hexadecimal digits. That is the only way it can fail, which is
+/// what the log line for a malformed fingerprint says.
+fn normalize_digest_sha256(digest: &str) -> Option<String> {
     let s = digest.trim().to_ascii_lowercase();
-    if s.len() != 64 || !s.chars().all(|c| c.is_ascii_hexdigit()) {
-        bail!("invalid sha256 digest (expected 64 hex digits)");
-    }
-    Ok(s)
+    (s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit())).then_some(s)
 }
 
 /// One attachment a worker should HEAD/PUT.
@@ -1114,17 +1111,17 @@ mod tests {
     fn normalize_digest_sha256_accepts_hex() {
         let d = "A".repeat(64);
         assert_eq!(normalize_digest_sha256(&d).unwrap(), "a".repeat(64));
-        assert!(normalize_digest_sha256("not-a-digest").is_err());
+        assert!(normalize_digest_sha256("not-a-digest").is_none());
     }
 
     /// The fingerprint becomes part of a request path, so the right length
     /// alone or hex digits alone is not enough.
     #[test]
     fn normalize_digest_sha256_refuses_the_wrong_length_or_a_non_hex_digit() {
-        assert!(normalize_digest_sha256(&"a".repeat(63)).is_err());
-        assert!(normalize_digest_sha256(&"a".repeat(65)).is_err());
-        assert!(normalize_digest_sha256(&"z".repeat(64)).is_err());
-        assert!(normalize_digest_sha256(&format!("../{}", "a".repeat(61))).is_err());
+        assert!(normalize_digest_sha256(&"a".repeat(63)).is_none());
+        assert!(normalize_digest_sha256(&"a".repeat(65)).is_none());
+        assert!(normalize_digest_sha256(&"z".repeat(64)).is_none());
+        assert!(normalize_digest_sha256(&format!("../{}", "a".repeat(61))).is_none());
     }
 
     #[test]
