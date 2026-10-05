@@ -1596,6 +1596,91 @@ fn a_converted_conversion_stages_from_the_sources_its_disk_check_counted() {
     assert_eq!(reasons, [Some("file_missing"), Some("too_large")]);
 }
 
+/// With the media converted or compressed, a conversion stages every
+/// attachment from the input and copies none of the input's `attachments/`,
+/// so the output holds one file per attachment, as many as the disk check
+/// counted. A copy under the input's names stayed beside the staged files
+/// and could fill a disk the check had passed (#1759).
+#[test]
+fn a_converted_conversion_writes_each_attachment_once() {
+    // Converting needs FFmpeg even when no attachment is media.
+    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+        return;
+    };
+    let source = tempfile::tempdir().unwrap();
+    fs::create_dir_all(source.path()).unwrap();
+    clean_previous_ir_output(source.path()).unwrap();
+    let mut doc = message_ir::testutil::sample_document("a note");
+    doc.messages[0].attachments = vec![attachment("note.txt", Some("attachments/note.txt"))];
+    let mut sink =
+        FormatSink::open(source.path(), OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
+    sink.write_document(doc).unwrap();
+    sink.finish(&mut ExportReport::default()).unwrap();
+    fs::create_dir_all(source.path().join("attachments")).unwrap();
+    fs::write(source.path().join("attachments/note.txt"), b"hello note").unwrap();
+
+    for mode in [MediaMode::Convert, MediaMode::Compress] {
+        let destination = tempfile::tempdir().unwrap();
+        let mut converted = config(source.path(), destination.path(), OutputFormat::Jsonl);
+        converted.media.mode = mode;
+
+        convert_export(source.path(), &converted).unwrap();
+
+        let out = read_output(destination.path(), OutputFormat::Jsonl);
+        let staged = out.messages[0].attachments[0].path.clone().unwrap();
+        let written: Vec<_> = snapshot(&destination.path().join("attachments"))
+            .into_iter()
+            .map(|(path, bytes)| (path.to_string_lossy().replace('\\', "/"), bytes))
+            .collect();
+        assert_eq!(
+            written,
+            [(
+                staged.trim_start_matches("attachments/").to_string(),
+                b"hello note".to_vec()
+            )],
+            "{mode:?}"
+        );
+    }
+}
+
+/// With the media converted or compressed, a conversion of an SMS backup
+/// stages the spooled attachments and then stages them again from the
+/// output under the same names, so the output holds one file per
+/// attachment, as many as the disk check counted (#1759).
+#[test]
+fn a_converted_sms_backup_writes_each_attachment_once() {
+    // Converting needs FFmpeg even when no attachment is media.
+    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+        return;
+    };
+    let source = tempfile::tempdir().unwrap();
+    let backup = r#"<smses><mms date="1400773400000" msg_box="1" address="+15555550101"><parts><part ct="application/pdf" name="note.pdf" data="aGVsbG8gbm90ZQ=="/></parts><addrs><addr address="+15555550101" type="137"/><addr address="+15555550100" type="151"/></addrs></mms></smses>"#;
+    fs::write(source.path().join("smses.xml"), backup).unwrap();
+
+    for mode in [MediaMode::Convert, MediaMode::Compress] {
+        let destination = tempfile::tempdir().unwrap();
+        let mut converted = config(source.path(), destination.path(), OutputFormat::Jsonl);
+        converted.media.mode = mode;
+
+        convert_export(source.path(), &converted).unwrap();
+
+        let out = read_output(destination.path(), OutputFormat::Jsonl);
+        let staged = out.messages[0].attachments[0].path.clone().unwrap();
+        let written: Vec<_> = snapshot(&destination.path().join("attachments"))
+            .into_iter()
+            .map(|(path, bytes)| (path.to_string_lossy().replace('\\', "/"), bytes))
+            .collect();
+        assert_eq!(
+            written,
+            [(
+                staged.trim_start_matches("attachments/").to_string(),
+                b"hello note".to_vec()
+            )],
+            "{mode:?}"
+        );
+    }
+}
+
 /// A JSON Lines export in `dir` whose two attachments name a size no disk
 /// holds and have no file: one at a path with nothing there, one with no
 /// path and `reason` as its `missing_reason`.

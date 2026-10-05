@@ -135,7 +135,10 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
     // no file there counts for nothing (#1743). What the clean will free
     // counts as free, and a run that will not fit leaves the earlier output
     // as it was. The input's attachments are staged from the sources
-    // counted here; a backup's are staged by its own step below.
+    // counted here; a backup's are staged by its own step below. Either
+    // way each attachment is on the disk once: a backup's staged files are
+    // staged again under the same names, and the convert pass replaces each
+    // one in place, so the check counts one copy (#1759).
     let mut from_input = None;
     if copy_attachments {
         let counted = match &sms_backup {
@@ -159,7 +162,11 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
 
     clean_previous_ir_output(&config.output)?;
 
-    if copy_attachments {
+    // A run that stages from the input writes every attachment from there,
+    // so it copies none of the input's `attachments/`: the copy would stay
+    // beside the staged files, under the input's names, on a disk the
+    // check counted for one copy (#1759).
+    if copy_attachments && from_input.is_none() {
         copy_attachments_dir(input_dir, &config.output)?;
     }
     let mut report = ExportReport::default();
