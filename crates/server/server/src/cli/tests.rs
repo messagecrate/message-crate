@@ -180,7 +180,7 @@ async fn import_records_the_conversation_then_dedupe_and_process_assets_run_on_i
 }
 
 #[tokio::test]
-async fn process_assets_fails_when_a_conversion_failed_and_names_the_count() {
+async fn process_assets_fails_when_a_preview_or_thumbnail_was_not_made_and_names_the_count() {
     use crate::process_assets::tests::{ACCOUNT, attach_stored_blob, seed_message};
     use media::testutil::PNG_1X1_RGB;
 

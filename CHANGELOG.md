@@ -1539,16 +1539,18 @@ released versions carry their date on the heading.
 
 #### The server
 
-- 2026-10-05 **`process-assets` and `reset-demo` name a Preview or Thumbnail
-  that could not be made as such.** When the Preview or Thumbnail of an
+- 2026-10-05 **`process-assets` and `reset-demo` no longer call a failed
+  Thumbnail a failed conversion.** When the Preview or Thumbnail of an
   original could not be made, `process-assets` ended with "1 conversion
   failed. That original stays without a Thumbnail or a browser preview",
-  also when only the Thumbnail failed. It now ends with "The Preview or
-  Thumbnail of 1 original could not be made". The `reset-demo` summary's
-  "Browser previews" section, with its "converted for web", "left as-is"
-  and "conversion failures" lines, is now "Previews and Thumbnails", with
+  also when only the Thumbnail failed, and `reset-demo` warned "1 demo
+  attachment failed conversion". They now say "The Preview or Thumbnail of
+  1 original could not be made". The `reset-demo` summary's "Browser
+  previews" section, with its "converted for web", "left as-is" and
+  "conversion failures" lines, is now "Previews and Thumbnails", with
   "Previews made", "Thumbnails made", "left as they were" and "not made".
-  It also gives the count of Thumbnails, which it left out.
+  It also gives the count of Thumbnails, which it left out. Stopping
+  `process-assets` says it stops the Preview or Thumbnail being made.
 - 2026-10-05 **The HTTP API reference describes every field.** 59 fields,
   among them the Import Run's mode and source, an upload's part size, and a
   Contact Group's or Message Tag's name, showed no description in the HTTP

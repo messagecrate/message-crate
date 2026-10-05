@@ -597,7 +597,7 @@ async fn run_reset_demo(args: ResetDemoArgs) -> Result<()> {
         stats.process_assets.thumbnails
     );
     println!(
-        "  left as they were:     {} (originals with nothing to make)",
+        "  left as they were:     {} (originals for which nothing was written)",
         stats.process_assets.skipped
     );
     println!(
@@ -676,7 +676,7 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
         async move {
             crate::server::stop_requested().await;
             eprintln!(
-                "stopping: the conversion that runs is stopped and its part-made file removed"
+                "stopping: the Preview or Thumbnail being made is stopped and its part-made file removed"
             );
             stop.store(true, Ordering::Relaxed);
             // The handlers stay installed, so without this a second Ctrl-C
@@ -708,7 +708,7 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
             crate::counts::words(
                 stats.errors,
                 "The Preview or Thumbnail of 1 original could not be made",
-                "The Previews or Thumbnails of {n} originals could not be made",
+                "The Preview or Thumbnail of {n} originals could not be made",
             )
         );
     }
