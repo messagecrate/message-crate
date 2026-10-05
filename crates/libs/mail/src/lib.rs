@@ -101,7 +101,7 @@ pub struct MailMessage {
     pub group_title: Option<String>,
     /// Roster → `X-ME-Participants` JSON.
     pub participants: Vec<Participant>,
-    /// Owner E.164 (or handle) used for From/To mapping.
+    /// Owner E.164 (or other identity) used for From/To mapping.
     pub owner_identity: String,
     /// Outgoing From display name; defaults to `"Me"` when absent.
     pub owner_display_name: Option<String>,
@@ -161,7 +161,7 @@ struct AttachmentMetaCell<'a> {
 
 /// Conversation directory stem (shared per-conversation filename stem).
 fn conversation_stem(msg: &MailMessage) -> String {
-    let participant_handles: Vec<String> = msg
+    let participant_identities: Vec<String> = msg
         .participants
         .iter()
         .map(|p| p.identity.clone())
@@ -170,7 +170,7 @@ fn conversation_stem(msg: &MailMessage) -> String {
         &msg.conversation_type,
         &msg.chat_identifier,
         msg.group_title.as_deref(),
-        &participant_handles,
+        &participant_identities,
         msg.filename_suffix.as_deref(),
     )
 }
@@ -331,7 +331,7 @@ fn envelope_sender(msg: &MailMessage) -> String {
             .sender_identity
             .as_deref()
             .and_then(message_ir::trimmed)
-            .or_else(|| peer_handle(msg).and_then(message_ir::trimmed))
+            .or_else(|| peer_identity(msg).and_then(message_ir::trimmed))
             .unwrap_or("unknown"),
         IrDirection::Outgoing => {
             let owner = msg.owner_identity.trim();
@@ -393,14 +393,10 @@ fn synthetic_address(identity: &str, display_name: Option<&str>) -> Address<'sta
 
 /// The address an identity is written as in `From`, `To` and the mbox
 /// `From_` line: `+15555550101@sms.local`, or
-/// `sam=example.com@identity.local` for an identity holding an `@`, which is
-/// written as `=`.
-///
-/// The local part is [`dot_atom`]'s, so an identity an address can hold is
-/// written as it is, and every other one is encoded so that no space or line
-/// break reaches the header. Written as it was, a line break in an identity
-/// ended the header, and the mail no longer read. Two identities never share
-/// an address, because a mail client groups mails by it. The identity
+/// `sam=example.com@identity.local` for an identity holding an `@`. The
+/// local part is [`address_local_part`]'s. Written as it was, a line break
+/// in an identity ended the header, and the mail no longer read. An absent
+/// identity is written as `unknown`, as the callers name one. The identity
 /// itself is kept in its `X-ME-*` header.
 fn synthetic_email(identity: &str) -> String {
     let identity = identity.trim();
@@ -412,7 +408,30 @@ fn synthetic_email(identity: &str) -> String {
     } else {
         SMS_ADDRESS_DOMAIN
     };
-    format!("{}@{domain}", dot_atom(&identity.replace('@', "=")))
+    format!("{}@{domain}", address_local_part(identity))
+}
+
+/// The local part of the address `text`, an identity or a chat identifier,
+/// is written as.
+///
+/// A text holding one `@` and no `=` has the `@` written as `=`, so
+/// `sam@example.com` reads `sam=example.com`. An address cannot hold a
+/// second `@`. Every other text keeps its `@`, which [`dot_atom`] then
+/// encodes. The result goes through [`dot_atom`], so text an address can
+/// hold is written as it is, and no space or line break is left in it.
+///
+/// Two texts never share a local part, because a mail client groups mails
+/// by address. A local part written as it is holds no `%`, and each `=` in
+/// it is the one `@` of a text with no `=`, or the text's own `=` when it
+/// holds no `@`. An encoded one decodes to its text, with any `=` in place
+/// of the one `@` only when the text held no `=`.
+fn address_local_part(text: &str) -> String {
+    let one_at_no_equals = text.matches('@').count() == 1 && !text.contains('=');
+    if one_at_no_equals {
+        dot_atom(&text.replace('@', "="))
+    } else {
+        dot_atom(text)
+    }
 }
 
 /// The owner's address: their identity (or `me`) with their display name
@@ -438,29 +457,16 @@ fn conversation_address(msg: &MailMessage) -> Address<'static> {
             let id = msg.chat_identifier.trim();
             if id.is_empty() { "group" } else { id }
         });
-    let local = sanitize_addr_local(msg.chat_identifier.trim()).unwrap_or_else(|| "group".into());
+    let id = msg.chat_identifier.trim();
+    let local = if id.is_empty() {
+        "group".to_string()
+    } else {
+        address_local_part(id)
+    };
     Address::new_address(
         Some(display.to_string()),
         format!("{local}@{CHAT_ADDRESS_DOMAIN}"),
     )
-}
-
-/// An address local part with the characters an email local part cannot hold replaced.
-fn sanitize_addr_local(raw: &str) -> Option<String> {
-    if raw.is_empty() {
-        return None;
-    }
-    let mut out = String::with_capacity(raw.len());
-    for ch in raw.chars() {
-        if ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '_' | '.' | '=') {
-            out.push(ch);
-        } else if ch == '@' {
-            out.push('=');
-        } else {
-            out.push('_');
-        }
-    }
-    if out.is_empty() { None } else { Some(out) }
 }
 
 /// The display name the participants list gives for `peer`.
@@ -568,7 +574,7 @@ fn part_content_type(mime: Option<&str>) -> &str {
 }
 
 /// The other party's handle in a 1:1 conversation; groups have none.
-fn peer_handle(msg: &MailMessage) -> Option<&str> {
+fn peer_identity(msg: &MailMessage) -> Option<&str> {
     if msg.conversation_type.eq_ignore_ascii_case("group") {
         return None;
     }
@@ -803,7 +809,7 @@ fn envelope_addresses(msg: &MailMessage) -> (Address<'static>, Address<'static>)
         };
         return (from, conversation_address(msg));
     }
-    let peer = peer_handle(msg)
+    let peer = peer_identity(msg)
         .and_then(message_ir::trimmed)
         .unwrap_or_else(|| {
             let id = msg.chat_identifier.trim();
@@ -1004,7 +1010,7 @@ fn conversation_subject_label(msg: &MailMessage) -> String {
         return "group".to_string();
     }
 
-    if let Some(peer) = peer_handle(msg).and_then(message_ir::trimmed) {
+    if let Some(peer) = peer_identity(msg).and_then(message_ir::trimmed) {
         if let Some(n) = peer_display_name(msg, peer) {
             return n.to_string();
         }

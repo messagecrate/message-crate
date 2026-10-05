@@ -282,7 +282,7 @@ fn subject_and_to(msg: &MailMessage) -> (String, String) {
 /// The sender of an outgoing message is the owner, so the sender's name is
 /// not the peer's. With no name in the roster the peer is known by handle.
 #[test]
-fn outgoing_to_a_peer_with_no_name_is_titled_with_the_peer_handle() {
+fn outgoing_to_a_peer_with_no_name_is_titled_with_the_peer_identity() {
     let mut msg = base_sms();
     msg.participants[0].display_name = None;
     msg.message.direction = IrDirection::Outgoing;
@@ -1035,6 +1035,15 @@ fn standard_header(msg: &MailMessage, name: &str) -> String {
     header.get_value()
 }
 
+/// The one address in header `name` of the mail `msg` is written as.
+fn header_address(msg: &MailMessage, name: &str) -> String {
+    let value = standard_header(msg, name);
+    let [mailparse::MailAddr::Single(addr)] = &mailparse::addrparse(&value).unwrap()[..] else {
+        panic!("{name} was {value:?}");
+    };
+    addr.addr.clone()
+}
+
 /// A guid holding a line break, written into `Message-ID` as it was, ended
 /// the mail's headers there: every `X-ME-*` header after it was read as the
 /// body (#1816). The guid and the reply guid now read back exactly, and the
@@ -1089,20 +1098,41 @@ fn identities_keep_their_own_addresses() {
         let mut msg = base_sms();
         msg.message.direction = IrDirection::Outgoing;
         msg.owner_identity = identity.into();
-        let from = standard_header(&msg, "From");
-        let [mailparse::MailAddr::Single(addr)] = &mailparse::addrparse(&from).unwrap()[..] else {
-            panic!("From was {from:?}");
-        };
-        addr.addr.clone()
+        header_address(&msg, "From")
     };
     assert_eq!(
         address("o'brien/x@example.com"),
         "o'brien/x=example.com@identity.local"
     );
     assert_eq!(address("+15555550101"), "+15555550101@sms.local");
-    let addresses: Vec<String> = ["a b", "a/b", "a_b", "a\r\nb", "a%20b", "josé", "jos_"]
+    let addresses: Vec<String> = [
+        "a b", "a/b", "a_b", "a\r\nb", "a%20b", "josé", "jos_", "a@b=c", "a=b@c", "a=b=c", "a@b@c",
+        "a@b c", "a=b c", "a b@c",
+    ]
+    .into_iter()
+    .map(address)
+    .collect();
+    let distinct: std::collections::BTreeSet<&String> = addresses.iter().collect();
+    assert_eq!(
+        distinct.len(),
+        addresses.len(),
+        "addresses were {addresses:?}"
+    );
+}
+
+/// Group chats whose identifiers differ only in characters an address
+/// cannot hold still have different addresses.
+#[test]
+fn group_chats_keep_their_own_addresses() {
+    let addresses: Vec<String> = ["chat a b", "chat a_b", "chat\r\na", "g@b=c", "g=b@c"]
         .into_iter()
-        .map(address)
+        .map(|id| {
+            let mut msg = base_sms();
+            msg.conversation_type = "group".into();
+            msg.group_title = Some("Same title".into());
+            msg.chat_identifier = id.into();
+            header_address(&msg, "To")
+        })
         .collect();
     let distinct: std::collections::BTreeSet<&String> = addresses.iter().collect();
     assert_eq!(
