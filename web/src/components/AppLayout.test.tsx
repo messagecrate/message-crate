@@ -376,4 +376,14 @@ describe("AppLayout on a Contact Group or Message Tag page", () => {
       "/messages/6?q=ada&view=messages&at=77",
     );
   });
+
+  it("drops the versions a result was found by as soon as the header box holds another search", async () => {
+    const user = setupUser();
+    renderLayout("/messages/6?q=imprudent&view=messages&at=77&matched=0");
+
+    await user.click(screen.getByRole("button", { name: "Type ada" }));
+    expect(screen.getByTestId("location").textContent).toBe(
+      "/messages/6?q=ada&view=messages&at=77",
+    );
+  });
 });
