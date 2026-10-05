@@ -12,7 +12,7 @@ use crate::types::ParsedMessage;
 use anyhow::{Result, bail};
 use message_crate_core::{
     CancelFlag, Counter, ExportReport, ExportTransforms, IssueSink, LogSink, OutputFormat,
-    RunIssue, emit_issue, emit_log, prepare_outputs, project_conversation,
+    RunIssue, count_of, emit_issue, emit_log, prepare_outputs, project_conversation,
 };
 use message_ir::{
     ConversationDocument, ExportMeta, IrConversationType, IrDirection, IrParticipant, IrService,
@@ -401,7 +401,13 @@ impl Verbose<'_> {
         if !self.enabled || report.errors.is_empty() {
             return;
         }
-        emit_log(self.log, format!("errors: {}", report.errors.len()));
+        emit_log(
+            self.log,
+            format!(
+                "{}:",
+                count_of(report.errors.len() as u64, "error", "errors")
+            ),
+        );
         for err in report.errors.iter().take(20) {
             emit_log(self.log, format!("  {err}"));
         }
@@ -434,7 +440,7 @@ pub(crate) struct ConvertExportArgs<'a, P: AsRef<Path>> {
     pub resume: bool,
 }
 
-/// Convert SMS Backup+ EML tree(s) into the shared conversation structure, then
+/// Convert SMS Backup+ EML trees into the shared conversation structure, then
 /// write the chosen output format.
 ///
 /// Copies of one message, such as two exports of one mailbox, are reduced to
@@ -476,9 +482,16 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
     let owner_identity = owner
         .primary_handle()
         .expect("from_phones guarantees a phone owner handle");
-    verbose.line(format!("owner phones: {}", owner_phones.len()));
-    verbose.line(format!("owner emails: {}", owner.email_count()));
-    verbose.line(format!("output: {}", output_dir.display()));
+    verbose.line(format!(
+        "Owner: {} and {}",
+        count_of(owner_phones.len() as u64, "phone number", "phone numbers"),
+        count_of(
+            owner.email_count() as u64,
+            "email address",
+            "email addresses"
+        ),
+    ));
+    verbose.line(format!("Output directory: {}", output_dir.display()));
 
     let input_paths: Vec<PathBuf> = inputs.iter().map(|p| p.as_ref().to_path_buf()).collect();
     let (inputs, output_dir) = prepare_outputs(&input_paths, output_dir)?;
@@ -487,8 +500,8 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
 
     let eml_paths = collect_eml_paths(&inputs, cancel)?;
     verbose.line(format!(
-        "scanning {} .eml files (parallel parse)",
-        eml_paths.len()
+        "Reading {}",
+        count_of(eml_paths.len() as u64, ".eml file", ".eml files")
     ));
     message_crate_core::check_cancel(cancel)?;
 
@@ -500,7 +513,6 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
     let mut ingest = EmlIngest::new(writer.spool(), eml_paths.len(), issues);
     parse_all_emls(&eml_paths, &parse, cancel, verbose, &mut ingest)?;
     ingest.add_members_by_number(verbose);
-    verbose.line(ingest.parse_summary());
     let EmlIngest {
         conversations,
         mut report,
@@ -527,9 +539,12 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
 
     if !writer.use_queue() {
         verbose.line(format!(
-            "writing {} conversation files (duplicates dropped so far: {})",
-            documents.len(),
-            report.duplicates_dropped
+            "Writing {}",
+            count_of(
+                documents.len() as u64,
+                "conversation file",
+                "conversation files"
+            )
         ));
     }
     writer.finish(
@@ -539,15 +554,6 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
         &mut report,
     )?;
 
-    verbose.line(format!(
-        "done: conversations={} messages={} duplicates_dropped={} attachments={} group_without_sender={} group_owner_not_named={}",
-        report.conversations,
-        report.messages,
-        report.duplicates_dropped,
-        report.attachments_saved,
-        report.extra(GROUP_MESSAGES_WITHOUT_SENDER),
-        report.extra(GROUP_MESSAGES_OWNER_NOT_NAMED),
-    ));
     verbose.errors(&report);
     Ok(report)
 }
@@ -753,19 +759,6 @@ impl<'a> EmlIngest<'a> {
             self.caveats.owner_not_named.insert(msg.eml_path.clone());
         }
         add_message(&mut self.conversations, msg, atts, &mut self.report);
-    }
-
-    /// One line of parse counters for the verbose log.
-    fn parse_summary(&self) -> String {
-        format!(
-            "parsed: flat_eml={} messages={} unknown_chat={} skipped_call_log={} skipped_not_sms_backup_plus={} skipped_parse_error={}",
-            self.report.extra(FLAT_EML),
-            self.report.extra(MESSAGES_BEFORE_DEDUPE),
-            self.caveats.unknown_chat.len(),
-            self.report.extra(SKIPPED_CALL_LOG),
-            self.report.extra(SKIPPED_NOT_SMS_BACKUP_PLUS),
-            self.report.extra(SKIPPED_PARSE_ERROR),
-        )
     }
 }
 

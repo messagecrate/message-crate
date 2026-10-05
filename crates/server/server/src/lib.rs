@@ -16,6 +16,7 @@ pub(crate) mod assets_api;
 pub(crate) mod audit_trail_api;
 pub(crate) mod contacts_api;
 pub(crate) mod conversations_api;
+pub(crate) mod counts;
 pub(crate) mod credentials;
 pub(crate) mod db;
 pub(crate) mod declared_query;

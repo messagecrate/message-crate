@@ -48,9 +48,10 @@ import {
  * The server answers `401 Unauthorized` both for a token it no longer accepts
  * (`authentication-required`) and for a mistyped current password
  * (`invalid-credentials`). Only the first ends the session: a wrong password
- * typed into Settings must not log the person out.
+ * typed into Settings must not log the person out. The Import Run's own
+ * server calls, made outside TanStack Query, ask it too (`useImportJob.ts`).
  */
-function endsSession(error: unknown): boolean {
+export function endsSession(error: unknown): boolean {
   return error instanceof ApiError && error.status === 401 && error.type !== "invalid-credentials";
 }
 

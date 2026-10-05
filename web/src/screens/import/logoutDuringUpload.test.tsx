@@ -5,10 +5,14 @@
 // request refused and every remaining conversation recorded as failed. Logout
 // asks first, then pauses the Upload, waits for the Upload to halt and the pause
 // to be recorded, and only then revokes the session.
+//
+// The other way round, a session the server refuses to any call the Import
+// Run makes ends the session here too, and the run stays where the server has
+// it for the next login (#1491 for the push, #1677 for the run's own calls).
 
 import { act, renderHook, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getToken } from "../../lib/api";
+import { ApiError, getToken } from "../../lib/api";
 import type { TauriJobResult, UploadFinishedReport } from "../../lib/tauri";
 import { setupUser } from "../../test/user";
 
@@ -18,6 +22,7 @@ const calls: string[] = [];
 const serverLogoutMock = vi.fn();
 const completeImportMock = vi.fn();
 const setImportStageMock = vi.fn();
+const discardImportRunMock = vi.fn();
 const saveRunRecordMock = vi.fn();
 const cancelMock = vi.fn();
 const deleteRunDirMock = vi.fn();
@@ -62,6 +67,7 @@ vi.mock("../../lib/serverApi", async (importOriginal) => ({
 vi.mock("../../lib/importRun", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/importRun")>()),
   setImportStage: (...args: unknown[]) => setImportStageMock(...args),
+  discardImportRun: (...args: unknown[]) => discardImportRunMock(...args),
 }));
 
 vi.mock("../../lib/useAccountProfile", () => ({
@@ -181,6 +187,8 @@ describe("logging out during an Upload", () => {
     completeImportMock.mockResolvedValue({});
     setImportStageMock.mockReset();
     setImportStageMock.mockResolvedValue(undefined);
+    discardImportRunMock.mockReset();
+    discardImportRunMock.mockResolvedValue(undefined);
     saveRunRecordMock.mockReset();
     cancelMock.mockReset();
     deleteRunDirMock.mockReset();
@@ -429,5 +437,127 @@ describe("logging out during an Upload", () => {
     expect(screen.queryByText(/An Upload is running/)).toBeNull();
     expect(calls).toEqual(["upload started", "cancel", "pause recorded", "session revoked"]);
     expect(completeImportMock).not.toHaveBeenCalled();
+  });
+});
+
+/** What the server answers a call whose session token it no longer accepts. */
+function sessionRefusal(): ApiError {
+  return new ApiError(401, "Authentication required.", {
+    type: "https://messagecrate.app/problems/authentication-required",
+    title: "Authentication required.",
+    status: 401,
+  });
+}
+
+/** Log in, and resume the paused Upload of run 42 without waiting for it. */
+async function resumeUpload(): Promise<{ current: Screen }> {
+  const result = await logIn();
+  act(() => {
+    void result.current.job.startImport(form, {
+      runId: 42,
+      runDir: "/home/sam/staging-iphone",
+    });
+  });
+  return result;
+}
+
+describe("a session the server refuses to the Import Run's own calls (#1677)", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    resetImportRun();
+    calls.length = 0;
+    finishUpload = null;
+    completeImportMock.mockReset();
+    completeImportMock.mockResolvedValue({});
+    setImportStageMock.mockReset();
+    setImportStageMock.mockResolvedValue(undefined);
+    discardImportRunMock.mockReset();
+    discardImportRunMock.mockResolvedValue(undefined);
+    saveRunRecordMock.mockReset();
+    cancelMock.mockReset();
+    deleteRunDirMock.mockReset();
+  });
+
+  afterEach(async () => {
+    finishUpload?.({ summary: "Upload", report: pausedReport() });
+    await waitFor(() => expect(isUploadRunning()).toBe(false));
+  });
+
+  it("ends the session when the Upload's stage change is refused, and keeps the run for the next login", async () => {
+    setImportStageMock.mockRejectedValue(sessionRefusal());
+    const result = await resumeUpload();
+
+    await waitFor(() => expect(result.current.auth.isAuthenticated).toBe(false));
+    expect(getToken()).toBeNull();
+    await waitFor(() => expect(result.current.job.running).toBe(false));
+    // The push never starts, and the run is neither completed nor deleted.
+    expect(calls).not.toContain("upload started");
+    expect(completeImportMock).not.toHaveBeenCalled();
+    expect(deleteRunDirMock).not.toHaveBeenCalled();
+
+    // The next login finds the form, whose resume check offers the run
+    // where the server holds it, and no Import Error for the refusal.
+    await act(() => result.current.auth.login("http://127.0.0.1:8080", "next-session-token", 7));
+    expect(result.current.job.phase).toBe("form");
+    expect(result.current.job.summaryView).toBeNull();
+  });
+
+  it("ends the session when the run's completion is refused, and records no Import Error for it", async () => {
+    completeImportMock.mockRejectedValue(sessionRefusal());
+    const result = await resumeUpload();
+    await waitFor(() => expect(calls).toContain("upload started"));
+
+    act(() => {
+      finishUpload?.({
+        summary: "Upload",
+        report: {
+          ...pausedReport(),
+          ok: true,
+          cancelled: false,
+          conversations_ok: 681,
+          conversations_cancelled: 0,
+        },
+      });
+    });
+
+    await waitFor(() => expect(result.current.auth.isAuthenticated).toBe(false));
+    await waitFor(() => expect(isUploadRunning()).toBe(false));
+    expect(deleteRunDirMock).not.toHaveBeenCalled();
+    await act(() => result.current.auth.login("http://127.0.0.1:8080", "next-session-token", 7));
+    // The server still holds the run at its Upload, which resumes, finds
+    // every message sent, and completes it.
+    expect(result.current.job.summaryView?.status).toBe("paused");
+    expect(result.current.job.summaryView?.issues).toEqual([]);
+  });
+
+  it("ends the session when a Discard is refused, and keeps the run's directory", async () => {
+    discardImportRunMock.mockRejectedValue(sessionRefusal());
+    const result = await logIn();
+
+    await act(() => result.current.job.discardRun(42, "/home/sam/staging-iphone"));
+
+    await waitFor(() => expect(result.current.auth.isAuthenticated).toBe(false));
+    // The run is still open on the server, so its directory stays for the
+    // next login to offer it again.
+    expect(deleteRunDirMock).not.toHaveBeenCalled();
+  });
+
+  it("leaves a later login alone when a refusal arrives after it", async () => {
+    let refuse: (error: unknown) => void = () => {};
+    setImportStageMock.mockImplementation(
+      () =>
+        new Promise((_resolve, reject) => {
+          refuse = reject;
+        }),
+    );
+    const result = await resumeUpload();
+    await waitFor(() => expect(setImportStageMock).toHaveBeenCalled());
+    await act(() => result.current.auth.login("http://127.0.0.1:8080", "next-session-token", 7));
+
+    act(() => refuse(sessionRefusal()));
+    await waitFor(() => expect(result.current.job.running).toBe(false));
+
+    expect(result.current.auth.isAuthenticated).toBe(true);
+    expect(getToken()).toBe("next-session-token");
   });
 });
