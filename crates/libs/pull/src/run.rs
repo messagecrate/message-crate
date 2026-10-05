@@ -522,8 +522,9 @@ impl<'a> Pull<'a> {
         let cfg = self.cfg;
         let to_fetch = assets_to_fetch(assets, &cfg.out_dir);
         let kept = assets.len() as u64 - to_fetch.len() as u64;
-        let mut stats = AssetFetchStats::default();
-        if !to_fetch.is_empty() {
+        let fetched = if to_fetch.is_empty() {
+            0
+        } else {
             emit(
                 out,
                 ProgressEvent::Log(format!(
@@ -533,7 +534,7 @@ impl<'a> Pull<'a> {
                     kept
                 )),
             );
-            stats = fetch_assets_parallel(FetchAssetsParallelArgs {
+            let stats = fetch_assets_parallel(FetchAssetsParallelArgs {
                 session: &self.session,
                 base_url: &cfg.base_url,
                 token: &cfg.token,
@@ -542,10 +543,16 @@ impl<'a> Pull<'a> {
                 workers: cfg.asset_fetch_workers,
                 cancel: cfg.cancel.as_ref(),
             })?;
-        }
-        let counts = AssetCounts {
-            fetched: stats.fetched,
-            kept,
+            emit(
+                out,
+                ProgressEvent::Log(format!(
+                    "Fetched {} ({}) and kept {} already on disk",
+                    count_of(stats.fetched, "Asset", "Assets"),
+                    media::format_bytes(stats.bytes),
+                    kept
+                )),
+            );
+            stats.fetched
         };
         for sha in assets.keys() {
             if !self.journal.assets.contains(sha) {
@@ -566,18 +573,7 @@ impl<'a> Pull<'a> {
                 }
             }
         }
-        if !to_fetch.is_empty() {
-            emit(
-                out,
-                ProgressEvent::Log(format!(
-                    "Fetched {} ({}) and kept {} already on disk",
-                    count_of(counts.fetched, "Asset", "Assets"),
-                    media::format_bytes(stats.bytes),
-                    counts.kept
-                )),
-            );
-        }
-        Ok(counts)
+        Ok(AssetCounts { fetched, kept })
     }
 
     /// Write one JSON Lines file per conversation and return how many.
