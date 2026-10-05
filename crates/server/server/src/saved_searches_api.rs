@@ -95,6 +95,29 @@ pub(crate) async fn create_saved_search(
     })
 }
 
+/// One saved search, as the list shows it.
+#[utoipa::path(
+    get,
+    path = "/v1/saved-searches/{id}",
+    tag = "Saved searches",
+    security(("session" = [])),
+    params(("id" = i64, Path, description = "Saved search id")),
+    responses(
+        (status = 200, body = SavedSearch),
+    )
+)]
+pub(crate) async fn get_saved_search(
+    State(state): State<AppState>,
+    FullAccess(auth): FullAccess,
+    Path(id): Path<i64>,
+) -> Result<Json<SavedSearch>, ApiError> {
+    let mut conn = state.db.acquire().await?;
+    let row = saved_searches::get(&mut conn, auth.account_id, id)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("saved search not found".into()))?;
+    Ok(Json(row))
+}
+
 /// Replace a saved search's name and query, and return it.
 #[utoipa::path(
     patch,
@@ -149,8 +172,10 @@ pub(crate) async fn delete_saved_search(
 mod tests {
     use axum::http::StatusCode;
 
+    use crate::problem::ProblemType;
     use crate::test_support::{
-        delete_status, fixture_with_account, get_json, patch_json, post_created_json,
+        delete_status, expect_problem, fixture_with_account, get_json, get_raw, get_status,
+        patch_json, post_created_json, register_via_api,
     };
 
     #[tokio::test]
@@ -225,5 +250,44 @@ mod tests {
             get_json(&state, "/v1/saved-searches?offset=99", &user.token).await;
         assert_eq!(past_the_end["items"].as_array().unwrap().len(), 0);
         assert_eq!(past_the_end["total"], serde_json::json!(3));
+    }
+
+    #[tokio::test]
+    async fn a_saved_search_is_read_at_its_location_as_its_list_shows_it() {
+        let (fixture, user) = fixture_with_account().await;
+        let state = fixture.state.clone();
+        let (location, created): (String, serde_json::Value) = post_created_json(
+            &state,
+            "/v1/saved-searches",
+            &user.token,
+            serde_json::json!({ "name": " Family ", "query": " group:Family " }),
+        )
+        .await;
+
+        let read: serde_json::Value = get_json(&state, &location, &user.token).await;
+        let list: serde_json::Value = get_json(&state, "/v1/saved-searches", &user.token).await;
+        assert_eq!(read, list["items"][0], "GET {location}");
+        assert_eq!(read, created, "GET {location}");
+    }
+
+    #[tokio::test]
+    async fn another_accounts_saved_search_answers_404_to_get() {
+        let (fixture, user) = fixture_with_account().await;
+        let state = fixture.state.clone();
+        let bob = register_via_api(&state, "bob", "hunter2hunter2").await;
+        let (location, _): (String, serde_json::Value) = post_created_json(
+            &state,
+            "/v1/saved-searches",
+            &bob.token,
+            serde_json::json!({ "name": "Family", "query": "group:Family" }),
+        )
+        .await;
+
+        let (status, text) = get_raw(&state, &location, &user.token).await;
+        expect_problem(status, &text, ProblemType::NotFound);
+        assert_eq!(
+            get_status(&state, &location, &bob.token).await,
+            StatusCode::OK
+        );
     }
 }
