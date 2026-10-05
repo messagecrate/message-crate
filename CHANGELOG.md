@@ -248,21 +248,6 @@ released versions carry their date on the heading.
 
 ### Design
 
-- 2026-10-05 **An Export's "Fetching" line counts every Asset already in
-  the Export's directory as already on disk.** A program that ran an Export
-  into a directory holding Assets the pull-state file did not list could read
-  "Fetching 2 Assets with 1 worker (0 already on disk)…" and then "Fetched 1
-  Asset (13 B) and kept 1 already on disk". It now reads "Fetching 1 Asset
-  with 1 worker (1 already on disk)…", and an Export that finds every Asset
-  already on disk logs neither line, whether or not the pull-state file lists
-  them. The app gives every Export a new directory, so nothing changes on
-  screen.
-- 2026-10-05 **The size in an Export's "Fetched" line counts only what the
-  Export fetched.** A program that ran an Export into a directory already
-  holding some of its Assets could read "Fetched 1 Asset (5.0 MB) and kept
-  3 already on disk" when the one Asset it fetched was 1.2 MB. It now reads
-  "Fetched 1 Asset (1.2 MB) and kept 3 already on disk". The app gives every
-  Export a new directory, so nothing changes on screen.
 - 2026-10-04 **A program that reads Import Runs from the server finds each
   run's directory under a new name.** The old name read as the Staging
   Directory, which holds every run's directory. Nothing changes on screen.
@@ -958,6 +943,21 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-05 **An Export's "Fetching" line counts every Asset already in
+  the Export's directory as already on disk.** A program that ran an Export
+  again into a directory where an earlier Export had stopped early could read
+  "Fetching 2 Assets with 1 worker (0 already on disk)…" and then "Fetched 1
+  Asset (13 B) and kept 1 already on disk". It now reads "Fetching 1 Asset
+  with 1 worker (1 already on disk)…", and an Export that finds every Asset
+  already on disk logs neither line. The app gives every Export a new
+  directory, so nothing changes on screen.
+- 2026-10-05 **The size in an Export's "Fetched" line counts only what the
+  Export fetched.** A program that ran an Export again into a directory
+  where an earlier Export had stopped early could read "Fetched 1 Asset
+  (5.0 MB) and kept 3 already on disk" when the one Asset it fetched was
+  1.2 MB. It now reads "Fetched 1 Asset (1.2 MB) and kept 3 already on
+  disk". The app gives every Export a new directory, so nothing changes on
+  screen.
 - 2026-10-05 **The log of an Export from a server says it fetches Assets,
   and writes its warnings as sentences.** It read "Downloading 2 assets with
   8 workers (0 already downloaded)…" and "Downloaded 2 assets (22 B) and
