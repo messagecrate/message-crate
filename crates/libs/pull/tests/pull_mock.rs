@@ -583,10 +583,56 @@ fn a_file_the_journal_lists_but_the_disk_lost_is_fetched_again() {
 
 /// A run that stopped after writing its Assets but before recording them in
 /// the pull-state file leaves files the next run keeps without fetching. The
-/// "Fetched" line counts only the bytes this run fetched, so it reads "0 B"
-/// rather than the size of the files it kept.
+/// "Fetching" line counts each of them as already on disk, as the fetch does,
+/// so it agrees with the "Fetched" line after it, and the "Fetched" line
+/// counts only the bytes this run fetched.
 #[test]
-fn a_file_on_disk_the_journal_does_not_list_is_kept_and_adds_no_fetched_bytes() {
+fn a_file_on_disk_the_journal_does_not_list_is_kept_and_counted_as_on_disk() {
+    let server = MockServer::start();
+    let _auth = mock_auth(&server);
+    let _run = mock_run(&server);
+    let _pages = mock_pages(&server, "sms-backup-restore");
+    let menu = mock_asset(&server, MENU_SHA, MENU_BYTES);
+    let photo = mock_asset(&server, PHOTO_SHA, PHOTO_BYTES);
+    let dir = tempdir().unwrap();
+    let out = dir.path().join("pulled");
+    let cfg = config(&out, server.base_url());
+    run(&cfg, None).unwrap();
+    fs::remove_file(journal::journal_path(&out)).unwrap();
+    fs::remove_file(out.join("attachments/menu.pdf")).unwrap();
+
+    let mut lines = Vec::new();
+    let report = {
+        let mut progress = |event| {
+            if let ProgressEvent::Log(line) = event {
+                lines.push(line);
+            }
+        };
+        run(&cfg, Some(&mut progress)).unwrap()
+    };
+
+    assert_eq!(report, report_for(&out, 1, 1));
+    assert_eq!(menu.calls(), 2);
+    assert_eq!(photo.calls(), 1);
+    let asset_lines: Vec<&str> = lines
+        .iter()
+        .map(String::as_str)
+        .filter(|line| line.starts_with("Fetching ") || line.starts_with("Fetched "))
+        .collect();
+    assert_eq!(
+        asset_lines,
+        [
+            "Fetching 1 Asset with 1 worker (1 already on disk)…",
+            "Fetched 1 Asset (13 B) and kept 1 already on disk",
+        ]
+    );
+}
+
+/// With every Asset already on disk, a run logs no "Fetching" or "Fetched"
+/// line whether or not the pull-state file lists the Assets, because what is
+/// on disk, not the pull-state file, decides what is fetched.
+#[test]
+fn every_file_on_disk_logs_no_fetch_lines_whether_or_not_the_journal_lists_it() {
     let server = MockServer::start();
     let _auth = mock_auth(&server);
     let _run = mock_run(&server);
@@ -613,9 +659,13 @@ fn a_file_on_disk_the_journal_does_not_list_is_kept_and_adds_no_fetched_bytes() 
     assert_eq!(menu.calls(), 1);
     assert_eq!(photo.calls(), 1);
     assert!(
-        lines.contains(&"Fetched 0 Assets (0 B) and kept 2 already on disk".to_string()),
+        !lines
+            .iter()
+            .any(|line| line.starts_with("Fetching ") || line.starts_with("Fetched ")),
         "{lines:#?}"
     );
+    let state = journal::load(&journal::journal_path(&out), &server.base_url(), "alice").unwrap();
+    assert!(state.assets.contains(MENU_SHA) && state.assets.contains(PHOTO_SHA));
 }
 
 #[test]
