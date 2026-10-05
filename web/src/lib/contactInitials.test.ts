@@ -27,7 +27,7 @@ describe("contactAvatarClass", () => {
     });
     const b = contactAvatarClass({
       preferredName: "Ada",
-      preferredHandle: "+1 (555) 1212",
+      preferredHandle: "+1 (555) 0112",
     });
     expect(a).toBe(b);
   });

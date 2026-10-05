@@ -41,6 +41,8 @@ vi.mock("../lib/serverApi", () => ({
   updateContact: (...args: unknown[]) => post(...args),
   trashContact: (...args: unknown[]) => trash(...args),
 }));
+// The address is 555-01 and two digits of `id`, so `id` stays under 100 to
+// keep it in the fiction range 555-0100 to 555-0199.
 function detail(id: number, overrides: Partial<ContactDetail> = {}): ContactDetail {
   return {
     id,
