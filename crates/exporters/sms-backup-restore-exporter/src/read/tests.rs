@@ -514,8 +514,8 @@ fn the_byte_total_stays_the_same_when_the_spool_holds_no_file() {
 }
 
 /// A message kept with a part or character references left out is named by
-/// its file, its time and its address, so the run can say which one it is
-/// (#1707). A repeated copy is named once, and a message the read skips is
+/// its file, its time and the identities in its conversation, so the run can
+/// say which one it is (#1707). A repeated copy is named once, and a message the read skips is
 /// not named at all.
 #[test]
 fn a_message_kept_with_something_left_out_is_named() {
@@ -549,6 +549,6 @@ fn a_message_kept_with_something_left_out_is_named() {
             },
         ]
     );
-    assert_eq!(report.skipped_unreadable_part, 1);
-    assert_eq!(report.dropped_character_references, 2);
+    assert_eq!(report.skipped_unreadable_part(), 1);
+    assert_eq!(report.dropped_character_references(), 2);
 }

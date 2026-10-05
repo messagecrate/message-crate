@@ -60,7 +60,7 @@ fn to_core_report(report: ReadReport, issues: Option<&IssueSink>) -> ExportRepor
         }
         if left_out.dropped_character_references > 0 {
             out.caveat(
-                "dropped_character_references",
+                DROPPED_CHARACTER_REFERENCES,
                 left_out.dropped_character_references,
                 item,
                 dropped_references_note(left_out.dropped_character_references),
@@ -69,6 +69,11 @@ fn to_core_report(report: ReadReport, issues: Option<&IssueSink>) -> ExportRepor
     }
     out
 }
+
+/// The report counter for character references left out of kept messages
+/// because they are not a character, each message sent as a
+/// [`dropped_references_note`].
+const DROPPED_CHARACTER_REFERENCES: &str = "dropped_character_references";
 
 /// The note for a message kept with `n` character references left out
 /// because they are not a character.

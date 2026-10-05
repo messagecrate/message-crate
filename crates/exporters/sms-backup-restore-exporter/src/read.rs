@@ -22,6 +22,7 @@ use sbr::{
 };
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 const EXPORT_SOURCE: &str = "sms-backup-restore";
 const EXPORT_TOOL: &str = "SMS Backup & Restore";
@@ -50,11 +51,6 @@ pub struct ReadReport {
     pub skipped_draft_or_outbox: u64,
     /// MMS dropped with no participants.
     pub skipped_empty_participants: u64,
-    /// Parts left out of kept messages because their `data` is not base64.
-    pub skipped_unreadable_part: u64,
-    /// Character references left out of kept messages because they are not
-    /// a character.
-    pub dropped_character_references: u64,
     /// Repeated copies of a message dropped, one copy of each kept.
     pub duplicates_dropped: u64,
     /// What could not be read, each with the file it was in.
@@ -70,7 +66,7 @@ pub struct ReadReport {
 pub struct LeftOut {
     /// The file, as a path.
     pub file: String,
-    /// The message, by its time and its address, such as
+    /// The message, by its time and the identities in its conversation, such as
     /// `message of 2014-05-22T15:41:01Z with +15555550101`.
     pub message: String,
     /// Parts left out because their `data` is not base64.
@@ -104,6 +100,20 @@ impl std::fmt::Display for ReadError {
 }
 
 impl ReadReport {
+    /// Parts left out of kept messages because their `data` is not base64.
+    pub fn skipped_unreadable_part(&self) -> u64 {
+        self.left_out.iter().map(|m| m.unreadable_parts).sum()
+    }
+
+    /// Character references left out of kept messages because they are not
+    /// a character.
+    pub fn dropped_character_references(&self) -> u64 {
+        self.left_out
+            .iter()
+            .map(|m| m.dropped_character_references)
+            .sum()
+    }
+
     /// One log line for each kind of message the read dropped or skipped,
     /// leaving out the kinds it found none of, then one line for every
     /// error, so a person can tell what did not come across.
@@ -146,13 +156,13 @@ impl ReadReport {
                 "MMS with no participants",
             ),
             (
-                self.skipped_unreadable_part,
+                self.skipped_unreadable_part(),
                 "Skipped",
                 "message part that could not be read",
                 "message parts that could not be read",
             ),
             (
-                self.dropped_character_references,
+                self.dropped_character_references(),
                 "Dropped",
                 "character reference that is not a character",
                 "character references that are not characters",
@@ -224,10 +234,12 @@ struct PendingMessage {
     contact_name: String,
     android_type: String,
     source_fields: serde_json::Map<String, serde_json::Value>,
-    /// What the read left out of the message, if anything. Its `message`
-    /// is filled in once the conversation is complete, because a repeated
-    /// copy dropped later can change the message's time.
-    left_out: Option<LeftOut>,
+    /// The file the message was read from, shared by every message in it.
+    file: Arc<str>,
+    /// Parts left out because their `data` is not base64.
+    unreadable_parts: u64,
+    /// Character references left out because they are not a character.
+    dropped_character_references: u64,
 }
 
 #[derive(Debug, Default)]
@@ -368,7 +380,7 @@ fn chat_id(record: &Record) -> String {
 /// conversation on first sight.
 fn add_record(
     conversations: &mut BTreeMap<String, PendingConversation>,
-    file: &Path,
+    file: &Arc<str>,
     record: Record,
     attachments: Vec<PendingAttachment>,
 ) -> Result<()> {
@@ -404,14 +416,9 @@ fn add_record(
         contact_name: record.contact_name,
         android_type: record.android_type,
         source_fields,
-        left_out: (record.unreadable_parts > 0 || record.dropped_character_references > 0).then(
-            || LeftOut {
-                file: file.display().to_string(),
-                message: String::new(),
-                unreadable_parts: record.unreadable_parts,
-                dropped_character_references: record.dropped_character_references,
-            },
-        ),
+        file: Arc::clone(file),
+        unreadable_parts: record.unreadable_parts,
+        dropped_character_references: record.dropped_character_references,
     });
     Ok(())
 }
@@ -522,12 +529,14 @@ fn to_document(
             } else {
                 report.received += 1;
             }
-            if let Some(left_out) = &message.left_out {
-                report.skipped_unreadable_part += left_out.unreadable_parts;
-                report.dropped_character_references += left_out.dropped_character_references;
+            // Named only now that dedupe has run, because a repeated copy
+            // dropped there can change which time the message keeps.
+            if message.unreadable_parts > 0 || message.dropped_character_references > 0 {
                 report.left_out.push(LeftOut {
+                    file: message.file.to_string(),
                     message: describe(message, conversation),
-                    ..left_out.clone()
+                    unreadable_parts: message.unreadable_parts,
+                    dropped_character_references: message.dropped_character_references,
                 });
             }
             ir_message(id, message, &owner)
@@ -554,7 +563,7 @@ fn to_document(
 }
 
 /// A message as a person can find it in its file: `message of <UTC time>
-/// with <every address in the conversation>`.
+/// with <every identity in the conversation>`.
 fn describe(message: &PendingMessage, conversation: &PendingConversation) -> String {
     let (ms, _) = message.time();
     let time =
@@ -701,6 +710,7 @@ pub fn read_backup(
     let mut conversations = BTreeMap::new();
     for path in paths {
         check_cancel(options.cancel)?;
+        let file: Arc<str> = path.display().to_string().into();
         // Each record's attachment payloads go to the spool as the record is
         // parsed; staging waits until every conversation is built. Messages
         // that parse before an XML error are kept; stats are merged even
@@ -719,7 +729,7 @@ pub fn read_backup(
                     return Err(stop);
                 }
             };
-            match add_record(&mut conversations, &path, record, attachments) {
+            match add_record(&mut conversations, &file, record, attachments) {
                 Ok(()) => Ok(()),
                 Err(error) => {
                     // Keep parsing the rest of the file; one bad record
