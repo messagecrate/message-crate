@@ -198,10 +198,13 @@ pub fn run(cfg: &PullConfig, mut on_progress: Option<&mut ProgressFn<'_>>) -> Re
         CloseAction::Cancel
     };
     if let Err(error) = pull.close_export(export.id, action) {
-        emit(
-            &mut on_progress,
-            ProgressEvent::Log(format!("warning: {error:#}")),
-        );
+        // A refused completion follows a run whose files are all written; a
+        // refused cancellation follows the failure the run returns below.
+        let line = match action {
+            CloseAction::Complete => format!("{error:#}. The Export wrote every file all the same"),
+            CloseAction::Cancel => format!("{error:#}"),
+        };
+        emit(&mut on_progress, ProgressEvent::Log(line));
     }
     let Written {
         conversations,
@@ -411,6 +414,7 @@ impl<'a> Pull<'a> {
         let conversations = self.write_conversations(fetched.by_conv)?;
         self.finish_journal(
             out,
+            export.id,
             conversations,
             fetched.total_messages,
             &assets,
@@ -520,8 +524,8 @@ impl<'a> Pull<'a> {
         emit(
             out,
             ProgressEvent::Log(format!(
-                "Downloading {} with {} ({} already downloaded)…",
-                count_of(to_download.len() as u64, "asset", "assets"),
+                "Fetching {} with {} ({} already on disk)…",
+                count_of(to_download.len() as u64, "Asset", "Assets"),
                 count_of(cfg.asset_download_workers as u64, "worker", "workers"),
                 skipped_by_journal
             )),
@@ -550,7 +554,8 @@ impl<'a> Pull<'a> {
                     emit(
                         out,
                         ProgressEvent::Log(format!(
-                            "warning: could not record {sha} in the journal: {error:#}"
+                            "The journal could not record Asset {sha}, so the next \
+                             Export into this directory fetches it again: {error:#}"
                         )),
                     );
                 }
@@ -559,8 +564,8 @@ impl<'a> Pull<'a> {
         emit(
             out,
             ProgressEvent::Log(format!(
-                "Downloaded {} ({}) and kept {} already downloaded",
-                count_of(counts.downloaded, "asset", "assets"),
+                "Fetched {} ({}) and kept {} already on disk",
+                count_of(counts.downloaded, "Asset", "Assets"),
                 media::format_bytes(stats.bytes),
                 counts.skipped
             )),
@@ -612,6 +617,7 @@ impl<'a> Pull<'a> {
     fn finish_journal(
         &self,
         out: &mut Option<&mut ProgressFn<'_>>,
+        export_id: i64,
         conversations: u64,
         messages: u64,
         assets: &AssetCounts,
@@ -628,7 +634,7 @@ impl<'a> Pull<'a> {
             emit(
                 out,
                 ProgressEvent::Log(format!(
-                    "warning: could not record the finished Export Run in the journal: {error:#}"
+                    "The journal could not record that Export Run {export_id} finished: {error:#}"
                 )),
             );
         }
@@ -646,7 +652,9 @@ impl<'a> Pull<'a> {
         ) {
             emit(
                 out,
-                ProgressEvent::Log(format!("warning: could not compact the journal: {error:#}")),
+                ProgressEvent::Log(format!(
+                    "The journal could not be rewritten in its shortest form: {error:#}"
+                )),
             );
         }
     }
@@ -735,10 +743,12 @@ fn place_other_paths(
 fn refused_path_line(path: &str, rel: Option<&str>) -> String {
     match rel {
         Some(rel) => format!(
-            "warning: attachment path {path} would leave the output directory; written at {rel} instead"
+            "Attachment path {path} would leave the Export's directory, \
+             so the file is written at {rel} instead"
         ),
         None => format!(
-            "warning: attachment path {path} would leave the output directory; the conversation file names no path for it"
+            "Attachment path {path} would leave the Export's directory, and the \
+             attachment has no SHA-256 to name another path by, so it is not written"
         ),
     }
 }

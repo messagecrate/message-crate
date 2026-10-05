@@ -415,7 +415,8 @@ fn an_attachment_path_that_leaves_the_output_directory_is_written_under_its_fing
     assert_eq!(report.refused_attachment_paths, refused);
     for (path, sha) in [(climbing, MENU_SHA), (absolute.as_str(), PHOTO_SHA)] {
         let line = format!(
-            "warning: attachment path {path} would leave the output directory; written at attachments/{sha} instead"
+            "Attachment path {path} would leave the Export's directory, \
+             so the file is written at attachments/{sha} instead"
         );
         assert!(
             events.contains(&ProgressEvent::Log(line.clone())),
@@ -698,8 +699,8 @@ fn a_query_becomes_the_runs_query_scope_and_progress_narrates_the_run() {
                 messages: 1,
                 total_so_far: 3,
             },
-            ProgressEvent::Log("Downloading 2 assets with 1 worker (0 already downloaded)…".into()),
-            ProgressEvent::Log("Downloaded 2 assets (22 B) and kept 0 already downloaded".into()),
+            ProgressEvent::Log("Fetching 2 Assets with 1 worker (0 already on disk)…".into()),
+            ProgressEvent::Log("Fetched 2 Assets (22 B) and kept 0 already on disk".into()),
             ProgressEvent::Log(format!(
                 "Wrote 1 conversation and 3 messages to {}",
                 out.display()
@@ -901,8 +902,8 @@ fn a_refused_completion_is_a_warning_that_names_the_run_once() {
     assert_eq!(complete.calls(), 1, "a 409 Conflict is not retried");
     assert!(
         events.contains(&ProgressEvent::Log(format!(
-            "warning: Export Run {EXPORT_ID} completion failed (HTTP 409 Conflict): \
-             the run is already closed"
+            "Export Run {EXPORT_ID} completion failed (HTTP 409 Conflict): \
+             the run is already closed. The Export wrote every file all the same"
         ))),
         "{events:?}"
     );
