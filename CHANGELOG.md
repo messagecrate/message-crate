@@ -866,6 +866,13 @@ released versions carry their date on the heading.
   Export from each account does not say the previous Export Run finished,
   because the note that run left in the directory is now written
   differently. It still skips every attachment already there.
+- 2026-10-05 **An EML or mbox export of a message whose id or address holds
+  a line break converts whole.** A line break in a message's id or in the
+  phone number or address it was sent from or to ended the mail's headers
+  early, so converting the file lost the message's details or refused the
+  whole file. The same went for an attachment whose file type held one. Such
+  a value is now written so the mail stays whole, and converting the file
+  gives it back exactly as it was exported.
 - 2026-10-05 **The rest of the log says each count in plain words too.**
   The lines around a run's summary still wrote counts as "1 file(s)" or
   "3 conversion(s)": converting attachments, an Export from a server, and
@@ -1051,6 +1058,14 @@ released versions carry their date on the heading.
 
 #### Search
 
+- 2026-10-05 **An edited message imported from two backups shows its
+  earlier versions.** The same iPhone imported through iMazing and through
+  Apple Messages gives two copies of each message, and the Message Crate
+  shows one of them. When it showed the iMazing copy, which records no
+  edits, the message listed no earlier versions, and a word only an earlier
+  version held found nothing. The copy shown now lists the earlier versions
+  of the hidden copy that holds them, search finds it by them, and Export
+  writes them.
 - 2026-10-04 **A conversation opened from a Message Tag page keeps the
   search box as it was.** Opening a conversation from a Message Tag page put
   `tag:Holiday` into the search box, as though it had been typed, and the
