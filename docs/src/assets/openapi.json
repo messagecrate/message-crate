@@ -15253,7 +15253,7 @@
           "conversation",
           "attachments",
           "tapbacks",
-          "edits",
+          "earlier_versions",
           "matched_earlier_version"
         ],
         "properties": {
@@ -15279,7 +15279,7 @@
               }
             ]
           },
-          "edits": {
+          "earlier_versions": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/EarlierVersion"
@@ -17216,7 +17216,7 @@
                 "conversation",
                 "attachments",
                 "tapbacks",
-                "edits",
+                "earlier_versions",
                 "matched_earlier_version"
               ],
               "properties": {
@@ -17242,7 +17242,7 @@
                     }
                   ]
                 },
-                "edits": {
+                "earlier_versions": {
                   "type": "array",
                   "items": {
                     "$ref": "#/components/schemas/EarlierVersion"

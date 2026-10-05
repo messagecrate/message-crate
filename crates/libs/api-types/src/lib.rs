@@ -416,7 +416,7 @@ api_shape! {
         /// The earlier versions of an edited message, oldest first within
         /// each part; `text` is the final version. Empty for a message never
         /// edited, or from a source that records no edits.
-        pub edits: Vec<EarlierVersion>,
+        pub earlier_versions: Vec<EarlierVersion>,
         /// True in a Messages search answer (`GET /v1/messages` with `q`)
         /// when the message is a hit only because of its earlier versions:
         /// its final text alone does not match the query, and the versions
@@ -635,7 +635,7 @@ mod tests {
                 sender: None,
             }],
             deletion: Some(Deletion::DeletedInSourceApp),
-            edits: vec![EarlierVersion {
+            earlier_versions: vec![EarlierVersion {
                 part_index: 0,
                 text: "helo".into(),
                 edited_at: Some("2023-12-31T23:59:00Z".into()),
@@ -664,9 +664,9 @@ mod tests {
         assert_eq!(read.tapbacks[0].kind, "loved");
         assert_eq!(written["deletion"], "deleted_in_source_app");
         assert_eq!(read.deletion, Some(Deletion::DeletedInSourceApp));
-        assert_eq!(read.edits[0].text, "helo");
+        assert_eq!(read.earlier_versions[0].text, "helo");
         assert_eq!(
-            read.edits[0].edited_at.as_deref(),
+            read.earlier_versions[0].edited_at.as_deref(),
             Some("2023-12-31T23:59:00Z")
         );
     }

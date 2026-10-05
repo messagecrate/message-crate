@@ -3047,7 +3047,7 @@ export interface components {
              *     each part; `text` is the final version. Empty for a message never
              *     edited, or from a source that records no edits.
              */
-            edits: components["schemas"]["EarlierVersion"][];
+            earlier_versions: components["schemas"]["EarlierVersion"][];
             /**
              * @description Export GUID for replies and grouping. Every message has one,
              *     because the import refuses a message without one.
@@ -4051,7 +4051,7 @@ export interface components {
                  *     each part; `text` is the final version. Empty for a message never
                  *     edited, or from a source that records no edits.
                  */
-                edits: components["schemas"]["EarlierVersion"][];
+                earlier_versions: components["schemas"]["EarlierVersion"][];
                 /**
                  * @description Export GUID for replies and grouping. Every message has one,
                  *     because the import refuses a message without one.

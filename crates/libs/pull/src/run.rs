@@ -970,7 +970,7 @@ mod asset_ref_tests {
             },
             "attachments": attachments,
             "tapbacks": [],
-            "edits": [],
+            "earlier_versions": [],
             "matched_earlier_version": false
         }))
         .unwrap()

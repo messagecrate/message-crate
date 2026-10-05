@@ -587,7 +587,7 @@ async fn an_edited_message_is_returned_with_its_earlier_versions_and_their_times
     let edited = message_by_guid(&page, "guid-edited-twice");
     assert_eq!(edited["text"], "Meet at the bakery", "{page}");
     assert_eq!(
-        edited["edits"],
+        edited["earlier_versions"],
         serde_json::json!([
             {"part_index": 0, "text": "Meet at the library",
              "edited_at": "2020-01-06T11:10:00Z", "matched": false},
@@ -598,7 +598,7 @@ async fn an_edited_message_is_returned_with_its_earlier_versions_and_their_times
     );
     assert_eq!(edited["matched_earlier_version"], false, "{page}");
     let never = message_by_guid(&page, "guid-never-edited");
-    assert_eq!(never["edits"], serde_json::json!([]), "{page}");
+    assert_eq!(never["earlier_versions"], serde_json::json!([]), "{page}");
 }
 
 /// A word that only an earlier version holds finds the message, which says
@@ -619,7 +619,7 @@ async fn a_word_only_an_earlier_version_holds_finds_the_message_and_says_which_v
     assert_eq!(guids(&museum), ["guid-edited-twice"], "{museum}");
     let hit = message_by_guid(&museum, "guid-edited-twice");
     assert_eq!(hit["matched_earlier_version"], true, "{museum}");
-    let matched: Vec<bool> = hit["edits"]
+    let matched: Vec<bool> = hit["earlier_versions"]
         .as_array()
         .unwrap()
         .iter()
@@ -644,11 +644,20 @@ async fn a_word_only_an_earlier_version_holds_finds_the_message_and_says_which_v
     );
     let only_earlier = message_by_guid(&library, "guid-edited-twice");
     assert_eq!(only_earlier["matched_earlier_version"], true, "{library}");
-    assert_eq!(only_earlier["edits"][0]["matched"], true, "{library}");
-    assert_eq!(only_earlier["edits"][1]["matched"], false, "{library}");
+    assert_eq!(
+        only_earlier["earlier_versions"][0]["matched"], true,
+        "{library}"
+    );
+    assert_eq!(
+        only_earlier["earlier_versions"][1]["matched"], false,
+        "{library}"
+    );
     let final_match = message_by_guid(&library, "guid-edited-final-match");
     assert_eq!(final_match["matched_earlier_version"], false, "{library}");
-    assert_eq!(final_match["edits"][0]["matched"], false, "{library}");
+    assert_eq!(
+        final_match["earlier_versions"][0]["matched"], false,
+        "{library}"
+    );
 
     // The final text alone: a message found by it is never marked.
     let bakery: serde_json::Value = get_json(
@@ -702,6 +711,41 @@ async fn importing_an_edited_message_again_keeps_one_copy_of_each_earlier_versio
     )
     .await;
     assert_eq!(guids(&museum), ["guid-edited-twice"], "{museum}");
+}
+
+/// An append from a later backup, in which the message was edited again,
+/// leaves the stored message as it was: its text and its earlier versions
+/// stay together, rather than the text it holds turning up as an earlier
+/// version beside it.
+#[tokio::test]
+async fn an_append_from_a_later_backup_keeps_a_stored_messages_versions_with_its_text() {
+    let (fixture, alice) = fixture_with_account().await;
+    import_edits(&fixture, alice.account_id).await;
+    let later = APPLE_MESSAGES_EDITS.replace(
+        r#""text":"Meet at the bakery","attachments":[],"edits":["#,
+        r#""text":"Meet at the park","attachments":[],"edits":[{"part_index":0,"text":"Meet at the bakery","edited_at_unix_ms":1578309090000},"#,
+    );
+    assert_ne!(
+        later, APPLE_MESSAGES_EDITS,
+        "the later backup edits the message again"
+    );
+    import_apple_messages_file(&fixture, alice.account_id, "edits-later", &later).await;
+
+    let page: serde_json::Value =
+        get_json(&fixture.state, "/v1/messages?sort=date", &alice.token).await;
+    let edited = message_by_guid(&page, "guid-edited-twice");
+    assert_eq!(edited["text"], "Meet at the bakery", "{page}");
+    let texts: Vec<&str> = edited["earlier_versions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v["text"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        texts,
+        ["Meet at the library", "Meet at the museum"],
+        "{page}"
+    );
 }
 
 /// Deleting an edited message deletes its earlier versions and their search

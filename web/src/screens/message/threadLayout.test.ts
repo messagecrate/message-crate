@@ -32,7 +32,7 @@ function message(
     },
     attachments: [],
     tapbacks: [],
-    edits: [],
+    earlier_versions: [],
     matched_earlier_version: false,
   };
 }

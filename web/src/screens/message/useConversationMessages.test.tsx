@@ -43,7 +43,7 @@ function message(id: number): Message {
     },
     attachments: [],
     tapbacks: [],
-    edits: [],
+    earlier_versions: [],
     matched_earlier_version: false,
   };
 }

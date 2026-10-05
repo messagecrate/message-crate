@@ -132,7 +132,7 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
         reactions: msg.tapbacks.iter().filter_map(reaction_from_row).collect(),
         deletion: msg.deletion.map(deletion_from_api),
         edits: msg
-            .edits
+            .earlier_versions
             .iter()
             .map(earlier_version_from_api)
             .collect::<Result<_>>()
@@ -409,7 +409,7 @@ mod tests {
           "tapbacks": [
             { "part_index": 0, "kind": "loved", "is_from_me": true }
           ],
-          "edits": [],
+          "earlier_versions": [],
           "matched_earlier_version": false
         }
       ],
@@ -696,7 +696,7 @@ mod tests {
             attachments: vec![],
             tapbacks: vec![],
             deletion: None,
-            edits: Vec::new(),
+            earlier_versions: Vec::new(),
             matched_earlier_version: false,
         };
         let ir = to_ir_message(&msg, false).unwrap();
@@ -757,7 +757,7 @@ mod tests {
             contact_id: None,
         });
         assert!(to_ir_message(&msg, false).unwrap().edits.is_empty());
-        msg.edits = vec![
+        msg.earlier_versions = vec![
             message_crate_api_types::EarlierVersion {
                 part_index: 0,
                 text: "helo".into(),
@@ -849,7 +849,7 @@ mod tests {
             attachments: vec![],
             tapbacks: vec![],
             deletion: None,
-            edits: Vec::new(),
+            earlier_versions: Vec::new(),
             matched_earlier_version: false,
         }
     }

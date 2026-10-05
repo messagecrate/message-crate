@@ -54,7 +54,7 @@ function message(attachments: MessageAttachment[]): Message {
     text: null,
     attachments,
     tapbacks: [],
-    edits: [],
+    earlier_versions: [],
     matched_earlier_version: false,
     conversation: {
       id: 1,

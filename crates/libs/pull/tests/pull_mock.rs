@@ -96,7 +96,7 @@ fn message(
         },
         "attachments": attachments,
         "tapbacks": [],
-        "edits": [],
+        "earlier_versions": [],
         "matched_earlier_version": false
     })
 }
@@ -1130,7 +1130,7 @@ fn a_pulled_message_keeps_its_earlier_versions() {
         "See you at noon",
         json!([]),
     );
-    edited["edits"] = json!([
+    edited["earlier_versions"] = json!([
         { "part_index": 0, "text": "See you at 11", "edited_at": "2020-01-06T12:14:00Z", "matched": false },
         { "part_index": 0, "text": "See you at 11:30", "edited_at": "2020-01-06T12:15:00Z", "matched": false }
     ]);

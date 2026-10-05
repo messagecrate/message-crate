@@ -39,7 +39,7 @@ function message(over: Partial<Message> = {}): Message {
     },
     attachments: [],
     tapbacks: [],
-    edits: [],
+    earlier_versions: [],
     matched_earlier_version: false,
     ...over,
   };
