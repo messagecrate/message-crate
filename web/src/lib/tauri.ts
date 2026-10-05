@@ -279,7 +279,6 @@ export type ExportQueryList = components["schemas"]["ExportQueryList"];
 
 export interface PullConfig {
   base_url: string;
-  username: string;
   token: string;
   out_dir: string;
   /** Blank exports everything the account holds. */
@@ -294,7 +293,6 @@ export async function invokePull(config: PullConfig): Promise<void> {
   return invoke("pull", {
     args: {
       baseUrl: config.base_url,
-      username: config.username,
       token: config.token,
       outDir: config.out_dir,
       query: config.query,

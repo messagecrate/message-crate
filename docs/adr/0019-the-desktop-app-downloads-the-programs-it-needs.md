@@ -1,10 +1,13 @@
 # The desktop app downloads the programs it needs and ships none of them
 
-The desktop app runs two programs it does not contain: ffmpeg (with ffprobe),
-which converts attachments and makes browser previews, and wtsexporter, which
-reads WhatsApp data. Each time the app starts it checks for them and
-downloads what is missing into the Tools Directory, in the background, with
-no button and no prompt (#1053). Each download is pinned in the app to one
+The desktop app needs two programs it does not contain: ffmpeg (with
+ffprobe) and wtsexporter. The app uses ffmpeg to convert attachments. The
+server it starts uses ffmpeg to make Previews and Thumbnails of them.
+wtsexporter reads WhatsApp data. Each time the app starts it checks for both
+and downloads what is missing into the Tools Directory, in the background,
+with no button and no prompt (#1053). It passes the Tools Directory to the
+server it starts. The server looks on `PATH` and then there, as the app does,
+so both find the same ffmpeg. Each download is pinned in the app to one
 release and one checksum, and a file that doesn't match is refused.
 wtsexporter is always the app's own copy. ffmpeg is not downloaded when it is
 on `PATH`.
@@ -64,6 +67,10 @@ release files in place: `eugeneware/ffmpeg-static` and
 where the program is needed, and the user guide's troubleshooting section
 tells a person how to install ffmpeg with a package manager or put either
 program in the Tools Directory by hand.
+
+Until ffmpeg arrives on a new computer, the server the app starts makes no
+Previews or Thumbnails. The Assets wait in its queue and are made once
+ffmpeg is there, at the server's next start or after the next Import Run.
 
 The Tools Directory belongs to the app. A release that pins a newer version
 replaces what is there, whoever put it there, and deletes the old file only

@@ -202,7 +202,7 @@ struct BatchError {
 impl BatchError {
     fn new(error: &anyhow::Error) -> Self {
         Self {
-            message: error.to_string(),
+            message: format!("{error:#}"),
             session_refused: message_crate_http::is_session_refused(error),
             refused_line: error
                 .downcast_ref::<HttpError>()
@@ -532,10 +532,10 @@ impl<'a> ImportPipeline<'a> {
             && error.session_refused
         {
             out.log(&format!(
-                "Import request refused, {} from {}: {}",
+                "{} ({} from {})",
+                error.message,
                 count_of(outcome.message_count as u64, "message", "messages"),
-                outcome.batch.source,
-                error.message
+                outcome.batch.source
             ));
             return Ok(false);
         }
@@ -585,7 +585,8 @@ impl<'a> ImportPipeline<'a> {
                     }
                 }
                 out.log(&format!(
-                    "Import request accepted: {stats}. The server imported {}",
+                    "Import Run {} batch accepted: {stats}. The server imported {}",
+                    self.import_id,
                     count_of(
                         response.messages.max(response.messages_appended),
                         "message",
@@ -600,7 +601,7 @@ impl<'a> ImportPipeline<'a> {
                     .failed
                     .saturating_add(outcome.message_count as u64);
                 let error = self.describe_batch_error(&outcome.batch, error);
-                out.log(&format!("Import request failed ({stats}): {error}"));
+                out.log(&format!("{error} ({stats})"));
                 for &index in &represented {
                     let Some(tracker) = self.trackers[index].as_mut() else {
                         continue;
@@ -748,6 +749,18 @@ mod tests {
                 .collect(),
             file_lines: (1..=messages + 1).collect(),
         }
+    }
+
+    /// A batch that never reached the server fails under its label alone,
+    /// which says nothing a person can act on. The recorded sentence keeps
+    /// the cause beneath it, such as a refused connection.
+    #[test]
+    fn a_batch_error_keeps_the_cause_beneath_its_label() {
+        let error = anyhow::anyhow!("connection refused").context("Import Run 7 batch failed");
+        assert_eq!(
+            BatchError::new(&error).message,
+            "Import Run 7 batch failed: connection refused"
+        );
     }
 
     /// The lines of a batch run on across its chunks, and each maps back to
