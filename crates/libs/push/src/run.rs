@@ -96,10 +96,6 @@ pub struct PushConfig {
     pub input: PathBuf,
     /// Server base URL, e.g. `http://127.0.0.1:8080`.
     pub base_url: String,
-    /// Account username. The run never reads it: the report and progress
-    /// events carry the username the server reports at login, else the
-    /// account id.
-    pub username: String,
     /// The logged-in Session's token. The desktop app never passes an API
     /// Token.
     pub token: String,

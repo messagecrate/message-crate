@@ -189,7 +189,6 @@ export async function invokeSaveImportRunRecord(config: {
 
 export interface UploadConfig {
   base_url: string;
-  username: string;
   token: string;
   input_dir: string;
   mode: string;
@@ -261,7 +260,6 @@ export async function invokeUpload(config: UploadConfig): Promise<void> {
   return invoke("upload", {
     args: {
       baseUrl: config.base_url,
-      username: config.username,
       token: config.token,
       inputDir: config.input_dir,
       mode: config.mode,
