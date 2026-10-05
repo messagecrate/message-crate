@@ -1237,3 +1237,136 @@ fn an_attachment_type_with_a_line_break_keeps_its_part_whole() {
         "{eml}"
     );
 }
+
+/// Why `name` is not a file name every one of Linux, macOS and Windows
+/// accepts, or `None` when it is: no path separator, no control character,
+/// none of Windows' reserved characters, no reserved device name before the
+/// first dot, and no trailing dot or space.
+fn portable_file_name_problem(name: &str) -> Option<&'static str> {
+    const RESERVED: [&str; 22] = [
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+    let stem = name.split('.').next().unwrap_or_default();
+    if name.is_empty() {
+        Some("is empty")
+    } else if name.contains(['/', '\\']) {
+        Some("holds a path separator")
+    } else if name.contains(char::is_control) {
+        Some("holds a control character")
+    } else if name.contains([':', '*', '?', '"', '<', '>', '|']) {
+        Some("holds a character Windows reserves")
+    } else if RESERVED
+        .iter()
+        .any(|r| stem.trim_end().eq_ignore_ascii_case(r))
+    {
+        Some("is a name Windows reserves")
+    } else if name.ends_with(['.', ' ']) {
+        Some("ends in a dot or a space")
+    } else {
+        None
+    }
+}
+
+/// A guid with fewer than eight hex digits was written into its `.eml`
+/// file name as it was: a `/` made the name a path into a directory that
+/// does not exist, and a line break or a character Windows reserves made a
+/// name Windows refuses, so the EML export of the conversation failed
+/// (#1824). Each such guid now gives a portable name, and the guid still
+/// reads back from `X-ME-Guid`.
+#[test]
+fn a_guid_with_unsafe_characters_still_names_a_portable_eml_file() {
+    let guids = [
+        "ab/cd",
+        "a/",
+        "/",
+        "../../x",
+        "a\r\n\r\nb",
+        "\t",
+        "a\u{7f}b",
+        "a\\b",
+        "a:b",
+        "a*b",
+        "a?b",
+        "a\"b",
+        "a<b",
+        "a>b",
+        "a|b",
+        "CON",
+        "con",
+        "nul.txt",
+        "LPT1",
+        "a.",
+        "a ",
+        ". .",
+        "",
+        "日本語/x",
+    ];
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("chat");
+    for guid in guids {
+        let mut msg = base_sms();
+        msg.message.guid = guid.into();
+        let path = write_message_file(&dir, 1, &msg)
+            .unwrap_or_else(|e| panic!("guid {guid:?} did not write: {e:#}"));
+        assert_eq!(path.parent(), Some(dir.as_path()), "guid {guid:?}");
+        let name = path.file_name().unwrap().to_str().unwrap();
+        if let Some(problem) = portable_file_name_problem(name) {
+            panic!("guid {guid:?} gave {name:?}, which {problem}");
+        }
+        if guid.is_empty() {
+            // A mail with no guid is refused on Convert, whatever its name.
+            continue;
+        }
+        let read = crate::mail_message_from_eml_bytes(&fs::read(&path).unwrap())
+            .unwrap_or_else(|e| panic!("guid {guid:?} did not read back: {e:#}"));
+        assert_eq!(read.message.guid, guid);
+    }
+}
+
+/// A guid a file name can hold keeps the name it had before #1824: the
+/// first eight hex digits of a guid that has them, else its first eight
+/// characters, padded with `0`, a `%` among them included.
+#[test]
+fn a_safe_guid_keeps_its_eml_file_name() {
+    for (guid, guid8) in [
+        ("aabbccddeeff00112233445566778899", "aabbccdd"),
+        ("{1A2B-3C4D-5E6F}", "1A2B3C4D"),
+        ("SMS-42", "SMS-4200"),
+        ("a b.c", "a b.c000"),
+        ("50%off", "50%off00"),
+        ("ab%2Fcd", "ab%2Fcd0"),
+        ("日本語テキストです", "日本語テキストで"),
+    ] {
+        let mut msg = base_sms();
+        msg.message.guid = guid.into();
+        let name = eml_file_name(1, &msg.message).unwrap();
+        assert!(
+            name.starts_with("000001_") && name.ends_with(&format!("_{guid8}.eml")),
+            "guid {guid:?} gave {name:?}"
+        );
+    }
+}
+
+/// Two guids that differ only in characters a file name cannot hold still
+/// give different, portable `.eml` names, as the `Message-ID`s do (#1821).
+#[test]
+fn guids_that_differ_in_unsafe_characters_keep_different_eml_file_names() {
+    let names: Vec<String> = [
+        "ab/cd", "ab\\cd", "ab:cd", "ab*cd", "ab?cd", "ab\"cd", "ab<cd", "ab>cd", "ab|cd",
+        "ab\ncd", "ab\rcd", "ab%2Fcd", "ab%2fcd", "ab_cd", "ab%cd",
+    ]
+    .into_iter()
+    .map(|guid| {
+        let mut msg = base_sms();
+        msg.message.guid = guid.into();
+        let name = eml_file_name(1, &msg.message).unwrap();
+        if let Some(problem) = portable_file_name_problem(&name) {
+            panic!("guid {guid:?} gave {name:?}, which {problem}");
+        }
+        name
+    })
+    .collect();
+    let distinct: std::collections::BTreeSet<&String> = names.iter().collect();
+    assert_eq!(distinct.len(), names.len(), "names were {names:?}");
+}

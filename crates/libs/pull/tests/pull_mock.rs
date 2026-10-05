@@ -443,7 +443,7 @@ fn the_journal_lists_every_asset_and_marks_the_run_finished() {
         state.assets,
         HashSet::from([MENU_SHA.to_string(), PHOTO_SHA.to_string()])
     );
-    assert!(state.backup_complete);
+    assert!(state.export_complete);
 }
 
 #[test]
@@ -479,10 +479,10 @@ fn a_second_run_over_the_same_directory_downloads_nothing_it_already_has() {
         lines,
         [
             "Authenticated as alice (1)".to_string(),
-            "Backup query: (all messages)".to_string(),
-            "Previous backup completed successfully. Running to check for new messages…"
+            "Exporting every message".to_string(),
+            "The previous Export Run finished. Checking for new messages…".to_string(),
+            "Export Run 7 holds 3 messages in 1 conversation, with 2 attachments (22 B)"
                 .to_string(),
-            "Export 7 holds 3 messages in 1 conversation, with 2 attachments (22 B)".to_string(),
             format!("Wrote 1 conversation and 3 messages to {}", out.display()),
         ]
     );
@@ -541,7 +541,7 @@ fn a_cancel_requested_before_the_run_records_nothing_on_the_server() {
     assert_eq!(cancel.calls(), 0);
     assert!(!out.join(CONVERSATION_FILE).exists());
     let state = journal::load(&journal::journal_path(&out), &server.base_url(), "alice").unwrap();
-    assert!(!state.backup_complete);
+    assert!(!state.export_complete);
 }
 
 #[test]
@@ -687,9 +687,9 @@ fn a_query_becomes_the_runs_query_scope_and_progress_narrates_the_run() {
                 username: "alice".into(),
             },
             ProgressEvent::Log("Authenticated as alice (1)".into()),
-            ProgressEvent::Log("Backup query: from:sam".into()),
+            ProgressEvent::Log("Exporting the messages that match: from:sam".into()),
             ProgressEvent::Log(
-                "Export 7 holds 3 messages in 1 conversation, with 2 attachments (22 B)".into()
+                "Export Run 7 holds 3 messages in 1 conversation, with 2 attachments (22 B)".into()
             ),
             ProgressEvent::Page {
                 messages: 2,
@@ -740,7 +740,7 @@ fn a_query_for_the_conversations_list_names_that_list_in_the_scope() {
     create.assert();
     complete.assert();
     assert!(events.contains(&ProgressEvent::Log(
-        "Backup query: messages:>100 (every message of the conversations it finds)".into()
+        "Exporting every message of the conversations that match: messages:>100".into()
     )));
 }
 
@@ -777,7 +777,7 @@ fn an_asset_the_server_does_not_have_fails_the_run_and_cancels_it_on_the_server(
     assert!(!out.join("attachments/menu.pdf").exists());
     assert!(!out.join(CONVERSATION_FILE).exists());
     let state = journal::load(&journal::journal_path(&out), &server.base_url(), "alice").unwrap();
-    assert!(!state.backup_complete);
+    assert!(!state.export_complete);
 }
 
 /// An access proxy whose session has expired answers the asset request with
@@ -829,7 +829,7 @@ fn bytes_whose_sha256_is_not_the_one_asked_for_fail_the_run_and_are_not_kept() {
         !state.assets.contains(PHOTO_SHA),
         "the photo is not journalled"
     );
-    assert!(!state.backup_complete);
+    assert!(!state.export_complete);
 }
 
 #[test]
