@@ -164,10 +164,6 @@ struct Conversation {
 }
 
 impl Conversation {
-    fn chat_id(&self) -> String {
-        self.key.chat_id()
-    }
-
     /// "Unknown recipient" ([`Key::UnknownRecipient`]), which holds every
     /// sent row whose recipient the export does not record. It has no
     /// participants.
@@ -177,10 +173,6 @@ impl Conversation {
             contact_name: String::new(),
             group_name: None,
         }
-    }
-
-    fn is_group(&self) -> bool {
-        self.key.is_group()
     }
 
     fn group(vendor_id: String, members: Vec<IrParticipant>, group_name: Option<String>) -> Self {
@@ -294,7 +286,7 @@ impl Ingest {
             self.report.skipped_invalid_date += 1;
             return;
         };
-        let chat_id = conversation.chat_id();
+        let chat_id = conversation.key.chat_id();
         let is_from_me = resolve_is_from_me(&row);
         let (sender_identity, sender_display_name) = resolve_sender(&row, is_from_me, conversation);
 
@@ -316,7 +308,7 @@ impl Ingest {
                     key: conversation.key.clone(),
                     convo: PendingConversation::new(
                         chat_id,
-                        conversation.is_group(),
+                        conversation.key.is_group(),
                         conversation.group_name.clone(),
                         Vec::new(),
                     ),
@@ -532,7 +524,7 @@ fn resolve_sender(row: &RawRow, is_from_me: bool, conversation: &Conversation) -
         return (String::new(), String::new());
     }
     let sender = row.sender.trim();
-    let contact_name = if conversation.is_group() {
+    let contact_name = if conversation.key.is_group() {
         String::new()
     } else {
         conversation.contact_name.clone()
