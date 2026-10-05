@@ -120,6 +120,12 @@ async fn load_username(pool: &SqlitePool, account_id: i64) -> Result<String, Api
         .ok_or_else(ApiError::account_gone)
 }
 
+/// The answer to every refused login, whatever was wrong, so the answer does
+/// not tell a guesser which part failed.
+fn invalid_login() -> ApiError {
+    ApiError::InvalidCredentials("invalid username or password".into())
+}
+
 /// Log in: verify a local username and password and answer the Session, a
 /// `201 Created` whose `Location` is the singleton itself.
 #[utoipa::path(
@@ -170,7 +176,16 @@ pub async fn create_session(
 
     let password = req.password.clone();
 
-    let Some(account_id) = account_id else {
+    // The username the account's row holds. An account deleted since the
+    // lookup above is a username nobody holds by now, so it takes the same
+    // branch, with the same timing and the same Audit Trail entry.
+    let account = match account_id {
+        Some(id) => account_profile::username_for_account(&mut conn, id)
+            .await?
+            .map(|stored| (id, stored)),
+        None => None,
+    };
+    let Some((account_id, stored_username)) = account else {
         let _ = verify_password(dummy_password_hash(), &password);
         audit_trail::record_refused_login(
             &mut conn,
@@ -180,9 +195,7 @@ pub async fn create_session(
             app,
         )
         .await?;
-        return Err(ApiError::InvalidCredentials(
-            "invalid username or password".into(),
-        ));
+        return Err(invalid_login());
     };
 
     // The Demo Account cannot be entered while it is being built: until the
@@ -190,20 +203,9 @@ pub async fn create_session(
     // The login card is told there is no Demo Account, so the answer here is
     // the one for a username that does not exist.
     if account_id == account_profile::DEMO_ACCOUNT_ID && state.demo_build.is_building() {
-        return Err(ApiError::InvalidCredentials(
-            "invalid username or password".into(),
-        ));
+        return Err(invalid_login());
     }
 
-    // An account deleted since the lookup above answers as a username nobody
-    // holds, because by now nobody does.
-    let Some(stored_username) =
-        account_profile::username_for_account(&mut conn, account_id).await?
-    else {
-        return Err(ApiError::InvalidCredentials(
-            "invalid username or password".into(),
-        ));
-    };
     let account = Some((account_id, stored_username.as_str()));
     let password_hash = account_profile::load_password_hash(&mut conn, account_id).await?;
     if !verify_login_password(password_hash.as_deref(), &password) {
@@ -215,14 +217,12 @@ pub async fn create_session(
             app,
         )
         .await?;
-        return Err(ApiError::InvalidCredentials(
-            "invalid username or password".into(),
-        ));
+        return Err(invalid_login());
     }
 
     let auth = account_profile::load_account_auth(&mut conn, account_id)
         .await?
-        .ok_or_else(|| ApiError::InvalidCredentials("invalid username or password".into()))?;
+        .ok_or_else(invalid_login)?;
     if auth.disabled {
         audit_trail::record_refused_login(
             &mut conn,
