@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use httpmock::prelude::*;
-use message_crate_push::{AuthError, ProgressEvent, PushConfig, authenticate, run};
+use message_crate_push::{AuthError, ProgressEvent, PushConfig, PushReport, authenticate, run};
 use message_ir::{
     ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IrAttachment,
     IrConversationType, IrDirection, IrMessage, IrMessageKind, IrParticipant, IrService,
@@ -150,6 +150,20 @@ fn read_log(dir: &Path) -> String {
     fs::read_to_string(dir.join("message-crate-push.log")).unwrap()
 }
 
+/// Run the Upload `cfg` describes, with the lines the desktop app shows.
+fn run_showing(cfg: &PushConfig) -> (PushReport, Vec<String>) {
+    let mut shown = Vec::new();
+    let report = {
+        let mut progress = |event| {
+            if let ProgressEvent::Log(line) = event {
+                shown.push(line);
+            }
+        };
+        run(cfg, Some(&mut progress)).unwrap()
+    };
+    (report, shown)
+}
+
 #[test]
 fn authenticate_and_push_text_only_conversation() {
     let server = MockServer::start();
@@ -199,15 +213,7 @@ fn authenticate_and_push_text_only_conversation() {
     write_jsonl(dir.path(), &sample_doc());
 
     let cfg = text_only_config(dir.path(), server.base_url());
-    let mut shown = Vec::new();
-    let report = {
-        let mut progress = |event| {
-            if let ProgressEvent::Log(line) = event {
-                shown.push(line);
-            }
-        };
-        run(&cfg, Some(&mut progress)).unwrap()
-    };
+    let (report, shown) = run_showing(&cfg);
     assert!(report.ok);
     assert_eq!(report.conversations_ok, 1);
     let report_json = serde_json::to_value(&report).unwrap();
@@ -948,15 +954,7 @@ fn profiles_attachment_upload_phases() {
         cancel: None,
         import_id: None,
     };
-    let mut progress_lines = Vec::new();
-    let report = {
-        let mut progress = |event| {
-            if let ProgressEvent::Log(line) = event {
-                progress_lines.push(line);
-            }
-        };
-        run(&cfg, Some(&mut progress)).unwrap()
-    };
+    let (report, progress_lines) = run_showing(&cfg);
 
     assert!(
         head.calls() >= 1,
@@ -3096,12 +3094,17 @@ fn a_refused_session_stops_the_push_as_a_pause_and_fails_no_conversation() {
         ..text_only_config(dir.path(), server.base_url())
     };
 
-    let report = run(&cfg, None).unwrap();
+    let (report, shown) = run_showing(&cfg);
 
     assert!(
         report.session_refused,
         "the report says the session was refused"
     );
+    // The log and the desktop app say why in the same sentence (#1842).
+    let stopped = "The server no longer accepts this session, so the Upload stopped. \
+                   The next Upload sends what this one did not.";
+    assert!(read_log(dir.path()).contains(stopped));
+    assert!(shown.iter().any(|line| line == stopped), "{shown:?}");
     assert!(
         report.cancelled,
         "a refused session stops the push as a pause"
@@ -3198,10 +3201,14 @@ fn a_session_refused_at_login_stops_the_push_as_a_pause() {
         ..text_only_config(dir.path(), server.base_url())
     };
 
-    let report = run(&cfg, None).unwrap();
+    let (report, shown) = run_showing(&cfg);
 
     assert!(report.session_refused);
     assert!(report.cancelled);
+    let not_started = "The server no longer accepts this session, so the Upload did not start. \
+                       The next Upload sends every conversation.";
+    assert!(read_log(dir.path()).contains(not_started));
+    assert!(shown.iter().any(|line| line == not_started), "{shown:?}");
     assert_eq!(report.conversations_failed, 0);
     assert_eq!(report.conversations_cancelled, 2);
     assert_eq!(report.conversations_total, 2);
