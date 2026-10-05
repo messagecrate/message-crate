@@ -81,6 +81,14 @@ export async function invokeSetStagingRoot(root: string): Promise<StagingRoot> {
 }
 
 /**
+ * The log of the Import Run whose directory is `stagingDir`, in the Logs
+ * Directory, where it stays after the run's directory is deleted.
+ */
+export async function invokeImportRunLog(stagingDir: string): Promise<string> {
+  return invoke("import_run_log", { stagingDir });
+}
+
+/**
  * Make a new run directory under the Staging Directory and return its path.
  * `label` is the Import source.
  */

@@ -26,7 +26,7 @@ fn convert(input_dir: &Path, output_dir: &Path) -> Result<ExportReport> {
     convert_export(ConvertExportArgs {
         input_dir,
         output_dir,
-        cache_dir: cache.path(),
+        scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
         transforms: ExportTransforms::none(),
         output_format: OutputFormat::Csv,
@@ -113,7 +113,7 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
         convert_export(ConvertExportArgs {
             input_dir: &input,
             output_dir: &output,
-            cache_dir: cache.path(),
+            scratch_dir: cache.path(),
             owner_phones: &["+15555550100".into()],
             transforms: ExportTransforms::none(),
             output_format: OutputFormat::Jsonl,

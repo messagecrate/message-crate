@@ -82,8 +82,8 @@ pub(crate) struct ExportOptions {
     /// [`ExportRequest::use_caller_id`].
     pub use_caller_id: bool,
     pub export_path: PathBuf,
-    /// The app's cache directory; the program decrypts into a directory under it.
-    pub cache_dir: PathBuf,
+    /// the Scratch Directory; the program decrypts into a directory under it.
+    pub scratch_dir: PathBuf,
     pub attachment_embed: AttachmentEmbed,
     /// Media / obfuscate transforms applied by [`message_ir_format::FormatSink`].
     pub transforms: ExportTransforms,
@@ -158,19 +158,19 @@ fn run_with(
     let output = convert::open_output(&options)?;
 
     // The program writes decrypted files into a directory of this run's own
-    // under the app's cache directory, beside the identities request's: not
+    // under the Scratch Directory, beside the identities request's: not
     // the system's temporary directory, which can be a small RAM disk that no
     // check measures (#1134), and not the output directory, which holds only
     // output (#1402). The directory is deleted when the run ends, whichever
     // way it ends; what a killed run left is deleted by the next request
     // and by the sweep when the app starts.
-    let scratch_root = options.cache_dir.join(IMESSAGE_READER_DIRECTORY);
+    let scratch_root = options.scratch_dir.join(IMESSAGE_READER_DIRECTORY);
     let report = {
         let scratch = ScratchDir::create(&scratch_root)?;
         check_headroom(
             scratch.path(),
             decrypted_bytes(&options.source),
-            Disk::Cache,
+            Disk::Scratch,
         )?;
         let mut helper = spawn(
             &options.export_request(scratch.path()),
@@ -237,7 +237,7 @@ fn options_from_export_config(config: &ExporterConfig) -> Result<ExportOptions> 
         contacts_path: source.apple_contacts.clone(),
         use_caller_id: source.use_caller_id,
         export_path: config.output.clone(),
-        cache_dir: config.cache_dir.clone(),
+        scratch_dir: config.scratch_dir.clone(),
         attachment_embed,
         transforms: ExportTransforms::from_config(config),
         output_format: config.output_format,

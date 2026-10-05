@@ -23,6 +23,7 @@ use std::path::{Path, PathBuf};
 
 use message_ir_format::{EXPORT_SENTINEL, mark_export_directory};
 
+use crate::app_directories::import_run_log;
 use crate::commands::paths::{resolve_openable_path, resolve_staging_root};
 
 /// File in the app-data directory that holds the Staging Directory setting
@@ -76,12 +77,17 @@ pub struct StagingDirectories {
     /// The home directory, for the default Staging Directory. `None` when the
     /// operating system reports none.
     home: Option<PathBuf>,
+    /// The Logs Directory, where each run's log outlives its directory. A
+    /// name whose log is there is not given to a new run, so two runs never
+    /// share a log.
+    logs: PathBuf,
 }
 
 impl StagingDirectories {
-    /// The record kept in `file`, read from it on every use.
-    pub fn at(file: PathBuf, home: Option<PathBuf>) -> Self {
-        Self { file, home }
+    /// The record kept in `file`, read from it on every use, for runs whose
+    /// logs go to `logs`.
+    pub fn at(file: PathBuf, home: Option<PathBuf>, logs: PathBuf) -> Self {
+        Self { file, home, logs }
     }
 
     /// The record as the file holds it now.
@@ -232,6 +238,13 @@ impl StagingDirectories {
         let mut directory = root.join(&base);
         let mut n = 1;
         loop {
+            // An earlier run of that name, perhaps in another Staging
+            // Directory or before the clock went back, left its log.
+            if import_run_log(&self.logs, &directory).exists() {
+                n += 1;
+                directory = root.join(format!("{base}-{n}"));
+                continue;
+            }
             match std::fs::create_dir(&directory) {
                 Ok(()) => break,
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
@@ -491,6 +504,7 @@ impl Scratch {
         StagingDirectories::at(
             app_data.path().join(RECORD_FILE),
             Some(home.path().to_path_buf()),
+            crate::app_directories::logs_dir_in(app_data.path()),
         )
     }
 
@@ -536,6 +550,25 @@ mod tests {
         assert!(!run.exists(), "discard and clean up");
         let next = directories.create("imessage-ios", NOW).unwrap();
         assert!(next.starts_with(second.path().canonicalize().unwrap()));
+    }
+
+    #[test]
+    fn a_name_whose_log_is_kept_is_not_given_to_a_new_run() {
+        let scratch = Scratch::new();
+        let first = scratch.directories.create("imessage-ios", NOW).unwrap();
+        let logs = crate::app_directories::logs_dir_in(scratch.app_data.path());
+        fs::create_dir_all(&logs).unwrap();
+        fs::write(import_run_log(&logs, &first), "the first run's log").unwrap();
+        // The first run ended and its directory went; its log stays.
+        scratch.directories.delete(first.to_str().unwrap()).unwrap();
+
+        let second = scratch.directories.create("imessage-ios", NOW).unwrap();
+
+        assert_ne!(
+            import_run_log(&logs, &second),
+            import_run_log(&logs, &first)
+        );
+        assert!(second.ends_with("staging-iphone-ios-261002-101500-2"));
     }
 
     #[test]

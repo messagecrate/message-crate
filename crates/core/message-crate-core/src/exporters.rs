@@ -243,8 +243,8 @@ impl Default for Form {
 
 impl Form {
     /// Validate the form and build a typed [`ExporterConfig`] for `exporter`,
-    /// whose scratch data goes under `cache_dir`, the app's cache directory
-    /// ([`ExporterConfig::cache_dir`]).
+    /// whose scratch data goes under `scratch_dir`, the Scratch Directory
+    /// ([`ExporterConfig::scratch_dir`]).
     ///
     /// # Errors
     ///
@@ -252,21 +252,23 @@ impl Form {
     pub fn to_config(
         &self,
         exporter: Exporter,
-        cache_dir: &Path,
+        scratch_dir: &Path,
     ) -> Result<ExporterConfig, Vec<String>> {
         let mut errors = Vec::new();
         let obfuscate = self.validate_obfuscate(&mut errors);
 
         let config = match exporter {
-            Exporter::Imessage => self.to_imessage_config(obfuscate, cache_dir, &mut errors),
-            Exporter::Whatsapp => self.to_whatsapp_config(obfuscate, cache_dir, &mut errors),
-            Exporter::Imazing => self.to_imazing_config(obfuscate, cache_dir, &mut errors),
-            Exporter::OpenExtract => self.to_openextract_config(obfuscate, cache_dir, &mut errors),
-            Exporter::GoSmsPro => self.to_go_sms_pro_config(obfuscate, cache_dir, &mut errors),
-            Exporter::SmsBackupRestore => {
-                self.to_sms_restore_config(obfuscate, cache_dir, &mut errors)
+            Exporter::Imessage => self.to_imessage_config(obfuscate, scratch_dir, &mut errors),
+            Exporter::Whatsapp => self.to_whatsapp_config(obfuscate, scratch_dir, &mut errors),
+            Exporter::Imazing => self.to_imazing_config(obfuscate, scratch_dir, &mut errors),
+            Exporter::OpenExtract => {
+                self.to_openextract_config(obfuscate, scratch_dir, &mut errors)
             }
-            Exporter::SmsBackupPlus => self.to_sms_plus_config(obfuscate, cache_dir, &mut errors),
+            Exporter::GoSmsPro => self.to_go_sms_pro_config(obfuscate, scratch_dir, &mut errors),
+            Exporter::SmsBackupRestore => {
+                self.to_sms_restore_config(obfuscate, scratch_dir, &mut errors)
+            }
+            Exporter::SmsBackupPlus => self.to_sms_plus_config(obfuscate, scratch_dir, &mut errors),
         };
 
         if errors.is_empty() {
@@ -280,7 +282,7 @@ impl Form {
     fn to_imessage_config(
         &self,
         obfuscate: ObfuscateConfig,
-        cache_dir: &Path,
+        scratch_dir: &Path,
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
         required_text(&self.output, "Output directory", errors);
@@ -306,7 +308,7 @@ impl Form {
         ExporterConfig {
             inputs,
             output: PathBuf::from(self.output.trim()),
-            cache_dir: cache_dir.to_path_buf(),
+            scratch_dir: scratch_dir.to_path_buf(),
             timezone: None,
             obfuscate,
             media,
@@ -335,7 +337,7 @@ impl Form {
     fn to_whatsapp_config(
         &self,
         obfuscate: ObfuscateConfig,
-        cache_dir: &Path,
+        scratch_dir: &Path,
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
         let inputs = if self.input.trim().is_empty() {
@@ -362,7 +364,7 @@ impl Form {
         ExporterConfig {
             inputs,
             output: PathBuf::from(self.output.trim()),
-            cache_dir: cache_dir.to_path_buf(),
+            scratch_dir: scratch_dir.to_path_buf(),
             timezone: None,
             obfuscate,
             media,
@@ -395,7 +397,7 @@ impl Form {
     fn to_imazing_config(
         &self,
         obfuscate: ObfuscateConfig,
-        cache_dir: &Path,
+        scratch_dir: &Path,
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
         let input = require_single_existing_path(&self.input, "Input", errors);
@@ -405,7 +407,7 @@ impl Form {
         ExporterConfig {
             inputs: input.into_iter().collect(),
             output: PathBuf::from(self.output.trim()),
-            cache_dir: cache_dir.to_path_buf(),
+            scratch_dir: scratch_dir.to_path_buf(),
             timezone,
             obfuscate,
             media,
@@ -423,7 +425,7 @@ impl Form {
     fn to_openextract_config(
         &self,
         obfuscate: ObfuscateConfig,
-        cache_dir: &Path,
+        scratch_dir: &Path,
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
         let input = require_single_existing_path(&self.input, "Input", errors);
@@ -432,7 +434,7 @@ impl Form {
         ExporterConfig {
             inputs: input.into_iter().collect(),
             output: PathBuf::from(self.output.trim()),
-            cache_dir: cache_dir.to_path_buf(),
+            scratch_dir: scratch_dir.to_path_buf(),
             timezone: None,
             obfuscate,
             media,
@@ -450,14 +452,14 @@ impl Form {
     fn to_go_sms_pro_config(
         &self,
         obfuscate: ObfuscateConfig,
-        cache_dir: &Path,
+        scratch_dir: &Path,
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
         let (inputs, media, owner_phones) = self.android_common(errors);
         ExporterConfig {
             inputs,
             output: PathBuf::from(self.output.trim()),
-            cache_dir: cache_dir.to_path_buf(),
+            scratch_dir: scratch_dir.to_path_buf(),
             timezone: None,
             obfuscate,
             media,
@@ -475,14 +477,14 @@ impl Form {
     fn to_sms_restore_config(
         &self,
         obfuscate: ObfuscateConfig,
-        cache_dir: &Path,
+        scratch_dir: &Path,
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
         let (inputs, media, owner_phones) = self.android_common(errors);
         ExporterConfig {
             inputs,
             output: PathBuf::from(self.output.trim()),
-            cache_dir: cache_dir.to_path_buf(),
+            scratch_dir: scratch_dir.to_path_buf(),
             timezone: None,
             obfuscate,
             media,
@@ -500,7 +502,7 @@ impl Form {
     fn to_sms_plus_config(
         &self,
         obfuscate: ObfuscateConfig,
-        cache_dir: &Path,
+        scratch_dir: &Path,
         errors: &mut Vec<String>,
     ) -> ExporterConfig {
         let (inputs, media, owner_phones) = self.android_common(errors);
@@ -514,7 +516,7 @@ impl Form {
         ExporterConfig {
             inputs,
             output: PathBuf::from(self.output.trim()),
-            cache_dir: cache_dir.to_path_buf(),
+            scratch_dir: scratch_dir.to_path_buf(),
             timezone: None,
             obfuscate,
             media,

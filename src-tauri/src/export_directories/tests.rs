@@ -41,7 +41,7 @@ fn convert(input: &Path, output: &Path, cache: &Path) {
     message_reexport::run(&ExporterConfig {
         inputs: vec![input.to_path_buf()],
         output: output.to_path_buf(),
-        cache_dir: cache.to_path_buf(),
+        scratch_dir: cache.to_path_buf(),
         timezone: None,
         obfuscate: ObfuscateConfig::default(),
         media: MediaConfig::default(),

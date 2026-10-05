@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Button from "../../components/Button";
 import { type ImportSummaryView, NOTES_HELP } from "../../components/import/ImportSummaryPanel";
@@ -12,7 +12,7 @@ import { groupSlug, slugPath } from "../../lib/contactGroups";
 import { desktopJobRunningText, useDesktopJob } from "../../lib/desktopJob";
 import { useRouteQuery } from "../../lib/routeQuery";
 import { getImport } from "../../lib/serverApi";
-import type { AttachmentForecast, StagingSummary } from "../../lib/tauri";
+import { type AttachmentForecast, invokeImportRunLog, type StagingSummary } from "../../lib/tauri";
 import type { AttachmentMediaMode } from "../../lib/types";
 import ImportContactsPanel from "../settings/storage/ImportContactsPanel";
 import { estimatePiles, estimatesHeading, filesOverLimit } from "./gateForecast";
@@ -32,7 +32,6 @@ import {
 } from "./importRunCopy";
 import { ExpandableFactRow, FactGroup, FactGroups, FactList, FactRow } from "./RunFacts";
 import type { ImportJobFormValues } from "./useImportJob";
-import { PUSH_LOG_NAME } from "./useImportJob";
 
 const STAGING_REVIEW_LABEL = "Staging Review";
 const MEDIA_REVIEW_LABEL = "Media Review";
@@ -197,6 +196,50 @@ function FinishedExits({ importId }: { importId: number }) {
 }
 
 /**
+ * The log of the Import Run whose directory is `stagingDir`, in the Logs
+ * Directory, as the desktop names it. Null until it answers. When the run
+ * ends its directory is deleted and `stagingDir` goes, but the log stays, so
+ * with `keep` the last log named is kept rather than dropped.
+ */
+function useImportRunLog(stagingDir: string | null, keep: boolean): string | null {
+  const [log, setLog] = useState<string | null>(null);
+  // The run directory the log was last asked for: `keep` changing on its own
+  // asks again for nothing.
+  const askedFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!stagingDir) {
+      if (!keep) {
+        askedFor.current = null;
+        setLog(null);
+      }
+      return;
+    }
+    if (askedFor.current === stagingDir) return;
+    askedFor.current = stagingDir;
+    setLog(null);
+    let live = true;
+    invokeImportRunLog(stagingDir).then(
+      (path) => {
+        if (live) setLog(path);
+      },
+      (caught: unknown) => {
+        // The run goes on without the link; the reason is worth a line.
+        console.error("Could not name the Import Run's log", caught);
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, [stagingDir, keep]);
+  return log;
+}
+
+/** The last part of `path`, after its last slash or backslash. */
+function fileName(path: string): string {
+  return path.split(/[/\\]/).pop() || path;
+}
+
+/**
  * The Import Run's one screen: the run's stages as a list, each holding what
  * it made, with each Review as a row in that list where the run stops for
  * the person. A finished run leads with where to go next; its errors, and
@@ -281,9 +324,9 @@ export default function ImportRunView({
   cancelDisabled?: boolean;
 }) {
   const trimmedStaging = stagingDir?.trim() || null;
-  const logPath = trimmedStaging ? `${trimmedStaging}/${PUSH_LOG_NAME}` : null;
-  const mode = form?.attachmentMedia ?? "copy";
   const done = phase === "done";
+  const logPath = useImportRunLog(trimmedStaging, done);
+  const mode = form?.attachmentMedia ?? "copy";
   const succeeded =
     summaryView?.status === "completed" || summaryView?.status === "completed_with_issues";
   const hasMedia = steps.some((step) => step.label === MEDIA_LABEL);
@@ -481,7 +524,7 @@ export default function ImportRunView({
             title="Import log"
             value={
               <OpenPathButton path={logPath} title={logPath} className={PATH_LINK}>
-                {PUSH_LOG_NAME}
+                {fileName(logPath)}
               </OpenPathButton>
             }
           />

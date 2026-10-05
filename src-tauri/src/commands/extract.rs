@@ -35,7 +35,8 @@ use super::events;
 use super::events::ExtractProgressEvent;
 use super::jobs::{cancel_running_job, spawn_job, start_job};
 use super::last_log_line_or;
-use super::paths::app_cache_dir;
+use super::paths::{logs_dir, scratch_dir};
+use crate::app_directories::RunLog;
 use crate::staging_directories::StagingDirectories;
 use crate::state::AppState;
 
@@ -182,7 +183,7 @@ pub fn extract(
 
     let media_settings = media_settings_for(&options, args.asset_max_bytes)?;
     let mut config = build_exporter_config(
-        &app_cache_dir(&app)?,
+        &scratch_dir(&app)?,
         &args.source,
         &args.path,
         &output_dir.display().to_string(),
@@ -197,9 +198,13 @@ pub fn extract(
     // Two channels, two jobs: log lines are for the person reading the log
     // panel, progress events are for the bar. Nothing reads counts out of
     // the prose.
+    // The same lines go into the run's log in the Logs Directory, which
+    // outlives the run's directory.
+    let run_log = RunLog::open(&logs_dir(&app)?, &output_dir);
     let log_app = app_handle.clone();
+    let sink_log = run_log.clone();
     config.log = Some(LogSink::new(move |line: &str| {
-        events::emit(&log_app, events::LOG, line.to_string());
+        events::log_to_run(&log_app, &sink_log, line.to_string());
     }));
     let progress_app = app_handle.clone();
     config.progress = Some(ProgressSink::new(move |event| {
@@ -212,10 +217,11 @@ pub fn extract(
     config.issues = Some(events::issue_sink(&app_handle));
 
     spawn_job(app, job, move || {
-        let run_result = run_staging(&config, &output_dir, &media_settings)?;
+        let run_result = run_staging(&config, &output_dir, &media_settings)
+            .inspect_err(|error| run_log.error(error))?;
         let payload = finished_payload(&run_result);
         for line in run_result.messages {
-            events::emit(&app_handle, events::LOG, line);
+            events::log_to_run(&app_handle, &run_log, line);
         }
         Ok(payload)
     });
@@ -372,7 +378,7 @@ fn run_staging(
 }
 
 /// Build the exporter config the background thread will run, with its
-/// scratch data under `cache_dir`, the app's cache directory.
+/// scratch data under `scratch_dir`, the Scratch Directory.
 ///
 /// Every source maps its UI key to an [`Exporter`] variant, fills the shared
 /// [`Form`], and goes through `Form::to_config` — so the Form builders in
@@ -387,7 +393,7 @@ fn run_staging(
 /// checked here: `Form` sees Clone for a real Compress choice, and
 /// [`media_settings_for`] checks them against the real one.
 fn build_exporter_config(
-    cache_dir: &Path,
+    scratch_dir: &Path,
     source: &str,
     path: &str,
     output_dir: &str,
@@ -482,7 +488,7 @@ fn build_exporter_config(
         _ => return Err(format!("unsupported source '{source}'")),
     };
 
-    form.to_config(exporter, cache_dir)
+    form.to_config(exporter, scratch_dir)
         .map_err(|errors| errors.join("; "))
 }
 

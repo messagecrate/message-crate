@@ -10,7 +10,7 @@ use message_crate_core::{
 use super::events;
 use super::jobs::{spawn_job, start_job};
 use super::last_log_line_or;
-use super::paths::app_cache_dir;
+use super::paths::scratch_dir;
 use crate::state::AppState;
 
 /// Ask this process to rewrite an extract directory in a different file format.
@@ -51,7 +51,7 @@ pub fn format(
         })
         .transpose()?;
 
-    let cache_dir = app_cache_dir(&app)?;
+    let scratch_dir = scratch_dir(&app)?;
     let job = start_job(&state, "a format conversion")?;
     let cancel = job.cancel_flag();
 
@@ -61,7 +61,7 @@ pub fn format(
         let config = ExporterConfig {
             inputs: vec![PathBuf::from(&input_dir)],
             output: PathBuf::from(&output_dir),
-            cache_dir,
+            scratch_dir,
             timezone: None,
             obfuscate: Default::default(),
             media: MediaConfig::default(),

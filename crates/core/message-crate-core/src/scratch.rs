@@ -1,12 +1,12 @@
-//! The scratch directories a run writes into, under the desktop app's cache
-//! directory.
+//! The scratch directories a run writes into, under the desktop app's
+//! Scratch Directory.
 //!
 //! Two things a run writes are not output: the attachment spool (each
 //! attachment payload an SMS Backup & Restore, GO SMS Pro or SMS Backup+
 //! file carries, written to disk as it is parsed) and the databases
 //! `imessage-reader` decrypts out of an encrypted iPhone backup. Both are
 //! plain copies of personal data that no screen names, so they live in
-//! directories under the app's cache directory ([`IMESSAGE_READER_DIRECTORY`],
+//! directories under the Scratch Directory ([`IMESSAGE_READER_DIRECTORY`],
 //! [`ATTACHMENT_SPOOL_DIRECTORY`]), never in the output directory the person
 //! chose. The app deletes a request's directory when the request ends, and
 //! [`sweep_scratch`] at app start, and every new request, delete what a
@@ -29,11 +29,11 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 
-/// The directory under the app's cache directory that `imessage-reader` decrypts
+/// The directory under the Scratch Directory that `imessage-reader` decrypts
 /// an encrypted iPhone backup's databases and attachments into.
 pub const IMESSAGE_READER_DIRECTORY: &str = "imessage-reader";
 
-/// The directory under the app's cache directory that holds each run's attachment
+/// The directory under the Scratch Directory that holds each run's attachment
 /// spool.
 pub const ATTACHMENT_SPOOL_DIRECTORY: &str = "attachment-spool";
 
@@ -43,16 +43,16 @@ const SCRATCH_DIRECTORIES: [&str; 2] = [IMESSAGE_READER_DIRECTORY, ATTACHMENT_SP
 /// The lock file, in the root and in each request's directory.
 pub(crate) const LOCK: &str = ".lock";
 
-/// Delete what killed runs left in every scratch directory under `cache_dir`,
+/// Delete what killed runs left in every scratch directory under `scratch_dir`,
 /// keeping the directories of requests still running. The desktop app calls it
 /// when it starts, so a killed run's data does not wait for the next run of
 /// the same kind.
 ///
 /// A scratch directory that cannot be read or locked is left as it is: the
 /// next request in it cleans it, and a failed sweep must not stop the app.
-pub fn sweep_scratch(cache_dir: &Path) {
+pub fn sweep_scratch(scratch_dir: &Path) {
     for directory in SCRATCH_DIRECTORIES {
-        let root = cache_dir.join(directory);
+        let root = scratch_dir.join(directory);
         if !root.is_dir() {
             continue;
         }
@@ -175,7 +175,7 @@ fn restrict_to_owner(directory: &Path) -> Result<()> {
         .with_context(|| format!("restrict {} to its owner", directory.display()))
 }
 
-/// Off Unix the directory keeps the permissions of the app's cache directory it
+/// Off Unix the directory keeps the permissions of the Scratch Directory it
 /// sits in.
 #[cfg(not(unix))]
 fn restrict_to_owner(_directory: &Path) -> Result<()> {
@@ -274,9 +274,9 @@ mod tests {
     /// directory a running job holds, in either (#1421, #1402).
     #[test]
     fn the_start_up_sweep_deletes_a_killed_run_s_scratch_and_keeps_a_running_one() {
-        let cache = tempfile::tempdir().unwrap();
-        let spool_root = cache.path().join(ATTACHMENT_SPOOL_DIRECTORY);
-        let reader_root = cache.path().join(IMESSAGE_READER_DIRECTORY);
+        let scratch = tempfile::tempdir().unwrap();
+        let spool_root = scratch.path().join(ATTACHMENT_SPOOL_DIRECTORY);
+        let reader_root = scratch.path().join(IMESSAGE_READER_DIRECTORY);
         killed_request(&spool_root, "request-killed", "2cf24dba");
         killed_request(&reader_root, "request-killed", "crabapple-sms-x.db");
         let running_spool = ScratchDir::create(&spool_root).unwrap();
@@ -285,9 +285,9 @@ mod tests {
         // Made after the running requests, so their own clean-up did not
         // see it: only the sweep can.
         killed_request(&spool_root, "request-later", "9f86d081");
-        fs::write(cache.path().join("unrelated"), b"kept").unwrap();
+        fs::write(scratch.path().join("unrelated"), b"kept").unwrap();
 
-        sweep_scratch(cache.path());
+        sweep_scratch(scratch.path());
 
         let own = |scratch: &ScratchDir| {
             vec![
@@ -303,18 +303,18 @@ mod tests {
         assert_eq!(names_in(&reader_root), own(&running_reader));
         assert!(running_spool.path().join("e3b0c442").exists());
         assert!(
-            cache.path().join("unrelated").exists(),
+            scratch.path().join("unrelated").exists(),
             "only scratch directories are swept"
         );
     }
 
-    /// A cache directory with no scratch directories yet is swept without making
+    /// A Scratch Directory with no scratch directories yet is swept without making
     /// any.
     #[test]
-    fn the_sweep_of_an_empty_cache_directory_makes_nothing() {
-        let cache = tempfile::tempdir().unwrap();
-        sweep_scratch(cache.path());
-        assert_eq!(fs::read_dir(cache.path()).unwrap().count(), 0);
+    fn the_sweep_of_an_empty_scratch_directory_makes_nothing() {
+        let scratch = tempfile::tempdir().unwrap();
+        sweep_scratch(scratch.path());
+        assert_eq!(fs::read_dir(scratch.path()).unwrap().count(), 0);
     }
 
     /// A relative root would put decrypted data wherever the process runs,

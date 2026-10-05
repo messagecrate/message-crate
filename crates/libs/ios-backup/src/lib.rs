@@ -15,7 +15,7 @@
 //! program: `imessage-reader` (`crates/helpers/imessage-reader`). [`Helper`]
 //! finds that program, starts it, and reads its answer over the wire types
 //! of `imessage-reader-protocol`; `message_crate_core::ScratchDir` is the
-//! directory one request decrypts into, under the app's cache directory.
+//! directory one request decrypts into, under the Scratch Directory.
 //! `imessage-ir-exporter` starts the program through the same two types for
 //! an export. Why: `docs/adr/0014-gpl-code-only-behind-a-process-boundary.md`.
 

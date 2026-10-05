@@ -350,8 +350,8 @@ impl ProjectionHooks for GoSmsProjection {
 pub(crate) struct ConvertExportArgs<'a> {
     pub input_dir: &'a Path,
     pub output_dir: &'a Path,
-    /// The app's cache directory, which the run's attachment spool goes under.
-    pub cache_dir: &'a Path,
+    /// the Scratch Directory, which the run's attachment spool goes under.
+    pub scratch_dir: &'a Path,
     pub owner_phones: &'a [String],
     pub transforms: ExportTransforms,
     pub output_format: OutputFormat,
@@ -377,7 +377,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     let ConvertExportArgs {
         input_dir,
         output_dir,
-        cache_dir,
+        scratch_dir,
         owner_phones,
         transforms,
         output_format,
@@ -397,7 +397,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
 
     // Clean the previous run's output, or keep it when `resume` is set.
     let writer =
-        ExportWriter::open(&output_dir, output_format, transforms, resume)?.with_spool(cache_dir);
+        ExportWriter::open(&output_dir, output_format, transforms, resume)?.with_spool(scratch_dir);
     let mut ingest = Ingest {
         owners: &owners,
         spool: writer.spool(),
