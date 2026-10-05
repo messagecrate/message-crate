@@ -248,6 +248,12 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-05 **The size in an Export's "Fetched" line counts only what the
+  Export fetched.** A program that ran an Export into a directory already
+  holding some of its Assets could read "Fetched 0 Assets (5.0 MB) and kept
+  3 already on disk". It now reads "Fetched 0 Assets (0 B) and kept 3
+  already on disk". The app gives every Export a new directory, so nothing
+  changes on screen.
 - 2026-10-04 **A program that reads Import Runs from the server finds each
   run's directory under a new name.** The old name read as the Staging
   Directory, which holds every run's directory. Nothing changes on screen.
@@ -391,6 +397,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **The Upload's log writes its progress, skips, failures,
+  timings and summary as sentences.** The log wrote shorthand such as
+  "skip …: …", "files 10/25: …", "PROFILE … read_ms=… total_ms=…" and a
+  "==== Summary ====" block of labels. It now writes lines such as "Did not
+  upload …: …", "Finished 10 of 25 conversations. In the last 12.3s the
+  Upload sent 10 conversations with 20 messages and 7.0 MB of Assets." and
+  "The Upload completed in 1m00s." An Upload that left conversations for
+  the next Upload ends with "The Upload paused after …", where it used to
+  say it completed with errors.
 - 2026-10-05 **An Import Run's log writes its warnings as sentences.** Lines
   written while reading a backup started with "warning:" or "media warning:".
   Each now says what happened:

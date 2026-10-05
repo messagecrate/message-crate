@@ -1,5 +1,5 @@
 use super::*;
-use crate::test_support::conversation_header;
+use crate::test_support::{conversation_header, message_line};
 
 const TEST_ACCOUNT: i64 = 7;
 
@@ -9,15 +9,8 @@ async fn import_one_message(conn: &mut SqliteConnection, dir: &std::path::Path, 
     let path = dir.join(format!("{guid}.jsonl"));
     let header =
         conversation_header("sms-backup-restore", "+15555550143").participant("+15555550143", None);
-    std::fs::write(
-        &path,
-        format!(
-            r#"{header}
-{{"guid":"{guid}","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550143","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}}
-"#
-        ),
-    )
-    .unwrap();
+    let message = message_line(guid, "hi").sms().sender("+15555550143");
+    std::fs::write(&path, format!("{header}\n{message}\n")).unwrap();
     let assets = dir.join("assets");
     let counts = super::super::import_jsonl_files_on_conn(
         conn,

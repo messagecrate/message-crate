@@ -2040,13 +2040,12 @@ mod kind_words {
     ) -> (i64, i64) {
         let path = dir.join(format!("{chat}.jsonl"));
         let header = crate::test_support::conversation_header(source, chat).participant(chat, None);
-        let line = serde_json::json!({
-            "guid": format!("{source}-{chat}"), "timestamp_unix_ms": 1_426_183_462_000_i64,
-            "direction": "incoming", "service": "sms", "message_kind": "sms",
-            "sender_identity": chat, "sender_display_name": null, "subject": null,
-            "text": format!("hello from {source}"), "attachments": [],
-            "imessage": null, "source": null
-        });
+        let line = crate::test_support::message_line(
+            &format!("{source}-{chat}"),
+            &format!("hello from {source}"),
+        )
+        .sms()
+        .sender(chat);
         std::fs::write(&path, format!("{header}\n{line}\n")).unwrap();
         let assets = dir.join("assets");
         let counts = crate::imports_api::import_jsonl_files_on_conn(

@@ -782,6 +782,7 @@ struct AssetDownloadJob {
 
 #[derive(Default)]
 struct AssetDownloadStats {
+    /// The bytes this run fetched. A file already at its path adds nothing.
     bytes: u64,
     downloaded: u64,
     skipped: u64,
@@ -820,17 +821,17 @@ struct DownloadAssetsParallelArgs<'a> {
 }
 
 /// Fetch each Asset in `assets` on `workers` threads and return the counts and
-/// bytes.
+/// the bytes fetched.
 ///
 /// The same pattern as the Upload's `upload_assets`: the jobs are collected,
 /// then [`parallel_for_each`] runs them. An Asset whose file is already at its
-/// path is not fetched and is counted as `skipped`. Each fetch retries a
+/// path is not fetched: it is counted as `skipped`, and its size is left out
+/// of the bytes, which are only what this run fetched. Each fetch retries a
 /// transient HTTP failure, as the Upload does.
 ///
 /// # Errors
 ///
-/// Returns an error when a fetch fails after retries, the size of a file
-/// already at its path cannot be read, or the run is cancelled.
+/// Returns an error when a fetch fails after retries or the run is cancelled.
 fn download_assets_parallel(args: DownloadAssetsParallelArgs<'_>) -> Result<AssetDownloadStats> {
     let DownloadAssetsParallelArgs {
         session,
@@ -847,8 +848,6 @@ fn download_assets_parallel(args: DownloadAssetsParallelArgs<'_>) -> Result<Asse
     for (sha256, rel) in assets {
         let dest = out_dir.join(rel);
         if dest.is_file() {
-            let meta = fs::metadata(&dest).with_context(|| format!("stat {}", dest.display()))?;
-            stats.bytes = stats.bytes.saturating_add(meta.len());
             stats.skipped += 1;
             continue;
         }
