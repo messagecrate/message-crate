@@ -1174,6 +1174,110 @@ pub fn log_event(second: usize, level: &str, text: &str) -> String {
     )
 }
 
+/// The conversation header line that opens a test's JSON Lines batch, built
+/// from `message_ir`'s own header type at [`message_ir::SCHEMA_VERSION`]. A
+/// schema version bump or a renamed field reaches every test through this one
+/// builder, rather than through a hand-written literal in each file (#1732).
+///
+/// It starts as a one-to-one conversation with no owner, no title and no
+/// participants, and each method sets one more field. `Display` writes the
+/// line as JSON without a trailing newline. The stats are left at zero,
+/// because the import reads none of them.
+#[derive(Debug, Clone)]
+pub struct ConversationHeaderLine(message_ir::ConversationHeader);
+
+/// A header line for a conversation from `source` keyed by `chat_identifier`.
+pub fn conversation_header(source: &str, chat_identifier: &str) -> ConversationHeaderLine {
+    ConversationHeaderLine(message_ir::ConversationHeader {
+        schema_version: message_ir::SCHEMA_VERSION,
+        export: message_ir::ExportMeta {
+            source: source.to_string(),
+            tool: "test".to_string(),
+            tool_version: "0".to_string(),
+            owner_identity: None,
+            owner_display_name: None,
+        },
+        conversation: message_ir::ConversationMeta {
+            chat_identifier: chat_identifier.to_string(),
+            conversation_type: message_ir::IrConversationType::Individual,
+            group_title: None,
+            participants: Vec::new(),
+            stats: message_ir::ConversationStats::default(),
+        },
+    })
+}
+
+impl ConversationHeaderLine {
+    /// The account holder's identity, and the name they appear under.
+    pub fn owner(mut self, identity: &str, display_name: Option<&str>) -> Self {
+        self.0.export.owner_identity = Some(identity.to_string());
+        self.0.export.owner_display_name = display_name.map(str::to_string);
+        self
+    }
+
+    /// A group conversation.
+    pub fn group(mut self) -> Self {
+        self.0.conversation.conversation_type = message_ir::IrConversationType::Group;
+        self
+    }
+
+    /// The title the source gave the conversation.
+    pub fn title(mut self, title: &str) -> Self {
+        self.0.conversation.group_title = Some(title.to_string());
+        self
+    }
+
+    /// The conversation's type, for a test that takes it as a parameter.
+    pub fn conversation_type(mut self, kind: message_ir::IrConversationType) -> Self {
+        self.0.conversation.conversation_type = kind;
+        self
+    }
+
+    /// One more participant, reached at `identity`.
+    pub fn participant(self, identity: &str, display_name: Option<&str>) -> Self {
+        self.with_participant(Some(identity), display_name, None)
+    }
+
+    /// One more participant, reached at `identity` of a known type.
+    pub fn typed_participant(
+        self,
+        identity: &str,
+        display_name: Option<&str>,
+        identity_type: message_ir::HandleType,
+    ) -> Self {
+        self.with_participant(Some(identity), display_name, Some(identity_type))
+    }
+
+    /// One more participant the source recorded no address for, named
+    /// `display_name` when it named them at all.
+    pub fn participant_without_identity(self, display_name: Option<&str>) -> Self {
+        self.with_participant(None, display_name, None)
+    }
+
+    fn with_participant(
+        mut self,
+        identity: Option<&str>,
+        display_name: Option<&str>,
+        identity_type: Option<message_ir::HandleType>,
+    ) -> Self {
+        self.0
+            .conversation
+            .participants
+            .push(message_ir::IrParticipant {
+                identity: identity.map(str::to_string),
+                display_name: display_name.map(str::to_string),
+                identity_type,
+            });
+        self
+    }
+}
+
+impl std::fmt::Display for ConversationHeaderLine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&serde_json::to_string(&self.0).map_err(|_| std::fmt::Error)?)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

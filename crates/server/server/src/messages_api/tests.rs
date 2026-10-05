@@ -2,8 +2,9 @@ use axum::http::StatusCode;
 
 use crate::problem::ProblemType;
 use crate::test_support::{
-    RegisteredAccount, SeedConversation, SeedMessage, TestFixture, expect_problem,
-    fixture_with_account, get_json, get_raw, get_status, register_via_api, seed_conversation,
+    RegisteredAccount, SeedConversation, SeedMessage, TestFixture, conversation_header,
+    expect_problem, fixture_with_account, get_json, get_raw, get_status, register_via_api,
+    seed_conversation,
 };
 
 /// Two conversations for alice (a direct thread and a group), and one for bob
@@ -328,24 +329,12 @@ fn ir_message(
 /// reply carrying a sticker and two reactions, an announcement carrying one
 /// reaction, and a plain message with none of these.
 async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
-    let header = serde_json::json!({
-        "schema_version": 9,
-        "export": {"source": "imessage", "tool": "test", "tool_version": "0",
-                   "owner_identity": null, "owner_display_name": null},
-        "conversation": {
-            "chat_identifier": "chat-reactions",
-            "conversation_type": "group",
-            "group_title": "Reactions",
-            "participants": [
-                {"identity": "+15555550123", "display_name": null},
-                {"identity": "+15555550167", "display_name": null},
-                {"identity": "+15555550161", "display_name": null}
-            ],
-            "stats": {"message_count": 3, "attachment_count": 3,
-                      "first_timestamp_unix_ms": 1426183462000_i64,
-                      "last_timestamp_unix_ms": 1426183464000_i64}
-        }
-    });
+    let header = conversation_header("imessage", "chat-reactions")
+        .group()
+        .title("Reactions")
+        .participant("+15555550123", None)
+        .participant("+15555550167", None)
+        .participant("+15555550161", None);
     let reply = ir_message(
         "g-reply",
         1_426_183_462_000,

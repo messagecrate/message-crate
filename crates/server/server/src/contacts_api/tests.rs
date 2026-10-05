@@ -6,8 +6,8 @@ use message_ir::HandleType;
 
 use crate::db::account_profile;
 use crate::test_support::{
-    MessageRow, RegisteredAccount, TestFixture, fixture_with_account, post_json, post_status,
-    register_via_api, test_fixture,
+    MessageRow, RegisteredAccount, TestFixture, conversation_header, fixture_with_account,
+    post_json, post_status, register_via_api, test_fixture,
 };
 use axum::http::StatusCode;
 
@@ -3404,9 +3404,8 @@ async fn ada_in_a_conversation(conn: &mut sqlx::SqliteConnection, account: i64) 
         conn,
         account,
         "imessage",
-        r#"{"schema_version":9,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550123","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550123","display_name":"Ada"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}
-{"guid":"g-ada-1105","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}
-"#,
+        &format!("{}\n{}", conversation_header("imessage", "+15555550123").participant("+15555550123", Some("Ada")), r#"{"guid":"g-ada-1105","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}
+"#),
     )
     .await;
     sqlx::query_scalar("SELECT id FROM contacts WHERE account_id = $1 AND preferred_name = 'Ada'")
