@@ -436,8 +436,8 @@ fn a_refused_completion_outranks_a_report_that_cannot_be_written() {
 
     let dir = tempdir().unwrap();
     write_jsonl(dir.path(), &sample_doc());
-    // A folder where the report file should be makes the write fail.
-    let report_path = dir.path().join("report-is-a-folder");
+    // A directory where the report file should be makes the write fail.
+    let report_path = dir.path().join("report-is-a-directory");
     fs::create_dir(&report_path).unwrap();
     let cfg = PushConfig {
         report_path: Some(report_path),
@@ -677,7 +677,7 @@ fn a_refused_line_of_a_batch_is_reported_as_the_line_of_its_staged_file() {
 }
 
 /// Three conversations, the middle one unreadable, in name order.
-fn folder_with_a_bad_middle_file(dir: &Path) {
+fn directory_with_a_bad_middle_file(dir: &Path) {
     write_jsonl(dir, &sample_doc());
     let bad = sample_doc_for("+15555550102", "guid-2");
     fs::write(
@@ -708,7 +708,7 @@ fn a_push_imports_the_files_after_a_bad_one() {
     });
 
     let dir = tempdir().unwrap();
-    folder_with_a_bad_middle_file(dir.path());
+    directory_with_a_bad_middle_file(dir.path());
 
     let report = run(&text_only_config(dir.path(), server.base_url()), None).unwrap();
 
@@ -2616,7 +2616,7 @@ fn a_conversation_cut_off_mid_way_by_a_cancel_is_counted_as_cancelled() {
     );
 }
 
-/// After one batch fails, a second push on the same folder sends only the
+/// After one batch fails, a second push on the same directory sends only the
 /// failed conversation's messages, and the journal then has every file ok.
 ///
 /// Guards the resume path after a partial failure: a failed file wrongly
@@ -2896,9 +2896,9 @@ fn a_chunk_that_overflows_the_pending_batch_is_sent_in_the_next_one() {
 }
 
 /// The desktop app sets no journal path, so the journal a second push reads
-/// is the one the first push wrote inside the export folder.
+/// is the one the first push wrote inside the export directory.
 #[test]
-fn a_push_with_no_journal_path_keeps_its_journal_in_the_export_folder() {
+fn a_push_with_no_journal_path_keeps_its_journal_in_the_export_directory() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 7);

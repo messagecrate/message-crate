@@ -171,7 +171,7 @@ schema fingerprint changes on its own.
 | `VAULT_SCHEMA_META_KEY`, `VAULT_SCHEMA_LOCK_ID`, `VAULT_EXPORT_COLUMNS`, `VAULT_IMPORT_COLUMNS` (Rust constants) | same without `VAULT_` |
 | Postgres user, password, and database `vault` in `ci.yml` and the Postgres dev script | `messagecrate` |
 
-`MC_DB` and `MC_DATA_DIR` were later removed from the Docker image, because nothing read them (#1441). The database path and the data folder come from `[paths]` in the configuration.
+`MC_DB` and `MC_DATA_DIR` were later removed from the Docker image, because nothing read them (#1441). The database path and the data directory come from `[paths]` in the configuration.
 
 ### Files and defaults
 

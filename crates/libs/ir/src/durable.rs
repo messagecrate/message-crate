@@ -7,7 +7,7 @@
 //! on disk before anything that points at it. On a file system with delayed
 //! allocation (ext4, for one) a rename can reach the disk ahead of the data
 //! behind it, so each file is synced before it is renamed into place, and
-//! the folder is synced after, so the rename itself is on disk before the
+//! the directory is synced after, so the rename itself is on disk before the
 //! caller writes the next file that relies on it.
 
 use anyhow::{Context, Result};
@@ -32,7 +32,7 @@ pub fn write_atomic(path: &Path, write: impl FnOnce(&mut dyn Write) -> Result<()
     write_atomic_via(&path.with_file_name(tmp_name), path, write)
 }
 
-/// Write `path` atomically: create its folder, hand `write` the temporary
+/// Write `path` atomically: create its directory, hand `write` the temporary
 /// file `tmp`, then [`rename_into_place`] it over `path`, so a reader never
 /// sees a half-written file.
 ///
@@ -43,7 +43,7 @@ pub fn write_atomic(path: &Path, write: impl FnOnce(&mut dyn Write) -> Result<()
 ///
 /// # Errors
 ///
-/// Returns an error when the folder or `tmp` cannot be created, `write`
+/// Returns an error when the directory or `tmp` cannot be created, `write`
 /// fails, or the sync or the rename fails.
 pub fn write_atomic_via(
     tmp: &Path,
@@ -62,7 +62,7 @@ pub fn write_atomic_via(
 
 /// Rename the finished file `from` over `to` so that a power loss leaves
 /// either the old `to` or all of `from` under that name: sync `from`, rename
-/// it, then sync the folder of `to`.
+/// it, then sync the directory of `to`.
 ///
 /// For a file another program wrote, such as an ffmpeg output, that this
 /// process has not synced.
@@ -70,7 +70,7 @@ pub fn write_atomic_via(
 /// # Errors
 ///
 /// Returns an error when `from` cannot be opened or synced, or the rename
-/// or the folder sync fails.
+/// or the directory sync fails.
 pub fn rename_into_place(from: &Path, to: &Path) -> Result<()> {
     File::open(from)
         .and_then(|f| f.sync_all())
@@ -89,7 +89,7 @@ fn write_and_sync(tmp: &Path, write: impl FnOnce(&mut dyn Write) -> Result<()>) 
         .with_context(|| format!("sync {}", tmp.display()))
 }
 
-/// Rename `from` (already synced) over `to` and sync the folder of `to`.
+/// Rename `from` (already synced) over `to` and sync the directory of `to`.
 fn rename_synced(from: &Path, to: &Path) -> Result<()> {
     fs::rename(from, to)
         .with_context(|| format!("rename {} → {}", from.display(), to.display()))?;
@@ -99,7 +99,7 @@ fn rename_synced(from: &Path, to: &Path) -> Result<()> {
     }
 }
 
-/// Sync a folder's entries to disk, so a rename inside it survives a power
+/// Sync a directory's entries to disk, so a rename inside it survives a power
 /// loss.
 #[cfg(unix)]
 fn sync_dir(dir: &Path) -> Result<()> {
@@ -108,7 +108,7 @@ fn sync_dir(dir: &Path) -> Result<()> {
         .with_context(|| format!("sync {}", dir.display()))
 }
 
-/// Windows cannot open a folder through `std::fs::File`, and NTFS journals
+/// Windows cannot open a directory through `std::fs::File`, and NTFS journals
 /// a rename with the metadata it changes, so there is nothing to sync.
 #[cfg(not(unix))]
 fn sync_dir(_dir: &Path) -> Result<()> {

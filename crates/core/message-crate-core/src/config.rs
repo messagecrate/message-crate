@@ -18,7 +18,7 @@ use crate::progress::{ProgressEvent, ProgressSink, emit_progress};
 pub enum OutputFormat {
     /// Per-conversation CSV.
     Csv,
-    /// Per-conversation folder of `.eml` files (see <https://messagecrate.app/docs/developer/formats/mail-archive/>).
+    /// Per-conversation directory of `.eml` files (see <https://messagecrate.app/docs/developer/formats/mail-archive/>).
     Eml,
     /// Per-conversation `.mbox` (mboxrd) mailbox file.
     Mbox,
@@ -30,7 +30,7 @@ pub enum OutputFormat {
     /// One XML file holding every conversation, written by the merged archive
     /// the caller supplies; the crate that owns that archive names the file.
     Xml,
-    /// SMS Backup+ mail: a folder of `.eml` files per conversation with the
+    /// SMS Backup+ mail: a directory of `.eml` files per conversation with the
     /// `X-smssync-*` headers, holding only SMS and MMS.
     SmsBackupPlus,
 }
@@ -39,7 +39,7 @@ impl fmt::Display for OutputFormat {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::Csv => "CSV (per conversation)",
-            Self::Eml => "EML archive (mail folders)",
+            Self::Eml => "EML archive (mail directories)",
             Self::Mbox => "MBOX (per conversation)",
             Self::Json => "JSON (common message)",
             Self::Jsonl => "JSONL (common message lines)",
@@ -63,7 +63,7 @@ impl OutputFormat {
         }
     }
 
-    /// True for mail-archive packaging (EML folders or MBOX files).
+    /// True for mail-archive packaging (EML directories or MBOX files).
     pub fn is_mail_archive(self) -> bool {
         matches!(self, Self::Eml | Self::Mbox)
     }
@@ -77,10 +77,10 @@ pub struct ExporterConfig {
     /// Output directory the export is written to (packaging plus `attachments/`).
     /// It holds output only.
     pub output: PathBuf,
-    /// The desktop app's cache folder. What a run writes that is not output
+    /// The desktop app's cache directory. What a run writes that is not output
     /// (the attachment spool, the databases `imessage-reader` decrypts) goes
-    /// in a scratch folder under it ([`crate::ScratchDir`]), never under
-    /// [`Self::output`]. The exporter crates do not know the app's folders,
+    /// in a scratch directory under it ([`crate::ScratchDir`]), never under
+    /// [`Self::output`]. The exporter crates do not know the app's directories,
     /// so the app names it here.
     pub cache_dir: PathBuf,
     /// Optional zone for timestamps that carry none: a fixed UTC offset
@@ -206,7 +206,7 @@ pub enum SourceConfig {
 }
 
 #[derive(Debug, Clone, Default)]
-/// Convert an existing export folder to another output format.
+/// Convert an existing export directory to another output format.
 pub struct FormatConfig {
     /// When the Export Run this conversion is part of started. Export pulls
     /// JSON Lines from the server and then converts them, so its run starts
@@ -281,7 +281,7 @@ impl Default for AppleConfig {
 }
 
 #[derive(Debug, Clone, Default)]
-/// WhatsApp extras: Android vs iOS, key, backup folder, and optional media/db paths.
+/// WhatsApp extras: Android vs iOS, key, backup directory, and optional media/db paths.
 pub struct WhatsappConfig {
     /// Android vs iOS backup layout.
     pub platform: Option<WhatsappPlatform>,
@@ -296,7 +296,7 @@ pub struct WhatsappConfig {
     pub backup_password: Option<String>,
     /// Contacts database (`wa.db` / `ContactsV2.sqlite`) path.
     pub wa: Option<PathBuf>,
-    /// WhatsApp media folder path.
+    /// WhatsApp media directory path.
     pub media: Option<PathBuf>,
     /// Explicit `msgstore.db` path.
     pub db: Option<PathBuf>,

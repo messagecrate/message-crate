@@ -6,13 +6,13 @@ use crate::emit::{ConvertExportArgs, convert_export};
 use chrono::{TimeZone, Utc};
 use message_crate_core::{ExportReport, ExportTransforms, OutputFormat};
 use message_ir::{ConversationDocument, IrDirection};
-use message_ir_format::{FormatSink, mark_export_folder, read_conversation_jsonl};
+use message_ir_format::{FormatSink, mark_export_directory, read_conversation_jsonl};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 /// SMS Backup+ mail with an SMS each way, an MMS with a photo, and a group
 /// message each way, one with a picture. It sits outside `tests/fixtures`
-/// because other tests import that whole folder.
+/// because other tests import that whole directory.
 fn fixture() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/round_trip_fixture")
 }
@@ -54,7 +54,7 @@ fn import(input: &Path, output: &Path) -> Vec<ConversationDocument> {
 /// attachments the import staged under `staged` copied in first, as Convert
 /// does.
 fn export(documents: Vec<ConversationDocument>, staged: &Path, output: &Path) -> ExportReport {
-    mark_export_folder(output).unwrap();
+    mark_export_directory(output).unwrap();
     let attachments = output.join("attachments");
     fs::create_dir_all(&attachments).unwrap();
     for entry in fs::read_dir(staged.join("attachments")).unwrap() {
@@ -148,7 +148,7 @@ fn sms_backup_plus_mail_survives_an_export_and_a_second_import() {
 }
 
 #[test]
-fn each_conversation_is_one_folder_of_one_eml_per_message() {
+fn each_conversation_is_one_directory_of_one_eml_per_message() {
     let first = tempfile::tempdir().unwrap();
     let exported = tempfile::tempdir().unwrap();
     let before = import(&fixture(), first.path());
@@ -160,9 +160,9 @@ fn each_conversation_is_one_folder_of_one_eml_per_message() {
     export(before, first.path(), exported.path());
 
     for stem in stems {
-        let folder = exported.path().join(&stem);
-        let names: Vec<String> = fs::read_dir(&folder)
-            .unwrap_or_else(|err| panic!("no folder {stem}: {err}"))
+        let directory = exported.path().join(&stem);
+        let names: Vec<String> = fs::read_dir(&directory)
+            .unwrap_or_else(|err| panic!("no directory {stem}: {err}"))
             .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
         assert!(!names.is_empty(), "{stem}");

@@ -1,5 +1,5 @@
 //! Decrypt every file of one domain of an encrypted iPhone backup into a
-//! folder the app owns.
+//! directory the app owns.
 //!
 //! WhatsApp keeps its data in an app-group domain of the backup. The program
 //! that reads WhatsApp (wtsexporter) asks for a backup password on a
@@ -28,13 +28,13 @@ use crate::{
 /// How many progress events a domain's files are reported in, at most.
 const PROGRESS_EVENTS: u64 = 200;
 
-/// `Manifest.db` flag for a regular file. Folders and symbolic links have
+/// `Manifest.db` flag for a regular file. Directories and symbolic links have
 /// rows too, and no bytes.
 const FLAG_FILE: i64 = 1;
 
 /// What one run wrote.
 pub(crate) struct Written {
-    /// Files decrypted into the folder.
+    /// Files decrypted into the directory.
     pub files: u64,
     /// Files the manifest lists that could not be decrypted.
     pub failures: u64,
@@ -44,11 +44,11 @@ pub(crate) struct Written {
 ///
 /// # Errors
 ///
-/// Returns an error when the folder is not an iPhone backup, the backup is
+/// Returns an error when the directory is not an iPhone backup, the backup is
 /// not encrypted, or the password is wrong.
 pub(crate) fn open(request: &BackupDomainRequest) -> Result<Backup, RuntimeError> {
-    // Opening the backup writes nothing; the folder the app named is the
-    // only one this request may write to, so it is the scratch folder too.
+    // Opening the backup writes nothing; the directory the app named is the
+    // only one this request may write to, so it is the scratch directory too.
     let options = ReaderOptions::from_source(
         Source {
             db_path: request.backup_path.clone(),
@@ -70,7 +70,7 @@ pub(crate) fn open(request: &BackupDomainRequest) -> Result<Backup, RuntimeError
 /// # Errors
 ///
 /// Returns an error when the manifest cannot be read or the domain is not a
-/// plain folder name.
+/// plain directory name.
 pub(crate) fn decrypt_domain(
     backup: &Backup,
     request: &BackupDomainRequest,
@@ -88,7 +88,7 @@ pub(crate) fn decrypt_domain(
     for (index, (file_id, relative_path)) in files.iter().enumerate() {
         let Some(target) = target_path(&request.out_dir, &request.domain, relative_path) else {
             return Err(RuntimeError::InvalidOptions(format!(
-                "the backup names a file outside its own folder: {relative_path}"
+                "the backup names a file outside its own directory: {relative_path}"
             )));
         };
         match decrypt_to(backup, file_id, &target) {
@@ -179,7 +179,7 @@ mod tests {
     const DOMAIN: &str = "AppDomainGroup-group.net.whatsapp.WhatsApp.shared";
 
     /// Only the asked domain's regular files are listed: another domain's
-    /// file, and a folder row of the same domain, are left out.
+    /// file, and a directory row of the same domain, are left out.
     #[test]
     fn only_the_regular_files_of_the_domain_are_listed() {
         let manifest = Connection::open_in_memory().unwrap();
@@ -202,10 +202,10 @@ mod tests {
         );
     }
 
-    /// A file lands under the domain's own folder, and a manifest path that
+    /// A file lands under the domain's own directory, and a manifest path that
     /// would climb out of it, or name a root, is refused.
     #[test]
-    fn a_path_that_leaves_the_folder_is_refused() {
+    fn a_path_that_leaves_the_directory_is_refused() {
         let out = Path::new("/scratch");
         assert_eq!(
             target_path(out, DOMAIN, "Message/Media/photo.jpg"),
@@ -232,7 +232,7 @@ mod tests {
 
     /// The whole path against a backup encrypted the way an iPhone's is:
     /// the password opens it, the domain's files come out as their plain
-    /// bytes under the domain's folder, another domain's file stays in the
+    /// bytes under the domain's directory, another domain's file stays in the
     /// backup, and a file the manifest lists without bytes is counted and
     /// skipped rather than ending the run.
     #[test]
@@ -369,9 +369,9 @@ mod tests {
                 )
                 .unwrap();
                 if let Some(bytes) = bytes {
-                    let folder = root.join(&file_id[..2]);
-                    fs::create_dir_all(&folder).unwrap();
-                    fs::write(folder.join(&file_id), encrypt(bytes, &FILE_KEY)).unwrap();
+                    let directory = root.join(&file_id[..2]);
+                    fs::create_dir_all(&directory).unwrap();
+                    fs::write(directory.join(&file_id), encrypt(bytes, &FILE_KEY)).unwrap();
                 }
             }
             drop(db);

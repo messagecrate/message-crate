@@ -104,7 +104,7 @@ The same lines also show `xml_messages_seen`, `pdu_messages`, and `pdu_group_mes
 | `skipped_unparseable_pdu` | A PDU that breaks a WAP-209 or WSP rule, or records a transaction that is not a message (a delivery report, a notification). The first twenty are named as `error:` lines in the summary with the rule broken and the byte offset. |
 
 Each `skipped_*.csv` names at most the first twenty records (`MAX_SKIP_DETAILS` in `crates/exporters/go-sms-pro-exporter/src/emit.rs`) and closes with a `...and N more entries not shown` row when there were more, so a large backup does not produce a diagnostic file the size of the export.
-A run that skips nothing of that kind writes no file, and removes a stale one left by an earlier run into the same folder.
+A run that skips nothing of that kind writes no file, and removes a stale one left by an earlier run into the same directory.
 
 ## PDU rows
 

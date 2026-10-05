@@ -36,7 +36,7 @@ use super::events::ExtractProgressEvent;
 use super::jobs::{cancel_running_job, spawn_job, start_job};
 use super::last_log_line_or;
 use super::paths::app_cache_dir;
-use crate::staging_folders::StagingFolders;
+use crate::staging_directories::StagingDirectories;
 use crate::state::AppState;
 
 /// Ask this process to stop the job that is running. Does nothing when no
@@ -58,7 +58,7 @@ pub fn cancel(state: tauri::State<'_, Arc<Mutex<AppState>>>) -> Result<(), Strin
 /// and the conversation and message counts the exporter reported.
 ///
 /// The counts come from the exporter rather than from reading the output
-/// folder again, because that folder also holds the staged attachments, and
+/// directory again, because that directory also holds the staged attachments, and
 /// an attachment can be named `*.jsonl` and hold any bytes at all.
 fn finished_payload(run_result: &RunResult) -> String {
     serde_json::json!({
@@ -75,9 +75,9 @@ fn finished_payload(run_result: &RunResult) -> String {
 pub struct ExtractArgs {
     /// Backup source key, for example `imessage-ios` or `whatsapp-android`.
     pub source: String,
-    /// Path to the phone backup (a folder, database file, or XML file).
+    /// Path to the phone backup (a directory, database file, or XML file).
     pub path: String,
-    /// Staging folder `create_staging_dir` made, which the exporter writes
+    /// run directory `create_staging_dir` made, which the exporter writes
     /// conversation files into.
     pub output_dir: String,
     /// Password for encrypted backups, when the source needs one.
@@ -103,7 +103,7 @@ pub struct ExtractArgs {
     /// Owner email addresses for SMS Backup+, whose archive is Gmail-backed
     /// and needs them to tell sent mail from received.
     pub owner_emails: Option<Vec<String>>,
-    /// Alternate folder for Attachments and StickerCache (Mac and jailbreak).
+    /// Alternate directory for Attachments and StickerCache (Mac and jailbreak).
     pub attachment_root: Option<String>,
     /// Path to an Apple AddressBook file (Mac and jailbreak).
     pub apple_contacts: Option<String>,
@@ -111,13 +111,13 @@ pub struct ExtractArgs {
     pub whatsapp_key: Option<String>,
     /// Optional WhatsApp contacts database (`wa.db` / `ContactsV2.sqlite`).
     pub whatsapp_wa: Option<String>,
-    /// Optional WhatsApp media folder.
+    /// Optional WhatsApp media directory.
     pub whatsapp_media: Option<String>,
     /// Optional explicit `msgstore.db` path.
     pub whatsapp_db: Option<String>,
     /// WhatsApp Business backup (iPhone only; Android stays false).
     pub whatsapp_business: Option<bool>,
-    /// Continue an interrupted export in the same output folder: previous
+    /// Continue an interrupted export in the same output directory: previous
     /// output is kept and conversations already written are skipped.
     pub resume: Option<bool>,
     /// The server's attachment size limit, in bytes, as the app read it from
@@ -139,26 +139,26 @@ pub struct ExtractArgs {
 ///
 /// This is where an Import Run's media settings are decided: the mode the
 /// person chose and the compress fields are parsed here, before anything is
-/// staged, and recorded in the staging folder once Staging finishes (see
+/// staged, and recorded in the run directory once Staging finishes (see
 /// [`run_staging`]). `summarize_staging` and `transcode_staging` read them
 /// from there and are never given them again.
 ///
 /// # Errors
 ///
-/// Returns an error if `output_dir` is not a staging folder this app made, a
+/// Returns an error if `output_dir` is not a run directory this app made, a
 /// form field is invalid, the source is unknown, another job is running, or
 /// another thread panicked while holding the shared state lock. Failures
 /// during the export itself are sent as `extract:error`, not returned here.
 #[tauri::command(async)]
 pub fn extract(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
-    folders: tauri::State<'_, StagingFolders>,
+    directories: tauri::State<'_, StagingDirectories>,
     app: tauri::AppHandle,
     args: ExtractArgs,
 ) -> Result<(), String> {
-    // The exporter cleans the folder it writes into, so it writes only into
+    // The exporter cleans the directory it writes into, so it writes only into
     // one this app made for staging.
-    let output_dir = folders.folder(&args.output_dir)?;
+    let output_dir = directories.directory(&args.output_dir)?;
     let options = ExtractOptions {
         backup_password: args.backup_password.unwrap_or_default(),
         attachment_media: parse_attachment_media(args.attachment_media.as_deref())?,
@@ -354,7 +354,7 @@ fn media_settings_for(
 /// beside the export sentinel it wrote.
 ///
 /// The record is written after the exporter and not before, because a fresh
-/// export refuses a folder that already holds files it does not recognise.
+/// export refuses a directory that already holds files it does not recognise.
 /// A Staging that is interrupted leaves no record. Nothing reads one until
 /// Staging finishes, and the resumed Staging writes it.
 ///
@@ -372,7 +372,7 @@ fn run_staging(
 }
 
 /// Build the exporter config the background thread will run, with its
-/// scratch data under `cache_dir`, the app's cache folder.
+/// scratch data under `cache_dir`, the app's cache directory.
 ///
 /// Every source maps its UI key to an [`Exporter`] variant, fills the shared
 /// [`Form`], and goes through `Form::to_config` — so the Form builders in
@@ -451,7 +451,7 @@ fn build_exporter_config(
             form.input = path.to_string();
             // iMazing dates carry no zone, so the exporter reads them in this
             // one. Without it the exporter falls back to the machine's zone,
-            // and the same folder gives different instants on different
+            // and the same directory gives different instants on different
             // machines.
             form.timezone.clone_from(&options.timezone);
             Exporter::Imazing

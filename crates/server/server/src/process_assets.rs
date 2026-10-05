@@ -334,7 +334,7 @@ impl<'a> AccountPass<'a> {
             + crate::asset_store::sweep_shard_temps(&converted_dir, opts.dry_run);
         if left > 0 {
             println!(
-                "  {cleaned_verb} {left} temporary file(s) a killed write left in the shard folders"
+                "  {cleaned_verb} {left} temporary file(s) a killed write left in the shard directories"
             );
         }
         Self::new(cfg, opts, work_dir, account_id, stop, Log::Print)
@@ -898,7 +898,7 @@ fn store_derived_bytes(derived_dir: &Path, buf: &[u8], ext: &str) -> Result<Vers
     let dest = derived_dir.join(&rel);
     let parent = dest
         .parent()
-        .with_context(|| format!("derived path {} has no folder", dest.display()))?;
+        .with_context(|| format!("derived path {} has no directory", dest.display()))?;
     fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     if !crate::assets_api::hash_file(&dest).is_ok_and(|actual| actual == sha.as_str()) {
         let mut temporary = crate::asset_store::shard_temp_file(parent)

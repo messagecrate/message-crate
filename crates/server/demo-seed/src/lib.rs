@@ -1,7 +1,7 @@
 //! Builds a demo message dataset with three backup sources.
 //!
 //! Each conversation is a JSON Lines file: one JSON object per line. The three
-//! folders under `staging/` look like separate phone backups (iMessage, Android
+//! directories under `staging/` look like separate phone backups (iMessage, Android
 //! SMS Backup & Restore, and WhatsApp).
 
 mod assets;
@@ -131,10 +131,10 @@ fn output_parent_dir(out: &Path) -> &Path {
 }
 
 /// The context on an error after which the previous demo files could not all
-/// be moved back: some are still in the backup folder.
+/// be moved back: some are still in the backup directory.
 ///
 /// [`restore_previous_paths`] attaches it, and [`keep_prepared_if_restore_failed`]
-/// looks for it. The backup folder still existing is not the sign: it is also
+/// looks for it. The backup directory still existing is not the sign: it is also
 /// left behind when the restore worked and only its removal failed.
 #[derive(Debug)]
 struct RestoreFailed {
@@ -198,7 +198,7 @@ fn generate_into(cfg: &SeedConfig, out: &Path, cancel: &AtomicBool) -> Result<Ge
     let names = names::NameBank::load_default().context("load name lists")?;
 
     let attachment_digests = assets::write_attachment_blobs(&imessage_attachments)?;
-    // Copy the same attachment files into the Android and WhatsApp folders so
+    // Copy the same attachment files into the Android and WhatsApp directories so
     // those conversations can point at the same relative paths.
     copy_dir_files(&imessage_attachments, &sbr_attachments, cancel)?;
     copy_dir_files(&imessage_attachments, &whatsapp_attachments, cancel)?;
@@ -266,11 +266,11 @@ where
     Ok(stats)
 }
 
-/// Check that the three backup folders and the expected config files exist.
+/// Check that the three backup directories and the expected config files exist.
 ///
 /// # Errors
 ///
-/// Returns an error if a required folder or file is missing, or if a JSON Lines
+/// Returns an error if a required directory or file is missing, or if a JSON Lines
 /// file cannot be read as JSON.
 fn validate_generated_bundle(root: &Path, cancel: &AtomicBool) -> Result<()> {
     for source in [IMESSAGE_SOURCE, SBR_SOURCE, WHATSAPP_SOURCE] {
@@ -342,7 +342,7 @@ fn is_jsonl_file(path: &Path) -> bool {
 /// # Errors
 ///
 /// Returns an error if a rename fails. If the previous files cannot be fully
-/// restored, they are left in the backup folder and the error says so.
+/// restored, they are left in the backup directory and the error says so.
 fn replace_generated_paths(active: &Path, prepared: &Path) -> Result<()> {
     replace_generated_paths_with(active, prepared, move_path, |backup| {
         fs::remove_dir_all(backup)
@@ -434,7 +434,7 @@ fn copy_dir_recursive(source: &Path, destination: &Path) -> Result<()> {
 }
 
 /// Same as [`replace_generated_paths`], but uses `rename` and `remove_backup`
-/// so tests can fail a move or the removal of the backup folder on purpose.
+/// so tests can fail a move or the removal of the backup directory on purpose.
 ///
 /// # Errors
 ///
@@ -536,14 +536,14 @@ where
 /// Remove the new files that were installed, then move the previous copies back.
 ///
 /// Every restore step is attempted even if an earlier one fails. If any step
-/// fails, the backup folder is left on disk.
+/// fails, the backup directory is left on disk.
 ///
 /// # Errors
 ///
 /// Always returns `error`, with context that says whether the previous files
 /// were restored. When they were not all restored, that context is
-/// [`RestoreFailed`]. When they were and only the backup folder could not be
-/// removed, the context names the folder.
+/// [`RestoreFailed`]. When they were and only the backup directory could not be
+/// removed, the context names the directory.
 fn restore_previous_paths<F, R>(
     active: &Path,
     backup: &Path,
@@ -585,7 +585,7 @@ where
     }
     if let Err(cleanup_error) = remove_backup(backup) {
         return Err(error.context(format!(
-            "replace generated demo bundle; the previous demo files were restored, and their emptied backup folder was left at {} because it could not be removed: {cleanup_error}",
+            "replace generated demo bundle; the previous demo files were restored, and their emptied backup directory was left at {} because it could not be removed: {cleanup_error}",
             backup.display()
         )));
     }

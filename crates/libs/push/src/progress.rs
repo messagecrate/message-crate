@@ -32,12 +32,12 @@ pub enum ProgressEvent {
         index: usize,
         /// Files in the run.
         total: usize,
-        /// File name relative to the input folder.
+        /// File name relative to the input directory.
         file: String,
     },
     /// Work on one conversation file ended.
     FileDone {
-        /// File name relative to the input folder.
+        /// File name relative to the input directory.
         file: String,
         /// `ok`, `failed`, or `skipped`. A conversation a stop left unsent
         /// gets no `FileDone`; its `cancelled` row is in the report.
@@ -85,7 +85,7 @@ struct LogWriter {
 }
 
 impl LogWriter {
-    /// Create or open the log file, making parent folders if needed.
+    /// Create or open the log file, making parent directories if needed.
     fn open(path: &Path) -> Result<Self> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;

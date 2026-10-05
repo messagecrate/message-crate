@@ -57,7 +57,7 @@ pub(crate) fn locate() -> Result<PathBuf> {
 struct Places<'a> {
     /// `MESSAGE_CRATE_IMESSAGE_READER`.
     explicit: Option<PathBuf>,
-    /// The folder of the running executable.
+    /// The directory of the running executable.
     exe_dir: Option<&'a Path>,
 }
 
@@ -77,7 +77,7 @@ fn locate_in(places: &Places<'_>) -> Result<PathBuf> {
     let Some(dir) = places.exe_dir else {
         bail!(
             "Could not find {executable}, the program that reads Apple Messages: \
-             the folder of this program is unknown, and {HELPER_PATH_ENV} is not set."
+             the directory of this program is unknown, and {HELPER_PATH_ENV} is not set."
         );
     };
     let beside = dir.join(&executable);

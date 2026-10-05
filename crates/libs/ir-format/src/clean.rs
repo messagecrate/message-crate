@@ -6,9 +6,9 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// Sentinel file written into export directories so `clean_previous_ir_output` can
-/// distinguish a real export directory from a person's own folder that was
+/// distinguish a real export directory from a person's own directory that was
 /// pointed at by mistake. It also lists, one per line, the files a merged
-/// archive wrote into the folder ([`record_archive_files`]), which the next
+/// archive wrote into the directory ([`record_archive_files`]), which the next
 /// clean removes.
 pub const EXPORT_SENTINEL: &str = ".message-crate-export";
 
@@ -44,33 +44,33 @@ pub(crate) fn require_export_directory(output_dir: &Path) -> Result<()> {
 }
 
 /// Write an empty sentinel marking `output_dir` as an export target, with no
-/// archive files listed. Outside tests, [`mark_export_folder`] calls it after
-/// checking the folder is empty, and [`clean_previous_ir_output`] calls it
+/// archive files listed. Outside tests, [`mark_export_directory`] calls it after
+/// checking the directory is empty, and [`clean_previous_ir_output`] calls it
 /// once it has removed the files the list named.
 fn write_export_sentinel(output_dir: &Path) -> Result<()> {
     let path = output_dir.join(EXPORT_SENTINEL);
     fs::write(&path, "").with_context(|| format!("write {}", path.display()))
 }
 
-/// Files an operating system leaves in a folder the person opened, such as
-/// Finder's `.DS_Store`. A folder that holds only these looks empty to the
+/// Files an operating system leaves in a directory the person opened, such as
+/// Finder's `.DS_Store`. A directory that holds only these looks empty to the
 /// person, so it counts as empty.
 const OPERATING_SYSTEM_FILES: [&str; 3] = [".DS_Store", "Thumbs.db", "desktop.ini"];
 
-/// Mark `output_dir` as a folder an export wrote, unless it already is one.
+/// Mark `output_dir` as a directory an export wrote, unless it already is one.
 /// An existing sentinel is left as it is, so the archive files it lists are
 /// still removed by the next clean.
 ///
-/// A folder without the sentinel file `.message-crate-export` is marked only
+/// A directory without the sentinel file `.message-crate-export` is marked only
 /// when it is empty, ignoring the files an operating system leaves behind.
-/// Any other folder belongs to the person who chose it, whatever its files
+/// Any other directory belongs to the person who chose it, whatever its files
 /// are named, so it is refused and nothing in it is touched.
 ///
 /// # Errors
 ///
 /// Returns an error when the directory cannot be read, the sentinel cannot be
 /// written, or the directory has no sentinel and is not empty.
-pub fn mark_export_folder(output_dir: &Path) -> Result<()> {
+pub fn mark_export_directory(output_dir: &Path) -> Result<()> {
     if has_export_sentinel(output_dir) {
         return Ok(());
     }
@@ -79,7 +79,7 @@ pub fn mark_export_folder(output_dir: &Path) -> Result<()> {
         if !OPERATING_SYSTEM_FILES.contains(&name.to_str().unwrap_or("")) {
             bail!(
                 "{} is not empty and Message Crate did not write it. Refusing to write into it. \
-                 Choose an empty folder or one an earlier export wrote.",
+                 Choose an empty directory or one an earlier export wrote.",
                 output_dir.display()
             );
         }
@@ -87,13 +87,13 @@ pub fn mark_export_folder(output_dir: &Path) -> Result<()> {
     write_export_sentinel(output_dir)
 }
 
-/// Clean a folder an earlier export marked, or mark an empty one.
+/// Clean a directory an earlier export marked, or mark an empty one.
 ///
-/// A folder that holds the sentinel loses the files a merged archive recorded
+/// A directory that holds the sentinel loses the files a merged archive recorded
 /// in it ([`record_archive_files`]) and its previous CSV, JSON, JSON Lines,
 /// meta, temps, staged attachments, and mail archives, and keeps every other
 /// file. The crate that owns an archive names its files, and this crate knows
-/// none. A folder without the sentinel goes through [`mark_export_folder`],
+/// none. A directory without the sentinel goes through [`mark_export_directory`],
 /// so nothing is removed from it.
 ///
 /// # Errors
@@ -105,7 +105,7 @@ pub fn clean_previous_ir_output(output_dir: &Path) -> Result<()> {
         return Ok(());
     }
     if !has_export_sentinel(output_dir) {
-        return mark_export_folder(output_dir);
+        return mark_export_directory(output_dir);
     }
     for name in recorded_archive_files(output_dir)? {
         let path = output_dir.join(name);
@@ -231,7 +231,7 @@ pub(crate) fn record_archive_files(output_dir: &Path, names: &[String]) -> Resul
 }
 
 /// The file names recorded in the sentinel of `output_dir`. A line that is
-/// not a plain file name in the folder is passed over, so a damaged sentinel
+/// not a plain file name in the directory is passed over, so a damaged sentinel
 /// cannot remove anything outside it.
 fn recorded_archive_files(output_dir: &Path) -> Result<Vec<String>> {
     let path = output_dir.join(EXPORT_SENTINEL);

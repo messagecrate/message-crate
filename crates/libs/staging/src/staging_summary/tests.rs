@@ -253,7 +253,7 @@ fn the_summary_carries_the_limit_its_verdicts_were_measured_against() {
 #[test]
 fn the_summary_carries_the_attachment_mode_staging_recorded() {
     // The screen decides from this whether the run has a Media stage, so it
-    // must be the folder's mode, sent under the form's name for it.
+    // must be the directory's mode, sent under the form's name for it.
     for (mode, form_name) in [
         (MediaMode::Disabled, "skip"),
         (MediaMode::Clone, "copy"),
@@ -275,7 +275,7 @@ fn the_summary_carries_the_attachment_mode_staging_recorded() {
 
 #[test]
 fn attachment_bytes_are_measured_on_disk_not_read_from_the_document() {
-    // size_bytes in the document is what the writer recorded. The folder is
+    // size_bytes in the document is what the writer recorded. The directory is
     // the truth, and a resumed run must not trust a stale field.
     let dir = staged_fixture();
     let attachment = dir.path().join("attachments/photo.png");
@@ -428,7 +428,7 @@ fn two_attachments_in_one_document_sharing_one_file_count_bytes_and_forecast_onc
 }
 
 #[test]
-fn a_folder_with_no_conversation_files_is_an_empty_summary_not_an_error() {
+fn a_directory_with_no_conversation_files_is_an_empty_summary_not_an_error() {
     let dir = tempfile::tempdir().unwrap();
     let summary = summarize_staging(dir.path(), &summary_options(), &mut |_| {}).unwrap();
     assert_eq!(summary.conversations, 0);

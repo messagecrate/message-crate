@@ -397,7 +397,7 @@ fn an_all_conversations_group_is_apart_from_its_senders() {
 /// two conversations, and the same file is the same conversation wherever
 /// the export is put.
 #[test]
-fn a_per_chat_groups_key_comes_from_its_rows_and_name_not_its_folder() {
+fn a_per_chat_groups_key_comes_from_its_rows_and_name_not_its_directory() {
     let group = |text: &str| {
         format!(
             "Date,Sender,Text,Is From Me,Has Attachments\n\

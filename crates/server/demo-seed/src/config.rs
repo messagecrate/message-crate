@@ -54,7 +54,7 @@ impl std::fmt::Display for DemoSize {
 pub struct SeedConfig {
     /// Random seed. The same seed and settings produce the same backups.
     pub seed: u64,
-    /// Folder the generated backups are written under.
+    /// Directory the generated backups are written under.
     pub out: String,
     /// The "now" that every generated timestamp counts back from.
     #[serde(deserialize_with = "deserialize_reference_time")]
@@ -71,7 +71,7 @@ pub struct SeedConfig {
     pub messages: MessagesConfig,
     /// Deliberately awkward data: unassigned handles, orphans, empty threads.
     pub edge_cases: EdgeCasesConfig,
-    /// How conversations are split across the backup folders.
+    /// How conversations are split across the backup directories.
     pub sources: SourcesConfig,
 }
 
@@ -164,7 +164,7 @@ pub struct MessagesConfig {
     /// one is marked Unsent and loses its text; 0 marks none. A message with an
     /// attachment is left unmarked, because an Unsent message keeps nothing.
     pub unsent_stride: usize,
-    /// Share of messages in the iMessage folder that are marked as SMS or RCS
+    /// Share of messages in the iMessage directory that are marked as SMS or RCS
     /// so the conversation view can show those labels.
     pub apple_fallback_transport_fraction: f64,
 }
@@ -179,14 +179,14 @@ pub struct EdgeCasesConfig {
     pub empty_group: bool,
 }
 
-/// How demo conversations are split across the iMessage, Android, and WhatsApp folders.
+/// How demo conversations are split across the iMessage, Android, and WhatsApp directories.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SourcesConfig {
     /// Share of one-to-one contacts (excluding the ones that appear in both
     /// backups) that only appear in the Android backup.
     pub android_only_fraction: f64,
-    /// How many contacts are written into both the iMessage and Android folders.
+    /// How many contacts are written into both the iMessage and Android directories.
     pub overlap_count: usize,
     /// Share of messages in those overlapping iMessage threads that also appear
     /// in the Android backup with the same text and time.

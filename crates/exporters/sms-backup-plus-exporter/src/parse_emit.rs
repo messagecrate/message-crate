@@ -9,7 +9,7 @@ use message_crate_core::CancelFlag;
 use std::path::{Path, PathBuf};
 
 /// Collect `.eml` paths from files and directories, skipping `duplicate` /
-/// `exclude` / `.git` folders.
+/// `exclude` / `.git` directories.
 ///
 /// # Errors
 ///
@@ -53,11 +53,11 @@ pub(super) fn collect_eml_paths<P: AsRef<Path>>(
     Ok(paths)
 }
 
-/// True for paths under folders the walk never enters (`duplicate`,
+/// True for paths under directories the walk never enters (`duplicate`,
 /// `exclude`, `.git`) below `input`.
 ///
 /// Only the part of `path` below `input` is tested, because an input that
-/// sits under a folder with one of those names is still meant to be read.
+/// sits under a directory with one of those names is still meant to be read.
 fn in_skipped_dir(input: &Path, path: &Path) -> bool {
     let below = path.strip_prefix(input).unwrap_or(path);
     below.components().any(|c| {

@@ -235,7 +235,7 @@ This repository is **messagecrate/message-crate**. The Cargo packages carry the 
 The product has two pieces:
 
 - **The server** — `message-crate-server`. Stores messages in SQLite (`data/messagecrate.db`), serves `/v1/*`, and can host the website from `static/`. Run it with `./scripts/run-dev.sh` (http://127.0.0.1:8080) or Docker. Login is a local account, not a cloud account.
-- **The desktop app** — Tauri v2 around the Vite SPA in `web/`. Reads phone backups, writes JSONL, and imports into a running server. Browse and search also work in the browser against the server; importing a backup needs the desktop app. The installer carries `message-crate-server` and the built website, and the app starts that server at `127.0.0.1:8080` when nothing answers there, with its data in the operating system's app-data folder; it stops it on close. A Message Crate already answering at that address (Docker, `./scripts/run-dev.sh`) is used as it is. Rules: `src-tauri/src/local_server.rs`; why: `docs/adr/0018-the-desktop-app-starts-the-server-it-ships.md`.
+- **The desktop app** — Tauri v2 around the Vite SPA in `web/`. Reads phone backups, writes JSONL, and imports into a running server. Browse and search also work in the browser against the server; importing a backup needs the desktop app. The installer carries `message-crate-server` and the built website, and the app starts that server at `127.0.0.1:8080` when nothing answers there, with its data in the operating system's app-data directory; it stops it on close. A Message Crate already answering at that address (Docker, `./scripts/run-dev.sh`) is used as it is. Rules: `src-tauri/src/local_server.rs`; why: `docs/adr/0018-the-desktop-app-starts-the-server-it-ships.md`.
 
 ### Technology stack
 
@@ -391,7 +391,7 @@ Or, browser only (no Tauri):
 cd web && npm run dev        # http://localhost:5173, proxies /v1 to :8080
 ```
 
-`cargo tauri dev` uses the server on **127.0.0.1:8080** when one is running, so start `./scripts/run-dev.sh` first to work against the repository's `data/`. With nothing on that port the app starts its own server, built by `src-tauri/build.rs`, with its data in `data-dev` in the app-data folder (`~/.local/share/app.messagecrate.desktop/data-dev` on Linux), and stops it when the window closes. The installed app keeps its data in `data` beside it, and a dev build never opens that folder, because a branch with another Schema Fingerprint would rebuild the installed app's database empty. **Open data folder** in a dev build opens `data-dev`.
+`cargo tauri dev` uses the server on **127.0.0.1:8080** when one is running, so start `./scripts/run-dev.sh` first to work against the repository's `data/`. With nothing on that port the app starts its own server, built by `src-tauri/build.rs`, with its data in `data-dev` in the app-data directory (`~/.local/share/app.messagecrate.desktop/data-dev` on Linux), and stops it when the window closes. The installed app keeps its data in `data` beside it, and a dev build never opens that directory, because a branch with another Schema Fingerprint would rebuild the installed app's database empty. **Open data directory** in a dev build opens `data-dev`.
 
 Do not run `npm run dev` and `cargo tauri dev` at the same time. Point the app at **http://127.0.0.1:8080** (not `localhost` — that can resolve to IPv6, which the server does not listen on). `web/` and `src-tauri/` usually reload; restart `cargo tauri dev` if they do not.
 

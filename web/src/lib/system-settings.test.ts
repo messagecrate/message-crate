@@ -46,7 +46,7 @@ describe("remembered importer extra paths", () => {
     });
   });
 
-  it("stores attachment folder and Apple Contacts per method", () => {
+  it("stores attachment directory and Apple Contacts per method", () => {
     setImporterPath("imessage-macos", "/Users/sam/Library/Messages/chat.db");
     setImporterExtraPath("imessage-macos", "attachmentRoot", "/Users/sam/Library/Messages");
     setImporterExtraPath(
@@ -130,7 +130,7 @@ describe("loadRememberedImportPaths", () => {
     });
   });
 
-  it("restores WhatsApp folders by method id and whatsappWa without mixing appleContacts", () => {
+  it("restores WhatsApp directories by method id and whatsappWa without mixing appleContacts", () => {
     setRememberImporterPaths(true);
     setImporterPath("whatsapp-ios", "/backups/iphone");
     setImporterPath("whatsapp-android", "/backups/android");

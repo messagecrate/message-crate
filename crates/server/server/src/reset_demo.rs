@@ -445,7 +445,7 @@ pub async fn remove_stopped_demo_build(cfg: &Config, db: &SqlitePool) -> Result<
     Ok(unfinished)
 }
 
-/// Writes a demo bundle of the given size into the given folder, and stops
+/// Writes a demo bundle of the given size into the given directory, and stops
 /// part-way with an error once the flag is set. The server holds the real
 /// one ([`generate_bundle`]); a test holds one that writes a few
 /// conversations.
@@ -497,9 +497,9 @@ pub async fn build_demo_account(
         let cancel = Arc::new(AtomicBool::new(false));
         let _stop_generator = CancelOnDrop(Arc::clone(&cancel));
         // Generating is CPU work with no await in it, so it runs off the
-        // request-serving threads. The temporary folder moves into the task
+        // request-serving threads. The temporary directory moves into the task
         // and comes back with its result: when the build is dropped while
-        // the task runs, the folder is removed once the generator has
+        // the task runs, the directory is removed once the generator has
         // returned, never while it is still writing into it.
         let (work, generated) = tokio::task::spawn_blocking(move || {
             let generated = generate(size, &work.path().join("bundle"), &cancel);
@@ -630,7 +630,7 @@ async fn reset_prepared_bundle_with(
     // install can rename into data_dir/<account>. A work directory on
     // another mount (tmp, a nested bind, a named volume) fails with EXDEV.
     let data_work = reset_account_work_dir(&cfg.paths.data_dir)?;
-    let other_folders = other_account_folders(&cfg.paths.data_dir, account_id)?;
+    let other_directories = other_account_directories(&cfg.paths.data_dir, account_id)?;
     let prepared_db = db_work.path().join("messagecrate.db");
     checkpoint_and_clean_sidecars(&cfg.paths.db, "before creating the reset snapshot").await?;
     prepare_database_snapshot(&cfg.paths.db, &prepared_db).await?;
@@ -661,7 +661,11 @@ async fn reset_prepared_bundle_with(
     let stats = stats?;
 
     verify_non_demo_state_preserved(&cfg.paths.db, &prepared_db, account_id).await?;
-    verify_other_account_folders_preserved(&cfg.paths.data_dir, account_id, &other_folders)?;
+    verify_other_account_directories_preserved(
+        &cfg.paths.data_dir,
+        account_id,
+        &other_directories,
+    )?;
     let active_account = cfg.paths.data_dir.join(account_id.to_string());
     let prepared_account = temporary_cfg.paths.data_dir.join(account_id.to_string());
     let paths = ResetPaths {
@@ -928,7 +932,7 @@ async fn load_demo_address_book(
     Ok(counts)
 }
 
-/// Check the bundle has its seed, the three staging folders, and the contacts file, and return their paths.
+/// Check the bundle has its seed, the three run directories, and the contacts file, and return their paths.
 fn validate_prepared_bundle(bundle: &Path) -> Result<PreparedBundle> {
     let demo_seed = bundle.join("config/seed.toml");
     let imessage_dir = bundle.join("staging").join(IMESSAGE_SOURCE);
@@ -1549,40 +1553,43 @@ async fn search_sample_digest(
     Ok(digest.finish())
 }
 
-/// One entry under an account's folder, as [`other_account_folders`] lists
+/// One entry under an account's directory, as [`other_account_directories`] lists
 /// it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FolderEntry {
-    Folder,
+enum DirectoryEntry {
+    Directory,
     File {
         bytes: u64,
     },
-    /// A symbolic link or anything else that is neither a file nor a folder.
+    /// A symbolic link or anything else that is neither a file nor a directory.
     Other,
 }
 
-impl std::fmt::Display for FolderEntry {
+impl std::fmt::Display for DirectoryEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Folder => f.write_str("folder"),
+            Self::Directory => f.write_str("directory"),
             Self::File { bytes } => write!(f, "{bytes} bytes"),
-            Self::Other => f.write_str("not a file or folder"),
+            Self::Other => f.write_str("not a file or directory"),
         }
     }
 }
 
-/// Every file and folder in the folders of accounts other than `demo_id`
+/// Every file and directory in the directories of accounts other than `demo_id`
 /// under `data_dir` (`data_dir/<account>/`), by its path relative to
 /// `data_dir`, with each file's size. A missing `data_dir` lists nothing.
-/// An account folder that is a symbolic link is followed, since an account
+/// An account directory that is a symbolic link is followed, since an account
 /// moved to another disk is linked back that way; below it, links are listed
-/// and not followed ([`list_folder`]).
+/// and not followed ([`list_directory`]).
 ///
 /// # Errors
 ///
-/// Returns an error when a folder cannot be read, or an account folder is a
+/// Returns an error when a directory cannot be read, or an account directory is a
 /// link to nothing.
-fn other_account_folders(data_dir: &Path, demo_id: i64) -> Result<BTreeMap<PathBuf, FolderEntry>> {
+fn other_account_directories(
+    data_dir: &Path,
+    demo_id: i64,
+) -> Result<BTreeMap<PathBuf, DirectoryEntry>> {
     let mut listing = BTreeMap::new();
     let entries = match fs::read_dir(data_dir) {
         Ok(entries) => entries,
@@ -1601,41 +1608,41 @@ fn other_account_folders(data_dir: &Path, demo_id: i64) -> Result<BTreeMap<PathB
         if !is_other_account {
             continue;
         }
-        let is_folder = fs::metadata(entry.path())
-            .with_context(|| format!("read the account folder {}", entry.path().display()))?
+        let is_directory = fs::metadata(entry.path())
+            .with_context(|| format!("read the account directory {}", entry.path().display()))?
             .is_dir();
-        if is_folder {
-            list_folder(data_dir, &entry.path(), &mut listing)?;
+        if is_directory {
+            list_directory(data_dir, &entry.path(), &mut listing)?;
         }
     }
     Ok(listing)
 }
 
-/// Add `folder` and everything under it to `listing`, by paths relative to
+/// Add `directory` and everything under it to `listing`, by paths relative to
 /// `root`. A symbolic link is listed and not followed.
-fn list_folder(
+fn list_directory(
     root: &Path,
-    folder: &Path,
-    listing: &mut BTreeMap<PathBuf, FolderEntry>,
+    directory: &Path,
+    listing: &mut BTreeMap<PathBuf, DirectoryEntry>,
 ) -> Result<()> {
     let relative = |path: &Path| path.strip_prefix(root).unwrap_or(path).to_path_buf();
-    listing.insert(relative(folder), FolderEntry::Folder);
-    for entry in fs::read_dir(folder).with_context(|| format!("list {}", folder.display()))? {
-        let entry = entry.with_context(|| format!("list {}", folder.display()))?;
+    listing.insert(relative(directory), DirectoryEntry::Directory);
+    for entry in fs::read_dir(directory).with_context(|| format!("list {}", directory.display()))? {
+        let entry = entry.with_context(|| format!("list {}", directory.display()))?;
         let path = entry.path();
         let metadata =
             fs::symlink_metadata(&path).with_context(|| format!("read {}", path.display()))?;
         if metadata.is_dir() {
-            list_folder(root, &path, listing)?;
+            list_directory(root, &path, listing)?;
         } else if metadata.is_file() {
             listing.insert(
                 relative(&path),
-                FolderEntry::File {
+                DirectoryEntry::File {
                     bytes: metadata.len(),
                 },
             );
         } else {
-            listing.insert(relative(&path), FolderEntry::Other);
+            listing.insert(relative(&path), DirectoryEntry::Other);
         }
     }
     Ok(())
@@ -1644,18 +1651,18 @@ fn list_folder(
 /// The most changed paths a refusal names before it counts the rest.
 const CHANGED_PATHS_NAMED: usize = 10;
 
-/// Refuse to install the reset when the folder of any account other than
+/// Refuse to install the reset when the directory of any account other than
 /// `demo_id` under `data_dir` no longer lists what `before` lists: a file or
-/// folder added or removed, or a file whose size changed. The reset only
-/// ever replaces the Demo Account's folder (#1450).
-fn verify_other_account_folders_preserved(
+/// directory added or removed, or a file whose size changed. The reset only
+/// ever replaces the Demo Account's directory (#1450).
+fn verify_other_account_directories_preserved(
     data_dir: &Path,
     demo_id: i64,
-    before: &BTreeMap<PathBuf, FolderEntry>,
+    before: &BTreeMap<PathBuf, DirectoryEntry>,
 ) -> Result<()> {
-    let after = other_account_folders(data_dir, demo_id)?;
+    let after = other_account_directories(data_dir, demo_id)?;
     let changed = changed_entries(before, &after, |path, before, after| {
-        let side = |entry: Option<&FolderEntry>| {
+        let side = |entry: Option<&DirectoryEntry>| {
             entry.map_or_else(|| "none".to_owned(), ToString::to_string)
         };
         format!(
@@ -1675,7 +1682,7 @@ fn verify_other_account_folders_preserved(
             changed.len() - CHANGED_PATHS_NAMED
         ));
     }
-    bail!("the reset changed other accounts' folders: {named}");
+    bail!("the reset changed other accounts' directories: {named}");
 }
 
 /// How to find the account a row of a table belongs to: a join to add after
@@ -1779,7 +1786,7 @@ struct ResetPaths<'a> {
     prepared_account: &'a Path,
 }
 
-/// Swap the prepared database and account folder into their active paths.
+/// Swap the prepared database and account directory into their active paths.
 async fn install_reset_state(paths: &ResetPaths<'_>) -> Result<()> {
     install_reset_state_with(paths, demo_seed::move_path).await
 }
@@ -1800,7 +1807,7 @@ where
 }
 
 /// One of the two things a reset swaps: the database file or the account
-/// folder. Each has an active path, a prepared replacement, and a backup path
+/// directory. Each has an active path, a prepared replacement, and a backup path
 /// the active one is moved to first so the swap can be undone.
 struct Swap<'a> {
     /// What the paths hold, for messages: "database" or "account directory".
@@ -1883,7 +1890,7 @@ impl<'a> Swap<'a> {
 }
 
 impl<'a> ResetPaths<'a> {
-    /// The two swaps in install order: database, then account folder.
+    /// The two swaps in install order: database, then account directory.
     fn swaps(&self) -> Result<[Swap<'a>; 2]> {
         let db_backup = self
             .prepared_db
@@ -1969,7 +1976,7 @@ fn cleanup_reset_backups(swaps: &[Swap<'_>]) {
     }
 }
 
-/// Remove a file or folder tree; a missing path is not an error.
+/// Remove a file or directory tree; a missing path is not an error.
 fn remove_any_if_exists(path: &Path) -> Result<()> {
     if path.is_dir() {
         fs::remove_dir_all(path).with_context(|| format!("remove {}", path.display()))?;

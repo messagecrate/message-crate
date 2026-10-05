@@ -1,4 +1,4 @@
-//! Write conversations as SMS Backup+ mail: one folder per conversation and
+//! Write conversations as SMS Backup+ mail: one directory per conversation and
 //! one `.eml` per SMS or MMS, with the `X-smssync-*` headers this crate's
 //! importer reads (#543, ADR 0021).
 //!
@@ -53,7 +53,7 @@ impl SmsBackupPlusArchive {
 }
 
 impl MergedArchive for SmsBackupPlusArchive {
-    /// Write one folder per conversation that has an SMS or MMS, and count
+    /// Write one directory per conversation that has an SMS or MMS, and count
     /// every other message in `report`. Returns `output_dir`.
     fn write(
         &self,
@@ -107,7 +107,7 @@ impl MergedArchive for SmsBackupPlusArchive {
 }
 
 impl SmsBackupPlusArchive {
-    /// One folder of `.eml` files, named and ordered as the EML archive
+    /// One directory of `.eml` files, named and ordered as the EML archive
     /// names and orders its own.
     fn write_conversation(
         &self,
@@ -115,8 +115,9 @@ impl SmsBackupPlusArchive {
         doc: &ConversationDocument,
         report: &mut ExportReport,
     ) -> Result<()> {
-        let folder = output_dir.join(doc.filename_stem());
-        fs::create_dir_all(&folder).with_context(|| format!("create {}", folder.display()))?;
+        let directory = output_dir.join(doc.filename_stem());
+        fs::create_dir_all(&directory)
+            .with_context(|| format!("create {}", directory.display()))?;
         let conversation = Conversation::of(doc);
         let mut ordered: Vec<&IrMessage> = doc.messages.iter().collect();
         ordered.sort_by(|a, b| {
@@ -126,7 +127,7 @@ impl SmsBackupPlusArchive {
         });
         for (index, message) in ordered.into_iter().enumerate() {
             let sequence = u32::try_from(index + 1).context("too many messages")?;
-            let path = folder.join(eml_file_name(sequence, message)?);
+            let path = directory.join(eml_file_name(sequence, message)?);
             let bytes = self.build_mail(&conversation, message, output_dir, report)?;
             fs::write(&path, bytes).with_context(|| format!("write {}", path.display()))?;
         }

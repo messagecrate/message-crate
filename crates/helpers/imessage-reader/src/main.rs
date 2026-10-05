@@ -17,7 +17,7 @@
 //! What it does: opens `chat.db` (or decrypts an iPhone backup), caches
 //! chats, handles, contacts and tapbacks, then streams every message as an
 //! already-classified record. It also decrypts one domain of an encrypted
-//! iPhone backup into a folder (`domain.rs`), which is how WhatsApp's files
+//! iPhone backup into a directory (`domain.rs`), which is how WhatsApp's files
 //! come out of one: `crabapple` is the only code here that can decrypt a
 //! backup, and it is on this side of the boundary. Turning those records into the shared
 //! conversation structure, writing files, media handling and everything else

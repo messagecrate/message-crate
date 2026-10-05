@@ -1,8 +1,8 @@
-//! Commands that find ffmpeg and ffprobe, and remember which folder they live in.
+//! Commands that find ffmpeg and ffprobe, and remember which directory they live in.
 //!
 //! Attachment convert and compress need those programs. The WebView cannot
 //! search the disk or set process environment variables, so this process does
-//! both. This process never *writes* environment variables: the tools-folder
+//! both. This process never *writes* environment variables: the tools-directory
 //! override lives in media-crate process state, and `MESSAGE_CRATE_BIN`
 //! stays a user-set fallback that is only ever read here (by the media and
 //! whatsapp-exporter resolution paths, which is sound because nothing in
@@ -35,7 +35,7 @@ fn probe_to_dto(probe: media::FfmpegToolsProbe) -> FfmpegToolsProbeDto {
     }
 }
 
-/// Treat a blank folder string as "use the default search instead".
+/// Treat a blank directory string as "use the default search instead".
 fn optional_tools_dir(dir: Option<&str>) -> Option<&Path> {
     let dir = dir.and_then(message_ir::trimmed)?;
     Some(Path::new(dir))
@@ -43,8 +43,8 @@ fn optional_tools_dir(dir: Option<&str>) -> Option<&Path> {
 
 /// Ask this process whether ffmpeg and ffprobe are available.
 ///
-/// When `dir` is set, look in that folder. When it is empty, use the default
-/// search: the saved override folder, beside the program, `lib/`,
+/// When `dir` is set, look in that directory. When it is empty, use the default
+/// search: the saved override directory, beside the program, `lib/`,
 /// `MESSAGE_CRATE_BIN`, then the process PATH.
 #[tauri::command]
 pub fn probe_ffmpeg_tools(dir: Option<String>) -> FfmpegToolsProbeDto {

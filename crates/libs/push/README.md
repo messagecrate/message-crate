@@ -1,6 +1,6 @@
 # message-crate-push
 
-Import a Message Crate JSON Lines export folder into a running server.
+Import a Message Crate JSON Lines export directory into a running server.
 
 The desktop app **Import** screen uses this crate as a library. Create an API token under **Settings → Account** in the website.
 

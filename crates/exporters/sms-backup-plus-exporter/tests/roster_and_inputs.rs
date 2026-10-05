@@ -52,7 +52,7 @@ fn documents(output_dir: &Path) -> BTreeMap<String, ConversationDocument> {
         .collect()
 }
 
-/// A fresh input folder holding the named fixtures.
+/// A fresh input directory holding the named fixtures.
 fn input_with(root: &Path, names: &[&str]) -> PathBuf {
     let input = root.join("in");
     fs::create_dir_all(&input).expect("input dir");
@@ -253,11 +253,11 @@ fn ordinary_mail_is_skipped_and_counted_as_not_sms() {
 fn files_under_duplicate_and_exclude_are_skipped() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let input = input_with(tmp.path(), &["flat_received.eml"]);
-    for (folder, text) in [
+    for (directory, text) in [
         ("duplicate", "Read from duplicate"),
         ("exclude", "Read from exclude"),
     ] {
-        let dir = input.join(folder);
+        let dir = input.join(directory);
         fs::create_dir_all(&dir).expect("skipped dir");
         let eml = fs::read_to_string(fixtures().join("flat_received.eml"))
             .expect("fixture")
@@ -284,13 +284,13 @@ fn files_under_duplicate_and_exclude_are_skipped() {
     assert_eq!(texts, vec!["Hello from Alice"]);
 }
 
-/// An input that sits under folders named `Duplicate`, `Exclude` or `.git`
-/// is still read, because only the folders below the input are skipped.
+/// An input that sits under directories named `Duplicate`, `Exclude` or `.git`
+/// is still read, because only the directories below the input are skipped.
 ///
-/// Testing every folder of the absolute path skipped the whole input and
+/// Testing every directory of the absolute path skipped the whole input and
 /// failed the run with "no .eml files".
 #[test]
-fn an_input_under_a_folder_named_duplicate_is_read() {
+fn an_input_under_a_directory_named_duplicate_is_read() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let parent = tmp.path().join("Duplicate").join("Exclude").join(".git");
     let input = input_with(&parent, &["flat_received.eml"]);

@@ -720,7 +720,7 @@ pub async fn insert_account(
     // both that floor and the highest id the table has ever held. The column
     // is AUTOINCREMENT, so `sqlite_sequence` keeps that high mark after the
     // row is deleted: a deleted account's id never passes to a new account,
-    // which would otherwise inherit any folder of files the delete left.
+    // which would otherwise inherit any directory of files the delete left.
     let highest: Option<i64> =
         sqlx::query_scalar("SELECT seq FROM sqlite_sequence WHERE name = 'accounts'")
             .fetch_optional(&mut *conn)
@@ -910,7 +910,7 @@ mod tests {
         );
     }
 
-    /// A deleted account's id is never handed out again, because a folder of
+    /// A deleted account's id is never handed out again, because a directory of
     /// its files can outlive the row and the next account must not inherit it.
     #[tokio::test]
     async fn the_id_of_a_deleted_account_is_not_handed_out_again() {

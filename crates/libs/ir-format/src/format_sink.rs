@@ -14,7 +14,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 /// A vendor format that writes every conversation in one pass with the
-/// attachment bytes inside it: one `smses.xml`, or a folder of SMS Backup+
+/// attachment bytes inside it: one `smses.xml`, or a directory of SMS Backup+
 /// mail per conversation. The crate that owns such a format implements this
 /// and the caller that wants it hands it to [`FormatSink::with_archive`];
 /// this crate knows no archive format by name.
@@ -34,8 +34,8 @@ pub trait MergedArchive: std::fmt::Debug + Send {
     ) -> Result<PathBuf>;
 
     /// The names of the files [`write`](Self::write) creates in the output
-    /// folder, partial files included. The sink records them before it
-    /// writes, so the next fresh export into the folder removes them
+    /// directory, partial files included. The sink records them before it
+    /// writes, so the next fresh export into the directory removes them
     /// whatever format it writes.
     fn file_names(&self) -> Vec<String>;
 
@@ -62,13 +62,13 @@ pub struct FormatSink {
 impl FormatSink {
     /// Open a sink into `output_dir`, an export directory: one that holds
     /// the sentinel `.message-crate-export`, which
-    /// [`clean_previous_ir_output`] or [`mark_export_folder`] writes. The
+    /// [`clean_previous_ir_output`] or [`mark_export_directory`] writes. The
     /// sink buffers documents until [`finish`](Self::finish), which can
     /// replace and remove files there, so a directory without the sentinel
     /// is refused whoever calls this. [`open_prepared`](Self::open_prepared)
     /// cleans and opens in one call.
     ///
-    /// [`mark_export_folder`]: crate::mark_export_folder
+    /// [`mark_export_directory`]: crate::mark_export_directory
     ///
     /// # Errors
     ///
@@ -130,7 +130,7 @@ impl FormatSink {
     /// Unlike [`open_prepared`](Self::open_prepared), nothing is cleaned: the
     /// conversation files and staged attachments the interrupted run left
     /// behind are exactly the work a resumed run gets to skip. The directory
-    /// must already be an export folder — it carries the sentinel — because
+    /// must already be an export directory — it carries the sentinel — because
     /// resuming into anything else is a caller bug, not something to repair
     /// by cleaning.
     ///
@@ -145,7 +145,7 @@ impl FormatSink {
     ) -> Result<(Self, PathBuf)> {
         if !has_export_sentinel(output) {
             anyhow::bail!(
-                "cannot resume into {}: it is not a staging folder from a previous run",
+                "cannot resume into {}: it is not a staging directory from a previous run",
                 output.display()
             );
         }
@@ -186,7 +186,7 @@ impl FormatSink {
     /// Apply the export transforms, then write all buffered documents.
     ///
     /// For EML, MBOX, and a merged archive, attachment bytes are embedded.
-    /// The staged `attachments/` directory is removed so the output folder
+    /// The staged `attachments/` directory is removed so the output directory
     /// holds only the archive.
     ///
     /// Folds the obfuscated-document count into `report`. Convert and
@@ -343,7 +343,7 @@ mod tests {
 
     /// An archive the test owns: every document's chat id on one line each,
     /// which is enough to see that the sink handed over all of them at once
-    /// and cleaned the staging folder afterwards.
+    /// and cleaned the staging directory afterwards.
     #[derive(Debug)]
     struct LineArchive;
 
@@ -373,7 +373,7 @@ mod tests {
     }
 
     #[test]
-    fn format_sink_writes_a_merged_archive_and_drops_the_staging_folder() {
+    fn format_sink_writes_a_merged_archive_and_drops_the_staging_directory() {
         let tmp = crate::export_dir();
         fs::create_dir_all(tmp.path().join("attachments")).unwrap();
         let mut sink = FormatSink::open(tmp.path(), OutputFormat::Xml, ExportTransforms::none())
@@ -391,7 +391,7 @@ mod tests {
         );
         assert!(
             !tmp.path().join("attachments").exists(),
-            "the archive holds the bytes, so the staging folder goes"
+            "the archive holds the bytes, so the staging directory goes"
         );
     }
 
@@ -513,7 +513,7 @@ mod tests {
     #[test]
     fn open_resume_keeps_previous_output_and_requires_the_sentinel() {
         let tmp = tempfile::tempdir().unwrap();
-        // A directory that was never an export folder is refused: resuming
+        // A directory that was never an export directory is refused: resuming
         // into one is a caller bug, not something to repair by cleaning.
         assert!(
             FormatSink::open_resume(tmp.path(), OutputFormat::Jsonl, ExportTransforms::none())

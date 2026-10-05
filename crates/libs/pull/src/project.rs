@@ -209,7 +209,7 @@ fn participants_from_seed(seed: &Message) -> Vec<IrParticipant> {
     participants
 }
 
-/// Where an export writes one attachment, relative to the output folder.
+/// Where an export writes one attachment, relative to the output directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExportPath {
     /// The path the file is written at and the conversation file names:
@@ -221,11 +221,11 @@ pub struct ExportPath {
     pub refused: Option<String>,
 }
 
-/// Choose where an attachment is written under the output folder.
+/// Choose where an attachment is written under the output directory.
 ///
 /// The server's path is input: an import that reuses a stored fingerprint
 /// never read the file, so the server can hold `../x` or an absolute path.
-/// Joined onto the output folder, such a path writes outside it, so it goes
+/// Joined onto the output directory, such a path writes outside it, so it goes
 /// through [`message_ir::safe_attachment_path`] like every other reader of an
 /// attachment path. A refused path is not used: the attachment falls back to
 /// `attachments/{sha256}`, the name an attachment with no path gets.
@@ -242,7 +242,7 @@ pub fn export_path(att: &Attachment) -> ExportPath {
         };
     };
     // The base is empty because only the verdict matters here: the caller
-    // joins the accepted path onto the output folder itself.
+    // joins the accepted path onto the output directory itself.
     if message_ir::safe_attachment_path(Path::new(""), path).is_ok() {
         ExportPath {
             rel: Some(path.to_string()),

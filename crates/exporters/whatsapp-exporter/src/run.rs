@@ -17,7 +17,7 @@ use std::fs;
 ///
 /// # Errors
 ///
-/// Returns an error when the source is not WhatsApp, the output folder is or
+/// Returns an error when the source is not WhatsApp, the output directory is or
 /// holds what the run reads, wtsexporter cannot run, conversion fails, media
 /// processing fails for every candidate file, or the user cancels.
 pub fn run(config: &ExporterConfig) -> Result<RunResult> {
@@ -35,7 +35,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
     let input = config.primary_input().map(|p| p.to_path_buf());
 
     // The output is cleaned before it is written, so one that is or holds
-    // what this run reads is refused first: the backup (the working folder
+    // what this run reads is refused first: the backup (the working directory
     // when none is named and wtsexporter runs) and a ready-made JSON.
     let mut read_paths = config.inputs.clone();
     match &source.json {
@@ -128,7 +128,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         let owner_identity = match platform {
             // wtsexporter copies the whole app-group domain into the work
             // dir, preferences plist included; a backup someone extracted by
-            // hand has it under the input folder. The form's number covers a
+            // hand has it under the input directory. The form's number covers a
             // backup that carries no owner key (the Business app, a moved key).
             Platform::Ios => match owner_from_backup(&media_roots, &mut messages).or(form_owner) {
                 Some(owner) => owner,
@@ -175,25 +175,25 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
     Ok(result)
 }
 
-/// Mark the output folder as an export folder, then create the scratch
-/// folder wtsexporter runs in (its working folder, the extract, and
-/// `result.json`) inside it. The scratch folder is kept until after convert so
+/// Mark the output directory as an export directory, then create the scratch
+/// directory wtsexporter runs in (its working directory, the extract, and
+/// `result.json`) inside it. The scratch directory is kept until after convert so
 /// media copy can read the extracted files.
 ///
-/// The writer cleans the output when it opens, and refuses a folder with no
-/// sentinel that is not empty, so a new folder must be marked before this
+/// The writer cleans the output when it opens, and refuses a directory with no
+/// sentinel that is not empty, so a new directory must be marked before this
 /// run writes into it. It is only marked here, not cleaned: an earlier export
-/// in the folder stays until the writer opens, after the new JSON has loaded,
-/// so a failed wtsexporter run leaves it in place. A resumed run's folder is
+/// in the directory stays until the writer opens, after the new JSON has loaded,
+/// so a failed wtsexporter run leaves it in place. A resumed run's directory is
 /// already marked.
 ///
 /// # Errors
 ///
 /// Returns an error when the output cannot be read or marked, holds files and
-/// no sentinel, or the scratch folder cannot be created.
+/// no sentinel, or the scratch directory cannot be created.
 fn mark_output_and_make_scratch_dir(config: &ExporterConfig) -> Result<tempfile::TempDir> {
     if !config.resume {
-        message_ir_format::mark_export_folder(&config.output)?;
+        message_ir_format::mark_export_directory(&config.output)?;
     }
     tempfile::Builder::new()
         .prefix("wtsexporter-")
@@ -218,7 +218,7 @@ mod tests {
         names
     }
 
-    /// The writer cleans its output folder before it writes, so an output
+    /// The writer cleans its output directory before it writes, so an output
     /// that is or holds the backup or the JSON would delete what is being
     /// read.
     #[test]
@@ -230,9 +230,9 @@ mod tests {
         fs::write(&json, "{}").unwrap();
 
         for (inputs, output) in [
-            // The JSON's folder.
+            // The JSON's directory.
             (vec![], backup.clone()),
-            // A folder above the backup named as the input.
+            // A directory above the backup named as the input.
             (vec![backup.as_path()], tmp.path().to_path_buf()),
         ] {
             let config = jsonl_run_config(
@@ -260,7 +260,7 @@ mod tests {
         }
     }
 
-    /// An empty output folder `out` in a new temporary folder, and a WhatsApp
+    /// An empty output directory `out` in a new temporary directory, and a WhatsApp
     /// run's config that writes into it.
     fn empty_whatsapp_output() -> (tempfile::TempDir, PathBuf, ExporterConfig) {
         let tmp = tempfile::tempdir().unwrap();
@@ -274,26 +274,26 @@ mod tests {
         (tmp, output, config)
     }
 
-    /// wtsexporter writes into the output folder before the writer opens it,
-    /// and the writer's clean refuses a folder with no sentinel that is not
-    /// empty. The scratch folder is made only after the output is marked.
+    /// wtsexporter writes into the output directory before the writer opens it,
+    /// and the writer's clean refuses a directory with no sentinel that is not
+    /// empty. The scratch directory is made only after the output is marked.
     #[test]
-    fn the_writer_accepts_an_output_that_holds_the_wtsexporter_scratch_folder() {
+    fn the_writer_accepts_an_output_that_holds_the_wtsexporter_scratch_directory() {
         let (_tmp, output, config) = empty_whatsapp_output();
 
         let work = super::mark_output_and_make_scratch_dir(&config).unwrap();
         fs::write(output.join("wtsexporter_result.json"), "{}").unwrap();
 
         message_ir_format::clean_previous_ir_output(&output).unwrap();
-        assert!(work.path().is_dir(), "the scratch folder is kept");
+        assert!(work.path().is_dir(), "the scratch directory is kept");
     }
 
-    /// Making the scratch folder leaves an earlier export in place, so a
+    /// Making the scratch directory leaves an earlier export in place, so a
     /// wtsexporter run that fails afterwards has not deleted it.
     #[test]
-    fn making_the_scratch_folder_keeps_an_earlier_export() {
+    fn making_the_scratch_directory_keeps_an_earlier_export() {
         let (_tmp, output, config) = empty_whatsapp_output();
-        message_ir_format::mark_export_folder(&output).unwrap();
+        message_ir_format::mark_export_directory(&output).unwrap();
         fs::write(output.join("earlier.jsonl"), "{}").unwrap();
 
         let _work = super::mark_output_and_make_scratch_dir(&config).unwrap();

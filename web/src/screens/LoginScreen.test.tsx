@@ -17,7 +17,7 @@ vi.mock("../lib/auth", () => ({
 const tauriState = vi.hoisted(() => ({ isTauri: false }));
 const startLocalServer = vi.hoisted(() => vi.fn());
 const localServerStatus = vi.hoisted(() => vi.fn());
-const openDataFolder = vi.hoisted(() => vi.fn());
+const openDataDirectory = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/tauri-check", () => ({
   isTauri: () => tauriState.isTauri,
@@ -27,7 +27,7 @@ vi.mock("../lib/localServer", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../lib/localServer")>()),
   startLocalServer: () => startLocalServer(),
   localServerStatus: () => localServerStatus(),
-  openDataFolder: () => openDataFolder(),
+  openDataDirectory: () => openDataDirectory(),
 }));
 
 const setBaseUrlSpy = vi.hoisted(() => vi.fn());
@@ -143,8 +143,8 @@ describe("LoginScreen", () => {
     startLocalServer.mockResolvedValue({ status: "ready", started_by_app: true });
     localServerStatus.mockReset();
     localServerStatus.mockResolvedValue({ status: "ready", started_by_app: true });
-    openDataFolder.mockReset();
-    openDataFolder.mockResolvedValue(undefined);
+    openDataDirectory.mockReset();
+    openDataDirectory.mockResolvedValue(undefined);
     setBaseUrlSpy.mockReset();
     retrySavedLogin.mockReset();
     checkServerHealthMock.mockReset();
@@ -758,8 +758,8 @@ describe("LoginScreen", () => {
     // Nothing the server wrote, so nothing to disclose.
     expect(screen.queryByText("Details")).toBeNull();
 
-    await user.click(screen.getByRole("button", { name: "Open data folder" }));
-    expect(openDataFolder).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Open data directory" }));
+    expect(openDataDirectory).toHaveBeenCalledTimes(1);
 
     await user.click(screen.getByRole("button", { name: "Try again" }));
     expect(startLocalServer).toHaveBeenCalledTimes(2);

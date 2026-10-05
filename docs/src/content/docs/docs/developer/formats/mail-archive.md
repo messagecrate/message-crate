@@ -3,13 +3,13 @@ title: "Mail archives"
 description: "EML and MBOX layout and X-ME headers used when Message Crate writes a mail archive."
 ---
 
-Design for a human-viewable export: **one folder per conversation**, **one `.eml` per message**, with structured `X-ME-*` headers for machine fidelity. Intended as an archive / interchange path. Mail clients can open individual messages; translators can recover SMS, group MMS, and (later) iMessage semantics without relying on CSV.
+Design for a human-viewable export: **one directory per conversation**, **one `.eml` per message**, with structured `X-ME-*` headers for machine fidelity. Intended as an archive / interchange path. Mail clients can open individual messages; translators can recover SMS, group MMS, and (later) iMessage semantics without relying on CSV.
 
 **Status:** Writer in [`mail`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/mail/). Every exporter's output can be rewritten as EML or MBOX through [Convert](/docs/developer/formats/convert/). All exporters (including iMessage via [`imessage-ir-exporter`](https://github.com/messagecrate/message-crate/blob/main/crates/exporters/imessage-ir-exporter/)) go backup → [shared conversation structure](/docs/developer/reference/export-structure/) ([`message-ir`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir/)) → output format (see [message-ir architecture](/docs/developer/architecture/common-message/)). JSON is the default format. iMessage writes extension headers; handwriting attaches SVG. See also [CSV columns](/docs/developer/reference/csv-columns/).
 
 ## Goals
 
-- Browseable archive (double-click an `.eml`; folder = conversation)
+- Browseable archive (double-click an `.eml`; directory = conversation)
 - Lossless-enough SMS and group MMS relative to today’s SBR / GO SMS Pro / SMS Backup+ CSV cores
 - Stable `Message-ID` / guid for re-exports and threading
 - Metadata in `X-ME-*` headers (not only human body text)
@@ -20,7 +20,7 @@ Design for a human-viewable export: **one folder per conversation**, **one `.eml
 - Server import/export
 - Replacing CSV as the default exporter output
 - IMAP sync or SMS Backup+ wire compatibility
-- Treating `.mbox` as the preferred packaging (derived export is available; folders of `.eml` remain preferred)
+- Treating `.mbox` as the preferred packaging (derived export is available; directories of `.eml` remain preferred)
 - Replaying send-effect animations or handwriting ink in clients
 
 ## Packaging
@@ -42,7 +42,7 @@ Each file is one RFC 5322 message, written with the `mail-builder` crate.
 
 ### Why not one `.mbox` per conversation
 
-| Concern | Folder of `.eml` | Single `.mbox` |
+| Concern | Directory of `.eml` | Single `.mbox` |
 |---------|------------------|----------------|
 | Translate / reprocess | One message = one file | Must parse mbox + `From ` escaping |
 | Crash safety | Partial export remains usable | Truncation can corrupt the last record |
@@ -50,7 +50,7 @@ Each file is one RFC 5322 message, written with the `mail-builder` crate.
 | Large chats | Open one message | Some clients load the whole file |
 | Thunderbird “mailbox” UX | Import/drag varies | Often smoother import-as-folder |
 
-**Preferred packaging is a folder of EMLs.** Derived **mboxrd** (`OutputFormat::Mbox` / GUI **MBOX**) is also available: one `<conversation-stem>.mbox` per chat, same MIME/`X-ME-*` payload as the `.eml` files. Outlook has poor native support for both; do not optimize the preferred packaging for Outlook.
+**Preferred packaging is a directory of EMLs.** Derived **mboxrd** (`OutputFormat::Mbox` / GUI **MBOX**) is also available: one `<conversation-stem>.mbox` per chat, same MIME/`X-ME-*` payload as the `.eml` files. Outlook has poor native support for both; do not optimize the preferred packaging for Outlook.
 
 ### Explicit anti-pattern: SMS Backup+ archive EML
 
@@ -198,7 +198,7 @@ SMS writers use `sms` / `mms` only. Absence of iMessage-only headers means “no
 - Every attachment part is written with `Content-Transfer-Encoding: base64`, text files included. A text file written as bare lines would lose its CRLF line ends in an mbox, which stores LF only, and its bytes would no longer match `digest_sha256`.
 - **Never** assign leftover MIME parts to the “last” message in a conversation (Plus archive anti-pattern).
 
-Media is transformed then embedded; FormatSink removes the staged `attachments/` directory after write so the mail archive folder is the product.
+Media is transformed then embedded; FormatSink removes the staged `attachments/` directory after write so the mail archive directory is the product.
 
 ## Body text
 

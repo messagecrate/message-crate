@@ -21,7 +21,7 @@ use message_crate_core::{check_cancel, parallel_for_each};
 use message_ir::{ConversationDocument, ConversationHeader, IrAttachment, IrMessage};
 use message_ir_format::read_conversation_jsonl_with_lines;
 
-use crate::folder::{attachment_label, resolve_attachment};
+use crate::directory::{attachment_label, resolve_attachment};
 use crate::http::{Asset, AssetUpload};
 use crate::journal::{JournalMessage, RunJournal};
 use crate::progress::AttachmentSkip;

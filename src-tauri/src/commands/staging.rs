@@ -2,27 +2,27 @@
 //! Import Run record commands.
 //!
 //! These back the two reviews a staged import stops at:
-//! `summarize_staging` recomputes what a staged folder holds so the first
+//! `summarize_staging` recomputes what a staged directory holds so the first
 //! review can show it, `transcode_staging` runs the convert/compress pass the
 //! exporter deferred (see `extract::exporter_attachment_media`), and
-//! `delete_staging` removes the staging folder — when a review is closed
+//! `delete_staging` removes the run directory — when a review is closed
 //! without approving, when a paused run is discarded, and when the server
-//! records the run as finished, since nothing will read the folder again.
+//! records the run as finished, since nothing will read the directory again.
 //! `read_import_run_record` and `save_import_run_record` keep the record of a
-//! paused run's earlier parts in its folder ([`RUN_RECORD_NAME`]).
+//! paused run's earlier parts in its directory ([`RUN_RECORD_NAME`]).
 //!
-//! `summarize_staging` and `transcode_staging` take only the folder. They
+//! `summarize_staging` and `transcode_staging` take only the directory. They
 //! read the run's media settings from it, where `extract` recorded them
 //! ([`message_staging::read_media_settings`]), so a summary, the pass it
 //! forecasts, and the Staging before them all work to the one set of values
 //! the Import Run was started with.
 //!
-//! ## Which folders these commands act on
+//! ## Which directories these commands act on
 //!
-//! The desktop process owns the Staging Directory and the folders made
-//! under it ([`StagingFolders`]). `set_staging_root` stores the setting,
-//! `create_staging_dir` makes a run's folder, and every other command takes
-//! only the folder. A folder is acted on when `create_staging_dir` made it
+//! The desktop process owns the Staging Directory and the directories made
+//! under it ([`StagingDirectories`]). `set_staging_root` stores the setting,
+//! `create_staging_dir` makes a run's directory, and every other command takes
+//! only the directory. A directory is acted on when `create_staging_dir` made it
 //! and it still holds the `.message-crate-export` sentinel, wherever the
 //! Staging Directory points now, so changing the setting never strands a run
 //! that started under the earlier one (#1154).
@@ -35,15 +35,15 @@ use message_staging::{StagingSummary, TranscodeOptions, TranscodeReport};
 use super::events;
 use super::events::ExtractProgressEvent;
 use super::jobs::{spawn_job, start_job};
-use crate::staging_folders::{self, StagingFolders, StagingRoot};
+use crate::staging_directories::{self, StagingDirectories, StagingRoot};
 use crate::state::AppState;
 
-/// The folder `summarize_staging`, `transcode_staging`, `delete_staging`
+/// The directory `summarize_staging`, `transcode_staging`, `delete_staging`
 /// and the Import Run record commands act on.
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StagingArgs {
-    /// Staging folder `create_staging_dir` made.
+    /// run directory `create_staging_dir` made.
     pub staging_dir: String,
 }
 
@@ -51,81 +51,83 @@ pub struct StagingArgs {
 ///
 /// # Errors
 ///
-/// Returns an error when the operating system reports no home folder.
+/// Returns an error when the operating system reports no home directory.
 #[tauri::command]
-pub fn staging_root(folders: tauri::State<'_, StagingFolders>) -> Result<StagingRoot, String> {
-    folders.describe()
+pub fn staging_root(
+    directories: tauri::State<'_, StagingDirectories>,
+) -> Result<StagingRoot, String> {
+    directories.describe()
 }
 
 /// Store the Staging Directory from Settings. An empty value goes back to
-/// the default. The new folder applies to staging folders made after this;
+/// the default. The new directory applies to run directories made after this;
 /// those made before it keep working.
 ///
 /// # Errors
 ///
-/// Returns an error when the folder is relative or the filesystem root, or
+/// Returns an error when the directory is relative or the filesystem root, or
 /// the setting cannot be saved.
 #[tauri::command]
 pub fn set_staging_root(
-    folders: tauri::State<'_, StagingFolders>,
+    directories: tauri::State<'_, StagingDirectories>,
     root: String,
 ) -> Result<StagingRoot, String> {
-    folders.set_root(&root)?;
-    folders.describe()
+    directories.set_root(&root)?;
+    directories.describe()
 }
 
-/// Make a new staging folder under the Staging Directory and return its
+/// Make a new run directory under the Staging Directory and return its
 /// path. `label` is the Import source, or `export` for Export.
 ///
 /// # Errors
 ///
-/// Returns an error when the label cannot name a folder, the Staging
-/// Directory is unusable, or the folder cannot be made.
+/// Returns an error when the label cannot name a directory, the Staging
+/// Directory is unusable, or the directory cannot be made.
 #[tauri::command(async)]
 pub fn create_staging_dir(
-    folders: tauri::State<'_, StagingFolders>,
+    directories: tauri::State<'_, StagingDirectories>,
     label: String,
 ) -> Result<String, String> {
-    let folder = folders.create(&label, &staging_folders::timestamp_now())?;
-    Ok(folder.display().to_string())
+    let directory = directories.create(&label, &staging_directories::timestamp_now())?;
+    Ok(directory.display().to_string())
 }
 
-/// The staged folder, checked by [`StagingFolders::folder`], and the media
+/// The staged directory, checked by [`StagingDirectories::directory`], and the media
 /// settings its Staging recorded there.
 ///
 /// # Errors
 ///
-/// Returns an error when the folder fails the check, or holds no readable
+/// Returns an error when the directory fails the check, or holds no readable
 /// media settings because its Staging never finished.
-fn staged_folder(
-    folders: &StagingFolders,
+fn staged_directory(
+    directories: &StagingDirectories,
     staging_dir: &str,
 ) -> Result<(PathBuf, TranscodeOptions), String> {
-    let staging_dir = folders.folder(staging_dir)?;
+    let staging_dir = directories.directory(staging_dir)?;
     let options =
         message_staging::read_media_settings(&staging_dir).map_err(|error| format!("{error:#}"))?;
     Ok((staging_dir, options))
 }
 
-/// Recompute what a staged folder holds, for the first review.
+/// Recompute what a staged directory holds, for the first review.
 ///
 /// Reports progress on `extract:progress` with `step: "check"`, so a long
-/// summary of a huge folder shows movement on the step the user is already
-/// looking at. The read itself (folder walk plus ffprobe calls) runs on a
+/// summary of a huge directory shows movement on the step the user is already
+/// looking at. The read itself (directory walk plus ffprobe calls) runs on a
 /// blocking-pool thread via [`tauri::async_runtime::spawn_blocking`], so it
 /// cannot stall the async runtime other commands share.
 ///
 /// # Errors
 ///
-/// Returns an error if `staging_dir` is not a staging folder this app made,
+/// Returns an error if `staging_dir` is not a run directory this app made,
 /// holds no media settings, cannot be read, or the blocking task panicked.
 #[tauri::command]
 pub async fn summarize_staging(
     app: tauri::AppHandle,
-    folders: tauri::State<'_, StagingFolders>,
+    directories: tauri::State<'_, StagingDirectories>,
     args: StagingArgs,
 ) -> Result<StagingSummary, String> {
-    let (staging_dir, options) = staged_folder(&folders, &args.staging_dir)?;
+    let (staging_dir, options) = staged_directory(&directories, &args.staging_dir)?;
 
     let progress_app = app.clone();
     tauri::async_runtime::spawn_blocking(move || {
@@ -188,7 +190,7 @@ fn transcode_summary(report: &TranscodeReport) -> String {
     format!("{}.", clauses.join("; "))
 }
 
-/// Run the convert/compress pass over a staged folder, after the first review
+/// Run the convert/compress pass over a staged directory, after the first review
 /// approves it.
 ///
 /// Follows `extract`'s job shape: the job starts through [`start_job`], with
@@ -214,7 +216,7 @@ fn transcode_summary(report: &TranscodeReport) -> String {
 ///
 /// # Errors
 ///
-/// Returns an error if `staging_dir` is not a staging folder this app made
+/// Returns an error if `staging_dir` is not a run directory this app made
 /// or holds no media settings, another job is running, or another thread
 /// panicked while holding the shared state lock. Failures during the pass —
 /// including a cancellation and ffmpeg/ffprobe being unavailable — are sent
@@ -222,11 +224,11 @@ fn transcode_summary(report: &TranscodeReport) -> String {
 #[tauri::command(async)]
 pub fn transcode_staging(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
-    folders: tauri::State<'_, StagingFolders>,
+    directories: tauri::State<'_, StagingDirectories>,
     app: tauri::AppHandle,
     args: StagingArgs,
 ) -> Result<(), String> {
-    let (staging_dir, options) = staged_folder(&folders, &args.staging_dir)?;
+    let (staging_dir, options) = staged_directory(&directories, &args.staging_dir)?;
     let job = start_job(&state, "a Media pass")?;
     let cancel = job.cancel_flag();
     let has_media_step = matches!(
@@ -299,30 +301,30 @@ pub fn transcode_staging(
     Ok(())
 }
 
-/// Delete a staging folder: the decline path's terminal action (Decision
+/// Delete a run directory: the decline path's terminal action (Decision
 /// 16), and the last step of a successful import, whose staged copy of the
 /// messages, push log, journal and report the server has no further use for.
 ///
 /// Runs on the async task pool (`#[tauri::command(async)]`) rather than the
-/// main thread: `remove_dir_all` over a large staging folder would otherwise
-/// freeze the window. A folder no longer on disk counts as deleted: the
+/// main thread: `remove_dir_all` over a large run directory would otherwise
+/// freeze the window. A directory no longer on disk counts as deleted: the
 /// decline path may run after a crash that already removed it.
 ///
 /// # Errors
 ///
-/// Returns an error when `staging_dir` is not a staging folder this app made,
-/// or the folder cannot be removed. Refuses rather than silently doing
+/// Returns an error when `staging_dir` is not a run directory this app made,
+/// or the directory cannot be removed. Refuses rather than silently doing
 /// nothing, so a path bug here cannot turn into a delete somewhere else on
 /// disk.
 #[tauri::command(async)]
 pub fn delete_staging(
-    folders: tauri::State<'_, StagingFolders>,
+    directories: tauri::State<'_, StagingDirectories>,
     args: StagingArgs,
 ) -> Result<(), String> {
-    folders.delete(&args.staging_dir)
+    directories.delete(&args.staging_dir)
 }
 
-/// File in a staging folder holding the Import Run's record so far: the
+/// File in a run directory holding the Import Run's record so far: the
 /// Import Errors, timings and counts of the parts that ran before the run
 /// paused or stopped at a Review.
 ///
@@ -330,59 +332,59 @@ pub fn delete_staging(
 /// earlier parts recorded. The window writes the record here, beside the
 /// push journal, and reads it back when the run resumes, so the completion
 /// it finally posts covers the whole run. The leading dot keeps it out of
-/// every listing of conversation files, and it is deleted with the folder.
+/// every listing of conversation files, and it is deleted with the directory.
 /// It has no `.json` extension, for the reason the media settings file has
 /// none (`message_staging::MEDIA_SETTINGS_FILE`): a fresh export into the
-/// folder would delete it as an earlier run's output.
+/// directory would delete it as an earlier run's output.
 pub const RUN_RECORD_NAME: &str = ".message-crate-run";
 
 /// Arguments for [`save_import_run_record`].
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SaveRunRecordArgs {
-    /// Staging folder of the Import Run.
+    /// run directory of the Import Run.
     pub staging_dir: String,
     /// The record as the window builds it. Its shape belongs to the window.
     pub record: serde_json::Value,
 }
 
-/// Read the Import Run's record from its staging folder.
+/// Read the Import Run's record from its run directory.
 ///
-/// Returns `None` when the folder holds no record: a run that has not yet
+/// Returns `None` when the directory holds no record: a run that has not yet
 /// paused or stopped at a Review has not written one.
 ///
 /// # Errors
 ///
-/// Returns an error when the folder is not a staging folder this app made,
+/// Returns an error when the directory is not a run directory this app made,
 /// or the record cannot be read or is not JSON.
 #[tauri::command(async)]
 pub fn read_import_run_record(
-    folders: tauri::State<'_, StagingFolders>,
+    directories: tauri::State<'_, StagingDirectories>,
     args: StagingArgs,
 ) -> Result<Option<serde_json::Value>, String> {
-    let folder = folders.folder(&args.staging_dir)?;
-    read_run_record(&folder)
+    let directory = directories.directory(&args.staging_dir)?;
+    read_run_record(&directory)
 }
 
-/// Write the Import Run's record into its staging folder, replacing the one
+/// Write the Import Run's record into its run directory, replacing the one
 /// there.
 ///
 /// # Errors
 ///
-/// Returns an error when the folder is not a staging folder this app made,
+/// Returns an error when the directory is not a run directory this app made,
 /// or the file cannot be written.
 #[tauri::command(async)]
 pub fn save_import_run_record(
-    folders: tauri::State<'_, StagingFolders>,
+    directories: tauri::State<'_, StagingDirectories>,
     args: SaveRunRecordArgs,
 ) -> Result<(), String> {
-    let folder = folders.folder(&args.staging_dir)?;
-    save_run_record(&folder, &args.record)
+    let directory = directories.directory(&args.staging_dir)?;
+    save_run_record(&directory, &args.record)
 }
 
-/// The work of [`read_import_run_record`], in a folder already checked.
-fn read_run_record(folder: &Path) -> Result<Option<serde_json::Value>, String> {
-    let path = folder.join(RUN_RECORD_NAME);
+/// The work of [`read_import_run_record`], in a directory already checked.
+fn read_run_record(directory: &Path) -> Result<Option<serde_json::Value>, String> {
+    let path = directory.join(RUN_RECORD_NAME);
     let bytes = match std::fs::read(&path) {
         Ok(bytes) => bytes,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -393,12 +395,12 @@ fn read_run_record(folder: &Path) -> Result<Option<serde_json::Value>, String> {
         .map_err(|error| format!("{} is not readable: {error}", path.display()))
 }
 
-/// The work of [`save_import_run_record`], in a folder already checked. It
+/// The work of [`save_import_run_record`], in a directory already checked. It
 /// writes a temporary file and renames it over the record, so a crash
 /// mid-write leaves the previous record whole.
-fn save_run_record(folder: &Path, record: &serde_json::Value) -> Result<(), String> {
-    let path = folder.join(RUN_RECORD_NAME);
-    let tmp = folder.join(format!("{RUN_RECORD_NAME}.tmp"));
+fn save_run_record(directory: &Path, record: &serde_json::Value) -> Result<(), String> {
+    let path = directory.join(RUN_RECORD_NAME);
+    let tmp = directory.join(format!("{RUN_RECORD_NAME}.tmp"));
     let body = serde_json::to_vec(record).map_err(|error| error.to_string())?;
     std::fs::write(&tmp, body)
         .and_then(|()| std::fs::rename(&tmp, &path))
@@ -408,13 +410,13 @@ fn save_run_record(folder: &Path, record: &serde_json::Value) -> Result<(), Stri
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::staging_folders::Scratch;
+    use crate::staging_directories::Scratch;
     use media::MediaMode;
 
-    /// A record of staging folders in its own temporary folders, and one
-    /// folder made in it.
+    /// A record of run directories in its own temporary directories, and one
+    /// directory made in it.
     struct Made {
-        folders: StagingFolders,
+        directories: StagingDirectories,
         run: PathBuf,
         _scratch: Scratch,
     }
@@ -422,19 +424,19 @@ mod tests {
     fn made() -> Made {
         let scratch = Scratch::new();
         let run = scratch
-            .folders
+            .directories
             .create("imessage-ios", "261002-101500")
             .unwrap();
         Made {
-            folders: scratch.reopen(),
+            directories: scratch.reopen(),
             run,
             _scratch: scratch,
         }
     }
 
     #[test]
-    fn a_staged_folder_is_read_with_the_settings_its_staging_recorded() {
-        // The summary and the Media stage are given only the folder, so they
+    fn a_staged_directory_is_read_with_the_settings_its_staging_recorded() {
+        // The summary and the Media stage are given only the directory, so they
         // cannot be handed a mode the run did not start with (#1153).
         let made = made();
         let recorded = TranscodeOptions {
@@ -447,7 +449,8 @@ mod tests {
         };
         message_staging::write_media_settings(&made.run, &recorded).unwrap();
 
-        let (dir, options) = staged_folder(&made.folders, made.run.to_str().unwrap()).unwrap();
+        let (dir, options) =
+            staged_directory(&made.directories, made.run.to_str().unwrap()).unwrap();
 
         assert_eq!(dir, made.run);
         assert_eq!(options, recorded);
@@ -456,8 +459,8 @@ mod tests {
     #[test]
     fn a_paused_run_resumes_and_is_deleted_after_the_staging_directory_changes() {
         // Issue #1154, through what a resume runs: the run record is read,
-        // the staged folder is checked for the summary and the Media stage,
-        // and the folder is deleted, all after the setting moved.
+        // the staged directory is checked for the summary and the Media stage,
+        // and the directory is deleted, all after the setting moved.
         let made = made();
         let options = TranscodeOptions {
             mode: MediaMode::Compress,
@@ -468,24 +471,24 @@ mod tests {
         let record = serde_json::json!({ "phase": "staging_review" });
         save_run_record(&made.run, &record).unwrap();
         let elsewhere = tempfile::tempdir().unwrap();
-        made.folders
+        made.directories
             .set_root(elsewhere.path().to_str().unwrap())
             .unwrap();
         let run = made.run.to_str().unwrap();
 
-        let folder = made.folders.folder(run).unwrap();
-        assert_eq!(read_run_record(&folder).unwrap(), Some(record));
-        let (dir, _) = staged_folder(&made.folders, run).unwrap();
+        let directory = made.directories.directory(run).unwrap();
+        assert_eq!(read_run_record(&directory).unwrap(), Some(record));
+        let (dir, _) = staged_directory(&made.directories, run).unwrap();
         assert_eq!(dir, made.run);
-        made.folders.delete(run).unwrap();
+        made.directories.delete(run).unwrap();
         assert!(!made.run.exists());
     }
 
     #[test]
-    fn a_folder_whose_staging_recorded_no_settings_is_refused() {
+    fn a_directory_whose_staging_recorded_no_settings_is_refused() {
         let made = made();
 
-        let err = staged_folder(&made.folders, made.run.to_str().unwrap()).unwrap_err();
+        let err = staged_directory(&made.directories, made.run.to_str().unwrap()).unwrap_err();
 
         assert!(err.contains("media settings"), "{err}");
     }
@@ -532,7 +535,7 @@ mod tests {
     }
 
     #[test]
-    fn a_folder_with_no_run_record_reads_as_none() {
+    fn a_directory_with_no_run_record_reads_as_none() {
         let made = made();
 
         assert_eq!(read_run_record(&made.run), Ok(None));

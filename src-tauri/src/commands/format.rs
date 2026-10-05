@@ -1,4 +1,4 @@
-//! `format` command — convert an existing extract folder to another format.
+//! `format` command — convert an existing extract directory to another format.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -13,7 +13,7 @@ use super::last_log_line_or;
 use super::paths::app_cache_dir;
 use crate::state::AppState;
 
-/// Ask this process to rewrite an extract folder in a different file format.
+/// Ask this process to rewrite an extract directory in a different file format.
 ///
 /// Returns as soon as the background thread starts. Log lines and the final
 /// summary use the same `extract:log` / `extract:finished` / `extract:error`

@@ -9,7 +9,7 @@ import type { ConversationStatus } from "../../lib/types";
  * A run runs in parts when it pauses, or stops at a Review, and resumes
  * later, perhaps after the app closed. The server takes the run's record
  * only with `/complete`, which a paused run never posts, so the window keeps
- * the record of the earlier parts in the Staging Directory
+ * the record of the earlier parts in the run directory
  * (`read_import_run_record`, `save_import_run_record`) and the completion
  * the last part posts covers the whole run: its Import Errors, timings,
  * bytes and counts.
@@ -102,7 +102,7 @@ function readNote(value: unknown): ImportNote | undefined {
 }
 
 /**
- * Read a record back from the Staging Directory. The file is the app's own,
+ * Read a record back from the run directory. The file is the app's own,
  * but it is read from disk, so each field is checked: an unreadable field
  * is left out, and anything that is not a record reads as no earlier part.
  */
@@ -300,7 +300,7 @@ function combine(carried: RunRecord, part: RunPart, earlier: ImportIssue[]): Run
 /**
  * The record for the next part of the run, as the run stands now: written
  * when a part stops, and while a stage runs, as each issue arrives, so an
- * app that closes mid-stage leaves it in the Staging Directory.
+ * app that closes mid-stage leaves it in the run directory.
  *
  * Two kinds of issue are left out of its `issues`, and kept in
  * `lastStopIssues` for a Discard instead. An Upload's row about a

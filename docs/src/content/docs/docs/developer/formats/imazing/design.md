@@ -9,7 +9,7 @@ The observed iMazing 3.5.5 directory layout, CSV headers, and source limitations
 
 ## Goals
 
-- Accept either one iMazing Messages/WhatsApp CSV **or** a folder at any level of a device export tree.
+- Accept either one iMazing Messages/WhatsApp CSV **or** a directory at any level of a device export tree.
 - Emit the common message → packaging via `FormatSink` (CSV uses shared [`CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs); default JSON), with WhatsApp kept separate from SMS/iMessage.
 
 ## Input discovery
@@ -36,17 +36,17 @@ Discovery walks the selected path recursively without following directory symbol
   A run that does not copy media finds no files, so it compares the cells alone.
 - The writer is given each kept message's files in the order it writes them, so the file of a row the dedupe step drops goes to no message.
 - When the Import form's **Attachments** choice copies media (and always for mail / Xml), each row's file is found in its own
-  chat folder by the naming rules in [input](/docs/developer/formats/imazing/input/#export-tree) and copied under
+  chat directory by the naming rules in [input](/docs/developer/formats/imazing/input/#export-tree) and copied under
   `output/attachments/`. A row with no such file, or whose file can't be told apart from another row's, is marked `file_missing`, so no file goes to two rows.
 - When media is copied, the files beside a Messages CSV that no row names are sorted after every CSV
   is read, because only iMazing's Messages export writes files without a row.
-  A folder that holds only a WhatsApp CSV is not looked at.
+  A directory that holds only a WhatsApp CSV is not looked at.
   A Live Photo's video (`.mov` beside a `.jpg` or `.jpeg` a Messages Image row names) becomes the second
   attachment of that row's message, named as the row's picture with the video's extension.
   When two rows name the picture, the first in CSV order takes the video, and the report names the
   picture in a note, which the run's summary lines print as `note:`, apart from its errors.
   The report counts the videos as `live_photo_videos`.
-  In a folder that also holds a WhatsApp CSV, any other file no row names may be WhatsApp's, so it is
+  In a directory that also holds a WhatsApp CSV, any other file no row names may be WhatsApp's, so it is
   neither counted nor imported.
 - A link preview (`.url`) whose `URL=` address appears in the text of a row at the second the file
   name starts with is not imported, because it holds nothing the message does not already show. The
@@ -89,12 +89,12 @@ A received row with no `Sender ID` is from the conversation's number or short co
 
 iMazing gives a group no id, and nothing it names is a usable key.
 A session name repeats across different groups, and it changes when a contact is renamed or a member joins or leaves.
-The folder name carries the time of the latest message, the file name carries the export's own time, and both cut the label at 40 characters.
+The directory name carries the time of the latest message, the file name carries the export's own time, and both cut the label at 40 characters.
 
 A group's `chat_identifier` is `group:` and the SHA-256 of its earliest row: `Message Date` as written, `Type`, `Sender ID`, `Text` and `Attachment`.
 Where rows share the earliest time, the smallest of them is taken, so the order of the rows does not change the key.
 Two groups can start with the same row, when the account holder sends one message to two new groups in the same second.
-Of the groups that share an earliest row, those with one session name are the same group read from two exports in the same input folder, and are one conversation.
+Of the groups that share an earliest row, those with one session name are the same group read from two exports in the same input directory, and are one conversation.
 Groups with different session names are never merged, even when the rows of one are the first rows of the other.
 Two different groups with one name that start with the same row in the same second are merged.
 The export cannot tell them apart.

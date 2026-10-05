@@ -250,7 +250,7 @@ struct ForwardedPaths {
 ///
 /// An iPhone backup passed with `-b` fills nothing from `input`: wtsexporter
 /// takes the database, contacts and media from the backup, and WhatsApp's
-/// files at the backup folder's root are left over from an earlier extract.
+/// files at the backup directory's root are left over from an earlier extract.
 fn resolve_forwarded_paths(args: &WtsexporterArgs) -> Result<ForwardedPaths> {
     let search = input_search_root(&args.input)?;
     let search_input = !(args.platform == Platform::Ios && args.backup.is_some());
@@ -342,7 +342,7 @@ fn first_existing(candidates: &[PathBuf]) -> Option<PathBuf> {
 /// Android crypt file in `search` for `-b`, or `None` so wtsexporter defaults apply.
 ///
 /// Prefers a decrypted `msgstore.db` file over any crypt name. Crypt names are
-/// checked at the folder root only, in order: crypt12, crypt14, crypt15.
+/// checked at the directory root only, in order: crypt12, crypt14, crypt15.
 /// Directories with those names are ignored (`is_file`), matching the form probe.
 pub(crate) fn android_crypt_backup(search: &Path) -> Option<PathBuf> {
     if search.join("msgstore.db").is_file() {
@@ -439,10 +439,10 @@ mod tests {
     }
 
     /// wtsexporter looks for its default files (`msgstore.db`, `wa.db`, the
-    /// key) in one folder. For a file input that is the folder holding the
-    /// file, not the folder the app happens to run in.
+    /// key) in one directory. For a file input that is the directory holding the
+    /// file, not the directory the app happens to run in.
     #[test]
-    fn a_file_input_is_searched_in_the_folder_that_holds_it() {
+    fn a_file_input_is_searched_in_the_directory_that_holds_it() {
         let dir = tempdir().unwrap();
         let file = dir.path().join("msgstore.db");
         fs::write(&file, b"db").unwrap();
@@ -535,7 +535,7 @@ mod tests {
     /// a hex key (passed as a key file, never on the command line),
     /// contacts, media, and the business app. The whole command line is
     /// pinned, so a flag added in any form (`-c`, which moves the user's
-    /// media into the scratch folder, above all) fails here.
+    /// media into the scratch directory, above all) fails here.
     #[test]
     fn an_android_command_forwards_every_found_path_and_nothing_else() {
         let dir = tempdir().unwrap();
@@ -622,10 +622,10 @@ mod tests {
         assert_eq!(command[d + 1], text(&db));
     }
 
-    /// Only Android has crypt backup files, so an iOS folder that happens to
+    /// Only Android has crypt backup files, so an iOS directory that happens to
     /// hold one passes no `-b`.
     #[test]
-    fn an_ios_folder_forwards_no_android_backup() {
+    fn an_ios_directory_forwards_no_android_backup() {
         let dir = tempdir().unwrap();
         fs::write(dir.path().join("msgstore.db.crypt15"), b"crypt").unwrap();
         let args = WtsexporterArgs {
@@ -685,8 +685,8 @@ mod tests {
     }
 
     /// An iPhone backup is passed with `-b` alone. WhatsApp's own files at
-    /// the backup folder's root are left over from an earlier extract there
-    /// and are not passed: with the shared folder but no `ChatStorage.sqlite`
+    /// the backup directory's root are left over from an earlier extract there
+    /// and are not passed: with the shared directory but no `ChatStorage.sqlite`
     /// at the root, `-m` and `-w` without `-d` make wtsexporter stop with
     /// "The message database does not exist".
     #[test]
@@ -724,7 +724,7 @@ mod tests {
     }
 
     /// An iOS backup forwards its database, contacts and media found under
-    /// the input folder; with no backup file there is no `-b`, so the key
+    /// the input directory; with no backup file there is no `-b`, so the key
     /// is dropped too.
     #[test]
     fn an_ios_command_forwards_the_found_database_contacts_and_media() {

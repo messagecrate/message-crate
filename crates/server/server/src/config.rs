@@ -159,8 +159,8 @@ pub struct ServerConfig {
     /// Serve Swagger UI at `/docs` and the spec at `/openapi.json`. Default false.
     #[serde(default = "default_openapi_ui")]
     pub openapi_ui: bool,
-    /// Folder holding the built website, served at `/`. Default `static`.
-    /// A relative path resolves against the folder above the config file's folder.
+    /// Directory holding the built website, served at `/`. Default `static`.
+    /// A relative path resolves against the directory above the config file's directory.
     #[serde(default = "default_static_dir")]
     pub static_dir: PathBuf,
 }
@@ -256,7 +256,7 @@ pub fn validate_source_id(source: &str) -> Result<()> {
 }
 
 impl PathsConfig {
-    /// Originals: `data_dir/<account_id>/<assets_dir>`. One folder holds the
+    /// Originals: `data_dir/<account_id>/<assets_dir>`. One directory holds the
     /// account's attachment files from every source, addressed by SHA-256, so
     /// one file imported from two sources is stored once.
     pub fn assets_dir_for_account(&self, account_id: i64) -> PathBuf {
@@ -266,7 +266,7 @@ impl PathsConfig {
     }
 
     /// Converted media: `data_dir/<account_id>/<assets_converted_dir>`, one
-    /// folder for the account's Previews from every source.
+    /// directory for the account's Previews from every source.
     pub fn assets_converted_dir_for_account(&self, account_id: i64) -> PathBuf {
         self.data_dir
             .join(account_id.to_string())
@@ -277,7 +277,7 @@ impl PathsConfig {
 impl Config {
     /// Read and parse a TOML config file. A relative path in it (`[paths] db`,
     /// `[paths] data_dir`, `[server] static_dir`) resolves against
-    /// [`config_root`], the folder above the config file's folder: the
+    /// [`config_root`], the directory above the config file's directory: the
     /// repository root for `config/config.toml`.
     ///
     /// # Errors
@@ -302,7 +302,7 @@ impl Config {
 
     /// [`Config::load`] with the command line's `--db` applied over
     /// `[paths] db`. A relative `--db` resolves against [`config_root`], the
-    /// same folder `[paths] db` resolves against, so the flag and the key
+    /// same directory `[paths] db` resolves against, so the flag and the key
     /// name the same file whatever directory the command runs in. After this
     /// the config alone says where the database is.
     ///
@@ -317,7 +317,7 @@ impl Config {
         Ok(config)
     }
 
-    /// The config for a Message Crate kept whole in one folder, with no config
+    /// The config for a Message Crate kept whole in one directory, with no config
     /// file: the database is `messagecrate.db` in `data_dir`, the accounts'
     /// files sit beside it, and every server setting has its default. This is
     /// what `serve --data-dir` runs on, and how the desktop app starts the
@@ -337,7 +337,7 @@ impl Config {
     /// Apply `serve`'s own flags: `--bind` replaces `[server] bind`,
     /// `--static-dir` replaces `[server] static_dir`, and each
     /// `--cors-origin` is added to `[server] cors_origins`. A relative
-    /// `--static-dir` resolves against `root`, the folder the config's own
+    /// `--static-dir` resolves against `root`, the directory the config's own
     /// paths resolve against. A config with no `[server]` section is left
     /// without one, for `require_server` to refuse.
     pub(crate) fn with_serve_overrides(
@@ -392,9 +392,9 @@ fn resolve_path(base: &Path, configured: &Path) -> PathBuf {
     }
 }
 
-/// The folder a relative path resolves against when the config file at
-/// `path` is read: the folder above the config file's folder, or the config
-/// file's own folder when nothing is above it.
+/// The directory a relative path resolves against when the config file at
+/// `path` is read: the directory above the config file's directory, or the config
+/// file's own directory when nothing is above it.
 ///
 /// # Errors
 ///

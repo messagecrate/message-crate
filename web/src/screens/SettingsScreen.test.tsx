@@ -135,8 +135,8 @@ describe("SettingsScreen convert gate", () => {
     renderSettings(["/settings?tab=convert"]);
 
     expect(screen.getByRole("tab", { name: "Convert" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByLabelText("Input folder")).toBeInTheDocument();
-    expect(screen.getByLabelText("Output folder")).toBeInTheDocument();
+    expect(screen.getByLabelText("Input directory")).toBeInTheDocument();
+    expect(screen.getByLabelText("Output directory")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Convert" })).toBeDisabled();
   });
 });

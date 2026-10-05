@@ -24,7 +24,7 @@ Attachment records may include `digest_sha256` so clients can upload by hash (`P
 
 ## Clients
 
-- **Same machine**: CLI `import` against a local export folder
+- **Same machine**: CLI `import` against a local export directory
 - **Remote**: The desktop app **Import** screen posts JSONL to the import API. Batched requests may concatenate multiple conversations (header + messages, repeated) in one body.
 
 ## Schema compatibility

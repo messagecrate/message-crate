@@ -207,7 +207,7 @@ fn the_media_settings_carry_the_mode_the_fields_and_the_limit() {
 }
 
 #[test]
-fn staging_records_the_media_settings_in_the_folder() {
+fn staging_records_the_media_settings_in_the_directory() {
     // The Staging Review's summary and the Media stage read them from here,
     // so the whole run works to the values Staging was started with.
     let tmp = tempfile::tempdir().unwrap();
@@ -278,7 +278,7 @@ fn a_staging_issue_reaches_the_issue_sink_before_staging_ends() {
     )
     .unwrap();
     // Staging ends by recording the run's media settings, so an issue that
-    // arrives while they are not yet in the Staging Directory arrived
+    // arrives while they are not yet in the run directory arrived
     // mid-Staging.
     let arrived = Arc::new(Mutex::new(Vec::new()));
     let sink_arrived = Arc::clone(&arrived);
@@ -613,7 +613,7 @@ fn whatsapp_ios_omits_leftover_android_media_and_db() {
 }
 
 #[test]
-fn whatsapp_ios_sets_backup_from_folder_and_business() {
+fn whatsapp_ios_sets_backup_from_directory_and_business() {
     let mut options = test_options(Vec::new());
     options.whatsapp_business = true;
     let backup = tempfile::tempdir().unwrap();
@@ -640,15 +640,15 @@ fn whatsapp_ios_sets_backup_from_folder_and_business() {
 fn imazing_reads_dates_in_the_zone_the_screen_sent() {
     // iMazing dates carry no zone. Dropping this field leaves
     // `ExporterConfig.timezone` as None and the exporter reads every date in
-    // the machine's zone, so the same folder exports differently on
+    // the machine's zone, so the same directory exports differently on
     // different machines (#689).
     let mut options = test_options(Vec::new());
     options.timezone = "America/New_York".into();
-    let folder = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().unwrap();
     let config = build_exporter_config(
         Path::new("/cache"),
         "imazing",
-        folder.path().to_str().unwrap(),
+        directory.path().to_str().unwrap(),
         "/tmp/out",
         &options,
     )
@@ -660,11 +660,11 @@ fn imazing_reads_dates_in_the_zone_the_screen_sent() {
 #[test]
 fn imazing_with_no_zone_leaves_the_exporter_its_fallback() {
     let options = test_options(Vec::new());
-    let folder = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().unwrap();
     let config = build_exporter_config(
         Path::new("/cache"),
         "imazing",
-        folder.path().to_str().unwrap(),
+        directory.path().to_str().unwrap(),
         "/tmp/out",
         &options,
     )

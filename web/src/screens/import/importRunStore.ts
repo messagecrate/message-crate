@@ -7,7 +7,7 @@ import type { StagingSummary } from "../../lib/tauri";
 import { type ImportPhase, type ImportStep, stepsFor } from "./importProgressState";
 import type { ImportJobFormValues } from "./useImportJob";
 
-/** A staging folder Message Crate could not delete, and the reason it gave. */
+/** A run directory Message Crate could not delete, and the reason it gave. */
 export type StagingDeleteFailure = { path: string; reason: string };
 
 /**
@@ -38,10 +38,10 @@ export type ImportRunState = {
   summaryView: ImportSummaryView | null;
   stagingDir: string | null;
   importSessionId: number | null;
-  /** What the staging folder held once Staging finished; the Staging row's facts. */
+  /** What the run directory held once Staging finished; the Staging row's facts. */
   stagingSummary: StagingSummary | null;
   /**
-   * What the folder holds after Media, read again from disk (the folder is
+   * What the directory holds after Media, read again from disk (the directory is
    * the truth, not the last estimate). Null until Media ran.
    */
   mediaSummary: StagingSummary | null;
@@ -59,7 +59,7 @@ export type ImportRunState = {
   mediaPartiallyRan: boolean;
   /**
    * A resume's own recompute failing (a transient read of the staging
-   * folder, not the run itself), surfaced on the resume panel rather than
+   * directory, not the run itself), surfaced on the resume panel rather than
    * completing the run. Cleared at the start of the next resume attempt or
    * a fresh import; deliberately not cleared by returning to the form,
    * since the failure path returns there itself and still needs it read.
@@ -78,10 +78,10 @@ export type ImportRunState = {
   computingSummary: boolean;
   sourceIdentities: string[] | null;
   /**
-   * A staging folder Message Crate could not delete, and why: from a
+   * A run directory Message Crate could not delete, and why: from a
    * discarded or cancelled run, or the cleanup after a finished one. Shown
-   * until the person dismisses it or a later delete of the folder succeeds,
-   * so a folder of several gigabytes is never left behind unsaid.
+   * until the person dismisses it or a later delete of the directory succeeds,
+   * so a directory of several gigabytes is never left behind unsaid.
    */
   stagingDeleteFailure: StagingDeleteFailure | null;
 };

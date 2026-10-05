@@ -43,7 +43,7 @@ interface AuthContextValue extends AuthState {
    * revokes the session anyway and says the Upload resumes from what it sent.
    *
    * `deletedAccountDirectories` is given when the account has just been deleted:
-   * its Staging Directories on this computer, deleted once the session is
+   * the directories of its Import Runs on this computer, deleted once the session is
    * revoked. One that cannot be deleted is named in a notice.
    */
   logout: (options?: {
@@ -385,17 +385,17 @@ function SessionProvider({
         setDialog(null);
       }
       if (deletedAccountDirectories) {
-        // The run went with the account, so nothing resumes; its folders go
+        // The run went with the account, so nothing resumes; its directories go
         // too, and one that stays is named rather than left without a word.
         // An Upload that did not pause in time may still write into its
-        // folder, so the folders go once it has ended. The deleted account's
+        // directory, so the directories go once it has ended. The deleted account's
         // token is refused, so that is soon.
         await pause.ended;
         const undeleted = await deleteStagingDirectories(deletedAccountDirectories);
         if (undeleted.length > 0) {
           setDialog({
             kind: "notice",
-            title: "Staging Directories left on this computer",
+            title: "Directories of Import Runs left on this computer",
             body: <UndeletedDirectories directories={undeleted} />,
           });
         }
@@ -489,7 +489,7 @@ const UPLOAD_NOT_PAUSED_BODY = (
   <p className="mt-3 text-[0.875rem] leading-relaxed text-muted">{UPLOAD_NOT_PAUSED}</p>
 );
 
-/** A Staging Directory that could not be deleted, and why. */
+/** An Import Run's directory that could not be deleted, and why. */
 type UndeletedDirectory = { path: string; reason: string };
 
 /** Delete each directory, and return the ones that could not be deleted. */
@@ -507,13 +507,13 @@ async function deleteStagingDirectories(
   return undeleted;
 }
 
-/** Names each Staging Directory a deleted account left behind, and why. */
+/** Names each Import Run's directory a deleted account left behind, and why. */
 function UndeletedDirectories({ directories }: { directories: readonly UndeletedDirectory[] }) {
   return (
     <>
       <p className="mt-3 text-[0.875rem] leading-relaxed text-muted">
-        Message Crate could not delete these Staging Directories of the deleted account. Delete them
-        by hand to free the space they take:
+        Message Crate could not delete these directories of the deleted account's Import Runs.
+        Delete them by hand to free the space they take:
       </p>
       <PathList paths={directories.map(({ path, reason }) => ({ path, note: reason }))} />
     </>

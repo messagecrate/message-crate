@@ -1,4 +1,4 @@
-//! Find the file iMazing wrote for a CSV row, in the row's own chat folder.
+//! Find the file iMazing wrote for a CSV row, in the row's own chat directory.
 //!
 //! iMazing names a media file `{Message Date} - {label} - {name}`. The date
 //! is the row's `Message Date` with each `:` replaced by a space. The label
@@ -6,7 +6,7 @@
 //! compared. The name is the row's `Attachment` cell as iMazing changed it
 //! when it wrote the file ([`names_on_disk`]).
 
-use crate::chat_folder::regular_files;
+use crate::chat_directory::regular_files;
 use crate::parse::RawRow;
 use anyhow::Result;
 use chrono::NaiveDateTime;
@@ -46,13 +46,13 @@ const SECOND_LEN: usize = "YYYY-MM-DD HH MM SS".len();
 /// The separator iMazing writes between the parts of a media file's name.
 const SEPARATOR: &str = " - ";
 
-/// The regular files directly in one chat folder, by the second their name
+/// The regular files directly in one chat directory, by the second their name
 /// starts with.
-pub(crate) struct FolderFiles {
+pub(crate) struct DirectoryFiles {
     by_second: HashMap<String, SecondFiles>,
 }
 
-/// The files of one chat folder whose names start with one second and
+/// The files of one chat directory whose names start with one second and
 /// ` - `.
 #[derive(Default)]
 struct SecondFiles {
@@ -63,9 +63,9 @@ struct SecondFiles {
     by_name: HashMap<String, Vec<usize>>,
 }
 
-impl FolderFiles {
-    /// Read the regular files directly in `folder`
-    /// ([`crate::chat_folder::regular_files`]).
+impl DirectoryFiles {
+    /// Read the regular files directly in `directory`
+    /// ([`crate::chat_directory::regular_files`]).
     ///
     /// A name that is not UTF-8 is skipped, because no CSV cell can name it.
     /// A name that does not start with a second and ` - ` is skipped,
@@ -73,11 +73,11 @@ impl FolderFiles {
     ///
     /// # Errors
     ///
-    /// Returns an error, with `folder` named, when `folder` or one of its
+    /// Returns an error, with `directory` named, when `directory` or one of its
     /// entries cannot be read.
-    pub(crate) fn read(folder: &Path) -> Result<Self> {
+    pub(crate) fn read(directory: &Path) -> Result<Self> {
         let mut by_second: HashMap<String, SecondFiles> = HashMap::new();
-        for path in regular_files(folder)? {
+        for path in regular_files(directory)? {
             let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
                 continue;
             };
@@ -108,7 +108,7 @@ impl FolderFiles {
             }
             second_files.files.push((path, ends));
         }
-        Ok(FolderFiles { by_second })
+        Ok(DirectoryFiles { by_second })
     }
 
     /// The file iMazing wrote for `row`: a name that starts with the row's
@@ -152,20 +152,20 @@ impl FolderFiles {
 type NamesAtSecond<'a> = HashMap<String, Vec<NumberedName<'a>>>;
 
 /// The file iMazing wrote for each row of one CSV, in the CSV's order, from
-/// the files of the CSV's chat folder. `seconds` holds each row's
+/// the files of the CSV's chat directory. `seconds` holds each row's
 /// [`file_name_second`], in the same order. `None` for a row that names no
 /// file or whose date does not parse, and for a row whose file can't be told
 /// apart from another row's:
 ///
 /// - rows of one second and one numbering name ([`numbering_name`]) whose
-///   files are not all in the folder get none, because a missing file moves
+///   files are not all in the directory get none, because a missing file moves
 ///   the ` 2`, ` 3` numbers and nothing tells which row's file is gone;
 /// - a file that two or more rows would take goes to none of them, because
 ///   one file is never two rows' attachment.
 pub(crate) fn row_sources(
     rows: &[RawRow],
     seconds: &[Option<String>],
-    files: &FolderFiles,
+    files: &DirectoryFiles,
 ) -> Vec<Option<PathBuf>> {
     // Each row's numbering group and its place in it, counting from 1.
     let mut groups: HashMap<(&str, String), Vec<usize>> = HashMap::new();
@@ -261,7 +261,7 @@ fn written_parts(csv_name: &str) -> (String, Option<&str>) {
 /// the name iMazing writes ([`written_parts`]) in lower case. iMazing
 /// numbers two names that differ only in case, because a file system that
 /// ignores case, as macOS and Windows do by default, can't hold both in one
-/// folder.
+/// directory.
 fn numbering_name(csv_name: &str) -> String {
     let (stem, extension) = written_parts(csv_name);
     with_ordinal(&stem, extension, 1).to_lowercase()
@@ -451,7 +451,7 @@ mod tests {
             b"jpeg-bytes",
         )
         .unwrap();
-        let files = FolderFiles::read(&chat).unwrap();
+        let files = DirectoryFiles::read(&chat).unwrap();
         let cell = attachment_cell("photo.jpg", "image");
         let source = files.find(&row("photo.jpg"));
         assert!(
@@ -499,7 +499,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn a_symlink_in_the_chat_folder_is_not_followed() {
+    fn a_symlink_in_the_chat_directory_is_not_followed() {
         use std::os::unix::fs::symlink;
         let dir = tempfile::tempdir().unwrap();
         let chat = dir.path().join("chat");
@@ -513,7 +513,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            FolderFiles::read(&chat).unwrap().find(&row("photo.jpg")),
+            DirectoryFiles::read(&chat).unwrap().find(&row("photo.jpg")),
             None
         );
     }

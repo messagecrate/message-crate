@@ -166,8 +166,8 @@ pub struct ReadOptions<'a> {
     /// parsed, so no payload stays in memory; `None` when the run does not
     /// copy attachments, and then no payload is kept at all.
     pub spool: Option<&'a AttachmentSpool>,
-    /// A folder under the input whose files the read leaves out: the run's
-    /// output when it sits inside the backup's folder, so a backup or an
+    /// A directory under the input whose files the read leaves out: the run's
+    /// output when it sits inside the backup's directory, so a backup or an
     /// attachment an earlier run wrote there is never read back in as input.
     pub exclude_dir: Option<&'a Path>,
     /// How to write attachment files after parse.
@@ -216,7 +216,7 @@ struct PendingConversation {
     messages: Vec<PendingMessage>,
 }
 
-/// The XML files to read: the file itself, or every `.xml` under the folder
+/// The XML files to read: the file itself, or every `.xml` under the directory
 /// outside `exclude_dir`.
 fn collect_xml_paths(input: &Path, exclude_dir: Option<&Path>) -> Result<Vec<PathBuf>> {
     if input.is_file() {

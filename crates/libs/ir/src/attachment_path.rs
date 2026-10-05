@@ -1,11 +1,11 @@
-//! The one check that keeps an attachment's recorded path under its folder.
+//! The one check that keeps an attachment's recorded path under its directory.
 //!
 //! Every attachment in a [`ConversationDocument`](crate::ConversationDocument)
-//! carries a path relative to the export folder. That path is input: a
+//! carries a path relative to the export directory. That path is input: a
 //! crafted CSV or JSON Lines file can name `/etc/passwd` or `../secrets`, and
-//! whichever code joins it onto a folder — the format writers embedding bytes
+//! whichever code joins it onto a directory — the format writers embedding bytes
 //! into an EML, the transcode pass, the server's import — would read outside
-//! the folder. The check lives here, once, so every caller refuses the same
+//! the directory. The check lives here, once, so every caller refuses the same
 //! shapes with the same message.
 
 use std::fmt;
@@ -15,7 +15,7 @@ use std::path::{Component, Path, PathBuf};
 /// recognise the refusal without depending on the exact path text.
 pub const UNSAFE_ATTACHMENT_PATH: &str = "unsafe attachment path";
 
-/// An attachment path that could escape its folder, or names nothing.
+/// An attachment path that could escape its directory, or names nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnsafeAttachmentPath {
     /// The path as it was recorded, before trimming.

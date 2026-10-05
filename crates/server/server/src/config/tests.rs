@@ -63,7 +63,7 @@ fn validate_source_id_rejects_bad() {
 }
 
 #[test]
-fn relative_paths_resolve_against_the_folder_above_the_config_folder() {
+fn relative_paths_resolve_against_the_directory_above_the_config_directory() {
     let dir = tempfile::tempdir().unwrap();
     let path = config_file(
         dir.path(),
@@ -112,7 +112,7 @@ fn a_config_with_no_settings_loads_the_documented_defaults() {
     assert!(server.cors_origins.is_empty());
 }
 
-/// Write `text` as `config/config.toml` under a fresh folder and load it.
+/// Write `text` as `config/config.toml` under a fresh directory and load it.
 fn load_text(text: &str) -> Result<Config> {
     let dir = tempfile::tempdir().unwrap();
     let config_dir = dir.path().join("config");

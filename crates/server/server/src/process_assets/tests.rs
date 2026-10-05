@@ -497,7 +497,7 @@ pub(crate) const BMP_1X1: &[u8] = &[
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20, 0x40, 0x80, 0x00,
 ];
 
-/// An opened fresh database with the schema applied and its data folder
+/// An opened fresh database with the schema applied and its data directory
 /// under a temp dir, the shape [`run`] is handed by the command line.
 async fn open_db() -> (OpenDb, tempfile::TempDir) {
     let (pool, dir) = engine::test_pool().await;
@@ -556,7 +556,7 @@ pub(crate) async fn seed_message(conn: &mut SqliteConnection, source: &str) -> i
 
 /// Store `bytes` as the original for an attachment of `message_id`, the way
 /// an import leaves it: the blob at `<aa>/<sha><ext>` in the account's
-/// assets folder and a row pointing at it. Returns the attachment id.
+/// assets directory and a row pointing at it. Returns the attachment id.
 pub(crate) async fn attach_stored_blob(
     opened: &OpenDb,
     conn: &mut SqliteConnection,
@@ -715,7 +715,7 @@ async fn listed_attachments_carry_name_hints_for_extensionless_blobs() {
 }
 
 #[test]
-fn a_run_writes_a_jpeg_preview_under_the_converted_folder_and_records_it() {
+fn a_run_writes_a_jpeg_preview_under_the_converted_directory_and_records_it() {
     with_real_ffmpeg(async {
         let (opened, _dir, attachment_id) = fixture_with_bmp("imessage").await;
         let opts = ProcessAssetsOptions::default();
@@ -960,7 +960,7 @@ fn one_asset_is_processed_alone() {
 }
 
 /// One file named by messages of two sources is stored once in the
-/// account's folder, converted once, and every row that names it, from
+/// account's directory, converted once, and every row that names it, from
 /// either source, points at the one preview.
 #[test]
 fn a_file_two_sources_share_is_converted_once_for_both() {
@@ -1020,7 +1020,7 @@ async fn a_database_without_accounts_is_an_error() {
 }
 
 #[tokio::test]
-async fn an_account_without_an_assets_folder_is_passed_over() {
+async fn an_account_without_an_assets_directory_is_passed_over() {
     let (opened, _dir) = open_db().await;
     let mut conn = opened.conn().await.unwrap();
     seed_account(&mut conn, ACCOUNT).await;
@@ -1155,15 +1155,15 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
 }
 
 #[tokio::test]
-async fn account_ids_come_from_the_table_or_else_from_the_data_folders() {
+async fn account_ids_come_from_the_table_or_else_from_the_data_directories() {
     let dir = tempfile::tempdir().unwrap();
     let data = dir.path().join("data");
-    for folder in ["7", "12", "notes"] {
-        fs::create_dir_all(data.join(folder)).unwrap();
+    for directory in ["7", "12", "notes"] {
+        fs::create_dir_all(data.join(directory)).unwrap();
     }
     fs::write(data.join("3"), b"a file, not an account").unwrap();
 
-    // No accounts table and no data folder: nothing.
+    // No accounts table and no data directory: nothing.
     let (pool, _db_dir) = engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     assert_eq!(
@@ -1173,17 +1173,17 @@ async fn account_ids_come_from_the_table_or_else_from_the_data_folders() {
         Vec::<i64>::new()
     );
 
-    // No accounts table yet: the folders named by an id are the accounts.
+    // No accounts table yet: the directories named by an id are the accounts.
     assert_eq!(list_account_ids(&mut conn, &data).await.unwrap(), [7, 12]);
 
-    // A table with rows in it is the answer, and the folders are ignored.
+    // A table with rows in it is the answer, and the directories are ignored.
     schema::ensure_schema(&mut conn).await.unwrap();
     seed_account(&mut conn, 5).await;
     assert_eq!(list_account_ids(&mut conn, &data).await.unwrap(), [5]);
 }
 
 #[tokio::test]
-async fn opening_an_account_without_an_assets_folder_gives_nothing_to_process() {
+async fn opening_an_account_without_an_assets_directory_gives_nothing_to_process() {
     let (opened, _dir) = open_db().await;
     let opts = ProcessAssetsOptions::default();
     let work = tempfile::tempdir().unwrap();
@@ -1197,12 +1197,12 @@ async fn opening_an_account_without_an_assets_folder_gives_nothing_to_process() 
             .paths
             .assets_converted_dir_for_account(ACCOUNT)
             .exists(),
-        "no converted folder is made for an account with nothing in it"
+        "no converted directory is made for an account with nothing in it"
     );
 }
 
 #[tokio::test]
-async fn opening_an_account_makes_its_converted_folder_and_cleans_its_incoming_temps() {
+async fn opening_an_account_makes_its_converted_directory_and_cleans_its_incoming_temps() {
     let (opened, _dir) = open_db().await;
     let opts = ProcessAssetsOptions::default();
     let work = tempfile::tempdir().unwrap();
@@ -1216,7 +1216,7 @@ async fn opening_an_account_makes_its_converted_folder_and_cleans_its_incoming_t
 
     let pass = AccountPass::open(&opened.cfg, &opts, work.path(), ACCOUNT, &NOT_STOPPED)
         .unwrap()
-        .expect("an account with an assets folder is processed");
+        .expect("an account with an assets directory is processed");
 
     let converted = opened.cfg.paths.assets_converted_dir_for_account(ACCOUNT);
     assert_eq!(pass.assets_dir, assets);
@@ -1230,9 +1230,9 @@ async fn opening_an_account_makes_its_converted_folder_and_cleans_its_incoming_t
     assert!(live_part.exists(), "a live upload's temp is kept on open");
 }
 
-/// A run killed between creating a temporary file in a shard folder and
+/// A run killed between creating a temporary file in a shard directory and
 /// renaming it over its fingerprint leaves the temporary file behind. The
-/// next run removes it from the originals and the Preview folders alike,
+/// next run removes it from the originals and the Preview directories alike,
 /// and leaves a young one, which a running import or run may still be
 /// writing, alone.
 #[tokio::test]
@@ -1256,7 +1256,7 @@ async fn opening_an_account_removes_temporary_files_a_killed_run_left_in_the_sha
 
     AccountPass::open(&opened.cfg, &opts, work.path(), ACCOUNT, &NOT_STOPPED)
         .unwrap()
-        .expect("an account with an assets folder is processed");
+        .expect("an account with an assets directory is processed");
 
     assert!(
         !left_original.exists(),
@@ -1288,7 +1288,7 @@ async fn a_dry_run_leaves_temporary_files_in_the_shards() {
 
     AccountPass::open(&opened.cfg, &opts, work.path(), ACCOUNT, &NOT_STOPPED)
         .unwrap()
-        .expect("an account with an assets folder is processed");
+        .expect("an account with an assets directory is processed");
 
     assert!(left.exists());
 }

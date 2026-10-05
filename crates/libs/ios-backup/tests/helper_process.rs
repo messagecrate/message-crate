@@ -25,7 +25,7 @@ fn identities_come_back_cleaned_from_the_helper_process() {
         .collect();
     assert!(
         left.is_empty(),
-        "the request's scratch folder stays: {left:?}"
+        "the request's scratch directory stays: {left:?}"
     );
     identities.sort();
     assert_eq!(
