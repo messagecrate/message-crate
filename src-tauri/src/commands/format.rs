@@ -11,7 +11,7 @@ use super::events;
 use super::jobs::{spawn_job, start_job};
 use super::last_log_line_or;
 use super::paths::scratch_dir;
-use crate::state::AppState;
+use crate::state::{AppState, JobName};
 
 /// Ask this process to rewrite an extract directory in a different file format.
 ///
@@ -52,7 +52,7 @@ pub fn format(
         .transpose()?;
 
     let scratch_dir = scratch_dir(&app)?;
-    let job = start_job(&state, "Convert")?;
+    let job = start_job(&state, job_name(run_started.as_ref()))?;
     let cancel = job.cancel_flag();
 
     let app_handle = app.clone();
@@ -86,4 +86,30 @@ pub fn format(
     });
 
     Ok(())
+}
+
+/// What a `format` run is called while it runs. Only an Export passes its
+/// run's start, so a run with one is the second step of an Export, and one
+/// without is Settings → Convert.
+fn job_name(run_started: Option<&chrono::DateTime<chrono::Utc>>) -> JobName {
+    if run_started.is_some() {
+        JobName::Export
+    } else {
+        JobName::Convert
+    }
+}
+
+#[cfg(test)]
+mod job_name_tests {
+    use super::*;
+
+    #[test]
+    fn a_format_run_inside_an_export_is_named_export() {
+        assert_eq!(job_name(Some(&chrono::Utc::now())), JobName::Export);
+    }
+
+    #[test]
+    fn a_format_run_from_settings_is_named_convert() {
+        assert_eq!(job_name(None), JobName::Convert);
+    }
 }

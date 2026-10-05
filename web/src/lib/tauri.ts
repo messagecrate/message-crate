@@ -382,7 +382,8 @@ export async function invokeFormat(config: {
   output_format: ExportFormat;
   /** When the Export Run started, in epoch milliseconds: SMS Backup+ mail
    * records it as its backup time. Left out by Settings → Convert, which is a
-   * run of its own. */
+   * run of its own. The desktop names the run by it too: an Export when it is
+   * given, a Convert when it is not. */
   run_started_ms?: number;
 }): Promise<void> {
   return invoke("format", {

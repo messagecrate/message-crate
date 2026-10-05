@@ -10,7 +10,7 @@ use message_crate_pull::{
 
 use super::events;
 use super::jobs::{spawn_job, start_job};
-use crate::state::AppState;
+use crate::state::{AppState, JobName};
 
 /// User-facing parameters for the `pull` command.
 #[derive(Debug, serde::Deserialize)]
@@ -52,7 +52,7 @@ pub fn pull(
     app: tauri::AppHandle,
     args: PullArgs,
 ) -> Result<(), String> {
-    let job = start_job(&state, "Export")?;
+    let job = start_job(&state, JobName::Export)?;
     let cancel = job.cancel_flag();
 
     let app_handle = app.clone();

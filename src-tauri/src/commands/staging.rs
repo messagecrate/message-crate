@@ -37,7 +37,7 @@ use super::events::ExtractProgressEvent;
 use super::jobs::{spawn_job, start_job};
 use crate::app_directories::RunLog;
 use crate::run_directories::{self, RunDirectories, StagingRoot};
-use crate::state::AppState;
+use crate::state::{AppState, JobName};
 
 /// The directory `summarize_staging`, `transcode_staging`, `delete_run_dir`
 /// and the Import Run record commands act on.
@@ -246,7 +246,7 @@ pub fn transcode_staging(
 ) -> Result<(), String> {
     let (run_dir, options) = staged_directory(&directories, &args.run_dir)?;
     let run_log = RunLog::open(&super::paths::logs_dir(&app)?, &run_dir);
-    let job = start_job(&state, "The Media Stage")?;
+    let job = start_job(&state, JobName::Media)?;
     let cancel = job.cancel_flag();
     let media_stage_converts = matches!(
         options.mode,

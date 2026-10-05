@@ -28,7 +28,7 @@ use tauri::{AppHandle, Manager};
 use super::events;
 use super::events::ExtractErrorEvent;
 use crate::local_server::LocalServer;
-use crate::state::{AppState, RunningJob};
+use crate::state::{AppState, JobName, RunningJob};
 
 /// The desktop job that is running. Dropping it ends the job, so a command
 /// that returns an error after starting its job does not leave it running.
@@ -60,16 +60,12 @@ impl Drop for Job {
 
 /// Start a job called `name`, with a cancel flag of its own.
 ///
-/// `name` is what the screens call the work, as a `CONTEXT.md` term written
-/// to start a sentence ("Staging", "The Upload"), because the refusal below
-/// puts both names in front of the person. "Job" is a word for the code only.
-///
 /// # Errors
 ///
 /// Returns an error naming what is running and what was asked for when
 /// another job runs, or if another thread panicked while holding the shared
 /// state lock.
-pub(crate) fn start_job(state: &Arc<Mutex<AppState>>, name: &'static str) -> Result<Job, String> {
+pub(crate) fn start_job(state: &Arc<Mutex<AppState>>, name: JobName) -> Result<Job, String> {
     let mut st = state.lock().map_err(|e| e.to_string())?;
     if let Some(running) = &st.job {
         return Err(running_text(running.name, name));
@@ -85,11 +81,16 @@ pub(crate) fn start_job(state: &Arc<Mutex<AppState>>, name: &'static str) -> Res
     })
 }
 
-/// Why `start` can't start while `running` runs, in the words the web app
-/// uses for the same refusal (`desktopJobRunningText` in
-/// `web/src/lib/desktopJob.ts`).
-fn running_text(running: &str, start: &str) -> String {
-    format!("{running} is running. {start} can start once it ends.")
+/// Why `start` can't start while `running` runs. The sentence has the shape
+/// of the web app's own refusal (`desktopJobRunningText` in
+/// `web/src/lib/desktopJob.ts`), which names whole screens where this names
+/// the job.
+fn running_text(running: JobName, start: JobName) -> String {
+    format!(
+        "{} is running. {} can start once it ends.",
+        running.label(),
+        start.label()
+    )
 }
 
 /// Ask the job that is running to stop. Does nothing when no job runs.
@@ -166,25 +167,41 @@ mod tests {
     #[test]
     fn a_job_cannot_start_while_another_runs_and_the_refusal_names_both() {
         let state = new_state();
-        let _export = start_job(&state, "Export").unwrap();
-        let error = start_job(&state, "Staging")
+        let _export = start_job(&state, JobName::Export).unwrap();
+        let error = start_job(&state, JobName::Staging)
             .err()
             .expect("a second job is refused");
-        assert_eq!(error, "Export is running. Staging can start once it ends.");
+        assert_eq!(
+            error,
+            "An Export is running. Staging can start once it ends."
+        );
+    }
+
+    #[test]
+    fn the_refusal_names_a_convert_and_an_import_stage_in_the_screens_words() {
+        let state = new_state();
+        let _convert = start_job(&state, JobName::Convert).unwrap();
+        let error = start_job(&state, JobName::Upload)
+            .err()
+            .expect("a second job is refused");
+        assert_eq!(
+            error,
+            "A Convert is running. The Upload can start once it ends."
+        );
     }
 
     #[test]
     fn a_job_can_start_once_the_one_before_it_has_ended() {
         let state = new_state();
-        let first = start_job(&state, "Staging").unwrap();
+        let first = start_job(&state, JobName::Staging).unwrap();
         drop(first);
-        assert!(start_job(&state, "The Upload").is_ok());
+        assert!(start_job(&state, JobName::Upload).is_ok());
     }
 
     #[test]
     fn cancel_stops_the_running_job() {
         let state = new_state();
-        let job = start_job(&state, "The Upload").unwrap();
+        let job = start_job(&state, JobName::Upload).unwrap();
         let flag = job.cancel_flag();
         cancel_running_job(&state).unwrap();
         assert!(flag.load(Ordering::Relaxed));
@@ -193,11 +210,11 @@ mod tests {
     #[test]
     fn a_cancel_does_not_reach_a_job_started_after_it() {
         let state = new_state();
-        let first = start_job(&state, "Staging").unwrap();
+        let first = start_job(&state, JobName::Staging).unwrap();
         let first_flag = first.cancel_flag();
         cancel_running_job(&state).unwrap();
         drop(first);
-        let second = start_job(&state, "The Upload").unwrap();
+        let second = start_job(&state, JobName::Upload).unwrap();
         assert!(first_flag.load(Ordering::Relaxed));
         assert!(!second.cancel_flag().load(Ordering::Relaxed));
     }
@@ -206,7 +223,7 @@ mod tests {
     fn a_cancel_with_no_job_running_does_nothing() {
         let state = new_state();
         cancel_running_job(&state).unwrap();
-        let job = start_job(&state, "Staging").unwrap();
+        let job = start_job(&state, JobName::Staging).unwrap();
         assert!(!job.cancel_flag().load(Ordering::Relaxed));
     }
 
@@ -216,12 +233,12 @@ mod tests {
     #[test]
     fn a_job_has_ended_by_the_time_its_outcome_is_reported() {
         let state = new_state();
-        let job = start_job(&state, "Staging").unwrap();
+        let job = start_job(&state, JobName::Staging).unwrap();
         let end = run_job(job, || Ok("done".into()));
         assert_eq!(end.unwrap(), "done");
         assert!(state.lock().unwrap().job.is_none());
 
-        let job = start_job(&state, "Staging").unwrap();
+        let job = start_job(&state, JobName::Staging).unwrap();
         assert!(run_job(job, || panic!("bug")).is_err());
         assert!(state.lock().unwrap().job.is_none());
     }
@@ -229,7 +246,7 @@ mod tests {
     fn run(
         run: impl FnOnce() -> Result<String, ExtractErrorEvent>,
     ) -> Result<String, ExtractErrorEvent> {
-        run_job(start_job(&new_state(), "Export").unwrap(), run)
+        run_job(start_job(&new_state(), JobName::Export).unwrap(), run)
     }
 
     #[test]
