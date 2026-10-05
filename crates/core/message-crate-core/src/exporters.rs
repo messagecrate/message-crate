@@ -200,7 +200,7 @@ pub struct Form {
     pub whatsapp_backup: String,
     /// WhatsApp contacts database (`wa.db` / `ContactsV2.sqlite`) path.
     pub whatsapp_wa: String,
-    /// WhatsApp media folder path.
+    /// WhatsApp media directory path.
     pub whatsapp_media: String,
     /// WhatsApp message database path.
     pub whatsapp_db: String,
@@ -243,7 +243,7 @@ impl Default for Form {
 
 impl Form {
     /// Validate the form and build a typed [`ExporterConfig`] for `exporter`,
-    /// whose scratch data goes under `cache_dir`, the app's cache folder
+    /// whose scratch data goes under `cache_dir`, the app's cache directory
     /// ([`ExporterConfig::cache_dir`]).
     ///
     /// # Errors
@@ -618,7 +618,7 @@ fn require_single_existing_path(
         return None;
     }
     if paths.len() > 1 {
-        errors.push(format!("{label} must be a single file or folder."));
+        errors.push(format!("{label} must be a single file or directory."));
         return None;
     }
     let path = paths[0];
@@ -822,7 +822,7 @@ mod tests {
         let err = form
             .to_config(Exporter::SmsBackupPlus, Path::new("/cache"))
             .unwrap_err();
-        assert!(err.iter().any(|e| e.contains("single file or folder")));
+        assert!(err.iter().any(|e| e.contains("single file or directory")));
     }
 
     #[test]

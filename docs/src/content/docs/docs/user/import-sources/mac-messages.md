@@ -32,10 +32,10 @@ Messages the Message Crate already holds are skipped.
 1. Open **Import** and choose **iMessage** as the source.
 2. **Platform**: **Mac Messages**.
 3. **Messages database**: on a Mac the field already holds `~/Library/Messages/chat.db`.
-4. **Attachment folder** stays empty. The attachments sit next to `chat.db`, and the app finds them there.
+4. **Attachment directory** stays empty. The attachments sit next to `chat.db`, and the app finds them there.
 5. **Apple Contacts file** stays empty. The app reads the Mac's own Contacts for names.
 
 The two optional fields exist for a `chat.db` that was copied to another computer.
-In that case **Attachment folder** takes the copied `Attachments` folder, and **Apple Contacts file** takes a copied `AddressBook-v22.abcddb`.
+In that case **Attachment directory** takes the copied `Attachments` directory, and **Apple Contacts file** takes a copied `AddressBook-v22.abcddb`.
 
 The run itself is the same as in [Import your backup](/docs/user/your-messages/import-your-backup/#start-the-import).

@@ -5,17 +5,17 @@ use crate::local_server::{self, Launch, LocalServer, Status};
 use std::path::PathBuf;
 use tauri::{AppHandle, Manager, State};
 
-/// The folder inside the installed app that holds the built website. It
+/// The directory inside the installed app that holds the built website. It
 /// matches the `bundle.resources` target in `tauri.conf.json`.
 const WEBSITE_RESOURCE: &str = "website";
 
-/// The server's data folder for this app. A dev build has its own, so it
+/// The server's data directory for this app. A dev build has its own, so it
 /// never opens the installed app's database.
 fn data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     let app_data = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("Could not find the app's data folder: {e}"))?;
+        .map_err(|e| format!("Could not find the app-data directory: {e}"))?;
     Ok(local_server::data_dir_in(&app_data, tauri::is_dev()))
 }
 
@@ -63,7 +63,7 @@ fn launch(app: &AppHandle, open_to_network: bool) -> Result<Launch, String> {
 /// # Errors
 ///
 /// Returns an error when the app cannot work out what to start: its data
-/// folder, its resources, or the server program is missing.
+/// directory, its resources, or the server program is missing.
 #[tauri::command]
 pub fn start_local_server(
     app: AppHandle,
@@ -89,14 +89,14 @@ pub fn local_server_status(server: State<'_, LocalServer>) -> Status {
     server.status()
 }
 
-/// Open the server's data folder in the file manager, creating it first so
+/// Open the server's data directory in the file manager, creating it first so
 /// the button works before the first start has finished.
 ///
 /// # Errors
 ///
-/// Returns an error when the folder cannot be found, created, or opened.
+/// Returns an error when the directory cannot be found, created, or opened.
 #[tauri::command]
-pub fn open_data_folder(app: AppHandle) -> Result<(), String> {
+pub fn open_data_directory(app: AppHandle) -> Result<(), String> {
     let dir = data_dir(&app)?;
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("Could not create {}: {e}", dir.display()))?;

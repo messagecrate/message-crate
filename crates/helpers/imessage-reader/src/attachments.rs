@@ -22,14 +22,14 @@ pub(crate) fn resolved_path(session: &MailSession, attachment: &Attachment) -> O
 }
 
 /// Answer one attachment request: for an encrypted backup, decrypt the entry
-/// into the scratch folder and name the file; otherwise name the path itself
+/// into the scratch directory and name the file; otherwise name the path itself
 /// when it exists.
 ///
 /// An entry the backup does not hold is [`AttachmentFile::Missing`]: the
 /// app records the attachment as missing and moves on, the same as it does
 /// for a plain file that is gone, and the reason is on the log so a run's
 /// worth of gaps does not go unexplained. Any other error, such as a scratch
-/// folder with no room left, is [`AttachmentFile::Failed`] with the error,
+/// directory with no room left, is [`AttachmentFile::Failed`] with the error,
 /// which the app counts and reports on its own.
 pub(crate) fn decrypt_for_app(session: &MailSession, source: &Path) -> Event {
     let Some(backup) = session

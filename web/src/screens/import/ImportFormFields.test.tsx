@@ -8,7 +8,7 @@ import { IMESSAGE_METHODS, IMESSAGE_SOURCE_ID } from "../../lib/imessageImport";
 import {
   emptyWhatsappPathStats,
   WHATSAPP_ERR_CRYPT_KEY,
-  WHATSAPP_ERR_FOLDER_IS_FILE,
+  WHATSAPP_ERR_DIRECTORY_IS_FILE,
   WHATSAPP_ERR_OWNER_PHONE,
   WHATSAPP_METHODS,
   WHATSAPP_SOURCE_ID,
@@ -124,7 +124,7 @@ describe("ImportFormFields iMessage methods", () => {
     expect(await screen.findByRole("option", { name: "Jailbroken iPhone" })).toBeTruthy();
   });
 
-  it("marks the iPhone backup folder required and encryption password optional", () => {
+  it("marks the iPhone backup directory required and encryption password optional", () => {
     renderForm();
     const backupLabel = screen.getByText("iPhone Backup Directory").closest("label");
     expect(backupLabel?.textContent).toContain("*");
@@ -158,15 +158,15 @@ describe("ImportFormFields iMessage methods", () => {
     }
   });
 
-  it("shows password and hides attachment folder on iPhone backup", () => {
+  it("shows password and hides attachment directory on iPhone backup", () => {
     renderForm({ source: "imessage-ios" });
     expect(screen.getByLabelText("Encryption password (Optional)")).toBeTruthy();
-    expect(screen.queryByLabelText("Attachment folder")).toBeNull();
+    expect(screen.queryByLabelText("Attachment directory")).toBeNull();
     expect(screen.queryByLabelText("Apple Contacts file")).toBeNull();
     expect(screen.getByRole("button", { name: "Import" })).not.toBeDisabled();
   });
 
-  it("shows optional attachment folder on Mac Messages", () => {
+  it("shows optional attachment directory on Mac Messages", () => {
     renderForm({
       source: "imessage-macos",
       backupPath: "/Users/sam/Library/Messages/chat.db",
@@ -178,11 +178,11 @@ describe("ImportFormFields iMessage methods", () => {
       },
     });
     expect(screen.queryByLabelText("Encryption password")).toBeNull();
-    expect(screen.getByLabelText("Attachment folder (Optional)")).toBeTruthy();
+    expect(screen.getByLabelText("Attachment directory (Optional)")).toBeTruthy();
     expect(screen.getByLabelText("Apple Contacts file (Optional)")).toBeTruthy();
     expect(
       screen.getByText(
-        "Leave empty if Attachments and StickerCache are next to chat.db. Set this only when those folders live somewhere else.",
+        "Leave empty if Attachments and StickerCache are next to chat.db. Set this only when those directories live somewhere else.",
       ),
     ).toBeTruthy();
     expect(
@@ -193,7 +193,7 @@ describe("ImportFormFields iMessage methods", () => {
     expect(screen.getByRole("button", { name: "Import" })).not.toBeDisabled();
   });
 
-  it("disables Import on jailbreak until the attachment folder is set", () => {
+  it("disables Import on jailbreak until the attachment directory is set", () => {
     renderForm({
       source: "imessage-jailbreak",
       backupPath: "/mnt/iphone/sms.db",
@@ -205,12 +205,12 @@ describe("ImportFormFields iMessage methods", () => {
         backupEncrypted: null,
       },
     });
-    const attachmentLabel = screen.getByText("Attachment folder").closest("label");
+    const attachmentLabel = screen.getByText("Attachment directory").closest("label");
     expect(attachmentLabel?.textContent).toContain("*");
     expect(screen.getByRole("button", { name: "Import" })).toBeDisabled();
   });
 
-  it("enables jailbreak Import when sms.db and attachment folder exist", () => {
+  it("enables jailbreak Import when sms.db and attachment directory exist", () => {
     renderForm({
       source: "imessage-jailbreak",
       backupPath: "/mnt/iphone/sms.db",
@@ -225,7 +225,7 @@ describe("ImportFormFields iMessage methods", () => {
     expect(screen.getByRole("button", { name: "Import" })).not.toBeDisabled();
   });
 
-  it("shows an attachment-folder kind error when the path is a file", () => {
+  it("shows an attachment-directory kind error when the path is a file", () => {
     renderForm({
       source: "imessage-macos",
       backupPath: "/tmp/chat.db",
@@ -238,7 +238,7 @@ describe("ImportFormFields iMessage methods", () => {
       },
     });
     expect(
-      screen.getByText("Pick the folder that contains Attachments and StickerCache."),
+      screen.getByText("Pick the directory that contains Attachments and StickerCache."),
     ).toBeTruthy();
     expect(screen.getByRole("button", { name: "Import" })).toBeDisabled();
   });
@@ -298,7 +298,7 @@ describe("ImportFormFields WhatsApp methods", () => {
     expect(screen.queryByLabelText("Decryption key (Optional)")).toBeNull();
     expect(screen.queryByLabelText("Decryption key")).toBeNull();
     expect(screen.getByRole("checkbox", { name: "WhatsApp Business" })).toBeTruthy();
-    expect(screen.queryByLabelText("Media folder (Optional)")).toBeNull();
+    expect(screen.queryByLabelText("Media directory (Optional)")).toBeNull();
     expect(screen.queryByLabelText("Message database (Optional)")).toBeNull();
   });
 
@@ -384,7 +384,7 @@ describe("ImportFormFields WhatsApp methods", () => {
     expect(screen.getByRole("button", { name: "Import" })).toBeEnabled();
   });
 
-  it("shows a folder-kind error when the backup path is a file", () => {
+  it("shows a directory-kind error when the backup path is a file", () => {
     renderForm({
       source: "whatsapp-android",
       backupPath: "/tmp/msgstore.db",
@@ -398,7 +398,7 @@ describe("ImportFormFields WhatsApp methods", () => {
         backupEncrypted: null,
       },
     });
-    expect(screen.getByText(WHATSAPP_ERR_FOLDER_IS_FILE)).toBeTruthy();
+    expect(screen.getByText(WHATSAPP_ERR_DIRECTORY_IS_FILE)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Import" })).toBeDisabled();
   });
 });
@@ -492,11 +492,11 @@ describe("ImportFormFields Import button", () => {
     expect(screen.queryByText("Processing Options (Advanced)")).toBeNull();
   });
 
-  it("names each Android SMS source's own backup files in the folder placeholder", () => {
+  it("names each Android SMS source's own backup files in the directory placeholder", () => {
     const placeholders = [
-      ["sms-backup-restore", "Folder containing sms-*.xml backup files"],
-      ["go-sms-pro", "Folder containing gosms_sys*.xml backup files"],
-      ["sms-backup-plus", "Folder containing .eml files"],
+      ["sms-backup-restore", "Directory containing sms-*.xml backup files"],
+      ["go-sms-pro", "Directory containing gosms_sys*.xml backup files"],
+      ["sms-backup-plus", "Directory containing .eml files"],
     ];
     for (const [source, placeholder] of placeholders) {
       const { unmount } = renderForm({ source });
@@ -506,7 +506,7 @@ describe("ImportFormFields Import button", () => {
   });
 
   // Import stays disabled without either one, so both carry the asterisk.
-  it("marks the Android SMS backup folder and phone numbers required", () => {
+  it("marks the Android SMS backup directory and phone numbers required", () => {
     renderForm({ source: "sms-backup-restore" });
     const backupLabel = screen.getByText("Backup Directory").closest("label");
     expect(backupLabel?.textContent).toContain("*");
@@ -565,11 +565,11 @@ const whatsappAndroidProps: Partial<ImportFormFieldsProps> = {
   whatsappStats: filledWhatsappStats,
 };
 const whatsappAndroidFields: FormCase["fields"] = [
-  { label: "Backup folder", empty: { backupPath: "" } },
+  { label: "Backup directory", empty: { backupPath: "" } },
   { label: "Decryption key", empty: { whatsappKey: "" } },
   { label: "WhatsApp phone number", empty: { whatsappOwnerPhone: "" } },
   { label: "Contacts database", empty: { whatsappWa: "" } },
-  { label: "Media folder", empty: { whatsappMedia: "" } },
+  { label: "Media directory", empty: { whatsappMedia: "" } },
   { label: "Message database", empty: { whatsappDb: "" } },
 ];
 const whatsappIphoneProps: Partial<ImportFormFieldsProps> = {
@@ -582,7 +582,7 @@ const whatsappIphoneProps: Partial<ImportFormFieldsProps> = {
   processingOpen: true,
 };
 const whatsappIphoneFields: FormCase["fields"] = [
-  { label: "Backup folder", empty: { backupPath: "" } },
+  { label: "Backup directory", empty: { backupPath: "" } },
   { label: "Encryption password", empty: { backupPassword: "" } },
   { label: "Contacts database", empty: { whatsappWa: "" } },
   { label: "WhatsApp phone number", empty: { whatsappOwnerPhone: "" } },
@@ -610,7 +610,7 @@ const messagesDbProps: Partial<ImportFormFieldsProps> = {
 };
 const messagesDbFields: FormCase["fields"] = [
   { label: "Messages database", empty: { backupPath: "" } },
-  { label: "Attachment folder", empty: { attachmentRoot: "" } },
+  { label: "Attachment directory", empty: { attachmentRoot: "" } },
   { label: "Apple Contacts file", empty: { appleContacts: "" } },
 ];
 const androidSmsProps: Partial<ImportFormFieldsProps> = {

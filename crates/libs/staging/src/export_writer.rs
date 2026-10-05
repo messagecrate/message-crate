@@ -80,7 +80,7 @@ impl ExportWriter {
     /// # Errors
     ///
     /// Returns an error when the output directory cannot be prepared, or a
-    /// resumed run points at a directory that is not a staging folder.
+    /// resumed run points at a directory that is not a run directory.
     pub fn open(
         output_dir: &Path,
         format: OutputFormat,
@@ -122,7 +122,7 @@ impl ExportWriter {
     }
 
     /// Give the run an attachment spool under `cache_dir`, the app's cache
-    /// folder, when it copies attachments; see [`spool`](Self::spool).
+    /// directory, when it copies attachments; see [`spool`](Self::spool).
     #[must_use]
     pub fn with_spool(mut self, cache_dir: &Path) -> Self {
         if self.copy_attachments {
@@ -158,7 +158,7 @@ impl ExportWriter {
         self.use_queue
     }
 
-    /// The run's attachment spool, under the app's cache folder and never
+    /// The run's attachment spool, under the app's cache directory and never
     /// in the output directory; `None` when the writer was not given one
     /// or the run copies no attachments. An exporter whose attachments
     /// arrive as bytes writes each payload here as it parses it, so no
@@ -475,7 +475,7 @@ mod tests {
     /// Every format that is not JSON Lines checks the staging disk for room
     /// before it writes, as the JSON Lines queue does: an attachment no disk
     /// could hold stops the run with the space it needs, and the output
-    /// folder holds nothing but the export's mark (#1421).
+    /// directory holds nothing but the export's mark (#1421).
     #[test]
     fn every_format_refuses_a_backup_the_staging_disk_cannot_hold_before_writing() {
         for format in [
@@ -515,10 +515,10 @@ mod tests {
         }
     }
 
-    /// The spool sits under the cache folder the writer is given, never in
-    /// the output folder, and is gone once the run ends (#1421).
+    /// The spool sits under the cache directory the writer is given, never in
+    /// the output directory, and is gone once the run ends (#1421).
     #[test]
-    fn the_spool_is_under_the_cache_folder_and_never_in_the_output_folder() {
+    fn the_spool_is_under_the_cache_directory_and_never_in_the_output_directory() {
         let tmp = tempfile::tempdir().unwrap();
         let out = tmp.path().join("out");
         let cache = tmp.path().join("cache");
@@ -532,7 +532,7 @@ mod tests {
         let spooled = spool.path(&digest).unwrap();
 
         assert!(
-            spooled.starts_with(cache.join(message_crate_core::ATTACHMENT_SPOOL_FOLDER)),
+            spooled.starts_with(cache.join(message_crate_core::ATTACHMENT_SPOOL_DIRECTORY)),
             "{}",
             spooled.display()
         );

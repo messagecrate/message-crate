@@ -10,7 +10,7 @@ import {
   getOpenToNetwork,
   isOwnAddress,
   type LocalServerStatus,
-  openDataFolder,
+  openDataDirectory,
   setLocalServerOpenToNetwork,
   setOpenToNetwork,
 } from "../../lib/localServer";
@@ -132,11 +132,11 @@ function ThirdPartySoftware() {
 }
 
 /**
- * Where the Message Crate this app starts keeps everything. The folder is the
+ * Where the Message Crate this app starts keeps everything. The directory is the
  * whole Message Crate, so it is what a person copies to back it up; the app
  * opens it rather than naming a path to find.
  */
-function DataFolder() {
+function DataDirectory() {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(getOpenToNetwork);
   const [server, setServer] = useState<LocalServerStatus | null>(null);
@@ -160,19 +160,19 @@ function DataFolder() {
     <div className="mt-8">
       <h3 className={sectionHeading}>Message Crate on this computer</h3>
       <p className="m-0 max-w-prose text-[0.875rem] text-text">
-        The Message Crate this app starts keeps its database and attachments in one folder. A copy
-        of that folder is a backup.
+        The Message Crate this app starts keeps its database and attachments in one directory. A
+        copy of that directory is a backup.
       </p>
       <PlainButton
         className="mt-2 rounded border border-border px-3 py-1.5 text-[0.875rem] text-text hover:bg-elevated"
         onPress={() => {
           setError(null);
-          openDataFolder().catch((caught: unknown) => {
+          openDataDirectory().catch((caught: unknown) => {
             setError(caught instanceof Error ? caught.message : String(caught));
           });
         }}
       >
-        Open data folder
+        Open data directory
       </PlainButton>
       {error ? (
         <p className="m-0 mt-1 text-[0.75rem] text-danger" role="alert">
@@ -282,7 +282,7 @@ export function SystemSection() {
   // The desktop process keeps the setting and decides what it takes: every
   // value typed is sent, and a refusal is shown as the desktop process gave
   // it, so the window holds no rule of its own. An empty value goes back to
-  // the default. A run already staged keeps the folder it was made in; the
+  // the default. A run already staged keeps the directory it was made in; the
   // new setting applies to runs started after it.
   const stagingSaveGen = useRef(0);
   const lastStagingSave = useRef<Promise<unknown>>(Promise.resolve());
@@ -304,7 +304,7 @@ export function SystemSection() {
   };
 
   // A value the desktop process refused stays in the field until it is left.
-  // The field then shows the folder the desktop process holds, read once the
+  // The field then shows the directory the desktop process holds, read once the
   // last save has answered, so a value accepted after the refusal is never
   // hidden behind the one shown before it.
   const onStagingPathBlur = () => {
@@ -408,7 +408,7 @@ export function SystemSection() {
             />
           </div>
           <p className={settingsHelp}>
-            Folder must contain both ffmpeg and ffprobe. Leave blank to use system PATH.{" "}
+            Directory must contain both ffmpeg and ffprobe. Leave blank to use system PATH.{" "}
             <a
               href="https://messagecrate.app/docs/user/features/messages/attachments-and-media/"
               target="_blank"
@@ -427,7 +427,7 @@ export function SystemSection() {
         </div>
       </div>
 
-      <DataFolder />
+      <DataDirectory />
 
       <div className="mt-8">
         <AppVersion />

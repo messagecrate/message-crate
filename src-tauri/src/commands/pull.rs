@@ -23,7 +23,7 @@ pub struct PullArgs {
     /// The logged-in Session's token, sent as the bearer token. Never an API
     /// Token, and never a password.
     pub token: String,
-    /// Folder the pulled conversation files are written into.
+    /// Directory the pulled conversation files are written into.
     pub out_dir: String,
     /// Search query selecting what to pull. Blank pulls everything.
     pub query: String,

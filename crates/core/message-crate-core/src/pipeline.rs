@@ -635,7 +635,7 @@ mod tests {
 
         let output = tmp.path().join("export");
         let (resolved, out) = prepare_outputs(&inputs, &output).unwrap();
-        assert!(output.is_dir(), "the output folder is created");
+        assert!(output.is_dir(), "the output directory is created");
         assert_eq!(out, std::fs::canonicalize(&output).unwrap());
         assert_eq!(resolved, [std::fs::canonicalize(&input).unwrap()]);
     }

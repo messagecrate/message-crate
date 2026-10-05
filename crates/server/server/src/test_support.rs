@@ -1010,7 +1010,7 @@ pub async fn seed_conversation(state: &AppState, c: &SeedConversation<'_>) -> i6
 ///
 /// `sha` stands in for the content hash; the store never reads the bytes
 /// back here, so it only has to be 64 characters long the way a real digest
-/// is. The file goes in the account's one assets directory, the folder
+/// is. The file goes in the account's one assets directory, the directory
 /// every source of the account shares, which is where a delete looks for it.
 pub async fn attach_stored_file(
     state: &AppState,
@@ -1078,7 +1078,7 @@ pub async fn seed_one_message(state: &AppState, account_id: i64) {
 
 /// Import one JSON Lines text into `account_id` in append mode on `conn`, as
 /// the serve path does once the schema is in place, and answer the run's
-/// counts. The file and its asset folder live in a temporary directory that
+/// counts. The file and its asset directory live in a temporary directory that
 /// is gone when this returns.
 pub async fn import_jsonl_text(
     conn: &mut sqlx::SqliteConnection,

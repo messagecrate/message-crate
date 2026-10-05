@@ -1685,7 +1685,7 @@ pub(crate) async fn discard_body(
     Ok(())
 }
 
-/// Create `dest` and its parent folders for an upload.
+/// Create `dest` and its parent directories for an upload.
 async fn create_dest_file(dest: &Path) -> Result<tokio::fs::File, ApiError> {
     if let Some(parent) = dest.parent() {
         tokio::fs::create_dir_all(parent)

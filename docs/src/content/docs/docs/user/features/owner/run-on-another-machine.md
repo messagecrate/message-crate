@@ -99,7 +99,7 @@ The server must be stopped first, because a database copied while the server is 
 docker stop message-crate
 ```
 
-The next command starts a temporary container that packs the volume into `message-crate-data.tar.gz` in the current folder.
+The next command starts a temporary container that packs the volume into `message-crate-data.tar.gz` in the current directory.
 
 ```bash title="On the old computer: save the volume"
 docker run --rm \
@@ -108,7 +108,7 @@ docker run --rm \
   alpine tar czf /backup/message-crate-data.tar.gz -C /data .
 ```
 
-`"$PWD"` is the current folder in a Linux or macOS shell.
+`"$PWD"` is the current directory in a Linux or macOS shell.
 PowerShell on Windows takes `"${PWD}"` in its place.
 
 The file then goes to the new computer by whatever means is at hand: a USB drive, a network share, or `scp`.
@@ -116,7 +116,7 @@ The file then goes to the new computer by whatever means is at hand: a USB drive
 ### Restore the volume
 
 The first command makes an empty volume with the same name.
-The second unpacks the file into it, from the folder that holds `message-crate-data.tar.gz`.
+The second unpacks the file into it, from the directory that holds `message-crate-data.tar.gz`.
 
 ```bash title="On the new computer: restore the volume"
 docker volume create message-crate-data

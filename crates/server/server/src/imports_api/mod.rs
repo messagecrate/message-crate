@@ -191,7 +191,7 @@ pub(crate) struct OwnedSession {
 
 impl OwnedSession {
     /// Record a session at the parse stage. Nothing client-side (staging
-    /// folder, device, form) is known for a run started here.
+    /// directory, device, form) is known for a run started here.
     ///
     /// # Errors
     ///
@@ -848,7 +848,7 @@ pub(crate) struct ImportRunSummary {
     pub(crate) upload_ms: Option<i64>,
     /// Where a running run is; null once it is over.
     pub(crate) stage: Option<crate::db::imports::ImportStage>,
-    /// Absolute path to the staging folder on the client that owns the run.
+    /// Absolute path to the run directory on the client that owns the run.
     pub(crate) staging_dir: Option<String>,
     /// Which install created the run.
     pub(crate) device_id: Option<String>,
@@ -1497,7 +1497,7 @@ pub(crate) struct UpdateImportRequest {
     /// What the person approved at the Review they just passed, when they passed one.
     ///
     /// Recorded here rather than at completion so an approval survives a
-    /// reload: the summary shown at a Review is recomputed from the folder, but
+    /// reload: the summary shown at a Review is recomputed from the directory, but
     /// what was approved is a different question and only the run
     /// remembers it. Absent leaves the stored `summary_json` untouched —
     /// most stage changes carry nothing, and treating absent as null would

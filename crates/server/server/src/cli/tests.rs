@@ -554,7 +554,7 @@ fn serve_args(args: &[&str]) -> ServeArgs {
     }
 }
 
-/// How the desktop app starts the server (#970): one folder holds the whole
+/// How the desktop app starts the server (#970): one directory holds the whole
 /// Message Crate, no config file is read, and the other settings are the
 /// defaults unless a flag says otherwise.
 #[test]
@@ -594,7 +594,7 @@ fn serve_with_a_data_dir_needs_no_config_file() {
 }
 
 /// The same two flags apply over a config file, a relative `--static-dir`
-/// resolves where the config file's own `static_dir` does, and a relative data folder
+/// resolves where the config file's own `static_dir` does, and a relative data directory
 /// is made absolute so the server does not depend on where it was started.
 #[tokio::test]
 async fn serve_flags_override_the_config_file_and_a_relative_data_dir_is_made_absolute() {
@@ -632,7 +632,7 @@ async fn serve_flags_override_the_config_file_and_a_relative_data_dir_is_made_ab
     assert!(relative.paths.data_dir.ends_with("some/crate"));
 }
 
-/// A config file and a data folder are two answers to one question.
+/// A config file and a data directory are two answers to one question.
 #[test]
 fn serve_refuses_a_config_file_together_with_a_data_dir() {
     let argv = [

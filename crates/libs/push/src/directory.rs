@@ -1,8 +1,8 @@
-//! The export folder on disk: which files in it are conversations, and how
+//! The export directory on disk: which files in it are conversations, and how
 //! attachment paths inside those files map back to real files.
 //!
 //! Nothing here talks to the network. It is the push run's read-only view of
-//! the folder.
+//! the directory.
 
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
@@ -14,25 +14,25 @@ use message_ir::ConversationHeader;
 use crate::journal;
 use crate::project;
 
-/// The folder a push works from. A conversation file path is accepted too and
+/// The directory a push works from. A conversation file path is accepted too and
 /// resolved to its parent, because the desktop app hands over whichever the
 /// person picked.
 ///
 /// # Errors
 ///
-/// Returns an error when the resolved folder does not exist.
-pub(crate) fn input_folder(input: &Path) -> Result<PathBuf> {
-    let folder = if input.is_file() {
+/// Returns an error when the resolved directory does not exist.
+pub(crate) fn input_directory(input: &Path) -> Result<PathBuf> {
+    let directory = if input.is_file() {
         input
             .parent()
             .map_or_else(|| PathBuf::from("."), Path::to_path_buf)
     } else {
         input.to_path_buf()
     };
-    if !folder.is_dir() {
-        bail!("input directory does not exist: {}", folder.display());
+    if !directory.is_dir() {
+        bail!("input directory does not exist: {}", directory.display());
     }
-    Ok(folder)
+    Ok(directory)
 }
 
 /// True for files message-crate-push itself writes (journal/report/log), not conversations.
@@ -78,7 +78,7 @@ pub(crate) fn list_jsonl_files(dir: &Path, exclude: &[&Path]) -> Result<Vec<Path
 ///
 /// An entry that cannot be read fails the listing, with `dir` named. Skipping
 /// it would leave a conversation file uncounted and unsent, and the Upload
-/// would report success for a folder it read only in part. The server's
+/// would report success for a directory it read only in part. The server's
 /// `import` command fails the same way.
 ///
 /// # Errors
@@ -115,7 +115,7 @@ pub(crate) fn file_label(path: &Path) -> String {
 ///
 /// # Errors
 ///
-/// Returns an error when the folder cannot be listed, the file cannot be read,
+/// Returns an error when the directory cannot be listed, the file cannot be read,
 /// or the header is invalid.
 pub fn detect_source(input: &Path) -> Result<Option<String>> {
     let dir = if input.is_file() {
@@ -137,11 +137,11 @@ pub fn detect_source(input: &Path) -> Result<Option<String>> {
 }
 
 /// Turn an attachment path from a JSON Lines file into a real file path under
-/// the export folder. `None` means the path is safe but no file is there.
+/// the export directory. `None` means the path is safe but no file is there.
 ///
 /// # Errors
 ///
-/// Returns an error when the path could escape the export folder.
+/// Returns an error when the path could escape the export directory.
 pub(crate) fn resolve_attachment(export_root: &Path, rel: &str) -> Result<Option<PathBuf>> {
     let under = message_ir::safe_attachment_path(export_root, rel)?;
     Ok(under.is_file().then_some(under))
@@ -179,10 +179,10 @@ mod tests {
         assert_eq!(names, ["a.jsonl", "b.jsonl"]);
     }
 
-    /// An entry the folder listing cannot read fails the Upload with the
-    /// folder named, rather than leaving a conversation file unsent (#1403).
+    /// An entry the directory listing cannot read fails the Upload with the
+    /// directory named, rather than leaving a conversation file unsent (#1403).
     #[test]
-    fn an_entry_that_cannot_be_read_fails_the_listing_and_names_the_folder() {
+    fn an_entry_that_cannot_be_read_fails_the_listing_and_names_the_directory() {
         let dir = Path::new("/staging/run-1");
         let entries = vec![
             Ok(dir.join("a.jsonl")),
@@ -216,7 +216,7 @@ mod tests {
     }
 
     /// The source comes from the first conversation file in name order,
-    /// whether the folder or a file inside it is given.
+    /// whether the directory or a file inside it is given.
     #[test]
     fn detect_source_reads_the_first_conversation_header() {
         let dir = tempfile::tempdir().unwrap();

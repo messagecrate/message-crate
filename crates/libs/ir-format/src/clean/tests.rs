@@ -10,7 +10,7 @@ fn names(dir: &Path) -> Vec<String> {
 }
 
 #[test]
-fn refuses_a_folder_of_the_persons_own_files() {
+fn refuses_a_directory_of_the_persons_own_files() {
     let tmp = tempfile::tempdir().unwrap();
     fs::write(tmp.path().join("notes.txt"), "mine").unwrap();
 
@@ -24,7 +24,7 @@ fn refuses_a_folder_of_the_persons_own_files() {
 }
 
 #[test]
-fn removes_only_export_files_from_a_marked_folder() {
+fn removes_only_export_files_from_a_marked_directory() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path();
     write_export_sentinel(dir).unwrap();
@@ -40,7 +40,7 @@ fn removes_only_export_files_from_a_marked_folder() {
     }
     fs::create_dir(dir.join("attachments")).unwrap();
     fs::write(dir.join("attachments").join("a.jpg"), "x").unwrap();
-    // A folder named like an export file is not an export file.
+    // A directory named like an export file is not an export file.
     fs::create_dir(dir.join("kept.json")).unwrap();
 
     clean_previous_ir_output(dir).unwrap();
@@ -49,7 +49,7 @@ fn removes_only_export_files_from_a_marked_folder() {
 }
 
 #[test]
-fn cleans_a_marked_folder_that_holds_no_export_files() {
+fn cleans_a_marked_directory_that_holds_no_export_files() {
     let tmp = tempfile::tempdir().unwrap();
     write_export_sentinel(tmp.path()).unwrap();
     fs::write(tmp.path().join("notes.txt"), "mine").unwrap();
@@ -60,7 +60,7 @@ fn cleans_a_marked_folder_that_holds_no_export_files() {
 }
 
 #[test]
-fn refuses_an_unmarked_folder_that_holds_export_like_files() {
+fn refuses_an_unmarked_directory_that_holds_export_like_files() {
     let tmp = tempfile::tempdir().unwrap();
     fs::write(tmp.path().join("budget.csv"), "mine").unwrap();
     fs::write(tmp.path().join("settings.json"), "{}").unwrap();
@@ -93,7 +93,7 @@ fn removes_the_files_an_archive_recorded_and_nothing_else() {
     write_export_sentinel(dir).unwrap();
     let recorded = ["archive.xml", "archive.xml.tmp"].map(String::from);
     record_archive_files(dir, &recorded).unwrap();
-    // A damaged list cannot reach outside the folder.
+    // A damaged list cannot reach outside the directory.
     record_archive_files(dir, &["../outside.xml".to_string()]).unwrap();
     let outside = tmp.path().join("outside.xml");
     fs::write(&outside, "mine").unwrap();
@@ -104,29 +104,29 @@ fn removes_the_files_an_archive_recorded_and_nothing_else() {
     clean_previous_ir_output(dir).unwrap();
 
     assert_eq!(names(dir), [EXPORT_SENTINEL, "sms-20261001.xml"]);
-    assert!(outside.is_file(), "a file outside the folder is kept");
+    assert!(outside.is_file(), "a file outside the directory is kept");
     assert_eq!(fs::read_to_string(dir.join(EXPORT_SENTINEL)).unwrap(), "");
 }
 
-/// Pull and WhatsApp mark a folder without cleaning it, so marking it
+/// Pull and WhatsApp mark a directory without cleaning it, so marking it
 /// again keeps the archive files an earlier export listed for the next
 /// clean.
 #[test]
-fn marking_a_folder_again_keeps_the_archive_files_it_lists() {
+fn marking_a_directory_again_keeps_the_archive_files_it_lists() {
     let tmp = tempfile::tempdir().unwrap();
     let dir = tmp.path();
     write_export_sentinel(dir).unwrap();
     record_archive_files(dir, &["archive.xml".to_string()]).unwrap();
     fs::write(dir.join("archive.xml"), "x").unwrap();
 
-    mark_export_folder(dir).unwrap();
+    mark_export_directory(dir).unwrap();
     clean_previous_ir_output(dir).unwrap();
 
     assert_eq!(names(dir), [EXPORT_SENTINEL]);
 }
 
 #[test]
-fn marks_an_empty_folder() {
+fn marks_an_empty_directory() {
     let tmp = tempfile::tempdir().unwrap();
 
     clean_previous_ir_output(tmp.path()).unwrap();
@@ -154,7 +154,7 @@ fn export_artifacts_are_recognised_by_name() {
 }
 
 #[test]
-fn marks_a_folder_that_holds_only_operating_system_files() {
+fn marks_a_directory_that_holds_only_operating_system_files() {
     let tmp = tempfile::tempdir().unwrap();
     fs::write(tmp.path().join(".DS_Store"), "finder").unwrap();
 

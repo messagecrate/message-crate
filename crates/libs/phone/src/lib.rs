@@ -514,14 +514,28 @@ fn group_id_slug(digits: &[String]) -> String {
         .join("_")
 }
 
-/// Non-US test numbers are no one's, in this crate and every other one
-/// outside the Demo Data generator (`demo-seed`). Each comes from a range
-/// its regulator reserves for fiction. Where a country reserves none, the
-/// number starts with a digit no number there starts with.
+/// Non-US test numbers are no one's, in this crate and every other one. Each
+/// comes from a range its regulator reserves for fiction. Where a country
+/// reserves none, or a test needs a number outside that range, the number
+/// starts with a digit no number there starts with, or has a length no
+/// number there has.
 ///
+/// - North America: 555-0100 to 555-0199, in any area code. Source: NANPA,
+///   "Numbering Resources - 555 Line Numbers"
+///   (<https://www.nationalnanpa.com/number_resource_info/555_numbers.html>).
+///   Only the `demo-seed` test of its fiction check holds North American
+///   numbers to this note. It needs numbers outside that range, so it puts
+///   them under area code 015. An area code starts with 2 to 9, never 0.
+///   Source: NANPA, "Number Resources - NPA (Area) Codes"
+///   (<https://www.nationalnanpa.com/area_codes/index.html>).
 /// - UK: 020 7946 0xxx and 07700 900xxx. Source: Ofcom, "Telephone numbers
 ///   for use in TV and radio drama programmes"
 ///   (<https://www.ofcom.org.uk/phones-and-broadband/phone-numbers/numbers-for-drama>).
+///   The `demo-seed` test of its fiction check also uses +44 7700 9001000
+///   and +44 7700 900. A UK mobile number has six digits after 7700, and
+///   these have seven and three. Source: Ofcom, "The National Telephone
+///   Numbering Plan", B2.1: a number has ten digits after the leading 0
+///   (<https://www.ofcom.org.uk/siteassets/resources/documents/phones-telecoms-and-internet/information-for-industry/numbering/other/national-numbering-plan.pdf>).
 /// - France: 06 39 98 xx xx. Source: ARCEP decision 2018-0881, Plan
 ///   national de numérotation, "Numéros pour œuvres audiovisuelles", page 54
 ///   (<https://www.arcep.fr/uploads/tx_gsavis/18-0881.pdf>).

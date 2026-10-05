@@ -34,7 +34,7 @@ const COPY: Record<ResumableKind, PanelCopy> = {
   resume_review: {
     heading: () => "Pick up where you left off",
     body: () =>
-      "Your messages are staged. Opening the import again shows you the same summary, read fresh from the folder.",
+      "Your messages are staged. Opening the import again shows you the same summary, read fresh from the directory.",
     primary: { label: "Show me the summary", action: "resume" },
     secondary: { label: "Discard this import", action: "discard" },
   },
@@ -61,25 +61,25 @@ const COPY: Record<ResumableKind, PanelCopy> = {
     primary: { label: "Start over", action: "resume" },
     secondary: { label: "Discard this import", action: "discard" },
   },
-  // resumeDecisionFor routes here both when the staged folder has gone
+  // resumeDecisionFor routes here both when the staged directory has gone
   // missing and when the session never recorded one — every session created
   // outside the desktop app stores a null staging_dir — so the copy names
   // the path only when there is one.
-  folder_missing: {
+  directory_missing: {
     heading: (session) =>
       session.staging_dir ? "The staged files are gone" : "There is nothing staged to pick up",
     body: (session) =>
       session.staging_dir
-        ? `This import's folder is no longer at ${session.staging_dir}. Discarding it lets you start a new one.`
-        : "This import did not record a staged folder, so there is nothing here to carry on from. Discarding it lets you start a new one.",
+        ? `This import's directory is no longer at ${session.staging_dir}. Discarding it lets you start a new one.`
+        : "This import did not record a staged directory, so there is nothing here to carry on from. Discarding it lets you start a new one.",
     primary: { label: "Discard this import", action: "discard" },
   },
-  // The stat of the staging folder failed, which says nothing about whether
-  // the folder is there, so the copy says that rather than calling it gone.
-  folder_unknown: {
+  // The stat of the run directory failed, which says nothing about whether
+  // the directory is there, so the copy says that rather than calling it gone.
+  directory_unknown: {
     heading: () => "The staged files could not be checked",
     body: (session) =>
-      `Message Crate could not check ${session.staging_dir ?? "this import's folder"}. Open Import again to check once more, or discard this import to start a new one.`,
+      `Message Crate could not check ${session.staging_dir ?? "this import's directory"}. Open Import again to check once more, or discard this import to start a new one.`,
     primary: { label: "Discard this import", action: "discard" },
   },
   other_device: {
@@ -128,7 +128,7 @@ export default function ResumeImportPanel({
   /**
    * Set when the last attempt to act on this decision failed partway
    * through — today, only a resume at a Review or in the Media stage whose
-   * recompute of the staged folder failed (a transient read, not a run that
+   * recompute of the staged directory failed (a transient read, not a run that
    * actually failed: only an explicit discard ends a run, so it is still
    * here to try again). Null the rest of the time.
    */

@@ -26,16 +26,16 @@ cors_origins = [
 ]
 ```
 
-- A relative path resolves against the folder above the config file's folder: the repository root for `config/config.toml`. The rule holds for every path in the file (`db`, `data_dir`, `static_dir`) and for the flags that replace one of them (`--db`, `--static-dir`), so `--db data/messagecrate.db` names the same file as `db = "data/messagecrate.db"` whatever directory the command runs in. `serve --data-dir` reads no config file, so there `--data-dir` and `--static-dir` resolve against the directory the server is started in.
+- A relative path resolves against the directory above the config file's directory: the repository root for `config/config.toml`. The rule holds for every path in the file (`db`, `data_dir`, `static_dir`) and for the flags that replace one of them (`--db`, `--static-dir`), so `--db data/messagecrate.db` names the same file as `db = "data/messagecrate.db"` whatever directory the command runs in. `serve --data-dir` reads no config file, so there `--data-dir` and `--static-dir` resolve against the directory the server is started in.
 - `assets_dir` and `assets_converted_dir` are each one directory name, not a path: an account's originals are in `data_dir/<account_id>/<assets_dir>` and its Previews in `data_dir/<account_id>/<assets_converted_dir>`. The server refuses a value that is absolute, contains a `/`, `\` or `:`, starts with `.` (`.` and `..` included), ends in `.` or a space, or is empty, with an error naming the key, and refuses the two keys being the same name in any letter case. Why: an absolute path, or a Windows drive such as `C:assets`, would put every account's attachments in one directory; a separator or `..` would reach outside the account's own; the server keeps `.removing` beside the attachments and deletes what is in it; Windows drops a trailing `.` or space, and macOS and Windows ignore letter case by default, so `assets.` or `Assets` could be another key's directory; and originals and Previews are cleaned up under different rules, so they need a directory each.
 - `[server]` is required for `serve`.
 - `reset-demo` rebuilds the Demo Account in the database `db` names and never writes the config file.
 - `cors_origins` lists origins allowed on top of the three the packaged desktop app runs from (`tauri://localhost`, `http://tauri.localhost`, `https://tauri.localhost`), which the server allows whether or not you name them. The website the server serves is same-origin and needs no entry either, so an empty list is the right setting for most installs. Add the Vite origins (`http://localhost:5173`, `http://127.0.0.1:5173`) when running the dev UI against this server.
-- `static_dir` is the folder holding the built website, served at `/`. It defaults to `static`.
-- `serve` runs without a config file when given `--data-dir <folder>`: the database is `messagecrate.db` in that folder, the accounts' files sit beside it, and every `[server]` key has its default. `--bind` and `--static-dir` override `bind` and `static_dir`, with or without a config file. The desktop app starts the server this way.
+- `static_dir` is the directory holding the built website, served at `/`. It defaults to `static`.
+- `serve` runs without a config file when given `--data-dir <directory>`: the database is `messagecrate.db` in that directory, the accounts' files sit beside it, and every `[server]` key has its default. `--bind` and `--static-dir` override `bind` and `static_dir`, with or without a config file. The desktop app starts the server this way.
 - Source names are **not** listed in TOML — each import registers its own
   source slug for that account in the database. The files on disk carry no
-  source: an account keeps one folder of originals and one of previews.
+  source: an account keeps one directory of originals and one of previews.
 
 ### Which file is the database
 

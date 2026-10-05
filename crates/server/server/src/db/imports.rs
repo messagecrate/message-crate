@@ -190,7 +190,7 @@ pub struct ImportRow {
     pub summary_json: Option<String>,
     /// Where the run is while it is live; `None` once it is over.
     pub stage: Option<ImportStage>,
-    /// Absolute path to the staging folder on the client that owns it.
+    /// Absolute path to the run directory on the client that owns it.
     pub staging_dir: Option<String>,
     /// Which install created the run.
     pub device_id: Option<String>,
@@ -349,7 +349,7 @@ pub struct StartImportArgs<'a> {
 
 impl<'a> StartImportArgs<'a> {
     /// A run opening at [`ImportStage::Parse`] with nothing recorded
-    /// about the client: no staging folder, device, form snapshot,
+    /// about the client: no run directory, device, form snapshot,
     /// fingerprint, or identities. The CLI importer and most tests start
     /// here; a caller with more to record uses struct update syntax on
     /// top of it.
@@ -1188,7 +1188,7 @@ pub async fn record_credential(
 /// deleted: each keeps `username` and its counts, and is marked with
 /// `deletion_entry_id`, the account's `account_deleted` entry. A run still
 /// open is closed as `cancelled` at `now`, and what describes the person's
-/// messages goes: its issues and notes, form, staging folder, source details and the
+/// messages goes: its issues and notes, form, run directory, source details and the
 /// addresses the backup sent from (ADR 0020).
 ///
 /// # Errors

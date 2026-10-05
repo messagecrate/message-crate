@@ -15,14 +15,14 @@ const setFfmpegToolsDir = vi.hoisted(() => vi.fn());
 /** The Staging Directory as the desktop process keeps it. */
 const desktopStaging = vi.hoisted(() => ({ root: "", defaultRoot: "/home/demo/message-crate" }));
 const setStagingRoot = vi.hoisted(() => vi.fn());
-const openDataFolder = vi.hoisted(() => vi.fn());
+const openDataDirectory = vi.hoisted(() => vi.fn());
 
 const startLocalServer = vi.hoisted(() => vi.fn());
 const setLocalServerOpenToNetwork = vi.hoisted(() => vi.fn());
 
 vi.mock("../../lib/localServer", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/localServer")>()),
-  openDataFolder: () => openDataFolder(),
+  openDataDirectory: () => openDataDirectory(),
   startLocalServer: () => startLocalServer(),
   setLocalServerOpenToNetwork: (on: boolean) => setLocalServerOpenToNetwork(on),
 }));
@@ -56,7 +56,7 @@ beforeEach(() => {
   desktopStaging.root = "";
   setStagingRoot.mockReset();
   setStagingRoot.mockImplementation(async (root: string) => {
-    // The desktop process refuses a relative folder, as resolve_staging_root does.
+    // The desktop process refuses a relative directory, as resolve_staging_root does.
     if (root !== "" && !root.startsWith("/")) throw "The staging directory must be a full path.";
     desktopStaging.root = root === desktopStaging.defaultRoot ? "" : root;
     return {
@@ -107,19 +107,19 @@ describe("SystemSection", () => {
     expect(screen.queryByText("Third-party software")).toBeNull();
   });
 
-  it("opens the data folder of the app's own Message Crate", async () => {
-    openDataFolder.mockResolvedValue(undefined);
+  it("opens the data directory of the app's own Message Crate", async () => {
+    openDataDirectory.mockResolvedValue(undefined);
     render(<SystemSection />);
     const user = setupUser();
-    await user.click(await screen.findByRole("button", { name: "Open data folder" }));
-    expect(openDataFolder).toHaveBeenCalledTimes(1);
+    await user.click(await screen.findByRole("button", { name: "Open data directory" }));
+    expect(openDataDirectory).toHaveBeenCalledTimes(1);
   });
 
-  it("says why the data folder could not be opened", async () => {
-    openDataFolder.mockRejectedValue(new Error("Could not open /data"));
+  it("says why the data directory could not be opened", async () => {
+    openDataDirectory.mockRejectedValue(new Error("Could not open /data"));
     render(<SystemSection />);
     const user = setupUser();
-    await user.click(await screen.findByRole("button", { name: "Open data folder" }));
+    await user.click(await screen.findByRole("button", { name: "Open data directory" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not open /data");
   });
 
@@ -177,10 +177,10 @@ describe("SystemSection", () => {
     expect(await screen.findByRole("status")).toHaveTextContent("This app did not start");
   });
 
-  it("offers no data folder in the browser", () => {
+  it("offers no data directory in the browser", () => {
     tauriState.isTauri = false;
     render(<SystemSection />);
-    expect(screen.queryByRole("button", { name: "Open data folder" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Open data directory" })).toBeNull();
   });
 
   it("shows the desktop-only stub when not in Tauri", () => {
@@ -223,7 +223,7 @@ describe("SystemSection", () => {
     expect(await screen.findByText(/disk full/)).toBeInTheDocument();
   });
 
-  it("shows a folder accepted after a refusal when the field is left before the answer", async () => {
+  it("shows a directory accepted after a refusal when the field is left before the answer", async () => {
     const user = setupUser();
     render(<SystemSection />);
     const stagingInput = await screen.findByDisplayValue("/home/demo/message-crate");
@@ -233,10 +233,10 @@ describe("SystemSection", () => {
     });
     expect(await screen.findByText(/Not saved/)).toBeInTheDocument();
 
-    // The pasted folder replaces the refused one in one change, so the
+    // The pasted directory replaces the refused one in one change, so the
     // refusal is still shown when the field is left.
     (stagingInput as HTMLInputElement).select();
-    // The desktop process accepts the pasted folder, but answers late.
+    // The desktop process accepts the pasted directory, but answers late.
     let answer!: () => void;
     setStagingRoot.mockImplementationOnce(
       (root: string) =>

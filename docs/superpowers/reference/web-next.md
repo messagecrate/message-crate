@@ -391,7 +391,7 @@ has no such feature.
 | Feature | web | web-next |
 |---|---|---|
 | Import from a backup | desktop: sources, gates, resume, progress, summary | — |
-| Export to a folder | desktop | — |
+| Export to a directory | desktop | — |
 
 ### Cross-cutting
 

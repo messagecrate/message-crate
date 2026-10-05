@@ -29,7 +29,7 @@ It finds the program when it is on the `PATH` the app was started with, or when 
 
 ### What Import needs
 
-A folder that holds one of:
+A directory that holds one of:
 
 - `msgstore.db`, the WhatsApp message database, or
 - `msgstore.db.crypt15` (or the older `.crypt14` or `.crypt12`), the encrypted backup of it, together with its key.
@@ -43,7 +43,7 @@ WhatsApp can protect its backup with a key the person holds.
 1. In WhatsApp, open **Settings → Chats → Chat backup → End-to-end encrypted backup** and turn it on.
 2. Choose the **64-digit encryption key** in place of a password, and write the key down. A password can't be used for Import.
 3. Run a backup from **Chat backup**.
-4. Copy `msgstore.db.crypt15` to the computer. On the phone it is under `Android/media/com.whatsapp/WhatsApp/Databases/`. A WhatsApp `Media` folder beside `Databases` holds the photos and videos, and it is copied too when they are wanted.
+4. Copy `msgstore.db.crypt15` to the computer. On the phone it is under `Android/media/com.whatsapp/WhatsApp/Databases/`. A WhatsApp `Media` directory beside `Databases` holds the photos and videos, and it is copied too when they are wanted.
 
 The labels inside WhatsApp change between versions.
 [WhatsApp's own help](https://faq.whatsapp.com/) describes the current ones.
@@ -58,10 +58,10 @@ The [WhatsApp Chat Exporter documentation](https://github.com/KnugiHK/WhatsApp-C
 
 1. Open **Import** and choose **WhatsApp** as the source.
 2. **Platform**: **Android**.
-3. **Backup folder**: the folder that holds the `msgstore` file.
-4. **Decryption key**: the 64-digit key, or the path to the key file. It is required when the folder has a `.crypt` file and no `msgstore.db`. The app never saves it.
+3. **Backup directory**: the directory that holds the `msgstore` file.
+4. **Decryption key**: the 64-digit key, or the path to the key file. It is required when the directory has a `.crypt` file and no `msgstore.db`. The app never saves it.
 5. **WhatsApp phone number**: the number the account is registered to. It is filled in from the profile.
-6. **Contacts database**, **Media folder**, and **Message database** stay empty when those files are inside the backup folder.
+6. **Contacts database**, **Media directory**, and **Message database** stay empty when those files are inside the backup directory.
 
 ## WhatsApp on iPhone
 
@@ -74,11 +74,11 @@ A backup that was encrypted for importing iPhone messages is used here as it is,
 
 1. Open **Import** and choose **WhatsApp** as the source.
 2. **Platform**: **iPhone**.
-3. **Backup folder**: the device folder, the one that contains `Manifest.plist`.
+3. **Backup directory**: the device directory, the one that contains `Manifest.plist`.
 4. **Encryption password**: the backup's password. It is required when the backup is encrypted, and stays empty when it is not. The app never saves it.
 5. **WhatsApp Business** is turned on only for a WhatsApp Business backup.
 
-For an encrypted backup, Import first decrypts WhatsApp's files into the import's working folder, which takes longer when the backup holds a lot of WhatsApp media. The decrypted files are deleted when the import finishes reading them.
+For an encrypted backup, Import first decrypts WhatsApp's files into the import's working directory, which takes longer when the backup holds a lot of WhatsApp media. The decrypted files are deleted when the import finishes reading them.
 
 The phone number is read from the backup.
 When the backup doesn't hold it, Import uses **WhatsApp phone number** under **Processing Options (Advanced)**.

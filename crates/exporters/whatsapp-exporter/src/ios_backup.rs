@@ -4,7 +4,7 @@
 //! encrypted one it asks for the password on a terminal and takes it no
 //! other way, so the app decrypts WhatsApp's app-group domain into the
 //! run's work dir first (through `imessage-reader`, the only program here
-//! that can decrypt an iPhone backup) and wtsexporter reads that folder as
+//! that can decrypt an iPhone backup) and wtsexporter reads that directory as
 //! it reads a backup someone extracted by hand.
 
 use anyhow::{Result, bail};
@@ -20,7 +20,7 @@ const BUSINESS_DOMAIN: &str = "AppDomainGroup-group.net.whatsapp.WhatsAppSMB.sha
 /// Where the decrypted files are.
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct DecryptedWhatsapp {
-    /// The domain's folder: media, contacts and preferences sit under it.
+    /// The domain's directory: media, contacts and preferences sit under it.
     pub domain_dir: PathBuf,
     /// `ChatStorage.sqlite`, the message database.
     pub database: PathBuf,
@@ -28,7 +28,7 @@ pub(crate) struct DecryptedWhatsapp {
 
 /// Decrypt WhatsApp's files into `work` when `source.backup` is an
 /// encrypted iPhone backup. `None` means the backup is not encrypted (or is
-/// not a backup folder) and wtsexporter reads it as it is.
+/// not a backup directory) and wtsexporter reads it as it is.
 ///
 /// # Errors
 ///
@@ -98,7 +98,7 @@ fn decrypt_with(
                 database,
             }))
         }
-        // Not encrypted, or not a folder with a readable Manifest.plist:
+        // Not encrypted, or not a directory with a readable Manifest.plist:
         // wtsexporter reads it, or says what is wrong with it.
         _ => Ok(None),
     }
@@ -113,7 +113,7 @@ mod tests {
     use std::path::Path;
     use tempfile::{TempDir, tempdir};
 
-    /// A backup folder whose `Manifest.plist` says `encrypted`.
+    /// A backup directory whose `Manifest.plist` says `encrypted`.
     fn backup(encrypted: bool) -> TempDir {
         let dir = tempdir().unwrap();
         let mut dict = plist::Dictionary::new();

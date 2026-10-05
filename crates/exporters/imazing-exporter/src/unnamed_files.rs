@@ -1,13 +1,13 @@
-//! Files in a chat folder that no CSV row names.
+//! Files in a chat directory that no CSV row names.
 //!
-//! iMazing writes two kinds of file into a Messages chat folder without a row
+//! iMazing writes two kinds of file into a Messages chat directory without a row
 //! for them: the video of a Live Photo, beside its picture, and the link
 //! preview of a message that holds a link. Neither appears in any
 //! `Attachment` cell, so the row lookup in [`crate::attachments`] never sees
 //! them. This module sorts each such file into what it is, so the emitter can
 //! attach the video to its picture's message and count the rest.
 
-use crate::chat_folder::regular_files;
+use crate::chat_directory::regular_files;
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -34,31 +34,34 @@ pub(crate) enum UnnamedFile {
     Other,
 }
 
-/// What the rows of one chat folder name and say.
-pub(crate) struct FolderRows<'a> {
+/// What the rows of one chat directory name and say.
+pub(crate) struct DirectoryRows<'a> {
     /// Every file any row of the export was matched to.
     pub named: &'a HashSet<PathBuf>,
     /// Every picture an Image row was matched to, with those rows.
     pub pictures: &'a HashMap<PathBuf, Vec<usize>>,
-    /// The texts of this folder's rows, keyed by the row's `Message Date`
+    /// The texts of this directory's rows, keyed by the row's `Message Date`
     /// as iMazing writes it into a file name ([`crate::attachments::file_name_second`]).
     pub texts_at: &'a HashMap<String, Vec<String>>,
 }
 
-/// Sort every regular file in `folder` that no row names, in name order.
+/// Sort every regular file in `directory` that no row names, in name order.
 ///
-/// CSV files are the folder's own exports, and a name starting with `.` is
+/// CSV files are the directory's own exports, and a name starting with `.` is
 /// the file system's (`.DS_Store`), so neither is a file iMazing wrote for a
 /// message. Symbolic links are skipped, as the row lookup skips them
-/// ([`crate::chat_folder::regular_files`]).
+/// ([`crate::chat_directory::regular_files`]).
 ///
 /// # Errors
 ///
-/// Returns an error, with `folder` named, when `folder` or one of its
+/// Returns an error, with `directory` named, when `directory` or one of its
 /// entries cannot be read.
-pub(crate) fn unnamed_files(folder: &Path, rows: &FolderRows<'_>) -> Result<Vec<UnnamedFile>> {
+pub(crate) fn unnamed_files(
+    directory: &Path,
+    rows: &DirectoryRows<'_>,
+) -> Result<Vec<UnnamedFile>> {
     let mut files: Vec<(String, PathBuf)> = Vec::new();
-    for path in regular_files(folder)? {
+    for path in regular_files(directory)? {
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
             continue;
         };
@@ -74,7 +77,7 @@ pub(crate) fn unnamed_files(folder: &Path, rows: &FolderRows<'_>) -> Result<Vec<
         .collect())
 }
 
-fn classify(name: &str, path: PathBuf, rows: &FolderRows<'_>) -> UnnamedFile {
+fn classify(name: &str, path: PathBuf, rows: &DirectoryRows<'_>) -> UnnamedFile {
     if has_extension(&path, &["mov"])
         && let Some(picture) = live_photo_picture(&path, rows)
     {
@@ -98,13 +101,13 @@ fn classify(name: &str, path: PathBuf, rows: &FolderRows<'_>) -> UnnamedFile {
 
 /// The picture beside `video` under the same name with a picture extension,
 /// when an Image row names it.
-fn live_photo_picture(video: &Path, rows: &FolderRows<'_>) -> Option<PathBuf> {
+fn live_photo_picture(video: &Path, rows: &DirectoryRows<'_>) -> Option<PathBuf> {
     let stem = video.file_stem()?.to_str()?;
-    let folder = video.parent()?;
+    let directory = video.parent()?;
     LIVE_PHOTO_PICTURE_EXTENSIONS
         .iter()
         .flat_map(|ext| [ext.to_string(), ext.to_ascii_uppercase()])
-        .map(|ext| folder.join(format!("{stem}.{ext}")))
+        .map(|ext| directory.join(format!("{stem}.{ext}")))
         .find(|picture| rows.pictures.contains_key(picture))
 }
 
@@ -151,12 +154,12 @@ mod tests {
         assert_eq!(message_second("2020-01-01 12 01 0é - x"), None);
     }
 
-    /// A chat folder that cannot be listed fails the search for files no
-    /// row names, with the folder named, rather than reading as holding no
+    /// A chat directory that cannot be listed fails the search for files no
+    /// row names, with the directory named, rather than reading as holding no
     /// such file and dropping a Live Photo video without a word (#1563).
     #[cfg(unix)]
     #[test]
-    fn a_folder_that_cannot_be_listed_fails_and_is_named() {
+    fn a_directory_that_cannot_be_listed_fails_and_is_named() {
         let dir = tempfile::tempdir().unwrap();
         let chat = dir.path().join("chat");
         fs::create_dir(&chat).unwrap();
@@ -166,13 +169,13 @@ mod tests {
         )
         .unwrap();
         let (named, pictures, texts_at) = (HashSet::new(), HashMap::new(), HashMap::new());
-        let rows = FolderRows {
+        let rows = DirectoryRows {
             named: &named,
             pictures: &pictures,
             texts_at: &texts_at,
         };
         let Some(result) =
-            crate::test_support::with_folder_mode(&chat, 0o000, || unnamed_files(&chat, &rows))
+            crate::test_support::with_directory_mode(&chat, 0o000, || unnamed_files(&chat, &rows))
         else {
             return;
         };

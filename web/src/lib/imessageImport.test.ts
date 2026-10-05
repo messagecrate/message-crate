@@ -96,7 +96,7 @@ describe("iMessage methods", () => {
 });
 
 describe("imessageCanImport", () => {
-  it("enables iPhone backup when the folder exists", () => {
+  it("enables iPhone backup when the directory exists", () => {
     const result = imessageCanImport({
       method: "imessage-ios",
       backupPath: "/backups/iphone",
@@ -244,7 +244,7 @@ describe("imessageCanImport", () => {
     expect(imessageAttachmentRootRequired("imessage-ios")).toBe(false);
   });
 
-  it("requires jailbreak sms.db and attachment folder", () => {
+  it("requires jailbreak sms.db and attachment directory", () => {
     const missingRoot = imessageCanImport({
       method: "imessage-jailbreak",
       backupPath: "/mnt/iphone/sms.db",
@@ -294,7 +294,7 @@ describe("imessageCanImport", () => {
     expect(result.errors.attachmentRoot).toBe(IMESSAGE_ERR_PATH_MISSING);
   });
 
-  it("rejects an attachment folder that is a file", () => {
+  it("rejects an attachment directory that is a file", () => {
     const result = imessageCanImport({
       method: "imessage-macos",
       backupPath: "/tmp/chat.db",
@@ -402,7 +402,7 @@ describe("imessageStatsForMethod", () => {
 });
 
 describe("Mac Messages pre-fill", () => {
-  it("joins chat.db under the home Library folder", () => {
+  it("joins chat.db under the home Library directory", () => {
     expect(macMessagesDbPath("/Users/sam")).toBe("/Users/sam/Library/Messages/chat.db");
     expect(macMessagesDbPath("/Users/sam/")).toBe("/Users/sam/Library/Messages/chat.db");
   });

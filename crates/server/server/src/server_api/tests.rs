@@ -813,7 +813,7 @@ fn no_bundle(
     anyhow::bail!("the generator has nothing to write")
 }
 
-/// The folder [`long_bundle`] was last given, so a test can look for it
+/// The directory [`long_bundle`] was last given, so a test can look for it
 /// once the build has stopped.
 static LONG_BUNDLE: std::sync::Mutex<Option<std::path::PathBuf>> = std::sync::Mutex::new(None);
 
@@ -821,8 +821,8 @@ static LONG_BUNDLE: std::sync::Mutex<Option<std::path::PathBuf>> = std::sync::Mu
 /// minute, the way the Large set keeps the generator busy. Like the real
 /// generator, which checks the flag between conversations, it checks the
 /// flag once every 20 files, and stops with an error once it is set. Each
-/// file recreates the folder it goes in, so a generator still writing after
-/// its folder was removed leaves the folder behind.
+/// file recreates the directory it goes in, so a generator still writing after
+/// its directory was removed leaves the directory behind.
 fn long_bundle(
     _size: demo_seed::DemoSize,
     bundle: &std::path::Path,
@@ -1102,10 +1102,10 @@ async fn stopping_the_server_during_a_demo_build_leaves_no_demo_account() {
 }
 
 /// Stopping the server while a build generates its bundle stops the
-/// generator within moments, and leaves no temporary bundle folder. The
+/// generator within moments, and leaves no temporary bundle directory. The
 /// generator runs as a blocking task, which the server's shutdown waits for,
 /// so without a flag the server waits for the whole data set, and the
-/// generator writes on into a folder the build already removed (#1431).
+/// generator writes on into a directory the build already removed (#1431).
 #[test]
 fn stopping_the_server_during_generation_stops_the_generator_and_leaves_no_bundle() {
     let runtime = tokio::runtime::Builder::new_multi_thread()
@@ -1146,10 +1146,10 @@ fn stopping_the_server_during_generation_stops_the_generator_and_leaves_no_bundl
     );
     let work = bundle
         .parent()
-        .expect("the bundle sits in the build's folder");
+        .expect("the bundle sits in the build's directory");
     assert!(
         !work.exists(),
-        "the temporary bundle folder {} is left",
+        "the temporary bundle directory {} is left",
         work.display()
     );
 }

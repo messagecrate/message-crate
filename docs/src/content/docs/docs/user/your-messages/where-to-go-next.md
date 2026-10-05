@@ -47,5 +47,5 @@ A Message Crate in Docker starts empty of real messages: the backups are importe
 - [Update](/docs/user/features/owner/update/) moves the Message Crate to a new version.
 - [Troubleshooting](/docs/user/features/owner/troubleshooting/) lists the common failures.
 
-The messages live in the app's data folder, which **Settings → System → Open data folder** opens.
-A copy of that folder, made while the app is closed, is the backup of the Message Crate.
+The messages live in the app-data directory, which **Settings → System → Open data directory** opens.
+A copy of that directory, made while the app is closed, is the backup of the Message Crate.

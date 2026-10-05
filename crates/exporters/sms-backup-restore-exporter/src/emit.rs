@@ -59,7 +59,7 @@ fn to_core_report(report: ReadReport, issues: Option<&IssueSink>) -> ExportRepor
 pub(crate) struct ConvertExportArgs<'a> {
     pub input: &'a Path,
     pub output_dir: &'a Path,
-    /// The app's cache folder, which the run's attachment spool goes under.
+    /// The app's cache directory, which the run's attachment spool goes under.
     pub cache_dir: &'a Path,
     pub owner_phones: &'a [String],
     pub transforms: ExportTransforms,

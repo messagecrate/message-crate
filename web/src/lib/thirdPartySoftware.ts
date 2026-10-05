@@ -12,12 +12,12 @@ import { productVersionOf } from "./buildFormat";
 const REPO = "https://github.com/messagecrate/message-crate";
 const READER_PATH = "crates/helpers/imessage-reader";
 
-/** The reader's folder at the release tag for this Build. */
+/** The reader's directory at the release tag for this Build. */
 export function readerSourceUrl(build: string): string {
   return `${REPO}/tree/v${productVersionOf(build)}/${READER_PATH}`;
 }
 
-/** The GPL text in the reader's folder at the release tag for this Build. */
+/** The GPL text in the reader's directory at the release tag for this Build. */
 export function readerLicenseUrl(build: string): string {
   return `${REPO}/blob/v${productVersionOf(build)}/${READER_PATH}/LICENSE`;
 }

@@ -1,6 +1,6 @@
 ---
 title: "Convert an existing export"
-description: "How message-reexport converts a Message Crate output folder from one packaging format to another."
+description: "How message-reexport converts a Message Crate output directory from one packaging format to another."
 ---
 
 The `message-reexport` package converts an existing Message Crate output
@@ -8,7 +8,7 @@ directory to another packaging format. The desktop app calls it as the second
 step of an [Export](/docs/user/features/messages/export/) into any format
 other than JSON Lines.
 
-**Settings → Convert** in the desktop app rewrites a folder that already exists,
+**Settings → Convert** in the desktop app rewrites a directory that already exists,
 without going through the server.
 The library reads all six formats and can convert between any pair of them.
 

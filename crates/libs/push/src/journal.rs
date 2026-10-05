@@ -88,7 +88,7 @@ impl JournalState {
     }
 }
 
-/// Path of `.import-state.jsonl` inside the export folder.
+/// Path of `.import-state.jsonl` inside the export directory.
 pub fn journal_path(input: &Path) -> PathBuf {
     input.join(JOURNAL_NAME)
 }
@@ -153,7 +153,7 @@ pub fn load(path: &Path, url: &str, username: &str) -> Result<JournalState> {
 ///
 /// # Errors
 ///
-/// Returns an error when the parent folder cannot be created, the file cannot
+/// Returns an error when the parent directory cannot be created, the file cannot
 /// be opened, or the write fails.
 pub fn append(path: &Path, event: &JournalEvent) -> Result<()> {
     jsonl_journal::append("journal", path, event)
@@ -161,7 +161,7 @@ pub fn append(path: &Path, event: &JournalEvent) -> Result<()> {
 
 /// Rewrite the journal from in-memory `state` for one server URL and username.
 ///
-/// Events for other URL and username pairs are kept, so one export folder can
+/// Events for other URL and username pairs are kept, so one export directory can
 /// resume against more than one server.
 ///
 /// # Errors
@@ -170,7 +170,7 @@ pub fn append(path: &Path, event: &JournalEvent) -> Result<()> {
 /// cannot be written, or the rename fails.
 pub fn compact(path: &Path, url: &str, username: &str, state: &JournalState) -> Result<()> {
     jsonl_journal::compact_with::<JournalEvent, _>("journal", path, |mut events| {
-        // Preserve other server targets so one export folder can resume against
+        // Preserve other server targets so one export directory can resume against
         // multiple servers without wiping their skip state.
         events.retain(|event| {
             let (u, a) = event.target();

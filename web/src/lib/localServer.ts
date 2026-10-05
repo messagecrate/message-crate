@@ -71,7 +71,7 @@ export async function localServerStatus(): Promise<LocalServerStatus> {
   return invoke<LocalServerStatus>("local_server_status");
 }
 
-/** Open the folder holding the app's own database and attachments. */
-export async function openDataFolder(): Promise<void> {
-  await invoke("open_data_folder");
+/** Open the directory holding the app's own database and attachments. */
+export async function openDataDirectory(): Promise<void> {
+  await invoke("open_data_directory");
 }

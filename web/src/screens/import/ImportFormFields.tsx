@@ -8,8 +8,8 @@ import PhoneTokenField, { type PhoneTokenFieldHandle } from "../../components/Ph
 import Select, { ListBoxItem, selectItemClassName } from "../../components/Select";
 import TimeZoneField from "../../components/TimeZoneField";
 import {
-  backupFolderHint,
-  backupFolderPlaceholder,
+  backupDirectoryHint,
+  backupDirectoryPlaceholder,
   isAndroidSmsSource,
   needsOwnerEmails,
   splitEmails,
@@ -124,24 +124,25 @@ const SQLITE_DB_FILTERS = [{ name: "SQLite database", extensions: ["db"] }];
 const WHATSAPP_CONTACTS_FILTERS = [{ name: "SQLite database", extensions: ["db", "sqlite"] }];
 const APPLE_CONTACTS_FILTERS = [{ name: "Apple AddressBook", extensions: ["abcddb", "sqlitedb"] }];
 
-const WHATSAPP_FOLDER_HINT_ANDROID =
-  "Folder that contains msgstore.db or msgstore.db.crypt12 / crypt14 / crypt15.";
-const WHATSAPP_FOLDER_HINT_IPHONE = "Path to the root of a device backup";
+const WHATSAPP_DIRECTORY_HINT_ANDROID =
+  "Directory that contains msgstore.db or msgstore.db.crypt12 / crypt14 / crypt15.";
+const WHATSAPP_DIRECTORY_HINT_IPHONE = "Path to the root of a device backup";
 const WHATSAPP_KEY_HINT =
-  "Key file or crypt15 hex. Needed when the folder has an encrypted backup and no msgstore.db.";
-const WHATSAPP_CONTACTS_HINT_ANDROID = "Leave empty if wa.db is in the backup folder.";
+  "Key file or crypt15 hex. Needed when the directory has an encrypted backup and no msgstore.db.";
+const WHATSAPP_CONTACTS_HINT_ANDROID = "Leave empty if wa.db is in the backup directory.";
 const WHATSAPP_CONTACTS_HINT_IPHONE = "Leave empty if ContactsV2.sqlite is in the backup.";
-const WHATSAPP_MEDIA_HINT = "Leave empty if the WhatsApp media folder is in the backup folder.";
-const WHATSAPP_DB_HINT = "Leave empty if msgstore.db is in the backup folder.";
+const WHATSAPP_MEDIA_HINT =
+  "Leave empty if the WhatsApp media directory is in the backup directory.";
+const WHATSAPP_DB_HINT = "Leave empty if msgstore.db is in the backup directory.";
 const WHATSAPP_OWNER_PHONE_LABEL = "WhatsApp phone number";
 const WHATSAPP_OWNER_PHONE_HINT_ANDROID =
   "Pre-filled from your profile. The number your WhatsApp account is registered to.";
 const WHATSAPP_OWNER_PHONE_HINT_IPHONE =
   "Fallback, used when the backup does not contain your phone number.";
 
-const ATTACHMENT_FOLDER_HINT_MAC =
-  "Leave empty if Attachments and StickerCache are next to chat.db. Set this only when those folders live somewhere else.";
-const ATTACHMENT_FOLDER_HINT_JAILBREAK = "Folder that contains Attachments and StickerCache.";
+const ATTACHMENT_DIRECTORY_HINT_MAC =
+  "Leave empty if Attachments and StickerCache are next to chat.db. Set this only when those directories live somewhere else.";
+const ATTACHMENT_DIRECTORY_HINT_JAILBREAK = "Directory that contains Attachments and StickerCache.";
 const APPLE_CONTACTS_HINT_MAC =
   "Default: use the local AddressBook. Pick AddressBook-v22.abcddb or AddressBook.sqlitedb only if that file is not in the usual Contacts location.";
 const APPLE_CONTACTS_HINT_JAILBREAK =
@@ -480,7 +481,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
 
             {imessageShowsAttachmentRoot(imessageMethod) ? (
               <StackedField
-                label="Attachment folder"
+                label="Attachment directory"
                 required={imessageAttachmentRootRequired(imessageMethod)}
                 optional={!imessageAttachmentRootRequired(imessageMethod)}
               >
@@ -491,8 +492,8 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
                 />
                 <p className={hintStyle}>
                   {imessageMethod === "imessage-macos"
-                    ? ATTACHMENT_FOLDER_HINT_MAC
-                    : ATTACHMENT_FOLDER_HINT_JAILBREAK}
+                    ? ATTACHMENT_DIRECTORY_HINT_MAC
+                    : ATTACHMENT_DIRECTORY_HINT_JAILBREAK}
                 </p>
                 <FieldStatus message={imessageErrors.attachmentRoot} />
               </StackedField>
@@ -528,12 +529,12 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
           </>
         ) : whatsappMethod ? (
           <>
-            <StackedField label="Backup folder" required>
+            <StackedField label="Backup directory" required>
               <PathPicker value={props.backupPath} onChange={props.onBackupPathChange} directory />
               <p className={hintStyle}>
                 {whatsappMethod === "whatsapp-ios"
-                  ? WHATSAPP_FOLDER_HINT_IPHONE
-                  : WHATSAPP_FOLDER_HINT_ANDROID}
+                  ? WHATSAPP_DIRECTORY_HINT_IPHONE
+                  : WHATSAPP_DIRECTORY_HINT_ANDROID}
               </p>
               <FieldStatus message={whatsappErrors.backupPath} />
             </StackedField>
@@ -612,7 +613,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
             ) : null}
 
             {whatsappShowsMedia(whatsappMethod) ? (
-              <StackedField label="Media folder" optional>
+              <StackedField label="Media directory" optional>
                 <PathPicker
                   value={props.whatsappMedia}
                   onChange={props.onWhatsappMediaChange}
@@ -664,9 +665,9 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
                 value={props.backupPath}
                 onChange={props.onBackupPathChange}
                 directory
-                placeholder={backupFolderPlaceholder(props.source)}
+                placeholder={backupDirectoryPlaceholder(props.source)}
               />
-              <p className={hintStyle}>{backupFolderHint(props.source)}</p>
+              <p className={hintStyle}>{backupDirectoryHint(props.source)}</p>
             </StackedField>
 
             <AttachmentFields

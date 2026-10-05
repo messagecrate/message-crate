@@ -381,9 +381,9 @@ phone's file that Import reads.
 _Avoid_: Export Job, Backup, Download
 
 **Convert**:
-Rewriting a folder of already-exported files into a different format,
+Rewriting a directory of already-exported files into a different format,
 reading neither the original backup nor the database. Export uses it for any
-format other than JSON Lines. As an operation a person starts on a folder of
+format other than JSON Lines. As an operation a person starts on a directory of
 their own it is an advanced tool most people never need, so it lives under
 Settings rather than beside Import and Export.
 _Avoid_: Reexport, Transcode, Reformat
@@ -460,13 +460,14 @@ Message Crate Directory; a Docker Message Crate's is the volume given to it.
 _Avoid_: Data Folder, DB Directory, Database Directory
 
 **Staging Directory**:
-The directory where Message Crate writes intermediate files that neither the
-person nor Message Crate keeps — a backup being prepared for import, or JSON
-Lines waiting to be converted into the format an export asked for. It is
-deleted when the job ends, whether it succeeded, failed or was cancelled,
-the import log, resume journal and run record with it. An Import Run that
-can still be resumed, paused or waiting at a Review, keeps it, since the
-staged files are what Resume reads.
+The directory that holds one directory for each Import Run, where the
+desktop app prepares a backup for import. A run's directory is deleted when the run ends, whether it succeeded,
+failed or was cancelled, the import log, resume journal and run record with
+it. An Import Run that can still be resumed, paused or waiting at a Review,
+keeps it, since the staged files are what Resume reads. A run's directory has
+no term of its own: on screen it is "this Import Run's directory". An Export
+to a format other than JSON Lines also pulls its JSON Lines into a directory
+here, and deletes it when the export ends.
 _Avoid_: Import Staging Directory, Temp Folder, Working Directory
 
 **Tools Directory**:

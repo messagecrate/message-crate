@@ -19,7 +19,7 @@ After changing `web/` screens, components, or copy that users see in the browser
 ## Browser vs desktop-only UI
 
 - **Browser-reachable:** browse, search, settings tabs that do not gate on `isTauri()`, the `static/` files the server serves.
-- **Desktop-only (`isTauri()`):** Import, System settings (import staging directory, ffmpeg tools folder), path openers. Playwright against Vite alone only sees the “available in the desktop app” stub. For those, either ask for a manual check in `cargo tauri dev`, or keep coverage in unit/integration tests of the path helpers.
+- **Desktop-only (`isTauri()`):** Import, System settings (import staging directory, ffmpeg directory), path openers. Playwright against Vite alone only sees the “available in the desktop app” stub. For those, either ask for a manual check in `cargo tauri dev`, or keep coverage in unit/integration tests of the path helpers.
 
 ## Do not
 

@@ -100,13 +100,13 @@ fn read_document(path: &Path) -> ConversationDocument {
     header.into_document(messages)
 }
 
-/// Every conversation file under `out/staging/<source>`, with its source folder name.
+/// Every conversation file under `out/staging/<source>`, with its source directory name.
 fn read_bundle(out: &Path) -> Vec<(String, ConversationDocument)> {
     let mut documents = Vec::new();
     for source in [IMESSAGE_SOURCE, SBR_SOURCE, WHATSAPP_SOURCE] {
         let staging = out.join("staging").join(source);
         let mut paths: Vec<PathBuf> = fs::read_dir(&staging)
-            .expect("list staging folder")
+            .expect("list staging directory")
             .map(|entry| entry.expect("staging entry").path())
             .filter(|path| is_jsonl_file(path))
             .collect();
@@ -414,7 +414,7 @@ fn generate_replaces_an_earlier_bundle_and_removes_its_backup() {
     assert_stats_match_the_seed(&stats, &cfg);
     assert!(
         !stale.exists(),
-        "the earlier staging folder is replaced whole"
+        "the earlier staging directory is replaced whole"
     );
     let readme = fs::read_to_string(out.join("README.md")).expect("read README.md");
     assert!(
@@ -453,7 +453,7 @@ fn a_cancelled_generation_stops_and_leaves_no_temporary_directory() {
     assert!(left.is_empty(), "temporary directories left: {left:?}");
 }
 
-/// How many conversation files the `.demo-seed-*` folders in `parent` hold
+/// How many conversation files the `.demo-seed-*` directories in `parent` hold
 /// so far, across the three backup sources.
 fn prepared_conversations(parent: &Path) -> usize {
     let Ok(entries) = fs::read_dir(parent) else {
@@ -737,9 +737,9 @@ fn restore_attempts_all_paths_after_one_restore_fails() {
 }
 
 /// When the install fails and every previous path is moved back, but the
-/// emptied backup folder cannot be removed, the previous files are in place.
+/// emptied backup directory cannot be removed, the previous files are in place.
 /// The message said "Could not restore the previous demo files", because it
-/// took the backup folder still being there as the sign the restore failed.
+/// took the backup directory still being there as the sign the restore failed.
 #[test]
 fn a_restore_that_worked_says_so_when_its_backup_cannot_be_removed() {
     let temp = tempfile::tempdir().expect("create test directory");
@@ -767,7 +767,7 @@ fn a_restore_that_worked_says_so_when_its_backup_cannot_be_removed() {
     .expect_err("replacement must fail");
 
     assert_bundle_paths(&active, b"old");
-    assert!(backup.exists(), "the backup folder was not removed");
+    assert!(backup.exists(), "the backup directory was not removed");
     let text = format!("{:#}", keep_prepared_if_restore_failed(prepared, error));
     assert!(!text.contains("Could not restore"), "{text}");
     assert!(text.contains("previous demo files were restored"), "{text}");
@@ -804,16 +804,16 @@ fn assert_bundle_paths(root: &Path, marker: &[u8]) {
 ///
 /// Each case removes or corrupts one thing a generated bundle must have, and
 /// the error has to name the file, because the person reading it is looking at
-/// a folder of a few hundred files.
+/// a directory of a few hundred files.
 #[test]
-fn the_validator_refuses_a_bundle_with_a_staging_folder_missing() {
+fn the_validator_refuses_a_bundle_with_a_staging_directory_missing() {
     let temp = tempfile::tempdir().expect("create test directory");
     let cfg = small_config(temp.path());
     let out = PathBuf::from(&cfg.out);
     generate(&cfg).expect("generate the small bundle");
 
     let whatsapp = out.join("staging").join(WHATSAPP_SOURCE);
-    fs::remove_dir_all(&whatsapp).expect("remove the whatsapp staging folder");
+    fs::remove_dir_all(&whatsapp).expect("remove the whatsapp staging directory");
 
     let err = validate_generated_bundle(&out, &AtomicBool::new(false))
         .expect_err("a missing source must be refused");
@@ -850,7 +850,7 @@ fn the_validator_refuses_a_bundle_with_a_config_file_missing() {
 }
 
 /// A JSON Lines file that is not JSON is the failure that matters most: the
-/// bundle looks complete, every folder and file is where it should be, and the
+/// bundle looks complete, every directory and file is where it should be, and the
 /// server fails on import instead. `validate_tree_files` is the walk that
 /// catches it, and it could be replaced with `Ok(())`.
 #[test]
@@ -917,7 +917,7 @@ fn the_validator_reads_only_json_lines_files() {
 /// the output, which is the cross-device rename the move path has to handle —
 /// or, for a bare relative name like `demo`, tries to use an empty path.
 #[test]
-fn the_output_parent_is_the_folder_the_bundle_lands_beside() {
+fn the_output_parent_is_the_directory_the_bundle_lands_beside() {
     assert_eq!(
         output_parent_dir(Path::new("/srv/data/demo")),
         Path::new("/srv/data")
@@ -1065,20 +1065,33 @@ fn phone_numbers_in_bundle(out: &Path) -> std::collections::BTreeSet<String> {
 }
 
 #[test]
-fn the_fictional_ranges_are_the_ones_nanpa_and_ofcom_set_aside() {
+fn is_fictional_phone_accepts_only_555_01xx_and_07700_900xxx() {
     assert!(is_fictional_phone("+14155550100"));
     assert!(is_fictional_phone("+12125550199"));
     assert!(is_fictional_phone("+447700900000"));
     assert!(is_fictional_phone("+447700900999"));
-    assert!(!is_fictional_phone("+14155550200"));
-    assert!(!is_fictional_phone("+14155559000"));
-    assert!(!is_fictional_phone("+14155550099"));
-    assert!(!is_fictional_phone("+18007438200"));
-    assert!(!is_fictional_phone("+447700901000"));
-    // +33 6 39 98 12 34 is in ARCEP's range for audiovisual works, so it is
-    // no one's number, and `is_fictional_phone` does not cover it. The note
-    // on the `phone` crate's `mod tests` gives the source.
+    // These numbers are outside 555-0100 to 555-0199. Two of them sit one
+    // past its ends. All four are under area code 015, and no North American
+    // area code starts with 0, so no one has them. They test only the check
+    // of 555-01xx, because `is_fictional_phone` does not read the
+    // area code. The note on the `phone` crate's `mod tests` gives the
+    // source.
+    assert!(!is_fictional_phone("+10155550200"));
+    assert!(!is_fictional_phone("+10155559000"));
+    assert!(!is_fictional_phone("+10155550099"));
+    assert!(!is_fictional_phone("+10157438200"));
+    // These numbers are in Ofcom's 020 7946 0xxx drama range and ARCEP's
+    // range for audiovisual works. No one has them, and `is_fictional_phone`
+    // covers neither range.
+    assert!(!is_fictional_phone("+442079460000"));
     assert!(!is_fictional_phone("+33639981234"));
+    // These numbers have a length no UK mobile number has, so no one has
+    // them. They pin the length check on the drama mobile range. The number
+    // just past 07700 900999 can be dialled, so the `900` part of the prefix
+    // has no test. The note on the `phone` crate's `mod tests` gives the
+    // source.
+    assert!(!is_fictional_phone("+4477009001000"));
+    assert!(!is_fictional_phone("+447700900"));
 }
 
 /// The Demo Account ships with every Message Crate, so a number in it that

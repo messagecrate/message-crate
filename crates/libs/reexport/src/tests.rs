@@ -238,8 +238,8 @@ fn convert_xml_with_ir_reader() {
 fn snapshot(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
     let mut files = Vec::new();
     let mut pending = vec![dir.to_path_buf()];
-    while let Some(folder) = pending.pop() {
-        for entry in fs::read_dir(&folder).unwrap() {
+    while let Some(directory) = pending.pop() {
+        for entry in fs::read_dir(&directory).unwrap() {
             let path = entry.unwrap().path();
             if path.is_dir() {
                 pending.push(path);
@@ -254,7 +254,7 @@ fn snapshot(dir: &Path) -> Vec<(PathBuf, Vec<u8>)> {
 }
 
 /// Convert an SMS backup with a picture into `destination`, replace the
-/// backup with `broken`, and convert it again into the same folder with
+/// backup with `broken`, and convert it again into the same directory with
 /// `media`. The second run must fail and leave the first run's output as it
 /// was.
 fn assert_broken_backup_keeps_previous_output(media: MediaMode, broken: impl Fn(&str) -> String) {
@@ -302,11 +302,11 @@ fn a_broken_sms_backup_leaves_the_previous_output_as_it_was() {
     }
 }
 
-/// An output inside the backup's folder is left out of the read, so the
+/// An output inside the backup's directory is left out of the read, so the
 /// backup an earlier conversion wrote there is not read back in as a second
 /// copy of every conversation.
 #[test]
-fn a_backup_converted_into_a_folder_inside_it_is_not_read_back() {
+fn a_backup_converted_into_a_directory_inside_it_is_not_read_back() {
     let source = tempfile::tempdir().unwrap();
     fs::write(
         source.path().join("smses.xml"),
@@ -343,7 +343,7 @@ fn mixed_formats_error() {
     assert!(error.contains("mixed"), "{error}");
 }
 
-/// Convert cleans its output folder before it writes, so an output that is
+/// Convert cleans its output directory before it writes, so an output that is
 /// or holds the input would delete the export being read.
 #[test]
 fn an_output_that_is_or_contains_the_input_is_refused() {
@@ -662,7 +662,7 @@ fn dir_has_eml_finds_an_eml_file_whatever_its_case() {
 }
 
 #[test]
-fn an_eml_export_is_detected_from_its_folders() {
+fn an_eml_export_is_detected_from_its_directories() {
     let source = tempfile::tempdir().unwrap();
     write_fixture(source.path(), OutputFormat::Eml);
 
@@ -673,7 +673,7 @@ fn an_eml_export_is_detected_from_its_folders() {
 }
 
 #[test]
-fn copy_dir_recursive_copies_nested_files_and_folders() {
+fn copy_dir_recursive_copies_nested_files_and_directories() {
     let dir = tempfile::tempdir().unwrap();
     let source = dir.path().join("source");
     fs::create_dir_all(source.join("nested/deeper")).unwrap();
@@ -903,7 +903,7 @@ fn a_csv_without_every_ir_column_is_refused() {
 }
 
 /// An `.xml` is an SMS Backup & Restore export only when it is named
-/// `smses.xml` or its first line says `<smses`. Any other XML in the folder —
+/// `smses.xml` or its first line says `<smses`. Any other XML in the directory —
 /// an Android manifest, a settings dump — must be left alone.
 #[test]
 fn an_xml_that_is_not_an_smses_export_is_refused() {
@@ -978,11 +978,11 @@ fn an_mbox_export_is_detected_and_converts() {
     );
 }
 
-/// A link to nothing is neither a file nor a folder, and must not stop
-/// detection: reading it as an EML folder would fail the whole conversion.
+/// A link to nothing is neither a file nor a directory, and must not stop
+/// detection: reading it as an EML directory would fail the whole conversion.
 #[cfg(unix)]
 #[test]
-fn a_dangling_link_in_the_folder_is_passed_over() {
+fn a_dangling_link_in_the_directory_is_passed_over() {
     let dir = tempfile::tempdir().unwrap();
     write_fixture(dir.path(), OutputFormat::Jsonl);
     std::os::unix::fs::symlink(dir.path().join("gone"), dir.path().join("link")).unwrap();
@@ -1000,7 +1000,7 @@ fn a_dangling_link_in_the_folder_is_passed_over() {
 }
 
 /// Only a conversation file of the detected format counts: a sidecar, a
-/// file of another type, or a folder named like a conversation file is not
+/// file of another type, or a directory named like a conversation file is not
 /// one.
 #[test]
 fn list_artifacts_takes_only_conversation_files_of_the_format() {
@@ -1024,7 +1024,7 @@ fn list_artifacts_takes_only_conversation_files_of_the_format() {
         ] {
             fs::write(dir.path().join(name), &body).unwrap();
         }
-        fs::create_dir(dir.path().join(format!("folder.{ext}"))).unwrap();
+        fs::create_dir(dir.path().join(format!("directory.{ext}"))).unwrap();
         // Every other format's conversation file, which this format must skip.
         for other in [
             OutputFormat::Json,
@@ -1048,10 +1048,10 @@ fn list_artifacts_takes_only_conversation_files_of_the_format() {
     }
 }
 
-/// Sidecars are skipped by name, folders included: a half-written EML
-/// folder is not a conversation.
+/// Sidecars are skipped by name, directories included: a half-written EML
+/// directory is not a conversation.
 #[test]
-fn an_eml_folder_with_a_temporary_name_is_skipped() {
+fn an_eml_directory_with_a_temporary_name_is_skipped() {
     let dir = tempfile::tempdir().unwrap();
     write_fixture(dir.path(), OutputFormat::Jsonl);
     fs::create_dir(dir.path().join("+15555550101.tmp")).unwrap();
@@ -1120,9 +1120,9 @@ fn write_version_3_copy(dir: &Path, format: OutputFormat, name: &str) {
 
 /// A version-3 file is an export of another version, not something else:
 /// Convert refuses it with the shared message and the file's name instead
-/// of reporting that the folder holds no export.
+/// of reporting that the directory holds no export.
 #[test]
-fn a_folder_of_version_3_files_is_refused_by_name() {
+fn a_directory_of_version_3_files_is_refused_by_name() {
     for (format, name) in [
         (OutputFormat::Json, "old.json"),
         (OutputFormat::Jsonl, "old.jsonl"),
@@ -1177,7 +1177,7 @@ fn a_version_3_file_among_current_files_stops_the_run_and_writes_nothing() {
     );
 }
 
-/// Convert into a folder an earlier XML conversion wrote removes that
+/// Convert into a directory an earlier XML conversion wrote removes that
 /// backup and its temporary files, whatever format it writes now.
 #[test]
 fn convert_removes_the_backup_an_earlier_conversion_wrote() {
@@ -1234,7 +1234,7 @@ fn convert_keeps_the_names_two_groups_with_one_title_were_given() {
 /// Write one conversation whose first message carries `note.txt` (and, when
 /// `with_unsent` is set, a second attachment the source never held) as a
 /// mail export of `format` into `dir`. The mail export embeds the bytes,
-/// so `dir` ends with no `attachments/` folder.
+/// so `dir` ends with no `attachments/` directory.
 fn write_mail_fixture(dir: &Path, format: OutputFormat, with_unsent: bool) {
     clean_previous_ir_output(dir).unwrap();
     fs::create_dir_all(dir.join("attachments")).unwrap();
@@ -1296,7 +1296,7 @@ fn assert_mail_attachment_survives(source: &Path, format: OutputFormat, media: M
 }
 
 /// An MBOX or EML export carries its attachment bytes inside the mail, and
-/// has no `attachments/` folder to copy. Converting it to a format that
+/// has no `attachments/` directory to copy. Converting it to a format that
 /// holds only metadata must write each attachment under `attachments/` and
 /// name it, or the attachment is lost with nothing to say so (#1072).
 #[test]
@@ -1372,13 +1372,13 @@ fn converting_a_mail_export_to_mail_keeps_its_attachments_embedded() {
     .unwrap();
 
     assert!(!destination.path().join("attachments").exists());
-    let folder = fs::read_dir(destination.path())
+    let directory = fs::read_dir(destination.path())
         .unwrap()
         .filter_map(Result::ok)
         .map(|entry| entry.path())
         .find(|path| path.is_dir())
-        .expect("an EML folder");
-    let out = read_conversation_eml_dir(&folder).unwrap();
+        .expect("an EML directory");
+    let out = read_conversation_eml_dir(&directory).unwrap();
     assert_eq!(
         out.messages[0].attachments[0].bytes.as_deref(),
         Some(&b"hello attachment"[..])
@@ -1616,7 +1616,7 @@ fn write_huge_attachments_with_no_file(dir: &Path, reason: &str) {
 
 /// What an earlier conversion left in the output's `attachments/` is
 /// counted as free, since the clean deletes it before this run writes; a
-/// folder without the export's mark is never cleaned, so nothing counts.
+/// directory without the export's mark is never cleaned, so nothing counts.
 #[test]
 fn an_earlier_conversion_s_attachments_count_as_free() {
     let output = tempfile::tempdir().unwrap();

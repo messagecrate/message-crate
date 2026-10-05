@@ -2,7 +2,7 @@
 name = "message-crate-pull"
 version = "0.1.0"
 edition = "2024"
-description = "Pull messages from a Message Crate export API into a message-ir folder"
+description = "Pull messages from a Message Crate export API into a message-ir directory"
 license = "LicenseRef-FCL-1.0-ALv2"
 
 [dependencies]

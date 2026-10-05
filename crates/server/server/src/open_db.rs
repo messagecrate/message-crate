@@ -80,7 +80,7 @@ impl OpenDb {
     }
 
     /// Open the database `cfg` names, making it when no file is there or the
-    /// file is empty. A new database's folder is made too, which is how a new
+    /// file is empty. A new database's directory is made too, which is how a new
     /// Message Crate begins. `serve` and `create-database` open it this way,
     /// as does `reset-demo`, which builds the Demo Account into a new one.
     ///
@@ -169,7 +169,7 @@ mod tests {
     async fn opening_a_new_database_creates_it_with_its_schema() {
         let dir = tempfile::tempdir().unwrap();
         let mut cfg = fresh_config(dir.path());
-        cfg.paths.db = dir.path().join("new/folder/messagecrate.db");
+        cfg.paths.db = dir.path().join("new/directory/messagecrate.db");
         let opened = OpenDb::create_or_open(cfg).await.unwrap();
 
         let mut conn = opened.conn().await.unwrap();
@@ -202,7 +202,7 @@ mod tests {
 
     /// S7-12: a mistyped `--db` names a path where no file is. The command
     /// stops there, naming the path, and creates neither the file nor its
-    /// folder.
+    /// directory.
     #[tokio::test]
     async fn opening_a_path_where_no_file_is_refuses_and_creates_nothing() {
         let dir = tempfile::tempdir().unwrap();

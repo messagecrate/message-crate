@@ -129,7 +129,7 @@ fn emit(log: &mut Option<&mut dyn FnMut(&str)>, line: &str) {
     }
 }
 
-/// Sum sizes of non-temp files under `attachments/` (folder-level total).
+/// Sum sizes of non-temp files under `attachments/` (directory-level total).
 fn attachments_dir_bytes(attachments: &Path) -> Result<u64> {
     let mut total = 0u64;
     let mut stack = vec![attachments.to_path_buf()];
@@ -296,7 +296,7 @@ pub fn classify(path: &Path) -> Option<Kind> {
 /// the file's own extension first, then the declared MIME type, then the
 /// names the export supplied for it.
 ///
-/// The server stores blobs as `<folder>/<sha256>` with no extension, so a row
+/// The server stores blobs as `<directory>/<sha256>` with no extension, so a row
 /// whose MIME type is missing would otherwise have no kind and never be
 /// converted. `name_hints` (the attachment's original name and its path
 /// inside the export) are read only when the path and the declared MIME say
@@ -666,7 +666,7 @@ fn commit_produced(commit: Commit<'_>, original: &Path, produced: &Path) -> Resu
 
 /// Move `from` to `to`: a rename when both sit on one filesystem, else a copy
 /// and a delete. The scratch file is written beside the source, and a caller's
-/// destination (a temp folder, say) need not share a device with it.
+/// destination (a temp directory, say) need not share a device with it.
 fn move_file(from: &Path, to: &Path) -> Result<()> {
     if fs::rename(from, to).is_ok() {
         return Ok(());

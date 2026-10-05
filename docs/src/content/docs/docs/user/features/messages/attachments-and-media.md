@@ -79,12 +79,12 @@ The second is a video that is already H.265, within the target resolution, at 12
 
 The desktop app finds the programs on `PATH`.
 When they are somewhere else, [**Settings → System**](/docs/user/features/settings/system/) has an **ffmpeg directory** field under **Media**.
-The folder must contain both `ffmpeg` and `ffprobe`.
+The directory must contain both `ffmpeg` and `ffprobe`.
 Under the field, each program reads `Found` with its path, or `not found`.
 
 An Import Run looks for ffmpeg at the Staging Review, not when the run starts, because Staging copies the original files and needs neither program.
-When ffmpeg is missing, the review reads `Media needs ffmpeg. Set its folder in Settings, then come back to Import.` and the **Convert media** or **Compress media** button is disabled.
-The run keeps waiting at the review until the folder is set.
+When ffmpeg is missing, the review reads `Media needs ffmpeg. Set its directory in Settings, then come back to Import.` and the **Convert media** or **Compress media** button is disabled.
+The run keeps waiting at the review until the directory is set.
 
 ## The size limit
 

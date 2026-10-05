@@ -43,8 +43,8 @@ pub fn attachment_totals() -> (ProgressSink, AttachmentTotals) {
     (progress, totals)
 }
 
-/// The names in `dir`, sorted, without the `.lock` files a scratch folder
-/// keeps: what a test asserts is the data a folder holds.
+/// The names in `dir`, sorted, without the `.lock` files a scratch directory
+/// keeps: what a test asserts is the data a directory holds.
 ///
 /// # Panics
 ///
@@ -239,7 +239,7 @@ fn jsonl_names(dir: &Path) -> Vec<String> {
 /// assert that the second run resumed the first instead of rewriting it.
 ///
 /// `run` calls the exporter's own entry point with `OutputFormat::Jsonl`, the
-/// output folder `out`, and the `resume` flag it is given. The first run must
+/// output directory `out`, and the `resume` flag it is given. The first run must
 /// write at least one conversation, one `.jsonl` file per conversation, and
 /// skip nothing. The second must skip every conversation the first wrote,
 /// still count them all, and leave the same files with the same bytes.
@@ -266,7 +266,7 @@ pub fn assert_jsonl_resumes(
     );
     assert_eq!(
         report.conversations_skipped, 0,
-        "a first run into an empty folder skips nothing"
+        "a first run into an empty directory skips nothing"
     );
 
     let first = jsonl_names(out);
@@ -301,8 +301,8 @@ pub fn assert_jsonl_resumes(
     report
 }
 
-/// One cache folder for every test in the process's temporary folder. A
-/// run's scratch folder under it is deleted when the run ends, and two
+/// One cache directory for every test in the process's temporary directory. A
+/// run's scratch directory under it is deleted when the run ends, and two
 /// runs at once each lock their own, so tests can share it.
 pub fn test_cache_dir() -> PathBuf {
     std::env::temp_dir().join("message-crate-test-cache")

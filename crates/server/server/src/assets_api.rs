@@ -97,7 +97,7 @@ pub enum AssetError {
 ///
 /// Every path in the asset store is built from one of these, never from a
 /// string a request or an export sent. A fingerprint names a file, so a value
-/// that is not 64 hex digits could name a folder outside the store. Holding
+/// that is not 64 hex digits could name a directory outside the store. Holding
 /// the checked value in its own type means no function can build a path from
 /// an unchecked one. Surrounding whitespace is refused rather than trimmed,
 /// so the value used for the path is the value the caller sent.
@@ -130,7 +130,7 @@ impl Sha256 {
         &self.0
     }
 
-    /// The first two hex digits: the folder the file is stored in.
+    /// The first two hex digits: the directory the file is stored in.
     pub(crate) fn shard(&self) -> &str {
         &self.0[..2]
     }
@@ -163,7 +163,7 @@ pub fn sha256_hex(data: &[u8]) -> String {
     hex_encode(&Sha256Hasher::digest(data))
 }
 
-/// Relative path under the assets root: first two hex digits as a folder, then
+/// Relative path under the assets root: first two hex digits as a directory, then
 /// the full fingerprint, then `ext`. `.jpeg` is stored as `.jpg`.
 pub fn shard_rel_path(sha256: &Sha256, ext: &str) -> String {
     let ext = if ext == ".jpeg" { ".jpg" } else { ext };
@@ -273,7 +273,7 @@ fn store_verified_inner(
     ))
 }
 
-/// Copy `source` into place through a temporary file in the same folder, then
+/// Copy `source` into place through a temporary file in the same directory, then
 /// rename. Returns `true` only when a concurrent or earlier valid file already
 /// won.
 ///
@@ -282,7 +282,7 @@ fn store_verified_inner(
 ///    wrong claimed fingerprint must never be accepted just because a valid
 ///    file exists) and the call returns without a copy, a disk flush, or a
 ///    rename. This is the common repeat-import and repeat-upload case.
-/// 2. Otherwise copy into a temporary file in the destination folder, hashing
+/// 2. Otherwise copy into a temporary file in the destination directory, hashing
 ///    while writing, and refuse to keep the file unless the written bytes match
 ///    the claimed fingerprint. The bytes that land on disk are therefore always
 ///    bytes this call checked, even if the source changed underneath.
@@ -616,7 +616,7 @@ impl Asset {
 }
 
 /// Resolve the account an asset route targets and look the blob up by
-/// sha256 in that account's one assets folder.
+/// sha256 in that account's one assets directory.
 ///
 /// The probe and every write decide whether a client may skip sending bytes,
 /// so the stored blob is hashed here, and a truncated or replaced file is

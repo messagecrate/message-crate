@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-/// Filename of the local download log, written in the output folder.
+/// Filename of the local download log, written in the output directory.
 pub const PULL_JOURNAL_NAME: &str = ".message-crate-pull-state.jsonl";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,7 +52,7 @@ pub struct PullJournalState {
     pub backup_complete: bool,
 }
 
-/// Path of `.message-crate-pull-state.jsonl` inside the output folder.
+/// Path of `.message-crate-pull-state.jsonl` inside the output directory.
 pub fn journal_path(out_dir: &Path) -> PathBuf {
     out_dir.join(PULL_JOURNAL_NAME)
 }
@@ -84,7 +84,7 @@ pub fn load(path: &Path, url: &str, username: &str) -> Result<PullJournalState> 
 ///
 /// # Errors
 ///
-/// Returns an error when the parent folder cannot be created, the file cannot
+/// Returns an error when the parent directory cannot be created, the file cannot
 /// be opened, or the write fails.
 pub fn append(path: &Path, event: &PullJournalEvent) -> Result<()> {
     jsonl_journal::append("pull journal", path, event)
@@ -260,11 +260,11 @@ mod tests {
         );
     }
 
-    /// The parent folder is created on the way. A pull writing its first
+    /// The parent directory is created on the way. A pull writing its first
     /// journal into a fresh output directory would otherwise fail on the very
     /// first asset.
     #[test]
-    fn appending_creates_the_folder_it_needs() {
+    fn appending_creates_the_directory_it_needs() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("not-yet").join(PULL_JOURNAL_NAME);
 

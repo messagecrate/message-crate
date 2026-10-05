@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 /// Per-conversation outcome written into the final report JSON.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileResult {
-    /// File name relative to the input folder.
+    /// File name relative to the input directory.
     pub file: String,
     /// `ok`, `failed`, `skipped`, or `cancelled` (the run was stopped before
     /// every message of the file was sent).

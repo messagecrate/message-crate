@@ -349,7 +349,7 @@ fn a_csv_export_writes_each_conversation_and_copies_the_photo() {
 }
 
 /// An MBOX or EML export with attachment copying on carries the photo's
-/// bytes as a MIME part, and writes no `attachments/` folder beside it.
+/// bytes as a MIME part, and writes no `attachments/` directory beside it.
 #[test]
 fn a_mail_archive_export_embeds_the_photo() {
     helper_binary();
