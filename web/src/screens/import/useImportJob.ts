@@ -24,9 +24,10 @@ import {
 import { importRunCreateBody, showsAttachmentOptions } from "../../lib/importSource";
 import { endsSession } from "../../lib/routeQuery";
 import { CANCELLED_MESSAGE, createRunCancel, type RunCancel } from "../../lib/runCancel";
-import { registerRunningUpload, sessionRefused } from "../../lib/runningUpload";
+import { registerRunningUpload } from "../../lib/runningUpload";
 import { sbrExtractFields } from "../../lib/sbrExtractFields";
 import { completeImport, createImport, getServerState } from "../../lib/serverApi";
+import { sessionRefused } from "../../lib/sessionRefusal";
 import {
   type AttachmentForecast,
   awaitTauriJob,
@@ -842,7 +843,7 @@ async function summarizeStagingWithProgress(config: RunDirConfig): Promise<Stagi
 class StageNotRecordedError extends Error {}
 
 /**
- * A call the server refused the session to. `callServer` has already ended
+ * A call the server refused the session to. `endSessionIfRefused` has already ended
  * the session here, so the run stops where the server has it, for its
  * account's next login to offer again. The run did nothing wrong, so the
  * refusal is no Import Error (#1677).
@@ -859,7 +860,7 @@ class SessionRefusedError extends Error {}
  * a refusal that arrives after a later login says nothing of that login's
  * session.
  */
-async function callServer<T>(call: () => Promise<T>): Promise<T> {
+async function endSessionIfRefused<T>(call: () => Promise<T>): Promise<T> {
   const token = getToken();
   try {
     return await call();
@@ -871,16 +872,18 @@ async function callServer<T>(call: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Leave a run whose session the server refused, back on the form. The server
- * keeps the run where it got to, with its run directory, and the form's
- * resume check offers it again at the account's next login. A run the server
- * never created has nothing to offer, so its directory goes.
+ * When `e` is a refused session, leave the run back on the form and return
+ * true. The server keeps the run where it got to, with its run directory,
+ * and the form's resume check offers it again at the account's next login. A
+ * run the server never created has nothing to offer, so its directory goes.
  */
-async function leaveRefusedRun(runId: number | null): Promise<void> {
+async function leaveIfRefused(e: unknown, runId: number | null): Promise<boolean> {
+  if (!(e instanceof SessionRefusedError)) return false;
   const { runDir } = store.get();
   if (runId == null && runDir != null) await discardRunDirectory(runDir);
   returnToForm();
   store.set({ running: false });
+  return true;
 }
 
 /**
@@ -902,13 +905,11 @@ async function moveStage(
   approvedPlan?: StagingSummary,
 ): Promise<void> {
   try {
-    await callServer(() => setImportStage(runId, stage, approvedPlan));
+    await endSessionIfRefused(() => setImportStage(runId, stage, approvedPlan));
   } catch (e: unknown) {
+    if (e instanceof SessionRefusedError) throw e;
     const reason = e instanceof Error ? e.message : String(e);
-    const message = `Message Crate didn't record the run's progress: ${reason}`;
-    throw e instanceof SessionRefusedError
-      ? new SessionRefusedError(message)
-      : new StageNotRecordedError(message);
+    throw new StageNotRecordedError(`Message Crate didn't record the run's progress: ${reason}`);
   }
 }
 
@@ -916,6 +917,8 @@ async function moveStage(
  * Record that the run is waiting at a review. A failure leaves the review on
  * screen with the error on it (`reviewError`), and approving writes the stage
  * again before anything else (`approve`). Returns whether the server has it.
+ * A refused session is no failure of the run, so it throws
+ * `SessionRefusedError` for the caller to leave the run (`leaveIfRefused`).
  */
 async function moveStageAtReview(
   runId: number,
@@ -927,6 +930,7 @@ async function moveStageAtReview(
     store.set({ reviewError: null });
     return true;
   } catch (e: unknown) {
+    if (e instanceof SessionRefusedError) throw e;
     store.set({ reviewError: e instanceof Error ? e.message : String(e) });
     return false;
   }
@@ -1028,7 +1032,7 @@ async function finishImport(args: {
     try {
       // The server counts the messages and attachments the run holds: a
       // resumed Upload's report counts only what the resume sent.
-      await callServer(() =>
+      await endSessionIfRefused(() =>
         completeImport(runId, {
           status,
           bytes_uploaded: whole.bytesUploaded,
@@ -1174,10 +1178,7 @@ async function uploadAndFinish(
   try {
     await moveStage(runId, "upload", approvedPlan);
   } catch (e: unknown) {
-    if (e instanceof SessionRefusedError) {
-      await leaveRefusedRun(runId);
-      return false;
-    }
+    if (await leaveIfRefused(e, runId)) return false;
     // The server still has the run at its review, so the run stays there
     // and is not completed: a later visit offers that review again.
     recordError("upload", e instanceof Error ? e.message : String(e));
@@ -1281,10 +1282,7 @@ async function runMediaStage(
   try {
     await moveStage(runId, "media", approvedSummary);
   } catch (e: unknown) {
-    if (e instanceof SessionRefusedError) {
-      await leaveRefusedRun(runId);
-      return;
-    }
+    if (await leaveIfRefused(e, runId)) return;
     // The server still has the run at the Staging Review, so the run stays
     // there and is not completed: a later visit offers that review again.
     recordError("media", e instanceof Error ? e.message : String(e));
@@ -1344,7 +1342,12 @@ async function runMediaStage(
   });
 
   store.set({ computingSummary: true });
-  await moveStageAtReview(runId, "media_review", approvedSummary);
+  try {
+    await moveStageAtReview(runId, "media_review", approvedSummary);
+  } catch (e: unknown) {
+    if (await leaveIfRefused(e, runId)) return;
+    throw e;
+  }
   // Media's times are only in memory until now, and the run may be resumed
   // from this Review after the app closes.
   await saveCarriedRecord();
@@ -1452,7 +1455,7 @@ async function runImport(
       // A new Import Run works to the server's attachment size limit as it is
       // now. It goes into the form the run is created with, so every later
       // stage, and a resume, measures against this same number.
-      const server = await callServer(() => getServerState());
+      const server = await endSessionIfRefused(() => getServerState());
       form = { ...form, assetMaxBytes: server.asset_max_bytes };
       scratch.form = form;
       store.set({ form });
@@ -1506,7 +1509,7 @@ async function runImport(
       const backupStat = await invokePathStat(form.backupPath).catch(() => null);
       // The run is created in the account of the session logged in now.
       stopIfAccountLeft();
-      const importRun = await callServer(() =>
+      const importRun = await endSessionIfRefused(() =>
         createImport({
           ...importRunCreateBody(form.source),
           stage: "parse",
@@ -1597,10 +1600,7 @@ async function runImport(
       returnToForm();
     }
   } catch (e: unknown) {
-    if (e instanceof SessionRefusedError) {
-      await leaveRefusedRun(runId);
-      return;
-    }
+    if (await leaveIfRefused(e, runId)) return;
     const msg = e instanceof Error ? e.message : String(e);
     // A cancelled Staging is not a failure: the conversations already
     // written are real work, and Staging can pick up from them. Leaving the
@@ -1653,7 +1653,7 @@ async function discardRun(runId: number | null, runDir: string | null): Promise<
   }
   if (runId != null) {
     try {
-      await callServer(() => discardImportRun(runId, issueRequests(issues), notes));
+      await endSessionIfRefused(() => discardImportRun(runId, issueRequests(issues), notes));
     } catch (e: unknown) {
       if (e instanceof SessionRefusedError) return;
     }
@@ -1820,6 +1820,9 @@ export function useImportJob() {
         } else {
           await runUpload(token, runId, outputDir, approvedSummary);
         }
+      } catch (e: unknown) {
+        // The review's own stage write, above: the stages themselves never throw.
+        if (!(await leaveIfRefused(e, runId))) throw e;
       } finally {
         approving.reviewAction = false;
       }

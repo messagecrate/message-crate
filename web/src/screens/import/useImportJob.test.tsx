@@ -601,6 +601,40 @@ describe("useImportJob wiring", () => {
     expect(completeImportMock).not.toHaveBeenCalled();
   });
 
+  it("goes back to the form, with no error on a Review, when the server refuses the session to the `staging_review` stage (#1677)", async () => {
+    setImportStageMock.mockImplementation((_id: number, stage: string) =>
+      stage === "staging_review" ? Promise.reject(sessionRefusal()) : Promise.resolve(),
+    );
+    const { result } = renderHook(() => useImportJob());
+    await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
+
+    // The server holds the run at `write`, and the resume check offers it there.
+    expect(result.current.phase).toBe("form");
+    expect(result.current.running).toBe(false);
+    expect(result.current.reviewError).toBeNull();
+    expect(result.current.stagingSummary).toBeNull();
+    expect(completeImportMock).not.toHaveBeenCalled();
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
+  });
+
+  it("goes back to the form when the server refuses the session to approve's second write of the Review's stage (#1677)", async () => {
+    failStageWrite("staging_review", 1);
+    const { result } = renderHook(() => useImportJob());
+    await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
+    expect(result.current.reviewError).toMatch(/Failed to fetch/);
+
+    setImportStageMock.mockImplementation((_id: number, stage: string) =>
+      stage === "staging_review" ? Promise.reject(sessionRefusal()) : Promise.resolve(),
+    );
+    await act(() => result.current.approve());
+
+    expect(invokeUploadMock).not.toHaveBeenCalled();
+    expect(result.current.phase).toBe("form");
+    expect(result.current.running).toBe(false);
+    expect(result.current.reviewError).toBeNull();
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
+  });
+
   it("goes back to the form, keeping the run and its directory, when the server refuses the session to the `media` stage (#1677)", async () => {
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));

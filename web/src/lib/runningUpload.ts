@@ -10,11 +10,8 @@
  * registers the pause here while an Upload runs; `auth.tsx` reads it, without
  * depending on the screen.
  *
- * The other way round, a session the server refuses to the Import Run has to
- * end here, as one it refuses to a query does: to the push (#1491), and to the
- * run's own calls, such as a stage change or the completion (#1677).
- * `auth.tsx` registers how here, and the run calls it, without depending on
- * the login.
+ * The other way round, a push the server refused the session to ends the
+ * session through `sessionRefusal.ts` (#1491).
  */
 
 let pauseUpload: (() => Promise<void>) | null = null;
@@ -42,25 +39,4 @@ export function isUploadRunning(): boolean {
  */
 export async function pauseRunningUpload(): Promise<void> {
   await pauseUpload?.();
-}
-
-let endSession: (token: string) => void = () => {};
-
-/**
- * Record what ends the session when the server refuses the session token an
- * Import Run sent. Returns what to call once that no longer applies.
- */
-export function onSessionRefused(handler: (token: string) => void): () => void {
-  endSession = handler;
-  return () => {
-    if (endSession === handler) endSession = () => {};
-  };
-}
-
-/**
- * The server refused `token`, the session the Import Run sent: end it here as
- * well, unless a later login has replaced it.
- */
-export function sessionRefused(token: string): void {
-  endSession(token);
 }
