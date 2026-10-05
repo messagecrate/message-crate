@@ -6,6 +6,7 @@
 //! I/O so the desktop app and tests can build and inspect reports directly.
 
 use message_crate_api_types::ImportMode;
+use message_crate_core::count_of;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -69,7 +70,8 @@ impl FileResult {
     }
 }
 
-/// Timing and size stats for one conversation (used for PROFILE log lines).
+/// Timing and size stats for one conversation (used for the log line that
+/// says where its time went).
 ///
 /// These numbers help answer "why was this chat slow?" — reading JSON Lines,
 /// hashing/scanning attachments, uploading media, or importing messages.
@@ -211,7 +213,7 @@ pub(crate) fn now_stamp() -> String {
         .map_or_else(|_| "0".into(), |d| d.as_secs().to_string())
 }
 
-/// Milliseconds since `started` (for PROFILE timing fields).
+/// Milliseconds since `started` (for the timing fields of [`UploadProfile`]).
 pub(crate) fn elapsed_ms(started: Instant) -> u64 {
     u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX)
 }
@@ -251,48 +253,54 @@ pub fn outcome_status(report: &PushReport, aborted: bool) -> &'static str {
     "completed"
 }
 
-/// Build the multi-line "Import success / completed with errors" blurb for the log.
+/// Format a millisecond count as seconds with one decimal place, like `3.3s`.
+pub(crate) fn format_ms_seconds(ms: u64) -> String {
+    format!("{:.1}s", ms as f64 / 1000.0)
+}
+
+/// Build the sentences that end the Upload's log: how the Upload ended, and
+/// what it did with the conversations, messages and Assets it read.
 pub fn format_push_summary(report: &PushReport) -> String {
-    let status = if report.ok {
-        "success"
+    let elapsed = format_duration_ms(report.elapsed_ms);
+    let ending = if report.ok {
+        format!("The Upload completed in {elapsed}.")
+    } else if report.cancelled {
+        format!("The Upload stopped after {elapsed}, before it finished.")
     } else {
-        "completed with errors"
+        format!("The Upload completed in {elapsed}, with errors.")
     };
     format!(
-        "==== Summary ====\n\
-Import {status}\n\
-Conversations: {} ok, {} failed, {} skipped, {} cancelled ({} total)\n\
-Message accounting: {} attempted = {} new + {} deduped + {} failed\n\
-Assets: {} uploaded, {} skipped\n\
-Elapsed: {} ({} ms)",
+        "{ending}\n\
+Sent {} of {}, with {} failed, {} sent before, and {} left for the next Upload.\n\
+Sent {}: {} new, {} the server already held, and {} failed.\n\
+Uploaded {} and skipped {}.",
         report.conversations_ok,
+        count_of(report.conversations_total, "conversation", "conversations"),
         report.conversations_failed,
         report.conversations_skipped,
         report.conversations_cancelled,
-        report.conversations_total,
-        report.messages_attempted,
+        count_of(report.messages_attempted, "message", "messages"),
         report.messages_inserted,
         report.messages_deduped,
         report.messages_failed,
-        report.assets_uploaded,
+        count_of(report.assets_uploaded, "Asset", "Assets"),
         report.assets_skipped,
-        format_duration_ms(report.elapsed_ms),
-        report.elapsed_ms,
     )
 }
 
-/// One PROFILE line with the timings of each part of a conversation's work.
+/// One sentence with the timings of each part of a conversation's work, so a
+/// slow conversation shows where its time went.
 pub(crate) fn format_profile_line(name: &str, profile: &UploadProfile) -> String {
     format!(
-        "PROFILE {name} read_ms={} attachment_scan_hash_ms={} asset_upload_ms={} \
-         message_import_ms={} total_ms={} unique_assets={} asset_bytes={}",
-        profile.read_ms,
-        profile.attachment_scan_hash_ms,
-        profile.asset_upload_ms,
-        profile.message_import_ms,
-        profile.total_ms,
-        profile.unique_assets,
-        profile.asset_bytes
+        "{name} took {} in all: {} reading the file, {} finding and hashing {}, \
+         {} uploading {}, and {} importing messages.",
+        format_ms_seconds(profile.total_ms),
+        format_ms_seconds(profile.read_ms),
+        format_ms_seconds(profile.attachment_scan_hash_ms),
+        count_of(profile.unique_assets, "Asset", "Assets"),
+        format_ms_seconds(profile.asset_upload_ms),
+        media::format_bytes(profile.asset_bytes),
+        format_ms_seconds(profile.message_import_ms),
     )
 }
 
@@ -337,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn format_push_summary_is_multiline() {
+    fn format_push_summary_writes_sentences() {
         let report = PushReport {
             elapsed_ms: 12_000,
             conversations_ok: 8,
@@ -348,20 +356,75 @@ mod tests {
             assets_bytes: 1_048_576,
             ..sample_report()
         };
-        let summary = format_push_summary(&report);
-        assert!(summary.contains("==== Summary ===="));
-        assert!(summary.contains("Import success"));
+        assert_eq!(
+            format_push_summary(&report),
+            "The Upload completed in 12s.\n\
+             Sent 8 of 10 conversations, with 1 failed, 1 sent before, \
+             and 0 left for the next Upload.\n\
+             Sent 100 messages: 90 new, 10 the server already held, and 0 failed.\n\
+             Uploaded 4 Assets and skipped 2."
+        );
+    }
+
+    /// One of each is worded singular, and a run that did not finish says
+    /// how it ended rather than "completed".
+    #[test]
+    fn format_push_summary_words_one_and_says_how_the_upload_ended() {
+        let one = PushReport {
+            ok: false,
+            conversations_total: 1,
+            conversations_ok: 1,
+            messages_attempted: 1,
+            messages_inserted: 1,
+            messages_deduped: 0,
+            assets_uploaded: 1,
+            ..sample_report()
+        };
+        let summary = format_push_summary(&one);
         assert!(
-            summary.contains("Conversations: 8 ok, 1 failed, 1 skipped, 0 cancelled (10 total)")
+            summary.starts_with("The Upload completed in 1m00s, with errors.\n"),
+            "{summary}"
+        );
+        assert!(summary.contains("Sent 1 of 1 conversation, "), "{summary}");
+        assert!(summary.contains("Sent 1 message: 1 new, "), "{summary}");
+        assert!(
+            summary.ends_with("Uploaded 1 Asset and skipped 0."),
+            "{summary}"
+        );
+
+        let paused = PushReport {
+            ok: false,
+            cancelled: true,
+            conversations_ok: 4,
+            conversations_cancelled: 6,
+            ..sample_report()
+        };
+        let summary = format_push_summary(&paused);
+        assert!(
+            summary.starts_with("The Upload stopped after 1m00s, before it finished.\n"),
+            "{summary}"
         );
         assert!(
-            summary.contains("Message accounting: 100 attempted = 90 new + 10 deduped + 0 failed")
+            summary.contains(" and 6 left for the next Upload."),
+            "{summary}"
         );
-        assert!(summary.contains("Assets: 4 uploaded, 2 skipped"));
-        assert!(summary.contains("Elapsed: 12s (12000 ms)"));
-        assert!(
-            !summary.lines().any(|l| l.starts_with(' ')),
-            "summary lines must not be indented"
+    }
+
+    #[test]
+    fn the_profile_line_says_where_a_conversations_time_went() {
+        let profile = UploadProfile {
+            read_ms: 120,
+            attachment_scan_hash_ms: 300,
+            asset_upload_ms: 2_000,
+            message_import_ms: 3_050,
+            total_ms: 5_500,
+            unique_assets: 3,
+            asset_bytes: 2_048,
+        };
+        assert_eq!(
+            format_profile_line("chat.jsonl", &profile),
+            "chat.jsonl took 5.5s in all: 0.1s reading the file, 0.3s finding and hashing \
+             3 Assets, 2.0s uploading 2.0 KB, and 3.0s importing messages."
         );
     }
 

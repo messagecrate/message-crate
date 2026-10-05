@@ -1,5 +1,5 @@
 //! Everything an Upload says while it runs: the on-disk log, the live progress
-//! callback, and the "files N/M" batching that keeps big imports readable.
+//! callback, and the batched progress line that keeps big imports readable.
 //!
 //! [`Reporter`] is the one object the rest of the crate talks to. It owns the
 //! log file, the optional progress callback, and the [`ProgressBatcher`], so
@@ -13,7 +13,9 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use message_crate_core::count_of;
 
-use crate::report::{FileResult, PushReport, UploadProfile, elapsed_ms, format_profile_line};
+use crate::report::{
+    FileResult, PushReport, UploadProfile, elapsed_ms, format_ms_seconds, format_profile_line,
+};
 
 /// Events the desktop app can show while an Upload is running.
 #[derive(Debug, Clone)]
@@ -67,7 +69,7 @@ pub enum ProgressEvent {
 /// Callback type for live progress (desktop log panel, tests).
 pub type ProgressFn<'a> = dyn FnMut(ProgressEvent) + Send + 'a;
 
-/// How many finished conversations are grouped into one "files N/M …" log line.
+/// How many finished conversations are grouped into one progress line.
 /// Printing every single chat would flood the log on a big import.
 const PROGRESS_BATCH_SIZE: usize = 10;
 
@@ -186,14 +188,15 @@ impl ProgressBatcher {
         // (those overlap when prepares run ahead of imports).
         let wall_ms = self.chunk_started.map_or(0, elapsed_ms);
         let line = format!(
-            "files {}/{}: {} and {}, {} sent, {} importing, {} in all",
+            "Finished {} of {}. The last {} sent {} and {} of Assets in {}, \
+             and importing the messages took {}.",
             self.done,
-            self.total,
+            count_of(self.total as u64, "conversation", "conversations"),
             count_of(self.chunk_conversations, "conversation", "conversations"),
             count_of(self.chunk_messages, "message", "messages"),
             media::format_bytes(self.chunk_bytes),
-            format_ms_seconds(self.chunk_import_ms),
             format_ms_seconds(wall_ms),
+            format_ms_seconds(self.chunk_import_ms),
         );
         self.chunk_conversations = 0;
         self.chunk_messages = 0;
@@ -203,11 +206,6 @@ impl ProgressBatcher {
         self.chunk_count = 0;
         line
     }
-}
-
-/// Format a millisecond count as seconds with one decimal place.
-fn format_ms_seconds(ms: u64) -> String {
-    format!("{:.1}s", ms as f64 / 1000.0)
 }
 
 /// The single outlet for everything an Upload says.
@@ -222,7 +220,7 @@ pub(crate) struct Reporter<'p, 'f> {
 }
 
 impl<'p, 'f> Reporter<'p, 'f> {
-    /// Open the log file. The "files N/M" counter starts at zero until
+    /// Open the log file. The progress line's counter starts at zero until
     /// [`Reporter::expect_files`] says how many conversations the run has.
     ///
     /// # Errors
@@ -236,7 +234,7 @@ impl<'p, 'f> Reporter<'p, 'f> {
         })
     }
 
-    /// Tell the "files N/M" counter how many conversations this run covers.
+    /// Tell the progress line how many conversations this run covers.
     pub(crate) fn expect_files(&mut self, total: usize) {
         self.batcher = ProgressBatcher::new(total);
     }
@@ -276,33 +274,33 @@ impl<'p, 'f> Reporter<'p, 'f> {
         });
     }
 
-    /// Record a successful conversation in the "files N/M" counter.
+    /// Record a successful conversation in the progress line.
     pub(crate) fn note_ok(&mut self, messages: u64, profile: &UploadProfile) {
         if let Some(line) = self.batcher.note_ok(messages, profile) {
             self.show(line);
         }
     }
 
-    /// Record a skipped conversation in the "files N/M" counter.
+    /// Record a skipped conversation in the progress line.
     pub(crate) fn note_skipped(&mut self) {
         if let Some(line) = self.batcher.note_skipped() {
             self.show(line);
         }
     }
 
-    /// Record a failed conversation: flush the pending "files N/M" success line
-    /// first so failure text is not mixed into it, then log the failure and,
-    /// when known, its PROFILE timings so slow failures stay diagnosable.
+    /// Record a failed conversation: flush the pending progress line first so
+    /// failure text is not mixed into it, then log the failure and, when
+    /// known, where its time went so slow failures stay diagnosable.
     pub(crate) fn note_failed(&mut self, name: &str, error: &str, profile: Option<&UploadProfile>) {
         self.flush_file_counter();
         self.batcher.note_failed();
-        self.show(format!("fail {name}: {error}"));
+        self.show(format!("{name} failed: {error}"));
         if let Some(profile) = profile {
             self.show(format_profile_line(name, profile));
         }
     }
 
-    /// Write any partial "files N/M" line (end of run, or before an error line).
+    /// Write any partial progress line (end of run, or before an error line).
     pub(crate) fn flush_file_counter(&mut self) {
         if let Some(line) = self.batcher.flush_remainder() {
             self.show(line);
@@ -312,7 +310,7 @@ impl<'p, 'f> Reporter<'p, 'f> {
     /// Write Import Errors skip rows for attachments that were not uploaded.
     pub(crate) fn attachment_skips(&mut self, skips: &[AttachmentSkip]) {
         for skip in skips {
-            self.show(format!("skip {}: {}", skip.item, skip.reason));
+            self.show(format!("Did not upload {}: {}", skip.item, skip.reason));
             self.event(ProgressEvent::Issue {
                 kind: "skip".into(),
                 step: "upload".into(),
@@ -329,7 +327,7 @@ impl<'p, 'f> Reporter<'p, 'f> {
     /// A `skipped` conversation gets no row: the Upload's journal skips only a
     /// conversation an earlier part of the same run sent, so it is on the
     /// server and is not a problem.
-    /// The log already carries the `fail` line for each failure, so this
+    /// The log already carries the "… failed: …" line for each failure, so this
     /// goes to the callback only.
     pub(crate) fn conversation_issues(&mut self, results: &[FileResult]) {
         for result in results {
@@ -372,13 +370,17 @@ mod tests {
         let tenth = batcher.note_ok(2, &profile).unwrap();
         assert!(
             tenth.starts_with(
-                "files 10/25: 10 conversations and 20 messages, 7.0 MB sent, 33.0s importing, "
+                "Finished 10 of 25 conversations. The last 10 conversations sent 20 messages \
+                 and 7.0 MB of Assets in "
             ),
             "{tenth}"
         );
+        assert!(
+            tenth.ends_with(", and importing the messages took 33.0s."),
+            "{tenth}"
+        );
         // The time in all is wall-clock for the progress window, not the sum of profile.total_ms.
-        assert!(tenth.ends_with(" in all"));
-        assert!(!tenth.contains("55.0s in all"));
+        assert!(!tenth.contains("in 55.0s"), "{tenth}");
         assert!(!tenth.contains('='));
         lines.push(tenth);
         for _ in 0..15 {
@@ -387,8 +389,12 @@ mod tests {
             }
         }
         assert_eq!(lines.len(), 3);
-        assert!(lines[1].starts_with("files 20/25: 10 conversations and 10 messages, "));
-        assert!(lines[2].starts_with("files 25/25: 5 conversations and 5 messages, "));
+        assert!(lines[1].starts_with(
+            "Finished 20 of 25 conversations. The last 10 conversations sent 10 messages "
+        ));
+        assert!(lines[2].starts_with(
+            "Finished 25 of 25 conversations. The last 5 conversations sent 5 messages "
+        ));
     }
 
     /// A window of one conversation with one message words both counts
@@ -404,8 +410,13 @@ mod tests {
         let line = batcher.note_ok(1, &profile).unwrap();
         assert!(
             line.starts_with(
-                "files 1/1: 1 conversation and 1 message, 500 B sent, 0.2s importing, "
+                "Finished 1 of 1 conversation. The last 1 conversation sent 1 message \
+                 and 500 B of Assets in "
             ),
+            "{line}"
+        );
+        assert!(
+            line.ends_with(", and importing the messages took 0.2s."),
             "{line}"
         );
     }
