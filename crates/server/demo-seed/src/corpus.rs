@@ -57,6 +57,15 @@ impl Corpus {
         first
     }
 
+    /// The sentence at `index`, counting round the list, so a caller can pick
+    /// one without drawing from the random source.
+    pub fn sentence(&self, index: usize) -> &str {
+        if self.sentences.is_empty() {
+            return "Okay.";
+        }
+        &self.sentences[index % self.sentences.len()]
+    }
+
     /// Number of sentences kept after splitting the book.
     pub fn len(&self) -> usize {
         self.sentences.len()

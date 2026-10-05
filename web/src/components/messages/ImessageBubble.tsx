@@ -56,6 +56,7 @@ export default function ImessageBubble({
       timeLabel={time}
       deletion={message.deletion}
       source={message.source}
+      edits={message}
       footer={footer}
     >
       {bubbleBody(body, highlight)}

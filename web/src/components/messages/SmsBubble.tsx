@@ -35,6 +35,7 @@ export default function SmsBubble({
       timeLabel={time}
       deletion={message.deletion}
       source={message.source}
+      edits={message}
       meta={service ? <span className="uppercase tracking-[0.04em]">{service}</span> : null}
       footer={
         hasAttachments ? (

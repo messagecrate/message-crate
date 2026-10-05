@@ -164,6 +164,10 @@ pub struct MessagesConfig {
     /// one is marked Unsent and loses its text; 0 marks none. A message with an
     /// attachment is left unmarked, because an Unsent message keeps nothing.
     pub unsent_stride: usize,
+    /// Every this many messages of an Apple Messages one-to-one conversation,
+    /// one was edited and keeps its earlier versions; 0 edits none. Only an
+    /// iMessage with text that was not Unsent is edited.
+    pub edited_stride: usize,
     /// Share of messages in the iMessage folder that are marked as SMS or RCS
     /// so the conversation view can show those labels.
     pub apple_fallback_transport_fraction: f64,

@@ -1017,6 +1017,55 @@ fn the_medium_set_marks_a_few_apple_messages_deleted_in_the_source_app_and_unsen
     assert!((3..=30).contains(&unsent), "{unsent} Unsent messages");
 }
 
+/// The Demo Account shows edited messages, so a person exploring it can open
+/// an edited message's earlier versions and find one by a word only an earlier
+/// version holds (#1143). Only an iMessage can be edited, within 15 minutes of
+/// sending, and the original was written when the message was sent.
+#[test]
+fn the_medium_set_edits_a_few_apple_messages_and_keeps_their_earlier_versions() {
+    use message_ir::{Deletion, IrService};
+
+    let temp = tempfile::tempdir().expect("create test directory");
+    let out = temp.path().join("demo");
+    generate_size_to(DemoSize::Medium, &out, &AtomicBool::new(false))
+        .expect("generate the medium bundle");
+
+    let (mut once, mut twice) = (0, 0);
+    for (source, doc) in read_bundle(&out) {
+        for message in &doc.messages {
+            match message.edits.len() {
+                0 => continue,
+                1 => once += 1,
+                2 => twice += 1,
+                n => panic!("{} has {n} earlier versions", message.guid),
+            }
+            assert_eq!(source, IMESSAGE_SOURCE, "{}", message.guid);
+            assert_eq!(message.service, IrService::IMessage, "{}", message.guid);
+            assert_ne!(message.deletion, Some(Deletion::Unsent), "{}", message.guid);
+            let sent = message.timestamp_unix_ms;
+            assert_eq!(
+                message.edits[0].edited_at_unix_ms,
+                Some(sent),
+                "{}",
+                message.guid
+            );
+            for version in &message.edits {
+                assert_ne!(version.text, message.text, "{}", message.guid);
+                let at = version
+                    .edited_at_unix_ms
+                    .expect("every version has its time");
+                assert!(
+                    (sent..=sent + 15 * 60 * 1000).contains(&at),
+                    "{} edited outside 15 minutes",
+                    message.guid
+                );
+            }
+        }
+    }
+    assert!((15..=150).contains(&once), "{once} messages edited once");
+    assert!((15..=150).contains(&twice), "{twice} messages edited twice");
+}
+
 /// Whether `phone` is in a range set aside for fiction, so it cannot belong to
 /// anyone: a North American number at 555-0100 to 555-0199 in any area code
 /// (NANPA), or a UK mobile at 07700 900000 to 07700 900999 (Ofcom's range for

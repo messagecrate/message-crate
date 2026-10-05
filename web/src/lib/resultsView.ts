@@ -19,6 +19,14 @@ export const MESSAGE_SORT_PARAM = "sort";
 /** The message a search result opened its conversation at. */
 export const AT_PARAM = "at";
 /**
+ * The earlier versions a search found the opened result by, when it found it
+ * only by them: their places in the message's list, oldest first, joined by
+ * commas (`0,2`). The conversation reads its messages without the search, so
+ * the result's answer rides here, and the message opens with those versions
+ * shown and highlighted (#1143).
+ */
+export const MATCHED_PARAM = "matched";
+/**
  * The Message Tag a conversation was opened from: the tag's name, or `none`
  * for the No Message Tag page (#1562). The tag page names the tag in its
  * path and `/messages/:id` does not, so the tag rides here, apart from `q`,
@@ -66,6 +74,17 @@ export function openedAt(params: URLSearchParams): number | null {
   return Number.isSafeInteger(n) && n > 0 ? n : null;
 }
 
+/** The earlier versions the opened result was found by, as `MATCHED_PARAM` holds them. */
+export function openedMatchedVersions(params: URLSearchParams): number[] {
+  const raw = params.get(MATCHED_PARAM);
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .filter((part) => /^\d+$/.test(part))
+    .map(Number)
+    .filter(Number.isSafeInteger);
+}
+
 /**
  * The address search for a page of the Messages screen: `q`, the listed tag
  * and the Messages list's own parameters from `current`, with `overrides` on
@@ -77,7 +96,7 @@ export function messagesSearch(
   overrides: Record<string, string>,
 ): string {
   const next = new URLSearchParams();
-  for (const key of ["q", TAG_PARAM, VIEW_PARAM, MESSAGE_SORT_PARAM, AT_PARAM]) {
+  for (const key of ["q", TAG_PARAM, VIEW_PARAM, MESSAGE_SORT_PARAM, AT_PARAM, MATCHED_PARAM]) {
     const value = key in overrides ? overrides[key] : current.get(key);
     if (value) next.set(key, value);
   }
