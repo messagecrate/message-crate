@@ -2271,8 +2271,8 @@ export interface components {
             /** @description Client/tool name recorded on the run, e.g. `message-crate-pull`. */
             tool?: string | null;
         };
-        /** @description Import result: stats plus optional dedupe counts. */
-        CreateImportBatchResponse: components["schemas"]["ImportStats"] & {
+        /** @description Import result: the import counts plus optional dedupe counts. */
+        CreateImportBatchResponse: components["schemas"]["ImportCounts"] & {
             /** Format: int64 */
             account: number;
             dedupe?: components["schemas"]["DedupeCounts"] | null;
@@ -2656,6 +2656,84 @@ export interface components {
              */
             reason: components["schemas"]["ContactReason"];
         };
+        /** @description Counters for one import run (staging and promote results). */
+        ImportCounts: {
+            /**
+             * Format: int64
+             * @description Unique media files written to the asset store.
+             */
+            assets_copied: number;
+            /**
+             * Format: int64
+             * @description Media files already present under the same fingerprint, skipped.
+             */
+            assets_deduped: number;
+            /**
+             * Format: int64
+             * @description Attachment files referenced but not found on disk.
+             */
+            assets_missing: number;
+            /**
+             * Format: int64
+             * @description Attachment records (message–media links) imported.
+             */
+            attachments: number;
+            /**
+             * Format: int64
+             * @description Contacts the import created for participants nothing else owned.
+             */
+            contacts_created: number;
+            /**
+             * Format: int64
+             * @description Conversations imported.
+             */
+            conversations: number;
+            /**
+             * Format: int64
+             * @description JSONL files imported.
+             */
+            files: number;
+            /**
+             * Format: int64
+             * @description Messages imported.
+             */
+            messages: number;
+            /**
+             * Format: int64
+             * @description Messages added by an append-mode import.
+             */
+            messages_appended: number;
+            /**
+             * Format: int64
+             * @description Messages hidden as duplicates within this import.
+             */
+            messages_deduped: number;
+            /** @description Import mode. */
+            mode: components["schemas"]["ImportMode"];
+            /**
+             * Format: int64
+             * @description Identities of type `other` this import met for people: a name the
+             *     backup gave with no address, or a sender such as `AMAZON`. Each one is
+             *     a person the exporter could not tie to an address, so a count above
+             *     zero says the import is incomplete.
+             */
+            other_identities: number;
+            /**
+             * Format: int64
+             * @description Participant rows imported.
+             */
+            participants: number;
+            /**
+             * Format: int64
+             * @description Flagged phone identities (ambiguous; review note set) inserted by this import.
+             */
+            phones_needing_review: number;
+            /**
+             * Format: int64
+             * @description Tapback reactions imported.
+             */
+            tapbacks: number;
+        };
         /** @description One stored import issue. */
         ImportIssue: {
             item: string;
@@ -2834,84 +2912,6 @@ export interface components {
          * @enum {string}
          */
         ImportStage: "parse" | "write" | "staging_review" | "media" | "media_review" | "upload";
-        /** @description Counters for one import run (staging and promote results). */
-        ImportStats: {
-            /**
-             * Format: int64
-             * @description Unique media files written to the asset store.
-             */
-            assets_copied: number;
-            /**
-             * Format: int64
-             * @description Media files already present under the same fingerprint, skipped.
-             */
-            assets_deduped: number;
-            /**
-             * Format: int64
-             * @description Attachment files referenced but not found on disk.
-             */
-            assets_missing: number;
-            /**
-             * Format: int64
-             * @description Attachment records (message–media links) imported.
-             */
-            attachments: number;
-            /**
-             * Format: int64
-             * @description Contacts the import created for participants nothing else owned.
-             */
-            contacts_created: number;
-            /**
-             * Format: int64
-             * @description Conversations imported.
-             */
-            conversations: number;
-            /**
-             * Format: int64
-             * @description JSONL files imported.
-             */
-            files: number;
-            /**
-             * Format: int64
-             * @description Messages imported.
-             */
-            messages: number;
-            /**
-             * Format: int64
-             * @description Messages added by an append-mode import.
-             */
-            messages_appended: number;
-            /**
-             * Format: int64
-             * @description Messages hidden as duplicates within this import.
-             */
-            messages_deduped: number;
-            /** @description Import mode. */
-            mode: components["schemas"]["ImportMode"];
-            /**
-             * Format: int64
-             * @description Identities of type `other` this import met for people: a name the
-             *     backup gave with no address, or a sender such as `AMAZON`. Each one is
-             *     a person the exporter could not tie to an address, so a count above
-             *     zero says the import is incomplete.
-             */
-            other_identities: number;
-            /**
-             * Format: int64
-             * @description Participant rows imported.
-             */
-            participants: number;
-            /**
-             * Format: int64
-             * @description Flagged phone identities (ambiguous; review note set) inserted by this import.
-             */
-            phones_needing_review: number;
-            /**
-             * Format: int64
-             * @description Tapback reactions imported.
-             */
-            tapbacks: number;
-        };
         /**
          * @description How an Import Run stands: the values `imports.status` holds, the values
          *     `GET /v1/imports?status=` accepts, and the words every response carries.

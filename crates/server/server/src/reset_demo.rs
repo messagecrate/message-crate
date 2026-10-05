@@ -46,7 +46,7 @@ pub struct ResetDemoStats {
     /// Stats from regenerating the demo bundle.
     pub seed: demo_seed::GenStats,
     /// Stats from importing the regenerated bundle.
-    pub import: imports_api::ImportStats,
+    pub import: imports_api::ImportCounts,
     /// What loading the bundle's address book changed, after the imports.
     pub address_book: LoadCounts,
     /// Dedupe content keys filled during the reset (one per message; not a duplicate count).
@@ -197,7 +197,7 @@ fn conversion_warning(errors: u64) -> Option<String> {
 }
 
 struct ResetPreparedStats {
-    import: imports_api::ImportStats,
+    import: imports_api::ImportCounts,
     address_book: LoadCounts,
     dedupe_keys_filled: u64,
     process_assets: process_assets::ProcessAssetsStats,
@@ -798,7 +798,7 @@ async fn import_demo_sources(
     db: &SqlitePool,
     prepared: &PreparedBundle,
     account_id: i64,
-) -> Result<imports_api::ImportStats> {
+) -> Result<imports_api::ImportCounts> {
     import_demo_sources_with(
         cfg,
         db,
@@ -825,8 +825,8 @@ async fn import_demo_sources_with(
     account_id: i64,
     batch_bytes: u64,
     mut after_batch: impl AsyncFnMut() -> Result<()>,
-) -> Result<imports_api::ImportStats> {
-    let mut totals = imports_api::ImportStats::default();
+) -> Result<imports_api::ImportCounts> {
+    let mut totals = imports_api::ImportCounts::default();
     for source in &DEMO_IMPORT_SOURCES {
         let export_dir = (source.staging_dir)(prepared);
         let paths = crate::import_cli::list_jsonl_files(export_dir)?;
@@ -840,7 +840,7 @@ async fn import_demo_sources_with(
             "message-crate-server",
         )
         .await?;
-        let mut run = imports_api::ImportStats {
+        let mut run = imports_api::ImportCounts {
             mode: source.mode,
             ..Default::default()
         };
@@ -868,7 +868,7 @@ async fn import_demo_sources_with(
             .await
             .map_err(anyhow::Error::from);
             match imported {
-                Ok(stats) => run.add_run(&stats),
+                Ok(counts) => run.add_run(&counts),
                 Err(error) => {
                     result = Err(error);
                     break;
