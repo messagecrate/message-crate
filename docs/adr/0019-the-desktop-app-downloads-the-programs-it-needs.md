@@ -1,14 +1,15 @@
 # The desktop app downloads the programs it needs and ships none of them
 
-The desktop app runs two programs it does not contain: ffmpeg (with ffprobe),
-which converts attachments and makes their Previews and Thumbnails, and
-wtsexporter, which reads WhatsApp data.
-Each time the app starts it checks for them and
-downloads what is missing into the Tools Directory, in the background, with
-no button and no prompt (#1053). Each download is pinned in the app to one
-release and one checksum, and a file that doesn't match is refused.
-wtsexporter is always the app's own copy. ffmpeg is not downloaded when it is
-on `PATH`.
+The desktop app needs two programs it does not contain: ffmpeg (with
+ffprobe) and wtsexporter. The app uses ffmpeg to convert attachments, and the
+server it starts uses ffmpeg to make Previews and Thumbnails of them.
+wtsexporter reads WhatsApp data. Each time the app starts it checks for both
+and downloads what is missing into the Tools Directory, in the background,
+with no button and no prompt (#1053). It passes the Tools Directory to the
+server it starts, so the server finds the same ffmpeg. Each download is
+pinned in the app to one release and one checksum, and a file that doesn't
+match is refused. wtsexporter is always the app's own copy. ffmpeg is not
+downloaded when it is on `PATH`.
 
 Decided, not built yet: #1053 tracks the work, and until it lands the app
 downloads nothing.
