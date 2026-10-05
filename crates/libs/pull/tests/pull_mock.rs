@@ -353,6 +353,59 @@ fn a_pull_records_one_run_and_writes_the_conversation_and_every_asset_once_acros
 /// path would write the download anywhere on disk. Each one is refused: the
 /// file lands at `attachments/{sha256}`, the conversation file names that
 /// path, and the report and the log name the refused path.
+/// An attachment whose path would leave the Export's directory and that has
+/// no SHA-256 has nowhere else to go: the log says it is not written, and
+/// nothing is fetched for it.
+#[test]
+fn an_attachment_path_that_leaves_the_directory_with_no_sha256_is_not_written() {
+    let server = MockServer::start();
+    let _auth = mock_auth(&server);
+    let (_create, complete) = mock_run(&server);
+    let dir = tempdir().unwrap();
+    let out = dir.path().join("pulled");
+    let climbing = "../escape.pdf";
+    let _page = server.mock(|when, then| {
+        when.method(GET)
+            .path(format!("/v1/exports/{EXPORT_ID}/messages"))
+            .query_param("offset", "0");
+        then.status(200).json_body(json!({
+            "items": [message(
+                1, "sms-backup-restore", "guid-1", "2015-03-12T18:05:01Z", "the menu",
+                json!([{
+                    "path": climbing,
+                    "original_name": "escape.pdf",
+                    "mime_type": "application/pdf",
+                    "is_sticker": false
+                }])
+            )],
+            "total": 1,
+            "limit": 1,
+            "offset": 0
+        }));
+    });
+    let assets = server.mock(|when, then| {
+        when.method(GET).path_includes("/v1/assets/");
+        then.status(500);
+    });
+    let mut events = Vec::new();
+    let mut on_progress = |event: ProgressEvent| events.push(event);
+
+    let report = run(&config(&out, server.base_url()), Some(&mut on_progress)).unwrap();
+
+    complete.assert();
+    assert_eq!(assets.calls(), 0, "nothing names a file to fetch");
+    assert!(!dir.path().join("escape.pdf").exists());
+    assert_eq!(report.refused_attachment_paths, [climbing.to_string()]);
+    let line = format!(
+        "Attachment path {climbing} would leave the Export's directory, and the \
+         attachment has no SHA-256 to name another path by, so it is not written"
+    );
+    assert!(
+        events.contains(&ProgressEvent::Log(line)),
+        "the log says the file is not written: {events:?}"
+    );
+}
+
 #[test]
 fn an_attachment_path_that_leaves_the_output_directory_is_written_under_its_fingerprint_instead() {
     let server = MockServer::start();
