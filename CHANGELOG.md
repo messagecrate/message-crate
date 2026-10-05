@@ -391,6 +391,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **The Upload's log writes its warnings as sentences.** An
+  attachment whose recorded SHA-256 did not match the file was logged as
+  "WARN chat.jsonl: sha256 mismatch for attachments/a.jpg: claimed …, got
+  …", and a report the Upload could not write as "warning: write report …".
+  The log now writes "chat.jsonl: attachment attachments/a.jpg hashes to …,
+  not the … its conversation file records. The Upload sends it as Asset …",
+  "chat.jsonl: the SHA-256 recorded for attachment attachments/a.jpg is not
+  64 hexadecimal digits, so the Upload hashed the file instead", and "The
+  Upload's report could not be written: …".
 - 2026-10-05 **The Upload's log names each attachment it sends as an
   Asset, in a sentence.** The log wrote "asset ok 3f2b…" for an attachment
   the Upload sent and "asset skip 3f2b…" for one the server already had. It

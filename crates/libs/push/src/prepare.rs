@@ -220,7 +220,7 @@ pub(crate) fn prepare_file(
     profile.attachment_scan_hash_ms = elapsed_ms(scan_started);
     profile.unique_assets = u64::try_from(scan.unique.len()).unwrap_or(u64::MAX);
 
-    let mut log_lines: Vec<String> = scan.warnings.iter().map(|w| format!("WARN {w}")).collect();
+    let mut log_lines = scan.warnings;
     let mut assets = AssetTotals {
         skipped: scan.skipped,
         ..AssetTotals::default()
@@ -559,8 +559,11 @@ impl DigestResolver {
 
         let claimed = claimed_raw.and_then(|raw| match normalize_digest_sha256(raw) {
             Ok(digest) => Some(digest),
-            Err(e) => {
-                warn(format!("{name}: bad digest_sha256 for {rel}: {e}"));
+            Err(_) => {
+                warn(format!(
+                    "{name}: the SHA-256 recorded for attachment {rel} is not \
+                     64 hexadecimal digits, so the Upload hashed the file instead"
+                ));
                 None
             }
         });
@@ -583,20 +586,21 @@ impl DigestResolver {
         if let Some(claimed_digest) = claimed.as_deref()
             && claimed_digest != disk_digest
         {
-            let size_note = match claimed_size {
-                Some(cs) if cs != disk_size => {
-                    format!(", size changed from {cs} to {disk_size} bytes")
-                }
-                _ => String::new(),
-            };
-            let msg = format!(
-                "{name}: sha256 mismatch for {rel}: \
-                 claimed {claimed_digest}, got {disk_digest}{size_note}"
+            let mut msg = format!(
+                "{name}: attachment {rel} hashes to {disk_digest}, \
+                 not the {claimed_digest} its conversation file records"
             );
+            if let Some(cs) = claimed_size
+                && cs != disk_size
+            {
+                msg.push_str(&format!(
+                    ". Its size changed from {cs} to {disk_size} bytes"
+                ));
+            }
             if self.verify_digests {
                 bail!("{msg}");
             }
-            warn(msg);
+            warn(format!("{msg}. The Upload sends it as Asset {disk_digest}"));
         }
         self.remember(abs, &disk_digest);
         Ok(disk_digest)
