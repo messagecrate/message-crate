@@ -90,12 +90,12 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     for (chat_id, mut pending) in conversations {
         let hooks = OpenExtractProjection {
             export: &export,
-            key: pending.key.as_ref(),
+            key: &pending.key,
         };
         if let Some(mut doc) =
             project_conversation(&chat_id, &mut pending.convo, &hooks, &mut report)
         {
-            if pending.unknown_recipient {
+            if matches!(pending.key, Key::UnknownRecipient) {
                 doc.conversation.conversation_type = IrConversationType::Orphaned;
             }
             documents.push(doc);
@@ -121,22 +121,41 @@ struct Ingest {
 
 /// One conversation and its key, awaiting projection.
 struct Pending {
-    /// `None` for the conversation of received rows that name nobody, keyed
-    /// [`NAMELESS_CHAT_ID`], and for "Unknown recipient".
-    key: Option<ConversationKey>,
-    /// Whether it is "Unknown recipient" ([`Conversation::unknown_recipient`]).
-    unknown_recipient: bool,
+    key: Key,
     convo: PendingConversation,
+}
+
+/// What a conversation is keyed by.
+#[derive(Clone)]
+enum Key {
+    /// A one-to-one conversation, a group, or a person the source names
+    /// with no address.
+    Keyed(ConversationKey),
+    /// The conversation of received rows that name nobody, keyed
+    /// [`NAMELESS_CHAT_ID`].
+    Nameless,
+    /// "Unknown recipient": the account holder's orphaned messages, sent rows
+    /// that record no recipient, keyed [`orphaned_chat_id`] with no sender.
+    UnknownRecipient,
+}
+
+impl Key {
+    fn chat_id(&self) -> String {
+        match self {
+            Self::Keyed(key) => key.chat_id(),
+            Self::Nameless => NAMELESS_CHAT_ID.to_string(),
+            Self::UnknownRecipient => orphaned_chat_id(None),
+        }
+    }
+
+    fn is_group(&self) -> bool {
+        matches!(self, Self::Keyed(key) if key.is_group())
+    }
 }
 
 /// The conversation a set of rows belongs to.
 struct Conversation {
-    /// `None` for the conversation that names nobody, and for "Unknown
-    /// recipient".
-    key: Option<ConversationKey>,
-    /// Whether it is "Unknown recipient": the account holder's orphaned
-    /// messages, sent rows that record no recipient.
-    unknown_recipient: bool,
+    key: Key,
     /// The other person's name, for a one-to-one conversation the source
     /// names; empty otherwise.
     contact_name: String,
@@ -146,34 +165,27 @@ struct Conversation {
 
 impl Conversation {
     fn chat_id(&self) -> String {
-        if self.unknown_recipient {
-            return orphaned_chat_id(None);
-        }
-        self.key
-            .as_ref()
-            .map_or_else(|| NAMELESS_CHAT_ID.to_string(), ConversationKey::chat_id)
+        self.key.chat_id()
     }
 
-    /// "Unknown recipient": the conversation of orphaned messages, keyed
-    /// [`orphaned_chat_id`] with no sender, that holds every sent row whose
-    /// recipient the export does not record. It has no participants.
+    /// "Unknown recipient" ([`Key::UnknownRecipient`]), which holds every
+    /// sent row whose recipient the export does not record. It has no
+    /// participants.
     fn unknown_recipient() -> Self {
         Self {
-            key: None,
-            unknown_recipient: true,
+            key: Key::UnknownRecipient,
             contact_name: String::new(),
             group_name: None,
         }
     }
 
     fn is_group(&self) -> bool {
-        self.key.as_ref().is_some_and(ConversationKey::is_group)
+        self.key.is_group()
     }
 
     fn group(vendor_id: String, members: Vec<IrParticipant>, group_name: Option<String>) -> Self {
         Self {
-            key: Some(ConversationKey::Group { vendor_id, members }),
-            unknown_recipient: false,
+            key: Key::Keyed(ConversationKey::Group { vendor_id, members }),
             contact_name: String::new(),
             group_name,
         }
@@ -291,7 +303,7 @@ impl Ingest {
             .conversations
             .entry(chat_id.clone())
             .or_insert_with(|| {
-                if let Some(ConversationKey::NameOnly(name)) = &conversation.key {
+                if let Key::Keyed(ConversationKey::NameOnly(name)) = &conversation.key {
                     // Counted once per conversation, not once per row.
                     report.caveat(
                         message_crate_core::NAME_ONLY_CHAT,
@@ -302,7 +314,6 @@ impl Ingest {
                 }
                 Pending {
                     key: conversation.key.clone(),
-                    unknown_recipient: conversation.unknown_recipient,
                     convo: PendingConversation::new(
                         chat_id,
                         conversation.is_group(),
@@ -432,13 +443,12 @@ fn one_to_one(sender: Option<&str>, label: Option<&str>) -> Conversation {
         .find(|s| self::address(s).is_none())
         .map(|s| s.trim().to_string());
     let key = match (address, &name) {
-        (Some(address), _) => Some(ConversationKey::OneToOne(address)),
-        (None, Some(name)) => Some(ConversationKey::NameOnly(name.clone())),
-        (None, None) => None,
+        (Some(address), _) => Key::Keyed(ConversationKey::OneToOne(address)),
+        (None, Some(name)) => Key::Keyed(ConversationKey::NameOnly(name.clone())),
+        (None, None) => Key::Nameless,
     };
     Conversation {
         key,
-        unknown_recipient: false,
         contact_name: name.unwrap_or_default(),
         group_name: None,
     }
@@ -531,7 +541,7 @@ fn resolve_sender(row: &RawRow, is_from_me: bool, conversation: &Conversation) -
         return (address.into_key(), contact_name);
     }
     let handle = match &conversation.key {
-        Some(ConversationKey::OneToOne(handle)) => handle.clone(),
+        Key::Keyed(ConversationKey::OneToOne(handle)) => handle.clone(),
         _ => String::new(),
     };
     let display = if sender.is_empty() {
@@ -563,9 +573,8 @@ fn parse_timestamp(raw: &str) -> Option<i64> {
 /// OpenExtract deltas of the shared [`message_ir::pending_to_document`] projection.
 struct OpenExtractProjection<'a> {
     export: &'a ExportMeta,
-    /// The key of the conversation being projected; `None` for the one that
-    /// names nobody and for "Unknown recipient".
-    key: Option<&'a ConversationKey>,
+    /// The key of the conversation being projected.
+    key: &'a Key,
 }
 
 impl ProjectionHooks for OpenExtractProjection<'_> {
@@ -605,14 +614,14 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
     /// that names nobody, and "Unknown recipient", have no roster at all.
     fn participants(&self, _chat_id: &str, convo: &PendingConversation) -> Vec<IrParticipant> {
         match self.key {
-            None => Vec::new(),
-            Some(ConversationKey::Group { members, .. }) => members.clone(),
-            Some(ConversationKey::OneToOne(handle)) => vec![IrParticipant {
+            Key::Nameless | Key::UnknownRecipient => Vec::new(),
+            Key::Keyed(ConversationKey::Group { members, .. }) => members.clone(),
+            Key::Keyed(ConversationKey::OneToOne(handle)) => vec![IrParticipant {
                 identity: Some(handle.clone()),
                 display_name: convo.first_contact_name(),
                 identity_type: Handle::parse(handle).map(|handle| handle.kind()),
             }],
-            Some(ConversationKey::NameOnly(_)) => vec![IrParticipant {
+            Key::Keyed(ConversationKey::NameOnly(_)) => vec![IrParticipant {
                 identity: None,
                 display_name: convo.first_contact_name(),
                 identity_type: None,
