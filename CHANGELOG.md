@@ -1073,6 +1073,11 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-05 **Your profile lists a phone number once when it is both a
+  Text Message and a WhatsApp identity.** The account's phone numbers named
+  such a number twice, with no service, so the Android SMS owner numbers an
+  import offers listed it twice too. Each number now comes once, naming every
+  service it is your identity under.
 - 2026-10-04 **An import names a nameless contact, whatever made it.** A
   contact with a number and no name stayed Unknown after an import that knew
   the number's name, when an Address Book load or you had made it rather
@@ -1605,6 +1610,10 @@ released versions carry their date on the heading.
   3. Import those backups again.
 - The server's `process-assets` command no longer takes `--source`: it
   makes previews for every attachment of each account.
+- If you have a program that reads an account from the HTTP API, it must
+  read each entry of `phones` as an object: the number is in `address`, and
+  `services` names `phone` (Text Message), `whatsapp`, or both. A number on
+  both services is one entry, where it used to be the same string twice.
 - If you have a program that reads a conversation from the HTTP API, it
   must read `first_message_at` in place of `date_range_start` and
   `last_message_at` in place of `date_range_end`. The old names are gone.

@@ -12871,9 +12871,9 @@
           "phones": {
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/AccountPhone"
             },
-            "description": "Phone numbers linked to the account."
+            "description": "Phone numbers linked to the account, each once with every service it\nis an identity under."
           },
           "preferred_name": {
             "type": [
@@ -12968,6 +12968,27 @@
           },
           "username": {
             "type": "string"
+          }
+        }
+      },
+      "AccountPhone": {
+        "type": "object",
+        "description": "One phone number linked to an account, with every service it is an\nidentity under. A number that is both a Text Message and a WhatsApp\nidentity is one entry naming both.",
+        "required": [
+          "address",
+          "services"
+        ],
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "The number, normalized: E.164 when it parses as one."
+          },
+          "services": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IdentityService"
+            },
+            "description": "The services the number is an identity under, `phone` (Text Message)\nbefore `whatsapp`. Never empty."
           }
         }
       },
@@ -14928,7 +14949,7 @@
       },
       "IdentityService": {
         "type": "string",
-        "description": "The service an identity is on, as a request names it: `phone` or\n`whatsapp`. `phone` is Text Message, which carries SMS, MMS, iMessage and\nRCS, and reaches an email address through iMessage. The service never\ndecides the identity's type, which comes from the address.",
+        "description": "The service an identity is on, as a request names it and the profile\nreports it: `phone` or `whatsapp`. `phone` is Text Message, which carries\nSMS, MMS, iMessage and RCS, and reaches an email address through iMessage.\nThe service never decides the identity's type, which comes from the\naddress.",
         "enum": [
           "phone",
           "whatsapp"
@@ -16194,9 +16215,9 @@
                 "phones": {
                   "type": "array",
                   "items": {
-                    "type": "string"
+                    "$ref": "#/components/schemas/AccountPhone"
                   },
-                  "description": "Phone numbers linked to the account."
+                  "description": "Phone numbers linked to the account, each once with every service it\nis an identity under."
                 },
                 "preferred_name": {
                   "type": [

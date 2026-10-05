@@ -2058,7 +2058,10 @@ describe("useImportJob wiring", () => {
 
     it("stops at identity_stop when nothing the backup sent from is on the profile", async () => {
       invokeImessageBackupIdentitiesMock.mockResolvedValue(["+15555550110"]);
-      loadAccountProfileMock.mockResolvedValue({ phones: ["+15555550180"], emails: [] });
+      loadAccountProfileMock.mockResolvedValue({
+        phones: [{ address: "+15555550180", services: ["phone"] }],
+        emails: [],
+      });
       const { result } = renderHook(() => useImportJob());
       await act(async () => {
         await result.current.startImport(imessageForm());
@@ -2072,7 +2075,10 @@ describe("useImportJob wiring", () => {
 
     it("continueAfterIdentityStop proceeds and sends the identities on the run", async () => {
       invokeImessageBackupIdentitiesMock.mockResolvedValue(["+15555550110"]);
-      loadAccountProfileMock.mockResolvedValue({ phones: ["+15555550180"], emails: [] });
+      loadAccountProfileMock.mockResolvedValue({
+        phones: [{ address: "+15555550180", services: ["phone"] }],
+        emails: [],
+      });
       const { result } = renderHook(() => useImportJob());
       await act(async () => {
         await result.current.startImport(imessageForm());
@@ -2101,7 +2107,10 @@ describe("useImportJob wiring", () => {
 
     it("proceeds without a stop when an identity matches, sending the list", async () => {
       invokeImessageBackupIdentitiesMock.mockResolvedValue(["+15555550110"]);
-      loadAccountProfileMock.mockResolvedValue({ phones: ["+1 555 555 0110"], emails: [] });
+      loadAccountProfileMock.mockResolvedValue({
+        phones: [{ address: "+1 555 555 0110", services: ["phone"] }],
+        emails: [],
+      });
       const { result } = renderHook(() => useImportJob());
       await act(async () => {
         await result.current.startImport(imessageForm());
@@ -3126,7 +3135,10 @@ describe("one desktop app, two accounts (#1085)", () => {
 
   it("does not offer account A's parked form to account B", async () => {
     invokeImessageBackupIdentitiesMock.mockResolvedValue(["+15555550110"]);
-    loadAccountProfileMock.mockResolvedValue({ phones: ["+15555550116"], emails: [] });
+    loadAccountProfileMock.mockResolvedValue({
+      phones: [{ address: "+15555550116", services: ["phone"] }],
+      emails: [],
+    });
     const a = renderHook(() => useImportJob());
     await act(() => a.result.current.startImport({ ...form(), backupPassword: "secret-of-A" }));
     expect(a.result.current.phase).toBe("identity_stop");
