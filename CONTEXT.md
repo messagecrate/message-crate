@@ -445,10 +445,10 @@ _Avoid_: Delete run, Clear
 The one directory the desktop app keeps on a computer, made the first time
 the app starts. It holds the Data Directory of the Message Crate the app
 starts, the Staging Directory, the Export Directory, the Logs Directory, the
-Scratch Directory, and the Tools Directory. It exists on every computer the app runs on, including one whose
-app connects to a Message Crate elsewhere. Decided, not built yet: #1053 tracks the work, and until it
-lands the app keeps its Message Crate's data in the operating system's
-app-data directory.
+Scratch Directory, and the Tools Directory. It exists on every computer the
+app runs on, including one whose app connects to a Message Crate elsewhere.
+Decided, not built yet: #1053 tracks the work, and until it lands the app
+keeps its Message Crate's data in the operating system's app-data directory.
 _Avoid_: Folder, App Data, Home Directory
 
 **Data Directory**:

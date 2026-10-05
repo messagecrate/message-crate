@@ -230,12 +230,13 @@ released versions carry their date on the heading.
 - 2026-10-04 **An Import Run's log is kept for good, and scratch data has a
   directory of its own.** Each Import Run's log is written to the Logs
   Directory, named for the run, instead of the run's directory in the
-  Staging Directory, so it is still there after the run ends; the Import
+  Staging Directory, so it is still there after the run ends; it now holds
+  what Staging and Media said as well as the Upload, and the Import
   screen's link opens it there. The decrypted iPhone backup databases and
   the attachments read out of SMS backups go to the Scratch Directory beside
   it, instead of the operating system's cache directory, and what a stopped
-  run left there is deleted the next time the app starts. Settings → System
-  lists where the app keeps each of its directories.
+  run left there is deleted the next time the app starts. The user guide's
+  Settings → System page lists where the app keeps each of its directories.
 - 2026-10-04 **Every Export and Convert gets a directory of its own in the
   Export Directory.** An export no longer needs a directory chosen before it
   starts: it is written into a new directory named for its date, time and
@@ -1484,9 +1485,9 @@ released versions carry their date on the heading.
 - An export, or a conversion with no output directory chosen, now goes into
   the Export Directory; look for it there, through Settings → System, rather
   than in the Staging Directory.
-- An Import Run's log is now in the Logs Directory, `logs` beside the
-  Export Directory, rather than in the run's directory; Settings → System
-  says where.
+- An Import Run's log is now in the Logs Directory, `logs` in the app's
+  data directory beside the Export Directory, rather than in the run's
+  directory; the Import screen's Import log link opens it.
 - The database format changed. **An existing Message Crate is rebuilt
   empty on first start and its messages must be imported again.**
 - If your configuration file sets `asset_max_bytes` under `[server]`, delete
