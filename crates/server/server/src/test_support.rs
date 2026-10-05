@@ -1111,24 +1111,24 @@ pub async fn import_jsonl_text(
     .unwrap()
 }
 
-/// Import a one-to-one Text Message conversation with Ada at +15555550123
-/// into `account_id` on `conn`: one incoming message, "hi", whose guid is
-/// `guid`. The import names Ada's contact "Ada", from her participant's
-/// display name.
+/// Import a one-to-one Text Message conversation with Ada at `address`
+/// into `account_id` on `conn`: one incoming message from `address`, "hi",
+/// whose guid is `guid`. The import names Ada's contact "Ada", from her
+/// participant's display name.
 pub async fn import_ada_conversation(
     conn: &mut sqlx::SqliteConnection,
     account_id: i64,
+    address: &str,
     guid: &str,
 ) {
-    let header =
-        conversation_header("imessage", "+15555550123").participant("+15555550123", Some("Ada"));
+    let header = conversation_header("imessage", address).participant(address, Some("Ada"));
     let message = serde_json::json!({
         "guid": guid,
         "timestamp_unix_ms": 1426183462000_i64,
         "direction": "incoming",
         "service": "imessage",
         "message_kind": "imessage",
-        "sender_identity": "+15555550123",
+        "sender_identity": address,
         "sender_display_name": null,
         "subject": null,
         "text": "hi",

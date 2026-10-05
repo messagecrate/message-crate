@@ -3400,7 +3400,7 @@ async fn an_address_book_load_needs_no_import_export_or_delete_permission() {
 /// A one-to-one conversation with Ada at +15555550123, imported into
 /// `account`, and Ada's contact id.
 async fn ada_in_a_conversation(conn: &mut sqlx::SqliteConnection, account: i64) -> i64 {
-    crate::test_support::import_ada_conversation(conn, account, "g-ada-1105").await;
+    crate::test_support::import_ada_conversation(conn, account, "+15555550123", "g-ada-1105").await;
     sqlx::query_scalar("SELECT id FROM contacts WHERE account_id = $1 AND preferred_name = 'Ada'")
         .bind(account)
         .fetch_one(&mut *conn)
