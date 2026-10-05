@@ -32,8 +32,9 @@ export function stableStem(path: string): string {
 }
 
 /**
- * Verdicts that predict a file will not make it into Message Crate at all
- * (spec decision 15). `likely_fits`/`may_grow`/`fits_as_is` predict the file
+ * Verdicts that predict a file will not make it into Message Crate at all, so
+ * a skip the approved plan forecast with one is an expected omission.
+ * `likely_fits`/`may_grow`/`fits_as_is` predict the file
  * lands, so a skip for one of those was not on the approved plan.
  */
 const OMITTABLE_VERDICTS: ReadonlySet<SizeVerdict> = new Set([
@@ -49,7 +50,7 @@ const OMITTABLE_VERDICTS: ReadonlySet<SizeVerdict> = new Set([
  * (the `AttachmentSkip` that `crates/libs/push/src/prepare.rs` builds), not a bare
  * path, so exact equality against `row.path`/`row.name` only catches the
  * simple case. `item.endsWith(...)` catches the compound form without the
- * conversation-name prefix tripping it up. `stableStem` (Task 9's helper)
+ * conversation-name prefix tripping it up. `stableStem`
  * catches a file the media pass renamed with a `-mv` suffix between the
  * review and the push — `stem.pop()` on the path already strips any
  * `{name}:` prefix, since it only looks at the last `/`-separated segment.
@@ -79,7 +80,7 @@ function isApprovedOmission(
 
 /**
  * Verdict for an Upload, read from the push report rather than from whether
- * the push call returned (spec decisions 21–22).
+ * the push call returned.
  *
  * An Upload finishes only when every conversation was sent or was already
  * sent: anything else is `paused`, never failed (#1233). That covers a push
@@ -93,8 +94,8 @@ function isApprovedOmission(
  *
  * A finished Upload with item-level problems is `completed_with_issues` —
  * unless `approved` already told the user about them: the plan the user
- * approved at their last gate (spec decision 15 — Gate 2's plan when there
- * was a media pass, Gate 1's otherwise) is diffed against the issues the
+ * approved at their last gate (Gate 2's plan when there was a media pass,
+ * Gate 1's otherwise) is diffed against the issues the
  * run reported, and a skip the plan already forecast is not news. Without
  * `approved` every issue counts.
  */

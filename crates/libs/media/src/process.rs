@@ -335,7 +335,8 @@ fn has_gif_ext(path: &Path) -> bool {
 ///
 /// Returns the produced path, or `None` when the media step leaves this file
 /// alone — either because the mode does not touch it, or because a same-format
-/// re-encode came out no smaller (decision 44).
+/// re-encode came out no smaller. A format change keeps the derivative even
+/// when it is larger, because the person chose the target format.
 fn run_one(
     path: &Path,
     kind: Kind,
@@ -503,7 +504,7 @@ fn derivative_name_impl(
 /// Transcode `src` and write the derivative to exactly `dest`.
 ///
 /// `src` is never modified or deleted: committing is the caller's, because it
-/// has to patch whatever points at the original first (decision 28). Scratch
+/// has to patch whatever points at the original first. Scratch
 /// left beside `src` by an interrupted run is cleared; scratch belonging to
 /// other files, and any `.in_progress` marker, is left alone.
 ///
@@ -625,8 +626,8 @@ enum Commit<'a> {
     /// Move the derivative to exactly this path and leave the original alone.
     ///
     /// The caller commits: it patches whatever points at the original, renames
-    /// this file into its final name, and only then deletes the original
-    /// (decision 28).
+    /// this file into its final name, and only then deletes the original,
+    /// so the final name never exists before a conversation file points at it.
     To(&'a Path),
 }
 
@@ -638,8 +639,8 @@ fn commit_produced(commit: Commit<'_>, original: &Path, produced: &Path) -> Resu
             if dest == original {
                 // The whole point of Commit::To is that the final name never
                 // exists until the caller has patched whatever points at the
-                // original and renamed this derivative into place itself
-                // (decision 28). A destination equal to the original would
+                // original and renamed this derivative into place itself.
+                // A destination equal to the original would
                 // overwrite it here, before any of that has happened — for
                 // example `derivative_name` returning the source's own name
                 // (a same-format compress) joined onto the source's directory

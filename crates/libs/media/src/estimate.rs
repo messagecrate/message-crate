@@ -13,13 +13,13 @@ use crate::{CompressOptions, MediaMode, MediaProbe};
 ///
 /// The largest growth factor in [`format_factor`] is well under 2.5x, so a file
 /// this far below the limit cannot cross it, and probing every thumbnail in a
-/// backup costs more than the answer is worth (decision 13).
+/// backup costs more than the answer is worth.
 const PROBE_BAND_FLOOR: f64 = 0.4;
 
 /// An over-limit file whose estimate lands above this fraction of the limit
 /// reads as probably still too big rather than likely to fit.
 ///
-/// The margin is what stops a near miss from reading as a promise (decision 13).
+/// The margin is what stops a near miss from reading as a promise.
 const PROBABLY_FITS_MARGIN: f64 = 0.8;
 
 /// How a staged attachment is expected to land against the size limit.
@@ -230,8 +230,9 @@ fn fps_ratio(probe: &MediaProbe, compress: &CompressOptions) -> f64 {
 
 /// Size change from the format alone, holding pixels and frame rate fixed.
 ///
-/// Above 1.0 means the target format is bulkier than the source — the case
-/// decision 12 exists to catch, and the common one on an iPhone backup.
+/// Above 1.0 means the target format is bulkier than the source. That is the
+/// case the estimate exists to catch, because the media step can make a file
+/// bigger, and the common one on an iPhone backup, which is mostly HEIC and HEVC.
 fn format_factor(ext: &str, probe: Option<&MediaProbe>, mode: MediaMode) -> f64 {
     let compressing = matches!(mode, MediaMode::Compress);
     match ext {
@@ -251,7 +252,8 @@ fn format_factor(ext: &str, probe: Option<&MediaProbe>, mode: MediaMode) -> f64 
         // `convert_video` always lands on H.264 (its remux path preserves the
         // source codec and so is not size-changing at all; only its re-encode
         // fallback is format_factor's concern), so a source already on a more
-        // efficient codec grows — decision 12's headline case.
+        // efficient codec grows. HEVC to H.264 is the common case on an
+        // iPhone backup.
         //
         // `compress_video` re-encodes to HEVC (libx265) at a fixed CRF, so a
         // source under `min_size_bytes` or already on efficient HEVC never

@@ -129,7 +129,8 @@ export default function ResumeImportPanel({
    * Set when the last attempt to act on this decision failed partway
    * through — today, only a gate/media resume whose recompute of the
    * staged folder failed (a transient read, not a run that actually
-   * failed: decision 37 means the session is still here to try again).
+   * failed: only an explicit discard ends a session, so it is still here to
+   * try again).
    * Null the rest of the time.
    */
   error?: string | null;

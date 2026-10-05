@@ -1,6 +1,8 @@
 ---
 title: System Design
 description: Repository layout, binaries, C4 views, and developer session sequences for Message Crate.
+tableOfContents:
+  maxHeadingLevel: 4
 ---
 
 Message Crate is two processes: the **server** (HTTP API and SQLite) and the **UI** that talks to it. This page is the map for someone who already compiles. Setup, tests, and pull requests stay on [Contributing](/docs/developer/contributing/). How messages move in and out is on [Message Transfer](/docs/developer/message-transfer/).
@@ -114,7 +116,7 @@ sequenceDiagram
 
 ### Log in
 
-**Prerequisite**
+#### Prerequisites for logging in
 
 - Server is running on `:8080`.
 - Desktop App is running.
@@ -141,7 +143,7 @@ sequenceDiagram
 
 ### Import a backup
 
-**Prerequisite**
+#### Prerequisites for an import
 
 - Server is running on `:8080`
 - Desktop App is running.
@@ -175,7 +177,7 @@ sequenceDiagram
 
 ### Export from Message Crate
 
-**Prerequisite**
+#### Prerequisites for an export
 
 - Server is running on `:8080`
 - Desktop App is running.

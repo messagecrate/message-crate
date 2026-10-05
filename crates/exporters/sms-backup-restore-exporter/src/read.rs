@@ -42,8 +42,6 @@ pub struct ReadReport {
     pub received: u64,
     /// Messages dropped for an invalid date.
     pub skipped_invalid_date: u64,
-    /// Messages dropped outside the configured date range.
-    pub skipped_out_of_range: u64,
     /// Messages dropped with no usable address.
     pub skipped_unknown_address: u64,
     /// SMS dropped for an unknown `type`.
@@ -103,12 +101,6 @@ impl ReadReport {
                 "Skipped",
                 "message with an invalid date",
                 "messages with an invalid date",
-            ),
-            (
-                self.skipped_out_of_range,
-                "Skipped",
-                "message outside the date range",
-                "messages outside the date range",
             ),
             (
                 self.skipped_unknown_address,

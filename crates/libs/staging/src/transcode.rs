@@ -32,7 +32,7 @@
 //! old name, so the pass heals: it strips the `-mv` suffix and looks under
 //! `attachments/` for a file with that stem (any extension) that
 //! `derivative_name` still wants, and re-transcodes it — the recorded
-//! digest/size/path are stale regardless (decision 29), so a heal re-patches
+//! digest/size/path are stale regardless, so a heal re-patches
 //! exactly like a fresh conversion. When no such file exists but another
 //! attachment sharing the original dropped it for size, the note it left
 //! (see Aliasing) makes the attachment record `too_large` with the size.
@@ -53,7 +53,7 @@
 //! repointed at the existing derivative rather than failing or re-encoding.
 //!
 //! A shared original whose derivative comes out over the size limit is
-//! deleted together with the derivative (decision 45), so a later attachment
+//! deleted together with the derivative, so a later attachment
 //! recording the same path finds neither. Before deleting, the pass writes a
 //! note beside the original's name, `{original_name}.too_large`, holding the
 //! derivative's size. A recorded path that is gone, has no committed
@@ -208,7 +208,7 @@ pub fn transcode_staged(
 
     let files = conversation_files(staging_dir)?;
     // Counting up front costs a second parse of each conversation file and
-    // buys an honest progress total. Decision 31 accepts the re-read.
+    // buys an honest progress total, which is worth the re-read.
     let total = count_remaining(staging_dir, &files, options.mode)?;
     on_progress(TranscodeProgress { done: 0, total });
 
@@ -430,7 +430,7 @@ fn pending_in(
             // the same bytes (this document or another) already converted
             // it and deleted the shared original — or the shared original
             // was dropped for good (too_large deletes both the derivative
-            // and the original, decision 45, and leaves a note saying so).
+            // and the original, and leaves a note saying so).
             // The recorded file has no
             // bytes to measure, so the candidate name is derived stat-free:
             // the size floors exist to skip a small *live* file, and are
@@ -642,7 +642,7 @@ fn disk_attachment_fields(src: &Path) -> Result<DiskAttachmentFields> {
     })
 }
 
-/// Transcode `src` and commit it, in the order decision 28 fixes: derivative
+/// Transcode `src` and commit it, in this order: derivative
 /// written, conversation file patched, derivative renamed into its final
 /// name, original deleted. Reversing any pair leaves the directory lying about
 /// itself.
@@ -749,7 +749,8 @@ fn apply_transcode(
                 .with_context(|| format!("stat {}", marker.display()))?
                 .len();
             if produced_len > options.asset_max_bytes {
-                // Decision 45: skipped, not reverted. Both the derivative and
+                // Skipped, not reverted: falling back to the original would
+                // store the format the person asked to be rid of. Both the derivative and
                 // the original go, so nothing survives to point at. The note
                 // is written first, while the original is still on disk: a
                 // stop before the delete leaves the original, and the next
@@ -770,7 +771,7 @@ fn apply_transcode(
                 let _ = std::fs::remove_file(src);
                 return Ok(());
             }
-            // Decision 29: read the file on disk. A replayed digest can be
+            // Read the file on disk. A replayed digest can be
             // stale, and the server dedupes assets by sha256.
             let digest = media::file_sha256(&marker)?;
             let rel = attachment_rel(&final_path)?;

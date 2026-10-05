@@ -631,7 +631,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("routes a progress event arriving during summarize to the staging row", async () => {
-    // W6: `summarize_staging` (Rust) emits `extract:progress` with
+    // `summarize_staging` (Rust) emits `extract:progress` with
     // `step: "check"` while it walks a big folder, but nothing used to
     // subscribe, so those events had nowhere to go and a huge folder's gate
     // looked frozen. The mocked `invokeSummarizeStaging` fires one here,
@@ -766,7 +766,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("recomputes the summary after the media pass rather than adjusting the old one", async () => {
-    // Decision 39: the folder is the truth.
+    // The folder is the truth.
     runMock.mockImplementationOnce(
       runResult({ summary: "Transcode finished.", transcode: undefined }),
     );
@@ -1317,7 +1317,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("approving at the Media Review writes upload carrying the recomputed summary, not the Staging Review's", async () => {
-    // Decision 15: the diff at the Media Review is against what was approved
+    // The diff at the Media Review is against what was approved
     // at the Staging Review, but what gets approved when the Media Review
     // itself is approved is the summary it is showing — the recomputed one,
     // not the original.
@@ -1419,9 +1419,8 @@ describe("useImportJob wiring", () => {
   });
 
   it("does not complete the run on a cancelled media pass, so it stays resumable", async () => {
-    // Decision 36 routes a cancellation mid-media pass to the same recovery
-    // as a crash at that stage; decision 37 says only an explicit discard
-    // ends a waiting run. Posting /complete would free the one-running-
+    // A cancellation mid media pass gets the same recovery as a crash at
+    // that stage, and only an explicit discard ends a waiting run. Posting /complete would free the one-running-
     // run slot and drop the run out of GET /v1/imports?status=running,
     // stranding the staged folder with no run left to resume it
     // through — even though the "cancelled" outcome is still shown locally.
@@ -1454,7 +1453,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("does not complete the run on a cancelled extract, so the copy can be picked up", async () => {
-    // Decision 36 gives a cancellation the same recovery as a crash at that
+    // A cancellation gets the same recovery as a crash at that
     // stage, and the write stage is resumable now: the conversations already
     // copied are real work. Completing here would free the one-running-run
     // slot and strand them with no run left to resume through.
@@ -1671,7 +1670,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("does not strand the folder when the post-extract summarize fails right after a successful extract", async () => {
-    // W8: extract succeeds and stages hours of work, but the summarize call
+    // Extract succeeds and stages hours of work, but the summarize call
     // that follows it (on the way to the Staging Review) fails. Routing that through
     // finishImport would post /complete and end the run, orphaning the
     // staged folder with no way back to it. This must behave like the
@@ -1917,8 +1916,8 @@ describe("useImportJob wiring", () => {
   });
 
   it("continues the convert-mode step list through the media pass into the Media Review", async () => {
-    // Task 7 pinned the media row sitting pending after extract; this
-    // continues the same run through review: active while the pass runs,
+    // The media row sits pending after extract; this test continues the
+    // same run through review: active while the pass runs,
     // done once it finishes.
     createStagingDirMock.mockResolvedValue("/tmp/staging");
     runMock.mockImplementationOnce(
@@ -2643,7 +2642,7 @@ describe("useImportJob resumeAtReview", () => {
     expect(invokeSummarizeStagingMock).toHaveBeenCalledTimes(1);
     expect(result.current.phase).toBe("staging_review");
     expect(result.current.stagingSummary?.conversations).toBe(9);
-    // Decision 39: landing on a gate to look at it again writes nothing.
+    // Landing on a gate to look at it again writes nothing.
     expect(setImportStageMock).not.toHaveBeenCalled();
     // Copy mode has no Media row: two rows, Staging already marked done,
     // matching the state a fresh startImport run would show right before
@@ -2716,7 +2715,7 @@ describe("useImportJob resumeAtReview", () => {
     expect(result.current.mediaSummary).toEqual(actual);
     // Media's own report is gone on a resume: unknown, not zero.
     expect(result.current.mediaFailedCount).toBeNull();
-    // Decision 39: landing on a gate to look at it again writes nothing.
+    // Landing on a gate to look at it again writes nothing.
     expect(setImportStageMock).not.toHaveBeenCalled();
     // The media pass already ran (in an earlier session) to get here -- its
     // row shows done, not pending, and there are 3 of them.
@@ -2962,7 +2961,7 @@ describe("useImportJob resumeAtReview", () => {
         );
       });
 
-      // Decision 37: only an explicit discard ends a waiting run. A
+      // Only an explicit discard ends a waiting run. A
       // transient read failure must not complete it (freeing the slot) or
       // move it to a stage the folder never actually reached.
       expect(completeImportMock).not.toHaveBeenCalled();
