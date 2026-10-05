@@ -25,8 +25,8 @@ released versions carry their date on the heading.
   version, and search finds it by any of them.** A message edited in Apple
   Messages is imported with its final text and each version before it, with
   the time each one was written. Searching Messages for a word that only an
-  earlier version held finds the message. A later import of the same
-  message adds only the versions it does not have yet. Export keeps the
+  earlier version held finds the message. A later import leaves a message
+  already stored as it is, with its text and earlier versions. Export keeps the
   earlier versions, so a conversation exported and imported again keeps them
   too. The conversation shows them, and which one a search found, in a
   coming release.
