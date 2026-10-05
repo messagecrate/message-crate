@@ -29,7 +29,7 @@ static JOURNAL_WRITE_LOCK: Mutex<()> = Mutex::new(());
 ///
 /// # Errors
 ///
-/// Returns an error when the parent folder cannot be created, the file cannot
+/// Returns an error when the parent directory cannot be created, the file cannot
 /// be opened, read or synced, the event cannot be serialized, or the write
 /// fails.
 pub fn append<E: Serialize>(label: &str, path: &Path, event: &E) -> Result<()> {

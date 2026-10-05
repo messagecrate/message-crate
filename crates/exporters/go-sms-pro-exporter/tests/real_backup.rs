@@ -1,6 +1,6 @@
 //! The exporter over a real GO SMS Pro backup, when one is on the machine.
 //!
-//! Run by hand with the backup folder and the owner's number:
+//! Run by hand with the backup directory and the owner's number:
 //!
 //! ```text
 //! GO_SMS_PRO_BACKUP=/path/to/backup GO_SMS_PRO_OWNER=+15555550100 \
@@ -10,7 +10,7 @@
 //! It asserts what only real data can show: every PDU is a message or a
 //! stub, nothing is unparseable, and every conversation's members are
 //! phone numbers, not digit runs scraped from image bytes. Set
-//! `GO_SMS_PRO_OUT` to keep the export in that folder for a closer look.
+//! `GO_SMS_PRO_OUT` to keep the export in that directory for a closer look.
 
 use crate::emit::{ConvertExportArgs, convert_export};
 use message_crate_core::testutil::{csv_files, csv_rows};

@@ -76,9 +76,9 @@ mod locating {
     }
 
     /// The program is looked for beside the app and nowhere else: a copy in
-    /// the folder above is not used.
+    /// the directory above is not used.
     #[test]
-    fn a_program_in_the_folder_above_the_app_is_not_found() {
+    fn a_program_in_the_directory_above_the_app_is_not_found() {
         let root = tempfile::tempdir().unwrap();
         put_program(root.path());
         let app = root.path().join("app");

@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   isWhatsappMethod,
   WHATSAPP_ERR_CRYPT_KEY,
+  WHATSAPP_ERR_DIRECTORY_IS_FILE,
   WHATSAPP_ERR_ENCRYPTED_PASSWORD,
-  WHATSAPP_ERR_FOLDER_IS_FILE,
+  WHATSAPP_ERR_MUST_BE_DIRECTORY,
   WHATSAPP_ERR_MUST_BE_FILE,
-  WHATSAPP_ERR_MUST_BE_FOLDER,
   WHATSAPP_ERR_OWNER_PHONE,
   WHATSAPP_ERR_PATH_MISSING,
   whatsappCanImport,
@@ -28,7 +28,7 @@ describe("whatsappImport", () => {
     expect(whatsappShowsBusiness("whatsapp-android")).toBe(false);
   });
 
-  it("disables Import when the backup folder does not exist", () => {
+  it("disables Import when the backup directory does not exist", () => {
     const missing = { exists: false, isFile: false, isDirectory: false };
     const result = whatsappCanImport({
       method: "whatsapp-android",
@@ -108,7 +108,7 @@ describe("whatsappImport", () => {
     expect(result.errors).toEqual({});
   });
 
-  it("disables Import when the Android folder is a file", () => {
+  it("disables Import when the Android directory is a file", () => {
     const result = whatsappCanImport({
       method: "whatsapp-android",
       backupPath: "/tmp/msgstore.db",
@@ -129,7 +129,7 @@ describe("whatsappImport", () => {
       },
     });
     expect(result.enabled).toBe(false);
-    expect(result.errors.backupPath).toBe(WHATSAPP_ERR_FOLDER_IS_FILE);
+    expect(result.errors.backupPath).toBe(WHATSAPP_ERR_DIRECTORY_IS_FILE);
   });
 
   it("requires the key when only a crypt file is present", () => {
@@ -156,7 +156,7 @@ describe("whatsappImport", () => {
     expect(result.errors.key).toBe(WHATSAPP_ERR_CRYPT_KEY);
   });
 
-  it("enables Android Import for a folder with msgstore.db and no key", () => {
+  it("enables Android Import for a directory with msgstore.db and no key", () => {
     const result = whatsappCanImport({
       method: "whatsapp-android",
       backupPath: "/tmp/wa",
@@ -225,10 +225,10 @@ describe("whatsappImport", () => {
       },
     });
     expect(result.enabled).toBe(false);
-    expect(result.errors.media).toBe(WHATSAPP_ERR_MUST_BE_FOLDER);
+    expect(result.errors.media).toBe(WHATSAPP_ERR_MUST_BE_DIRECTORY);
   });
 
-  it("enables iPhone Import for a backup folder with no key", () => {
+  it("enables iPhone Import for a backup directory with no key", () => {
     const result = whatsappCanImport({
       method: "whatsapp-ios",
       backupPath: "/backups/iphone",

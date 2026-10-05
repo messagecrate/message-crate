@@ -381,9 +381,9 @@ phone's file that Import reads.
 _Avoid_: Export Job, Backup, Download
 
 **Convert**:
-Rewriting a folder of already-exported files into a different format,
+Rewriting a directory of already-exported files into a different format,
 reading neither the original backup nor the database. Export uses it for any
-format other than JSON Lines. As an operation a person starts on a folder of
+format other than JSON Lines. As an operation a person starts on a directory of
 their own it is an advanced tool most people never need, so it lives under
 Settings rather than beside Import and Export.
 _Avoid_: Reexport, Transcode, Reformat
@@ -444,9 +444,9 @@ _Avoid_: Delete run, Clear
 **Message Crate Directory**:
 The one directory the desktop app keeps on a computer, made the first time
 the app starts. It holds the Data Directory of the Message Crate the app
-starts, the Staging Directory, and the Tools Directory. It exists on every
-computer the app runs on, including one whose app connects to a Message
-Crate elsewhere. Decided, not built yet: #1053 tracks the work, and until it
+starts, the Staging Directory, the Export Directory, and the Tools
+Directory. It exists on every computer the app runs on, including one whose
+app connects to a Message Crate elsewhere. Decided, not built yet: #1053 tracks the work, and until it
 lands the app keeps its Message Crate's data in the operating system's
 app-data directory.
 _Avoid_: Folder, App Data, Home Directory
@@ -460,14 +460,28 @@ Message Crate Directory; a Docker Message Crate's is the volume given to it.
 _Avoid_: Data Folder, DB Directory, Database Directory
 
 **Staging Directory**:
-The directory where Message Crate writes intermediate files that neither the
-person nor Message Crate keeps — a backup being prepared for import, or JSON
-Lines waiting to be converted into the format an export asked for. It is
-deleted when the job ends, whether it succeeded, failed or was cancelled,
-the import log, resume journal and run record with it. An Import Run that
-can still be resumed, paused or waiting at a Review, keeps it, since the
-staged files are what Resume reads.
+The directory that holds one directory for each Import Run, where the
+desktop app prepares a backup for import. A run's directory is deleted when the run ends, whether it succeeded,
+failed or was cancelled, the import log, resume journal and run record with
+it. An Import Run that can still be resumed, paused or waiting at a Review,
+keeps it, since the staged files are what Resume reads. A run's directory has
+no term of its own: on screen it is "this Import Run's directory". Exports and
+Converts never use it; they work in the Export Directory.
 _Avoid_: Import Staging Directory, Temp Folder, Working Directory
+
+**Export Directory**:
+The directory where each Export, and each Convert with no output directory
+chosen, gets a directory of its own, named for what it is, when it started
+and its format, such as `export-2026-10-04-1430-mbox`. That directory is
+where the result lands unless the person chose another destination. While
+the run goes, it also holds the in-between files, such as the JSON Lines an
+Export pulls before converting them; they are deleted when the run
+finishes, leaving only the result. A run that fails or is cancelled deletes
+its directory, and the app deletes one it did not see to its end the next
+time it starts. Message Crate never deletes a finished export from it. It belongs in the Message
+Crate Directory; until #1053 builds that, it is `exports` in the operating
+system's app-data directory.
+_Avoid_: Export Folder, Downloads, Output Directory
 
 **Tools Directory**:
 The directory inside the Message Crate Directory where the desktop app keeps

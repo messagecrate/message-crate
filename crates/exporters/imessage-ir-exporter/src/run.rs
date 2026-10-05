@@ -14,25 +14,25 @@ use imessage_reader_protocol::{ExportRequest, Platform, Request, Source};
 use ios_backup::{Helper, ios_backup_encrypted_flag};
 use message_crate_core::{
     AppleConfig, ApplePlatform, CancelFlag, ExportTransforms, ExporterConfig,
-    IMESSAGE_READER_FOLDER, IssueSink, LogSink, OutputFormat, ProgressEvent, ProgressSink,
+    IMESSAGE_READER_DIRECTORY, IssueSink, LogSink, OutputFormat, ProgressEvent, ProgressSink,
     RunIssue, RunResult, ScratchDir, SourceConfig, emit_progress, prepare_outputs,
 };
 use message_staging::{Disk, check_headroom};
 
 use crate::convert;
 
-/// User-facing copy when a custom attachment folder is missing.
-pub(crate) const ATTACHMENT_FOLDER_MISSING: &str = "Attachment folder does not exist.";
+/// User-facing copy when a custom attachment directory is missing.
+pub(crate) const ATTACHMENT_DIRECTORY_MISSING: &str = "Attachment directory does not exist.";
 /// User-facing copy when a supplied Apple Contacts file is missing.
 pub(crate) const APPLE_CONTACTS_MISSING: &str = "Apple Contacts file does not exist.";
 /// User-facing copy when the macOS Messages database file is missing.
 pub(crate) const MESSAGES_DATABASE_MISSING: &str = "Messages database does not exist.";
-/// User-facing copy when the folder is not an iPhone backup (or Messages is missing).
+/// User-facing copy when the directory is not an iPhone backup (or Messages is missing).
 pub(crate) const NOT_AN_IPHONE_BACKUP: &str =
-    "This folder is not an iPhone backup, or Messages is missing from it.";
+    "This directory is not an iPhone backup, or Messages is missing from it.";
 
 /// Where an iPhone backup keeps the Messages database: the SHA-1 of its
-/// domain and path, under a folder named by its first two characters.
+/// domain and path, under a directory named by its first two characters.
 const MESSAGES_DB_IN_IOS_BACKUP: &str = "3d/3d0d7e5fb2ce288813306e4d4636395e047a3d28";
 
 /// Where an iPhone backup keeps the Contacts database, which the program
@@ -82,7 +82,7 @@ pub(crate) struct ExportOptions {
     /// [`ExportRequest::use_caller_id`].
     pub use_caller_id: bool,
     pub export_path: PathBuf,
-    /// The app's cache folder; the program decrypts into a folder under it.
+    /// The app's cache directory; the program decrypts into a directory under it.
     pub cache_dir: PathBuf,
     pub attachment_embed: AttachmentEmbed,
     /// Media / obfuscate transforms applied by [`message_ir_format::FormatSink`].
@@ -157,14 +157,14 @@ fn run_with(
     options.check_cancel()?;
     let output = convert::open_output(&options)?;
 
-    // The program writes decrypted files into a folder of this run's own
-    // under the app's cache folder, beside the identities request's: not
-    // the system's temporary folder, which can be a small RAM disk that no
-    // check measures (#1134), and not the output folder, which holds only
-    // output (#1402). The folder is deleted when the run ends, whichever
+    // The program writes decrypted files into a directory of this run's own
+    // under the app's cache directory, beside the identities request's: not
+    // the system's temporary directory, which can be a small RAM disk that no
+    // check measures (#1134), and not the output directory, which holds only
+    // output (#1402). The directory is deleted when the run ends, whichever
     // way it ends; what a killed run left is deleted by the next request
     // and by the sweep when the app starts.
-    let scratch_root = options.cache_dir.join(IMESSAGE_READER_FOLDER);
+    let scratch_root = options.cache_dir.join(IMESSAGE_READER_DIRECTORY);
     let report = {
         let scratch = ScratchDir::create(&scratch_root)?;
         check_headroom(
@@ -202,8 +202,8 @@ fn options_from_export_config(config: &ExporterConfig) -> Result<ExportOptions> 
         config,
         platform,
         source.attachment_root.as_deref().map(Path::new),
-        ATTACHMENT_FOLDER_MISSING,
-        "An attachment folder was given, but iPhone backups keep attachments inside the backup, so it will be ignored.",
+        ATTACHMENT_DIRECTORY_MISSING,
+        "An attachment directory was given, but iPhone backups keep attachments inside the backup, so it will be ignored.",
     )?;
     check_macos_only_path(
         config,
@@ -217,7 +217,7 @@ fn options_from_export_config(config: &ExporterConfig) -> Result<ExportOptions> 
     let attachment_embed = attachment_embed_from_copy_method(&source.copy_method)?;
 
     // Create the output directory, refused when it is or holds the database,
-    // the backup or the attachment folder a Mac export reads, because
+    // the backup or the attachment directory a Mac export reads, because
     // `convert` cleans it through ExportWriter::open.
     let mut inputs = vec![db_path.clone()];
     if platform == Platform::MacOs
@@ -249,7 +249,7 @@ fn options_from_export_config(config: &ExporterConfig) -> Result<ExportOptions> 
     })
 }
 
-/// The bytes the program decrypts into its scratch folder before it reads
+/// The bytes the program decrypts into its scratch directory before it reads
 /// anything: an encrypted iPhone backup's Messages and Contacts databases,
 /// each about the size of its encrypted copy in the backup. Attachments are
 /// decrypted one at a time and deleted once read, which the check's slack
@@ -285,14 +285,14 @@ fn platform_for(source: &AppleConfig, db_path: &Path) -> Result<Platform> {
     }
 }
 
-/// Tell a backup folder from a database file by layout: a folder holding the
+/// Tell a backup directory from a database file by layout: a directory holding the
 /// Messages database at its hashed path is an iPhone backup, a file is a
 /// Mac `chat.db`. Anything else is treated as a Mac path so the missing
 /// database is what gets reported.
 fn detect_platform(db_path: &Path) -> Result<Platform> {
     if db_path.ends_with(MESSAGES_DB_IN_IOS_BACKUP) {
         bail!(
-            "{} is the Messages database inside an iPhone backup; choose the backup folder itself.",
+            "{} is the Messages database inside an iPhone backup; choose the backup directory itself.",
             db_path.display()
         );
     }
@@ -324,7 +324,7 @@ fn check_macos_only_path(
 }
 
 /// The backup must be laid out as the platform expects: a messages
-/// database file on macOS; on iOS a backup folder with its manifest and,
+/// database file on macOS; on iOS a backup directory with its manifest and,
 /// when the backup is not encrypted, the database at its hashed path.
 fn check_db_path(platform: Platform, db_path: &Path) -> Result<()> {
     match platform {

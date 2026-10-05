@@ -46,14 +46,14 @@ export async function invokeCancel(): Promise<void> {
 }
 
 /**
- * The staged folder `summarize_staging` and `transcode_staging` act on.
+ * The staged directory `summarize_staging` and `transcode_staging` act on.
  *
- * It carries no media settings: `extract` recorded the run's in the folder,
+ * It carries no media settings: `extract` recorded the run's in the directory,
  * and both commands read them from there, so they work to the values the
  * Import Run was started with.
  *
  * It carries no Staging Directory either. The desktop process keeps the
- * setting and the folders it made under it, and acts on a folder it made
+ * setting and the directories it made under it, and acts on a directory it made
  * wherever the setting points now, so changing the setting never strands a
  * run that started under the earlier one.
  */
@@ -61,7 +61,7 @@ export interface StagingConfig {
   staging_dir: string;
 }
 
-/** The Staging Directory, and the folder used when Settings name none. */
+/** The Staging Directory, and the directory used when Settings name none. */
 export interface StagingRoot {
   root: string;
   defaultRoot: string;
@@ -74,15 +74,15 @@ export async function invokeStagingRoot(): Promise<StagingRoot> {
 
 /**
  * Store the Staging Directory. An empty string goes back to the default.
- * Folders made under the earlier setting keep working.
+ * Directories made under the earlier setting keep working.
  */
 export async function invokeSetStagingRoot(root: string): Promise<StagingRoot> {
   return invoke("set_staging_root", { root });
 }
 
 /**
- * Make a new staging folder under the Staging Directory and return its path.
- * `label` is the Import source, or `export` for Export.
+ * Make a new run directory under the Staging Directory and return its path.
+ * `label` is the Import source.
  */
 export async function invokeCreateStagingDir(label: string): Promise<string> {
   return invoke("create_staging_dir", { label });
@@ -112,7 +112,7 @@ export interface OwnerIdentityCount {
   received: number;
 }
 
-/** What a staged folder holds, recomputed for the first review. */
+/** What a staged directory holds, recomputed for the first review. */
 export interface StagingSummary {
   conversations: number;
   messages: number;
@@ -124,11 +124,11 @@ export interface StagingSummary {
   forecasts: AttachmentForecast[];
   /** Largest single attachment the upload accepts; what the verdicts were measured against. */
   assetMaxBytes: number;
-  /** The attachment mode Staging recorded in the folder, under the form's name for it. */
+  /** The attachment mode Staging recorded in the directory, under the form's name for it. */
   mediaMode: AttachmentMediaMode;
 }
 
-/** Recompute what a staged folder holds, for the first review. */
+/** Recompute what a staged directory holds, for the first review. */
 export async function invokeSummarizeStaging(config: StagingConfig): Promise<StagingSummary> {
   return invoke("summarize_staging", {
     args: { stagingDir: config.staging_dir },
@@ -136,7 +136,7 @@ export async function invokeSummarizeStaging(config: StagingConfig): Promise<Sta
 }
 
 /**
- * Run the convert/compress pass over a staged folder, after the first gate
+ * Run the convert/compress pass over a staged directory, after the first gate
  * approves it. Reports through the `extract:*` events like every other long
  * job, so `awaitTauriJob` drives it exactly as it drives extract and push.
  */
@@ -147,8 +147,8 @@ export async function invokeTranscodeStaging(config: StagingConfig): Promise<voi
 }
 
 /**
- * Delete a staging folder — the decline path's terminal action: closing an
- * review without approving deletes the folder outright.
+ * Delete a run directory — the decline path's terminal action: closing an
+ * review without approving deletes the directory outright.
  */
 export async function invokeDeleteStaging(config: { staging_dir: string }): Promise<void> {
   return invoke("delete_staging", {
@@ -157,9 +157,9 @@ export async function invokeDeleteStaging(config: { staging_dir: string }): Prom
 }
 
 /**
- * Read the Import Run record kept in a staging folder
+ * Read the Import Run record kept in a run directory
  * (`read_import_run_record`): what a paused run's earlier parts recorded.
- * Null when the folder holds none. The caller checks its shape.
+ * Null when the directory holds none. The caller checks its shape.
  */
 export async function invokeReadImportRunRecord(config: {
   staging_dir: string;
@@ -169,7 +169,7 @@ export async function invokeReadImportRunRecord(config: {
   });
 }
 
-/** Write the Import Run record into its staging folder (`save_import_run_record`). */
+/** Write the Import Run record into its run directory (`save_import_run_record`). */
 export async function invokeSaveImportRunRecord(config: {
   staging_dir: string;
   record: unknown;
@@ -283,7 +283,7 @@ export interface PullConfig {
   skip_attachments: boolean;
 }
 
-/** Download conversations from a server into a folder. */
+/** Download conversations from a server into a directory. */
 export async function invokePull(config: PullConfig): Promise<void> {
   return invoke("pull", {
     args: {
@@ -317,7 +317,53 @@ export const EXPORT_FORMATS = [
 export type ExportFormat = (typeof EXPORT_FORMATS)[number]["id"];
 
 /**
- * Rewrite an export folder into another format.
+ * The directory an Export or Convert gets of its own in the Export Directory,
+ * and where an Export keeps its in-between files inside it.
+ */
+export interface ExportDir {
+  /** Where the result lands unless another destination is chosen. */
+  dir: string;
+  /** Where an Export pulls its JSON Lines before converting them. */
+  pulled: string;
+  /** Where an Export's conversion writes when the result lands in `dir`. */
+  converting: string;
+}
+
+/** The Export Directory, for Settings. */
+export async function invokeExportDirectory(): Promise<string> {
+  return invoke("export_directory");
+}
+
+/**
+ * Make the directory of a new Export or Convert in the Export Directory.
+ * `chosen` is the destination the person chose, or empty; one that holds the
+ * Export Directory is refused before anything is made.
+ */
+export async function invokeCreateExportDir(
+  kind: "export" | "convert",
+  format: ExportFormat,
+  chosen: string,
+): Promise<ExportDir> {
+  return invoke("create_export_dir", { kind, format, chosen: chosen || null });
+}
+
+/**
+ * Finish an Export's or Convert's directory after it succeeded: its
+ * in-between files are deleted and only the result is left. Returns the
+ * directory, or null when the result went elsewhere and the directory was
+ * deleted.
+ */
+export async function invokeFinishExportDir(dir: string): Promise<string | null> {
+  return invoke("finish_export_dir", { dir });
+}
+
+/** Delete an Export's or Convert's directory after it failed or was cancelled. */
+export async function invokeDiscardExportDir(dir: string): Promise<void> {
+  return invoke("discard_export_dir", { dir });
+}
+
+/**
+ * Rewrite an export directory into another format.
  *
  * `input_dir` and `output_dir` must differ: `message-reexport` canonicalizes
  * both and refuses to write into its own input.
@@ -346,12 +392,12 @@ export interface FfmpegToolsProbe {
   error: string | null;
 }
 
-/** Check whether ffmpeg and ffprobe are available at this folder. */
+/** Check whether ffmpeg and ffprobe are available at this directory. */
 export async function probeFfmpegTools(dir: string | null): Promise<FfmpegToolsProbe> {
   return invoke("probe_ffmpeg_tools", { dir });
 }
 
-/** Save the ffmpeg tools folder and check that the tools are there. */
+/** Save the ffmpeg tools directory and check that the tools are there. */
 export async function setFfmpegToolsDir(dir: string | null): Promise<FfmpegToolsProbe> {
   return invoke("set_ffmpeg_tools_dir", { dir });
 }
@@ -361,7 +407,7 @@ export interface HomeDirInfo {
   os: string;
 }
 
-/** User home folder and operating system name from the desktop backend. */
+/** User home directory and operating system name from the desktop backend. */
 export async function invokeHomeDir(): Promise<HomeDirInfo> {
   return invoke("home_dir");
 }
@@ -379,7 +425,7 @@ export async function invokePathStat(path: string): Promise<PathStat> {
   return invoke("path_stat", { path });
 }
 
-/** Whether an iOS backup folder is encrypted, or null when unknown. */
+/** Whether an iOS backup directory is encrypted, or null when unknown. */
 export async function invokeIosBackupEncrypted(path: string): Promise<boolean | null> {
   return invoke("ios_backup_encrypted", { path });
 }

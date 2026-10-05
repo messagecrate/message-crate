@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Checkbox from "../../components/Checkbox";
 import { CheckIcon, XIcon } from "../../components/icons";
+import OpenPathButton from "../../components/OpenPathButton";
 import PathPicker from "../../components/PathPicker";
 import PlainButton from "../../components/PlainButton";
 import { getBaseUrl } from "../../lib/api";
@@ -10,7 +11,7 @@ import {
   getOpenToNetwork,
   isOwnAddress,
   type LocalServerStatus,
-  openDataFolder,
+  openDataDirectory,
   setLocalServerOpenToNetwork,
   setOpenToNetwork,
 } from "../../lib/localServer";
@@ -18,6 +19,7 @@ import { readPref, removePref, writePref } from "../../lib/storage";
 import { getRememberImporterPaths, setRememberImporterPaths } from "../../lib/system-settings";
 import {
   type FfmpegToolsProbe,
+  invokeExportDirectory,
   invokeSetStagingRoot,
   invokeStagingRoot,
   probeFfmpegTools,
@@ -132,11 +134,11 @@ function ThirdPartySoftware() {
 }
 
 /**
- * Where the Message Crate this app starts keeps everything. The folder is the
+ * Where the Message Crate this app starts keeps everything. The directory is the
  * whole Message Crate, so it is what a person copies to back it up; the app
  * opens it rather than naming a path to find.
  */
-function DataFolder() {
+function DataDirectory() {
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(getOpenToNetwork);
   const [server, setServer] = useState<LocalServerStatus | null>(null);
@@ -160,19 +162,19 @@ function DataFolder() {
     <div className="mt-8">
       <h3 className={sectionHeading}>Message Crate on this computer</h3>
       <p className="m-0 max-w-prose text-[0.875rem] text-text">
-        The Message Crate this app starts keeps its database and attachments in one folder. A copy
-        of that folder is a backup.
+        The Message Crate this app starts keeps its database and attachments in one directory. A
+        copy of that directory is a backup.
       </p>
       <PlainButton
         className="mt-2 rounded border border-border px-3 py-1.5 text-[0.875rem] text-text hover:bg-elevated"
         onPress={() => {
           setError(null);
-          openDataFolder().catch((caught: unknown) => {
+          openDataDirectory().catch((caught: unknown) => {
             setError(caught instanceof Error ? caught.message : String(caught));
           });
         }}
       >
-        Open data folder
+        Open data directory
       </PlainButton>
       {error ? (
         <p className="m-0 mt-1 text-[0.75rem] text-danger" role="alert">
@@ -205,6 +207,52 @@ function DataFolder() {
       {networkError ? (
         <p className="m-0 mt-1 text-[0.75rem] text-danger" role="alert">
           {networkError}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Where each Export and Convert gets a directory of its own, unless the
+ * person chooses another one on its screen. The desktop process keeps it in
+ * the app-data directory; the button opens it.
+ */
+function ExportDirectory() {
+  const [path, setPath] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    invokeExportDirectory().then(
+      (dir) => {
+        if (live) setPath(dir);
+      },
+      (caught: unknown) => {
+        if (live) setError(caught instanceof Error ? caught.message : String(caught));
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
+  return (
+    <div className="mt-8">
+      <h3 className={sectionHeading}>Exports</h3>
+      <p className="m-0 max-w-prose text-[0.875rem] text-text">
+        Each Export and Convert gets a directory of its own in the Export Directory, unless you
+        choose another directory to save to.
+      </p>
+      {path ? (
+        <OpenPathButton
+          path={path}
+          className="mt-2 max-w-full border-0 bg-transparent p-0 text-left text-[0.875rem] text-accent underline-offset-2 [overflow-wrap:anywhere] hover:underline"
+        >
+          {path}
+        </OpenPathButton>
+      ) : null}
+      {error ? (
+        <p className="m-0 mt-1 text-[0.75rem] text-danger" role="alert">
+          {error}
         </p>
       ) : null}
     </div>
@@ -282,7 +330,7 @@ export function SystemSection() {
   // The desktop process keeps the setting and decides what it takes: every
   // value typed is sent, and a refusal is shown as the desktop process gave
   // it, so the window holds no rule of its own. An empty value goes back to
-  // the default. A run already staged keeps the folder it was made in; the
+  // the default. A run already staged keeps the directory it was made in; the
   // new setting applies to runs started after it.
   const stagingSaveGen = useRef(0);
   const lastStagingSave = useRef<Promise<unknown>>(Promise.resolve());
@@ -304,7 +352,7 @@ export function SystemSection() {
   };
 
   // A value the desktop process refused stays in the field until it is left.
-  // The field then shows the folder the desktop process holds, read once the
+  // The field then shows the directory the desktop process holds, read once the
   // last save has answered, so a value accepted after the refusal is never
   // hidden behind the one shown before it.
   const onStagingPathBlur = () => {
@@ -339,8 +387,8 @@ export function SystemSection() {
       <div>
         <AppVersion />
         <p className="m-0 mt-8 text-[0.875rem] text-muted">
-          System settings (staging directory, ffmpeg tools, and remembered importer paths) are
-          available in the desktop app.
+          System settings (the Staging Directory, remembered importer paths, ffmpeg tools, and the
+          Export Directory) are available in the desktop app.
         </p>
       </div>
     );
@@ -371,7 +419,7 @@ export function SystemSection() {
           </p>
         ) : null}
         <p className={settingsHelp}>
-          Temporary files for Import and Export are written here. For example {helpExample}
+          Each Import Run gets a directory here while it runs. For example {helpExample}
         </p>
       </div>
 
@@ -408,7 +456,7 @@ export function SystemSection() {
             />
           </div>
           <p className={settingsHelp}>
-            Folder must contain both ffmpeg and ffprobe. Leave blank to use system PATH.{" "}
+            Directory must contain both ffmpeg and ffprobe. Leave blank to use system PATH.{" "}
             <a
               href="https://messagecrate.app/docs/user/features/messages/attachments-and-media/"
               target="_blank"
@@ -427,7 +475,9 @@ export function SystemSection() {
         </div>
       </div>
 
-      <DataFolder />
+      <ExportDirectory />
+
+      <DataDirectory />
 
       <div className="mt-8">
         <AppVersion />

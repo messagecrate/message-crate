@@ -1,4 +1,4 @@
-//! Test helpers for crates that write this crate's backup into a folder.
+//! Test helpers for crates that write this crate's backup into a directory.
 
 use std::fs;
 use std::path::Path;

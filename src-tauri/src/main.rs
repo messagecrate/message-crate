@@ -11,12 +11,14 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod export_directories;
 mod local_server;
-mod staging_folders;
+mod staging_directories;
 mod state;
 
+use export_directories::ExportDirectories;
 use local_server::LocalServer;
-use staging_folders::StagingFolders;
+use staging_directories::StagingDirectories;
 use state::AppState;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
@@ -40,18 +42,26 @@ fn main() {
         .manage(app_state)
         // The Message Crate this app starts for itself, when asked to.
         .manage(LocalServer::default())
-        // The Staging Directory and the staging folders made under it, kept
-        // in the app's data folder, and the sweep of the cache folder's
-        // scratch folders.
+        // The Staging Directory and the run directories made under it, kept
+        // in the app-data directory, and the sweep of the cache directory's
+        // scratch directories.
         .setup(|app| {
-            let record = app
-                .path()
-                .app_data_dir()?
-                .join(staging_folders::RECORD_FILE);
-            app.manage(StagingFolders::at(record, dirs::home_dir()));
-            // What killed runs left in the cache folder's scratch folders
+            let app_data_dir = app.path().app_data_dir()?;
+            let record = app_data_dir.join(staging_directories::RECORD_FILE);
+            app.manage(StagingDirectories::at(record, dirs::home_dir()));
+            // The Export Directory, where each Export and Convert gets a
+            // directory of its own.
+            let exports = ExportDirectories::in_app_data(&app_data_dir);
+            // What an Export or Convert the app did not see to its end left
+            // in the Export Directory is deleted now, on a thread of its own.
+            // A run another app process has under way holds its marker and
+            // is kept.
+            let exports_root = exports.root().to_path_buf();
+            std::thread::spawn(move || export_directories::sweep(&exports_root));
+            app.manage(exports);
+            // What killed runs left in the cache directory's scratch directories
             // (decrypted databases, attachment payloads) is deleted now,
-            // not at the next run of the same kind. A folder a running job
+            // not at the next run of the same kind. A directory a running job
             // holds is kept. On a thread of its own, so a large leftover
             // does not hold up the window.
             let cache_dir = commands::paths::app_cache_dir(app.handle())?;
@@ -73,9 +83,13 @@ fn main() {
             commands::local_server::start_local_server,
             commands::local_server::local_server_status,
             commands::local_server::set_open_to_network,
-            commands::local_server::open_data_folder,
+            commands::local_server::open_data_directory,
             commands::push::push,
             commands::pull::pull,
+            commands::exports::export_directory,
+            commands::exports::create_export_dir,
+            commands::exports::finish_export_dir,
+            commands::exports::discard_export_dir,
             commands::staging::staging_root,
             commands::staging::set_staging_root,
             commands::staging::create_staging_dir,

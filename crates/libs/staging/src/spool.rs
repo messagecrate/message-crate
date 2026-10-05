@@ -9,8 +9,8 @@
 //! back one file at a time.
 //!
 //! The spool is scratch data, not output: unencrypted attachments no screen
-//! names. So it lives in a [`ScratchDir`] under the app's cache folder,
-//! never in the output folder. The folder goes when the spool is dropped,
+//! names. So it lives in a [`ScratchDir`] under the app's cache directory,
+//! never in the output directory. The directory goes when the spool is dropped,
 //! whichever way the run ends, and what a killed run left is deleted by the
 //! next spool and by the sweep when the app starts
 //! (`message_crate_core::sweep_scratch`).
@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use anyhow::{Context, Result};
-use message_crate_core::{ATTACHMENT_SPOOL_FOLDER, ScratchDir};
+use message_crate_core::{ATTACHMENT_SPOOL_DIRECTORY, ScratchDir};
 use message_ir::IrAttachment;
 use sha2::{Digest, Sha256};
 
@@ -31,9 +31,9 @@ use crate::write_queue::AttachmentSource;
 /// Content-addressed store of attachment payloads for one run.
 #[derive(Debug)]
 pub struct AttachmentSpool {
-    /// The spool's scratch root, under the app's cache folder.
+    /// The spool's scratch root, under the app's cache directory.
     root: PathBuf,
-    /// The folder the spooled payloads are copied into once the backup is
+    /// The directory the spooled payloads are copied into once the backup is
     /// read, when the spool is told; see [`AttachmentSpool::new`].
     copy_dir: Option<PathBuf>,
     state: Mutex<SpoolState>,
@@ -42,9 +42,9 @@ pub struct AttachmentSpool {
 /// What the spool has written, behind one lock.
 #[derive(Debug, Default)]
 struct SpoolState {
-    /// This run's folder, made when the first payload arrives. Dropping it
-    /// deletes the folder.
-    folder: Option<ScratchDir>,
+    /// This run's directory, made when the first payload arrives. Dropping it
+    /// deletes the directory.
+    directory: Option<ScratchDir>,
     /// Size of each spooled payload by its SHA-256, for the progress totals.
     sizes: HashMap<String, u64>,
     /// The sum of `sizes`.
@@ -54,29 +54,29 @@ struct SpoolState {
 impl SpoolState {
     /// The spooled file for `digest`, when one was spooled.
     fn path(&self, digest: &str) -> Option<PathBuf> {
-        let folder = self.folder.as_ref()?;
+        let directory = self.directory.as_ref()?;
         self.sizes
             .contains_key(digest)
-            .then(|| folder.path().join(digest))
+            .then(|| directory.path().join(digest))
     }
 }
 
 impl AttachmentSpool {
-    /// A spool whose folder goes under `cache_dir`, the app's cache folder.
+    /// A spool whose directory goes under `cache_dir`, the app's cache directory.
     /// Nothing is made on disk until the first payload arrives.
     pub fn new(cache_dir: &Path) -> Self {
         Self {
-            root: cache_dir.join(ATTACHMENT_SPOOL_FOLDER),
+            root: cache_dir.join(ATTACHMENT_SPOOL_DIRECTORY),
             copy_dir: None,
             state: Mutex::new(SpoolState::default()),
         }
     }
 
-    /// Name `copy_dir`, the folder the payloads are copied into once the
+    /// Name `copy_dir`, the directory the payloads are copied into once the
     /// backup is read. Each payload then also checks that the disk holding
     /// it still has room for the copy of everything spooled so far, so a
     /// run that will not fit stops while the backup is read, not after.
-    /// When the cache folder is on that same disk, the spool has already
+    /// When the cache directory is on that same disk, the spool has already
     /// taken its share of what is free.
     #[must_use]
     pub fn with_copy_dir(mut self, copy_dir: &Path) -> Self {
@@ -95,7 +95,7 @@ impl AttachmentSpool {
     ///
     /// # Errors
     ///
-    /// Returns an error when the spool's folder cannot be made, its disk
+    /// Returns an error when the spool's directory cannot be made, its disk
     /// has no room for the payload, or the payload file cannot be written.
     pub fn put(&self, bytes: &[u8]) -> Result<String> {
         let digest = hex::encode(Sha256::digest(bytes));
@@ -103,22 +103,22 @@ impl AttachmentSpool {
         if state.sizes.contains_key(&digest) {
             return Ok(digest);
         }
-        let folder = match &mut state.folder {
-            Some(folder) => folder.path().to_path_buf(),
+        let directory = match &mut state.directory {
+            Some(directory) => directory.path().to_path_buf(),
             empty => empty
                 .insert(ScratchDir::create(&self.root)?)
                 .path()
                 .to_path_buf(),
         };
-        check_headroom(&folder, bytes.len() as u64, Disk::Cache)?;
+        check_headroom(&directory, bytes.len() as u64, Disk::Cache)?;
         if let Some(copy_dir) = &self.copy_dir {
             let copied = state.spooled_bytes.saturating_add(bytes.len() as u64);
             check_headroom(copy_dir, copied, Disk::Staging)?;
         }
-        let path = folder.join(&digest);
+        let path = directory.join(&digest);
         // Written under a temporary name first, so a file under a digest is
         // always the whole payload.
-        let tmp = folder.join(format!("{digest}.tmp"));
+        let tmp = directory.join(format!("{digest}.tmp"));
         fs::write(&tmp, bytes).with_context(|| format!("write {}", tmp.display()))?;
         fs::rename(&tmp, &path).with_context(|| format!("rename {}", path.display()))?;
         state.sizes.insert(digest.clone(), bytes.len() as u64);
@@ -166,17 +166,17 @@ mod tests {
         );
         assert_eq!(spool.put(b"hello").unwrap(), digest, "spooled once");
         let path = spool.path(&digest).unwrap();
-        assert!(path.starts_with(cache.path().join(ATTACHMENT_SPOOL_FOLDER)));
+        assert!(path.starts_with(cache.path().join(ATTACHMENT_SPOOL_DIRECTORY)));
         assert_eq!(fs::read(&path).unwrap(), b"hello");
         assert_eq!(spool.size(&digest), Some(5));
         assert!(spool.path("0000").is_none());
         drop(spool);
-        assert!(names_in(&cache.path().join(ATTACHMENT_SPOOL_FOLDER)).is_empty());
+        assert!(names_in(&cache.path().join(ATTACHMENT_SPOOL_DIRECTORY)).is_empty());
     }
 
     /// A spool that is never written to makes nothing on disk.
     #[test]
-    fn an_unused_spool_makes_no_folder() {
+    fn an_unused_spool_makes_no_directory() {
         let cache = tempfile::tempdir().unwrap();
         drop(AttachmentSpool::new(cache.path()));
         assert!(names_in(cache.path()).is_empty());
@@ -191,7 +191,7 @@ mod tests {
         let kept = running.put(b"kept").unwrap();
         let killed = cache
             .path()
-            .join(ATTACHMENT_SPOOL_FOLDER)
+            .join(ATTACHMENT_SPOOL_DIRECTORY)
             .join("request-killed");
         fs::create_dir_all(&killed).unwrap();
         fs::write(killed.join(".lock"), b"").unwrap();

@@ -1,9 +1,9 @@
-//! Upload a folder of conversation files into Message Crate.
+//! Upload a directory of conversation files into Message Crate.
 //!
 //! # What this module does
 //!
-//! An export folder has one `.jsonl` file per conversation, plus an
-//! `attachments/` folder of media files. A push:
+//! An export directory has one `.jsonl` file per conversation, plus an
+//! `attachments/` directory of media files. A push:
 //!
 //! 1. Logs in to the server with the session token.
 //! 2. For each conversation file, finds attachments, uploads any the server
@@ -46,7 +46,7 @@ use anyhow::{Context, Result, bail};
 use message_crate_core::{CancelFlag, check_cancel};
 
 use crate::AuthInfo;
-use crate::folder::{detect_source, file_label, input_folder, list_jsonl_files};
+use crate::directory::{detect_source, file_label, input_directory, list_jsonl_files};
 use crate::http::{HttpSession, ImportOutcome};
 use crate::journal::{self, RunJournal};
 use crate::pipeline::{ChunkStep, ImportPipeline};
@@ -92,7 +92,7 @@ pub const DEFAULT_PREPARE_WORKERS: usize = 2;
 /// Settings for one full push run (paths, URL, flags, limits).
 #[derive(Debug, Clone)]
 pub struct PushConfig {
-    /// A folder of JSON Lines conversation files, or one such file.
+    /// A directory of JSON Lines conversation files, or one such file.
     pub input: PathBuf,
     /// Server base URL, e.g. `http://127.0.0.1:8080`.
     pub base_url: String,
@@ -224,13 +224,13 @@ struct RunPaths {
 }
 
 impl RunPaths {
-    /// Resolve the export folder and the three side files, honouring overrides in `cfg`.
+    /// Resolve the export directory and the three side files, honouring overrides in `cfg`.
     ///
     /// # Errors
     ///
-    /// Returns an error when the input folder does not exist.
+    /// Returns an error when the input directory does not exist.
     fn resolve(cfg: &PushConfig) -> Result<Self> {
-        let input = input_folder(&cfg.input)?;
+        let input = input_directory(&cfg.input)?;
         Ok(Self {
             report: cfg
                 .report_path
@@ -695,7 +695,7 @@ fn settle(
 ///
 /// # Errors
 ///
-/// Returns an error when the folder cannot be created or the file cannot be written.
+/// Returns an error when the directory cannot be created or the file cannot be written.
 fn write_report(path: &Path, report: &PushReport) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;

@@ -391,7 +391,7 @@ fn one_to_one(sender: Option<&str>, label: Option<&str>) -> Conversation {
 /// (`conversation_7.csv`), so the number alone would merge two exports'
 /// unrelated groups; with the earliest row it tells apart the files of one
 /// export whose rows are the same, such as one message sent to several
-/// people who never answered. The folder is left out, so the id does not
+/// people who never answered. The directory is left out, so the id does not
 /// depend on where the export is put. The id changes when the oldest
 /// messages are gone from the phone or OpenExtract numbers its files anew:
 /// the group then comes in as a second conversation, never merged with

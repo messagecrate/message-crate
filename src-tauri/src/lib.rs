@@ -14,6 +14,7 @@
 //! file exists alongside `main.rs`. Both declare the same modules.
 
 pub mod commands;
+pub mod export_directories;
 pub mod local_server;
-pub mod staging_folders;
+pub mod staging_directories;
 pub mod state;

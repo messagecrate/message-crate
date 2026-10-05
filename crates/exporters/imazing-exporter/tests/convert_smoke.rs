@@ -54,7 +54,7 @@ fn convert_messages_keys_the_chat_by_its_number() {
     assert_csv_row(&out, &[("text", "Hi Bob"), ("direction", "outgoing")]);
     // The third row is an iMessage carrying an attachment, so it proves both
     // that the service column follows the source and that the attachment file
-    // name reached the row rather than only the folder.
+    // name reached the row rather than only the directory.
     let rows = csv_rows(&out);
     let photo = rows
         .iter()

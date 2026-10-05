@@ -59,7 +59,7 @@ pub(crate) fn acquire_for_reset(db: &Path) -> Result<OperationLock> {
     })
 }
 
-/// Take the exclusive lock file next to the database, creating its folder if
+/// Take the exclusive lock file next to the database, creating its directory if
 /// needed. `None` when another process holds it.
 fn acquire(db: &Path) -> Result<Option<OperationLock>> {
     let lock_path = lock_path(db);

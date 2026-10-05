@@ -15294,7 +15294,7 @@
               "string",
               "null"
             ],
-            "description": "Absolute path to the staging folder on the client that owns the run."
+            "description": "Absolute path to the run directory on the client that owns the run."
           },
           "started_at": {
             "type": "string",
@@ -17381,7 +17381,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "Absolute path to the staging folder on the client that owns the run."
+                  "description": "Absolute path to the run directory on the client that owns the run."
                 },
                 "started_at": {
                   "type": "string",
@@ -18838,7 +18838,7 @@
             "description": "The stage the run moves to."
           },
           "summary": {
-            "description": "What the person approved at the Review they just passed, when they passed one.\n\nRecorded here rather than at completion so an approval survives a\nreload: the summary shown at a Review is recomputed from the folder, but\nwhat was approved is a different question and only the run\nremembers it. Absent leaves the stored `summary_json` untouched —\nmost stage changes carry nothing, and treating absent as null would\nthrow away the plan the outcome is later judged against."
+            "description": "What the person approved at the Review they just passed, when they passed one.\n\nRecorded here rather than at completion so an approval survives a\nreload: the summary shown at a Review is recomputed from the directory, but\nwhat was approved is a different question and only the run\nremembers it. Absent leaves the stored `summary_json` untouched —\nmost stage changes carry nothing, and treating absent as null would\nthrow away the plan the outcome is later judged against."
           }
         }
       },

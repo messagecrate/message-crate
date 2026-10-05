@@ -3,11 +3,11 @@ title: Export
 description: What the desktop app's Export screen writes, what an export covers, and the formats it offers.
 ---
 
-**Export** writes an account's messages and their attachments to a folder on the computer.
+**Export** writes an account's messages and their attachments to a directory on the computer.
 It reads the Message Crate, never a phone backup.
 
 Export is in the desktop app's sidebar, under **Messages**.
-The browser doesn't show it, because writing a folder of files needs the desktop app.
+The browser doesn't show it, because writing a directory of files needs the desktop app.
 
 Exporting needs the account's export permission, which the Owner sets under **Message Permissions**.
 **Export** stays in the sidebar for an account without it.
@@ -27,14 +27,14 @@ The Export screen has five fields.
 | **Scope** | **Everything** or **Search**. |
 | **Search in** | **Conversations** or **Messages**: the list the search runs on. Shown only when **Scope** is **Search**. |
 | **Search** | The search an export is limited to. Shown only when **Scope** is **Search**. |
-| **Save to** | The folder the export is written into. |
+| **Save to** | The directory the export is written into. Left empty, the export gets a directory of its own in the Export Directory. |
 | **Format** | One of six formats. **JSON Lines (.jsonl)** is the default. |
 
 **Export** starts the run and **Cancel** stops it.
-The **Export** button stays disabled until **Save to** holds a folder, and under **Search** until the search box holds a search.
+Under **Search**, the **Export** button stays disabled until the search box holds a search.
 The desktop app runs one job at a time, so Export waits from the start of an Import Run to its end, its Reviews included, and **Export** stays disabled while **Convert** in Settings runs. A Review holds it back only for the account that started the run; another account logged in on the same desktop app can use it. The screen names the job it waits for.
 A log under the buttons shows what the run is doing.
-A finished run reads `Export complete.` followed by the format and the folder.
+A finished run reads `Export complete.` followed by the format and the directory.
 
 ## Scope
 
@@ -70,36 +70,48 @@ A message imported or trashed while the run is being read does not change what t
 
 | Format | What is written |
 |---|---|
-| **JSON Lines (.jsonl)** | One `.jsonl` file per conversation, attachments in an `attachments/` folder |
-| **JSON (.json)** | One indented `.json` file per conversation, attachments in an `attachments/` folder |
-| **CSV (.csv)** | One `.csv` file per conversation, attachments in an `attachments/` folder. Columns: [CSV columns](/docs/developer/reference/csv-columns/) |
-| **EML (one file per message)** | One folder per conversation, one `.eml` file per message, attachments embedded |
+| **JSON Lines (.jsonl)** | One `.jsonl` file per conversation, attachments in an `attachments/` directory |
+| **JSON (.json)** | One indented `.json` file per conversation, attachments in an `attachments/` directory |
+| **CSV (.csv)** | One `.csv` file per conversation, attachments in an `attachments/` directory. Columns: [CSV columns](/docs/developer/reference/csv-columns/) |
+| **EML (one file per message)** | One directory per conversation, one `.eml` file per message, attachments embedded |
 | **MBOX (.mbox)** | One `.mbox` file per conversation, attachments embedded |
 | **Android XML (smses.xml)** | A single `smses.xml` holding only SMS and MMS, attachments embedded. The log says how many other messages were left out |
-| **EML (SMS Backup+)** | One folder per conversation, one `.eml` file per SMS or MMS in the mail SMS Backup+ writes, attachments embedded. Other messages are left out, and the run's log says how many |
+| **EML (SMS Backup+)** | One directory per conversation, one `.eml` file per SMS or MMS in the mail SMS Backup+ writes, attachments embedded. Other messages are left out, and the run's log says how many |
 
 Export always fetches the messages as JSON Lines first.
 Any other format is written by converting that JSON Lines copy, as part of the same run.
 
 The JSON Lines layout is described in [Export structure](/docs/developer/reference/export-structure/).
 
-## The folder an export writes into
+## The Export Directory
 
-A JSON Lines export writes straight into the **Save to** folder.
+Every export gets a directory of its own in the Export Directory, named `export-` followed by the date, the time and the format, such as `export-2026-10-04-1430-mbox`.
+With **Save to** left empty, the export is written there.
+[**Settings → System**](/docs/user/features/settings/system/) names the Export Directory under **Exports**, and opens it.
+
+The desktop app keeps the Export Directory in the operating system's app-data directory, under `exports`:
+
+| System | Export Directory |
+|---|---|
+| Linux | `~/.local/share/app.messagecrate.desktop/exports` |
+| macOS | `~/Library/Application Support/app.messagecrate.desktop/exports` |
+| Windows | `%APPDATA%\app.messagecrate.desktop\exports` |
+
+An export in any format other than JSON Lines first fetches the messages as JSON Lines into its directory, then converts them.
+When it finishes, the JSON Lines copy is deleted and the directory holds only the result, with the hidden `.message-crate-export` file that marks it as an export, so a later export or conversion into it replaces what it holds.
+A failed or cancelled export deletes its directory, so no copy of the messages is left behind.
+An export the app did not see to its end, because the app was closed or stopped, is deleted the next time the app starts.
+The disk that holds the Export Directory needs room for a second copy of the exported messages and attachments while such an export runs.
+
+## Saving somewhere else
+
+A directory chosen under **Save to** gets the result instead, and the export's directory in the Export Directory holds only the JSON Lines copy while the conversion runs.
+
+A JSON Lines export writes straight into the chosen directory.
 It also keeps a file named `.message-crate-pull-state.jsonl` there, which records the attachments already downloaded from each server and account.
-A later JSON Lines export into the same folder, from the same server and account, skips those attachments.
+A later JSON Lines export into the same directory, from the same server and account, skips those attachments.
+An export into its own directory in the Export Directory deletes that file when it finishes, since nothing exports into that directory again.
 
-An export in any other format first deletes the files of an earlier export from the **Save to** folder.
-It refuses a folder that holds other files and no export, so that nothing unrelated is deleted.
-An empty folder, or one a previous export wrote, is accepted.
-
-## The Staging Directory
-
-An export in any format other than JSON Lines needs two folders, because the conversion reads one folder and writes another.
-The JSON Lines copy goes into the Staging Directory, and the converted files go into the **Save to** folder.
-
-The Staging Directory is `~/message-crate` by default, the same folder Import uses.
-[**Settings → System**](/docs/user/features/settings/system/) changes it under **Staging directory**.
-The export's folder inside it is deleted when the export finishes, including when the conversion fails.
-
-The disk that holds the Staging Directory needs room for a second copy of the exported messages and attachments while such an export runs.
+An export in any other format first deletes the files of an earlier export from the chosen directory.
+It refuses a directory that holds other files and no export, so that nothing unrelated is deleted.
+An empty directory, or one a previous export wrote, is accepted.

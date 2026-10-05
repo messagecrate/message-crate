@@ -64,7 +64,7 @@ fn a_stored_name_gives_its_fingerprint_and_any_other_name_gives_none() {
 }
 
 #[test]
-fn an_upload_session_is_stale_after_a_day_by_its_manifest_or_its_folder() {
+fn an_upload_session_is_stale_after_a_day_by_its_manifest_or_its_directory() {
     let dir = tempfile::tempdir().unwrap();
     let with_manifest = dir.path().join("with-manifest");
     fs::create_dir_all(&with_manifest).unwrap();
@@ -336,7 +336,7 @@ async fn the_sweep_deletes_a_removing_directory_a_crash_left() {
     assert_eq!(left_in_removing(&paths), Vec::<PathBuf>::new());
 }
 
-/// An assets folder whose `.incoming/` holds one of each thing the sweep
+/// An assets directory whose `.incoming/` holds one of each thing the sweep
 /// meets: a `.part` temp two days old, a `.part` temp a live upload is
 /// still writing, a file that is not a `.part`, a multipart session two
 /// days old, and one still being uploaded.
@@ -395,7 +395,7 @@ fn the_incoming_sweep_removes_part_temps_and_stale_sessions_and_nothing_else() {
     assert!(!incoming.stale_session.exists());
     assert!(
         !incoming.stale_session.parent().unwrap().exists(),
-        "the stale session's emptied sha folder goes too"
+        "the stale session's emptied sha directory goes too"
     );
     assert!(incoming.other_file.exists(), "only .part files are temps");
     assert!(

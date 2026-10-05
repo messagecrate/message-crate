@@ -1,6 +1,6 @@
 # message-crate-pull
 
-Download messages from a running server into a local JSON Lines folder (`*.jsonl` plus `attachments/`).
+Download messages from a running server into a local JSON Lines directory (`*.jsonl` plus `attachments/`).
 
 The desktop app **Export** screen uses this crate as a library. Create an API token under **Settings → Account** in the website.
 

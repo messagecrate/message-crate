@@ -11,7 +11,7 @@ use anyhow::{Context, Result};
 use phone::OwnerHandleSet;
 use std::path::{Path, PathBuf};
 
-/// WhatsApp's preferences plist, relative to a folder that holds the
+/// WhatsApp's preferences plist, relative to a directory that holds the
 /// extracted app-group domains: wtsexporter's working directory, or a backup
 /// someone extracted by hand. The Business app keeps the same layout under
 /// its own domain.
@@ -86,10 +86,10 @@ mod tests {
         assert!(log.is_empty(), "{log:?}");
     }
 
-    /// The working directory is searched first, then the backup folder; a
-    /// folder without the domain contributes nothing.
+    /// The working directory is searched first, then the backup directory; a
+    /// directory without the domain contributes nothing.
     #[test]
-    fn a_folder_without_the_plist_yields_no_owner() {
+    fn a_directory_without_the_plist_yields_no_owner() {
         let empty = tempfile::tempdir().unwrap();
         let mut log = Vec::new();
         assert_eq!(

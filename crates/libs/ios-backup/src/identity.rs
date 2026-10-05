@@ -4,7 +4,7 @@
 //! the user starts an iMessage import, before the Import Run is created.
 //! The values come from the `imessage-reader` program, which opens the
 //! source the same way the real run does, so every method (Mac `chat.db`,
-//! iPhone backup folder, jailbreak `sms.db`) and both encryption states go
+//! iPhone backup directory, jailbreak `sms.db`) and both encryption states go
 //! through one code path. The program strips Apple's `P:`, `E:` and `tel:`
 //! prefixes before the values cross the pipe
 //! (`imessage_reader_protocol::bare_address`), the same rule it applies to a
@@ -19,7 +19,7 @@ use message_crate_core::ScratchDir;
 
 use crate::helper::Helper;
 
-/// `Info.plist` → `Phone Number` from an iOS backup folder.
+/// `Info.plist` → `Phone Number` from an iOS backup directory.
 ///
 /// Returns `None` when the file is missing or cannot be parsed. `Info.plist`
 /// is plaintext even in an encrypted backup.
@@ -37,8 +37,8 @@ pub fn ios_backup_phone_number(backup_root: &Path) -> Option<String> {
 /// `chat.account_login`, `message.destination_caller_id`, and (for iOS
 /// backups) `Info.plist` → `Phone Number`, deduplicated.
 ///
-/// An encrypted backup's databases are decrypted into a folder of this
-/// request's own under `scratch_root`, a folder the app owns. The folder is
+/// An encrypted backup's databases are decrypted into a directory of this
+/// request's own under `scratch_root`, a directory the app owns. The directory is
 /// deleted when the request ends, and what a killed request left under
 /// `scratch_root` is deleted before this one starts ([`ScratchDir`]).
 ///
@@ -46,7 +46,7 @@ pub fn ios_backup_phone_number(backup_root: &Path) -> Option<String> {
 ///
 /// Returns an error when the source cannot be opened: missing database,
 /// missing or wrong backup password, not an iPhone backup, or no
-/// `imessage-reader` program to open it with. Also when the scratch folder
+/// `imessage-reader` program to open it with. Also when the scratch directory
 /// cannot be made.
 pub fn backup_identities(
     db_path: &Path,
@@ -78,7 +78,7 @@ fn identities_with(
         scratch_dir: scratch.path().to_path_buf(),
     });
     // The program is stopped (by `finish`, or by its drop on an error)
-    // before the scratch folder is deleted.
+    // before the scratch directory is deleted.
     let mut values = read_identities(spawn(&request)?)?;
     drop(scratch);
     if ios {
@@ -210,7 +210,7 @@ mod tests {
         const ANSWER: &str = r#"echo '{"event":"identities","values":["+15555550110"]}'"#;
 
         /// Shell lines that keep the request in `<dir>/request.json` and
-        /// write a decrypted database into the scratch folder it names, as
+        /// write a decrypted database into the scratch directory it names, as
         /// the real program does for an encrypted backup.
         fn decrypt_into_scratch(dir: &Path) -> String {
             format!(
@@ -232,11 +232,11 @@ echo decrypted > "$scratch/crabapple-sms-x.db""#,
             names
         }
 
-        /// The identities request names a scratch folder of its own under
+        /// The identities request names a scratch directory of its own under
         /// the root the app gave, and once the answer is in, nothing the
         /// program decrypted is left there (#1135).
         #[test]
-        fn the_request_carries_a_scratch_folder_that_is_deleted_after() {
+        fn the_request_carries_a_scratch_directory_that_is_deleted_after() {
             let dir = tempfile::tempdir().unwrap();
             let root = tempfile::tempdir().unwrap();
             let body = format!(
@@ -269,7 +269,7 @@ echo decrypted > "$scratch/crabapple-sms-x.db""#,
         }
 
         /// A program killed while it decrypts leaves its database in the
-        /// scratch folder, and the app deletes the folder all the same.
+        /// scratch directory, and the app deletes the directory all the same.
         #[test]
         fn a_killed_program_leaves_no_decrypted_database() {
             let dir = tempfile::tempdir().unwrap();

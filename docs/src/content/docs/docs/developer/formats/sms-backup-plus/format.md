@@ -56,7 +56,7 @@ Source-field mapping and online cover-key deduplication: [SMS Backup+ mapping](/
 The **EML (SMS Backup+)** export format writes SMS and MMS back out as this mail, through `SmsBackupPlusArchive` in `sms-backup-plus-exporter` (ADR 0021). A message that is not SMS or MMS is left out and counted, and the run's log says how many.
 A message whose service is unknown counts as SMS or MMS when its kind says so, as it does for the Android XML export.
 
-Each conversation is one folder, named as the EML archive names its folders, holding one `.eml` per message, named as the EML archive names its files.
+Each conversation is one directory, named as the EML archive names its directories, holding one `.eml` per message, named as the EML archive names its files.
 
 Every mail carries `Subject` (`SMS with <name>`: the sender of a received message, the other person of a sent one-to-one message, and otherwise a member's number, since the import takes the name as the sender's), `From`, `To`, `Date`, `Message-ID` and `References` (`<…@sms-backup-plus.local>`), `MIME-Version`, `Content-Type`, `Content-Transfer-Encoding`, and:
 

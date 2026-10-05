@@ -124,12 +124,12 @@ fn a_reused_blob_takes_the_export_mime_type_when_the_record_has_one() {
     assert_eq!(stats.missing, 0);
 }
 
-/// An attachment path that climbs out of the export folder is refused even
+/// An attachment path that climbs out of the export directory is refused even
 /// when its fingerprint is already stored and the file is never read, because
 /// `attachments.path` keeps the path as sent and an Export later writes the
 /// file there. The refusal is the one a new fingerprint gets.
 #[test]
-fn a_path_that_leaves_the_export_folder_is_refused_whether_or_not_its_fingerprint_is_stored() {
+fn a_path_that_leaves_the_export_directory_is_refused_whether_or_not_its_fingerprint_is_stored() {
     let tmp = TempDir::new().unwrap();
     let export_dir = tmp.path().join("export");
     let assets_dir = tmp.path().join("assets");

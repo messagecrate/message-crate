@@ -159,10 +159,10 @@ released versions carry their date on the heading.
 - 2026-10-01 **The desktop app is a Message Crate on its own.** The
   installer now carries the server and the website. When you open the app
   and nothing answers on this computer at its usual address, the app starts
-  its own Message Crate, keeps its data in your system's app-data folder,
+  its own Message Crate, keeps its data in your system's app-data directory,
   and stops it when the app closes. A Message Crate already running there,
   such as one in Docker, is used as it is. Settings → System has an **Open
-  data folder** button. Trying Message Crate no longer needs Docker.
+  data directory** button. Trying Message Crate no longer needs Docker.
 - 2026-10-01 **Every new Message Crate starts with the Demo Account.** A
   Message Crate with no database creates one holding the Demo Account and
   its Demo Data, about 54,000 messages, before it opens its doors, whether
@@ -230,12 +230,24 @@ released versions carry their date on the heading.
   unencrypted backup is no longer needed.
 - 2026-10-03 **Export and Convert write SMS Backup+ mail.** Choose **EML
   (SMS Backup+)** to get your SMS and MMS back as the mail SMS Backup+
-  writes, one folder per conversation, which the SMS Backup+ import reads
+  writes, one directory per conversation, which the SMS Backup+ import reads
   again and any mail program can keep. Other messages are left out, and the
   log says how many.
 
 ### Design
 
+- 2026-10-04 **Every Export and Convert gets a directory of its own in the
+  Export Directory.** An export no longer needs a directory chosen before it
+  starts: it is written into a new directory named for its date, time and
+  format, such as `export-2026-10-04-1430-mbox`, in the Export Directory,
+  which Settings → System names and opens. Convert does the same when no
+  output directory is chosen. A directory can still be chosen for either.
+  The JSON Lines an export converts from now wait in that directory instead
+  of the Staging Directory, and are deleted when it finishes, leaving only
+  the result; a failed or cancelled export deletes its directory, and one
+  the app did not see to its end is deleted the next time it starts.
+- 2026-10-04 **Screens, the user guide and the glossary say "directory"
+  everywhere they said "folder".**
 - 2026-10-04 **A reaction travels on the message it reacts to.** An Apple
   Messages tapback or emoji reaction is written into an export on the
   message it reacts to, with the person who reacted named, and an import
@@ -290,7 +302,7 @@ released versions carry their date on the heading.
   every existing token stops working and everyone logs in again. The
   database file is `data/messagecrate.db` and several tables are renamed, so
   an existing database is rebuilt empty and needs a fresh import. The
-  staging folder defaults to `~/message-crate`. The compose service is
+  Staging Directory defaults to `~/message-crate`. The compose service is
   `server`, and the desktop app installs as a new application beside any
   older copy.
 - 2026-10-01 **The user guide starts with the desktop app.** It is now in
@@ -443,11 +455,11 @@ released versions carry their date on the heading.
   database, and reading an SMS Backup & Restore, GO SMS Pro or SMS Backup+
   file sets its attachments aside, both as plain copies. These working
   files used to sit in the Staging Directory, and an app closed or stopped
-  mid-run left them there until a later run used the same folder. They now
-  sit in the app's cache folder, are deleted when the run ends, whether it
+  mid-run left them there until a later run used the same directory. They now
+  sit in the app's cache directory, are deleted when the run ends, whether it
   finished or failed, and are deleted when the app next starts if it was
   stopped. Before it writes, Staging now checks that the disk holding the
-  Staging Directory and the disk holding the cache folder have room, and
+  Staging Directory and the disk holding the cache directory have room, and
   stops with the space it needs while it reads the backup, not after.
 - 2026-10-04 **A discarded import keeps its errors, and an import keeps its
   converted files when they cannot be read back.** Discarding an import,
@@ -460,22 +472,22 @@ released versions carry their date on the heading.
 - 2026-10-04 An internal fix to how an upload finishes an Import Run;
   nothing you see changes.
 - 2026-10-04 **An iMazing import no longer reports a Live Photo choice as an
-  error, and leaves WhatsApp chat folders' extra files alone.** When two
+  error, and leaves WhatsApp chat directories' extra files alone.** When two
   photo rows named one picture, the import gave its Live Photo video to the
   first of them, as it should, but its report listed that as an error. The
   report now lists it as a note. The import also looked for Live Photo
-  videos and link previews in WhatsApp chat folders, though only iMazing's
+  videos and link previews in WhatsApp chat directories, though only iMazing's
   Messages export holds them. It could attach a video beside a WhatsApp
-  photo to that photo's message. It also counted the folder's other files
-  as left out. It now looks for them in Messages chat folders only.
-- 2026-10-04 **iMazing and Apple Messages imports name a folder they cannot
-  read in full.** When an iMazing chat folder held an entry that could not
+  photo to that photo's message. It also counted the directory's other files
+  as left out. It now looks for them in Messages chat directories only.
+- 2026-10-04 **iMazing and Apple Messages imports name a directory they cannot
+  read in full.** When an iMazing chat directory held an entry that could not
   be read, the rows whose files were in it came through with no photo or
   file, and a Live Photo video in it was dropped, without a word. On a Mac,
-  a Contacts account folder that could not be read left that account's
+  a Contacts account directory that could not be read left that account's
   names out of an Apple Messages import with no message, and one Contacts
   account whose database could not be read left out every account's
-  names. The iMazing import now stops and names the folder. The Apple
+  names. The iMazing import now stops and names the directory. The Apple
   Messages import now names each Contacts account it cannot read in its
   log and keeps the names from the others.
 - 2026-10-04 **Minimum Video File Size takes a number of megabytes.**
@@ -538,10 +550,10 @@ released versions carry their date on the heading.
   total and came off only as Staging reached each one, so the percentage
   jumped. The total now leaves them out from the start.
 - 2026-10-03 **An Upload that cannot read its staged files pauses and names
-  the folder.** When the app could not read part of the files an Import Run
+  the directory.** When the app could not read part of the files an Import Run
   had staged, the conversations it could not see were left out without a
   word, and the Upload reported success. The Upload now pauses and names
-  the folder, so it can be resumed once that folder can be read.
+  the directory, so it can be resumed once that directory can be read.
 - 2026-10-03 **A message sent twice a moment apart is shown twice.** When
   one source held a message sent twice a second or two apart, and another
   source held one copy, matching the sources hid all but one of the three.
@@ -590,7 +602,7 @@ released versions carry their date on the heading.
 - 2026-09-24 **iMazing message times are read in your account's time zone.**
   An iMazing export writes each message time without a zone, and the desktop
   app used to read them in whatever zone the computer running the import was
-  set to, so the same folder gave different times on different machines. The
+  set to, so the same directory gave different times on different machines. The
   import now reads them in the time zone on your profile. If the phone lived
   in another zone at the time, Processing Options on the Import screen has a
   Time zone of the messages picker for the iMazing source.
@@ -679,11 +691,11 @@ released versions carry their date on the heading.
   address was listed among a group's participants. Each is fixed.
 - 2026-10-02 **No decrypted copy of your iPhone messages is left behind.**
   Entering an encrypted backup's password made a plain copy of the Messages
-  and Contacts databases in the system's temporary folder, which stayed
+  and Contacts databases in the system's temporary directory, which stayed
   there when the app or the reader was stopped. The copy now lives in the
-  run's own folder and is always removed. Decrypted attachments are written
+  run's own directory and is always removed. Decrypted attachments are written
   there too, on the disk the run checks for room, so a small system
-  temporary folder no longer makes every large video fail. An attachment
+  temporary directory no longer makes every large video fail. An attachment
   that could not be decrypted is counted and listed among the Import Run's
   issues with the reason, instead of being marked missing while the run
   reported success.
@@ -693,7 +705,7 @@ released versions carry their date on the heading.
   keeps the attachment marked missing. WhatsApp Status no longer
   becomes a contact, and WhatsApp ids that are not phone numbers are no
   longer stored as email identities. A WhatsApp import from an iPhone backup
-  no longer fails over leftovers from an earlier run in the backup folder.
+  no longer fails over leftovers from an earlier run in the backup directory.
 - 2026-10-02 **Phone numbers from Android SMS backups keep their country.**
   The SMS Backup & Restore, GO SMS Pro and SMS Backup+ readers read every
   number by US rules, so `+6595550100` became a US number and a UK number
@@ -712,9 +724,9 @@ released versions carry their date on the heading.
   picture message using a header from a later version of the MMS standard was
   dropped whole.
 - 2026-10-02 **SMS Backup+ imports only text messages, and reads every
-  folder you give it.** A call-log mail is now skipped and counted, instead
-  of imported as a text holding the call's length. A backup folder that sits
-  inside a folder named Duplicate, Exclude or `.git` is no longer skipped
+  directory you give it.** A call-log mail is now skipped and counted, instead
+  of imported as a text holding the call's length. A backup directory that sits
+  inside a directory named Duplicate, Exclude or `.git` is no longer skipped
   whole. Two people known only by names that differ outside plain English
   letters, such as "张伟" and "李娜", no longer share one conversation.
 - 2026-10-02 **iMazing imports attach Live Photo videos.** A Live Photo's
@@ -725,7 +737,7 @@ released versions carry their date on the heading.
 - 2026-10-02 **An attachment too large after conversion says so in every
   conversation.** When two conversations shared one attachment that came
   out of Media over the size limit, the second recorded it as missing
-  instead of too large. Opening the link to a staging folder not made yet
+  instead of too large. Opening the link to an Import Run's directory not made yet
   says nothing is there yet, instead of calling it outside the Staging
   Directory when that directory is reached through a link.
 - 2026-10-02 **An Apple Messages reaction belongs to the person who made
@@ -835,7 +847,7 @@ released versions carry their date on the heading.
   Settings, failed part-way with a write error when the disk filled. They
   now check first and stop with the space they need. **Convert** from an
   SMS Backup & Restore backup also sets the backup's attachments aside in
-  the app's cache folder, not in the folder it writes to.
+  the app's cache directory, not in the directory it writes to.
 - 2026-10-04 **A conversion can no longer start in the middle of an Import
   Run or an export.** **Convert** in Settings stayed disabled only while one
   of the run's Stages was running, so it could be started while an Import
@@ -856,11 +868,11 @@ released versions carry their date on the heading.
   carries the names of the people in the group, as SMS Backup & Restore
   writes them. One-to-one messages are unchanged.
 - 2026-10-04 **An export stops when it cannot read an earlier export's
-  email folder.** An export or conversion written into a folder an earlier
-  one used first removes the earlier one's email conversation folders. A
-  conversation folder holding an entry that could not be read could look
+  email directory.** An export or conversion written into a directory an earlier
+  one used first removes the earlier one's email conversation directories. A
+  conversation directory holding an entry that could not be read could look
   as if it held no email, and then stayed beside the new export. The
-  export now stops and names the folder.
+  export now stops and names the directory.
 - 2026-10-04 **An obfuscated export keeps a reply to a message in another
   conversation.** Apple Messages can reply or react to a message in another
   conversation. In an obfuscated export, that reply or reaction pointed at
@@ -876,16 +888,16 @@ released versions carry their date on the heading.
   but the attachment kept the size of the real file, which can be enough
   to recognise it. An obfuscated attachment now carries no size.
 - 2026-10-04 **Convert keeps the previous output when an Android XML backup
-  can't be read.** Converting a broken `smses.xml` into a folder an earlier
+  can't be read.** Converting a broken `smses.xml` into a directory an earlier
   conversion wrote removed that conversion's files before the backup was
   read, so the run failed with nothing left. The backup is now read first,
   as every other input is, and a backup Convert can't read, or one with no
   conversations in it, stops the run with the previous output left as it
   was.
-- 2026-10-03 **An obfuscated export leaves out attachments in subfolders
-  too.** A real photo or file inside a subfolder of the export's
+- 2026-10-03 **An obfuscated export leaves out attachments in subdirectories
+  too.** A real photo or file inside a subdirectory of the export's
   attachments stayed in the export that exists to leave it out. A shortcut
-  (symbolic link) there is now removed, and the file or folder it points
+  (symbolic link) there is now removed, and the file or directory it points
   to is left untouched.
 - 2026-10-03 **Android XML holds only SMS and MMS.** Export and Convert
   wrote every message as a text message, so an iMessage or a WhatsApp
@@ -899,22 +911,22 @@ released versions carry their date on the heading.
   server reads.** Each message keeps whose number it was sent from, an
   attachment keeps its size and the reason it is missing, and a text or HTML
   attachment comes back with its own bytes instead of the next attachment's.
-- 2026-10-02 **An export stays inside its folder.** An attachment is never
-  written outside the output folder, whatever path it was stored under. An
-  export, or Convert, whose output folder is the backup or a folder above it
+- 2026-10-02 **An export stays inside its directory.** An attachment is never
+  written outside the output directory, whatever path it was stored under. An
+  export, or Convert, whose output directory is the backup or a directory above it
   is refused before anything is written. An obfuscated export that can't
   remove a real attachment fails and names the file, instead of reporting
   success with the file still there.
 - 2026-10-02 **Exported attachments are checked.** A download that answers
   with something other than the attachment, such as a sign-in page from a
   proxy, is refused, instead of being saved as the attachment and skipped
-  by every later export into the same folder.
-- 2026-10-02 **Export and Convert name the folder they wrote to.** The
+  by every later export into the same directory.
+- 2026-10-02 **Export and Convert name the directory they wrote to.** The
   success message followed whatever the form showed afterwards, and the
-  folder could be changed while the job ran.
+  directory could be changed while the job ran.
 - 2026-10-02 **Convert names a file from an older format.** A file in the
-  version-3 format is refused by name, where a folder of them failed with
-  a message that said nothing useful and a folder mixing them with current
+  version-3 format is refused by name, where a directory of them failed with
+  a message that said nothing useful and a directory mixing them with current
   files left those conversations out without a word. A refused file now
   stops the run before the previous output is removed.
 
@@ -1359,7 +1371,7 @@ released versions carry their date on the heading.
   an interrupted run is written again, an attachment still uploading is
   left alone, and the server's `process-assets` command reports failure
   when a conversion failed. The server's `import` command fails when it
-  can't read an entry in the folder, instead of leaving that conversation
+  can't read an entry in the directory, instead of leaving that conversation
   out.
 - 2026-10-02 **Programs using the HTTP API get the answers its reference
   describes.** The Bearer scheme is read in any case, the health check
@@ -1369,7 +1381,7 @@ released versions carry their date on the heading.
   everything else.
 - 2026-10-02 **`reset-demo` works on the Message Crate your configuration
   names.** It built the Demo Account into a database of its own choosing
-  beside the configuration folder, whatever the configuration said, and then
+  beside the configuration directory, whatever the configuration said, and then
   replaced the configuration file with one the server would not start with.
   It now rebuilds the Demo Account in the configured database and leaves the
   file alone. Before it puts the rebuilt database in place, it checks every
@@ -1387,7 +1399,7 @@ released versions carry their date on the heading.
   waits for all its Demo Data.**
   Stopped while a build was still making up its Demo Data, the server waited
   until all of it was written, which on the large set is the longest part of
-  the build, and could leave a folder of part-written Demo Data behind. It
+  the build, and could leave a directory of part-written Demo Data behind. It
   now stops as soon as the conversation it is writing is done, and leaves
   nothing behind.
 - 2026-10-04 **Every contact in the Demo Data's Address Book has a name.**
@@ -1397,7 +1409,7 @@ released versions carry their date on the heading.
   and building the medium Demo Account names all 75.
 - 2026-10-04 **The Docker image no longer sets environment variables the
   server never reads.** The image set `MC_DB`, `MC_DATA_DIR` and `HOSTNAME`,
-  and changing them changed nothing. The database and the data folder come
+  and changing them changed nothing. The database and the data directory come
   from `[paths]` in the configuration, and the address the server listens
   on from `[server]`, as they always did.
 - 2026-10-04 **Programs using the HTTP API get a conversation's first and
@@ -1428,14 +1440,14 @@ released versions carry their date on the heading.
   shown as it was until someone ran the command with `--force`. Every run
   now checks each Preview against its contents and makes a damaged one
   again, and removes the part-written files a stopped run or import left in
-  the attachment folders.
+  the attachment directories.
 - 2026-10-04 **How the desktop app checks that its server started was
   reworked, with nothing visible.**
 - 2026-10-04 **The server's `reset-demo` command checks more of what it
   must leave alone.** Before it puts the rebuilt Demo Account in place, it
   checks that nothing else changed. That check now also covers the Audit
   Trail of deleted accounts, what a search finds in other accounts'
-  messages, and the files in other accounts' folders. The reset stops if any
+  messages, and the files in other accounts' directories. The reset stops if any
   of them changed. On a database of about 1.3 million messages the check
   takes about 14 seconds.
 - 2026-10-04 **Deleting attachments no longer holds up everyone else.**
@@ -1469,6 +1481,9 @@ released versions carry their date on the heading.
 
 ### Upgrading
 
+- An export, or a conversion with no output directory chosen, now goes into
+  the Export Directory; look for it there, through Settings → System, rather
+  than in the Staging Directory.
 - The database format changed. **An existing Message Crate is rebuilt
   empty on first start and its messages must be imported again.**
 - If your configuration file sets `asset_max_bytes` under `[server]`, delete
@@ -1499,12 +1514,12 @@ released versions carry their date on the heading.
 - A Saved Search that uses `source:sms` is refused. Edit it to
   `source:sms-backup-restore`.
 - Photos and files imported by an earlier 0.10.0 build are not shown.
-  Each account now keeps them in one folder, `data/<account_id>/assets/`,
-  and the server no longer reads the folder an earlier build made for each
+  Each account now keeps them in one directory, `data/<account_id>/assets/`,
+  and the server no longer reads the directory an earlier build made for each
   source, such as `data/1/imessage/`. **Delete all messages** leaves those
-  old folders on disk. To bring the photos back:
+  old directories on disk. To bring the photos back:
   1. Use **Delete all messages** in Settings.
-  2. Delete each `data/<account_id>/<source>/` folder.
+  2. Delete each `data/<account_id>/<source>/` directory.
   3. Import those backups again.
 - The server's `process-assets` command no longer takes `--source`: it
   makes previews for every attachment of each account.

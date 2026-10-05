@@ -49,7 +49,7 @@ export interface ExtractConfig {
   owner_phones?: string[];
   /** Owner email addresses for SMS Backup+ (repeatable). */
   owner_emails?: string[];
-  /** Alternate folder for Attachments and StickerCache (Mac and jailbreak). */
+  /** Alternate directory for Attachments and StickerCache (Mac and jailbreak). */
   attachment_root?: string;
   /** Path to an Apple AddressBook file (Mac and jailbreak). */
   apple_contacts?: string;
@@ -57,17 +57,17 @@ export interface ExtractConfig {
   whatsapp_key?: string;
   /** WhatsApp contacts database (`wa.db` or ContactsV2.sqlite). */
   whatsapp_wa?: string;
-  /** WhatsApp media folder override. */
+  /** WhatsApp media directory override. */
   whatsapp_media?: string;
   /** Explicit WhatsApp message database (`msgstore.db`). */
   whatsapp_db?: string;
   /** iPhone WhatsApp Business default files (`--business`). */
   whatsapp_business?: boolean;
-  /** Continue an interrupted export in the same folder: previous output is
+  /** Continue an interrupted export in the same directory: previous output is
    * kept and conversations already written are skipped. */
   resume?: boolean;
   /** The server's attachment size limit, in bytes, as stored with the Import
-   * Run. Staging records it in the folder with the run's media settings. */
+   * Run. Staging records it in the directory with the run's media settings. */
   asset_max_bytes: number;
 }
 

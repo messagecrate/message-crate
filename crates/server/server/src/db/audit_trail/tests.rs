@@ -21,7 +21,7 @@ async fn a_refused_username_is_cut_to_the_username_limit() {
 
 /// Deleting an account keeps its Import Runs and their counts, and drops what
 /// describes the person's messages: the run's issues and notes, its form, its staging
-/// folder and the addresses the backup sent from. A run still open is closed.
+/// directory and the addresses the backup sent from. A run still open is closed.
 #[tokio::test]
 async fn deleting_an_account_keeps_an_import_runs_counts_and_drops_its_details() {
     let fixture = test_fixture().await;

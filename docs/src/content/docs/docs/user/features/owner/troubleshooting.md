@@ -115,15 +115,15 @@ Two of the **Attachments** choices on the Import form run `ffmpeg` and `ffprobe`
 
 In the desktop app, **Settings → System** has **ffmpeg directory** under **Media**.
 Left empty, the app looks on the system `PATH`.
-A folder entered there must hold both programs.
+A directory entered there must hold both programs.
 The lines under the field report each program as found, with its path, or not found.
 
 ## Convert
 
-### "Choose a different output folder."
+### "Choose a different output directory."
 
-**Convert** can't write into the folder it reads from.
-The message goes away once **Output folder** names a different folder.
+**Convert** can't write into the directory it reads from.
+The message goes away once **Output directory** names a different directory.
 
 ## Getting help
 

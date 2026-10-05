@@ -7,8 +7,8 @@ type StagingDeleteFailureNoticeProps = {
 };
 
 /**
- * Says that a staging folder of a discarded, cancelled or finished Import
- * Run is still on disk, and why. A staging folder can hold several
+ * Says that a run directory of a discarded, cancelled or finished Import
+ * Run is still on disk, and why. A run directory can hold several
  * gigabytes, so a failed delete is never dropped without a word.
  */
 export default function StagingDeleteFailureNotice({
@@ -21,7 +21,7 @@ export default function StagingDeleteFailureNotice({
       role="alert"
     >
       <p className="m-0 text-[0.813rem] text-danger">
-        Message Crate could not delete the Staging Directory{" "}
+        Message Crate could not delete this Import Run's directory{" "}
         <code className="font-mono text-[0.75rem] break-all">{failure.path}</code>
         {`: ${failure.reason}. Delete it by hand to free the space it takes.`}
       </p>

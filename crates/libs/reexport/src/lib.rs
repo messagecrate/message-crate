@@ -114,7 +114,7 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
     }
 
     // A mail export's reader holds the attachments in memory, and the
-    // export has no `attachments/` folder to copy, so its attachments are
+    // export has no `attachments/` directory to copy, so its attachments are
     // staged even when the media is only cloned.
     let stages_again = matches!(transforms.media, MediaMode::Convert | MediaMode::Compress)
         || (copy_attachments && detected.format.is_mail_archive());
@@ -337,15 +337,15 @@ fn keep_missing_reasons(
 
 /// The bytes of the `attachments/` an earlier export left in `output`, which
 /// [`clean_previous_ir_output`] deletes before this run writes. Nothing is
-/// deleted from a folder without the export's mark, so nothing counts.
+/// deleted from a directory without the export's mark, so nothing counts.
 fn previous_attachment_bytes(output: &Path) -> u64 {
     if !output.join(EXPORT_SENTINEL).is_file() {
         return 0;
     }
     let mut total = 0u64;
     let mut pending = vec![output.join("attachments")];
-    while let Some(folder) = pending.pop() {
-        let Ok(entries) = fs::read_dir(&folder) else {
+    while let Some(directory) = pending.pop() {
+        let Ok(entries) = fs::read_dir(&directory) else {
             continue;
         };
         for entry in entries.flatten() {
@@ -364,10 +364,10 @@ fn previous_attachment_bytes(output: &Path) -> u64 {
 /// An SMS Backup & Restore read whose attachments wait in the spool until
 /// the output has been cleaned.
 struct SmsBackupRead {
-    /// The backup's folder, resolved.
+    /// The backup's directory, resolved.
     input: PathBuf,
-    /// The output folder, resolved. The read leaves it out, since it may
-    /// sit inside the backup's folder and hold a backup an earlier run wrote.
+    /// The output directory, resolved. The read leaves it out, since it may
+    /// sit inside the backup's directory and hold a backup an earlier run wrote.
     output: PathBuf,
     /// The output's `attachments/`, where the spooled attachments are staged.
     attachments_dir: PathBuf,
@@ -379,7 +379,7 @@ struct SmsBackupRead {
 impl SmsBackupRead {
     /// Prepare to read the backup in `input` for a conversion into
     /// `output`, both resolved by `prepare_outputs`. Each payload goes to
-    /// a spool under `cache_dir`, the app's cache folder, as its record is
+    /// a spool under `cache_dir`, the app's cache directory, as its record is
     /// read, so the backup's attachments are never all in memory and never
     /// in the output before they are staged.
     fn open(input: &Path, output: PathBuf, cache_dir: &Path, copy_attachments: bool) -> Self {
@@ -387,7 +387,7 @@ impl SmsBackupRead {
             input: input.to_path_buf(),
             attachments_dir: output.join("attachments"),
             output,
-            // No copy folder: the output still holds an earlier conversion
+            // No copy directory: the output still holds an earlier conversion
             // while the backup is read, so the copy is checked once, before
             // the clean, counting what the clean frees.
             spool: copy_attachments.then(|| AttachmentSpool::new(cache_dir)),
@@ -444,7 +444,7 @@ impl SmsBackupRead {
     }
 }
 
-/// Read every conversation file or EML folder of `format` in `input_dir`.
+/// Read every conversation file or EML directory of `format` in `input_dir`.
 /// Any file the read refuses stops the whole read.
 fn read_conversation_files(
     input_dir: &Path,
@@ -456,7 +456,7 @@ fn read_conversation_files(
         .collect()
 }
 
-/// Read one conversation file or EML folder in the detected format.
+/// Read one conversation file or EML directory in the detected format.
 fn read_artifact(path: &Path, format: OutputFormat) -> Result<ConversationDocument> {
     match format {
         OutputFormat::Json => read_conversation_json(path),
@@ -530,7 +530,7 @@ fn detect_ir_export(input_dir: &Path) -> Result<DetectedExport> {
         [format] => Ok(DetectedExport { format: *format }),
         [] => bail!(
             "unsupported input: no Message Crate IR export found in {} \
-             (expected smses.xml, *.json, *.jsonl, *.csv, *.mbox, or EML folders)",
+             (expected smses.xml, *.json, *.jsonl, *.csv, *.mbox, or EML directories)",
             input_dir.display()
         ),
         formats => bail!(
@@ -546,7 +546,7 @@ fn detect_ir_export(input_dir: &Path) -> Result<DetectedExport> {
     }
 }
 
-/// List conversation files or EML folders for the detected format.
+/// List conversation files or EML directories for the detected format.
 fn list_artifacts(input_dir: &Path, format: OutputFormat) -> Result<Vec<PathBuf>> {
     let mut paths = Vec::new();
     for entry in fs::read_dir(input_dir)? {
@@ -584,7 +584,7 @@ fn list_artifacts(input_dir: &Path, format: OutputFormat) -> Result<Vec<PathBuf>
                     && path.extension().and_then(|extension| extension.to_str()) == Some("mbox")
             }
             OutputFormat::Eml => path.is_dir() && dir_has_eml(&path)?,
-            // Never detected as an input: its folders are found as `Eml`.
+            // Never detected as an input: its directories are found as `Eml`.
             OutputFormat::SmsBackupPlus => false,
         };
         if matches {

@@ -232,9 +232,9 @@ export default function ImportRunView({
   steps: ImportStep[];
   running: boolean;
   form: ImportJobFormValues | null;
-  /** What the folder held once Staging finished. */
+  /** What the directory held once Staging finished. */
   stagingSummary: StagingSummary | null;
-  /** What the folder holds after Media; null when Media has not run. */
+  /** What the directory holds after Media; null when Media has not run. */
   mediaSummary: StagingSummary | null;
   /** Files Media could not process; null when unknown. */
   mediaFailedCount: number | null;
@@ -257,7 +257,7 @@ export default function ImportRunView({
   mediaToolsMissing?: boolean;
   /**
    * This Staging Review is a resume that found Media partway through, so
-   * the folder holds a mix of originals and processed files and an estimate
+   * the directory holds a mix of originals and processed files and an estimate
    * of what Media "will" do would be wrong.
    */
   mediaPartiallyRan?: boolean;
@@ -308,7 +308,7 @@ export default function ImportRunView({
       <FactGroups>
         {trimmedStaging ? (
           <FactGroup
-            title="Staging directory"
+            title="This Import Run's directory"
             value={
               <OpenPathButton path={trimmedStaging} className={PATH_LINK}>
                 {trimmedStaging}
@@ -401,7 +401,7 @@ export default function ImportRunView({
         ) : null}
         {toolsBlocked ? (
           <p className="m-0 text-[0.813rem] text-muted">
-            Media needs ffmpeg. Set its folder in Settings, then come back to Import.
+            Media needs ffmpeg. Set its directory in Settings, then come back to Import.
           </p>
         ) : null}
         <ReviewActions

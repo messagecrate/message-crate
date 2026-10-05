@@ -4,7 +4,7 @@ CREATE TABLE IF NOT EXISTS accounts (
     -- itself: the owner is 1 and the demo account 2. Every other account takes
     -- the next id above both that range and the highest id the table has ever
     -- held. AUTOINCREMENT keeps that high mark in sqlite_sequence, so a
-    -- deleted account's id, and any folder of its files left behind, never
+    -- deleted account's id, and any directory of its files left behind, never
     -- passes to a new account.
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     -- Login user id; unique case-insensitively.
@@ -203,7 +203,7 @@ CREATE TABLE IF NOT EXISTS imports (
     -- media_review, or upload. NULL once the run is over. `status` says
     -- how a run ended; `stage` says where it is.
     stage TEXT,
-    -- Absolute path to this run's staging folder on the client. The
+    -- Absolute path to this run's directory in the Staging Directory on the client. The
     -- database holds the pointer so resuming means asking the server where
     -- to go, rather than guessing from a directory listing.
     staging_dir TEXT,

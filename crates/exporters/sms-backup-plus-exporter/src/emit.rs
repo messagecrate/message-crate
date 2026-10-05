@@ -361,7 +361,7 @@ impl Verbose<'_> {
 pub(crate) struct ConvertExportArgs<'a, P: AsRef<Path>> {
     pub inputs: &'a [P],
     pub output_dir: &'a Path,
-    /// The app's cache folder, which the run's attachment spool goes under.
+    /// The app's cache directory, which the run's attachment spool goes under.
     pub cache_dir: &'a Path,
     pub owner_phones: &'a [String],
     pub owner_emails: &'a [String],
@@ -407,7 +407,7 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
         issues,
         resume,
     } = args;
-    // Checked before the output folder is cleaned, so a refused run leaves it.
+    // Checked before the output directory is cleaned, so a refused run leaves it.
     if inputs.is_empty() {
         bail!("SMS Backup+ needs a backup directory");
     }
@@ -500,7 +500,7 @@ struct ParseInputs {
     /// The `ExporterConfig::inputs` paths after output preparation; relative
     /// EML paths are computed against these.
     input_roots: Vec<PathBuf>,
-    /// The subset of `input_roots` that are single files rather than folders.
+    /// The subset of `input_roots` that are single files rather than directories.
     file_inputs: HashSet<PathBuf>,
     owner: Owner,
 }
@@ -730,17 +730,21 @@ mod tests {
     };
 
     /// An EML given as an input is recorded under its own file name. An EML
-    /// found in a folder input is recorded under its path inside that folder.
+    /// found in a directory input is recorded under its path inside that directory.
     #[test]
     fn an_eml_given_as_a_file_input_is_recorded_under_its_file_name() {
         let file = PathBuf::from("/backups/single/one.eml");
-        let folder = PathBuf::from("/backups/tree");
-        let inputs = vec![file.clone(), folder.clone()];
+        let directory = PathBuf::from("/backups/tree");
+        let inputs = vec![file.clone(), directory.clone()];
         let file_inputs: HashSet<PathBuf> = [file.clone()].into_iter().collect();
 
         assert_eq!(relative_eml_path(&file, &inputs, &file_inputs), "one.eml");
         assert_eq!(
-            relative_eml_path(&folder.join("SMS").join("two.eml"), &inputs, &file_inputs),
+            relative_eml_path(
+                &directory.join("SMS").join("two.eml"),
+                &inputs,
+                &file_inputs
+            ),
             Path::new("SMS").join("two.eml").display().to_string()
         );
         // An EML under none of the inputs keeps its whole path.

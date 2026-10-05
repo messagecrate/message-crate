@@ -3,7 +3,7 @@
  *
  * The Staging Directory is not here: the desktop process keeps it
  * (`invokeStagingRoot`, `invokeSetStagingRoot`), because it alone decides
- * which staging folders its commands act on.
+ * which run directories its commands act on.
  */
 
 import { readPref, removePref, writePref } from "./storage";
@@ -12,7 +12,7 @@ const REMEMBER_IMPORTER_PATHS_KEY = "mc-remember-importer-paths";
 const IMPORTER_PATHS_KEY = "mc-importer-paths";
 const IMPORTER_EXTRA_PATHS_KEY = "mc-importer-extra-paths";
 
-/** True when Import should reuse the last backup folder for each source. */
+/** True when Import should reuse the last backup directory for each source. */
 export function getRememberImporterPaths(): boolean {
   return readPref(REMEMBER_IMPORTER_PATHS_KEY) === "1";
 }
@@ -43,7 +43,7 @@ function writeImporterPaths(map: Record<string, string>): void {
   else writePref(IMPORTER_PATHS_KEY, JSON.stringify(map));
 }
 
-/** Last backup folder remembered for this import source. */
+/** Last backup directory remembered for this import source. */
 export function getImporterPath(sourceId: string): string {
   return readImporterPaths()[sourceId] ?? "";
 }

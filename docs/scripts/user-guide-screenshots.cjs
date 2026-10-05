@@ -7,7 +7,7 @@
 //   npm install --no-save playwright && npx playwright install chromium
 //   CRATE_URL=http://localhost:18080 node scripts/user-guide-screenshots.cjs
 //
-// PLAYWRIGHT names the library's folder when it is installed somewhere else.
+// PLAYWRIGHT names the library's directory when it is installed somewhere else.
 // --verbose prints the text of each captured screen, for checking labels.
 //
 // The import run screens are not captured here, because a browser cannot

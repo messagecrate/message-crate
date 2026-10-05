@@ -4,24 +4,25 @@ use serde::Serialize;
 use std::path::{Component, Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
-use crate::staging_folders::StagingFolders;
+use crate::export_directories::ExportDirectories;
+use crate::staging_directories::StagingDirectories;
 
-/// The app's cache folder, which every run's scratch folders go under
+/// The app's cache directory, which every run's scratch directories go under
 /// (`message_crate_core::ScratchDir`).
 ///
 /// # Errors
 ///
-/// Returns an error when the operating system names no cache folder.
+/// Returns an error when the operating system names no cache directory.
 pub(crate) fn app_cache_dir(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
         .app_cache_dir()
-        .map_err(|e| format!("Could not find the app's cache folder: {e}"))
+        .map_err(|e| format!("Could not find the app's cache directory: {e}"))
 }
 
-/// The logged-in user's home folder, plus which OS this process is running on.
+/// The logged-in user's home directory, plus which OS this process is running on.
 #[derive(Debug, Clone, Serialize)]
 pub struct HomeDirInfo {
-    /// Home folder as an absolute path the UI can join onto.
+    /// Home directory as an absolute path the UI can join onto.
     pub path: String,
     /// Operating system name as Rust reports it, for example `linux`, `macos`,
     /// or `windows`.
@@ -32,7 +33,7 @@ pub struct HomeDirInfo {
 ///
 /// `size_bytes` and `modified_unix_ms` are file-oriented: they come from a
 /// single `std::fs::metadata` call on the path itself. For a directory
-/// source -- an iOS backup folder, a WhatsApp folder -- that is the
+/// source -- an iOS backup directory, a WhatsApp directory -- that is the
 /// directory entry, not its contents: the size is the entry's own (4096
 /// bytes on most filesystems) and the mtime moves only when a child is
 /// added or removed, never when one is written to. A fingerprint built
@@ -94,7 +95,7 @@ pub fn path_stat(path: String) -> PathStat {
     path_stat_inner(&path)
 }
 
-/// Read `Manifest.plist` and return whether an iOS backup folder is
+/// Read `Manifest.plist` and return whether an iOS backup directory is
 /// encrypted. `None` when the path is blank or is not an iOS backup.
 #[tauri::command]
 pub fn ios_backup_encrypted(path: String) -> Option<bool> {
@@ -109,7 +110,7 @@ pub fn ios_backup_encrypted(path: String) -> Option<bool> {
 /// identity check.
 ///
 /// Runs on a blocking-pool thread: for an encrypted backup, answering this
-/// decrypts `chat.db` into a folder under the app's cache folder, which the
+/// decrypts `chat.db` into a directory under the app's cache directory, which the
 /// next request cleans if this one is killed.
 #[tauri::command]
 pub async fn imessage_backup_identities(
@@ -118,7 +119,7 @@ pub async fn imessage_backup_identities(
     ios: bool,
     backup_password: Option<String>,
 ) -> Result<Vec<String>, String> {
-    let scratch_root = app_cache_dir(&app)?.join(message_crate_core::IMESSAGE_READER_FOLDER);
+    let scratch_root = app_cache_dir(&app)?.join(message_crate_core::IMESSAGE_READER_DIRECTORY);
     tauri::async_runtime::spawn_blocking(move || {
         let password = backup_password.as_deref().and_then(message_ir::trimmed);
         ios_backup::backup_identities(Path::new(path.trim()), ios, password, &scratch_root)
@@ -130,7 +131,7 @@ pub async fn imessage_backup_identities(
 
 /// Ask this process for the current user's home directory.
 ///
-/// The WebView cannot see the real home folder on its own. Settings uses the
+/// The WebView cannot see the real home directory on its own. Settings uses the
 /// result as a starting point for file paths.
 ///
 /// # Errors
@@ -146,18 +147,26 @@ pub fn home_dir() -> Result<HomeDirInfo, String> {
     })
 }
 
-/// Open a file or folder with the operating system's default handler.
+/// Open a file or directory with the operating system's default handler.
 ///
-/// Only a staging folder this app made, or a path inside one such as its
-/// `message-crate-push.log`, is opened ([`StagingFolders::openable`]).
+/// Only a run directory this app made, or a path inside one such as its
+/// `message-crate-push.log` ([`StagingDirectories::openable`]), or the Export
+/// Directory and what is in it ([`ExportDirectories::openable`]), is opened.
 ///
 /// # Errors
 ///
-/// Returns an error when the path is empty or relative, is in no staging
-/// folder this app made, is missing on disk, or the OS cannot open it.
+/// Returns an error when the path is empty or relative, is in neither, is
+/// missing on disk, or the OS cannot open it.
 #[tauri::command]
-pub fn open_path(folders: tauri::State<'_, StagingFolders>, path: String) -> Result<(), String> {
-    let resolved = folders.openable(&path)?;
+pub fn open_path(
+    directories: tauri::State<'_, StagingDirectories>,
+    exports: tauri::State<'_, ExportDirectories>,
+    path: String,
+) -> Result<(), String> {
+    let resolved = match exports.openable(Path::new(path.trim())) {
+        Some(export) => export,
+        None => directories.openable(&path)?,
+    };
     missing_path_error(&resolved)?;
     open::that_detached(&resolved).map_err(|error| format!("Could not open path: {error}"))
 }
@@ -295,7 +304,7 @@ fn resolve_absolute(
 ///
 /// The path is normalized lexically, then its nearest existing ancestor is
 /// canonicalized and the missing part appended. A path that exists comes back
-/// canonical; one that does not comes back in the same form as the folders
+/// canonical; one that does not comes back in the same form as the directories
 /// above it, so a root and a path under it compare alike even when the root
 /// is reached through a symbolic link or, on Windows, canonicalizes to a
 /// `\\?\` path.
@@ -321,7 +330,7 @@ fn resolve_on_disk(path: &Path) -> std::io::Result<PathBuf> {
 /// [`resolve_on_disk`] (so a root not made yet still resolves), and never the
 /// filesystem root.
 ///
-/// Shared by [`resolve_openable_path`] and `StagingFolders`, which checks
+/// Shared by [`resolve_openable_path`] and `StagingDirectories`, which checks
 /// the Staging Directory from Settings with it, so a root and a path under
 /// it are resolved the identical way.
 ///
@@ -332,7 +341,7 @@ fn resolve_on_disk(path: &Path) -> std::io::Result<PathBuf> {
 pub(crate) fn resolve_staging_root(staging_root: &str) -> Result<PathBuf, String> {
     let root = resolve_absolute(
         staging_root,
-        "Name a folder for the staging directory.",
+        "Name a directory for the staging directory.",
         "The staging directory must be a full path, such as /Users/sam/message-crate, \
          so its files never land wherever the app happens to be running.",
     )?;
@@ -347,7 +356,7 @@ pub(crate) fn resolve_staging_root(staging_root: &str) -> Result<PathBuf, String
 ///
 /// When the path already exists it is canonicalized, so a symbolic link cannot
 /// escape the staging tree. When it does not exist yet (for example a staging
-/// folder that extract is about to create), it is resolved through
+/// directory that extract is about to create), it is resolved through
 /// [`resolve_on_disk`], the same way as the root, so the two compare in one
 /// form.
 pub(crate) fn resolve_openable_path(raw: &str, staging_root: &str) -> Result<PathBuf, String> {
@@ -359,7 +368,7 @@ pub(crate) fn resolve_openable_path(raw: &str, staging_root: &str) -> Result<Pat
             .canonicalize()
             .map_err(|error| format!("Could not resolve path: {error}"))?;
         if !canonical.starts_with(&root) {
-            return Err("Path is outside the staging folder".to_string());
+            return Err("Path is outside the directory".to_string());
         }
         return Ok(canonical);
     }
@@ -367,7 +376,7 @@ pub(crate) fn resolve_openable_path(raw: &str, staging_root: &str) -> Result<Pat
     let resolved =
         resolve_on_disk(&candidate).map_err(|error| format!("Could not resolve path: {error}"))?;
     if !resolved.starts_with(&root) {
-        return Err("Path is outside the staging folder".to_string());
+        return Err("Path is outside the directory".to_string());
     }
     Ok(resolved)
 }
@@ -377,7 +386,7 @@ fn reject_filesystem_root(root: &Path) -> Result<(), String> {
     if root.parent().is_none() {
         return Err(
             "The staging directory cannot be the root of a drive, because Import \
-             and Export make and delete folders in it."
+             and Export make and delete directories in it."
                 .to_string(),
         );
     }
@@ -391,7 +400,7 @@ mod tests {
 
     #[cfg(unix)]
     #[test]
-    fn a_missing_folder_under_a_symlinked_root_is_inside_the_root() {
+    fn a_missing_directory_under_a_symlinked_root_is_inside_the_root() {
         let dir = tempfile::tempdir().unwrap();
         let real = dir.path().join("real");
         fs::create_dir(&real).unwrap();
@@ -404,11 +413,11 @@ mod tests {
         assert!(resolved.is_ok(), "{resolved:?}");
     }
 
-    /// A Staging Directory not made yet, under a folder reached through a
-    /// symbolic link, resolves in the same form as a folder inside it.
+    /// A Staging Directory not made yet, under a directory reached through a
+    /// symbolic link, resolves in the same form as a directory inside it.
     #[cfg(unix)]
     #[test]
-    fn a_missing_folder_under_a_missing_root_behind_a_symlink_is_inside_the_root() {
+    fn a_missing_directory_under_a_missing_root_behind_a_symlink_is_inside_the_root() {
         let dir = tempfile::tempdir().unwrap();
         let real = dir.path().join("real");
         fs::create_dir(&real).unwrap();
@@ -444,7 +453,7 @@ mod tests {
         let err =
             resolve_openable_path(candidate.to_str().unwrap(), link.to_str().unwrap()).unwrap_err();
 
-        assert_eq!(err, "Path is outside the staging folder");
+        assert_eq!(err, "Path is outside the directory");
     }
 
     #[test]
@@ -464,7 +473,10 @@ mod tests {
     #[test]
     fn write_file_reports_a_failed_write() {
         let dir = tempfile::tempdir().unwrap();
-        let missing = dir.path().join("no-such-folder").join("address-book.csv");
+        let missing = dir
+            .path()
+            .join("no-such-directory")
+            .join("address-book.csv");
         let err = write_file(&missing, b"x").unwrap_err();
         assert!(err.starts_with("Could not save "), "{err}");
     }
@@ -498,7 +510,7 @@ mod tests {
     #[test]
     fn rejects_empty_staging_root() {
         let err = resolve_openable_path("/home/sam/message-crate/staging", "  ").unwrap_err();
-        assert!(err.contains("Name a folder for the staging directory"));
+        assert!(err.contains("Name a directory for the staging directory"));
     }
 
     #[test]
@@ -525,10 +537,10 @@ mod tests {
         parts.iter().fold(base, |path, part| path.join(part))
     }
 
-    /// Make the folder `existing_dir` under a temporary folder, and take the
-    /// Staging Directory at that folder joined with `root_below`. Check that
+    /// Make the directory `existing_dir` under a temporary directory, and take the
+    /// Staging Directory at that directory joined with `root_below`. Check that
     /// the path `path_below_root` under it is accepted, in the canonical form
-    /// of the made folder. Nothing below the made folder is made.
+    /// of the made directory. Nothing below the made directory is made.
     ///
     /// The expected path is built from the canonical form rather than the
     /// path passed in, because a missing path resolves through its nearest
@@ -628,7 +640,7 @@ mod tests {
     }
 
     #[test]
-    fn missing_folder_uses_generic_message() {
+    fn missing_directory_uses_generic_message() {
         let staging = PathBuf::from("/home/sam/message-crate/staging-x");
         let err = missing_path_error(&staging).unwrap_err();
         assert!(err.contains("Nothing exists"));

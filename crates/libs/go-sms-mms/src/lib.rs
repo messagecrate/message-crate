@@ -1,6 +1,6 @@
 //! Decode GO SMS Pro MMS protocol data units (PDUs).
 //!
-//! GO SMS Pro is an Android messaging app. Its backup folder holds the SMS
+//! GO SMS Pro is an Android messaging app. Its backup directory holds the SMS
 //! in one XML file and each MMS as a `.pdu` file: the MMS PDU the phone's
 //! MMS stack held, byte for byte. This crate decodes those files by the
 //! WAP-209 and WAP-230 rules and nothing else. The layers, bottom up:

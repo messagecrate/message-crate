@@ -664,7 +664,7 @@ impl IrImessage {
 }
 
 impl ConversationDocument {
-    /// Filename stem used for CSV, JSON, and mail folders (no extension).
+    /// Filename stem used for CSV, JSON, and mail directories (no extension).
     pub fn filename_stem(&self) -> String {
         let handles: Vec<String> = self
             .conversation

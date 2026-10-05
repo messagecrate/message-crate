@@ -103,7 +103,7 @@ pub fn require_upload_id(upload_id: &str) -> Result<String, AssetError> {
     Ok(id.to_ascii_lowercase())
 }
 
-/// Folder for one multipart upload: `{assets}/.incoming/{sha256}/{upload_id}`.
+/// Directory for one multipart upload: `{assets}/.incoming/{sha256}/{upload_id}`.
 pub fn session_dir(assets_root: &Path, sha256: &Sha256, upload_id: &str) -> PathBuf {
     assets_root
         .join(".incoming")
@@ -260,13 +260,13 @@ pub fn session_part_size(
     Ok(manifest.part_size)
 }
 
-/// An upload's folder can be removed while a request to it runs: by the
+/// An upload's directory can be removed while a request to it runs: by the
 /// upload's completion, by an abort, or by the sweep of stale uploads. A
 /// failure to read or write its files after that is an upload that is gone,
 /// not a server that cannot store the file.
 ///
-/// A removal deletes the folder's files one by one before the folder, so the
-/// folder can outlive the upload. The manifest is in every live upload, so
+/// A removal deletes the directory's files one by one before the directory, so the
+/// directory can outlive the upload. The manifest is in every live upload, so
 /// its absence is what says the upload is gone.
 fn gone_if_removed(session: &Path, err: AssetError) -> AssetError {
     match err {
@@ -276,7 +276,7 @@ fn gone_if_removed(session: &Path, err: AssetError) -> AssetError {
 }
 
 /// Whether the upload in `session` has been removed, or is being removed:
-/// its manifest is gone, whether or not its folder is.
+/// its manifest is gone, whether or not its directory is.
 fn upload_is_gone(session: &Path) -> bool {
     !manifest_path(session).is_file()
 }
@@ -291,14 +291,14 @@ fn gone_if_session_file_removed(session: &Path, err: AssetError) -> AssetError {
     }
 }
 
-/// Whether an I/O error somewhere in `err` is a file or folder not found.
+/// Whether an I/O error somewhere in `err` is a file or directory not found.
 fn is_not_found(err: &anyhow::Error) -> bool {
     err.chain()
         .filter_map(|cause| cause.downcast_ref::<std::io::Error>())
         .any(|io| io.kind() == std::io::ErrorKind::NotFound)
 }
 
-/// The folder of an upload in progress.
+/// The directory of an upload in progress.
 fn existing_session(
     assets_root: &Path,
     sha: &Sha256,
@@ -341,12 +341,12 @@ pub fn put_part(
         return Err(AssetError::Invalid("part number must be >= 1".into()));
     }
     let session = existing_session(assets_root, sha, upload_id)?;
-    // The folder existed when the request arrived, and may be removed while
+    // The directory existed when the request arrived, and may be removed while
     // it runs.
     write_part(&session, sha, part, body).map_err(|e| gone_if_session_file_removed(&session, e))
 }
 
-/// [`put_part`] on the folder of its upload.
+/// [`put_part`] on the directory of its upload.
 fn write_part(session: &Path, sha: &Sha256, part: u32, body: &[u8]) -> Result<u64, AssetError> {
     let _lock = lock_session(session)?;
     let mut manifest = read_manifest_for(session, sha)?;
@@ -399,9 +399,9 @@ pub fn complete_upload(
     complete_session(assets_root, &session, sha)
 }
 
-/// [`complete_upload`] on a session folder that existed when the request
+/// [`complete_upload`] on a session directory that existed when the request
 /// arrived, and may be removed while it runs. Every failure is checked
-/// against a removed folder before this completion removes it. Storing the
+/// against a removed directory before this completion removes it. Storing the
 /// file also writes to the asset store, where a file not found is a fault of
 /// the server, so only a missing manifest says the upload is gone there.
 fn complete_session(
@@ -421,7 +421,7 @@ fn complete_session(
     result
 }
 
-/// Join an upload's parts into one file in its session folder, checking
+/// Join an upload's parts into one file in its session directory, checking
 /// that every part arrived and that the total is the size the upload
 /// declared. The caller holds the session's lock.
 fn assemble(session: &Path, sha: &Sha256) -> Result<(UploadManifest, PathBuf), AssetError> {
@@ -475,14 +475,14 @@ fn assemble(session: &Path, sha: &Sha256) -> Result<(UploadManifest, PathBuf), A
     Ok((manifest, assembled))
 }
 
-/// Abort an upload and delete its folder. An upload that is already gone is
+/// Abort an upload and delete its directory. An upload that is already gone is
 /// aborted too.
 ///
 /// # Errors
 ///
 /// Returns [`AssetError::Invalid`] when the upload id is invalid,
 /// [`AssetError::Locked`] when a part or completion for the upload is still
-/// running, and [`AssetError::Internal`] when the folder cannot be removed.
+/// running, and [`AssetError::Internal`] when the directory cannot be removed.
 pub fn abort_upload(assets_root: &Path, sha: &Sha256, upload_id: &str) -> Result<(), AssetError> {
     let upload_id = require_upload_id(upload_id)?;
     let session = session_dir(assets_root, sha, &upload_id);
@@ -490,7 +490,7 @@ pub fn abort_upload(assets_root: &Path, sha: &Sha256, upload_id: &str) -> Result
         return Ok(());
     }
     // A part or completion still running holds the lock, and emptying the
-    // folder under it would fail it and leave files behind. The lock is
+    // directory under it would fail it and leave files behind. The lock is
     // dropped before the removal, because Windows does not delete a file
     // that is open.
     match lock_session(&session) {
@@ -502,7 +502,7 @@ pub fn abort_upload(assets_root: &Path, sha: &Sha256, upload_id: &str) -> Result
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
         // A request that took the lock after this abort let go of it is
-        // writing into the folder: it made a file the removal did not see,
+        // writing into the directory: it made a file the removal did not see,
         // or, on Windows, holds one open that cannot be deleted.
         Err(e)
             if e.kind() == std::io::ErrorKind::DirectoryNotEmpty
@@ -739,7 +739,7 @@ mod tests {
     }
 
     /// An upload of the five bytes `hello` in one part, started in a new
-    /// folder: the folder, the fingerprint, the upload id and its session.
+    /// directory: the directory, the fingerprint, the upload id and its session.
     fn started_upload() -> (tempfile::TempDir, Sha256, String, PathBuf) {
         let dir = tempdir().unwrap();
         let sha = Sha256::of_bytes(b"hello");
@@ -753,7 +753,7 @@ mod tests {
         (dir, sha, upload_id, session)
     }
 
-    /// A completion that passed the check for its upload, whose folder an
+    /// A completion that passed the check for its upload, whose directory an
     /// abort or the stale sweep then removed, finds the upload gone: the
     /// client's own state, not a server that cannot store the file.
     #[test]
@@ -761,15 +761,15 @@ mod tests {
         let (dir, sha, _, session) = started_upload();
         fs::remove_dir_all(&session).unwrap();
 
-        // `complete_upload` checks the folder before it gets here, so the
+        // `complete_upload` checks the directory before it gets here, so the
         // removal between that check and the work is staged by calling the
         // work after the check directly.
         let err = complete_session(dir.path(), &session, &sha).unwrap_err();
         assert!(matches!(err, AssetError::UploadNotFound), "{err}");
     }
 
-    /// A removal deletes an upload's files before its folder. A request that
-    /// arrives while the manifest is gone and the folder is not finds the
+    /// A removal deletes an upload's files before its directory. A request that
+    /// arrives while the manifest is gone and the directory is not finds the
     /// upload gone too.
     #[test]
     fn a_request_to_an_upload_part_way_through_its_removal_finds_no_upload() {

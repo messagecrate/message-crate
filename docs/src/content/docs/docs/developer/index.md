@@ -14,6 +14,6 @@ These pages are for people who compile the server, run Compose, or call the HTTP
 - [Formats](/docs/developer/formats/) — converter capabilities and mapping tables
 - [Config and accounts](/docs/developer/reference/config-and-accounts/) — `config.toml` and local accounts
 - [Database](/docs/developer/reference/database/)
-- [Export structure](/docs/developer/reference/export-structure/) — JSONL folder layout
+- [Export structure](/docs/developer/reference/export-structure/) — JSONL directory layout
 - [CSV columns](/docs/developer/reference/csv-columns/)
 - [Server CLI](/docs/developer/reference/server-cli/)

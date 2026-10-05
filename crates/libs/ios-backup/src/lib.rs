@@ -6,7 +6,7 @@
 //! itself: whether it is encrypted ([`ios_backup_encrypted_flag`]), which
 //! phone number it names ([`ios_backup_phone_number`]), which addresses its
 //! device sent from ([`backup_identities`], which also reads a Mac
-//! `chat.db`), and the files of one domain decrypted to a folder
+//! `chat.db`), and the files of one domain decrypted to a directory
 //! ([`decrypt_ios_backup_domain`]).
 //!
 //! Opening a backup's databases and decrypting its files needs
@@ -15,7 +15,7 @@
 //! program: `imessage-reader` (`crates/helpers/imessage-reader`). [`Helper`]
 //! finds that program, starts it, and reads its answer over the wire types
 //! of `imessage-reader-protocol`; `message_crate_core::ScratchDir` is the
-//! folder one request decrypts into, under the app's cache folder.
+//! directory one request decrypts into, under the app's cache directory.
 //! `imessage-ir-exporter` starts the program through the same two types for
 //! an export. Why: `docs/adr/0014-gpl-code-only-behind-a-process-boundary.md`.
 

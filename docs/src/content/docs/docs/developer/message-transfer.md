@@ -5,30 +5,30 @@ description: How a phone backup becomes chat files, how those files load into Me
 
 A phone backup is a copy of chats sitting on a computer. The server is a separate program with its own database. The backup does not become data in that database until a converter reads it and import loads the result.
 
-[System Design](/docs/developer/design/) shows the folders in this project and how the website talks to the server. Which fields each converter fills in is on [Converter capabilities](/docs/developer/formats/). Every column in the chat files is on [Export structure](/docs/developer/reference/export-structure/).
+[System Design](/docs/developer/design/) shows the directories in this project and how the website talks to the server. Which fields each converter fills in is on [Converter capabilities](/docs/developer/formats/). Every column in the chat files is on [Export structure](/docs/developer/reference/export-structure/).
 
 ## How chats get into Message Crate
 
 1. A converter reads the backup. In the desktop app this runs as the first step of **Import**.
-2. The converter writes a folder of chat files, plus photos and other attachments in an `attachments/` folder.
-3. Import loads that folder into a server that is already running. In the desktop app this is the **Import** screen, which uses the `message-crate-push` library.
+2. The converter writes a directory of chat files, plus photos and other attachments in an `attachments/` directory.
+3. Import loads that directory into a server that is already running. In the desktop app this is the **Import** screen, which uses the `message-crate-push` library.
 
 ```mermaid
 flowchart LR
   backups[Phone backup] --> converter[Converter]
-  converter --> folder[Chat files folder]
-  folder --> import[Import]
+  converter --> directory[Chat files directory]
+  directory --> import[Import]
   import --> server[Message Crate]
 ```
 
 ## How chats come back out
 
-Export copies chats from a running server into a new folder of the same chat files. In the desktop app this is the **Export** screen, which uses the `message-crate-pull` library.
+Export copies chats from a running server into a new directory of the same chat files. In the desktop app this is the **Export** screen, which uses the `message-crate-pull` library.
 
 ```mermaid
 flowchart LR
   server[Message Crate] --> export[Export]
-  export --> folder[Chat files folder]
+  export --> directory[Chat files directory]
 ```
 
 ## Chat files
@@ -70,10 +70,10 @@ Some files come from tools that were not built for this project, or that drop me
 
 ## Libraries that talk to a running server
 
-These do not read a phone backup. They load or save the chat-file folder, or change a folder that is already in Message Crate's format. The desktop app links them directly; none is a command a person runs.
+These do not read a phone backup. They load or save the chat-file directory, or change a directory that is already in Message Crate's format. The desktop app links them directly; none is a command a person runs.
 
 | Library | What it does |
 |---------|----------------|
-| `message-crate-push` | Loads a chat-file folder into a running server. Used by **Import**. |
-| `message-crate-pull` | Writes a chat-file folder from a running server. Used by **Export**. |
-| `message-reexport` | Turns an existing Message Crate export folder into another format, such as CSV or mail. Used by **Export** for any format other than JSON Lines. See [Convert an existing export](/docs/developer/formats/convert/). |
+| `message-crate-push` | Loads a chat-file directory into a running server. Used by **Import**. |
+| `message-crate-pull` | Writes a chat-file directory from a running server. Used by **Export**. |
+| `message-reexport` | Turns an existing Message Crate export directory into another format, such as CSV or mail. Used by **Export** for any format other than JSON Lines. See [Convert an existing export](/docs/developer/formats/convert/). |

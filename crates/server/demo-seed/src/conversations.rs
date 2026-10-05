@@ -45,7 +45,7 @@ enum SourceFlavor {
 pub struct GenStats {
     /// Contacts invented.
     pub contacts: usize,
-    /// Conversation files written across every backup folder.
+    /// Conversation files written across every backup directory.
     pub conversation_files: usize,
     /// Messages written.
     pub messages: usize,
@@ -91,14 +91,14 @@ fn export_meta(source: &str, owner_identity: &str) -> ExportMeta {
     }
 }
 
-/// The three backup folders a run writes into.
+/// The three backup directories a run writes into.
 pub struct StagingDirs<'a> {
     pub imessage: &'a Path,
     pub sbr: &'a Path,
     pub whatsapp: &'a Path,
 }
 
-/// Write every conversation file into the three backup folders and return counts.
+/// Write every conversation file into the three backup directories and return counts.
 ///
 /// One-to-one contacts are split into iMessage-only, Android-only, and overlap.
 /// Unassigned handles, groups, `orphaned.jsonl`, empty threads, and WhatsApp
@@ -421,7 +421,7 @@ impl<R: Rng> Seeder<'_, R> {
         Ok(())
     }
 
-    /// Write the same contact into both the iMessage and Android folders.
+    /// Write the same contact into both the iMessage and Android directories.
     ///
     /// Shared messages use the same text and time so import can treat them as
     /// duplicates. The Android copy also gets extra messages that only exist there.
@@ -573,7 +573,7 @@ fn individual_participants(chat_id: &str, display_name: Option<String>) -> Vec<I
     }]
 }
 
-/// Folder name for this backup source (`imessage`, `sms-backup-restore`, or `whatsapp`).
+/// Directory name for this backup source (`imessage`, `sms-backup-restore`, or `whatsapp`).
 fn source_id(flavor: SourceFlavor) -> &'static str {
     match flavor {
         SourceFlavor::IMessage => IMESSAGE_SOURCE,
