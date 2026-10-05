@@ -1,7 +1,7 @@
-//! Local log of which files were already downloaded by message-crate-pull.
+//! Local log of which attachments an Export from a server already downloaded.
 //!
 //! The file is `.message-crate-pull-state.jsonl`. JSON Lines means one JSON object per
-//! line. A later download can skip attachments that are already on disk.
+//! line. A later Export Run can skip attachments that are already on disk.
 
 use std::collections::HashSet;
 #[cfg(test)]
@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-/// Filename of the local download log, written in the output directory.
+/// Filename of the journal, written in the output directory.
 pub const PULL_JOURNAL_NAME: &str = ".message-crate-pull-state.jsonl";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,9 +27,9 @@ pub enum PullJournalEvent {
         /// Hex SHA-256 fingerprint of the attachment bytes; the skip key.
         sha256: String,
     },
-    /// A whole download finished, with its counts.
+    /// An Export Run finished, with its counts.
     ExportComplete {
-        /// Server base URL the download came from.
+        /// Server base URL the Export Run read from.
         url: String,
         /// Account username the run logged in as.
         username: String,

@@ -28,7 +28,7 @@ pub const DEFAULT_ASSET_DOWNLOAD_WORKERS: usize = 8;
 /// Extra tries for transient HTTP failures, matching the message-crate-push default.
 const MAX_RETRIES: u32 = 3;
 
-/// Settings for one download run (output directory, URL, search, flags).
+/// Settings for one Export Run (output directory, URL, search, flags).
 #[derive(Debug, Clone)]
 pub struct PullConfig {
     /// Directory the JSON Lines files and attachments are written into.
@@ -60,7 +60,7 @@ pub struct PullConfig {
     pub asset_download_workers: usize,
 }
 
-/// Final summary of a download (conversations, messages, attachment counts).
+/// Final summary of an Export Run (conversations, messages, attachment counts).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PullReport {
     /// Account id the token resolved to.
@@ -272,7 +272,7 @@ struct Written {
     refused_paths: BTreeSet<String>,
 }
 
-/// One authenticated download run: the connection, the account it resolved
+/// One authenticated Export Run: the connection, the account it resolved
 /// to, and the local journal of files already on disk.
 struct Pull<'a> {
     cfg: &'a PullConfig,
@@ -611,7 +611,7 @@ impl<'a> Pull<'a> {
         Ok(docs.len() as u64)
     }
 
-    /// Record that this download finished, then rewrite the journal in its
+    /// Record that this Export Run finished, then rewrite the journal in its
     /// shortest form. Every asset this run saw is on disk: it was downloaded
     /// above, or an earlier run had already fetched it. A journal write
     /// failure does not fail a run whose files are already written; it is
@@ -635,7 +635,7 @@ impl<'a> Pull<'a> {
             emit(
                 out,
                 ProgressEvent::Log(format!(
-                    "warning: could not record the finished Export in the journal: {error:#}"
+                    "warning: could not record the finished Export Run in the journal: {error:#}"
                 )),
             );
         }
