@@ -1206,6 +1206,15 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-05 **The desktop app reaches an HTTPS server whose certificate
+  your computer trusts.** A Message Crate behind a reverse proxy whose
+  certificate comes from a private certificate authority, such as one made
+  by mkcert or Caddy's internal authority, opened in the desktop app's
+  window, but an Upload, an Export from the server and an attachment
+  download failed with `UnknownIssuer`. The app checked those against the
+  public authorities it carries and nothing else. It now also trusts the
+  authorities the operating system trusts, as the window does. A certificate
+  that neither trusts is still refused.
 - 2026-10-05 **The desktop app saves a large attachment without holding it
   in memory.** Downloading a video of several hundred megabytes in the
   desktop app loaded the whole file into memory two or three times over
