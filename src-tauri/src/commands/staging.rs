@@ -1,7 +1,7 @@
 //! `summarize_staging`, `transcode_staging`, `delete_staging`, and the
 //! Import Run record commands.
 //!
-//! These back the two reviews a staged import stops at (Decision 16):
+//! These back the two reviews a staged import stops at:
 //! `summarize_staging` recomputes what a staged folder holds so the first
 //! review can show it, `transcode_staging` runs the convert/compress pass the
 //! exporter deferred (see `extract::exporter_attachment_media`), and

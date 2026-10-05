@@ -412,15 +412,9 @@ fn complete_session(
     let gone = |e| gone_if_session_file_removed(session, e);
     let _lock = lock_session(session).map_err(gone)?;
     let (manifest, assembled) = assemble(session, sha).map_err(gone)?;
-    let result = assets_api::store_verified(
-        &assembled,
-        sha,
-        assets_root,
-        manifest.mime.as_deref(),
-        true,
-        false,
-    )
-    .map_err(|e| gone_if_removed(session, e));
+    let result =
+        assets_api::store_verified(&assembled, sha, assets_root, manifest.mime.as_deref(), true)
+            .map_err(|e| gone_if_removed(session, e));
     // Always drop the session directory after complete attempt.
     drop(_lock);
     let _ = fs::remove_dir_all(session);

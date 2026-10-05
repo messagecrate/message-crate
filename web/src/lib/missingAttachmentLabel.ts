@@ -17,9 +17,8 @@ function missingWhy(reason: string | null | undefined): string {
     const detail = reason.slice("unknown: ".length);
     return detail ? `could not be imported — ${detail}` : "could not be imported";
   }
-  // Keep an unrecognized reason visible and reportable, never uniform —
-  // spec decision 41's fallback wording, whether or not it carries the
-  // `unknown: ` prefix.
+  // Keep an unrecognized reason visible and reportable, never uniform,
+  // whether or not it carries the `unknown: ` prefix.
   return `could not be imported — ${reason}`;
 }
 

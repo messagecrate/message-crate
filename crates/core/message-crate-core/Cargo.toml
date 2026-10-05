@@ -8,7 +8,7 @@ description = "Shared export pipeline, jobs, and form model for the Message Crat
 [dependencies]
 anyhow = { workspace = true }
 chrono = { workspace = true }
-message-csv = { path = "../../libs/csv" }
+message-csv = { path = "../../libs/csv", optional = true }
 message-ir = { path = "../../libs/ir" }
 media = { path = "../../libs/media" }
 obfuscate = { path = "../../libs/obfuscate" }
@@ -17,9 +17,11 @@ tempfile = { workspace = true }
 thiserror = { workspace = true }
 
 [features]
-testutil = []
+# The CSV reader is only for `testutil`, which reads exports back in tests.
+testutil = ["dep:message-csv"]
 
 [dev-dependencies]
+message-csv = { path = "../../libs/csv" }
 media = { path = "../../libs/media", features = ["testutil"] }
 
 [lints]

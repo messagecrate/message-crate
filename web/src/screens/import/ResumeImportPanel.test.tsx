@@ -320,7 +320,6 @@ describe("ResumeImportPanel", () => {
           path: "/backups/iphone.tar",
           size_bytes: 10,
           modified_unix_ms: 1,
-          message_count: null,
         },
       }),
     };

@@ -94,8 +94,7 @@ fn a_reused_blob_takes_the_export_mime_type_when_the_record_has_one() {
     let source = export_dir.join("photo.png");
     std::fs::write(&source, b"not really a png").unwrap();
     let sha = assets_api::Sha256::parse(&assets_api::hash_file(&source).unwrap()).unwrap();
-    assets_api::store_verified(&source, &sha, &assets_dir, Some("image/png"), false, false)
-        .unwrap();
+    assets_api::store_verified(&source, &sha, &assets_dir, Some("image/png"), false).unwrap();
     let mut stats = AssetStats::default();
 
     let stored = store_claimed_or_path(
@@ -138,7 +137,7 @@ fn a_path_that_leaves_the_export_folder_is_refused_whether_or_not_its_fingerprin
     let source = export_dir.join("photo.png");
     std::fs::write(&source, b"stored bytes").unwrap();
     let stored_sha = assets_api::Sha256::parse(&assets_api::hash_file(&source).unwrap()).unwrap();
-    assets_api::store_verified(&source, &stored_sha, &assets_dir, None, false, false).unwrap();
+    assets_api::store_verified(&source, &stored_sha, &assets_dir, None, false).unwrap();
     let new_sha = assets_api::Sha256::of_bytes(b"bytes the store has never seen");
 
     for sha in [&stored_sha, &new_sha] {

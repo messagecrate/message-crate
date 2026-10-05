@@ -19,7 +19,6 @@ fn to_core_report(report: ReadReport, issues: Option<&IssueSink>) -> ExportRepor
         sent: report.sent,
         received: report.received,
         skipped_invalid_date: report.skipped_invalid_date,
-        skipped_out_of_range: report.skipped_out_of_range,
         duplicates_dropped: report.duplicates_dropped,
         ..ExportReport::with_issues(issues.cloned())
     };

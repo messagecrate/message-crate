@@ -40,7 +40,7 @@ Rel(desktop, vite, "Loads UI")
 Rel(desktop, api, "API", $tags="api")
 Rel(vite, web_src, "Serves live")
 Rel(web, web_src, "Built copy in static/")
-Rel(api, db, "rusqlite")
+Rel(api, db, "sqlx")
 Rel(api, data, "Reads and writes assets")
 Rel(desktop, backups, "Reads during Extract")
 
