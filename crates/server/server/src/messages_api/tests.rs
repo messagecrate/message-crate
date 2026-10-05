@@ -393,7 +393,7 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
     .unwrap();
     let assets = dir.join("assets");
     let mut conn = fixture.conn().await;
-    let stats = crate::imports_api::import_jsonl_files_on_conn(
+    let counts = crate::imports_api::import_jsonl_files_on_conn(
         &mut conn,
         &[path],
         &crate::imports_api::ImportOptions::fixed(crate::imports_api::FixedImportArgs {
@@ -409,8 +409,8 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
     )
     .await
     .unwrap();
-    assert_eq!(stats.messages, 3);
-    assert_eq!(stats.tapbacks, 3);
+    assert_eq!(counts.messages, 3);
+    assert_eq!(counts.tapbacks, 3);
 }
 
 /// An Apple Messages conversation file holding a message the owner deleted
@@ -422,11 +422,11 @@ const APPLE_MESSAGES_DELETIONS: &str =
 /// Import [`APPLE_MESSAGES_DELETIONS`] into `account_id` through the whole
 /// pipeline.
 async fn import_deletions(fixture: &TestFixture, account_id: i64) {
-    let stats =
+    let counts =
         import_apple_messages_file(fixture, account_id, "deletions", APPLE_MESSAGES_DELETIONS)
             .await;
     assert_eq!(
-        stats.messages, 3,
+        counts.messages, 3,
         "a marked message is imported like any other"
     );
 }
@@ -440,9 +440,9 @@ const APPLE_MESSAGES_EDITS: &str = include_str!("../../tests/fixtures/apple-mess
 /// Import [`APPLE_MESSAGES_EDITS`] into `account_id` through the whole
 /// pipeline.
 async fn import_edits(fixture: &TestFixture, account_id: i64) {
-    let stats =
+    let counts =
         import_apple_messages_file(fixture, account_id, "edits", APPLE_MESSAGES_EDITS).await;
-    assert_eq!(stats.messages, 3);
+    assert_eq!(counts.messages, 3);
 }
 
 /// Import one Apple Messages conversation file, `contents`, into
@@ -452,7 +452,7 @@ async fn import_apple_messages_file(
     account_id: i64,
     name: &str,
     contents: &str,
-) -> crate::imports_api::ImportStats {
+) -> crate::imports_api::ImportCounts {
     let dir = fixture.dir().join(name);
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join(format!("{name}.jsonl"));
