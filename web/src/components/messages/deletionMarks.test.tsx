@@ -3,11 +3,8 @@
 import { cleanup, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { missingAttachmentChipLabel } from "../../lib/missingAttachmentLabel";
-import {
-  BUBBLES,
-  bubbleMessage as message,
-  renderBubbleInUtc as renderInUtc,
-} from "../../test/bubbles";
+import { BUBBLES, renderBubbleInUtc as renderInUtc } from "../../test/bubbles";
+import { sampleMessage as message } from "../../test/messages";
 
 afterEach(() => {
   cleanup();
@@ -30,7 +27,7 @@ function markedBubble(text: string): HTMLElement {
   return bubble;
 }
 
-describe.each(BUBBLES)("$name bubble", ({ Bubble, source, service, label }) => {
+describe.each(BUBBLES)("$label bubble", ({ Bubble, source, service, label }) => {
   it("keeps the text of a message Deleted in the source app, muted in a dashed outline, and names the source beside its time", () => {
     renderInUtc(Bubble, message({ source, service, deletion: "deleted_in_source_app" }));
 

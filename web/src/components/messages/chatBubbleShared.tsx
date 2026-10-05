@@ -192,24 +192,37 @@ const MATCHED_EARLIER_VERSION_TEXT = "Matched an earlier version";
  * that opens and closes them (#1143). They are closed by default, because
  * reading them is rare. A message a search found only by an earlier version
  * opens them, when it is drawn so or when it becomes so, as a Find match
- * does on a message already on screen; the person can close them again.
+ * does on a message already on screen. When the search moves on, as Find
+ * stepping to the next match does, they close again, so only the message the
+ * search reached is open, unless the person pressed "Edited" meanwhile: then
+ * they stay as the person left them.
  */
 function useEarlierVersions(
   message: Pick<Message, "earlier_versions" | "matched_earlier_version">,
 ) {
   const matched = message.matched_earlier_version;
   const [open, setOpen] = useState(matched);
+  /** Whether the person pressed "Edited" since a search last opened them. */
+  const [pressed, setPressed] = useState(false);
   const [wasMatched, setWasMatched] = useState(matched);
   if (matched !== wasMatched) {
     setWasMatched(matched);
-    if (matched) setOpen(true);
+    if (matched) {
+      setOpen(true);
+      setPressed(false);
+    } else if (!pressed) {
+      setOpen(false);
+    }
   }
   const panelId = useId();
   const edited = message.earlier_versions.length > 0;
   return {
     edited,
     open: edited && open,
-    toggle: () => setOpen((o) => !o),
+    toggle: () => {
+      setPressed(true);
+      setOpen((o) => !o);
+    },
     panelId,
     versions: message.earlier_versions,
     matched,
@@ -319,43 +332,39 @@ function senderColorClass(palette: BubblePalette): string {
  * its earlier versions under the bubble.
  */
 export function ChatBubbleRow({
-  messageId,
-  mine,
+  message,
   isActive,
   palette,
   showSender,
   senderLabel,
   timeLabel,
-  deletion,
-  source,
-  edits,
   meta,
   children,
   footer,
 }: {
-  messageId: string;
-  mine: boolean;
+  /**
+   * The message: its id, its author's side, its mark (which draws the bubble
+   * muted and dashed), the source the Deleted in the source app note names,
+   * and its earlier versions.
+   */
+  message: Message;
   isActive?: boolean;
   palette: BubblePalette;
   showSender?: boolean;
   senderLabel?: string;
   timeLabel: string;
-  /** The message's mark, which draws the bubble muted and dashed. */
-  deletion?: Deletion | null;
-  /** The message's import source, which the Deleted in the source app note names. */
-  source: string;
-  /** The message's earlier versions, and whether a search found it only by one. */
-  edits: Pick<Message, "earlier_versions" | "matched_earlier_version">;
   meta?: ReactNode;
   children?: ReactNode;
   footer?: ReactNode;
 }) {
   const hasBubble = children != null && children !== false && children !== "";
-  const versions = useEarlierVersions(edits);
+  const mine = message.is_from_me;
+  const { deletion, source } = message;
+  const versions = useEarlierVersions(message);
 
   return (
     <div
-      id={`msg-${messageId}`}
+      id={`msg-${message.id}`}
       className={`flex flex-col px-4 py-[0.2rem] ${
         mine ? "mb-[0.15rem] items-end" : "mb-[0.4rem] items-start"
       } ${isActive ? "bg-search-active" : "bg-transparent"}`}

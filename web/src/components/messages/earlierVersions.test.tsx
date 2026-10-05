@@ -3,7 +3,8 @@
 import { cleanup, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Message } from "../../lib/types";
-import { BUBBLES, bubbleMessage, renderBubbleInUtc } from "../../test/bubbles";
+import { BUBBLES, renderBubbleInUtc } from "../../test/bubbles";
+import { sampleMessage } from "../../test/messages";
 import { setupUser } from "../../test/user";
 
 afterEach(() => {
@@ -15,7 +16,7 @@ afterEach(() => {
  * to "See you at half past noon", and later to its final text.
  */
 function edited(source: string, service: string, partial: Partial<Message> = {}): Message {
-  return bubbleMessage({
+  return sampleMessage({
     source,
     service,
     text: "See you at one",
@@ -37,7 +38,7 @@ function versionItems(): HTMLElement[] {
   return within(screen.getByRole("list", { name: "Earlier versions" })).getAllByRole("listitem");
 }
 
-describe.each(BUBBLES)("$name bubble", ({ Bubble, source, service }) => {
+describe.each(BUBBLES)("$label bubble", ({ Bubble, source, service }) => {
   it("reads Edited beside the time of an edited message and keeps its earlier versions closed", () => {
     renderBubbleInUtc(Bubble, edited(source, service));
 
@@ -102,6 +103,32 @@ describe.each(BUBBLES)("$name bubble", ({ Bubble, source, service }) => {
     expect(second).not.toHaveAttribute("data-matched");
   });
 
+  it("closes the versions again when the search that opened them moves on, unless the person pressed Edited", async () => {
+    const found = edited(source, service, {
+      matched_earlier_version: true,
+      earlier_versions: edited(source, service).earlier_versions.map((v, i) => ({
+        ...v,
+        matched: i === 0,
+      })),
+    });
+    const { rerenderWith } = renderBubbleInUtc(Bubble, found);
+    const control = screen.getByRole("button", { name: "Edited" });
+    expect(control).toHaveAttribute("aria-expanded", "true");
+
+    // Find stepped on: the message is no longer the one a search reached.
+    rerenderWith(edited(source, service));
+    expect(control).toHaveAttribute("aria-expanded", "false");
+
+    // Reached again, and this time the person opens and keeps them.
+    rerenderWith(found);
+    const user = setupUser();
+    await user.click(control);
+    await user.click(control);
+    expect(control).toHaveAttribute("aria-expanded", "true");
+    rerenderWith(edited(source, service));
+    expect(control).toHaveAttribute("aria-expanded", "true");
+  });
+
   it("keeps closed an edited message a search found by its final text", () => {
     // A hit by the final text carries no version marked, even when an earlier
     // version holds the word too.
@@ -115,7 +142,7 @@ describe.each(BUBBLES)("$name bubble", ({ Bubble, source, service }) => {
   });
 
   it("draws no Edited control on a message never edited", () => {
-    renderBubbleInUtc(Bubble, bubbleMessage({ source, service }));
+    renderBubbleInUtc(Bubble, sampleMessage({ source, service }));
 
     expect(screen.queryByRole("button", { name: "Edited" })).not.toBeInTheDocument();
     expect(screen.queryByText(/Edited/)).not.toBeInTheDocument();
