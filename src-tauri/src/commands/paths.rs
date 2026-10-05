@@ -362,7 +362,7 @@ pub(crate) fn resolve_openable_path(raw: &str, staging_root: &str) -> Result<Pat
             .canonicalize()
             .map_err(|error| format!("Could not resolve path: {error}"))?;
         if !canonical.starts_with(&root) {
-            return Err("Path is outside the run directory".to_string());
+            return Err("Path is outside this Import Run's directory".to_string());
         }
         return Ok(canonical);
     }
@@ -370,7 +370,7 @@ pub(crate) fn resolve_openable_path(raw: &str, staging_root: &str) -> Result<Pat
     let resolved =
         resolve_on_disk(&candidate).map_err(|error| format!("Could not resolve path: {error}"))?;
     if !resolved.starts_with(&root) {
-        return Err("Path is outside the run directory".to_string());
+        return Err("Path is outside this Import Run's directory".to_string());
     }
     Ok(resolved)
 }
@@ -447,7 +447,7 @@ mod tests {
         let err =
             resolve_openable_path(candidate.to_str().unwrap(), link.to_str().unwrap()).unwrap_err();
 
-        assert_eq!(err, "Path is outside the run directory");
+        assert_eq!(err, "Path is outside this Import Run's directory");
     }
 
     #[test]

@@ -82,7 +82,7 @@ describe("ProfileDangerZone", () => {
     expect(logout).not.toHaveBeenCalled();
   });
 
-  it("names the account's Staging Directories on this computer, and deletes them with the account", async () => {
+  it("names the directories of the account's Import Runs on this computer, and deletes them with the account", async () => {
     desktop.value = true;
     accountStagingDirectories.mockResolvedValue(["/home/carol/staging/iphone-2026-10-04"]);
     deleteAccount.mockResolvedValue(undefined);
@@ -107,7 +107,7 @@ describe("ProfileDangerZone", () => {
       await within(dialog).findByText("/home/carol/staging/iphone-2026-10-04"),
     ).toBeInTheDocument();
     expect(dialog).toHaveTextContent(
-      "Deleting the account also deletes its Staging Directories on this computer:",
+      "Deleting the account also deletes the directories of its Import Runs on this computer:",
     );
     await fill(user, within(dialog).getByRole("textbox", { name: /Type your username/ }), "carol");
     await user.click(within(dialog).getByRole("button", { name: "Permanently delete my account" }));
@@ -155,7 +155,7 @@ describe("ProfileDangerZone", () => {
     expect(within(dialog).queryByText("/home/carol/old")).toBeNull();
   });
 
-  it("deletes no Staging Directory when it could not look for them, even with an earlier list cached", async () => {
+  it("deletes no Import Run's directory when it could not look for them, even with an earlier list cached", async () => {
     desktop.value = true;
     deleteAccount.mockResolvedValue(undefined);
     const client = testQueryClient();
@@ -207,7 +207,7 @@ describe("ProfileDangerZone", () => {
     await user.click(screen.getByRole("button", { name: /Danger zone/ }));
     await user.click(screen.getByRole("button", { name: "Delete account" }));
     const dialog = screen.getByRole("dialog");
-    expect(dialog).not.toHaveTextContent(/Staging Director/);
+    expect(dialog).not.toHaveTextContent(/Import Runs on this computer/);
     await fill(user, within(dialog).getByRole("textbox", { name: /Type your username/ }), "carol");
     await user.click(within(dialog).getByRole("button", { name: "Permanently delete my account" }));
 

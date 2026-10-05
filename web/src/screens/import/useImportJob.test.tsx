@@ -2406,7 +2406,7 @@ describe("useImportJob resume path", () => {
 
   /**
    * A push that stands in for `awaitTauriJob`: it calls the invoke function,
-   * sends `events` to the job's listeners, and returns what the Staging Directory held
+   * sends `events` to the job's listeners, and returns what the run directory held
    * once the window wrote the record they lead to. That is what an app that
    * closed at that moment, before the Upload ended, would leave.
    */
@@ -2441,7 +2441,7 @@ describe("useImportJob resume path", () => {
     };
   }
 
-  it("writes an Upload issue into the Staging Directory before the Upload ends (#1639)", async () => {
+  it("writes an Upload issue into the run directory before the Upload ends (#1639)", async () => {
     const skip: ImportIssueEvent = {
       kind: "skip",
       step: "upload",
@@ -2479,7 +2479,7 @@ describe("useImportJob resume path", () => {
 
   it("does not send with a Discard a failure the resumed Upload undid before the app closed (#1639)", async () => {
     // Pause 1 left a.jsonl failed. The resumed Upload sends it, and the app
-    // closes before that Upload ends, so the Staging Directory keeps the record written
+    // closes before that Upload ends, so the run directory keeps the record written
     // while it ran.
     const failed = {
       kind: "error",

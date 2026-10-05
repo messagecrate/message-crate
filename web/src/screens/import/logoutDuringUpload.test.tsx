@@ -318,7 +318,7 @@ describe("logging out during an Upload", () => {
     expect(result.current.job.summaryView?.filesFailed).toBe(0);
   });
 
-  it("deletes a deleted account's Staging Directories once the Upload has paused and the session is revoked", async () => {
+  it("deletes the directories of a deleted account's Import Runs once the Upload has paused and the session is revoked", async () => {
     const result = await startUpload();
 
     await act(() =>
@@ -401,7 +401,7 @@ describe("logging out during an Upload", () => {
     expect(getToken()).toBe("next-session-token");
   });
 
-  it("names a deleted account's Staging Directory it could not delete", async () => {
+  it("names a deleted account's Import Run directory it could not delete", async () => {
     deleteStagingMock.mockRejectedValueOnce(new Error("permission denied"));
     const result = await logIn();
 

@@ -278,7 +278,7 @@ fn a_staging_issue_reaches_the_issue_sink_before_staging_ends() {
     )
     .unwrap();
     // Staging ends by recording the run's media settings, so an issue that
-    // arrives while they are not yet in the Staging Directory arrived
+    // arrives while they are not yet in the run directory arrived
     // mid-Staging.
     let arrived = Arc::new(Mutex::new(Vec::new()));
     let sink_arrived = Arc::clone(&arrived);

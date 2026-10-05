@@ -308,7 +308,7 @@ export default function ImportRunView({
       <FactGroups>
         {trimmedStaging ? (
           <FactGroup
-            title="Staging directory"
+            title="This Import Run's directory"
             value={
               <OpenPathButton path={trimmedStaging} className={PATH_LINK}>
                 {trimmedStaging}

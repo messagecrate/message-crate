@@ -137,7 +137,7 @@ function withShownAttachmentMode(form: ImportJobFormValues): ImportJobFormValues
 }
 
 /**
- * The run's form with the attachment mode its Staging Directory recorded.
+ * The run's form with the attachment mode its run directory recorded.
  *
  * Staging records the run's media settings in the directory, and the summary
  * of the directory carries the mode. From the end of Staging on, the directory is
@@ -292,7 +292,7 @@ export type ResumeWrite = {
   identities?: string[] | null;
 };
 
-/** Pick up a session whose Staging Directory is already complete. */
+/** Pick up a session whose run directory is already complete. */
 export type ResumePush = {
   sessionId: number;
   stagingDir: string;
@@ -420,7 +420,7 @@ type RunScratch = {
    */
   startImport: boolean;
   /**
-   * What the run's earlier parts recorded, read from the Staging Directory when
+   * What the run's earlier parts recorded, read from the run directory when
    * the run resumes (`runRecord.ts`). Empty for a run that started here.
    */
   carried: RunRecord;
@@ -482,7 +482,7 @@ function asWork(action: () => Promise<void>): Promise<void> {
  * A store already the account's is left as it is. A run another account
  * started is stopped and let settle first, so nothing it does afterwards
  * lands in the new run: its stage is cancelled, which leaves the run open on
- * the server for that account to resume from its Staging Directory. Then the
+ * the server for that account to resume from its run directory. Then the
  * store goes back to a fresh form, named with `accountId` (#1085).
  */
 async function takeRunFor(accountId: number | null): Promise<void> {
@@ -591,7 +591,7 @@ function currentPart(
 }
 
 /**
- * Pick up what the run's earlier parts recorded, from its Staging Directory. A
+ * Pick up what the run's earlier parts recorded, from its run directory. A
  * record that cannot be read leaves the run with only what this part
  * records: the resume itself goes ahead.
  */
@@ -613,7 +613,7 @@ let recordWrites: Promise<void> = Promise.resolve();
 let queuedRecordWrite: RecordWrite | null = null;
 
 /**
- * Write a run record into its Staging Directory, one write at a time and in the
+ * Write a run record into its run directory, one write at a time and in the
  * order they were asked for, so an older record never lands over a newer one.
  * The record is built when its write starts, from the run as it stands then,
  * and a write asked for while another waits for the same directory replaces the
@@ -640,13 +640,13 @@ function writeRunRecord(stagingDir: string, build: () => RunRecord): Promise<voi
 }
 
 /**
- * Write the run's record so far into its Staging Directory, for the part
+ * Write the run's record so far into its run directory, for the part
  * that resumes it. Called wherever the run stops with the run still open (at
  * a Review, and when `finishImport` leaves the run open), and while a stage
  * runs, as each issue arrives (`recordIssue`, `recordFileDone`). A failed
  * write loses only this part's record; the run itself is unaffected.
  *
- * While a stage runs, the write leaves in the Staging Directory every issue
+ * While a stage runs, the write leaves in the run directory every issue
  * the window had received: each stage sends its issues the moment it
  * records them, and the Upload says when it has sent each conversation, so
  * a crash loses only what arrived while the last write was on its way to
@@ -905,7 +905,7 @@ function waitAtReview(phase: "staging_review" | "media_review"): void {
 /**
  * Build the run's summary, record it, and end the run or leave it open.
  *
- * A run ends when the server takes `/complete`, and its Staging Directory is
+ * A run ends when the server takes `/complete`, and its run directory is
  * deleted then: the server holds the record, and nothing will read the
  * directory again (#1233). That covers a finished Upload, and a failed Staging
  * or Media stage, which is discarded at once because nothing complete exists
@@ -1045,7 +1045,7 @@ async function finishImport(args: {
 }
 
 /**
- * Delete a Staging Directory of a run that has ended or been discarded. Never
+ * Delete a run directory of a run that has ended or been discarded. Never
  * throws: a refusal or failed delete is kept on `stagingDeleteFailure` for
  * the screen to show. Returns whether the directory is gone.
  */
@@ -1067,7 +1067,7 @@ async function discardStagingDirectory(stagingDir: string): Promise<boolean> {
   }
 }
 
-/** The person has read that a Staging Directory was left behind. */
+/** The person has read that a run directory was left behind. */
 function dismissStagingDeleteFailure(): void {
   store.set({ stagingDeleteFailure: null });
 }
@@ -1263,7 +1263,7 @@ async function runMediaPass(
     // which is exactly where it got to. A cancellation also skips
     // `/complete` outright (see finishImport), so the run stays running and
     // resumable instead of completing and freeing the slot out from under a
-    // Staging Directory nobody can reach any more. A failed stage is discarded:
+    // run directory nobody can reach any more. A failed stage is discarded:
     // it completes as failed and its directory goes, so a broken ffmpeg does
     // not lock the account out of importing.
     await finishImport({
@@ -1398,7 +1398,7 @@ async function runImport(
     }
 
     if (resume) {
-      // The Staging Directory is already complete, so there is nothing to
+      // The run directory is already complete, so there is nothing to
       // resolve, no new run to create (the account already has this one),
       // and no extract to run. resume_push is only ever offered after the
       // last review, so there IS a plan from it: it rides along as
@@ -1430,7 +1430,7 @@ async function runImport(
     let outputDir: string;
     if (resumeWrite) {
       // The run already exists and its Staging was interrupted. Reuse it and
-      // its Staging Directory: the exporter reads the backup again and skips
+      // its run directory: the exporter reads the backup again and skips
       // the conversations already written.
       outputDir = resumeWrite.stagingDir;
       sessionId = resumeWrite.sessionId;
@@ -1558,7 +1558,7 @@ async function runImport(
  * End a run the person gave up on, by a Cancel at a Review or a Discard of a
  * paused run: close it on the server as cancelled, with the Import Errors and
  * notes its record holds (`issuesToDiscard`, `notesToDiscard`), and delete
- * its Staging Directory.
+ * its run directory.
  *
  * The record is in the directory, so it is read before the directory goes, and a
  * record that cannot be read discards the run with no Import Errors. The
@@ -1769,11 +1769,11 @@ export function useImportJob() {
    * `session.form` a second time.
    *
    * The directory is the truth. Every landing recomputes the summary fresh
-   * from the Staging Directory; the run's stored `summary` is read only as the
+   * from the run directory; the run's stored `summary` is read only as the
    * approved plan, for the Staging row on the Media Review and the Media
    * stage's own bookkeeping.
    *
-   * A recompute failing here is a transient read of the Staging Directory, not
+   * A recompute failing here is a transient read of the run directory, not
    * a run that failed: only an explicit cancel ends a waiting run, so this
    * must not complete it or write a stage. It returns to the form instead
    * (the resume check there re-runs and finds the same run, so the panel

@@ -57,7 +57,7 @@ export async function getActiveImportSession(
 }
 
 /**
- * The Staging Directories of the account's Import Runs that are on this
+ * The directories of the account's Import Runs that are on this
  * computer, for deleting with the account (#1491).
  *
  * The server keeps where each run staged its files, but the directories are on

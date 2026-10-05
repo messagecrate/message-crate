@@ -4,7 +4,7 @@ import ModalShell, { DialogError } from "./ModalShell";
 import PathList from "./PathList";
 import PlainButton from "./PlainButton";
 
-/** The account's Staging Directories on this computer, as the dialog shows them. */
+/** The directories of the account's Import Runs on this computer, as the dialog shows them. */
 export type StagingDirectoriesCheck = {
   checking: boolean;
   paths: readonly string[];
@@ -156,18 +156,20 @@ function DeleteAccountForm({
   );
 }
 
-/** Names the Staging Directories deleted with the account, or says why it cannot. */
+/** Names the Import Runs' directories deleted with the account, or says why it cannot. */
 function StagingDirectoriesNote({ check }: { check: StagingDirectoriesCheck }) {
   const text = "mt-3 text-[0.875rem] leading-relaxed text-muted";
   if (check.checking) {
     return (
-      <p className={text}>Looking for this account&apos;s Staging Directories on this computer…</p>
+      <p className={text}>
+        Looking for the directories of this account&apos;s Import Runs on this computer…
+      </p>
     );
   }
   if (check.error) {
     return (
       <p className={text}>
-        {`Message Crate could not look for this account's Staging Directories on this computer, so it deletes none: ${check.error}`}
+        {`Message Crate could not look for the directories of this account's Import Runs on this computer, so it deletes none: ${check.error}`}
       </p>
     );
   }
@@ -175,7 +177,7 @@ function StagingDirectoriesNote({ check }: { check: StagingDirectoriesCheck }) {
   return (
     <>
       <p className={text}>
-        Deleting the account also deletes its Staging Directories on this computer:
+        Deleting the account also deletes the directories of its Import Runs on this computer:
       </p>
       <PathList paths={check.paths.map((path) => ({ path }))} />
     </>

@@ -197,18 +197,18 @@ Under **Copy** and **Skip** the run goes from the Staging Review straight to Upl
 
 ### Staging
 
-Staging reads the backup and copies its messages and original attachments into the Staging Directory on the computer.
+Staging reads the backup and copies its messages and original attachments into this Import Run's directory in the Staging Directory on the computer.
 Nothing reaches the Message Crate during Staging.
 
 The Staging row shows:
 
-- **Staging directory**, a link that opens the directory.
+- **This Import Run's directory**, a link that opens it.
 - **Conversations**, with the count of **Messages** under it.
 - **Attachments**: the **Action** chosen on the form, the **Count**, and the **Total size**.
 - **Options**, only when **Obfuscate** is on.
 
-The Staging Directory is a new directory for each run, named `staging-` followed by the source and the date and time.
-It is made under `~/message-crate` unless **Settings → System** names another **Staging directory**.
+Each run gets a new directory in the Staging Directory, named `staging-` followed by the source and the date and time.
+The Staging Directory is `~/message-crate` unless **Settings → System** names another **Staging directory**.
 
 While Staging reads the backup, it keeps two kinds of working files in the app's cache directory, never in the Staging Directory: the databases it decrypts from an encrypted iPhone backup, and the attachments it reads out of an SMS Backup & Restore, GO SMS Pro or SMS Backup+ backup.
 They are deleted when Staging ends, whether it finished or failed.
@@ -227,7 +227,7 @@ Everything it shows is read from the staged files, not estimated, except the gro
 
 The approve button says what happens next: **Upload to Message Crate**, **Convert media**, or **Compress media**.
 It stays disabled while an export or a conversion runs, since the desktop app runs one job at a time, and names the job it waits for.
-**Cancel this import** ends the run and deletes the Staging Directory.
+**Cancel this import** ends the run and deletes its directory.
 
 When **Convert** or **Compress & Convert** is chosen and ffmpeg can't be found, the approve button is disabled and the row says so.
 [Attachments and media](/docs/user/features/messages/attachments-and-media/#ffmpeg) says where the ffmpeg directory is set.
@@ -244,10 +244,10 @@ The run stops again and reads **Awaiting approval**.
 The row shows the **Size limit per file** and the **Files over the limit** as they are now, after Media, by name and size.
 
 When the staged files cannot be read after Media, the screen goes back to the form and says why.
-The run waits at the Media Review with its Staging Directory, and resuming it reads the files again.
+The run waits at the Media Review with its directory, and resuming it reads the files again.
 
 **Upload to Message Crate** continues.
-**Cancel this import** ends the run and deletes the Staging Directory.
+**Cancel this import** ends the run and deletes its directory.
 
 ### Upload
 
@@ -259,7 +259,7 @@ The Upload row shows, once the run finishes:
 - **Messages**: the count sent, split into **New**, **Duplicate**, and **Failed**. A duplicate is a message the Message Crate already holds, which is skipped.
 - **Attachments**: the count **Uploaded**.
 - **Contacts**: **New** and **Modified**, and a **Contact list** that opens to each contact the run touched.
-- **Import log**: a link to `message-crate-push.log` in the Staging Directory.
+- **Import log**: a link to `message-crate-push.log` in this Import Run's directory.
 
 ### Approved Reviews, errors and notes
 
@@ -285,10 +285,10 @@ A run at a Review keeps waiting on another screen and after the app is closed.
 The **Import** entry in the sidebar carries a badge that reads **Waiting** while a run is at a Review, **Paused** while a run is paused at its Upload, and **Failed** when the run in the app has failed.
 
 **Cancel** under Staging or Media stops that Stage.
-The run stays open and the Staging Directory stays in place, so the run can be resumed.
+The run stays open and its directory stays in place, so the run can be resumed.
 
 **Pause** under Upload stops the Upload.
-The run stays open at its Upload and the Staging Directory stays in place.
+The run stays open at its Upload and its directory stays in place.
 Resuming it sends only the conversations that are not in the Message Crate yet.
 
 An Upload that fails is paused the same way, because a failure there is mostly the network or the server.
@@ -308,9 +308,9 @@ When the server ends the session during an Upload, the Upload pauses at once, re
 When Import is opened and the account already has a run open, the screen shows that run in place of the form.
 Every case offers **Discard this import**, which ends the run.
 The run keeps the Errors and notes it recorded before it was discarded.
-On the computer that staged the run, it also deletes the Staging Directory.
+On the computer that staged the run, it also deletes the run's directory.
 
-A run whose app closed or crashed keeps every Error that Staging, Media, or Upload had reported before it stopped, because each Error is written into the Staging Directory the moment its Stage reports it.
+A run whose app closed or crashed keeps every Error that Staging, Media, or Upload had reported before it stopped, because each Error is written into the run's directory the moment its Stage reports it.
 A resumed Stage reads again what it had not finished, and an Error it reports again is listed once.
 An Upload Error about a conversation that the resumed Upload then sends is dropped, so the run never records a failure for a conversation that reached the Message Crate.
 
@@ -325,7 +325,7 @@ An Upload Error about a conversation that the resumed Upload then sends is dropp
 
 Three cases offer only **Discard this import**, because there is nothing on this computer to carry on from:
 
-- The Staging Directory is gone.
+- The run's directory is gone.
 - The run was started on another computer, and its files are staged there.
 - The run's settings could not be read.
 
@@ -340,7 +340,7 @@ A resume at a Review, during Media, or during Upload reads the staged files and 
 
 ### The upload journal
 
-Upload keeps a journal named `.import-state.jsonl` in the Staging Directory.
+Upload keeps a journal named `.import-state.jsonl` in the run's directory.
 It records each attachment, each batch of messages, and each conversation that reached the Message Crate, for one server address and one username.
 
 A resumed Upload reads the journal and skips what is recorded there.
@@ -358,10 +358,10 @@ The heading of a finished run says how it ended.
 | `Import cancelled` | Staging or Media was cancelled. |
 | `Import paused` | The Upload was paused, or it failed before every conversation was sent. The run can be resumed. |
 
-A run that ends deletes its Staging Directory, and the import log and the journal with it.
+A run that ends deletes its directory, and the import log and the journal with it.
 After a success the Message Crate holds the messages, so the staged copy is no longer needed.
 After a failed Staging or Media, nothing complete was staged, so there is nothing to upload.
-A run that is cancelled or paused leaves the Staging Directory in place, because the staged files are what a resume reads.
+A run that is cancelled or paused leaves its directory in place, because the staged files are what a resume reads.
 The Errors and notes of a paused run are kept with its staged files, so the finished run lists those of every part.
 
 A run that succeeded leads with where to go next:
