@@ -301,7 +301,7 @@ mod tests {
     use crate::db::account_profile;
     use crate::imports_api::IMPORT_CONTACT_GROUP_NAME_SQL;
     use crate::open_db::fresh_config;
-    use crate::test_support::conversation_header;
+    use crate::test_support::{conversation_header, message_line};
     use tempfile::TempDir;
 
     const ALICE: i64 = 7;
@@ -312,11 +312,8 @@ mod tests {
     /// One incoming text from `phone`.
     fn conversation_with(phone: &str) -> String {
         let header = conversation_header("sms-backup-restore", phone).participant(phone, None);
-        format!(
-            r#"{header}
-{{"guid":"g-contacts-1","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"{phone}","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}}
-"#
-        )
+        let message = message_line("g-contacts-1", "hi").sms().sender(phone);
+        format!("{header}\n{message}\n")
     }
 
     /// A database with account alice and an export directory holding one

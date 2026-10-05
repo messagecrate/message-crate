@@ -11,7 +11,8 @@ use axum::http::StatusCode;
 use super::*;
 use crate::server::AppState;
 use crate::test_support::{
-    RegisteredAccount, TestFixture, conversation_header, fixture_with_account,
+    RegisteredAccount, TestFixture, attachment, conversation_header, fixture_with_account,
+    message_line,
 };
 
 /// The three synthetic files the tests import: an 800x600 PNG, a half-second
@@ -42,18 +43,14 @@ fn fixture_bytes(name: &str) -> Vec<u8> {
 /// One batch of one message with `files`, each a name and a media type,
 /// attached under the fingerprints `shas`.
 fn batch(files: &[(&str, &str)], shas: &[String]) -> String {
-    let attachments: Vec<String> = files
-        .iter()
-        .zip(shas)
-        .map(|((name, mime), sha)| {
-            format!(
-                r#"{{"path":"attachments/{name}","original_name":"{name}","mime_type":"{mime}","digest_sha256":"{sha}","is_sticker":false,"transcription":null,"sticker_effect":null}}"#
-            )
-        })
-        .collect();
-    let message = format!(
-        r#"{{"guid":"g-media","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"some files","attachments":[{}],"imessage":null,"source":null}}"#,
-        attachments.join(",")
+    let message = files.iter().zip(shas).fold(
+        message_line("g-media", "some files").sender("+15555550123"),
+        |message, ((name, mime), sha)| {
+            message.attachment(message_ir::IrAttachment {
+                digest_sha256: Some(sha.clone()),
+                ..attachment(&format!("attachments/{name}"), name, mime)
+            })
+        },
     );
     let header = conversation_header("imessage", "+15555550123").participant("+15555550123", None);
     format!("{header}\n{message}\n")

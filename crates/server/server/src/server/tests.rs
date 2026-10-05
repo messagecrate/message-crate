@@ -1865,11 +1865,14 @@ async fn a_small_attachment_size_limit_holds_only_the_attachment_uploads() {
         .owner("+15555550106", Some("Me"))
         .participant("+15555550107", None);
     let mut batch = header.line();
-    batch.push_str(&format!(
-        r#"{{"guid":"g-1","timestamp_unix_ms":1700000000000,"direction":"incoming","service":"whatsapp","message_kind":"sms","sender_identity":"+15555550107","sender_display_name":null,"subject":null,"text":"{}","attachments":[],"imessage":null,"source":null}}"#,
-        "a".repeat(4096)
-    ));
-    batch.push('\n');
+    batch.push_str(
+        &crate::test_support::message_line("g-1", &"a".repeat(4096))
+            .at(1_700_000_000_000)
+            .sms()
+            .service(message_ir::IrService::Whatsapp)
+            .sender("+15555550107")
+            .line(),
+    );
     let (status, text) = crate::test_support::post_raw(
         &state,
         &format!("/v1/imports/{}/batches", created["id"]),
