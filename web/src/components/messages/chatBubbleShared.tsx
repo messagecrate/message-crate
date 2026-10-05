@@ -1,5 +1,5 @@
 import type { CSSProperties, ReactNode } from "react";
-import { sourceLabel } from "../../lib/exportSources";
+import { deletedInSourceText, UNSENT_TEXT } from "../../lib/deletionMarkText";
 import { highlightText } from "../../lib/highlightText";
 import { useTimeZone } from "../../lib/timeZone";
 import type { Message, MessageAttachment, MessageTapback } from "../../lib/types";
@@ -164,7 +164,7 @@ function MarkedBubble({
         mine ? "ml-auto" : ""
       }`}
     >
-      {deletion === "unsent" ? "Unsent" : children}
+      {deletion === "unsent" ? UNSENT_TEXT : children}
     </div>
   );
 }
@@ -176,7 +176,7 @@ function MarkedBubble({
  */
 function DeletionNote({ deletion, source }: { deletion?: Deletion | null; source: string }) {
   if (deletion !== "deleted_in_source_app") return null;
-  return <span>· Deleted in {sourceLabel(source)}</span>;
+  return <span>· {deletedInSourceText(source)}</span>;
 }
 
 /** Bubble fill/text color per palette (theme vars switch with data-theme). */
