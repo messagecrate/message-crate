@@ -12,9 +12,9 @@ const TEST_ACCOUNT: i64 = 7;
 
 /// Every Session the server answers names its account by id and username, so
 /// the reference types `account_id` an integer and `username` a string, never
-/// null, and a client generated from it never has to handle a Session without
-/// them. That every property of a success answer is required is checked over
-/// the whole document (`openapi/document_rules.rs`).
+/// null. That every property of a success answer is required, so a client
+/// generated from the reference never has to handle a Session without them,
+/// is checked over the whole document (`openapi/document_rules.rs`).
 #[tokio::test]
 async fn the_reference_types_a_sessions_account_id_and_username() {
     let (fixture, account) = fixture_with_account().await;
