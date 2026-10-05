@@ -165,7 +165,6 @@ fn store_claimed_or_path(
                 assets_dir,
                 att.mime_type.as_deref(),
                 false,
-                false,
             ) {
                 Ok((stored, already)) => {
                     if already {

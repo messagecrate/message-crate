@@ -30,8 +30,8 @@ fn a_small_file_is_fine_without_probing() {
 
 #[test]
 fn heic_under_the_limit_may_grow_past_it() {
-    // Decision 12's headline case: HEIC is about half an equivalent JPEG,
-    // so converting grows it. 30 MB in, over 50 MB out.
+    // The common case on an iPhone backup: HEIC is about half an equivalent
+    // JPEG, so converting grows it. 30 MB in, over 50 MB out.
     let p = probe("hevc", 4032, 3024, None, 0);
     assert_eq!(
         classify_probed(
@@ -310,7 +310,7 @@ fn clone_and_disabled_leave_every_file_alone() {
 
 #[test]
 fn the_estimate_is_not_capped_at_the_original_size() {
-    // Decision 12 says so in as many words. A cap would erase MayGrow.
+    // The media step can make a file bigger, so a cap would erase MayGrow.
     let p = probe("hevc", 4032, 3024, None, 0);
     let size = 10 * 1024 * 1024;
     assert!(

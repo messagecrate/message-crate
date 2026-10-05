@@ -4,7 +4,7 @@
 //! media step will do to a file's size, and it is labelled as an estimate all
 //! the way to the screen.
 //!
-//! Decision 39: this is always recomputed from the folder, never read back
+//! This is always recomputed from the folder, never read back
 //! from a previously-written `summary_json` — the folder is the truth, and
 //! that is what makes resuming at a gate work: reopening the session
 //! recomputes rather than restoring.

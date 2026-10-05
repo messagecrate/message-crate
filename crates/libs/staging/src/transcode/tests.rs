@@ -112,7 +112,7 @@ fn the_digest_and_size_are_recomputed_from_the_derivative() {
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
     };
-    // Decision 29: ffmpeg output is not byte-identical across runs, so a
+    // ffmpeg output is not byte-identical across runs, so a
     // replayed digest would be a silent corruption — the server dedupes
     // assets by sha256.
     let (dir, jsonl, _) = staged_one("photo.png", &test_png_bytes());
@@ -142,7 +142,7 @@ fn an_interrupted_file_is_re_transcoded_not_adopted() {
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
     };
-    // Decision 28: nothing distinguishes a complete .in_progress from a
+    // Nothing distinguishes a complete .in_progress from a
     // truncated one without hashing it, so the marker's bytes are never used.
     let (dir, jsonl, _) = staged_one("photo.png", &test_png_bytes());
     let marker = dir.path().join("attachments/photo-mv.jpg.in_progress");
@@ -212,8 +212,8 @@ fn a_derivative_over_the_limit_becomes_too_large_and_keeps_the_message() {
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
     };
-    // Decision 45: skipped, not reverted. Falling back to the original
-    // would store the format the user asked to be rid of.
+    // Skipped, not reverted. Falling back to the original would store the
+    // format the person asked to be rid of.
     let (dir, jsonl, original) = staged_one("photo.png", &test_png_bytes());
     let report = transcode_staged(
         dir.path(),
@@ -532,9 +532,9 @@ fn a_crash_between_the_patch_and_the_rename_heals_by_re_transcoding_the_original
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
     };
-    // Hand-simulate the crash window between decision 28's steps 4-5
-    // (patch committed, conversation file written) and step 6 (marker
-    // renamed into its final name): the doc already points at the -mv
+    // Hand-simulate the crash window between the conversation file being
+    // patched and written and the marker being renamed into its final
+    // name: the doc already points at the -mv
     // name, a marker sits under .in_progress, and the original is still
     // on disk under its old name because the delete never ran.
     let (dir, jsonl, original) = staged_one("photo.png", &test_png_bytes());

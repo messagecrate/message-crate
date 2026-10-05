@@ -1,6 +1,8 @@
 ---
 title: System Design
 description: Repository layout, binaries, C4 views, and developer session sequences for Message Crate.
+tableOfContents:
+  maxHeadingLevel: 4
 ---
 
 Message Crate is two processes: the **server** (HTTP API and SQLite) and the **UI** that talks to it. This page is the map for someone who already compiles. Setup, tests, and pull requests stay on [Contributing](/docs/developer/contributing/). How messages move in and out is on [Message Transfer](/docs/developer/message-transfer/).
@@ -114,11 +116,13 @@ sequenceDiagram
 
 ### Log in
 
-**Prerequisite**
+#### Prerequisites for logging in
 
 - Server is running on `:8080`.
 - Desktop App is running.
   - Vite is serving the WebView on `:5173`.
+
+#### How logging in runs
 
 The developer types credentials in the SPA. Login is an Auth API call to the server, not a login to Tauri.
 
@@ -141,12 +145,14 @@ sequenceDiagram
 
 ### Import a backup
 
-**Prerequisite**
+#### Prerequisites for an import
 
 - Server is running on `:8080`
 - Desktop App is running.
   - Vite is serving webview on `:5173`.
 - User is logged in.
+
+#### How an import runs
 
 Messages and attachments are uploaded to the server using the `message-crate-push` library.
 
@@ -175,12 +181,14 @@ sequenceDiagram
 
 ### Export from Message Crate
 
-**Prerequisite**
+#### Prerequisites for an export
 
 - Server is running on `:8080`
 - Desktop App is running.
   - Vite is serving webview on `:5173`.
 - User is logged in.
+
+#### How an export runs
 
 Messages and attachments are downloaded from the server using the `message-crate-pull` library.
 

@@ -335,11 +335,11 @@ function isOwnerIdentityCount(value: unknown): value is OwnerIdentityCount {
 }
 
 /**
- * Parse a session's stored `summary` (Task 6) back into a `StagingSummary`
+ * Parse a session's stored `summary` back into a `StagingSummary`
  * — the plan approved at the last gate the session passed.
  *
  * Read only as the *approved baseline* on resume, never shown directly:
- * decision 39 says the summary actually on screen is always recomputed
+ * the summary actually on screen is always recomputed
  * fresh from the directory. Like `restoreFormFromSnapshot`, this value came
  * from the database rather than from this session's own state, so its
  * shape is checked field by field rather than trusted; returns `undefined`

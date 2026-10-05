@@ -179,8 +179,6 @@ pub struct ExportReport {
     pub received: u64,
     /// Rows skipped because their date could not be parsed.
     pub skipped_invalid_date: u64,
-    /// Rows skipped because they fell outside the date range.
-    pub skipped_out_of_range: u64,
     /// Duplicate rows dropped during dedupe.
     pub duplicates_dropped: u64,
     /// Attachment files saved to the output.
@@ -343,12 +341,6 @@ impl ExportReport {
                 self.skipped_invalid_date
             ));
         }
-        if self.skipped_out_of_range > 0 {
-            out.push(format!(
-                "  skipped {} out-of-range rows",
-                self.skipped_out_of_range
-            ));
-        }
         if self.duplicates_dropped > 0 {
             out.push(format!(
                 "  dropped {} duplicate rows",
@@ -448,28 +440,6 @@ pub fn prepare_outputs(
         resolved.push(input);
     }
     Ok((resolved, output))
-}
-
-/// Drop messages with unrepresentable timestamps and finalize a pending
-/// conversation. Returns whether any message remains.
-///
-/// `to_secs` converts a message sort key to Unix seconds (exporters that
-/// store milliseconds pass `|k| k / 1000`).
-pub fn prune_and_finish_conversation(
-    convo: &mut PendingConversation,
-    report: &mut ExportReport,
-    to_secs: impl Fn(i64) -> i64,
-) -> bool {
-    convo.messages.retain(|m| {
-        if message_csv::format_local_ts(to_secs(m.sort_key)).is_some() {
-            true
-        } else {
-            report.skipped_invalid_date += 1;
-            false
-        }
-    });
-    convo.has_attachments = convo.messages.iter().any(|m| !m.attachments.is_empty());
-    !convo.messages.is_empty()
 }
 
 /// Standard export metadata: source / tool / version plus the owner identity.
@@ -591,85 +561,6 @@ mod tests {
         report_with_media(0, &["a.heic: ffmpeg not found"])
             .check_media(false)
             .unwrap();
-    }
-
-    fn pending_message(sort_key: i64, attachment: bool) -> message_ir::PendingMessage {
-        message_ir::PendingMessage {
-            sort_key,
-            is_from_me: false,
-            sender_identity: "+15555550100".to_string(),
-            sender_display_name: None,
-            text: "hi".to_string(),
-            attachments: if attachment {
-                vec![message_ir::PendingAttachment {
-                    rel_path: "attachments/a.jpg".to_string(),
-                    content_type: "image/jpeg".to_string(),
-                    digest_sha256: None,
-                    name_hint: None,
-                    size_bytes: None,
-                }]
-            } else {
-                Vec::new()
-            },
-            extra: std::collections::BTreeMap::new(),
-        }
-    }
-
-    #[test]
-    fn prune_drops_and_counts_invalid_dates_and_keeps_the_rest() {
-        let mut convo = PendingConversation::new("chat", false, None, Vec::new());
-        convo.messages = vec![
-            pending_message(i64::MAX, true),
-            pending_message(1_700_000_000, false),
-            pending_message(i64::MAX, false),
-        ];
-        convo.has_attachments = true;
-        let mut report = ExportReport {
-            skipped_invalid_date: 5,
-            ..ExportReport::default()
-        };
-
-        assert!(prune_and_finish_conversation(
-            &mut convo,
-            &mut report,
-            |k| k
-        ));
-        assert_eq!(report.skipped_invalid_date, 7);
-        assert_eq!(convo.messages.len(), 1);
-        assert_eq!(convo.messages[0].sort_key, 1_700_000_000);
-        // The only attachment went with a dropped message.
-        assert!(!convo.has_attachments);
-    }
-
-    #[test]
-    fn prune_reports_a_conversation_with_no_valid_message_as_empty() {
-        let mut convo = PendingConversation::new("chat", false, None, Vec::new());
-        convo.messages = vec![pending_message(i64::MAX, false)];
-        let mut report = ExportReport::default();
-
-        assert!(!prune_and_finish_conversation(
-            &mut convo,
-            &mut report,
-            |k| k
-        ));
-        assert_eq!(report.skipped_invalid_date, 1);
-        assert!(convo.messages.is_empty());
-    }
-
-    #[test]
-    fn prune_passes_sort_keys_through_to_secs() {
-        // Milliseconds that are valid only once divided by 1000.
-        let mut convo = PendingConversation::new("chat", false, None, Vec::new());
-        convo.messages = vec![pending_message(i64::MAX / 10, true)];
-        let mut report = ExportReport::default();
-
-        assert!(prune_and_finish_conversation(
-            &mut convo,
-            &mut report,
-            |_| 1_700_000_000
-        ));
-        assert_eq!(report.skipped_invalid_date, 0);
-        assert!(convo.has_attachments);
     }
 
     #[test]

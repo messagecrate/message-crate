@@ -15,8 +15,6 @@ export type SourceFingerprint = {
   path: string;
   size_bytes: number;
   modified_unix_ms: number | null;
-  /** Always null: nothing fills it in. */
-  message_count: number | null;
 };
 
 /** The account's live import session, as the server reports it. */
@@ -107,8 +105,6 @@ export async function discardImportSession(
 /**
  * Identity of the backup this session reads.
  *
- * The message count starts null, and nothing fills it in after parse.
- *
  * The size and mtime come from a stat of the path itself, so for a
  * directory source -- an iOS backup folder, a WhatsApp folder -- they
  * describe the directory entry rather than its contents, and neither moves
@@ -120,6 +116,5 @@ export function buildSourceFingerprint(path: string, stat: PathStat): SourceFing
     path,
     size_bytes: stat.sizeBytes,
     modified_unix_ms: stat.modifiedUnixMs,
-    message_count: null,
   };
 }
