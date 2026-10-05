@@ -1539,6 +1539,17 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-05 **The HTTP API reference describes every field.** 59 fields,
+  among them the Import Run's mode and source, an upload's part size, and a
+  Contact Group's or Message Tag's name, showed no description in the HTTP
+  API reference. Each now says what it holds and when it is empty, and a
+  check fails on a new field that has none.
+- 2026-10-05 **The server refuses two requests it used to take silently.**
+  An import whose source name had a space before or after it started, and
+  its messages carried the space in their source. A change to a Contact
+  Group or a Message Tag that named a contact or conversation by an
+  impossible number left that one out without a word. Both are now refused
+  as invalid, as any other source name or member the server cannot take is.
 - 2026-10-05 **The HTTP API reference describes every optional field.** An
   optional field that holds a group of values or one of a set of choices,
   such as the identity a contact change links or the service it is on, had

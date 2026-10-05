@@ -746,6 +746,15 @@ Why: openapi-typescript reads no description inside a branch, so the web app's
 generated type for such a field carried no doc, while the same field made
 required kept it.
 
+Every field has a description, written from the doc comment on its Rust
+field, and a document rule fails on a field with none. The tag of an
+internally tagged enum, such as `ExportScope.kind`, is the one field no Rust
+code declares, so the finished document describes it from its values: each
+form's tag names that form and the others.
+Why: in October 2026, 59 fields of the reference had no description, and a
+reader of the reference or of the web app's generated types had only the
+field's name to go on.
+
 A rule that can be checked by walking every operation in the document is
 checked that way, by one test, as `openapi/credential_matrix.rs` checks every
 route's reach: the page shape and paging parameters on every list, a
