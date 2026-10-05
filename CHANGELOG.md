@@ -907,6 +907,15 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-05 **Two attachments whose names differ only in their extension
+  both arrive whole in an Export from a server.** The Export wrote each
+  attachment it fetched to a temporary file named after the attachment
+  without its extension, so `menu.pdf` and `menu.jpg` shared `menu.part`.
+  When both were fetched at once, one could cut the other off or mix bytes
+  into it, and the Export failed or kept a damaged file. Each fetch now
+  writes to a temporary file of its own, as does the copy of an attachment
+  to a second path, which could also write over an attachment named
+  `menu.part`.
 - 2026-10-05 **When part of an Export from a server fails, the message
   names the Export Run or Asset in the words the app uses for them.** These
   messages used lowercase shorthand such as "complete export failed" and

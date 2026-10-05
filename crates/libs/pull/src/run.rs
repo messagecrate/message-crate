@@ -14,6 +14,7 @@ use message_ir_format::mark_export_directory;
 use serde::Serialize;
 
 use crate::http::{CloseAction, ExportMessagesArgs, HttpSession};
+use crate::part_file::part_file_beside;
 use crate::project::{ExportPath, build_document, conversation_key, export_path, to_ir_message};
 use message_crate_api_types::{ExportQueryList, ExportRun, ExportScope, Message};
 
@@ -717,16 +718,35 @@ fn place_other_paths(
                     .with_context(|| format!("mkdir {}", parent.display()))?;
             }
             if fs::hard_link(&from, &dest).is_err() {
-                // Copy beside the destination and rename, so a crash never
-                // leaves a short file that a resume would take as finished.
-                let tmp = dest.with_extension("part");
-                fs::copy(&from, &tmp)
-                    .with_context(|| format!("copy {} -> {}", from.display(), tmp.display()))?;
-                fs::rename(&tmp, &dest)
-                    .with_context(|| format!("rename {} -> {}", tmp.display(), dest.display()))?;
+                copy_into_place(&from, &dest)?;
             }
         }
     }
+    Ok(())
+}
+
+/// Copy `from` to `dest` through a temporary file of a unique name beside
+/// `dest` ([`part_file_beside`]), renamed onto `dest` once the copy is whole,
+/// so a crash never leaves a short file that a resume would take as finished,
+/// and a file already beside `dest`, whatever its name, is left alone.
+///
+/// # Errors
+///
+/// Returns an error when the temporary file cannot be created, `from` cannot
+/// be read, or the rename fails.
+fn copy_into_place(from: &Path, dest: &Path) -> Result<()> {
+    let mut part = part_file_beside(dest)
+        .with_context(|| format!("create a temporary file beside {}", dest.display()))?;
+    let mut source = fs::File::open(from).with_context(|| format!("open {}", from.display()))?;
+    std::io::copy(&mut source, part.as_file_mut())
+        .with_context(|| format!("copy {} -> {}", from.display(), part.path().display()))?;
+    // Closed before the rename, which Windows needs. Dropping `part` on an
+    // error removes it.
+    let part = part.into_temp_path();
+    fs::rename(&part, dest)
+        .with_context(|| format!("rename {} -> {}", part.display(), dest.display()))?;
+    // Renamed away, so there is nothing left for the drop to remove.
+    let _ = part.keep();
     Ok(())
 }
 
@@ -1032,5 +1052,134 @@ mod asset_ref_tests {
                 ("../no-fingerprint.txt".to_string(), None),
             ]
         );
+    }
+}
+
+#[cfg(test)]
+mod asset_download_tests {
+    use super::*;
+    use sha2::{Digest, Sha256};
+    use std::io::{BufRead, BufReader, Write};
+    use std::net::TcpListener;
+    use std::thread;
+    use std::time::Duration;
+
+    /// The names of the files in `dir`, sorted.
+    fn names_in(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        names.sort();
+        names
+    }
+
+    /// A server that answers two `GET /v1/assets/{sha256}` requests with the
+    /// bytes `bodies` holds under that fingerprint, and returns its address.
+    /// It sends the first half of both answers, waits, then sends the second
+    /// halves, so both fetches are writing their files at the same time.
+    fn serve_two_fetches_at_once(bodies: HashMap<String, Vec<u8>>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        thread::spawn(move || {
+            let mut answers = Vec::new();
+            for _ in 0..2 {
+                let (stream, _) = listener.accept().unwrap();
+                let mut request = BufReader::new(stream.try_clone().unwrap());
+                let mut request_line = String::new();
+                request.read_line(&mut request_line).unwrap();
+                // Read the headers through to the blank line that ends them.
+                let mut header = String::new();
+                while request.read_line(&mut header).unwrap() > 2 {
+                    header.clear();
+                }
+                let sha256 = request_line
+                    .split_whitespace()
+                    .nth(1)
+                    .and_then(|path| path.strip_prefix("/v1/assets/"))
+                    .unwrap();
+                answers.push((stream, bodies[sha256].clone()));
+            }
+            // A third request, such as a retry, is refused rather than left
+            // waiting.
+            drop(listener);
+            for (stream, body) in &mut answers {
+                write!(
+                    stream,
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                )
+                .unwrap();
+                stream.write_all(&body[..body.len() / 2]).unwrap();
+                stream.flush().unwrap();
+            }
+            thread::sleep(Duration::from_millis(300));
+            for (stream, body) in &mut answers {
+                stream.write_all(&body[body.len() / 2..]).unwrap();
+                stream.flush().unwrap();
+            }
+        });
+        base_url
+    }
+
+    #[test]
+    fn two_assets_whose_paths_differ_only_in_extension_both_arrive_whole() {
+        // `menu.pdf` and `menu.jpg` once shared `menu.part`: the second fetch
+        // to start truncated the first one's file, and the first rename moved
+        // the mixed bytes into place.
+        let pdf = vec![b'p'; 4096];
+        let jpg = vec![b'j'; 4096];
+        let pdf_sha = hex::encode(Sha256::digest(&pdf));
+        let jpg_sha = hex::encode(Sha256::digest(&jpg));
+        let base_url = serve_two_fetches_at_once(HashMap::from([
+            (pdf_sha.clone(), pdf.clone()),
+            (jpg_sha.clone(), jpg.clone()),
+        ]));
+        let dir = tempfile::tempdir().unwrap();
+        let assets = HashMap::from([
+            (pdf_sha, "attachments/menu.pdf".to_string()),
+            (jpg_sha, "attachments/menu.jpg".to_string()),
+        ]);
+
+        let stats = download_assets_parallel(DownloadAssetsParallelArgs {
+            session: &HttpSession::new().unwrap(),
+            base_url: &base_url,
+            token: "token",
+            assets: &assets,
+            out_dir: dir.path(),
+            workers: 2,
+            cancel: None,
+        })
+        .unwrap();
+
+        assert_eq!(stats.downloaded, 2);
+        let attachments = dir.path().join("attachments");
+        assert_eq!(fs::read(attachments.join("menu.pdf")).unwrap(), pdf);
+        assert_eq!(fs::read(attachments.join("menu.jpg")).unwrap(), jpg);
+        assert_eq!(
+            names_in(&attachments),
+            ["menu.jpg", "menu.pdf"],
+            "no temporary file is left behind"
+        );
+    }
+
+    #[test]
+    fn a_copy_to_a_second_path_leaves_a_file_beside_it_alone() {
+        // The copy once went through `<stem>.part`, which wrote over a file
+        // of that name and then renamed it away.
+        let dir = tempfile::tempdir().unwrap();
+        let from = dir.path().join("first.pdf");
+        let dest = dir.path().join("menu.pdf");
+        fs::write(&from, b"the menu").unwrap();
+        fs::write(dir.path().join("menu.part"), b"another attachment").unwrap();
+
+        copy_into_place(&from, &dest).unwrap();
+
+        assert_eq!(fs::read(&dest).unwrap(), b"the menu");
+        assert_eq!(
+            fs::read(dir.path().join("menu.part")).unwrap(),
+            b"another attachment"
+        );
+        assert_eq!(names_in(dir.path()), ["first.pdf", "menu.part", "menu.pdf"]);
     }
 }

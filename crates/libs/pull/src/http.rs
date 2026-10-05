@@ -19,6 +19,8 @@ use message_crate_http::{HttpError, error_sentence, ok_json, session_refused, tr
 use reqwest::Method;
 use sha2::{Digest, Sha256};
 
+use crate::part_file::part_file_beside;
+
 use message_crate_api_types::{ExportRun, ExportScope, Message, Page};
 
 pub use message_crate_http::HttpSession;
@@ -149,16 +151,17 @@ pub fn close_export(
 
 /// Download one attachment by SHA-256 fingerprint to `dest`.
 ///
-/// Bytes are written to a `.part` file first and hashed as they are written.
-/// The file is renamed into place only when their SHA-256 is `sha256`, so
-/// neither a crash nor an answer that is not the attachment leaves a file at
-/// the destination.
+/// Bytes are written to a temporary file of a unique name beside `dest` first
+/// ([`part_file_beside`]) and hashed as they are written. The file is renamed
+/// into place only when their SHA-256 is `sha256`, so neither a crash nor an
+/// answer that is not the attachment leaves a file at the destination, and
+/// two Assets fetched at once never write one temporary file.
 ///
 /// # Errors
 ///
 /// Returns an error when the fingerprint is not 64 hex characters, the server
 /// returns 404 or another failure, the bytes' SHA-256 is not `sha256`, or the
-/// file cannot be written. The `.part` file is removed on every error after
+/// file cannot be written. The temporary file is removed on every error after
 /// it was created. Each error after the fingerprint check names the Asset.
 ///
 /// Returns the number of bytes written to `dest`.
@@ -206,42 +209,39 @@ pub fn download_asset(
             .with_context(|| format!("mkdir {}", parent.display()))
             .with_context(fetch_failed)?;
     }
-    // Write to a temp file then rename, so a partial download (crash, cancel,
-    // network drop) never leaves a truncated file at the destination path.
-    let tmp = dest.with_extension("part");
-    let written = write_part_file(&mut response, &tmp).with_context(fetch_failed);
-    let (digest, len) = match written {
-        Ok(written) => written,
-        Err(error) => {
-            let _ = std::fs::remove_file(&tmp);
-            return Err(error);
-        }
-    };
+    // Write to a temporary file then rename, so a partial download (crash,
+    // cancel, network drop) never leaves a truncated file at the destination
+    // path. Dropping `part` on an error below removes it.
+    let mut part = part_file_beside(dest)
+        .with_context(|| format!("create a temporary file beside {}", dest.display()))
+        .with_context(fetch_failed)?;
+    let tmp = part.path().to_path_buf();
+    let (digest, len) =
+        write_part_file(&mut response, part.as_file_mut(), &tmp).with_context(fetch_failed)?;
     // A `200 OK` is not proof of the attachment: an access proxy whose
     // session has expired redirects to its login page, which answers `200 OK`
     // with HTML. Only bytes whose SHA-256 is the one asked for are kept, so a
     // later Export fetches the attachment again instead of skipping it.
     if !digest.eq_ignore_ascii_case(sha_clean) {
-        let _ = std::fs::remove_file(&tmp);
         return Err(HttpError::new(
             status.as_u16(),
             format!("the server's answer to {what} is bytes whose SHA-256 is {digest}"),
         )
         .into());
     }
-    // Synced, because the pull journal records the asset as fetched next,
-    // and a resumed Pull skips an asset the journal names.
-    if let Err(error) = message_ir::rename_into_place(&tmp, dest) {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(error.context(fetch_failed()));
-    }
+    // Closed before the rename, which Windows needs. Synced, because the
+    // pull journal records the asset as fetched next, and a resumed Pull
+    // skips an asset the journal names.
+    let part = part.into_temp_path();
+    message_ir::rename_into_place(&part, dest).with_context(fetch_failed)?;
+    // Renamed away, so there is nothing left for the drop to remove.
+    let _ = part.keep();
     Ok(len)
 }
 
-/// Copy `body` into a new file at `tmp` and return the lowercase hex SHA-256
-/// of the bytes written, and how many there were.
-fn write_part_file(body: &mut impl Read, tmp: &Path) -> Result<(String, u64)> {
-    let file = File::create(tmp).with_context(|| format!("create {}", tmp.display()))?;
+/// Copy `body` into `file`, the temporary file at `tmp`, and return the
+/// lowercase hex SHA-256 of the bytes written, and how many there were.
+fn write_part_file(body: &mut impl Read, file: &mut File, tmp: &Path) -> Result<(String, u64)> {
     let mut writer = HashingWriter {
         inner: file,
         hasher: Sha256::new(),
