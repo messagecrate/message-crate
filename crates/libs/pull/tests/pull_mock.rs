@@ -720,7 +720,15 @@ fn every_file_on_disk_logs_no_fetch_lines_whether_or_not_the_journal_lists_it() 
             .any(|line| line.starts_with("Fetching ") || line.starts_with("Fetched ")),
         "{lines:#?}"
     );
-    let state = journal::load(&journal::journal_path(&out), &server.base_url(), "alice").unwrap();
+    let mut unreadable = Vec::new();
+    let state = journal::load(
+        &journal::journal_path(&out),
+        &server.base_url(),
+        "alice",
+        &mut |sentence| unreadable.push(sentence),
+    )
+    .unwrap();
+    assert!(unreadable.is_empty(), "{unreadable:#?}");
     assert!(state.assets.contains(MENU_SHA) && state.assets.contains(PHOTO_SHA));
 }
 
