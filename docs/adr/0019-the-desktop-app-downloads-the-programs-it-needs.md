@@ -3,7 +3,7 @@
 The desktop app needs two programs it does not contain: ffmpeg (with
 ffprobe) and wtsexporter. The app uses ffmpeg in an Import Run's Media
 Stage, which converts or compresses attachments. The server it starts uses
-ffmpeg to make Previews and Thumbnails of attachments.
+ffmpeg to make Previews and Thumbnails of Assets.
 wtsexporter reads WhatsApp data. Each time the app starts it checks for both
 and downloads what is missing into the Tools Directory, in the background,
 with no button and no prompt (#1053). It passes the Tools Directory to the
@@ -54,8 +54,8 @@ programs would then reach the computer by two mechanisms.
 because it is a click to get functionality.
 
 **An LGPL build of ffmpeg.** It could be shipped, and it was rejected because
-it has neither `libx264` nor `libx265`, so the Media Stage could not
-re-encode a video and a video's Preview would not work.
+it has neither `libx264` nor `libx265`. Without them the Media Stage could
+not re-encode a video. The server could not make a video's Preview either.
 
 **Keeping the ffmpeg directory setting as an override.** It was rejected
 because `PATH` is already the first place the app looks, so the setting
