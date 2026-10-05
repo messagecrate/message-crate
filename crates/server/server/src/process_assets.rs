@@ -139,9 +139,9 @@ fn media_type(row: &StoredOriginal) -> Option<String> {
 /// # Errors
 ///
 /// Returns an error when no account is named and the database has none, a
-/// query fails, or an account's asset directories cannot be prepared. A
-/// conversion that fails for one attachment is counted in `errors` and
-/// printed, and the run goes on.
+/// query fails, or an account's asset directories cannot be prepared. An
+/// original whose Preview or Thumbnail cannot be made is counted in `errors`
+/// and printed, and the run goes on.
 pub async fn run(
     opened: &OpenDb,
     opts: &ProcessAssetsOptions,

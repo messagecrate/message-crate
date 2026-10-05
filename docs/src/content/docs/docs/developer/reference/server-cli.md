@@ -44,7 +44,7 @@ Import and view messages in SQLite
 * `dump-openapi` — Write the OpenAPI document (JSON) to stdout or --output. Does not open the database
 * `dump-cli-docs` — Write this CLI's docs-site reference page (Markdown) to stdout or --output. Does not open the database
 * `dump-error-docs` — Write one docs-site page per HTTP problem type (Markdown) into the --output directory, or all of them to stdout. Does not open the database
-* `process-assets` — Make the Thumbnails and browser Previews of stored attachments under `assets_converted/`, for rebuilding and repair
+* `process-assets` — Make the Thumbnails and Previews of stored attachments under `assets_converted/`, for rebuilding and repair
 * `create-owner` — Claim an unclaimed Message Crate by creating its owner. Refuses one that already has an owner
 * `reset-owner-password` — Set a new password for the owner, ending their sessions. Refuses a Message Crate that has no owner yet
 
@@ -220,7 +220,7 @@ Write one docs-site page per HTTP problem type (Markdown) into the --output dire
 
 ## `message-crate-server process-assets`
 
-Make the Thumbnails and browser Previews of stored attachments under `assets_converted/`, for rebuilding and repair
+Make the Thumbnails and Previews of stored attachments under `assets_converted/`, for rebuilding and repair
 
 **Usage:** `message-crate-server process-assets [OPTIONS]`
 

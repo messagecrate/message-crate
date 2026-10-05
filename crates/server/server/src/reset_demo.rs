@@ -180,20 +180,20 @@ async fn dedupe_and_process_assets(
     )
     .await
     .context("process-assets after prepared demo import")?;
-    if let Some(warning) = conversion_warning(process_stats.errors) {
+    if let Some(warning) = not_made_warning(process_stats.errors) {
         eprintln!("warning: {warning}");
     }
     Ok((dedupe_stats, process_stats))
 }
 
-/// The warning printed when `errors` attachments failed conversion, or
-/// `None` when every attachment converted.
-fn conversion_warning(errors: u64) -> Option<String> {
+/// The warning printed when the Preview or Thumbnail of `errors` demo
+/// originals could not be made, or `None` when every one was made.
+fn not_made_warning(errors: u64) -> Option<String> {
     (errors > 0).then(|| {
         crate::counts::words(
             errors,
-            "1 demo attachment failed conversion. Its original stays in place, and reset-demo continues",
-            "{n} demo attachments failed conversion. Their originals stay in place, and reset-demo continues",
+            "1 demo original whose Preview or Thumbnail could not be made stays as it was, and reset-demo continues",
+            "{n} demo originals whose Preview or Thumbnail could not be made stay as they were, and reset-demo continues",
         )
     })
 }

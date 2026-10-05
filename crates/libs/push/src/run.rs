@@ -317,8 +317,7 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
     let aborted = settle(cfg, &mut pipeline, aborted, &mut out)?;
     let session_refused = session.is_refused();
     if session_refused {
-        out.show_as(
-            "session refused: stopped",
+        out.show(
             "The server no longer accepts this session, so the Upload stopped. \
              The next Upload sends what this one did not."
                 .into(),
@@ -402,20 +401,13 @@ fn login(cfg: &PushConfig, stop: CancelFlag, out: &mut Reporter<'_, '_>) -> Resu
     let http = HttpSession::new()?;
     let auth = http.auth_check(&url, &cfg.token)?;
     let username = auth.username.clone();
-    out.log(&format!(
-        "authenticated username={username} account={}",
-        auth.account_id
-    ));
     out.event(ProgressEvent::Auth {
         account_id: auth.account_id,
         username: username.clone(),
     });
-    out.event(ProgressEvent::Log(format!("Authenticated as {username}")));
+    out.show(format!("Authenticated as {username} ({})", auth.account_id));
     if cfg.skip_attachments {
-        out.show_as(
-            "skip_attachments=true (text-only import)",
-            "Skipping attachments (text-only import)".into(),
-        );
+        out.show("Skipping attachments (text-only import)".into());
     }
     Ok(Session {
         http,
@@ -466,8 +458,7 @@ fn finish_refused_at_login(
     report: PushReport,
     out: &mut Reporter<'_, '_>,
 ) -> Result<PushReport> {
-    out.show_as(
-        "session refused at login: stopped",
+    out.show(
         "The server no longer accepts this session, so the Upload did not start. \
          The next Upload sends every conversation."
             .into(),
@@ -496,19 +487,13 @@ fn start_import_run(
         .flatten()
         .unwrap_or_else(|| "unknown".to_string());
     if let Some(import_id) = cfg.import_id {
-        out.show_as(
-            &format!("using provided Import Run id={import_id}"),
-            format!("Reusing Import Run {import_id} ({source})"),
-        );
+        out.show(format!("Reusing Import Run {import_id} for {source}"));
         return Ok(import_id);
     }
     let id = session
         .start_import(&source, cfg.mode, Some("message-crate-push"))
         .context("start the Import Run on the server")?;
-    out.show_as(
-        &format!("Import Run id={id} source={source}"),
-        format!("Recording Import Run {id} ({source})"),
-    );
+    out.show(format!("Recording Import Run {id} for {source}"));
     Ok(id)
 }
 
@@ -721,7 +706,7 @@ fn complete_import_run(
                 bytes_uploaded: report.assets_bytes,
             },
         )
-        .with_context(|| format!("complete import run {import_id}"))?;
-    out.log(&format!("import run {import_id} completed"));
+        .with_context(|| format!("complete Import Run {import_id} on the server"))?;
+    out.log(&format!("Import Run {import_id} completed"));
     Ok(())
 }
