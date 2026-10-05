@@ -78,6 +78,23 @@ In Messages a row's `Sender ID` and `Sender Name` belong to one person, so two a
 Two different people saved under one name in a conversation with a typed title are then counted as one person, and the conversation is filed as one-to-one.
 A WhatsApp account has one number, so in WhatsApp two numbers are always two people, whatever their `Sender Name`.
 
+A WhatsApp group in which only one other person wrote is filed as a one-to-one conversation with that person.
+So is a Messages group with a typed title in which only one other person wrote.
+A roster-named Messages session stays a group.
+A WhatsApp group, or a Messages group with a typed title, in which nobody else wrote is filed under the address its title is or holds, else under its name only.
+The export holds no dependable sign that tells a group in which at most one other person wrote from a one-to-one conversation (#1509, decided 2026-10-05).
+
+On the maintainer's export, which is in English, every received row carries a `Sender ID` in a group and in a one-to-one conversation alike.
+A received row without one is still handled as the two sections below say.
+No outgoing row carries one.
+The end-to-end encryption `Notification` row reads the same in both.
+
+The one thing that marks a group is the text of a `Notification` row that reports a membership event: a member added, removed, joined or left, or a renamed conversation.
+Nine conversations on that export in which at most one other person wrote hold such a row.
+Three are WhatsApp groups in which one other person wrote, two of them titled with that person's `Sender Name`.
+Six are Messages groups in which nobody else wrote, holding only the rows that say the account holder was removed or left.
+That text is in the phone's language and in words iMazing, Messages and WhatsApp may change, so it is not used as a rule.
+
 ### One-to-one conversations
 
 The conversation's address is the number in `Chat Session`, a `Chat Session` that is itself an address, or else the address of the earliest received row that has one, so new messages from a second address do not change it.
@@ -123,6 +140,7 @@ Non-senders are invisible in the CSV.
 | 2026-07-19 | 3.5.5 | Full device export (Messages + WhatsApp + Contacts) | Headers/layout confirmed; silent-roster limitation quantified on Messages groups; WhatsApp schema differs as above |
 | 2026-07-19 | 3.5.5 | Synthetic fixtures in `tests/fixtures/` | Recursive discovery, service separation, silent-member contact recovery |
 | 2026-10-02 | 3.5.5 | Full device export, read only (681 Messages and 66 WhatsApp conversations) | One CSV per conversation; five pairs of different groups share a session name; the earliest-row group key has no collision among the 747 conversations |
+| 2026-10-05 | 3.5.5 | Full device export, read only (681 Messages and 66 WhatsApp conversations, in English) | No dependable sign tells a group in which at most one other person wrote from a one-to-one conversation. Only the English text of membership `Notification` rows does, on nine conversations (see "Group or one-to-one") |
 
 ## Future work (not yet implemented)
 
