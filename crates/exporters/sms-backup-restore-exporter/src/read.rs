@@ -66,13 +66,27 @@ pub struct ReadReport {
 pub struct LeftOut {
     /// The file, as a path.
     pub file: String,
-    /// The message, by its time and the identities in its conversation, such as
-    /// `message of 2014-05-22T15:41:01Z with +15555550101`.
+    /// The message, by its time and its `address` attribute as the file
+    /// writes it, such as `message of 2014-05-22T15:41:01Z with +15555550101`.
     pub message: String,
+    /// What was left out of it.
+    pub counts: LeftOutCounts,
+}
+
+/// What the read left out of one message.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LeftOutCounts {
     /// Parts left out because their `data` is not base64.
     pub unreadable_parts: u64,
     /// Character references left out because they are not a character.
     pub dropped_character_references: u64,
+}
+
+impl LeftOutCounts {
+    /// Whether nothing was left out.
+    pub fn is_empty(self) -> bool {
+        self == Self::default()
+    }
 }
 
 /// Something in one backup file the reader could not read.
@@ -102,7 +116,10 @@ impl std::fmt::Display for ReadError {
 impl ReadReport {
     /// Parts left out of kept messages because their `data` is not base64.
     pub fn skipped_unreadable_part(&self) -> u64 {
-        self.left_out.iter().map(|m| m.unreadable_parts).sum()
+        self.left_out
+            .iter()
+            .map(|m| m.counts.unreadable_parts)
+            .sum()
     }
 
     /// Character references left out of kept messages because they are not
@@ -110,7 +127,7 @@ impl ReadReport {
     pub fn dropped_character_references(&self) -> u64 {
         self.left_out
             .iter()
-            .map(|m| m.dropped_character_references)
+            .map(|m| m.counts.dropped_character_references)
             .sum()
     }
 
@@ -236,10 +253,8 @@ struct PendingMessage {
     source_fields: serde_json::Map<String, serde_json::Value>,
     /// The file the message was read from, shared by every message in it.
     file: Arc<str>,
-    /// Parts left out because their `data` is not base64.
-    unreadable_parts: u64,
-    /// Character references left out because they are not a character.
-    dropped_character_references: u64,
+    /// What the read left out of the message.
+    left_out: LeftOutCounts,
 }
 
 #[derive(Debug, Default)]
@@ -417,8 +432,10 @@ fn add_record(
         android_type: record.android_type,
         source_fields,
         file: Arc::clone(file),
-        unreadable_parts: record.unreadable_parts,
-        dropped_character_references: record.dropped_character_references,
+        left_out: LeftOutCounts {
+            unreadable_parts: record.unreadable_parts,
+            dropped_character_references: record.dropped_character_references,
+        },
     });
     Ok(())
 }
@@ -531,12 +548,11 @@ fn to_document(
             }
             // Named only now that dedupe has run, because a repeated copy
             // dropped there can change which time the message keeps.
-            if message.unreadable_parts > 0 || message.dropped_character_references > 0 {
+            if !message.left_out.is_empty() {
                 report.left_out.push(LeftOut {
                     file: message.file.to_string(),
                     message: describe(message, conversation),
-                    unreadable_parts: message.unreadable_parts,
-                    dropped_character_references: message.dropped_character_references,
+                    counts: message.left_out,
                 });
             }
             ir_message(id, message, &owner)
@@ -563,17 +579,31 @@ fn to_document(
 }
 
 /// A message as a person can find it in its file: `message of <UTC time>
-/// with <every identity in the conversation>`.
+/// with <address>`, the `address` attribute as the file writes it, so a
+/// search of the file finds it. An MMS with no `address` attribute names
+/// every identity in its conversation instead.
 fn describe(message: &PendingMessage, conversation: &PendingConversation) -> String {
     let (ms, _) = message.time();
     let time =
         format_local_ts(ms.div_euclid(1000)).map_or_else(|| ms.to_string(), |(_, utc, _)| utc);
-    let with: Vec<&str> = conversation
-        .participants
-        .iter()
-        .map(|(handle, _)| handle.as_str())
-        .collect();
-    format!("message of {time} with {}", with.join(", "))
+    let address = message
+        .source_fields
+        .get("attrs")
+        .and_then(|attrs| attrs.get("address"))
+        .and_then(serde_json::Value::as_str)
+        .filter(|address| !address.trim().is_empty());
+    let with = address.map_or_else(
+        || {
+            let identities: Vec<&str> = conversation
+                .participants
+                .iter()
+                .map(|(handle, _)| handle.as_str())
+                .collect();
+            identities.join(", ")
+        },
+        str::to_string,
+    );
+    format!("message of {time} with {with}")
 }
 
 /// The IR message for one pending message. `owner` (handle, display name)

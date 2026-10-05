@@ -50,20 +50,20 @@ fn to_core_report(report: ReadReport, issues: Option<&IssueSink>) -> ExportRepor
     );
     for left_out in report.left_out {
         let item = format!("{} ({})", left_out.file, left_out.message);
-        if left_out.unreadable_parts > 0 {
+        if left_out.counts.unreadable_parts > 0 {
             out.caveat(
                 SKIPPED_UNREADABLE_PART,
-                left_out.unreadable_parts,
+                left_out.counts.unreadable_parts,
                 item.as_str(),
-                unreadable_parts_note(left_out.unreadable_parts),
+                unreadable_parts_note(left_out.counts.unreadable_parts),
             );
         }
-        if left_out.dropped_character_references > 0 {
+        if left_out.counts.dropped_character_references > 0 {
             out.caveat(
                 DROPPED_CHARACTER_REFERENCES,
-                left_out.dropped_character_references,
+                left_out.counts.dropped_character_references,
                 item,
-                dropped_references_note(left_out.dropped_character_references),
+                dropped_references_note(left_out.counts.dropped_character_references),
             );
         }
     }
