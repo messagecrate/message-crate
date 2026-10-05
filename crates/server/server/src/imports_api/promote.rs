@@ -103,7 +103,7 @@ impl Promote<'_> {
         let messages_before = self.promote_messages().await?;
         let attachments_before = self.promote_attachments().await?;
         self.promote_tapbacks().await?;
-        let versions_before = self.promote_earlier_versions().await?;
+        let versions_before = self.promote_earlier_versions(messages_before).await?;
         self.index_fts(messages_before, attachments_before, versions_before)
             .await?;
         if fill_content_keys {
@@ -381,13 +381,14 @@ impl Promote<'_> {
         Ok(())
     }
 
-    /// Insert the staged earlier versions under their production messages.
-    /// Returns the highest version id that existed before the insert: every
-    /// new row lands above it, which is how [`Self::index_fts`] finds them.
-    async fn promote_earlier_versions(&mut self) -> Result<i64> {
+    /// Insert the staged earlier versions under the messages this promotion
+    /// inserted, those above `messages_before`. Returns the highest version
+    /// id that existed before the insert: every new row lands above it,
+    /// which is how [`Self::index_fts`] finds them.
+    async fn promote_earlier_versions(&mut self, messages_before: i64) -> Result<i64> {
         let phase = Self::begin("bulk-inserting earlier versions of edited messages…");
         let versions_before = staging::max_earlier_version_id(self.tx).await?;
-        let inserted = staging::promote_earlier_versions(self.tx).await?;
+        let inserted = staging::promote_earlier_versions(self.tx, messages_before).await?;
         self.done(
             phase,
             format!("earlier versions done (inserted={inserted})"),

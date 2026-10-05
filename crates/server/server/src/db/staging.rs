@@ -1062,33 +1062,33 @@ pub async fn promote_tapbacks(conn: &mut SqliteConnection) -> Result<u64> {
     .rows_affected())
 }
 
-/// Insert the staged earlier versions under their production messages, in
-/// staging order, skipping any version production already has field for
-/// field: an append that reads a message again adds nothing, and one that
-/// reads it from a later backup holding more versions adds the new ones.
-/// Returns how many were inserted.
+/// Insert the staged earlier versions under the production messages this
+/// promotion inserted, those above `messages_before`, in staging order.
+///
+/// A message production already held keeps the versions it has: an append
+/// skips such a message and keeps its text, so versions from a later backup,
+/// which edited it again, would list the text it holds as an earlier one and
+/// lose the text that replaced it. A message sent again unchanged gets
+/// nothing twice for the same reason. Returns how many were inserted.
 ///
 /// # Errors
 ///
 /// Returns an error when the statement fails.
-pub async fn promote_earlier_versions(conn: &mut SqliteConnection) -> Result<u64> {
+pub async fn promote_earlier_versions(
+    conn: &mut SqliteConnection,
+    messages_before: i64,
+) -> Result<u64> {
     Ok(sqlx::query(
         r"
         INSERT INTO message_versions (message_id, part_index, text, edited_at)
         SELECT mm.prod_id, sv.part_index, sv.text, sv.edited_at
         FROM staging_message_versions sv
         JOIN _promote_msg_map mm ON mm.staging_id = sv.message_id
-        WHERE NOT EXISTS (
-            SELECT 1
-            FROM message_versions v
-            WHERE v.message_id = mm.prod_id
-              AND v.part_index = sv.part_index
-              AND v.text = sv.text
-              AND v.edited_at IS NOT DISTINCT FROM sv.edited_at
-        )
+        WHERE mm.prod_id > $1
         ORDER BY sv.id
         ",
     )
+    .bind(messages_before)
     .execute(&mut *conn)
     .await?
     .rows_affected())
