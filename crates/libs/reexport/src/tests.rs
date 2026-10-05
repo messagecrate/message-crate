@@ -1138,7 +1138,10 @@ fn a_directory_of_version_3_files_is_refused_by_name() {
         .unwrap_err();
         let message = format!("{error:#}");
         assert!(
-            message.contains("This file is schema version 3; Message Crate reads version 9"),
+            message.contains(&format!(
+                "This file is schema version 3; Message Crate reads version {}",
+                message_ir::SCHEMA_VERSION
+            )),
             "{message}"
         );
         assert!(
@@ -1167,7 +1170,10 @@ fn a_version_3_file_among_current_files_stops_the_run_and_writes_nothing() {
     .unwrap_err();
     let message = format!("{error:#}");
     assert!(
-        message.contains("This file is schema version 3; Message Crate reads version 9"),
+        message.contains(&format!(
+            "This file is schema version 3; Message Crate reads version {}",
+            message_ir::SCHEMA_VERSION
+        )),
         "{message}"
     );
     assert!(message.contains("old.jsonl"), "{message}");
