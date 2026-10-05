@@ -1596,22 +1596,6 @@ fn a_converted_conversion_stages_from_the_sources_its_disk_check_counted() {
     assert_eq!(reasons, [Some("file_missing"), Some("too_large")]);
 }
 
-/// A 1x1 PNG, which the convert pass turns into a JPEG in both Convert and
-/// Compress.
-#[rustfmt::skip]
-const PNG_1X1: &[u8] = &[
-    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
-    0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
-    0x00, 0x03, 0x01, 0x01, 0x00, 0xc9, 0xfe, 0x92, 0xef, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
-    0x44, 0xae, 0x42, 0x60, 0x82,
-];
-
-/// [`PNG_1X1`] in base64, as an SMS Backup & Restore backup holds a part.
-/// This crate has no base64 encoder, so the encoding is written out.
-const PNG_1X1_BASE64: &str =
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
-
 /// Convert `source`, which holds one conversation with one PNG attachment,
 /// to JSON Lines with the media cloned, converted and compressed. Each run's
 /// `attachments/` must hold exactly the one file the conversation names: a
@@ -1662,7 +1646,11 @@ fn a_converted_conversion_writes_each_attachment_once() {
     sink.write_document(doc).unwrap();
     sink.finish(&mut ExportReport::default()).unwrap();
     fs::create_dir_all(source.path().join("attachments")).unwrap();
-    fs::write(source.path().join("attachments/photo.png"), PNG_1X1).unwrap();
+    fs::write(
+        source.path().join("attachments/photo.png"),
+        media::testutil::PNG_1X1_RGB,
+    )
+    .unwrap();
 
     assert_converted_writes_each_attachment_once(source.path());
 }
@@ -1673,8 +1661,9 @@ fn a_converted_conversion_writes_each_attachment_once() {
 #[test]
 fn a_converted_sms_backup_writes_each_attachment_once() {
     let source = tempfile::tempdir().unwrap();
+    let png = media::testutil::PNG_1X1_RGB_BASE64;
     let backup = format!(
-        r#"<smses><mms date="1400773400000" msg_box="1" address="+15555550101"><parts><part ct="image/png" name="photo.png" data="{PNG_1X1_BASE64}"/></parts><addrs><addr address="+15555550101" type="137"/><addr address="+15555550100" type="151"/></addrs></mms></smses>"#
+        r#"<smses><mms date="1400773400000" msg_box="1" address="+15555550101"><parts><part ct="image/png" name="photo.png" data="{png}"/></parts><addrs><addr address="+15555550101" type="137"/><addr address="+15555550100" type="151"/></addrs></mms></smses>"#
     );
     fs::write(source.path().join("smses.xml"), backup).unwrap();
     fs::create_dir_all(source.path().join("attachments")).unwrap();

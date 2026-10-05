@@ -162,10 +162,10 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
 
     clean_previous_ir_output(&config.output)?;
 
-    // Only an export whose attachments are not staged again is copied. A
-    // run that stages from the input writes every attachment from there,
-    // and a backup's come from its XML, so a copy of the input's
-    // `attachments/` would stay beside the staged files on a disk the check
+    // The input's `attachments/` is copied only when nothing stages the
+    // attachments again. A run that stages from the input writes every
+    // attachment from there, and a backup's attachments come from its XML,
+    // so a copy would stay beside the staged files on a disk the check
     // counted for one copy (#1759).
     if copy_attachments && from_input.is_none() && sms_backup.is_none() {
         copy_attachments_dir(input_dir, &config.output)?;
