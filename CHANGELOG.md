@@ -391,6 +391,13 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **An Import Run whose session has ended logs you out and
+  waits for you.** When your session ended while an import waited at a
+  review, and you then approved it, cancelled it, or resumed an Upload, the
+  import was marked failed with an error about recording its progress, and
+  you stayed on screens the server no longer answered. It now logs you out
+  and records no error. The import stays where it was, and Import offers it
+  again when you log back in.
 - 2026-10-05 **A newer backup brings a message's later edit.** When a
   message already in the Message Crate had been edited again on the phone,
   importing the newer backup kept the old text and the old earlier versions,
