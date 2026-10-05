@@ -495,7 +495,7 @@ impl<'a> AccountPass<'a> {
         };
         let cleaned = crate::asset_store::sweep_incoming(&assets_dir, opts.dry_run);
         if cleaned > 0 {
-            let files = crate::counts::words(
+            let files = words(
                 cleaned,
                 "1 abandoned temporary upload file",
                 "{n} abandoned temporary upload files",
@@ -505,7 +505,7 @@ impl<'a> AccountPass<'a> {
         let left = crate::asset_store::sweep_shard_temps(&assets_dir, opts.dry_run)
             + crate::asset_store::sweep_shard_temps(&converted_dir, opts.dry_run);
         if left > 0 {
-            let files = crate::counts::words(left, "1 temporary file", "{n} temporary files");
+            let files = words(left, "1 temporary file", "{n} temporary files");
             println!("  {cleaned_verb} {files} a killed write left in the shard directories");
         }
         Self::new(cfg, opts, work_dir, account_id, stop, Log::Print)
@@ -762,8 +762,9 @@ impl<'a> AccountPass<'a> {
     /// Stop naming the damaged `version` that `row` names and delete it, or
     /// say so in a dry run. It is not made again, because its original is
     /// missing or the original no longer gets such a version, and the rows
-    /// must not go on naming a file the server would serve as if whole. Every row of the account that names it is cleared,
-    /// then the file is deleted.
+    /// must not go on naming a file the server would serve as if whole.
+    /// Every row of the account that names it is cleared, then the file is
+    /// deleted.
     ///
     /// True when it was dropped, or would be in a dry run, and false when
     /// the rows name none.
