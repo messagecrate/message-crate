@@ -1515,6 +1515,9 @@ released versions carry their date on the heading.
 
 ### Upgrading
 
+- If a script passes `--staging-dir` to the server's `import` command,
+  change it to `--input`, because the command no longer takes that name.
+  `--dir` and `--export-dir` still work.
 - An export, or a conversion with no output directory chosen, now goes into
   the Export Directory; look for it there, through Settings → System, rather
   than in the Staging Directory.

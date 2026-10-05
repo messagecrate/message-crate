@@ -677,10 +677,14 @@ mod tests {
 
     #[test]
     fn missing_log_is_reported_like_any_other_missing_path() {
-        // A missing log is reported like any other missing path.
-        let log = PathBuf::from("/home/sam/message-crate/staging-x/message-crate-push.log");
+        let log = PathBuf::from(
+            "/home/sam/.local/share/message-crate/logs/import-whatsapp-261004-143000.log",
+        );
         let err = missing_path_error(&log).unwrap_err();
-        assert_eq!(err, "Nothing exists at message-crate-push.log yet");
+        assert_eq!(
+            err,
+            "Nothing exists at import-whatsapp-261004-143000.log yet"
+        );
     }
 
     #[test]

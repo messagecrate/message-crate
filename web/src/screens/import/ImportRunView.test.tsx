@@ -243,8 +243,8 @@ describe("ImportRunView", () => {
 
   it("puts the backup path under the heading and the run directory in the Staging row", async () => {
     const user = setupUser();
-    const staging = "/home/sam/message-crate/staging-iphone";
-    renderView({ runDir: staging });
+    const runDir = "/home/sam/message-crate/staging-iphone";
+    renderView({ runDir });
 
     expect(screen.getByRole("heading", { name: "Importing from Apple Messages · iPhone backup" }));
     expect(screen.getByText("/backups/iphone")).toBeInTheDocument();
@@ -252,19 +252,19 @@ describe("ImportRunView", () => {
 
     const row = within(stageRow("Staging"));
     expect(row.getByText("Convert · up to 720p, 30 fps, files over 20 MB")).toBeInTheDocument();
-    await user.click(row.getByRole("button", { name: staging }));
-    expect(openPathInExplorer).toHaveBeenCalledWith(staging);
+    await user.click(row.getByRole("button", { name: runDir }));
+    expect(openPathInExplorer).toHaveBeenCalledWith(runDir);
   });
 
   it("offers no import log until Upload has started, then shows it in the Upload row", async () => {
     const user = setupUser();
-    const staging = "/home/sam/message-crate/staging-iphone";
-    const view = renderView({ runDir: staging });
+    const runDir = "/home/sam/message-crate/staging-iphone";
+    const view = renderView({ runDir });
     expect(screen.queryByRole("button", { name: "import-iphone.log" })).not.toBeInTheDocument();
 
     view.unmount();
     renderView({
-      runDir: staging,
+      runDir,
       steps: stepsAt("convert", { Staging: "done", Media: "done", Upload: "active" }),
     });
     // The log is in the Logs Directory, named for the run, so it outlives
@@ -278,9 +278,9 @@ describe("ImportRunView", () => {
   });
 
   it("keeps the import log once the run ends and its directory is gone", async () => {
-    const staging = "/home/sam/message-crate/staging-iphone";
+    const runDir = "/home/sam/message-crate/staging-iphone";
     const view = renderView({
-      runDir: staging,
+      runDir,
       steps: stepsAt("convert", { Staging: "done", Media: "done", Upload: "active" }),
     });
     await within(stageRow("Upload")).findByRole("button", { name: "import-iphone.log" });
