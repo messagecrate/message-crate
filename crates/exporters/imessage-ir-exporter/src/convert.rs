@@ -643,7 +643,7 @@ fn write_conversations(
     let format = options.output_format;
     let total = conversations.len();
     options.emit_log("");
-    options.emit_log(format!("Preparing {total} conversation file(s)..."));
+    options.emit_log(message_crate_core::CONVERSATION_FILES_PREPARING.line(total as u64));
     options.emit_progress(ProgressEvent::Prepare { done: 0, total });
     let mut written = 0usize;
     let mut kept = 0u64;

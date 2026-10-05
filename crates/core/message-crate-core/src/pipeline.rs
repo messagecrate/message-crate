@@ -8,7 +8,7 @@ use crate::config::OutputFormat;
 use crate::counter::{
     ATTACHMENTS_SAVED, CONVERSATIONS_OBFUSCATED, CONVERSATIONS_RESUMED, Counter,
     DUPLICATES_DROPPED, NOT_SMS_OR_MMS_LEFT_OUT, NOTIFICATIONS, SKIPPED_INVALID_DATE, error_line,
-    note_line,
+    files, note_line,
 };
 use anyhow::{Context, bail};
 use media::MediaReport;
@@ -210,8 +210,9 @@ pub struct ExportReport {
     /// apart from `errors`, so a note never reads as a failure.
     pub notes: Vec<String>,
     /// Per-exporter extension counters, each with the words its log line
-    /// uses.
-    pub extra: std::collections::BTreeMap<Counter, u64>,
+    /// uses, in the order the run first counted them, so the summary gives
+    /// them in the order the exporter does.
+    pub extra: Vec<(Counter, u64)>,
     /// Where [`ExportReport::error`], [`ExportReport::note`] and
     /// [`ExportReport::caveat`] send each row the moment the run records it.
     /// `None` sends the rows nowhere, and the lines in `errors` and `notes`
@@ -255,6 +256,12 @@ impl ExportReport {
         text: impl Into<String>,
     ) {
         self.bump(counter, by);
+        self.caveat_note(item, text);
+    }
+
+    /// Send a note that names one item the run kept with a caveat to
+    /// `issues`, for an exporter that counts the caveat's total itself.
+    pub fn caveat_note(&self, item: impl Into<String>, text: impl Into<String>) {
         self.send(NOTE, item.into(), text.into());
     }
 
@@ -305,8 +312,8 @@ impl ExportReport {
         if self.media.processed > 0 || self.media.skipped > 0 || !self.media.errors.is_empty() {
             lines.push(format!(
                 "Media: processed {}, skipped {}",
-                files(self.media.processed),
-                files(self.media.skipped)
+                files(self.media.processed as u64),
+                files(self.media.skipped as u64)
             ));
             for err in self.media.errors.iter().take(10) {
                 lines.push(format!("  media warning: {err}"));
@@ -342,8 +349,7 @@ impl ExportReport {
             (DUPLICATES_DROPPED, self.duplicates_dropped),
             (ATTACHMENTS_SAVED, self.attachments_saved),
         ];
-        let extra = self.extra.iter().map(|(counter, count)| (*counter, *count));
-        for (counter, count) in counts.into_iter().chain(extra) {
+        for (counter, count) in counts.into_iter().chain(self.extra.iter().copied()) {
             if count > 0 {
                 out.push(format!("  {}", counter.line(count)));
             }
@@ -358,12 +364,18 @@ impl ExportReport {
 
     /// Bump a per-exporter extension counter in the `extra` map.
     pub fn bump(&mut self, counter: Counter, by: u64) {
-        *self.extra.entry(counter).or_insert(0) += by;
+        match self.extra.iter_mut().find(|(c, _)| *c == counter) {
+            Some((_, count)) => *count += by,
+            None => self.extra.push((counter, by)),
+        }
     }
 
     /// Read a per-exporter extension counter from the `extra` map (0 when unset).
     pub fn extra(&self, counter: Counter) -> u64 {
-        self.extra.get(&counter).copied().unwrap_or(0)
+        self.extra
+            .iter()
+            .find(|(c, _)| *c == counter)
+            .map_or(0, |(_, count)| *count)
     }
 
     /// Fold the counts from one projected conversation into this report.
@@ -375,15 +387,6 @@ impl ExportReport {
         if tally.notifications > 0 {
             self.bump(NOTIFICATIONS, tally.notifications);
         }
-    }
-}
-
-/// `n` files, with the noun singular for one.
-fn files(n: usize) -> String {
-    if n == 1 {
-        "1 file".to_string()
-    } else {
-        format!("{n} files")
     }
 }
 

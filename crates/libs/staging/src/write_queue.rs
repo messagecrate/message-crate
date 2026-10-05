@@ -26,8 +26,9 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use anyhow::{Context, Result};
 use media::{CompressOptions, MediaMode};
 use message_crate_core::{
-    AttachmentJob, CancelFlag, LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent,
-    ProgressSink, attachment_size_hint, emit_log, emit_progress, run_attachment_jobs,
+    AttachmentJob, CONVERSATION_FILES_PREPARING, CONVERSATIONS_RESUMED, CancelFlag, Counter,
+    LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent, ProgressSink,
+    attachment_size_hint, emit_log, emit_progress, files, run_attachment_jobs,
 };
 use message_ir::{ConversationDocument, IrAttachment, give_each_document_its_own_file};
 
@@ -647,18 +648,15 @@ fn run_media_post_pass(
     };
     if report.failed > 0 {
         // The per-file reasons are already on the attachments themselves.
-        media.errors.push(format!(
-            "{} file(s) could not be converted; their conversation entries say why",
-            report.failed
-        ));
+        media.errors.push(NOT_CONVERTED.line(report.failed as u64));
     }
     emit_log(
         log,
         format!(
-            "Attachment {} done: converted={} skipped={} size {} → {}",
+            "Attachment {} done: converted {}, skipped {}, size {} → {}",
             options.media,
-            media.processed,
-            media.skipped,
+            files(media.processed as u64),
+            files(media.skipped as u64),
             media::format_bytes(media.bytes_before),
             media::format_bytes(media.bytes_after)
         ),
@@ -697,11 +695,26 @@ fn check_units_headroom(
     check_headroom(output_dir, needed, Disk::Staging)
 }
 
+/// The line that ends the write queue's work.
+const PREPARED: Counter = Counter::new(
+    "conversation_files_prepared",
+    "Prepared 1 conversation file",
+    "Prepared {n} conversation files",
+);
+
+/// Files Media could not convert, each of whose conversation entries says
+/// why.
+const NOT_CONVERTED: Counter = Counter::new(
+    "media_not_converted",
+    "1 file could not be converted; its conversation entry says why",
+    "{n} files could not be converted; their conversation entries say why",
+);
+
 /// Say that the write queue is starting on `units` conversations: a log
 /// line for people and a zero-of-`units` prepare event for the bar.
 fn announce_start(log: Option<&LogSink>, progress: Option<&ProgressSink>, units: usize) {
     emit_log(log, "");
-    emit_log(log, format!("Preparing {units} conversation file(s)..."));
+    emit_log(log, CONVERSATION_FILES_PREPARING.line(units as u64));
     emit_progress(
         progress,
         ProgressEvent::Prepare {
@@ -713,20 +726,11 @@ fn announce_start(log: Option<&LogSink>, progress: Option<&ProgressSink>, units:
 
 /// Log the write queue's totals, noting resumed work.
 fn announce_finish(log: Option<&LogSink>, report: &WriteQueueReport, resume: bool) {
-    emit_log(
-        log,
-        format!(
-            "Prepared {} conversation file(s)",
-            report.conversations_written
-        ),
-    );
+    emit_log(log, PREPARED.line(report.conversations_written as u64));
     if resume && report.conversations_skipped > 0 {
         emit_log(
             log,
-            format!(
-                "Skipped {} already staged conversation(s)",
-                report.conversations_skipped
-            ),
+            CONVERSATIONS_RESUMED.line(report.conversations_skipped as u64),
         );
     }
 }

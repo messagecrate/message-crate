@@ -106,9 +106,7 @@ impl ReadError {
             reason: format!("{error:#}"),
         }
     }
-}
 
-impl ReadError {
     /// What happened to the file, in the words every run gives it.
     pub fn explanation(&self) -> String {
         format!("This file could not be read in full: {}", self.reason)
@@ -141,13 +139,15 @@ impl ReadReport {
     }
 
     /// Each count the read reports, beside its [`Counter`], in the order
-    /// Convert's log gives them.
-    fn counts(&self) -> [(Counter, u64); 10] {
+    /// Convert's log gives them. An import's summary gives the invalid dates
+    /// and the repeated copies first, from fields of its own, and the rest
+    /// in this order, so this order starts with those two.
+    pub(crate) fn counts(&self) -> [(Counter, u64); 10] {
         [
+            (SKIPPED_INVALID_DATE, self.skipped_invalid_date),
+            (DUPLICATES_DROPPED, self.duplicates_dropped),
             (SMS_SEEN, self.sms_seen),
             (MMS_SEEN, self.mms_seen),
-            (DUPLICATES_DROPPED, self.duplicates_dropped),
-            (SKIPPED_INVALID_DATE, self.skipped_invalid_date),
             (SKIPPED_UNKNOWN_ADDRESS, self.skipped_unknown_address),
             (SKIPPED_UNKNOWN_TYPE, self.skipped_unknown_type),
             (SKIPPED_DRAFT_OR_OUTBOX, self.skipped_draft_or_outbox),

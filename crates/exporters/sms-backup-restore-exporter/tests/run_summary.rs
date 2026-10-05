@@ -134,7 +134,7 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
 
 /// Convert logs what the read counted the moment the read returns, and an
 /// import's summary gives the same counts after its write. Both give every
-/// count and every error in the same words (#1700).
+/// count and every error in the same words and the same order (#1700).
 #[test]
 fn convert_and_import_word_every_count_and_error_alike() {
     let tmp = tempfile::tempdir().unwrap();
@@ -166,10 +166,13 @@ fn convert_and_import_word_every_count_and_error_alike() {
     .expect("read");
     let converted = report.log_lines();
     assert_eq!(converted.len(), 11, "{converted:?}");
+    // Every line Convert logs is a line of the import's summary, in the same
+    // order.
+    let mut rest = imported.iter().map(|l| l.trim_start());
     for line in &converted {
         assert!(
-            imported.iter().any(|l| l.trim_start() == line),
-            "{line:?} missing from {imported:?}"
+            rest.any(|l| l == line),
+            "{line:?} missing from, or out of order in, {imported:?}"
         );
     }
 }

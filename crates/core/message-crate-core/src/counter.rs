@@ -8,10 +8,11 @@
 /// One count a run reports: a key that tells it apart from the others, and
 /// the line that says it in plain words.
 ///
-/// Two counters with one key are the same counter. Each is defined once, as
-/// a constant beside the code that counts it, or here when several
-/// exporters count it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+/// Two counters with one key are the same counter: they compare and hash by
+/// the key alone, so a report counts them as one and prints one line. Each
+/// is defined once, as a constant beside the code that counts it, or here
+/// when several exporters count it.
+#[derive(Debug, Clone, Copy)]
 pub struct Counter {
     key: &'static str,
     one: &'static str,
@@ -34,12 +35,36 @@ impl Counter {
 
     /// The log line for a count of `n`.
     pub fn line(self, n: u64) -> String {
-        if n == 1 {
-            self.one.to_string()
-        } else {
-            self.many.replace("{n}", &n.to_string())
-        }
+        words(n, self.one, self.many)
     }
+}
+
+impl PartialEq for Counter {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+
+impl Eq for Counter {}
+
+impl std::hash::Hash for Counter {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.key.hash(state);
+    }
+}
+
+/// `one` for a count of 1, else `many` with `n` in place of `{n}`.
+fn words(n: u64, one: &str, many: &str) -> String {
+    if n == 1 {
+        one.to_string()
+    } else {
+        many.replace("{n}", &n.to_string())
+    }
+}
+
+/// `n` files, singular for one, such as `1 file` or `3 files`.
+pub fn files(n: u64) -> String {
+    words(n, "1 file", "{n} files")
 }
 
 /// Repeated copies of a message dropped, one copy of each kept.
@@ -77,6 +102,13 @@ pub const CONVERSATIONS_RESUMED: Counter = Counter::new(
     "conversations_resumed",
     "Resumed past 1 conversation that was already written",
     "Resumed past {n} conversations that were already written",
+);
+
+/// The conversation files a run is about to write, logged as it starts.
+pub const CONVERSATION_FILES_PREPARING: Counter = Counter::new(
+    "conversation_files_preparing",
+    "Preparing 1 conversation file...",
+    "Preparing {n} conversation files...",
 );
 
 /// Attachment files saved to the output.
@@ -170,6 +202,15 @@ mod tests {
 
     /// Every counter here says its count in words: its lines carry the count
     /// and no underscore, so none of them is a key printed in place of words.
+    /// Two counters with one key are one counter, whatever their words, so
+    /// a report never splits one count into two lines.
+    #[test]
+    fn counters_with_one_key_are_equal() {
+        let other = Counter::new("duplicates_dropped", "Dropped 1 copy", "Dropped {n} copies");
+        assert_eq!(DUPLICATES_DROPPED, other);
+        assert_ne!(DUPLICATES_DROPPED, SKIPPED_INVALID_DATE);
+    }
+
     #[test]
     fn every_shared_counter_says_its_count_in_words() {
         for counter in [
@@ -178,6 +219,7 @@ mod tests {
             SKIPPED_UNKNOWN_ADDRESS,
             SKIPPED_UNKNOWN_TYPE,
             CONVERSATIONS_RESUMED,
+            CONVERSATION_FILES_PREPARING,
             ATTACHMENTS_SAVED,
             CONVERSATIONS_OBFUSCATED,
             NOTIFICATIONS,
