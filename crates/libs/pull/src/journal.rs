@@ -1,7 +1,7 @@
-//! Local log of which attachments an Export from a server already downloaded.
+//! Local log of which Assets an Export from a server already fetched.
 //!
 //! The file is `.message-crate-pull-state.jsonl`. JSON Lines means one JSON object per
-//! line. A later Export Run can skip attachments that are already on disk.
+//! line. A later Export Run can skip Assets that are already on disk.
 
 use std::collections::HashSet;
 #[cfg(test)]
@@ -18,13 +18,13 @@ pub const PULL_JOURNAL_NAME: &str = ".message-crate-pull-state.jsonl";
 #[serde(tag = "event", rename_all = "snake_case")]
 /// One row in `.message-crate-pull-state.jsonl`.
 pub enum PullJournalEvent {
-    /// One attachment is on disk, so a later run can skip downloading it.
+    /// One Asset is on disk, so a later run can skip fetching it.
     AssetOk {
-        /// Server base URL the attachment came from.
+        /// Server base URL the Asset came from.
         url: String,
         /// Account username the run logged in as.
         username: String,
-        /// Hex SHA-256 fingerprint of the attachment bytes; the skip key.
+        /// Hex SHA-256 fingerprint of the Asset's bytes; the skip key.
         sha256: String,
     },
     /// An Export Run finished, with its counts.
@@ -37,8 +37,8 @@ pub enum PullJournalEvent {
         conversations: u64,
         /// Messages written.
         messages: u64,
-        /// Attachments downloaded, plus those already on disk according to
-        /// the journal.
+        /// Assets fetched, plus those kept because they were already on
+        /// disk.
         assets: u64,
     },
 }
@@ -116,7 +116,8 @@ pub fn compact(path: &Path, url: &str, username: &str, state: &PullJournalState)
             });
         }
         if state.export_complete {
-            // Counts are unused on resume; an `export_complete` row only means the last run finished.
+            // A later Export Run ignores the counts; an `export_complete` row
+            // only means the last Export Run finished.
             events.push(PullJournalEvent::ExportComplete {
                 url: url.to_string(),
                 username: username.to_string(),
@@ -209,10 +210,10 @@ mod tests {
         assert!(reloaded.export_complete);
     }
 
-    /// `append` is what a pull actually calls, once per asset, and nothing
+    /// `append` is what a pull actually calls, once per Asset, and nothing
     /// called it: every test here wrote the file by hand or went through
-    /// `compact`. Replacing it with a no-op made a pull that resumed from
-    /// nothing and downloaded every asset again, with the suite green.
+    /// `compact`. Replacing it with a no-op made a later Export Run start
+    /// from nothing and fetch every Asset again, with the suite green.
     #[test]
     fn appended_events_are_on_disk_and_load_back() {
         let dir = tempfile::tempdir().unwrap();
@@ -228,8 +229,8 @@ mod tests {
         )
         .unwrap();
 
-        // Loading between the two appends is the resume case: a pull that was
-        // interrupted after one asset must find that one asset.
+        // Loading between the two appends stands for a later Export Run: after
+        // a run interrupted after one Asset, it must find that Asset.
         let after_first = load(&path, "http://server", "alice").unwrap();
         assert!(after_first.assets.contains("aaa"));
         assert!(!after_first.export_complete);
@@ -289,7 +290,7 @@ mod tests {
 
     /// One output directory used by Export for two servers, or two accounts
     /// on one server: finishing a run for one rewrites only its own lines,
-    /// so the next run for another still skips what it downloaded (#1532).
+    /// so the next run for another still skips what it fetched (#1532).
     #[test]
     fn compact_keeps_the_lines_of_every_other_server_and_account() {
         let dir = tempfile::tempdir().unwrap();
