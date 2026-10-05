@@ -304,7 +304,7 @@ impl<'a> StagingEarlierVersion<'a> {
 /// (`ix_staging_messages_account_source_guid`): one guid of one source in
 /// one account.
 #[derive(Debug, Clone, Copy)]
-pub struct StagedMessageKey<'a> {
+pub struct StagingMessageKey<'a> {
     /// The account the message is imported into.
     pub account_id: i64,
     /// The source the import stamps on the message.
@@ -493,10 +493,10 @@ pub async fn insert_earlier_versions(
     Ok(inserted)
 }
 
-/// Give the message staged under `key` the text
-/// `body` and the earlier versions `versions` of another copy of it from
-/// the same import, when that copy records a later edit
-/// ([`later_edit_sql`]). Returns whether it did.
+/// Give the message staged under `key` the text `body` and the earlier
+/// versions `versions` of another copy of it from the same import, when
+/// that copy records a later edit ([`later_edit_sql`]). Returns whether it
+/// did.
 ///
 /// Staging keeps one row per guid and skips a second copy, so without this
 /// the copy staged first counted whatever its age: one import of an
@@ -510,7 +510,7 @@ pub async fn insert_earlier_versions(
 /// Returns an error when a statement fails.
 pub async fn take_later_staged_copy(
     conn: &mut SqliteConnection,
-    key: StagedMessageKey<'_>,
+    key: StagingMessageKey<'_>,
     body: Option<&str>,
     versions: &[crate::models::EarlierVersionRecord],
 ) -> Result<bool> {
