@@ -57,4 +57,16 @@ describe("downloadAttachment", () => {
     expect(saveFile).toHaveBeenCalledExactlyOnceWith("Clip.mov", original);
     expect(createMediaLink).not.toHaveBeenCalled();
   });
+
+  // Without the guard, the desktop app would ask for a Media Link to
+  // `/v1/assets/undefined` and the browser would fetch it.
+  it("refuses an attachment with no stored file, asking the server for nothing", async () => {
+    vi.mocked(isTauri).mockReturnValue(true);
+
+    await expect(downloadAttachment(attachment({ original_name: "gone.jpg" }))).rejects.toThrow(
+      "This attachment has no stored file.",
+    );
+    expect(createMediaLink).not.toHaveBeenCalled();
+    expect(invokeSaveDownload).not.toHaveBeenCalled();
+  });
 });

@@ -34,8 +34,8 @@ use super::paths::choose_save_path;
 /// # Errors
 ///
 /// Returns an error when `url` is not an original read by a Media Link, when
-/// `file_name` is empty (from [`choose_save_path`]), when the server refuses the download or it breaks
-/// off, or when the file cannot be written.
+/// `file_name` is empty (from [`choose_save_path`]), when the server refuses
+/// the download or it breaks off, or when the file cannot be written.
 #[tauri::command]
 pub async fn save_download(app: AppHandle, url: String, file_name: String) -> Result<bool, String> {
     let url = original_by_media_link(&url)?;
@@ -76,11 +76,12 @@ fn original_by_media_link(raw: &str) -> Result<Url, String> {
 
 /// Download `url` to `path`, replacing a file already there.
 ///
-/// The request carries no timeout of its own, so the client's applies
-/// (`message_crate_http::build_client`, 30 seconds). The blocking client
-/// gives that time to the answer's headers and again to each read of the
-/// body, so a large file on a slow link finishes however long it takes,
-/// and a server that stops sending fails the download after 30 seconds.
+/// The request carries no timeout of its own, so reqwest's blocking default
+/// of 30 seconds applies, which `message_crate_http::build_client` leaves in
+/// place. The blocking client gives that time to the answer's headers and
+/// again to each read of the body, so a large file on a slow link finishes
+/// however long it takes, and a server that stops sending fails the download
+/// after 30 seconds.
 ///
 /// The bytes go to a temporary file of a unique name beside `path` first,
 /// which is renamed onto `path` once the last byte is written. A unique name
@@ -116,11 +117,17 @@ fn download_to_file(url: &Url, path: &Path) -> Result<(), String> {
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
         .unwrap_or(Path::new("."));
-    let mut part = tempfile::Builder::new()
-        .prefix(".message-crate-download-")
-        .suffix(".part")
-        .tempfile_in(directory)
-        .map_err(could_not_save)?;
+    let mut builder = tempfile::Builder::new();
+    builder.prefix(".message-crate-download-").suffix(".part");
+    // tempfile makes its file readable by its owner alone, and the rename
+    // keeps that mode. The saved file gets the mode any new file gets
+    // instead, 0o666 less the umask, as `File::create` gives.
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        builder.permissions(std::fs::Permissions::from_mode(0o666));
+    }
+    let mut part = builder.tempfile_in(directory).map_err(could_not_save)?;
     std::io::copy(&mut response, part.as_file_mut()).map_err(could_not_save)?;
     part.as_file_mut().flush().map_err(could_not_save)?;
     part.as_file().sync_all().map_err(could_not_save)?;
@@ -204,6 +211,28 @@ mod tests {
             b"a browser's bytes"
         );
         assert_eq!(names_in(dir.path()), ["Clip.mov", "Clip.mov.part"]);
+    }
+
+    /// A saved attachment is readable by whoever could read any other new file
+    /// in the directory, as one saved by `File::create` was.
+    #[cfg(unix)]
+    #[test]
+    fn the_saved_file_has_the_mode_of_any_new_file() {
+        use std::os::unix::fs::PermissionsExt;
+        let server = MockServer::start();
+        server.mock(|when, then| {
+            when.method(GET).path(format!("/v1/assets/{SHA}"));
+            then.status(200).body("bytes");
+        });
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("Clip.mov");
+        let plain = dir.path().join("plain");
+        std::fs::File::create(&plain).unwrap();
+
+        download_to_file(&link(&server), &path).unwrap();
+
+        let mode = |p: &Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(&path), mode(&plain));
     }
 
     #[test]
