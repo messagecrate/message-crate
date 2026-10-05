@@ -106,10 +106,13 @@ fn serve_says_it_listens_and_a_second_serve_exits_with_the_lock_held_code() {
         let left = deadline.saturating_duration_since(Instant::now());
         match received.recv_timeout(left) {
             Ok(line) if line.starts_with(LISTENING_LINE) => {
-                assert!(
-                    line[LISTENING_LINE.len()..].starts_with("http://127.0.0.1:"),
-                    "{line}"
-                );
+                // The address it bound, not the `:0` it was given.
+                let address: std::net::SocketAddr = line[LISTENING_LINE.len()..]
+                    .strip_prefix("http://")
+                    .and_then(|address| address.parse().ok())
+                    .unwrap_or_else(|| panic!("{line}"));
+                assert_eq!(address.ip().to_string(), "127.0.0.1", "{line}");
+                assert_ne!(address.port(), 0, "{line}");
                 break;
             }
             Ok(line) => seen.push(line),

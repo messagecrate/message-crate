@@ -1355,10 +1355,17 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
     let demo_build = state.demo_build.clone();
     let media_queue = state.media_queue.clone();
     let app = http_app(state);
-    let listener = tokio::net::TcpListener::bind(&bind).await?;
+    let listener = tokio::net::TcpListener::bind(&bind)
+        .await
+        .map_err(|error| {
+            anyhow::Error::from(error).context(format!("could not listen on {bind}"))
+        })?;
+    // The address the listener holds, not the one it was given, so a bind to
+    // port 0 names the port the operating system chose.
     eprintln!(
-        "{}http://{bind}",
-        message_crate_serve_protocol::LISTENING_LINE
+        "{}http://{}",
+        message_crate_serve_protocol::LISTENING_LINE,
+        listener.local_addr()?
     );
     eprintln!(
         "  routes: `message-crate-server dump-openapi` lists them all; set [server] openapi_ui = true for /docs"

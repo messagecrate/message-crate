@@ -74,21 +74,16 @@ fn create_database(root: &Path, data_dir: &Path) {
 }
 
 /// `serve` as the desktop app starts it, and the address it listens on.
-/// The listening line names the address it was given, so the port is one
-/// the operating system had free a moment before.
+/// The server binds port 0 and its listening line names the port it got, so
+/// no other process can take the port between the choice and the bind.
 fn serve(data_dir: &Path, static_dir: &Path) -> (Running, String) {
-    let port = std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
     let mut child = Running(
         server()
             .arg("serve")
             .arg("--data-dir")
             .arg(data_dir)
             .arg("--bind")
-            .arg(format!("127.0.0.1:{port}"))
+            .arg("127.0.0.1:0")
             .arg("--static-dir")
             .arg(static_dir)
             .env("RUST_LOG", "trace")
@@ -107,15 +102,36 @@ fn serve(data_dir: &Path, static_dir: &Path) -> (Running, String) {
         }
     });
     let deadline = Instant::now() + WAIT;
+    let mut seen = Vec::new();
     loop {
         let left = deadline.saturating_duration_since(Instant::now());
-        let line = received
-            .recv_timeout(left)
-            .expect("the server never wrote the listening line");
-        if let Some(address) = line.strip_prefix(LISTENING_LINE) {
-            return (child, address.to_string());
+        match received.recv_timeout(left) {
+            Ok(line) => match line.strip_prefix(LISTENING_LINE) {
+                Some(address) => return (child, address.to_string()),
+                None => seen.push(line),
+            },
+            Err(mpsc::RecvTimeoutError::Disconnected) => panic!(
+                "the server closed its output before the listening line ({}):\n{}",
+                exit_status(&mut child.0, deadline),
+                seen.join("\n")
+            ),
+            Err(mpsc::RecvTimeoutError::Timeout) => panic!(
+                "the server wrote no listening line in {WAIT:?}:\n{}",
+                seen.join("\n")
+            ),
         }
     }
+}
+
+/// How `child` exited, or that it is still running at `deadline`.
+fn exit_status(child: &mut Child, deadline: Instant) -> String {
+    while Instant::now() < deadline {
+        if let Some(status) = child.try_wait().unwrap() {
+            return status.to_string();
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    "still running".to_string()
 }
 
 /// One call, answered with its status and JSON body (`Null` when it has
