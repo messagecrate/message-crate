@@ -152,9 +152,19 @@ where
     })
 }
 
-/// What the person reads when `name` panics.
+/// What the person reads when `name` panics. The Upload pauses rather than
+/// fails, as `CONTEXT.md` ("Pause") says: the import screen keeps its run at
+/// the Upload with everything staged (`importOutcome` in
+/// `web/src/screens/import/importOutcome.ts`), so it can be resumed.
 fn panic_text(name: JobName) -> String {
-    format!("{} failed because of a bug in Message Crate.", name.label())
+    let outcome = match name {
+        JobName::Upload => "paused",
+        JobName::Staging | JobName::Media | JobName::Export | JobName::Convert => "failed",
+    };
+    format!(
+        "{} {outcome} because of a bug in Message Crate.",
+        name.label()
+    )
 }
 
 /// The text a panic was raised with. `panic!` carries a `&str` for a plain
@@ -292,7 +302,7 @@ mod tests {
     }
 
     #[test]
-    fn a_panic_names_the_work_that_failed_in_the_screens_words() {
+    fn a_panic_names_the_work_and_what_became_of_it_in_the_screens_words() {
         let cases = [
             (
                 JobName::Staging,
@@ -304,7 +314,7 @@ mod tests {
             ),
             (
                 JobName::Upload,
-                "The Upload failed because of a bug in Message Crate.",
+                "The Upload paused because of a bug in Message Crate.",
             ),
             (
                 JobName::Export,
