@@ -13,7 +13,7 @@ use chrono::{Duration, Utc};
 use message_ir::{
     ConversationHeader, ConversationMeta, ConversationStats, Deletion, ExportMeta, IrAttachment,
     IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind, IrParticipant,
-    IrService, Reaction, SCHEMA_VERSION,
+    IrService, Reaction, SCHEMA_VERSION, orphaned_chat_id,
 };
 use rand::Rng;
 use rand::RngExt;
@@ -101,7 +101,7 @@ pub struct StagingDirs<'a> {
 /// Write every conversation file into the three backup directories and return counts.
 ///
 /// One-to-one contacts are split into iMessage-only, Android-only, and overlap.
-/// Unassigned handles, groups, `orphaned.jsonl`, empty threads, and WhatsApp
+/// Unassigned handles, groups, orphaned messages, empty threads, and WhatsApp
 /// copies are written after that, in that order.
 ///
 /// # Errors
@@ -788,32 +788,58 @@ fn named_group_participants(roster: &Roster, member_idxs: &[usize]) -> Vec<IrPar
 }
 
 impl<R: Rng> Seeder<'_, R> {
-    /// Write messages that have a sender but no conversation to attach them to.
+    /// Write orphaned messages, ones the backup holds without recording which
+    /// conversation they were said in, as the Apple Messages reader writes
+    /// them: the ones [`ORPHAN_SENDER`] sent in a conversation of their own
+    /// with that sender as its only participant, and the ones the account
+    /// holder sent in one with no participants.
     ///
     /// # Errors
     ///
-    /// Returns an error if the file cannot be written.
+    /// Returns an error if a file cannot be written.
     fn orphaned(&mut self, staging: &Path) -> Result<()> {
         let n = self.cfg.edge_cases.orphaned_messages.max(1);
-        let mut file = open_jsonl(&staging.join("orphaned.jsonl"))?;
-        write_conversation_header(
-            &mut file,
-            "orphaned",
-            IrConversationType::Individual,
-            None,
-            vec![],
-            n,
-            export_meta(IMESSAGE_SOURCE, OWNER_PHONE),
-        )?;
         let timestamps = self.timestamps(n, 2.0, sample_direct_day_burst);
+        let (mut received, mut sent) = (Vec::new(), Vec::new());
         for (i, &ts) in timestamps.iter().enumerate() {
             let guid = format!("orphan-{i}");
+            let from_me = i % 2 == 0;
             let mut msg =
-                self.text_message(&guid, ts, i % 2 == 0, ORPHAN_SENDER, SourceFlavor::IMessage);
+                self.text_message(&guid, ts, from_me, ORPHAN_SENDER, SourceFlavor::IMessage);
             msg.text = format!("Orphaned message #{i} (no conversation association)");
-            self.emit(&mut file, msg)?;
+            if from_me {
+                sent.push(msg);
+            } else {
+                received.push(msg);
+            }
         }
-        self.stats.conversation_files += 1;
+        let sender = IrParticipant {
+            identity: Some(ORPHAN_SENDER.into()),
+            display_name: None,
+            identity_type: None,
+        };
+        for (file_name, sender, messages) in [
+            ("orphaned-sender.jsonl", Some(sender), received),
+            ("orphaned-holder.jsonl", None, sent),
+        ] {
+            if messages.is_empty() {
+                continue;
+            }
+            let mut file = open_jsonl(&staging.join(file_name))?;
+            write_conversation_header(
+                &mut file,
+                &orphaned_chat_id(sender.as_ref().and_then(|p| p.identity.as_deref())),
+                IrConversationType::Orphaned,
+                None,
+                sender.into_iter().collect(),
+                messages.len(),
+                export_meta(IMESSAGE_SOURCE, OWNER_PHONE),
+            )?;
+            for msg in messages {
+                self.emit(&mut file, msg)?;
+            }
+            self.stats.conversation_files += 1;
+        }
         Ok(())
     }
 }

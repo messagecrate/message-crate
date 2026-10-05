@@ -32,9 +32,12 @@ password when the backup is encrypted.
 
 What comes back, one JSON object per line, in this order:
 
-1. `{"event":"source","protocol_version":10,"encrypted":false}` once.
+1. `{"event":"source","protocol_version":11,"encrypted":false}` once.
 2. Any number of `log`, `progress`, `conversation`, and `message` lines,
-   interleaved. Each `conversation` names a chat and its participants; each
+   interleaved. Each `conversation` names a chat and its participants (a
+   message in no chat is in its sender's `orphaned` conversation, keyed
+   `orphaned:` and the sender's address, or, for one the account holder
+   sent, in the one keyed `orphaned:` with no participants); each
    `message` is one already-classified message with its attachments and the
    reactions that stand on it listed, its `deletion` mark when it was
    deleted in Messages or unsent, and its earlier versions in `edits` when

@@ -1,9 +1,9 @@
 ---
 title: Export structure
-description: The JSONL format Message Crate imports — schema version 8, one file per conversation.
+description: The JSONL format Message Crate imports — schema version 9, one file per conversation.
 ---
 
-Message Crate imports JSONL (JSON Lines) exports at schema version 8. Version 7 and older are refused, never upgraded. This page describes the format for CLI users and tool authors.
+Message Crate imports JSONL (JSON Lines) exports at schema version 9. Version 8 and older are refused, never upgraded. This page describes the format for CLI users and tool authors.
 
 ## Happy path
 
@@ -29,7 +29,7 @@ Attachment records may include `digest_sha256` so clients can upload by hash (`P
 
 ## Schema compatibility
 
-The server reads one schema version, currently 8. Version 8 keeps an edited message's earlier versions in its own `edits`, where version 7 kept the Apple Messages edit history in `imessage.edits`. Version 7 had moved a message's mark, Deleted in the source app or Unsent, in its own `deletion`, where version 6 kept the Apple Messages deleted mark in `imessage.is_deleted`. Version 6 had moved a message's reactions into its own `reactions` list, where version 5 kept Apple Messages reactions in `imessage.tapbacks`. Version 5 had called every address an identity (`identity`, `identity_type`, `owner_identity`, `sender_identity`, `reactor_identity`) where version 4 said `handle`. A file written at any other version is refused, with an error naming both the file's version and the version the server expects. To import an older export, re-export it with the current desktop app.
+The server reads one schema version, currently 9. Version 9 gives orphaned messages, ones the backup holds without recording which conversation they were said in, conversations of type `orphaned`: one for each sender, keyed `orphaned:` and the sender's address, and one with no participants, keyed `orphaned:`, for the ones the account holder sent; version 8 put them all in one `individual` conversation named `orphaned`. Version 8 had kept an edited message's earlier versions in its own `edits`, where version 7 kept the Apple Messages edit history in `imessage.edits`. Version 7 had moved a message's mark, Deleted in the source app or Unsent, in its own `deletion`, where version 6 kept the Apple Messages deleted mark in `imessage.is_deleted`. Version 6 had moved a message's reactions into its own `reactions` list, where version 5 kept Apple Messages reactions in `imessage.tapbacks`. Version 5 had called every address an identity (`identity`, `identity_type`, `owner_identity`, `sender_identity`, `reactor_identity`) where version 4 said `handle`. A file written at any other version is refused, with an error naming both the file's version and the version the server expects. To import an older export, re-export it with the current desktop app.
 
 ## Related
 
