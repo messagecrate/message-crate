@@ -336,6 +336,7 @@ fn progress_lines_cover_all_units_with_global_counts() {
         "per-conversation count lines would confuse the desktop scraper"
     );
 }
+
 #[test]
 fn parallel_drain_writes_every_unit() {
     let tmp = tempfile::tempdir().unwrap();
