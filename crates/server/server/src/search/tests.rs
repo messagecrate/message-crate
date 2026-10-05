@@ -309,17 +309,17 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
     }
     let a = ACCOUNT;
     let mut f = Fixture {
-        me_handle: handle(&mut conn, a, "+15550000", "imessage").await,
+        me_handle: handle(&mut conn, a, "+15555550100", "imessage").await,
         ..Fixture::default()
     };
 
     crate::test_support::link_identity(&mut conn, a, f.me_handle).await;
-    f.ana_handle = handle(&mut conn, a, "+15550001", "imessage").await;
-    f.bo_handle = handle(&mut conn, a, "+15550002", "sms").await;
+    f.ana_handle = handle(&mut conn, a, "+15555550101", "imessage").await;
+    f.bo_handle = handle(&mut conn, a, "+15555550102", "sms").await;
     f.jane_handle = handle(&mut conn, a, "jane.doe@example.com", "imessage").await;
     f.sam_handle = handle(&mut conn, a, "sam@example.org", "imessage").await;
-    f.nameless_handle = handle(&mut conn, a, "+15550009", "sms").await;
-    f.cy_handle = handle(&mut conn, a, "+15550003", "whatsapp").await;
+    f.nameless_handle = handle(&mut conn, a, "+15555550109", "sms").await;
+    f.cy_handle = handle(&mut conn, a, "+15555550103", "whatsapp").await;
 
     f.ana = contact(&mut conn, a, "Ana", &[f.ana_handle]).await;
     f.bo = contact(&mut conn, a, "Bo", &[f.bo_handle]).await;
@@ -1675,7 +1675,7 @@ mod people_words {
             vec![f.big_group_msg]
         );
         assert_eq!(
-            run(&mut conn, ListKind::Messages, "in:+15550002").await,
+            run(&mut conn, ListKind::Messages, "in:+15555550102").await,
             vec![f.bo_2023]
         );
     }
@@ -1915,7 +1915,7 @@ mod kind_words {
         let direct = run(&mut conn, ListKind::Conversations, "kind:direct").await;
         let groups = run(&mut conn, ListKind::Conversations, "kind:group").await;
 
-        let ana_key = handle(&mut conn, ACCOUNT, "orphaned:+15550001", "imessage").await;
+        let ana_key = handle(&mut conn, ACCOUNT, "orphaned:+15555550101", "imessage").await;
         let ana_orphaned = conversation(
             &mut conn,
             ACCOUNT,
@@ -2489,7 +2489,7 @@ mod trash_across_lists {
             );
         }
         assert_eq!(
-            run(&mut conn, ListKind::Conversations, "with:+15550001").await,
+            run(&mut conn, ListKind::Conversations, "with:+15555550101").await,
             anas
         );
         // `group:none` is the complement: Ana's conversations are in it now.
@@ -3993,7 +3993,7 @@ mod group_keyed_conversation {
             run(&mut conn, ListKind::Conversations, "with:\"Robin Quill\"").await,
             vec![untitled]
         );
-        for query in ["with:+15550001", "identity:+15550001"] {
+        for query in ["with:+15555550101", "identity:+15555550101"] {
             let found = run(&mut conn, ListKind::Conversations, query).await;
             for row in groups {
                 assert!(
