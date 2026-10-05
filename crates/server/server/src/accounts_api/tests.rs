@@ -5,12 +5,12 @@ use crate::db::api_tokens;
 use crate::db::permissions::Permissions;
 use crate::problem::ProblemType;
 use crate::test_support::{
-    SeedConversation, SeedMessage, claim_as_owner, conversation_header, delete_json,
+    SeedConversation, SeedMessage, attachment, claim_as_owner, conversation_header, delete_json,
     delete_json_with_body, delete_raw, delete_status, delete_status_with_body, expect_problem,
-    fixture_with_account, get_json, get_raw, get_status, log_in, login_status, patch_failure,
-    patch_json, patch_raw, patch_status, post_created_json, post_logged_out, post_raw, post_status,
-    post_status_logged_out, put_json, put_raw, put_status, register_via_api, seed_conversation,
-    seed_one_message, test_fixture,
+    fixture_with_account, get_json, get_raw, get_status, log_in, login_status, message_line,
+    patch_failure, patch_json, patch_raw, patch_status, post_created_json, post_logged_out,
+    post_raw, post_status, post_status_logged_out, put_json, put_raw, put_status, register_via_api,
+    seed_conversation, seed_one_message, test_fixture,
 };
 use message_ir::HandleType;
 
@@ -1594,9 +1594,16 @@ async fn deleting_messages_keeps_a_file_a_running_import_has_uploaded() {
     .await;
     assert_eq!(deleted.conversations, 1);
 
-    let message = format!(
-        r#"{{"guid":"g-new","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"new","attachments":[{{"path":"attachments/photo.bin","original_name":"photo.bin","mime_type":"application/octet-stream","digest_sha256":"{sha}","is_sticker":false,"transcription":null,"sticker_effect":null}}],"imessage":null,"source":null}}"#
-    );
+    let message = message_line("g-new", "new")
+        .sender("+15555550123")
+        .attachment(message_ir::IrAttachment {
+            digest_sha256: Some(sha.to_string()),
+            ..attachment(
+                "attachments/photo.bin",
+                "photo.bin",
+                "application/octet-stream",
+            )
+        });
     let body = format!(
         "{}\n{message}\n",
         conversation_header("imessage", "+15555550123").participant("+15555550123", None),

@@ -3,9 +3,10 @@ use axum::http::StatusCode;
 use crate::problem::ProblemType;
 use crate::test_support::{
     RegisteredAccount, SeedConversation, SeedMessage, TestFixture, at_current_schema_version,
-    conversation_header, expect_problem, fixture_with_account, get_json, get_raw, get_status,
-    register_via_api, seed_conversation,
+    attachment, conversation_header, expect_problem, fixture_with_account, get_json, get_raw,
+    get_status, message_line, register_via_api, seed_conversation,
 };
+use message_ir::{IrAttachment, IrImessage, Reaction};
 
 /// Two conversations for alice (a direct thread and a group), and one for bob
 /// that must never appear in alice's results.
@@ -294,35 +295,47 @@ fn ir_message(
     ms: i64,
     text: &str,
     is_sticker: bool,
-    reactions: serde_json::Value,
-    imessage: serde_json::Value,
+    reactions: Vec<Reaction>,
+    imessage: Option<IrImessage>,
 ) -> String {
-    serde_json::json!({
-        "guid": guid,
-        "timestamp_unix_ms": ms,
-        "direction": "incoming",
-        "service": "imessage",
-        "message_kind": "imessage",
-        "sender_identity": "+15555550123",
-        "sender_display_name": null,
-        "subject": null,
-        "text": text,
-        "attachments": [{
-            "path": format!("attachments/{guid}.png"),
-            "original_name": format!("{guid}.png"),
-            "mime_type": "image/png",
-            "digest_sha256": null,
-            "is_sticker": is_sticker,
-            "transcription": null,
-            "sticker_effect": null,
-            "size_bytes": 12,
-            "missing_reason": "not_found"
-        }],
-        "reactions": reactions,
-        "imessage": imessage,
-        "source": null
-    })
-    .to_string()
+    let mut message = message_line(guid, text)
+        .at(ms)
+        .sender("+15555550123")
+        .attachment(IrAttachment {
+            is_sticker,
+            size_bytes: Some(12),
+            missing_reason: Some("not_found".into()),
+            ..attachment(
+                &format!("attachments/{guid}.png"),
+                &format!("{guid}.png"),
+                "image/png",
+            )
+        });
+    for reaction in reactions {
+        message = message.reaction(reaction);
+    }
+    if let Some(imessage) = imessage {
+        message = message.imessage(imessage);
+    }
+    message.to_string()
+}
+
+/// A reaction of `kind` to part `part_index`, by the person reached at
+/// `reactor_identity`.
+fn reaction_by(
+    kind: &str,
+    emoji: Option<&str>,
+    part_index: u32,
+    reactor_identity: &str,
+) -> Reaction {
+    Reaction {
+        part_index,
+        kind: kind.into(),
+        emoji: emoji.map(str::to_string),
+        is_from_me: false,
+        reactor_identity: Some(reactor_identity.into()),
+        reactor_display_name: None,
+    }
 }
 
 /// Import, through the whole pipeline, three messages into `account_id`: a
@@ -340,14 +353,13 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
         1_426_183_462_000,
         "a reply",
         true,
-        serde_json::json!([
-            {"kind": "liked", "emoji": null, "part_index": 0,
-             "is_from_me": false, "reactor_identity": "+15555550167"},
-            {"kind": "emoji", "emoji": "🎉", "part_index": 1,
-             "is_from_me": false, "reactor_identity": "+15555550161"}
-        ]),
-        serde_json::json!({
-            "is_reply": true
+        vec![
+            reaction_by("liked", None, 0, "+15555550167"),
+            reaction_by("emoji", Some("🎉"), 1, "+15555550161"),
+        ],
+        Some(IrImessage {
+            is_reply: true,
+            ..IrImessage::default()
         }),
     );
     let announcement = ir_message(
@@ -355,13 +367,10 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
         1_426_183_463_000,
         "an announcement",
         false,
-        serde_json::json!([
-            {"kind": "loved", "emoji": null, "part_index": 2,
-             "is_from_me": false, "reactor_identity": "+15555550167"}
-        ]),
-        serde_json::json!({
-            "is_reply": false,
-            "announcement": "named the conversation Reactions"
+        vec![reaction_by("loved", None, 2, "+15555550167")],
+        Some(IrImessage {
+            announcement: Some("named the conversation Reactions".into()),
+            ..IrImessage::default()
         }),
     );
     let plain = ir_message(
@@ -369,8 +378,8 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
         1_426_183_464_000,
         "a plain message",
         false,
-        serde_json::json!([]),
-        serde_json::Value::Null,
+        Vec::new(),
+        None,
     );
     let dir = fixture.dir().join("reactions");
     std::fs::create_dir_all(&dir).unwrap();

@@ -86,7 +86,7 @@ pub fn read_records(path: &Path) -> Result<Vec<ExportRecord>, ReadRecordsError> 
 mod tests {
     use super::{ReadRecordsError, read_records};
     use crate::imports_api::ImportFailure;
-    use crate::test_support::conversation_header;
+    use crate::test_support::{conversation_header, message_line};
 
     /// The header line of a one-to-one conversation with Sam.
     fn header() -> String {
@@ -96,9 +96,12 @@ mod tests {
     }
 
     fn message(guid: &str) -> String {
-        format!(
-            r#"{{"guid":"{guid}","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}}"#
-        )
+        message_line(guid, "hello")
+            .at(1_400_773_261_000)
+            .sms()
+            .sender("+15555550101")
+            .sender_display_name("Sam")
+            .to_string()
     }
 
     /// Blank lines are lines of the file, so a failure below them names the

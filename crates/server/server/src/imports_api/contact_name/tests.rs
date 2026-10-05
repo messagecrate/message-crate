@@ -1,6 +1,6 @@
 use super::*;
 use crate::db::schema;
-use crate::test_support::conversation_header;
+use crate::test_support::{conversation_header, message_line};
 
 const TEST_ACCOUNT: i64 = 7;
 
@@ -263,16 +263,12 @@ async fn a_fresh_contact_takes_the_number_on_every_service() {
 
 /// An incoming message line from `sender`.
 fn incoming(guid: &str, sender: &str) -> String {
-    format!(
-        r#"{{"guid":"{guid}","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"{sender}","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}}"#
-    )
+    message_line(guid, "hi").sender(sender).to_string()
 }
 
 /// An outgoing message line: one the account holder sent.
 fn outgoing(guid: &str) -> String {
-    format!(
-        r#"{{"guid":"{guid}","timestamp_unix_ms":1426183462000,"direction":"outgoing","service":"imessage","message_kind":"imessage","sender_identity":null,"sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}}"#
-    )
+    message_line(guid, "hi").outgoing().to_string()
 }
 
 /// The orphaned messages one sender sent, as the Apple Messages reader

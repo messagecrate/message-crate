@@ -10,8 +10,8 @@ use crate::imports_api::{
     ImportSchemaMode, import_jsonl_files_on_conn,
 };
 use crate::models::AttachmentRecord;
-use crate::test_support::conversation_header;
-use message_ir::HandleType;
+use crate::test_support::{attachment, conversation_header, message_line};
+use message_ir::{HandleType, IrAttachment, IrMessageKind, IrService};
 
 const TEST_ACCOUNT: i64 = 7;
 
@@ -32,9 +32,7 @@ fn orphaned_header() -> String {
 
 /// An incoming iMessage line from `sender`.
 fn incoming(guid: &str, sender: &str) -> String {
-    format!(
-        r#"{{"guid":"{guid}","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"{sender}","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}}"#
-    ) + "\n"
+    message_line(guid, "hi").sender(sender).line()
 }
 
 /// Import one file named `name` with `body` under the fixed source
@@ -189,10 +187,9 @@ async fn an_attachment_staging_refuses_is_a_rejection_naming_its_file() {
     let mut conn = pool.acquire().await.unwrap();
     let tmp = TempDir::new().unwrap();
     let header = one_to_one_header();
-    let message = incoming("g-escape", "+15555550154").replace(
-        r#""attachments":[]"#,
-        r#""attachments":[{"path":"../escape.txt","original_name":null,"mime_type":null,"is_sticker":false,"transcription":null,"sticker_effect":null}]"#,
-    );
+    // The path is the input under test, so the line stays written out.
+    let message = r#"{"guid":"g-escape","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550154","sender_display_name":null,"subject":null,"text":"hi","attachments":[{"path":"../escape.txt","original_name":null,"mime_type":null,"is_sticker":false,"transcription":null,"sticker_effect":null}],"imessage":null,"source":null}
+"#;
     let path = tmp.path().join("+15555550154.jsonl");
     std::fs::write(&path, format!("{header}{message}")).unwrap();
     let assets = tmp.path().join("assets");
@@ -342,9 +339,12 @@ async fn a_file_that_does_not_match_its_claimed_sha256_fails_the_import_and_is_n
     std::fs::write(tmp.path().join("photo.bin"), b"the bytes on disk").unwrap();
     let claimed_sha = assets_api::Sha256::of_bytes(b"the bytes the export saw");
     let header = one_to_one_header();
-    let message = format!(
-        r#"{{"guid":"g-mismatch","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550154","sender_display_name":null,"subject":null,"text":"hi","attachments":[{{"path":"photo.bin","original_name":"photo.bin","mime_type":"application/octet-stream","digest_sha256":"{claimed_sha}","is_sticker":false,"transcription":null,"sticker_effect":null}}],"imessage":null,"source":null}}"#
-    );
+    let message = message_line("g-mismatch", "hi")
+        .sender("+15555550154")
+        .attachment(IrAttachment {
+            digest_sha256: Some(claimed_sha.to_string()),
+            ..attachment("photo.bin", "photo.bin", "application/octet-stream")
+        });
     let path = tmp.path().join("mismatch.jsonl");
     std::fs::write(&path, format!("{header}{message}\n")).unwrap();
     let opts = append_opts(&assets, tmp.path(), "imessage");
@@ -443,10 +443,11 @@ async fn a_file_with_neither_header_nor_messages_is_refused() {
 
 /// An incoming WhatsApp line from `sender`.
 fn incoming_whatsapp(guid: &str, sender: &str) -> String {
-    incoming(guid, sender).replace(
-        r#""service":"imessage","message_kind":"imessage""#,
-        r#""service":"whatsapp","message_kind":"unknown""#,
-    )
+    message_line(guid, "hi")
+        .service(IrService::Whatsapp)
+        .kind(IrMessageKind::Unknown)
+        .sender(sender)
+        .line()
 }
 
 /// Every `(raw, handle_type)` the account's handles hold, sorted.
@@ -515,10 +516,11 @@ async fn an_individual_chat_id_takes_the_type_its_participant_has_in_the_header(
 /// An incoming line from `sender` on a service the model does not know, as
 /// Apple Messages writes a message sent by satellite.
 fn incoming_unknown_service(guid: &str, sender: &str) -> String {
-    incoming(guid, sender).replace(
-        r#""service":"imessage","message_kind":"imessage""#,
-        r#""service":"unknown","message_kind":"unknown""#,
-    )
+    message_line(guid, "hi")
+        .service(IrService::Unknown)
+        .kind(IrMessageKind::Unknown)
+        .sender(sender)
+        .line()
 }
 
 /// A participant's message over a service the model does not know is the
