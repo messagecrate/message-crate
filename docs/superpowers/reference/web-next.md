@@ -474,7 +474,8 @@ search result opens there); item 8, conversation-grouped body search, by #313
 
 ### Writes, deferred rather than missing
 
-Every write route handler in web-next answers `501 Not Implemented` until the writes are named. The nearest `/v1` routes, for when they are:
+Every write route handler in web-next answers `501 Not Implemented` until the
+writes are named. The nearest `/v1` routes, for when they are:
 
 | web-next action | Nearest `/v1` route |
 |---|---|
