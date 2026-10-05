@@ -855,6 +855,17 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-05 **An Export from a server no longer calls itself a backup in
+  the log.** It began with "Backup query: from:sam" and, when the directory
+  held a finished run, "Previous backup completed successfully". A backup is
+  the phone's file an import reads, so the log now says "Exporting the
+  messages that match: from:sam" and "The previous Export Run finished.
+  Checking for new messages…". The line with the run's counts names its
+  record: "Export Run 7 holds 3 messages in 1 conversation", where it said
+  "Export 7". In a directory an earlier version exported into, the first
+  Export from each account does not say the previous Export Run finished,
+  because the note that run left in the directory is now written
+  differently. It still skips every attachment already there.
 - 2026-10-05 **An EML or mbox export of a message whose id or address holds
   a line break converts whole.** A line break in a message's id or in the
   phone number or address it was sent from or to ended the mail's headers
