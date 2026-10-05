@@ -122,7 +122,6 @@ fn text_only_config(dir: &Path, base_url: String) -> PushConfig {
     PushConfig {
         input: dir.to_path_buf(),
         base_url,
-        username: "alice".into(),
         token: "mc_test".into(),
         mode: ImportMode::Append,
         force: false,
@@ -933,7 +932,6 @@ fn profiles_attachment_upload_phases() {
     let cfg = PushConfig {
         input: dir.path().to_path_buf(),
         base_url: server.base_url(),
-        username: "alice".into(),
         token: "mc_test".into(),
         mode: ImportMode::Append,
         force: false,
