@@ -85,7 +85,7 @@ impl ContactsIndex {
     /// # Errors
     ///
     /// Returns an error when the database at `path` cannot be opened or
-    /// queried, or when the macOS Sources folder exists but cannot be read.
+    /// queried, or when the macOS Sources directory exists but cannot be read.
     /// A macOS source that cannot be read is named in the log and left out,
     /// so the other sources' names are kept.
     pub fn build(path: Option<&Path>) -> Result<Self, TableError> {
@@ -345,25 +345,25 @@ fn to_phone_digits(raw: &str) -> String {
 }
 
 // MARK: macOS Dirs
-/// What a scan of the macOS Contacts Sources folder found.
+/// What a scan of the macOS Contacts Sources directory found.
 #[derive(Debug, Default, PartialEq, Eq)]
 struct SourcesScan {
-    /// The AddressBook-v22.abcddb database of each source folder.
+    /// The AddressBook-v22.abcddb database of each source directory.
     databases: Vec<PathBuf>,
-    /// A line naming each entry or source folder that could not be read,
+    /// A line naming each entry or source directory that could not be read,
     /// with the error.
     unreadable: Vec<String>,
 }
 
 /// Scans a macOS Contacts Sources directory ([`macos_sources_dir`]) for
-/// the AddressBook-v22.abcddb database each source folder holds.
+/// the AddressBook-v22.abcddb database each source directory holds.
 ///
-/// A Mac with no Contacts sources has no Sources folder, so a folder that
+/// A Mac with no Contacts sources has no Sources directory, so a directory that
 /// does not exist is an empty scan.
 ///
 /// # Errors
 ///
-/// Returns an error, with `sources_dir` named, when the folder exists but
+/// Returns an error, with `sources_dir` named, when the directory exists but
 /// cannot be read. An entry of it that cannot be read is named in the scan
 /// instead (see [`addressbook_db_paths`]).
 fn find_macos_addressbook_db_paths(sources_dir: &Path) -> Result<SourcesScan, TableError> {
@@ -383,13 +383,13 @@ fn find_macos_addressbook_db_paths(sources_dir: &Path) -> Result<SourcesScan, Ta
     ))
 }
 
-/// The AddressBook-v22.abcddb database of each source folder among
+/// The AddressBook-v22.abcddb database of each source directory among
 /// `entries`, the paths of `sources_dir`.
 ///
-/// An entry, a source folder or a database whose details cannot be read is
+/// An entry, a source directory or a database whose details cannot be read is
 /// named in [`SourcesScan::unreadable`], with the error. Skipping it without
 /// a word would leave that source's contacts unnamed in the export with no
-/// message. Only a path that does not exist, such as a source folder with no
+/// message. Only a path that does not exist, such as a source directory with no
 /// database or a symbolic link to nothing, is not a source.
 fn addressbook_db_paths(
     sources_dir: &Path,
@@ -407,13 +407,13 @@ fn addressbook_db_paths(
         };
         let db_path = path.join("AddressBook-v22.abcddb");
         match (kind_of(&path), kind_of(&db_path)) {
-            (Ok(Some(folder)), Ok(Some(db))) if folder.is_dir() && db.is_file() => {
+            (Ok(Some(directory)), Ok(Some(db))) if directory.is_dir() && db.is_file() => {
                 scan.databases.push(db_path);
             }
             (Err(e), _) => scan
                 .unreadable
                 .push(format!("read {}: {e}", path.display())),
-            (Ok(Some(folder)), Err(e)) if folder.is_dir() => {
+            (Ok(Some(directory)), Err(e)) if directory.is_dir() => {
                 scan.unreadable
                     .push(format!("read {}: {e}", db_path.display()));
             }
@@ -428,7 +428,7 @@ fn addressbook_db_paths(
 ///
 /// # Errors
 ///
-/// Returns the error for any other failure to read it, such as a folder
+/// Returns the error for any other failure to read it, such as a directory
 /// whose permissions refuse it.
 fn kind_of(path: &Path) -> io::Result<Option<fs::FileType>> {
     match fs::metadata(path) {
@@ -455,7 +455,7 @@ fn macos_sources_dir() -> PathBuf {
 mod tests {
     use super::*;
     #[cfg(unix)]
-    use crate::test_support::with_folder_mode;
+    use crate::test_support::with_directory_mode;
     use crate::test_support::{fill_ios_address_book, fill_macos_address_book};
 
     /// A handle is looked up by these keys, so a key the builder does not
@@ -494,11 +494,11 @@ mod tests {
         );
     }
 
-    /// The Mac keeps one Address Book per account, each in a folder under
-    /// `~/Library/Application Support/AddressBook/Sources`. Every folder's
-    /// database is found; a folder without one and a stray file are not.
+    /// The Mac keeps one Address Book per account, each in a directory under
+    /// `~/Library/Application Support/AddressBook/Sources`. Every directory's
+    /// database is found; a directory without one and a stray file are not.
     #[test]
-    fn every_mac_address_book_under_the_sources_folder_is_found() {
+    fn every_mac_address_book_under_the_sources_directory_is_found() {
         assert!(
             macos_sources_dir().ends_with("Library/Application Support/AddressBook/Sources"),
             "{}",
@@ -507,10 +507,10 @@ mod tests {
 
         let sources = tempfile::tempdir().unwrap();
         for account in ["icloud", "exchange"] {
-            let folder = sources.path().join(account);
-            fs::create_dir(&folder).unwrap();
+            let directory = sources.path().join(account);
+            fs::create_dir(&directory).unwrap();
             fill_macos_address_book(
-                &Connection::open(folder.join("AddressBook-v22.abcddb")).unwrap(),
+                &Connection::open(directory.join("AddressBook-v22.abcddb")).unwrap(),
             );
         }
         fs::create_dir(sources.path().join("empty")).unwrap();
@@ -533,11 +533,11 @@ mod tests {
         );
     }
 
-    /// An entry of the Sources folder that cannot be read is named, with
-    /// the folder and the error, and the sources that read are kept, rather
+    /// An entry of the Sources directory that cannot be read is named, with
+    /// the directory and the error, and the sources that read are kept, rather
     /// than leaving that source's contacts unnamed with no message (#1563).
     #[test]
-    fn an_entry_of_the_sources_folder_that_cannot_be_read_is_named_and_the_rest_kept() {
+    fn an_entry_of_the_sources_directory_that_cannot_be_read_is_named_and_the_rest_kept() {
         let sources = tempfile::tempdir().unwrap();
         let icloud = sources.path().join("icloud");
         fs::create_dir(&icloud).unwrap();
@@ -559,22 +559,22 @@ mod tests {
         assert!(line.contains("stale file handle"), "{line}");
     }
 
-    /// A Contacts account folder that cannot be read is named, and the
+    /// A Contacts account directory that cannot be read is named, and the
     /// other accounts' names are still in the index (#1563).
     #[cfg(unix)]
     #[test]
-    fn an_account_folder_that_cannot_be_read_is_named_and_the_others_names_kept() {
+    fn an_account_directory_that_cannot_be_read_is_named_and_the_others_names_kept() {
         let sources = tempfile::tempdir().unwrap();
         for account in ["icloud", "exchange"] {
-            let folder = sources.path().join(account);
-            fs::create_dir(&folder).unwrap();
+            let directory = sources.path().join(account);
+            fs::create_dir(&directory).unwrap();
             fill_macos_address_book(
-                &Connection::open(folder.join("AddressBook-v22.abcddb")).unwrap(),
+                &Connection::open(directory.join("AddressBook-v22.abcddb")).unwrap(),
             );
         }
         let exchange = sources.path().join("exchange");
 
-        let Some(built) = with_folder_mode(&exchange, 0o000, || {
+        let Some(built) = with_directory_mode(&exchange, 0o000, || {
             ContactsIndex::build_from_macos_sources(sources.path())
         }) else {
             return;
@@ -618,15 +618,15 @@ mod tests {
         );
     }
 
-    /// A Sources folder that exists but cannot be read fails the scan with
-    /// the folder named, rather than reading as a Mac with no contacts.
+    /// A Sources directory that exists but cannot be read fails the scan with
+    /// the directory named, rather than reading as a Mac with no contacts.
     #[cfg(unix)]
     #[test]
-    fn a_sources_folder_that_cannot_be_read_fails_the_scan_and_names_it() {
+    fn a_sources_directory_that_cannot_be_read_fails_the_scan_and_names_it() {
         let sources = tempfile::tempdir().unwrap();
         fs::create_dir(sources.path().join("icloud")).unwrap();
 
-        let Some(result) = with_folder_mode(sources.path(), 0o000, || {
+        let Some(result) = with_directory_mode(sources.path(), 0o000, || {
             find_macos_addressbook_db_paths(sources.path())
         }) else {
             return;

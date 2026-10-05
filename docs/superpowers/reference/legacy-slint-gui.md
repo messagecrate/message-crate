@@ -61,7 +61,7 @@ from `src/sync.rs` (`extract_visibility_flags`): iMessage and WhatsApp get
 their own sections, GO SMS Pro / SMS Backup & Restore / SMS Backup+ require
 owner phone numbers, everything except iMessage and WhatsApp offers a
 contacts file, and SMS Backup+ alone takes backup emails, a name-mapping CSV,
-and an "Input file or folder" label. Every variant shares the attachment
+and an "Input file or directory" label. Every variant shares the attachment
 handling combo and the message-filtering tail.
 
 ### iPhone backup

@@ -18,7 +18,7 @@
 //! plain checkout with nothing to remember.
 //!
 //! The helper is never a dependency of this crate. It is built by a nested
-//! `cargo build` into its own target folder, so `cargo tree` on this manifest
+//! `cargo build` into its own target directory, so `cargo tree` on this manifest
 //! shows no GPL crate. The server is built the same way for a different
 //! reason: it is one program everywhere, the same one the Docker image runs.
 
@@ -51,7 +51,7 @@ fn main() {
 }
 
 /// Build `package` for this build's target and place it where Tauri looks.
-/// `sources` are the workspace folders whose changes mean a rebuild.
+/// `sources` are the workspace directories whose changes mean a rebuild.
 fn build_sidecar(package: &str, sources: &[&str]) {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
     let workspace = manifest_dir.parent().unwrap().to_path_buf();
@@ -66,10 +66,10 @@ fn build_sidecar(package: &str, sources: &[&str]) {
         workspace.join("Cargo.lock").display()
     );
 
-    // A folder of its own under this build's target dir. The cargo running
+    // A directory of its own under this build's target dir. The cargo running
     // this script holds the lock on `<target>/<profile>`, and the workspace's
     // own target dir may be locked by another cargo, so neither can be reused;
-    // a sibling folder shares neither lock. OUT_DIR is
+    // a sibling directory shares neither lock. OUT_DIR is
     // `<target>/<profile>/build/<pkg>-<hash>/out`, four levels down.
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let target_dir = out_dir
@@ -150,10 +150,10 @@ fn write_reader_notice() {
 }
 
 /// Copy the built website into `resources/website`, which `tauri.conf.json`
-/// ships as the `website` folder the server is pointed at.
+/// ships as the `website` directory the server is pointed at.
 ///
 /// `cargo tauri build` builds `web/dist` before this script runs. A plain
-/// `cargo check` may have no `web/dist` at all; the folder is then staged
+/// `cargo check` may have no `web/dist` at all; the directory is then staged
 /// with a one-line page, so the build does not depend on the website and a
 /// browser says what is missing.
 fn stage_website() {
@@ -177,7 +177,7 @@ fn stage_website() {
     }
 }
 
-/// Copy every file under `from` into `to`, keeping the folder layout.
+/// Copy every file under `from` into `to`, keeping the directory layout.
 fn copy_dir(from: &Path, to: &Path) {
     for entry in fs::read_dir(from).unwrap_or_else(|e| panic!("read {}: {e}", from.display())) {
         let entry = entry.unwrap();

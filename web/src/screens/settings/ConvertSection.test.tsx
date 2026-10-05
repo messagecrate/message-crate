@@ -47,12 +47,12 @@ beforeEach(() => {
 
 const convertButton = () => screen.getByRole("button", { name: "Convert" });
 
-/** Fill both folders; the format stays at its default unless `formatLabel` is given. */
-async function fillFolders(input: string, output: string, formatLabel?: string) {
+/** Fill both directories; the format stays at its default unless `formatLabel` is given. */
+async function fillDirectories(input: string, output: string, formatLabel?: string) {
   const user = setupUser();
   render(<ConvertSection />);
-  await fill(user, screen.getByLabelText("Input folder"), input);
-  await fill(user, screen.getByLabelText("Output folder"), output);
+  await fill(user, screen.getByLabelText("Input directory"), input);
+  await fill(user, screen.getByLabelText("Output directory"), output);
   if (formatLabel) {
     await user.click(screen.getByRole("button", { name: /Output format/ }));
     await user.click(await screen.findByRole("option", { name: formatLabel }));
@@ -64,7 +64,7 @@ describe("ConvertSection", () => {
   it("does not start while another desktop job runs, and names that job", async () => {
     const release = holdDesktopJob("Export");
     try {
-      await fillFolders("/home/demo/export-json", "/home/demo/export-csv");
+      await fillDirectories("/home/demo/export-json", "/home/demo/export-csv");
       expect(convertButton()).toBeDisabled();
       expect(screen.getByRole("status").textContent).toBe(
         "An export is running. Convert can start once it ends.",
@@ -82,40 +82,44 @@ describe("ConvertSection", () => {
     expect(screen.queryByRole("button", { name: "Convert" })).toBeNull();
   });
 
-  it("keeps Convert disabled until both folders are filled", async () => {
+  it("keeps Convert disabled until both directories are filled", async () => {
     const user = setupUser();
     render(<ConvertSection />);
     expect(convertButton()).toBeDisabled();
 
-    await fill(user, screen.getByLabelText("Input folder"), "/home/demo/export-json");
+    await fill(user, screen.getByLabelText("Input directory"), "/home/demo/export-json");
     expect(convertButton()).toBeDisabled();
 
-    await fill(user, screen.getByLabelText("Output folder"), "/home/demo/export-csv");
+    await fill(user, screen.getByLabelText("Output directory"), "/home/demo/export-csv");
     expect(convertButton()).toBeEnabled();
   });
 
-  it("refuses the same folder for input and output and says so", async () => {
+  it("refuses the same directory for input and output and says so", async () => {
     // message-reexport would reject this anyway, but only after the job had
     // started; the screen states the rule before the button is live.
-    const user = await fillFolders("/home/demo/export", "/home/demo/export/");
+    const user = await fillDirectories("/home/demo/export", "/home/demo/export/");
 
-    expect(screen.getByRole("alert")).toHaveTextContent(/two folders must differ/);
+    expect(screen.getByRole("alert")).toHaveTextContent(/two directories must differ/);
     expect(convertButton()).toBeDisabled();
     await user.click(convertButton()).catch(() => {});
     expect(invokeFormat).not.toHaveBeenCalled();
   });
 
-  it("clears the folder message once the output folder changes", async () => {
-    const user = await fillFolders("/home/demo/export", "/home/demo/export");
+  it("clears the directory message once the output directory changes", async () => {
+    const user = await fillDirectories("/home/demo/export", "/home/demo/export");
     expect(screen.getByRole("alert")).toBeTruthy();
 
-    await user.type(screen.getByLabelText("Output folder"), "-csv");
+    await user.type(screen.getByLabelText("Output directory"), "-csv");
     expect(screen.queryByRole("alert")).toBeNull();
     expect(convertButton()).toBeEnabled();
   });
 
-  it("runs the format command with both folders and the chosen output format", async () => {
-    const user = await fillFolders("/home/demo/export-json", "/home/demo/export-csv", "CSV (.csv)");
+  it("runs the format command with both directories and the chosen output format", async () => {
+    const user = await fillDirectories(
+      "/home/demo/export-json",
+      "/home/demo/export-csv",
+      "CSV (.csv)",
+    );
     await user.click(convertButton());
 
     await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
@@ -128,7 +132,7 @@ describe("ConvertSection", () => {
   });
 
   it("defaults the output format to JSON Lines", async () => {
-    const user = await fillFolders("/home/demo/export-xml", "/home/demo/export-jsonl");
+    const user = await fillDirectories("/home/demo/export-xml", "/home/demo/export-jsonl");
     await user.click(convertButton());
 
     await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
@@ -139,19 +143,19 @@ describe("ConvertSection", () => {
     awaitTauriJob.mockImplementation(async () => {
       throw new Error("input and output directories must be different");
     });
-    const user = await fillFolders("/home/demo/link-to-export", "/home/demo/export");
+    const user = await fillDirectories("/home/demo/link-to-export", "/home/demo/export");
     await user.click(convertButton());
 
     expect(await screen.findByText("input and output directories must be different")).toBeTruthy();
     expect(screen.queryByText(/Conversion complete/)).toBeNull();
   });
 
-  it("names the folder and format the conversion wrote to after the form changes", async () => {
-    const user = await fillFolders("/home/demo/export-json", "/a", "CSV (.csv)");
+  it("names the directory and format the conversion wrote to after the form changes", async () => {
+    const user = await fillDirectories("/home/demo/export-json", "/a", "CSV (.csv)");
     await user.click(convertButton());
     await screen.findByText(/Conversion complete/);
 
-    const field = screen.getByLabelText("Output folder");
+    const field = screen.getByLabelText("Output directory");
     await user.clear(field);
     await fill(user, field, "/b");
     await user.click(screen.getByRole("button", { name: /Output format/ }));
@@ -162,7 +166,7 @@ describe("ConvertSection", () => {
     );
   });
 
-  it("locks both folder fields while a conversion runs", async () => {
+  it("locks both directory fields while a conversion runs", async () => {
     let release: () => void = () => {};
     const held = new Promise<void>((resolve) => {
       release = resolve;
@@ -173,12 +177,12 @@ describe("ConvertSection", () => {
       return { summary: "Format conversion complete." };
     });
 
-    const user = await fillFolders("/home/demo/export-json", "/a");
+    const user = await fillDirectories("/home/demo/export-json", "/a");
     await user.click(convertButton());
-    expect(screen.getByLabelText("Input folder")).toBeDisabled();
-    expect(screen.getByLabelText("Output folder")).toBeDisabled();
+    expect(screen.getByLabelText("Input directory")).toBeDisabled();
+    expect(screen.getByLabelText("Output directory")).toBeDisabled();
     release();
     await screen.findByText(/Conversion complete/);
-    expect(screen.getByLabelText("Output folder")).toBeEnabled();
+    expect(screen.getByLabelText("Output directory")).toBeEnabled();
   });
 });

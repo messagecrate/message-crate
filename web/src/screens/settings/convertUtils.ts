@@ -1,5 +1,5 @@
 /**
- * True when two folder paths name the same folder as typed.
+ * True when two directory paths name the same directory as typed.
  *
  * `message-reexport` canonicalizes both paths and refuses to write into its
  * own input (`crates/libs/reexport/src/lib.rs`), so the screen catches the
@@ -7,13 +7,13 @@
  * and trailing slashes. Symlinks and case-insensitive file systems are left
  * to the Rust side, which reports them as a job error.
  */
-export function sameFolder(a: string, b: string): boolean {
-  const left = normalizeFolder(a);
-  const right = normalizeFolder(b);
+export function sameDirectory(a: string, b: string): boolean {
+  const left = normalizeDirectory(a);
+  const right = normalizeDirectory(b);
   return left !== "" && left === right;
 }
 
-function normalizeFolder(path: string): string {
+function normalizeDirectory(path: string): string {
   // Keep a lone root ("/" or "C:\") intact; strip trailing separators otherwise.
   return path.trim().replace(/(?<=.)[/\\]+$/, "");
 }

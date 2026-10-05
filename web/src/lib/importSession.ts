@@ -55,12 +55,12 @@ export async function getActiveImportSession(
 }
 
 /**
- * The Staging Directories of the account's Import Runs that are on this
+ * The directories of the account's Import Runs that are on this
  * computer, for deleting with the account (#1491).
  *
- * The server keeps where each run staged its files, but the folders are on
+ * The server keeps where each run staged its files, but the directories are on
  * whichever computer ran it, so each one is looked for here and only the
- * folders found are named. Desktop app only: it asks the app for each path.
+ * directories found are named. Desktop app only: it asks the app for each path.
  */
 export async function accountStagingDirectories(signal?: AbortSignal): Promise<string[]> {
   const runs = await listEveryImport({ signal });
@@ -106,7 +106,7 @@ export async function discardImportSession(
  * Identity of the backup this session reads.
  *
  * The size and mtime come from a stat of the path itself, so for a
- * directory source -- an iOS backup folder, a WhatsApp folder -- they
+ * directory source -- an iOS backup directory, a WhatsApp directory -- they
  * describe the directory entry rather than its contents, and neither moves
  * when a file inside it grows. `checkSourceFingerprint` reads this
  * fingerprint back on resume, so a change inside a directory goes unseen there.

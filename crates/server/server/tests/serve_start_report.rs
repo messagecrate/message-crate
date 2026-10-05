@@ -136,7 +136,7 @@ fn any_other_failure_to_serve_is_not_the_lock_held_code() {
     // A file where the Data Directory should be: the start fails for a reason
     // that is not another server.
     let data_dir = root.path().join("data");
-    std::fs::write(&data_dir, b"not a folder").unwrap();
+    std::fs::write(&data_dir, b"not a directory").unwrap();
 
     let mut child = Running(serve(&data_dir, root.path()).spawn().unwrap());
     let status = exit_status(&mut child.0);

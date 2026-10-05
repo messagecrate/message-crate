@@ -1,5 +1,5 @@
 /**
- * The Android SMS backup sources share one form: a backup folder, media
+ * The Android SMS backup sources share one form: a backup directory, media
  * options, and the owner's phone numbers so the exporter can tell sent from
  * received. SMS Backup+ adds the owner's email addresses, because its archive
  * is Gmail-backed and the sender of a sent message is an email account.
@@ -32,26 +32,26 @@ export function splitEmails(raw: string): string[] {
     .filter((s) => s.length > 0);
 }
 
-/** What the backup folder holds, per source, for the form's hint line. */
-export function backupFolderHint(source: string): string {
+/** What the backup directory holds, per source, for the form's hint line. */
+export function backupDirectoryHint(source: string): string {
   switch (source) {
     case SMS_BACKUP_PLUS_SOURCE:
-      return "Point at a folder of .eml files archived from SMS Backup+ (Gmail or IMAP). This does not connect to a mail server.";
+      return "Point at a directory of .eml files archived from SMS Backup+ (Gmail or IMAP). This does not connect to a mail server.";
     case GO_SMS_PRO_SOURCE:
-      return "Point at the folder holding the GO SMS Pro backup files.";
+      return "Point at the directory holding the GO SMS Pro backup files.";
     default:
-      return "Point at a folder of SMS Backup & Restore XML files (not a single ZIP). Unlock encrypted backups before selecting the folder.";
+      return "Point at a directory of SMS Backup & Restore XML files (not a single ZIP). Unlock encrypted backups before selecting the directory.";
   }
 }
 
-/** The backup files each source writes, for the backup folder's placeholder. */
-export function backupFolderPlaceholder(source: string): string {
+/** The backup files each source writes, for the backup directory's placeholder. */
+export function backupDirectoryPlaceholder(source: string): string {
   switch (source) {
     case SMS_BACKUP_PLUS_SOURCE:
-      return "Folder containing .eml files";
+      return "Directory containing .eml files";
     case GO_SMS_PRO_SOURCE:
-      return "Folder containing gosms_sys*.xml backup files";
+      return "Directory containing gosms_sys*.xml backup files";
     default:
-      return "Folder containing sms-*.xml backup files";
+      return "Directory containing sms-*.xml backup files";
   }
 }

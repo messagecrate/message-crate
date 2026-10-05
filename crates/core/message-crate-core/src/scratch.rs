@@ -1,25 +1,25 @@
-//! The scratch folders a run writes into, under the desktop app's cache
-//! folder.
+//! The scratch directories a run writes into, under the desktop app's cache
+//! directory.
 //!
 //! Two things a run writes are not output: the attachment spool (each
 //! attachment payload an SMS Backup & Restore, GO SMS Pro or SMS Backup+
 //! file carries, written to disk as it is parsed) and the databases
 //! `imessage-reader` decrypts out of an encrypted iPhone backup. Both are
 //! plain copies of personal data that no screen names, so they live in
-//! folders under the app's cache folder ([`IMESSAGE_READER_FOLDER`],
-//! [`ATTACHMENT_SPOOL_FOLDER`]), never in the output folder the person
-//! chose. The app deletes a request's folder when the request ends, and
+//! directories under the app's cache directory ([`IMESSAGE_READER_DIRECTORY`],
+//! [`ATTACHMENT_SPOOL_DIRECTORY`]), never in the output directory the person
+//! chose. The app deletes a request's directory when the request ends, and
 //! [`sweep_scratch`] at app start, and every new request, delete what a
 //! killed one left.
 //!
 //! Two requests can run at once (the Import form can ask for a second
 //! backup's identities while an Import Run decrypts the first), so the
-//! clean-up must tell a dead request's folder from a live one. A live
-//! request holds an exclusive lock on the `.lock` file in its folder for as
+//! clean-up must tell a dead request's directory from a live one. A live
+//! request holds an exclusive lock on the `.lock` file in its directory for as
 //! long as it runs. The operating system drops that lock when the process
-//! ends, however it ends, so a folder whose lock can be taken belongs to
-//! nobody. Cleaning up and making a new folder happen under a lock on the
-//! root's own `.lock` file, so no request is between making its folder and
+//! ends, however it ends, so a directory whose lock can be taken belongs to
+//! nobody. Cleaning up and making a new directory happen under a lock on the
+//! root's own `.lock` file, so no request is between making its directory and
 //! locking it while another cleans up.
 
 use std::{
@@ -29,30 +29,30 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 
-/// The folder under the app's cache folder that `imessage-reader` decrypts
+/// The directory under the app's cache directory that `imessage-reader` decrypts
 /// an encrypted iPhone backup's databases and attachments into.
-pub const IMESSAGE_READER_FOLDER: &str = "imessage-reader";
+pub const IMESSAGE_READER_DIRECTORY: &str = "imessage-reader";
 
-/// The folder under the app's cache folder that holds each run's attachment
+/// The directory under the app's cache directory that holds each run's attachment
 /// spool.
-pub const ATTACHMENT_SPOOL_FOLDER: &str = "attachment-spool";
+pub const ATTACHMENT_SPOOL_DIRECTORY: &str = "attachment-spool";
 
-/// Every scratch folder [`sweep_scratch`] cleans.
-const SCRATCH_FOLDERS: [&str; 2] = [IMESSAGE_READER_FOLDER, ATTACHMENT_SPOOL_FOLDER];
+/// Every scratch directory [`sweep_scratch`] cleans.
+const SCRATCH_DIRECTORIES: [&str; 2] = [IMESSAGE_READER_DIRECTORY, ATTACHMENT_SPOOL_DIRECTORY];
 
-/// The lock file, in the root and in each request's folder.
+/// The lock file, in the root and in each request's directory.
 pub(crate) const LOCK: &str = ".lock";
 
-/// Delete what killed runs left in every scratch folder under `cache_dir`,
-/// keeping the folders of requests still running. The desktop app calls it
+/// Delete what killed runs left in every scratch directory under `cache_dir`,
+/// keeping the directories of requests still running. The desktop app calls it
 /// when it starts, so a killed run's data does not wait for the next run of
 /// the same kind.
 ///
-/// A scratch folder that cannot be read or locked is left as it is: the
+/// A scratch directory that cannot be read or locked is left as it is: the
 /// next request in it cleans it, and a failed sweep must not stop the app.
 pub fn sweep_scratch(cache_dir: &Path) {
-    for folder in SCRATCH_FOLDERS {
-        let root = cache_dir.join(folder);
+    for directory in SCRATCH_DIRECTORIES {
+        let root = cache_dir.join(directory);
         if !root.is_dir() {
             continue;
         }
@@ -65,7 +65,7 @@ pub fn sweep_scratch(cache_dir: &Path) {
     }
 }
 
-/// One request's scratch folder. Dropping it deletes the folder and
+/// One request's scratch directory. Dropping it deletes the directory and
 /// everything in it.
 #[derive(Debug)]
 pub struct ScratchDir {
@@ -77,19 +77,22 @@ pub struct ScratchDir {
 
 impl ScratchDir {
     /// Delete what earlier requests left under `root`, then make and lock a
-    /// new folder there for this request.
+    /// new directory there for this request.
     ///
     /// # Errors
     ///
     /// Returns an error when `root` is not a full path, `root` or the new
-    /// folder cannot be made, or a lock file cannot be made or locked.
+    /// directory cannot be made, or a lock file cannot be made or locked.
     pub fn create(root: &Path) -> Result<Self> {
         // A relative root would land wherever the process happens to run.
         if !root.is_absolute() {
-            bail!("the scratch folder {} is not a full path", root.display());
+            bail!(
+                "the scratch directory {} is not a full path",
+                root.display()
+            );
         }
         fs::create_dir_all(root)
-            .with_context(|| format!("make the scratch folder {}", root.display()))?;
+            .with_context(|| format!("make the scratch directory {}", root.display()))?;
         restrict_to_owner(root)?;
         let root_lock = File::create(root.join(LOCK))
             .with_context(|| format!("make the lock file in {}", root.display()))?;
@@ -102,9 +105,9 @@ impl ScratchDir {
         let path = tempfile::Builder::new()
             .prefix("request-")
             .tempdir_in(root)
-            .with_context(|| format!("make a request folder in {}", root.display()))?
+            .with_context(|| format!("make a request directory in {}", root.display()))?
             .keep();
-        // From here the folder is deleted on drop, and on an error below.
+        // From here the directory is deleted on drop, and on an error below.
         let mut scratch = Self { path, lock: None };
         restrict_to_owner(&scratch.path)?;
         let lock = File::create(scratch.path.join(LOCK))
@@ -114,7 +117,7 @@ impl ScratchDir {
         Ok(scratch)
     }
 
-    /// The folder this request writes into.
+    /// The directory this request writes into.
     pub fn path(&self) -> &Path {
         &self.path
     }
@@ -123,13 +126,13 @@ impl ScratchDir {
 impl Drop for ScratchDir {
     fn drop(&mut self) {
         drop(self.lock.take());
-        // A folder that will not go now is removed by the next request, or
+        // A directory that will not go now is removed by the next request, or
         // by the sweep when the app next starts.
         let _ = fs::remove_dir_all(&self.path);
     }
 }
 
-/// Delete every entry of `root` except its lock file and the folders of
+/// Delete every entry of `root` except its lock file and the directories of
 /// requests still running. The caller holds the root's lock.
 fn remove_leftovers(root: &Path) {
     let Ok(entries) = fs::read_dir(root) else {
@@ -153,29 +156,29 @@ fn remove_leftovers(root: &Path) {
     }
 }
 
-/// Whether another request holds the lock in `folder`. A folder without a
+/// Whether another request holds the lock in `directory`. A directory without a
 /// lock file belongs to a request killed before it took one: requests make
-/// the folder and its lock under the root's lock, which the caller holds.
-fn belongs_to_a_running_request(folder: &Path) -> bool {
-    let Ok(lock) = File::open(folder.join(LOCK)) else {
+/// the directory and its lock under the root's lock, which the caller holds.
+fn belongs_to_a_running_request(directory: &Path) -> bool {
+    let Ok(lock) = File::open(directory.join(LOCK)) else {
         return false;
     };
     lock.try_lock().is_err()
 }
 
-/// Make `folder` readable by its owner only, because it holds decrypted
+/// Make `directory` readable by its owner only, because it holds decrypted
 /// message data or attachment payloads.
 #[cfg(unix)]
-fn restrict_to_owner(folder: &Path) -> Result<()> {
+fn restrict_to_owner(directory: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(folder, fs::Permissions::from_mode(0o700))
-        .with_context(|| format!("restrict {} to its owner", folder.display()))
+    fs::set_permissions(directory, fs::Permissions::from_mode(0o700))
+        .with_context(|| format!("restrict {} to its owner", directory.display()))
 }
 
-/// Off Unix the folder keeps the permissions of the app's cache folder it
+/// Off Unix the directory keeps the permissions of the app's cache directory it
 /// sits in.
 #[cfg(not(unix))]
-fn restrict_to_owner(_folder: &Path) -> Result<()> {
+fn restrict_to_owner(_directory: &Path) -> Result<()> {
     Ok(())
 }
 
@@ -185,12 +188,14 @@ mod tests {
 
     use crate::testutil::names_in;
 
-    use super::{ATTACHMENT_SPOOL_FOLDER, IMESSAGE_READER_FOLDER, LOCK, ScratchDir, sweep_scratch};
+    use super::{
+        ATTACHMENT_SPOOL_DIRECTORY, IMESSAGE_READER_DIRECTORY, LOCK, ScratchDir, sweep_scratch,
+    };
 
-    /// A request's folder sits under the root and is gone, with what the
+    /// A request's directory sits under the root and is gone, with what the
     /// reader decrypted into it, once the request ends.
     #[test]
-    fn a_request_folder_is_deleted_when_the_request_ends() {
+    fn a_request_directory_is_deleted_when_the_request_ends() {
         let root = tempfile::tempdir().unwrap();
         let scratch = ScratchDir::create(root.path()).unwrap();
         assert_eq!(scratch.path().parent(), Some(root.path()));
@@ -205,7 +210,7 @@ mod tests {
     }
 
     /// What a killed request left is deleted when the next request starts:
-    /// its folder (whose lock nobody holds), a folder it made before it
+    /// its directory (whose lock nobody holds), a directory it made before it
     /// took a lock, and a loose decrypted database.
     #[test]
     fn a_killed_request_s_leftovers_are_deleted_at_the_next_request() {
@@ -224,9 +229,9 @@ mod tests {
         assert_eq!(names_in(root.path()), vec![own.into_owned()]);
     }
 
-    /// A request still running keeps its folder while another starts.
+    /// A request still running keeps its directory while another starts.
     #[test]
-    fn a_running_request_s_folder_is_kept() {
+    fn a_running_request_s_directory_is_kept() {
         let root = tempfile::tempdir().unwrap();
         let first = ScratchDir::create(root.path()).unwrap();
         fs::write(first.path().join("crabapple-sms-x.db"), b"decrypted").unwrap();
@@ -249,29 +254,29 @@ mod tests {
         fs::set_permissions(&root, fs::Permissions::from_mode(0o755)).unwrap();
 
         let scratch = ScratchDir::create(&root).unwrap();
-        for folder in [root.as_path(), scratch.path()] {
-            let mode = fs::metadata(folder).unwrap().permissions().mode() & 0o777;
-            assert_eq!(mode, 0o700, "{}: {mode:o}", folder.display());
+        for directory in [root.as_path(), scratch.path()] {
+            let mode = fs::metadata(directory).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o700, "{}: {mode:o}", directory.display());
         }
     }
 
-    /// A folder a killed request left: its lock file, which nobody holds,
+    /// A directory a killed request left: its lock file, which nobody holds,
     /// and the data it wrote.
     fn killed_request(root: &std::path::Path, name: &str, file: &str) {
-        let folder = root.join(name);
-        fs::create_dir_all(&folder).unwrap();
-        fs::write(folder.join(LOCK), b"").unwrap();
-        fs::write(folder.join(file), b"plain").unwrap();
+        let directory = root.join(name);
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join(LOCK), b"").unwrap();
+        fs::write(directory.join(file), b"plain").unwrap();
     }
 
     /// When the app starts, the sweep deletes what killed runs left in the
-    /// attachment spool's folder and the reader's folder, and keeps the
-    /// folder a running job holds, in either (#1421, #1402).
+    /// attachment spool's directory and the reader's directory, and keeps the
+    /// directory a running job holds, in either (#1421, #1402).
     #[test]
     fn the_start_up_sweep_deletes_a_killed_run_s_scratch_and_keeps_a_running_one() {
         let cache = tempfile::tempdir().unwrap();
-        let spool_root = cache.path().join(ATTACHMENT_SPOOL_FOLDER);
-        let reader_root = cache.path().join(IMESSAGE_READER_FOLDER);
+        let spool_root = cache.path().join(ATTACHMENT_SPOOL_DIRECTORY);
+        let reader_root = cache.path().join(IMESSAGE_READER_DIRECTORY);
         killed_request(&spool_root, "request-killed", "2cf24dba");
         killed_request(&reader_root, "request-killed", "crabapple-sms-x.db");
         let running_spool = ScratchDir::create(&spool_root).unwrap();
@@ -299,14 +304,14 @@ mod tests {
         assert!(running_spool.path().join("e3b0c442").exists());
         assert!(
             cache.path().join("unrelated").exists(),
-            "only scratch folders are swept"
+            "only scratch directories are swept"
         );
     }
 
-    /// A cache folder with no scratch folders yet is swept without making
+    /// A cache directory with no scratch directories yet is swept without making
     /// any.
     #[test]
-    fn the_sweep_of_an_empty_cache_folder_makes_nothing() {
+    fn the_sweep_of_an_empty_cache_directory_makes_nothing() {
         let cache = tempfile::tempdir().unwrap();
         sweep_scratch(cache.path());
         assert_eq!(fs::read_dir(cache.path()).unwrap().count(), 0);

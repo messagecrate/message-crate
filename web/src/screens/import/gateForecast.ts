@@ -16,7 +16,7 @@ function bySizeDescending(a: AttachmentForecast, b: AttachmentForecast): number 
 /**
  * The staged files larger than the limit right now. Exact, read from the
  * sizes on disk: no estimate is involved, so this is the same list before
- * and after Media, measured against whatever the folder holds at the time.
+ * and after Media, measured against whatever the directory holds at the time.
  */
 export function filesOverLimit(summary: StagingSummary): AttachmentForecast[] {
   return summary.forecasts

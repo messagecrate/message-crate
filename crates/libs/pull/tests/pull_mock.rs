@@ -336,14 +336,14 @@ fn a_pull_records_one_run_and_writes_the_conversation_and_every_asset_once_acros
     );
 }
 
-/// The server can hold an attachment path that climbs out of a folder or
+/// The server can hold an attachment path that climbs out of a directory or
 /// names an absolute one, because an import that reuses a stored fingerprint
-/// never read the file at that path. Joined onto the output folder, such a
+/// never read the file at that path. Joined onto the output directory, such a
 /// path would write the download anywhere on disk. Each one is refused: the
 /// file lands at `attachments/{sha256}`, the conversation file names that
 /// path, and the report and the log name the refused path.
 #[test]
-fn an_attachment_path_that_leaves_the_output_folder_is_written_under_its_fingerprint_instead() {
+fn an_attachment_path_that_leaves_the_output_directory_is_written_under_its_fingerprint_instead() {
     let server = MockServer::start();
     let _auth = mock_auth(&server);
     let (_create, complete) = mock_run(&server);
@@ -413,7 +413,7 @@ fn an_attachment_path_that_leaves_the_output_folder_is_written_under_its_fingerp
     assert_eq!(report.refused_attachment_paths, refused);
     for (path, sha) in [(climbing, MENU_SHA), (absolute.as_str(), PHOTO_SHA)] {
         let line = format!(
-            "warning: attachment path {path} would leave the output folder; written at attachments/{sha} instead"
+            "warning: attachment path {path} would leave the output directory; written at attachments/{sha} instead"
         );
         assert!(
             events.contains(&ProgressEvent::Log(line.clone())),
@@ -444,7 +444,7 @@ fn the_journal_lists_every_asset_and_marks_the_run_finished() {
 }
 
 #[test]
-fn a_second_run_over_the_same_folder_downloads_nothing_it_already_has() {
+fn a_second_run_over_the_same_directory_downloads_nothing_it_already_has() {
     let server = MockServer::start();
     let _auth = mock_auth(&server);
     let (create, complete) = mock_run(&server);
@@ -865,7 +865,7 @@ fn a_scope_the_server_refuses_fails_the_run_with_the_servers_sentence() {
 }
 
 #[test]
-fn a_blank_token_or_output_folder_is_refused_before_login() {
+fn a_blank_token_or_output_directory_is_refused_before_login() {
     let dir = tempdir().unwrap();
     let base_url = "http://127.0.0.1:1".to_string();
     let blank_token = PullConfig {

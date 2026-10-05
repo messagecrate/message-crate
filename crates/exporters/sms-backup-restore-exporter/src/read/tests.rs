@@ -234,9 +234,9 @@ fn reading_a_backup_spools_every_payload_and_holds_none() {
 }
 
 /// An `.xml` file under `exclude_dir` is not read, so a backup Convert wrote
-/// into an output inside the input's folder is never read back in.
+/// into an output inside the input's directory is never read back in.
 #[test]
-fn a_backup_under_the_excluded_folder_is_not_read() {
+fn a_backup_under_the_excluded_directory_is_not_read() {
     let dir = tempfile::tempdir().unwrap();
     let sms = r#"<smses><sms protocol="0" address="+15555550101" date="1400773261000" type="1" body="kept"/></smses>"#;
     fs::write(dir.path().join("smses.xml"), sms).unwrap();

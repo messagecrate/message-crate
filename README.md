@@ -67,7 +67,7 @@ Once messages are imported you can:
 
 - Read threads the way you would in an app or on a phone, including group chats. Photos, videos, and other attachments are included.
 - Search across years of conversations
-- Save a copy back out as ordinary files if you want a folder on disk
+- Save a copy back out as ordinary files if you want a directory on disk
 - Combine texts from more than one phone or app into one archive
 
 ## Who The Project Is For

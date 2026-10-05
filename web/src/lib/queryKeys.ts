@@ -127,7 +127,7 @@ export const keys = {
      * cannot disagree about whether a run is waiting.
      */
     running: ["imports", "running"] as const,
-    /** The account's staging folders found on this computer (desktop app). */
+    /** The account's run directories found on this computer (desktop app). */
     stagingDirectories: ["imports", "staging-directories"] as const,
     /** The contacts one Import Run created or changed, as a paged list. */
     contacts: (id: number) => ["imports", String(id), "contacts"] as const,

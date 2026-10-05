@@ -1,4 +1,4 @@
-//! Upload a folder of conversation files into the Message Crate HTTP server.
+//! Upload a directory of conversation files into the Message Crate HTTP server.
 //!
 //! Each conversation is a JSON Lines file (one JSON object per line). The
 //! desktop app's Import screen calls this crate.
@@ -9,10 +9,10 @@
 //! - `pipeline` — batch chunks into import requests and settle each conversation's result.
 //! - `progress` — the log file and live progress callback.
 //! - `journal` — the on-disk record of what already succeeded.
-//! - `folder` — what counts as a conversation file, and where attachments live.
+//! - `directory` — what counts as a conversation file, and where attachments live.
 //! - `report` — the summary written at the end.
 
-mod folder;
+mod directory;
 mod http;
 mod journal;
 mod pipeline;
@@ -22,7 +22,7 @@ mod project;
 mod report;
 mod run;
 
-pub use folder::detect_source;
+pub use directory::detect_source;
 pub use journal::{JOURNAL_NAME, LOG_NAME, REPORT_NAME};
 pub use message_crate_api_types::ImportMode;
 pub use message_crate_http::AuthError;

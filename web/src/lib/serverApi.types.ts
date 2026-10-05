@@ -2883,7 +2883,7 @@ export interface components {
             /** @description Addresses the backup's device sent from (JSON array), or null. */
             source_identities: unknown;
             stage?: components["schemas"]["ImportStage"] | null;
-            /** @description Absolute path to the staging folder on the client that owns the run. */
+            /** @description Absolute path to the run directory on the client that owns the run. */
             staging_dir?: string | null;
             /** @description UTC time the run started. */
             started_at: string;
@@ -3981,7 +3981,7 @@ export interface components {
                 /** @description Addresses the backup's device sent from (JSON array), or null. */
                 source_identities: unknown;
                 stage?: components["schemas"]["ImportStage"] | null;
-                /** @description Absolute path to the staging folder on the client that owns the run. */
+                /** @description Absolute path to the run directory on the client that owns the run. */
                 staging_dir?: string | null;
                 /** @description UTC time the run started. */
                 started_at: string;
@@ -4759,7 +4759,7 @@ export interface components {
              * @description What the person approved at the Review they just passed, when they passed one.
              *
              *     Recorded here rather than at completion so an approval survives a
-             *     reload: the summary shown at a Review is recomputed from the folder, but
+             *     reload: the summary shown at a Review is recomputed from the directory, but
              *     what was approved is a different question and only the run
              *     remembers it. Absent leaves the stored `summary_json` untouched —
              *     most stage changes carry nothing, and treating absent as null would

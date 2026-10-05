@@ -24,7 +24,7 @@ fn write_mock_tool(path: &Path) {
     fs::set_permissions(path, perms).unwrap();
 }
 
-/// Point the tool location at a folder holding an `ffmpeg` that runs
+/// Point the tool location at a directory holding an `ffmpeg` that runs
 /// `body` and an `ffprobe` that does nothing. Both answer `-version`, so
 /// the lookup accepts them.
 fn mock_ffmpeg_dir(body: &str) -> tempfile::TempDir {
@@ -243,7 +243,7 @@ fn real_ffmpeg_failure_names_the_missing_input() {
 
 #[cfg(unix)]
 #[test]
-fn probe_folder_requires_both_tools() {
+fn probe_directory_requires_both_tools() {
     let _guard = tools_test_lock();
     let _restore = RestoreToolsDir::capture();
     let dir = tempfile::tempdir().unwrap();
@@ -259,7 +259,7 @@ fn probe_folder_requires_both_tools() {
 /// would start and then fail on every file.
 #[cfg(unix)]
 #[test]
-fn probe_folder_refuses_tools_that_cannot_run() {
+fn probe_directory_refuses_tools_that_cannot_run() {
     let _guard = tools_test_lock();
     let _restore = RestoreToolsDir::capture();
     let dir = tempfile::tempdir().unwrap();
@@ -313,7 +313,7 @@ fn missing_ffprobe_names_the_tool_not_the_input_file() {
 
 #[cfg(unix)]
 #[test]
-fn probe_candidate_folder_does_not_change_override() {
+fn probe_candidate_directory_does_not_change_override() {
     let _guard = tools_test_lock();
     let _restore = RestoreToolsDir::capture();
     let live = tempfile::tempdir().unwrap();

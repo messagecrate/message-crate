@@ -10,7 +10,7 @@
 /package.json
 
 # Local database at the repo root (never bake personal data into an image).
-# Do not ignore every `data/` folder — the server compiles in
+# Do not ignore every `data/` directory — the server compiles in
 # crates/server/demo-seed/data/corpus/pride-and-prejudice.txt and the name
 # lists beside it, to generate Demo Data on a first start.
 /data

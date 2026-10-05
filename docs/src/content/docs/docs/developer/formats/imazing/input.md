@@ -18,7 +18,7 @@ Messages/{YYYY-MM-DD HH MM SS} - {label}/Messages - {export-stamp} - {label}.csv
 WhatsApp/{YYYY-MM-DD HH MM SS} - {label}/WhatsApp - {export-stamp} - {label}.csv
 ```
 
-Media files sit beside the CSV in each chat folder. There is no `Attachments/` subdirectory. A media file's name has this shape:
+Media files sit beside the CSV in each chat directory. There is no `Attachments/` subdirectory. A media file's name has this shape:
 
 ```text title="Attachment filename"
 {YYYY-MM-DD HH MM SS} - {label} - {name}
@@ -28,7 +28,7 @@ The timestamp is the row's `Message Date` with each `:` replaced by a space, and
 A `Message Date` written without seconds stands for second `00`, because iMazing writes the seconds into every file name.
 
 The label comes from the chat, and a row can't rebuild it.
-On the maintainer's iMazing 3.5.5 export, measured for [#1082](https://github.com/messagecrate/message-crate/issues/1082) under "How iMazing names the files", the label differs from the chat folder's label in 71 of 298 Messages folders and from `Chat Session` in 142.
+On the maintainer's iMazing 3.5.5 export, measured for [#1082](https://github.com/messagecrate/message-crate/issues/1082) under "How iMazing names the files", the label differs from the chat directory's label in 71 of 298 Messages directories and from `Chat Session` in 142.
 The name is the row's `Attachment` cell, which is always a bare basename, as iMazing changed it when it wrote the file.
 It can itself hold ` - `, so the file name can't be split on ` - `.
 
@@ -37,7 +37,7 @@ iMazing changes the basename in four ways.
 1. It converts the extension: heic to jpg, caf to mp3, opus to mp3, and webp to png.
 2. It cuts a stem longer than 40 characters to its first 40.
 3. It removes non-ASCII characters from the stem. U+202F, U+2019, U+202D, U+2026 and U+00AE occur.
-4. It numbers the files of rows that would get one name, `X.ext`, `X 2.ext`, and on to `X N.ext`, because one folder can't hold two files of one name.
+4. It numbers the files of rows that would get one name, `X.ext`, `X 2.ext`, and on to `X N.ext`, because one directory can't hold two files of one name.
 
 The written name is the name iMazing writes for a cell: the stem without non-ASCII characters, cut to 40, with the extension converted.
 The numbering name is the written name in lower case.
@@ -47,7 +47,7 @@ On that assumption, `photo.JPG` and `photo.jpg` of one second get the files `pho
 The rows are numbered in CSV order: the first takes the plain name and the k-th the name whose stem ends with ` k`.
 Two cells can share a written name, such as two long names that cut to the same 40 characters, so they are numbered together.
 
-The importer looks for a row's file in the row's own chat folder only, never in another conversation's, because a file of the same name elsewhere belongs to another message.
+The importer looks for a row's file in the row's own chat directory only, never in another conversation's, because a file of the same name elsewhere belongs to another message.
 The file's name must start with the row's timestamp and ` - `, and end with ` - ` and a name iMazing may have written for the row.
 The label between the two is not compared, because a row can't rebuild it.
 The names are tried in this order, and the first that any file ends with is the one used:
@@ -64,8 +64,8 @@ Names and extensions are compared to files exactly, with no case folding and no 
 
 The importer gives a row no file, and marks its attachment `file_missing`, in four cases, because in each nothing tells which file is the row's:
 
-- the row's folder holds no file of the row's shape, or two or more;
-- rows of one second share a numbering name and the folder lacks the file of any of them, so all of them are marked, because a missing file moves the ` 2`, ` 3` numbers;
+- the row's directory holds no file of the row's shape, or two or more;
+- rows of one second share a numbering name and the directory lacks the file of any of them, so all of them are marked, because a missing file moves the ` 2`, ` 3` numbers;
 - two or more rows of one CSV would take one file, so none of them gets it;
 - the row is a Location row, which names a `.vcf` while its file is a `.url` with another stem.
 
@@ -78,7 +78,7 @@ Six points are not confirmed:
 - that a `Message Date` written without seconds stands for second `00`;
 - any version of iMazing other than 3.5.5.
 
-Two kinds of file in a Messages chat folder are named by no row:
+Two kinds of file in a Messages chat directory are named by no row:
 
 - **A Live Photo's video**, `{message timestamp} - {label} - {stem}.mov`, sits beside its picture, `{message timestamp} - {label} - {stem}.jpg` or `.jpeg`. Only the extension differs.
 - **A link preview**, `{message timestamp} - {label} - Web link.url`, or `Web link 2` and on when two share a second, is one `[InternetShortcut]` section holding a single `URL=` line. It has no title and no image, and its address appears in the `Text` of a row at the same second.
@@ -90,7 +90,7 @@ The path given on the Import form accepts:
 | Path | Files available to the importer |
 |------|---------------------------------|
 | One `.csv` | One Messages or WhatsApp CSV when its headers match a supported layout |
-| Chat folder | Matching CSV files found below that folder |
+| Chat directory | Matching CSV files found below that directory |
 | `Messages/` or `WhatsApp/` | Matching CSV files found recursively in that tree |
 | Device export root | Messages and WhatsApp CSV files found recursively; Contacts CSV files are skipped as message input |
 
@@ -136,7 +136,7 @@ These limitations come from the exported files. The importer cannot recover info
 3. A silent Messages group member has no phone, because no row pairs their display name with an address.
 4. WhatsApp has no complete group roster. Participants are inferred from senders.
 5. `Message Date` values do not contain a timezone.
-6. Long folder names and chat labels can end mid-name with `-`.
+6. Long directory names and chat labels can end mid-name with `-`.
 7. The CSV attachment basename can differ from the filename on disk.
 8. Contacts can omit phone columns and retain a phone only in `Notes`.
 9. Replies and reactions are free text instead of structured records. Observed reaction timestamps use the US `M/D/YYYY` format.

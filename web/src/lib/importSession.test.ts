@@ -15,9 +15,9 @@ vi.mock("./tauri", async (importOriginal) => ({
 }));
 
 describe("accountStagingDirectories", () => {
-  // A run's folder is on whichever computer ran it, so a deleted account's
-  // folders are named only when they are on this one (#1491).
-  it("names each run's folder once, and only when it is on this computer", async () => {
+  // A run's directory is on whichever computer ran it, so a deleted account's
+  // directories are named only when they are on this one (#1491).
+  it("names each run's directory once, and only when it is on this computer", async () => {
     listEveryImport.mockResolvedValue([
       { id: 3, staging_dir: "/staging/iphone" },
       { id: 2, staging_dir: null },

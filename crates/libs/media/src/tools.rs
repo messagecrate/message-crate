@@ -47,7 +47,7 @@ fn tools_state() -> &'static Mutex<ToolsState> {
     })
 }
 
-/// Store a folder-only override for ffmpeg/ffprobe discovery and clear cached paths.
+/// Store a directory-only override for ffmpeg/ffprobe discovery and clear cached paths.
 pub fn set_tools_dir(dir: Option<PathBuf>) {
     let mut state = tools_state().lock().expect("tools state lock");
     state.override_dir = dir;
@@ -56,7 +56,7 @@ pub fn set_tools_dir(dir: Option<PathBuf>) {
     state.ffprobe = None;
 }
 
-/// Current tools-folder override, if any (primarily for tests).
+/// Current tools-directory override, if any (primarily for tests).
 pub fn tools_dir() -> Option<PathBuf> {
     tools_state()
         .lock()
@@ -91,7 +91,7 @@ pub(crate) fn require_ffmpeg() -> Result<()> {
         bail!(
             "ffmpeg and ffprobe are required to convert or compress attachments. \
              Keep the bundled tools in lib/ next to this program, install ffmpeg on PATH, \
-             or set MESSAGE_CRATE_BIN to a folder that contains both."
+             or set MESSAGE_CRATE_BIN to a directory that contains both."
         )
     }
 }
@@ -187,7 +187,7 @@ pub fn probe_ffmpeg_tools(dir: Option<&Path>) -> FfmpegToolsProbe {
     }
 }
 
-/// Locate a tool: in the override folder when set, else beside the program, in `lib/`,
+/// Locate a tool: in the override directory when set, else beside the program, in `lib/`,
 /// in `MESSAGE_CRATE_BIN`, or on PATH.
 fn find_tool_with_override(name: &str, override_dir: Option<&Path>) -> Option<PathBuf> {
     if let Some(dir) = override_dir {

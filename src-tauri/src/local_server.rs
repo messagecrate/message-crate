@@ -474,9 +474,9 @@ fn restart_if_wanted(state: &mut State, actions: &mut Vec<Action>) {
 pub struct Launch {
     /// The server program.
     pub program: PathBuf,
-    /// The folder holding the database and attachments.
+    /// The directory holding the database and attachments.
     pub data_dir: PathBuf,
-    /// The folder holding the built website.
+    /// The directory holding the built website.
     pub static_dir: PathBuf,
     /// The server's address on this computer: where the app asks what is
     /// running, and where the server listens unless it is open to the
@@ -535,7 +535,7 @@ pub fn locate_server() -> Result<PathBuf, String> {
     let exe = std::env::current_exe().map_err(|e| format!("find the running app: {e}"))?;
     let dir = exe
         .parent()
-        .ok_or_else(|| "the running app has no folder".to_string())?;
+        .ok_or_else(|| "the running app has no directory".to_string())?;
     let name = if cfg!(windows) {
         format!("{SERVER_NAME}.exe")
     } else {
@@ -923,12 +923,12 @@ fn joined(output: &Output) -> String {
     lines.iter().cloned().collect::<Vec<_>>().join("\n")
 }
 
-/// The folder inside the app's own data folder that the server keeps its
+/// The directory inside the app's own data directory that the server keeps its
 /// database and attachments in. It is the whole Message Crate: copying it is
 /// the backup.
 ///
 /// A dev build (`cargo tauri dev`) uses `data-dev` beside it. Both builds
-/// share one app-data folder, because `tauri.conf.json` has one identifier,
+/// share one app-data directory, because `tauri.conf.json` has one identifier,
 /// and a dev build on a branch with another Schema Fingerprint would
 /// otherwise rebuild the installed app's database empty.
 pub fn data_dir_in(app_data_dir: &Path, dev: bool) -> PathBuf {

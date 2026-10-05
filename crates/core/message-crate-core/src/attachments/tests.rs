@@ -32,7 +32,7 @@ fn a_short_digest_is_taken_whole_rather_than_panicking() {
 }
 
 /// The name is `{UTC date}-{digest16}{ext}`, and each part has to be there:
-/// the date so a folder listing reads chronologically, the digest so two
+/// the date so a directory listing reads chronologically, the digest so two
 /// copies of one file share a name, the extension so the operating system
 /// opens it.
 #[test]

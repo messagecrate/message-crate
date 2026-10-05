@@ -49,7 +49,7 @@ use serde_json::Value;
 /// 3: [`Event::Identities`] values and [`Message::owner_identity`] are bare
 /// addresses ([`bare_address`]); the app no longer strips prefixes itself.
 /// 4: [`Request::BackupDomain`] and [`Event::BackupDomainDone`].
-/// 5: [`Request::Identities`] carries a scratch folder
+/// 5: [`Request::Identities`] carries a scratch directory
 /// ([`IdentitiesRequest`]), and [`ExportRequest::scratch_dir`] is required.
 /// 6: [`Event::Attachment`] carries an [`AttachmentFile`], which tells a
 /// file the backup does not hold from one that failed to decrypt.
@@ -102,14 +102,14 @@ pub const HELPER_NAME: &str = "imessage-reader";
 pub enum Platform {
     /// A `chat.db` file, as on a Mac or copied off a jailbroken iPhone.
     MacOs,
-    /// An iPhone backup folder holding `Manifest.plist`.
+    /// An iPhone backup directory holding `Manifest.plist`.
     Ios,
 }
 
 /// Where the Messages data is and how to open it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Source {
-    /// The `chat.db` file (macOS) or the backup folder (iOS).
+    /// The `chat.db` file (macOS) or the backup directory (iOS).
     pub db_path: PathBuf,
     /// Which layout `db_path` has.
     pub platform: Platform,
@@ -133,7 +133,7 @@ pub enum Request {
         path: PathBuf,
     },
     /// Decrypt every file of one domain of an encrypted iPhone backup into a
-    /// folder. This is how another app's data (WhatsApp) comes out of an
+    /// directory. This is how another app's data (WhatsApp) comes out of an
     /// encrypted backup: the program that reads it cannot take the password.
     BackupDomain(BackupDomainRequest),
 }
@@ -143,7 +143,7 @@ pub enum Request {
 pub struct IdentitiesRequest {
     /// The Messages data to read.
     pub source: Source,
-    /// A folder the helper writes decrypted files into, as
+    /// A directory the helper writes decrypted files into, as
     /// [`ExportRequest::scratch_dir`].
     pub scratch_dir: PathBuf,
 }
@@ -151,14 +151,14 @@ pub struct IdentitiesRequest {
 /// What decrypting one domain of an encrypted iPhone backup needs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackupDomainRequest {
-    /// The backup folder holding `Manifest.plist`.
+    /// The backup directory holding `Manifest.plist`.
     pub backup_path: PathBuf,
     /// The backup password.
     pub backup_password: String,
     /// The domain as `Manifest.db` spells it, such as
     /// `AppDomainGroup-group.net.whatsapp.WhatsApp.shared`.
     pub domain: String,
-    /// A folder the app owns. Each file is written to
+    /// A directory the app owns. Each file is written to
     /// `<out_dir>/<domain>/<its path inside the domain>`.
     pub out_dir: PathBuf,
 }
@@ -168,18 +168,18 @@ pub struct BackupDomainRequest {
 pub struct ExportRequest {
     /// The Messages data to read.
     pub source: Source,
-    /// A folder attachments live under, when the database's own paths do
+    /// A directory attachments live under, when the database's own paths do
     /// not apply (a jailbroken phone's `sms.db` copied beside its files).
     pub attachment_root: Option<String>,
     /// An Apple Contacts database to take names from. macOS only.
     pub contacts_path: Option<PathBuf>,
     /// Name the owner by the destination caller id instead of `Me`.
     pub use_caller_id: bool,
-    /// A folder the helper writes decrypted files into: an encrypted
+    /// A directory the helper writes decrypted files into: an encrypted
     /// backup's message and contacts databases, and each attachment the app
     /// asks for. The app owns it and deletes it when the request ends, so a
     /// killed helper leaves nothing behind. A request without one is refused,
-    /// because the system's temporary folder is no place for a decrypted
+    /// because the system's temporary directory is no place for a decrypted
     /// database that a killed helper never deletes.
     pub scratch_dir: PathBuf,
 }
@@ -252,7 +252,7 @@ pub enum Event {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 pub enum AttachmentFile {
-    /// The file to read: the decrypted copy in the scratch folder, or the
+    /// The file to read: the decrypted copy in the scratch directory, or the
     /// path itself for a source that is not encrypted.
     Ready {
         /// Where the file is.
@@ -617,11 +617,11 @@ mod tests {
     }
 
     /// The reader decrypts an encrypted backup's databases into the
-    /// request's scratch folder, so a request that names none is refused
-    /// rather than sent to the system's temporary folder, where a killed
+    /// request's scratch directory, so a request that names none is refused
+    /// rather than sent to the system's temporary directory, where a killed
     /// reader left the decrypted message database behind (#1135).
     #[test]
-    fn a_request_without_a_scratch_folder_is_refused() {
+    fn a_request_without_a_scratch_directory_is_refused() {
         let source = r#""source":{"db_path":"/backup","platform":"ios","backup_password":"pw"}"#;
         for line in [
             r#"{"op":"identities","db_path":"/backup","platform":"ios","backup_password":"pw"}"#
@@ -636,13 +636,13 @@ mod tests {
         ] {
             assert!(
                 serde_json::from_str::<Request>(&line).is_err(),
-                "accepted without a scratch folder: {line}"
+                "accepted without a scratch directory: {line}"
             );
         }
 
         let line = format!(r#"{{"op":"identities",{source},"scratch_dir":"/app/scratch/one"}}"#);
         let Ok(Request::Identities(request)) = serde_json::from_str::<Request>(&line) else {
-            panic!("an identities request with a scratch folder is read: {line}");
+            panic!("an identities request with a scratch directory is read: {line}");
         };
         assert_eq!(request.scratch_dir, PathBuf::from("/app/scratch/one"));
     }

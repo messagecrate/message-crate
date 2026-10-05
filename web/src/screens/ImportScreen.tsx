@@ -52,7 +52,7 @@ import { isReviewPhase } from "./import/importRunStore";
 import ResumeImportPanel from "./import/ResumeImportPanel";
 import {
   checkSourceFingerprint,
-  type FolderCheck,
+  type DirectoryCheck,
   type ResumeDecision,
   resumeDecisionFor,
   resumeReadsBackup,
@@ -92,12 +92,12 @@ async function probePath(path: string): Promise<PathStat | null> {
 }
 
 /**
- * Whether a session's staging folder is still on disk. A stat that fails
+ * Whether a session's run directory is still on disk. A stat that fails
  * outright is "unknown", not "missing": an IPC error says nothing about the
- * folder, and reading it as gone would offer to discard staged work that
+ * directory, and reading it as gone would offer to discard staged work that
  * may well still be there.
  */
-async function stagingFolderCheck(stagingDir: string): Promise<FolderCheck> {
+async function stagingDirectoryCheck(stagingDir: string): Promise<DirectoryCheck> {
   try {
     const stat = await invokePathStat(stagingDir);
     return stat.exists && stat.isDirectory ? "present" : "missing";
@@ -272,11 +272,11 @@ export default function ImportScreen() {
         const session = await cache.fetch(keys.imports.running, (signal) =>
           getActiveImportSession(signal),
         );
-        const folder = session?.staging_dir
-          ? await stagingFolderCheck(session.staging_dir)
+        const directory = session?.staging_dir
+          ? await stagingDirectoryCheck(session.staging_dir)
           : "missing";
         // Only a resume of the copy consults this; every later stage works
-        // from the staged folder rather than the backup. The full stat, not
+        // from the staged directory rather than the backup. The full stat, not
         // `probePath`'s narrowed one: the comparison needs the size and
         // modified time.
         const sourceStat = session?.source_fingerprint?.path
@@ -289,7 +289,7 @@ export default function ImportScreen() {
             resumeDecisionFor({
               session,
               deviceId: getDeviceId(),
-              folder,
+              directory,
               fingerprint: checkSourceFingerprint(session?.source_fingerprint ?? null, sourceStat),
             }),
           );
@@ -339,8 +339,8 @@ export default function ImportScreen() {
 
   /**
    * Discard the run the panel offers (`discardRun`): it closes with the
-   * Import Errors its record holds, and its folder goes, so it must not
-   * orphan a multi-GB folder. A folder that could not be deleted is shown
+   * Import Errors its record holds, and its directory goes, so it must not
+   * orphan a multi-GB directory. A directory that could not be deleted is shown
    * above the form (`stagingDeleteFailure`), never dropped without a word.
    * A session staged on another device is never touched on disk here,
    * because its files are staged on that device. The check is the same
@@ -390,8 +390,8 @@ export default function ImportScreen() {
       const session = resume.session;
       const storedForm = restoreFormFromSnapshot(session.form);
       if (!storedForm) {
-        // The staging folder is present -- the decision only reached here
-        // because it is -- so folder_missing's copy would be false. This
+        // The run directory is present -- the decision only reached here
+        // because it is -- so directory_missing's copy would be false. This
         // kind exists solely for this screen to construct.
         setResume({ kind: "settings_unreadable", session });
         return;
@@ -440,11 +440,11 @@ export default function ImportScreen() {
         return;
       }
 
-      // Restart: a fresh extract writes into a new staging folder, and the
+      // Restart: a fresh extract writes into a new run directory, and the
       // server allows only one live session per account, so give up the old
       // one before starting the new run. setResume stays put until right
       // before startImport, so the panel (not a blank form) covers the
-      // discard round trip. The old folder goes with the session: nothing
+      // discard round trip. The old directory goes with the session: nothing
       // will ever reach it again, and it can be multiple gigabytes. A failed
       // delete stays on screen through the new run.
       // If the server is unreachable, the create call below surfaces its

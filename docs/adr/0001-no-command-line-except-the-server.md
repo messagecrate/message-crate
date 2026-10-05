@@ -73,7 +73,7 @@ is one `message-crate` command, not a reader that happens to be executable.
 line (`src/main.rs`), and this decision still holds. Run from the
 repository root, `cargo run -p demo-seed` writes the files the Demo Data is
 generated from into `crates/server/demo-seed/`. It writes three entries
-there: `staging/`, `config/` and `README.md`. `staging/` holds one folder per
+there: `staging/`, `config/` and `README.md`. `staging/` holds one directory per
 made-up backup: iMessage, SMS Backup & Restore and WhatsApp. A developer
 runs it to read those files on disk. Its flags are `--size`, `--config`,
 `--out` and `--seed`.

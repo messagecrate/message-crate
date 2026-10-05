@@ -6,7 +6,7 @@ description: Write an Android phone's SMS and MMS to XML files with SMS Backup &
 An Android phone's SMS and MMS are read from XML files written by the app **SMS Backup & Restore**, by SyncTech.
 The app is free, needs no root access, and is the only route this guide walks through for Android.
 
-This step ends with one folder on the computer that holds the XML files.
+This step ends with one directory on the computer that holds the XML files.
 
 WhatsApp is a different source with its own page: [WhatsApp](/docs/user/import-sources/whatsapp/).
 
@@ -30,11 +30,11 @@ The desktop app can't open an encrypted backup, because it has no field for that
 
 The backup is one or more files named like `sms-20261001120000.xml`.
 
-- From **Your phone**: connect the phone with a cable, choose file transfer on the phone, and copy the `.xml` files from the folder the app wrote them to.
+- From **Your phone**: connect the phone with a cable, choose file transfer on the phone, and copy the `.xml` files from the directory the app wrote them to.
 - From cloud storage: download the `.xml` files from that service's website.
 
-The `.xml` files go into a folder of their own on the computer, with nothing else in it.
-Import takes that folder, not a single file and not a `.zip`.
+The `.xml` files go into a directory of their own on the computer, with nothing else in it.
+Import takes that directory, not a single file and not a `.zip`.
 A `.zip` must be unpacked first.
 
 ## Note the phone's own number
@@ -45,6 +45,6 @@ A phone that changed numbers over the years has several, and each one belongs on
 
 ## Check that it worked
 
-A folder on the computer holds at least one `.xml` file, and the file is larger than a few kilobytes.
+A directory on the computer holds at least one `.xml` file, and the file is larger than a few kilobytes.
 
 Next: [Import the backup](/docs/user/your-messages/import-your-backup/).

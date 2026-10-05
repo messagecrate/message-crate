@@ -263,7 +263,7 @@ fn cancel_during_the_write_phase_stops_the_export() {
 }
 
 #[test]
-fn convert_export_eml_writes_conversation_folder() {
+fn convert_export_eml_writes_conversation_directory() {
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/sample.xml");
     assert!(fixture.is_file(), "missing fixture: {}", fixture.display());
 

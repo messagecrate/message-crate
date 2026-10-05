@@ -63,7 +63,7 @@ export type WhatsappPathStats = {
   db: PathStat | null;
   hasMsgstoreDb: boolean;
   cryptName: string | null;
-  /** Whether the iPhone backup folder is encrypted; null when unknown or not iPhone. */
+  /** Whether the iPhone backup directory is encrypted; null when unknown or not iPhone. */
   backupEncrypted: boolean | null;
 };
 
@@ -80,12 +80,12 @@ export function emptyWhatsappPathStats(): WhatsappPathStats {
 }
 
 export const WHATSAPP_ERR_PATH_MISSING = "This path does not exist.";
-export const WHATSAPP_ERR_FOLDER_IS_FILE = "Pick the backup folder.";
+export const WHATSAPP_ERR_DIRECTORY_IS_FILE = "Pick the backup directory.";
 export const WHATSAPP_ERR_CRYPT_KEY = "Decryption key is required for an encrypted backup.";
 export const WHATSAPP_ERR_ENCRYPTED_PASSWORD =
   "The backup is encrypted — fill Encryption password.";
 export const WHATSAPP_ERR_MUST_BE_FILE = "This path must be a file.";
-export const WHATSAPP_ERR_MUST_BE_FOLDER = "This path must be a folder.";
+export const WHATSAPP_ERR_MUST_BE_DIRECTORY = "This path must be a directory.";
 export const WHATSAPP_ERR_OWNER_PHONE = "Owner's WhatsApp number is required.";
 
 /**
@@ -166,7 +166,7 @@ export function whatsappCanImport(args: WhatsappCanImportArgs): {
   if (!backupStat.exists) {
     errors.backupPath = WHATSAPP_ERR_PATH_MISSING;
   } else if (backupStat.isFile) {
-    errors.backupPath = WHATSAPP_ERR_FOLDER_IS_FILE;
+    errors.backupPath = WHATSAPP_ERR_DIRECTORY_IS_FILE;
   }
 
   if (
@@ -206,7 +206,7 @@ export function whatsappCanImport(args: WhatsappCanImportArgs): {
       args.stats.media,
       errors,
       "media",
-      WHATSAPP_ERR_MUST_BE_FOLDER,
+      WHATSAPP_ERR_MUST_BE_DIRECTORY,
       true,
     );
   }

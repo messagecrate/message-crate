@@ -5,7 +5,7 @@ export const FFMPEG_TOOLS_STORAGE_KEY = "mc-ffmpeg-path";
 
 let initStarted = false;
 
-/** Apply the saved ffmpeg tools folder once when the desktop app starts. */
+/** Apply the saved ffmpeg tools directory once when the desktop app starts. */
 export function initFfmpegToolsFromStorage(): void {
   if (initStarted || !isTauri()) return;
   initStarted = true;

@@ -211,7 +211,7 @@ async fn a_build_refused_by_another_account_named_demo_names_that_account() {
 
 /// A reset that fails after it has wiped the Demo Account, here on the last
 /// source's file, leaves the previous Demo Account whole: every row in the
-/// active database and the file in its data folder. The wipe ran on the
+/// active database and the file in its data directory. The wipe ran on the
 /// prepared copy, and the copy is never installed.
 #[tokio::test]
 async fn failed_reset_preserves_existing_demo_account() {
@@ -663,50 +663,55 @@ async fn reset_check_refuses_a_reset_that_loses_the_old_demo_accounts_audit_trai
     assert_reset_test_database(&db).await;
 }
 
-/// An account folder linked from another disk is listed through the link,
+/// An account directory linked from another disk is listed through the link,
 /// so a change to it refuses the reset like any other.
 #[cfg(unix)]
 #[test]
-fn an_account_folder_linked_from_elsewhere_is_listed() {
+fn an_account_directory_linked_from_elsewhere_is_listed() {
     let temp = tempfile::tempdir().expect("create test directory");
     let elsewhere = temp.path().join("elsewhere");
-    fs::create_dir_all(elsewhere.join("assets")).expect("create the linked folder");
+    fs::create_dir_all(elsewhere.join("assets")).expect("create the linked directory");
     fs::write(elsewhere.join("assets/kept.bin"), b"keep").expect("write a file");
     let data_dir = temp.path().join("data");
-    fs::create_dir_all(&data_dir).expect("create the data folder");
+    fs::create_dir_all(&data_dir).expect("create the data directory");
     std::os::unix::fs::symlink(&elsewhere, data_dir.join("9")).expect("link account 9");
 
-    let listing = other_account_folders(&data_dir, DEMO_ACCOUNT_ID).expect("list the folders");
+    let listing =
+        other_account_directories(&data_dir, DEMO_ACCOUNT_ID).expect("list the directories");
 
     assert_eq!(
         listing.get(Path::new("9/assets/kept.bin")),
-        Some(&FolderEntry::File { bytes: 4 })
+        Some(&DirectoryEntry::File { bytes: 4 })
     );
 }
 
-/// A link to nothing in the data folder that is not an account's folder,
+/// A link to nothing in the data directory that is not an account's directory,
 /// such as a stale backups link, does not stop the listing.
 #[cfg(unix)]
 #[test]
-fn a_broken_link_that_is_not_an_account_folder_is_passed_over() {
+fn a_broken_link_that_is_not_an_account_directory_is_passed_over() {
     let temp = tempfile::tempdir().expect("create test directory");
     let data_dir = temp.path().join("data");
-    fs::create_dir_all(data_dir.join("9")).expect("create account 9's folder");
+    fs::create_dir_all(data_dir.join("9")).expect("create account 9's directory");
     std::os::unix::fs::symlink(temp.path().join("gone"), data_dir.join("backups"))
         .expect("link to nothing");
 
-    let listing = other_account_folders(&data_dir, DEMO_ACCOUNT_ID).expect("list the folders");
+    let listing =
+        other_account_directories(&data_dir, DEMO_ACCOUNT_ID).expect("list the directories");
 
-    assert_eq!(listing.get(Path::new("9")), Some(&FolderEntry::Folder));
+    assert_eq!(
+        listing.get(Path::new("9")),
+        Some(&DirectoryEntry::Directory)
+    );
 }
 
-/// A reset whose rebuild changed another account's folder under the data
+/// A reset whose rebuild changed another account's directory under the data
 /// directory is refused, whether a file grew, went or appeared (#1450).
 #[tokio::test]
-async fn a_reset_that_changes_another_accounts_folder_is_refused() {
-    /// The refusal's last words, and the change to account 9's folder.
-    type FolderChange = (&'static str, fn(&Path));
-    let changes: [FolderChange; 3] = [
+async fn a_reset_that_changes_another_accounts_directory_is_refused() {
+    /// The refusal's last words, and the change to account 9's directory.
+    type DirectoryChange = (&'static str, fn(&Path));
+    let changes: [DirectoryChange; 3] = [
         (
             "9/assets/kept.bin (before: 4 bytes, after: 9 bytes)",
             |account| {
@@ -732,7 +737,7 @@ async fn a_reset_that_changes_another_accounts_folder_is_refused() {
         seed_reset_test_database(&db).await;
         let data_dir = temp.path().join("data");
         let account = data_dir.join("9");
-        fs::create_dir_all(account.join("assets")).expect("create account 9's folder");
+        fs::create_dir_all(account.join("assets")).expect("create account 9's directory");
         fs::write(account.join("assets/kept.bin"), b"keep").expect("write account 9's file");
         let bundle = temp.path().join("bundle");
         write_tiny_reset_bundle(&bundle);
@@ -746,7 +751,7 @@ async fn a_reset_that_changes_another_accounts_folder_is_refused() {
 
         let error = format!("{:#}", result.err().expect("the reset is refused"));
         assert!(
-            error.ends_with(&format!("changed other accounts' folders: {named}")),
+            error.ends_with(&format!("changed other accounts' directories: {named}")),
             "the error names the changed file: {error}"
         );
         assert_reset_test_database(&db).await;
@@ -754,7 +759,7 @@ async fn a_reset_that_changes_another_accounts_folder_is_refused() {
 }
 
 /// While a server holds the database, a reset is refused before it reads or
-/// writes anything: the database, the account folder and `server.ready`
+/// writes anything: the database, the account directory and `server.ready`
 /// stay as they were.
 #[tokio::test]
 async fn reset_refuses_while_server_holds_database_lock() {
@@ -764,7 +769,8 @@ async fn reset_refuses_while_server_holds_database_lock() {
     crate::operation_lock::mark_ready(&db).expect("write server.ready");
     let data_dir = temp.path().join("data");
     let demo_file = data_dir.join(DEMO_ACCOUNT_ID.to_string()).join("keep.bin");
-    fs::create_dir_all(demo_file.parent().expect("account folder")).expect("create account folder");
+    fs::create_dir_all(demo_file.parent().expect("account directory"))
+        .expect("create account directory");
     fs::write(&demo_file, b"keep").expect("write demo file");
     let bundle = temp.path().join("bundle");
     write_tiny_reset_bundle(&bundle);
@@ -1856,7 +1862,7 @@ async fn the_demo_address_book_names_the_unknowns_the_imports_made() {
 }
 
 /// Add a second copy of the tiny bundle's iMessage conversation to the SBR
-/// staging folder, so the two sources carry one message twice and the
+/// run directory, so the two sources carry one message twice and the
 /// dedupe has something to hide.
 fn write_overlap_conversation(bundle: &Path) {
     let overlap = concat!(
@@ -1877,7 +1883,7 @@ fn write_overlap_conversation(bundle: &Path) {
 
 /// Seed the account `demo` had before this reset: a WhatsApp message (the
 /// reset appends WhatsApp, so only the wipe removes it) and a file under its
-/// data folder. Returns the file's path.
+/// data directory. Returns the file's path.
 async fn seed_previous_demo(db: &Path, data_dir: &Path) -> PathBuf {
     let (pool, mut conn) = test_db(db).await;
     account_profile::ensure_account_row(&mut conn, DEMO_ACCOUNT_ID)
@@ -1921,34 +1927,35 @@ async fn seed_previous_demo(db: &Path, data_dir: &Path) -> PathBuf {
     let stale = data_dir
         .join(DEMO_ACCOUNT_ID.to_string())
         .join("previous.bin");
-    fs::create_dir_all(stale.parent().expect("account folder")).expect("create account folder");
+    fs::create_dir_all(stale.parent().expect("account directory"))
+        .expect("create account directory");
     fs::write(&stale, b"previous demo attachment").expect("write previous attachment");
     stale
 }
 
-/// The wipe removes the demo account's rows and its data folder, and nothing
-/// else. In a reset the folder wiped is the empty work directory, so this is
-/// the one place the folder removal is observed (#780).
+/// The wipe removes the demo account's rows and its data directory, and nothing
+/// else. In a reset the directory wiped is the empty work directory, so this is
+/// the one place the directory removal is observed (#780).
 #[tokio::test]
-async fn the_wipe_removes_the_demo_rows_and_folder_and_leaves_other_accounts() {
+async fn the_wipe_removes_the_demo_rows_and_directory_and_leaves_other_accounts() {
     let temp = tempfile::tempdir().expect("create test directory");
     let db = temp.path().join("messagecrate.db");
     let data_dir = temp.path().join("data");
     seed_reset_test_database(&db).await;
-    let demo_folder = data_dir.join(DEMO_ACCOUNT_ID.to_string());
-    fs::create_dir_all(demo_folder.join(IMESSAGE_SOURCE).join("assets"))
-        .expect("create demo assets folder");
+    let demo_directory = data_dir.join(DEMO_ACCOUNT_ID.to_string());
+    fs::create_dir_all(demo_directory.join(IMESSAGE_SOURCE).join("assets"))
+        .expect("create demo assets directory");
     fs::write(
-        demo_folder
+        demo_directory
             .join(IMESSAGE_SOURCE)
             .join("assets")
             .join("a.bin"),
         b"demo",
     )
     .expect("write demo attachment");
-    let other_folder = data_dir.join("9");
-    fs::create_dir_all(&other_folder).expect("create other account folder");
-    fs::write(other_folder.join("keep.bin"), b"keep").expect("write other attachment");
+    let other_directory = data_dir.join("9");
+    fs::create_dir_all(&other_directory).expect("create other account directory");
+    fs::write(other_directory.join("keep.bin"), b"keep").expect("write other attachment");
     let cfg = test_config(&db, &data_dir);
 
     let build = build_pool(&db).await;
@@ -1977,11 +1984,14 @@ async fn the_wipe_removes_the_demo_rows_and_folder_and_leaves_other_accounts() {
     .expect("count other messages");
     assert_eq!(other_messages, 1, "the other account keeps its message");
     close_test_db(pool, conn).await;
-    assert!(!demo_folder.exists(), "the demo data folder is removed");
+    assert!(
+        !demo_directory.exists(),
+        "the demo data directory is removed"
+    );
     assert_eq!(
-        fs::read(other_folder.join("keep.bin")).expect("read other attachment"),
+        fs::read(other_directory.join("keep.bin")).expect("read other attachment"),
         b"keep",
-        "the other account's folder is untouched"
+        "the other account's directory is untouched"
     );
 }
 
@@ -2148,7 +2158,7 @@ async fn accounts_and_demo_conversations(cfg: &Config) -> (i64, i64) {
 async fn a_new_database_is_seeded_once_with_the_demo_account_and_no_owner() {
     let temp = tempfile::tempdir().expect("create test directory");
     let mut cfg = crate::open_db::fresh_config(temp.path());
-    cfg.paths.db = temp.path().join("new/folder/messagecrate.db");
+    cfg.paths.db = temp.path().join("new/directory/messagecrate.db");
     assert!(
         database_is_new(&cfg)
             .await
@@ -2364,7 +2374,7 @@ async fn the_next_start_removes_a_demo_account_whose_build_did_not_finish() {
         .expect("write the build record");
     drop(conn);
     let account_dir = cfg.paths.data_dir.join(DEMO_ACCOUNT_ID.to_string());
-    fs::create_dir_all(&account_dir).expect("create the account folder");
+    fs::create_dir_all(&account_dir).expect("create the account directory");
 
     assert!(
         remove_stopped_demo_build(&cfg, &opened.db)

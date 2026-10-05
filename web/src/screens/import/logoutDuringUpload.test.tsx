@@ -318,7 +318,7 @@ describe("logging out during an Upload", () => {
     expect(result.current.job.summaryView?.filesFailed).toBe(0);
   });
 
-  it("deletes a deleted account's Staging Directories once the Upload has paused and the session is revoked", async () => {
+  it("deletes the directories of a deleted account's Import Runs once the Upload has paused and the session is revoked", async () => {
     const result = await startUpload();
 
     await act(() =>
@@ -340,7 +340,7 @@ describe("logging out during an Upload", () => {
     expect(screen.queryByText(/could not delete/)).toBeNull();
   });
 
-  it("deletes a deleted account's folder only once an Upload that did not pause has ended", async () => {
+  it("deletes a deleted account's directory only once an Upload that did not pause has ended", async () => {
     const user = setupUser();
     const result = await startUpload();
     // A push that does not stop when asked.
@@ -355,7 +355,7 @@ describe("logging out during an Upload", () => {
     await user.click(await screen.findByRole("button", { name: "Log out now" }));
     await waitFor(() => expect(serverLogoutMock).toHaveBeenCalled());
 
-    // The push may still write into its folder: nothing is deleted yet.
+    // The push may still write into its directory: nothing is deleted yet.
     expect(calls).not.toContain("deleted /home/sam/staging-iphone");
 
     act(() => {
@@ -401,7 +401,7 @@ describe("logging out during an Upload", () => {
     expect(getToken()).toBe("next-session-token");
   });
 
-  it("names a deleted account's Staging Directory it could not delete", async () => {
+  it("names a directory of a deleted account's Import Runs it could not delete", async () => {
     deleteStagingMock.mockRejectedValueOnce(new Error("permission denied"));
     const result = await logIn();
 

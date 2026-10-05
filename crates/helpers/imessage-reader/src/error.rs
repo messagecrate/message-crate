@@ -24,9 +24,9 @@ pub const UNENCRYPTED_BACKUP_CLEAR_PASSWORD: &str =
     "This backup is not encrypted. Clear Encryption password.";
 /// User-facing copy when the supplied iOS backup password is wrong.
 pub const IOS_BACKUP_PASSWORD_INCORRECT: &str = "The iOS backup password was incorrect.";
-/// User-facing copy when the folder is not an iPhone backup (or Messages is missing).
+/// User-facing copy when the directory is not an iPhone backup (or Messages is missing).
 pub const NOT_AN_IPHONE_BACKUP: &str =
-    "This folder is not an iPhone backup, or Messages is missing from it.";
+    "This directory is not an iPhone backup, or Messages is missing from it.";
 
 /// Runtime failures while opening sources or streaming records.
 #[derive(Debug)]

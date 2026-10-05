@@ -8,7 +8,7 @@ import { useTauriJob } from "../../hooks/useTauriJob";
 import { parseSelectKey } from "../../lib/selectKey";
 import { EXPORT_FORMATS, type ExportFormat, invokeFormat } from "../../lib/tauri";
 import { isTauri } from "../../lib/tauri-check";
-import { sameFolder } from "./convertUtils";
+import { sameDirectory } from "./convertUtils";
 
 const FORMAT_IDS = EXPORT_FORMATS.map((f) => f.id);
 
@@ -18,10 +18,10 @@ function formatLabel(id: ExportFormat): string {
 }
 
 /**
- * Settings → Convert: rewrite a folder of already-exported files into another
- * format. `message-reexport` detects the input format from the folder, so the
+ * Settings → Convert: rewrite a directory of already-exported files into another
+ * format. `message-reexport` detects the input format from the directory, so the
  * screen picks the output format only, and it refuses to write into its own
- * input, so the two folders must differ.
+ * input, so the two directories must differ.
  *
  * Convert reads files and writes files. It never opens a backup or the server,
  * which is why it lives under Settings as a tool rather than in the sidebar
@@ -33,7 +33,7 @@ export function ConvertSection() {
   const [format, setFormat] = useState<ExportFormat>("jsonl");
   const [error, setError] = useState("");
   const [log, setLog] = useState<string[]>([]);
-  // The folder and format each conversion was started with, so the success
+  // The directory and format each conversion was started with, so the success
   // message names what was written even after the form changes.
   const { running, finished, run, cancel } = useTauriJob<{
     outputDir: string;
@@ -47,16 +47,16 @@ export function ConvertSection() {
   if (!isTauri()) {
     return (
       <p className="m-0 text-[0.875rem] text-muted">
-        Convert rewrites a folder of exported files into another format. It is available in the
+        Convert rewrites a directory of exported files into another format. It is available in the
         desktop app.
       </p>
     );
   }
 
-  const foldersClash = sameFolder(inputDir, outputDir);
+  const directoriesClash = sameDirectory(inputDir, outputDir);
 
   const startConvert = () => {
-    if (running || foldersClash) return;
+    if (running || directoriesClash) return;
     setError("");
     setLog([]);
     const request = { outputDir: outputDir.trim(), format };
@@ -88,14 +88,14 @@ export function ConvertSection() {
       runningLabel="Converting…"
       running={running}
       log={log}
-      startDisabled={!inputDir.trim() || !outputDir.trim() || foldersClash}
+      startDisabled={!inputDir.trim() || !outputDir.trim() || directoriesClash}
       onStart={startConvert}
       onCancel={cancel}
       error={error}
       intro={
         <p className="mb-6 text-[0.875rem] text-muted">
-          Convert rewrites a folder of exported files into another format. The input format is read
-          from the folder. Convert touches neither a backup nor your Message Crate.
+          Convert rewrites a directory of exported files into another format. The input format is
+          read from the directory. Convert touches neither a backup nor your Message Crate.
         </p>
       }
       success={
@@ -106,28 +106,28 @@ export function ConvertSection() {
         ) : null
       }
     >
-      <FormRow label="Input folder">
+      <FormRow label="Input directory">
         <PathPicker
           value={inputDir}
           onChange={setInputDir}
           directory
-          placeholder="Folder holding an export…"
+          placeholder="Directory holding an export…"
           isDisabled={running}
         />
       </FormRow>
-      <FormRow label="Output folder">
+      <FormRow label="Output directory">
         <PathPicker
           value={outputDir}
           onChange={setOutputDir}
           directory
-          placeholder="A different folder to write into…"
+          placeholder="A different directory to write into…"
           isDisabled={running}
         />
       </FormRow>
-      {foldersClash ? (
+      {directoriesClash ? (
         <p role="alert" className="mb-3 ml-[calc(140px+0.75rem)] text-[0.813rem] text-danger">
-          Choose a different output folder. Convert can't write into the folder it reads from, so
-          the two folders must differ.
+          Choose a different output directory. Convert can't write into the directory it reads from,
+          so the two directories must differ.
         </p>
       ) : null}
       <FormRow label="Output format">

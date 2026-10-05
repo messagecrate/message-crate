@@ -26,7 +26,7 @@ describe("resumeDecisionFor", () => {
       resumeDecisionFor({
         session: null,
         deviceId: "this-device",
-        folder: "missing",
+        directory: "missing",
         fingerprint: "unknown",
       }).kind,
     ).toBe("none");
@@ -36,53 +36,53 @@ describe("resumeDecisionFor", () => {
     const decision = resumeDecisionFor({
       session: session({ device_id: "other-device" }),
       deviceId: "this-device",
-      folder: "present",
+      directory: "present",
       fingerprint: "unknown",
     });
     expect(decision.kind).toBe("other_device");
   });
 
-  it("offers discard alone when the staging folder is gone", () => {
+  it("offers discard alone when the run directory is gone", () => {
     const decision = resumeDecisionFor({
       session: session(),
       deviceId: "this-device",
-      folder: "missing",
+      directory: "missing",
       fingerprint: "unknown",
     });
-    expect(decision.kind).toBe("folder_missing");
+    expect(decision.kind).toBe("directory_missing");
   });
 
-  it("says the folder could not be checked when the stat itself failed", () => {
-    // An IPC error is not evidence the folder is gone: the panel must not
+  it("says the directory could not be checked when the stat itself failed", () => {
+    // An IPC error is not evidence the directory is gone: the panel must not
     // offer to discard staged work on the strength of one.
     for (const stage of ["upload", "staging_review", "media", "write", "parse"] as const) {
       expect(
         resumeDecisionFor({
           session: session({ stage }),
           deviceId: "this-device",
-          folder: "unknown",
+          directory: "unknown",
           fingerprint: "unknown",
         }).kind,
-      ).toBe("folder_unknown");
+      ).toBe("directory_unknown");
     }
   });
 
-  it("puts a session that never recorded a folder ahead of the folder check", () => {
+  it("puts a session that never recorded a directory ahead of the directory check", () => {
     expect(
       resumeDecisionFor({
         session: session({ staging_dir: null }),
         deviceId: "this-device",
-        folder: "unknown",
+        directory: "unknown",
         fingerprint: "unknown",
       }).kind,
-    ).toBe("folder_missing");
+    ).toBe("directory_missing");
   });
 
   it("resumes the upload when a push was interrupted", () => {
     const decision = resumeDecisionFor({
       session: session({ stage: "upload" }),
       deviceId: "this-device",
-      folder: "present",
+      directory: "present",
       fingerprint: "unknown",
     });
     expect(decision.kind).toBe("resume_push");
@@ -95,7 +95,7 @@ describe("resumeDecisionFor", () => {
       resumeDecisionFor({
         session: session({ stage: "parse" }),
         deviceId: "this-device",
-        folder: "present",
+        directory: "present",
         fingerprint: "match",
       }).kind,
     ).toBe("restart");
@@ -106,7 +106,7 @@ describe("resumeDecisionFor", () => {
       const decision = resumeDecisionFor({
         session: session({ stage }),
         deviceId: "this-device",
-        folder: "present",
+        directory: "present",
         fingerprint: "unknown",
       });
       expect(decision.kind).toBe("resume_review");
@@ -117,13 +117,13 @@ describe("resumeDecisionFor", () => {
     const decision = resumeDecisionFor({
       session: session({ stage: "media" }),
       deviceId: "this-device",
-      folder: "present",
+      directory: "present",
       fingerprint: "unknown",
     });
     expect(decision.kind).toBe("resume_media");
   });
 
-  it("still offers discard only when the folder is gone at a gate", () => {
+  it("still offers discard only when the directory is gone at a gate", () => {
     // After a review, discard only. There is nothing to
     // recompute a summary from.
     for (const stage of ["staging_review", "media_review", "media"] as const) {
@@ -131,10 +131,10 @@ describe("resumeDecisionFor", () => {
         resumeDecisionFor({
           session: session({ stage }),
           deviceId: "this-device",
-          folder: "missing",
+          directory: "missing",
           fingerprint: "unknown",
         }).kind,
-      ).toBe("folder_missing");
+      ).toBe("directory_missing");
     }
   });
 
@@ -143,7 +143,7 @@ describe("resumeDecisionFor", () => {
       resumeDecisionFor({
         session: session({ device_id: null }),
         deviceId: "this-device",
-        folder: "present",
+        directory: "present",
         fingerprint: "unknown",
       }).kind,
     ).toBe("resume_push");
@@ -152,7 +152,7 @@ describe("resumeDecisionFor", () => {
     const decision = resumeDecisionFor({
       session: session({ stage: "write" }),
       deviceId: "this-device",
-      folder: "present",
+      directory: "present",
       fingerprint: "match",
     });
     expect(decision.kind).toBe("resume_write");
@@ -163,7 +163,7 @@ describe("resumeDecisionFor", () => {
       resumeDecisionFor({
         session: session({ stage: "write" }),
         deviceId: "this-device",
-        folder: "present",
+        directory: "present",
         fingerprint: "unknown",
       }).kind,
     ).toBe("resume_write");
@@ -174,7 +174,7 @@ describe("resumeDecisionFor", () => {
       const decision = resumeDecisionFor({
         session: session({ stage: "write" }),
         deviceId: "this-device",
-        folder: "present",
+        directory: "present",
         fingerprint,
       });
       expect(decision.kind).toBe("source_changed");
@@ -186,7 +186,7 @@ describe("resumeDecisionFor", () => {
       resumeDecisionFor({
         session: session({ stage: "parse" }),
         deviceId: "this-device",
-        folder: "present",
+        directory: "present",
         fingerprint: "mismatch",
       }).kind,
     ).toBe("restart");
@@ -194,26 +194,26 @@ describe("resumeDecisionFor", () => {
 
   it("ignores the fingerprint once the copy is done", () => {
     // A changed source is irrelevant at either Review and during
-    // the push — the staged folder is what those stages work from.
+    // the push — the staged directory is what those stages work from.
     expect(
       resumeDecisionFor({
         session: session({ stage: "upload" }),
         deviceId: "this-device",
-        folder: "present",
+        directory: "present",
         fingerprint: "mismatch",
       }).kind,
     ).toBe("resume_push");
   });
 
-  it("puts a missing folder ahead of any fingerprint answer", () => {
+  it("puts a missing directory ahead of any fingerprint answer", () => {
     expect(
       resumeDecisionFor({
         session: session({ stage: "write" }),
         deviceId: "this-device",
-        folder: "missing",
+        directory: "missing",
         fingerprint: "match",
       }).kind,
-    ).toBe("folder_missing");
+    ).toBe("directory_missing");
   });
 });
 

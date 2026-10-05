@@ -10,7 +10,7 @@
 // It also pins the two-Review flow added afterward: startImport now stops at
 // the Staging Review instead of pushing straight through, approve runs the media
 // pass (when there is one) and stops at the Media Review, and cancelRun closes the
-// run and deletes the staging folder. Every push assertion below goes
+// run and deletes the run directory. Every push assertion below goes
 // through approve first, because there is no other way to reach it.
 
 import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
@@ -239,8 +239,8 @@ function stagingSummary(overrides: Partial<StagingSummary> = {}): StagingSummary
 }
 
 /**
- * The mode Staging records in the folder for the last extract: what the
- * real summary of that folder would carry. Copy when extract was given none.
+ * The mode Staging records in the directory for the last extract: what the
+ * real summary of that directory would carry. Copy when extract was given none.
  */
 function stagedMode(): AttachmentMediaMode {
   const args = invokeExtractMock.mock.calls.at(-1)?.[0] as
@@ -344,7 +344,7 @@ describe("useImportJob wiring", () => {
     completeImportMock.mockResolvedValue({});
   });
 
-  it("reads the server's attachment size limit before Staging and leaves Upload to read it from the folder", async () => {
+  it("reads the server's attachment size limit before Staging and leaves Upload to read it from the directory", async () => {
     getServerStateMock.mockResolvedValue({ asset_max_bytes: 100 * MIB });
     runMock.mockImplementationOnce(runResult({ summary: "Push finished.", report: okReport() }));
     const { result } = renderHook(() => useImportJob());
@@ -357,20 +357,20 @@ describe("useImportJob wiring", () => {
     expect(getServerStateMock.mock.invocationCallOrder[0]).toBeLessThan(
       invokeExtractMock.mock.invocationCallOrder[0] as number,
     );
-    // Staging writes it into the staged folder, where the Staging Review's
+    // Staging writes it into the staged directory, where the Staging Review's
     // forecast and the Media stage read it.
     expect(invokeExtractMock).toHaveBeenCalledWith(
       expect.objectContaining({ asset_max_bytes: 100 * MIB }),
     );
 
-    // Upload reads the limit Staging recorded in the folder, so it is
+    // Upload reads the limit Staging recorded in the directory, so it is
     // given none of its own that could disagree with it.
     await act(() => result.current.approve());
     expect(invokePushMock).toHaveBeenCalledTimes(1);
     expect(invokePushMock.mock.calls[0]?.[0]).not.toHaveProperty("asset_max_bytes");
   });
 
-  it("gives Staging the media settings once and the later stages only the folder", async () => {
+  it("gives Staging the media settings once and the later stages only the directory", async () => {
     // Compress with Max FPS cleared: extract is given the real mode and the
     // fields, so it refuses them before anything is staged.
     runMock.mockImplementationOnce(
@@ -383,10 +383,13 @@ describe("useImportJob wiring", () => {
     );
     await act(() => result.current.approve());
 
-    // The summaries and the Media stage read the settings from the folder.
-    const folder = { staging_dir: "/home/sam/message-crate/staging-iphone" };
-    expect(invokeSummarizeStagingMock.mock.calls.map((call) => call[0])).toEqual([folder, folder]);
-    expect(invokeTranscodeStagingMock).toHaveBeenCalledWith(folder);
+    // The summaries and the Media stage read the settings from the directory.
+    const directory = { staging_dir: "/home/sam/message-crate/staging-iphone" };
+    expect(invokeSummarizeStagingMock.mock.calls.map((call) => call[0])).toEqual([
+      directory,
+      directory,
+    ]);
+    expect(invokeTranscodeStagingMock).toHaveBeenCalledWith(directory);
   });
 
   it("an iMazing run, whose form shows no attachment option, has no Media stage", async () => {
@@ -422,10 +425,10 @@ describe("useImportJob wiring", () => {
     }
   });
 
-  it("resumes an Upload without reading the server's current limit, since the folder holds the run's own", async () => {
+  it("resumes an Upload without reading the server's current limit, since the directory holds the run's own", async () => {
     // The owner changed the limit after this run was staged and reviewed.
     // The files the person approved were measured against 7 MiB, the
-    // number Staging recorded in the folder, which is where Upload reads it.
+    // number Staging recorded in the directory, which is where Upload reads it.
     getServerStateMock.mockResolvedValue({ asset_max_bytes: 100 * MIB });
     runMock.mockReset();
     runMock.mockImplementationOnce(runResult({ summary: "Push finished.", report: okReport() }));
@@ -632,8 +635,8 @@ describe("useImportJob wiring", () => {
 
   it("routes a progress event arriving during summarize to the staging row", async () => {
     // `summarize_staging` (Rust) emits `extract:progress` with
-    // `step: "check"` while it walks a big folder, but nothing used to
-    // subscribe, so those events had nowhere to go and a huge folder's gate
+    // `step: "check"` while it walks a big directory, but nothing used to
+    // subscribe, so those events had nowhere to go and a huge directory's gate
     // looked frozen. The mocked `invokeSummarizeStaging` fires one here,
     // mid-call, through the callbacks `onExtractEvents` was given — exactly
     // what the real Tauri event stream would do.
@@ -766,7 +769,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("recomputes the summary after the media pass rather than adjusting the old one", async () => {
-    // The folder is the truth.
+    // The directory is the truth.
     runMock.mockImplementationOnce(
       runResult({ summary: "Transcode finished.", transcode: undefined }),
     );
@@ -794,7 +797,7 @@ describe("useImportJob wiring", () => {
     expect(setImportStageMock).toHaveBeenCalledWith(1, "media_review", approved);
   });
 
-  it("declining closes the run and deletes the folder", async () => {
+  it("declining closes the run and deletes the directory", async () => {
     createStagingDirMock.mockResolvedValue("/staging/run-1");
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
@@ -805,7 +808,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("sends the run's Import Errors with the cancelled run when a review is cancelled (#1479)", async () => {
-    // The folder goes with the discard, and the run record in it with it, so
+    // The directory goes with the discard, and the run record in it with it, so
     // the record's Import Errors must reach the server first.
     const stagingIssue: ImportIssueEvent = {
       kind: "error",
@@ -926,7 +929,7 @@ describe("useImportJob wiring", () => {
     expect(invokeDeleteStagingMock).toHaveBeenCalledWith({ staging_dir: "/staging/paused" });
   });
 
-  it("discards another device's run without reading or deleting a folder here", async () => {
+  it("discards another device's run without reading or deleting a directory here", async () => {
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.discardRun(7, null));
 
@@ -935,9 +938,9 @@ describe("useImportJob wiring", () => {
     expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
   });
 
-  it("deletes the folder even when discarding the run fails", async () => {
+  it("deletes the directory even when discarding the run fails", async () => {
     // Either half failing must not leave the other undone: an open run with
-    // no folder blocks the next import, and a folder with no session is litter
+    // no directory blocks the next import, and a directory with no session is litter
     // nothing will ever clean up.
     discardImportSessionMock.mockRejectedValueOnce(new Error("offline"));
     const { result } = renderHook(() => useImportJob());
@@ -946,7 +949,7 @@ describe("useImportJob wiring", () => {
     expect(invokeDeleteStagingMock).toHaveBeenCalled();
   });
 
-  it("still discards the run, and still returns to the form, even when deleting the folder fails", async () => {
+  it("still discards the run, and still returns to the form, even when deleting the directory fails", async () => {
     // The other direction of the same guarantee: a regression to sequential
     // discard-then-delete (each awaited without independent handling) would
     // let a rejected delete propagate out of cancelRun and skip
@@ -958,14 +961,14 @@ describe("useImportJob wiring", () => {
     await act(() => result.current.cancelRun());
     expect(discardImportSessionMock).toHaveBeenCalledWith(1, [], []);
     expect(result.current.phase).toBe("form");
-    // The folder is still on disk, and the screen says so (#1154).
+    // The directory is still on disk, and the screen says so (#1154).
     expect(result.current.stagingDeleteFailure).toEqual({
       path: "/home/sam/message-crate/staging-iphone",
       reason: "disk full",
     });
   });
 
-  it("declines from the Media Review the same way — closes the run and deletes the folder", async () => {
+  it("declines from the Media Review the same way — closes the run and deletes the directory", async () => {
     createStagingDirMock.mockResolvedValue("/staging/run-2");
     runMock.mockImplementationOnce(
       runResult({ summary: "Transcode finished.", transcode: undefined }),
@@ -992,19 +995,19 @@ describe("useImportJob wiring", () => {
     expect(result.current.phase).toBe("done");
     expect(result.current.summaryView?.status).toBe("completed");
     expect(invokeDeleteStagingMock).toHaveBeenCalledWith({ staging_dir: "/staging/run-3" });
-    // The server's record is written first; the folder goes after it.
+    // The server's record is written first; the directory goes after it.
     expect(completeImportMock.mock.invocationCallOrder[0]).toBeLessThan(
       invokeDeleteStagingMock.mock.invocationCallOrder[0] ?? 0,
     );
-    // Nothing on the finished screen points at a folder that no longer exists.
+    // Nothing on the finished screen points at a directory that no longer exists.
     expect(result.current.stagingDir).toBeNull();
     expect(discardImportSessionMock).not.toHaveBeenCalled();
   });
 
   // #1233: a failed Upload is paused, not failed. It posts no /complete, so
   // the run stays at `upload` and the next visit to Import offers Resume
-  // or Discard; the staged folder is what Resume sends from.
-  it("pauses a failed Upload: no /complete, the run stays at upload, and its folder stays", async () => {
+  // or Discard; the staged directory is what Resume sends from.
+  it("pauses a failed Upload: no /complete, the run stays at upload, and its directory stays", async () => {
     createStagingDirMock.mockResolvedValue("/staging/run-4");
     runMock.mockImplementationOnce(
       runResult({ summary: "Push finished.", report: failedReport() }),
@@ -1044,7 +1047,7 @@ describe("useImportJob wiring", () => {
 
   it("pauses an Upload that left conversations unsent instead of finishing it and deleting them", async () => {
     // Some conversations landed, so the old verdict read the run as
-    // completed_with_issues, completed it, and deleted the folder that held
+    // completed_with_issues, completed it, and deleted the directory that held
     // the conversations never sent.
     runMock.mockImplementationOnce(
       runResult({
@@ -1067,7 +1070,7 @@ describe("useImportJob wiring", () => {
     expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
   });
 
-  it("keeps a paused Upload's Import Errors in its folder, leaving out what the resume reports again", async () => {
+  it("keeps a paused Upload's Import Errors in its directory, leaving out what the resume reports again", async () => {
     const stagingIssue: ImportIssueEvent = {
       kind: "skip",
       step: "parse",
@@ -1141,7 +1144,7 @@ describe("useImportJob wiring", () => {
     expect(record.messagesParsed).toBe(8_000);
   });
 
-  it("keeps the Staging issues in the folder when the run stops at the Staging Review", async () => {
+  it("keeps the Staging issues in the directory when the run stops at the Staging Review", async () => {
     const stagingIssue: ImportIssueEvent = {
       kind: "error",
       step: "attachments",
@@ -1160,8 +1163,8 @@ describe("useImportJob wiring", () => {
     ]);
   });
 
-  it("writes an issue that arrives during Staging into the folder before Staging ends (#1479)", async () => {
-    // An app that crashes mid-stage keeps what the folder holds, so the
+  it("writes an issue that arrives during Staging into the directory before Staging ends (#1479)", async () => {
+    // An app that crashes mid-stage keeps what the directory holds, so the
     // record is written as issues arrive, not only at the Review.
     const stagingIssue: ImportIssueEvent = {
       kind: "skip",
@@ -1206,7 +1209,7 @@ describe("useImportJob wiring", () => {
     ]);
   });
 
-  it("writes an issue that arrives during Media into the folder before Media ends (#1479)", async () => {
+  it("writes an issue that arrives during Media into the directory before Media ends (#1479)", async () => {
     const mediaIssue: ImportIssueEvent = {
       kind: "skip",
       step: "media",
@@ -1238,7 +1241,7 @@ describe("useImportJob wiring", () => {
     ]);
   });
 
-  it("completes a failed Staging as failed and deletes its folder, since nothing complete exists to upload", async () => {
+  it("completes a failed Staging as failed and deletes its directory, since nothing complete exists to upload", async () => {
     createStagingDirMock.mockResolvedValue("/staging/run-6");
     runMock.mockReset();
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
@@ -1260,7 +1263,7 @@ describe("useImportJob wiring", () => {
     expect(result.current.stagingDir).toBeNull();
   });
 
-  it("completes a failed Media stage as failed and deletes its folder", async () => {
+  it("completes a failed Media stage as failed and deletes its directory", async () => {
     createStagingDirMock.mockResolvedValue("/staging/run-7");
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
@@ -1278,7 +1281,7 @@ describe("useImportJob wiring", () => {
     expect(invokeDeleteStagingMock).toHaveBeenCalledWith({ staging_dir: "/staging/run-7" });
   });
 
-  it("keeps a failed Staging's folder when the server does not take its completion, since the run is still open", async () => {
+  it("keeps a failed Staging's directory when the server does not take its completion, since the run is still open", async () => {
     runMock.mockReset();
     runMock.mockImplementationOnce(async () => {
       throw new Error("chat.db is not readable");
@@ -1301,7 +1304,7 @@ describe("useImportJob wiring", () => {
 
     expect(result.current.phase).toBe("done");
     expect(result.current.summaryView?.status).toBe("completed");
-    // The folder is still there, so the screen keeps pointing at it and
+    // The directory is still there, so the screen keeps pointing at it and
     // says why it is.
     expect(result.current.stagingDir).toBe("/staging/run-5");
     expect(result.current.stagingDeleteFailure).toEqual({
@@ -1309,7 +1312,7 @@ describe("useImportJob wiring", () => {
       reason: "permission denied",
     });
 
-    // A later delete of the same folder that succeeds clears the notice.
+    // A later delete of the same directory that succeeds clears the notice.
     await act(async () => {
       await result.current.discardRun(null, "/staging/run-5");
     });
@@ -1423,7 +1426,7 @@ describe("useImportJob wiring", () => {
     // crash at that stage, and only an explicit discard ends a waiting run.
     // Posting /complete would free the one-running-run slot and drop the
     // run out of GET /v1/imports?status=running, stranding the staged
-    // folder with no run left to resume it through — even though the
+    // directory with no run left to resume it through — even though the
     // "cancelled" outcome is still shown locally.
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
@@ -1520,7 +1523,7 @@ describe("useImportJob wiring", () => {
     await act(() => approved);
 
     expect(invokePushMock).not.toHaveBeenCalled();
-    // The Upload is paused, not ended: the run stays at `upload` with its folder.
+    // The Upload is paused, not ended: the run stays at `upload` with its directory.
     expect(result.current.summaryView?.status).toBe("paused");
     expect(completeImportMock).not.toHaveBeenCalled();
     expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
@@ -1579,7 +1582,7 @@ describe("useImportJob wiring", () => {
     await act(() => result.current.approve());
 
     expect(completeImportMock).toHaveBeenCalled();
-    // The run is left at `upload`; its resume needs this folder.
+    // The run is left at `upload`; its resume needs this directory.
     expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
     expect(result.current.stagingDir).toBe("/home/sam/message-crate/staging-iphone");
     // Not finished, so not shown as an import with a Saved Search and a
@@ -1670,11 +1673,11 @@ describe("useImportJob wiring", () => {
     expect(body.status).toBe("failed");
   });
 
-  it("does not strand the folder when the post-extract summarize fails right after a successful extract", async () => {
+  it("does not strand the directory when the post-extract summarize fails right after a successful extract", async () => {
     // Extract succeeds and stages hours of work, but the summarize call
     // that follows it (on the way to the Staging Review) fails. Routing that through
     // finishImport would post /complete and end the run, orphaning the
-    // staged folder with no way back to it. This must behave like the
+    // staged directory with no way back to it. This must behave like the
     // Review-resume recompute failure instead: no /complete, no phase "done",
     // back to the form with the error on resumeError so the next visit's
     // resume check re-finds the same run (stage staging_review) and
@@ -1706,9 +1709,9 @@ describe("useImportJob wiring", () => {
     expect(completeCall).toBeDefined();
   });
 
-  it("returns to the form and keeps the folder when the recompute after a successful Media stage fails (#1479)", async () => {
-    // Media converted every attachment; only reading the folder afterwards
-    // failed. Completing the run would delete the converted folder, so this
+  it("returns to the form and keeps the directory when the recompute after a successful Media stage fails (#1479)", async () => {
+    // Media converted every attachment; only reading the directory afterwards
+    // failed. Completing the run would delete the converted directory, so this
     // lands the way the recompute after Staging does: back to the form, the
     // run left open at the Media Review for the next visit to offer again.
     createStagingDirMock.mockResolvedValue("/staging/run-8");
@@ -1807,7 +1810,7 @@ describe("useImportJob wiring", () => {
     }
   });
 
-  it("records the staging folder and device on the run it creates", async () => {
+  it("records the run directory and device on the run it creates", async () => {
     createStagingDirMock.mockResolvedValue("/home/u/message-crate/staging-260830");
     invokePathStatMock.mockResolvedValue({
       exists: true,
@@ -1966,12 +1969,12 @@ describe("useImportJob wiring", () => {
   });
 
   describe("the desktop job between stages (#1407)", () => {
-    /** Settings → Convert with both folders filled, so only a running job keeps it off. */
+    /** Settings → Convert with both directories filled, so only a running job keeps it off. */
     async function renderConvert() {
       const user = setupUser();
       const view = render(<ConvertSection />);
-      await fill(user, screen.getByLabelText("Input folder"), "/home/demo/export-json");
-      await fill(user, screen.getByLabelText("Output folder"), "/home/demo/export-csv");
+      await fill(user, screen.getByLabelText("Input directory"), "/home/demo/export-json");
+      await fill(user, screen.getByLabelText("Output directory"), "/home/demo/export-csv");
       return { view, convert: screen.getByRole("button", { name: "Convert" }) };
     }
 
@@ -2213,7 +2216,7 @@ describe("useImportJob resume path", () => {
   });
 
   it("skips staging resolve, run create, and extract when resuming a push", async () => {
-    // A push that pauses again, so the run, and its folder, stay on screen.
+    // A push that pauses again, so the run, and its directory, stay on screen.
     runMock.mockImplementation(runResult({ summary: "Push finished.", report: failedReport() }));
     const { result } = renderHook(() => useImportJob());
 
@@ -2260,7 +2263,7 @@ describe("useImportJob resume path", () => {
   });
 
   it("resumed push: the rows follow the mode the approved plan carries, not the form's", async () => {
-    // The plan was read from the folder at the Media Review, so it carries
+    // The plan was read from the directory at the Media Review, so it carries
     // the compress mode Staging recorded; the stored form says copy.
     const { result } = renderHook(() => useImportJob());
 
@@ -2335,7 +2338,7 @@ describe("useImportJob resume path", () => {
   });
 
   it("completes a resumed Upload with the earlier parts' Import Errors, times, bytes and counts", async () => {
-    // The first part paused and left its record in the folder. Without it,
+    // The first part paused and left its record in the directory. Without it,
     // the run's record would hold only what the resumed part did.
     const carriedIssue = { kind: "skip", stage: "staging", item: "IMG_1.HEIC", reason: "missing" };
     readRunRecordMock.mockResolvedValue({
@@ -2397,13 +2400,13 @@ describe("useImportJob resume path", () => {
         messages_inserted: 30,
       }),
     );
-    // The run ended, so its folder goes, the record with it.
+    // The run ended, so its directory goes, the record with it.
     expect(invokeDeleteStagingMock).toHaveBeenCalled();
   });
 
   /**
    * A push that stands in for `awaitTauriJob`: it calls the invoke function,
-   * sends `events` to the job's listeners, and returns what the Staging Directory held
+   * sends `events` to the job's listeners, and returns what the run directory held
    * once the window wrote the record they lead to. That is what an app that
    * closed at that moment, before the Upload ended, would leave.
    */
@@ -2438,7 +2441,7 @@ describe("useImportJob resume path", () => {
     };
   }
 
-  it("writes an Upload issue into the Staging Directory before the Upload ends (#1639)", async () => {
+  it("writes an Upload issue into the run directory before the Upload ends (#1639)", async () => {
     const skip: ImportIssueEvent = {
       kind: "skip",
       step: "upload",
@@ -2476,7 +2479,7 @@ describe("useImportJob resume path", () => {
 
   it("does not send with a Discard a failure the resumed Upload undid before the app closed (#1639)", async () => {
     // Pause 1 left a.jsonl failed. The resumed Upload sends it, and the app
-    // closes before that Upload ends, so the Staging Directory keeps the record written
+    // closes before that Upload ends, so the run directory keeps the record written
     // while it ran.
     const failed = {
       kind: "error",
@@ -2632,7 +2635,7 @@ describe("useImportJob resumeAtReview", () => {
     discardImportSessionMock.mockResolvedValue(undefined);
   });
 
-  it("recomputes the summary fresh from the folder and lands on the Staging Review for a run waiting there", async () => {
+  it("recomputes the summary fresh from the directory and lands on the Staging Review for a run waiting there", async () => {
     invokeSummarizeStagingMock.mockResolvedValueOnce(stagingSummary({ conversations: 9 }));
     const { result } = renderHook(() => useImportJob());
 
@@ -2711,7 +2714,7 @@ describe("useImportJob resumeAtReview", () => {
     expect(invokeSummarizeStagingMock).toHaveBeenCalledTimes(1);
     expect(result.current.phase).toBe("media_review");
     // The Staging row shows what was approved before Media; what the
-    // person is deciding on is always recomputed from the folder. The two
+    // person is deciding on is always recomputed from the directory. The two
     // genuinely differ here, so a bug that fed one value to both shows.
     expect(result.current.stagingSummary).toEqual(approved);
     expect(result.current.mediaSummary).toEqual(actual);
@@ -2850,15 +2853,15 @@ describe("useImportJob resumeAtReview", () => {
     expect(invokeTranscodeStagingMock).not.toHaveBeenCalled();
     expect(result.current.phase).toBe("staging_review");
     expect(result.current.mediaToolsMissing).toBe(true);
-    // The folder may hold a mix of originals and already-converted files --
+    // The directory may hold a mix of originals and already-converted files --
     // The Staging Review's "has not run yet" copy would be wrong here.
     expect(result.current.mediaPartiallyRan).toBe(true);
     expect(result.current.steps.map((s) => s.status)).toEqual(["done", "pending", "pending"]);
   });
 
-  it("shows the Media stage on a resume at the Staging Review when the folder says compress and the form says copy", async () => {
-    // Staging recorded compress in the folder; the stored form says copy.
-    // After Staging the folder is the one source, so the run has a Media
+  it("shows the Media stage on a resume at the Staging Review when the directory says compress and the form says copy", async () => {
+    // Staging recorded compress in the directory; the stored form says copy.
+    // After Staging the directory is the one source, so the run has a Media
     // stage and approving runs it.
     invokeSummarizeStagingMock.mockResolvedValueOnce(stagingSummary({ mediaMode: "compress" }));
     runMock.mockImplementationOnce(
@@ -2936,7 +2939,7 @@ describe("useImportJob resumeAtReview", () => {
 
     expect(result.current.phase).toBe("media_review");
     // No stored plan to show for Staging: the resume still lands on the
-    // review with the recomputed folder, instead of blocking or throwing.
+    // review with the recomputed directory, instead of blocking or throwing.
     expect(result.current.stagingSummary).toBeNull();
     expect(result.current.mediaSummary).toEqual(actual);
   });
@@ -2966,7 +2969,7 @@ describe("useImportJob resumeAtReview", () => {
 
       // Only an explicit discard ends a waiting run. A
       // transient read failure must not complete it (freeing the slot) or
-      // move it to a stage the folder never actually reached.
+      // move it to a stage the directory never actually reached.
       expect(completeImportMock).not.toHaveBeenCalled();
       expect(setImportStageMock).not.toHaveBeenCalled();
       expect(result.current.phase).toBe("form");
@@ -3026,7 +3029,7 @@ describe("parseStoredStagingSummary", () => {
   });
 
   it("returns undefined without an attachment mode the form offers", () => {
-    // The plan stands in for the folder's mode on a resume, so a plan with
+    // The plan stands in for the directory's mode on a resume, so a plan with
     // no mode, or one the form does not offer, is no plan at all.
     const { mediaMode: _mediaMode, ...missingMode } = stagingSummary();
     expect(parseStoredStagingSummary(missingMode)).toBeUndefined();
@@ -3177,7 +3180,7 @@ describe("one desktop app, two accounts (#1085)", () => {
     await act(() => b.result.current.cancelRun());
     await act(() => b.result.current.approve());
     act(() => b.result.current.returnToForm());
-    // A's staged folder and A's run are A's to delete or carry on.
+    // A's staged directory and A's run are A's to delete or carry on.
     expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
     expect(discardImportSessionMock).not.toHaveBeenCalled();
     expect(invokePushMock).not.toHaveBeenCalled();
@@ -3222,7 +3225,7 @@ describe("one desktop app, two accounts (#1085)", () => {
     await act(() => runOfA);
 
     expect(cancelMock).toHaveBeenCalled();
-    // A's run stays open on the server, resumable from its own folder.
+    // A's run stays open on the server, resumable from its own directory.
     expect(completeImportMock).not.toHaveBeenCalled();
     expect(saveRunRecordMock).toHaveBeenCalledWith(
       expect.objectContaining({ staging_dir: "/home/sam/message-crate/staging-of-A" }),

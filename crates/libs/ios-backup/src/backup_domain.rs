@@ -30,7 +30,7 @@ pub struct DecryptedDomain {
 ///
 /// # Errors
 ///
-/// Returns an error when the folder is not an encrypted iPhone backup, the
+/// Returns an error when the directory is not an encrypted iPhone backup, the
 /// password is wrong, or there is no `imessage-reader` program to run.
 pub fn decrypt_ios_backup_domain(
     backup_root: &Path,

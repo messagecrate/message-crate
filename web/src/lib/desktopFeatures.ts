@@ -46,7 +46,7 @@ export function importExportBlock(
 }
 
 /**
- * Convert (Settings → Convert) rewrites a folder of exported files and never
+ * Convert (Settings → Convert) rewrites a directory of exported files and never
  * reads a backup or the server, so it needs the desktop app and nothing else:
  * no profile, no import or export permission.
  */

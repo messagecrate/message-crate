@@ -350,7 +350,7 @@ impl ProjectionHooks for GoSmsProjection {
 pub(crate) struct ConvertExportArgs<'a> {
     pub input_dir: &'a Path,
     pub output_dir: &'a Path,
-    /// The app's cache folder, which the run's attachment spool goes under.
+    /// The app's cache directory, which the run's attachment spool goes under.
     pub cache_dir: &'a Path,
     pub owner_phones: &'a [String],
     pub transforms: ExportTransforms,
@@ -459,7 +459,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
 ///
 /// # Errors
 ///
-/// Returns an error when the folder cannot be read.
+/// Returns an error when the directory cannot be read.
 fn sorted_files(dir: &Path, predicate: &dyn Fn(&Path) -> bool) -> Result<Vec<PathBuf>> {
     let mut paths = message_crate_core::discover_files(dir, predicate)?;
     paths.sort();

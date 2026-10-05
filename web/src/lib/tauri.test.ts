@@ -163,7 +163,7 @@ describe("parseTauriJobResult", () => {
   });
 });
 
-describe("staging command wrappers name only the folder", () => {
+describe("staging command wrappers name only the directory", () => {
   const run = "/home/sam/message-crate/staging-run";
 
   beforeEach(() => {
@@ -171,7 +171,7 @@ describe("staging command wrappers name only the folder", () => {
     invoke.mockResolvedValue(undefined);
   });
 
-  // The desktop process keeps the Staging Directory and knows which folders
+  // The desktop process keeps the Staging Directory and knows which directories
   // it made. A root sent from the window would be checked against the
   // setting as it is now, and a run started under an earlier setting would
   // be refused (#1154).
@@ -191,7 +191,7 @@ describe("staging command wrappers name only the folder", () => {
     ]);
   });
 
-  it("asks the desktop process to make a run's folder", async () => {
+  it("asks the desktop process to make a run's directory", async () => {
     invoke.mockResolvedValue(run);
 
     await expect(invokeCreateStagingDir("imessage-ios")).resolves.toBe(run);

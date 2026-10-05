@@ -17,7 +17,7 @@ Short definitions of terms used in the User Guide. Command flags and vendor fiel
 
 ## Formats
 
-**JSONL (JSON Lines)** — One JSON object per line of text. Each conversation in a file export is one `.jsonl` file. [JSON Lines](https://jsonlines.org/) calls it a convenient format for data processed one record at a time. Import never asks for this folder. [Export](/docs/user/features/messages/export/) writes it.
+**JSONL (JSON Lines)** — One JSON object per line of text. Each conversation in a file export is one `.jsonl` file. [JSON Lines](https://jsonlines.org/) calls it a convenient format for data processed one record at a time. Import never asks for this directory. [Export](/docs/user/features/messages/export/) writes it.
 
 **JSON** — Pretty-printed JSON with indentation. The same data as JSONL, easier for a human to read. One `.json` file per conversation.
 

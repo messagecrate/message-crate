@@ -28,12 +28,12 @@ describe("FormField", () => {
 
   it("associates a stacked label with the first control when hints follow it", () => {
     render(
-      <FormField label="Attachment folder" layout="stacked">
+      <FormField label="Attachment directory" layout="stacked">
         <input />
-        <p>Folder that contains Attachments and StickerCache.</p>
+        <p>Directory that contains Attachments and StickerCache.</p>
       </FormField>,
     );
-    expect(screen.getByLabelText("Attachment folder")).toBeTruthy();
+    expect(screen.getByLabelText("Attachment directory")).toBeTruthy();
   });
 
   it("marks a required stacked label with a red asterisk", () => {
