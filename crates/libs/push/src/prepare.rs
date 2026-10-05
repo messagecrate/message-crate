@@ -600,9 +600,7 @@ impl DigestResolver {
             if self.verify_digests {
                 bail!("{msg}");
             }
-            warn(format!(
-                "{msg}. The Upload uses the file's own hash, Asset {disk_digest}"
-            ));
+            warn(format!("{msg}. The Upload names it Asset {disk_digest}"));
         }
         self.remember(abs, &disk_digest);
         Ok(disk_digest)
@@ -626,9 +624,8 @@ impl DigestResolver {
     }
 }
 
-/// The lowercase form of a SHA-256 fingerprint, or `None` when it is not
-/// exactly 64 hexadecimal digits. That is the only way it can fail, which is
-/// what the log line for a malformed fingerprint says.
+/// The lowercase form of a SHA-256, or `None` when it is not exactly 64
+/// hexadecimal digits.
 fn normalize_digest_sha256(digest: &str) -> Option<String> {
     let s = digest.trim().to_ascii_lowercase();
     (s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit())).then_some(s)

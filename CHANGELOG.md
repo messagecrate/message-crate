@@ -396,11 +396,11 @@ released versions carry their date on the heading.
   "WARN … sha256 mismatch for …: claimed …, got …", and a report the Upload
   could not write as "warning: write report …". The log now writes "…
   attachment … hashes to …, not the … its conversation file records. The
-  Upload uses the file's own hash, Asset …", "… the SHA-256 recorded for
-  attachment … is not 64 hexadecimal digits, so the Upload hashes the file
-  instead", and "The Upload's report could not be written: …". When the
-  Upload is set to verify each SHA-256, the conversation it refuses names
-  the mismatch in the same first sentence.
+  Upload names it Asset …", "… the SHA-256 recorded for attachment … is not
+  64 hexadecimal digits, so the Upload hashes the file instead", and "The
+  Upload's report could not be written: …". When the Upload checks each
+  SHA-256 before sending, it refuses the conversation instead, and the
+  refusal starts with the same sentence the warning does.
 - 2026-10-05 **The Upload's log names each attachment it sends as an
   Asset, in a sentence.** The log wrote "asset ok 3f2b…" for an attachment
   the Upload sent and "asset skip 3f2b…" for one the server already had. It

@@ -1538,7 +1538,7 @@ fn verify_digests_fails_on_mismatch() {
         )),
         "{error}"
     );
-    assert!(!error.contains("uses the file's own hash"), "{error}");
+    assert!(!error.contains("names it Asset"), "{error}");
 }
 
 /// Without `verify_digests`, a recorded SHA-256 that is malformed or does not
@@ -1600,7 +1600,7 @@ fn a_digest_that_does_not_match_its_file_is_a_sentence_in_the_log() {
             "{name}: attachment attachments/mismatch.txt hashes to {disk_digest}, \
              not the {wrong_digest} its conversation file records. \
              Its size changed from 4 to {} bytes. \
-             The Upload uses the file's own hash, Asset {disk_digest}\n",
+             The Upload names it Asset {disk_digest}\n",
             ASSET_BYTES.len()
         )),
         "{log}"
