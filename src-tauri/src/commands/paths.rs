@@ -677,8 +677,7 @@ mod tests {
 
     #[test]
     fn missing_log_is_reported_like_any_other_missing_path() {
-        // The log is deleted with the staging directory once an import
-        // succeeds, so a missing log has nothing special to explain.
+        // A missing log is reported like any other missing path.
         let log = PathBuf::from("/home/sam/message-crate/staging-x/message-crate-push.log");
         let err = missing_path_error(&log).unwrap_err();
         assert_eq!(err, "Nothing exists at message-crate-push.log yet");

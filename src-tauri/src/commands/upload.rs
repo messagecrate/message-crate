@@ -245,9 +245,9 @@ mod tests {
     /// A run directory with the media settings Staging records, its
     /// attachment size limit `asset_max_bytes`.
     fn staged_directory(asset_max_bytes: u64) -> tempfile::TempDir {
-        let staging = tempfile::tempdir().unwrap();
+        let run_dir = tempfile::tempdir().unwrap();
         message_staging::write_media_settings(
-            staging.path(),
+            run_dir.path(),
             &message_staging::TranscodeOptions {
                 mode: media::MediaMode::Clone,
                 compress: media::CompressOptions::default(),
@@ -255,19 +255,19 @@ mod tests {
             },
         )
         .unwrap();
-        staging
+        run_dir
     }
 
     /// Upload holds a file to the limit Staging recorded in the directory, the
     /// number the Staging Review forecast against.
     #[test]
     fn upload_uses_the_attachment_size_limit_the_directory_recorded() {
-        let staging = staged_directory(123_456_789);
+        let run_dir = staged_directory(123_456_789);
         let args: UploadArgs = serde_json::from_value(json!({
             "baseUrl": "http://127.0.0.1:8080",
             "username": "",
             "token": "token",
-            "inputDir": staging.path(),
+            "inputDir": run_dir.path(),
             "mode": "append",
             "skipAttachments": false,
             "trustExport": true,
@@ -287,12 +287,12 @@ mod tests {
     /// own to fall back on.
     #[test]
     fn upload_from_a_directory_with_no_media_settings_is_refused() {
-        let staging = tempfile::tempdir().unwrap();
+        let run_dir = tempfile::tempdir().unwrap();
         let args: UploadArgs = serde_json::from_value(json!({
             "baseUrl": "http://127.0.0.1:8080",
             "username": "",
             "token": "token",
-            "inputDir": staging.path(),
+            "inputDir": run_dir.path(),
             "mode": "append",
             "skipAttachments": false,
             "trustExport": true,
@@ -331,7 +331,7 @@ mod tests {
 
     /// A run directory holding one staged conversation of one message.
     fn staged_conversation() -> tempfile::TempDir {
-        let staging = staged_directory(512 * 1024 * 1024);
+        let run_dir = staged_directory(512 * 1024 * 1024);
         let header = json!({
             "schema_version": SCHEMA_VERSION,
             "export": ExportMeta {
@@ -372,26 +372,26 @@ mod tests {
             source: None,
         });
         std::fs::write(
-            staging.path().join("sam.jsonl"),
+            run_dir.path().join("sam.jsonl"),
             format!("{header}\n{message}\n"),
         )
         .unwrap();
 
-        staging
+        run_dir
     }
 
-    /// What the Import screen sends for an Upload of `staging` to `server`,
+    /// What the Import screen sends for an Upload of `run_dir` to `server`,
     /// first time and resumed, with the run's log in `logs`.
     fn upload_to(
         server: &MockServer,
-        staging: &Path,
+        run_dir: &Path,
         logs: &Path,
     ) -> message_crate_push::PushReport {
         let args: UploadArgs = serde_json::from_value(json!({
             "baseUrl": server.base_url(),
             "username": "",
             "token": "mc_test",
-            "inputDir": staging,
+            "inputDir": run_dir,
             "mode": "append",
             "skipAttachments": false,
             "trustExport": true,
@@ -408,14 +408,14 @@ mod tests {
     fn a_resumed_upload_does_not_send_what_the_journal_recorded() {
         let server = upload_server();
         let batches = take_batches(&server);
-        let staging = staged_conversation();
+        let run_dir = staged_conversation();
         let logs = tempfile::tempdir().unwrap();
 
-        let first = upload_to(&server, staging.path(), logs.path());
+        let first = upload_to(&server, run_dir.path(), logs.path());
         assert!(first.ok, "{:?}", first.results);
         assert_eq!(batches.calls(), 1);
 
-        let resumed = upload_to(&server, staging.path(), logs.path());
+        let resumed = upload_to(&server, run_dir.path(), logs.path());
         assert!(resumed.ok, "{:?}", resumed.results);
         assert_eq!(resumed.messages_attempted, 0);
         assert_eq!(batches.calls(), 1, "the resumed Upload sends no batch");
@@ -427,17 +427,17 @@ mod tests {
     fn an_import_run_s_log_survives_its_run_directory_being_deleted() {
         let server = upload_server();
         take_batches(&server);
-        let staging = staged_conversation();
+        let run_dir = staged_conversation();
         let logs = tempfile::tempdir().unwrap();
-        let log = import_run_log(logs.path(), staging.path());
+        let log = import_run_log(logs.path(), run_dir.path());
 
-        let report = upload_to(&server, staging.path(), logs.path());
+        let report = upload_to(&server, run_dir.path(), logs.path());
         assert!(report.ok, "{:?}", report.results);
         assert!(
-            !staging.path().join(message_crate_push::LOG_NAME).exists(),
+            !run_dir.path().join(message_crate_push::LOG_NAME).exists(),
             "no log in the run's directory"
         );
-        staging.close().unwrap();
+        run_dir.close().unwrap();
 
         let text = std::fs::read_to_string(&log).unwrap();
         assert!(text.contains("sam.jsonl"), "{text}");
