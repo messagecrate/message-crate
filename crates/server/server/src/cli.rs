@@ -712,7 +712,7 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
         async move {
             crate::server::stop_requested().await;
             eprintln!(
-                "Stopping. The Preview or Thumbnail being made is stopped and its part-made file removed"
+                "process-assets is stopping. The Preview or Thumbnail being made is stopped and its part-made file removed"
             );
             stop.store(true, Ordering::Relaxed);
             // The handlers stay installed, so without this a second Ctrl-C

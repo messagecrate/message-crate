@@ -92,8 +92,8 @@ pub(crate) fn stream_export(session: &MailSession) -> Result<(), RuntimeError> {
             Err(why) => {
                 failures += 1;
                 session.options.emit_log(format!(
-                    "Skipping message (rowid={}, guid={}): {}",
-                    msg.rowid, msg.guid, why
+                    "Message {} (row {}) could not be read, so it is left out: {}",
+                    msg.guid, msg.rowid, why
                 ));
             }
         }
@@ -114,9 +114,11 @@ pub(crate) fn stream_export(session: &MailSession) -> Result<(), RuntimeError> {
         total: read,
     }));
     if failures > 0 {
-        session.options.emit_log(format!(
-            "{failures} messages skipped due to formatting errors."
-        ));
+        session.options.emit_log(if failures == 1 {
+            "1 message could not be read and was left out".to_string()
+        } else {
+            format!("{failures} messages could not be read and were left out")
+        });
     }
     emit(&Event::ExportDone {
         messages_seen: seen,

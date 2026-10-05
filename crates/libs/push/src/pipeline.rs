@@ -21,7 +21,7 @@ use crate::directory::file_label;
 use crate::http;
 use crate::journal::{JournalMessage, RunJournal};
 use crate::prepare::{ImportChunk, PreparedFile, SharedJournal};
-use crate::progress::Reporter;
+use crate::progress::{FileStatus, Reporter};
 use crate::report::{
     FileResult, MessageAccounting, UploadProfile, elapsed_ms, format_profile_line,
 };
@@ -320,7 +320,7 @@ impl<'a> ImportPipeline<'a> {
     /// Record a conversation the journal already had, with no work done.
     pub(crate) fn record_skipped(&mut self, idx: usize, name: &str, out: &mut Reporter<'_, '_>) {
         self.results[idx] = Some(FileResult::skipped(name));
-        out.file_done(name, "skipped");
+        out.file_done(name, FileStatus::Skipped);
         out.note_skipped();
     }
 
@@ -336,7 +336,7 @@ impl<'a> ImportPipeline<'a> {
             .journal
             .record_failure("", name, "file", error);
         out.note_failed(name, error, None);
-        out.file_done(name, "failed");
+        out.file_done(name, FileStatus::Failed);
         self.results[idx] = Some(FileResult::failed(name, error));
     }
 
@@ -717,7 +717,12 @@ impl<'a> ImportPipeline<'a> {
                 profile: Some(profile),
             }
         };
-        out.file_done(&name, &result.status);
+        let status = if result.error.is_some() {
+            FileStatus::Failed
+        } else {
+            FileStatus::Ok
+        };
+        out.file_done(&name, status);
         self.results[idx] = Some(result);
         Ok(())
     }

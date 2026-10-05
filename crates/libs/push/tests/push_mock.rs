@@ -12,7 +12,9 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use httpmock::prelude::*;
-use message_crate_push::{AuthError, ProgressEvent, PushConfig, PushReport, authenticate, run};
+use message_crate_push::{
+    AuthError, FileStatus, ProgressEvent, PushConfig, PushReport, authenticate, run,
+};
 use message_ir::{
     ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IrAttachment,
     IrConversationType, IrDirection, IrMessage, IrMessageKind, IrParticipant, IrService,
@@ -2656,7 +2658,7 @@ fn a_cancelled_push_sends_no_further_batch_and_resumes_later() {
     let flag = cancel.clone();
     let mut on_progress = move |event: ProgressEvent| {
         if let ProgressEvent::FileDone { status, .. } = event
-            && status == "ok"
+            && status == FileStatus::Ok
         {
             flag.store(true, Ordering::SeqCst);
         }
@@ -2730,7 +2732,7 @@ fn a_cancelled_push_reports_every_conversation_in_one_category() {
     let flag = cancel.clone();
     let mut on_progress = move |event: ProgressEvent| {
         if let ProgressEvent::FileDone { status, .. } = event
-            && status == "ok"
+            && status == FileStatus::Ok
         {
             flag.store(true, Ordering::SeqCst);
         }

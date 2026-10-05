@@ -17,6 +17,29 @@ use crate::report::{
     FileResult, PushReport, UploadProfile, elapsed_ms, format_ms_seconds, format_profile_line,
 };
 
+/// How the Upload ended with one conversation file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileStatus {
+    /// Sent now.
+    Ok,
+    /// Not sent; the log says why.
+    Failed,
+    /// The journal records it as sent by an earlier attempt, so it is not
+    /// sent again.
+    Skipped,
+}
+
+impl FileStatus {
+    /// The word the desktop app's `extract:file-done` event carries.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Failed => "failed",
+            Self::Skipped => "skipped",
+        }
+    }
+}
+
 /// Events the desktop app can show while an Upload is running.
 #[derive(Debug, Clone)]
 pub enum ProgressEvent {
@@ -38,13 +61,13 @@ pub enum ProgressEvent {
         /// File name relative to the input directory.
         file: String,
     },
-    /// Work on one conversation file ended.
+    /// Work on one conversation file ended. A conversation a stop left
+    /// unsent gets no `FileDone`; its `cancelled` row is in the report.
     FileDone {
         /// File name relative to the input directory.
         file: String,
-        /// `ok`, `failed`, or `skipped`. A conversation a stop left unsent
-        /// gets no `FileDone`; its `cancelled` row is in the report.
-        status: String,
+        /// How it ended.
+        status: FileStatus,
     },
     /// Structured skip/error for Import Errors (e.g. oversized attachment).
     Issue {
@@ -275,11 +298,11 @@ impl<'p, 'f> Reporter<'p, 'f> {
         });
     }
 
-    /// Announce a conversation's final status (`ok`, `failed`, or `skipped`).
-    pub(crate) fn file_done(&mut self, file: &str, status: &str) {
+    /// Announce how the Upload ended with a conversation.
+    pub(crate) fn file_done(&mut self, file: &str, status: FileStatus) {
         self.event(ProgressEvent::FileDone {
             file: file.to_string(),
-            status: status.to_string(),
+            status,
         });
     }
 

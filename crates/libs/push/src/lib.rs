@@ -27,7 +27,7 @@ pub use journal::{JOURNAL_NAME, LOG_NAME, REPORT_NAME};
 pub use message_crate_api_types::ImportMode;
 pub use message_crate_http::AuthError;
 pub use message_crate_http::AuthInfo;
-pub use progress::{ProgressEvent, ProgressFn};
+pub use progress::{FileStatus, ProgressEvent, ProgressFn};
 pub use report::{FileResult, PushReport, UploadProfile, format_duration_ms, format_push_summary};
 pub use run::{
     DEFAULT_ASSET_MAX_BYTES, DEFAULT_ASSET_UPLOAD_WORKERS, DEFAULT_BATCH_SIZE,

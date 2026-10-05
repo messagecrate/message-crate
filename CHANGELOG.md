@@ -397,6 +397,30 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **An Import Run's log and the Upload write their last
+  warnings as sentences.** A few lines in an Import Run's log started
+  "Unable to", "Skipping" or "could not", and the desktop app wrote
+  "Starting:" and "Done:" for each conversation of an Upload. Each now says
+  what happened:
+  - "Unable to remove decrypted temp file …" is now "The decrypted copy of
+    attachment … at … could not be removed: …".
+  - "Unable to build contacts index: …" and "Unable to read a contacts
+    source: …" are now "Contacts could not be read, so no contact is named
+    from them: …" and "A contacts source could not be read, so no contact is
+    named from it: …". "Could not decrypt Contacts database from iOS backup:
+    …; continuing without contacts" is now "The contacts database in the
+    iPhone backup could not be decrypted, so no contact is named from it: …".
+  - "Skipping message (rowid=…, guid=…): …" and "2 messages skipped due to
+    formatting errors." are now "Message … (row …) could not be read, so it
+    is left out: …" and "2 messages could not be read and were left out".
+    "Chat ID 7 does not exist in chat table!" is now "A message names
+    conversation 7, which is not in the messages database".
+  - "could not read …" for WhatsApp's preferences is now "WhatsApp's
+    preferences file … could not be read: …".
+  - The desktop app's "Starting: chat.jsonl" and "Done: chat.jsonl (ok)" for
+    each conversation of an Upload are now "Uploading chat.jsonl,
+    conversation 2 of 5" and "Uploaded chat.jsonl", "chat.jsonl was not
+    uploaded", or "chat.jsonl was uploaded before, so it is not sent again".
 - 2026-10-05 **A journal line the Upload cannot read is named in the
   Upload's log.** It went to standard error as "warning: journal … line … is
   corrupt (…). The affected entries will be re-submitted (server dedup is
@@ -1645,12 +1669,9 @@ released versions carry their date on the heading.
 
 #### The server
 
-- 2026-10-05 **The server, the demo seed, an Import Run's log and the
-  Upload write their last warnings as sentences.** Lines on standard error
-  started with "warning:", "stopping:" or "skip —", a few lines in an Import
-  Run's log started "Unable to" or "could not", and the desktop app wrote
-  "Starting:" and "Done:" for each conversation of an Upload. Each now says
-  what happened, for example:
+- 2026-10-05 **The server and the demo seed write their last warnings as
+  sentences.** Lines on standard error started with "warning:", "stopping:"
+  or "skip —". Each now says what happened, for example:
   - "warning: could not add the Demo Account: …" is now "The Demo Account
     could not be added: …", and the line after it starts with a capital.
   - "warning: the Demo Account has 1 original whose Preview or Thumbnail
@@ -1661,22 +1682,10 @@ released versions carry their date on the heading.
   - "warning: could not write server.ready back: …" is now "server.ready
     could not be written back, so sqlite-web goes on waiting: …".
   - "warning: installed the generated demo bundle but could not remove
-    backup …" is now "The new Demo Data is in place, but the backup of the
-    previous one at … could not be removed: …".
+    backup …" is now "The newly generated demo files are in place, but the
+    backup of the previous ones at … could not be removed: …".
   - "shutting down" is now "The server is shutting down", and
-    `process-assets` says "Stopping." when it is stopped.
-  - "Unable to remove decrypted temp file …" is now "The decrypted copy of
-    attachment … at … could not be removed: …".
-  - "Unable to build contacts index: …" and "Unable to read a contacts
-    source: …" are now "The contacts database could not be read, so no
-    contact is named from it: …" and "A contacts source could not be read,
-    so no contact is named from it: …".
-  - "could not read …" for WhatsApp's preferences is now "WhatsApp's
-    preferences file … could not be read: …".
-  - The desktop app's "Starting: chat.jsonl" and "Done: chat.jsonl (ok)" for
-    each conversation of an Upload are now "Uploading chat.jsonl,
-    conversation 2 of 5" and "Uploaded chat.jsonl", "chat.jsonl was not
-    uploaded", or "chat.jsonl was uploaded before, so it is not sent again".
+    `process-assets` says "process-assets is stopping." when it is stopped.
 - 2026-10-05 **`process-assets` says what it did to an incomplete original
   and a damaged or shared Preview or Thumbnail.** A transfer that never
   finished leaves an incomplete original. When one could not be removed,

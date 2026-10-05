@@ -4,7 +4,7 @@ use message_crate_push::ImportMode;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use message_crate_push::{ProgressEvent, PushConfig, run as run_push};
+use message_crate_push::{FileStatus, ProgressEvent, PushConfig, run as run_push};
 
 use super::events;
 use super::events::ExtractProgressEvent;
@@ -179,14 +179,12 @@ fn file_start_line(index: usize, total: usize, file: &str) -> String {
 
 /// The log line for the Upload ending conversation file `file` with
 /// `status`. A failure's reason is already on the log, in the Upload's own
-/// "… failed: …" line, so this line does not repeat it. A skipped file is
-/// one the Upload's journal records as sent by an earlier attempt.
-fn file_done_line(file: &str, status: &str) -> String {
+/// "… failed: …" line, so this line does not repeat it.
+fn file_done_line(file: &str, status: FileStatus) -> String {
     match status {
-        "ok" => format!("Uploaded {file}"),
-        "failed" => format!("{file} was not uploaded"),
-        "skipped" => format!("{file} was uploaded before, so it is not sent again"),
-        other => format!("{file} ended as {other}"),
+        FileStatus::Ok => format!("Uploaded {file}"),
+        FileStatus::Failed => format!("{file} was not uploaded"),
+        FileStatus::Skipped => format!("{file} was uploaded before, so it is not sent again"),
     }
 }
 
@@ -213,11 +211,14 @@ fn forward_upload_event(app: &tauri::AppHandle, event: ProgressEvent) {
             );
         }
         ProgressEvent::FileDone { file, status } => {
-            events::emit(app, events::LOG, file_done_line(&file, &status));
+            events::emit(app, events::LOG, file_done_line(&file, status));
             events::emit(
                 app,
                 events::FILE_DONE,
-                events::ExtractFileDoneEvent { file, status },
+                events::ExtractFileDoneEvent {
+                    file,
+                    status: status.as_str().into(),
+                },
             );
         }
         ProgressEvent::Issue {
@@ -266,13 +267,16 @@ mod tests {
             file_start_line(2, 5, "chat.jsonl"),
             "Uploading chat.jsonl, conversation 2 of 5"
         );
-        assert_eq!(file_done_line("chat.jsonl", "ok"), "Uploaded chat.jsonl");
         assert_eq!(
-            file_done_line("chat.jsonl", "failed"),
+            file_done_line("chat.jsonl", FileStatus::Ok),
+            "Uploaded chat.jsonl"
+        );
+        assert_eq!(
+            file_done_line("chat.jsonl", FileStatus::Failed),
             "chat.jsonl was not uploaded"
         );
         assert_eq!(
-            file_done_line("chat.jsonl", "skipped"),
+            file_done_line("chat.jsonl", FileStatus::Skipped),
             "chat.jsonl was uploaded before, so it is not sent again"
         );
     }
