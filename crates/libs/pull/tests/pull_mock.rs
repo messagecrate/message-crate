@@ -236,8 +236,6 @@ fn mock_asset<'a>(server: &'a MockServer, sha256: &str, bytes: &[u8]) -> httpmoc
     })
 }
 
-/// A pull of every message into `out_dir`: two messages a page, one download
-/// worker so the counts in the log are fixed.
 /// The temporary files a fetch left in `dir`: every name ending in `.part`.
 fn part_files_in(dir: &Path) -> Vec<String> {
     fs::read_dir(dir)
@@ -247,6 +245,8 @@ fn part_files_in(dir: &Path) -> Vec<String> {
         .collect()
 }
 
+/// A pull of every message into `out_dir`: two messages a page, one download
+/// worker so the counts in the log are fixed.
 fn config(out_dir: &Path, base_url: String) -> PullConfig {
     PullConfig {
         out_dir: out_dir.to_path_buf(),
