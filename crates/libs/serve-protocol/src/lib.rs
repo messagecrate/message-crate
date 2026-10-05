@@ -10,7 +10,8 @@
 //! returns these values, and the app reads them, from here.
 
 /// The start of the line `serve` writes to standard error once it holds its
-/// address, followed by the address as `http://<bind>`. Only the process
+/// address, followed by the address it bound as `http://<address>`: with
+/// `--bind 127.0.0.1:0`, the port the operating system chose. Only the process
 /// that bound the port writes it, so it tells the app's own server from
 /// another Message Crate answering at the same address.
 pub const LISTENING_LINE: &str = "message-crate-server serve listening on ";

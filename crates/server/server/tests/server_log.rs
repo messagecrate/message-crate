@@ -8,19 +8,14 @@
 //! one the process-wide subscriber writes, at `RUST_LOG=trace`, the most a
 //! person can ask the server to write.
 
-use std::io::{BufRead, BufReader};
-use std::path::Path;
-use std::process::{Child, Command, Stdio};
-use std::sync::mpsc;
-use std::thread;
-use std::time::{Duration, Instant};
+mod common;
 
-use message_crate_serve_protocol::LISTENING_LINE;
+use std::path::Path;
+
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-/// How long a server on an empty database may take to listen.
-const WAIT: Duration = Duration::from_secs(60);
+use common::{create_database, listen, serve};
 
 /// The owner's password.
 const OWNER_PASSWORD: &str = "Owner-Pw-7q2Lx9Vb";
@@ -36,87 +31,6 @@ const CONTACT_PHONE: &str = "+15555550177";
 const CONTACT_EMAIL: &str = "zebediah.quixote@example.com";
 /// The attachment's bytes.
 const ATTACHMENT: &[u8] = b"Attachment-Bytes-Pelican-Orchard-41";
-
-/// A server process, killed when the test ends however it ends.
-struct Running(Child);
-
-impl Drop for Running {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-fn server() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_message-crate-server"))
-}
-
-/// An empty database in `data_dir`, so `serve` listens without first
-/// building the Demo Account.
-fn create_database(root: &Path, data_dir: &Path) {
-    let config = root.join("config.toml");
-    std::fs::write(
-        &config,
-        format!(
-            "[paths]\ndb = {:?}\ndata_dir = {:?}\n",
-            data_dir.join("messagecrate.db"),
-            data_dir
-        ),
-    )
-    .unwrap();
-    let output = server()
-        .arg("create-database")
-        .arg("--config")
-        .arg(&config)
-        .output()
-        .unwrap();
-    assert!(output.status.success(), "{output:?}");
-}
-
-/// `serve` as the desktop app starts it, and the address it listens on.
-/// The listening line names the address it was given, so the port is one
-/// the operating system had free a moment before.
-fn serve(data_dir: &Path, static_dir: &Path) -> (Running, String) {
-    let port = std::net::TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port();
-    let mut child = Running(
-        server()
-            .arg("serve")
-            .arg("--data-dir")
-            .arg(data_dir)
-            .arg("--bind")
-            .arg(format!("127.0.0.1:{port}"))
-            .arg("--static-dir")
-            .arg(static_dir)
-            .env("RUST_LOG", "trace")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .spawn()
-            .unwrap(),
-    );
-    let stderr = child.0.stderr.take().unwrap();
-    let (lines, received) = mpsc::channel();
-    // Reads until the server's output closes, so the pipe never fills.
-    thread::spawn(move || {
-        for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-            let _ = lines.send(line);
-        }
-    });
-    let deadline = Instant::now() + WAIT;
-    loop {
-        let left = deadline.saturating_duration_since(Instant::now());
-        let line = received
-            .recv_timeout(left)
-            .expect("the server never wrote the listening line");
-        if let Some(address) = line.strip_prefix(LISTENING_LINE) {
-            return (child, address.to_string());
-        }
-    }
-}
 
 /// One call, answered with its status and JSON body (`Null` when it has
 /// none).
@@ -176,7 +90,8 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     std::fs::create_dir_all(&data_dir).unwrap();
     std::fs::create_dir_all(&static_dir).unwrap();
     create_database(root.path(), &data_dir);
-    let (_server, base) = serve(&data_dir, &static_dir);
+    let (_server, address) = listen(serve(&data_dir, &static_dir).env("RUST_LOG", "trace"));
+    let base = format!("http://{address}");
     let base = base.as_str();
 
     // The owner claims the Message Crate and opens registration.
