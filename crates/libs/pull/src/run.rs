@@ -276,7 +276,8 @@ struct Pull<'a> {
     cfg: &'a PullConfig,
     session: HttpSession,
     account: i64,
-    username: String,
+    /// The server and account this pull's journal lines belong to.
+    target: crate::journal::ServerTarget,
     /// The search query with surrounding whitespace removed.
     query: String,
     journal_path: PathBuf,
@@ -323,14 +324,15 @@ impl<'a> Pull<'a> {
         // Load the pull journal so a later Export Run does not fetch the Assets
         // already on disk again.
         let journal_path = crate::journal::journal_path(&cfg.out_dir);
-        let journal = crate::journal::load(&journal_path, &cfg.base_url, &username, &mut |line| {
+        let target = crate::journal::ServerTarget::new(&cfg.base_url, username);
+        let journal = crate::journal::load(&journal_path, &target, &mut |line| {
             emit(out, ProgressEvent::Log(line));
         })?;
         Ok(Self {
             cfg,
             session: HttpSession::new()?,
             account,
-            username,
+            target,
             query,
             journal_path,
             journal,
@@ -559,8 +561,7 @@ impl<'a> Pull<'a> {
         for sha in assets.keys() {
             if !self.journal.assets.contains(sha) {
                 let event = crate::journal::PullJournalEvent::AssetOk {
-                    url: cfg.base_url.clone(),
-                    username: self.username.clone(),
+                    target: self.target.clone(),
                     sha256: sha.clone(),
                 };
                 if let Err(error) = crate::journal::append(&self.journal_path, &event) {
@@ -630,8 +631,7 @@ impl<'a> Pull<'a> {
         seen_assets: HashMap<String, String>,
     ) {
         let event = crate::journal::PullJournalEvent::ExportComplete {
-            url: self.cfg.base_url.clone(),
-            username: self.username.clone(),
+            target: self.target.clone(),
             conversations,
             messages,
             assets: assets.fetched + assets.kept,
@@ -651,12 +651,8 @@ impl<'a> Pull<'a> {
             assets: recorded_assets,
             export_complete: true,
         };
-        if let Err(error) = crate::journal::compact(
-            &self.journal_path,
-            &self.cfg.base_url,
-            &self.username,
-            &final_state,
-        ) {
+        if let Err(error) = crate::journal::compact(&self.journal_path, &self.target, &final_state)
+        {
             emit(
                 out,
                 ProgressEvent::Log(format!(
