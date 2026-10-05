@@ -3,7 +3,7 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { holdDesktopJob } from "../../lib/desktopJob";
-import type { ActiveImportSession } from "../../lib/importSession";
+import type { ActiveImportRun } from "../../lib/importRun";
 import { fill, setupUser } from "../../test/user";
 import ResumeImportPanel from "./ResumeImportPanel";
 import type { ResumeDecision } from "./resumeDecision";
@@ -12,7 +12,7 @@ afterEach(() => {
   cleanup();
 });
 
-function session(overrides: Partial<ActiveImportSession> = {}): ActiveImportSession {
+function session(overrides: Partial<ActiveImportRun> = {}): ActiveImportRun {
   return {
     id: 7,
     source: "imessage",
@@ -43,7 +43,7 @@ describe("ResumeImportPanel", () => {
     const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
-    const decision: ResumeDecision = { kind: "resume_push", session: session() };
+    const decision: ResumeDecision = { kind: "resume_upload", session: session() };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
     expect(screen.getByText("Finish your last import")).toBeInTheDocument();
@@ -449,7 +449,7 @@ describe("ResumeImportPanel", () => {
     const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
-    const decision: ResumeDecision = { kind: "resume_push", session: session() };
+    const decision: ResumeDecision = { kind: "resume_upload", session: session() };
     const release = holdDesktopJob("Export");
     try {
       render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);

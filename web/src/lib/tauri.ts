@@ -187,7 +187,7 @@ export async function invokeSaveImportRunRecord(config: {
   });
 }
 
-export interface PushConfig {
+export interface UploadConfig {
   base_url: string;
   username: string;
   token: string;
@@ -198,7 +198,7 @@ export interface PushConfig {
   import_id?: number;
 }
 
-export interface PushFinishedReport {
+export interface UploadFinishedReport {
   ok: boolean;
   /** The cancel flag stopped the push: a pause the run resumes from, not a failure. */
   cancelled: boolean;
@@ -248,7 +248,7 @@ export interface TranscodeFinishedReport {
 
 export interface TauriJobResult {
   summary: string;
-  report?: PushFinishedReport;
+  report?: UploadFinishedReport;
   extraction?: {
     files_parsed: number;
     messages_parsed: number;
@@ -257,8 +257,8 @@ export interface TauriJobResult {
 }
 
 /** Upload extracted conversations to a server. */
-export async function invokePush(config: PushConfig): Promise<void> {
-  return invoke("push", {
+export async function invokeUpload(config: UploadConfig): Promise<void> {
+  return invoke("upload", {
     args: {
       baseUrl: config.base_url,
       username: config.username,
@@ -529,7 +529,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isPushFinishedReport(value: unknown): value is PushFinishedReport {
+function isUploadFinishedReport(value: unknown): value is UploadFinishedReport {
   if (!isRecord(value)) return false;
   return (
     typeof value.ok === "boolean" &&
@@ -585,7 +585,7 @@ export function parseTauriJobResult(summary: string): TauriJobResult {
 
     const summaryText = typeof parsed.summary === "string" ? parsed.summary : summary;
 
-    if (isPushFinishedReport(parsed)) {
+    if (isUploadFinishedReport(parsed)) {
       return {
         summary: summaryText,
         report: parsed,

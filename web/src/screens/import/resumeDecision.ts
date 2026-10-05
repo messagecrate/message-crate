@@ -1,4 +1,4 @@
-import type { ActiveImportSession, SourceFingerprint } from "../../lib/importSession";
+import type { ActiveImportRun, SourceFingerprint } from "../../lib/importRun";
 import type { PathStat } from "../../lib/tauri";
 
 /** What entering Import should do about a session that already exists. */
@@ -11,7 +11,7 @@ export type ResumeDecision = {
     // it is there is not known. Distinct from directory_missing because an IPC
     // error is not evidence the directory is gone.
     | "directory_unknown"
-    | "resume_push"
+    | "resume_upload"
     // A session waiting at either review: the summary is recomputed
     // fresh from the directory and shown again, nothing restored, because the
     // directory is the truth.
@@ -33,7 +33,7 @@ export type ResumeDecision = {
     // itself when restoreFormFromSnapshot rejects the snapshot at the point
     // of trying to resume or restart.
     | "settings_unreadable";
-  session: ActiveImportSession | null;
+  session: ActiveImportRun | null;
 };
 
 /** Whether a session's run directory is on disk, or that the check itself failed. */
@@ -52,7 +52,7 @@ export type DirectoryCheck = "present" | "missing" | "unknown";
  * be worse than the rare case of two installs sharing a server.
  */
 export function resumeDecisionFor(args: {
-  session: ActiveImportSession | null;
+  session: ActiveImportRun | null;
   deviceId: string;
   directory: DirectoryCheck;
   fingerprint: FingerprintCheck;
@@ -69,7 +69,7 @@ export function resumeDecisionFor(args: {
     return { kind: "directory_unknown", session };
   }
   if (session.stage === "upload") {
-    return { kind: "resume_push", session };
+    return { kind: "resume_upload", session };
   }
   if (session.stage === "staging_review" || session.stage === "media_review") {
     return { kind: "resume_review", session };

@@ -15,7 +15,7 @@ import {
   type PathStat,
   shouldPrefillMacMessagesDb,
 } from "../lib/imessageImport";
-import { type ActiveImportSession, getActiveImportSession } from "../lib/importSession";
+import { type ActiveImportRun, getActiveImportRun } from "../lib/importRun";
 import { keys } from "../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../lib/routeQuery";
 import { unmatchedIdentities } from "../lib/serverApi";
@@ -116,7 +116,7 @@ export default function ImportScreen() {
     form,
     summaryView,
     stagingDir,
-    importSessionId,
+    importRunId,
     stagingSummary,
     mediaSummary,
     mediaFailedCount,
@@ -270,7 +270,7 @@ export default function ImportScreen() {
     void (async () => {
       try {
         const session = await cache.fetch(keys.imports.running, (signal) =>
-          getActiveImportSession(signal),
+          getActiveImportRun(signal),
         );
         const directory = session?.staging_dir
           ? await stagingDirectoryCheck(session.staging_dir)
@@ -347,7 +347,7 @@ export default function ImportScreen() {
    * `device_id` check `resumeDecisionFor` uses to route to `other_device`,
    * and a session with no recorded device counts as this install's there too.
    */
-  async function discardSession(session: ActiveImportSession): Promise<void> {
+  async function discardOfferedRun(session: ActiveImportRun): Promise<void> {
     const thisDevice = !session.device_id || session.device_id === getDeviceId();
     await discardRun(session.id, thisDevice ? session.staging_dir : null);
   }
@@ -359,7 +359,7 @@ export default function ImportScreen() {
     try {
       // The panel drops to the form either way; if the session is still
       // live server-side, the next visit shows it again.
-      await discardSession(session);
+      await discardOfferedRun(session);
     } finally {
       discardingRef.current = false;
       setResume(NO_RESUME);
@@ -403,7 +403,7 @@ export default function ImportScreen() {
         ? { ...storedForm, [resumeSecret]: typedSecret }
         : storedForm;
 
-      if (resume.kind === "resume_push") {
+      if (resume.kind === "resume_upload") {
         if (!session.staging_dir) return; // resumeDecisionFor guarantees this; defensive only.
         setResume(NO_RESUME);
         await startImport(restoredForm, {
@@ -413,7 +413,7 @@ export default function ImportScreen() {
           // omissions against, which demotes an honest `completed` verdict
           // to `completed_with_issues` for exactly the interrupted-and-
           // resumed case. Undefined when the stored summary is missing or
-          // unparsable — startImport/runPush already tolerate that.
+          // unparsable — startImport/runUpload already tolerate that.
           approved: parseStoredStagingSummary(session.summary),
         });
         return;
@@ -449,7 +449,7 @@ export default function ImportScreen() {
       // delete stays on screen through the new run.
       // If the server is unreachable, the create call below surfaces its
       // own error the same as any other failed import start.
-      await discardSession(session);
+      await discardOfferedRun(session);
       cache.invalidateAccount();
       setResume(NO_RESUME);
       await startImport(restoredForm);
@@ -839,7 +839,7 @@ export default function ImportScreen() {
           mediaFailedCount={mediaFailedCount}
           summaryView={summaryView}
           stagingDir={stagingDir}
-          importSessionId={importSessionId}
+          importRunId={importRunId}
           completionText={completionText}
           reviewWaiting={reviewWaiting}
           unknownContacts={unknownContacts}

@@ -19,7 +19,7 @@ pub mod jobs;
 pub mod local_server;
 pub mod paths;
 pub mod pull;
-pub mod push;
+pub mod upload;
 pub mod staging;
 
 /// Last log line from a job, or `fallback` when the job wrote none.

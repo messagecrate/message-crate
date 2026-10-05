@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { accountStagingDirectories, buildSourceFingerprint } from "./importSession";
+import { accountStagingDirectories, buildSourceFingerprint } from "./importRun";
 
 const listEveryImport = vi.hoisted(() => vi.fn());
 const invokePathStat = vi.hoisted(() => vi.fn());

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { EXPORT_SOURCES } from "./exportSources";
 import { IMESSAGE_METHODS, IMESSAGE_SOURCE_ID } from "./imessageImport";
-import { importSessionCreateBody, showsAttachmentOptions, sourceForMethod } from "./importSource";
+import { importRunCreateBody, showsAttachmentOptions, sourceForMethod } from "./importSource";
 import { WHATSAPP_METHODS, WHATSAPP_SOURCE_ID } from "./whatsappImport";
 
 describe("sourceForMethod", () => {
@@ -38,9 +38,9 @@ describe("sourceForMethod", () => {
   });
 });
 
-describe("importSessionCreateBody", () => {
+describe("importRunCreateBody", () => {
   it("sends imessage when the form method is imessage-ios", () => {
-    expect(importSessionCreateBody("imessage-ios")).toEqual({
+    expect(importRunCreateBody("imessage-ios")).toEqual({
       source: "imessage",
       tool: "message-crate",
       mode: "append",
@@ -48,7 +48,7 @@ describe("importSessionCreateBody", () => {
   });
 
   it("sends whatsapp when the form method is whatsapp-android", () => {
-    expect(importSessionCreateBody("whatsapp-android")).toEqual({
+    expect(importRunCreateBody("whatsapp-android")).toEqual({
       source: "whatsapp",
       tool: "message-crate",
       mode: "append",
@@ -56,7 +56,7 @@ describe("importSessionCreateBody", () => {
   });
 
   it("sends sms-backup-restore unchanged", () => {
-    expect(importSessionCreateBody("sms-backup-restore").source).toBe("sms-backup-restore");
+    expect(importRunCreateBody("sms-backup-restore").source).toBe("sms-backup-restore");
   });
 });
 

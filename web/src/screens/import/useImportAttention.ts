@@ -1,4 +1,4 @@
-import { getActiveImportSession } from "../../lib/importSession";
+import { getActiveImportRun } from "../../lib/importRun";
 import { keys } from "../../lib/queryKeys";
 import { useRouteQuery } from "../../lib/routeQuery";
 import type { ImportPhase } from "./importProgressState";
@@ -46,7 +46,7 @@ export function importAttentionFor(
  */
 export function useImportAttention(enabled: boolean): ImportAttention | null {
   const run = useImportRunState();
-  const running = useRouteQuery(keys.imports.running, (signal) => getActiveImportSession(signal), {
+  const running = useRouteQuery(keys.imports.running, (signal) => getActiveImportRun(signal), {
     enabled,
     staleTime: 30_000,
   });

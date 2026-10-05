@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { ActiveImportSession } from "../../lib/importSession";
+import type { ActiveImportRun } from "../../lib/importRun";
 import { checkSourceFingerprint, resumeDecisionFor } from "./resumeDecision";
 
-function session(overrides: Partial<ActiveImportSession> = {}): ActiveImportSession {
+function session(overrides: Partial<ActiveImportRun> = {}): ActiveImportRun {
   return {
     id: 7,
     source: "imessage",
@@ -85,7 +85,7 @@ describe("resumeDecisionFor", () => {
       directory: "present",
       fingerprint: "unknown",
     });
-    expect(decision.kind).toBe("resume_push");
+    expect(decision.kind).toBe("resume_upload");
   });
 
   it("restarts when the run died before it had written anything", () => {
@@ -146,7 +146,7 @@ describe("resumeDecisionFor", () => {
         directory: "present",
         fingerprint: "unknown",
       }).kind,
-    ).toBe("resume_push");
+    ).toBe("resume_upload");
   });
   it("offers to pick up a copy that was interrupted", () => {
     const decision = resumeDecisionFor({
@@ -202,7 +202,7 @@ describe("resumeDecisionFor", () => {
         directory: "present",
         fingerprint: "mismatch",
       }).kind,
-    ).toBe("resume_push");
+    ).toBe("resume_upload");
   });
 
   it("puts a missing directory ahead of any fingerprint answer", () => {

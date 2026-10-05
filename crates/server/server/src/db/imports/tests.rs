@@ -17,8 +17,8 @@ async fn setup_accounts_only() -> (sqlx::SqlitePool, tempfile::TempDir) {
     (pool, dir)
 }
 
-/// A default session-open for tests that only care that a running
-/// import exists, not about its stage or session fields.
+/// Default start arguments for tests that only care that a running
+/// Import Run exists, not about its stage or the fields the desktop app sets.
 fn default_start_args(account_id: i64) -> StartImportArgs<'static> {
     StartImportArgs::new(account_id, "ios", "append", Some("message-crate"))
 }
@@ -335,7 +335,7 @@ async fn running_import(conn: &mut SqliteConnection, account: i64) -> Option<Imp
 }
 
 #[tokio::test]
-async fn active_session_round_trips_and_blocks_a_second() {
+async fn running_import_run_round_trips_and_blocks_a_second() {
     let (pool, _dir) = setup_accounts_only().await;
     let mut conn = pool.acquire().await.unwrap();
     let account = ACCOUNT_ID;
@@ -371,7 +371,7 @@ async fn active_session_round_trips_and_blocks_a_second() {
             start_import(&mut conn, &args).await,
             Err(StartImportError::AlreadyActive)
         ),
-        "a second session is refused by the index, not by a race-prone check"
+        "a second running Import Run is refused by the index, not by a race-prone check"
     );
 }
 
@@ -403,11 +403,11 @@ async fn stage_advances_and_discard_frees_the_slot() {
     // The slot is genuinely free.
     start_import(&mut conn, &args)
         .await
-        .expect("a new session can start");
+        .expect("a new Import Run can start");
 }
 
 #[tokio::test]
-async fn discard_running_import_finds_the_session_by_account_and_skips_finished_ones() {
+async fn discard_running_import_finds_the_running_import_run_by_account_and_skips_finished_ones() {
     let (pool, _dir) = setup_accounts_only().await;
     let mut conn = pool.acquire().await.unwrap();
     let account = ACCOUNT_ID;
@@ -417,7 +417,7 @@ async fn discard_running_import_finds_the_session_by_account_and_skips_finished_
             .await
             .unwrap()
             .is_none(),
-        "nothing to discard before a session starts"
+        "nothing to discard before an Import Run starts"
     );
 
     let args = StartImportArgs::new(account, "imessage", "append", None);
@@ -435,7 +435,7 @@ async fn discard_running_import_finds_the_session_by_account_and_skips_finished_
     let discarded = discard_running_import(&mut conn, account)
         .await
         .unwrap()
-        .expect("the running session is the one discarded");
+        .expect("the running Import Run is the one discarded");
     assert_eq!(discarded.id, stranded);
     assert_eq!(
         discarded.status.as_str(),
@@ -457,7 +457,7 @@ async fn discard_running_import_finds_the_session_by_account_and_skips_finished_
             .status
             .as_str(),
         "completed",
-        "a finished session is left alone"
+        "a finished Import Run is left alone"
     );
     assert!(
         discard_running_import(&mut conn, account)
@@ -469,7 +469,7 @@ async fn discard_running_import_finds_the_session_by_account_and_skips_finished_
 }
 
 #[tokio::test]
-async fn completing_a_session_frees_the_slot_too() {
+async fn completing_an_import_run_frees_the_slot_too() {
     let (pool, _dir) = setup_accounts_only().await;
     let mut conn = pool.acquire().await.unwrap();
     let account = ACCOUNT_ID;

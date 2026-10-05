@@ -1,6 +1,6 @@
 import type { ImportIssue, ImportNote } from "../../components/import/ImportSummaryPanel";
 import { isIssueStage } from "../../components/import/importIssueStage";
-import type { PushFinishedReport } from "../../lib/tauri";
+import type { UploadFinishedReport } from "../../lib/tauri";
 import type { ConversationStatus } from "../../lib/types";
 
 /**
@@ -137,7 +137,7 @@ export type RunPart = {
    */
   conversations: ReadonlyMap<string, ConversationStatus>;
   /** This part's push report, when it ran an Upload that reported. */
-  report: PushFinishedReport | null;
+  report: UploadFinishedReport | null;
 };
 
 /**
@@ -374,6 +374,6 @@ export function issueRequests(issues: readonly ImportIssue[]): ImportIssue[] {
  * counts the conversations an earlier part sent as skipped, since the push
  * journal lists them, so those are taken back out.
  */
-export function filesSkippedOverRun(carried: RunRecord, report: PushFinishedReport): number {
+export function filesSkippedOverRun(carried: RunRecord, report: UploadFinishedReport): number {
   return Math.max(0, report.conversations_skipped - (carried.filesSucceeded ?? 0));
 }

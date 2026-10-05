@@ -13,14 +13,14 @@ import { getDeviceId } from "../../lib/deviceId";
 import { IMAZING_SOURCE_ID } from "../../lib/exportSources";
 import { imessageExtractFields } from "../../lib/imessageExtractFields";
 import { isImessageMethod } from "../../lib/imessageImport";
-import type { ActiveImportSession } from "../../lib/importSession";
+import type { ActiveImportRun } from "../../lib/importRun";
 import {
   buildSourceFingerprint,
-  discardImportSession,
+  discardImportRun,
   type ImportStage,
   setImportStage,
-} from "../../lib/importSession";
-import { importSessionCreateBody, showsAttachmentOptions } from "../../lib/importSource";
+} from "../../lib/importRun";
+import { importRunCreateBody, showsAttachmentOptions } from "../../lib/importSource";
 import { CANCELLED_MESSAGE, createRunCancel, type RunCancel } from "../../lib/runCancel";
 import { registerRunningUpload, uploadSessionRefused } from "../../lib/runningUpload";
 import { sbrExtractFields } from "../../lib/sbrExtractFields";
@@ -33,14 +33,14 @@ import {
   invokeExtract,
   invokeImessageBackupIdentities,
   invokePathStat,
-  invokePush,
+  invokeUpload,
   invokeReadImportRunRecord,
   invokeSaveImportRunRecord,
   invokeSummarizeStaging,
   invokeTranscodeStaging,
   type OwnerIdentityCount,
   onExtractEvents,
-  type PushFinishedReport,
+  type UploadFinishedReport,
   probeFfmpegTools,
   type SizeVerdict,
   type StagingConfig,
@@ -60,7 +60,7 @@ import { useFetchAccountProfile } from "../../lib/useAccountProfile";
 import { whatsappExtractFields } from "../../lib/whatsappExtractFields";
 import { isWhatsappMethod } from "../../lib/whatsappImport";
 import { formSnapshot, isAttachmentMediaMode, isStringArray } from "./formSnapshot";
-import { mediaJobVerb } from "./gateForecast";
+import { mediaJobVerb } from "./reviewForecast";
 import { importOutcome } from "./importOutcome";
 import {
   type AttachmentProgressCounts,
@@ -291,12 +291,12 @@ export type ResumeWrite = {
 };
 
 /** Pick up a session whose run directory is already complete. */
-export type ResumePush = {
+export type ResumeUpload = {
   sessionId: number;
   stagingDir: string;
   /** The plan approved at the last gate this session passed, parsed from
    * its stored `summary` (`parseStoredStagingSummary`). Undefined when the
-   * session recorded nothing usable — `runPush` and `importOutcome`
+   * session recorded nothing usable — `runUpload` and `importOutcome`
    * tolerate that absence, they just can't diff a resumed push's expected
    * omissions against it, which demotes an honest `completed` outcome to
    * `completed_with_issues` for exactly the interrupted-and-resumed case. */
@@ -539,7 +539,7 @@ function returnToForm(): void {
     phase: "form",
     summaryView: null,
     stagingDir: null,
-    importSessionId: null,
+    importRunId: null,
     stagingSummary: null,
     mediaSummary: null,
     mediaFailedCount: null,
@@ -571,7 +571,7 @@ function beginRun(form: ImportJobFormValues, firstStage: ImportIssueStage): void
 
 /** This part of the run as it stands now. */
 function currentPart(
-  report: PushFinishedReport | null,
+  report: UploadFinishedReport | null,
   uploadMs: number | null,
   run: RunScratch = scratch,
 ): RunPart {
@@ -654,7 +654,7 @@ function writeRunRecord(stagingDir: string, build: () => RunRecord): Promise<voi
  * go.
  */
 async function saveCarriedRecord(
-  report: PushFinishedReport | null = null,
+  report: UploadFinishedReport | null = null,
   uploadMs: number | null = null,
 ): Promise<void> {
   const { stagingDir } = store.get();
@@ -928,24 +928,24 @@ function waitAtReview(phase: "staging_review" | "media_review"): void {
 async function finishImport(args: {
   sessionId: number | null;
   status: "completed" | "completed_with_issues" | "failed" | "cancelled" | "paused";
-  pushReport: PushFinishedReport | null;
+  uploadReport: UploadFinishedReport | null;
   uploadMs: number | null;
   skipComplete?: boolean;
 }): Promise<void> {
-  const { sessionId, status, pushReport, uploadMs, skipComplete } = args;
+  const { sessionId, status, uploadReport, uploadMs, skipComplete } = args;
   const carried = scratch.carried;
-  const whole = wholeRun(carried, currentPart(pushReport, uploadMs));
+  const whole = wholeRun(carried, currentPart(uploadReport, uploadMs));
   const finalSummary: ImportSummaryView = {
     status,
     messagesParsed: whole.messagesParsed,
-    filesTotal: pushReport?.conversations_total ?? whole.filesParsed,
+    filesTotal: uploadReport?.conversations_total ?? whole.filesParsed,
     filesSucceeded: whole.filesSucceeded,
-    filesFailed: pushReport?.conversations_failed,
-    filesSkipped: pushReport ? filesSkippedOverRun(carried, pushReport) : undefined,
+    filesFailed: uploadReport?.conversations_failed,
+    filesSkipped: uploadReport ? filesSkippedOverRun(carried, uploadReport) : undefined,
     messagesAttempted: whole.messagesAttempted,
     messagesInserted: whole.messagesInserted,
     messagesDeduped: whole.messagesDeduped,
-    messagesFailed: pushReport?.messages_failed,
+    messagesFailed: uploadReport?.messages_failed,
     attachmentsUploaded: whole.attachmentsUploaded,
     parseMs: whole.parseMs,
     attachmentsMs: whole.attachmentsMs,
@@ -1035,7 +1035,7 @@ async function finishImport(args: {
     await recordWrites;
     if (stagingDir != null && (await discardStagingDirectory(stagingDir))) stagingDir = null;
   } else {
-    await saveCarriedRecord(pushReport, uploadMs);
+    await saveCarriedRecord(uploadReport, uploadMs);
   }
   // The server writes this run's saved search and Contact Group when the run
   // completes, so a window closed mid-import still gets them.
@@ -1077,7 +1077,7 @@ function dismissStagingDeleteFailure(): void {
  * folded into the finished summary via `finishImport`, exactly like any
  * other terminal outcome.
  */
-async function runPush(
+async function runUpload(
   token: string | null,
   sessionId: number,
   outputDir: string,
@@ -1104,7 +1104,7 @@ async function runPush(
 }
 
 /**
- * `runPush` without the registration that lets logging out pause it.
+ * `runUpload` without the registration that lets logging out pause it.
  * Resolves to whether the server refused the session the push sent.
  */
 async function uploadAndFinish(
@@ -1126,7 +1126,7 @@ async function uploadAndFinish(
     await finishImport({
       sessionId,
       status: "failed",
-      pushReport: null,
+      uploadReport: null,
       uploadMs: null,
       skipComplete: true,
     });
@@ -1134,15 +1134,15 @@ async function uploadAndFinish(
   }
 
   const uploadStartedAt = performance.now();
-  let pushResult: TauriJobResult | null = null;
+  let uploadResult: TauriJobResult | null = null;
   let threw = false;
   // A Pause that came before the push started: the guard refused the job.
   let pausedBeforeStart = false;
   try {
     const baseUrl = getBaseUrl();
     if (!token) throw new Error("Not authenticated");
-    pushResult = await runJob(() =>
-      invokePush({
+    uploadResult = await runJob(() =>
+      invokeUpload({
         base_url: baseUrl,
         username: "",
         token,
@@ -1167,7 +1167,7 @@ async function uploadAndFinish(
     }
   }
   const uploadMs = performance.now() - uploadStartedAt;
-  const report = pushResult?.report ?? null;
+  const report = uploadResult?.report ?? null;
   // An Upload that did not send every conversation, paused or failed, is
   // paused: the run stays at `upload` with its directory, and resuming it
   // sends only what the push journal does not list.
@@ -1189,7 +1189,7 @@ async function uploadAndFinish(
     });
   }
 
-  await finishImport({ sessionId, status, pushReport: report, uploadMs });
+  await finishImport({ sessionId, status, uploadReport: report, uploadMs });
   return report?.session_refused === true;
 }
 
@@ -1229,7 +1229,7 @@ async function runMediaPass(
     await finishImport({
       sessionId,
       status: "failed",
-      pushReport: null,
+      uploadReport: null,
       uploadMs: null,
       skipComplete: true,
     });
@@ -1267,7 +1267,7 @@ async function runMediaPass(
     await finishImport({
       sessionId,
       status: cancelled ? "cancelled" : "failed",
-      pushReport: null,
+      uploadReport: null,
       uploadMs: null,
       skipComplete: cancelled,
     });
@@ -1357,7 +1357,7 @@ async function runImport(
   token: string | null,
   submitted: ImportJobFormValues,
   identities: string[] | null,
-  resume?: ResumePush,
+  resume?: ResumeUpload,
   resumeWrite?: ResumeWrite,
 ): Promise<void> {
   if (!isTauri()) return;
@@ -1369,7 +1369,7 @@ async function runImport(
     form,
     summaryView: null,
     stagingDir: null,
-    importSessionId: null,
+    importRunId: null,
     stagingSummary: null,
     mediaSummary: null,
     mediaFailedCount: null,
@@ -1398,7 +1398,7 @@ async function runImport(
     if (resume) {
       // The run directory is already complete, so there is nothing to
       // resolve, no new run to create (the account already has this one),
-      // and no extract to run. resume_push is only ever offered after the
+      // and no extract to run. resume_upload is only ever offered after the
       // last review, so there IS a plan from it: it rides along as
       // `resume.approved` (parsed from the run's stored summary) when it
       // parses. Straight to Upload.
@@ -1410,14 +1410,14 @@ async function runImport(
       form = adoptRecordedMode(form, resume.approved);
       store.set({
         stagingDir: outputDir,
-        importSessionId: sessionId,
+        importRunId: sessionId,
         steps: stepsFor(form.attachmentMedia).map((step) =>
           step.label === UPLOAD_LABEL
             ? { ...step, status: "active", detail: "Uploading to Message Crate…" }
             : { ...step, status: "done", detail: "Already staged" },
         ),
       });
-      await runPush(token, sessionId, outputDir, resume.approved);
+      await runUpload(token, sessionId, outputDir, resume.approved);
       return;
     }
 
@@ -1433,7 +1433,7 @@ async function runImport(
       outputDir = resumeWrite.stagingDir;
       sessionId = resumeWrite.sessionId;
       await loadCarriedRecord(outputDir);
-      store.set({ stagingDir: outputDir, importSessionId: sessionId });
+      store.set({ stagingDir: outputDir, importRunId: sessionId });
       setRowByLabel(STAGING_LABEL, { detail: "Extracting…" });
       await moveStage(sessionId, "write");
     } else {
@@ -1444,7 +1444,7 @@ async function runImport(
       // The run is created in the account of the session logged in now.
       stopIfAccountLeft();
       const importSession = await createImport({
-        ...importSessionCreateBody(form.source),
+        ...importRunCreateBody(form.source),
         stage: "parse",
         staging_dir: outputDir,
         device_id: getDeviceId(),
@@ -1453,7 +1453,7 @@ async function runImport(
         source_identities: identities,
       });
       sessionId = importSession.id;
-      store.set({ importSessionId: sessionId });
+      store.set({ importRunId: sessionId });
       setRowByLabel(STAGING_LABEL, { detail: "Extracting…" });
       await moveStage(sessionId, "write");
     }
@@ -1545,7 +1545,7 @@ async function runImport(
     await finishImport({
       sessionId,
       status: cancelled ? "cancelled" : "failed",
-      pushReport: null,
+      uploadReport: null,
       uploadMs: null,
       skipComplete: cancelled || stageNotRecorded,
     });
@@ -1580,7 +1580,7 @@ async function discardRun(sessionId: number | null, stagingDir: string | null): 
   }
   await Promise.allSettled([
     sessionId != null
-      ? discardImportSession(sessionId, issueRequests(issues), notes)
+      ? discardImportRun(sessionId, issueRequests(issues), notes)
       : Promise.resolve(),
     stagingDir != null ? discardStagingDirectory(stagingDir) : Promise.resolve(),
   ]);
@@ -1591,7 +1591,7 @@ async function cancelRun(): Promise<void> {
   if (scratch.reviewAction) return;
   scratch.reviewAction = true;
   try {
-    const { importSessionId: sessionId, stagingDir: outputDir } = store.get();
+    const { importRunId: sessionId, stagingDir: outputDir } = store.get();
     await discardRun(sessionId, outputDir);
   } finally {
     scratch.reviewAction = false;
@@ -1636,7 +1636,7 @@ export function useImportJob() {
    */
   async function startImport(
     form: ImportJobFormValues,
-    resume?: ResumePush,
+    resume?: ResumeUpload,
     resumeWrite?: ResumeWrite,
   ): Promise<void> {
     if (!isTauri()) return;
@@ -1657,7 +1657,7 @@ export function useImportJob() {
   /** `startImport`, once the store is this account's and no other start is under way. */
   async function startRun(
     form: ImportJobFormValues,
-    resume?: ResumePush,
+    resume?: ResumeUpload,
     resumeWrite?: ResumeWrite,
   ): Promise<void> {
     let identities: string[] | null = null;
@@ -1715,7 +1715,7 @@ export function useImportJob() {
     const form = scratch.form;
     const {
       phase,
-      importSessionId: sessionId,
+      importRunId: sessionId,
       stagingDir: outputDir,
       stagingSummary,
       mediaSummary,
@@ -1743,7 +1743,7 @@ export function useImportJob() {
         if (phase === "staging_review" && mediaJobVerb(form.attachmentMedia) !== null) {
           await runMediaPass(form, sessionId, outputDir, approvedSummary);
         } else {
-          await runPush(token, sessionId, outputDir, approvedSummary);
+          await runUpload(token, sessionId, outputDir, approvedSummary);
         }
       } finally {
         approving.reviewAction = false;
@@ -1756,7 +1756,7 @@ export function useImportJob() {
    * / `media_review`) or mid Media (`media`).
    *
    * `approve` can't do this itself: it depends on what the store holds
-   * (`stagingSummary`, the form, `stagingDir`, `importSessionId`) that a
+   * (`stagingSummary`, the form, `stagingDir`, `importRunId`) that a
    * reload has none of, and it branches on the phase rather than the run's
    * own stored stage. This rebuilds that state from `session` instead, then
    * routes exactly the way the normal flow would have got here.
@@ -1778,7 +1778,7 @@ export function useImportJob() {
    * reappears; that is the retry) and leaves the failure on `resumeError`.
    */
   async function resumeAtReview(
-    session: ActiveImportSession,
+    session: ActiveImportRun,
     resumedForm: ImportJobFormValues,
   ): Promise<void> {
     if (!isTauri()) return;
@@ -1788,7 +1788,7 @@ export function useImportJob() {
 
   /** `resumeAtReview`, once the store is this account's. */
   async function resumeRunAtReview(
-    session: ActiveImportSession,
+    session: ActiveImportRun,
     resumedForm: ImportJobFormValues,
   ): Promise<void> {
     if (
@@ -1816,7 +1816,7 @@ export function useImportJob() {
       form: known,
       summaryView: null,
       stagingDir: outputDir,
-      importSessionId: sessionId,
+      importRunId: sessionId,
       stagingSummary: null,
       mediaSummary: null,
       mediaFailedCount: null,
@@ -1899,7 +1899,7 @@ export function useImportJob() {
     form: state.form,
     summaryView: state.summaryView,
     stagingDir: state.stagingDir,
-    importSessionId: state.importSessionId,
+    importRunId: state.importRunId,
     stagingSummary: state.stagingSummary,
     mediaSummary: state.mediaSummary,
     mediaFailedCount: state.mediaFailedCount,

@@ -186,7 +186,7 @@ async fn import_under_session(
         .assets_dir
         .clone()
         .unwrap_or_else(|| cfg.paths.assets_dir_for_account(account_id));
-    let session = imports_api::OwnedSession::start(
+    let import_run = imports_api::OwnedImportRun::start(
         conn,
         account_id,
         source,
@@ -202,7 +202,7 @@ async fn import_under_session(
         source: opts.source_override.as_deref().unwrap_or(""),
         account_id,
         fill_content_keys: true,
-        import_id: Some(session.id),
+        import_id: Some(import_run.id),
         source_from_jsonl: plan.from_jsonl,
         media: opts.media,
         wipe_sources: Some(vec![source.to_string()]),
@@ -215,8 +215,8 @@ async fn import_under_session(
     )
     .await
     .map_err(anyhow::Error::from);
-    let import_id = session.id;
-    session.finish(conn, &result).await;
+    let import_id = import_run.id;
+    import_run.finish(conn, &result).await;
     // No server runs the background pass here, so the Assets wait in the
     // queue for the next `serve` (`docs/architecture/media.md`, rule 4).
     crate::media_queue::queue_without_waking(conn, account_id, import_id).await;

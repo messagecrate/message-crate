@@ -24,7 +24,7 @@ export function sourceForMethod(source: string): string {
 }
 
 /** Body for POST /v1/imports. Maps method ids; leaves other sources as-is. */
-export function importSessionCreateBody(formSource: string): {
+export function importRunCreateBody(formSource: string): {
   source: string;
   tool: "message-crate";
   mode: "append";

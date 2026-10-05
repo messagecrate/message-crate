@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { ImportIssue } from "../../components/import/ImportSummaryPanel";
 import type {
   AttachmentForecast,
-  PushFinishedReport,
+  UploadFinishedReport,
   SizeVerdict,
   StagingSummary,
 } from "../../lib/tauri";
 import { importOutcome, stableStem } from "./importOutcome";
 
-function report(overrides: Partial<PushFinishedReport> = {}): PushFinishedReport {
+function report(overrides: Partial<UploadFinishedReport> = {}): UploadFinishedReport {
   return {
     ok: true,
     cancelled: false,

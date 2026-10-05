@@ -18,7 +18,7 @@ export type SourceFingerprint = {
 };
 
 /** The account's live import session, as the server reports it. */
-export type ActiveImportSession = {
+export type ActiveImportRun = {
   id: number;
   source: string;
   mode: string;
@@ -40,9 +40,9 @@ export type ActiveImportSession = {
  * The account's running Import Run, or null when there is none. At most one
  * runs at a time, so the first item of `status=running` is the one.
  */
-export async function getActiveImportSession(
+export async function getActiveImportRun(
   signal?: AbortSignal,
-): Promise<ActiveImportSession | null> {
+): Promise<ActiveImportRun | null> {
   const session = (await listImports({ status: "running", limit: 1 }, { signal })).items[0];
   if (!session) return null;
   return {
@@ -94,7 +94,7 @@ export async function setImportStage(
  * recorded as cancelled with `issues`, the Import Errors it recorded before,
  * and `notes`.
  */
-export async function discardImportSession(
+export async function discardImportRun(
   id: number,
   issues: components["schemas"]["ImportIssueRequest"][],
   notes: components["schemas"]["ImportNoteRequest"][],

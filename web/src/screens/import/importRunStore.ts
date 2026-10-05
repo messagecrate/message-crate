@@ -37,7 +37,7 @@ export type ImportRunState = {
   form: ImportJobFormValues | null;
   summaryView: ImportSummaryView | null;
   stagingDir: string | null;
-  importSessionId: number | null;
+  importRunId: number | null;
   /** What the run directory held once Staging finished; the Staging row's facts. */
   stagingSummary: StagingSummary | null;
   /**
@@ -95,7 +95,7 @@ export function initialImportRunState(steps: ImportStep[]): ImportRunState {
     form: null,
     summaryView: null,
     stagingDir: null,
-    importSessionId: null,
+    importRunId: null,
     stagingSummary: null,
     mediaSummary: null,
     mediaFailedCount: null,

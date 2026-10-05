@@ -7,7 +7,7 @@
 
 import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ActiveImportSession } from "../lib/importSession";
+import type { ActiveImportRun } from "../lib/importRun";
 import type { StagingSummary } from "../lib/tauri";
 import { mockedAuth, renderWithProviders } from "../test/providers";
 import { setupUser } from "../test/user";
@@ -40,8 +40,8 @@ const cancelMock = vi.hoisted(() => vi.fn());
 const returnToFormMock = vi.hoisted(() => vi.fn());
 const continueAfterIdentityStopMock = vi.hoisted(() => vi.fn());
 const cancelIdentityStopMock = vi.hoisted(() => vi.fn());
-const getActiveImportSessionMock = vi.hoisted(() => vi.fn());
-const discardImportSessionMock = vi.hoisted(() => vi.fn());
+const getActiveImportRunMock = vi.hoisted(() => vi.fn());
+const discardImportRunMock = vi.hoisted(() => vi.fn());
 const invokeDeleteStagingMock = vi.hoisted(() => vi.fn());
 const invokePathStatMock = vi.hoisted(() => vi.fn());
 const apiPostMock = vi.hoisted(() => vi.fn());
@@ -63,7 +63,7 @@ vi.mock("./import/useImportJob", async (importOriginal) => {
       form: null,
       summaryView: null,
       stagingDir: null,
-      importSessionId: null,
+      importRunId: null,
       stagingSummary: hookState.stagingSummary,
       mediaSummary: hookState.mediaSummary,
       mediaFailedCount: hookState.mediaFailedCount,
@@ -86,7 +86,7 @@ vi.mock("./import/useImportJob", async (importOriginal) => {
       // notice, and its reading of the run record is the hook's own test.
       discardRun: async (sessionId: number, stagingDir: string | null) => {
         await Promise.allSettled([
-          discardImportSessionMock(sessionId),
+          discardImportRunMock(sessionId),
           stagingDir != null ? invokeDeleteStagingMock({ staging_dir: stagingDir }) : undefined,
         ]);
       },
@@ -95,9 +95,9 @@ vi.mock("./import/useImportJob", async (importOriginal) => {
   };
 });
 
-vi.mock("../lib/importSession", () => ({
-  getActiveImportSession: (...args: unknown[]) => getActiveImportSessionMock(...args),
-  discardImportSession: (...args: unknown[]) => discardImportSessionMock(...args),
+vi.mock("../lib/importRun", () => ({
+  getActiveImportRun: (...args: unknown[]) => getActiveImportRunMock(...args),
+  discardImportRun: (...args: unknown[]) => discardImportRunMock(...args),
 }));
 
 vi.mock("../lib/deviceId", () => ({
@@ -199,7 +199,7 @@ function stagingSummary(overrides: Partial<StagingSummary> = {}): StagingSummary
   };
 }
 
-function session(overrides: Partial<ActiveImportSession> = {}): ActiveImportSession {
+function session(overrides: Partial<ActiveImportRun> = {}): ActiveImportRun {
   return {
     id: 7,
     source: "imessage",
@@ -276,9 +276,9 @@ describe("ImportScreen entering Import", () => {
     returnToFormMock.mockReset();
     continueAfterIdentityStopMock.mockReset();
     cancelIdentityStopMock.mockReset();
-    getActiveImportSessionMock.mockReset();
-    discardImportSessionMock.mockReset();
-    discardImportSessionMock.mockResolvedValue(undefined);
+    getActiveImportRunMock.mockReset();
+    discardImportRunMock.mockReset();
+    discardImportRunMock.mockResolvedValue(undefined);
     invokeDeleteStagingMock.mockReset();
     invokeDeleteStagingMock.mockResolvedValue(undefined);
     invokePathStatMock.mockReset();
@@ -300,8 +300,8 @@ describe("ImportScreen entering Import", () => {
   });
 
   it("renders neither the form nor a panel while the active-session check is in flight", async () => {
-    const pending = deferred<ActiveImportSession | null>();
-    getActiveImportSessionMock.mockReturnValue(pending.promise);
+    const pending = deferred<ActiveImportRun | null>();
+    getActiveImportRunMock.mockReturnValue(pending.promise);
 
     renderWithProviders(<ImportScreen />);
 
@@ -317,7 +317,7 @@ describe("ImportScreen entering Import", () => {
   });
 
   it("shows the form when there is no active session", async () => {
-    getActiveImportSessionMock.mockResolvedValue(null);
+    getActiveImportRunMock.mockResolvedValue(null);
     renderWithProviders(<ImportScreen />);
 
     expect(await screen.findByTestId("import-form")).toBeInTheDocument();
@@ -325,7 +325,7 @@ describe("ImportScreen entering Import", () => {
   });
 
   it("falls through to the form when the server cannot answer", async () => {
-    getActiveImportSessionMock.mockRejectedValue(new Error("network down"));
+    getActiveImportRunMock.mockRejectedValue(new Error("network down"));
     renderWithProviders(<ImportScreen />);
 
     expect(await screen.findByTestId("import-form")).toBeInTheDocument();
@@ -333,16 +333,16 @@ describe("ImportScreen entering Import", () => {
   });
 
   it("shows the resume panel instead of the form for a resumable session", async () => {
-    getActiveImportSessionMock.mockResolvedValue(session({ stage: "upload" }));
+    getActiveImportRunMock.mockResolvedValue(session({ stage: "upload" }));
     renderWithProviders(<ImportScreen />);
 
     expect(await screen.findByTestId("resume-panel")).toBeInTheDocument();
-    expect(screen.getByTestId("resume-kind")).toHaveTextContent("resume_push");
+    expect(screen.getByTestId("resume-kind")).toHaveTextContent("resume_upload");
     expect(screen.queryByTestId("import-form")).not.toBeInTheDocument();
   });
 
   it("says the run directory could not be checked, not that it is gone, when the stat fails", async () => {
-    getActiveImportSessionMock.mockResolvedValue(session({ stage: "upload" }));
+    getActiveImportRunMock.mockResolvedValue(session({ stage: "upload" }));
     invokePathStatMock.mockRejectedValue(new Error("ipc down"));
     renderWithProviders(<ImportScreen />);
 
@@ -352,13 +352,13 @@ describe("ImportScreen entering Import", () => {
 
   it("discards the session and drops through to the form", async () => {
     const user = setupUser();
-    getActiveImportSessionMock.mockResolvedValue(session({ stage: "upload" }));
+    getActiveImportRunMock.mockResolvedValue(session({ stage: "upload" }));
     renderWithProviders(<ImportScreen />);
 
     await screen.findByTestId("resume-panel");
     await user.click(screen.getByText("discard-action"));
 
-    expect(discardImportSessionMock).toHaveBeenCalledWith(7);
+    expect(discardImportRunMock).toHaveBeenCalledWith(7);
     expect(await screen.findByTestId("import-form")).toBeInTheDocument();
   });
 
@@ -367,15 +367,15 @@ describe("ImportScreen entering Import", () => {
     // only on the server, so the badge reads it from there. Discard ends it,
     // and the badge must go at once rather than on a later refetch.
     const user = setupUser();
-    let running: ActiveImportSession | null = session({ stage: "staging_review" });
-    getActiveImportSessionMock.mockImplementation(async () => running);
+    let running: ActiveImportRun | null = session({ stage: "staging_review" });
+    getActiveImportRunMock.mockImplementation(async () => running);
     listImportsMock.mockImplementation(async () => ({
       items: running ? [running] : [],
       total: running ? 1 : 0,
       limit: 1,
       offset: 0,
     }));
-    discardImportSessionMock.mockImplementation(async () => {
+    discardImportRunMock.mockImplementation(async () => {
       running = null;
     });
     /** The sidebar's Import badge, as `LeftPanel` reads it. */
@@ -401,9 +401,9 @@ describe("ImportScreen entering Import", () => {
     // cancelRun already deletes the run directory when a review is
     // cancelled -- a panel discard is the same operation reached
     // through a different button, and used to only call
-    // discardImportSession, orphaning a potentially multi-GB directory.
+    // discardImportRun, orphaning a potentially multi-GB directory.
     const user = setupUser();
-    getActiveImportSessionMock.mockResolvedValue(
+    getActiveImportRunMock.mockResolvedValue(
       session({
         stage: "upload",
         device_id: "this-device",
@@ -415,7 +415,7 @@ describe("ImportScreen entering Import", () => {
     await screen.findByTestId("resume-panel");
     await user.click(screen.getByText("discard-action"));
 
-    expect(discardImportSessionMock).toHaveBeenCalledWith(7);
+    expect(discardImportRunMock).toHaveBeenCalledWith(7);
     expect(invokeDeleteStagingMock).toHaveBeenCalledWith({
       staging_dir: "/home/u/message-crate/staging-260830",
     });
@@ -426,7 +426,7 @@ describe("ImportScreen entering Import", () => {
     // A discard used to drop a refused delete without a word, leaving a
     // directory of several gigabytes on disk (#1154).
     const user = setupUser();
-    getActiveImportSessionMock.mockResolvedValue(null);
+    getActiveImportRunMock.mockResolvedValue(null);
     hookState.stagingDeleteFailure = {
       path: "/home/u/message-crate/staging-260830",
       reason: "Permission denied",
@@ -445,7 +445,7 @@ describe("ImportScreen entering Import", () => {
     // whose files are staged on that other install, not here -- deleting a
     // local path with the same name would be wrong, or a no-op at best.
     const user = setupUser();
-    getActiveImportSessionMock.mockResolvedValue(
+    getActiveImportRunMock.mockResolvedValue(
       session({
         stage: "upload",
         device_id: "another-device",
@@ -458,14 +458,14 @@ describe("ImportScreen entering Import", () => {
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("other_device");
     await user.click(screen.getByText("discard-action"));
 
-    expect(discardImportSessionMock).toHaveBeenCalledWith(7);
+    expect(discardImportRunMock).toHaveBeenCalledWith(7);
     expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
     expect(await screen.findByTestId("import-form")).toBeInTheDocument();
   });
 
   it("resumes the push against the existing session without creating a new one", async () => {
     const user = setupUser();
-    getActiveImportSessionMock.mockResolvedValue(
+    getActiveImportRunMock.mockResolvedValue(
       session({
         stage: "upload",
         staging_dir: "/home/u/message-crate/staging-260830",
@@ -503,7 +503,7 @@ describe("ImportScreen entering Import", () => {
     const [form, resume] = startImportMock.mock.calls[0] as [unknown, unknown];
     expect(form).toMatchObject({ source: "imessage-ios", backupPath: "/backups/iphone.tar" });
     expect(resume).toEqual({ sessionId: 7, stagingDir: "/home/u/message-crate/staging-260830" });
-    expect(discardImportSessionMock).not.toHaveBeenCalled();
+    expect(discardImportRunMock).not.toHaveBeenCalled();
   });
 
   const restorableForm = {
@@ -538,7 +538,7 @@ describe("ImportScreen entering Import", () => {
     "routes a session at %s through resumeAtReview, not startImport or discard",
     async (stage, kind) => {
       const user = setupUser();
-      getActiveImportSessionMock.mockResolvedValue(
+      getActiveImportRunMock.mockResolvedValue(
         session({
           stage,
           staging_dir: "/home/u/message-crate/staging-260830",
@@ -552,17 +552,17 @@ describe("ImportScreen entering Import", () => {
       await user.click(screen.getByText("resume-action"));
 
       expect(resumeAtReviewMock).toHaveBeenCalledTimes(1);
-      const [resumedSession, resumedForm] = resumeAtReviewMock.mock.calls[0] as [
-        ActiveImportSession,
+      const [resumedRun, resumedForm] = resumeAtReviewMock.mock.calls[0] as [
+        ActiveImportRun,
         unknown,
       ];
-      expect(resumedSession.id).toBe(7);
-      expect(resumedSession.stage).toBe(stage);
+      expect(resumedRun.id).toBe(7);
+      expect(resumedRun.stage).toBe(stage);
       // The screen's own already-validated parse, not a second one inside
       // the hook.
       expect(resumedForm).toMatchObject({ source: "imessage-ios", attachmentMedia: "copy" });
       expect(startImportMock).not.toHaveBeenCalled();
-      expect(discardImportSessionMock).not.toHaveBeenCalled();
+      expect(discardImportRunMock).not.toHaveBeenCalled();
     },
   );
 
@@ -573,14 +573,14 @@ describe("ImportScreen entering Import", () => {
     // re-triggers this screen's own check for a running Import Run, and
     // since nothing was touched server-side, it finds the same run and
     // shows the panel again -- this is the retry.
-    getActiveImportSessionMock.mockResolvedValue(
+    getActiveImportRunMock.mockResolvedValue(
       session({ stage: "staging_review", form: restorableForm }),
     );
     const { rerender } = renderWithProviders(<ImportScreen />);
 
     await screen.findByTestId("resume-panel");
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("resume_review");
-    expect(getActiveImportSessionMock).toHaveBeenCalledTimes(1);
+    expect(getActiveImportRunMock).toHaveBeenCalledTimes(1);
 
     // Simulate resumeAtReview's failure path from inside the (mocked) hook:
     // phase moves to "running" while it recomputes, then back to "form"
@@ -595,7 +595,7 @@ describe("ImportScreen entering Import", () => {
       rerender(<ImportScreen />);
     });
 
-    expect(getActiveImportSessionMock).toHaveBeenCalledTimes(2);
+    expect(getActiveImportRunMock).toHaveBeenCalledTimes(2);
     expect(await screen.findByTestId("resume-panel")).toBeInTheDocument();
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("resume_review");
     expect(screen.getByTestId("resume-error")).toHaveTextContent("disk unavailable");
@@ -603,7 +603,7 @@ describe("ImportScreen entering Import", () => {
 
   it("discards the old session before restarting when the extract never finished", async () => {
     const user = setupUser();
-    getActiveImportSessionMock.mockResolvedValue(
+    getActiveImportRunMock.mockResolvedValue(
       session({
         stage: "parse",
         form: {
@@ -637,7 +637,7 @@ describe("ImportScreen entering Import", () => {
     expect(screen.getByTestId("resume-kind")).toHaveTextContent("restart");
     await user.click(screen.getByText("resume-action"));
 
-    expect(discardImportSessionMock).toHaveBeenCalledWith(7);
+    expect(discardImportRunMock).toHaveBeenCalledWith(7);
     // The old directory goes with the session: a restart writes into a new one,
     // and nothing will ever reach this one again.
     expect(invokeDeleteStagingMock).toHaveBeenCalledWith({
@@ -651,7 +651,7 @@ describe("ImportScreen entering Import", () => {
 
   it("picks up an interrupted copy in the directory it was already writing into", async () => {
     const user = setupUser();
-    getActiveImportSessionMock.mockResolvedValue(
+    getActiveImportRunMock.mockResolvedValue(
       session({
         stage: "write",
         source_fingerprint: {
@@ -702,7 +702,7 @@ describe("ImportScreen entering Import", () => {
 
     await user.click(screen.getByText("resume-action"));
 
-    expect(discardImportSessionMock).not.toHaveBeenCalled();
+    expect(discardImportRunMock).not.toHaveBeenCalled();
     expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
     expect(startImportMock).toHaveBeenCalledTimes(1);
     const [, resume, resumeWrite] = startImportMock.mock.calls[0] as [unknown, unknown, unknown];
@@ -715,7 +715,7 @@ describe("ImportScreen entering Import", () => {
   });
 
   it("says the backup changed when its size no longer matches what was recorded", async () => {
-    getActiveImportSessionMock.mockResolvedValue(
+    getActiveImportRunMock.mockResolvedValue(
       session({
         stage: "write",
         source_fingerprint: {
@@ -744,38 +744,38 @@ describe("ImportScreen entering Import", () => {
     // A swallowed final /complete, or a restart whose discard failed,
     // leaves a session open server-side that the screen has forgotten. If
     // Back never re-checks, the user gets a form whose Import button 409s.
-    getActiveImportSessionMock.mockResolvedValue(null);
+    getActiveImportRunMock.mockResolvedValue(null);
     const { rerender } = renderWithProviders(<ImportScreen />);
 
     expect(await screen.findByTestId("import-form")).toBeInTheDocument();
-    expect(getActiveImportSessionMock).toHaveBeenCalledTimes(1);
+    expect(getActiveImportRunMock).toHaveBeenCalledTimes(1);
 
     hookState.phase = "running";
     await act(async () => {
       rerender(<ImportScreen />);
     });
-    expect(getActiveImportSessionMock).toHaveBeenCalledTimes(1);
+    expect(getActiveImportRunMock).toHaveBeenCalledTimes(1);
 
     hookState.phase = "done";
     await act(async () => {
       rerender(<ImportScreen />);
     });
-    expect(getActiveImportSessionMock).toHaveBeenCalledTimes(1);
+    expect(getActiveImportRunMock).toHaveBeenCalledTimes(1);
 
-    getActiveImportSessionMock.mockResolvedValue(session({ stage: "upload" }));
+    getActiveImportRunMock.mockResolvedValue(session({ stage: "upload" }));
     hookState.phase = "form";
     await act(async () => {
       rerender(<ImportScreen />);
     });
 
-    expect(getActiveImportSessionMock).toHaveBeenCalledTimes(2);
+    expect(getActiveImportRunMock).toHaveBeenCalledTimes(2);
     expect(await screen.findByTestId("resume-panel")).toBeInTheDocument();
-    expect(screen.getByTestId("resume-kind")).toHaveTextContent("resume_push");
+    expect(screen.getByTestId("resume-kind")).toHaveTextContent("resume_upload");
   });
 
   it("runs one restart when the resume action is double-clicked", async () => {
     const user = setupUser();
-    getActiveImportSessionMock.mockResolvedValue(
+    getActiveImportRunMock.mockResolvedValue(
       session({
         stage: "parse",
         form: {
@@ -806,7 +806,7 @@ describe("ImportScreen entering Import", () => {
     // The panel stays mounted across this round trip by design, so the
     // second click lands on a live button.
     const pendingDiscard = deferred<void>();
-    discardImportSessionMock.mockReturnValue(pendingDiscard.promise);
+    discardImportRunMock.mockReturnValue(pendingDiscard.promise);
     renderWithProviders(<ImportScreen />);
 
     await screen.findByTestId("resume-panel");
@@ -814,26 +814,26 @@ describe("ImportScreen entering Import", () => {
     await user.click(screen.getByText("resume-action"));
     await user.click(screen.getByText("discard-action"));
 
-    expect(discardImportSessionMock).toHaveBeenCalledTimes(1);
+    expect(discardImportRunMock).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       pendingDiscard.resolve();
       await pendingDiscard.promise;
     });
 
-    expect(discardImportSessionMock).toHaveBeenCalledTimes(1);
+    expect(discardImportRunMock).toHaveBeenCalledTimes(1);
     expect(startImportMock).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to a settings-unreadable panel when the stored form snapshot is malformed", async () => {
     const user = setupUser();
-    getActiveImportSessionMock.mockResolvedValue(
+    getActiveImportRunMock.mockResolvedValue(
       session({ stage: "upload", form: { nonsense: true } }),
     );
     renderWithProviders(<ImportScreen />);
 
     await screen.findByTestId("resume-panel");
-    expect(screen.getByTestId("resume-kind")).toHaveTextContent("resume_push");
+    expect(screen.getByTestId("resume-kind")).toHaveTextContent("resume_upload");
     await user.click(screen.getByText("resume-action"));
 
     expect(startImportMock).not.toHaveBeenCalled();
@@ -842,20 +842,20 @@ describe("ImportScreen entering Import", () => {
 
   it("still drops to the form when discarding from the panel fails server-side", async () => {
     const user = setupUser();
-    getActiveImportSessionMock.mockResolvedValue(session({ stage: "upload" }));
-    discardImportSessionMock.mockRejectedValue(new Error("network down"));
+    getActiveImportRunMock.mockResolvedValue(session({ stage: "upload" }));
+    discardImportRunMock.mockRejectedValue(new Error("network down"));
     renderWithProviders(<ImportScreen />);
 
     await screen.findByTestId("resume-panel");
     await user.click(screen.getByText("discard-action"));
 
-    expect(discardImportSessionMock).toHaveBeenCalledWith(7);
+    expect(discardImportRunMock).toHaveBeenCalledWith(7);
     expect(await screen.findByTestId("import-form")).toBeInTheDocument();
   });
 
   it("still restarts when discarding the old session before a restart fails server-side", async () => {
     const user = setupUser();
-    getActiveImportSessionMock.mockResolvedValue(
+    getActiveImportRunMock.mockResolvedValue(
       session({
         stage: "parse",
         form: {
@@ -883,13 +883,13 @@ describe("ImportScreen entering Import", () => {
         },
       }),
     );
-    discardImportSessionMock.mockRejectedValue(new Error("network down"));
+    discardImportRunMock.mockRejectedValue(new Error("network down"));
     renderWithProviders(<ImportScreen />);
 
     await screen.findByTestId("resume-panel");
     await user.click(screen.getByText("resume-action"));
 
-    expect(discardImportSessionMock).toHaveBeenCalledWith(7);
+    expect(discardImportRunMock).toHaveBeenCalledWith(7);
     expect(startImportMock).toHaveBeenCalledTimes(1);
     const [form, resume] = startImportMock.mock.calls[0] as [unknown, unknown];
     expect(form).toMatchObject({ source: "imessage-ios", backupPath: "/backups/iphone.tar" });
@@ -898,7 +898,7 @@ describe("ImportScreen entering Import", () => {
 
   it("asks for the backup password again when a resumed Staging will read an encrypted backup", async () => {
     const user = setupUser();
-    getActiveImportSessionMock.mockResolvedValue(
+    getActiveImportRunMock.mockResolvedValue(
       session({ stage: "write", form: storedForm({ backupPasswordGiven: true }) }),
     );
     renderWithProviders(<ImportScreen />);
@@ -922,7 +922,7 @@ describe("ImportScreen entering Import", () => {
 
   it("asks for the backup password again when a restart will read an encrypted backup", async () => {
     const user = setupUser();
-    getActiveImportSessionMock.mockResolvedValue(
+    getActiveImportRunMock.mockResolvedValue(
       session({ stage: "parse", form: storedForm({ backupPasswordGiven: true }) }),
     );
     renderWithProviders(<ImportScreen />);
@@ -933,7 +933,7 @@ describe("ImportScreen entering Import", () => {
 
     await user.click(screen.getByText("resume-action"));
 
-    expect(discardImportSessionMock).toHaveBeenCalledWith(7);
+    expect(discardImportRunMock).toHaveBeenCalledWith(7);
     expect(startImportMock).toHaveBeenCalledTimes(1);
     const [form, resume, resumeWrite] = startImportMock.mock.calls[0] as [
       unknown,
@@ -952,7 +952,7 @@ describe("ImportScreen entering Import", () => {
     "asks for the WhatsApp key again when %s will read the backup",
     async (_label, stage, kind) => {
       const user = setupUser();
-      getActiveImportSessionMock.mockResolvedValue(
+      getActiveImportRunMock.mockResolvedValue(
         session({
           source: "whatsapp",
           stage,
@@ -979,7 +979,7 @@ describe("ImportScreen entering Import", () => {
 
   it("asks for nothing when the stored Import Run had no password or key", async () => {
     const user = setupUser();
-    getActiveImportSessionMock.mockResolvedValue(session({ stage: "write", form: storedForm() }));
+    getActiveImportRunMock.mockResolvedValue(session({ stage: "write", form: storedForm() }));
     renderWithProviders(<ImportScreen />);
 
     await screen.findByTestId("resume-panel");
@@ -994,13 +994,13 @@ describe("ImportScreen entering Import", () => {
 
   it("asks for nothing on a resume into Upload, which reads no backup", async () => {
     const user = setupUser();
-    getActiveImportSessionMock.mockResolvedValue(
+    getActiveImportRunMock.mockResolvedValue(
       session({ stage: "upload", form: storedForm({ backupPasswordGiven: true }) }),
     );
     renderWithProviders(<ImportScreen />);
 
     await screen.findByTestId("resume-panel");
-    expect(screen.getByTestId("resume-kind")).toHaveTextContent("resume_push");
+    expect(screen.getByTestId("resume-kind")).toHaveTextContent("resume_upload");
     expect(screen.getByTestId("resume-secret")).toHaveTextContent("none");
 
     await user.click(screen.getByText("resume-action"));
@@ -1032,9 +1032,9 @@ describe("ImportScreen gates", () => {
     returnToFormMock.mockReset();
     continueAfterIdentityStopMock.mockReset();
     cancelIdentityStopMock.mockReset();
-    getActiveImportSessionMock.mockReset();
-    getActiveImportSessionMock.mockResolvedValue(null);
-    discardImportSessionMock.mockReset();
+    getActiveImportRunMock.mockReset();
+    getActiveImportRunMock.mockResolvedValue(null);
+    discardImportRunMock.mockReset();
     invokePathStatMock.mockReset();
     apiPostMock.mockReset();
     apiPostMock.mockResolvedValue({ items: [], total: 0, limit: 500, offset: 0 });

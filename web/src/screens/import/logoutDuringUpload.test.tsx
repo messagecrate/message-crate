@@ -9,7 +9,7 @@
 import { act, renderHook, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getToken } from "../../lib/api";
-import type { PushFinishedReport, TauriJobResult } from "../../lib/tauri";
+import type { UploadFinishedReport, TauriJobResult } from "../../lib/tauri";
 import { setupUser } from "../../test/user";
 
 /** Every call that matters to the order, in the order it was made. */
@@ -23,21 +23,21 @@ const cancelMock = vi.fn();
 const deleteStagingMock = vi.fn();
 
 /** Settles the running push with the report the desktop side sends. */
-let finishPush: ((result: TauriJobResult) => void) | null = null;
+let finishUpload: ((result: TauriJobResult) => void) | null = null;
 
 vi.mock("../../lib/tauri", () => ({
   awaitTauriJob: async (_job: string, invokeFn: () => Promise<void>) => {
     await invokeFn();
     calls.push("push started");
     return new Promise<TauriJobResult>((resolve) => {
-      finishPush = resolve;
+      finishUpload = resolve;
     });
   },
   invokeCancel: async () => {
     calls.push("cancel");
     cancelMock();
   },
-  invokePush: async () => {},
+  invokeUpload: async () => {},
   invokeReadImportRunRecord: async () => null,
   invokeSaveImportRunRecord: async () => {
     calls.push("pause recorded");
@@ -59,8 +59,8 @@ vi.mock("../../lib/serverApi", async (importOriginal) => ({
   completeImport: (...args: unknown[]) => completeImportMock(...args),
 }));
 
-vi.mock("../../lib/importSession", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../lib/importSession")>()),
+vi.mock("../../lib/importRun", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/importRun")>()),
   setImportStage: (...args: unknown[]) => setImportStageMock(...args),
 }));
 
@@ -116,7 +116,7 @@ const form = {
 };
 
 /** What `run.rs` reports when the cancel flag stops the push after 200 of 681. */
-function pausedReport(): PushFinishedReport {
+function pausedReport(): UploadFinishedReport {
   return {
     ok: false,
     cancelled: true,
@@ -175,7 +175,7 @@ describe("logging out during an Upload", () => {
     localStorage.clear();
     resetImportRun();
     calls.length = 0;
-    finishPush = null;
+    finishUpload = null;
     serverLogoutMock.mockReset();
     completeImportMock.mockReset();
     completeImportMock.mockResolvedValue({});
@@ -185,12 +185,12 @@ describe("logging out during an Upload", () => {
     cancelMock.mockReset();
     deleteStagingMock.mockReset();
     // The push stops when the cancel flag is set, the way `run.rs` does.
-    cancelMock.mockImplementation(() => finishPush?.({ summary: "Push", report: pausedReport() }));
+    cancelMock.mockImplementation(() => finishUpload?.({ summary: "Push", report: pausedReport() }));
   });
 
   // An Upload a test left running would make the next test's logout ask.
   afterEach(async () => {
-    finishPush?.({ summary: "Push", report: pausedReport() });
+    finishUpload?.({ summary: "Push", report: pausedReport() });
     await waitFor(() => expect(isUploadRunning()).toBe(false));
   });
 
@@ -305,7 +305,7 @@ describe("logging out during an Upload", () => {
 
     // What run.rs reports when a 401 stops the push after 200 of 681.
     act(() => {
-      finishPush?.({ summary: "Push", report: { ...pausedReport(), session_refused: true } });
+      finishUpload?.({ summary: "Push", report: { ...pausedReport(), session_refused: true } });
     });
 
     await waitFor(() => expect(result.current.auth.isAuthenticated).toBe(false));
@@ -359,7 +359,7 @@ describe("logging out during an Upload", () => {
     expect(calls).not.toContain("deleted /home/sam/staging-iphone");
 
     act(() => {
-      finishPush?.({ summary: "Push", report: { ...pausedReport(), session_refused: true } });
+      finishUpload?.({ summary: "Push", report: { ...pausedReport(), session_refused: true } });
     });
 
     await waitFor(() => expect(calls).toContain("deleted /home/sam/staging-iphone"));
@@ -393,7 +393,7 @@ describe("logging out during an Upload", () => {
 
     // The old push meets its revoked session only now.
     act(() => {
-      finishPush?.({ summary: "Push", report: { ...pausedReport(), session_refused: true } });
+      finishUpload?.({ summary: "Push", report: { ...pausedReport(), session_refused: true } });
     });
     await waitFor(() => expect(isUploadRunning()).toBe(false));
 

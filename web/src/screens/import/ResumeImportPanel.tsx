@@ -2,7 +2,7 @@ import { useState } from "react";
 import Button from "../../components/Button";
 import PasswordField from "../../components/PasswordField";
 import { desktopJobRunningText, useDesktopJob } from "../../lib/desktopJob";
-import type { ActiveImportSession } from "../../lib/importSession";
+import type { ActiveImportRun } from "../../lib/importRun";
 import type { SnapshotSecret } from "./formSnapshot";
 import { hintStyle, StackedField } from "./ImportFormUi";
 import type { ResumeDecision } from "./resumeDecision";
@@ -10,14 +10,14 @@ import type { ResumeDecision } from "./resumeDecision";
 type ResumableKind = Exclude<ResumeDecision["kind"], "none">;
 
 type PanelCopy = {
-  heading: (session: ActiveImportSession) => string;
-  body: (session: ActiveImportSession) => string;
+  heading: (session: ActiveImportRun) => string;
+  body: (session: ActiveImportRun) => string;
   primary: { label: string; action: "resume" | "discard" };
   secondary?: { label: string; action: "discard" };
 };
 
 const COPY: Record<ResumableKind, PanelCopy> = {
-  resume_push: {
+  resume_upload: {
     heading: () => "Finish your last import",
     body: () =>
       "Your messages are staged. Resuming the Upload sends the conversations that are not in your Message Crate yet.",

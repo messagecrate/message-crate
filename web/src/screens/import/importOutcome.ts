@@ -1,7 +1,7 @@
 import type { ImportIssue } from "../../components/import/ImportSummaryPanel";
 import type {
   AttachmentForecast,
-  PushFinishedReport,
+  UploadFinishedReport,
   SizeVerdict,
   StagingSummary,
 } from "../../lib/tauri";
@@ -100,7 +100,7 @@ function isApprovedOmission(
  * `approved` every issue counts.
  */
 export function importOutcome(args: {
-  report: PushFinishedReport | undefined;
+  report: UploadFinishedReport | undefined;
   threw: boolean;
   issues: readonly ImportIssue[];
   approved?: StagingSummary;
