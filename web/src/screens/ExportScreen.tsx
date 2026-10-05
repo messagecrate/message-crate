@@ -71,8 +71,8 @@ function formatLabel(id: ExportFormat): string {
  *
  * The two steps need two directories. `message-crate-pull` only writes JSONL, and
  * `message-reexport` refuses to convert a directory into itself, so a non-JSONL
- * export pulls into a run directory first and converts out of it into the
- * directory the person picked. The run directory is deleted either way, so a
+ * export pulls into a pull directory first and converts out of it into the
+ * directory the person picked. The pull directory is deleted either way, so a
  * failed conversion does not leave a copy of the conversations behind.
  *
  * The scope is Everything or Search. The screen opens in Search when its URL
@@ -104,7 +104,7 @@ export default function ExportScreen() {
   // resolves (a `home_dir` round trip on the first export), and between the
   // pull and the conversion. The desktop refuses a second job while one runs
   // (`jobs.rs`), but between two jobs it has nothing to refuse, and two exports
-  // begun in the same second would share a run directory, so the first
+  // begun in the same second would share a pull directory, so the first
   // cleanup would delete the second's files. This covers the whole run.
   const [busy, setBusy] = useState(false);
   // The directory and format each export was started with, so the success
@@ -180,13 +180,13 @@ export default function ExportScreen() {
             { onLog: appendLog },
           );
         } finally {
-          // Best effort: a run directory left behind is worth a log line, not
+          // Best effort: a pull directory left behind is worth a log line, not
           // a failed export the person cannot tell apart from a real one.
           try {
             await invokeDeleteStaging({ staging_dir: stagingDir });
           } catch (cleanupError: unknown) {
             appendLog(
-              `Could not remove the run directory ${stagingDir}: ${
+              `Could not remove the pull directory ${stagingDir}: ${
                 cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
               }`,
             );
