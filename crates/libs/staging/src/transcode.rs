@@ -750,8 +750,9 @@ fn apply_transcode(
                 .len();
             if produced_len > options.asset_max_bytes {
                 // Skipped, not reverted: falling back to the original would
-                // store the format the person asked to be rid of. Both the derivative and
-                // the original go, so nothing survives to point at. The note
+                // store the format the person asked to be rid of. Both the
+                // derivative and the original go, so nothing survives to
+                // point at. The note
                 // is written first, while the original is still on disk: a
                 // stop before the delete leaves the original, and the next
                 // run converts it again and rewrites the note.

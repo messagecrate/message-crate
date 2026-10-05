@@ -122,6 +122,8 @@ sequenceDiagram
 - Desktop App is running.
   - Vite is serving the WebView on `:5173`.
 
+#### How logging in runs
+
 The developer types credentials in the SPA. Login is an Auth API call to the server, not a login to Tauri.
 
 ```mermaid
@@ -149,6 +151,8 @@ sequenceDiagram
 - Desktop App is running.
   - Vite is serving webview on `:5173`.
 - User is logged in.
+
+#### How an import runs
 
 Messages and attachments are uploaded to the server using the `message-crate-push` library.
 
@@ -183,6 +187,8 @@ sequenceDiagram
 - Desktop App is running.
   - Vite is serving webview on `:5173`.
 - User is logged in.
+
+#### How an export runs
 
 Messages and attachments are downloaded from the server using the `message-crate-pull` library.
 

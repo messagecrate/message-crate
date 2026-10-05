@@ -504,9 +504,9 @@ fn derivative_name_impl(
 /// Transcode `src` and write the derivative to exactly `dest`.
 ///
 /// `src` is never modified or deleted: committing is the caller's, because it
-/// has to patch whatever points at the original first. Scratch
-/// left beside `src` by an interrupted run is cleared; scratch belonging to
-/// other files, and any `.in_progress` marker, is left alone.
+/// has to patch whatever points at the original first. Scratch left beside
+/// `src` by an interrupted run is cleared; scratch belonging to other files,
+/// and any `.in_progress` marker, is left alone.
 ///
 /// # Errors
 ///

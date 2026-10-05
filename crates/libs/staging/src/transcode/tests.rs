@@ -212,8 +212,8 @@ fn a_derivative_over_the_limit_becomes_too_large_and_keeps_the_message() {
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
     };
-    // Skipped, not reverted. Falling back to the original
-    // would store the format the user asked to be rid of.
+    // Skipped, not reverted. Falling back to the original would store the
+    // format the person asked to be rid of.
     let (dir, jsonl, original) = staged_one("photo.png", &test_png_bytes());
     let report = transcode_staged(
         dir.path(),

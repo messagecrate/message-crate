@@ -193,7 +193,7 @@ describe("resumeDecisionFor", () => {
   });
 
   it("ignores the fingerprint once the copy is done", () => {
-    // A changed source is irrelevant at either gate and during
+    // A changed source is irrelevant at either Review and during
     // the push — the staged folder is what those stages work from.
     expect(
       resumeDecisionFor({

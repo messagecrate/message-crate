@@ -1419,9 +1419,10 @@ describe("useImportJob wiring", () => {
   });
 
   it("does not complete the run on a cancelled media pass, so it stays resumable", async () => {
-    // A cancellation mid media pass gets the same recovery as a crash at
-    // that stage, and only an explicit discard ends a waiting run. Posting /complete would free the one-running-
-    // run slot and drop the run out of GET /v1/imports?status=running,
+    // A cancellation during the Media stage gets the same recovery as a
+    // crash at that stage, and only an explicit discard ends a waiting run.
+    // Posting /complete would free the one-running-run slot and drop the
+    // run out of GET /v1/imports?status=running,
     // stranding the staged folder with no run left to resume it
     // through — even though the "cancelled" outcome is still shown locally.
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
@@ -2642,7 +2643,8 @@ describe("useImportJob resumeAtReview", () => {
     expect(invokeSummarizeStagingMock).toHaveBeenCalledTimes(1);
     expect(result.current.phase).toBe("staging_review");
     expect(result.current.stagingSummary?.conversations).toBe(9);
-    // Landing on a gate to look at it again writes nothing.
+    // Landing on a Review to look at it again writes nothing, because the
+    // summary is recomputed from the folder.
     expect(setImportStageMock).not.toHaveBeenCalled();
     // Copy mode has no Media row: two rows, Staging already marked done,
     // matching the state a fresh startImport run would show right before
@@ -2715,7 +2717,8 @@ describe("useImportJob resumeAtReview", () => {
     expect(result.current.mediaSummary).toEqual(actual);
     // Media's own report is gone on a resume: unknown, not zero.
     expect(result.current.mediaFailedCount).toBeNull();
-    // Landing on a gate to look at it again writes nothing.
+    // Landing on a Review to look at it again writes nothing, because the
+    // summary is recomputed from the folder.
     expect(setImportStageMock).not.toHaveBeenCalled();
     // The media pass already ran (in an earlier session) to get here -- its
     // row shows done, not pending, and there are 3 of them.

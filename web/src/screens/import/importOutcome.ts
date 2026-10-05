@@ -94,9 +94,9 @@ function isApprovedOmission(
  *
  * A finished Upload with item-level problems is `completed_with_issues` —
  * unless `approved` already told the user about them: the plan the user
- * approved at their last gate (Gate 2's plan when there was a media pass,
- * Gate 1's otherwise) is diffed against the issues the
- * run reported, and a skip the plan already forecast is not news. Without
+ * approved at their last Review (the Media Review's plan when the run had a
+ * Media stage, the Staging Review's otherwise) is diffed against the issues
+ * the run reported, and a skip the plan already forecast is not news. Without
  * `approved` every issue counts.
  */
 export function importOutcome(args: {

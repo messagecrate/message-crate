@@ -567,7 +567,7 @@ describe("ImportScreen entering Import", () => {
   );
 
   it("re-fetches and reshows the resume panel with the failure surfaced when a gate resume's recompute fails", async () => {
-    // Only an explicit discard ends a waiting session, so a
+    // Only an explicit discard ends a waiting run, so a
     // failed recompute (useImportJob's resumeAtReview) never completes or
     // discards it -- it returns to the form phase instead. That phase
     // transition is what re-triggers this screen's own active-session
