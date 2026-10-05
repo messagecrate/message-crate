@@ -19,8 +19,6 @@ use crate::state::{AppState, JobName};
 pub struct PullArgs {
     /// Base URL of the server, for example `http://127.0.0.1:8080`.
     pub base_url: String,
-    /// Account name.
-    pub username: String,
     /// The logged-in Session's token, sent as the bearer token. Never an API
     /// Token, and never a password.
     pub token: String,
@@ -61,7 +59,6 @@ pub fn pull(
         let cfg = PullConfig {
             out_dir: PathBuf::from(&args.out_dir),
             base_url: args.base_url,
-            username: args.username,
             token: args.token,
             query: args.query,
             list: args.list,
