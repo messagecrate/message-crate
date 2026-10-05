@@ -814,6 +814,12 @@ fn apply_reexport_convert_restages_attachments_and_marks_missing_files() {
 #[test]
 fn a_json_that_is_not_an_ir_export_is_refused() {
     let dir = tempfile::tempdir().unwrap();
+    let partial = serde_json::json!({
+        "schema_version": message_ir::SCHEMA_VERSION,
+        "export": {},
+        "messages": [],
+    })
+    .to_string();
     for (name, body) in [
         // Valid JSON, wrong shape.
         ("package.json", r#"{"name":"thing","version":"1.0.0"}"#),
@@ -828,10 +834,7 @@ fn a_json_that_is_not_an_ir_export_is_refused() {
             r#"{"schema_version":"4","export":{},"conversation":{},"messages":[]}"#,
         ),
         // The right version but missing a required section.
-        (
-            "partial.json",
-            r#"{"schema_version":9,"export":{},"messages":[]}"#,
-        ),
+        ("partial.json", partial.as_str()),
         // Not JSON at all.
         ("broken.json", "{not json"),
     ] {
@@ -850,9 +853,15 @@ fn a_json_that_is_not_an_ir_export_is_refused() {
 #[test]
 fn a_jsonl_whose_first_line_is_not_a_conversation_is_refused() {
     let dir = tempfile::tempdir().unwrap();
+    let conversation = serde_json::json!({
+        "schema_version": message_ir::SCHEMA_VERSION,
+        "export": {},
+        "conversation": {},
+        "messages": [],
+    });
     std::fs::write(
         dir.path().join("log.jsonl"),
-        "{\"level\":\"info\",\"msg\":\"started\"}\n         {\"schema_version\":9,\"export\":{},\"conversation\":{},\"messages\":[]}\n",
+        format!("{{\"level\":\"info\",\"msg\":\"started\"}}\n{conversation}\n"),
     )
     .unwrap();
 
@@ -934,7 +943,13 @@ fn an_xml_that_is_not_an_smses_export_is_refused() {
 #[test]
 fn every_kind_of_sidecar_is_skipped() {
     let dir = tempfile::tempdir().unwrap();
-    let ir_json = r#"{"schema_version":9,"export":{},"conversation":{},"messages":[]}"#;
+    let ir_json = serde_json::json!({
+        "schema_version": message_ir::SCHEMA_VERSION,
+        "export": {},
+        "conversation": {},
+        "messages": [],
+    })
+    .to_string();
     for name in [
         "conversation.meta.json",
         "conversation.json.tmp",
@@ -942,7 +957,7 @@ fn every_kind_of_sidecar_is_skipped() {
         "smses.xml.tmp",
         "smses.xml.sbrbody",
     ] {
-        std::fs::write(dir.path().join(name), ir_json).unwrap();
+        std::fs::write(dir.path().join(name), &ir_json).unwrap();
     }
     std::fs::create_dir_all(dir.path().join("attachments")).unwrap();
     std::fs::write(dir.path().join("attachments/a.eml"), "From: x\n").unwrap();
@@ -1138,7 +1153,10 @@ fn a_directory_of_version_3_files_is_refused_by_name() {
         .unwrap_err();
         let message = format!("{error:#}");
         assert!(
-            message.contains("This file is schema version 3; Message Crate reads version 9"),
+            message.contains(&format!(
+                "This file is schema version 3; Message Crate reads version {}",
+                message_ir::SCHEMA_VERSION
+            )),
             "{message}"
         );
         assert!(
@@ -1167,7 +1185,10 @@ fn a_version_3_file_among_current_files_stops_the_run_and_writes_nothing() {
     .unwrap_err();
     let message = format!("{error:#}");
     assert!(
-        message.contains("This file is schema version 3; Message Crate reads version 9"),
+        message.contains(&format!(
+            "This file is schema version 3; Message Crate reads version {}",
+            message_ir::SCHEMA_VERSION
+        )),
         "{message}"
     );
     assert!(message.contains("old.jsonl"), "{message}");
