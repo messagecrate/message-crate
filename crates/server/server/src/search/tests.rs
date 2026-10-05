@@ -309,17 +309,17 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
     }
     let a = ACCOUNT;
     let mut f = Fixture {
-        me_handle: handle(&mut conn, a, "+15550000", "imessage").await,
+        me_handle: handle(&mut conn, a, "+15550110", "imessage").await,
         ..Fixture::default()
     };
 
     crate::test_support::link_identity(&mut conn, a, f.me_handle).await;
-    f.ana_handle = handle(&mut conn, a, "+15550001", "imessage").await;
-    f.bo_handle = handle(&mut conn, a, "+15550002", "sms").await;
+    f.ana_handle = handle(&mut conn, a, "+15550111", "imessage").await;
+    f.bo_handle = handle(&mut conn, a, "+15550112", "sms").await;
     f.jane_handle = handle(&mut conn, a, "jane.doe@example.com", "imessage").await;
     f.sam_handle = handle(&mut conn, a, "sam@example.org", "imessage").await;
-    f.nameless_handle = handle(&mut conn, a, "+15550009", "sms").await;
-    f.cy_handle = handle(&mut conn, a, "+15550003", "whatsapp").await;
+    f.nameless_handle = handle(&mut conn, a, "+15550119", "sms").await;
+    f.cy_handle = handle(&mut conn, a, "+15550113", "whatsapp").await;
 
     f.ana = contact(&mut conn, a, "Ana", &[f.ana_handle]).await;
     f.bo = contact(&mut conn, a, "Bo", &[f.bo_handle]).await;
@@ -623,7 +623,7 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
     // A conversation whose only message a later import superseded: marked a
     // duplicate, with no other kept copy in its conversation. The handle
     // links to no contact, so this adds no contact-level count.
-    let dup_only_handle = handle(&mut conn, a, "+15550098", "sms").await;
+    let dup_only_handle = handle(&mut conn, a, "+15550198", "sms").await;
     f.dup_only_conv = conversation(
         &mut conn,
         a,
@@ -658,7 +658,7 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
     f.archive = tag(&mut conn, a, "Archive", &[f.archive_group]).await;
 
     // The other account has one contact and one message that must never show.
-    let other_handle = handle(&mut conn, OTHER_ACCOUNT, "+15559999", "imessage").await;
+    let other_handle = handle(&mut conn, OTHER_ACCOUNT, "+15550199", "imessage").await;
     contact(&mut conn, OTHER_ACCOUNT, "Ana", &[other_handle]).await;
     let other_conv = conversation(
         &mut conn,
@@ -1118,7 +1118,7 @@ mod text_words {
     async fn name_finds_a_contact_linked_after_the_import() {
         let (pool, _dir, _f) = seeded().await;
         let mut conn = pool.acquire().await.unwrap();
-        let late_handle = handle(&mut conn, ACCOUNT, "+15550777", "imessage").await;
+        let late_handle = handle(&mut conn, ACCOUNT, "+15550177", "imessage").await;
         let conv = conversation(
             &mut conn,
             ACCOUNT,
@@ -1675,7 +1675,7 @@ mod people_words {
             vec![f.big_group_msg]
         );
         assert_eq!(
-            run(&mut conn, ListKind::Messages, "in:+15550002").await,
+            run(&mut conn, ListKind::Messages, "in:+15550112").await,
             vec![f.bo_2023]
         );
     }
@@ -2026,7 +2026,7 @@ mod kind_words {
         let mut copies = Vec::new();
         for (i, source) in IMPORT_SOURCES.iter().enumerate() {
             kept.push(import_from(&mut conn, dir.path(), source, &format!("+1555010{i}")).await);
-            copies.push(import_from(&mut conn, dir.path(), source, &format!("+1555020{i}")).await);
+            copies.push(import_from(&mut conn, dir.path(), source, &format!("+1555015{i}")).await);
         }
         for (i, (_, copy)) in copies.iter().enumerate() {
             let (_, original) = kept[(i + 1) % kept.len()];
@@ -2077,7 +2077,7 @@ mod kind_words {
         let (pool, _dir, f) = seeded().await;
         let mut conn = pool.acquire().await.unwrap();
         let a = ACCOUNT;
-        let quiet_h = handle(&mut conn, a, "+15550201", "sms").await;
+        let quiet_h = handle(&mut conn, a, "+15550121", "sms").await;
         let quiet = contact(&mut conn, a, "Quiet", &[quiet_h]).await;
         let quiet_c = conversation(&mut conn, a, quiet_h, "individual", None, &[quiet_h]).await;
         let mut sent = msg(
@@ -2307,7 +2307,7 @@ mod trash_across_lists {
         let (pool, _dir, f) = seeded().await;
         let mut conn = pool.acquire().await.unwrap();
         let a = ACCOUNT;
-        let binned_h = handle(&mut conn, a, "+15550201", "sms").await;
+        let binned_h = handle(&mut conn, a, "+15550121", "sms").await;
         let binned = contact(&mut conn, a, "Binned", &[binned_h]).await;
         sqlx::query("INSERT INTO participants (conversation_id, handle_id) VALUES ($1, $2)")
             .bind(f.trashed_conv)
@@ -2414,7 +2414,7 @@ mod trash_across_lists {
             );
         }
         assert_eq!(
-            run(&mut conn, ListKind::Conversations, "with:+15550001").await,
+            run(&mut conn, ListKind::Conversations, "with:+15550111").await,
             anas
         );
         // `group:none` is the complement: Ana's conversations are in it now.
@@ -3918,7 +3918,7 @@ mod group_keyed_conversation {
             run(&mut conn, ListKind::Conversations, "with:\"Robin Quill\"").await,
             vec![untitled]
         );
-        for query in ["with:+15550001", "identity:+15550001"] {
+        for query in ["with:+15550111", "identity:+15550111"] {
             let found = run(&mut conn, ListKind::Conversations, query).await;
             for row in groups {
                 assert!(

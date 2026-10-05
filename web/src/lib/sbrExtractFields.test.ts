@@ -9,7 +9,7 @@ describe("sbrExtractFields", () => {
         maxResolution: "1080p",
         maxFps: "30",
         minSizeMb: "20",
-        ownerPhones: ["+15551111", "+15552222"],
+        ownerPhones: ["+15550111", "+15550122"],
         obfuscate: true,
       }),
     ).toEqual({
@@ -17,7 +17,7 @@ describe("sbrExtractFields", () => {
       media_max_resolution: "1080p",
       media_max_fps: "30",
       media_min_size: "20",
-      owner_phones: ["+15551111", "+15552222"],
+      owner_phones: ["+15550111", "+15550122"],
       obfuscate: true,
     });
   });

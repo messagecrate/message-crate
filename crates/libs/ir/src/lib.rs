@@ -1130,8 +1130,8 @@ mod conversation_stem_tests {
     #[test]
     fn individual_uses_chat_id() {
         assert_eq!(
-            conversation_stem("individual", "+15551212", None, &[], None),
-            "+15551212"
+            conversation_stem("individual", "+15550112", None, &[], None),
+            "+15550112"
         );
     }
 

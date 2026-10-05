@@ -95,7 +95,7 @@ describe("messageSenderName", () => {
 
   it("is the participant's name for their identity, else the identity", () => {
     expect(messageSenderName(message())).toBe("Alice");
-    expect(messageSenderName(message({ sender: "+15555550999" }))).toBe("+15555550999");
+    expect(messageSenderName(message({ sender: "+15555550198" }))).toBe("+15555550198");
   });
 
   it("is null for a received message that names no sender", () => {

@@ -110,7 +110,7 @@ mod tests {
             ("02079460000@s.whatsapp.net", None),
             // E.164 numbers run 8 to 15 digits here; outside that is not one.
             ("1234567@s.whatsapp.net", None),
-            ("12345678@s.whatsapp.net", Some("+12345678")),
+            ("15550123@s.whatsapp.net", Some("+15550123")),
             ("123456789012345@s.whatsapp.net", Some("+123456789012345")),
             ("1234567890123456@s.whatsapp.net", None),
         ];

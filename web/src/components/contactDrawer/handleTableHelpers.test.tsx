@@ -37,7 +37,7 @@ function Harness() {
       <TableBody>
         <Row id="r1">
           <Cell>Phone</Cell>
-          <Cell>+15551212</Cell>
+          <Cell>+15550112</Cell>
         </Row>
       </TableBody>
     </Table>

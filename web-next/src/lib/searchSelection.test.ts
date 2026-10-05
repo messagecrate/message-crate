@@ -68,23 +68,23 @@ describe("applySearchRangeSelect", () => {
 
 describe("message search result selection", () => {
   const hits = [
-    hit({ conversationId: 1, chatIdentifier: "+15550001" }),
+    hit({ conversationId: 1, chatIdentifier: "+15550101" }),
     hit({
       conversationId: 2,
       conversationType: "group",
       chatIdentifier: "group-a",
     }),
-    hit({ conversationId: 3, chatIdentifier: "+15550001" }),
-    hit({ conversationId: 4, chatIdentifier: "+15550002" }),
+    hit({ conversationId: 3, chatIdentifier: "+15550101" }),
+    hit({ conversationId: 4, chatIdentifier: "+15550102" }),
   ];
 
   it("keys direct threads by handle and groups by conversation", () => {
-    assert.equal(searchResultKey(hits[0]!), "direct:+15550001");
+    assert.equal(searchResultKey(hits[0]!), "direct:+15550101");
     assert.equal(searchResultKey(hits[1]!), "group:2");
     assert.deepEqual(orderedSearchResultKeys(hits), [
-      "direct:+15550001",
+      "direct:+15550101",
       "group:2",
-      "direct:+15550002",
+      "direct:+15550102",
     ]);
   });
 
@@ -94,24 +94,24 @@ describe("message search result selection", () => {
       [
         ...applySearchResultRangeSelect(
           ordered,
-          "direct:+15550002",
-          "direct:+15550001",
+          "direct:+15550102",
+          "direct:+15550101",
         ),
       ],
-      ["direct:+15550001", "group:2", "direct:+15550002"],
+      ["direct:+15550101", "group:2", "direct:+15550102"],
     );
   });
 
   it("groups duplicate direct rows into one selected thread", () => {
     const groups = selectedSearchResultGroups(
       hits,
-      new Set(["direct:+15550001", "group:2"]),
+      new Set(["direct:+15550101", "group:2"]),
     );
     assert.deepEqual(groups, [
       {
-        key: "direct:+15550001",
+        key: "direct:+15550101",
         conversationType: "individual",
-        chatIdentifier: "+15550001",
+        chatIdentifier: "+15550101",
         title: "t",
         conversationIds: [1, 3],
       },

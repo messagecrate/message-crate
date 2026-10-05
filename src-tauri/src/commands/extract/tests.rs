@@ -406,12 +406,12 @@ fn sms_backup_restore_passes_owner_phones() {
         "sms-backup-restore",
         backup.path().to_str().unwrap(),
         "/tmp/out",
-        &test_options(vec!["+15551111".into(), "+15552222".into()]),
+        &test_options(vec!["+15550111".into(), "+15550122".into()]),
     )
     .unwrap();
     match config.source {
         SourceConfig::SmsBackupRestore(s) => {
-            assert_eq!(s.owner_phones, vec!["+15551111", "+15552222"]);
+            assert_eq!(s.owner_phones, vec!["+15550111", "+15550122"]);
         }
         other => panic!("expected SmsBackupRestore, got {other:?}"),
     }
@@ -424,7 +424,7 @@ fn every_source_requires_an_existing_input_path() {
         "sms-backup-restore",
         "/does/not/exist-sms-backup",
         "/tmp/out",
-        &test_options(vec!["+15551111".into()]),
+        &test_options(vec!["+15550111".into()]),
     )
     .unwrap_err();
     assert!(
@@ -444,7 +444,7 @@ fn sms_backup_plus_requires_owner_emails() {
         "sms-backup-plus",
         backup.path().to_str().unwrap(),
         "/tmp/out",
-        &test_options(vec!["+15551111".into()]),
+        &test_options(vec!["+15550111".into()]),
     )
     .unwrap_err();
     assert!(
@@ -456,7 +456,7 @@ fn sms_backup_plus_requires_owner_emails() {
 #[test]
 fn sms_backup_plus_passes_owner_phones_and_emails() {
     let backup = tempfile::tempdir().unwrap();
-    let mut options = test_options(vec!["+15551111".into()]);
+    let mut options = test_options(vec!["+15550111".into()]);
     options.owner_emails = vec!["me@example.com".into(), "Me@Work.example".into()];
     let config = build_exporter_config(
         Path::new("/cache"),
@@ -468,7 +468,7 @@ fn sms_backup_plus_passes_owner_phones_and_emails() {
     .unwrap();
     match config.source {
         SourceConfig::SmsBackupPlus(s) => {
-            assert_eq!(s.owner_phones, vec!["+15551111"]);
+            assert_eq!(s.owner_phones, vec!["+15550111"]);
             assert_eq!(s.owner_emails, vec!["me@example.com", "Me@Work.example"]);
         }
         other => panic!("expected SmsBackupPlus, got {other:?}"),
