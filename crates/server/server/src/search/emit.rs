@@ -66,11 +66,17 @@ pub(crate) fn compile(
         Some(_) => Some(compile_where(list, expr, account_id, zone, false)?),
         None => None,
     };
+    let earlier_version_match = rank_query.as_deref().map(|query| {
+        let mut out = Sql::default();
+        fts::version_ids_matching(&mut out, query);
+        (out.text, out.params)
+    });
     Ok(Filter {
         where_sql,
         params,
         rank_query,
         final_text,
+        earlier_version_match,
     })
 }
 

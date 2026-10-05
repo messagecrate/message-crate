@@ -26,6 +26,7 @@ use crate::db::ownership::owns_conversation;
 use crate::db::participant_names::load_for_conversations;
 use crate::db::sql::{SQLITE_IN_CHUNK, SqlParam, bind_all, bind_args, group_rows_by_id};
 use crate::paging::{Direction, Page, SortKey};
+use crate::search::bridge::Sql;
 use crate::server::ApiError;
 
 /// Sorted, deduplicated ids for an `IN` list.
@@ -228,7 +229,7 @@ async fn mark_earlier_version_matches(
     filter: &crate::search::Filter,
     page: &mut [Message],
 ) -> Result<(), ApiError> {
-    let (Some((final_where, final_params)), Some((matching_sql, matching_param))) =
+    let (Some((final_where, final_params)), Some((matching_sql, matching_params))) =
         (filter.final_text(), filter.matching_earlier_version_ids())
     else {
         return Ok(());
@@ -264,16 +265,23 @@ async fn mark_earlier_version_matches(
     // into each message, so the n-th row of a message is its n-th version.
     let mut matched: HashMap<i64, Vec<bool>> = HashMap::new();
     for chunk in only_earlier.chunks(SQLITE_IN_CHUNK) {
-        let sql = format!(
-            "SELECT message_id, id IN ({matching_sql})
-             FROM message_versions
-             WHERE message_id IN ({ids})
-             ORDER BY {EARLIER_VERSION_ORDER}",
-            ids = vec!["?"; chunk.len()].join(", "),
-        );
-        let mut params = vec![matching_param.clone()];
-        params.extend(chunk.iter().map(|id| SqlParam::Int(*id)));
-        for row in (&mut *conn).fetch_all(bind_all(&sql, &params)).await? {
+        // Each value is bound where its `?` is written.
+        let mut sql = Sql::default();
+        sql.push("SELECT message_id, id IN (");
+        sql.push(matching_sql);
+        sql.params.extend_from_slice(matching_params);
+        sql.push(") FROM message_versions WHERE message_id IN (");
+        for (i, id) in chunk.iter().enumerate() {
+            if i > 0 {
+                sql.push(", ");
+            }
+            sql.bind_int(*id);
+        }
+        sql.push(&format!(") ORDER BY {EARLIER_VERSION_ORDER}"));
+        for row in (&mut *conn)
+            .fetch_all(bind_all(&sql.text, &sql.params))
+            .await?
+        {
             let message_id: i64 = row.try_get(0)?;
             let is_match: bool = row.try_get::<i64, _>(1)? != 0;
             matched.entry(message_id).or_default().push(is_match);

@@ -89,6 +89,7 @@ pub struct Filter {
     params: Vec<SqlParam>,
     rank_query: Option<String>,
     final_text: Option<(String, Vec<SqlParam>)>,
+    earlier_version_match: Option<(String, Vec<SqlParam>)>,
 }
 
 impl Filter {
@@ -114,13 +115,10 @@ impl Filter {
     /// query's free-text words not behind `-` or `not`, with the one value
     /// it binds: the versions a hit found only by an earlier version was
     /// found by. `None` when the query has no such word.
-    pub fn matching_earlier_version_ids(&self) -> Option<(String, SqlParam)> {
-        self.rank_query.as_ref().map(|query| {
-            (
-                format!("{}?", fts::VERSION_IDS_MATCHING),
-                SqlParam::Text(query.clone()),
-            )
-        })
+    pub fn matching_earlier_version_ids(&self) -> Option<(&str, &[SqlParam])> {
+        self.earlier_version_match
+            .as_ref()
+            .map(|(sql, params)| (sql.as_str(), params.as_slice()))
     }
 
     /// The same filter with its free-text words reading only each
@@ -185,6 +183,7 @@ pub fn compile_messages_of_conversations(req: CompileRequest<'_>) -> Result<Filt
         params,
         rank_query: None,
         final_text: None,
+        earlier_version_match: None,
     })
 }
 
