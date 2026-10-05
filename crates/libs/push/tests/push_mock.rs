@@ -432,10 +432,11 @@ fn a_refused_completion_is_an_error_the_push_returns() {
         1,
         "the push asks to complete the run once"
     );
-    let message = format!("{error:#}");
-    assert!(
-        message.contains("Import Run 42") && message.contains("intentional completion failure"),
-        "{message}"
+    assert_eq!(
+        format!("{error:#}"),
+        "Import Run 42 completion failed (HTTP 500 Internal Server Error): \
+         intentional completion failure",
+        "one sentence that names the run once"
     );
     let written: serde_json::Value = serde_json::from_str(
         &fs::read_to_string(dir.path().join("message-crate-push-report.json")).unwrap(),
@@ -2770,7 +2771,7 @@ fn an_unreadable_2xx_answer_is_not_retried() {
     assert_eq!(report.conversations_failed, 1);
     let error = report.results[0].error.as_deref().unwrap_or_default();
     assert!(
-        error.contains("could not read the server's answer to import batch"),
+        error.contains("could not read the server's answer to Import Run 7 batch"),
         "{error}"
     );
     assert!(journal_events(dir.path(), "file_ok").is_empty());
@@ -2861,7 +2862,7 @@ fn a_2xx_answer_whose_body_is_cut_off_is_not_retried() {
     assert_eq!(report.conversations_failed, 1);
     let error = report.results[0].error.as_deref().unwrap_or_default();
     assert!(
-        error.contains("could not read the server's answer to import batch"),
+        error.contains("could not read the server's answer to Import Run 7 batch"),
         "{error}"
     );
     assert!(journal_events(dir.path(), "file_ok").is_empty());

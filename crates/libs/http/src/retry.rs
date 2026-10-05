@@ -168,9 +168,9 @@ mod tests {
 
     #[test]
     fn http_status_errors_are_permanent_for_4xx() {
-        let e = anyhow::Error::from(HttpError::new(404, "asset HEAD failed (HTTP 404)"));
+        let e = anyhow::Error::from(HttpError::new(404, "Asset check failed (HTTP 404)"));
         assert!(classified(classify_retry(&e)));
-        let e = anyhow::Error::from(HttpError::new(413, "import rejected: HTTP 413"));
+        let e = anyhow::Error::from(HttpError::new(413, "Import Run 7 batch rejected: HTTP 413"));
         assert!(classified(classify_retry(&e)));
         let e = anyhow::Error::from(HttpError::new(
             401,
@@ -181,7 +181,7 @@ mod tests {
 
     #[test]
     fn only_a_401_is_a_refused_session() {
-        let refused = anyhow::Error::from(crate::session_refused("import batch"));
+        let refused = anyhow::Error::from(crate::session_refused("Import Run 7 batch"));
         assert!(is_session_refused(&refused));
         assert!(is_session_refused(
             &refused.context("POST /v1/imports/7/batches")
@@ -200,14 +200,14 @@ mod tests {
     fn an_unreadable_2xx_is_permanent_because_the_server_did_the_work() {
         let e = anyhow::Error::from(HttpError::new(
             200,
-            "could not read the server's answer to import batch",
+            "could not read the server's answer to Import Run 7 batch",
         ));
         assert!(classified(classify_retry(&e)));
     }
 
     #[test]
     fn http_status_errors_are_transient_for_5xx() {
-        let e = anyhow::Error::from(HttpError::new(503, "asset part 1 failed (HTTP 503)"));
+        let e = anyhow::Error::from(HttpError::new(503, "Asset upload part 1 failed (HTTP 503)"));
         assert!(!classified(classify_retry(&e)));
     }
 

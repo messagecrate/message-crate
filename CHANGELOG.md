@@ -391,6 +391,14 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **An Upload the server refuses names its Import Run and Assets
+  once, in their own words.** A refused completion ended the Upload with
+  "complete Import Run 42 on the server: import run complete failed (HTTP 500
+  Internal Server Error): …", and the other requests read "import run",
+  "import batch", "asset HEAD", "asset upload" and "asset part 2". Now it
+  reads "Import Run 42 completion failed (HTTP 500 Internal Server Error): …",
+  and the others read "Import Run start", "Import Run 42 batch",
+  "Asset check", "Asset upload" and "Asset upload part 2".
 - 2026-10-05 **The Upload's log and the desktop app say the same
   sentences.** The log wrote "authenticated username=sam account=1",
   "using provided Import Run id=7", "Import Run id=7 source=sms",

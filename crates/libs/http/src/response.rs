@@ -69,9 +69,9 @@ pub fn read_body(
 /// A 2xx status is a success and the body is `T`. Anything else is a
 /// [`HttpError`] carrying the status, so the retry rules can classify it,
 /// the problem document when the body is one, so a caller can read a member
-/// such as `line`, and a sentence naming `what` was being asked for — "import batch",
-/// "export messages" — because a status alone does not tell the person which
-/// part of a long run stopped.
+/// such as `line`, and a sentence naming `what` was being asked for — "Import
+/// Run 7 batch", "export messages" — because a status alone does not tell the
+/// person which part of a long run stopped.
 ///
 /// # Errors
 ///
@@ -124,27 +124,30 @@ mod tests {
     #[test]
     fn the_servers_own_sentence_is_what_the_person_sees() {
         let err = ok_json::<Answer>(
-            "asset upload",
+            "Asset upload",
             reqwest::StatusCode::BAD_REQUEST,
             r#"{"type":"https://messagecrate.app/docs/developer/reference/errors/asset-upload-invalid","title":"Asset upload invalid","status":400,"detail":"sha256 mismatch: claimed abc, got def","request_id":"3f2b1c0e-8d4a-4b6e-9f21-5c7d8e9a0b1c"}"#,
         )
         .unwrap_err();
         assert_eq!(
             err.to_string(),
-            "asset upload failed (HTTP 400 Bad Request): sha256 mismatch: claimed abc, got def (request id 3f2b1c0e-8d4a-4b6e-9f21-5c7d8e9a0b1c)"
+            "Asset upload failed (HTTP 400 Bad Request): sha256 mismatch: claimed abc, got def (request id 3f2b1c0e-8d4a-4b6e-9f21-5c7d8e9a0b1c)"
         );
     }
 
     #[test]
     fn a_401_says_to_log_in_again_and_stays_permanent() {
         let err = ok_json::<Answer>(
-            "import batch",
+            "Import Run 7 batch",
             reqwest::StatusCode::UNAUTHORIZED,
             r#"{"type":"https://messagecrate.app/docs/developer/reference/errors/authentication-required","title":"Authentication required","status":401,"detail":"Authentication required."}"#,
         )
         .unwrap_err();
         let message = err.to_string();
-        assert!(message.starts_with("import batch failed."), "got {message}");
+        assert!(
+            message.starts_with("Import Run 7 batch failed."),
+            "got {message}"
+        );
         assert!(message.contains("Log in again"), "got {message}");
         assert_eq!(
             crate::classify_retry(&err),
@@ -155,17 +158,21 @@ mod tests {
 
     #[test]
     fn a_body_with_no_error_sentence_falls_back_to_status_and_body() {
-        let err =
-            ok_json::<Answer>("import batch", reqwest::StatusCode::BAD_GATEWAY, "{}").unwrap_err();
-        assert_eq!(
-            err.to_string(),
-            "import batch failed (HTTP 502 Bad Gateway): {}"
-        );
-        let err = ok_json::<Answer>("import batch", reqwest::StatusCode::BAD_GATEWAY, "gateway")
+        let err = ok_json::<Answer>("Import Run 7 batch", reqwest::StatusCode::BAD_GATEWAY, "{}")
             .unwrap_err();
         assert_eq!(
             err.to_string(),
-            "import batch failed (HTTP 502 Bad Gateway): gateway"
+            "Import Run 7 batch failed (HTTP 502 Bad Gateway): {}"
+        );
+        let err = ok_json::<Answer>(
+            "Import Run 7 batch",
+            reqwest::StatusCode::BAD_GATEWAY,
+            "gateway",
+        )
+        .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "Import Run 7 batch failed (HTTP 502 Bad Gateway): gateway"
         );
     }
 
@@ -183,12 +190,12 @@ mod tests {
 
     #[test]
     fn the_status_decides_success_not_a_field_in_the_body() {
-        let parsed: Answer = ok_json("asset upload", reqwest::StatusCode::OK, r#"{"ok":true}"#)
+        let parsed: Answer = ok_json("Asset upload", reqwest::StatusCode::OK, r#"{"ok":true}"#)
             .expect("2xx is a success");
         assert!(parsed.ok);
         assert!(
             ok_json::<Answer>(
-                "asset upload",
+                "Asset upload",
                 reqwest::StatusCode::INTERNAL_SERVER_ERROR,
                 "{}"
             )
@@ -213,7 +220,7 @@ mod tests {
     #[test]
     fn a_failure_carries_the_status_so_retries_can_classify_it() {
         let err = ok_json::<Answer>(
-            "import batch",
+            "Import Run 7 batch",
             reqwest::StatusCode::SERVICE_UNAVAILABLE,
             "{}",
         )
@@ -223,8 +230,8 @@ mod tests {
             crate::RetryKind::Transient,
             "a 503 must still read as transient: {err}"
         );
-        let err =
-            ok_json::<Answer>("import batch", reqwest::StatusCode::BAD_REQUEST, "{}").unwrap_err();
+        let err = ok_json::<Answer>("Import Run 7 batch", reqwest::StatusCode::BAD_REQUEST, "{}")
+            .unwrap_err();
         assert_ne!(
             crate::classify_retry(&err),
             crate::RetryKind::Transient,
