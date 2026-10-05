@@ -32,6 +32,7 @@ pub fn format(
     input_dir: String,
     output_dir: String,
     output_format: String,
+    started_from: StartedFrom,
     run_started_ms: Option<i64>,
 ) -> Result<(), String> {
     let fmt = match output_format.as_str() {
@@ -52,7 +53,7 @@ pub fn format(
         .transpose()?;
 
     let scratch_dir = scratch_dir(&app)?;
-    let job = start_job(&state, job_name(run_started.as_ref()))?;
+    let job = start_job(&state, started_from.job_name())?;
     let cancel = job.cancel_flag();
 
     let app_handle = app.clone();
@@ -88,28 +89,44 @@ pub fn format(
     Ok(())
 }
 
-/// What a `format` run is called while it runs. Only an Export passes its
-/// run's start, so a run with one is the second step of an Export, and one
-/// without is Settings → Convert.
-fn job_name(run_started: Option<&chrono::DateTime<chrono::Utc>>) -> JobName {
-    if run_started.is_some() {
-        JobName::Export
-    } else {
-        JobName::Convert
+/// The screen that started a `format` run. It runs for Settings → Convert,
+/// and as the second step of every Export other than JSON Lines; a refused
+/// start names it as that screen does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StartedFrom {
+    /// The Export screen, for its format step.
+    Export,
+    /// Settings → Convert.
+    Convert,
+}
+
+impl StartedFrom {
+    fn job_name(self) -> JobName {
+        match self {
+            Self::Export => JobName::Export,
+            Self::Convert => JobName::Convert,
+        }
     }
 }
 
 #[cfg(test)]
-mod job_name_tests {
+mod tests {
     use super::*;
+
+    fn job_name(started_from: &str) -> JobName {
+        serde_json::from_value::<StartedFrom>(serde_json::json!(started_from))
+            .unwrap()
+            .job_name()
+    }
 
     #[test]
     fn a_format_run_inside_an_export_is_named_export() {
-        assert_eq!(job_name(Some(&chrono::Utc::now())), JobName::Export);
+        assert_eq!(job_name("export"), JobName::Export);
     }
 
     #[test]
     fn a_format_run_from_settings_is_named_convert() {
-        assert_eq!(job_name(None), JobName::Convert);
+        assert_eq!(job_name("convert"), JobName::Convert);
     }
 }

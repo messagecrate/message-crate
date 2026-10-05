@@ -169,6 +169,7 @@ describe("ExportScreen", () => {
       input_dir: pulled,
       output_dir: "/home/demo/out",
       output_format: "csv",
+      started_from: "export",
       run_started_ms: expect.any(Number),
     });
   });
