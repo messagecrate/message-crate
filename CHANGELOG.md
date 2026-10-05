@@ -907,6 +907,13 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-05 **When part of an Export from a server fails, the message
+  names the Export Run or Asset in the words the app uses for them.** These
+  messages used lowercase shorthand such as "complete export failed" and
+  "asset download failed", or a bare web address when the connection failed,
+  and a completion the server refused named the run twice. Now each one
+  names what was being asked for once, such as "Export Run 7 completion
+  failed" or "Asset 3f2b… fetch failed", followed by what went wrong.
 - 2026-10-05 **An Export from a server no longer calls itself a backup in
   the log.** It began with "Backup query: from:sam" and, when the directory
   held a finished run, "Previous backup completed successfully". A backup is

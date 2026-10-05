@@ -44,6 +44,7 @@ pub fn create_export(
     scope: &ExportScope,
     tool: &str,
 ) -> Result<ExportRun> {
+    let what = "Export Run start";
     let body = serde_json::to_vec(&CreateExportBody { scope, tool })?;
     let response = http
         .server_request(Method::POST, base_url, "/v1/exports", token)
@@ -51,10 +52,10 @@ pub fn create_export(
         .body(body)
         .timeout(Duration::from_secs(120))
         .send()
-        .context("POST /v1/exports")?;
+        .with_context(|| format!("{what} failed"))?;
     let status = response.status();
     let text = response.text().unwrap_or_default();
-    ok_json("create export", status, &text)
+    ok_json(what, status, &text)
 }
 
 /// Arguments for [`export_messages`].
@@ -80,21 +81,48 @@ pub fn export_messages(http: &HttpSession, args: ExportMessagesArgs<'_>) -> Resu
         limit,
         offset,
     } = args;
+    let what = format!("Export Run {export_id} page");
     let path = format!("/v1/exports/{export_id}/messages");
     let response = http
         .server_request(Method::GET, base_url, &path, token)
         .query(&[("limit", limit.to_string()), ("offset", offset.to_string())])
         .timeout(Duration::from_secs(120))
         .send()
-        .with_context(|| format!("GET {path}"))?;
+        .with_context(|| format!("{what} failed"))?;
 
     let status = response.status();
     let body = response.text().unwrap_or_default();
-    ok_json("export messages", status, &body)
+    ok_json(&what, status, &body)
+}
+
+/// How an Export ends its run on the server: with every file written, or
+/// given up.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum CloseAction {
+    Complete,
+    Cancel,
+}
+
+impl CloseAction {
+    /// The last segment of the route that closes the run this way.
+    fn path_segment(self) -> &'static str {
+        match self {
+            Self::Complete => "complete",
+            Self::Cancel => "cancel",
+        }
+    }
+
+    /// The request's name in an error, after "Export Run 7".
+    fn noun(self) -> &'static str {
+        match self {
+            Self::Complete => "completion",
+            Self::Cancel => "cancellation",
+        }
+    }
 }
 
 /// `POST /v1/exports/{id}/complete` or `.../cancel`: close the run and
-/// return it as it now stands. `action` is `complete` or `cancel`.
+/// return it as it now stands.
 ///
 /// # Errors
 ///
@@ -105,17 +133,18 @@ pub fn close_export(
     base_url: &str,
     token: &str,
     export_id: i64,
-    action: &str,
+    action: CloseAction,
 ) -> Result<ExportRun> {
-    let path = format!("/v1/exports/{export_id}/{action}");
+    let what = format!("Export Run {export_id} {}", action.noun());
+    let path = format!("/v1/exports/{export_id}/{}", action.path_segment());
     let response = http
         .server_request(Method::POST, base_url, &path, token)
         .timeout(Duration::from_secs(120))
         .send()
-        .with_context(|| format!("POST {path}"))?;
+        .with_context(|| format!("{what} failed"))?;
     let status = response.status();
     let text = response.text().unwrap_or_default();
-    ok_json(&format!("{action} export"), status, &text)
+    ok_json(&what, status, &text)
 }
 
 /// Download one attachment by SHA-256 fingerprint to `dest`.
@@ -130,19 +159,23 @@ pub fn close_export(
 /// Returns an error when the fingerprint is not 64 hex characters, the server
 /// returns 404 or another failure, the bytes' SHA-256 is not `sha256`, or the
 /// file cannot be written. The `.part` file is removed on every error after
-/// it was created.
+/// it was created. Each error after the fingerprint check names the Asset.
+///
+/// Returns the number of bytes written to `dest`.
 pub fn download_asset(
     http: &HttpSession,
     base_url: &str,
     token: &str,
     sha256: &str,
     dest: &Path,
-) -> Result<()> {
+) -> Result<u64> {
     // Validate sha256 is a 64-char hex string before putting it in the URL.
     let sha_clean = sha256.trim();
     if sha_clean.len() != 64 || !sha_clean.chars().all(|c| c.is_ascii_hexdigit()) {
-        bail!("invalid SHA-256 digest for asset download: {sha256}");
+        bail!("invalid SHA-256 digest for an Asset: {sha256}");
     }
+    let what = format!("Asset {sha_clean} fetch");
+    let fetch_failed = || format!("{what} failed");
     let base = trim_base_url(base_url);
     // The fingerprint alone names the attachment, and the token names the
     // account; the route takes no query.
@@ -153,36 +186,32 @@ pub fn download_asset(
         .request_url(Method::GET, url, token)
         .timeout(Duration::from_secs(300))
         .send()
-        .context("GET /v1/assets")?;
+        .with_context(fetch_failed)?;
 
     let status = response.status();
-    if status.as_u16() == 404 {
-        return Err(HttpError::new(404, format!("asset not found: {sha256}")).into());
-    }
     if status.as_u16() == 401 {
-        return Err(session_refused("asset download").into());
+        return Err(session_refused(&what).into());
     }
     if !status.is_success() {
         let body = response.text().unwrap_or_default();
         return Err(HttpError::new(
             status.as_u16(),
-            format!(
-                "asset download failed (HTTP {status}): {}",
-                error_sentence(&body)
-            ),
+            format!("{what} failed (HTTP {status}): {}", error_sentence(&body)),
         )
         .into());
     }
 
     if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent).with_context(|| format!("mkdir {}", parent.display()))?;
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("mkdir {}", parent.display()))
+            .with_context(fetch_failed)?;
     }
     // Write to a temp file then rename, so a partial download (crash, cancel,
     // network drop) never leaves a truncated file at the destination path.
     let tmp = dest.with_extension("part");
-    let written = write_part_file(&mut response, &tmp);
-    let digest = match written {
-        Ok(digest) => digest,
+    let written = write_part_file(&mut response, &tmp).with_context(fetch_failed);
+    let (digest, len) = match written {
+        Ok(written) => written,
         Err(error) => {
             let _ = std::fs::remove_file(&tmp);
             return Err(error);
@@ -196,30 +225,34 @@ pub fn download_asset(
         let _ = std::fs::remove_file(&tmp);
         return Err(HttpError::new(
             status.as_u16(),
-            format!("asset {sha_clean} was answered with bytes whose SHA-256 is {digest}"),
+            format!("the server's answer to {what} is bytes whose SHA-256 is {digest}"),
         )
         .into());
     }
     // Synced, because the pull journal records the asset as fetched next,
     // and a resumed Pull skips an asset the journal names.
-    message_ir::rename_into_place(&tmp, dest)?;
-    Ok(())
+    if let Err(error) = message_ir::rename_into_place(&tmp, dest) {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(error.context(fetch_failed()));
+    }
+    Ok(len)
 }
 
 /// Copy `body` into a new file at `tmp` and return the lowercase hex SHA-256
-/// of the bytes written.
-fn write_part_file(body: &mut impl Read, tmp: &Path) -> Result<String> {
+/// of the bytes written, and how many there were.
+fn write_part_file(body: &mut impl Read, tmp: &Path) -> Result<(String, u64)> {
     let file = File::create(tmp).with_context(|| format!("create {}", tmp.display()))?;
     let mut writer = HashingWriter {
         inner: file,
         hasher: Sha256::new(),
     };
-    std::io::copy(body, &mut writer).with_context(|| format!("write {}", tmp.display()))?;
+    let len =
+        std::io::copy(body, &mut writer).with_context(|| format!("write {}", tmp.display()))?;
     writer
         .inner
         .flush()
         .with_context(|| format!("write {}", tmp.display()))?;
-    Ok(hex::encode(writer.hasher.finalize()))
+    Ok((hex::encode(writer.hasher.finalize()), len))
 }
 
 /// A writer that hashes every byte it passes on to `inner`.
@@ -284,8 +317,95 @@ mod tests {
 
         let err = download_asset(&http, &server.base_url(), "mc_test", &digest, &dest)
             .expect_err("a 401 is an error");
-        assert!(err.to_string().contains("Log in again"), "{err}");
+        let message = err.to_string();
+        assert!(
+            message.starts_with(&format!("Asset {digest} fetch failed.")),
+            "{message}"
+        );
+        assert!(message.contains("Log in again"), "{message}");
         assert!(!dest.exists());
+    }
+
+    /// A request that never reaches the server leads with the request's
+    /// label, not the route, and keeps the connection's own error beneath it.
+    #[test]
+    fn a_request_that_cannot_connect_leads_with_its_label() {
+        // A port the system just handed out and nobody holds any more refuses
+        // the connection at once.
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let http = HttpSession::new().unwrap();
+        let err = create_export(
+            &http,
+            &format!("http://127.0.0.1:{port}"),
+            "mc_test",
+            &ExportScope::Everything,
+            "message-crate-pull",
+        )
+        .expect_err("nothing listens on that port");
+        assert_eq!(err.to_string(), "Export Run start failed");
+        assert!(err.source().is_some(), "the cause stays beneath the label");
+    }
+
+    /// A refused page names the Export Run and the page once.
+    #[test]
+    fn a_refused_page_names_the_export_run() {
+        let server = httpmock::MockServer::start();
+        server.mock(|when, then| {
+            when.method("GET").path("/v1/exports/7/messages");
+            then.status(500)
+                .header("content-type", "application/problem+json")
+                .json_body(serde_json::json!({
+                    "type": "about:blank",
+                    "title": "Internal error",
+                    "status": 500,
+                    "detail": "the database is locked"
+                }));
+        });
+        let http = HttpSession::new().unwrap();
+        let err = export_messages(
+            &http,
+            ExportMessagesArgs {
+                base_url: &server.base_url(),
+                token: "mc_test",
+                export_id: 7,
+                limit: 2,
+                offset: 0,
+            },
+        )
+        .expect_err("a 500 is an error");
+        assert_eq!(
+            err.to_string(),
+            "Export Run 7 page failed (HTTP 500 Internal Server Error): the database is locked"
+        );
+    }
+
+    /// A cancel goes to the cancel route and a refusal names it a cancellation.
+    #[test]
+    fn a_refused_cancel_names_the_cancellation() {
+        let server = httpmock::MockServer::start();
+        let cancel = server.mock(|when, then| {
+            when.method("POST").path("/v1/exports/7/cancel");
+            then.status(409)
+                .header("content-type", "application/problem+json")
+                .json_body(serde_json::json!({
+                    "type": "about:blank",
+                    "title": "Conflict",
+                    "status": 409,
+                    "detail": "the run is already closed"
+                }));
+        });
+        let http = HttpSession::new().unwrap();
+        let err = close_export(&http, &server.base_url(), "mc_test", 7, CloseAction::Cancel)
+            .expect_err("a 409 is an error");
+        assert_eq!(cancel.calls(), 1);
+        assert_eq!(
+            err.to_string(),
+            "Export Run 7 cancellation failed (HTTP 409 Conflict): the run is already closed"
+        );
     }
 
     #[test]
