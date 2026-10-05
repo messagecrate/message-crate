@@ -14,7 +14,7 @@ use std::thread::JoinHandle;
 use std::time::Instant;
 
 use anyhow::Result;
-use message_crate_core::check_cancel;
+use message_crate_core::{check_cancel, count_of};
 use message_crate_http::HttpError;
 
 use crate::directory::file_label;
@@ -285,8 +285,9 @@ impl<'a> ImportPipeline<'a> {
                 None => FileResult::cancelled(&file_label(path)),
             };
             out.log(&format!(
-                "cancelled {} msgs={}",
-                result.file, result.messages
+                "Cancelled {} with {} uploaded",
+                result.file,
+                count_of(result.messages, "message", "messages")
             ));
             self.results[idx] = Some(result);
         }
@@ -531,8 +532,10 @@ impl<'a> ImportPipeline<'a> {
             && error.session_refused
         {
             out.log(&format!(
-                "IMPORT_REQUEST refused source={} messages={} error={}",
-                outcome.batch.source, outcome.message_count, error.message
+                "Import request refused, {} from {}: {}",
+                count_of(outcome.message_count as u64, "message", "messages"),
+                outcome.batch.source,
+                error.message
             ));
             return Ok(false);
         }
@@ -543,12 +546,15 @@ impl<'a> ImportPipeline<'a> {
             .saturating_add(outcome.message_count as u64);
         self.charge_request_time(&represented, outcome.request_ms);
         let stats = format!(
-            "source={} conversations={} messages={} bytes={} elapsed_ms={} \
-             messages_per_second={:.1} mib_per_second={:.2}",
+            "{} and {} from {}, {} in {} ms ({:.1} messages a second, {:.2} MiB a second)",
+            count_of(
+                outcome.batch.conversations as u64,
+                "conversation",
+                "conversations"
+            ),
+            count_of(outcome.message_count as u64, "message", "messages"),
             outcome.batch.source,
-            outcome.batch.conversations,
-            outcome.message_count,
-            outcome.body_bytes,
+            media::format_bytes(outcome.body_bytes as u64),
             outcome.request_ms,
             outcome.messages_per_second,
             outcome.mebibytes_per_second,
@@ -579,8 +585,12 @@ impl<'a> ImportPipeline<'a> {
                     }
                 }
                 out.log(&format!(
-                    "IMPORT_REQUEST ok {stats} server_messages={}",
-                    response.messages.max(response.messages_appended)
+                    "Import request accepted: {stats}. The server imported {}",
+                    count_of(
+                        response.messages.max(response.messages_appended),
+                        "message",
+                        "messages"
+                    )
                 ));
                 true
             }
@@ -590,7 +600,7 @@ impl<'a> ImportPipeline<'a> {
                     .failed
                     .saturating_add(outcome.message_count as u64);
                 let error = self.describe_batch_error(&outcome.batch, error);
-                out.log(&format!("IMPORT_REQUEST fail {stats} error={error}"));
+                out.log(&format!("Import request failed: {stats}: {error}"));
                 for &index in &represented {
                     let Some(tracker) = self.trackers[index].as_mut() else {
                         continue;
@@ -691,7 +701,9 @@ impl<'a> ImportPipeline<'a> {
             journal.file_ok(&tracker.source, &name)?;
             // Keep quiet per-file detail in the on-disk log only.
             out.log(&format!(
-                "ok {name} msgs={messages} attachments={attachments}"
+                "Uploaded {name}: {} and {}",
+                count_of(messages, "message", "messages"),
+                count_of(attachments, "attachment", "attachments")
             ));
             out.log(&format_profile_line(&name, &profile));
             out.note_ok(messages, &profile);

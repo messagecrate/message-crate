@@ -132,3 +132,33 @@ async fn promote_message_map_ignores_other_accounts() {
 
     assert_eq!(map, HashMap::from([(101, 1)]));
 }
+
+/// The line that ends a promotion words each count singular for one and
+/// plural for every other count (#1825).
+#[test]
+fn the_promoted_line_counts_one_and_many() {
+    let one = PromoteStats {
+        conversations: 1,
+        participants: 1,
+        messages: 1,
+        attachments: 1,
+        tapbacks: 1,
+        ..PromoteStats::default()
+    };
+    assert_eq!(
+        promoted_line(&one),
+        "promoted 1 conversation, 1 participant, 1 message, 1 attachment and 1 tapback"
+    );
+    let many = PromoteStats {
+        conversations: 2,
+        participants: 3,
+        messages: 0,
+        attachments: 4,
+        tapbacks: 5,
+        ..PromoteStats::default()
+    };
+    assert_eq!(
+        promoted_line(&many),
+        "promoted 2 conversations, 3 participants, 0 messages, 4 attachments and 5 tapbacks"
+    );
+}

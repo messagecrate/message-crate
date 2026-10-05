@@ -391,6 +391,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **An import's log says its counts in words, not as
+  `name=value`.** The Upload, the attachment conversion, and the server's
+  import, duplicate check and `process-assets` command wrote counts such as
+  "conversations=2 messages=2", "processed=1 skipped=0" and "promoted
+  convs=1 parts=2 msgs=3". Each now reads like "2 conversations and 2
+  messages", "converted 1 file, skipped 0 files" and "promoted 1
+  conversation, 2 participants, 3 messages", singular for one. The server's
+  `import` command no longer prints its duplicate counts twice, because its
+  summary already gives them.
 - 2026-10-05 **A WhatsApp import keeps its working files out of the
   Staging Directory.** WhatsApp's files read out of an iPhone backup,
   decrypted when the backup is encrypted, sat in a directory inside the
