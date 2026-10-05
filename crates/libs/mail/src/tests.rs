@@ -1326,7 +1326,7 @@ fn a_guid_with_unsafe_characters_still_names_a_portable_eml_file() {
 
 /// A guid a file name can hold keeps the name it had before #1824: the
 /// first eight hex digits of a guid that has them, else its first eight
-/// characters, padded with `0`.
+/// characters, padded with `0`, a `%` among them included.
 #[test]
 fn a_safe_guid_keeps_its_eml_file_name() {
     for (guid, guid8) in [
@@ -1334,6 +1334,8 @@ fn a_safe_guid_keeps_its_eml_file_name() {
         ("{1A2B-3C4D-5E6F}", "1A2B3C4D"),
         ("SMS-42", "SMS-4200"),
         ("a b.c", "a b.c000"),
+        ("50%off", "50%off00"),
+        ("ab%2Fcd", "ab%2Fcd0"),
         ("日本語テキストです", "日本語テキストで"),
     ] {
         let mut msg = base_sms();
