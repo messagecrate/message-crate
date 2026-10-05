@@ -12,9 +12,11 @@
 //! never holds the backup's attachments in memory, and the write reads them
 //! back a file at a time. Every write is checked for room first, against
 //! the disk that holds it ([`check_headroom`]).
-//! The Media stage ([`transcode_staged`]) converts or compresses staged
-//! attachments afterwards as its own resumable stage, and
-//! [`summarize_staging`] reads a run directory back for the Staging Review.
+//! [`transcode_staged`] converts or compresses staged attachments
+//! afterwards, on its own and resumable. The desktop app runs it as an
+//! Import Run's Media stage, and a local export runs it through the write
+//! queue. [`summarize_staging`] reads a run directory back for the Staging
+//! Review.
 //! Both work to the media settings Staging recorded in the directory
 //! ([`write_media_settings`], [`read_media_settings`]).
 //!

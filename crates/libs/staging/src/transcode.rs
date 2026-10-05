@@ -6,6 +6,10 @@
 //! with no progress record: a file under its final derivative name is fully
 //! patched, and an original still on disk means work remains.
 //!
+//! The desktop app runs it as an Import Run's Media stage, which is what
+//! "the Media stage" means below. A local export runs the same code through
+//! the write queue's `run_media_post_pass`, outside any Import Run.
+//!
 //! ## Naming and resume
 //!
 //! The final name for a converted attachment is `{original_stem}-mv.{target_ext}`
