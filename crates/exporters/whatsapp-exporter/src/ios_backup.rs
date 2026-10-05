@@ -42,9 +42,11 @@ const DATABASES_COPIED_TWICE: [&str; 3] = [
 /// The bytes wtsexporter writes into its working directory when it extracts
 /// WhatsApp's domain from `source.backup`, an iPhone backup that is not
 /// encrypted: every file of the domain, and the message, contacts and call
-/// databases a second time. `None` when there is no such extract: no backup
-/// is named, it is encrypted (its files are decrypted, and measured, by
-/// [`decrypt_if_encrypted`]), or it is not a backup directory.
+/// databases a second time. `None` when the backup cannot have such an
+/// extract: no backup is named, it is encrypted (its files are decrypted,
+/// and measured, by [`decrypt_if_encrypted`]), or it is not a backup
+/// directory. Whether wtsexporter extracts at all is
+/// [`crate::wtsexporter::extracts_ios_backup`].
 ///
 /// # Errors
 ///
@@ -227,7 +229,7 @@ mod tests {
     /// The password and the app's own domain go to the decryption, and the
     /// answer names the files it left in the work directory.
     #[test]
-    fn an_encrypted_backup_is_decrypted_into_the_work_dir() {
+    fn an_encrypted_backup_is_decrypted_into_the_work_directory() {
         let backup = backup(true);
         let work = tempdir().unwrap();
         for (business, expected_domain) in [(false, DOMAIN), (true, BUSINESS_DOMAIN)] {
@@ -287,24 +289,11 @@ mod tests {
     /// it, size) at the places its plain `Manifest.db` names.
     fn unencrypted_backup(files: &[(&str, &str, usize)]) -> TempDir {
         let dir = backup(false);
-        let manifest = rusqlite::Connection::open(dir.path().join("Manifest.db")).unwrap();
-        manifest
-            .execute_batch(
-                "CREATE TABLE Files (fileID TEXT, domain TEXT, relativePath TEXT, flags INTEGER);",
-            )
-            .unwrap();
-        for (index, (domain, path, size)) in files.iter().enumerate() {
-            let id = format!("{index:040x}");
-            manifest
-                .execute(
-                    "INSERT INTO Files VALUES (?1, ?2, ?3, 1)",
-                    (&id, domain, path),
-                )
-                .unwrap();
-            let stored = dir.path().join(&id[..2]);
-            fs::create_dir_all(&stored).unwrap();
-            fs::write(stored.join(&id), vec![0u8; *size]).unwrap();
-        }
+        let files: Vec<_> = files
+            .iter()
+            .map(|&(domain, path, size)| (domain, path, Some(size)))
+            .collect();
+        ios_backup::manifest_fixture::write_unencrypted_manifest(dir.path(), &files);
         dir
     }
 

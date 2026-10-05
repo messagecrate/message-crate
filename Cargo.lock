@@ -4242,7 +4242,6 @@ dependencies = [
  "message-staging",
  "phone",
  "plist",
- "rusqlite",
  "serde",
  "serde_json",
  "tempfile",

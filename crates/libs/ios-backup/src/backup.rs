@@ -43,7 +43,14 @@ pub fn ios_backup_encrypted_flag(backup_root: &Path) -> Option<bool> {
 pub fn ios_backup_domain_files(backup_root: &Path, domain: &str) -> Result<Vec<(String, u64)>> {
     let path = backup_root.join("Manifest.db");
     let manifest = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)
-        .with_context(|| format!("open {}", path.display()))?;
+        .with_context(|| {
+            format!(
+                "The iPhone backup in {} has no Manifest.db that can be read: \
+                 it is from iOS 9 or older, or the backup is not complete. \
+                 Make a new backup in Finder or iTunes.",
+                backup_root.display()
+            )
+        })?;
     let mut statement = manifest
         .prepare(
             "SELECT fileID, relativePath FROM Files \
@@ -118,24 +125,22 @@ mod tests {
     #[test]
     fn a_domain_s_files_are_listed_with_their_sizes_on_disk() {
         let backup = tempfile::tempdir().unwrap();
-        let manifest = rusqlite::Connection::open(backup.path().join("Manifest.db")).unwrap();
-        manifest
-            .execute_batch(
-                "CREATE TABLE Files (fileID TEXT, domain TEXT, relativePath TEXT, flags INTEGER);
-                 INSERT INTO Files VALUES
-                     ('aa11', 'Shared', 'Message/Media/photo.jpg', 1),
-                     ('bb22', 'Shared', 'ChatStorage.sqlite', 1),
-                     ('cc33', 'Shared', 'Message', 2),
-                     ('dd44', 'Shared', 'Message/Media/gone.jpg', 1),
-                     ('ee55', 'HomeDomain', 'Library/SMS/sms.db', 1);",
+        crate::manifest_fixture::write_unencrypted_manifest(
+            backup.path(),
+            &[
+                ("Shared", "Message/Media/photo.jpg", Some(700)),
+                ("Shared", "ChatStorage.sqlite", Some(30)),
+                ("Shared", "Message/Media/gone.jpg", None),
+                ("HomeDomain", "Library/SMS/sms.db", Some(9)),
+            ],
+        );
+        rusqlite::Connection::open(backup.path().join("Manifest.db"))
+            .unwrap()
+            .execute(
+                "INSERT INTO Files VALUES ('cc33', 'Shared', 'Message', 2)",
+                (),
             )
             .unwrap();
-        drop(manifest);
-        for (id, bytes) in [("aa11", 700), ("bb22", 30), ("ee55", 9)] {
-            let directory = backup.path().join(&id[..2]);
-            fs::create_dir_all(&directory).unwrap();
-            fs::write(directory.join(id), vec![0u8; bytes]).unwrap();
-        }
 
         assert_eq!(
             ios_backup_domain_files(backup.path(), "Shared").unwrap(),
@@ -148,8 +153,13 @@ mod tests {
     }
 
     #[test]
-    fn a_backup_without_a_manifest_database_is_refused() {
+    fn a_backup_without_a_manifest_database_is_refused_in_plain_words() {
         let backup = tempfile::tempdir().unwrap();
-        assert!(ios_backup_domain_files(backup.path(), "Shared").is_err());
+        let err = ios_backup_domain_files(backup.path(), "Shared").unwrap_err();
+        assert!(
+            err.to_string()
+                .ends_with("it is from iOS 9 or older, or the backup is not complete. Make a new backup in Finder or iTunes."),
+            "{err}"
+        );
     }
 }

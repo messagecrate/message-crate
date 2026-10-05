@@ -4,7 +4,9 @@
 use crate::emit::{ConvertRequest, convert_json};
 use crate::ios_backup::{decrypt_if_encrypted, extract_bytes};
 use crate::owner::{owner_from_backup, owner_from_form};
-use crate::wtsexporter::{Platform, WtsexporterArgs, resolve_wtsexporter, run_wtsexporter};
+use crate::wtsexporter::{
+    Platform, WtsexporterArgs, extracts_ios_backup, resolve_wtsexporter, run_wtsexporter,
+};
 use anyhow::{Context, Result, bail};
 use message_crate_core::{
     ExportTransforms, ExporterConfig, RunResult, ScratchDir, SourceConfig, WHATSAPP_DIRECTORY,
@@ -83,7 +85,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
 
         message_crate_core::check_cancel(config.cancel.as_ref())?;
         let bin = resolve_wtsexporter()?;
-        let work = mark_output_and_make_work_dir(config)?;
+        let work = mark_output_and_make_work_directory(config)?;
         let json_out = work.path().join("result.json");
 
         // Cooperative only: cancel is checked before and after the external process.
@@ -108,7 +110,9 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         if platform == Platform::Ios {
             if let Some(decrypted) = decrypt_if_encrypted(source, work.path(), config)? {
                 args.read_decrypted(decrypted);
-            } else if let Some(bytes) = extract_bytes(source)? {
+            } else if extracts_ios_backup(&args)?
+                && let Some(bytes) = extract_bytes(source)?
+            {
                 check_headroom(work.path(), bytes, Disk::Scratch)?;
             }
         }
@@ -203,7 +207,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
 ///
 /// Returns an error when the output cannot be read or marked, holds files and
 /// no sentinel, or the work directory cannot be made.
-fn mark_output_and_make_work_dir(config: &ExporterConfig) -> Result<ScratchDir> {
+fn mark_output_and_make_work_directory(config: &ExporterConfig) -> Result<ScratchDir> {
     if !config.resume {
         message_ir_format::mark_export_directory(&config.output)?;
     }
@@ -295,7 +299,7 @@ mod tests {
     fn the_work_directory_is_made_under_the_scratch_directory_not_the_output() {
         let (_tmp, output, config) = empty_whatsapp_output();
 
-        let work = super::mark_output_and_make_work_dir(&config).unwrap();
+        let work = super::mark_output_and_make_work_directory(&config).unwrap();
 
         let root = config
             .scratch_dir
@@ -322,7 +326,7 @@ mod tests {
         message_ir_format::mark_export_directory(&output).unwrap();
         fs::write(output.join("earlier.jsonl"), "{}").unwrap();
 
-        let _work = super::mark_output_and_make_work_dir(&config).unwrap();
+        let _work = super::mark_output_and_make_work_directory(&config).unwrap();
 
         assert!(output.join("earlier.jsonl").is_file());
     }

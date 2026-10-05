@@ -246,6 +246,22 @@ struct ForwardedPaths {
     db: Option<PathBuf>,
 }
 
+/// Whether wtsexporter extracts WhatsApp's files from an iPhone backup into
+/// the work directory for `args`. It does when it is given a backup and no
+/// media directory that exists; with one, it says "WhatsApp directory
+/// already exists, skipping WhatsApp file extraction" and reads that.
+///
+/// # Errors
+///
+/// Returns an error when a forwarded path cannot be resolved.
+pub(crate) fn extracts_ios_backup(args: &WtsexporterArgs) -> Result<bool> {
+    if args.platform != Platform::Ios {
+        return Ok(false);
+    }
+    let paths = resolve_forwarded_paths(args)?;
+    Ok(paths.backup.is_some() && !paths.media.as_deref().is_some_and(Path::is_dir))
+}
+
 /// Absolutize user paths and fill Android/iOS defaults from `input` when missing.
 ///
 /// An iPhone backup passed with `-b` fills nothing from `input`: wtsexporter
@@ -416,7 +432,7 @@ fn write_key_file(work_dir: &Path, hex_key: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Platform, WtsexporterArgs, android_crypt_backup, input_search_root,
+        Platform, WtsexporterArgs, android_crypt_backup, extracts_ios_backup, input_search_root,
         resolve_forwarded_paths, wtsexporter_command,
     };
     use crate::ios_backup::DecryptedWhatsapp;
@@ -763,5 +779,37 @@ mod tests {
                 text(&shared),
             ]
         );
+    }
+
+    /// wtsexporter extracts an iPhone backup's WhatsApp files into the work
+    /// directory only when it gets the backup and no media directory that
+    /// exists, so only then is there an extract to measure. Android never
+    /// extracts one.
+    #[test]
+    fn only_an_iphone_backup_without_a_media_directory_is_extracted() {
+        let dir = tempdir().unwrap();
+        let backup = dir.path().join("backup");
+        let media = dir.path().join("WhatsApp");
+        fs::create_dir_all(&backup).unwrap();
+        let ios = |media: Option<&Path>| WtsexporterArgs {
+            platform: Platform::Ios,
+            backup: Some(backup.clone()),
+            media: media.map(Path::to_path_buf),
+            ..android_args(&backup, None)
+        };
+
+        assert!(extracts_ios_backup(&ios(None)).unwrap());
+        assert!(
+            extracts_ios_backup(&ios(Some(&media))).unwrap(),
+            "a media directory that does not exist is no reason to skip"
+        );
+        fs::create_dir_all(&media).unwrap();
+        assert!(!extracts_ios_backup(&ios(Some(&media))).unwrap());
+        let no_backup = WtsexporterArgs {
+            backup: None,
+            ..ios(None)
+        };
+        assert!(!extracts_ios_backup(&no_backup).unwrap());
+        assert!(!extracts_ios_backup(&android_args(&backup, None)).unwrap());
     }
 }

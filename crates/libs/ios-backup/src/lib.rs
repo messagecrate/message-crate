@@ -11,7 +11,7 @@
 //! domain of an encrypted backup decrypted to a directory
 //! ([`decrypt_ios_backup_domain`]).
 //!
-//! Opening a backup's databases and decrypting its files needs
+//! Decrypting a backup, and opening an encrypted backup's databases, needs
 //! `imessage-database` and `crabapple`, which are GPL-3.0-or-later, and this
 //! crate is under the Fair Core License, so that work happens in a separate
 //! program: `imessage-reader` (`crates/helpers/imessage-reader`). [`Helper`]
@@ -20,11 +20,15 @@
 //! directory one request decrypts into, under the Scratch Directory.
 //! `imessage-ir-exporter` starts the program through the same two types for
 //! an export. Why: `docs/adr/0014-gpl-code-only-behind-a-process-boundary.md`.
+//! The one database read here is the plain `Manifest.db` of a backup that is
+//! not encrypted, through `rusqlite` (MIT).
 
 mod backup;
 mod backup_domain;
 mod helper;
 mod identity;
+#[cfg(any(test, feature = "testutil"))]
+pub mod manifest_fixture;
 #[cfg(any(test, feature = "testutil"))]
 pub mod reader_build;
 #[cfg(all(unix, any(test, feature = "testutil")))]
