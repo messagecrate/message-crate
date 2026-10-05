@@ -193,7 +193,9 @@ fn write_message_file(conv_dir: &Path, sequence: u32, msg: &MailMessage) -> Resu
 }
 
 /// The file name of the `sequence`th `.eml` in a conversation directory:
-/// `000001_<local date>_<local time>_<first 8 hex of the guid>.eml`.
+/// `000001_<local date>_<local time>_<guid8>.eml`, where `<guid8>` is the
+/// first eight hex digits of the guid, or another eight-character part of
+/// it that a file name can hold.
 ///
 /// # Errors
 ///
@@ -364,7 +366,18 @@ fn local_date_time_parts(secs: i64) -> Option<(String, String)> {
     ))
 }
 
-/// The first eight hex characters of a guid, for file names.
+/// The guid's part of an `.eml` file name: its first eight hex digits, or,
+/// for a guid with fewer, its first eight characters padded with `0`.
+///
+/// Written as they were, those characters could hold a `/`, a line break or
+/// a character Windows reserves, and the file could not be created (#1824).
+/// Characters that every file system accepts, other than `%`, are written
+/// as they are, as every guid a source app gives is. Every other character
+/// is written as `%XX` for each of its UTF-8 bytes, and so is `%`, so two
+/// guids that differ only in such characters still give different names.
+/// The name begins with the sequence number and ends in `.eml`, so it is
+/// never a name Windows reserves and never ends in a dot or a space. The
+/// guid itself is kept in `X-ME-Guid`.
 fn guid_prefix8(guid: &str) -> String {
     let hex: String = guid
         .chars()
@@ -372,17 +385,21 @@ fn guid_prefix8(guid: &str) -> String {
         .take(8)
         .collect();
     if hex.len() >= 8 {
-        hex[..8].to_string()
-    } else {
-        // Fall back to first 8 chars (not bytes) to avoid panicking on
-        // multi-byte UTF-8 characters. Pad with zeros if shorter.
-        let prefix: String = guid.chars().take(8).collect();
-        if prefix.chars().count() >= 8 {
-            prefix
+        return hex;
+    }
+    let prefix: String = guid.chars().take(8).collect();
+    let prefix = format!("{prefix:0<8}");
+    let mut name = String::with_capacity(prefix.len());
+    for c in prefix.chars() {
+        if c.is_control() || "%/\\:*?\"<>|".contains(c) {
+            for b in c.to_string().bytes() {
+                name.push_str(&format!("%{b:02X}"));
+            }
         } else {
-            format!("{prefix:0<8}")
+            name.push(c);
         }
     }
+    name
 }
 
 /// Synthetic RFC5322 address for an identity, with its display name.

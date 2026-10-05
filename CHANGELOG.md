@@ -862,6 +862,13 @@ released versions carry their date on the heading.
   whole file. The same went for an attachment whose file type held one. Such
   a value is now written so the mail stays whole, and converting the file
   gives it back exactly as it was exported.
+- 2026-10-05 **An EML export of a message whose id holds a slash, a line
+  break or a character Windows does not allow in a file name finishes.**
+  Each message's file is named partly after its id, and such an id gave a
+  name no file could have, so the export of the whole conversation failed.
+  Those characters are now written as a `%` and two hex digits, so every
+  file name works on Linux, macOS and Windows. Messages whose ids hold none
+  of them keep the file names they had.
 - 2026-10-05 **The rest of the log says each count in plain words too.**
   The lines around a run's summary still wrote counts as "1 file(s)" or
   "3 conversion(s)": converting attachments, an Export from a server, and
