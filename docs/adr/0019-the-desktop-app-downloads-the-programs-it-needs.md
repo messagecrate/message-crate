@@ -1,8 +1,9 @@
 # The desktop app downloads the programs it needs and ships none of them
 
 The desktop app needs two programs it does not contain: ffmpeg (with
-ffprobe) and wtsexporter. The app uses ffmpeg to convert attachments. The
-server it starts uses ffmpeg to make Previews and Thumbnails of them.
+ffprobe) and wtsexporter. The app uses ffmpeg in an Import Run's Media
+Stage, which converts or compresses attachments. The server it starts uses
+ffmpeg to make Previews and Thumbnails of them.
 wtsexporter reads WhatsApp data. Each time the app starts it checks for both
 and downloads what is missing into the Tools Directory, in the background,
 with no button and no prompt (#1053). It passes the Tools Directory to the
@@ -17,11 +18,12 @@ downloads nothing.
 
 ## Why
 
-The conversions Message Crate runs ask ffmpeg for `libx264` and `libx265`,
-which only a GPL build of ffmpeg has. The repository is under the Fair Core
-License, so Message Crate must not hand out that build, in an installer or
-from a host of its own. When the person's computer fetches it from a third
-party, Message Crate distributes nothing.
+The Media Stage asks ffmpeg for `libx264` and `libx265`, and the server asks
+for `libx264` to make a video's Preview. Only a GPL build of ffmpeg has those
+encoders. The repository is under the Fair Core License, so Message Crate
+must not hand out that build, in an installer or from a host of its own.
+When the person's computer fetches it from a third party, Message Crate
+distributes nothing.
 
 A Message Crate the app starts must behave like one Docker runs, and the
 Docker image has ffmpeg. An app that waits for the person to install ffmpeg
@@ -52,7 +54,8 @@ programs would then reach the computer by two mechanisms.
 because it is a click to get functionality.
 
 **An LGPL build of ffmpeg.** It could be shipped, and it was rejected because
-it has neither encoder the conversions use.
+it has neither `libx264` nor `libx265`, so neither the Media Stage nor a
+video's Preview would work.
 
 **Keeping the ffmpeg directory setting as an override.** It was rejected
 because `PATH` is already the first place the app looks, so the setting
@@ -60,13 +63,15 @@ would be a second way to say the same thing.
 
 ## Consequences
 
-The first WhatsApp import and the first conversion on a new computer need an
-internet connection, and both depend on two GitHub projects keeping their
+On a new computer, the first WhatsApp import and the first Media Stage need
+an internet connection, and both depend on two GitHub projects keeping their
 release files in place: `eugeneware/ffmpeg-static` and
 `KnugiHK/WhatsApp-Chat-Exporter`. When a download fails the app says so only
 where the program is needed, and the user guide's troubleshooting section
 tells a person how to install ffmpeg with a package manager or put either
-program in the Tools Directory by hand.
+program in the Tools Directory by hand. Convert runs neither program,
+because it rewrites already-exported files and leaves their attachments as
+they are, so it needs no connection.
 
 Until ffmpeg arrives on a new computer, the server the app starts makes no
 Previews or Thumbnails. The Assets wait in its queue and are made once
