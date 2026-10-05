@@ -282,8 +282,8 @@ fn a_corrupt_journal_line_is_a_sentence_in_the_uploads_log() {
     assert!(line.contains(&journal.display().to_string()), "{line}");
     assert!(
         line.ends_with(
-            "The Upload sends what that line recorded again, and the server skips \
-             what it already holds."
+            "), so the Upload skips it and may send again what it recorded. The server \
+             skips what it already holds."
         ),
         "{line}"
     );

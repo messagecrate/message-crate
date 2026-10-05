@@ -89,12 +89,23 @@ impl JournalState {
 }
 
 /// The Upload's log line for a journal line that could not be read.
+///
+/// The line may have recorded nothing this Upload needs (a failure, another
+/// server's events, or a conversation a later line records), so the sentence
+/// says only that what it recorded may be sent again.
 fn corrupt_line_sentence(path: &Path, line: usize, error: &serde_json::Error) -> String {
+    // serde names a position within the line's JSON, whose line is always 1,
+    // so only its column is kept beside the journal's own line number.
+    let text = error.to_string();
+    let reason = text
+        .rfind(" at line ")
+        .map_or(text.as_str(), |at| &text[..at]);
     format!(
-        "Line {line} of the Upload's journal {} could not be read ({error}). \
-         The Upload sends what that line recorded again, and the server skips \
+        "Line {line} of the Upload's journal {} could not be read ({reason} at column {}), \
+         so the Upload skips it and may send again what it recorded. The server skips \
          what it already holds.",
-        path.display()
+        path.display(),
+        error.column()
     )
 }
 
@@ -106,8 +117,9 @@ pub fn journal_path(input: &Path) -> PathBuf {
 /// Read the journal and keep events that match this server URL and username.
 ///
 /// A missing file is treated as an empty journal. A corrupt line is skipped,
-/// and `on_corrupt` gets one sentence for the Upload's log saying so; what the
-/// line recorded is sent again, and the server skips what it already holds.
+/// and `on_corrupt` gets one sentence for the Upload's log saying so. What
+/// the line recorded may be sent again, and the server skips what it already
+/// holds.
 ///
 /// # Errors
 ///
@@ -445,10 +457,12 @@ mod tests {
         ]
     }
 
-    /// A corrupt line is skipped, and the sentence for the Upload's log names
-    /// its line number and the journal, with no `warning:` prefix (#1889).
+    /// A corrupt line is skipped while the lines around it are kept, and the
+    /// sentence counts it among every line of the file, with only serde's
+    /// column beside it (#1889). The rest of the sentence is checked by
+    /// `a_corrupt_journal_line_is_a_sentence_in_the_uploads_log`.
     #[test]
-    fn a_corrupt_line_is_skipped_and_named_in_one_sentence() {
+    fn a_corrupt_line_is_skipped_and_named_by_its_line_in_the_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(JOURNAL_NAME);
         append(&path, &success_events("http://server", "alice", "kept")[2]).unwrap();
@@ -466,17 +480,9 @@ mod tests {
         assert_eq!(lines.len(), 1, "{lines:?}");
         assert!(
             lines[0].starts_with(&format!(
-                "Line 2 of the Upload's journal {} could not be read (",
+                "Line 2 of the Upload's journal {} could not be read (key must be a string at column 2), ",
                 path.display()
             )),
-            "{}",
-            lines[0]
-        );
-        assert!(
-            lines[0].ends_with(
-                "). The Upload sends what that line recorded again, and the server \
-                 skips what it already holds."
-            ),
             "{}",
             lines[0]
         );
