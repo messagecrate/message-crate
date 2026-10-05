@@ -121,9 +121,23 @@ export function tapbackGroups(m: Message): TapbackGroup[] {
   return [...groups.values()];
 }
 
-/** A chat bubble's corners: round, with the tail corner on the author's side. */
-function bubbleRadius(mine: boolean): string {
-  return mine ? "rounded-[18px] rounded-br-[4px]" : "rounded-[18px] rounded-bl-[4px]";
+/**
+ * A chat bubble's shape, marked or not: round corners with the tail corner on
+ * the author's side, its width, padding and text size. Each caller adds colours.
+ */
+function bubbleShape(mine: boolean): string {
+  const corners = mine ? "rounded-[18px] rounded-br-[4px]" : "rounded-[18px] rounded-bl-[4px]";
+  return `${corners} max-w-[min(78%,34rem)] whitespace-pre-wrap break-words px-[0.7rem] py-[0.45rem] text-[0.9375rem] leading-[1.35]`;
+}
+
+/**
+ * Whether a marked message gets a `MarkedBubble`: always when Unsent, and when
+ * Deleted in the source app only if it kept something to draw in it. A message
+ * that kept nothing is its time and note alone, as an empty unmarked message
+ * draws no bubble, rather than an empty dashed outline.
+ */
+function drawsMarkedBubble(deletion: Deletion, keptSomething: boolean): boolean {
+  return deletion === "unsent" || keptSomething;
 }
 
 /**
@@ -146,7 +160,7 @@ function MarkedBubble({
 }) {
   return (
     <div
-      className={`${bubbleRadius(mine)} w-fit max-w-[min(78%,34rem)] whitespace-pre-wrap break-words border border-dashed border-muted bg-transparent px-[0.7rem] py-[0.45rem] text-[0.9375rem] leading-[1.35] text-muted ${
+      className={`${bubbleShape(mine)} w-fit border border-dashed border-muted bg-transparent text-muted ${
         mine ? "ml-auto" : ""
       }`}
     >
@@ -232,7 +246,7 @@ export function ChatBubbleRow({
         </div>
       ) : null}
 
-      {deletion ? (
+      {deletion && drawsMarkedBubble(deletion, hasBubble || Boolean(footer)) ? (
         <MarkedBubble deletion={deletion} mine={mine}>
           {children}
           {footer ? <div className={hasBubble ? "mt-[0.2rem]" : "mt-0"}>{footer}</div> : null}
@@ -241,7 +255,7 @@ export function ChatBubbleRow({
 
       {!deletion && hasBubble ? (
         <div
-          className={`${bubbleRadius(mine)} ${bubbleColorClasses(palette, mine)} max-w-[min(78%,34rem)] whitespace-pre-wrap break-words px-[0.7rem] py-[0.45rem] text-[0.9375rem] leading-[1.35] ${
+          className={`${bubbleShape(mine)} ${bubbleColorClasses(palette, mine)} ${
             mine ? "" : "shadow-bubble"
           }`}
         >
@@ -318,6 +332,8 @@ export function ServiceBubbleShell({
   const mine = message.is_from_me;
   const zone = useTimeZone();
   const deletion = message.deletion;
+  const keptSomething =
+    Boolean(message.text?.trim()) || message.attachments.length > 0 || message.tapbacks.length > 0;
   return (
     <ServiceRow messageId={String(message.id)} isActive={isActive}>
       <div
@@ -337,9 +353,11 @@ export function ServiceBubbleShell({
         </span>
       </div>
       {deletion ? (
-        <MarkedBubble deletion={deletion} mine={mine}>
-          {children}
-        </MarkedBubble>
+        drawsMarkedBubble(deletion, keptSomething) ? (
+          <MarkedBubble deletion={deletion} mine={mine}>
+            {children}
+          </MarkedBubble>
+        ) : null
       ) : (
         <div className="text-text">{children}</div>
       )}

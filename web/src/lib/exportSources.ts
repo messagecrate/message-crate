@@ -17,7 +17,8 @@ export const EXPORT_SOURCES: { id: string; label: string }[] = [
 
 /**
  * Sources the conversation draws a bubble for that Import does not offer, by
- * the name the product gives them.
+ * the name the product gives them. A source moves to `EXPORT_SOURCES` once
+ * Import offers it, so each source is named in one place.
  */
 const OTHER_SOURCE_LABELS: Record<string, string> = {
   discord: "Discord",

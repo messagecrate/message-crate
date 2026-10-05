@@ -164,6 +164,16 @@ describe.each(BUBBLES)("$name bubble", ({ Bubble, source, service, label }) => {
     expect(screen.getByText(`· Deleted in ${label}`)).toBeInTheDocument();
   });
 
+  it("draws no empty outline for a message Deleted in the source app that kept nothing, only the note", () => {
+    const { container } = renderInUtc(
+      Bubble,
+      message({ source, service, text: " ", deletion: "deleted_in_source_app" }),
+    );
+
+    expect(container.querySelector(".border-dashed")).toBeNull();
+    expect(screen.getByText(`· Deleted in ${label}`)).toBeInTheDocument();
+  });
+
   it("draws an Unsent message as the empty bubble alone, leaving out attachments and reactions", () => {
     renderInUtc(
       Bubble,
