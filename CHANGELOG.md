@@ -391,6 +391,13 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **One import of two backups gives a message its later edit.**
+  When one import carried an older and a newer backup of the same phone,
+  and a message new to the Message Crate was edited between them, the
+  message took the text and earlier versions of whichever file came first,
+  so it could keep the older text. It now takes the newer backup's text and
+  earlier versions in either order, and search finds it as an import of
+  the newer backup alone would.
 - 2026-10-05 **The server's import command names the line of a conversation
   it refuses for its source.** Before it imports a directory, the command
   reads every conversation's source. A conversation with no source, with a

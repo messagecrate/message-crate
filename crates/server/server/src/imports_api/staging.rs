@@ -13,7 +13,7 @@ use crate::db::handles::{
 };
 use crate::db::staging::{
     self as db_staging, StagingAttachment, StagingConversation, StagingEarlierVersion,
-    StagingMessage, StagingTapback,
+    StagingMessage, StagingMessageKey, StagingTapback,
 };
 use crate::import_media;
 use crate::jsonl::{self, ReadRecordsError};
@@ -840,11 +840,18 @@ async fn flush_staging_message_chunk(
     let mut att_rows = Vec::new();
     let mut tap_rows = Vec::new();
     let mut version_rows = Vec::new();
+    let mut later_copies = Vec::new();
     for row in chunk {
         // Consume the RETURNING id so a conflicted row (duplicate guid) is
-        // skipped instead of attaching children to another message.
+        // skipped instead of attaching children to another message. A
+        // conflicted row with earlier versions may be a later backup of
+        // the staged one, which is checked once the chunk's own versions
+        // are written.
         let Some(message_id) = by_sort.remove(&row.sort_order) else {
             counts.messages_deduped += 1;
+            if !row.msg.earlier_versions.is_empty() {
+                later_copies.push(row);
+            }
             continue;
         };
         counts.messages += 1;
@@ -860,18 +867,26 @@ async fn flush_staging_message_chunk(
             row.msg
                 .earlier_versions
                 .iter()
-                .map(|version| StagingEarlierVersion {
-                    message_id,
-                    part_index: version.part_index,
-                    text: &version.text,
-                    edited_at: version.edited_at.as_deref(),
-                }),
+                .map(|version| StagingEarlierVersion::from_record(message_id, version)),
         );
     }
 
     counts.attachments += db_staging::insert_attachments(tx, &att_rows).await?;
     counts.tapbacks += db_staging::insert_tapbacks(tx, &tap_rows).await?;
     db_staging::insert_earlier_versions(tx, &version_rows).await?;
+    for row in later_copies {
+        db_staging::take_later_staged_copy(
+            tx,
+            StagingMessageKey {
+                account_id: stmts.account_id,
+                source,
+                guid: &row.msg.guid,
+            },
+            row.body.as_deref(),
+            &row.msg.earlier_versions,
+        )
+        .await?;
+    }
     Ok(())
 }
 
