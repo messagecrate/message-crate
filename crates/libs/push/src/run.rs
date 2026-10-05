@@ -43,12 +43,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
+use jsonl_journal::ServerTarget;
 use message_crate_core::{CancelFlag, check_cancel};
 
 use crate::AuthInfo;
 use crate::directory::{detect_source, file_label, input_directory, list_jsonl_files};
 use crate::http::{HttpSession, ImportOutcome};
-use crate::journal::{self, RunJournal, ServerTarget};
+use crate::journal::{self, RunJournal};
 use crate::pipeline::{ChunkStep, ImportPipeline};
 use crate::prepare::{
     PrepareContext, PrepareOutcome, PrepareQueue, PrepareResult, PreparedFile, SharedJournal,

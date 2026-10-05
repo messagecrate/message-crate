@@ -2,7 +2,9 @@
 //!
 //! A journal is one JSON object per line. Readers rebuild skip-sets from the
 //! events; writers append rows and periodically rewrite the file compacted.
-//! Events are opaque to this crate — callers bring their own serde type.
+//! Events are opaque to this crate — callers bring their own serde type. The
+//! one shape this crate names is [`ServerTarget`], the server and account an
+//! event belongs to, which the Upload's journal and the Export's both carry.
 //!
 //! All writes run under one process-wide lock, so a rewrite can never mix
 //! bytes with a concurrent append.
@@ -13,8 +15,34 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use anyhow::{Context, Result};
-use serde::Serialize;
 use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
+
+/// The server and account a journal records progress for: the server's URL
+/// and the username the session resolved to. One directory can be uploaded
+/// to more than one server and account, or be exported into from more than
+/// one, so every event names its target.
+///
+/// An event holds it as `#[serde(flatten)]`, so on disk the two are a line's
+/// own `url` and `username` keys, beside the event's other fields, and each
+/// line reads whole on its own.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerTarget {
+    /// Base URL of the server.
+    pub url: String,
+    /// Username of the account the run logged in as.
+    pub username: String,
+}
+
+impl ServerTarget {
+    /// The target for `url` and `username`.
+    pub fn new(url: impl Into<String>, username: impl Into<String>) -> Self {
+        Self {
+            url: url.into(),
+            username: username.into(),
+        }
+    }
+}
 
 /// One lock for append and rewrite so two threads cannot mix bytes on a line
 /// or rewrite the file while another thread is appending.
@@ -163,7 +191,6 @@ fn write_unlocked<E: Serialize>(path: &Path, events: &[E]) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde::Deserialize;
 
     #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
     struct TestEvent {

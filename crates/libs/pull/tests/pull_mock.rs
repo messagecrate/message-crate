@@ -270,8 +270,7 @@ fn load_journal(out_dir: &Path, server: &MockServer) -> PullJournalState {
     let mut unreadable = Vec::new();
     let state = journal::load(
         &journal::journal_path(out_dir),
-        &server.base_url(),
-        "alice",
+        &journal::ServerTarget::new(server.base_url(), "alice"),
         &mut |sentence| unreadable.push(sentence),
     )
     .unwrap();
