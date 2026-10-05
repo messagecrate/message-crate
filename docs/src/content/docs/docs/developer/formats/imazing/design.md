@@ -27,7 +27,14 @@ Discovery walks the selected path recursively without following directory symbol
   `read_date`, `edited_date`, `deleted_date`, `sent_date`, plus `group_title` when the session
   string is a display title.
 - `participants_json` is always written (unified header).
-- The shared dedupe step (`message_ir::one_copy_per_message`) compares attachments by content digest, or by path when the file was not found, so rows with one time and text and different media are kept.
+- The shared dedupe step (`message_ir::one_copy_per_message`) compares a row's attachment by its `Attachment` cell, so rows with one time and text and different files named are kept.
+  Rows of one conversation and one second that name one file, and that iMazing wrote different files for (`image0.jpg`, `image0 2.jpg`), are compared by the SHA-256 of each file instead, because their cell is the same.
+  Different pictures are then two messages, each with its own picture, and two copies of one picture are one message.
+  A group is hashed only when one CSV holds two or more of its rows with different files, and its rows from every CSV are then hashed, so a second export of the chat still repeats the same messages.
+  A row of a hashed group that has no file, from an export that lacks the files, is a copy of whichever hashed message it repeats, not a message of its own.
+  Only those rows are hashed, so every other message's id stays the same whether its file was found or not, and whatever other export the run reads.
+  A run that does not copy media finds no files, so it compares the cells alone.
+- The writer is given each kept message's files in the order it writes them, so the file of a row the dedupe step drops goes to no message.
 - When the Import form's **Attachments** choice copies media (and always for mail / Xml), each row's file is found in its own
   chat folder by the naming rules in [input](/docs/developer/formats/imazing/input/#export-tree) and copied under
   `output/attachments/`. A row with no such file, or whose file can't be told apart from another row's, is marked `file_missing`, so no file goes to two rows.
@@ -54,6 +61,13 @@ Each chat session has a `message_ir::ConversationKey`: a one-to-one conversation
 The key's chat id is the conversation's `chat_identifier`: the address, `group:` and the group's id, or `name:` and the whole trimmed name.
 Each kind other than an address has a prefix of its own, so a name never takes an address's or a group's key.
 The rows of one session in one CSV are one conversation.
+
+Every `Sender ID`, session name and roster label is classified once, by `phone::Handle::parse`, and the typed address goes from there to the sender, the members and the key.
+A value with `@` is an email address, keyed in lower case.
+A value written as a number, after an optional `tel:`, is a phone number, so `tel:5555550101` and a tab-padded `555-555-0101` are one address.
+Anything else, such as `Trip 2024` or `Promo2024`, is a name and no address.
+A `Sender ID` that is a name, such as `AMAZON`, is still the message's sender, and the server gives it an identity of type `other`. It never becomes a conversation's key or a group's member.
+A number written inside a longer session name (`Bob (+13215550100)`) is a `+` and at least four digits, so `Party +1` names no number.
 
 ### Group or one-to-one
 
