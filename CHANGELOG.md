@@ -391,6 +391,14 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **A newer backup brings a message's later edit.** When a
+  message already in the Message Crate had been edited again on the phone,
+  importing the newer backup kept the old text and the old earlier versions,
+  because the import skips a message it already holds. A word only the new
+  text held found nothing, and Export wrote the old text. The message now
+  takes the newer backup's text and earlier versions, and search finds it by
+  both. An older backup imported after a newer one leaves the message as it
+  is.
 - 2026-10-05 **An import's log and Convert's log say each count in the same
   plain words.** Converting and importing one SMS Backup & Restore backup
   used to word its counts two ways: Convert wrote "Skipped 1 message with no
