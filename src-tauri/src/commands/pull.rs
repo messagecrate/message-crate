@@ -1,11 +1,11 @@
-//! `pull` command — download messages from a Message Crate server.
+//! `pull` command — export messages from a Message Crate server.
 
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
 use message_crate_core::count_of;
 use message_crate_pull::{
-    DEFAULT_ASSET_DOWNLOAD_WORKERS, DEFAULT_PAGE_LIMIT, ExportQueryList, ProgressEvent, PullConfig,
+    DEFAULT_ASSET_FETCH_WORKERS, DEFAULT_PAGE_LIMIT, ExportQueryList, ProgressEvent, PullConfig,
     run as run_pull,
 };
 
@@ -30,11 +30,11 @@ pub struct PullArgs {
     /// message of the conversations the query shows, or the messages it
     /// matches.
     pub list: ExportQueryList,
-    /// When true, skip attachments and download messages only.
+    /// When true, skip attachments and export messages only.
     pub skip_attachments: bool,
 }
 
-/// Ask this process to download conversations from a server.
+/// Ask this process to export conversations from a server.
 ///
 /// Returns as soon as the background thread starts. Log lines and the final
 /// summary use the same `extract:log` / `extract:finished` / `extract:error`
@@ -43,7 +43,7 @@ pub struct PullArgs {
 /// # Errors
 ///
 /// Returns an error if another job is running, or if another thread panicked
-/// while holding the shared state lock. Failures during the download are
+/// while holding the shared state lock. Failures during the Export are
 /// sent as `extract:error`.
 #[tauri::command(async)]
 pub fn pull(
@@ -65,7 +65,7 @@ pub fn pull(
             skip_attachments: args.skip_attachments,
             page_limit: DEFAULT_PAGE_LIMIT,
             cancel: Some(cancel),
-            asset_download_workers: DEFAULT_ASSET_DOWNLOAD_WORKERS,
+            asset_fetch_workers: DEFAULT_ASSET_FETCH_WORKERS,
         };
 
         let mut progress = |event: ProgressEvent| match event {

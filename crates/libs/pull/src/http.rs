@@ -1,5 +1,5 @@
 //! HTTP helpers for an Export Run: creating it, paging its messages, closing
-//! it, and downloading attachments.
+//! it, and fetching Assets.
 //!
 //! Calls are blocking so they can run on worker threads without an async
 //! runtime. The session type is [`message_crate_http::HttpSession`].
@@ -148,12 +148,12 @@ pub fn close_export(
     ok_json(&what, status, &text)
 }
 
-/// Download one attachment by SHA-256 fingerprint to `dest`.
+/// Fetch one Asset by its SHA-256 fingerprint to `dest`.
 ///
 /// Bytes are written to the Asset's own temporary file beside `dest` first
 /// ([`write_asset`]) and hashed as they are written. The file is renamed
 /// into place only when their SHA-256 is `sha256`, so neither a crash nor an
-/// answer that is not the attachment leaves a file at the destination, and
+/// answer that is not the Asset leaves a file at the destination, and
 /// two Assets fetched at once never write one temporary file.
 ///
 /// # Errors
@@ -164,7 +164,7 @@ pub fn close_export(
 /// it was created. Each error after the fingerprint check names the Asset.
 ///
 /// Returns the number of bytes written to `dest`.
-pub fn download_asset(
+pub fn fetch_asset(
     http: &HttpSession,
     base_url: &str,
     token: &str,
@@ -179,7 +179,7 @@ pub fn download_asset(
     let what = format!("Asset {sha_clean} fetch");
     let fetch_failed = || format!("{what} failed");
     let base = trim_base_url(base_url);
-    // The fingerprint alone names the attachment, and the token names the
+    // The fingerprint alone names the Asset, and the token names the
     // account; the route takes no query.
     let url = reqwest::Url::parse(&format!("{base}/v1/assets/{sha_clean}"))
         .with_context(|| format!("invalid server address {base}"))?;
@@ -279,7 +279,7 @@ mod tests {
         let dest = dir.path().join("asset.bin");
 
         for bad in ["a".repeat(63), "z".repeat(64), "abc123".to_string()] {
-            let err = download_asset(&http, &server.base_url(), "mc_test", &bad, &dest)
+            let err = fetch_asset(&http, &server.base_url(), "mc_test", &bad, &dest)
                 .expect_err("a bad fingerprint is an error");
             assert!(
                 err.to_string().contains("invalid SHA-256 digest"),
@@ -290,10 +290,10 @@ mod tests {
         assert!(!dest.exists());
     }
 
-    /// A session that expires mid-run answers 401 to a download, and the
+    /// A session that expires mid-run answers 401 to a fetch, and the
     /// message says to log in again.
     #[test]
-    fn a_401_download_says_to_log_in_again() {
+    fn a_401_fetch_says_to_log_in_again() {
         let server = httpmock::MockServer::start();
         let digest = "a".repeat(64);
         server.mock(|when, then| {
@@ -304,7 +304,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let dest = dir.path().join("asset.bin");
 
-        let err = download_asset(&http, &server.base_url(), "mc_test", &digest, &dest)
+        let err = fetch_asset(&http, &server.base_url(), "mc_test", &digest, &dest)
             .expect_err("a 401 is an error");
         let message = err.to_string();
         assert!(

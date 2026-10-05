@@ -1,5 +1,5 @@
 //! Mock server tests for one pull: login, the Export Run it records, two
-//! pages of messages, asset download, the journal a second run reads, and
+//! pages of messages, Asset fetches, the journal a second run reads, and
 //! the progress a caller sees.
 //!
 //! The mock answers the five routes `run` calls — `GET /v1/session`,
@@ -173,7 +173,7 @@ fn mock_run(server: &MockServer) -> (httpmock::Mock<'_>, httpmock::Mock<'_>) {
 
 /// Two pages of `GET /v1/exports/{id}/messages` at two messages a page:
 /// messages 1 and 2 with `total` 3, then message 3. The menu is on messages
-/// 1 and 3, so its second mention must not download twice.
+/// 1 and 3, so its second mention must not be fetched twice.
 fn mock_pages<'a>(
     server: &'a MockServer,
     source: &str,
@@ -221,8 +221,8 @@ fn mock_pages<'a>(
 }
 
 /// `GET /v1/assets/{sha256}`, answering `bytes`. The fingerprint alone names
-/// the attachment and the token names the account, and the server refuses a
-/// parameter a route does not declare, so a download that still sent
+/// the Asset and the token names the account, and the server refuses a
+/// parameter a route does not declare, so a fetch that still sent
 /// `source=` or `account=` would not match.
 fn mock_asset<'a>(server: &'a MockServer, sha256: &str, bytes: &[u8]) -> httpmock::Mock<'a> {
     server.mock(|when, then| {
@@ -245,7 +245,7 @@ fn part_files_in(dir: &Path) -> Vec<String> {
         .collect()
 }
 
-/// A pull of every message into `out_dir`: two messages a page, one download
+/// A pull of every message into `out_dir`: two messages a page, one fetch
 /// worker so the counts in the log are fixed.
 fn config(out_dir: &Path, base_url: String) -> PullConfig {
     PullConfig {
@@ -257,20 +257,20 @@ fn config(out_dir: &Path, base_url: String) -> PullConfig {
         skip_attachments: false,
         page_limit: 2,
         cancel: None,
-        asset_download_workers: 1,
+        asset_fetch_workers: 1,
     }
 }
 
 /// The report `run` returns for the three-message fixture.
-fn report_for(out_dir: &Path, downloaded: u64, skipped: u64) -> PullReport {
+fn report_for(out_dir: &Path, fetched: u64, kept: u64) -> PullReport {
     PullReport {
         account: 1,
         export_id: EXPORT_ID,
         query: String::new(),
         conversations: 1,
         messages: 3,
-        attachments_downloaded: downloaded,
-        attachments_skipped: skipped,
+        assets_fetched: fetched,
+        assets_kept: kept,
         refused_attachment_paths: Vec::new(),
         out_dir: out_dir.display().to_string(),
     }
@@ -408,7 +408,7 @@ fn an_attachment_path_that_leaves_the_directory_with_no_sha256_is_not_written() 
 /// The server can hold an attachment path that climbs out of a directory or
 /// names an absolute one, because an import that reuses a stored fingerprint
 /// never read the file at that path. Joined onto the output directory, such a
-/// path would write the download anywhere on disk. Each one is refused: the
+/// path would write the fetched Asset anywhere on disk. Each one is refused: the
 /// file lands at `attachments/{sha256}`, the conversation file names that
 /// path, and the report and the log name the refused path.
 #[test]
@@ -515,7 +515,7 @@ fn the_journal_lists_every_asset_and_marks_the_run_finished() {
 }
 
 #[test]
-fn a_second_run_over_the_same_directory_downloads_nothing_it_already_has() {
+fn a_second_run_over_the_same_directory_fetches_nothing_it_already_has() {
     let server = MockServer::start();
     let _auth = mock_auth(&server);
     let (create, complete) = mock_run(&server);
@@ -540,7 +540,7 @@ fn a_second_run_over_the_same_directory_downloads_nothing_it_already_has() {
     assert_eq!(report, report_for(&out, 0, 2));
     assert_eq!(menu.calls(), 1);
     assert_eq!(photo.calls(), 1);
-    // Every pull is its own run, whether or not it downloads anything.
+    // Every pull is its own run, whether or not it fetches anything.
     assert_eq!(create.calls(), 2);
     assert_eq!(complete.calls(), 2);
     assert_eq!(
@@ -732,7 +732,7 @@ fn two_groups_with_one_title_are_both_written() {
 }
 
 #[test]
-fn skipping_attachments_writes_messages_without_files_or_downloads() {
+fn skipping_attachments_writes_messages_without_files_or_fetches() {
     let server = MockServer::start();
     let _auth = mock_auth(&server);
     let _run = mock_run(&server);
@@ -1060,7 +1060,7 @@ fn a_refused_session_says_to_log_in_again() {
 }
 
 /// Staging names a file by date and fingerprint, so one menu sent on two days
-/// has two paths on the server. The menu downloads once, and every path a
+/// has two paths on the server. The menu is fetched once, and every path a
 /// message names exists after the pull holding the menu's bytes.
 #[test]
 fn every_path_a_message_names_exists_after_a_pull() {
