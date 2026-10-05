@@ -28,7 +28,7 @@ pub enum PullJournalEvent {
         sha256: String,
     },
     /// A whole download finished, with its counts.
-    BackupComplete {
+    ExportComplete {
         /// Server base URL the download came from.
         url: String,
         /// Account username the run logged in as.
@@ -48,8 +48,8 @@ pub enum PullJournalEvent {
 pub struct PullJournalState {
     /// SHA-256 fingerprints (hex of the file bytes) of attachments already on disk.
     pub assets: HashSet<String>,
-    /// True if the last run finished cleanly (a `backup_complete` event was written).
-    pub backup_complete: bool,
+    /// True if the last run finished cleanly (an `export_complete` event was written).
+    pub export_complete: bool,
 }
 
 /// Path of `.message-crate-pull-state.jsonl` inside the output directory.
@@ -74,7 +74,7 @@ pub fn load(path: &Path, url: &str, username: &str) -> Result<PullJournalState> 
             PullJournalEvent::AssetOk { sha256, .. } => {
                 state.assets.insert(sha256);
             }
-            PullJournalEvent::BackupComplete { .. } => state.backup_complete = true,
+            PullJournalEvent::ExportComplete { .. } => state.export_complete = true,
         }
     }
     Ok(state)
@@ -115,9 +115,9 @@ pub fn compact(path: &Path, url: &str, username: &str, state: &PullJournalState)
                 sha256: sha.clone(),
             });
         }
-        if state.backup_complete {
-            // Counts are unused on resume; a `backup_complete` row only means the last run finished.
-            events.push(PullJournalEvent::BackupComplete {
+        if state.export_complete {
+            // Counts are unused on resume; an `export_complete` row only means the last run finished.
+            events.push(PullJournalEvent::ExportComplete {
                 url: url.to_string(),
                 username: username.to_string(),
                 conversations: 0,
@@ -133,7 +133,7 @@ impl PullJournalEvent {
     /// Whether this line was written by a run against server `url` as `username`.
     fn is_for(&self, url: &str, username: &str) -> bool {
         let (u, a) = match self {
-            Self::AssetOk { url, username, .. } | Self::BackupComplete { url, username, .. } => {
+            Self::AssetOk { url, username, .. } | Self::ExportComplete { url, username, .. } => {
                 (url, username)
             }
         };
@@ -146,7 +146,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn loads_asset_and_backup_complete_events() {
+    fn loads_asset_and_export_complete_events() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(PULL_JOURNAL_NAME);
         fs::write(
@@ -156,7 +156,7 @@ mod tests {
                 "\"sha256\":\"aaabbbccc\",\"path\":\"attachments/aaabbbccc\",\"size_bytes\":12345}\n",
                 "{\"event\":\"asset_ok\",\"url\":\"http://server\",\"username\":\"alice\",",
                 "\"sha256\":\"dddeeefff\",\"path\":\"attachments/dddeeefff\",\"size_bytes\":67890}\n",
-                "{\"event\":\"backup_complete\",\"url\":\"http://server\",\"username\":\"alice\",",
+                "{\"event\":\"export_complete\",\"url\":\"http://server\",\"username\":\"alice\",",
                 "\"conversations\":2,\"messages\":100,\"assets\":2}\n",
             ),
         )
@@ -166,7 +166,7 @@ mod tests {
 
         assert!(state.assets.contains("aaabbbccc"));
         assert!(state.assets.contains("dddeeefff"));
-        assert!(state.backup_complete);
+        assert!(state.export_complete);
     }
 
     #[test]
@@ -197,7 +197,7 @@ mod tests {
         state.assets.insert("ccc".into());
         state.assets.insert("aaa".into());
         state.assets.insert("bbb".into());
-        state.backup_complete = true;
+        state.export_complete = true;
 
         compact(&path, "http://server", "alice", &state).unwrap();
 
@@ -206,7 +206,7 @@ mod tests {
         assert!(reloaded.assets.contains("aaa"));
         assert!(reloaded.assets.contains("bbb"));
         assert!(reloaded.assets.contains("ccc"));
-        assert!(reloaded.backup_complete);
+        assert!(reloaded.export_complete);
     }
 
     /// `append` is what a pull actually calls, once per asset, and nothing
@@ -232,7 +232,7 @@ mod tests {
         // interrupted after one asset must find that one asset.
         let after_first = load(&path, "http://server", "alice").unwrap();
         assert!(after_first.assets.contains("aaa"));
-        assert!(!after_first.backup_complete);
+        assert!(!after_first.export_complete);
 
         append(
             &path,
@@ -299,7 +299,7 @@ mod tests {
             username: username.into(),
             sha256: sha256.into(),
         };
-        let complete = |url: &str, username: &str| PullJournalEvent::BackupComplete {
+        let complete = |url: &str, username: &str| PullJournalEvent::ExportComplete {
             url: url.into(),
             username: username.into(),
             conversations: 1,
@@ -318,19 +318,19 @@ mod tests {
         let mut state = PullJournalState::default();
         state.assets.insert("ccc".into());
         state.assets.insert("ddd".into());
-        state.backup_complete = true;
+        state.export_complete = true;
 
         compact(&path, "http://server-b", "alice", &state).unwrap();
 
         let server_a = load(&path, "http://server-a", "alice").unwrap();
         assert!(server_a.assets.contains("aaa"));
-        assert!(server_a.backup_complete);
+        assert!(server_a.export_complete);
         let other_account = load(&path, "http://server-a", "bob").unwrap();
         assert!(other_account.assets.contains("bbb"));
-        assert!(!other_account.backup_complete);
+        assert!(!other_account.export_complete);
         let server_b = load(&path, "http://server-b", "alice").unwrap();
         assert_eq!(server_b.assets.len(), 2);
-        assert!(server_b.backup_complete);
+        assert!(server_b.export_complete);
         // Server B's duplicate line is gone: one line per attachment.
         let text = fs::read_to_string(&path).unwrap();
         assert_eq!(text.lines().count(), 6, "{text}");

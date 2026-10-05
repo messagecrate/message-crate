@@ -846,6 +846,14 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-05 **An Export from a server no longer calls itself a backup in
+  the log.** It began with "Backup query: from:sam" and, when the directory
+  held a finished run, "Previous backup completed successfully". A backup is
+  the phone's file an import reads, so the log now says "Exporting the
+  messages that match: from:sam" and "The previous Export Run finished.
+  Checking for new messages…". The line with the run's counts names its
+  record: "Export Run 7 holds 3 messages in 1 conversation", where it said
+  "Export 7".
 - 2026-10-05 **The rest of the log says each count in plain words too.**
   The lines around a run's summary still wrote counts as "1 file(s)" or
   "3 conversion(s)": converting attachments, an Export from a server, and

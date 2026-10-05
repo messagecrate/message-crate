@@ -180,11 +180,11 @@ pub fn run(cfg: &PullConfig, mut on_progress: Option<&mut ProgressFn<'_>>) -> Re
     }
     let pull = Pull::login(cfg, &mut on_progress)?;
     prepare_out_dir(&cfg.out_dir, cfg.skip_attachments)?;
-    if pull.journal.backup_complete {
+    if pull.journal.export_complete {
         emit(
             &mut on_progress,
             ProgressEvent::Log(
-                "Previous backup completed successfully. Running to check for new messages…".into(),
+                "The previous Export Run finished. Checking for new messages…".into(),
             ),
         );
     }
@@ -205,7 +205,7 @@ pub fn run(cfg: &PullConfig, mut on_progress: Option<&mut ProgressFn<'_>>) -> Re
         emit(
             &mut on_progress,
             ProgressEvent::Log(format!(
-                "warning: could not {action} export run {} on the server: {error:#}",
+                "warning: could not {action} Export Run {} on the server: {error:#}",
                 export.id
             )),
         );
@@ -310,13 +310,15 @@ impl<'a> Pull<'a> {
         emit(
             out,
             ProgressEvent::Log(if query.is_empty() {
-                "Backup query: (all messages)".into()
+                "Exporting every message".into()
             } else {
                 match cfg.list {
-                    ExportQueryList::Messages => format!("Backup query: {query}"),
-                    ExportQueryList::Conversations => format!(
-                        "Backup query: {query} (every message of the conversations it finds)"
-                    ),
+                    ExportQueryList::Messages => {
+                        format!("Exporting the messages that match: {query}")
+                    }
+                    ExportQueryList::Conversations => {
+                        format!("Exporting every message of the conversations that match: {query}")
+                    }
                 }
             }),
         );
@@ -369,7 +371,7 @@ impl<'a> Pull<'a> {
         emit(
             out,
             ProgressEvent::Log(format!(
-                "Export {} holds {} in {}, with {} ({})",
+                "Export Run {} holds {} in {}, with {} ({})",
                 export.id,
                 count_of(count(export.message_count), "message", "messages"),
                 count_of(
@@ -622,7 +624,7 @@ impl<'a> Pull<'a> {
         assets: &AssetCounts,
         seen_assets: HashMap<String, String>,
     ) {
-        let event = crate::journal::PullJournalEvent::BackupComplete {
+        let event = crate::journal::PullJournalEvent::ExportComplete {
             url: self.cfg.base_url.clone(),
             username: self.username.clone(),
             conversations,
@@ -633,7 +635,7 @@ impl<'a> Pull<'a> {
             emit(
                 out,
                 ProgressEvent::Log(format!(
-                    "warning: could not record the finished download in the journal: {error:#}"
+                    "warning: could not record the finished Export in the journal: {error:#}"
                 )),
             );
         }
@@ -641,7 +643,7 @@ impl<'a> Pull<'a> {
         recorded_assets.extend(seen_assets.into_keys());
         let final_state = crate::journal::PullJournalState {
             assets: recorded_assets,
-            backup_complete: true,
+            export_complete: true,
         };
         if let Err(error) = crate::journal::compact(
             &self.journal_path,
