@@ -18,11 +18,12 @@
 //! stops compiling in the client, which is the whole point of putting the
 //! shape here.
 //!
-//! `#[serde(skip_serializing_if = ...)]` and `#[serde(default)]` come as a
-//! pair here, and only as a pair: a field the server may leave out is a field
-//! a reader has to be able to do without, and a field the server always sends
-//! stays required in the OpenAPI document rather than turning optional in
-//! every generated client.
+//! The server sends every field of these shapes, as `null` when it has no
+//! value, and never leaves one out (`docs/architecture/http-api.md`,
+//! "Fields"), so none carries `#[serde(skip_serializing_if = ...)]`. The one
+//! exception is [`Problem`], whose members follow RFC 7807: `detail` is a
+//! string when it is there, and each extension member belongs to the problem
+//! types that carry it.
 //!
 //! The `schema` feature adds `utoipa::ToSchema`, so the same structs describe
 //! themselves in the OpenAPI document. The server turns it on; a client crate
@@ -354,7 +355,6 @@ api_shape! {
         /// directly, since that is the only place the link is recorded for
         /// them. Matches the `id` every other contact shape uses, so a caller
         /// can compare the two without converting either.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         pub contact_id: Option<i64>,
     }
 }
@@ -368,7 +368,6 @@ api_shape! {
         pub source: String,
         /// Platform service, e.g. `imessage`, when known. It rides on the
         /// message, never on the conversation.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         pub service: Option<String>,
         /// Export GUID for replies and grouping. Every message has one,
         /// because the import refuses a message without one.
@@ -501,9 +500,8 @@ api_shape! {
         /// themselves, the account's display name or, without one, the
         /// conversation's own address; for one of orphaned messages, its
         /// sender's name and "Missing recipient", or "Unknown recipient" for
-        /// the account holder's; for any other, the export's title. Left out
+        /// the account holder's; for any other, the export's title. `null`
         /// when there is none, and the conversation goes by its participants.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         pub label: Option<String>,
         /// Participants of the conversation.
         pub participants: Vec<Participant>,
@@ -514,34 +512,25 @@ api_shape! {
     /// One attachment of an exported message.
     pub struct Attachment {
         /// Path inside the export.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         pub path: Option<String>,
         /// File name from the export.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         pub original_name: Option<String>,
         /// MIME type, when known.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         pub mime_type: Option<String>,
         /// Content fingerprint of the stored bytes.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         pub sha256: Option<String>,
         /// True for sticker files.
-        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
         pub is_sticker: bool,
         /// OCR/ASR transcription, when processed.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         pub transcription: Option<String>,
         /// Why the file is missing, when it is.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         pub missing_reason: Option<String>,
         /// MIME type of the attachment's preview, when it has one. The
         /// preview's bytes are at `/v1/assets/{sha256}/preview`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         pub preview_mime_type: Option<String>,
         /// MIME type of the attachment's thumbnail, once the server has made
-        /// it; absent until then. The thumbnail's bytes are at
+        /// it; `null` until then. The thumbnail's bytes are at
         /// `/v1/assets/{sha256}/thumbnail`.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         pub thumbnail_mime_type: Option<String>,
     }
 }
@@ -554,12 +543,10 @@ api_shape! {
         /// Reaction type, e.g. `love`.
         pub kind: String,
         /// Emoji form of the reaction, when one exists.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         pub emoji: Option<String>,
         /// True when the account owner reacted.
         pub is_from_me: bool,
         /// The identity that reacted, for incoming reactions.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
         pub sender: Option<String>,
     }
 }
@@ -583,13 +570,11 @@ mod tests {
         assert_eq!(ExportStatus::parse("canceled"), None);
     }
 
-    /// The pairing rule this module states, checked rather than trusted: a
-    /// field the server may leave out has to read back without it. Serializing
-    /// a value whose every skippable field is absent and reading it again is
-    /// the shortest way to say that, and it fails the moment a
-    /// `skip_serializing_if` arrives without its `default`.
+    /// The rule this module states, checked rather than trusted: a value
+    /// whose every optional field is `None` writes each of them as `null`,
+    /// so a reader sees the same keys in every message, and reads back.
     #[test]
-    fn a_value_with_every_skippable_field_absent_reads_back() {
+    fn a_value_with_every_optional_field_none_writes_each_as_null() {
         let message = Message {
             id: 1,
             source: "imessage".into(),
@@ -651,14 +636,54 @@ mod tests {
 
         let json = serde_json::to_string(&message).expect("serializes");
         let written: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
-        assert!(
-            written.get("service").is_none(),
-            "a message with no service must not carry the key at all: {json}"
+        assert_eq!(
+            written.get("service"),
+            Some(&serde_json::Value::Null),
+            "a message with no service carries the key as null: {json}"
+        );
+        assert_eq!(
+            written["conversation"],
+            serde_json::json!({
+                "id": 9,
+                "chat_identifier": "+15555550100",
+                "conversation_type": "individual",
+                "is_group": false,
+                "group_title": null,
+                "label": null,
+                "participants": [{
+                    "name": "Sarah Vale",
+                    "identity": null,
+                    "service": null,
+                    "contact_id": null,
+                }],
+            }),
+            "{json}"
         );
         assert_eq!(
             written["attachments"][0],
-            serde_json::json!({}),
-            "an attachment with nothing known about it writes as an empty object: {json}"
+            serde_json::json!({
+                "path": null,
+                "original_name": null,
+                "mime_type": null,
+                "sha256": null,
+                "is_sticker": false,
+                "transcription": null,
+                "missing_reason": null,
+                "preview_mime_type": null,
+                "thumbnail_mime_type": null,
+            }),
+            "an attachment with nothing known about it writes every key: {json}"
+        );
+        assert_eq!(
+            written["tapbacks"][0],
+            serde_json::json!({
+                "part_index": 0,
+                "kind": "loved",
+                "emoji": null,
+                "is_from_me": true,
+                "sender": null,
+            }),
+            "{json}"
         );
 
         let read: Message = serde_json::from_str(&json).expect("reads back");

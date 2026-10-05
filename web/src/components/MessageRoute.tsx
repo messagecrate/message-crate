@@ -2,7 +2,14 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from "reac
 import { apiErrorMessage } from "../lib/apiErrorMessage";
 import { asMessagesLocationState } from "../lib/messagesLocationState";
 import { keys } from "../lib/queryKeys";
-import { AT_PARAM, conversationListQuery, listedTag, openedAt } from "../lib/resultsView";
+import {
+  AT_PARAM,
+  conversationListQuery,
+  listedTag,
+  MATCHED_PARAM,
+  openedAt,
+  openedMatchedVersions,
+} from "../lib/resultsView";
 import { useRouteQuery } from "../lib/routeQuery";
 import { getConversation } from "../lib/serverApi";
 import MessageView from "../screens/MessageView";
@@ -31,8 +38,10 @@ export default function MessageRoute() {
   // A conversation opened from a tag page names the tag apart from `q`.
   const tag = listedTag(searchParams);
   const query = conversationListQuery(searchParams, tag);
-  // A result in the Messages list opens its conversation at the message.
+  // A result in the Messages list opens its conversation at the message, with
+  // the earlier versions it was found by when it was found only by them.
   const at = openedAt(searchParams);
+  const matched = openedMatchedVersions(searchParams);
 
   const locationState = asMessagesLocationState(location.state);
   // The router hands us whatever row the person clicked, which can be
@@ -76,6 +85,7 @@ export default function MessageRoute() {
             // The message a result opened at belongs to the last one.
             const params = new URLSearchParams(searchParams);
             params.delete(AT_PARAM);
+            params.delete(MATCHED_PARAM);
             const search = params.toString();
             navigate(`/messages/${c.id}${search ? `?${search}` : ""}`, {
               state: { conversation: c, openContactId, openContactPreview },
@@ -91,11 +101,14 @@ export default function MessageRoute() {
             // the thread starts again for each one: its page, year and find,
             // and any Move to trash or Contact Group still answering for the
             // last one, which then acts on nothing. Another result in the
-            // same conversation starts it again at that message.
+            // same conversation starts it again at that message. The versions
+            // a result was found by are not in the key: a new search that
+            // drops them keeps the thread where it is (#1648).
             <MessageView
               key={`${conversation.id}:${at ?? ""}`}
               conversation={conversation}
               openAt={at}
+              openMatched={matched}
               onOpenContact={(contactId, preview) => {
                 navigate(location.pathname + location.search, {
                   state: {

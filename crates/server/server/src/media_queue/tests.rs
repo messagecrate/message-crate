@@ -215,8 +215,9 @@ async fn an_import_run_completes_before_its_thumbnails_are_made() {
         "each Asset the run brought is queued"
     );
     for attachment in attachments(state, &alice, imported.conversation_id).await {
-        assert!(
-            attachment.get("thumbnail_mime_type").is_none(),
+        assert_eq!(
+            attachment.get("thumbnail_mime_type"),
+            Some(&serde_json::Value::Null),
             "no Thumbnail is made yet: {attachment}"
         );
     }
@@ -264,7 +265,11 @@ fn the_pass_makes_a_thumbnail_of_each_image_and_video_and_a_preview_only_for_hev
                     sha == imported.photo || sha == imported.h264,
                     "{attachment}"
                 );
-                assert_eq!(preview, None, "browsers show it as it is: {attachment}");
+                assert_eq!(
+                    preview,
+                    Some(&serde_json::Value::Null),
+                    "browsers show it as it is: {attachment}"
+                );
             }
         }
 

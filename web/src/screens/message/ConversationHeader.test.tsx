@@ -11,6 +11,7 @@ import {
   updateContactGroupMembers,
 } from "../../lib/serverApi";
 import type { Conversation } from "../../lib/types";
+import { participant } from "../../test/apiShapes";
 import { mockedAuth, Providers } from "../../test/providers";
 import { fill, setupUser } from "../../test/user";
 import ConversationHeader from "./ConversationHeader";
@@ -36,6 +37,9 @@ const updateContactGroupMembersMock = vi.mocked(updateContactGroupMembers);
 const PROFILE = {
   account_id: 7,
   username: "me",
+  app: null,
+  app_build: null,
+  last_login_at: null,
   preferred_name: "Me",
   time_zone: "UTC",
   phones: ["+15550100"],
@@ -58,10 +62,10 @@ function groupChat(): Conversation {
     is_group: true,
     label: "Book Club",
     participants: [
-      { name: "Me", identity: "+1 (555) 010-0", contact_id: 1 },
-      { name: "Ada", identity: "+15550120", contact_id: 2 },
-      { name: "Grace", identity: "+15550130", contact_id: 3 },
-      { name: "+15550140", identity: "+15550140", contact_id: null },
+      participant({ name: "Me", identity: "+1 (555) 010-0", contact_id: 1 }),
+      participant({ name: "Ada", identity: "+15550120", contact_id: 2 }),
+      participant({ name: "Grace", identity: "+15550130", contact_id: 3 }),
+      participant({ name: "+15550140", identity: "+15550140" }),
     ],
   });
 }

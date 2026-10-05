@@ -361,8 +361,8 @@ pub struct Details {
 
 /// One entry of the Audit Trail as the interface hands it out: an entry of
 /// `audit_entries`, an Import Run, or an Export Run. `id` is the row's id in
-/// its own table, so `action` and `id` together name an entry. Fields that do
-/// not describe the action are left out.
+/// its own table, so `action` and `id` together name an entry. Every field is
+/// sent, and the ones that do not describe the action are `null`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct AuditEntry {
     /// The row's id: the entry's, the Import Run's or the Export Run's. For a
@@ -382,75 +382,53 @@ pub struct AuditEntry {
     /// refused login, the username as typed. Kept after the account is deleted.
     pub username: Option<String>,
     /// `session_ended`: how the Session ended. `login_refused`: why.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reason: Option<AuditReason>,
     /// The app the request named, `desktop` or `website`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub app: Option<AppKind>,
-    /// That app's Build, such as `0.9.0+343fe0d8`. Present exactly when `app` is.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// That app's Build, such as `0.9.0+343fe0d8`. `null` exactly when `app` is.
     pub app_build: Option<String>,
-    /// A run: what started it. Absent for a run the server started itself.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// A run: what started it. `null` for a run the server started itself.
     pub credential: Option<RunCredential>,
     /// The API token's label as it was then.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_token_label: Option<String>,
     /// The API token's masked hint as it was then, such as `mc-api-Sd..mE`.
     /// Only on the entries about the reader's own account: the owner never
     /// reads another account's.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_token_hint: Option<String>,
     /// `permissions_changed`: permissions turned on.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permissions_added: Option<Vec<Permission>>,
     /// `permissions_changed`: permissions turned off.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub permissions_removed: Option<Vec<Permission>>,
     /// A run: its status as the run's own list spells it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<RunStatus>,
     /// An Import Run: the source it imported, such as `imessage`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     /// An Export Run: `everything`, `query` or `selection`. Never the query
     /// or the picked ids.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope_kind: Option<ExportScopeKind>,
     /// An Export Run with a query: the list it was for, `conversations` or
     /// `messages`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scope_list: Option<ExportQueryList>,
     /// Messages a run accepted or matched.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub messages: Option<i64>,
     /// Conversations an Export Run matched, or deleted for good.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub conversations: Option<i64>,
     /// Attachments a run accepted or matched, or deleted for good.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attachments: Option<i64>,
     /// Bytes an Import Run uploaded, or an Export Run's attachments total.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bytes: Option<i64>,
     /// Contacts forgotten when the trash was emptied, or written to an
     /// exported address book.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contacts: Option<i64>,
     /// Identities written to an exported address book.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub identities: Option<i64>,
     /// `address_book_loaded`: `append` or `edit`.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mode: Option<LoadMode>,
     /// `address_book_loaded`: contacts made.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contacts_created: Option<i64>,
     /// `address_book_loaded`: contacts renamed or changed.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contacts_updated: Option<i64>,
     /// `address_book_loaded`: contacts removed.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub contacts_deleted: Option<i64>,
 }
 

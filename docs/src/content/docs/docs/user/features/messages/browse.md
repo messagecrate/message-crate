@@ -118,6 +118,18 @@ Neither mark hides a message, and search finds both like any other.
 Apple Messages is the source that records the marks today.
 Moving a Conversation to the Trash is a separate thing, done inside Message Crate ([Trash](/docs/user/features/messages/trash/)).
 
+### Edited messages
+
+A message edited in the app it came from shows its final text, and the line under it reads like `4:56 PM · Edited`.
+**Edited** opens the earlier versions under the bubble, oldest first, each with the time it was written, and pressing it again closes them.
+They are closed when a Conversation opens, because reading them is rare.
+
+A message opened from the Messages list, when the search found it only by a word an earlier version holds, opens with its earlier versions shown.
+The line **Matched an earlier version** sits above them, and the version holding the word is highlighted.
+**Find** opens a match the same way when only an earlier version holds the word.
+Every other edited message stays closed, including one the search found by its final text.
+Apple Messages is the source that records edits today.
+
 ### Photos, videos, and recordings
 
 A photo or a video shows as its thumbnail, a small copy the server makes after each import, 200 pixels tall in the Conversation.

@@ -7,6 +7,7 @@ import { tagFromSlug } from "../lib/messageTags";
 import {
   conversationListQuery,
   listedTag,
+  MATCHED_PARAM,
   MESSAGE_SORT_PARAM,
   messagesSearch,
   resultsView,
@@ -230,7 +231,10 @@ export default function AppLayout() {
       updateSearchParams({ cq: q });
       return;
     }
-    updateSearchParams({ q: q, f: "" });
+    // The versions a result was found by belong to the search that found it.
+    const matched =
+      q === (searchParams.get("q") || "") ? (searchParams.get(MATCHED_PARAM) ?? "") : "";
+    updateSearchParams({ q: q, f: "", [MATCHED_PARAM]: matched });
   };
 
   const trashListQuery = trashed(trashSearch);
