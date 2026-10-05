@@ -35,10 +35,6 @@ pub struct PullConfig {
     pub out_dir: PathBuf,
     /// Server base URL, e.g. `http://127.0.0.1:8080`.
     pub base_url: String,
-    /// Account username. The run never reads it: the journal and progress
-    /// events carry the username the server reports at login, else the
-    /// account id.
-    pub username: String,
     /// The logged-in Session's token. The desktop app never passes an API
     /// Token.
     pub token: String,
@@ -94,7 +90,7 @@ pub enum ProgressEvent {
     Auth {
         /// Account id the token resolved to.
         account_id: i64,
-        /// Username the server reports for that account, else the account id.
+        /// Username the server reports for that account.
         username: String,
     },
     /// One page of messages arrived.
