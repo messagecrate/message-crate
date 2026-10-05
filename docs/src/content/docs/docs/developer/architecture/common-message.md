@@ -30,13 +30,13 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
 
 - **Common-message path** (`ConversationDocument` → `message_ir_format::FormatSink`, one of json/jsonl/csv/eml/mbox/xml): all exporters, including iMessage (`imessage-ir-exporter`). Per-chat formats also accept `write_format`; XML uses a single `smses.xml` via the sink.
 - **Media + obfuscate** run inside `FormatSink::finish` for every format (`message_crate_core::ExportTransforms`: none / copy / convert / compress, plus optional obfuscate). When obfuscate is on, exporters skip staging real attachment bytes and convert/compress is not run — only placeholder files are written. Exporters pass transforms from `ExporterConfig.media` / `.obfuscate`; there is no CSV-only post-step. EML / MBOX / XML embed media and drop the staged `attachments/` directory afterward.
-- **Schema version 8 only** (breaking). Version 8 keeps an edited message's earlier versions in its own `edits`, for every source, where version 7 kept the Apple Messages edit history as a JSON value in `imessage.edits`. Version 7 had moved a message's mark, Deleted in the source app or Unsent, in its own `deletion`, for every source, where version 6 kept the Apple Messages deleted mark in `imessage.is_deleted`. Version 6 had moved a message's reactions into its own `reactions` list, one shape for every source, where version 5 kept Apple Messages reactions as a JSON value in `imessage.tapbacks`. Version 5 had named every address an identity (`identity`, `identity_type`, `owner_identity`, `sender_identity`, `reactor_identity`) where version 4 said `handle`. Version 7 and older are refused, never upgraded. Typed enums/bags, filled outgoing identity, conversation stats, stable null/`[]` keys. Older common-message JSON is not read — regenerate exports after schema changes.
+- **Schema version 9 only** (breaking). Version 9 gives orphaned messages conversations of type `orphaned` (see [Orphaned messages](#orphaned-messages)), where version 8 put them all in one `individual` conversation named `orphaned`. Version 8 had kept an edited message's earlier versions in its own `edits`, for every source, where version 7 kept the Apple Messages edit history as a JSON value in `imessage.edits`. Version 7 had moved a message's mark, Deleted in the source app or Unsent, in its own `deletion`, for every source, where version 6 kept the Apple Messages deleted mark in `imessage.is_deleted`. Version 6 had moved a message's reactions into its own `reactions` list, one shape for every source, where version 5 kept Apple Messages reactions as a JSON value in `imessage.tapbacks`. Version 5 had named every address an identity (`identity`, `identity_type`, `owner_identity`, `sender_identity`, `reactor_identity`) where version 4 said `handle`. Version 8 and older are refused, never upgraded. Typed enums/bags, filled outgoing identity, conversation stats, stable null/`[]` keys. Older common-message JSON is not read — regenerate exports after schema changes.
 
-## Document schema (`schema_version: 8`)
+## Document schema (`schema_version: 9`)
 
 ```json
 {
-  "schema_version": 8,
+  "schema_version": 9,
   "export": {
     "source": "sms-backup-restore",
     "tool": "SMS Backup & Restore",
@@ -141,13 +141,19 @@ A message never edited leaves `edits` out of the file. The server stores each ve
 
 `EarlierVersion` is defined in `imessage-reader-protocol` beside `Reaction`, for the same reason, and `message_ir::EarlierVersion` is that type. Apple Messages fills it from each part's edit history: every entry but the last, which is the text the message holds now. An unsent part has no history and so no earlier version; `deletion` says what was unsent. Every other source writes none yet.
 
+### Orphaned messages
+
+A backup can hold a message without recording which conversation it was said in. Such messages sit in conversations of type `orphaned`, which are neither one-to-one nor a group. The ones one person sent sit in a conversation keyed `orphaned:` and that person's address, with that person as its only participant, apart from their one-to-one conversation. The ones the account holder sent record no recipient, and sit together in one conversation keyed `orphaned:` alone, with no participants. `message_ir::orphaned_chat_id` makes both keys; it is defined in `imessage-reader-protocol` beside `Reaction`, because the Apple Messages Reader writes these conversations.
+
+Apple Messages writes them for messages in no chat. OpenExtract writes the account holder's: a sent row of the all-conversations CSV with no `Conversation` value, and every row of a per-chat file in which only the holder wrote. OpenExtract cannot tell such rows apart, so each carries a vendor key: a per-chat file's own key, or, in the all-conversations CSV, how many rows alike in every column came before it. The same text sent in the same second to several people is then several messages, never one copy kept as a duplicate, and the same rows give the same ids on every export.
+
 ### Attachments
 
 Attachment **bytes** are never stored in JSON/JSONL (`#[serde(skip)]`). Paths + digests point at sidecar files under `attachments/`. For EML / MBOX / XML, FormatSink loads those files, embeds the bytes, then removes the staged `attachments/` directory so the output folder is the archive product.
 
 ### Vocabulary (enums)
 
-- `conversation_type`: `individual` \| `group`
+- `conversation_type`: `individual` \| `group` \| `orphaned`
 - `service`: `sms` \| `imessage` \| `whatsapp` \| `rcs` \| `discord` \| `signal` \| `telegram` \| `slack` \| `unknown`
 - `message_kind`: `sms` \| `mms` \| `imessage` \| `tapback` \| `sticker_tapback` \| `announcement` \| `location_share` \| `balloon` \| `unknown`
 
@@ -164,7 +170,7 @@ Attachment **bytes** are never stored in JSON/JSONL (`#[serde(skip)]`). Paths + 
 ## JSONL layout
 
 ```text
-{"schema_version":8,"export":{…},"conversation":{…}}
+{"schema_version":9,"export":{…},"conversation":{…}}
 {"guid":"…","timestamp_unix_ms":…, …}
 …
 ```

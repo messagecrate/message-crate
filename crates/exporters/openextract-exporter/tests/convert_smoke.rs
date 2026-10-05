@@ -166,7 +166,8 @@ fn a_named_chat_is_keyed_by_its_peers_number() {
 
 /// A row with no conversation named, or one named only `Me`, belongs to
 /// its incoming sender. An outgoing row with nothing to say who it went to
-/// lands in the chat that names nobody, which has no roster.
+/// is one of the account holder's orphaned messages, and lands in "Unknown
+/// recipient", which has no roster.
 #[test]
 fn a_row_without_a_conversation_belongs_to_its_sender_or_to_no_one() {
     let (_, documents) = convert_to_documents(&[(
@@ -177,13 +178,13 @@ fn a_row_without_a_conversation_belongs_to_its_sender_or_to_no_one() {
 2020-01-01T17:02:00+00:00,Me,Received,Cathy Arp,Still here,False,False\n",
     )]);
     let keys: Vec<_> = documents.keys().map(String::as_str).collect();
-    assert_eq!(keys, vec!["+15555550133", "name:Cathy Arp", "nameless:"]);
+    assert_eq!(keys, vec!["+15555550133", "name:Cathy Arp", "orphaned:"]);
     assert_eq!(roster(&documents["+15555550133"]), vec!["+15555550133"]);
-    assert!(documents["nameless:"].conversation.participants.is_empty());
+    assert!(documents["orphaned:"].conversation.participants.is_empty());
 }
 
 /// A person named "unknown" has a chat of their own, apart from the sent
-/// rows that name nobody.
+/// rows that name no recipient.
 #[test]
 fn a_person_named_unknown_is_not_the_chat_that_names_nobody() {
     let (_, documents) = convert_to_documents(&[(
@@ -193,9 +194,9 @@ fn a_person_named_unknown_is_not_the_chat_that_names_nobody() {
 2020-01-01T17:02:00+00:00,,Received,unknown,Still here,False,False\n",
     )]);
     let keys: Vec<_> = documents.keys().map(String::as_str).collect();
-    assert_eq!(keys, vec!["name:unknown", "nameless:"]);
+    assert_eq!(keys, vec!["name:unknown", "orphaned:"]);
     assert_eq!(documents["name:unknown"].messages.len(), 1);
-    assert_eq!(documents["nameless:"].messages.len(), 1);
+    assert_eq!(documents["orphaned:"].messages.len(), 1);
 }
 
 /// In a per-chat file every row is the one chat, whatever its sender says:
@@ -302,25 +303,56 @@ fn a_per_chat_file_with_three_senders_is_one_group() {
     );
 }
 
-/// Two per-chat files in which the owner only sent are two conversations.
-/// The same text sent to both in the same second is two messages: before,
-/// both files went into one `unknown` conversation and one copy was dropped
-/// as a duplicate.
+/// The account holder's messages that name no recipient: the guid of each.
+fn guids(doc: &message_ir::ConversationDocument) -> std::collections::BTreeSet<&str> {
+    doc.messages.iter().map(|m| m.guid.as_str()).collect()
+}
+
+/// A per-chat file in which only the owner sent records no recipient, so
+/// its messages are the account holder's orphaned messages and go to
+/// "Unknown recipient": the conversation of type `orphaned` keyed
+/// `orphaned:`, with no participants. Two such files share it, and the same
+/// text sent in both in the same second is two messages, never collapsed as
+/// duplicates (#1095).
 #[test]
-fn two_files_of_only_sent_messages_are_two_conversations() {
+fn files_of_only_sent_messages_go_to_unknown_recipient() {
     let sent_only = "Date,Sender,Text,Is From Me,Has Attachments\n\
 2020-01-01T00:00:00+00:00,Me,Happy new year,True,False\n";
     let (report, documents) = convert_to_documents(&[
         ("conversation_1.csv", sent_only),
         ("conversation_2.csv", sent_only),
     ]);
-    assert_eq!(documents.len(), 2);
-    assert!(documents.keys().all(|key| key.starts_with("group:")));
+    let keys: Vec<_> = documents.keys().map(String::as_str).collect();
+    assert_eq!(keys, vec!["orphaned:"]);
+    let doc = &documents["orphaned:"];
+    assert_eq!(doc.conversation.conversation_type.as_str(), "orphaned");
+    assert!(doc.conversation.participants.is_empty());
     assert_eq!(report.duplicates_dropped, 0);
-    assert_eq!(report.messages, 2);
-    for doc in documents.values() {
-        assert!(doc.conversation.participants.is_empty());
-    }
+    assert_eq!(guids(doc).len(), 2);
+}
+
+/// Sent rows of the all-conversations CSV that name no recipient go to
+/// "Unknown recipient" too. The same text sent in the same second to three
+/// people is three messages, never collapsed as duplicates, and a second
+/// export of the same rows gives them the same ids, so importing it again
+/// adds nothing (#1095).
+#[test]
+fn sent_rows_that_name_no_recipient_are_never_collapsed() {
+    let csv = "Date,Conversation,Direction,Sender,Text,Is From Me,Has Attachments\n\
+2020-01-01T00:00:00+00:00,,Sent,me,Happy new year,True,False\n\
+2020-01-01T00:00:00+00:00,,Sent,me,Happy new year,True,False\n\
+2020-01-01T00:00:00+00:00,,Sent,me,Happy new year,True,False\n";
+    let (report, documents) = convert_to_documents(&[("all_conversations.csv", csv)]);
+    let keys: Vec<_> = documents.keys().map(String::as_str).collect();
+    assert_eq!(keys, vec!["orphaned:"]);
+    let doc = &documents["orphaned:"];
+    assert_eq!(doc.conversation.conversation_type.as_str(), "orphaned");
+    assert!(doc.conversation.participants.is_empty());
+    assert_eq!(report.duplicates_dropped, 0);
+    assert_eq!(guids(doc).len(), 3);
+
+    let (_, again) = convert_to_documents(&[("all_conversations.csv", csv)]);
+    assert_eq!(guids(&again["orphaned:"]), guids(doc));
 }
 
 /// In the all-conversations CSV a `Conversation` value two people wrote in
@@ -433,11 +465,12 @@ fn a_number_and_an_email_are_two_people() {
     );
 }
 
-/// A group's key depends on its own file alone. A file of one sent message
-/// gets the same key imported alone as beside another file with the same
-/// rows, and two such files in one export get two keys.
+/// The key that keeps one per-chat file's sent messages apart from
+/// another's depends on that file alone. A file of one sent message gives
+/// it the same id imported alone as beside another file with the same rows,
+/// and two such files in one export give two ids.
 #[test]
-fn a_groups_key_does_not_depend_on_the_other_files() {
+fn a_files_key_does_not_depend_on_the_other_files() {
     let sent_only = "Date,Sender,Text,Is From Me,Has Attachments\n\
 2020-01-01T00:00:00+00:00,Me,Happy new year,True,False\n";
     let (_, alone) = convert_to_documents(&[("conversation_1.csv", sent_only)]);
@@ -445,11 +478,8 @@ fn a_groups_key_does_not_depend_on_the_other_files() {
         ("conversation_1.csv", sent_only),
         ("conversation_2.csv", sent_only),
     ]);
+    let together = guids(&together["orphaned:"]);
     assert_eq!(together.len(), 2);
-    let key = alone.keys().next().unwrap();
-    assert!(
-        together.contains_key(key),
-        "{key} not in {:?}",
-        together.keys()
-    );
+    let alone = guids(&alone["orphaned:"]);
+    assert!(alone.is_subset(&together), "{alone:?} not in {together:?}");
 }

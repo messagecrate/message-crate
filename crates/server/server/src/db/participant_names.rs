@@ -38,8 +38,49 @@ use crate::db::sql::group_rows_by_id;
 /// `GET /v1/contacts/{id}` answers 404 for it, so its participant is named and
 /// linked as if no contact held the identity. Search does the same unless the
 /// query carries `trashed:`.
-const NOT_TRASHED: &str = "NOT EXISTS (SELECT 1 FROM trashed_contacts t
-                         WHERE t.account_id = c.account_id AND t.contact_id = c.id)";
+fn not_trashed(c: &str) -> String {
+    format!(
+        "NOT EXISTS (SELECT 1 FROM trashed_contacts t
+                     WHERE t.account_id = {c}.account_id AND t.contact_id = {c}.id)"
+    )
+}
+
+/// The name shown for the participant row `p`, as a SQL expression, with `c`
+/// the contact its identity is on (joined with [`not_trashed`], so NULL for
+/// a trashed one) and `h` its identity: the contact's name, else what that
+/// backup called them in that conversation, else the identity.
+fn participant_name(p: &str, h: &str, c: &str) -> String {
+    format!(
+        "COALESCE(NULLIF({c}.preferred_name, ''),
+                  NULLIF(trim({p}.name_alias), ''),
+                  {h}.raw)"
+    )
+}
+
+/// The name of the first participant of conversation `conv`, as a SQL
+/// subquery; NULL when it has none. It is [`participant_name`], the name the
+/// participants this module loads carry, so an orphaned conversation's title
+/// (`db::conversations::conversation_title_sql`) names its sender as its
+/// participant row does. `conv` is the alias of a `conversations` row; the
+/// subquery's own aliases start with `fp_`.
+pub(crate) fn first_participant_name_sql(conv: &str) -> String {
+    format!(
+        "(SELECT {name}
+          FROM participants fp_p
+          JOIN handles fp_h ON fp_h.id = fp_p.handle_id
+          LEFT JOIN contact_handles fp_ch
+            ON fp_ch.handle_id = fp_p.handle_id AND fp_ch.account_id = {conv}.account_id
+          LEFT JOIN contacts fp_c
+            ON fp_c.id = fp_ch.contact_id
+           AND fp_c.account_id = {conv}.account_id
+           AND {not_trashed}
+          WHERE fp_p.conversation_id = {conv}.id
+          ORDER BY fp_p.id
+          LIMIT 1)",
+        name = participant_name("fp_p", "fp_h", "fp_c"),
+        not_trashed = not_trashed("fp_c"),
+    )
+}
 
 /// Participants of each conversation in `conversation_ids`, ordered by
 /// participant id within a conversation.
@@ -78,9 +119,7 @@ async fn load_participant_rows(
         |placeholders| {
             format!(
                 "SELECT p.conversation_id,
-                        COALESCE(NULLIF(c.preferred_name, ''),
-                                 NULLIF(trim(p.name_alias), ''),
-                                 h.raw) AS name,
+                        {name} AS name,
                         h.raw AS handle,
                         COALESCE(NULLIF(trim(h.service), ''), h.handle_type) AS service,
                         -- The id is the joined contact's, so a trashed one
@@ -94,9 +133,11 @@ async fn load_participant_rows(
                  LEFT JOIN contacts c
                    ON c.id = ch.contact_id
                   AND c.account_id = conv.account_id
-                  AND {NOT_TRASHED}
+                  AND {not_trashed}
                  WHERE p.conversation_id IN ({placeholders})
-                 ORDER BY p.conversation_id, p.id"
+                 ORDER BY p.conversation_id, p.id",
+                name = participant_name("p", "h", "c"),
+                not_trashed = not_trashed("c"),
             )
         },
         participant_row,
@@ -144,10 +185,11 @@ async fn load_from_chat_handle(
                    ON ch.handle_id = h.id AND ch.account_id = conv.account_id
                  LEFT JOIN contacts c
                    ON c.id = ch.contact_id AND c.account_id = conv.account_id
-                  AND {NOT_TRASHED}
+                  AND {not_trashed}
                  WHERE conv.id IN ({placeholders})
                    AND conv.conversation_type = 'individual' COLLATE NOCASE
                    AND NOT {with_yourself}",
+                not_trashed = not_trashed("c"),
                 with_yourself = crate::db::conversations::is_with_yourself_sql("conv")
             )
         },

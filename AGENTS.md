@@ -492,7 +492,7 @@ Three version numbers are easy to mix up:
 |-----------------|---------------------|----------------------------------------------------------------------------------------|
 | Product version | `0.9.0`             | Desktop app + server image. Git tag is `v0.9.0`.                                       |
 | Docker Hub tag  | `0.9.0` (no `v`)    | `bitrealm/message-crate:0.9.0`. Also `0.9`, `latest`, and `sha-…`.                     |
-| JSONL schema    | `schema_version: 8` | Shared chat file format. Independent of the product version. Version 7 is refused, never upgraded. |
+| JSONL schema    | `schema_version: 9` | Shared chat file format. Independent of the product version. Version 8 is refused, never upgraded. |
 | Build           | `0.9.0+343fe0d8`    | The product version plus the commit, which is what a screen shows as "Version". `.dirty` follows the commit when tracked files held uncommitted changes; a build from a `v*` tag is `0.9.0` alone; `0.9.0+unknown` when nothing is known. Nobody writes it: `crates/libs/build-version` works it out for the server and the desktop app, and `web/vite.config.ts` for the SPA, under the same rules. |
 | Schema fingerprint | `1176793189`     | Derived from `schema/sql/*.sql` and stamped into the database. Shown in Owner Home → Server Settings. Never bumped by hand. |
 

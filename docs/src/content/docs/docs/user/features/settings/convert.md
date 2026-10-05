@@ -59,7 +59,7 @@ A folder must hold exactly one format.
 A folder that holds more than one is refused with `unsupported input: mixed formats`, followed by the formats and files found, because Convert can't tell which export to read.
 A folder that holds none is refused with `unsupported input: no Message Crate IR export found`.
 
-A `.json` or `.jsonl` export of another schema version, such as an export written before version 8, is refused with "This file is schema version 7; Message Crate reads version 8" and the file's name.
+A `.json` or `.jsonl` export of another schema version, such as an export written before version 9, is refused with "This file is schema version 8; Message Crate reads version 9" and the file's name.
 Nothing is upgraded: export the conversations again with the current app.
 Convert reads every file before it writes, so a refused file stops the whole run and the output folder is left as it was.
 

@@ -93,7 +93,9 @@ flowchart TD
 
 A group conversation's own id, such as `chat1000000005`, is stored on the
 conversation so the group is recognised next time. It is nobody's identity
-and gets no contact. The same holds for the `orphaned` conversation.
+and gets no contact. The same holds for the `orphaned:` key of a
+conversation of orphaned messages; the sender in it is its participant, and
+gets a contact as one.
 
 ### When the run finishes
 

@@ -1903,6 +1903,81 @@ mod people_words {
 mod kind_words {
     use super::*;
 
+    /// `kind:orphaned` lists the conversations that hold orphaned messages,
+    /// one sender's and the account holder's, and `kind:direct` and
+    /// `kind:group` list neither (#1095). On Contacts it finds the sender, the
+    /// participant of their orphaned conversation. Their keys are no text to
+    /// match; their titles are.
+    #[tokio::test]
+    async fn kind_orphaned_is_neither_direct_nor_group() {
+        let (pool, _dir, f) = seeded().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let direct = run(&mut conn, ListKind::Conversations, "kind:direct").await;
+        let groups = run(&mut conn, ListKind::Conversations, "kind:group").await;
+
+        let ana_key = handle(&mut conn, ACCOUNT, "orphaned:+15550001", "imessage").await;
+        let ana_orphaned = conversation(
+            &mut conn,
+            ACCOUNT,
+            ana_key,
+            "orphaned",
+            None,
+            &[f.ana_handle],
+        )
+        .await;
+        let holder_key = handle(&mut conn, ACCOUNT, "orphaned:", "imessage").await;
+        let unknown = conversation(&mut conn, ACCOUNT, holder_key, "orphaned", None, &[]).await;
+        let from_ana = message(
+            &mut conn,
+            ACCOUNT,
+            msg(
+                ana_orphaned,
+                "2021-05-02T10:00:00Z",
+                false,
+                Some(f.ana_handle),
+                "lost",
+            ),
+        )
+        .await;
+        let mine = message(
+            &mut conn,
+            ACCOUNT,
+            msg(unknown, "2021-05-02T11:00:00Z", true, None, "lost too"),
+        )
+        .await;
+
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "kind:orphaned").await,
+            sorted(vec![ana_orphaned, unknown])
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "kind:direct").await,
+            direct
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "kind:group").await,
+            groups
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Contacts, "kind:orphaned").await,
+            vec![f.ana]
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Messages, "kind:orphaned").await,
+            sorted(vec![from_ana, mine])
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "orphaned").await,
+            Vec::<i64>::new(),
+            "a key is not text"
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "recipient").await,
+            sorted(vec![ana_orphaned, unknown]),
+            "the titles are"
+        );
+    }
+
     #[tokio::test]
     async fn kind_service_and_source() {
         let (pool, _dir, f) = seeded().await;
@@ -1965,7 +2040,7 @@ mod kind_words {
     ) -> (i64, i64) {
         let path = dir.join(format!("{chat}.jsonl"));
         let header = serde_json::json!({
-            "schema_version": 8,
+            "schema_version": 9,
             "export": {"source": source, "tool": "test", "tool_version": "0",
                        "owner_identity": null, "owner_display_name": null},
             "conversation": {

@@ -64,7 +64,29 @@ use serde_json::Value;
 /// 10: an edited message carries its earlier versions in
 /// [`Message::edits`], a list of [`EarlierVersion`], and `Imessage::edits`
 /// is gone.
-pub const PROTOCOL_VERSION: u32 = 10;
+/// 11: a message in no chat is in the [`ORPHANED_CONVERSATION_TYPE`]
+/// conversation of its sender, keyed by [`orphaned_chat_id`], where every
+/// such message was in one `individual` conversation named `orphaned`.
+pub const PROTOCOL_VERSION: u32 = 11;
+
+/// The [`Conversation::conversation_type`] of a conversation that holds
+/// orphaned messages: messages the backup holds without recording which
+/// conversation they were said in. Such a conversation is neither one-to-one
+/// nor a group.
+pub const ORPHANED_CONVERSATION_TYPE: &str = "orphaned";
+
+/// What every orphaned conversation's chat id starts with, so it never
+/// equals the sender's address, which keys their one-to-one conversation.
+pub const ORPHANED_CHAT_ID_PREFIX: &str = "orphaned:";
+
+/// The chat id of the orphaned conversation of `sender`: the orphaned
+/// messages that person sent. `None` for the account holder's, whose
+/// recipient is not recorded: they all sit in one conversation, keyed by the
+/// prefix alone.
+#[must_use]
+pub fn orphaned_chat_id(sender: Option<&str>) -> String {
+    format!("{ORPHANED_CHAT_ID_PREFIX}{}", sender.unwrap_or_default())
+}
 
 /// The owner address behind a raw `chat.account_login` or
 /// `message.destination_caller_id` value, or `None` when nothing is left.
@@ -293,10 +315,10 @@ pub enum Progress {
 /// A conversation's roster and shape.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Conversation {
-    /// Apple's `chat.chat_identifier`, or `orphaned` for messages whose chat
-    /// row is gone.
+    /// Apple's `chat.chat_identifier`, or [`orphaned_chat_id`] for messages
+    /// in no chat.
     pub chat_identifier: String,
-    /// `individual` or `group`.
+    /// `individual`, `group`, or [`ORPHANED_CONVERSATION_TYPE`].
     pub conversation_type: String,
     /// The name a person gave the group, if any.
     pub group_title: Option<String>,

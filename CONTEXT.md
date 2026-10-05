@@ -38,10 +38,11 @@ participants. It is the unit the product acts on: tagging and trashing
 resolve to whole conversations, and searching resolves to whole
 conversations unless the person asks for messages. A Conversation the source
 app keeps as a group is a **group conversation**; one with a single other
-person is a **one-to-one conversation**. The search words for the two are
-`kind:group` and `kind:direct`, short because they are typed; everything a
-person reads says "group conversation" and "one-to-one conversation", never
-"group chat", because "group" alone could also mean a Contact Group.
+person is a **one-to-one conversation**. A Conversation of Orphaned messages
+is neither. The search words for the three are `kind:group`, `kind:direct`
+and `kind:orphaned`, short because they are typed; everything a person reads
+says "group conversation" and "one-to-one conversation", never "group chat",
+because "group" alone could also mean a Contact Group.
 _Avoid_: Thread, Chat, Group chat, Direct conversation
 
 **Message**:
@@ -85,7 +86,9 @@ in. Orphaned messages one person sent sit in a Conversation of their own with
 that person as its only participant, apart from the one-to-one Conversation
 with them; the ones the account holder sent, whose recipient is not recorded,
 sit together in one with no participants. Such a Conversation is neither
-one-to-one nor a group.
+one-to-one nor a group. A person's is titled with their name and "Missing
+recipient", as "Ada · Missing recipient"; the holder's is titled "Unknown
+recipient".
 _Avoid_: Stray, Unfiled, Lost message
 
 **Asset**:

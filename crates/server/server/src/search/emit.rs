@@ -590,7 +590,9 @@ fn conversation_title_text() -> String {
 /// group conversation by, and its shape is shared by every group
 /// conversation from that source (`group:…`, a WhatsApp `…@g.us`), so
 /// `group` or `in:g.us` would find them all (#1706): a group conversation is
-/// found by its title and its members.
+/// found by its title and its members. The `orphaned:` key of a conversation
+/// of orphaned messages is read as nothing too, for the same reason: it is
+/// found by its title and its sender.
 fn conversation_identity_text() -> String {
     format!(
         "coalesce((SELECT CASE WHEN {} THEN substr(hc.raw, {}) WHEN {} THEN '' \
@@ -619,15 +621,17 @@ fn chat_handle_is_a_key(conv: &str, raw_col: &str) -> String {
 
 /// SQL that holds when the handle text `raw_col` is a conversation key:
 /// `group:` and the source's id for a group conversation, `name:` and a
-/// name, or `nameless:`. With [`is_the_nameless_key`] and
+/// name, `nameless:`, or `orphaned:` and a sender's address for a
+/// conversation of orphaned messages. With [`is_the_nameless_key`] and
 /// [`starts_with_prefix`], the one place that knows the key shapes, so
 /// `with:`, `identity:`, plain text and `in:` agree on what a key is.
 fn is_a_key_raw(raw_col: &str) -> String {
     format!(
-        "({} OR {} OR {})",
+        "({} OR {} OR {} OR {})",
         starts_with_prefix(raw_col, message_ir::GROUP_CHAT_ID_PREFIX),
         is_a_name_key(raw_col),
-        is_the_nameless_key(raw_col)
+        is_the_nameless_key(raw_col),
+        starts_with_prefix(raw_col, message_ir::ORPHANED_CHAT_ID_PREFIX)
     )
 }
 
@@ -997,10 +1001,10 @@ fn emit_kind_word(
 ) -> Result<(), QueryError> {
     match (term.spec.word, v) {
         ("kind", Value::Choice(k)) => {
-            let ty = if *k == "direct" {
-                "individual"
-            } else {
-                "group"
+            let ty = match *k {
+                "direct" => "individual",
+                "group" => "group",
+                _ => message_ir::ORPHANED_CONVERSATION_TYPE,
             };
             ctx.conversation(out, |o| {
                 o.push("c.conversation_type = ");

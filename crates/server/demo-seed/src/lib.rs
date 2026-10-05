@@ -727,7 +727,7 @@ Prejudice ({corpus_sentences} sentences) under `crates/server/demo-seed/data/cor
 - **History** — typical first contact ~3–5 years ago; longest ~14 years; newest ~1 week
 - **Group Chats** — membership mean ~5 groups/contact; size mean ~4; at least 10 groups with 8–20 participants; bursty days (several / none / a lot)
 - **Replies, tapbacks, attachments** — including one intentionally missing file
-- **orphaned.jsonl** — synthetic orphaned conversation
+- **Orphaned messages** — one sender's in a conversation of their own, and the account holder's in one with no participants
 ",
         seed = cfg.seed,
         corpus_sentences = corpus_sentences,

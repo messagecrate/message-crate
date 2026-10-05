@@ -2115,9 +2115,10 @@ export interface components {
             /**
              * @description The title the conversation is shown by: for a conversation the account
              *     holder has with themselves, the account's display name or, without
-             *     one, the conversation's own address; for any other, the export's
-             *     title. Left out when there is none, and the conversation goes by its
-             *     participants.
+             *     one, the conversation's own address; for one of orphaned messages, its
+             *     sender's name and "Missing recipient", or "Unknown recipient" for the
+             *     account holder's; for any other, the export's title. Left out when
+             *     there is none, and the conversation goes by its participants.
              */
             label?: string | null;
             /**
@@ -3125,7 +3126,11 @@ export interface components {
         MessageConversation: {
             /** @description The conversation's identifier as the export wrote it. */
             chat_identifier: string;
-            /** @description `individual` or `group`. */
+            /**
+             * @description `individual`, `group`, or `orphaned` for a conversation of
+             *     orphaned messages: ones the backup holds without recording which
+             *     conversation they were said in.
+             */
             conversation_type: string;
             /** @description The title the export gave the conversation, when it gave one. */
             group_title?: string | null;
@@ -3144,9 +3149,10 @@ export interface components {
              * @description The title the conversation is shown by, as the conversation list's
              *     `label` gives it: for a conversation the account holder has with
              *     themselves, the account's display name or, without one, the
-             *     conversation's own address; for any other, the export's title.
-             *     Left out when there is none, and the conversation goes by its
-             *     participants.
+             *     conversation's own address; for one of orphaned messages, its
+             *     sender's name and "Missing recipient", or "Unknown recipient" for
+             *     the account holder's; for any other, the export's title. Left out
+             *     when there is none, and the conversation goes by its participants.
              */
             label?: string | null;
             /** @description Participants of the conversation. */
@@ -3680,9 +3686,10 @@ export interface components {
                 /**
                  * @description The title the conversation is shown by: for a conversation the account
                  *     holder has with themselves, the account's display name or, without
-                 *     one, the conversation's own address; for any other, the export's
-                 *     title. Left out when there is none, and the conversation goes by its
-                 *     participants.
+                 *     one, the conversation's own address; for one of orphaned messages, its
+                 *     sender's name and "Missing recipient", or "Unknown recipient" for the
+                 *     account holder's; for any other, the export's title. Left out when
+                 *     there is none, and the conversation goes by its participants.
                  */
                 label?: string | null;
                 /**

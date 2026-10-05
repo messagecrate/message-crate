@@ -484,7 +484,9 @@ api_shape! {
         pub id: i64,
         /// The conversation's identifier as the export wrote it.
         pub chat_identifier: String,
-        /// `individual` or `group`.
+        /// `individual`, `group`, or `orphaned` for a conversation of
+        /// orphaned messages: ones the backup holds without recording which
+        /// conversation they were said in.
         pub conversation_type: String,
         /// True for a group conversation, by the rule the conversation list's
         /// `is_group` follows, so a client never reads `conversation_type` to
@@ -495,9 +497,10 @@ api_shape! {
         /// The title the conversation is shown by, as the conversation list's
         /// `label` gives it: for a conversation the account holder has with
         /// themselves, the account's display name or, without one, the
-        /// conversation's own address; for any other, the export's title.
-        /// Left out when there is none, and the conversation goes by its
-        /// participants.
+        /// conversation's own address; for one of orphaned messages, its
+        /// sender's name and "Missing recipient", or "Unknown recipient" for
+        /// the account holder's; for any other, the export's title. Left out
+        /// when there is none, and the conversation goes by its participants.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         pub label: Option<String>,
         /// Participants of the conversation.

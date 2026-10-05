@@ -9,7 +9,7 @@ What each converter writes (and where it falls short). Marks: **yes** / **partia
 
 ## Shared model
 
-All converters build a **common message** per conversation (`ConversationDocument`, schema version 8 in [`message-ir`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir)), then project the user-picked format via `FormatSink` in [`message-ir-format`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir-format) (default **JSON**). When packaging is CSV, columns follow [`CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs). Across the board:
+All converters build a **common message** per conversation (`ConversationDocument`, schema version 9 in [`message-ir`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir)), then project the user-picked format via `FormatSink` in [`message-ir-format`](https://github.com/messagecrate/message-crate/tree/main/crates/libs/ir-format) (default **JSON**). When packaging is CSV, columns follow [`CSV_HEADERS`](https://github.com/messagecrate/message-crate/blob/main/crates/libs/ir-format/src/write.rs). Across the board:
 
 - The peer is `chat_identifier` — there is **no** dedicated receiver-phone column
 - Every participant is a **typed identity**: `identity_type` (`phone` / `email` / `username` / `other`) on each JSON/JSONL participant and inside `participants_json`; the CSV `identity_type` column carries the sender's type, inferred from the identity when the source doesn't supply it

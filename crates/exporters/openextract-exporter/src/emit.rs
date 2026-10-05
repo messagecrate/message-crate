@@ -9,8 +9,9 @@ use message_crate_core::{
     project_conversation,
 };
 use message_ir::{
-    ConversationKey, ExportMeta, HandleType, IrParticipant, IrService, IrSource, NAMELESS_CHAT_ID,
-    PendingConversation, PendingMessage, ProjectionHooks,
+    ConversationKey, ExportMeta, HandleType, IrConversationType, IrParticipant, IrService,
+    IrSource, NAMELESS_CHAT_ID, PendingConversation, PendingMessage, ProjectionHooks,
+    orphaned_chat_id,
 };
 use message_staging::{AttachmentSource, ExportWriter};
 use phone::Handle;
@@ -22,6 +23,10 @@ use std::path::Path;
 const EXPORT_SOURCE: &str = "openextract";
 const EXPORT_TOOL: &str = "OpenExtract";
 const EXPORT_TOOL_VERSION: &str = "0.5.1";
+
+/// The message extra that holds a row's vendor key, for the rows that go to
+/// "Unknown recipient".
+const VENDOR_KEY: &str = "vendor_key";
 
 /// Inputs for [`convert_export`].
 pub(crate) struct ConvertExportArgs<'a> {
@@ -87,7 +92,12 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
             export: &export,
             key: pending.key.as_ref(),
         };
-        if let Some(doc) = project_conversation(&chat_id, &mut pending.convo, &hooks, &mut report) {
+        if let Some(mut doc) =
+            project_conversation(&chat_id, &mut pending.convo, &hooks, &mut report)
+        {
+            if pending.unknown_recipient {
+                doc.conversation.conversation_type = IrConversationType::Orphaned;
+            }
             documents.push(doc);
         }
     }
@@ -111,16 +121,22 @@ struct Ingest {
 
 /// One conversation and its key, awaiting projection.
 struct Pending {
-    /// `None` for the conversation of sent rows that name nobody, keyed
-    /// [`NAMELESS_CHAT_ID`].
+    /// `None` for the conversation of received rows that name nobody, keyed
+    /// [`NAMELESS_CHAT_ID`], and for "Unknown recipient".
     key: Option<ConversationKey>,
+    /// Whether it is "Unknown recipient" ([`Conversation::unknown_recipient`]).
+    unknown_recipient: bool,
     convo: PendingConversation,
 }
 
 /// The conversation a set of rows belongs to.
 struct Conversation {
-    /// `None` for the conversation that names nobody.
+    /// `None` for the conversation that names nobody, and for "Unknown
+    /// recipient".
     key: Option<ConversationKey>,
+    /// Whether it is "Unknown recipient": the account holder's orphaned
+    /// messages, sent rows that record no recipient.
+    unknown_recipient: bool,
     /// The other person's name, for a one-to-one conversation the source
     /// names; empty otherwise.
     contact_name: String,
@@ -130,9 +146,24 @@ struct Conversation {
 
 impl Conversation {
     fn chat_id(&self) -> String {
+        if self.unknown_recipient {
+            return orphaned_chat_id(None);
+        }
         self.key
             .as_ref()
             .map_or_else(|| NAMELESS_CHAT_ID.to_string(), ConversationKey::chat_id)
+    }
+
+    /// "Unknown recipient": the conversation of orphaned messages, keyed
+    /// [`orphaned_chat_id`] with no sender, that holds every sent row whose
+    /// recipient the export does not record. It has no participants.
+    fn unknown_recipient() -> Self {
+        Self {
+            key: None,
+            unknown_recipient: true,
+            contact_name: String::new(),
+            group_name: None,
+        }
     }
 
     fn is_group(&self) -> bool {
@@ -142,6 +173,7 @@ impl Conversation {
     fn group(vendor_id: String, members: Vec<IrParticipant>, group_name: Option<String>) -> Self {
         Self {
             key: Some(ConversationKey::Group { vendor_id, members }),
+            unknown_recipient: false,
             contact_name: String::new(),
             group_name,
         }
@@ -154,7 +186,8 @@ impl Ingest {
     ///
     /// A per-chat file is one conversation, whoever sent each row. In the
     /// all-conversations CSV a row's conversation is its `Conversation`
-    /// value; a row with none belongs to its incoming sender.
+    /// value; a row with none belongs to its incoming sender, or, sent, to
+    /// "Unknown recipient".
     fn ingest_file(&mut self, path: &Path) {
         let rows = match parse_csv_file(path) {
             Ok(rows) => rows,
@@ -183,45 +216,68 @@ impl Ingest {
             .into_iter()
             .map(|(label, rows)| (label.to_string(), labelled_conversation(&rows, label)))
             .collect();
+        // How many rows alike in every column went to "Unknown recipient"
+        // before this one ([`row_digest`]).
+        let mut alike: HashMap<[u8; 32], usize> = HashMap::new();
         for row in rows {
             match conversation_label(&row).and_then(|label| labelled.get(label)) {
-                Some(conversation) => self.ingest_row(path, row, conversation),
+                Some(conversation) => self.ingest_row(path, row, conversation, None),
+                None if resolve_is_from_me(&row) => {
+                    let earlier = alike.entry(row_digest(&row)).or_default();
+                    let vendor_key = earlier.to_string();
+                    *earlier += 1;
+                    let conversation = Conversation::unknown_recipient();
+                    self.ingest_row(path, row, &conversation, Some(vendor_key));
+                }
                 None => {
-                    let sender = (!resolve_is_from_me(&row)).then_some(row.sender.as_str());
-                    let conversation = one_to_one(sender, None);
-                    self.ingest_row(path, row, &conversation);
+                    let conversation = one_to_one(Some(row.sender.as_str()), None);
+                    self.ingest_row(path, row, &conversation, None);
                 }
             }
         }
     }
 
     /// A per-chat file in which one person other than the account holder
-    /// wrote is one-to-one with them. Any other is a group, keyed by
-    /// [`group_vendor_id`].
+    /// wrote is one-to-one with them. One in which two or more did is a
+    /// group, keyed by [`group_vendor_id`].
     ///
-    /// A file in which nobody else wrote is a group of nobody known, so that
-    /// two such files never share a conversation. It is most likely a
-    /// one-to-one conversation whose recipient the source does not record;
-    /// the group stands in until such conversations get a kind of their own
-    /// (#1095).
+    /// A file in which nobody else wrote records no recipient, so its rows
+    /// are the account holder's orphaned messages and go to "Unknown
+    /// recipient" (#1095). Each such file's rows carry the file's
+    /// [`group_vendor_id`] as their vendor key, so the same text sent to two
+    /// people in the same second, one file each, is two messages there.
     fn ingest_per_chat_file(&mut self, path: &Path, rows: Vec<RawRow>) {
         let all: Vec<&RawRow> = rows.iter().collect();
-        let conversation = match other_parties(&all).as_slice() {
-            [one] => one_to_one(Some(one), None),
-            others => Conversation::group(
-                group_vendor_id(path, &rows),
-                others.iter().map(|party| member(party)).collect(),
+        let (conversation, vendor_key) = match other_parties(&all).as_slice() {
+            [] => (
+                Conversation::unknown_recipient(),
+                Some(group_vendor_id(path, &rows)),
+            ),
+            [one] => (one_to_one(Some(one), None), None),
+            others => (
+                Conversation::group(
+                    group_vendor_id(path, &rows),
+                    others.iter().map(|party| member(party)).collect(),
+                    None,
+                ),
                 None,
             ),
         };
         for row in rows {
-            self.ingest_row(path, row, &conversation);
+            self.ingest_row(path, row, &conversation, vendor_key.clone());
         }
     }
 
     /// Add one row of the CSV at `path` to its conversation, or count why it
-    /// was dropped.
-    fn ingest_row(&mut self, path: &Path, row: RawRow, conversation: &Conversation) {
+    /// was dropped. `vendor_key` tells apart rows the export cannot: two
+    /// copies with different keys are two messages ([`message_ir::one_copy_per_message`]).
+    fn ingest_row(
+        &mut self,
+        path: &Path,
+        row: RawRow,
+        conversation: &Conversation,
+        vendor_key: Option<String>,
+    ) {
         let Some(secs) = parse_timestamp(&row.date) else {
             self.report.skipped_invalid_date += 1;
             return;
@@ -246,6 +302,7 @@ impl Ingest {
                 }
                 Pending {
                     key: conversation.key.clone(),
+                    unknown_recipient: conversation.unknown_recipient,
                     convo: PendingConversation::new(
                         chat_id,
                         conversation.is_group(),
@@ -261,6 +318,9 @@ impl Ingest {
             if row.has_attachments { "true" } else { "false" }.into(),
         );
         extra.insert("source_kind".into(), row.source_kind.as_str().to_string());
+        if let Some(vendor_key) = vendor_key {
+            extra.insert(VENDOR_KEY.into(), vendor_key);
+        }
         pending.convo.messages.push(PendingMessage {
             sort_key: secs,
             is_from_me,
@@ -378,6 +438,7 @@ fn one_to_one(sender: Option<&str>, label: Option<&str>) -> Conversation {
     };
     Conversation {
         key,
+        unknown_recipient: false,
         contact_name: name.unwrap_or_default(),
         group_name: None,
     }
@@ -503,7 +564,7 @@ fn parse_timestamp(raw: &str) -> Option<i64> {
 struct OpenExtractProjection<'a> {
     export: &'a ExportMeta,
     /// The key of the conversation being projected; `None` for the one that
-    /// names nobody.
+    /// names nobody and for "Unknown recipient".
     key: Option<&'a ConversationKey>,
 }
 
@@ -514,6 +575,10 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
 
     fn service(&self, _msg: &PendingMessage) -> IrService {
         IrService::Sms
+    }
+
+    fn vendor_key(&self, msg: &PendingMessage) -> Option<String> {
+        msg.extra.get(VENDOR_KEY).cloned()
     }
 
     fn source(&self, convo: &PendingConversation, msg: &PendingMessage) -> IrSource {
@@ -537,7 +602,7 @@ impl ProjectionHooks for OpenExtractProjection<'_> {
     /// A group's members come from its key. A one-to-one conversation's one
     /// participant is the person it is with: their address, or for a
     /// conversation keyed by a name, the name and no address. The conversation
-    /// that names nobody has no roster at all.
+    /// that names nobody, and "Unknown recipient", have no roster at all.
     fn participants(&self, _chat_id: &str, convo: &PendingConversation) -> Vec<IrParticipant> {
         match self.key {
             None => Vec::new(),
