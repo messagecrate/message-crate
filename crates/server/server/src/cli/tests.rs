@@ -221,7 +221,7 @@ async fn process_assets_fails_when_a_preview_or_thumbnail_was_not_made_and_names
 
     assert_eq!(
         err.to_string(),
-        "The Preview or Thumbnail of 1 original could not be made"
+        "1 original whose Preview or Thumbnail could not be made"
     );
 }
 

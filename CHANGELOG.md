@@ -1544,8 +1544,9 @@ released versions carry their date on the heading.
   original could not be made, `process-assets` ended with "1 conversion
   failed. That original stays without a Thumbnail or a browser preview",
   also when only the Thumbnail failed, and `reset-demo` warned "1 demo
-  attachment failed conversion". They now say "The Preview or Thumbnail of
-  1 original could not be made". The `reset-demo` summary's "Browser
+  attachment failed conversion". They now say "1 original whose Preview
+  or Thumbnail could not be made" and "1 demo original whose Preview or
+  Thumbnail could not be made stays as it was". The `reset-demo` summary's "Browser
   previews" section, with its "converted for web", "left as-is" and
   "conversion failures" lines, is now "Previews and Thumbnails", with
   "Previews made", "Thumbnails made", "left as they were" and "not made".

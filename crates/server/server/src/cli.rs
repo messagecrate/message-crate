@@ -707,8 +707,8 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
             "{}",
             crate::counts::words(
                 stats.errors,
-                "The Preview or Thumbnail of 1 original could not be made",
-                "The Preview or Thumbnail of {n} originals could not be made",
+                "1 original whose Preview or Thumbnail could not be made",
+                "{n} originals whose Preview or Thumbnail could not be made",
             )
         );
     }

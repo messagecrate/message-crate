@@ -180,7 +180,7 @@ async fn dedupe_and_process_assets(
     )
     .await
     .context("process-assets after prepared demo import")?;
-    if let Some(warning) = versions_warning(process_stats.errors) {
+    if let Some(warning) = not_made_warning(process_stats.errors) {
         eprintln!("warning: {warning}");
     }
     Ok((dedupe_stats, process_stats))
@@ -188,12 +188,12 @@ async fn dedupe_and_process_assets(
 
 /// The warning printed when the Preview or Thumbnail of `errors` demo
 /// originals could not be made, or `None` when every one was made.
-fn versions_warning(errors: u64) -> Option<String> {
+fn not_made_warning(errors: u64) -> Option<String> {
     (errors > 0).then(|| {
         crate::counts::words(
             errors,
-            "The Preview or Thumbnail of 1 demo original could not be made. Its original stays in place, and reset-demo continues",
-            "The Preview or Thumbnail of {n} demo originals could not be made. The originals stay in place, and reset-demo continues",
+            "1 demo original whose Preview or Thumbnail could not be made stays as it was, and reset-demo continues",
+            "{n} demo originals whose Preview or Thumbnail could not be made stay as they were, and reset-demo continues",
         )
     })
 }
