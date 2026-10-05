@@ -15,9 +15,11 @@ import { parseSelectKey } from "../lib/selectKey";
 import {
   EXPORT_FORMATS,
   type ExportFormat,
+  type ExportDir,
   type ExportQueryList,
-  invokeCreateStagingDir,
-  invokeDeleteStaging,
+  invokeCreateExportDir,
+  invokeDiscardExportDir,
+  invokeFinishExportDir,
   invokeFormat,
   invokePull,
 } from "../lib/tauri";
@@ -65,15 +67,20 @@ function formatLabel(id: ExportFormat): string {
 }
 
 /**
- * Desktop export: `message-crate-pull` downloads the account's conversations into a directory, and for any
- * format other than JSONL `message-reexport` rewrites that directory into the
- * chosen format.
+ * Desktop export: `message-crate-pull` downloads the account's conversations as
+ * JSON Lines, and for any other format `message-reexport` rewrites them into
+ * the chosen format.
  *
- * The two steps need two directories. `message-crate-pull` only writes JSONL, and
- * `message-reexport` refuses to convert a directory into itself, so a non-JSONL
- * export pulls into a directory in the Staging Directory first and converts out
- * of it into the directory the person picked. That directory is deleted either way, so a
- * failed conversion does not leave a copy of the conversations behind.
+ * Every export gets a directory of its own in the Export Directory, named for
+ * when it started and its format (`export-2026-10-04-1430-mbox`). The result
+ * lands there unless the person chose another directory under **Save to**.
+ * The JSON Lines a non-JSONL export pulls wait in that directory while they
+ * are converted, since `message-reexport` refuses to write into a directory
+ * that holds its input, and the conversion writes beside them. When the export
+ * finishes, the desktop deletes the JSON Lines and moves the result up, so the
+ * directory holds only the result; a directory left empty because the result
+ * went elsewhere is deleted. A failed or cancelled export deletes its
+ * directory whole, so no copy of the conversations is left behind.
  *
  * The scope is Everything or Search. The screen opens in Search when its URL
  * carries `?q=`: LeftPanel puts the query the conversation list was browsing
@@ -100,14 +107,12 @@ export default function ExportScreen() {
   const [error, setError] = useState("");
   const [log, setLog] = useState<string[]>([]);
   // `running` only turns true once a job starts, which leaves two windows
-  // where the Export button would be live mid-export: while the staging path
-  // resolves (a `home_dir` round trip on the first export), and between the
-  // pull and the conversion. The desktop refuses a second job while one runs
-  // (`jobs.rs`), but between two jobs it has nothing to refuse, and two exports
-  // begun in the same second would share a directory to pull into, so the first
-  // cleanup would delete the second's files. This covers the whole run.
+  // where the Export button would be live mid-export: while the export's
+  // directory is made, and between the pull and the conversion. The desktop
+  // refuses a second job while one runs (`jobs.rs`), but between two jobs it
+  // has nothing to refuse. This covers the whole run.
   const [busy, setBusy] = useState(false);
-  // The directory and format each export was started with, so the success
+  // The directory each export wrote to and its format, so the success
   // message names what was written even after the form changes.
   const { running, finished, run } = useTauriJob<{ savePath: string; format: ExportFormat }>({
     job: "Export",
@@ -138,40 +143,42 @@ export default function ExportScreen() {
     setLog([]);
     const exportCancel = createRunCancel();
     runCancel.current = exportCancel;
-    const request = { savePath, format };
+    const chosen = savePath.trim();
     const runStartedMs = Date.now();
 
-    const pullInto = (outDir: string) =>
-      run(
-        exportCancel.guard(() =>
-          invokePull({
-            base_url: getBaseUrl(),
-            username: "",
-            token,
-            out_dir: outDir,
-            query: scope === "search" ? query.trim() : "",
-            list,
-            skip_attachments: false,
-          }),
-        ),
-        request,
-        { onLog: appendLog },
-      );
-
     void (async () => {
+      let made: ExportDir | null = null;
+      // Once the result is written, a later failure must not delete it.
+      let written = false;
       try {
+        made = await invokeCreateExportDir("export", format);
+        const exportDir = made;
+        const request = { savePath: chosen || exportDir.dir, format };
+        const pullInto = (outDir: string) =>
+          run(
+            exportCancel.guard(() =>
+              invokePull({
+                base_url: getBaseUrl(),
+                username: "",
+                token,
+                out_dir: outDir,
+                query: scope === "search" ? query.trim() : "",
+                list,
+                skip_attachments: false,
+              }),
+            ),
+            request,
+            { onLog: appendLog },
+          );
         if (format === "jsonl") {
-          await pullInto(savePath);
-          return;
-        }
-        const stagingDir = await invokeCreateStagingDir("export");
-        try {
-          await pullInto(stagingDir);
+          await pullInto(chosen || exportDir.dir);
+        } else {
+          await pullInto(exportDir.pulled);
           await run(
             exportCancel.guard(() =>
               invokeFormat({
-                input_dir: stagingDir,
-                output_dir: savePath,
+                input_dir: exportDir.pulled,
+                output_dir: chosen || exportDir.converting,
                 output_format: format,
                 run_started_ms: runStartedMs,
               }),
@@ -179,24 +186,27 @@ export default function ExportScreen() {
             request,
             { onLog: appendLog },
           );
-        } finally {
-          // Best effort: a directory left behind is worth a log line, not
-          // a failed export the person cannot tell apart from a real one.
-          try {
-            await invokeDeleteStaging({ staging_dir: stagingDir });
-          } catch (cleanupError: unknown) {
-            appendLog(
-              `Could not remove the directory Export pulled its JSON Lines into, ${stagingDir}: ${
-                cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
-              }`,
-            );
-          }
         }
+        written = true;
+        await invokeFinishExportDir(exportDir.dir);
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         appendLog(`Error: ${message}`);
         setError(message);
       } finally {
+        // Best effort: a directory left behind is worth a log line, not a
+        // failed export the person cannot tell apart from a real one.
+        if (made && !written) {
+          try {
+            await invokeDiscardExportDir(made.dir);
+          } catch (cleanupError: unknown) {
+            appendLog(
+              `Could not delete ${made.dir}: ${
+                cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+              }`,
+            );
+          }
+        }
         releaseDesktop();
         setBusy(false);
       }
@@ -212,14 +222,15 @@ export default function ExportScreen() {
       runningLabel="Exporting…"
       running={running || busy}
       log={log}
-      startDisabled={!savePath || busy || (scope === "search" && query.trim() === "")}
+      startDisabled={busy || (scope === "search" && query.trim() === "")}
       onStart={startExport}
       onCancel={() => void runCancel.current.cancel()}
       error={error}
       intro={
         <p className="mb-6 text-[0.875rem] text-muted">
-          Export every conversation, or only the ones a search finds, into a directory in the format
-          you choose. Attachments come with the messages.
+          Export every conversation, or only the ones a search finds, in the format you choose.
+          Attachments come with the messages. Each export gets a directory of its own in the Export
+          Directory, unless you choose another directory to save to.
         </p>
       }
       success={
@@ -285,7 +296,7 @@ export default function ExportScreen() {
           value={savePath}
           onChange={setSavePath}
           directory
-          placeholder="Choose directory…"
+          placeholder="The Export Directory"
           isDisabled={running || busy}
         />
       </FormRow>

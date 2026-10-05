@@ -39,6 +39,7 @@ vi.mock("../../lib/tauri", () => ({
     defaultRoot: desktopStaging.defaultRoot,
   }),
   invokeSetStagingRoot: (root: string) => setStagingRoot(root),
+  invokeExportDirectory: async () => "/home/demo/.local/share/app.messagecrate.desktop/exports",
 }));
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
@@ -198,6 +199,16 @@ describe("SystemSection", () => {
     expect(screen.getByLabelText("ffmpeg directory")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Save" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Saving…" })).toBeNull();
+  });
+
+  it("names the Export Directory, where each Export and Convert gets a directory", async () => {
+    render(<SystemSection />);
+    expect(
+      await screen.findByRole("button", {
+        name: "/home/demo/.local/share/app.messagecrate.desktop/exports",
+      }),
+    ).toBeTruthy();
+    expect(screen.getByText(/Each Export and Convert gets a directory of its own/)).toBeTruthy();
   });
 
   it("stores the staging directory in the desktop process on change", async () => {

@@ -11,10 +11,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod commands;
+mod export_directories;
 mod local_server;
 mod staging_directories;
 mod state;
 
+use export_directories::ExportDirectories;
 use local_server::LocalServer;
 use staging_directories::StagingDirectories;
 use state::AppState;
@@ -44,11 +46,12 @@ fn main() {
         // in the app-data directory, and the sweep of the cache directory's
         // scratch directories.
         .setup(|app| {
-            let record = app
-                .path()
-                .app_data_dir()?
-                .join(staging_directories::RECORD_FILE);
+            let app_data_dir = app.path().app_data_dir()?;
+            let record = app_data_dir.join(staging_directories::RECORD_FILE);
             app.manage(StagingDirectories::at(record, dirs::home_dir()));
+            // The Export Directory, where each Export and Convert gets a
+            // directory of its own.
+            app.manage(ExportDirectories::in_app_data(&app_data_dir));
             // What killed runs left in the cache directory's scratch directories
             // (decrypted databases, attachment payloads) is deleted now,
             // not at the next run of the same kind. A directory a running job
@@ -76,6 +79,10 @@ fn main() {
             commands::local_server::open_data_directory,
             commands::push::push,
             commands::pull::pull,
+            commands::exports::export_directory,
+            commands::exports::create_export_dir,
+            commands::exports::finish_export_dir,
+            commands::exports::discard_export_dir,
             commands::staging::staging_root,
             commands::staging::set_staging_root,
             commands::staging::create_staging_dir,

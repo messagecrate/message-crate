@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import Checkbox from "../../components/Checkbox";
 import { CheckIcon, XIcon } from "../../components/icons";
+import OpenPathButton from "../../components/OpenPathButton";
 import PathPicker from "../../components/PathPicker";
 import PlainButton from "../../components/PlainButton";
 import { getBaseUrl } from "../../lib/api";
@@ -18,6 +19,7 @@ import { readPref, removePref, writePref } from "../../lib/storage";
 import { getRememberImporterPaths, setRememberImporterPaths } from "../../lib/system-settings";
 import {
   type FfmpegToolsProbe,
+  invokeExportDirectory,
   invokeSetStagingRoot,
   invokeStagingRoot,
   probeFfmpegTools,
@@ -211,6 +213,52 @@ function DataDirectory() {
   );
 }
 
+/**
+ * Where each Export and Convert gets a directory of its own, unless the
+ * person chooses another one on its screen. The desktop process keeps it in
+ * the app-data directory; the button opens it.
+ */
+function ExportDirectory() {
+  const [path, setPath] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true;
+    invokeExportDirectory().then(
+      (dir) => {
+        if (live) setPath(dir);
+      },
+      (caught: unknown) => {
+        if (live) setError(caught instanceof Error ? caught.message : String(caught));
+      },
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
+  return (
+    <div className="mt-8">
+      <h3 className={sectionHeading}>Exports</h3>
+      <p className="m-0 max-w-prose text-[0.875rem] text-text">
+        Each Export and Convert gets a directory of its own in the Export Directory, unless you
+        choose another directory to save to.
+      </p>
+      {path ? (
+        <OpenPathButton
+          path={path}
+          className="mt-2 max-w-full border-0 bg-transparent p-0 text-left text-[0.875rem] text-accent underline-offset-2 [overflow-wrap:anywhere] hover:underline"
+        >
+          {path}
+        </OpenPathButton>
+      ) : null}
+      {error ? (
+        <p className="m-0 mt-1 text-[0.75rem] text-danger" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function SystemSection() {
   const stagingId = useId();
   const ffmpegId = useId();
@@ -371,7 +419,7 @@ export function SystemSection() {
           </p>
         ) : null}
         <p className={settingsHelp}>
-          Temporary files for Import and Export are written here. For example {helpExample}
+          Each Import Run gets a directory here while it runs. For example {helpExample}
         </p>
       </div>
 
@@ -426,6 +474,8 @@ export function SystemSection() {
           ) : null}
         </div>
       </div>
+
+      <ExportDirectory />
 
       <DataDirectory />
 

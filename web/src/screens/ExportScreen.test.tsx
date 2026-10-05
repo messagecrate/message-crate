@@ -10,9 +10,10 @@ import { ConvertSection } from "./settings/ConvertSection";
 
 const invokePull = vi.hoisted(() => vi.fn());
 const invokeFormat = vi.hoisted(() => vi.fn());
-const invokeDeleteStaging = vi.hoisted(() => vi.fn());
+const invokeFinishExportDir = vi.hoisted(() => vi.fn());
+const invokeDiscardExportDir = vi.hoisted(() => vi.fn());
 const invokeCancel = vi.hoisted(() => vi.fn());
-const invokeCreateStagingDir = vi.hoisted(() => vi.fn());
+const invokeCreateExportDir = vi.hoisted(() => vi.fn());
 const awaitTauriJob = vi.hoisted(() => vi.fn());
 
 vi.mock("../lib/tauri-check", () => ({
@@ -25,8 +26,9 @@ vi.mock("../lib/tauri", async (importOriginal) => {
     EXPORT_FORMATS: actual.EXPORT_FORMATS,
     invokePull: (...args: unknown[]) => invokePull(...args),
     invokeFormat: (...args: unknown[]) => invokeFormat(...args),
-    invokeDeleteStaging: (...args: unknown[]) => invokeDeleteStaging(...args),
-    invokeCreateStagingDir: (...args: unknown[]) => invokeCreateStagingDir(...args),
+    invokeCreateExportDir: (...args: unknown[]) => invokeCreateExportDir(...args),
+    invokeFinishExportDir: (...args: unknown[]) => invokeFinishExportDir(...args),
+    invokeDiscardExportDir: (...args: unknown[]) => invokeDiscardExportDir(...args),
     invokeCancel: (...args: unknown[]) => invokeCancel(...args),
     // The job's name comes first; the mocks below take what follows it.
     awaitTauriJob: (_job: string, ...args: unknown[]) => awaitTauriJob(...args),
@@ -51,8 +53,19 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+/** The directory the desktop makes for the export in the Export Directory. */
+const EXPORT_DIR = {
+  dir: "/home/demo/.local/share/app.messagecrate.desktop/exports/export-2026-10-04-1430-csv",
+  pulled:
+    "/home/demo/.local/share/app.messagecrate.desktop/exports/export-2026-10-04-1430-csv/.pulled",
+  converting:
+    "/home/demo/.local/share/app.messagecrate.desktop/exports/export-2026-10-04-1430-csv/.converting",
+};
+
 beforeEach(() => {
-  invokeCreateStagingDir.mockResolvedValue("/home/demo/message-crate/staging-export-260831-120000");
+  invokeCreateExportDir.mockResolvedValue(EXPORT_DIR);
+  invokeFinishExportDir.mockResolvedValue(EXPORT_DIR.dir);
+  invokeDiscardExportDir.mockResolvedValue(undefined);
   // The hook's `run` goes through awaitTauriJob: call the invoke and resolve.
   awaitTauriJob.mockImplementation(async (invokeFn: () => Promise<void>) => {
     await invokeFn();
@@ -78,7 +91,7 @@ function renderScreen(query?: string) {
 async function exportTo(directory: string) {
   const user = setupUser();
   renderScreen();
-  await fill(user, screen.getByPlaceholderText("Choose directory…"), directory);
+  await fill(user, screen.getByPlaceholderText("The Export Directory"), directory);
   await user.click(screen.getByRole("button", { name: "Export" }));
   return user;
 }
@@ -87,7 +100,7 @@ async function exportTo(directory: string) {
 async function exportAs(directory: string, formatLabel: string) {
   const user = setupUser();
   renderScreen();
-  await fill(user, screen.getByPlaceholderText("Choose directory…"), directory);
+  await fill(user, screen.getByPlaceholderText("The Export Directory"), directory);
   await user.click(screen.getByRole("button", { name: /Format/ }));
   await user.click(await screen.findByRole("option", { name: formatLabel }));
   await user.click(screen.getByRole("button", { name: "Export" }));
@@ -102,21 +115,58 @@ describe("ExportScreen", () => {
     // Everything is the scope the screen opens in without a query, and it
     // sends a blank query, which message-crate-pull reads as the whole account.
     expect(invokePull.mock.calls[0][0]).toMatchObject({ out_dir: "/home/demo/out", query: "" });
-    // JSONL is what pull already writes, so there is nothing to convert and
-    // no directory to pull into to make or remove.
-    expect(invokeCreateStagingDir).not.toHaveBeenCalled();
+    // JSONL is what pull already writes, so there is nothing to convert. The
+    // export's own directory is finished, which deletes it when it is empty.
     expect(invokeFormat).not.toHaveBeenCalled();
-    expect(invokeDeleteStaging).not.toHaveBeenCalled();
+    await waitFor(() => expect(invokeFinishExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir));
+    expect(invokeDiscardExportDir).not.toHaveBeenCalled();
   });
 
-  it("pulls into staging and converts into the chosen directory for CSV", async () => {
-    const staging = "/home/demo/message-crate/staging-export-260831-120000";
+  it("pulls JSON Lines into its own directory in the Export Directory when no directory is chosen", async () => {
+    const user = setupUser();
+    renderScreen();
+    expect(screen.getByRole("button", { name: "Export" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Export" }));
+
+    await waitFor(() => expect(invokePull).toHaveBeenCalledTimes(1));
+    expect(invokeCreateExportDir).toHaveBeenCalledWith("export", "jsonl");
+    expect(invokePull.mock.calls[0][0]).toMatchObject({ out_dir: EXPORT_DIR.dir });
+    await waitFor(() => expect(invokeFinishExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir));
+    expect(await screen.findByText(/Export complete/)).toHaveTextContent(
+      `Export complete. JSON Lines (.jsonl) saved to ${EXPORT_DIR.dir}.`,
+    );
+  });
+
+  it("converts into the export's own directory when no directory is chosen", async () => {
+    const user = setupUser();
+    renderScreen();
+    await user.click(screen.getByRole("button", { name: /Format/ }));
+    await user.click(await screen.findByRole("option", { name: "CSV (.csv)" }));
+    await user.click(screen.getByRole("button", { name: "Export" }));
+
+    await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
+    expect(invokeCreateExportDir).toHaveBeenCalledWith("export", "csv");
+    expect(invokePull.mock.calls[0][0]).toMatchObject({ out_dir: EXPORT_DIR.pulled });
+    // The conversion may not write into the directory that holds its input,
+    // so it writes beside it and the finish moves the result up.
+    expect(invokeFormat.mock.calls[0][0]).toMatchObject({
+      input_dir: EXPORT_DIR.pulled,
+      output_dir: EXPORT_DIR.converting,
+    });
+    await waitFor(() => expect(invokeFinishExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir));
+    expect(await screen.findByText(/Export complete/)).toHaveTextContent(
+      `Export complete. CSV (.csv) saved to ${EXPORT_DIR.dir}.`,
+    );
+  });
+
+  it("pulls into the export's own directory and converts into the chosen directory for CSV", async () => {
+    const pulled = EXPORT_DIR.pulled;
     await exportAs("/home/demo/out", "CSV (.csv)");
 
     await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
-    expect(invokePull.mock.calls[0][0]).toMatchObject({ out_dir: staging });
+    expect(invokePull.mock.calls[0][0]).toMatchObject({ out_dir: pulled });
     expect(invokeFormat.mock.calls[0][0]).toEqual({
-      input_dir: staging,
+      input_dir: pulled,
       output_dir: "/home/demo/out",
       output_format: "csv",
       run_started_ms: expect.any(Number),
@@ -137,17 +187,16 @@ describe("ExportScreen", () => {
     expect(started).toBeLessThanOrEqual(pulled);
   });
 
-  it("removes the directory it pulled into once the conversion finishes", async () => {
-    const staging = "/home/demo/message-crate/staging-export-260831-120000";
+  it("finishes the export's own directory once the conversion ends", async () => {
     await exportAs("/home/demo/out", "CSV (.csv)");
 
-    await waitFor(() => expect(invokeDeleteStaging).toHaveBeenCalledWith({ staging_dir: staging }));
+    await waitFor(() => expect(invokeFinishExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir));
+    expect(invokeDiscardExportDir).not.toHaveBeenCalled();
   });
 
-  it("removes the directory it pulled into even when the conversion fails", async () => {
+  it("deletes the export's own directory when the conversion fails", async () => {
     // Otherwise a failed export silently leaves a whole copy of the conversations on
     // disk, in a directory the person never chose and will not think to look in.
-    const staging = "/home/demo/message-crate/staging-export-260831-120000";
     awaitTauriJob.mockImplementationOnce(async (invokeFn: () => Promise<void>) => {
       await invokeFn();
       return { summary: "pulled" };
@@ -158,14 +207,14 @@ describe("ExportScreen", () => {
 
     await exportAs("/home/demo/out", "CSV (.csv)");
 
-    await waitFor(() => expect(invokeDeleteStaging).toHaveBeenCalledWith({ staging_dir: staging }));
+    await waitFor(() => expect(invokeDiscardExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir));
+    expect(invokeFinishExportDir).not.toHaveBeenCalled();
     expect(await screen.findByText("unsupported output format")).toBeTruthy();
   });
 
   it("does not start the conversion when Cancel is pressed after the pull finished", async () => {
     // A Cancel sent while no job runs stops nothing, and invokeFormat starts
     // its job with a cancel flag of its own, so the screen must not start it.
-    const staging = "/home/demo/message-crate/staging-export-260831-120000";
     let releaseFormat: () => void = () => {};
     const formatHeld = new Promise<void>((resolve) => {
       releaseFormat = resolve;
@@ -185,7 +234,7 @@ describe("ExportScreen", () => {
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     releaseFormat();
 
-    await waitFor(() => expect(invokeDeleteStaging).toHaveBeenCalledWith({ staging_dir: staging }));
+    await waitFor(() => expect(invokeDiscardExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir));
     expect(invokeFormat).not.toHaveBeenCalled();
   });
 
@@ -219,7 +268,7 @@ describe("ExportScreen", () => {
     const convert = screen.getByRole("button", { name: "Convert" });
     expect(convert).toBeEnabled();
 
-    await fill(user, screen.getByPlaceholderText("Choose directory…"), "/home/demo/out");
+    await fill(user, screen.getByLabelText("Save to"), "/home/demo/out");
     // The Export screen's Format comes before Convert's Output format.
     const [exportFormat] = screen.getAllByRole("button", { name: /Format/ });
     if (!exportFormat) throw new Error("no Format select");
@@ -235,7 +284,7 @@ describe("ExportScreen", () => {
     expect(convert).toBeDisabled();
 
     releaseFormat();
-    await waitFor(() => expect(invokeDeleteStaging).toHaveBeenCalled());
+    await waitFor(() => expect(invokeFinishExportDir).toHaveBeenCalled());
     await waitFor(() => expect(convert).toBeEnabled());
     expect(currentDesktopJob()).toBeNull();
   });
@@ -252,27 +301,26 @@ describe("ExportScreen", () => {
   });
 
   it("ignores a second Export while one is already under way", async () => {
-    // The desktop backend runs one job at a time (src-tauri/src/commands/jobs.rs).
-    // Two exports started in the same second would also resolve to the same
-    // directory to pull into, so the first cleanup would delete the second's files.
+    // The desktop backend runs one job at a time (src-tauri/src/commands/jobs.rs),
+    // and between the pull and the conversion it has nothing running to refuse.
     let releasePull: () => void = () => {};
     const pullStarted = new Promise<void>((resolve) => {
       releasePull = resolve;
     });
-    invokeCreateStagingDir.mockImplementation(async () => {
+    invokeCreateExportDir.mockImplementation(async () => {
       await pullStarted;
-      return "/home/demo/message-crate/staging-export-260831-120000";
+      return EXPORT_DIR;
     });
 
     const user = setupUser();
     renderScreen();
-    await fill(user, screen.getByPlaceholderText("Choose directory…"), "/home/demo/out");
+    await fill(user, screen.getByPlaceholderText("The Export Directory"), "/home/demo/out");
     await user.click(screen.getByRole("button", { name: /Format/ }));
     await user.click(await screen.findByRole("option", { name: "CSV (.csv)" }));
 
     const exportButton = screen.getByRole("button", { name: "Export" });
     await user.click(exportButton);
-    // Still resolving the staging path: the button must already be inert.
+    // Still making the export's directory: the button must already be inert.
     // `fireEvent`, not `user.click`: on a disabled button user-event sends the
     // pointer events and not the click, and React Aria then clicks the button
     // itself 80 ms later. On a busy machine that lands after the first export
@@ -282,7 +330,7 @@ describe("ExportScreen", () => {
 
     await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
     expect(invokePull).toHaveBeenCalledTimes(1);
-    expect(invokeCreateStagingDir).toHaveBeenCalledTimes(1);
+    expect(invokeCreateExportDir).toHaveBeenCalledTimes(1);
   });
 
   it("opens in Everything with no query box, and offers the box under Search", async () => {
@@ -299,7 +347,7 @@ describe("ExportScreen", () => {
   it("sends the query typed under Search", async () => {
     const user = setupUser();
     renderScreen();
-    await fill(user, screen.getByPlaceholderText("Choose directory…"), "/home/demo/out");
+    await fill(user, screen.getByPlaceholderText("The Export Directory"), "/home/demo/out");
     await user.click(screen.getByRole("button", { name: /Scope/ }));
     await user.click(await screen.findByRole("option", { name: "Search" }));
     await fill(user, screen.getByRole("textbox", { name: "Search" }), " in:#19,#22 ");
@@ -325,7 +373,7 @@ describe("ExportScreen", () => {
       screen.getByText(/holds every message of each conversation this search finds/),
     ).toBeTruthy();
 
-    await fill(user, screen.getByPlaceholderText("Choose directory…"), "/home/demo/out");
+    await fill(user, screen.getByPlaceholderText("The Export Directory"), "/home/demo/out");
     await user.click(screen.getByRole("button", { name: "Export" }));
 
     await waitFor(() => expect(invokePull).toHaveBeenCalledTimes(1));
@@ -343,7 +391,7 @@ describe("ExportScreen", () => {
     await user.click(await screen.findByRole("option", { name: "Messages" }));
     expect(screen.getByText(/holds only the messages this search finds/)).toBeTruthy();
 
-    await fill(user, screen.getByPlaceholderText("Choose directory…"), "/home/demo/out");
+    await fill(user, screen.getByPlaceholderText("The Export Directory"), "/home/demo/out");
     await user.click(screen.getByRole("button", { name: "Export" }));
 
     await waitFor(() => expect(invokePull).toHaveBeenCalledTimes(1));
@@ -355,7 +403,7 @@ describe("ExportScreen", () => {
     // someone who chose Search and left the box empty asked for.
     const user = setupUser();
     renderScreen("from:me");
-    await fill(user, screen.getByPlaceholderText("Choose directory…"), "/home/demo/out");
+    await fill(user, screen.getByPlaceholderText("The Export Directory"), "/home/demo/out");
     await user.clear(screen.getByRole("textbox", { name: "Search" }));
     expect(screen.getByRole("button", { name: "Export" })).toBeDisabled();
 
@@ -378,7 +426,7 @@ describe("ExportScreen", () => {
   it("names the directory and format the export wrote to after the form changes", async () => {
     const user = await exportTo("/a");
     await screen.findByText(/Export complete/);
-    const field = screen.getByPlaceholderText("Choose directory…");
+    const field = screen.getByPlaceholderText("The Export Directory");
     await user.clear(field);
     await fill(user, field, "/b");
     await user.click(screen.getByRole("button", { name: /Format/ }));
@@ -401,23 +449,23 @@ describe("ExportScreen", () => {
     });
 
     await exportTo("/a");
-    expect(screen.getByPlaceholderText("Choose directory…")).toBeDisabled();
+    expect(screen.getByPlaceholderText("The Export Directory")).toBeDisabled();
     releasePull();
     await screen.findByText(/Export complete/);
-    expect(screen.getByPlaceholderText("Choose directory…")).toBeEnabled();
+    expect(screen.getByPlaceholderText("The Export Directory")).toBeEnabled();
   });
 
   it("clears the last export's message as soon as the next export starts", async () => {
-    // A format other than JSON Lines resolves the directory to pull into before the
-    // job starts; the earlier message must not stay up through that wait.
+    // The export's directory is made before the job starts; the earlier
+    // message must not stay up through that wait.
     const user = await exportTo("/a");
     await screen.findByText(/Export complete/);
-    invokeCreateStagingDir.mockImplementation(() => new Promise<string>(() => {}));
+    invokeCreateExportDir.mockImplementation(() => new Promise<never>(() => {}));
     await user.click(screen.getByRole("button", { name: /Format/ }));
     await user.click(await screen.findByRole("option", { name: "CSV (.csv)" }));
     await user.click(screen.getByRole("button", { name: "Export" }));
 
-    await waitFor(() => expect(invokeCreateStagingDir).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(invokeCreateExportDir).toHaveBeenCalledTimes(2));
     expect(screen.queryByText(/Export complete/)).toBeNull();
   });
 });

@@ -1,6 +1,6 @@
 ---
 title: System
-description: What the System tab of Settings holds, the Staging Directory, remembered importer paths, the ffmpeg directory, the data directory of the app's own Message Crate, and the app's version.
+description: What the System tab of Settings holds, the Staging Directory, remembered importer paths, the ffmpeg directory, the Export Directory, the data directory of the app's own Message Crate, and the app's version.
 ---
 
 The **System** tab of **Settings** holds the settings of one installed desktop app.
@@ -15,11 +15,12 @@ The Owner's own Settings has no **System** tab, because every setting here serve
 
 ### Staging directory
 
-**Staging directory** is the directory where Import and Export write their temporary files.
+**Staging directory** is the Staging Directory, where Import keeps the backup it prepares.
 The default is `message-crate` in the person's home directory, shown as `~/message-crate`.
 
-Each job writes into its own directory inside it.
+Each Import Run writes into a directory of its own inside it.
 The line under the field gives an example, `~/message-crate/staging-iphone-ios-260809-143022`.
+Export and Convert don't use it: they work in the Export Directory, under [Exports](#exports).
 
 The field takes a typed path or a directory chosen with the picker.
 A change is saved as it is typed.
@@ -27,11 +28,11 @@ A change is saved as it is typed.
 Two kinds of path are not saved, and the default stays in force:
 
 - A relative path, because it would resolve against wherever the app happened to start.
-- The root of a file system, such as `/` or `C:`, because a job would then write beside every other directory on the disk.
+- The root of a file system, such as `/` or `C:`, because an Import Run would then write beside every other directory on the disk.
 
 Emptying the field returns to the default.
 
-A change applies to the jobs started after it.
+A change applies to the Import Runs started after it.
 An import already staged keeps the directory it was staged in, so it can still be resumed, discarded or cleaned up after the setting moves.
 
 When Message Crate can't delete the directory of a finished, cancelled or discarded import, the Import screen names the directory and the reason, so the directory can be deleted by hand.
@@ -58,6 +59,16 @@ The directory is saved only when both tools are found in it, because one without
 A saved directory is applied again each time the app starts.
 
 **Install help** opens [Attachments and media](/docs/user/features/messages/attachments-and-media/), which covers what the two tools are used for and how to install them.
+
+## Exports
+
+**Exports** names the Export Directory and opens it.
+Each [Export](/docs/user/features/messages/export/) and each [Convert](/docs/user/features/settings/convert/) gets a directory of its own there, named for what it is, when it started and its format, such as `export-2026-10-04-1430-mbox` or `convert-2026-10-04-1502-csv`.
+The result is written there unless the Export or Convert form names another directory.
+The directory holds only the result once the run finishes; a run that fails or is cancelled deletes it.
+
+The Export Directory is `exports` in the operating system's app-data directory, such as `~/.local/share/app.messagecrate.desktop/exports` on Linux.
+Message Crate never deletes a finished export from it.
 
 ## Message Crate on this computer
 

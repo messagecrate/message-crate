@@ -82,7 +82,7 @@ export async function invokeSetStagingRoot(root: string): Promise<StagingRoot> {
 
 /**
  * Make a new run directory under the Staging Directory and return its path.
- * `label` is the Import source, or `export` for Export.
+ * `label` is the Import source.
  */
 export async function invokeCreateStagingDir(label: string): Promise<string> {
   return invoke("create_staging_dir", { label });
@@ -315,6 +315,47 @@ export const EXPORT_FORMATS = [
 
 /** Id of a format the Export screen can write. */
 export type ExportFormat = (typeof EXPORT_FORMATS)[number]["id"];
+
+/**
+ * The directory an Export or Convert gets of its own in the Export Directory,
+ * and where an Export keeps its in-between files inside it.
+ */
+export interface ExportDir {
+  /** Where the result lands unless another destination is chosen. */
+  dir: string;
+  /** Where an Export pulls its JSON Lines before converting them. */
+  pulled: string;
+  /** Where an Export's conversion writes when the result lands in `dir`. */
+  converting: string;
+}
+
+/** The Export Directory, for Settings. */
+export async function invokeExportDirectory(): Promise<string> {
+  return invoke("export_directory");
+}
+
+/** Make the directory of a new Export or Convert in the Export Directory. */
+export async function invokeCreateExportDir(
+  kind: "export" | "convert",
+  format: ExportFormat,
+): Promise<ExportDir> {
+  return invoke("create_export_dir", { kind, format });
+}
+
+/**
+ * Finish an Export's or Convert's directory after it succeeded: its
+ * in-between files are deleted and only the result is left. Returns the
+ * directory, or null when the result went elsewhere and the directory was
+ * deleted.
+ */
+export async function invokeFinishExportDir(dir: string): Promise<string | null> {
+  return invoke("finish_export_dir", { dir });
+}
+
+/** Delete an Export's or Convert's directory after it failed or was cancelled. */
+export async function invokeDiscardExportDir(dir: string): Promise<void> {
+  return invoke("discard_export_dir", { dir });
+}
 
 /**
  * Rewrite an export directory into another format.
