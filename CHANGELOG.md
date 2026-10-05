@@ -1320,11 +1320,11 @@ released versions carry their date on the heading.
   sent one of those times with no value rather than leaving it out. It now
   carries its first and last message times once each, and leaves both out
   when there is no message to date them.
-- 2026-10-04 **Programs using the HTTP API can read a new Contact Group,
-  Message Tag or Saved Search where its creation points.** Creating one
-  answered with the address of the new item, and reading that address was
-  refused. It now answers the item as the list shows it, and answers "not
-  found" for an item that belongs to another account.
+- 2026-10-04 **Programs using the HTTP API can read a Contact Group,
+  Message Tag or Saved Search by its id.** Creating one answered with its
+  address, and reading that address was refused. It now answers the item as
+  the list shows it, and answers "not found" for one that belongs to another
+  account.
 - 2026-10-04 **Removing or changing messages right after an import no
   longer fails with "no such table: messages".** It failed now and then
   when an import had just finished on the same server.
