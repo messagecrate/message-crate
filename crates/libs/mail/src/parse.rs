@@ -59,11 +59,11 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             hn::EARLIER_IS_DELETED
         );
     }
-    if headers.get_first_header(hn::EARLIER_EDITS).is_some() {
+    if headers.get_first_header(hn::EARLIER_EDIT_HISTORY).is_some() {
         bail!(
             "This mail was written by an earlier Message Crate, which kept the edit history in {}; \
              export the backup again",
-            hn::EARLIER_EDITS
+            hn::EARLIER_EDIT_HISTORY
         );
     }
 

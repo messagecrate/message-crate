@@ -437,7 +437,7 @@ pub(crate) async fn index_messages_fts_from_promote_map(
     Ok(n.rows_affected())
 }
 
-/// Index the earlier versions above `min_new_version_id`, the highest
+/// Index the earlier versions above `versions_before`, the highest
 /// `message_versions.id` that existed before this promotion inserted any:
 /// the ones the promotion added while the sync triggers were paused.
 ///
@@ -446,13 +446,13 @@ pub(crate) async fn index_messages_fts_from_promote_map(
 /// Returns an error when the insert fails.
 pub(crate) async fn index_message_versions_fts(
     conn: &mut SqliteConnection,
-    min_new_version_id: i64,
+    versions_before: i64,
 ) -> Result<u64> {
     let n = sqlx::query(
         "INSERT INTO message_versions_fts(rowid, text)
          SELECT id, text FROM message_versions WHERE id > $1",
     )
-    .bind(min_new_version_id)
+    .bind(versions_before)
     .execute(&mut *conn)
     .await?;
     Ok(n.rows_affected())
