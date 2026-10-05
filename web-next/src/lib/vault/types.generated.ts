@@ -1741,7 +1741,7 @@ export interface components {
             /** Format: int64 */
             upload_ms?: number | null;
         };
-        /** @description Import result: stats plus optional dedupe counts. */
+        /** @description Import result: the import counts plus optional dedupe counts. */
         ImportResponse: components["schemas"]["ImportCounts"] & {
             account: string;
             dedupe?: null | components["schemas"]["DedupeResponse"];
