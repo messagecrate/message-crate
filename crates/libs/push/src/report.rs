@@ -1,4 +1,4 @@
-//! Report types written at the end of a push, plus the small formatting
+//! Report types written at the end of an Upload, plus the small formatting
 //! helpers that turn them into log text.
 //!
 //! [`PushReport`] is the JSON file left next to the export and the payload of
@@ -91,14 +91,14 @@ pub struct UploadProfile {
     pub asset_bytes: u64,
 }
 
-/// Final summary of a whole push (also written to disk as the report file).
+/// Final summary of a whole Upload (also written to disk as the report file).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PushReport {
     /// `true` when no conversation failed and the run was not cancelled.
     pub ok: bool,
     /// `true` when the cancel flag stopped the run. The conversations it did
     /// not finish sending are in `conversations_cancelled`, and the journal
-    /// leaves them for the next push. A failed request also stops the run
+    /// leaves them for the next Upload. A failed request also stops the run
     /// and leaves `cancelled` rows, but this stays `false`, so a caller can
     /// tell a pause from a failure. A session the server refused mid-run
     /// stops the run through the same flag, so it is `true` then too.
@@ -146,7 +146,7 @@ pub struct PushReport {
     pub assets_uploaded: u64,
     /// Attachments whose bytes did not go up this run: the server or another
     /// conversation already had the fingerprint, the file was left out (no
-    /// path, missing, too large), or the push was text-only.
+    /// path, missing, too large), or the Upload was text-only.
     pub assets_skipped: u64,
     /// Bytes uploaded.
     pub assets_bytes: u64,
@@ -234,8 +234,8 @@ pub fn format_duration_ms(ms: u64) -> String {
 }
 
 /// Three-way Import Run status for `/v1/imports/{id}/complete`, read from the
-/// push report rather than from whether the push returned. `failed` has a
-/// zero floor: aborted, or nothing landed at all. A skip-only re-push is a
+/// Upload's report rather than from whether the Upload returned. `failed` has a
+/// zero floor: aborted, or nothing landed at all. A skip-only repeat Upload is a
 /// no-op, not a failure. Item-level failures beside successes are
 /// `completed_with_issues`.
 pub fn outcome_status(report: &PushReport, aborted: bool) -> &'static str {
@@ -281,7 +281,7 @@ Elapsed: {} ({} ms)",
     )
 }
 
-/// One PROFILE line with per-phase timings for a conversation.
+/// One PROFILE line with the timings of each part of a conversation's work.
 pub(crate) fn format_profile_line(name: &str, profile: &UploadProfile) -> String {
     format!(
         "PROFILE {name} read_ms={} attachment_scan_hash_ms={} asset_upload_ms={} \
@@ -380,7 +380,7 @@ mod tests {
         nothing.conversations_failed = 10;
         assert_eq!(outcome_status(&nothing, false), "failed");
 
-        // A skip-only re-push is a no-op, not a failure.
+        // A skip-only repeat Upload is a no-op, not a failure.
         let mut skips = sample_report();
         skips.conversations_ok = 0;
         skips.conversations_skipped = 10;

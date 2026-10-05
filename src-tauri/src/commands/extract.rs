@@ -136,7 +136,7 @@ pub struct ExtractArgs {
 /// `extract:error`. Each issue goes out the moment the exporter records it,
 /// so the window has written it into the run record before an app that
 /// closes mid-Staging stops. Output is JSON Lines (one JSON object per line)
-/// so the Import screen's upload step can read it later.
+/// so the Import screen's Upload can read it later.
 ///
 /// This is where an Import Run's media settings are decided: the mode the
 /// person chose and the compress fields are parsed here, before anything is
@@ -289,9 +289,9 @@ fn parse_max_resolution(raw: Option<&str>) -> Result<MaxResolution, String> {
 /// `AttachmentMedia` the exporter's `Form` is asked for.
 ///
 /// Convert and Compress become Clone: the desktop stages originals, shows the
-/// first gate, and runs the media pass itself, so the expensive work happens
-/// after the user has approved it rather than before. Copy and Skip have no
-/// media step and reach the exporter unchanged. Kept in `AttachmentMedia`'s
+/// Staging Review, and runs the Media stage itself, so the expensive work happens
+/// after the user has approved it rather than before. Copy and Skip give the
+/// Media stage nothing to do and reach the exporter unchanged. Kept in `AttachmentMedia`'s
 /// own domain because `Form::attachment_media` drives the exporter's media
 /// mode, the upfront ffmpeg-availability check, and Apple `copy_method` —
 /// none of which must see Convert or Compress, or the exporter would demand
@@ -403,14 +403,14 @@ fn build_exporter_config(
         output: output_dir.to_string(),
         // See `exporter_attachment_media`'s docs: the exporter is asked for
         // Clone whenever the user chose Convert or Compress, so it stages
-        // originals and the desktop runs the media pass itself, after the
-        // gate.
+        // originals and the desktop runs the Media stage itself, after the
+        // Staging Review.
         attachment_media: exporter_attachment_media(options.attachment_media),
         media_max_resolution: options.media_max_resolution,
         media_max_fps: options.media_max_fps.clone(),
         media_min_size: options.media_min_size.clone(),
         obfuscate: options.obfuscate,
-        // Import and Push read conversation files as JSON Lines (one JSON
+        // Import and Upload read conversation files as JSON Lines (one JSON
         // object per line).
         output_format: OutputFormat::Jsonl,
         ..Default::default()

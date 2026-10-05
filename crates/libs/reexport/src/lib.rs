@@ -52,8 +52,8 @@ struct ReexportReport {
     /// The name of the format written when it holds only SMS and MMS, for
     /// the line that says how many messages were left out of it.
     sms_only_format: Option<&'static str>,
-    /// Conversations written, attachments a convert or compress pass
-    /// staged, the media pass, and obfuscation.
+    /// Conversations written, attachments staged, what media conversion
+    /// did, and obfuscation.
     report: ExportReport,
 }
 

@@ -163,7 +163,7 @@ pub fn clean_body(text: Option<&str>) -> Option<String> {
 /// Parse message-ir JSONL lines into import records.
 ///
 /// Accepts one or more concatenated conversations (each: header line, then
-/// message lines). Remote push clients batch multiple conversations this way.
+/// message lines). Upload clients batch multiple conversations this way.
 ///
 /// # Errors
 ///

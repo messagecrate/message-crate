@@ -3,7 +3,7 @@
 //! # What this module does
 //!
 //! An export directory has one `.jsonl` file per conversation, plus an
-//! `attachments/` directory of media files. A push:
+//! `attachments/` directory of media files. An Upload:
 //!
 //! 1. Logs in to the server with the session token.
 //! 2. For each conversation file, finds attachments, uploads any the server
@@ -77,7 +77,7 @@ pub const NO_MESSAGE_COUNT_LIMIT: usize = usize::MAX;
 /// accept more reliably than one huge body.
 pub const MAX_PROXY_BODY_BYTES: usize = 90 * 1024 * 1024;
 /// What a server's attachment size limit reads as until its owner sets one.
-/// A caller that pushes to a real server reads the limit from `GET /v1/server`
+/// A caller that uploads to a real server reads the limit from `GET /v1/server`
 /// and passes that; this is for tests.
 pub const DEFAULT_ASSET_MAX_BYTES: u64 = 512 * 1024 * 1024;
 /// How many attachment uploads may run at the same time.
@@ -89,7 +89,7 @@ pub const DEFAULT_PREPARE_AHEAD: usize = 3;
 /// Worker threads that prepare conversations for that prepare-ahead queue.
 pub const DEFAULT_PREPARE_WORKERS: usize = 2;
 
-/// Settings for one full push run (paths, URL, flags, limits).
+/// Settings for one full Upload (paths, URL, flags, limits).
 #[derive(Debug, Clone)]
 pub struct PushConfig {
     /// A directory of JSON Lines conversation files, or one such file.
@@ -161,7 +161,7 @@ pub fn authenticate(
     message_crate_http::auth_check(base_url, token)
 }
 
-/// The authenticated connection one push run uses for every request.
+/// The authenticated connection one Upload uses for every request.
 #[derive(Clone)]
 pub(crate) struct Session {
     pub http: HttpSession,
@@ -182,8 +182,8 @@ impl Session {
     /// Run `op` against the server with retries, and stop the run when the
     /// server refuses the session token. Every request that sends
     /// conversations or attachments goes through here, so none of them can
-    /// miss the refusal. Starting and completing the push's own Import Run
-    /// do not: the desktop app passes its run, so the push does neither.
+    /// miss the refusal. Starting and completing the Upload's own Import Run
+    /// do not: the desktop app hands over its run, so the Upload does neither.
     ///
     /// # Errors
     ///
@@ -201,7 +201,7 @@ impl Session {
     ///
     /// A refused session refuses every later request too, so the run stops
     /// as it would for a cancel, and what it did not send stays for the next
-    /// push rather than being recorded as failed.
+    /// Upload rather than being recorded as failed.
     fn note_refusal(&self, error: &anyhow::Error) {
         if message_crate_http::is_session_refused(error) {
             self.refused.store(true, Ordering::SeqCst);
@@ -249,7 +249,7 @@ impl RunPaths {
     }
 }
 
-/// Push every `.jsonl` conversation under `cfg.input`.
+/// Upload every `.jsonl` conversation under `cfg.input`.
 ///
 /// High-level flow:
 /// 1. Log in, open the journal, and list conversation files.
@@ -259,12 +259,12 @@ impl RunPaths {
 ///    message chunks into import batches, and sends those batches over HTTP
 ///    ([`ImportPipeline`]). An import can start while prepare workers keep
 ///    working on later chats.
-/// 4. Complete the Import Run this push started, then write the report.
+/// 4. Complete the Import Run this Upload started, then write the report.
 ///
 /// # Errors
 ///
 /// Returns an error when setup fails, a worker disconnects, the report cannot
-/// be written, or the server refuses to complete the Import Run this push
+/// be written, or the server refuses to complete the Import Run this Upload
 /// started. A conversation that fails is recorded in the report and the
 /// run goes on to the next one. A session the server stops accepting during
 /// the run is not an error: the run stops as for a cancel, and the report
@@ -324,7 +324,7 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
         out.show_as(
             "session refused: stopped",
             "The server no longer accepts this session, so the Upload stopped. \
-             The next push sends what this one did not."
+             The next Upload sends what this one did not."
                 .into(),
         );
     }
@@ -368,7 +368,7 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
     // The run is completed before the report is written, so a refused
     // completion leaves a report that is not `ok` beside the error. A
     // refused session cannot complete it: the run stays open on the server
-    // for the next push.
+    // for the next Upload.
     let completed = if cfg.import_id.is_none() && !session_refused {
         complete_import_run(&session, import_id, &report, aborted, &mut out)
     } else {
@@ -437,7 +437,7 @@ fn login(cfg: &PushConfig, stop: CancelFlag, out: &mut Reporter<'_, '_>) -> Resu
 }
 
 /// The report of a run whose session the server refused at login: nothing
-/// was sent, and every conversation is left for the next push. No account
+/// was sent, and every conversation is left for the next Upload. No account
 /// answered, so `account` is 0 and `username` is empty.
 fn refused_at_login(
     cfg: &PushConfig,
@@ -477,7 +477,7 @@ fn finish_refused_at_login(
     out.show_as(
         "session refused at login: stopped",
         "The server no longer accepts this session, so the Upload did not start. \
-         The next push sends every conversation."
+         The next Upload sends every conversation."
             .into(),
     );
     write_report(&paths.report, &report)?;
@@ -487,7 +487,7 @@ fn finish_refused_at_login(
 
 /// Create the Import Run every batch is posted into, or reuse the one the
 /// caller already created. There is no run without one: a server that refuses
-/// to start it ends the push here, before any file is read.
+/// to start it ends the Upload here, before any file is read.
 ///
 /// # Errors
 ///
@@ -707,13 +707,13 @@ fn write_report(path: &Path, report: &PushReport) -> Result<()> {
     .with_context(|| format!("write report {}", path.display()))
 }
 
-/// Tell the server how the Import Run this push started ended.
+/// Tell the server how the Import Run this Upload started ended.
 ///
 /// # Errors
 ///
 /// Returns an error when the server refuses to complete the run. The server
 /// then still holds the run as running, so the caller must not report the
-/// push as a success.
+/// Upload as a success.
 fn complete_import_run(
     session: &Session,
     import_id: i64,

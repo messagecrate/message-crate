@@ -179,23 +179,23 @@ impl ImportCounts {
     }
 }
 
-/// An import session this process opened for one run, as opposed to one a
-/// client (message-crate-push) owns and closes itself. Whoever starts one must
+/// An Import Run this process opened, as opposed to one a client
+/// (message-crate-push) owns and closes itself. Whoever starts one must
 /// finish it whatever the import does, so the Settings import table never
 /// shows a run stuck in progress.
-pub(crate) struct OwnedSession {
+pub(crate) struct OwnedImportRun {
     account_id: i64,
     /// The `imports` row id; the import stamps it on every message.
     pub id: i64,
 }
 
-impl OwnedSession {
-    /// Record a session at the parse stage. Nothing client-side (staging
+impl OwnedImportRun {
+    /// Record a run at the parse stage. Nothing client-side (staging
     /// directory, device, form) is known for a run started here.
     ///
     /// # Errors
     ///
-    /// Returns an error when the account already has a live session or the
+    /// Returns an error when the account already has a running Import Run or the
     /// row cannot be inserted.
     pub(crate) async fn start(
         conn: &mut SqliteConnection,
@@ -212,7 +212,7 @@ impl OwnedSession {
         Ok(Self { account_id, id })
     }
 
-    /// Mark the session succeeded with the run's counts, or failed. Not
+    /// Mark the run succeeded with its counts, or failed. Not
     /// being able to record the outcome is a warning on stderr, never an
     /// error: the import's own result is what the caller returns.
     pub(crate) async fn finish(self, conn: &mut SqliteConnection, result: &Result<ImportCounts>) {
@@ -231,7 +231,7 @@ impl OwnedSession {
 /// Record an Import Run's outcome, then make the run's Saved Search and
 /// Contact Group. Every path that completes a run calls this: the HTTP
 /// `complete_import`, the server's `import` command and the Demo Account
-/// build (through [`OwnedSession::finish`]), so each run gets the same
+/// build (through [`OwnedImportRun::finish`]), so each run gets the same
 /// shortcuts however it was made.
 ///
 /// # Errors

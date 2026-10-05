@@ -1,9 +1,9 @@
 import type { ImportIssue } from "../../components/import/ImportSummaryPanel";
 import type {
   AttachmentForecast,
-  PushFinishedReport,
   SizeVerdict,
   StagingSummary,
+  UploadFinishedReport,
 } from "../../lib/tauri";
 
 /**
@@ -46,13 +46,13 @@ const OMITTABLE_VERDICTS: ReadonlySet<SizeVerdict> = new Set([
  * Whether `item` — an issue's file identifier — names the same physical
  * attachment as `row`, an approved plan's forecast row.
  *
- * A push issue's `item` is `"{conversationFile}:{relativePath}"`
+ * An Upload issue's `item` is `"{conversationFile}:{relativePath}"`
  * (the `AttachmentSkip` that `crates/libs/push/src/prepare.rs` builds), not a bare
  * path, so exact equality against `row.path`/`row.name` only catches the
  * simple case. `item.endsWith(...)` catches the compound form without the
  * conversation-name prefix tripping it up. `stableStem`
- * catches a file the media pass renamed with a `-mv` suffix between the
- * review and the push — `stem.pop()` on the path already strips any
+ * catches a file the Media stage renamed with a `-mv` suffix between the
+ * Review and the Upload — `stem.pop()` on the path already strips any
  * `{name}:` prefix, since it only looks at the last `/`-separated segment.
  */
 function issueNamesForecastRow(item: string, row: AttachmentForecast): boolean {
@@ -79,16 +79,16 @@ function isApprovedOmission(
 }
 
 /**
- * Verdict for an Upload, read from the push report rather than from whether
- * the push call returned.
+ * Verdict for an Upload, read from the Upload's report rather than from whether
+ * the Upload call returned.
  *
  * An Upload finishes only when every conversation was sent or was already
- * sent: anything else is `paused`, never failed (#1233). That covers a push
+ * sent: anything else is `paused`, never failed (#1233). That covers an Upload
  * the cancel flag stopped, one that threw or left no report, a conversation
  * the server did not take (a server that stops answering part-way fails
- * every later conversation and the push moves on), a conversation left
- * unsent, and an Upload that sent nothing at all. The push journal leaves
- * every such conversation for the next push, so resuming sends only what is
+ * every later conversation and the Upload moves on), a conversation left
+ * unsent, and an Upload that sent nothing at all. The Upload journal leaves
+ * every such conversation for the next Upload, so resuming sends only what is
  * missing. Pausing on a failure keeps those conversations reachable: a run
  * recorded as finished would delete the directory they are staged in.
  *
@@ -100,7 +100,7 @@ function isApprovedOmission(
  * `approved` every issue counts.
  */
 export function importOutcome(args: {
-  report: PushFinishedReport | undefined;
+  report: UploadFinishedReport | undefined;
   threw: boolean;
   issues: readonly ImportIssue[];
   approved?: StagingSummary;

@@ -3,7 +3,7 @@ import { type IdentityType, identityOnProfile } from "../../lib/backupIdentity";
 import BackupIdentityList from "./BackupIdentityList";
 
 /**
- * Shown before the import session is created, when a probe of the backup
+ * Shown before the Import Run is created, when a probe of the backup
  * found identities and none is on the account's profile. A mismatch has no
  * mechanical consequence — attribution runs on the importing account and
  * Apple's own from-me flag either way — so the list is the information and

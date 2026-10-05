@@ -125,7 +125,7 @@ describe("SettingsScreen tabs follow the account it reads", () => {
  * desktop-only tool. In a browser the tab must not exist and `?tab=convert`
  * must fall back to Account, like every other tab `visibleTabs` leaves out.
  */
-describe("SettingsScreen convert gate", () => {
+describe("SettingsScreen Convert tab in the browser and the desktop app", () => {
   it("hides the Convert tab in the browser and falls ?tab=convert back to Account", () => {
     renderSettings(["/settings?tab=convert"]);
 

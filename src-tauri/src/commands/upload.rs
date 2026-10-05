@@ -1,4 +1,4 @@
-//! `push` command — upload an extract directory to a Message Crate server.
+//! `upload` command: the Upload of an Import Run, which sends a run directory to a Message Crate server.
 
 use message_crate_push::ImportMode;
 use std::path::{Path, PathBuf};
@@ -18,8 +18,8 @@ fn as_usize(value: u64) -> usize {
     usize::try_from(value).unwrap_or(usize::MAX)
 }
 
-/// Progress bar update and finished JSON payload after a push completes.
-fn finished_push_events(
+/// Progress bar update and finished JSON payload after an Upload completes.
+fn finished_upload_events(
     report: &message_crate_push::PushReport,
 ) -> (ExtractProgressEvent, serde_json::Value) {
     let progress = ExtractProgressEvent {
@@ -32,7 +32,7 @@ fn finished_push_events(
     };
     let summary = serde_json::json!({
         "summary": format!(
-            "Push complete: {} new, {} deduped, {} failed of {} attempted; {}/{} conversations ok; {} assets uploaded",
+            "Upload complete: {} new, {} deduped, {} failed of {} attempted; {}/{} conversations ok; {} assets uploaded",
             report.messages_inserted,
             report.messages_deduped,
             report.messages_failed,
@@ -60,10 +60,10 @@ fn finished_push_events(
     (progress, summary)
 }
 
-/// User-facing parameters for the `push` command.
+/// User-facing parameters for the `upload` command.
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PushArgs {
+pub struct UploadArgs {
     /// Base URL of the server, for example `http://127.0.0.1:8080`.
     pub base_url: String,
     /// Account name.
@@ -97,26 +97,26 @@ pub struct PushArgs {
 /// while holding the shared state lock. Failures during the upload are sent
 /// as `extract:error`.
 #[tauri::command(async)]
-pub fn push(
+pub fn upload(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
     app: tauri::AppHandle,
-    args: PushArgs,
+    args: UploadArgs,
 ) -> Result<(), String> {
     let logs = logs_dir(&app)?;
     let job = start_job(&state, "an upload")?;
     let cancel = job.cancel_flag();
     let app_handle = app.clone();
     spawn_job(app, job, move || {
-        let mut cfg = push_config(args, &logs)?;
+        let mut cfg = upload_config(args, &logs)?;
         cfg.cancel = Some(cancel);
-        let mut progress = |event: ProgressEvent| forward_push_event(&app_handle, event);
+        let mut progress = |event: ProgressEvent| forward_upload_event(&app_handle, event);
         let report = run_push(&cfg, Some(&mut progress))?;
-        Ok(finished_push_events(&report).1.to_string())
+        Ok(finished_upload_events(&report).1.to_string())
     });
     Ok(())
 }
 
-/// The push settings the desktop app uses. They differ from the
+/// The Upload settings the desktop app uses. They differ from the
 /// `message_crate_push::DEFAULT_*` constants because desktop imports are many
 /// small files over a local network; each number says why.
 ///
@@ -133,7 +133,7 @@ pub fn push(
 ///
 /// Returns an error when the directory holds no readable media settings,
 /// because its Staging never finished.
-fn push_config(args: PushArgs, logs_dir: &Path) -> anyhow::Result<PushConfig> {
+fn upload_config(args: UploadArgs, logs_dir: &Path) -> anyhow::Result<PushConfig> {
     let input = PathBuf::from(&args.input_dir);
     let recorded = message_staging::read_media_settings(&input)?;
     let log_path = Some(import_run_log(logs_dir, &input));
@@ -174,8 +174,8 @@ fn push_config(args: PushArgs, logs_dir: &Path) -> anyhow::Result<PushConfig> {
     })
 }
 
-/// Relay one push progress event to the window as `extract:*` events.
-fn forward_push_event(app: &tauri::AppHandle, event: ProgressEvent) {
+/// Relay one Upload progress event to the window as `extract:*` events.
+fn forward_upload_event(app: &tauri::AppHandle, event: ProgressEvent) {
     match event {
         ProgressEvent::Log(line) => {
             events::emit(app, events::LOG, line);
@@ -225,7 +225,7 @@ fn forward_push_event(app: &tauri::AppHandle, event: ProgressEvent) {
         }
         ProgressEvent::Finished(report) => {
             // The finished event goes out once the job has ended (`spawn_job`).
-            let (progress, _summary) = finished_push_events(&report);
+            let (progress, _summary) = finished_upload_events(&report);
             events::emit(app, events::PROGRESS, progress);
         }
     }
@@ -263,7 +263,7 @@ mod tests {
     #[test]
     fn upload_uses_the_attachment_size_limit_the_directory_recorded() {
         let staging = staged_directory(123_456_789);
-        let args: PushArgs = serde_json::from_value(json!({
+        let args: UploadArgs = serde_json::from_value(json!({
             "baseUrl": "http://127.0.0.1:8080",
             "username": "",
             "token": "token",
@@ -275,7 +275,7 @@ mod tests {
         }))
         .unwrap();
         assert_eq!(
-            push_config(args, Path::new("/logs"))
+            upload_config(args, Path::new("/logs"))
                 .unwrap()
                 .asset_max_bytes,
             123_456_789
@@ -288,7 +288,7 @@ mod tests {
     #[test]
     fn upload_from_a_directory_with_no_media_settings_is_refused() {
         let staging = tempfile::tempdir().unwrap();
-        let args: PushArgs = serde_json::from_value(json!({
+        let args: UploadArgs = serde_json::from_value(json!({
             "baseUrl": "http://127.0.0.1:8080",
             "username": "",
             "token": "token",
@@ -299,7 +299,7 @@ mod tests {
             "importId": 7,
         }))
         .unwrap();
-        let err = push_config(args, Path::new("/logs")).unwrap_err();
+        let err = upload_config(args, Path::new("/logs")).unwrap_err();
         assert!(format!("{err:#}").contains("no media settings"), "{err:#}");
     }
 
@@ -382,8 +382,12 @@ mod tests {
 
     /// What the Import screen sends for an Upload of `staging` to `server`,
     /// first time and resumed, with the run's log in `logs`.
-    fn upload(server: &MockServer, staging: &Path, logs: &Path) -> message_crate_push::PushReport {
-        let args: PushArgs = serde_json::from_value(json!({
+    fn upload_to(
+        server: &MockServer,
+        staging: &Path,
+        logs: &Path,
+    ) -> message_crate_push::PushReport {
+        let args: UploadArgs = serde_json::from_value(json!({
             "baseUrl": server.base_url(),
             "username": "",
             "token": "mc_test",
@@ -394,7 +398,7 @@ mod tests {
             "importId": 7,
         }))
         .unwrap();
-        run_push(&push_config(args, logs).unwrap(), None).unwrap()
+        run_push(&upload_config(args, logs).unwrap(), None).unwrap()
     }
 
     /// A resumed Upload runs over the run directory the interrupted Upload
@@ -407,11 +411,11 @@ mod tests {
         let staging = staged_conversation();
         let logs = tempfile::tempdir().unwrap();
 
-        let first = upload(&server, staging.path(), logs.path());
+        let first = upload_to(&server, staging.path(), logs.path());
         assert!(first.ok, "{:?}", first.results);
         assert_eq!(batches.calls(), 1);
 
-        let resumed = upload(&server, staging.path(), logs.path());
+        let resumed = upload_to(&server, staging.path(), logs.path());
         assert!(resumed.ok, "{:?}", resumed.results);
         assert_eq!(resumed.messages_attempted, 0);
         assert_eq!(batches.calls(), 1, "the resumed Upload sends no batch");
@@ -427,7 +431,7 @@ mod tests {
         let logs = tempfile::tempdir().unwrap();
         let log = import_run_log(logs.path(), staging.path());
 
-        let report = upload(&server, staging.path(), logs.path());
+        let report = upload_to(&server, staging.path(), logs.path());
         assert!(report.ok, "{:?}", report.results);
         assert!(
             !staging.path().join(message_crate_push::LOG_NAME).exists(),
@@ -440,7 +444,7 @@ mod tests {
     }
 
     #[test]
-    fn finished_push_event_reports_complete_upload_and_totals() {
+    fn finished_upload_event_reports_complete_upload_and_totals() {
         let report = PushReport {
             ok: true,
             cancelled: false,
@@ -473,7 +477,7 @@ mod tests {
             }],
         };
 
-        let (progress, summary) = finished_push_events(&report);
+        let (progress, summary) = finished_upload_events(&report);
 
         assert_eq!(progress.step, "upload");
         assert_eq!(progress.done, 3);
@@ -489,13 +493,13 @@ mod tests {
         assert_eq!(summary["results"][0]["error"], "attachment exceeds limit");
         assert_eq!(
             summary["summary"],
-            "Push complete: 42 new, 2 deduped, 1 failed of 45 attempted; 2/3 conversations ok; 4 assets uploaded"
+            "Upload complete: 42 new, 2 deduped, 1 failed of 45 attempted; 2/3 conversations ok; 4 assets uploaded"
         );
         assert_eq!(summary["assets_bytes"], 12_345);
         assert_eq!(summary["conversations_ok"], 2);
         assert_eq!(summary["conversations_total"], 3);
         assert_eq!(summary["cancelled"], false);
-        // The window ends the session when the push says it was refused.
+        // The window ends the Session when the Upload says the server refused it.
         assert_eq!(summary["session_refused"], false);
     }
 }

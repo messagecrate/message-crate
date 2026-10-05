@@ -6,7 +6,7 @@
 //! ffmpeg. Those jobs need a program that talks to the operating system.
 //!
 //! This crate is that program. It owns the window, loads the UI, and exposes
-//! commands the UI can call (`extract`, `format`, `push`, `pull`, and the
+//! commands the UI can call (`extract`, `format`, `upload`, `pull`, and the
 //! ffmpeg helpers). It also starts the Message Crate server it ships with,
 //! when nothing answers at the app's own address (`local_server`). Progress and errors go back to the UI as Tauri events.
 //!

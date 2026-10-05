@@ -551,7 +551,7 @@ pub async fn unknown_contact_identifiers(
         // the rule import uses for an address its source did not type. A
         // source-declared type can still differ (an exporter that calls a
         // number `other`), and then this reads the identifier as new: a
-        // best-effort gate count, not a source of silent data loss.
+        // best-effort Staging Review count, not a source of silent data loss.
         let Some(handle) = phone::Handle::parse(trimmed) else {
             continue;
         };

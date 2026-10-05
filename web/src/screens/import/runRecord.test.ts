@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ImportIssue } from "../../components/import/ImportSummaryPanel";
-import type { PushFinishedReport } from "../../lib/tauri";
+import type { UploadFinishedReport } from "../../lib/tauri";
 import {
   EMPTY_RUN_RECORD,
   filesSkippedOverRun,
@@ -14,7 +14,7 @@ import {
   wholeRun,
 } from "./runRecord";
 
-function report(overrides: Partial<PushFinishedReport> = {}): PushFinishedReport {
+function report(overrides: Partial<UploadFinishedReport> = {}): UploadFinishedReport {
   return {
     ok: true,
     cancelled: false,
@@ -202,7 +202,7 @@ describe("recordToCarry", () => {
 
   it("keeps an earlier stop's failed conversation when the next stop reported nothing on it", () => {
     // Pause 1 left conversation b.jsonl failed. The resumed Upload was paused
-    // before the push started, so it reported nothing on b.jsonl.
+    // before it started sending, so it reported nothing on b.jsonl.
     const earlier = {
       issues: [],
       lastStopIssues: [

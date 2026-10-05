@@ -248,6 +248,11 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-04 **Import says "Media stage" where it said "media step" or
+  "Media pass".** An Import Run that stopped during Media offers to carry on
+  with "The Media stage did not finish", and starting something else while
+  Media runs names "the Media stage" as what is running. The import
+  internals were renamed to match, with nothing else to see.
 - 2026-10-04 **Every answer from the server carries the same fields.** A
   field with nothing in it is sent empty instead of being left out, so a
   program that talks to the server always finds the fields it expects.

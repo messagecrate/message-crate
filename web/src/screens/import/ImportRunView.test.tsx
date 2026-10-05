@@ -150,7 +150,7 @@ function viewElement(props: Partial<Parameters<typeof ImportRunView>[0]> = {}) {
           mediaFailedCount={null}
           summaryView={null}
           stagingDir={null}
-          importSessionId={null}
+          importRunId={null}
           reviewWaiting={null}
           unknownContacts={null}
           unknownContactsError={null}
@@ -586,7 +586,7 @@ describe("ImportRunView", () => {
       steps: stepsAt("convert", { Staging: "done", Media: "done", Upload: "done" }),
       stagingSummary: staged(),
       summaryView: finished({ attachmentsUploaded: 6104 }),
-      importSessionId: 42,
+      importRunId: 42,
       completionText: "Import complete",
       onBack,
     });
@@ -624,7 +624,7 @@ describe("ImportRunView", () => {
       phase: "done",
       running: false,
       summaryView: finished({ status: "failed" }),
-      importSessionId: 42,
+      importRunId: 42,
       completionText: "Import failed",
     });
     expect(screen.getByRole("heading", { name: "Import failed" })).toBeInTheDocument();
@@ -644,7 +644,7 @@ describe("ImportRunView", () => {
         status: "completed_with_issues",
         issues: [{ kind: "warn", stage: "upload", item: "chat.jsonl", reason: "Skipped one" }],
       }),
-      importSessionId: null,
+      importRunId: null,
       completionText: "Import completed with issues",
     });
     expect(screen.getByRole("heading", { name: /^Errors/ })).toBeInTheDocument();
