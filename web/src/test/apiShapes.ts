@@ -69,3 +69,39 @@ export function message(fields: Partial<Schema["Message"]> = {}): Schema["Messag
     ...fields,
   };
 }
+
+/** An Audit Trail entry by the account holder, with every count and name `null`. */
+export function auditEntry(
+  fields: Partial<Schema["AuditEntry"]> & Pick<Schema["AuditEntry"], "action">,
+): Schema["AuditEntry"] {
+  return {
+    id: 1,
+    at: "2026-10-02T10:00:00+00:00",
+    actor: "holder",
+    account_id: null,
+    username: null,
+    api_token_hint: null,
+    api_token_label: null,
+    app: null,
+    app_build: null,
+    attachments: null,
+    bytes: null,
+    contacts: null,
+    contacts_created: null,
+    contacts_deleted: null,
+    contacts_updated: null,
+    conversations: null,
+    credential: null,
+    identities: null,
+    messages: null,
+    mode: null,
+    permissions_added: null,
+    permissions_removed: null,
+    reason: null,
+    scope_kind: null,
+    scope_list: null,
+    source: null,
+    status: null,
+    ...fields,
+  };
+}

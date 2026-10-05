@@ -220,8 +220,9 @@ async fn a_created_account_logs_in_with_the_password_the_owner_chose() {
     .await;
     let id = created["account_id"].as_i64().unwrap();
     assert_eq!(location, member(id));
-    assert!(
-        created.get("token") == Some(&serde_json::Value::Null),
+    assert_eq!(
+        created.get("token"),
+        Some(&serde_json::Value::Null),
         "the owner's creation opens no session: {created}"
     );
     assert_eq!(created["username"], "carol");

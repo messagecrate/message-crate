@@ -215,8 +215,9 @@ async fn an_import_run_completes_before_its_thumbnails_are_made() {
         "each Asset the run brought is queued"
     );
     for attachment in attachments(state, &alice, imported.conversation_id).await {
-        assert!(
-            attachment.get("thumbnail_mime_type") == Some(&serde_json::Value::Null),
+        assert_eq!(
+            attachment.get("thumbnail_mime_type"),
+            Some(&serde_json::Value::Null),
             "no Thumbnail is made yet: {attachment}"
         );
     }

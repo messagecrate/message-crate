@@ -120,19 +120,6 @@ pub(crate) fn answer_schemas(doc: &Value) -> BTreeSet<String> {
         .collect()
 }
 
-/// The schema of each success answer in JSON the operation declares.
-#[cfg(test)]
-pub(crate) fn success_schemas(op: &Value) -> impl Iterator<Item = &Value> {
-    op["responses"]
-        .as_object()
-        .into_iter()
-        .flatten()
-        .filter(|(status, _)| status.starts_with('2'))
-        .flat_map(|(_, response)| response["content"].as_object().into_iter().flatten())
-        .filter(|(media_type, _)| is_json(media_type))
-        .map(|(_, content)| &content["schema"])
-}
-
 /// Every operation of the document.
 fn operations(doc: &Value) -> impl Iterator<Item = &Value> {
     doc["paths"]

@@ -176,7 +176,7 @@ fn read_rules(doc: &Value, op: &Operation, spec: &Value) -> Vec<String> {
     // ("Fields"), so the document requires every one. A schema it names is
     // checked once, over the whole document.
     let mut optional = BTreeSet::new();
-    for schema in response_fields::success_schemas(spec) {
+    for schema in success_schemas(spec) {
         optional_fields(schema, "answer", &mut optional);
     }
     broken.extend(
@@ -333,7 +333,7 @@ async fn called_rules(doc: &Value, world: &World<'_>, op: &Operation, spec: &Val
     // the credential that made it can read it ("Status codes"). An operation
     // that answers no JSON and makes nothing is not called, so the owner's
     // `DELETE /v1/session` leaves the shared Session alone.
-    let answers_json = response_fields::success_schemas(spec).next().is_some();
+    let answers_json = success_schemas(spec).next().is_some();
     let creates = !spec["responses"]["201"].is_null() && token.is_some();
     if op.method == "head" || !(answers_json || creates) {
         return broken;
@@ -611,9 +611,8 @@ fn resolved<'d>(doc: &'d Value, schema: &'d Value) -> &'d Value {
 /// as `answer.field.field`, looking into every object `value` holds. Of a
 /// choice (`oneOf`, `anyOf`), the branches `value` fits are tried, and a
 /// value that carries every property of one of them leaves nothing out. A
-/// branch is told from another by its type and its `enum` tags only, so a
-/// value of a branch with no tag, such as a page of `ExportRun` beside a page
-/// of `OwnerExportRun`, passes when it carries every property of the other.
+/// branch fits only a value of its own shape ([`fits`]), so a page of
+/// `ExportRun` is never read as a page of `OwnerExportRun`.
 fn left_out(doc: &Value, schema: &Value, value: &Value, at: &str, out: &mut BTreeSet<String>) {
     let schema = resolved(doc, schema);
     if value.is_null() {
@@ -629,15 +628,22 @@ fn left_out(doc: &Value, schema: &Value, value: &Value, at: &str, out: &mut BTre
         let tried: Vec<BTreeSet<String>> = branches
             .iter()
             .map(|branch| resolved(doc, branch))
-            .filter(|branch| fits(branch, value))
+            .filter(|branch| fits(doc, branch, value))
             .map(|branch| {
                 let mut missing = BTreeSet::new();
                 left_out(doc, branch, value, at, &mut missing);
                 missing
             })
             .collect();
-        if let Some(fewest) = tried.into_iter().min_by_key(BTreeSet::len) {
-            out.extend(fewest);
+        match tried.into_iter().min_by_key(BTreeSet::len) {
+            Some(fewest) => {
+                out.extend(fewest);
+            }
+            None => {
+                out.insert(format!(
+                    "{at}, which has the shape of no branch of its {key}"
+                ));
+            }
         }
     }
     let properties = schema["properties"].as_object();
@@ -670,10 +676,17 @@ fn left_out(doc: &Value, schema: &Value, value: &Value, at: &str, out: &mut BTre
     }
 }
 
-/// Whether `value` can be the branch `schema` of a choice: its JSON type is
-/// one the branch allows, and it holds one of the values each `enum` property
-/// it carries allows, which is how a tagged variant is told apart.
-fn fits(schema: &Value, value: &Value) -> bool {
+/// Whether `value` has the shape of `schema`, which is how the branches of a
+/// choice are told apart: its JSON type is one the schema allows, it holds one
+/// of the values each `enum` property allows, it carries no key the schema
+/// does not declare (unless it takes any), and each object or list it holds
+/// has the shape of its own schema in turn. Missing keys do not count against
+/// it: those are what [`left_out`] reports.
+fn fits(doc: &Value, schema: &Value, value: &Value) -> bool {
+    let schema = resolved(doc, schema);
+    if value.is_null() {
+        return true;
+    }
     let is = |kind: &str| match kind {
         "null" => value.is_null(),
         "object" => value.is_object(),
@@ -689,18 +702,59 @@ fn fits(schema: &Value, value: &Value) -> bool {
         Value::Array(kinds) => kinds.iter().filter_map(Value::as_str).any(is),
         _ => true,
     };
-    let tags_fit =
-        schema["properties"]
-            .as_object()
+    if !type_fits {
+        return false;
+    }
+    for key in ["oneOf", "anyOf"] {
+        if let Some(branches) = schema[key].as_array()
+            && !branches.iter().any(|branch| fits(doc, branch, value))
+        {
+            return false;
+        }
+    }
+    if let Some(items) = value.as_array() {
+        return !schema["items"].is_object()
+            || items.iter().all(|item| fits(doc, &schema["items"], item));
+    }
+    let Some(object) = value.as_object() else {
+        return true;
+    };
+    let mut properties = serde_json::Map::new();
+    declared_properties(doc, schema, &mut properties);
+    if properties.is_empty() {
+        return true;
+    }
+    object.iter().all(|(key, held)| match properties.get(key) {
+        None => takes_any_key(doc, schema),
+        Some(field_schema) => {
+            let tag_fits = resolved(doc, field_schema)["enum"]
+                .as_array()
+                .is_none_or(|allowed| allowed.contains(held));
+            tag_fits && fits(doc, field_schema, held)
+        }
+    })
+}
+
+/// The properties `schema` declares, with those of each `allOf` part.
+fn declared_properties(doc: &Value, schema: &Value, out: &mut serde_json::Map<String, Value>) {
+    let schema = resolved(doc, schema);
+    for (field, field_schema) in schema["properties"].as_object().into_iter().flatten() {
+        out.insert(field.clone(), field_schema.clone());
+    }
+    for part in schema["allOf"].as_array().into_iter().flatten() {
+        declared_properties(doc, part, out);
+    }
+}
+
+/// Whether `schema`, or an `allOf` part of it, takes keys it does not name.
+fn takes_any_key(doc: &Value, schema: &Value) -> bool {
+    let schema = resolved(doc, schema);
+    !schema["additionalProperties"].is_null() && schema["additionalProperties"] != false
+        || schema["allOf"]
+            .as_array()
             .into_iter()
             .flatten()
-            .all(|(field, field_schema)| {
-                match (field_schema["enum"].as_array(), value.get(field)) {
-                    (Some(allowed), Some(held)) => allowed.contains(held),
-                    _ => true,
-                }
-            });
-    type_fits && tags_fit
+            .any(|part| takes_any_key(doc, part))
 }
 
 /// Whether the operation takes a credential and admits no request without
@@ -771,4 +825,16 @@ fn query_parameters(spec: &Value) -> BTreeSet<&str> {
         .filter(|p| p["in"] == "query")
         .filter_map(|p| p["name"].as_str())
         .collect()
+}
+
+/// The schema of each success answer in JSON the operation declares.
+fn success_schemas(op: &Value) -> impl Iterator<Item = &Value> {
+    op["responses"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter(|(status, _)| status.starts_with('2'))
+        .flat_map(|(_, response)| response["content"].as_object().into_iter().flatten())
+        .filter(|(media_type, _)| *media_type == "application/json")
+        .map(|(_, content)| &content["schema"])
 }

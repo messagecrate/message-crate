@@ -1,38 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { auditEntry } from "../test/apiShapes";
 import { type AuditEntry, describeAuditEntry } from "./auditTrail";
 
 /** An entry with only who, what and when; each test adds what it describes. */
 function entry(fields: Partial<AuditEntry> & Pick<AuditEntry, "action">): AuditEntry {
-  return {
-    id: 1,
-    at: "2026-10-02T10:00:00+00:00",
-    actor: "holder",
-    account_id: 101,
-    username: "alice",
-    api_token_hint: null,
-    api_token_label: null,
-    app: null,
-    app_build: null,
-    attachments: null,
-    bytes: null,
-    contacts: null,
-    contacts_created: null,
-    contacts_deleted: null,
-    contacts_updated: null,
-    conversations: null,
-    credential: null,
-    identities: null,
-    messages: null,
-    mode: null,
-    permissions_added: null,
-    permissions_removed: null,
-    reason: null,
-    scope_kind: null,
-    scope_list: null,
-    source: null,
-    status: null,
-    ...fields,
-  };
+  return auditEntry({ account_id: 101, username: "alice", ...fields });
 }
 
 describe("describeAuditEntry", () => {
