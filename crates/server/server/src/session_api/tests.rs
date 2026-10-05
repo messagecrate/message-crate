@@ -35,10 +35,12 @@ async fn the_reference_marks_a_sessions_account_id_required() {
 }
 
 /// Every Session the server answers names its account's username, so the
-/// reference marks `username` a required string, and a client generated from
-/// it never has to handle a Session without one.
+/// reference types `username` a string, never null, and a client generated
+/// from it never has to handle a Session without one. That every property of
+/// a success answer is required is checked over the whole document
+/// (`openapi/document_rules.rs`).
 #[tokio::test]
-async fn the_reference_marks_a_sessions_username_a_required_string() {
+async fn the_reference_types_a_sessions_username_a_string() {
     let (fixture, account) = fixture_with_account().await;
     let body: serde_json::Value = get_json(&fixture.state, "/v1/session", &account.token).await;
     assert_eq!(body["username"], account.username, "{body}");
@@ -46,12 +48,6 @@ async fn the_reference_marks_a_sessions_username_a_required_string() {
     let doc: serde_json::Value =
         serde_json::from_str(&crate::openapi::dump_openapi_json()).unwrap();
     let session = &doc["components"]["schemas"]["Session"];
-    assert!(
-        session["required"]
-            .as_array()
-            .is_some_and(|r| r.iter().any(|f| f == "username")),
-        "{session}"
-    );
     assert_eq!(
         session["properties"]["username"]["type"], "string",
         "{session}"
@@ -61,28 +57,42 @@ async fn the_reference_marks_a_sessions_username_a_required_string() {
 /// An account deleted between the credential check and the read of its
 /// username answers `401 Unauthorized` (`authentication-required`), as a
 /// credential naming no account does, rather than a Session with no
-/// username. The router cannot reach that moment, because the credential
-/// check refuses a token whose account is gone, so the handler is called with
-/// the identity the check would have handed it.
+/// username. The real router cannot reach that moment, because its
+/// credential check refuses a token whose account is gone. So the handler is
+/// served on a router of its own, under the server's request id layer, and
+/// handed the identity the check would have made, and the answer is read
+/// over HTTP like any other.
 #[tokio::test]
 async fn an_account_gone_before_its_username_is_read_answers_unauthorized() {
     let fixture = test_fixture().await;
-    let auth = AuthIdentity {
-        account_id: 9_999,
-        capability: crate::server::AuthCapability::Session {
-            permissions: crate::db::permissions::Permissions::all(),
-        },
-        credential: crate::db::audit_trail::CredentialUsed::Session(None),
-    };
+    let state = fixture.state.clone();
+    let app = axum::Router::new()
+        .route(
+            "/v1/session",
+            axum::routing::get(move || {
+                let state = state.clone();
+                async move {
+                    // An account id no `accounts` row holds.
+                    let auth = AuthIdentity {
+                        account_id: 9_999,
+                        capability: crate::server::AuthCapability::Session {
+                            permissions: crate::db::permissions::Permissions::all(),
+                        },
+                        credential: crate::db::audit_trail::CredentialUsed::Session(None),
+                    };
+                    get_session(State(state), auth).await
+                }
+            }),
+        )
+        .layer(axum::middleware::from_fn(crate::request_id::layer));
+    let server = crate::test_support::serve_router(app).await;
 
-    let err = get_session(State(fixture.state.clone()), auth)
+    let response = reqwest::get(format!("{}/v1/session", server.base()))
         .await
-        .expect_err("an account with no row has no Session");
-    assert_eq!(
-        err.problem_type(),
-        Some(ProblemType::AuthenticationRequired),
-        "{err:?}"
-    );
+        .unwrap();
+    let status = response.status();
+    let text = response.text().await.unwrap();
+    expect_problem(status, &text, ProblemType::AuthenticationRequired);
 }
 
 /// The Session is a singleton: logging in answers `201 Created` with a
@@ -538,7 +548,7 @@ async fn a_login_whose_session_row_appears_meanwhile_still_signs_in() {
     let mut conn = fixture.conn().await;
     let created = crate::db::write_tx::commit_during(
         other,
-        CreateSessionResponse::for_existing_account(&mut conn, account, None),
+        CreateSessionResponse::for_existing_account(&mut conn, account, "alice".into(), None),
     )
     .await
     .expect("the second login signs in");
