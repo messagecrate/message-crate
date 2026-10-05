@@ -302,6 +302,7 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
         &session.url,
         &session.username,
         cfg.force || cfg.mode == ImportMode::Replace,
+        &mut |line| out.show(line),
     )?;
     out.expect_files(files.len());
     let import_id = start_import_run(cfg, &session, &paths.input, &mut out)?;
