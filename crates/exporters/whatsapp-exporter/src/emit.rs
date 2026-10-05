@@ -7,7 +7,8 @@ use crate::parse::{
 };
 use anyhow::{Context, Result};
 use message_crate_core::{
-    CancelFlag, ExportReport, ExportTransforms, IssueSink, OutputFormat, project_conversation,
+    CancelFlag, Counter, ExportReport, ExportTransforms, IssueSink, OutputFormat,
+    project_conversation,
 };
 use message_csv::{format_local_ts, json_cell};
 use message_ir::{
@@ -144,15 +145,29 @@ pub(crate) fn convert_json(request: ConvertRequest<'_>) -> Result<ExportReport> 
 /// written, and each of its messages is counted so none is dropped silently.
 /// A reply to someone's Status is a message in the one-to-one chat with that
 /// person and is written as usual.
-fn skipped_chat_counter(jid: &str) -> Option<&'static str> {
+fn skipped_chat_counter(jid: &str) -> Option<Counter> {
     if is_status_jid(jid) {
-        Some("skipped_status_updates")
+        Some(SKIPPED_STATUS_UPDATES)
     } else if is_channel_jid(jid) {
-        Some("skipped_channel_posts")
+        Some(SKIPPED_CHANNEL_POSTS)
     } else {
         None
     }
 }
+
+/// Status updates skipped, counted by the messages in the status chat.
+pub(crate) const SKIPPED_STATUS_UPDATES: Counter = Counter::new(
+    "skipped_status_updates",
+    "Skipped 1 status update",
+    "Skipped {n} status updates",
+);
+
+/// Channel posts skipped.
+pub(crate) const SKIPPED_CHANNEL_POSTS: Counter = Counter::new(
+    "skipped_channel_posts",
+    "Skipped 1 channel post",
+    "Skipped {n} channel posts",
+);
 
 /// Ingest one WhatsApp chat JSON into a pending conversation (messages + media).
 fn ingest_chat(

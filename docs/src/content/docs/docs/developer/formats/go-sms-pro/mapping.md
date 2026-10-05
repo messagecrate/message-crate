@@ -90,18 +90,19 @@ Always includes `source_kind`: `"xml"` or `"pdu"`.
 ## Skipped records
 
 The exporter counts every record it drops on its `ExportReport`, and the run summary in the Import screen's log lists each count that is not zero (`ExportReport::summary_lines` in `crates/core/message-crate-core/src/pipeline.rs`).
-Invalid dates have a field of their own on the report and print as `skipped N invalid-date rows`; the other counts live in the report's `extra` map and print as `name: N`.
-The same lines also show `xml_messages_seen`, `pdu_messages`, and `pdu_group_messages`, which are totals rather than skips.
+Each count is a `Counter` (`crates/core/message-crate-core/src/counter.rs`) that carries its own line, singular for one, so every run that reports a count words it the same way.
+Invalid dates have a field of their own on the report; the other counts live in the report's `extra` map.
+The same lines also show `xml_messages_seen` (`Read N messages from the XML`), `pdu_messages` (`Read N messages from PDU files`), and `pdu_group_messages` (`Read N group messages from PDU files`), which are totals rather than skips.
 
-| Summary line | Meaning |
-|-------|---------|
-| `skipped N invalid-date rows` | XML `<date>` was missing or not a number. A missing date is skipped rather than read as 1970-01-01, because every such row would share timestamp 0 and could falsely deduplicate. |
-| `skipped_unknown_type` | XML `<type>` was not `1` (inbox) or `2` (sent) |
-| `skipped_unreadable_text` | XML SMS with a reference in one of its fields that is not a character or one of the five XML entities, such as `&#55357;` or `&nbsp;`. The reference costs that one message, not the file. |
-| `skipped_unknown_address` | XML SMS whose `<address>` is blank. A sender name is an address and is kept. Full list: `skipped_invalid_address.csv`. |
-| `skipped_empty_pdu` | A stub: a `.pdu` file that does not start with the X-Mms-Message-Type header. GO SMS Pro writes a 17-byte `application/smil` placeholder for an MMS it never downloaded; 709 of the 2,004 files in one real backup are stubs. Full list: `skipped_empty_pdu.csv`. |
-| `skipped_no_other_party` | A PDU whose every number is one of the owner phone numbers entered on the Import form, such as an MMS the owner sent to themself. Full list: `skipped_no_party.csv` (`pdu_filename`, `sender`, `recipients`, `is_sent`). |
-| `skipped_unparseable_pdu` | A PDU that breaks a WAP-209 or WSP rule, or records a transaction that is not a message (a delivery report, a notification). The first twenty are named as `error:` lines in the summary with the rule broken and the byte offset. |
+| Counter | Summary line | Meaning |
+|-------|---------|---------|
+| `skipped_invalid_date` | `Skipped N messages with an invalid date` | XML `<date>` was missing or not a number. A missing date is skipped rather than read as 1970-01-01, because every such row would share timestamp 0 and could falsely deduplicate. |
+| `skipped_unknown_type` | `Skipped N messages of an unknown type` | XML `<type>` was not `1` (inbox) or `2` (sent) |
+| `skipped_unreadable_text` | `Skipped N messages with a character reference that is not a character` | XML SMS with a reference in one of its fields that is not a character or one of the five XML entities, such as `&#55357;` or `&nbsp;`. The reference costs that one message, not the file. |
+| `skipped_unknown_address` | `Skipped N messages with no usable address` | XML SMS whose `<address>` is blank. A sender name is an address and is kept. Full list: `skipped_invalid_address.csv`. |
+| `skipped_empty_pdu` | `Skipped N empty PDU files` | A stub: a `.pdu` file that does not start with the X-Mms-Message-Type header. GO SMS Pro writes a 17-byte `application/smil` placeholder for an MMS it never downloaded; 709 of the 2,004 files in one real backup are stubs. Full list: `skipped_empty_pdu.csv`. |
+| `skipped_no_other_party` | `Skipped N messages that name nobody but the owner` | A PDU whose every number is one of the owner phone numbers entered on the Import form, such as an MMS the owner sent to themself. Full list: `skipped_no_party.csv` (`pdu_filename`, `sender`, `recipients`, `is_sent`). |
+| `skipped_unparseable_pdu` | `Skipped N PDU files that could not be read` | A PDU that breaks a WAP-209 or WSP rule, or records a transaction that is not a message (a delivery report, a notification). The first twenty are named as `error:` lines in the summary with the rule broken and the byte offset. |
 
 Each `skipped_*.csv` names at most the first twenty records (`MAX_SKIP_DETAILS` in `crates/exporters/go-sms-pro-exporter/src/emit.rs`) and closes with a `...and N more entries not shown` row when there were more, so a large backup does not produce a diagnostic file the size of the export.
 A run that skips nothing of that kind writes no file, and removes a stale one left by an earlier run into the same directory.

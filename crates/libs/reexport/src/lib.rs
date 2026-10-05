@@ -4,8 +4,9 @@ use anyhow::{Context, Result, bail};
 use media::{CompressOptions, MediaMode};
 pub use message_crate_core::RunResult;
 use message_crate_core::{
-    ATTACHMENTS_MISSING, ExportReport, ExportTransforms, ExporterConfig, LogSink, MediaConfig,
-    OutputFormat, SourceConfig, attachment_size_hint, document_messages, prepare_outputs,
+    ATTACHMENTS_MISSING, ATTACHMENTS_SAVED, ExportReport, ExportTransforms, ExporterConfig,
+    LogSink, MediaConfig, OutputFormat, SourceConfig, attachment_size_hint, document_messages,
+    prepare_outputs,
 };
 use message_ir::{ConversationDocument, IrMessage};
 use message_ir_format::{
@@ -70,13 +71,13 @@ impl ReexportReport {
         lines.push(format!("Conversations: {}", self.report.conversations));
         if self.report.attachments_saved > 0 {
             lines.push(format!(
-                "  saved {} attachments",
-                self.report.attachments_saved
+                "  {}",
+                ATTACHMENTS_SAVED.line(self.report.attachments_saved)
             ));
         }
         let missing = self.report.extra(ATTACHMENTS_MISSING);
         if missing > 0 {
-            lines.push(format!("  {missing} attachments missing"));
+            lines.push(format!("  {}", ATTACHMENTS_MISSING.line(missing)));
         }
         lines.extend(self.report.media_lines());
         lines

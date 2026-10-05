@@ -231,7 +231,7 @@ fn remove_staged_attachments(output_dir: &Path) -> Result<()> {
 }
 
 /// Write every document through the sink with the shared "Preparing N
-/// conversation file(s)" log line and [`ProgressEvent::Prepare`] events,
+/// conversation files" log line and [`ProgressEvent::Prepare`] events,
 /// bumping `report.conversations` per document, then finish the sink. The
 /// shared tail of every exporter's non-queue arm.
 pub fn write_documents_through_sink(
@@ -242,10 +242,12 @@ pub fn write_documents_through_sink(
     cancel: Option<&message_crate_core::CancelFlag>,
     report: &mut ExportReport,
 ) -> anyhow::Result<()> {
-    use message_crate_core::{ProgressEvent, emit_log, emit_progress};
+    use message_crate_core::{
+        CONVERSATION_FILES_PREPARING, ProgressEvent, emit_log, emit_progress,
+    };
     let total = documents.len();
     emit_log(log, "");
-    emit_log(log, format!("Preparing {total} conversation file(s)..."));
+    emit_log(log, CONVERSATION_FILES_PREPARING.line(total as u64));
     emit_progress(progress, ProgressEvent::Prepare { done: 0, total });
     let mut written = 0usize;
     for doc in documents {
