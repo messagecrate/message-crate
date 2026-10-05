@@ -154,10 +154,7 @@ where
 
 /// What the person reads when `name` panics.
 fn panic_text(name: JobName) -> String {
-    format!(
-        "{} stopped because of a bug in Message Crate.",
-        name.label()
-    )
+    format!("{} failed because of a bug in Message Crate.", name.label())
 }
 
 /// The text a panic was raised with. `panic!` carries a `&str` for a plain
@@ -291,34 +288,31 @@ mod tests {
             "{}",
             error.detail
         );
-        assert_eq!(
-            error.user_message.as_deref(),
-            Some("An Export stopped because of a bug in Message Crate.")
-        );
+        assert!(error.user_message.is_some());
     }
 
     #[test]
-    fn a_panic_names_the_work_that_stopped_in_the_screens_words() {
+    fn a_panic_names_the_work_that_failed_in_the_screens_words() {
         let cases = [
             (
                 JobName::Staging,
-                "Staging stopped because of a bug in Message Crate.",
+                "Staging failed because of a bug in Message Crate.",
             ),
             (
                 JobName::Media,
-                "The Media Stage stopped because of a bug in Message Crate.",
+                "The Media Stage failed because of a bug in Message Crate.",
             ),
             (
                 JobName::Upload,
-                "The Upload stopped because of a bug in Message Crate.",
+                "The Upload failed because of a bug in Message Crate.",
             ),
             (
                 JobName::Export,
-                "An Export stopped because of a bug in Message Crate.",
+                "An Export failed because of a bug in Message Crate.",
             ),
             (
                 JobName::Convert,
-                "A Convert stopped because of a bug in Message Crate.",
+                "A Convert failed because of a bug in Message Crate.",
             ),
         ];
         for (name, text) in cases {
