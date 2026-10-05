@@ -103,7 +103,7 @@ describe("ExportScreen", () => {
     // sends a blank query, which message-crate-pull reads as the whole account.
     expect(invokePull.mock.calls[0][0]).toMatchObject({ out_dir: "/home/demo/out", query: "" });
     // JSONL is what pull already writes, so there is nothing to convert and
-    // no pull directory to make or remove.
+    // no directory to pull into to make or remove.
     expect(invokeCreateStagingDir).not.toHaveBeenCalled();
     expect(invokeFormat).not.toHaveBeenCalled();
     expect(invokeDeleteStaging).not.toHaveBeenCalled();
@@ -137,14 +137,14 @@ describe("ExportScreen", () => {
     expect(started).toBeLessThanOrEqual(pulled);
   });
 
-  it("removes the pull directory once the conversion finishes", async () => {
+  it("removes the directory it pulled into once the conversion finishes", async () => {
     const staging = "/home/demo/message-crate/staging-export-260831-120000";
     await exportAs("/home/demo/out", "CSV (.csv)");
 
     await waitFor(() => expect(invokeDeleteStaging).toHaveBeenCalledWith({ staging_dir: staging }));
   });
 
-  it("removes the pull directory even when the conversion fails", async () => {
+  it("removes the directory it pulled into even when the conversion fails", async () => {
     // Otherwise a failed export silently leaves a whole copy of the conversations on
     // disk, in a directory the person never chose and will not think to look in.
     const staging = "/home/demo/message-crate/staging-export-260831-120000";
@@ -254,7 +254,7 @@ describe("ExportScreen", () => {
   it("ignores a second Export while one is already under way", async () => {
     // The desktop backend runs one job at a time (src-tauri/src/commands/jobs.rs).
     // Two exports started in the same second would also resolve to the same
-    // pull directory, so the first cleanup would delete the second's files.
+    // directory to pull into, so the first cleanup would delete the second's files.
     let releasePull: () => void = () => {};
     const pullStarted = new Promise<void>((resolve) => {
       releasePull = resolve;
@@ -408,7 +408,7 @@ describe("ExportScreen", () => {
   });
 
   it("clears the last export's message as soon as the next export starts", async () => {
-    // A format other than JSON Lines resolves the pull directory before the
+    // A format other than JSON Lines resolves the directory to pull into before the
     // job starts; the earlier message must not stay up through that wait.
     const user = await exportTo("/a");
     await screen.findByText(/Export complete/);

@@ -451,9 +451,8 @@ Message Crate Directory; a Docker Message Crate's is the volume given to it.
 _Avoid_: Data Folder, DB Directory, Database Directory
 
 **Staging Directory**:
-The directory the desktop app makes one directory in for each Import Run,
-holding the backup being prepared for import; Settings → System says where
-it is. A run's directory is deleted when the run ends, whether it succeeded,
+The directory that holds one directory for each Import Run, where the
+desktop app prepares a backup for import. A run's directory is deleted when the run ends, whether it succeeded,
 failed or was cancelled, the import log, resume journal and run record with
 it. An Import Run that can still be resumed, paused or waiting at a Review,
 keeps it, since the staged files are what Resume reads. A run's directory has

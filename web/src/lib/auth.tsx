@@ -395,7 +395,7 @@ function SessionProvider({
         if (undeleted.length > 0) {
           setDialog({
             kind: "notice",
-            title: "Import Run directories left on this computer",
+            title: "Directories of Import Runs left on this computer",
             body: <UndeletedDirectories directories={undeleted} />,
           });
         }

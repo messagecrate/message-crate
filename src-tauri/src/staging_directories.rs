@@ -350,7 +350,9 @@ impl StagingDirectories {
             .directories
             .iter()
             .find_map(|made| resolve_openable_path(path, &made.path.display().to_string()).ok())
-            .ok_or_else(|| "Path is not in a run directory Message Crate made".to_string())
+            .ok_or_else(|| {
+                "Path is not in a directory Message Crate made in the Staging Directory".to_string()
+            })
     }
 
     /// Write `record` to [`RECORD_FILE`] through a temporary file of this

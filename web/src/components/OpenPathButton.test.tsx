@@ -31,11 +31,13 @@ describe("OpenPathButton", () => {
 
   it("shows an alert when opening fails", async () => {
     const user = setupUser();
-    openPathInExplorer.mockRejectedValue(new Error("Path is outside this Import Run's directory"));
+    openPathInExplorer.mockRejectedValue(
+      new Error("Path is not in a directory Message Crate made in the Staging Directory"),
+    );
     render(<OpenPathButton path="/tmp/nope">Open</OpenPathButton>);
     await user.click(screen.getByRole("button", { name: "Open" }));
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "Path is outside this Import Run's directory",
+      "Path is not in a directory Message Crate made in the Staging Directory",
     );
   });
 });

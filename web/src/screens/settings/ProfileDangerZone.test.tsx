@@ -155,7 +155,7 @@ describe("ProfileDangerZone", () => {
     expect(within(dialog).queryByText("/home/carol/old")).toBeNull();
   });
 
-  it("deletes no Import Run's directory when it could not look for them, even with an earlier list cached", async () => {
+  it("deletes no directory of the account's Import Runs when it could not look for them, even with an earlier list cached", async () => {
     desktop.value = true;
     deleteAccount.mockResolvedValue(undefined);
     const client = testQueryClient();

@@ -401,7 +401,7 @@ describe("logging out during an Upload", () => {
     expect(getToken()).toBe("next-session-token");
   });
 
-  it("names a deleted account's Import Run directory it could not delete", async () => {
+  it("names a directory of a deleted account's Import Runs it could not delete", async () => {
     deleteStagingMock.mockRejectedValueOnce(new Error("permission denied"));
     const result = await logIn();
 
