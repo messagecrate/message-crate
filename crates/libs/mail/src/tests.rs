@@ -784,16 +784,18 @@ fn a_mail_whose_deletion_names_no_mark_is_refused() {
 }
 
 /// A copy of [`base_sms`] whose every free-text `X-ME-*` value is `value`:
-/// each plain-text header, and a string inside each JSON header. The guid
-/// and the reply guid are left out, because they also name the mail in
-/// `Message-ID` and `In-Reply-To`, which are not `X-ME-*` headers. The
-/// message is outgoing, so the sender identity goes only to
-/// `X-ME-Sender-Identity` and not into the `From` address, which is not an
-/// `X-ME-*` header either.
-fn with_every_x_me_text(value: &str) -> MailMessage {
+/// each plain-text header, and a string inside each JSON header.
+///
+/// The `From` address of a group conversation is the owner's for an
+/// outgoing message and the sender's for an incoming one. `From` is not an
+/// `X-ME-*` header, so the identity it names keeps its phone number and the
+/// other identity takes `value`: run both directions to cover both. The guid
+/// and the reply guid name the mail in `Message-ID` and `In-Reply-To` as
+/// well, so [`assert_every_value_reads_back`] checks them apart.
+fn with_every_x_me_text(value: &str, direction: IrDirection) -> MailMessage {
     let text = || Some(value.to_string());
     let mut msg = base_sms();
-    msg.message.direction = IrDirection::Outgoing;
+    msg.message.direction = direction;
     msg.chat_identifier = value.into();
     msg.conversation_type = "group".into();
     msg.group_title = text();
@@ -802,7 +804,10 @@ fn with_every_x_me_text(value: &str) -> MailMessage {
     msg.export_source = value.into();
     msg.export_tool = value.into();
     msg.export_tool_version = value.into();
-    msg.message.sender_identity = text();
+    match direction {
+        IrDirection::Outgoing => msg.message.sender_identity = text(),
+        IrDirection::Incoming => msg.owner_identity = value.into(),
+    }
     msg.message.sender_display_name = text();
     msg.message.owner_identity = text();
     msg.message.subject = text();
@@ -838,7 +843,7 @@ fn with_every_x_me_text(value: &str) -> MailMessage {
         bytes: b"x".to_vec(),
         meta: message_ir::AttachmentMeta {
             path: None,
-            original_name: Some("note.txt".into()),
+            original_name: text(),
             mime_type: Some("text/plain".into()),
             digest_sha256: None,
             size_bytes: Some(1),
@@ -856,6 +861,7 @@ fn with_every_x_me_text(value: &str) -> MailMessage {
 fn x_me_values(msg: &MailMessage) -> serde_json::Value {
     serde_json::json!({
         "chat_identifier": msg.chat_identifier,
+        "owner_identity": msg.owner_identity,
         "group_title": msg.group_title,
         "participants": msg.participants,
         "owner_display_name": msg.owner_display_name,
@@ -863,6 +869,7 @@ fn x_me_values(msg: &MailMessage) -> serde_json::Value {
         "export_tool": msg.export_tool,
         "export_tool_version": msg.export_tool_version,
         "message": msg.message,
+        "attachment_names": msg.attachments.iter().map(|a| &a.meta.original_name).collect::<Vec<_>>(),
         "transcriptions": msg.attachments.iter().map(|a| &a.transcription).collect::<Vec<_>>(),
         "sticker_effects": msg.attachments.iter().map(|a| &a.sticker_effect).collect::<Vec<_>>(),
     })
@@ -870,20 +877,26 @@ fn x_me_values(msg: &MailMessage) -> serde_json::Value {
 
 /// Assert that every value of `values`, written into every free-text
 /// `X-ME-*` value of a message, reads back from an EML file and from an mbox
-/// exactly as written. A failure counts the values that changed or did not
-/// read at all, and names the first few.
+/// exactly as written, in both directions. A failure counts the values that
+/// changed or did not read at all, and names the first few.
 fn assert_every_value_reads_back(values: &[String]) {
     let tmp = tempfile::tempdir().unwrap();
     let mut changed = Vec::new();
     for (i, value) in values.iter().enumerate() {
-        let msg = with_every_x_me_text(value);
-        let written = x_me_values(&msg);
-        let from_eml = crate::mail_message_from_eml_bytes(&build_eml(&msg).unwrap());
-        let mbox =
-            write_mail_package(&tmp.path().join(i.to_string()), MailPackage::Mbox, &[msg]).unwrap();
-        let from_mbox = crate::mail_messages_from_mbox(&mbox);
-        let same = from_eml.is_ok_and(|m| x_me_values(&m) == written)
-            && from_mbox.is_ok_and(|m| m.len() == 1 && x_me_values(&m[0]) == written);
+        let same = [IrDirection::Outgoing, IrDirection::Incoming]
+            .into_iter()
+            .enumerate()
+            .all(|(d, direction)| {
+                let msg = with_every_x_me_text(value, direction);
+                let written = x_me_values(&msg);
+                let from_eml = crate::mail_message_from_eml_bytes(&build_eml(&msg).unwrap());
+                let dir = tmp.path().join(format!("{i}-{d}"));
+                let mbox = write_mail_package(&dir, MailPackage::Mbox, &[msg]).unwrap();
+                let from_mbox = crate::mail_messages_from_mbox(&mbox);
+                from_eml.is_ok_and(|m| x_me_values(&m) == written)
+                    && from_mbox.is_ok_and(|m| m.len() == 1 && x_me_values(&m[0]) == written)
+            })
+            && guid_headers_read_back(value);
         if !same {
             changed.push(value);
         }
@@ -895,6 +908,30 @@ fn assert_every_value_reads_back(values: &[String]) {
         values.len(),
         &changed[..changed.len().min(5)]
     );
+}
+
+/// True when `value`, as a message's guid and reply guid, reads back from
+/// `X-ME-Guid` and `X-ME-Thread-Originator-Guid` as written. Only the two
+/// headers are read, because the guid also names the mail in `Message-ID`
+/// and `In-Reply-To`, which are not `X-ME-*` headers. A value with a line
+/// break is not tried: written into `Message-ID` as it is, the line break
+/// ends the mail's headers (#1816).
+fn guid_headers_read_back(value: &str) -> bool {
+    if value.contains(['\r', '\n']) {
+        return true;
+    }
+    let mut msg = base_sms();
+    msg.message.guid = value.into();
+    im_mut(&mut msg).in_reply_to_guid = Some(value.into());
+    let eml = build_eml(&msg).unwrap();
+    let Ok((headers, _)) = mailparse::parse_headers(&eml) else {
+        return false;
+    };
+    headers.get_first_value("X-ME-Guid").as_deref() == Some(value)
+        && headers
+            .get_first_value("X-ME-Thread-Originator-Guid")
+            .as_deref()
+            == Some(value)
 }
 
 /// A run of spaces next to the characters RFC 2047 encoded words are made
@@ -938,11 +975,48 @@ fn generated_values_read_back_as_written() {
         state ^= state << 17;
         (state % bound as u64) as usize
     };
-    let values: Vec<String> = (0..1500)
+    let values: Vec<String> = (0..1000)
         .map(|_| {
             let len = 1 + next(120);
             (0..len).map(|_| ALPHABET[next(ALPHABET.len())]).collect()
         })
         .collect();
     assert_every_value_reads_back(&values);
+}
+
+/// A number, a flag or a name from a fixed list that ends in a space, as a
+/// mail rewritten by hand or by another tool can carry, reads as the value
+/// it names. Read untrimmed, `outgoing ` was read as incoming and the
+/// timestamp was refused.
+#[test]
+fn a_typed_header_that_ends_in_a_space_reads_as_its_value() {
+    let eml = concat!(
+        "X-ME-Chat-Identifier: +15555550101\r\n",
+        "X-ME-Conversation-Type: group \r\n",
+        "X-ME-Guid: g1\r\n",
+        "X-ME-Timestamp-Unix-Ms: 1400773261000 \r\n",
+        "X-ME-Direction: outgoing \r\n",
+        "X-ME-Service: imessage \r\n",
+        "X-ME-Message-Kind: imessage \r\n",
+        "X-ME-Android-Type: 2 \r\n",
+        "X-ME-Deletion: unsent \r\n",
+        "X-ME-Is-Reply: true \r\n",
+        "X-ME-Num-Replies: 3 \r\n",
+        "\r\n",
+        "hello\r\n",
+    );
+    let msg = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap();
+    assert_eq!(msg.conversation_type, "group");
+    assert_eq!(msg.message.timestamp_unix_ms, 1_400_773_261_000);
+    assert_eq!(msg.message.direction, IrDirection::Outgoing);
+    assert_eq!(msg.message.service, message_ir::IrService::IMessage);
+    assert_eq!(
+        msg.message.message_kind,
+        message_ir::IrMessageKind::IMessage
+    );
+    assert_eq!(msg.message.source.unwrap().android_type, Some(2));
+    assert_eq!(msg.message.deletion, Some(message_ir::Deletion::Unsent));
+    let im = msg.message.imessage.unwrap();
+    assert!(im.is_reply);
+    assert_eq!(im.num_replies, Some(3));
 }

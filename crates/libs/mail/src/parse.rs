@@ -69,22 +69,28 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     }
 
     let chat_identifier = required_header(headers, hn::CHAT_IDENTIFIER)?;
-    let conversation_type = header_or(headers, hn::CONVERSATION_TYPE, "individual");
+    let conversation_type =
+        typed_header(headers, hn::CONVERSATION_TYPE).unwrap_or_else(|| "individual".into());
     let group_title = optional_header(headers, hn::GROUP_TITLE);
     let participants = parse_participants(headers)?;
     let guid = required_header(headers, hn::GUID)?;
-    let timestamp_unix_ms = required_header(headers, hn::TIMESTAMP_UNIX_MS)?
+    let timestamp_unix_ms = typed_header(headers, hn::TIMESTAMP_UNIX_MS)
+        .with_context(|| format!("missing required header {}", hn::TIMESTAMP_UNIX_MS))?
         .parse::<i64>()
         .context("parse X-ME-Timestamp-Unix-Ms")?;
-    let direction = match header_or(headers, hn::DIRECTION, "incoming")
+    let direction = match typed_header(headers, hn::DIRECTION)
+        .unwrap_or_default()
         .to_ascii_lowercase()
         .as_str()
     {
         "outgoing" => IrDirection::Outgoing,
         _ => IrDirection::Incoming,
     };
-    let service = IrService::parse(&header_or(headers, hn::SERVICE, "sms"));
-    let message_kind = IrMessageKind::parse(&header_or(headers, hn::MESSAGE_KIND, "sms"));
+    let service =
+        IrService::parse(&typed_header(headers, hn::SERVICE).unwrap_or_else(|| "sms".into()));
+    let message_kind = IrMessageKind::parse(
+        &typed_header(headers, hn::MESSAGE_KIND).unwrap_or_else(|| "sms".into()),
+    );
     let sender_identity = optional_header(headers, hn::SENDER_IDENTITY);
     let sender_display_name = optional_header(headers, hn::SENDER_DISPLAY_NAME);
     let owner_identity = optional_header(headers, hn::OWNER_IDENTITY).unwrap_or_default();
@@ -102,7 +108,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
 
     let source = {
         let android_type =
-            optional_header(headers, hn::ANDROID_TYPE).and_then(|s| s.trim().parse::<i32>().ok());
+            typed_header(headers, hn::ANDROID_TYPE).and_then(|s| s.parse::<i32>().ok());
         let fields = json_header(headers, hn::SOURCE_FIELDS, "source fields")?.unwrap_or_default();
         let src = IrSource {
             android_type,
@@ -271,9 +277,23 @@ fn required_header(headers: &[MailHeader<'_>], name: &str) -> Result<String> {
 /// A header value as the writer wrote it, or `None` when missing or empty.
 ///
 /// Nothing is trimmed: the writer protects a value's own opening and closing
-/// spaces (`x_me_value`), so they belong to the value.
+/// spaces (`x_me_value`), so they belong to the value. A value from a fixed
+/// list is read with [`typed_header`] instead.
 fn optional_header(headers: &[MailHeader<'_>], name: &str) -> Option<String> {
     headers.get_first_value(name).filter(|s| !s.is_empty())
+}
+
+/// A header whose value is a number, a flag or a name from a fixed list,
+/// trimmed, or `None` when missing or empty.
+///
+/// The writer never puts a space around such a value, but a mail rewritten
+/// by hand or by another tool can carry one at the end of its line, which a
+/// reader keeps. Read untrimmed, `outgoing ` would be read as incoming and
+/// `1400773261000 ` refused, so these values alone are trimmed.
+fn typed_header(headers: &[MailHeader<'_>], name: &str) -> Option<String> {
+    optional_header(headers, name)
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 /// A header value, or `default` when missing.
@@ -283,18 +303,18 @@ fn header_or(headers: &[MailHeader<'_>], name: &str, default: &str) -> String {
 
 /// True when the header is `true`, the only value the writer gives it.
 fn header_bool(headers: &[MailHeader<'_>], name: &str) -> bool {
-    optional_header(headers, name).as_deref() == Some("true")
+    typed_header(headers, name).as_deref() == Some("true")
 }
 
 /// A header value parsed as a number.
 fn header_u32(headers: &[MailHeader<'_>], name: &str) -> Option<u32> {
-    optional_header(headers, name)?.parse().ok()
+    typed_header(headers, name)?.parse().ok()
 }
 
 /// The message's mark from `X-ME-Deletion`, or none when the header is
 /// absent. A value that names neither mark is refused rather than dropped.
 fn parse_deletion(headers: &[MailHeader<'_>]) -> Result<Option<Deletion>> {
-    let Some(raw) = optional_header(headers, hn::DELETION) else {
+    let Some(raw) = typed_header(headers, hn::DELETION) else {
         return Ok(None);
     };
     message_ir::parse_deletion(&raw).with_context(|| format!("This mail's {} header", hn::DELETION))
