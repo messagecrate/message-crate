@@ -377,8 +377,8 @@ fn leave_out_files_that_are_gone(
 /// copied, so its hint counts toward no byte total, not the progress and
 /// not the disk check, and saying so before any total is summed keeps the
 /// total from dropping when the run reaches it. Both the write queue and
-/// the sink arm of [`ExportWriter::finish`](crate::ExportWriter::finish)
-/// count sources this way.
+/// [`CountedAttachments`](crate::CountedAttachments), which every run
+/// outside the queue stages through, count sources this way.
 pub(crate) fn counted_source(
     (source, size_hint): (AttachmentSource, Option<u64>),
 ) -> (AttachmentSource, Option<u64>) {

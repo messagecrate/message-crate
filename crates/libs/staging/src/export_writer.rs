@@ -1,11 +1,11 @@
 //! The shared write tail every exporter used to copy: sink opening, the
 //! queue-or-sink decision, and both drain arms.
 
-use crate::headroom::{Disk, bytes_to_write, check_headroom};
+use crate::counted_attachments::{CountedAttachments, PathSources};
+use crate::headroom::{Disk, check_headroom};
 use crate::spool::AttachmentSpool;
 use crate::write_queue::{
-    AttachmentSource, ConversationUnit, WriteQueueOptions, counted_source, drain_units,
-    load_attachment_source, missing_if_no_file,
+    AttachmentSource, ConversationUnit, WriteQueueOptions, drain_units, load_attachment_source,
 };
 use anyhow::Result;
 use media::{CompressOptions, MediaMode};
@@ -257,57 +257,40 @@ impl ExportWriter {
         }
 
         let mut documents = documents;
-        let mut jobs = message_crate_core::attachment_jobs(message_crate_core::document_messages(
-            &mut documents,
-        ));
-        // Gather sources in flat document order; staging loads by that
-        // index. Every attachment known now to have no file is `Missing`
-        // with no hint, so neither the disk check nor the progress total
-        // counts it, and the total never drops when the run reaches it, as
-        // in the queue arm (#1701). With media off nothing is read, so no
-        // path is checked.
-        let mut sources: Vec<AttachmentSource> = Vec::with_capacity(jobs.len());
-        let mut sizes: Vec<(Option<String>, u64)> = Vec::new();
-        for job in &mut jobs {
-            let mut counted = counted_source(source_for(job.attachment));
-            if self.media_mode != MediaMode::Disabled {
-                counted = missing_if_no_file(counted, self.log.as_ref());
-            }
-            let (source, hint) = counted;
-            if !matches!(source, AttachmentSource::Missing) {
-                sizes.push((job.attachment.digest_sha256.clone(), hint.unwrap_or(0)));
-            }
-            job.size_hint = hint;
-            sources.push(source);
-        }
-        let sizes: Vec<(Option<&str>, u64)> = sizes
-            .iter()
-            .map(|(digest, size)| (digest.as_deref(), *size))
-            .collect();
-        let needed = bytes_to_write(self.format, &sizes);
+        // Every attachment known now to have no file gets no hint, so
+        // neither the disk check nor the progress total counts it, and the
+        // total never drops when the run reaches it, as in the queue arm
+        // (#1701).
+        let counted = CountedAttachments::new(
+            message_crate_core::document_messages(&mut documents),
+            message_crate_core::MediaConfig {
+                mode: self.media_mode,
+                compress: self.compress.clone(),
+            },
+            PathSources::OnDisk,
+            &mut source_for,
+            self.log.as_ref(),
+        );
         // The same check the queue arm makes, before anything is written:
         // the staged copies, and for a mail or merged archive every
         // embedded copy too, need room on the disk that holds the output. A
         // spool on that disk has already taken its share of what is free.
         if self.media_mode != MediaMode::Disabled {
-            check_headroom(&self.output_dir, needed, Disk::Staging)?;
+            check_headroom(
+                &self.output_dir,
+                counted.bytes_to_write(self.format),
+                Disk::Staging,
+            )?;
         }
-        report.attachments_saved += message_crate_core::stage_attachment_jobs(
-            jobs,
-            &self.attachments_dir,
-            &message_crate_core::MediaConfig {
-                mode: self.media_mode,
-                compress: self.compress.clone(),
-            },
-            |i| match sources.get_mut(i) {
-                Some(source) => load_attachment_source(source),
-                None => Ok(None),
-            },
-            self.log.as_ref(),
-            self.progress.as_ref(),
-            cancel,
-        )
-        .map_err(anyhow::Error::msg)?;
+        report.attachments_saved += counted
+            .stage(
+                &self.attachments_dir,
+                load_attachment_source,
+                self.log.as_ref(),
+                self.progress.as_ref(),
+                cancel,
+            )
+            .map_err(anyhow::Error::msg)?;
 
         write_documents_through_sink(
             documents,

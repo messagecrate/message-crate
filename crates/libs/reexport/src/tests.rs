@@ -1563,3 +1563,50 @@ fn an_earlier_conversion_s_attachments_count_as_free() {
     fs::write(output.path().join(message_ir_format::EXPORT_SENTINEL), b"").unwrap();
     assert_eq!(previous_attachment_bytes(output.path()), 15);
 }
+
+/// A conversion that stages its attachments again knows before it starts
+/// which ones have no file: a path with nothing there, a record with neither
+/// bytes nor a path, and bytes that are empty. Its byte total leaves them
+/// out from the first event and never drops mid-run (#1727).
+#[test]
+fn the_byte_total_of_a_conversion_stays_the_same_when_a_file_is_gone() {
+    let output = tempfile::tempdir().unwrap();
+    let (progress, totals) = message_crate_core::testutil::attachment_totals();
+    let mut config = config(output.path(), output.path(), OutputFormat::Mbox);
+    config.progress = Some(progress);
+    let sized = |name: &str, path: Option<&str>, size: u64, bytes: Option<&[u8]>| IrAttachment {
+        size_bytes: Some(size),
+        bytes: bytes.map(<[u8]>::to_vec),
+        ..attachment(name, path)
+    };
+    let mut document = message_ir::testutil::sample_document("with attachments");
+    // The real attachment comes first, so the first event is sent before
+    // the run reaches a missing one and could take its size off.
+    document.messages[0].attachments = vec![
+        sized("note.txt", None, 5, Some(b"xxxxx")),
+        sized("gone.txt", Some("attachments/gone.txt"), 700, None),
+        sized("never-held.txt", None, 1_000, None),
+        sized("empty.txt", None, 30, Some(b"")),
+    ];
+
+    apply_reexport_convert(
+        std::slice::from_mut(&mut document),
+        &config,
+        &ExportTransforms::none(),
+        &mut ExportReport::default(),
+    )
+    .unwrap();
+
+    let totals = totals.lock().unwrap().clone();
+    assert!(totals.len() > 1, "{totals:?}");
+    assert!(
+        totals.iter().all(|&(_, _, bytes_total)| bytes_total == 5),
+        "every total: {totals:?}"
+    );
+    assert_eq!(
+        totals
+            .last()
+            .map(|&(done, bytes_done, _)| (done, bytes_done)),
+        Some((4, 5))
+    );
+}

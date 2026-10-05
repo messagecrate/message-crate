@@ -322,27 +322,13 @@ fn a_run_with_no_skipped_rows_says_nothing_about_them() {
     );
 }
 
-/// A handwriting message's SVG comes from the program as text, not a
-/// file. A JSON export writes it under `attachments/`, and an attachment
-/// with no file says it is missing.
+/// The program's script for a Mac export of one message carrying
+/// `attachments`.
 #[cfg(unix)]
-#[test]
-fn inline_and_missing_attachments_reach_a_file_backed_export() {
-    use imessage_reader_protocol::{
-        Attachment, AttachmentSource, Conversation, Event, Message, PROTOCOL_VERSION,
-    };
-    use ios_backup::testutil::{fake_helper, source_line, spawn_fake};
-    use message_ir_format::read_conversation_json;
+fn one_message_script(attachments: Vec<imessage_reader_protocol::Attachment>) -> String {
+    use imessage_reader_protocol::{Conversation, Event, Message, PROTOCOL_VERSION};
+    use ios_backup::testutil::source_line;
 
-    const SVG: &str = "<svg></svg>";
-    let attachment = |source| Attachment {
-        original_name: None,
-        mime_type: Some("image/svg+xml".into()),
-        is_sticker: false,
-        transcription: None,
-        sticker_effect: None,
-        source,
-    };
     let events = [
         Event::Conversation(Conversation {
             chat_identifier: "+15555550122".into(),
@@ -366,10 +352,7 @@ fn inline_and_missing_attachments_reach_a_file_backed_export() {
             reactions: Vec::new(),
             deletion: None,
             imessage: None,
-            attachments: vec![
-                attachment(AttachmentSource::Inline { text: SVG.into() }),
-                attachment(AttachmentSource::Missing),
-            ],
+            attachments,
         })),
         Event::ExportDone {
             messages_seen: 1,
@@ -383,13 +366,40 @@ fn inline_and_missing_attachments_reach_a_file_backed_export() {
             serde_json::to_string(event).unwrap()
         ));
     }
+    body
+}
 
-    let dir = tempfile::tempdir().unwrap();
-    let chat = dir.path().join("chat.db");
+/// An attachment from the program with `source`, as a handwriting SVG.
+#[cfg(unix)]
+fn svg_attachment(
+    source: imessage_reader_protocol::AttachmentSource,
+) -> imessage_reader_protocol::Attachment {
+    imessage_reader_protocol::Attachment {
+        original_name: None,
+        mime_type: Some("image/svg+xml".into()),
+        is_sticker: false,
+        transcription: None,
+        sticker_effect: None,
+        source,
+    }
+}
+
+/// A JSON export of a Mac's messages with `attachments`, run against the
+/// fake program, with `progress` on the run.
+#[cfg(unix)]
+fn run_one_message(
+    dir: &Path,
+    attachments: Vec<imessage_reader_protocol::Attachment>,
+    progress: Option<message_crate_core::ProgressSink>,
+) -> (ExporterConfig, message_crate_core::RunResult) {
+    use ios_backup::testutil::{fake_helper, spawn_fake};
+
+    let chat = dir.join("chat.db");
     fs::write(&chat, b"sqlite").unwrap();
-    let program = fake_helper(dir.path(), &body);
+    let program = fake_helper(dir, &one_message_script(attachments));
     let config = ExporterConfig {
         output_format: OutputFormat::Json,
+        progress,
         ..apple_cfg(
             &chat,
             AppleConfig {
@@ -399,6 +409,28 @@ fn inline_and_missing_attachments_reach_a_file_backed_export() {
         )
     };
     let result = run_with(&config, |request, _, _| Ok(spawn_fake(&program, request))).unwrap();
+    (config, result)
+}
+
+/// A handwriting message's SVG comes from the program as text, not a
+/// file. A JSON export writes it under `attachments/`, and an attachment
+/// with no file says it is missing.
+#[cfg(unix)]
+#[test]
+fn inline_and_missing_attachments_reach_a_file_backed_export() {
+    use imessage_reader_protocol::AttachmentSource;
+    use message_ir_format::read_conversation_json;
+
+    const SVG: &str = "<svg></svg>";
+    let dir = tempfile::tempdir().unwrap();
+    let (config, result) = run_one_message(
+        dir.path(),
+        vec![
+            svg_attachment(AttachmentSource::Inline { text: SVG.into() }),
+            svg_attachment(AttachmentSource::Missing),
+        ],
+        None,
+    );
     assert!(
         result.messages.iter().any(|l| l == "  saved 1 attachments"),
         "{:#?}",
@@ -413,6 +445,43 @@ fn inline_and_missing_attachments_reach_a_file_backed_export() {
     assert_eq!(
         attachments[1].missing_reason.as_deref(),
         Some("file_missing")
+    );
+}
+
+/// A path in a backup that is not encrypted is read from disk, so one with
+/// no file there is known before the run to be missing. The byte total
+/// leaves it out from the first event and never drops mid-run (#1727).
+#[cfg(unix)]
+#[test]
+fn an_unencrypted_path_with_no_file_stays_out_of_the_byte_total() {
+    use imessage_reader_protocol::AttachmentSource;
+    use message_crate_core::testutil::attachment_totals;
+
+    const SVG: &str = "<svg></svg>";
+    let dir = tempfile::tempdir().unwrap();
+    let (progress, totals) = attachment_totals();
+    run_one_message(
+        dir.path(),
+        vec![
+            // The real attachment comes first, so the first event is sent
+            // before the run reaches the missing one and could take its
+            // size off.
+            svg_attachment(AttachmentSource::Inline { text: SVG.into() }),
+            svg_attachment(AttachmentSource::Path {
+                path: dir.path().join("gone.svg"),
+                size_hint: Some(700),
+            }),
+        ],
+        Some(progress),
+    );
+
+    let totals = totals.lock().unwrap().clone();
+    assert!(totals.len() > 1, "{totals:?}");
+    assert!(
+        totals
+            .iter()
+            .all(|&(_, _, bytes_total)| bytes_total == SVG.len() as u64),
+        "every total: {totals:?}"
     );
 }
 
