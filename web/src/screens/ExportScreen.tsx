@@ -10,16 +10,13 @@ import { useTauriJob } from "../hooks/useTauriJob";
 import { getBaseUrl } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { holdDesktopJob } from "../lib/desktopJob";
+import { writeInExportDir } from "../lib/exportDir";
 import { createRunCancel, type RunCancel } from "../lib/runCancel";
 import { parseSelectKey } from "../lib/selectKey";
 import {
   EXPORT_FORMATS,
-  type ExportDir,
   type ExportFormat,
   type ExportQueryList,
-  invokeCreateExportDir,
-  invokeDiscardExportDir,
-  invokeFinishExportDir,
   invokeFormat,
   invokePull,
 } from "../lib/tauri";
@@ -147,66 +144,54 @@ export default function ExportScreen() {
     const runStartedMs = Date.now();
 
     void (async () => {
-      let made: ExportDir | null = null;
-      // Once the result is written, a later failure must not delete it.
-      let written = false;
       try {
-        made = await invokeCreateExportDir("export", format);
-        const exportDir = made;
-        const request = { savePath: chosen || exportDir.dir, format };
-        const pullInto = (outDir: string) =>
-          run(
-            exportCancel.guard(() =>
-              invokePull({
-                base_url: getBaseUrl(),
-                username: "",
-                token,
-                out_dir: outDir,
-                query: scope === "search" ? query.trim() : "",
-                list,
-                skip_attachments: false,
-              }),
-            ),
-            request,
-            { onLog: appendLog },
-          );
-        if (format === "jsonl") {
-          await pullInto(chosen || exportDir.dir);
-        } else {
-          await pullInto(exportDir.pulled);
-          await run(
-            exportCancel.guard(() =>
-              invokeFormat({
-                input_dir: exportDir.pulled,
-                output_dir: chosen || exportDir.converting,
-                output_format: format,
-                run_started_ms: runStartedMs,
-              }),
-            ),
-            request,
-            { onLog: appendLog },
-          );
-        }
-        written = true;
-        await invokeFinishExportDir(exportDir.dir);
+        await writeInExportDir(
+          "export",
+          format,
+          chosen,
+          async (exportDir) => {
+            const request = { savePath: chosen || exportDir.dir, format };
+            const pullInto = (outDir: string) =>
+              run(
+                exportCancel.guard(() =>
+                  invokePull({
+                    base_url: getBaseUrl(),
+                    username: "",
+                    token,
+                    out_dir: outDir,
+                    query: scope === "search" ? query.trim() : "",
+                    list,
+                    skip_attachments: false,
+                  }),
+                ),
+                request,
+                { onLog: appendLog },
+              );
+            if (format === "jsonl") {
+              await pullInto(chosen || exportDir.dir);
+              return;
+            }
+            await pullInto(exportDir.pulled);
+            await run(
+              exportCancel.guard(() =>
+                invokeFormat({
+                  input_dir: exportDir.pulled,
+                  output_dir: chosen || exportDir.converting,
+                  output_format: format,
+                  run_started_ms: runStartedMs,
+                }),
+              ),
+              request,
+              { onLog: appendLog },
+            );
+          },
+          appendLog,
+        );
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         appendLog(`Error: ${message}`);
         setError(message);
       } finally {
-        // Best effort: a directory left behind is worth a log line, not a
-        // failed export the person cannot tell apart from a real one.
-        if (made && !written) {
-          try {
-            await invokeDiscardExportDir(made.dir);
-          } catch (cleanupError: unknown) {
-            appendLog(
-              `Could not delete ${made.dir}: ${
-                cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
-              }`,
-            );
-          }
-        }
         releaseDesktop();
         setBusy(false);
       }

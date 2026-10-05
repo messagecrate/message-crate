@@ -5,15 +5,9 @@ import PathPicker from "../../components/PathPicker";
 import Select, { selectItemClassName } from "../../components/Select";
 import TauriJobFormShell from "../../components/TauriJobFormShell";
 import { useTauriJob } from "../../hooks/useTauriJob";
+import { writeInExportDir } from "../../lib/exportDir";
 import { parseSelectKey } from "../../lib/selectKey";
-import {
-  EXPORT_FORMATS,
-  type ExportFormat,
-  invokeCreateExportDir,
-  invokeDiscardExportDir,
-  invokeFinishExportDir,
-  invokeFormat,
-} from "../../lib/tauri";
+import { EXPORT_FORMATS, type ExportFormat, invokeFormat } from "../../lib/tauri";
 import { isTauri } from "../../lib/tauri-check";
 import { sameDirectory } from "./convertUtils";
 
@@ -70,37 +64,34 @@ export function ConvertSection() {
     setLog([]);
     const chosen = outputDir.trim();
     const input = inputDir.trim();
+    const convertInto = (output: string) =>
+      run(
+        () =>
+          invokeFormat({
+            input_dir: input,
+            output_dir: output,
+            output_format: format,
+          }),
+        { outputDir: output, format },
+        { onLog: appendLog },
+      );
     void (async () => {
-      let made: string | null = null;
-      let written = false;
       try {
-        if (!chosen) made = (await invokeCreateExportDir("convert", format)).dir;
-        const request = { outputDir: chosen || made || "", format };
-        await run(
-          () =>
-            invokeFormat({
-              input_dir: input,
-              output_dir: request.outputDir,
-              output_format: request.format,
-            }),
-          request,
-          { onLog: appendLog },
-        );
-        written = true;
-        if (made) await invokeFinishExportDir(made);
+        if (chosen) await convertInto(chosen);
+        else
+          await writeInExportDir(
+            "convert",
+            format,
+            "",
+            async (made) => {
+              await convertInto(made.dir);
+            },
+            appendLog,
+          );
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         appendLog(`Error: ${message}`);
         setError(message);
-        if (made && !written) {
-          await invokeDiscardExportDir(made).catch((cleanupError: unknown) => {
-            appendLog(
-              `Could not delete ${made}: ${
-                cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
-              }`,
-            );
-          });
-        }
       }
     })();
   };

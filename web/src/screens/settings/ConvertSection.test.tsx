@@ -115,7 +115,7 @@ describe("ConvertSection", () => {
     await user.click(convertButton());
 
     await waitFor(() => expect(invokeFinishExportDir).toHaveBeenCalledWith(CONVERT_DIR));
-    expect(invokeCreateExportDir).toHaveBeenCalledWith("convert", "jsonl");
+    expect(invokeCreateExportDir).toHaveBeenCalledWith("convert", "jsonl", "");
     expect(invokeFormat.mock.calls[0][0]).toMatchObject({
       input_dir: "/home/demo/export-json",
       output_dir: CONVERT_DIR,

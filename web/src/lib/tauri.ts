@@ -334,12 +334,17 @@ export async function invokeExportDirectory(): Promise<string> {
   return invoke("export_directory");
 }
 
-/** Make the directory of a new Export or Convert in the Export Directory. */
+/**
+ * Make the directory of a new Export or Convert in the Export Directory.
+ * `chosen` is the destination the person chose, or empty; one that holds the
+ * Export Directory is refused before anything is made.
+ */
 export async function invokeCreateExportDir(
   kind: "export" | "convert",
   format: ExportFormat,
+  chosen: string,
 ): Promise<ExportDir> {
-  return invoke("create_export_dir", { kind, format });
+  return invoke("create_export_dir", { kind, format, chosen: chosen || null });
 }
 
 /**

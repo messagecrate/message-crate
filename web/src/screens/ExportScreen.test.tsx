@@ -129,7 +129,7 @@ describe("ExportScreen", () => {
     await user.click(screen.getByRole("button", { name: "Export" }));
 
     await waitFor(() => expect(invokePull).toHaveBeenCalledTimes(1));
-    expect(invokeCreateExportDir).toHaveBeenCalledWith("export", "jsonl");
+    expect(invokeCreateExportDir).toHaveBeenCalledWith("export", "jsonl", "");
     expect(invokePull.mock.calls[0][0]).toMatchObject({ out_dir: EXPORT_DIR.dir });
     await waitFor(() => expect(invokeFinishExportDir).toHaveBeenCalledWith(EXPORT_DIR.dir));
     expect(await screen.findByText(/Export complete/)).toHaveTextContent(
@@ -145,7 +145,7 @@ describe("ExportScreen", () => {
     await user.click(screen.getByRole("button", { name: "Export" }));
 
     await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
-    expect(invokeCreateExportDir).toHaveBeenCalledWith("export", "csv");
+    expect(invokeCreateExportDir).toHaveBeenCalledWith("export", "csv", "");
     expect(invokePull.mock.calls[0][0]).toMatchObject({ out_dir: EXPORT_DIR.pulled });
     // The conversion may not write into the directory that holds its input,
     // so it writes beside it and the finish moves the result up.
@@ -185,6 +185,20 @@ describe("ExportScreen", () => {
     const started = invokeFormat.mock.calls[0][0].run_started_ms as number;
     expect(started).toBeGreaterThanOrEqual(before);
     expect(started).toBeLessThanOrEqual(pulled);
+  });
+
+  it("starts nothing when the desktop refuses Save to for holding the Export Directory", async () => {
+    invokeCreateExportDir.mockRejectedValueOnce(
+      new Error("/home/demo holds the Export Directory, where the export works."),
+    );
+    await exportAs("/home/demo", "CSV (.csv)");
+
+    expect(
+      await screen.findByText("/home/demo holds the Export Directory, where the export works."),
+    ).toBeTruthy();
+    expect(invokeCreateExportDir).toHaveBeenCalledWith("export", "csv", "/home/demo");
+    expect(invokePull).not.toHaveBeenCalled();
+    expect(invokeDiscardExportDir).not.toHaveBeenCalled();
   });
 
   it("finishes the export's own directory once the conversion ends", async () => {
