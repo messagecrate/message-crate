@@ -43,9 +43,11 @@ message-crate-push = { path = "../crates/libs/push" }
 message-crate-pull = { path = "../crates/libs/pull" }
 message-crate-http = { path = "../crates/libs/http" }
 message-crate-serve-protocol = { path = "../crates/libs/serve-protocol" }
+# The temporary file an attachment download is written to before it is
+# renamed onto the file the person chose (`commands::download`).
+tempfile = "3"
 
 [dev-dependencies]
-tempfile = "3"
 # `testutil` builds the sample conversation the Export Directory tests write.
 message-ir = { path = "../crates/libs/ir", features = ["testutil"] }
 httpmock = "0.8"

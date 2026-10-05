@@ -71,7 +71,7 @@ const anAccount = {
   username: "bob",
   preferred_name: "Bob Archer",
   time_zone: "America/New_York",
-  phones: ["+15555550100"],
+  phones: [{ address: "+15555550100", services: ["phone"] }],
   emails: [],
   is_demo: false,
   is_owner: false,

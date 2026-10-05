@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { phoneNumbers } from "../../lib/account";
 import { phonesMatch } from "../../lib/phoneTokens";
 import type { Conversation, Participant } from "../../lib/types";
 import { useAccountProfile } from "../../lib/useAccountProfile";
@@ -12,8 +13,13 @@ import { useAccountProfile } from "../../lib/useAccountProfile";
 export function useContactGroupMembers(conversation: Conversation): number[] {
   const { profile } = useAccountProfile();
   const memberIds = useMemo(
-    () => memberContactIds(conversation.participants, profile?.phones ?? [], profile?.emails ?? []),
-    [conversation.participants, profile?.phones, profile?.emails],
+    () =>
+      memberContactIds(
+        conversation.participants,
+        profile ? phoneNumbers(profile) : [],
+        profile?.emails ?? [],
+      ),
+    [conversation.participants, profile],
   );
   return conversation.is_group && memberIds.length >= 2 ? memberIds : [];
 }
