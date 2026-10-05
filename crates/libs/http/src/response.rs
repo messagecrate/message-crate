@@ -70,7 +70,7 @@ pub fn read_body(
 /// [`HttpError`] carrying the status, so the retry rules can classify it,
 /// the problem document when the body is one, so a caller can read a member
 /// such as `line`, and a sentence naming `what` was being asked for — "Import
-/// Run 7 batch", "export messages" — because a status alone does not tell the
+/// Run 7 batch", "Export Run 7 page" — because a status alone does not tell the
 /// person which part of a long run stopped.
 ///
 /// # Errors
@@ -206,11 +206,11 @@ mod tests {
 
     #[test]
     fn a_2xx_body_that_is_not_json_names_what_was_being_read() {
-        let err =
-            ok_json::<Answer>("export messages", reqwest::StatusCode::OK, "not json").unwrap_err();
+        let err = ok_json::<Answer>("Export Run 7 page", reqwest::StatusCode::OK, "not json")
+            .unwrap_err();
         assert!(
             err.to_string()
-                .contains("could not read the server's answer to export messages"),
+                .contains("could not read the server's answer to Export Run 7 page"),
             "{err}"
         );
     }

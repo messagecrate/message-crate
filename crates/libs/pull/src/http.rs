@@ -44,6 +44,7 @@ pub fn create_export(
     scope: &ExportScope,
     tool: &str,
 ) -> Result<ExportRun> {
+    let what = "Export Run start";
     let body = serde_json::to_vec(&CreateExportBody { scope, tool })?;
     let response = http
         .server_request(Method::POST, base_url, "/v1/exports", token)
@@ -51,10 +52,10 @@ pub fn create_export(
         .body(body)
         .timeout(Duration::from_secs(120))
         .send()
-        .context("POST /v1/exports")?;
+        .with_context(|| format!("{what} failed"))?;
     let status = response.status();
     let text = response.text().unwrap_or_default();
-    ok_json("create export", status, &text)
+    ok_json(what, status, &text)
 }
 
 /// Arguments for [`export_messages`].
@@ -80,17 +81,18 @@ pub fn export_messages(http: &HttpSession, args: ExportMessagesArgs<'_>) -> Resu
         limit,
         offset,
     } = args;
+    let what = format!("Export Run {export_id} page");
     let path = format!("/v1/exports/{export_id}/messages");
     let response = http
         .server_request(Method::GET, base_url, &path, token)
         .query(&[("limit", limit.to_string()), ("offset", offset.to_string())])
         .timeout(Duration::from_secs(120))
         .send()
-        .with_context(|| format!("GET {path}"))?;
+        .with_context(|| format!("{what} failed"))?;
 
     let status = response.status();
     let body = response.text().unwrap_or_default();
-    ok_json("export messages", status, &body)
+    ok_json(&what, status, &body)
 }
 
 /// `POST /v1/exports/{id}/complete` or `.../cancel`: close the run and
@@ -107,15 +109,21 @@ pub fn close_export(
     export_id: i64,
     action: &str,
 ) -> Result<ExportRun> {
+    let closing = if action == "cancel" {
+        "cancellation"
+    } else {
+        "completion"
+    };
+    let what = format!("Export Run {export_id} {closing}");
     let path = format!("/v1/exports/{export_id}/{action}");
     let response = http
         .server_request(Method::POST, base_url, &path, token)
         .timeout(Duration::from_secs(120))
         .send()
-        .with_context(|| format!("POST {path}"))?;
+        .with_context(|| format!("{what} failed"))?;
     let status = response.status();
     let text = response.text().unwrap_or_default();
-    ok_json(&format!("{action} export"), status, &text)
+    ok_json(&what, status, &text)
 }
 
 /// Download one attachment by SHA-256 fingerprint to `dest`.
@@ -141,8 +149,9 @@ pub fn download_asset(
     // Validate sha256 is a 64-char hex string before putting it in the URL.
     let sha_clean = sha256.trim();
     if sha_clean.len() != 64 || !sha_clean.chars().all(|c| c.is_ascii_hexdigit()) {
-        bail!("invalid SHA-256 digest for asset download: {sha256}");
+        bail!("invalid SHA-256 digest for an Asset: {sha256}");
     }
+    let what = format!("Asset {sha_clean} fetch");
     let base = trim_base_url(base_url);
     // The fingerprint alone names the attachment, and the token names the
     // account; the route takes no query.
@@ -153,23 +162,17 @@ pub fn download_asset(
         .request_url(Method::GET, url, token)
         .timeout(Duration::from_secs(300))
         .send()
-        .context("GET /v1/assets")?;
+        .with_context(|| format!("{what} failed"))?;
 
     let status = response.status();
-    if status.as_u16() == 404 {
-        return Err(HttpError::new(404, format!("asset not found: {sha256}")).into());
-    }
     if status.as_u16() == 401 {
-        return Err(session_refused("asset download").into());
+        return Err(session_refused(&what).into());
     }
     if !status.is_success() {
         let body = response.text().unwrap_or_default();
         return Err(HttpError::new(
             status.as_u16(),
-            format!(
-                "asset download failed (HTTP {status}): {}",
-                error_sentence(&body)
-            ),
+            format!("{what} failed (HTTP {status}): {}", error_sentence(&body)),
         )
         .into());
     }
@@ -180,7 +183,7 @@ pub fn download_asset(
     // Write to a temp file then rename, so a partial download (crash, cancel,
     // network drop) never leaves a truncated file at the destination path.
     let tmp = dest.with_extension("part");
-    let written = write_part_file(&mut response, &tmp);
+    let written = write_part_file(&mut response, &tmp).with_context(|| format!("{what} failed"));
     let digest = match written {
         Ok(digest) => digest,
         Err(error) => {
@@ -196,13 +199,13 @@ pub fn download_asset(
         let _ = std::fs::remove_file(&tmp);
         return Err(HttpError::new(
             status.as_u16(),
-            format!("asset {sha_clean} was answered with bytes whose SHA-256 is {digest}"),
+            format!("the server's answer to {what} is bytes whose SHA-256 is {digest}"),
         )
         .into());
     }
     // Synced, because the pull journal records the asset as fetched next,
     // and a resumed Pull skips an asset the journal names.
-    message_ir::rename_into_place(&tmp, dest)?;
+    message_ir::rename_into_place(&tmp, dest).with_context(|| format!("{what} failed"))?;
     Ok(())
 }
 
@@ -284,7 +287,12 @@ mod tests {
 
         let err = download_asset(&http, &server.base_url(), "mc_test", &digest, &dest)
             .expect_err("a 401 is an error");
-        assert!(err.to_string().contains("Log in again"), "{err}");
+        let message = err.to_string();
+        assert!(
+            message.starts_with(&format!("Asset {digest} fetch failed.")),
+            "{message}"
+        );
+        assert!(message.contains("Log in again"), "{message}");
         assert!(!dest.exists());
     }
 

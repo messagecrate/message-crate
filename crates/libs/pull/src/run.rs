@@ -200,10 +200,7 @@ pub fn run(cfg: &PullConfig, mut on_progress: Option<&mut ProgressFn<'_>>) -> Re
     if let Err(error) = pull.close_export(export.id, action) {
         emit(
             &mut on_progress,
-            ProgressEvent::Log(format!(
-                "warning: could not {action} Export Run {} on the server: {error:#}",
-                export.id
-            )),
+            ProgressEvent::Log(format!("warning: {error:#}")),
         );
     }
     let Written {
@@ -829,8 +826,8 @@ fn download_assets_parallel(args: DownloadAssetsParallelArgs<'_>) -> Result<Asse
     let results = parallel_for_each(&jobs, workers, cancel, |job| {
         with_retries(MAX_RETRIES, || {
             crate::http::download_asset(session, base_url, token, &job.sha256, &job.dest)?;
-            let meta = fs::metadata(&job.dest)
-                .with_context(|| format!("stat after download {}", job.dest.display()))?;
+            let meta =
+                fs::metadata(&job.dest).with_context(|| format!("stat {}", job.dest.display()))?;
             Ok(meta.len())
         })
         .map_err(|e| format!("{e:#}"))
@@ -843,7 +840,7 @@ fn download_assets_parallel(args: DownloadAssetsParallelArgs<'_>) -> Result<Asse
                 stats.downloaded += 1;
             }
             Err(error) => {
-                bail!("asset download failed: {error}");
+                bail!("{error}");
             }
         }
     }
