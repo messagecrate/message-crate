@@ -943,16 +943,27 @@ pub async fn promote_deletion_marks(conn: &mut SqliteConnection) -> Result<u64> 
 }
 
 /// Write `_promote_edit_map`: each message production held before this
-/// promotion, those at or below `messages_before`, whose staged row carries
-/// more earlier versions than the message holds, mapped from the staged row
-/// with the most. Returns how many messages it names.
+/// promotion, those at or below `messages_before`, whose staged row records
+/// a later edit than the message holds. Returns how many messages it names.
 ///
 /// An append skips a message production already holds, so a later backup in
-/// which it was edited again reaches it only here. A backup that lists more
-/// earlier versions saw more edits, so it is the later one; one that lists
-/// as many or fewer is the same backup or an earlier one, and the message
-/// keeps what it holds. Two staged rows for one message, from two files of
-/// one import, name it once.
+/// which it was edited again reaches it only here. The staged row is the
+/// later one when its newest earlier version is newer than the message's,
+/// or as new and it lists more of them. When either side records no times,
+/// the row with more earlier versions saw more edits and is the later one.
+/// The count alone misleads when times exist: a part unsent after its edits
+/// loses its earlier versions, so a later backup can list fewer than an
+/// earlier one. A row that is not later, the same backup read again or an
+/// earlier one, leaves the message as it is. Of two staged rows for one
+/// message, from two files of one import, the later one is compared.
+///
+/// The newest earlier version is the edit before the last one: the time of
+/// a part's last edit is recorded nowhere. So a later backup that differs
+/// only by an unsent part, or by one edit after an unsend, can read as not
+/// later, and the message keeps the earlier text (#1804).
+///
+/// `edited_at` is one fixed whole-second UTC form on both sides
+/// (`models::earlier_version_from_ir`), so the text orders as the time.
 ///
 /// # Errors
 ///
@@ -967,21 +978,30 @@ pub async fn write_edit_map(conn: &mut SqliteConnection, messages_before: i64) -
             SELECT
                 mm.staging_id,
                 mm.prod_id,
+                sv.n,
+                sv.newest,
+                (SELECT COUNT(*) FROM message_versions v WHERE v.message_id = mm.prod_id)
+                    AS held_n,
+                (SELECT MAX(v.edited_at) FROM message_versions v WHERE v.message_id = mm.prod_id)
+                    AS held_newest,
                 ROW_NUMBER() OVER (
-                    PARTITION BY mm.prod_id ORDER BY sv.n DESC, mm.staging_id DESC
+                    PARTITION BY mm.prod_id
+                    ORDER BY sv.newest DESC, sv.n DESC, mm.staging_id DESC
                 ) AS pick
             FROM _promote_msg_map mm
             JOIN (
-                SELECT message_id, COUNT(*) AS n
+                SELECT message_id, COUNT(*) AS n, MAX(edited_at) AS newest
                 FROM staging_message_versions
                 GROUP BY message_id
             ) sv ON sv.message_id = mm.staging_id
             WHERE mm.prod_id <= $1
-              AND sv.n > (
-                  SELECT COUNT(*) FROM message_versions v WHERE v.message_id = mm.prod_id
-              )
         )
         WHERE pick = 1
+          AND CASE
+              WHEN newest IS NOT NULL AND held_newest IS NOT NULL
+                  THEN newest > held_newest OR (newest = held_newest AND n > held_n)
+              ELSE n > held_n
+          END
         ",
     )
     .bind(messages_before)
@@ -990,11 +1010,20 @@ pub async fn write_edit_map(conn: &mut SqliteConnection, messages_before: i64) -
     .rows_affected())
 }
 
+/// What [`promote_later_edits`] did.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct PromotedEdits {
+    /// Stored messages that took the text of a later edit.
+    pub messages: u64,
+    /// Earlier versions those messages held, deleted for the staged ones.
+    pub versions_removed: u64,
+}
+
 /// Give each message `_promote_edit_map` names the text of its staged row,
 /// and delete the earlier versions it held, which
 /// [`promote_earlier_versions`] then replaces with the staged ones. The
 /// content key is cleared, because it hashes the text: the content-key fill
-/// computes it again. Returns how many messages changed.
+/// computes it again.
 ///
 /// The versions' search entries are not touched here: the caller removes
 /// them first (`schema::unindex_versions_of_edited_messages`), while the
@@ -1003,8 +1032,8 @@ pub async fn write_edit_map(conn: &mut SqliteConnection, messages_before: i64) -
 /// # Errors
 ///
 /// Returns an error when a statement fails.
-pub async fn promote_later_edits(conn: &mut SqliteConnection) -> Result<u64> {
-    let changed = sqlx::query(
+pub async fn promote_later_edits(conn: &mut SqliteConnection) -> Result<PromotedEdits> {
+    let messages = sqlx::query(
         r"
         UPDATE messages
         SET body = sm.body,
@@ -1017,15 +1046,19 @@ pub async fn promote_later_edits(conn: &mut SqliteConnection) -> Result<u64> {
     .execute(&mut *conn)
     .await?
     .rows_affected();
-    sqlx::query(
+    let versions_removed = sqlx::query(
         r"
         DELETE FROM message_versions
         WHERE message_id IN (SELECT prod_id FROM _promote_edit_map)
         ",
     )
     .execute(&mut *conn)
-    .await?;
-    Ok(changed)
+    .await?
+    .rows_affected();
+    Ok(PromotedEdits {
+        messages,
+        versions_removed,
+    })
 }
 
 /// What [`promote_attachments`] did.

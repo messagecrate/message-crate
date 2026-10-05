@@ -672,6 +672,40 @@ async fn text_and_key(conn: &mut sqlx::SqliteConnection) -> (String, Option<Stri
         .unwrap()
 }
 
+/// One earlier version of `g-edit`, as an `edits` entry.
+fn edit_version(part: u32, text: &str, ms: i64) -> String {
+    format!(r#"{{"part_index":{part},"text":"{text}","edited_at_unix_ms":{ms}}}"#)
+}
+
+/// A conversation file holding the one message `g-edit`, whose text is
+/// `text` and whose earlier versions are `versions` (from [`edit_version`]),
+/// written to `name` under `dir`.
+fn edit_file(dir: &Path, name: &str, text: &str, versions: &[String]) -> PathBuf {
+    let header = r#"{"schema_version":9,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550123","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550123","display_name":null}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}"#;
+    let edits = versions.join(",");
+    let line = format!(
+        r#"{{"guid":"g-edit","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"{text}","attachments":[],"edits":[{edits}],"imessage":null,"source":null}}"#
+    );
+    write_jsonl(dir, name, &format!("{header}\n{line}\n"))
+}
+
+/// Append-mode options for the `g-edit` tests.
+fn edit_options<'a>(
+    assets: &'a Path,
+    root: &'a Path,
+    fill_content_keys: bool,
+) -> ImportOptions<'a> {
+    ImportOptions::fixed(FixedImportArgs {
+        assets_dir: assets,
+        asset_root: root,
+        mode: ImportMode::Append,
+        source: "imessage",
+        account_id: TEST_ACCOUNT,
+        fill_content_keys,
+        import_id: None,
+    })
+}
+
 /// A message imported before it was edited takes the later text when an
 /// append-mode import carries the edit, and its content key is computed
 /// again from that text, the key a first import of the later backup gives
@@ -681,36 +715,13 @@ async fn text_and_key(conn: &mut sqlx::SqliteConnection) -> (String, Option<Stri
 async fn append_gives_a_later_edit_to_a_stored_message_with_a_new_content_key() {
     let tmp = TempDir::new().unwrap();
     let assets = tmp.path().join("assets");
-    let header = r#"{"schema_version":9,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550123","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550123","display_name":null}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}"#;
-    let line = |text: &str, edits: &str| {
-        format!(
-            r#"{{"guid":"g-edit","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"{text}","attachments":[],{edits}"imessage":null,"source":null}}"#
-        )
-    };
-    let options = ImportOptions::fixed(FixedImportArgs {
-        assets_dir: &assets,
-        asset_root: tmp.path(),
-        mode: ImportMode::Append,
-        source: "imessage",
-        account_id: TEST_ACCOUNT,
-        fill_content_keys: true,
-        import_id: None,
-    });
-    let before = write_jsonl(
-        tmp.path(),
-        "before.jsonl",
-        &format!("{header}\n{}\n", line("see you at six", "")),
-    );
-    let after = write_jsonl(
+    let options = edit_options(&assets, tmp.path(), true);
+    let before = edit_file(tmp.path(), "before.jsonl", "see you at six", &[]);
+    let after = edit_file(
         tmp.path(),
         "after.jsonl",
-        &format!(
-            "{header}\n{}\n",
-            line(
-                "see you at seven",
-                r#""edits":[{"part_index":0,"text":"see you at six","edited_at_unix_ms":1426183462000}],"#
-            )
-        ),
+        "see you at seven",
+        &[edit_version(0, "see you at six", 1426183462000)],
     );
 
     let fresh = tmp.path().join("fresh.db");
@@ -738,6 +749,50 @@ async fn append_gives_a_later_edit_to_a_stored_message_with_a_new_content_key() 
         (later_text, later_key),
         "the stored message reads as a first import of the later backup"
     );
+}
+
+/// An earlier backup appended after a later one leaves the later edit in
+/// place even when it lists more earlier versions. Apple Messages drops the
+/// earlier versions of a part unsent after its edits, so the later backup
+/// here lists two, both of part 0, and the earlier one three, two of them of
+/// part 1, which was unsent since. The later backup's newest version is the
+/// newer, and that decides; a count would bring the unsent part back.
+#[tokio::test]
+async fn append_keeps_a_later_edit_against_an_earlier_backup_listing_more_versions() {
+    let tmp = TempDir::new().unwrap();
+    let db = tmp.path().join("messagecrate.db");
+    let assets = tmp.path().join("assets");
+    let options = edit_options(&assets, tmp.path(), false);
+    let later = edit_file(
+        tmp.path(),
+        "later.jsonl",
+        "see you at eight",
+        &[
+            edit_version(0, "see you at six", 1426183462000),
+            edit_version(0, "see you at seven", 1426183600000),
+        ],
+    );
+    let earlier = edit_file(
+        tmp.path(),
+        "earlier.jsonl",
+        "see you at seven bring snacks",
+        &[
+            edit_version(0, "see you at six", 1426183462000),
+            edit_version(1, "bring cake", 1426183462000),
+            edit_version(1, "bring pie", 1426183500000),
+        ],
+    );
+    import_jsonl_files(&db, &[later], &options).await.unwrap();
+    import_jsonl_files(&db, &[earlier], &options).await.unwrap();
+
+    let (_pool, mut conn) = open_verify(&db).await;
+    let (text, _) = text_and_key(&mut conn).await;
+    assert_eq!(text, "see you at eight");
+    let versions: Vec<String> = sqlx::query_scalar("SELECT text FROM message_versions ORDER BY id")
+        .fetch_all(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(versions, ["see you at six", "see you at seven"]);
 }
 
 #[tokio::test]
