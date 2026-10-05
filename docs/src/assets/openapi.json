@@ -14293,6 +14293,13 @@
           "mode": {
             "$ref": "#/components/schemas/ImportMode"
           },
+          "run_dir": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Absolute path to the run directory on the client that owns this Import Run."
+          },
           "source": {
             "type": "string"
           },
@@ -14312,13 +14319,6 @@
                 "type": "null"
               }
             ]
-          },
-          "staging_dir": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Absolute staging path on the client that owns this Import Run."
           },
           "tool": {
             "type": [
@@ -15241,8 +15241,8 @@
           "finished_at",
           "parse_ms",
           "prepare_ms",
+          "run_dir",
           "stage",
-          "staging_dir",
           "tool",
           "upload_ms"
         ],
@@ -15348,6 +15348,13 @@
             "format": "int64",
             "description": "Time spent preparing conversation files, when finished."
           },
+          "run_dir": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Absolute path to the run directory on the client that owns the run."
+          },
           "source": {
             "type": "string",
             "description": "Source id the run imports."
@@ -15368,13 +15375,6 @@
                 "type": "null"
               }
             ]
-          },
-          "staging_dir": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Absolute path to the run directory on the client that owns the run."
           },
           "started_at": {
             "type": "string",
@@ -17400,8 +17400,8 @@
                 "finished_at",
                 "parse_ms",
                 "prepare_ms",
+                "run_dir",
                 "stage",
-                "staging_dir",
                 "tool",
                 "upload_ms"
               ],
@@ -17507,6 +17507,13 @@
                   "format": "int64",
                   "description": "Time spent preparing conversation files, when finished."
                 },
+                "run_dir": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "Absolute path to the run directory on the client that owns the run."
+                },
                 "source": {
                   "type": "string",
                   "description": "Source id the run imports."
@@ -17527,13 +17534,6 @@
                       "type": "null"
                     }
                   ]
-                },
-                "staging_dir": {
-                  "type": [
-                    "string",
-                    "null"
-                  ],
-                  "description": "Absolute path to the run directory on the client that owns the run."
                 },
                 "started_at": {
                   "type": "string",

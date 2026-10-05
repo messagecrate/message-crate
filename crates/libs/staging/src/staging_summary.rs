@@ -177,11 +177,11 @@ pub struct SummaryProgress {
 /// Returns an error when the directory cannot be read or a conversation file
 /// cannot be parsed.
 pub fn summarize_staging(
-    staging_dir: &Path,
+    run_dir: &Path,
     options: &TranscodeOptions,
     on_progress: &mut dyn FnMut(SummaryProgress),
 ) -> Result<StagingSummary> {
-    let files = conversation_files(staging_dir)?;
+    let files = conversation_files(run_dir)?;
 
     let mut summary = StagingSummary {
         asset_max_bytes: options.asset_max_bytes,
@@ -247,7 +247,7 @@ pub fn summarize_staging(
             && classified_paths.insert(rel.to_string())
         {
             classify_one(
-                staging_dir,
+                run_dir,
                 rel,
                 att.original_name.as_deref(),
                 options,
@@ -297,14 +297,14 @@ fn owner_identity_of<'a>(msg: &'a IrMessage, export_owner: Option<&'a str>) -> O
 /// silently, since a document recording a path with no bytes behind it is
 /// exactly the "not there" case this whole function exists to skip.
 fn classify_one(
-    staging_dir: &Path,
+    run_dir: &Path,
     rel: &str,
     original_name: Option<&str>,
     options: &TranscodeOptions,
     has_media_step: bool,
     summary: &mut StagingSummary,
 ) {
-    let Ok(abs) = message_ir::safe_attachment_path(staging_dir, rel) else {
+    let Ok(abs) = message_ir::safe_attachment_path(run_dir, rel) else {
         return;
     };
     let Ok(meta) = std::fs::metadata(&abs) else {

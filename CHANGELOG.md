@@ -248,6 +248,9 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-04 **A program that reads Import Runs from the server finds each
+  run's directory under a new name.** The old name read as the Staging
+  Directory, which holds every run's directory. Nothing changes on screen.
 - 2026-10-04 **Import says "Media stage" where it said "media step" or
   "Media pass".** An Import Run that stopped during Media offers to carry on
   with "The Media stage did not finish", and starting something else while
@@ -1512,6 +1515,9 @@ released versions carry their date on the heading.
 
 ### Upgrading
 
+- If a script passes `--staging-dir` to the server's `import` command,
+  change it to `--input`, because the command no longer takes that name.
+  `--dir` and `--export-dir` still work.
 - An export, or a conversion with no output directory chosen, now goes into
   the Export Directory; look for it there, through Settings → System, rather
   than in the Staging Directory.

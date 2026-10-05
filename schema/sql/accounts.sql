@@ -206,7 +206,7 @@ CREATE TABLE IF NOT EXISTS imports (
     -- Absolute path to this run's directory in the Staging Directory on the client. The
     -- database holds the pointer so resuming means asking the server where
     -- to go, rather than guessing from a directory listing.
-    staging_dir TEXT,
+    run_dir TEXT,
     -- Which install created the run, so another machine can say where
     -- it belongs instead of failing to open a path that was never local.
     device_id TEXT,

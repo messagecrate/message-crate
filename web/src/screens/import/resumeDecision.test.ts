@@ -10,7 +10,7 @@ function importRun(overrides: Partial<ActiveImportRun> = {}): ActiveImportRun {
     status: "running",
     started_at: "2026-08-30T00:00:00Z",
     stage: "upload",
-    staging_dir: "/home/u/message-crate/staging-260830",
+    run_dir: "/home/u/message-crate/staging-260830",
     device_id: "this-device",
     form: { source: "imessage-ios" },
     source_fingerprint: null,
@@ -70,7 +70,7 @@ describe("resumeDecisionFor", () => {
   it("puts a run that never recorded a directory ahead of the directory check", () => {
     expect(
       resumeDecisionFor({
-        run: importRun({ staging_dir: null }),
+        run: importRun({ run_dir: null }),
         deviceId: "this-device",
         directory: "unknown",
         fingerprint: "unknown",

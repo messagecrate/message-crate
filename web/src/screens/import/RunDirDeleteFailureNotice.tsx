@@ -1,8 +1,8 @@
 import Button from "../../components/Button";
-import type { StagingDeleteFailure } from "./importRunStore";
+import type { RunDirDeleteFailure } from "./importRunStore";
 
-type StagingDeleteFailureNoticeProps = {
-  failure: StagingDeleteFailure;
+type RunDirDeleteFailureNoticeProps = {
+  failure: RunDirDeleteFailure;
   onDismiss: () => void;
 };
 
@@ -11,10 +11,10 @@ type StagingDeleteFailureNoticeProps = {
  * Run is still on disk, and why. A run directory can hold several
  * gigabytes, so a failed delete is never dropped without a word.
  */
-export default function StagingDeleteFailureNotice({
+export default function RunDirDeleteFailureNotice({
   failure,
   onDismiss,
-}: StagingDeleteFailureNoticeProps) {
+}: RunDirDeleteFailureNoticeProps) {
   return (
     <div
       className="mb-5 rounded-md border border-danger-soft-border bg-danger-soft-bg p-3"

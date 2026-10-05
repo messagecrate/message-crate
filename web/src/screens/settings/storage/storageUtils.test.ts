@@ -21,7 +21,7 @@ function accountImportRun(partial: Partial<AccountImportRun> = {}): AccountImpor
     dedupe: false,
     device_id: null,
     stage: null,
-    staging_dir: null,
+    run_dir: null,
     message_count: 10,
     contacts_new: 0,
     contacts_changed: 0,

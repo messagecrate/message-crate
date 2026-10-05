@@ -3,8 +3,8 @@ import { currentDesktopJob, holdDesktopJob } from "./desktopJob";
 import type { UploadFinishedReport } from "./tauri";
 import {
   awaitTauriJob,
-  invokeCreateStagingDir,
-  invokeDeleteStaging,
+  invokeCreateRunDir,
+  invokeDeleteRunDir,
   invokeReadImportRunRecord,
   invokeSaveImportRunRecord,
   invokeSummarizeStaging,
@@ -176,27 +176,27 @@ describe("staging command wrappers name only the directory", () => {
   // setting as it is now, and a run started under an earlier setting would
   // be refused (#1154).
   it("sends no staging root with any staging command", async () => {
-    await invokeSummarizeStaging({ staging_dir: run });
-    await invokeTranscodeStaging({ staging_dir: run });
-    await invokeDeleteStaging({ staging_dir: run });
-    await invokeReadImportRunRecord({ staging_dir: run });
-    await invokeSaveImportRunRecord({ staging_dir: run, record: { issues: [] } });
+    await invokeSummarizeStaging({ run_dir: run });
+    await invokeTranscodeStaging({ run_dir: run });
+    await invokeDeleteRunDir({ run_dir: run });
+    await invokeReadImportRunRecord({ run_dir: run });
+    await invokeSaveImportRunRecord({ run_dir: run, record: { issues: [] } });
 
     expect(invoke.mock.calls).toEqual([
-      ["summarize_staging", { args: { stagingDir: run } }],
-      ["transcode_staging", { args: { stagingDir: run } }],
-      ["delete_staging", { args: { stagingDir: run } }],
-      ["read_import_run_record", { args: { stagingDir: run } }],
-      ["save_import_run_record", { args: { stagingDir: run, record: { issues: [] } } }],
+      ["summarize_staging", { args: { runDir: run } }],
+      ["transcode_staging", { args: { runDir: run } }],
+      ["delete_run_dir", { args: { runDir: run } }],
+      ["read_import_run_record", { args: { runDir: run } }],
+      ["save_import_run_record", { args: { runDir: run, record: { issues: [] } } }],
     ]);
   });
 
   it("asks the desktop process to make a run's directory", async () => {
     invoke.mockResolvedValue(run);
 
-    await expect(invokeCreateStagingDir("imessage-ios")).resolves.toBe(run);
+    await expect(invokeCreateRunDir("imessage-ios")).resolves.toBe(run);
 
-    expect(invoke).toHaveBeenCalledWith("create_staging_dir", { label: "imessage-ios" });
+    expect(invoke).toHaveBeenCalledWith("create_run_dir", { label: "imessage-ios" });
   });
 });
 

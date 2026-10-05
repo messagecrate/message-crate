@@ -11,7 +11,7 @@ import type { ActiveImportRun } from "../lib/importRun";
 import type { StagingSummary } from "../lib/tauri";
 import { mockedAuth, renderWithProviders } from "../test/providers";
 import { setupUser } from "../test/user";
-import type { StagingDeleteFailure } from "./import/importRunStore";
+import type { RunDirDeleteFailure } from "./import/importRunStore";
 import type { ResumeDecision } from "./import/resumeDecision";
 
 const hookState = vi.hoisted(() => ({
@@ -29,9 +29,9 @@ const hookState = vi.hoisted(() => ({
   mediaPartiallyRan: false,
   resumeError: null as string | null,
   sourceIdentities: null as string[] | null,
-  stagingDeleteFailure: null as StagingDeleteFailure | null,
+  runDirDeleteFailure: null as RunDirDeleteFailure | null,
 }));
-const dismissStagingDeleteFailureMock = vi.hoisted(() => vi.fn());
+const dismissRunDirDeleteFailureMock = vi.hoisted(() => vi.fn());
 const startImportMock = vi.hoisted(() => vi.fn());
 const resumeAtReviewMock = vi.hoisted(() => vi.fn());
 const approveMock = vi.hoisted(() => vi.fn());
@@ -42,7 +42,7 @@ const continueAfterIdentityStopMock = vi.hoisted(() => vi.fn());
 const cancelIdentityStopMock = vi.hoisted(() => vi.fn());
 const getActiveImportRunMock = vi.hoisted(() => vi.fn());
 const discardImportRunMock = vi.hoisted(() => vi.fn());
-const invokeDeleteStagingMock = vi.hoisted(() => vi.fn());
+const invokeDeleteRunDirMock = vi.hoisted(() => vi.fn());
 const invokePathStatMock = vi.hoisted(() => vi.fn());
 const apiPostMock = vi.hoisted(() => vi.fn());
 const apiGetMock = vi.hoisted(() => vi.fn());
@@ -62,7 +62,7 @@ vi.mock("./import/useImportJob", async (importOriginal) => {
       running: false,
       form: null,
       summaryView: null,
-      stagingDir: null,
+      runDir: null,
       importRunId: null,
       stagingSummary: hookState.stagingSummary,
       mediaSummary: hookState.mediaSummary,
@@ -81,16 +81,16 @@ vi.mock("./import/useImportJob", async (importOriginal) => {
       returnToForm: returnToFormMock,
       continueAfterIdentityStop: continueAfterIdentityStopMock,
       cancelIdentityStop: cancelIdentityStopMock,
-      stagingDeleteFailure: hookState.stagingDeleteFailure,
+      runDirDeleteFailure: hookState.runDirDeleteFailure,
       // The real one never throws: a failed close or delete is kept for the
       // notice, and its reading of the run record is the hook's own test.
-      discardRun: async (runId: number, stagingDir: string | null) => {
+      discardRun: async (runId: number, runDir: string | null) => {
         await Promise.allSettled([
           discardImportRunMock(runId),
-          stagingDir != null ? invokeDeleteStagingMock({ staging_dir: stagingDir }) : undefined,
+          runDir != null ? invokeDeleteRunDirMock({ run_dir: runDir }) : undefined,
         ]);
       },
-      dismissStagingDeleteFailure: dismissStagingDeleteFailureMock,
+      dismissRunDirDeleteFailure: dismissRunDirDeleteFailureMock,
     }),
   };
 });
@@ -118,7 +118,7 @@ vi.mock("../lib/tauri", () => ({
   invokeHomeDir: vi.fn().mockResolvedValue({ path: "/home/u", os: "linux" }),
   invokeIosBackupEncrypted: vi.fn().mockResolvedValue(null),
   invokePathStat: (...args: unknown[]) => invokePathStatMock(...args),
-  invokeDeleteStaging: (...args: unknown[]) => invokeDeleteStagingMock(...args),
+  invokeDeleteRunDir: (...args: unknown[]) => invokeDeleteRunDirMock(...args),
 }));
 
 vi.mock("../lib/auth", () => ({ useAuth: () => mockedAuth }));
@@ -207,7 +207,7 @@ function importRun(overrides: Partial<ActiveImportRun> = {}): ActiveImportRun {
     status: "running",
     started_at: "2026-08-30T00:00:00Z",
     stage: "upload",
-    staging_dir: "/home/u/message-crate/staging-260830",
+    run_dir: "/home/u/message-crate/staging-260830",
     device_id: "this-device",
     form: { source: "imessage-ios" },
     source_fingerprint: null,
@@ -266,7 +266,7 @@ describe("ImportScreen entering Import", () => {
     hookState.mediaPartiallyRan = false;
     hookState.resumeError = null;
     hookState.sourceIdentities = null;
-    hookState.stagingDeleteFailure = null;
+    hookState.runDirDeleteFailure = null;
     startImportMock.mockReset();
     resumeAtReviewMock.mockReset();
     resumeAtReviewMock.mockResolvedValue(undefined);
@@ -279,8 +279,8 @@ describe("ImportScreen entering Import", () => {
     getActiveImportRunMock.mockReset();
     discardImportRunMock.mockReset();
     discardImportRunMock.mockResolvedValue(undefined);
-    invokeDeleteStagingMock.mockReset();
-    invokeDeleteStagingMock.mockResolvedValue(undefined);
+    invokeDeleteRunDirMock.mockReset();
+    invokeDeleteRunDirMock.mockResolvedValue(undefined);
     invokePathStatMock.mockReset();
     invokePathStatMock.mockResolvedValue({ exists: true, isFile: false, isDirectory: true });
     apiPostMock.mockReset();
@@ -407,7 +407,7 @@ describe("ImportScreen entering Import", () => {
       importRun({
         stage: "upload",
         device_id: "this-device",
-        staging_dir: "/home/u/message-crate/staging-260830",
+        run_dir: "/home/u/message-crate/staging-260830",
       }),
     );
     renderWithProviders(<ImportScreen />);
@@ -416,8 +416,8 @@ describe("ImportScreen entering Import", () => {
     await user.click(screen.getByText("discard-action"));
 
     expect(discardImportRunMock).toHaveBeenCalledWith(7);
-    expect(invokeDeleteStagingMock).toHaveBeenCalledWith({
-      staging_dir: "/home/u/message-crate/staging-260830",
+    expect(invokeDeleteRunDirMock).toHaveBeenCalledWith({
+      run_dir: "/home/u/message-crate/staging-260830",
     });
     expect(await screen.findByTestId("import-form")).toBeInTheDocument();
   });
@@ -427,7 +427,7 @@ describe("ImportScreen entering Import", () => {
     // directory of several gigabytes on disk (#1154).
     const user = setupUser();
     getActiveImportRunMock.mockResolvedValue(null);
-    hookState.stagingDeleteFailure = {
+    hookState.runDirDeleteFailure = {
       path: "/home/u/message-crate/staging-260830",
       reason: "Permission denied",
     };
@@ -437,7 +437,7 @@ describe("ImportScreen entering Import", () => {
     expect(notice).toHaveTextContent("/home/u/message-crate/staging-260830");
     expect(notice).toHaveTextContent("Permission denied");
     await user.click(screen.getByRole("button", { name: "Dismiss" }));
-    expect(dismissStagingDeleteFailureMock).toHaveBeenCalledTimes(1);
+    expect(dismissRunDirDeleteFailureMock).toHaveBeenCalledTimes(1);
   });
 
   it("never touches disk when discarding another device's run", async () => {
@@ -449,7 +449,7 @@ describe("ImportScreen entering Import", () => {
       importRun({
         stage: "upload",
         device_id: "another-device",
-        staging_dir: "/home/u/message-crate/staging-260830",
+        run_dir: "/home/u/message-crate/staging-260830",
       }),
     );
     renderWithProviders(<ImportScreen />);
@@ -459,7 +459,7 @@ describe("ImportScreen entering Import", () => {
     await user.click(screen.getByText("discard-action"));
 
     expect(discardImportRunMock).toHaveBeenCalledWith(7);
-    expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
     expect(await screen.findByTestId("import-form")).toBeInTheDocument();
   });
 
@@ -468,7 +468,7 @@ describe("ImportScreen entering Import", () => {
     getActiveImportRunMock.mockResolvedValue(
       importRun({
         stage: "upload",
-        staging_dir: "/home/u/message-crate/staging-260830",
+        run_dir: "/home/u/message-crate/staging-260830",
         form: {
           source: "imessage-ios",
           backupPath: "/backups/iphone.tar",
@@ -502,7 +502,7 @@ describe("ImportScreen entering Import", () => {
     expect(startImportMock).toHaveBeenCalledTimes(1);
     const [form, resume] = startImportMock.mock.calls[0] as [unknown, unknown];
     expect(form).toMatchObject({ source: "imessage-ios", backupPath: "/backups/iphone.tar" });
-    expect(resume).toEqual({ runId: 7, stagingDir: "/home/u/message-crate/staging-260830" });
+    expect(resume).toEqual({ runId: 7, runDir: "/home/u/message-crate/staging-260830" });
     expect(discardImportRunMock).not.toHaveBeenCalled();
   });
 
@@ -541,7 +541,7 @@ describe("ImportScreen entering Import", () => {
       getActiveImportRunMock.mockResolvedValue(
         importRun({
           stage,
-          staging_dir: "/home/u/message-crate/staging-260830",
+          run_dir: "/home/u/message-crate/staging-260830",
           form: restorableForm,
         }),
       );
@@ -640,8 +640,8 @@ describe("ImportScreen entering Import", () => {
     expect(discardImportRunMock).toHaveBeenCalledWith(7);
     // The old directory goes with the run: a restart writes into a new one,
     // and nothing will ever reach this one again.
-    expect(invokeDeleteStagingMock).toHaveBeenCalledWith({
-      staging_dir: "/home/u/message-crate/staging-260830",
+    expect(invokeDeleteRunDirMock).toHaveBeenCalledWith({
+      run_dir: "/home/u/message-crate/staging-260830",
     });
     expect(startImportMock).toHaveBeenCalledTimes(1);
     const [form, resume] = startImportMock.mock.calls[0] as [unknown, unknown];
@@ -703,13 +703,13 @@ describe("ImportScreen entering Import", () => {
     await user.click(screen.getByText("resume-action"));
 
     expect(discardImportRunMock).not.toHaveBeenCalled();
-    expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
     expect(startImportMock).toHaveBeenCalledTimes(1);
     const [, resume, resumeWrite] = startImportMock.mock.calls[0] as [unknown, unknown, unknown];
     expect(resume).toBeUndefined();
     expect(resumeWrite).toEqual({
       runId: 7,
-      stagingDir: "/home/u/message-crate/staging-260830",
+      runDir: "/home/u/message-crate/staging-260830",
       identities: null,
     });
   });
@@ -1022,7 +1022,7 @@ describe("ImportScreen during a run", () => {
     hookState.mediaPartiallyRan = false;
     hookState.resumeError = null;
     hookState.sourceIdentities = null;
-    hookState.stagingDeleteFailure = null;
+    hookState.runDirDeleteFailure = null;
     startImportMock.mockReset();
     resumeAtReviewMock.mockReset();
     resumeAtReviewMock.mockResolvedValue(undefined);

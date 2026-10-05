@@ -63,14 +63,14 @@ const COPY: Record<ResumableKind, PanelCopy> = {
   },
   // resumeDecisionFor routes here both when the staged directory has gone
   // missing and when the run never recorded one — every run created
-  // outside the desktop app stores a null staging_dir — so the copy names
+  // outside the desktop app stores a null run_dir — so the copy names
   // the path only when there is one.
   directory_missing: {
     heading: (run) =>
-      run.staging_dir ? "The staged files are gone" : "There is nothing staged to pick up",
+      run.run_dir ? "The staged files are gone" : "There is nothing staged to pick up",
     body: (run) =>
-      run.staging_dir
-        ? `This import's directory is no longer at ${run.staging_dir}. Discarding it lets you start a new one.`
+      run.run_dir
+        ? `This import's directory is no longer at ${run.run_dir}. Discarding it lets you start a new one.`
         : "This import did not record a staged directory, so there is nothing here to carry on from. Discarding it lets you start a new one.",
     primary: { label: "Discard this import", action: "discard" },
   },
@@ -79,7 +79,7 @@ const COPY: Record<ResumableKind, PanelCopy> = {
   directory_unknown: {
     heading: () => "The staged files could not be checked",
     body: (run) =>
-      `Message Crate could not check ${run.staging_dir ?? "this import's directory"}. Open Import again to check once more, or discard this import to start a new one.`,
+      `Message Crate could not check ${run.run_dir ?? "this import's directory"}. Open Import again to check once more, or discard this import to start a new one.`,
     primary: { label: "Discard this import", action: "discard" },
   },
   other_device: {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { accountStagingDirectories, buildSourceFingerprint } from "./importRun";
+import { accountRunDirectories, buildSourceFingerprint } from "./importRun";
 
 const listEveryImport = vi.hoisted(() => vi.fn());
 const invokePathStat = vi.hoisted(() => vi.fn());
@@ -14,15 +14,15 @@ vi.mock("./tauri", async (importOriginal) => ({
   invokePathStat: (...a: unknown[]) => invokePathStat(...a),
 }));
 
-describe("accountStagingDirectories", () => {
+describe("accountRunDirectories", () => {
   // A run's directory is on whichever computer ran it, so a deleted account's
   // directories are named only when they are on this one (#1491).
   it("names each run's directory once, and only when it is on this computer", async () => {
     listEveryImport.mockResolvedValue([
-      { id: 3, staging_dir: "/staging/iphone" },
-      { id: 2, staging_dir: null },
-      { id: 1, staging_dir: "/staging/iphone" },
-      { id: 0, staging_dir: "/other-computer/android" },
+      { id: 3, run_dir: "/staging/iphone" },
+      { id: 2, run_dir: null },
+      { id: 1, run_dir: "/staging/iphone" },
+      { id: 0, run_dir: "/other-computer/android" },
     ]);
     invokePathStat.mockImplementation(async (path: string) => ({
       exists: path === "/staging/iphone",
@@ -32,7 +32,7 @@ describe("accountStagingDirectories", () => {
       modifiedUnixMs: null,
     }));
 
-    expect(await accountStagingDirectories()).toEqual(["/staging/iphone"]);
+    expect(await accountRunDirectories()).toEqual(["/staging/iphone"]);
     expect(invokePathStat).toHaveBeenCalledTimes(2);
   });
 });

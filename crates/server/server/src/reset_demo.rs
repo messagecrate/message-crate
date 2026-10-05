@@ -99,8 +99,8 @@ struct DemoImportSource {
     label: &'static str,
     /// Source id recorded on the imported conversations.
     source: &'static str,
-    /// Staging directory inside the prepared bundle.
-    staging_dir: fn(&PreparedBundle) -> &PathBuf,
+    /// The directory of conversation files inside the prepared bundle.
+    export_dir: fn(&PreparedBundle) -> &PathBuf,
     /// The first source replaces the demo account's data; the rest append.
     mode: ImportMode,
 }
@@ -109,19 +109,19 @@ const DEMO_IMPORT_SOURCES: [DemoImportSource; 3] = [
     DemoImportSource {
         label: "imessage",
         source: IMESSAGE_SOURCE,
-        staging_dir: |bundle| &bundle.imessage_dir,
+        export_dir: |bundle| &bundle.imessage_dir,
         mode: ImportMode::Replace,
     },
     DemoImportSource {
         label: "android",
         source: SBR_SOURCE,
-        staging_dir: |bundle| &bundle.sbr_dir,
+        export_dir: |bundle| &bundle.sbr_dir,
         mode: ImportMode::Append,
     },
     DemoImportSource {
         label: "whatsapp",
         source: WHATSAPP_SOURCE,
-        staging_dir: |bundle| &bundle.whatsapp_dir,
+        export_dir: |bundle| &bundle.whatsapp_dir,
         mode: ImportMode::Append,
     },
 ];
@@ -134,7 +134,7 @@ fn print_reset_header(account_id: i64, prepared: &PreparedBundle, db: &dyn std::
         println!(
             "  {:<14}{}",
             format!("{}:", source.label),
-            (source.staging_dir)(prepared).display()
+            (source.export_dir)(prepared).display()
         );
     }
     println!("  db:           {db}");
@@ -832,7 +832,7 @@ async fn import_demo_sources_with(
 ) -> Result<imports_api::ImportCounts> {
     let mut totals = imports_api::ImportCounts::default();
     for source in &DEMO_IMPORT_SOURCES {
-        let export_dir = (source.staging_dir)(prepared);
+        let export_dir = (source.export_dir)(prepared);
         let paths = crate::import_cli::list_jsonl_files(export_dir)?;
         let assets_dir = cfg.paths.assets_dir_for_account(account_id);
         let mut conn = db.acquire().await?;

@@ -5,7 +5,7 @@ import PathList from "./PathList";
 import PlainButton from "./PlainButton";
 
 /** The directories of the account's Import Runs on this computer, as the dialog shows them. */
-export type StagingDirectoriesCheck = {
+export type RunDirectoriesCheck = {
   checking: boolean;
   paths: readonly string[];
   /** Why they could not be looked for, or empty. */
@@ -18,8 +18,8 @@ export type StagingDirectoriesCheck = {
  * set, so the dialog asks for it only then and confirms with none otherwise.
  * `error` is why the last confirm failed; the dialog stays open to retry.
  *
- * `stagingDirectories`, in the desktop app, are the account's Staging
- * Directories on this computer, deleted with the account. The dialog names them before
+ * `runDirectories`, in the desktop app, are the account's run
+ * directories on this computer, deleted with the account. The dialog names them before
  * the person confirms, and holds the confirm while it looks for them.
  *
  * The typed username and password live in `DeleteAccountForm`, which exists
@@ -29,7 +29,7 @@ export default function DeleteAccountDialog({
   open,
   username,
   hasPassword,
-  stagingDirectories,
+  runDirectories,
   deleting = false,
   error = "",
   onClose,
@@ -38,7 +38,7 @@ export default function DeleteAccountDialog({
   open: boolean;
   username: string;
   hasPassword: boolean;
-  stagingDirectories?: StagingDirectoriesCheck;
+  runDirectories?: RunDirectoriesCheck;
   deleting?: boolean;
   error?: string;
   onClose: () => void;
@@ -56,7 +56,7 @@ export default function DeleteAccountDialog({
       <DeleteAccountForm
         username={username}
         hasPassword={hasPassword}
-        stagingDirectories={stagingDirectories}
+        runDirectories={runDirectories}
         deleting={deleting}
         error={error}
         onClose={onClose}
@@ -69,7 +69,7 @@ export default function DeleteAccountDialog({
 function DeleteAccountForm({
   username,
   hasPassword,
-  stagingDirectories,
+  runDirectories,
   deleting,
   error,
   onClose,
@@ -77,7 +77,7 @@ function DeleteAccountForm({
 }: {
   username: string;
   hasPassword: boolean;
-  stagingDirectories?: StagingDirectoriesCheck;
+  runDirectories?: RunDirectoriesCheck;
   deleting: boolean;
   error: string;
   onClose: () => void;
@@ -89,7 +89,7 @@ function DeleteAccountForm({
   const expected = username.trim();
   const matches =
     expected.length > 0 && typedUsername === expected && (!hasPassword || password.length > 0);
-  const checkingDirectories = stagingDirectories?.checking ?? false;
+  const checkingDirectories = runDirectories?.checking ?? false;
 
   return (
     <>
@@ -109,7 +109,7 @@ function DeleteAccountForm({
         attachments will be permanently deleted.
       </p>
 
-      {stagingDirectories ? <StagingDirectoriesNote check={stagingDirectories} /> : null}
+      {runDirectories ? <RunDirectoriesNote check={runDirectories} /> : null}
 
       <label className="mt-5 block">
         <span className="text-[0.875rem] text-text">
@@ -157,7 +157,7 @@ function DeleteAccountForm({
 }
 
 /** Names the Import Runs' directories deleted with the account, or says why it cannot. */
-function StagingDirectoriesNote({ check }: { check: StagingDirectoriesCheck }) {
+function RunDirectoriesNote({ check }: { check: RunDirectoriesCheck }) {
   const text = "mt-3 text-[0.875rem] leading-relaxed text-muted";
   if (check.checking) {
     return (

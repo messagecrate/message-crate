@@ -37,7 +37,7 @@ use super::jobs::{cancel_running_job, spawn_job, start_job};
 use super::last_log_line_or;
 use super::paths::{logs_dir, scratch_dir};
 use crate::app_directories::RunLog;
-use crate::staging_directories::StagingDirectories;
+use crate::run_directories::RunDirectories;
 use crate::state::AppState;
 
 /// Ask this process to stop the job that is running. Does nothing when no
@@ -78,7 +78,7 @@ pub struct ExtractArgs {
     pub source: String,
     /// Path to the phone backup (a directory, database file, or XML file).
     pub path: String,
-    /// run directory `create_staging_dir` made, which the exporter writes
+    /// run directory `create_run_dir` made, which the exporter writes
     /// conversation files into.
     pub output_dir: String,
     /// Password for encrypted backups, when the source needs one.
@@ -153,7 +153,7 @@ pub struct ExtractArgs {
 #[tauri::command(async)]
 pub fn extract(
     state: tauri::State<'_, Arc<Mutex<AppState>>>,
-    directories: tauri::State<'_, StagingDirectories>,
+    directories: tauri::State<'_, RunDirectories>,
     app: tauri::AppHandle,
     args: ExtractArgs,
 ) -> Result<(), String> {

@@ -586,9 +586,9 @@ pub(crate) struct CreateImportRequest {
     /// Stage the run opens at. Defaults to `parse`.
     #[serde(default)]
     pub(crate) stage: Option<crate::db::imports::ImportStage>,
-    /// Absolute staging path on the client that owns this Import Run.
+    /// Absolute path to the run directory on the client that owns this Import Run.
     #[serde(default)]
-    pub(crate) staging_dir: Option<String>,
+    pub(crate) run_dir: Option<String>,
     /// Which install is creating the Import Run.
     #[serde(default)]
     pub(crate) device_id: Option<String>,
@@ -849,7 +849,7 @@ pub(crate) struct ImportRunSummary {
     /// Where a running run is; null once it is over.
     pub(crate) stage: Option<crate::db::imports::ImportStage>,
     /// Absolute path to the run directory on the client that owns the run.
-    pub(crate) staging_dir: Option<String>,
+    pub(crate) run_dir: Option<String>,
     /// Which install created the run.
     pub(crate) device_id: Option<String>,
     /// Import form snapshot, or null.
@@ -892,7 +892,7 @@ impl From<crate::db::imports::ListedImport> for ImportRunSummary {
             prepare_ms: row.prepare_ms,
             upload_ms: row.upload_ms,
             stage: row.stage,
-            staging_dir: row.staging_dir,
+            run_dir: row.run_dir,
             device_id: row.device_id,
             form: crate::db::imports::json_column(row.form_json),
             source_fingerprint: crate::db::imports::json_column(row.source_fingerprint),
@@ -1201,7 +1201,7 @@ pub(crate) async fn create_import(
         dedupe: body.dedupe,
         tool: body.tool.as_deref(),
         stage,
-        staging_dir: body.staging_dir.as_deref(),
+        run_dir: body.run_dir.as_deref(),
         device_id: body.device_id.as_deref(),
         form_json: form_json.as_deref(),
         source_fingerprint: fingerprint_json.as_deref(),

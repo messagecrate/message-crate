@@ -8,7 +8,7 @@ import { type ImportPhase, type ImportStep, stepsFor } from "./importProgressSta
 import type { ImportJobFormValues } from "./useImportJob";
 
 /** A run directory Message Crate could not delete, and the reason it gave. */
-export type StagingDeleteFailure = { path: string; reason: string };
+export type RunDirDeleteFailure = { path: string; reason: string };
 
 /**
  * Everything the Import screen shows about the account's one Import Run.
@@ -36,7 +36,7 @@ export type ImportRunState = {
   /** The settings the run started with; what "what you asked for" shows. */
   form: ImportJobFormValues | null;
   summaryView: ImportSummaryView | null;
-  stagingDir: string | null;
+  runDir: string | null;
   importRunId: number | null;
   /** What the run directory held once Staging finished; the Staging row's facts. */
   stagingSummary: StagingSummary | null;
@@ -83,7 +83,7 @@ export type ImportRunState = {
    * until the person dismisses it or a later delete of the directory succeeds,
    * so a directory of several gigabytes is never left behind unsaid.
    */
-  stagingDeleteFailure: StagingDeleteFailure | null;
+  runDirDeleteFailure: RunDirDeleteFailure | null;
 };
 
 export function initialImportRunState(steps: ImportStep[]): ImportRunState {
@@ -94,7 +94,7 @@ export function initialImportRunState(steps: ImportStep[]): ImportRunState {
     steps,
     form: null,
     summaryView: null,
-    stagingDir: null,
+    runDir: null,
     importRunId: null,
     stagingSummary: null,
     mediaSummary: null,
@@ -105,7 +105,7 @@ export function initialImportRunState(steps: ImportStep[]): ImportRunState {
     reviewError: null,
     computingSummary: false,
     sourceIdentities: null,
-    stagingDeleteFailure: null,
+    runDirDeleteFailure: null,
   };
 }
 

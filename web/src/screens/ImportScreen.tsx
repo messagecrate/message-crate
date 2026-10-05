@@ -50,6 +50,7 @@ import ImportFormFields from "./import/ImportFormFields";
 import ImportRunView from "./import/ImportRunView";
 import { isReviewPhase } from "./import/importRunStore";
 import ResumeImportPanel from "./import/ResumeImportPanel";
+import RunDirDeleteFailureNotice from "./import/RunDirDeleteFailureNotice";
 import {
   checkSourceFingerprint,
   type DirectoryCheck,
@@ -57,7 +58,6 @@ import {
   resumeDecisionFor,
   resumeReadsBackup,
 } from "./import/resumeDecision";
-import StagingDeleteFailureNotice from "./import/StagingDeleteFailureNotice";
 import { parseStoredStagingSummary, useImportJob } from "./import/useImportJob";
 
 const DEFAULT_SOURCE = IMESSAGE_DEFAULT_METHOD;
@@ -97,9 +97,9 @@ async function probePath(path: string): Promise<PathStat | null> {
  * directory, and reading it as gone would offer to discard staged work that
  * may well still be there.
  */
-async function stagingDirectoryCheck(stagingDir: string): Promise<DirectoryCheck> {
+async function runDirectoryCheck(runDir: string): Promise<DirectoryCheck> {
   try {
-    const stat = await invokePathStat(stagingDir);
+    const stat = await invokePathStat(runDir);
     return stat.exists && stat.isDirectory ? "present" : "missing";
   } catch {
     return "unknown";
@@ -115,7 +115,7 @@ export default function ImportScreen() {
     running,
     form,
     summaryView,
-    stagingDir,
+    runDir,
     importRunId,
     stagingSummary,
     mediaSummary,
@@ -135,9 +135,9 @@ export default function ImportScreen() {
     returnToForm,
     continueAfterIdentityStop,
     cancelIdentityStop,
-    stagingDeleteFailure,
+    runDirDeleteFailure,
     discardRun,
-    dismissStagingDeleteFailure,
+    dismissRunDirDeleteFailure,
   } = useImportJob();
   /** Which review the run is waiting at, or null while it is not waiting. */
   const reviewWaiting = isReviewPhase(phase)
@@ -270,9 +270,7 @@ export default function ImportScreen() {
     void (async () => {
       try {
         const run = await cache.fetch(keys.imports.running, (signal) => getActiveImportRun(signal));
-        const directory = run?.staging_dir
-          ? await stagingDirectoryCheck(run.staging_dir)
-          : "missing";
+        const directory = run?.run_dir ? await runDirectoryCheck(run.run_dir) : "missing";
         // Only a resume of the copy consults this; every later stage works
         // from the staged directory rather than the backup. The full stat, not
         // `probePath`'s narrowed one: the comparison needs the size and
@@ -339,7 +337,7 @@ export default function ImportScreen() {
    * Discard the run the panel offers (`discardRun`): it closes with the
    * Import Errors its record holds, and its directory goes, so it must not
    * orphan a multi-GB directory. A directory that could not be deleted is shown
-   * above the form (`stagingDeleteFailure`), never dropped without a word.
+   * above the form (`runDirDeleteFailure`), never dropped without a word.
    * A run staged on another device is never touched on disk here,
    * because its files are staged on that device. The check is the same
    * `device_id` check `resumeDecisionFor` uses to route to `other_device`,
@@ -347,7 +345,7 @@ export default function ImportScreen() {
    */
   async function discardOfferedRun(run: ActiveImportRun): Promise<void> {
     const thisDevice = !run.device_id || run.device_id === getDeviceId();
-    await discardRun(run.id, thisDevice ? run.staging_dir : null);
+    await discardRun(run.id, thisDevice ? run.run_dir : null);
   }
 
   async function handleDiscardResume(): Promise<void> {
@@ -402,11 +400,11 @@ export default function ImportScreen() {
         : storedForm;
 
       if (resume.kind === "resume_upload") {
-        if (!run.staging_dir) return; // resumeDecisionFor guarantees this; defensive only.
+        if (!run.run_dir) return; // resumeDecisionFor guarantees this; defensive only.
         setResume(NO_RESUME);
         await startImport(restoredForm, {
           runId: run.id,
-          stagingDir: run.staging_dir,
+          runDir: run.run_dir,
           // Without this, a resumed Upload has no plan to diff its expected
           // omissions against, which demotes an honest `completed` verdict
           // to `completed_with_issues` for exactly the interrupted-and-
@@ -418,18 +416,18 @@ export default function ImportScreen() {
       }
 
       if (resume.kind === "resume_review" || resume.kind === "resume_media") {
-        if (!run.staging_dir) return; // resumeDecisionFor guarantees this; defensive only.
+        if (!run.run_dir) return; // resumeDecisionFor guarantees this; defensive only.
         setResume(NO_RESUME);
         await resumeAtReview(run, restoredForm);
         return;
       }
 
       if (resume.kind === "resume_write") {
-        if (!run.staging_dir) return; // resumeDecisionFor guarantees this; defensive only.
+        if (!run.run_dir) return; // resumeDecisionFor guarantees this; defensive only.
         setResume(NO_RESUME);
         await startImport(restoredForm, undefined, {
           runId: run.id,
-          stagingDir: run.staging_dir,
+          runDir: run.run_dir,
           // The write is resumed rather than re-probed, so the Staging Review's identity
           // section has to come from what was recorded on the run at
           // creation rather than a fresh read of the backup.
@@ -717,10 +715,10 @@ export default function ImportScreen() {
 
   return (
     <div className={`min-w-0 p-6 ${phase === "form" ? "max-w-[640px]" : "max-w-5xl"}`}>
-      {stagingDeleteFailure && (
-        <StagingDeleteFailureNotice
-          failure={stagingDeleteFailure}
-          onDismiss={dismissStagingDeleteFailure}
+      {runDirDeleteFailure && (
+        <RunDirDeleteFailureNotice
+          failure={runDirDeleteFailure}
+          onDismiss={dismissRunDirDeleteFailure}
         />
       )}
       {phase === "form" && resumeChecked && resume.kind === "none" && (
@@ -836,7 +834,7 @@ export default function ImportScreen() {
           mediaSummary={mediaSummary}
           mediaFailedCount={mediaFailedCount}
           summaryView={summaryView}
-          stagingDir={stagingDir}
+          runDir={runDir}
           importRunId={importRunId}
           completionText={completionText}
           reviewWaiting={reviewWaiting}

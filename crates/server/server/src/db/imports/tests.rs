@@ -346,7 +346,7 @@ async fn running_import_run_round_trips_and_blocks_a_second() {
     );
 
     let args = StartImportArgs {
-        staging_dir: Some("/home/u/message-crate/staging-iphone-260830"),
+        run_dir: Some("/home/u/message-crate/staging-iphone-260830"),
         device_id: Some("device-a"),
         form_json: Some(r#"{"source":"imessage-ios"}"#),
         source_fingerprint: Some(r#"{"path":"/b","size_bytes":10}"#),
@@ -360,7 +360,7 @@ async fn running_import_run_round_trips_and_blocks_a_second() {
     assert_eq!(active.id, id);
     assert_eq!(active.stage, Some(ImportStage::Parse));
     assert_eq!(
-        active.staging_dir.as_deref(),
+        active.run_dir.as_deref(),
         Some("/home/u/message-crate/staging-iphone-260830")
     );
     assert_eq!(active.device_id.as_deref(), Some("device-a"));

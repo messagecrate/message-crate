@@ -1,6 +1,6 @@
-//! Convert or compress a Staging Directory, patching the conversation files it wrote.
+//! Convert or compress a run directory, patching the conversation files Staging wrote.
 //!
-//! This runs after the Staging Directory is complete and before anything is
+//! This runs after the run directory is complete and before anything is
 //! uploaded, so the import can stop and ask between the two. It commits one
 //! attachment at a time through a rename, which is what makes it resumable
 //! with no progress record: a file under its final derivative name is fully
@@ -125,7 +125,7 @@ pub(crate) const COMMITTED_SUFFIX: &str = "-mv";
 
 /// What the Media stage should do.
 ///
-/// Staging records these in the Staging Directory
+/// Staging records these in the run directory
 /// ([`write_media_settings`](crate::write_media_settings)), and the summary
 /// and the Media stage read them back from there, so the whole Import Run works to
 /// one set of values.
@@ -174,7 +174,7 @@ pub struct TranscodeReport {
     pub bytes_after: u64,
 }
 
-/// Convert or compress every original still staged under `staging_dir`.
+/// Convert or compress every original still staged under `run_dir`.
 ///
 /// Safe to call again after an interruption: it re-reads the directory and does
 /// whatever is left.
@@ -187,7 +187,7 @@ pub struct TranscodeReport {
 /// item-level issue, counted in the report and sent to `issues` as it
 /// happens, never an error.
 pub fn transcode_staged(
-    staging_dir: &Path,
+    run_dir: &Path,
     options: &TranscodeOptions,
     cancel: Option<&CancelFlag>,
     issues: Option<&IssueSink>,
@@ -210,10 +210,10 @@ pub fn transcode_staged(
         );
     }
 
-    let files = conversation_files(staging_dir)?;
+    let files = conversation_files(run_dir)?;
     // Counting up front costs a second parse of each conversation file and
     // buys an honest progress total, which is worth the re-read.
-    let total = count_remaining(staging_dir, &files, options.mode)?;
+    let total = count_remaining(run_dir, &files, options.mode)?;
     on_progress(TranscodeProgress { done: 0, total });
 
     let mut report = TranscodeReport::default();
@@ -221,7 +221,7 @@ pub fn transcode_staged(
     for jsonl in &files {
         check_cancel(cancel)?;
         let mut doc = read_conversation_jsonl(jsonl)?;
-        let work = pending_in(staging_dir, &doc, options.mode)?;
+        let work = pending_in(run_dir, &doc, options.mode)?;
         for item in work {
             check_cancel(cancel)?;
             // An earlier attempt could not convert this file, and this one
@@ -244,7 +244,7 @@ pub fn transcode_staged(
             match item {
                 PendingWork::Transcode { recorded_rel, src } => {
                     apply_transcode(
-                        staging_dir,
+                        run_dir,
                         jsonl,
                         &mut doc,
                         &recorded_rel,
@@ -257,7 +257,7 @@ pub fn transcode_staged(
                 }
                 PendingWork::HealTranscode { recorded_rel, src } => {
                     apply_transcode(
-                        staging_dir,
+                        run_dir,
                         jsonl,
                         &mut doc,
                         &recorded_rel,
@@ -296,13 +296,13 @@ pub fn transcode_staged(
     Ok(report)
 }
 
-/// `*.jsonl` files directly under `staging_dir`, sorted, non-recursive — the
+/// `*.jsonl` files directly under `run_dir`, sorted, non-recursive — the
 /// sink writes them flat (`FormatSink::open_prepared`).
 ///
 /// `pub(crate)`: shared with `staging_summary`, which walks the same list.
-pub(crate) fn conversation_files(staging_dir: &Path) -> Result<Vec<PathBuf>> {
-    let mut files: Vec<PathBuf> = std::fs::read_dir(staging_dir)
-        .with_context(|| format!("read {}", staging_dir.display()))?
+pub(crate) fn conversation_files(run_dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut files: Vec<PathBuf> = std::fs::read_dir(run_dir)
+        .with_context(|| format!("read {}", run_dir.display()))?
         .flatten()
         .map(|entry| entry.path())
         .filter(|path| path.extension().and_then(|e| e.to_str()) == Some("jsonl"))
@@ -312,11 +312,11 @@ pub(crate) fn conversation_files(staging_dir: &Path) -> Result<Vec<PathBuf>> {
 }
 
 /// Sum of [`pending_in`] over every conversation file — the progress total.
-fn count_remaining(staging_dir: &Path, files: &[PathBuf], mode: MediaMode) -> Result<usize> {
+fn count_remaining(run_dir: &Path, files: &[PathBuf], mode: MediaMode) -> Result<usize> {
     let mut total = 0usize;
     for jsonl in files {
         let doc = read_conversation_jsonl(jsonl)?;
-        total += pending_in(staging_dir, &doc, mode)?.len();
+        total += pending_in(run_dir, &doc, mode)?.len();
     }
     Ok(total)
 }
@@ -366,7 +366,7 @@ enum PendingWork {
 /// See the module docs for the pending rule, the crash-heal rule, and the
 /// aliasing repoint rule.
 fn pending_in(
-    staging_dir: &Path,
+    run_dir: &Path,
     doc: &ConversationDocument,
     mode: MediaMode,
 ) -> Result<Vec<PendingWork>> {
@@ -382,7 +382,7 @@ fn pending_in(
                 // the same path in this document.
                 continue;
             }
-            let abs = message_ir::safe_attachment_path(staging_dir, rel)?;
+            let abs = message_ir::safe_attachment_path(run_dir, rel)?;
             let stem = abs.file_stem().and_then(|s| s.to_str()).unwrap_or("");
             let committed = stem.ends_with(COMMITTED_SUFFIX);
 
@@ -412,12 +412,12 @@ fn pending_in(
                 // limit where this attachment's conversion had not (a
                 // derivative whose size varies right at the limit).
                 let orig_stem = &stem[..stem.len() - COMMITTED_SUFFIX.len()];
-                if let Some(found) = find_recoverable_original(staging_dir, orig_stem, mode)? {
+                if let Some(found) = find_recoverable_original(run_dir, orig_stem, mode)? {
                     out.push(PendingWork::HealTranscode {
                         recorded_rel: rel.to_string(),
                         src: found,
                     });
-                } else if let Some(size) = find_too_large_note(staging_dir, &abs, mode)? {
+                } else if let Some(size) = find_too_large_note(run_dir, &abs, mode)? {
                     out.push(PendingWork::DroppedTooLarge {
                         recorded_rel: rel.to_string(),
                         size,
@@ -443,7 +443,7 @@ fn pending_in(
             // for this kind of file at all — its absence has nothing to do
             // with the Media stage, and it is left alone.
             if let Some(name) = final_derivative_name_for_missing(&abs, mode) {
-                let derivative = staging_dir.join("attachments").join(&name);
+                let derivative = run_dir.join("attachments").join(&name);
                 if derivative.is_file() {
                     out.push(PendingWork::Repoint {
                         recorded_rel: rel.to_string(),
@@ -468,14 +468,14 @@ fn pending_in(
     Ok(out)
 }
 
-/// Find a file under `staging_dir/attachments` whose stem is `orig_stem` and
+/// Find a file under `run_dir/attachments` whose stem is `orig_stem` and
 /// that the Media stage would still touch — the crash-heal search.
 fn find_recoverable_original(
-    staging_dir: &Path,
+    run_dir: &Path,
     orig_stem: &str,
     mode: MediaMode,
 ) -> Result<Option<PathBuf>> {
-    find_in_attachments(staging_dir, |path| {
+    find_in_attachments(run_dir, |path| {
         (path.is_file()
             && path.file_stem().and_then(|s| s.to_str()) == Some(orig_stem)
             && media::derivative_name(path, mode).is_some())
@@ -490,15 +490,11 @@ fn find_recoverable_original(
 /// The note is named `{original_name}.too_large`, and the original's
 /// extension is not in the `-mv` name, so the search reads `attachments/`
 /// for a note whose original would get exactly `committed`'s name.
-fn find_too_large_note(
-    staging_dir: &Path,
-    committed: &Path,
-    mode: MediaMode,
-) -> Result<Option<u64>> {
+fn find_too_large_note(run_dir: &Path, committed: &Path, mode: MediaMode) -> Result<Option<u64>> {
     let Some(committed_name) = committed.file_name().and_then(|n| n.to_str()) else {
         return Ok(None);
     };
-    find_in_attachments(staging_dir, |path| {
+    find_in_attachments(run_dir, |path| {
         let original_name = path
             .file_name()
             .and_then(|n| n.to_str())
@@ -512,13 +508,13 @@ fn find_too_large_note(
 }
 
 /// The first `Some` that `found` returns for an entry of
-/// `staging_dir/attachments`, or `None` when no entry gives one or the directory
+/// `run_dir/attachments`, or `None` when no entry gives one or the directory
 /// does not exist.
 fn find_in_attachments<T>(
-    staging_dir: &Path,
+    run_dir: &Path,
     mut found: impl FnMut(&Path) -> Option<T>,
 ) -> Result<Option<T>> {
-    let attachments_dir = staging_dir.join("attachments");
+    let attachments_dir = run_dir.join("attachments");
     if !attachments_dir.is_dir() {
         return Ok(None);
     }
@@ -658,7 +654,7 @@ fn disk_attachment_fields(src: &Path) -> Result<DiskAttachmentFields> {
 /// transcode.
 #[allow(clippy::too_many_arguments)]
 fn apply_transcode(
-    staging_dir: &Path,
+    run_dir: &Path,
     jsonl: &Path,
     doc: &mut ConversationDocument,
     recorded_rel: &str,
@@ -672,7 +668,7 @@ fn apply_transcode(
         report.skipped += 1;
         return Ok(());
     };
-    let attachments_dir = staging_dir.join("attachments");
+    let attachments_dir = run_dir.join("attachments");
     let final_path = attachments_dir.join(&name);
     let marker = attachments_dir.join(format!("{name}{IN_PROGRESS_SUFFIX}"));
     let original_len = std::fs::metadata(src).map_or(0, |m| m.len());

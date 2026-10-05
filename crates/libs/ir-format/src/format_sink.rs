@@ -145,7 +145,7 @@ impl FormatSink {
     ) -> Result<(Self, PathBuf)> {
         if !has_export_sentinel(output) {
             anyhow::bail!(
-                "cannot resume into {}: it is not a staging directory from a previous run",
+                "cannot resume into {}: it is not a directory a previous run staged into",
                 output.display()
             );
         }

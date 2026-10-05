@@ -1,7 +1,7 @@
 //! The Staging Directory and the run directories this app made under it.
 //!
 //! The desktop process owns both. The window never names a root:
-//! `set_staging_root` stores the Staging Directory here, `create_staging_dir`
+//! `set_staging_root` stores the Staging Directory here, `create_run_dir`
 //! makes a run's directory under it, and every other command that touches a
 //! run directory takes only the directory.
 //!
@@ -71,7 +71,7 @@ pub struct StagingRoot {
 /// The Staging Directory and the run directories made under it, kept in
 /// [`RECORD_FILE`].
 #[derive(Debug)]
-pub struct StagingDirectories {
+pub struct RunDirectories {
     /// Where the record is saved.
     file: PathBuf,
     /// The home directory, for the default Staging Directory. `None` when the
@@ -83,7 +83,7 @@ pub struct StagingDirectories {
     logs: PathBuf,
 }
 
-impl StagingDirectories {
+impl RunDirectories {
     /// The record kept in `file`, read from it on every use, for runs whose
     /// logs go to `logs`.
     pub fn at(file: PathBuf, home: Option<PathBuf>, logs: PathBuf) -> Self {
@@ -280,7 +280,7 @@ impl StagingDirectories {
     /// # Errors
     ///
     /// Returns an error when `dir` is empty or relative, is not on disk, was
-    /// not made by [`StagingDirectories::create`], or has no sentinel.
+    /// not made by [`RunDirectories::create`], or has no sentinel.
     pub fn directory(&self, dir: &str) -> Result<PathBuf, String> {
         let path = absolute(dir)?;
         let canonical = path
@@ -316,7 +316,7 @@ impl StagingDirectories {
     ///
     /// # Errors
     ///
-    /// Returns an error when the directory fails [`StagingDirectories::directory`]'s
+    /// Returns an error when the directory fails [`RunDirectories::directory`]'s
     /// checks, cannot be removed, or the record cannot be saved.
     pub fn delete(&self, dir: &str) -> Result<(), String> {
         let path = absolute(dir)?;
@@ -481,7 +481,7 @@ pub fn timestamp_now() -> String {
 /// directories, for tests here and in the staging commands.
 #[cfg(test)]
 pub(crate) struct Scratch {
-    pub directories: StagingDirectories,
+    pub directories: RunDirectories,
     pub app_data: tempfile::TempDir,
     pub home: tempfile::TempDir,
 }
@@ -500,8 +500,8 @@ impl Scratch {
     }
 
     /// The record kept in `app_data`, with `home` as the home directory.
-    fn open(app_data: &tempfile::TempDir, home: &tempfile::TempDir) -> StagingDirectories {
-        StagingDirectories::at(
+    fn open(app_data: &tempfile::TempDir, home: &tempfile::TempDir) -> RunDirectories {
+        RunDirectories::at(
             app_data.path().join(RECORD_FILE),
             Some(home.path().to_path_buf()),
             crate::app_directories::logs_dir_in(app_data.path()),
@@ -509,7 +509,7 @@ impl Scratch {
     }
 
     /// The same record, as another process or a restarted app opens it.
-    pub fn reopen(&self) -> StagingDirectories {
+    pub fn reopen(&self) -> RunDirectories {
         Self::open(&self.app_data, &self.home)
     }
 }

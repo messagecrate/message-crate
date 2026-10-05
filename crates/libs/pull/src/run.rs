@@ -138,7 +138,7 @@ fn next_offset(offset: usize, limit: usize, total: u64) -> Option<usize> {
 ///
 /// The sentinel names this directory as one an export wrote. The desktop app
 /// refuses to act on a run directory without it
-/// (`StagingDirectories::directory` in `src-tauri/src/staging_directories.rs`), which is
+/// (`RunDirectories::directory` in `src-tauri/src/run_directories.rs`), which is
 /// part of what stands between a path bug and a recursive delete somewhere
 /// else on disk. A pulled directory that skipped the sentinel could not be used
 /// as export staging. Because a marked directory may be cleaned by a later
