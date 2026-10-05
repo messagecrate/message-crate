@@ -76,7 +76,7 @@ mod tests {
     fn names_the_version_found_and_the_version_read() {
         assert_eq!(
             check_schema_version(3).unwrap_err().to_string(),
-            "This file is schema version 3; Message Crate reads version 9"
+            format!("This file is schema version 3; Message Crate reads version {SCHEMA_VERSION}")
         );
         assert_eq!(check_schema_version(SCHEMA_VERSION), Ok(()));
     }
@@ -91,7 +91,7 @@ mod tests {
             check_schema_version_in_json(r#"{"schema_version":8,"export":{}}"#)
                 .unwrap_err()
                 .to_string(),
-            "This file is schema version 8; Message Crate reads version 9"
+            format!("This file is schema version 8; Message Crate reads version {SCHEMA_VERSION}")
         );
     }
 
@@ -102,7 +102,9 @@ mod tests {
             Err(UnsupportedSchemaVersion { found: 3 })
         );
         assert_eq!(
-            check_schema_version_in_json(r#"{"schema_version":9,"export":{}}"#),
+            check_schema_version_in_json(&format!(
+                r#"{{"schema_version":{SCHEMA_VERSION},"export":{{}}}}"#
+            )),
             Ok(())
         );
         assert_eq!(check_schema_version_in_json(r#"{"export":{}}"#), Ok(()));

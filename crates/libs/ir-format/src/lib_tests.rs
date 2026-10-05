@@ -18,7 +18,7 @@ fn writes_json_csv_jsonl_and_eml() {
     assert!(json_path.ends_with("+15555550101.json"));
     let raw = fs::read_to_string(&json_path).unwrap();
     let parsed: ConversationDocument = serde_json::from_str(&raw).unwrap();
-    assert_eq!(parsed.schema_version, 9);
+    assert_eq!(parsed.schema_version, message_ir::SCHEMA_VERSION);
     assert_eq!(parsed.messages[0].text, "hello ir");
     assert!(parsed.messages[0].attachments.is_empty());
     assert_eq!(
@@ -49,7 +49,7 @@ fn writes_json_csv_jsonl_and_eml() {
     let jsonl = fs::read_to_string(&jsonl_path).unwrap();
     let mut lines = jsonl.lines();
     let header: Value = serde_json::from_str(lines.next().unwrap()).unwrap();
-    assert_eq!(header["schema_version"], 9);
+    assert_eq!(header["schema_version"], message_ir::SCHEMA_VERSION);
     assert!(header.get("messages").is_none());
     assert_eq!(header["conversation"]["stats"]["message_count"], 1);
     let msg_line: Value = serde_json::from_str(lines.next().unwrap()).unwrap();
@@ -457,7 +457,10 @@ fn json_refuses_a_version_3_file_by_name() {
     assert_eq!(refusal.found, 3);
     assert_eq!(
         refusal.to_string(),
-        "This file is schema version 3; Message Crate reads version 9"
+        format!(
+            "This file is schema version 3; Message Crate reads version {}",
+            message_ir::SCHEMA_VERSION
+        )
     );
 }
 
@@ -506,7 +509,10 @@ fn jsonl_refuses_a_version_8_file_by_name() {
     assert_eq!(refusal.found, 8);
     assert_eq!(
         refusal.to_string(),
-        "This file is schema version 8; Message Crate reads version 9"
+        format!(
+            "This file is schema version 8; Message Crate reads version {}",
+            message_ir::SCHEMA_VERSION
+        )
     );
 }
 
