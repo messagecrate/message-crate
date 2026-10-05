@@ -187,14 +187,9 @@ async fn an_attachment_staging_refuses_is_a_rejection_naming_its_file() {
     let mut conn = pool.acquire().await.unwrap();
     let tmp = TempDir::new().unwrap();
     let header = one_to_one_header();
-    let message = message_line("g-escape", "hi")
-        .sender("+15555550154")
-        .attachment(IrAttachment {
-            original_name: None,
-            mime_type: None,
-            ..attachment("../escape.txt", "", "")
-        })
-        .line();
+    // The path is the input under test, so the line stays written out.
+    let message = r#"{"guid":"g-escape","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550154","sender_display_name":null,"subject":null,"text":"hi","attachments":[{"path":"../escape.txt","original_name":null,"mime_type":null,"is_sticker":false,"transcription":null,"sticker_effect":null}],"imessage":null,"source":null}
+"#;
     let path = tmp.path().join("+15555550154.jsonl");
     std::fs::write(&path, format!("{header}{message}")).unwrap();
     let assets = tmp.path().join("assets");

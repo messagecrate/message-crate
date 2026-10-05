@@ -1330,8 +1330,9 @@ impl std::fmt::Display for ConversationHeaderLine {
 /// more field. `Display` writes the line as JSON without a trailing newline.
 ///
 /// A line that is not valid message-ir, such as one missing a required field
-/// or holding the wrong type, cannot be built here: a test of how the server
-/// refuses such a line writes it out.
+/// or holding the wrong type, cannot be built here. A test of how the server
+/// reads a malformed or unusual line, or refuses one, writes that line out,
+/// because the line is the input under test.
 #[derive(Debug, Clone)]
 pub struct MessageLine(message_ir::IrMessage);
 
@@ -1365,14 +1366,8 @@ impl MessageLine {
     }
 
     /// Sent by the account holder.
-    pub fn outgoing(self) -> Self {
-        self.direction(message_ir::IrDirection::Outgoing)
-    }
-
-    /// Sent or received as `direction` says, for a test that takes the
-    /// direction as a parameter.
-    pub fn direction(mut self, direction: message_ir::IrDirection) -> Self {
-        self.0.direction = direction;
+    pub fn outgoing(mut self) -> Self {
+        self.0.direction = message_ir::IrDirection::Outgoing;
         self
     }
 

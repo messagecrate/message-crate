@@ -518,7 +518,7 @@ fn format_utc_timestamp(secs: i64) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use message_ir::{IrImessage, UnsupportedSchemaVersion};
+    use message_ir::{IrImessage, IrService, UnsupportedSchemaVersion};
 
     use crate::test_support::{MessageLine, conversation_header, message_line};
 
@@ -559,10 +559,9 @@ mod tests {
         let header = conversation_header("imessage", "+15555550101")
             .participant("+15555550101", Some("Sam"))
             .to_string();
-        let mut message = message_line("g1", "hello")
-            .at(1_400_773_261_000)
-            .sender("+15555550101")
-            .sender_display_name("Sam");
+        let mut message = from_sam("g1")
+            .service(IrService::IMessage)
+            .kind(IrMessageKind::IMessage);
         if let Some(subject) = subject {
             message = message.subject(subject);
         }
@@ -800,8 +799,9 @@ mod tests {
         let header = conversation_header("sms-backup-restore", "+15555550101")
             .participant("+15555550101", Some("Sam"))
             .to_string();
-        let msg = from_sam("g1").at(i64::MAX).to_string();
-        let failure = parse_ir_lines([header, msg]).unwrap_err();
+        // The timestamp is the input under test, so the line stays written out.
+        let msg = r#"{"guid":"g1","timestamp_unix_ms":9223372036854775807,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}"#;
+        let failure = parse_ir_lines([header, msg.to_string()]).unwrap_err();
         match failure {
             ImportFailure::Invalid { line, .. } => assert_eq!(line, 2),
             other => panic!("expected Invalid, got {other:?}"),
@@ -816,7 +816,12 @@ mod tests {
         let header = conversation_header("sms-backup-restore", "+15555550101")
             .participant("+15555550101", Some("Sam"))
             .to_string();
-        let msg = |guid: &str| from_sam(guid).to_string();
+        // The guids are the input under test, so the line stays written out.
+        let msg = |guid: &str| {
+            format!(
+                r#"{{"guid":"{guid}","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}}"#
+            )
+        };
         let lines = [header.to_string(), msg("g1"), msg(""), msg("   ")];
         let failure = parse_ir_lines(lines).unwrap_err();
         assert_eq!(

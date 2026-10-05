@@ -675,13 +675,9 @@ async fn staging_keeps_both_rows_when_guids_differ_only_by_whitespace() {
     let db = tmp.path().join("messagecrate.db");
     let assets = tmp.path().join("assets");
     let header = conversation_header("imessage", "+15555550123").participant("+15555550123", None);
-    let first = message_line("g-space", "trimmed")
-        .sender("+15555550123")
-        .attachment(missing_attachment("trim.bin"));
-    let second = message_line(" g-space", "padded")
-        .at(1_426_183_463_000)
-        .sender("+15555550123")
-        .attachment(missing_attachment("pad.bin"));
+    // The guids are the input under test, so these lines stay written out.
+    let first = r#"{"guid":"g-space","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"trimmed","attachments":[{"path":"attachments/trim.bin","original_name":"trim.bin","mime_type":"application/octet-stream","digest_sha256":null,"is_sticker":false,"transcription":null,"sticker_effect":null,"size_bytes":12,"missing_reason":"not_found"}],"imessage":null,"source":null}"#;
+    let second = r#"{"guid":" g-space","timestamp_unix_ms":1426183463000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"padded","attachments":[{"path":"attachments/pad.bin","original_name":"pad.bin","mime_type":"application/octet-stream","digest_sha256":null,"is_sticker":false,"transcription":null,"sticker_effect":null,"size_bytes":12,"missing_reason":"not_found"}],"imessage":null,"source":null}"#;
     let path = write_jsonl(
         tmp.path(),
         "guid-whitespace.jsonl",
@@ -2360,14 +2356,9 @@ async fn rejects_attachment_path_traversal() {
             "{}\n{}",
             conversation_header("sms-backup-restore", "+15555550123")
                 .participant("+15555550123", None),
-            message_line("g-trav", "x")
-                .mms()
-                .sender("+15555550123")
-                .attachment(IrAttachment {
-                    size_bytes: Some(12),
-                    ..attachment("../secret.txt", "secret.txt", "text/plain")
-                })
-                .line()
+            // The path is the input under test, so the line stays written out.
+            r#"{"guid":"g-trav","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"mms","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"x","attachments":[{"path":"../secret.txt","original_name":"secret.txt","mime_type":"text/plain","digest_sha256":null,"is_sticker":false,"transcription":null,"sticker_effect":null,"size_bytes":12,"missing_reason":null}],"imessage":null,"source":null}
+"#
         ),
     );
     let err = import_jsonl_files(
@@ -2436,14 +2427,9 @@ async fn failed_replace_keeps_existing_messages() {
             "{}\n{}",
             conversation_header("sms-backup-restore", "+14075550107")
                 .participant("+14075550107", None),
-            message_line("g-bad", "nope")
-                .mms()
-                .sender("+14075550107")
-                .attachment(IrAttachment {
-                    size_bytes: Some(1),
-                    ..attachment("../secret.txt", "secret.txt", "text/plain")
-                })
-                .line()
+            // The path is the input under test, so the line stays written out.
+            r#"{"guid":"g-bad","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"mms","sender_identity":"+14075550107","sender_display_name":null,"subject":null,"text":"nope","attachments":[{"path":"../secret.txt","original_name":"secret.txt","mime_type":"text/plain","digest_sha256":null,"is_sticker":false,"transcription":null,"sticker_effect":null,"size_bytes":1,"missing_reason":null}],"imessage":null,"source":null}
+"#
         ),
     );
     let err = import_jsonl_files(
@@ -2793,18 +2779,23 @@ async fn an_empty_batch_is_a_422() {
 }
 
 /// One conversation whose single message has one attachment at `path`,
-/// stating `sha` when there is one.
+/// stating `sha` when there is one. Every caller tests a refusal of the path
+/// or the fingerprint, so the line stays written out.
 fn one_attachment_batch(path: &str, sha: Option<&str>) -> String {
-    let header = conversation_header("whatsapp", "+15555550151")
-        .owner("+15555550150", Some("Me"))
-        .participant("+15555550151", None);
-    let message = whatsapp_line("g-att", "x")
-        .sender("+15555550151")
-        .attachment(IrAttachment {
-            digest_sha256: sha.map(str::to_string),
-            ..attachment(path, "a.bin", "application/octet-stream")
-        });
-    format!("{header}\n{message}\n")
+    let digest = sha.map_or("null".to_string(), |s| format!(r#""{s}""#));
+    format!(
+        concat!(
+            "{header}\n",
+            r#"{{"guid":"g-att","timestamp_unix_ms":1700000000000,"direction":"incoming","service":"whatsapp","message_kind":"sms","sender_identity":"+15555550151","sender_display_name":null,"subject":null,"text":"x","#,
+            r#""attachments":[{{"path":"{path}","original_name":"a.bin","mime_type":"application/octet-stream","digest_sha256":{digest},"is_sticker":false,"transcription":null,"sticker_effect":null}}],"imessage":null,"source":null}}"#,
+            "\n",
+        ),
+        header = conversation_header("whatsapp", "+15555550151")
+            .owner("+15555550150", Some("Me"))
+            .participant("+15555550151", None),
+        path = path,
+        digest = digest,
+    )
 }
 
 /// S1-11: an attachment path that leaves the directory is the sender's to fix,
