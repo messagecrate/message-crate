@@ -2,6 +2,7 @@
 //! the tests that run the binary.
 
 use std::io::{BufRead, BufReader};
+use std::net::SocketAddr;
 use std::path::Path;
 use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::mpsc;
@@ -14,7 +15,28 @@ use message_crate_serve_protocol::LISTENING_LINE;
 pub const WAIT: Duration = Duration::from_secs(60);
 
 /// A server process, killed when the test ends however it ends.
-pub struct Running(pub Child);
+pub struct Running(Child);
+
+impl Running {
+    /// Start `command`.
+    pub fn spawn(command: &mut Command) -> Self {
+        Self(command.spawn().unwrap())
+    }
+
+    /// How the server exited, or `None` while it is still running at
+    /// `deadline`.
+    pub fn exit_by(&mut self, deadline: Instant) -> Option<ExitStatus> {
+        loop {
+            if let Some(status) = self.0.try_wait().unwrap() {
+                return Some(status);
+            }
+            if Instant::now() >= deadline {
+                return None;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+    }
+}
 
 impl Drop for Running {
     fn drop(&mut self) {
@@ -71,8 +93,8 @@ pub fn serve(data_dir: &Path, static_dir: &Path) -> Command {
 /// Start `command` and wait for its listening line: the running server and
 /// the address the line names. A server that closes its output first fails
 /// the test with its exit status and every line it wrote.
-pub fn listen(command: &mut Command) -> (Running, String) {
-    let mut child = Running(command.spawn().unwrap());
+pub fn listen(command: &mut Command) -> (Running, SocketAddr) {
+    let mut child = Running::spawn(command);
     let stderr = child.0.stderr.take().unwrap();
     let (lines, received) = mpsc::channel();
     // Reads until the server's output closes, so the pipe never fills.
@@ -87,12 +109,19 @@ pub fn listen(command: &mut Command) -> (Running, String) {
         let left = deadline.saturating_duration_since(Instant::now());
         match received.recv_timeout(left) {
             Ok(line) => match line.strip_prefix(LISTENING_LINE) {
-                Some(address) => return (child, address.to_string()),
+                Some(url) => {
+                    let address = url
+                        .strip_prefix("http://")
+                        .and_then(|address| address.parse().ok())
+                        .unwrap_or_else(|| panic!("the listening line names no address: {line}"));
+                    return (child, address);
+                }
                 None => seen.push(line),
             },
             Err(mpsc::RecvTimeoutError::Disconnected) => panic!(
                 "the server closed its output before the listening line ({}):\n{}",
-                exit_by(&mut child.0, deadline)
+                child
+                    .exit_by(deadline)
                     .map_or_else(|| "still running".to_string(), |status| status.to_string()),
                 seen.join("\n")
             ),
@@ -101,18 +130,5 @@ pub fn listen(command: &mut Command) -> (Running, String) {
                 seen.join("\n")
             ),
         }
-    }
-}
-
-/// How `child` exited, or `None` while it is still running at `deadline`.
-pub fn exit_by(child: &mut Child, deadline: Instant) -> Option<ExitStatus> {
-    loop {
-        if let Some(status) = child.try_wait().unwrap() {
-            return Some(status);
-        }
-        if Instant::now() >= deadline {
-            return None;
-        }
-        thread::sleep(Duration::from_millis(50));
     }
 }

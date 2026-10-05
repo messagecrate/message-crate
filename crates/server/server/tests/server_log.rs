@@ -90,7 +90,8 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     std::fs::create_dir_all(&data_dir).unwrap();
     std::fs::create_dir_all(&static_dir).unwrap();
     create_database(root.path(), &data_dir);
-    let (_server, base) = listen(serve(&data_dir, &static_dir).env("RUST_LOG", "trace"));
+    let (_server, address) = listen(serve(&data_dir, &static_dir).env("RUST_LOG", "trace"));
+    let base = format!("http://{address}");
     let base = base.as_str();
 
     // The owner claims the Message Crate and opens registration.
