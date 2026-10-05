@@ -22,7 +22,7 @@ vendor backup (chat.db, SMS XML, WhatsApp crypt15, …)
   → web/ SPA reads threads back through the /v1/ API
 ```
 
-- **`crates/libs/ir`** (`message-ir`) is the shared conversation model every exporter writes: `ConversationDocument` holds export metadata, participants, and messages. `schema_version` is `SCHEMA_VERSION` in `crates/libs/ir/src/lib.rs`, independent of the product version; a file at any other version is refused, naming its version and the current one, never upgraded (`check_schema_version` in `crates/libs/ir/src/schema_version.rs`).
+- **`crates/libs/ir`** (`message-ir`) is the shared conversation model every exporter writes: `ConversationDocument` holds export metadata, participants, and messages. `schema_version` is `SCHEMA_VERSION` in `crates/libs/ir/src/lib.rs`, independent of the product version. `check_schema_version` in `crates/libs/ir/src/schema_version.rs` refuses a file at any other version, naming its version and the current one. Nothing is upgraded.
 - **`crates/libs/ir-format`** reads/writes the formats Message Crate emits itself (JSON, JSONL, CSV, EML, MBOX) to/from IR; **`crates/libs/staging`** (`message-staging`) is the resumable write path every exporter and the desktop app go through (`ExportWriter`, the write queue, the transcode pass, the staging summary); SBR XML belongs to `crates/exporters/sms-backup-restore-exporter` in both directions; **`crates/libs/reexport`** converts between existing export formats, which is how Export writes anything other than JSONL. One job per crate, and why: `docs/adr/0012-four-crates-in-the-export-pipeline.md`.
 - **No command line except the server.** Every exporter, `message-reexport`, `message-crate-push`, and `message-crate-pull` are library crates with no binary; the desktop app calls them in process. Only `message-crate-server`, `demo-seed`, and `imessage-reader` build binaries, and the last is not a command line: it is the GPL helper the desktop app spawns to read Apple Messages (below). Why: `docs/adr/0001-no-command-line-except-the-server.md`.
 - **GPL only behind a process boundary.** `imessage-database` and `crabapple` are GPL-3.0-or-later and the repository is under the Fair Core License, so `crates/helpers/imessage-reader` (GPL) is the only crate that links them. `crates/libs/ios-backup` starts it as a process (for the Apple Messages exporter, the WhatsApp import from an encrypted iPhone backup, and the desktop app's backup checks) and talks JSON lines over stdin/stdout through `crates/helpers/imessage-reader-protocol` (MIT OR Apache-2.0, so both sides can link it). `src-tauri/build.rs` builds the helper and Tauri ships it beside the app as an `externalBin`; `cargo tree --manifest-path src-tauri/Cargo.toml -i imessage-database` must match nothing. `cargo deny check licenses bans` in `audit.yml` enforces the rule. Why, and the rules: `docs/adr/0014-gpl-code-only-behind-a-process-boundary.md`.
@@ -54,7 +54,8 @@ Every command is in AGENTS.md, and nothing is repeated here. Claude Code does no
   interface. Do not raise this as an open question. A version check that only
   refuses a mismatch, and never adapts to the older side, is allowed: it is not
   a handshake, because nothing is negotiated. The refusal of a conversation
-  file at any other schema version and the Apple Messages Reader's
+  file at any other schema version (`check_schema_version`,
+  `crates/libs/ir/src/schema_version.rs`) and the Apple Messages Reader's
   `PROTOCOL_VERSION` (`crates/helpers/imessage-reader-protocol`, checked in
   `crates/libs/ios-backup/src/helper.rs`) are the two in the code.
 - **SQLite is the only database engine.** Write SQL for SQLite. Never make a
