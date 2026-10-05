@@ -1,4 +1,3 @@
-import { identityType } from "./backupIdentity";
 import type { components } from "./serverApi.types";
 
 /** Messaging service ids used on profiles, setup, and contacts. */
@@ -28,18 +27,6 @@ export function serverService(service: HandleService): ServerService {
       return "whatsapp";
   }
 }
-
-/**
- * The `service` the server's identities list gives `address` on `service`:
- * `email`, the address's type, for an email address on any service, and the
- * service for anything else.
- */
-export function listedService(address: string, service: ServerService): ListedService {
-  return identityType(address) === "email" ? "email" : service;
-}
-
-/** A `service` the server's identities list gives an identity. */
-export type ListedService = ServerService | "email";
 
 /**
  * The service an identity the server lists is on, or undefined when the list

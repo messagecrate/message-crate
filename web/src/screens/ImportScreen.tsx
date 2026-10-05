@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { phoneNumbers, profileAddresses } from "../lib/account";
 import { isAndroidSmsSource, needsOwnerEmails, splitEmails } from "../lib/androidSmsSources";
 import { apiErrorMessage } from "../lib/apiErrorMessage";
 import { type IdentityType, identityOnProfile, parseSourceIdentities } from "../lib/backupIdentity";
@@ -174,7 +175,7 @@ export default function ImportScreen() {
 
   const { profile } = useAccountProfile();
   const updateProfile = useUpdateAccountProfile();
-  const identityProfile = profile ? { phones: profile.phones, emails: profile.emails } : null;
+  const identityProfile = profile ? profileAddresses(profile) : null;
   const identityAddBusy = updateProfile.isPending;
   const [identityAddError, setIdentityAddError] = useState<string | null>(null);
 
@@ -190,7 +191,7 @@ export default function ImportScreen() {
       const updated = await updateProfile.mutateAsync({
         identities: [{ address: value, service: serverService(type) }],
       });
-      if (!identityOnProfile(value, updated)) {
+      if (!identityOnProfile(value, profileAddresses(updated))) {
         throw new Error("no-op add");
       }
     } catch {
@@ -476,11 +477,12 @@ export default function ImportScreen() {
         const profile = await fetchAccountProfile();
         if (cancelled) return;
         if (!profile) throw new Error("profile unavailable");
-        setProfilePhones([...profile.phones]);
+        const phones = phoneNumbers(profile);
+        setProfilePhones(phones);
         setProfilePhonesError(false);
         setProfilePhonesReady(true);
         if (isWhatsapp) {
-          const [first] = profile.phones;
+          const [first] = phones;
           if (first === undefined || whatsappOwnerPhoneSeededRef.current) return;
           setWhatsappOwnerPhone((current) => {
             if (current.trim().length > 0) return current;
@@ -496,11 +498,11 @@ export default function ImportScreen() {
             return profile.emails.join(", ");
           });
         }
-        if (profile.phones.length === 0 || ownerPhonesSeededRef.current) return;
+        if (phones.length === 0 || ownerPhonesSeededRef.current) return;
         setOwnerPhones((current) => {
           if (current.length > 0) return current;
           ownerPhonesSeededRef.current = true;
-          return [...profile.phones];
+          return phones;
         });
       } catch {
         if (!cancelled) {

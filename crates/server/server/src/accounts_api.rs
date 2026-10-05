@@ -60,8 +60,9 @@ pub struct Account {
     /// IANA time zone every message time, day and year is shown in, for
     /// example `America/New_York`. Chosen at profile setup.
     pub time_zone: String,
-    /// Phone numbers linked to the account.
-    pub phones: Vec<String>,
+    /// Phone numbers linked to the account, each once with every service it
+    /// is an identity under.
+    pub phones: Vec<account_profile::AccountPhone>,
     /// Email addresses linked to the account.
     pub emails: Vec<String>,
     /// True for the seeded demo account (only the owner can delete it).

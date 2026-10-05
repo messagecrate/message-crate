@@ -8,7 +8,6 @@ import {
   handleValidationError,
   inferService,
   listedServerService,
-  listedService,
   serverService,
 } from "./handleService";
 
@@ -54,14 +53,6 @@ describe("listedServerService", () => {
     for (const word of ["sms", "whatsap", "unknown", "", null, undefined]) {
       expect(listedServerService(word)).toBeUndefined();
     }
-  });
-});
-
-describe("listedService", () => {
-  it("lists an email address as email on any service, and a number by its service", () => {
-    expect(listedService("ann@example.com", "phone")).toBe("email");
-    expect(listedService("+15555550100", "phone")).toBe("phone");
-    expect(listedService("+15555550100", "whatsapp")).toBe("whatsapp");
   });
 });
 

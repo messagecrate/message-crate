@@ -70,6 +70,7 @@ fn main() {
             commands::paths::imessage_backup_identities,
             commands::paths::open_path,
             commands::paths::save_file,
+            commands::download::save_download,
             commands::local_server::start_local_server,
             commands::local_server::local_server_status,
             commands::local_server::set_open_to_network,

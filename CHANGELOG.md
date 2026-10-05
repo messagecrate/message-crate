@@ -1083,6 +1083,11 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-05 **Your profile lists a phone number once when it is both a
+  Text Message and a WhatsApp identity.** The account's phone numbers named
+  such a number twice, with no service, so the Android SMS owner numbers an
+  import offers listed it twice too. Each number now comes once, naming every
+  service it is your identity under.
 - 2026-10-04 **An import names a nameless contact, whatever made it.** A
   contact with a number and no name stayed Unknown after an import that knew
   the number's name, when an Address Book load or you had made it rather
@@ -1211,6 +1216,14 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-05 **The desktop app saves a large attachment without holding it
+  in memory.** Downloading a video of several hundred megabytes in the
+  desktop app loaded the whole file into memory two or three times over
+  before saving it, which could use more than a gigabyte and fail on a
+  smaller computer. The app now asks where to save first, then writes the
+  file to that place as it arrives from the server, so memory stays the same
+  whatever the size of the file. A download that breaks off part-way leaves
+  any file already at that place as it was.
 - 2026-10-04 **The Import, Export and Convert screens name running work as
   the desktop app does.** While an Export or a Convert was running, the
   screens said "An export is running." or "A conversion in Settings is
@@ -1607,6 +1620,10 @@ released versions carry their date on the heading.
   3. Import those backups again.
 - The server's `process-assets` command no longer takes `--source`: it
   makes previews for every attachment of each account.
+- If you have a program that reads an account from the HTTP API, it must
+  read each entry of `phones` as an object: the number is in `address`, and
+  `services` names `phone` (Text Message), `whatsapp`, or both. A number on
+  both services is one entry, where it used to be the same string twice.
 - If you have a program that reads a conversation from the HTTP API, it
   must read `first_message_at` in place of `date_range_start` and
   `last_message_at` in place of `date_range_end`. The old names are gone.
