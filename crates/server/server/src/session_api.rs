@@ -37,21 +37,19 @@ pub struct CreateSessionResponse {
     pub token: String,
     /// Account id the session belongs to.
     pub account_id: i64,
-    /// Account username (falls back to the account id).
+    /// The username the account logs in with.
     pub username: String,
 }
 
 impl CreateSessionResponse {
     /// Open the Session for an existing account, replacing the one it had,
-    /// and record the login. Uses the account id when the row has no username.
+    /// and record the login. `username` is the one the account's row holds.
     async fn for_existing_account(
         conn: &mut SqliteConnection,
         account_id: i64,
+        username: String,
         app: Option<&ConnectingApp>,
     ) -> anyhow::Result<CreateSessionResponse> {
-        let username = account_profile::username_for_account(conn, account_id)
-            .await?
-            .unwrap_or_else(|| account_id.to_string());
         let mut tx = crate::db::begin_write(conn).await?;
         let token = session_tokens::open_session(&mut tx, account_id, &username, app).await?;
         account_profile::record_login(&mut tx, account_id).await?;
@@ -197,9 +195,15 @@ pub async fn create_session(
         ));
     }
 
-    let stored_username = account_profile::username_for_account(&mut conn, account_id)
-        .await?
-        .unwrap_or_else(|| username.clone());
+    // An account deleted since the lookup above answers as a username nobody
+    // holds, because by now nobody does.
+    let Some(stored_username) =
+        account_profile::username_for_account(&mut conn, account_id).await?
+    else {
+        return Err(ApiError::InvalidCredentials(
+            "invalid username or password".into(),
+        ));
+    };
     let account = Some((account_id, stored_username.as_str()));
     let password_hash = account_profile::load_password_hash(&mut conn, account_id).await?;
     if !verify_login_password(password_hash.as_deref(), &password) {
@@ -231,7 +235,9 @@ pub async fn create_session(
         return Err(ApiError::AccountDisabled("this account is disabled".into()));
     }
 
-    let body = CreateSessionResponse::for_existing_account(&mut conn, account_id, app).await?;
+    let body =
+        CreateSessionResponse::for_existing_account(&mut conn, account_id, stored_username, app)
+            .await?;
 
     Ok(Created {
         location: "/v1/session".to_string(),

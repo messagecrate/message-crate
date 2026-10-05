@@ -2518,7 +2518,7 @@ export interface components {
             account_id: number;
             /** @description Session token to send as `Authorization: Bearer …`. */
             token: string;
-            /** @description Account username (falls back to the account id). */
+            /** @description The username the account logs in with. */
             username: string;
         };
         /** @description Cross-source dedupe outcome. */

@@ -14460,7 +14460,7 @@
           },
           "username": {
             "type": "string",
-            "description": "Account username (falls back to the account id)."
+            "description": "The username the account logs in with."
           }
         }
       },
