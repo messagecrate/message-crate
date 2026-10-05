@@ -17,7 +17,7 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 Bullets under the version still in development carry the date they landed;
 released versions carry their date on the heading.
 
-## [0.10.0] - 2026-10-05
+## [0.10.1] - 2026-10-05
 
 ### Features
 
