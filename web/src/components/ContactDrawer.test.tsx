@@ -41,7 +41,10 @@ vi.mock("../lib/serverApi", () => ({
   updateContact: (...args: unknown[]) => post(...args),
   trashContact: (...args: unknown[]) => trash(...args),
 }));
+// The address is +1 555-01 and two digits of `id`, in the fiction range
+// 555-0100 to 555-0199, so `id` must be under 100.
 function detail(id: number, overrides: Partial<ContactDetail> = {}): ContactDetail {
+  if (id >= 100) throw new Error(`detail(${id}): id must be under 100`);
   return {
     id,
     name: `Contact ${id}`,
@@ -49,7 +52,7 @@ function detail(id: number, overrides: Partial<ContactDetail> = {}): ContactDeta
     last_modified: "2024-01-01T00:00:00Z",
     identities: [
       {
-        address: `+1555000${id}`,
+        address: `+155501${String(id).padStart(2, "0")}`,
         service: "phone",
         start_date: "2020-01-01T00:00:00Z",
         end_date: "2024-01-01T00:00:00Z",
@@ -159,7 +162,7 @@ describe("ContactDrawer", () => {
       groups: ["Work"],
       identities: [
         {
-          address: "+15551212",
+          address: "+15550112",
           service: "phone",
           start_date: "2021-06-01T00:00:00Z",
           end_date: "2025-01-01T00:00:00Z",
@@ -197,7 +200,7 @@ describe("ContactDrawer", () => {
         preview={{
           id: "2",
           name: "Cached Bob",
-          addresses: ["+15551212"],
+          addresses: ["+15550112"],
           groups: ["Work"],
         }}
         onClose={() => {}}
@@ -216,9 +219,9 @@ describe("ContactDrawer", () => {
 
     render(<ContactDrawer variant="docked" contactId="5" preview={null} onClose={() => {}} />);
 
-    const heading = await screen.findByRole("heading", { name: "+15550005" });
-    expect(heading.querySelector("em")?.textContent).toBe("+15550005");
-    expect(screen.getByRole("dialog", { name: "+15550005" })).toBeTruthy();
+    const heading = await screen.findByRole("heading", { name: "+15550105" });
+    expect(heading.querySelector("em")?.textContent).toBe("+15550105");
+    expect(screen.getByRole("dialog", { name: "+15550105" })).toBeTruthy();
     expect(screen.getByText("Unknown")).toBeTruthy();
     expect(screen.queryByText("No Contact Groups")).toBeNull();
   });
@@ -470,7 +473,7 @@ describe("ContactDrawer", () => {
         preview={{
           id: "2",
           name: "Contact b",
-          addresses: ["+15550001", "15550001", "+15550002", "15550002"],
+          addresses: ["+15550101", "15550101", "+15550102", "15550102"],
           handleCount: 2,
           groups: ["Family"],
         }}
@@ -478,10 +481,10 @@ describe("ContactDrawer", () => {
       />,
     );
 
-    expect(screen.getByText("+15550001")).toBeTruthy();
-    expect(screen.getByText("+15550002")).toBeTruthy();
-    expect(screen.queryByText("15550001")).toBeNull();
-    expect(screen.queryByText("15550002")).toBeNull();
+    expect(screen.getByText("+15550101")).toBeTruthy();
+    expect(screen.getByText("+15550102")).toBeTruthy();
+    expect(screen.queryByText("15550101")).toBeNull();
+    expect(screen.queryByText("15550102")).toBeNull();
     const table = screen.getByRole("grid", { name: "Contact identities" });
     expect(table.querySelectorAll('[role="row"]').length).toBe(4);
 
@@ -491,7 +494,7 @@ describe("ContactDrawer", () => {
         groups: ["Family"],
         identities: [
           {
-            address: "+15550001",
+            address: "+15550101",
             service: "phone",
             start_date: "2020-01-01T00:00:00Z",
             end_date: "2024-01-01T00:00:00Z",
@@ -500,7 +503,7 @@ describe("ContactDrawer", () => {
             group_messages: 0,
           },
           {
-            address: "+15550002",
+            address: "+15550102",
             service: "phone",
             start_date: "2020-01-01T00:00:00Z",
             end_date: "2024-01-01T00:00:00Z",
@@ -689,7 +692,7 @@ describe("ContactDrawer", () => {
     expect(headers[headers.length - 1].textContent).toBe("");
     // Once the detail is in, the row carries its service and counts.
     await waitFor(() => expect(screen.getAllByText("42").length).toBeGreaterThan(0));
-    const remove = screen.getByRole("button", { name: "Remove +15550001 (Text Message)" });
+    const remove = screen.getByRole("button", { name: "Remove +15550101 (Text Message)" });
     expect(remove.closest("[role=row]")?.lastElementChild).toContainElement(remove);
     expect(screen.getByText("Summary")).toBeTruthy();
   });
@@ -707,7 +710,7 @@ describe("ContactDrawer", () => {
     get.mockResolvedValue(
       detail(1, {
         identities: [
-          { ...shared, address: "+15550001", service: "phone" },
+          { ...shared, address: "+15550101", service: "phone" },
           { ...shared, address: "sam@example.com", service: "email" },
         ],
         direct_conversations: 0,

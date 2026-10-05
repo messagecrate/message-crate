@@ -11,9 +11,9 @@ use std::sync::atomic::AtomicBool;
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use message_ir::{
-    ConversationHeader, ConversationMeta, ConversationStats, Deletion, ExportMeta, IrAttachment,
-    IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind, IrParticipant,
-    IrService, Reaction, SCHEMA_VERSION, orphaned_chat_id,
+    ConversationHeader, ConversationMeta, ConversationStats, Deletion, EarlierVersion, ExportMeta,
+    IrAttachment, IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind,
+    IrParticipant, IrService, Reaction, SCHEMA_VERSION, orphaned_chat_id,
 };
 use rand::Rng;
 use rand::RngExt;
@@ -406,6 +406,7 @@ impl<R: Rng> Seeder<'_, R> {
                         &mut origin_guid,
                     );
                     mark_deletion(&mut msg, i, &self.cfg.messages);
+                    mark_edited(&mut msg, i, &self.cfg.messages, self.corpus);
                 }
                 SourceFlavor::SmsBackupRestore => {
                     self.decorate_android_message(&mut msg, i, msg_count);
@@ -951,6 +952,52 @@ fn mark_deletion(msg: &mut IrMessage, i: usize, messages: &crate::config::Messag
     } else if on(messages.deleted_in_source_app_stride) {
         msg.deletion = Some(Deletion::DeletedInSourceApp);
     }
+}
+
+/// Give the message earlier versions when `i` falls on the edit stride, so the
+/// Demo Account has edited messages to open (#1143). Only an iMessage can be
+/// edited, so a message sent as SMS or RCS, an Unsent one, and one with no
+/// words are left as they are. Every second edited message was edited twice.
+///
+/// The earlier versions are other sentences of the corpus, picked by the
+/// message's guid rather than drawn from the random source, so every other
+/// message of the Demo Data stays as it was, and two conversations' edited
+/// messages differ. The original's time is the message's own, and
+/// each edit follows two minutes later, inside the 15 minutes Apple Messages
+/// allows.
+fn mark_edited(
+    msg: &mut IrMessage,
+    i: usize,
+    messages: &crate::config::MessagesConfig,
+    corpus: &Corpus,
+) {
+    /// Where each earlier version's sentence sits from the first one's, and
+    /// how long after the message was sent it was written.
+    const VERSIONS: [(usize, i64); 2] = [(0, 0), (7, 120_000)];
+    let stride = messages.edited_stride;
+    if stride == 0 || i == 0 || !i.is_multiple_of(stride) {
+        return;
+    }
+    if msg.service != IrService::IMessage
+        || msg.deletion == Some(Deletion::Unsent)
+        || !msg.text.chars().any(char::is_alphabetic)
+    {
+        return;
+    }
+    let count = if (i / stride).is_multiple_of(2) { 2 } else { 1 };
+    let first = msg.guid.bytes().fold(0usize, |hash, byte| {
+        hash.wrapping_mul(31).wrapping_add(usize::from(byte))
+    });
+    msg.edits = VERSIONS
+        .iter()
+        .take(count)
+        .map(|&(offset, after_ms)| EarlierVersion {
+            part_index: 0,
+            text: corpus.sentence(first.wrapping_add(offset)).to_string(),
+            edited_at_unix_ms: Some(msg.timestamp_unix_ms + after_ms),
+        })
+        .filter(|version| version.text != msg.text)
+        .collect();
 }
 
 /// Sometimes mark an iMessage as SMS or RCS so the conversation view can show those labels.

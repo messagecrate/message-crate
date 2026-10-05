@@ -121,12 +121,12 @@ impl ExportWriter {
         })
     }
 
-    /// Give the run an attachment spool under `cache_dir`, the app's cache
+    /// Give the run an attachment spool under `scratch_dir`, the app's cache
     /// directory, when it copies attachments; see [`spool`](Self::spool).
     #[must_use]
-    pub fn with_spool(mut self, cache_dir: &Path) -> Self {
+    pub fn with_spool(mut self, scratch_dir: &Path) -> Self {
         if self.copy_attachments {
-            self.spool = Some(AttachmentSpool::new(cache_dir).with_copy_dir(&self.output_dir));
+            self.spool = Some(AttachmentSpool::new(scratch_dir).with_copy_dir(&self.output_dir));
         }
         self
     }
@@ -158,7 +158,7 @@ impl ExportWriter {
         self.use_queue
     }
 
-    /// The run's attachment spool, under the app's cache directory and never
+    /// The run's attachment spool, under the Scratch Directory and never
     /// in the output directory; `None` when the writer was not given one
     /// or the run copies no attachments. An exporter whose attachments
     /// arrive as bytes writes each payload here as it parses it, so no
@@ -515,10 +515,10 @@ mod tests {
         }
     }
 
-    /// The spool sits under the cache directory the writer is given, never in
+    /// The spool sits under the Scratch Directory the writer is given, never in
     /// the output directory, and is gone once the run ends (#1421).
     #[test]
-    fn the_spool_is_under_the_cache_directory_and_never_in_the_output_directory() {
+    fn the_spool_is_under_the_scratch_directory_and_never_in_the_output_directory() {
         let tmp = tempfile::tempdir().unwrap();
         let out = tmp.path().join("out");
         let cache = tmp.path().join("cache");

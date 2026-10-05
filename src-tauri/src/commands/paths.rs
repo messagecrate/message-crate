@@ -7,16 +7,37 @@ use tauri::{AppHandle, Manager};
 use crate::export_directories::ExportDirectories;
 use crate::staging_directories::StagingDirectories;
 
-/// The app's cache directory, which every run's scratch directories go under
+/// The Scratch Directory, which every run's scratch directories go under
 /// (`message_crate_core::ScratchDir`).
 ///
 /// # Errors
 ///
-/// Returns an error when the operating system names no cache directory.
-pub(crate) fn app_cache_dir(app: &AppHandle) -> Result<PathBuf, String> {
+/// Returns an error when the operating system names no app-data directory.
+pub(crate) fn scratch_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(crate::app_directories::scratch_dir_in(&app_data_dir(app)?))
+}
+
+/// The Logs Directory, which holds every Import Run's log.
+///
+/// # Errors
+///
+/// Returns an error when the operating system names no app-data directory.
+pub(crate) fn logs_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(crate::app_directories::logs_dir_in(&app_data_dir(app)?))
+}
+
+/// `path`, resolved, when it is in the Logs Directory `logs`, whether or not
+/// the log is there yet, so opening one not written yet says so
+/// ([`missing_path_error`]) rather than calling it outside.
+fn openable_in_logs(path: &str, logs: &Path) -> Option<PathBuf> {
+    resolve_openable_path(path, &logs.display().to_string()).ok()
+}
+
+/// The app-data directory.
+fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
-        .app_cache_dir()
-        .map_err(|e| format!("Could not find the app's cache directory: {e}"))
+        .app_data_dir()
+        .map_err(|e| format!("Could not find the app-data directory: {e}"))
 }
 
 /// The logged-in user's home directory, plus which OS this process is running on.
@@ -110,7 +131,7 @@ pub fn ios_backup_encrypted(path: String) -> Option<bool> {
 /// identity check.
 ///
 /// Runs on a blocking-pool thread: for an encrypted backup, answering this
-/// decrypts `chat.db` into a directory under the app's cache directory, which the
+/// decrypts `chat.db` into a directory under the Scratch Directory, which the
 /// next request cleans if this one is killed.
 #[tauri::command]
 pub async fn imessage_backup_identities(
@@ -119,7 +140,7 @@ pub async fn imessage_backup_identities(
     ios: bool,
     backup_password: Option<String>,
 ) -> Result<Vec<String>, String> {
-    let scratch_root = app_cache_dir(&app)?.join(message_crate_core::IMESSAGE_READER_DIRECTORY);
+    let scratch_root = scratch_dir(&app)?.join(message_crate_core::IMESSAGE_READER_DIRECTORY);
     tauri::async_runtime::spawn_blocking(move || {
         let password = backup_password.as_deref().and_then(message_ir::trimmed);
         ios_backup::backup_identities(Path::new(path.trim()), ios, password, &scratch_root)
@@ -149,9 +170,10 @@ pub fn home_dir() -> Result<HomeDirInfo, String> {
 
 /// Open a file or directory with the operating system's default handler.
 ///
-/// Only a run directory this app made, or a path inside one such as its
-/// `message-crate-push.log` ([`StagingDirectories::openable`]), or the Export
-/// Directory and what is in it ([`ExportDirectories::openable`]), is opened.
+/// Only a run directory this app made, or a path inside one
+/// ([`StagingDirectories::openable`]), the Export Directory and
+/// what is in it ([`ExportDirectories::openable`]), or an Import Run's log in
+/// the Logs Directory, is opened.
 ///
 /// # Errors
 ///
@@ -159,12 +181,17 @@ pub fn home_dir() -> Result<HomeDirInfo, String> {
 /// missing on disk, or the OS cannot open it.
 #[tauri::command]
 pub fn open_path(
+    app: AppHandle,
     directories: tauri::State<'_, StagingDirectories>,
     exports: tauri::State<'_, ExportDirectories>,
     path: String,
 ) -> Result<(), String> {
-    let resolved = match exports.openable(Path::new(path.trim())) {
-        Some(export) => export,
+    let logs = logs_dir(&app)?;
+    let resolved = match exports
+        .openable(Path::new(path.trim()))
+        .or_else(|| openable_in_logs(&path, &logs))
+    {
+        Some(found) => found,
         None => directories.openable(&path)?,
     };
     missing_path_error(&resolved)?;
@@ -352,16 +379,18 @@ pub(crate) fn resolve_staging_root(staging_root: &str) -> Result<PathBuf, String
     Ok(root)
 }
 
-/// Resolve `raw` to an absolute path that must stay under `staging_root`.
+/// Resolve `raw` to an absolute path that must stay under `root`, a
+/// directory this app opens things in: a run directory, or the Logs
+/// Directory. `root` is held to the rules of a Staging Directory setting
+/// ([`resolve_staging_root`]): absolute, and not a file system's root.
 ///
 /// When the path already exists it is canonicalized, so a symbolic link cannot
-/// escape the staging tree. When it does not exist yet (for example a staging
-/// directory that extract is about to create), it is resolved through
-/// [`resolve_on_disk`], the same way as the root, so the two compare in one
-/// form.
-pub(crate) fn resolve_openable_path(raw: &str, staging_root: &str) -> Result<PathBuf, String> {
+/// escape the root. When it does not exist yet (for example a log not written
+/// yet), it is resolved through [`resolve_on_disk`], the same way as the root,
+/// so the two compare in one form.
+pub(crate) fn resolve_openable_path(raw: &str, root: &str) -> Result<PathBuf, String> {
     let candidate = resolve_absolute(raw, "Path is empty", "Path must be absolute")?;
-    let root = resolve_staging_root(staging_root)?;
+    let root = resolve_staging_root(root)?;
 
     if candidate.exists() {
         let canonical = candidate
@@ -628,6 +657,22 @@ mod tests {
         let err =
             resolve_openable_path(outside.to_str().unwrap(), root.to_str().unwrap()).unwrap_err();
         assert!(err.contains("outside"));
+    }
+
+    #[test]
+    fn a_log_not_written_yet_in_the_logs_directory_is_reported_missing_not_outside() {
+        let app_data = tempfile::tempdir().unwrap();
+        let logs = crate::app_directories::logs_dir_in(app_data.path());
+        let log = logs.join("import-whatsapp-261004-143000.log");
+
+        let resolved = openable_in_logs(&log.display().to_string(), &logs).unwrap();
+
+        assert_eq!(
+            missing_path_error(&resolved).unwrap_err(),
+            "Nothing exists at import-whatsapp-261004-143000.log yet"
+        );
+        let elsewhere = app_data.path().join("data").join("messagecrate.db");
+        assert!(openable_in_logs(&elsewhere.display().to_string(), &logs).is_none());
     }
 
     #[test]

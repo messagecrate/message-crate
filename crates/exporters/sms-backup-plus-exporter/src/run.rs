@@ -32,7 +32,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
     let report = convert_export(ConvertExportArgs {
         inputs: &config.inputs,
         output_dir: &config.output,
-        cache_dir: &config.cache_dir,
+        scratch_dir: &config.scratch_dir,
         owner_phones: &source.owner_phones,
         owner_emails: &source.owner_emails,
         verbose: source.verbose,
@@ -98,7 +98,7 @@ mod tests {
         let no_input = convert_export(ConvertExportArgs {
             inputs: &[] as &[&Path],
             output_dir: input.path(),
-            cache_dir: cache.path(),
+            scratch_dir: cache.path(),
             owner_phones: &["+15555550100".into()],
             owner_emails: &["owner@example.com".into()],
             verbose: false,

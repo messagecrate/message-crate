@@ -11,7 +11,7 @@ import {
 
 describe("splitPhoneTokenInput", () => {
   it("splits on commas and keeps spaces inside a number", () => {
-    expect(splitPhoneTokenInput(" +1 555-1111, +15552222  ")).toEqual(["+1 555-1111", "+15552222"]);
+    expect(splitPhoneTokenInput(" +1 555-0111, +15550122  ")).toEqual(["+1 555-0111", "+15550122"]);
   });
 
   it("returns empty for blank input", () => {
@@ -21,9 +21,9 @@ describe("splitPhoneTokenInput", () => {
 
 describe("commitPhoneTokens", () => {
   it("appends new phones and skips duplicates", () => {
-    expect(commitPhoneTokens(["+15551111"], "+15551111, +15552222")).toEqual([
-      "+15551111",
-      "+15552222",
+    expect(commitPhoneTokens(["+15550111"], "+15550111, +15550122")).toEqual([
+      "+15550111",
+      "+15550122",
     ]);
   });
 });
@@ -68,15 +68,15 @@ describe("ownerPhonesMatchProfile", () => {
   });
 
   it("returns false when no overlap", () => {
-    expect(ownerPhonesMatchProfile(["+15551111"], ["+15552222"])).toBe(false);
+    expect(ownerPhonesMatchProfile(["+15550111"], ["+15550122"])).toBe(false);
   });
 
   it("returns false when profile has no phones", () => {
-    expect(ownerPhonesMatchProfile(["+15551111"], [])).toBe(false);
+    expect(ownerPhonesMatchProfile(["+15550111"], [])).toBe(false);
   });
 
   it("returns false when owner list is empty", () => {
-    expect(ownerPhonesMatchProfile([], ["+15551111"])).toBe(false);
+    expect(ownerPhonesMatchProfile([], ["+15550111"])).toBe(false);
   });
 });
 
@@ -94,19 +94,19 @@ describe("ownerPhonesNeedMismatchAck", () => {
   });
 
   it("returns true for empty profile after a successful load", () => {
-    expect(ownerPhonesNeedMismatchAck(["+15551111"], [], readyOk)).toBe(true);
+    expect(ownerPhonesNeedMismatchAck(["+15550111"], [], readyOk)).toBe(true);
     expect(ownerPhonesNeedMismatchAck([], [], readyOk)).toBe(true);
   });
 
   it("returns true when owner phones do not match profile", () => {
-    expect(ownerPhonesNeedMismatchAck(["+15551111"], ["+15552222"], readyOk)).toBe(true);
+    expect(ownerPhonesNeedMismatchAck(["+15550111"], ["+15550122"], readyOk)).toBe(true);
   });
 
   it("returns false when owner phones match profile", () => {
-    expect(ownerPhonesNeedMismatchAck(["+1 555-1111"], ["15551111"], readyOk)).toBe(false);
+    expect(ownerPhonesNeedMismatchAck(["+1 555-0111"], ["15550111"], readyOk)).toBe(false);
   });
 
   it("returns false when profile has phones but owner list is still empty", () => {
-    expect(ownerPhonesNeedMismatchAck([], ["+15551111"], readyOk)).toBe(false);
+    expect(ownerPhonesNeedMismatchAck([], ["+15550111"], readyOk)).toBe(false);
   });
 });

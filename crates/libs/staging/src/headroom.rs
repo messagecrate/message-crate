@@ -1,9 +1,9 @@
 //! The free-space check a run makes before it writes.
 //!
 //! A run writes to two places: the output directory (the attachments it
-//! copies) and a scratch directory under the app's cache directory (the
+//! copies) and a scratch directory under the Scratch Directory (the
 //! attachment spool, the databases `imessage-reader` decrypts). Most people
-//! keep both on one disk, but the cache directory can sit on another, so each
+//! keep both on one disk, but the Scratch Directory can sit on another, so each
 //! write is checked against the disk that holds it, before it starts. A
 //! disk that fills part-way through fails a run with a bare write error,
 //! often after hours; this check fails it first, with the space it needs.
@@ -23,9 +23,9 @@ pub(crate) const DISK_HEADROOM_SLACK: u64 = 64 * 1024 * 1024;
 pub enum Disk {
     /// The disk that holds the output directory.
     Staging,
-    /// The disk that holds the app's cache directory, where a run's scratch
+    /// The disk that holds the Scratch Directory, where a run's scratch
     /// data goes.
-    Cache,
+    Scratch,
 }
 
 /// The bytes a copy of `attachments` writes: each one's size, given with
@@ -104,8 +104,8 @@ pub(crate) fn headroom_shortfall(needed: u64, available: u64, disk: Disk) -> Opt
             "Not enough space on the staging disk: this backup needs about {required}, \
              and {available} is free."
         ),
-        Disk::Cache => format!(
-            "Not enough space on the disk that holds the app's cache directory: reading this \
+        Disk::Scratch => format!(
+            "Not enough space on the disk that holds the Scratch Directory: reading this \
              backup needs about {required} more there, and {available} is free."
         ),
     })
@@ -150,13 +150,13 @@ mod tests {
         assert_eq!(bytes_to_write(OutputFormat::Xml, &items), 30 + 80);
     }
 
-    /// A short cache disk is named as the cache directory's, not the staging
+    /// A short scratch disk is named as the Scratch Directory's, not the staging
     /// disk, so the person knows which disk to clear.
     #[test]
-    fn a_short_cache_disk_is_named_as_the_cache_directory_s() {
-        let msg = headroom_shortfall(2 * 1024 * 1024 * 1024, 1024, Disk::Cache).unwrap();
+    fn a_short_scratch_disk_is_named_as_the_scratch_directory_s() {
+        let msg = headroom_shortfall(2 * 1024 * 1024 * 1024, 1024, Disk::Scratch).unwrap();
         assert!(
-            msg.starts_with("Not enough space on the disk that holds the app's cache directory"),
+            msg.starts_with("Not enough space on the disk that holds the Scratch Directory"),
             "{msg}"
         );
     }
@@ -165,8 +165,8 @@ mod tests {
     #[test]
     fn check_headroom_passes_a_disk_with_room_and_refuses_one_without() {
         let dir = tempfile::tempdir().unwrap();
-        check_headroom(dir.path(), 0, Disk::Cache).unwrap();
-        let err = check_headroom(dir.path(), u64::MAX / 2, Disk::Cache).unwrap_err();
-        assert!(err.to_string().contains("cache directory"), "{err}");
+        check_headroom(dir.path(), 0, Disk::Scratch).unwrap();
+        let err = check_headroom(dir.path(), u64::MAX / 2, Disk::Scratch).unwrap_err();
+        assert!(err.to_string().contains("Scratch Directory"), "{err}");
     }
 }

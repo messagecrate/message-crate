@@ -105,8 +105,6 @@ import {
 
 export type { ImportPhase, ImportStep } from "./importProgressState";
 
-export const PUSH_LOG_NAME = "message-crate-push.log";
-
 /** Parse/attachments/prepare durations, fixed once extract finishes and read again at finish time. */
 type ExtractDurations = {
   parseMs: number | null;

@@ -1256,7 +1256,7 @@ mod tests {
                 &fixture.state,
                 &SeedConversation {
                     account_id: user.account_id,
-                    handle: &format!("+1555000{i:04}"),
+                    handle: &format!("+1015555{i:04}"),
                     conversation_type: "individual",
                     group_title: None,
                     source_file: "seed.jsonl",

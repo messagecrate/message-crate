@@ -1,70 +1,15 @@
 /** @vitest-environment jsdom */
 
-import { cleanup, render, screen } from "@testing-library/react";
-import type { ComponentType } from "react";
+import { cleanup, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { missingAttachmentChipLabel } from "../../lib/missingAttachmentLabel";
-import { TimeZoneContext } from "../../lib/timeZone";
-import type { Message } from "../../lib/types";
-import { attachment, message as baseMessage, participant } from "../../test/apiShapes";
-import type { MessageBubbleProps } from "./chatBubbleShared";
-import DiscordBubble from "./DiscordBubble";
-import ImessageBubble from "./ImessageBubble";
-import InstagramBubble from "./InstagramBubble";
-import SmsBubble from "./SmsBubble";
-import WhatsAppBubble from "./WhatsAppBubble";
+import { attachment } from "../../test/apiShapes";
+import { BUBBLES, renderBubbleInUtc as renderInUtc } from "../../test/bubbles";
+import { sampleMessage as message } from "../../test/messages";
 
 afterEach(() => {
   cleanup();
 });
-
-/**
- * Every source's bubble, with the source id it is drawn for and the name the
- * product gives that source.
- */
-const BUBBLES: {
-  name: string;
-  Bubble: ComponentType<MessageBubbleProps>;
-  source: string;
-  service: string;
-  label: string;
-}[] = [
-  {
-    name: "Apple Messages",
-    Bubble: ImessageBubble,
-    source: "imessage",
-    service: "iMessage",
-    label: "Apple Messages",
-  },
-  {
-    name: "SMS Backup & Restore",
-    Bubble: SmsBubble,
-    source: "sms-backup-restore",
-    service: "sms",
-    label: "SMS Backup & Restore",
-  },
-  {
-    name: "WhatsApp",
-    Bubble: WhatsAppBubble,
-    source: "whatsapp",
-    service: "whatsapp",
-    label: "WhatsApp",
-  },
-  {
-    name: "Discord",
-    Bubble: DiscordBubble,
-    source: "discord",
-    service: "discord",
-    label: "Discord",
-  },
-  {
-    name: "Instagram",
-    Bubble: InstagramBubble,
-    source: "instagram",
-    service: "instagram",
-    label: "Instagram",
-  },
-];
 
 /** An attachment the import kept without its file, so it draws as a chip and fetches nothing. */
 const ATTACHMENT = attachment({
@@ -73,35 +18,6 @@ const ATTACHMENT = attachment({
   missing_reason: "file_missing",
 });
 const ATTACHMENT_LABEL = missingAttachmentChipLabel(ATTACHMENT);
-
-function message(partial: Partial<Message>): Message {
-  return baseMessage({
-    id: 7,
-    service: "iMessage",
-    guid: "g7",
-    sender: "+15555550100",
-    text: "See you at noon",
-    conversation: {
-      id: 1,
-      chat_identifier: "+15555550100",
-      conversation_type: "individual",
-      is_group: false,
-      group_title: null,
-      label: null,
-      participants: [participant({ identity: "+15555550100", name: "Ada" })],
-    },
-    ...partial,
-  });
-}
-
-/** The bubble in UTC, so its time reads the same on every machine. */
-function renderInUtc(Bubble: ComponentType<MessageBubbleProps>, m: Message) {
-  return render(
-    <TimeZoneContext.Provider value="UTC">
-      <Bubble message={m} />
-    </TimeZoneContext.Provider>,
-  );
-}
 
 /** The element drawn as the message's bubble: the one holding `text`, with a dashed outline. */
 function markedBubble(text: string): HTMLElement {
@@ -112,7 +28,7 @@ function markedBubble(text: string): HTMLElement {
   return bubble;
 }
 
-describe.each(BUBBLES)("$name bubble", ({ Bubble, source, service, label }) => {
+describe.each(BUBBLES)("$label bubble", ({ Bubble, source, service, label }) => {
   it("keeps the text of a message Deleted in the source app, muted in a dashed outline, and names the source beside its time", () => {
     renderInUtc(Bubble, message({ source, service, deletion: "deleted_in_source_app" }));
 

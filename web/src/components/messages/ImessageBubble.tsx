@@ -47,15 +47,12 @@ export default function ImessageBubble({
 
   return (
     <ChatBubbleRow
-      messageId={String(message.id)}
-      mine={mine}
+      message={message}
       isActive={isActive}
       palette="imessage"
       showSender={!mine && (showSender ?? nameSender)}
       senderLabel={senderName(message)}
       timeLabel={time}
-      deletion={message.deletion}
-      source={message.source}
       footer={footer}
     >
       {bubbleBody(body, highlight)}

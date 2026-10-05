@@ -77,12 +77,12 @@ pub struct ExporterConfig {
     /// Output directory the export is written to (packaging plus `attachments/`).
     /// It holds output only.
     pub output: PathBuf,
-    /// The desktop app's cache directory. What a run writes that is not output
+    /// The desktop Scratch Directory. What a run writes that is not output
     /// (the attachment spool, the databases `imessage-reader` decrypts) goes
     /// in a scratch directory under it ([`crate::ScratchDir`]), never under
     /// [`Self::output`]. The exporter crates do not know the app's directories,
     /// so the app names it here.
-    pub cache_dir: PathBuf,
+    pub scratch_dir: PathBuf,
     /// Optional zone for timestamps that carry none: a fixed UTC offset
     /// (`UTC-05:00`) or an IANA name (`America/New_York`).
     /// When `None`, dates are interpreted in host-local time.
@@ -318,7 +318,7 @@ mod tests {
         ExporterConfig {
             inputs,
             output: PathBuf::from("out"),
-            cache_dir: PathBuf::from("/cache"),
+            scratch_dir: PathBuf::from("/cache"),
             timezone: None,
             obfuscate: ObfuscateConfig::default(),
             media: MediaConfig::default(),

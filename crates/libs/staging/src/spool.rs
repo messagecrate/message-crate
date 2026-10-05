@@ -9,7 +9,7 @@
 //! back one file at a time.
 //!
 //! The spool is scratch data, not output: unencrypted attachments no screen
-//! names. So it lives in a [`ScratchDir`] under the app's cache directory,
+//! names. So it lives in a [`ScratchDir`] under the Scratch Directory,
 //! never in the output directory. The directory goes when the spool is dropped,
 //! whichever way the run ends, and what a killed run left is deleted by the
 //! next spool and by the sweep when the app starts
@@ -31,7 +31,7 @@ use crate::write_queue::AttachmentSource;
 /// Content-addressed store of attachment payloads for one run.
 #[derive(Debug)]
 pub struct AttachmentSpool {
-    /// The spool's scratch root, under the app's cache directory.
+    /// The spool's scratch root, under the Scratch Directory.
     root: PathBuf,
     /// The directory the spooled payloads are copied into once the backup is
     /// read, when the spool is told; see [`AttachmentSpool::new`].
@@ -62,11 +62,11 @@ impl SpoolState {
 }
 
 impl AttachmentSpool {
-    /// A spool whose directory goes under `cache_dir`, the app's cache directory.
+    /// A spool whose directory goes under `scratch_dir`, the Scratch Directory.
     /// Nothing is made on disk until the first payload arrives.
-    pub fn new(cache_dir: &Path) -> Self {
+    pub fn new(scratch_dir: &Path) -> Self {
         Self {
-            root: cache_dir.join(ATTACHMENT_SPOOL_DIRECTORY),
+            root: scratch_dir.join(ATTACHMENT_SPOOL_DIRECTORY),
             copy_dir: None,
             state: Mutex::new(SpoolState::default()),
         }
@@ -76,7 +76,7 @@ impl AttachmentSpool {
     /// backup is read. Each payload then also checks that the disk holding
     /// it still has room for the copy of everything spooled so far, so a
     /// run that will not fit stops while the backup is read, not after.
-    /// When the cache directory is on that same disk, the spool has already
+    /// When the Scratch Directory is on that same disk, the spool has already
     /// taken its share of what is free.
     #[must_use]
     pub fn with_copy_dir(mut self, copy_dir: &Path) -> Self {
@@ -110,7 +110,7 @@ impl AttachmentSpool {
                 .path()
                 .to_path_buf(),
         };
-        check_headroom(&directory, bytes.len() as u64, Disk::Cache)?;
+        check_headroom(&directory, bytes.len() as u64, Disk::Scratch)?;
         if let Some(copy_dir) = &self.copy_dir {
             let copied = state.spooled_bytes.saturating_add(bytes.len() as u64);
             check_headroom(copy_dir, copied, Disk::Staging)?;

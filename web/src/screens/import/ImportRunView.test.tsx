@@ -14,12 +14,27 @@ import { attachmentsAsked, runHeading, sourceDisplayName } from "./importRunCopy
 import type { ImportJobFormValues } from "./useImportJob";
 
 const openPathInExplorer = vi.fn();
+/** Names a run's log as the desktop does, from the run's directory. */
+const invokeImportRunLog = vi.hoisted(() =>
+  vi.fn(
+    async (stagingDir: string) =>
+      `/home/sam/.local/share/app.messagecrate.desktop/logs/import-${stagingDir
+        .split("/")
+        .pop()
+        ?.replace(/^staging-/, "")}.log`,
+  ),
+);
 const getImportMock = vi.fn();
 const getImportContactsMock = vi.fn();
 const navigateMock = vi.fn();
 
 vi.mock("../../lib/openPath", () => ({
   openPathInExplorer: (...args: unknown[]) => openPathInExplorer(...args),
+}));
+
+vi.mock("../../lib/tauri", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/tauri")>()),
+  invokeImportRunLog: (stagingDir: string) => invokeImportRunLog(stagingDir),
 }));
 
 vi.mock("../../lib/auth", () => ({
@@ -117,7 +132,12 @@ function stepsAt(
 }
 
 function renderView(props: Partial<Parameters<typeof ImportRunView>[0]> = {}) {
-  return render(
+  return render(viewElement(props));
+}
+
+/** The view inside its providers, for `render` and `rerender`. */
+function viewElement(props: Partial<Parameters<typeof ImportRunView>[0]> = {}) {
+  return (
     <Providers>
       <MemoryRouter>
         <ImportRunView
@@ -141,7 +161,7 @@ function renderView(props: Partial<Parameters<typeof ImportRunView>[0]> = {}) {
           {...props}
         />
       </MemoryRouter>
-    </Providers>,
+    </Providers>
   );
 }
 
@@ -199,6 +219,7 @@ describe("ImportRunView", () => {
 
   afterEach(() => {
     cleanup();
+    invokeImportRunLog.mockClear();
   });
 
   it("lists every stage and review of the run, in order", () => {
@@ -239,19 +260,58 @@ describe("ImportRunView", () => {
     const user = setupUser();
     const staging = "/home/sam/message-crate/staging-iphone";
     const view = renderView({ stagingDir: staging });
-    expect(
-      screen.queryByRole("button", { name: "message-crate-push.log" }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "import-iphone.log" })).not.toBeInTheDocument();
 
     view.unmount();
     renderView({
       stagingDir: staging,
       steps: stepsAt("convert", { Staging: "done", Media: "done", Upload: "active" }),
     });
+    // The log is in the Logs Directory, named for the run, so it outlives
+    // the run's directory.
     await user.click(
-      within(stageRow("Upload")).getByRole("button", { name: "message-crate-push.log" }),
+      await within(stageRow("Upload")).findByRole("button", { name: "import-iphone.log" }),
     );
-    expect(openPathInExplorer).toHaveBeenCalledWith(`${staging}/message-crate-push.log`);
+    expect(openPathInExplorer).toHaveBeenCalledWith(
+      "/home/sam/.local/share/app.messagecrate.desktop/logs/import-iphone.log",
+    );
+  });
+
+  it("keeps the import log once the run ends and its directory is gone", async () => {
+    const staging = "/home/sam/message-crate/staging-iphone";
+    const view = renderView({
+      stagingDir: staging,
+      steps: stepsAt("convert", { Staging: "done", Media: "done", Upload: "active" }),
+    });
+    await within(stageRow("Upload")).findByRole("button", { name: "import-iphone.log" });
+
+    view.rerender(
+      viewElement({
+        phase: "done",
+        running: false,
+        stagingDir: null,
+        steps: stepsAt("convert", { Staging: "done", Media: "done", Upload: "done" }),
+      }),
+    );
+
+    expect(
+      within(stageRow("Upload")).getByRole("button", { name: "import-iphone.log" }),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps the import log of a run that stops with its directory still there", async () => {
+    // A paused run ends the screen's part with its directory kept.
+    const staging = "/home/sam/message-crate/staging-iphone";
+    const steps = stepsAt("convert", { Staging: "done", Media: "done", Upload: "active" });
+    const view = renderView({ stagingDir: staging, steps });
+    await within(stageRow("Upload")).findByRole("button", { name: "import-iphone.log" });
+
+    view.rerender(viewElement({ phase: "done", running: false, stagingDir: staging, steps }));
+
+    expect(
+      within(stageRow("Upload")).getByRole("button", { name: "import-iphone.log" }),
+    ).toBeInTheDocument();
+    expect(invokeImportRunLog).toHaveBeenCalledTimes(1);
   });
 
   it("shows the options group only when Obfuscate is on", () => {

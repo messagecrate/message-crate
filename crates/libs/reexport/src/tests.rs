@@ -20,7 +20,7 @@ fn config(input: &Path, output: &Path, output_format: OutputFormat) -> ExporterC
     ExporterConfig {
         inputs: vec![input.to_path_buf()],
         output: output.to_path_buf(),
-        cache_dir: std::env::temp_dir().join("message-crate-test-cache"),
+        scratch_dir: std::env::temp_dir().join("message-crate-test-cache"),
         timezone: None,
         obfuscate: ObfuscateConfig::default(),
         media: MediaConfig::default(),

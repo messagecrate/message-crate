@@ -13,14 +13,14 @@ describe("contactPreviewFromListRow", () => {
       contactPreviewFromListRow({
         id: "1",
         name: "Ada",
-        addresses: ["+15550001", "15550001"],
+        addresses: ["+15550101", "15550101"],
         identity_count: 1,
         groups: ["Family"],
       }),
     ).toEqual({
       id: "1",
       name: "Ada",
-      addresses: ["+15550001", "15550001"],
+      addresses: ["+15550101", "15550101"],
       handleCount: 1,
       groups: ["Family"],
     });
@@ -52,8 +52,8 @@ describe("previewHandleStubRows", () => {
   });
 
   it("keeps two distinct phones when handleCount is 2", () => {
-    const rows = previewHandleStubRows(["+15550001", "15550001", "+15550002", "15550002"], 2);
-    expect(rows.map((r) => r.address)).toEqual(["+15550001", "+15550002"]);
+    const rows = previewHandleStubRows(["+15550101", "15550101", "+15550102", "15550102"], 2);
+    expect(rows.map((r) => r.address)).toEqual(["+15550101", "+15550102"]);
   });
 });
 
@@ -61,13 +61,13 @@ describe("contactPreviewFromThreadParticipants", () => {
   it("builds a preview from matching conversation participants", () => {
     expect(
       contactPreviewFromThreadParticipants("1", [
-        { contact_id: 1, identity: "+15550001", name: "Ada" },
-        { contact_id: 2, identity: "+15550002", name: "Bob" },
+        { contact_id: 1, identity: "+15550101", name: "Ada" },
+        { contact_id: 2, identity: "+15550102", name: "Bob" },
       ]),
     ).toEqual({
       id: "1",
       name: "Ada",
-      addresses: ["+15550001"],
+      addresses: ["+15550101"],
       handleCount: 1,
     });
   });
@@ -75,11 +75,11 @@ describe("contactPreviewFromThreadParticipants", () => {
   it("counts two distinct phones for the same contact as two identities", () => {
     expect(
       contactPreviewFromThreadParticipants("1", [
-        { contact_id: 1, identity: "+15550001", name: "Ada" },
-        { contact_id: 1, identity: "+15550002", name: "Ada" },
+        { contact_id: 1, identity: "+15550101", name: "Ada" },
+        { contact_id: 1, identity: "+15550102", name: "Ada" },
       ]),
     ).toMatchObject({
-      addresses: ["+15550001", "+15550002"],
+      addresses: ["+15550101", "+15550102"],
       handleCount: 2,
     });
   });
@@ -87,8 +87,8 @@ describe("contactPreviewFromThreadParticipants", () => {
   it("collapses raw and normalized forms of the same phone to handleCount 1", () => {
     expect(
       contactPreviewFromThreadParticipants("1", [
-        { contact_id: 1, identity: "+15550001", name: "Ada" },
-        { contact_id: 1, identity: "15550001", name: "Ada" },
+        { contact_id: 1, identity: "+15550101", name: "Ada" },
+        { contact_id: 1, identity: "15550101", name: "Ada" },
       ])?.handleCount,
     ).toBe(1);
   });
@@ -96,9 +96,9 @@ describe("contactPreviewFromThreadParticipants", () => {
   it("falls back to the identity when no display name is set", () => {
     expect(
       contactPreviewFromThreadParticipants("1", [
-        { contact_id: 1, identity: "+15550001", name: "" },
+        { contact_id: 1, identity: "+15550101", name: "" },
       ])?.name,
-    ).toBe("+15550001");
+    ).toBe("+15550101");
   });
 
   it("stubs at least one identity when matched addresses are empty", () => {
@@ -114,7 +114,7 @@ describe("contactPreviewFromThreadParticipants", () => {
   it("returns null when no participant matches the contact id", () => {
     expect(
       contactPreviewFromThreadParticipants("missing", [
-        { contact_id: 1, identity: "+15550001", name: "Ada" },
+        { contact_id: 1, identity: "+15550101", name: "Ada" },
       ]),
     ).toBeNull();
   });
@@ -124,14 +124,14 @@ describe("sameContactPreviews", () => {
   const ada = {
     id: "1",
     name: "Ada",
-    addresses: ["+15550001"],
+    addresses: ["+15550101"],
     handleCount: 1,
     groups: ["Family"],
   };
 
   it("treats a re-mapped but equal list as unchanged", () => {
     expect(
-      sameContactPreviews([ada], [{ ...ada, addresses: ["+15550001"], groups: ["Family"] }]),
+      sameContactPreviews([ada], [{ ...ada, addresses: ["+15550101"], groups: ["Family"] }]),
     ).toBe(true);
   });
 

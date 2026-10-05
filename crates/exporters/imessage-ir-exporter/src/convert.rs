@@ -115,7 +115,7 @@ struct Collected {
 /// first, the same pattern as WhatsApp and SMS Backup & Restore. A resumed
 /// run is the exception: what the interrupted run wrote is exactly the work
 /// this one gets to skip. The program's scratch directory is under the app's
-/// cache directory, so the clean never meets it.
+/// Scratch Directory, so the clean never meets it.
 ///
 /// # Errors
 ///
@@ -898,7 +898,7 @@ mod tests {
             contacts_path: None,
             use_caller_id: false,
             export_path: PathBuf::from("/nowhere/out"),
-            cache_dir: PathBuf::from("/nowhere/cache"),
+            scratch_dir: PathBuf::from("/nowhere/cache"),
             attachment_embed: AttachmentEmbed::Embed,
             transforms: message_crate_core::ExportTransforms {
                 obfuscate,

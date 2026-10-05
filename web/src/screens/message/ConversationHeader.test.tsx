@@ -63,9 +63,9 @@ function groupChat(): Conversation {
     label: "Book Club",
     participants: [
       participant({ name: "Me", identity: "+1 (555) 010-0", contact_id: 1 }),
-      participant({ name: "Ada", identity: "+15550200", contact_id: 2 }),
-      participant({ name: "Grace", identity: "+15550300", contact_id: 3 }),
-      participant({ name: "+15550400", identity: "+15550400" }),
+      participant({ name: "Ada", identity: "+15550120", contact_id: 2 }),
+      participant({ name: "Grace", identity: "+15550130", contact_id: 3 }),
+      participant({ name: "+15550140", identity: "+15550140" }),
     ],
   });
 }

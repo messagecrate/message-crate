@@ -24,7 +24,7 @@ fn convert(input: &Path, output_dir: &Path) -> ExportReport {
     convert_export(ConvertExportArgs {
         inputs: &[input],
         output_dir,
-        cache_dir: cache.path(),
+        scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
         owner_emails: &["owner@example.com".into()],
         verbose: false,

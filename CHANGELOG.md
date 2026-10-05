@@ -21,6 +21,16 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-04 **The conversation shows an edited message's earlier
+  versions.** The line under an edited message reads like "4:56 PM · Edited",
+  and pressing "Edited" opens the earlier versions under the bubble, each
+  with the time it was written, and closes them again. They are closed when
+  a conversation opens. A message opened from the Messages list that the
+  search found only by a word an earlier version holds opens with its earlier
+  versions shown, that version highlighted, and the line "Matched an earlier
+  version" above them. Find does the same. Every source draws them the same
+  way. The Demo Account has a few edited messages in its Apple Messages
+  conversations.
 - 2026-10-04 **Messages a backup kept without saying which conversation
   they were in now sit in conversations of their own, one for each person who
   sent them.** An Apple Messages backup can hold messages that belong to no
@@ -40,8 +50,7 @@ released versions carry their date on the heading.
   earlier version held finds the message. A later import leaves a message
   already stored as it is, with its text and earlier versions. Export keeps the
   earlier versions, so a conversation exported and imported again keeps them
-  too. The conversation shows them, and which one a search found, in a
-  coming release.
+  too.
 - 2026-10-04 **The conversation and the Messages list show which messages
   were deleted in the app they came from, and which were unsent.** A message
   deleted in the source app keeps its text in a faded bubble with a dashed
@@ -243,6 +252,16 @@ released versions carry their date on the heading.
   field with nothing in it is sent empty instead of being left out, so a
   program that talks to the server always finds the fields it expects.
   Nothing changes on screen.
+- 2026-10-04 **An Import Run's log is kept for good, and scratch data has a
+  directory of its own.** Each Import Run's log is written to the Logs
+  Directory, named for the run, instead of the run's directory in the
+  Staging Directory, so it is still there after the run ends. It now holds
+  what Staging and Media said as well as the Upload, and the Import
+  screen's link opens it there. The decrypted iPhone backup databases and
+  the attachments read out of SMS backups go to the Scratch Directory beside
+  it, instead of the operating system's cache directory, and what a stopped
+  run left there is deleted the next time the app starts. The user guide's
+  Settings → System page lists where the app keeps each of its directories.
 - 2026-10-04 **Every Export and Convert gets a directory of its own in the
   Export Directory.** An export no longer needs a directory chosen before it
   starts: it is written into a new directory named for its date, time and
@@ -463,10 +482,10 @@ released versions carry their date on the heading.
   file sets its attachments aside, both as plain copies. These working
   files used to sit in the Staging Directory, and an app closed or stopped
   mid-run left them there until a later run used the same directory. They now
-  sit in the app's cache directory, are deleted when the run ends, whether it
+  sit in the Scratch Directory, are deleted when the run ends, whether it
   finished or failed, and are deleted when the app next starts if it was
   stopped. Before it writes, Staging now checks that the disk holding the
-  Staging Directory and the disk holding the cache directory have room, and
+  Staging Directory and the disk holding the Scratch Directory have room, and
   stops with the space it needs while it reads the backup, not after.
 - 2026-10-04 **A discarded import keeps its errors, and an import keeps its
   converted files when they cannot be read back.** Discarding an import,
@@ -854,7 +873,7 @@ released versions carry their date on the heading.
   Settings, failed part-way with a write error when the disk filled. They
   now check first and stop with the space they need. **Convert** from an
   SMS Backup & Restore backup also sets the backup's attachments aside in
-  the app's cache directory, not in the directory it writes to.
+  the Scratch Directory, not in the directory it writes to.
 - 2026-10-04 **A conversion can no longer start in the middle of an Import
   Run or an export.** **Convert** in Settings stayed disabled only while one
   of the run's Stages was running, so it could be started while an Import
@@ -1491,6 +1510,9 @@ released versions carry their date on the heading.
 - An export, or a conversion with no output directory chosen, now goes into
   the Export Directory; look for it there, through Settings → System, rather
   than in the Staging Directory.
+- An Import Run's log is now in the Logs Directory, beside the Export
+  Directory in the operating system's app-data directory, rather than in the
+  run's directory. The Import screen's Import log link opens it.
 - The database format changed. **An existing Message Crate is rebuilt
   empty on first start and its messages must be imported again.**
 - If your configuration file sets `asset_max_bytes` under `[server]`, delete

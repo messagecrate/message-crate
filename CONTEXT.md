@@ -447,11 +447,11 @@ _Avoid_: Delete run, Clear
 **Message Crate Directory**:
 The one directory the desktop app keeps on a computer, made the first time
 the app starts. It holds the Data Directory of the Message Crate the app
-starts, the Staging Directory, the Export Directory, and the Tools
-Directory. It exists on every computer the app runs on, including one whose
-app connects to a Message Crate elsewhere. Decided, not built yet: #1053 tracks the work, and until it
-lands the app keeps its Message Crate's data in the operating system's
-app-data directory.
+starts, the Staging Directory, the Export Directory, the Logs Directory, the
+Scratch Directory, and the Tools Directory. It exists on every computer the
+app runs on, including one whose app connects to a Message Crate elsewhere.
+Decided, not built yet: #1053 tracks the work, and until it lands the app
+keeps its Message Crate's data in the operating system's app-data directory.
 _Avoid_: Folder, App Data, Home Directory
 
 **Data Directory**:
@@ -464,12 +464,14 @@ _Avoid_: Data Folder, DB Directory, Database Directory
 
 **Staging Directory**:
 The directory that holds one directory for each Import Run, where the
-desktop app prepares a backup for import. A run's directory is deleted when the run ends, whether it succeeded,
-failed or was cancelled, the import log, resume journal and run record with
-it. An Import Run that can still be resumed, paused or waiting at a Review,
-keeps it, since the staged files are what Resume reads. A run's directory has
-no term of its own: on screen it is "this Import Run's directory". Exports and
-Converts never use it; they work in the Export Directory.
+desktop app prepares a backup for import. A run's directory is deleted when
+the run ends, whether it succeeded, failed or was cancelled, the resume
+journal and run record with it; the run's log is in the Logs Directory and
+stays. An Import Run that can still be resumed, paused or waiting at a
+Review, keeps it, since the staged files are what Resume reads. A run's
+directory has no term of its own: on screen it is "this Import Run's
+directory". Exports and Converts never use it; they work in the Export
+Directory.
 _Avoid_: Import Staging Directory, Temp Folder, Working Directory
 
 **Export Directory**:
@@ -485,6 +487,24 @@ time it starts. Message Crate never deletes a finished export from it. It belong
 Crate Directory; until #1053 builds that, it is `exports` in the operating
 system's app-data directory.
 _Avoid_: Export Folder, Downloads, Output Directory
+
+**Logs Directory**:
+The directory where the desktop app keeps each Import Run's log, named for
+the run, such as `import-iphone-ios-261004-143000.log`. A log stays on the
+computer that ran the import and is never deleted, so it outlives the run's
+directory in the Staging Directory. It belongs in the Message Crate
+Directory; until #1053 builds that, it is `logs` in the operating system's
+app-data directory. The server's own log is in the Data Directory.
+_Avoid_: Log Folder, Run Log Directory
+
+**Scratch Directory**:
+The directory where a run writes what is neither its output nor kept: the
+attachment spool and the databases the Apple Messages Reader decrypts from
+an encrypted iPhone backup. A run deletes what it wrote there when it ends,
+and the desktop app deletes what a killed run left when it starts. It
+belongs in the Message Crate Directory; until #1053 builds that, it is
+`scratch` in the operating system's app-data directory.
+_Avoid_: Cache Directory, Temp Folder, Temp Directory
 
 **Tools Directory**:
 The directory inside the Message Crate Directory where the desktop app keeps

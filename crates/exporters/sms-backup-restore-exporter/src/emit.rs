@@ -59,8 +59,8 @@ fn to_core_report(report: ReadReport, issues: Option<&IssueSink>) -> ExportRepor
 pub(crate) struct ConvertExportArgs<'a> {
     pub input: &'a Path,
     pub output_dir: &'a Path,
-    /// The app's cache directory, which the run's attachment spool goes under.
-    pub cache_dir: &'a Path,
+    /// the Scratch Directory, which the run's attachment spool goes under.
+    pub scratch_dir: &'a Path,
     pub owner_phones: &'a [String],
     pub transforms: ExportTransforms,
     pub output_format: OutputFormat,
@@ -89,7 +89,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         args.transforms,
         args.resume,
     )?
-    .with_spool(args.cache_dir);
+    .with_spool(args.scratch_dir);
     if args.output_format == OutputFormat::Xml {
         // This crate owns the backup format, so a round trip back to
         // `smses.xml` goes through its own archive writer.
