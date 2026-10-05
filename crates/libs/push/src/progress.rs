@@ -252,12 +252,6 @@ impl<'p, 'f> Reporter<'p, 'f> {
         self.event(ProgressEvent::Log(line));
     }
 
-    /// Write one wording to the log file and a friendlier one to the callback.
-    pub(crate) fn show_as(&mut self, log_line: &str, shown: String) {
-        self.log.line(log_line);
-        self.event(ProgressEvent::Log(shown));
-    }
-
     /// Send a structured event to the progress callback, if there is one.
     pub(crate) fn event(&mut self, event: ProgressEvent) {
         if let Some(cb) = self.progress.as_mut() {
@@ -426,10 +420,9 @@ mod tests {
             let mut reporter = Reporter::open(&log_path, Some(&mut cb)).unwrap();
             reporter.log("quiet");
             reporter.show("loud".into());
-            reporter.show_as("logged", "shown".into());
         }
         let text = fs::read_to_string(&log_path).unwrap();
-        assert_eq!(text, "quiet\nloud\nlogged\n");
+        assert_eq!(text, "quiet\nloud\n");
         let shown: Vec<String> = seen
             .into_iter()
             .map(|event| match event {
@@ -437,7 +430,7 @@ mod tests {
                 other => panic!("unexpected {other:?}"),
             })
             .collect();
-        assert_eq!(shown, ["loud", "shown"]);
+        assert_eq!(shown, ["loud"]);
     }
 
     #[test]

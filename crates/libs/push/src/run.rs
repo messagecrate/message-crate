@@ -321,8 +321,7 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
     let aborted = settle(cfg, &mut pipeline, aborted, &mut out)?;
     let session_refused = session.is_refused();
     if session_refused {
-        out.show_as(
-            "session refused: stopped",
+        out.show(
             "The server no longer accepts this session, so the Upload stopped. \
              The next Upload sends what this one did not."
                 .into(),
@@ -467,8 +466,7 @@ fn finish_refused_at_login(
     report: PushReport,
     out: &mut Reporter<'_, '_>,
 ) -> Result<PushReport> {
-    out.show_as(
-        "session refused at login: stopped",
+    out.show(
         "The server no longer accepts this session, so the Upload did not start. \
          The next Upload sends every conversation."
             .into(),

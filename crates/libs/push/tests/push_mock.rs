@@ -145,6 +145,11 @@ fn text_only_config(dir: &Path, base_url: String) -> PushConfig {
     }
 }
 
+/// The Upload's log that `text_only_config` names under `dir`.
+fn read_log(dir: &Path) -> String {
+    fs::read_to_string(dir.join("message-crate-push.log")).unwrap()
+}
+
 #[test]
 fn authenticate_and_push_text_only_conversation() {
     let server = MockServer::start();
@@ -194,7 +199,15 @@ fn authenticate_and_push_text_only_conversation() {
     write_jsonl(dir.path(), &sample_doc());
 
     let cfg = text_only_config(dir.path(), server.base_url());
-    let report = run(&cfg, None).unwrap();
+    let mut shown = Vec::new();
+    let report = {
+        let mut progress = |event| {
+            if let ProgressEvent::Log(line) = event {
+                shown.push(line);
+            }
+        };
+        run(&cfg, Some(&mut progress)).unwrap()
+    };
     assert!(report.ok);
     assert_eq!(report.conversations_ok, 1);
     let report_json = serde_json::to_value(&report).unwrap();
@@ -205,14 +218,16 @@ fn authenticate_and_push_text_only_conversation() {
             .is_some()
     );
     import.assert();
-    // The log names the account and the Import Run in sentences, not as
-    // `name=value` (#1842).
-    let log = fs::read_to_string(dir.path().join("message-crate-push.log")).unwrap();
-    assert!(log.contains("Authenticated as alice (1)"), "{log}");
-    assert!(
-        log.contains("Recording Import Run 42 for sms-backup-restore"),
-        "{log}"
-    );
+    // The log and the desktop app's lines name the account and the Import
+    // Run in the same sentences, not as `name=value` (#1842).
+    let log = read_log(dir.path());
+    for line in [
+        "Authenticated as alice (1)",
+        "Recording Import Run 42 for sms-backup-restore",
+    ] {
+        assert!(log.contains(line), "{log}");
+        assert!(shown.iter().any(|shown| shown == line), "{shown:?}");
+    }
     assert!(log.contains("Import Run 42 completed"), "{log}");
 
     // Second run should skip via journal.
@@ -286,7 +301,7 @@ fn reuses_supplied_import_run_without_starting_or_completing_one() {
         "the Upload must not complete an Import Run it was handed"
     );
     import.assert();
-    let log = fs::read_to_string(dir.path().join("message-crate-push.log")).unwrap();
+    let log = read_log(dir.path());
     assert!(
         log.contains("Reusing Import Run 99 for sms-backup-restore"),
         "{log}"
@@ -510,7 +525,7 @@ fn aggregates_multiple_conversations_into_one_import_request() {
         report.messages_inserted + report.messages_deduped + report.messages_failed
     );
     assert_eq!(import.calls(), 1);
-    let log = fs::read_to_string(dir.path().join("message-crate-push.log")).unwrap();
+    let log = read_log(dir.path());
     assert!(log.contains("Import request accepted: 2 conversations and 2 messages from "));
 }
 
@@ -2257,6 +2272,11 @@ fn a_push_that_skips_attachments_sends_text_and_uploads_nothing() {
     assert_eq!(assets.calls(), 0, "a text-only push uploads no file");
     assert_eq!(report.assets_uploaded, 0);
     assert_eq!(journaled_guids(dir.path()), vec!["guid-1".to_string()]);
+    let log = read_log(dir.path());
+    assert!(
+        log.contains("Skipping attachments (text-only import)"),
+        "{log}"
+    );
 }
 
 /// Each import request carries one backup source, so conversations from two
