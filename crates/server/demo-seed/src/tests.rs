@@ -1073,7 +1073,7 @@ fn is_fictional_phone_accepts_only_555_01xx_and_07700_900xxx() {
     // These numbers are outside 555-0100 to 555-0199. Two of them sit one
     // past its ends. All four are under area code 015, and no North American
     // area code starts with 0, so no one has them. They test only the check
-    // of the line number, because `is_fictional_phone` does not read the
+    // of 555-01xx, because `is_fictional_phone` does not read the
     // area code. The note on the `phone` crate's `mod tests` gives the
     // source.
     assert!(!is_fictional_phone("+10155550200"));
@@ -1085,10 +1085,11 @@ fn is_fictional_phone_accepts_only_555_01xx_and_07700_900xxx() {
     // covers neither range.
     assert!(!is_fictional_phone("+442079460000"));
     assert!(!is_fictional_phone("+33639981234"));
-    // A UK mobile number has six digits after 07700, so 07700 9001000 and
-    // 07700 900 are no one's. They pin the length check on the drama mobile
-    // range. The number just past 07700 900999 can be dialled, so the `900`
-    // part of the prefix has no test.
+    // These numbers have a length no UK mobile number has, so no one has
+    // them. They pin the length check on the drama mobile range. The number
+    // just past 07700 900999 can be dialled, so the `900` part of the prefix
+    // has no test. The note on the `phone` crate's `mod tests` gives the
+    // source.
     assert!(!is_fictional_phone("+4477009001000"));
     assert!(!is_fictional_phone("+447700900"));
 }
