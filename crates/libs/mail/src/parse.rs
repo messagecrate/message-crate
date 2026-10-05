@@ -43,27 +43,27 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     {
         bail!(
             "This mail was written by an earlier Message Crate, which named each address a \
-             handle ({earlier}); export the backup again"
+             handle ({earlier}). Export the backup again"
         );
     }
     if headers.get_first_header(hn::EARLIER_TAPBACKS).is_some() {
         bail!(
-            "This mail was written by an earlier Message Crate, which kept reactions in {}; \
-             export the backup again",
+            "This mail was written by an earlier Message Crate, which kept reactions in {}. \
+             Export the backup again",
             hn::EARLIER_TAPBACKS
         );
     }
     if headers.get_first_header(hn::EARLIER_IS_DELETED).is_some() {
         bail!(
-            "This mail was written by an earlier Message Crate, which kept the deleted mark in {}; \
-             export the backup again",
+            "This mail was written by an earlier Message Crate, which kept the deleted mark in {}. \
+             Export the backup again",
             hn::EARLIER_IS_DELETED
         );
     }
     if headers.get_first_header(hn::EARLIER_X_ME_EDITS).is_some() {
         bail!(
-            "This mail was written by an earlier Message Crate, which kept the edit history in {}; \
-             export the backup again",
+            "This mail was written by an earlier Message Crate, which kept the edit history in {}. \
+             Export the backup again",
             hn::EARLIER_X_ME_EDITS
         );
     }
