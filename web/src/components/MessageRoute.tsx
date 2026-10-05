@@ -101,10 +101,11 @@ export default function MessageRoute() {
             // the thread starts again for each one: its page, year and find,
             // and any Move to trash or Contact Group still answering for the
             // last one, which then acts on nothing. Another result in the
-            // same conversation starts it again at that message, and so does
-            // the same result found by other versions.
+            // same conversation starts it again at that message. The versions
+            // a result was found by are not in the key: a new search that
+            // drops them keeps the thread where it is (#1648).
             <MessageView
-              key={`${conversation.id}:${at ?? ""}:${matched.join(",")}`}
+              key={`${conversation.id}:${at ?? ""}`}
               conversation={conversation}
               openAt={at}
               openMatched={matched}

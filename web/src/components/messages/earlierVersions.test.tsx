@@ -129,6 +129,24 @@ describe.each(BUBBLES)("$label bubble", ({ Bubble, source, service }) => {
     expect(control).toHaveAttribute("aria-expanded", "true");
   });
 
+  it("keeps open the versions the person opened before a search reached the message", async () => {
+    const found = edited(source, service, {
+      matched_earlier_version: true,
+      earlier_versions: edited(source, service).earlier_versions.map((v, i) => ({
+        ...v,
+        matched: i === 0,
+      })),
+    });
+    const { rerenderWith } = renderBubbleInUtc(Bubble, edited(source, service));
+    const control = screen.getByRole("button", { name: "Edited" });
+    await setupUser().click(control);
+
+    rerenderWith(found);
+    rerenderWith(edited(source, service));
+
+    expect(control).toHaveAttribute("aria-expanded", "true");
+  });
+
   it("keeps closed an edited message a search found by its final text", () => {
     // A hit by the final text carries no version marked, even when an earlier
     // version holds the word too.

@@ -11,8 +11,8 @@ import type { Message } from "../lib/types";
 
 /**
  * Every source's bubble, with the source id it is drawn for and the name the
- * product gives that source (`label`). A mark the row frame draws is tested on each, so
- * every source shows it alike (#1143).
+ * product gives that source (`label`). A mark the row frame draws is tested on
+ * each, so every source shows it alike (#1143).
  */
 export const BUBBLES: {
   Bubble: ComponentType<MessageBubbleProps>;

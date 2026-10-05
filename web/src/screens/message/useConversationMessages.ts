@@ -137,6 +137,18 @@ export function useConversationMessages(
     openAt === null ? null : { id: openAt, versions: openMatched },
   );
   const highlightId = highlight?.id ?? null;
+  // A new search in the address drops or changes the versions the result was
+  // found by, for the same message, without opening the thread again.
+  const openKey = openMatched.join(",");
+  const [seenOpenKey, setSeenOpenKey] = useState(openKey);
+  if (openKey !== seenOpenKey) {
+    setSeenOpenKey(openKey);
+    setHighlight((current) =>
+      current !== null && current.id === openAt
+        ? { id: current.id, versions: openMatched }
+        : current,
+    );
+  }
   const [jumpError, setJumpError] = useState<Error | null>(null);
 
   const key = keys.conversations.messages(conversationId, startKey(start));
@@ -240,13 +252,20 @@ export function useConversationMessages(
   // Typing, or stepping to another match, jumps to it.
   const jumpedMatch = useRef<number | null>(null);
   // A term refined on the same match can find it by other versions, or by its
-  // final text, so the versions follow every answer, and only a new match jumps.
+  // final text, so the versions follow every answer while it is the one
+  // highlighted. Only a new match jumps and highlights; after Newest or a year
+  // left it, a new answer for the same match changes nothing.
   useEffect(() => {
     if (activeMatch === null) return;
     const next = { id: activeMatch.id, versions: matchedVersionIndexes(activeMatch) };
-    setHighlight((current) => (sameHighlight(current, next) ? current : next));
-    if (activeMatch.id === jumpedMatch.current) return;
+    if (activeMatch.id === jumpedMatch.current) {
+      setHighlight((current) =>
+        current?.id !== next.id || sameHighlight(current, next) ? current : next,
+      );
+      return;
+    }
     jumpedMatch.current = activeMatch.id;
+    setHighlight(next);
     jumpToMessage(activeMatch.id);
   }, [activeMatch, jumpToMessage]);
 

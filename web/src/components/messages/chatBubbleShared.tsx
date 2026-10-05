@@ -208,8 +208,9 @@ function useEarlierVersions(
   if (matched !== wasMatched) {
     setWasMatched(matched);
     if (matched) {
+      // Versions the person already opened stay theirs to close.
+      if (!open) setPressed(false);
       setOpen(true);
-      setPressed(false);
     } else if (!pressed) {
       setOpen(false);
     }

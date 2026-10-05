@@ -295,6 +295,65 @@ describe("useConversationMessages", () => {
     await waitFor(() => expect(matchedOf60()).toEqual([false, true]));
   });
 
+  it("does not mark a Find match again after Newest left it, when its answer changes", async () => {
+    const versions = [{ part_index: 0, text: "pizza at noon", edited_at: null, matched: false }];
+    getMessages.mockImplementation((async (_id: number, params: { around?: number }) => ({
+      items: [{ ...message(params.around ?? 60), earlier_versions: versions }],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    })) as unknown as typeof listConversationMessages);
+    searchMessages.mockResolvedValue({
+      items: [
+        {
+          ...message(60),
+          matched_earlier_version: true,
+          earlier_versions: [{ ...versions[0], matched: true }],
+        },
+      ],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    });
+
+    const { result } = renderHook(() => useConversationMessages(7), { wrapper: Providers });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    act(() => result.current.find.openFind());
+    act(() => result.current.find.setTerm("pizz"));
+    await waitFor(() => expect(result.current.highlightId).toBe(60));
+
+    act(() => result.current.jumpToNewest());
+    expect(result.current.highlightId).toBeNull();
+    // A refined term whose newest match is still message 60.
+    act(() => result.current.find.setTerm("pizza"));
+    await waitFor(() =>
+      expect(searchMessages).toHaveBeenLastCalledWith(
+        expect.objectContaining({ q: "in:#7 trashed:any pizza" }),
+        expect.anything(),
+      ),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(result.current.highlightId).toBeNull();
+  });
+
+  it("follows the versions a search result was found by when the address changes them", async () => {
+    const edited = {
+      ...message(42),
+      earlier_versions: [{ part_index: 0, text: "noon", edited_at: null, matched: false }],
+    };
+    getMessages.mockResolvedValue({ items: [edited], total: 1, limit: 50, offset: 0 });
+    const { result, rerender } = renderHook(
+      ({ matched }: { matched: number[] }) => useConversationMessages(7, 42, matched),
+      { initialProps: { matched: [0] }, wrapper: Providers },
+    );
+    await waitFor(() => expect(result.current.messages[0]?.matched_earlier_version).toBe(true));
+
+    // A new search dropped `matched`: the message is no longer found by a version.
+    rerender({ matched: [] });
+    expect(result.current.messages[0]?.matched_earlier_version).toBe(false);
+    expect(result.current.highlightId).toBe(42);
+  });
+
   it("jumps to a year's first message, searched for in the conversation", async () => {
     getMessages.mockImplementation((async (_id: number, params: { around?: number }) => ({
       items: params.around === undefined ? [message(99)] : [message(params.around)],
