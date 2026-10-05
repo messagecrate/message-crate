@@ -22,6 +22,10 @@ use std::path::{Path, PathBuf};
 
 const EXPORT_SOURCE: &str = "go-sms-pro";
 const EXPORT_TOOL: &str = "GO SMS Pro";
+/// This crate's version, recorded as the export tool version.
+const EXPORT_TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
+/// Cap on retained skip-detail rows; overflow is counted and reported.
+pub(crate) const MAX_SKIP_DETAILS: usize = 20;
 
 /// Messages read from PDU files.
 pub(crate) const PDU_MESSAGES: Counter = Counter::new(
@@ -72,10 +76,6 @@ pub(crate) const SKIPPED_UNPARSEABLE_PDU: Counter = Counter::new(
     "Skipped 1 PDU file that could not be read",
     "Skipped {n} PDU files that could not be read",
 );
-/// This crate's version, recorded as the export tool version.
-const EXPORT_TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
-/// Cap on retained skip-detail rows; overflow is counted and reported.
-pub(crate) const MAX_SKIP_DETAILS: usize = 20;
 
 /// Push one diagnostic row, keeping at most [`MAX_SKIP_DETAILS`] entries so
 /// huge backups cannot grow the detail vectors without bound.
