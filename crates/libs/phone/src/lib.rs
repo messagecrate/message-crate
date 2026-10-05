@@ -514,13 +514,25 @@ fn group_id_slug(digits: &[String]) -> String {
         .join("_")
 }
 
-/// Non-US test numbers are no one's, in this crate and every other one. Each
+/// Test numbers are no one's, in this crate and every other Rust crate. Each
 /// comes from a range its regulator reserves for fiction. Where a country
-/// reserves none, the number starts with a digit no number there starts with.
+/// reserves none, or a test needs a number outside that range, the number
+/// starts with a digit no number there starts with, or has a length no
+/// number there has.
 ///
+/// - North America: 555-0100 to 555-0199, in any area code. Source: NANPA,
+///   "Numbering Resources - 555 Line Numbers"
+///   (<https://www.nationalnanpa.com/number_resource_info/555_numbers.html>).
+///   The `demo-seed` test of its fiction check needs numbers outside that
+///   range, so it puts them under area code 015. An area code starts with
+///   2 to 9, never 0. Source: NANPA, "Number Resources - NPA (Area) Codes"
+///   (<https://www.nationalnanpa.com/area_codes/index.html>).
 /// - UK: 020 7946 0xxx and 07700 900xxx. Source: Ofcom, "Telephone numbers
 ///   for use in TV and radio drama programmes"
 ///   (<https://www.ofcom.org.uk/phones-and-broadband/phone-numbers/numbers-for-drama>).
+///   The `demo-seed` test of its fiction check also uses +44 7700 9001000
+///   and +44 7700 900. A UK mobile number has six digits after 7700, and
+///   these have seven and three.
 /// - France: 06 39 98 xx xx. Source: ARCEP decision 2018-0881, Plan
 ///   national de numérotation, "Numéros pour œuvres audiovisuelles", page 54
 ///   (<https://www.arcep.fr/uploads/tx_gsavis/18-0881.pdf>).
@@ -541,14 +553,6 @@ fn group_id_slug(digits: &[String]) -> String {
 ///   is the UK drama number 07700 900123 written after `+7` instead of
 ///   `+44`. It has nine digits after the 7, one short of any number under
 ///   country code 7.
-///
-/// North America reserves 555-0100 to 555-0199, in any area code, for
-/// fiction. Source: NANPA, "Numbering Resources - 555 Line Numbers"
-/// (<https://www.nationalnanpa.com/number_resource_info/555_numbers.html>).
-/// The `demo-seed` test of its fiction check also needs numbers outside that
-/// range, so it puts them under area code 015: an area code starts with 2 to
-/// 9, never 0. Source: NANPA, "Number Resources - NPA (Area) Codes"
-/// (<https://www.nationalnanpa.com/area_codes/index.html>).
 #[cfg(test)]
 mod tests {
     use super::*;
