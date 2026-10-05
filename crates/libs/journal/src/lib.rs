@@ -127,7 +127,7 @@ pub fn unreadable_line_reason(error: &serde_json::Error) -> String {
 /// [`append`] either lands before the read or after the rewrite, never between
 /// them.
 ///
-/// Corrupt lines are skipped silently during the read, in the push journal
+/// Unreadable lines are skipped silently during the read, in the push journal
 /// and the pull journal alike.
 ///
 /// # Errors
@@ -142,7 +142,7 @@ where
     let _guard = JOURNAL_WRITE_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    // Corrupt lines are skipped silently.
+    // Unreadable lines are skipped silently.
     let events = load_events::<E>(label, path, &mut |_, _| {})?;
     let events = rebuild(events);
     write_unlocked(path, &events)
@@ -238,13 +238,21 @@ mod tests {
         assert!(!reason.contains(" at line "), "{reason}");
     }
 
-    /// An error with no position, which a missing field of an internally
-    /// tagged event gives, keeps serde's text whole, even when a value in it
-    /// holds the words " at line ". `from_value` gives such an error.
+    /// An event tagged by a field, as both journals' events are.
+    #[derive(Debug, Deserialize)]
+    #[serde(tag = "event", rename_all = "snake_case")]
+    enum TaggedEvent {
+        #[allow(dead_code)]
+        Seen { url: String, key: String },
+    }
+
+    /// A line of a tagged event that misses a field gives serde no position,
+    /// and its text is kept whole, even when a value in it holds the words
+    /// " at line ".
     #[test]
     fn a_reason_with_no_position_keeps_serdes_text_whole() {
         let error =
-            serde_json::from_value::<TestEvent>(serde_json::json!({"url": "sms at line 2"}))
+            serde_json::from_slice::<TaggedEvent>(br#"{"event":"seen","url":"sms at line 2"}"#)
                 .unwrap_err();
         assert_eq!(error.line(), 0, "{error}");
         assert_eq!(unreadable_line_reason(&error), error.to_string());
