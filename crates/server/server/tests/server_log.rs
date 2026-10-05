@@ -15,6 +15,7 @@ use std::path::Path;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
+use common::lines::{attachment, conversation_header, message_line};
 use common::{create_database, listen, serve};
 
 /// The owner's password.
@@ -169,43 +170,27 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     )
     .await;
     assert!(status.is_success(), "{status} {answer}");
-    // Built from message-ir's own header type, so the version and the field
-    // names follow the schema (#1732).
-    let participant = |identity: &str| message_ir::IrParticipant {
-        identity: Some(identity.to_string()),
-        display_name: Some(CONTACT_NAME.to_string()),
-        identity_type: None,
-    };
-    let header = serde_json::to_string(&message_ir::ConversationHeader {
-        schema_version: message_ir::SCHEMA_VERSION,
-        export: message_ir::ExportMeta {
-            source: "whatsapp".to_string(),
-            tool: "test".to_string(),
-            tool_version: "0".to_string(),
-            owner_identity: Some("+15555550106".to_string()),
-            owner_display_name: Some("Me".to_string()),
-        },
-        conversation: message_ir::ConversationMeta {
-            chat_identifier: CONTACT_PHONE.to_string(),
-            conversation_type: message_ir::IrConversationType::Individual,
-            group_title: None,
-            participants: vec![participant(CONTACT_PHONE), participant(CONTACT_EMAIL)],
-            // Left at zero, as test_support's builder leaves them: the
-            // import reads none of the header's stats.
-            stats: message_ir::ConversationStats::default(),
-        },
-    })
-    .unwrap();
-    let message = json!({
-        "guid": "g-1", "timestamp_unix_ms": 1_700_000_000_000_i64, "direction": "incoming",
-        "service": "whatsapp", "message_kind": "sms", "sender_identity": CONTACT_PHONE,
-        "sender_display_name": CONTACT_NAME, "subject": null, "text": MESSAGE_TEXT,
-        "attachments": [{ "path": "attachments/photo.bin", "original_name": "photo.bin",
-                          "mime_type": "application/octet-stream", "digest_sha256": sha256,
-                          "is_sticker": false, "transcription": null, "sticker_effect": null }],
-        "imessage": null, "source": null
-    });
-    let batch = format!("{header}\n{message}\n").into_bytes();
+    // Built through the unit tests' own builders, from message-ir's types, so
+    // the version and the field names follow the schema (#1732, #1898).
+    let header = conversation_header("whatsapp", CONTACT_PHONE)
+        .owner("+15555550106", Some("Me"))
+        .participant(CONTACT_PHONE, Some(CONTACT_NAME))
+        .participant(CONTACT_EMAIL, Some(CONTACT_NAME));
+    let message = message_line("g-1", MESSAGE_TEXT)
+        .at(1_700_000_000_000)
+        .service(message_ir::IrService::Whatsapp)
+        .kind(message_ir::IrMessageKind::Sms)
+        .sender(CONTACT_PHONE)
+        .sender_display_name(CONTACT_NAME)
+        .attachment(message_ir::IrAttachment {
+            digest_sha256: Some(sha256.clone()),
+            ..attachment(
+                "attachments/photo.bin",
+                "photo.bin",
+                "application/octet-stream",
+            )
+        });
+    let batch = format!("{}{}", header.line(), message.line()).into_bytes();
     let (status, answer) = call(
         base,
         Method::POST,

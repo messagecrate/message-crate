@@ -735,24 +735,46 @@ async fn importing_an_edited_message_again_keeps_one_copy_of_each_earlier_versio
 /// [`apple_messages_edits`] as a later backup holds it: the message edited
 /// twice was edited a third time, from the bakery to the park, and the
 /// message never edited has been edited once, from "Nothing changed here".
+///
+/// The message lines are read into `message_ir::IrMessage` and changed by
+/// field, so the change holds whatever order or spacing the exporter wrote
+/// the fixture's fields in (#1899). The header line is kept as it is.
 fn later_apple_messages_edits() -> String {
     let edits = apple_messages_edits();
-    let later = edits
-        .replace(
-            r#""text":"Meet at the bakery","attachments":[],"#,
-            r#""text":"Meet at the park","attachments":[],"#,
-        )
-        .replace(
-            r#""text":"Meet at the museum","edited_at_unix_ms":1578309030000}]"#,
-            r#""text":"Meet at the museum","edited_at_unix_ms":1578309030000},{"part_index":0,"text":"Meet at the bakery","edited_at_unix_ms":1578309090000}]"#,
-        )
-        .replace(
-            r#""text":"Nothing changed here","attachments":[],"imessage""#,
-            r#""text":"Something changed here","attachments":[],"edits":[{"part_index":0,"text":"Nothing changed here","edited_at_unix_ms":1578309120000}],"imessage""#,
-        );
+    let (header, messages) = edits
+        .split_once('\n')
+        .expect("a conversation file opens with its header line");
+    let mut edited = Vec::new();
+    let mut later = format!("{header}\n");
+    for line in messages.lines() {
+        let mut message: message_ir::IrMessage =
+            serde_json::from_str(line).expect("each message line is message-ir");
+        let (was, now, edited_at) = match message.guid.as_str() {
+            "guid-edited-twice" => ("Meet at the bakery", "Meet at the park", 1_578_309_090_000),
+            "guid-never-edited" => (
+                "Nothing changed here",
+                "Something changed here",
+                1_578_309_120_000,
+            ),
+            _ => {
+                later.push_str(line);
+                later.push('\n');
+                continue;
+            }
+        };
+        assert_eq!(message.text, was, "{} before the later edit", message.guid);
+        message.edits.push(message_ir::EarlierVersion {
+            part_index: 0,
+            text: std::mem::replace(&mut message.text, now.to_string()),
+            edited_at_unix_ms: Some(edited_at),
+        });
+        edited.push(message.guid.clone());
+        later.push_str(&serde_json::to_string(&message).unwrap());
+        later.push('\n');
+    }
     assert_eq!(
-        later.matches("edited_at_unix_ms").count(),
-        edits.matches("edited_at_unix_ms").count() + 2,
+        edited,
+        ["guid-edited-twice", "guid-never-edited"],
         "the later backup edits both messages again"
     );
     later
