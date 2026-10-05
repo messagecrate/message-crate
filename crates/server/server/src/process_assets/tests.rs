@@ -1472,3 +1472,33 @@ async fn a_live_pass_keeps_its_work_directory_young() {
         "another pass leaves a live directory alone"
     );
 }
+
+/// The line that ends `process-assets` words each count singular for one
+/// and plural for every other count (#1825).
+#[test]
+fn the_done_line_counts_one_and_many() {
+    let one = ProcessAssetsStats {
+        scanned: 1,
+        derived: 1,
+        thumbnails: 1,
+        skipped: 1,
+        errors: 1,
+    };
+    assert_eq!(
+        done_line(&one, false),
+        "done: read 1 original, made 1 Preview and 1 Thumbnail, left 1 original as it was, \
+         1 original whose Preview or Thumbnail could not be made"
+    );
+    let many = ProcessAssetsStats {
+        scanned: 4,
+        derived: 2,
+        thumbnails: 3,
+        skipped: 0,
+        errors: 0,
+    };
+    assert_eq!(
+        done_line(&many, true),
+        "done: read 4 originals, made 2 Previews and 3 Thumbnails, left 0 originals as they were, \
+         0 originals whose Preview or Thumbnail could not be made (dry run)"
+    );
+}

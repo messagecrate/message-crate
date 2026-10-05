@@ -25,6 +25,7 @@ use sqlx::{SqliteConnection, SqlitePool};
 use tempfile::TempDir;
 
 use crate::config::Config;
+use crate::counts::words;
 use crate::db::attachment_versions::{self as versions_db, StoredOriginal, Version, VersionFile};
 use crate::db::{account_profile, schema};
 use crate::open_db::OpenDb;
@@ -178,16 +179,30 @@ pub async fn run(
         );
     }
 
-    println!(
-        "done: scanned={} converted_for_web={} thumbnails={} left_as_is={} conversion_failures={}{}",
-        stats.scanned,
-        stats.derived,
-        stats.thumbnails,
-        stats.skipped,
-        stats.errors,
-        if opts.dry_run { " (dry-run)" } else { "" }
-    );
+    println!("{}", done_line(&stats, opts.dry_run));
     Ok(stats)
+}
+
+/// The line that ends `process-assets`: each count of `stats` in words,
+/// singular for one, and `(dry run)` when nothing was written.
+fn done_line(stats: &ProcessAssetsStats, dry_run: bool) -> String {
+    format!(
+        "done: read {}, made {} and {}, {}, {}{}",
+        words(stats.scanned, "1 original", "{n} originals"),
+        words(stats.derived, "1 Preview", "{n} Previews"),
+        words(stats.thumbnails, "1 Thumbnail", "{n} Thumbnails"),
+        words(
+            stats.skipped,
+            "left 1 original as it was",
+            "left {n} originals as they were"
+        ),
+        words(
+            stats.errors,
+            "1 original whose Preview or Thumbnail could not be made",
+            "{n} originals whose Preview or Thumbnail could not be made"
+        ),
+        if dry_run { " (dry run)" } else { "" }
+    )
 }
 
 /// Make the versions of one stored original, `sha256` of `account_id`, as

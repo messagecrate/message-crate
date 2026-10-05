@@ -66,29 +66,40 @@ pub(super) fn operations_mut(item: &mut PathItem) -> impl Iterator<Item = &mut O
 /// and `anyOf` branches hold. A `$ref` is left alone, because the schema it
 /// names is a component of its own, which a caller walks on its own.
 pub(super) fn for_each_object(schema: &mut RefOr<Schema>, f: &mut impl FnMut(&mut Object)) {
+    for_each_schema(schema, &mut |schema: &mut Schema| {
+        if let Schema::Object(object) = schema {
+            f(object);
+        }
+    });
+}
+
+/// Call `f` on `schema` and then on every schema it holds: its properties,
+/// map values, array items and `allOf`, `oneOf` and `anyOf` branches. A
+/// `$ref` is left alone, as [`for_each_object`] leaves it.
+pub(super) fn for_each_schema(schema: &mut RefOr<Schema>, f: &mut impl FnMut(&mut Schema)) {
     let RefOr::T(schema) = schema else {
         return;
     };
+    f(schema);
     match schema {
         Schema::Object(object) => {
-            f(object);
             for field in object.properties.values_mut() {
-                for_each_object(field, f);
+                for_each_schema(field, f);
             }
             if let Some(AdditionalProperties::RefOr(values)) =
                 object.additional_properties.as_deref_mut()
             {
-                for_each_object(values, f);
+                for_each_schema(values, f);
             }
         }
         Schema::Array(array) => {
             if let ArrayItems::RefOrSchema(items) = &mut array.items {
-                for_each_object(items, f);
+                for_each_schema(items, f);
             }
         }
-        Schema::OneOf(one_of) => one_of.items.iter_mut().for_each(|b| for_each_object(b, f)),
-        Schema::AllOf(all_of) => all_of.items.iter_mut().for_each(|b| for_each_object(b, f)),
-        Schema::AnyOf(any_of) => any_of.items.iter_mut().for_each(|b| for_each_object(b, f)),
+        Schema::OneOf(one_of) => one_of.items.iter_mut().for_each(|b| for_each_schema(b, f)),
+        Schema::AllOf(all_of) => all_of.items.iter_mut().for_each(|b| for_each_schema(b, f)),
+        Schema::AnyOf(any_of) => any_of.items.iter_mut().for_each(|b| for_each_schema(b, f)),
         _ => {}
     }
 }

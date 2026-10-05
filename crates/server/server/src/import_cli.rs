@@ -131,13 +131,8 @@ pub async fn run(opened: &OpenDb, opts: &CliImportOptions) -> Result<CliImportCo
     let dedupe = if opts.skip_dedupe {
         None
     } else {
-        let stats =
-            dedupe::dedupe_cross_source(&mut conn, opts.account_id, None, opts.window_secs).await?;
-        println!(
-            "  dedupe:       fingerprints_set={} exact_hidden={} near_flagged={} (fingerprints are one per message, not duplicates)",
-            stats.keys_filled, stats.exact_flagged, stats.near_flagged
-        );
-        Some(stats)
+        // The command's summary gives these counts, so nothing is printed here.
+        Some(dedupe::dedupe_cross_source(&mut conn, opts.account_id, None, opts.window_secs).await?)
     };
 
     Ok(CliImportCounts {

@@ -9,6 +9,7 @@ use anyhow::{Context, Result};
 use rayon::prelude::*;
 use sqlx::SqliteConnection;
 
+use crate::counts::words;
 use crate::db::conversations::is_group_type;
 use crate::db::schema;
 use crate::db::sql::SQLITE_IN_CHUNK;
@@ -223,8 +224,12 @@ pub async fn dedupe_cross_source(
         .execute(&mut *tx)
         .await?;
         println!(
-            "  dedupe:   keys written={}  ({:.1}s)",
-            stats.keys_filled,
+            "  dedupe:   {}  ({:.1}s)",
+            words(
+                stats.keys_filled,
+                "1 content key written",
+                "{n} content keys written"
+            ),
             started.elapsed().as_secs_f64()
         );
     }
@@ -236,9 +241,17 @@ pub async fn dedupe_cross_source(
         stats.exact_groups = groups;
         stats.exact_flagged = flagged;
         println!(
-            "  dedupe:   exact groups={} flagged={}  ({:.1}s)",
-            stats.exact_groups,
-            stats.exact_flagged,
+            "  dedupe:   {}, {}  ({:.1}s)",
+            words(
+                stats.exact_groups,
+                "1 group of exact duplicates",
+                "{n} groups of exact duplicates"
+            ),
+            words(
+                stats.exact_flagged,
+                "1 message hidden",
+                "{n} messages hidden"
+            ),
             started.elapsed().as_secs_f64()
         );
     }
@@ -249,8 +262,12 @@ pub async fn dedupe_cross_source(
         stats.near_flagged =
             flag_near_time_dupes(&mut tx, account_id, &prio, near_window_secs).await?;
         println!(
-            "  dedupe:   near flagged={}  ({:.1}s total)",
-            stats.near_flagged,
+            "  dedupe:   {}  ({:.1}s total)",
+            words(
+                stats.near_flagged,
+                "1 near duplicate flagged",
+                "{n} near duplicates flagged"
+            ),
             started.elapsed().as_secs_f64()
         );
     }
@@ -303,7 +320,7 @@ async fn insert_content_key_rows(
         let crossed_log_mark =
             written / CONTENT_KEY_WRITE_LOG_EVERY != previous / CONTENT_KEY_WRITE_LOG_EVERY;
         if written == total || crossed_log_mark {
-            println!("  sql:      writing content keys … running={written}/{total}");
+            println!("  sql:      writing content keys … {written} of {total}");
             let _ = io::stdout().flush();
         }
     }
@@ -326,8 +343,8 @@ async fn recompute_content_keys(
         return Ok(0);
     };
     println!(
-        "  sql:      hashing content keys ({} messages)…",
-        inputs.rows.len()
+        "  sql:      hashing content keys ({})…",
+        words(inputs.rows.len() as u64, "1 message", "{n} messages")
     );
     let _ = io::stdout().flush();
     let keys = tokio::task::spawn_blocking(move || inputs.hash())

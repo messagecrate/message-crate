@@ -60,6 +60,8 @@ fn validate_source_id_rejects_bad() {
     assert!(validate_source_id("../x").is_err());
     assert!(validate_source_id("-bad").is_err());
     assert!(validate_source_id("has space").is_err());
+    assert!(validate_source_id(" imessage").is_err());
+    assert!(validate_source_id("imessage\n").is_err());
 }
 
 #[test]

@@ -391,6 +391,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **An import's log says its counts in words, not as
+  `name=value`.** The Upload, the attachment conversion, and the server's
+  import, duplicate check and `process-assets` command wrote counts such as
+  "conversations=2 messages=2", "processed=1 skipped=0" and "promoted
+  convs=1 parts=2 msgs=3". Each now reads like "2 conversations and 2
+  messages", "processed 1 file, skipped 0 files" and "promoted 1
+  conversation, 2 participants, 3 messages, 1 attachment and 0 tapbacks",
+  singular for one. The server's `import` command no longer prints its
+  duplicate counts twice, because its summary already gives them.
 - 2026-10-05 **One import of two backups gives a message its later edit.**
   When one import carried an older and a newer backup of the same phone,
   and a message new to the Message Crate was edited between them, the
@@ -1530,6 +1539,17 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-05 **The HTTP API reference describes every field.** 59 fields,
+  among them the Import Run's mode and source, an upload's part size, and a
+  Contact Group's or Message Tag's name, showed no description in the HTTP
+  API reference. Each now says what it holds and when it is empty, and a
+  check fails on a new field that has none.
+- 2026-10-05 **The server refuses two requests it used to take silently.**
+  An import whose source name had a space before or after it started, and
+  its messages carried the space in their source. A change to a Contact
+  Group or a Message Tag that named a contact or conversation by an
+  impossible number left that one out without a word. Both are now refused
+  as invalid, as any other source name or member the server cannot take is.
 - 2026-10-05 **The HTTP API reference describes every optional field.** An
   optional field that holds a group of values or one of a set of choices,
   such as the identity a contact change links or the service it is on, had

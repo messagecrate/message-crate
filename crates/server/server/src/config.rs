@@ -234,11 +234,16 @@ fn default_assets_converted_dir_name() -> String {
 ///
 /// # Errors
 ///
-/// Returns an error when the id is empty, too long, or uses disallowed characters.
+/// Returns an error when the id is empty, too long, has a space around it, or
+/// uses disallowed characters. The id is checked as given, because callers
+/// store it as given.
 pub fn validate_source_id(source: &str) -> Result<()> {
     let s = source.trim();
     if s.is_empty() {
         bail!("source id must not be empty");
+    }
+    if s != source {
+        bail!("source id must not start or end with a space");
     }
     if s.len() > 64 {
         bail!("source id must be at most 64 characters");
