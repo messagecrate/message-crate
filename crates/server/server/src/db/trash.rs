@@ -547,9 +547,10 @@ async fn original_is_referenced(
 
 /// Make `ids`, which the caller has already established are `account_id`'s
 /// trashed contacts, Unknown again: the name goes, so the next import that
-/// meets one of its handles may name it, the row's origin is set to `import`
-/// (which nothing reads; #1674), its Contact Group memberships go, and its
-/// trash marker goes. The handles stay linked, so the conversations the
+/// meets one of its handles may name it, its Contact Group memberships go,
+/// and its trash marker goes. The row keeps its origin, because `origin`
+/// records what made the row and an import names a nameless contact
+/// whatever made it. The handles stay linked, so the conversations the
 /// person was in keep showing them as one participant — by handle now, since
 /// the name is blank.
 async fn forget_contacts(
@@ -564,7 +565,7 @@ async fn forget_contacts(
     for chunk in ids.chunks(SQLITE_IN_CHUNK) {
         let placeholders = in_placeholders(3, chunk.len());
         let sql = format!(
-            "UPDATE contacts SET preferred_name = '', origin = 'import', last_modified = $2
+            "UPDATE contacts SET preferred_name = '', last_modified = $2
              WHERE account_id = $1 AND id IN ({placeholders})"
         );
         let mut q = sqlx::query(&sql).bind(account_id).bind(&now);
