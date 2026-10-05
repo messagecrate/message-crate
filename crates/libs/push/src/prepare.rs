@@ -707,7 +707,7 @@ fn upload_claimed(
         jobs,
         ctx.cfg.asset_upload_workers,
         ctx.cfg.cancel.as_ref(),
-        |job| upload_one_asset(ctx, job).map_err(|error| error.to_string()),
+        |job| upload_one_asset(ctx, job).map_err(|error| format!("{error:#}")),
     );
 
     // Apply journal updates in a stable order after all workers finish.
@@ -1001,7 +1001,7 @@ impl PrepareQueue {
                         Err(_) if check_cancel(ctx.cfg.cancel.as_ref()).is_err() => {
                             PrepareOutcome::Stopped
                         }
-                        Err(error) => PrepareOutcome::Failed(error.to_string()),
+                        Err(error) => PrepareOutcome::Failed(format!("{error:#}")),
                     };
                     let _ = result_tx.send(PrepareResult {
                         idx: job.idx,

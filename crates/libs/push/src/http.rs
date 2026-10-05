@@ -138,18 +138,19 @@ impl Session {
     /// (`403 Forbidden`: disabled, or neither import nor export), or the
     /// request fails in any other way.
     pub(crate) fn head_asset(&self, sha256: &str) -> Result<bool> {
+        let what = "Asset check";
         let url = self.asset_url(&[sha256])?;
         let response = self
             .http
-            .request_url(Method::HEAD, url.clone(), &self.token)
+            .request_url(Method::HEAD, url, &self.token)
             .timeout(Duration::from_secs(15))
             .send()
-            .with_context(|| format!("HEAD {url}"))?;
+            .with_context(|| format!("{what} failed"))?;
         let status = response.status();
         match status.as_u16() {
             404 => return Ok(false),
             401 => {
-                return Err(session_refused("asset HEAD").into());
+                return Err(session_refused(what).into());
             }
             403 => {
                 return Err(HttpError::new(
@@ -165,10 +166,7 @@ impl Session {
             let text = response.text().unwrap_or_default();
             return Err(HttpError::new(
                 status.as_u16(),
-                format!(
-                    "asset HEAD failed (HTTP {status}): {}",
-                    error_sentence(&text)
-                ),
+                format!("{what} failed (HTTP {status}): {}", error_sentence(&text)),
             )
             .into());
         }
@@ -183,6 +181,7 @@ impl Session {
     /// Returns an error when the file cannot be read or the server rejects it;
     /// a 413 says how large a body the server accepts.
     pub(crate) fn put_asset(&self, asset: &AssetUpload<'_>) -> Result<Asset> {
+        let what = "Asset upload";
         let file_len = std::fs::metadata(asset.file)
             .with_context(|| format!("stat {}", asset.file.display()))?
             .len();
@@ -199,21 +198,21 @@ impl Session {
             .unwrap_or("application/octet-stream");
         let response = self
             .http
-            .request_url(Method::PUT, url.clone(), &self.token)
+            .request_url(Method::PUT, url, &self.token)
             .timeout(Duration::from_secs(600))
             .header("Content-Type", content_type)
             .body(bytes)
             .send()
-            .with_context(|| format!("PUT {url}"))?;
-        let (status, text) = read_body("asset upload", response)?;
+            .with_context(|| format!("{what} failed"))?;
+        let (status, text) = read_body(what, response)?;
         if looks_like_payload_too_large(status, &text) {
             return Err(HttpError::new(
                 413,
-                payload_too_large_message("asset upload", Some(file_len as usize)),
+                payload_too_large_message(what, Some(file_len as usize)),
             )
             .into());
         }
-        ok_json::<Asset>("asset upload", status, &text)
+        ok_json::<Asset>(what, status, &text)
     }
 
     /// Upload in parts: open a multipart upload, send each part, complete
@@ -260,10 +259,11 @@ impl Session {
         import_id: i64,
         ndjson: Vec<u8>,
     ) -> Result<CreateImportBatchResponse> {
+        let what = format!("Import Run {import_id} batch");
         let body_len = ndjson.len();
         if body_len > crate::run::MAX_PROXY_BODY_BYTES {
             return Err(
-                HttpError::new(413, payload_too_large_message("import", Some(body_len))).into(),
+                HttpError::new(413, payload_too_large_message(&what, Some(body_len))).into(),
             );
         }
         let path = format!("/v1/imports/{import_id}/batches");
@@ -274,14 +274,14 @@ impl Session {
             .header("Content-Type", "application/jsonl")
             .body(ndjson)
             .send()
-            .with_context(|| format!("POST {path}"))?;
-        let (status, text) = read_body("import batch", response)?;
+            .with_context(|| format!("{what} failed"))?;
+        let (status, text) = read_body(&what, response)?;
         if looks_like_payload_too_large(status, &text) {
             return Err(
-                HttpError::new(413, payload_too_large_message("import", Some(body_len))).into(),
+                HttpError::new(413, payload_too_large_message(&what, Some(body_len))).into(),
             );
         }
-        ok_json::<CreateImportBatchResponse>("import batch", status, &text)
+        ok_json::<CreateImportBatchResponse>(&what, status, &text)
     }
 
     /// Create an Import Run on the server and return its id. Every batch is
@@ -297,6 +297,7 @@ impl Session {
         mode: ImportMode,
         tool: Option<&str>,
     ) -> Result<i64> {
+        let what = "Import Run start";
         let mut body = serde_json::json!({
             "source": source,
             "mode": mode,
@@ -311,9 +312,9 @@ impl Session {
             .header("Content-Type", "application/json")
             .json(&body)
             .send()
-            .context("POST /v1/imports")?;
-        let (status, text) = read_body("import run", response)?;
-        let parsed: CreateImportResponse = ok_json("import run", status, &text)?;
+            .with_context(|| format!("{what} failed"))?;
+        let (status, text) = read_body(what, response)?;
+        let parsed: CreateImportResponse = ok_json(what, status, &text)?;
         Ok(parsed.id)
     }
 
@@ -327,6 +328,7 @@ impl Session {
         import_id: i64,
         outcome: &ImportOutcome<'_>,
     ) -> Result<()> {
+        let what = format!("Import Run {import_id} completion");
         let body = serde_json::json!({
             "status": outcome.status,
             "bytes_uploaded": outcome.bytes_uploaded,
@@ -343,12 +345,12 @@ impl Session {
             .header("Content-Type", "application/json")
             .json(&body)
             .send()
-            .with_context(|| format!("POST /v1/imports/{import_id}/complete"))?;
-        let (status, text) = read_body("import run complete", response)?;
-        let closed: ImportRun = ok_json("import run complete", status, &text)?;
+            .with_context(|| format!("{what} failed"))?;
+        let (status, text) = read_body(&what, response)?;
+        let closed: ImportRun = ok_json(&what, status, &text)?;
         if closed.id != import_id {
             return Err(anyhow!(
-                "import run complete: the server closed run {} for run {import_id}",
+                "the server closed Import Run {} when asked to complete Import Run {import_id}",
                 closed.id
             ));
         }
@@ -373,6 +375,7 @@ impl<'a> MultipartUpload<'a> {
     /// Returns an error when the server refuses or its reply lacks an upload
     /// id or part size.
     fn start(session: &'a Session, asset: &AssetUpload<'a>, file_len: u64) -> Result<Option<Self>> {
+        let what = "Asset upload start";
         let start_url = session.asset_url(&[asset.sha256, "uploads"])?;
         let mut start_body = serde_json::json!({ "bytes": file_len });
         if let Some(mime) = asset.mime.filter(|m| !m.is_empty()) {
@@ -380,30 +383,28 @@ impl<'a> MultipartUpload<'a> {
         }
         let response = session
             .http
-            .request_url(Method::POST, start_url.clone(), &session.token)
+            .request_url(Method::POST, start_url, &session.token)
             .timeout(Duration::from_secs(30))
             .header("Content-Type", "application/json")
             .json(&start_body)
             .send()
-            .with_context(|| format!("POST {start_url}"))?;
-        let (status, text) = read_body("asset upload start", response)?;
+            .with_context(|| format!("{what} failed"))?;
+        let (status, text) = read_body(what, response)?;
         if looks_like_payload_too_large(status, &text) {
-            return Err(
-                HttpError::new(413, payload_too_large_message("asset upload start", None)).into(),
-            );
+            return Err(HttpError::new(413, payload_too_large_message(what, None)).into());
         }
-        let started: CreateAssetUploadResponse = ok_json("asset upload start", status, &text)?;
+        let started: CreateAssetUploadResponse = ok_json(what, status, &text)?;
         if started.already_present {
             return Ok(None);
         }
         let upload_id = started
             .upload_id
             .filter(|s| !s.is_empty())
-            .ok_or_else(|| anyhow!("upload start missing upload_id"))?;
+            .ok_or_else(|| anyhow!("the server's answer to {what} has no upload id"))?;
         let part_size = started
             .part_size
             .filter(|&n| n > 0)
-            .ok_or_else(|| anyhow!("upload start missing part_size"))?;
+            .ok_or_else(|| anyhow!("the server's answer to {what} has no part size"))?;
         Ok(Some(Self {
             session,
             sha256: asset.sha256,
@@ -426,35 +427,31 @@ impl<'a> MultipartUpload<'a> {
     /// Names the part and, for a 413, its size.
     fn send_part(&self, part: u32, buf: Vec<u8>) -> Result<()> {
         let part_len = buf.len();
+        let what = format!("Asset upload part {part}");
         let part_url = self.url(&["parts", &part.to_string()])?;
         let response = self
             .session
             .http
-            .request_url(Method::PUT, part_url.clone(), &self.session.token)
+            .request_url(Method::PUT, part_url, &self.session.token)
             .timeout(Duration::from_secs(600))
             .header("Content-Type", "application/octet-stream")
             .body(buf)
             .send()
-            .with_context(|| format!("PUT {part_url}"))?;
+            .with_context(|| format!("{what} failed"))?;
         let status = response.status();
         let text = response.text().unwrap_or_default();
         if looks_like_payload_too_large(status, &text) {
-            return Err(HttpError::new(
-                413,
-                payload_too_large_message("asset upload part", Some(part_len)),
-            )
-            .into());
+            return Err(
+                HttpError::new(413, payload_too_large_message(&what, Some(part_len))).into(),
+            );
         }
         if status == reqwest::StatusCode::UNAUTHORIZED {
-            return Err(session_refused(&format!("asset part {part}")).into());
+            return Err(session_refused(&what).into());
         }
         if !status.is_success() {
             return Err(HttpError::new(
                 status.as_u16(),
-                format!(
-                    "asset part {part} failed (HTTP {status}): {}",
-                    error_sentence(&text)
-                ),
+                format!("{what} failed (HTTP {status}): {}", error_sentence(&text)),
             )
             .into());
         }
@@ -463,16 +460,17 @@ impl<'a> MultipartUpload<'a> {
 
     /// Tell the server every part is in and read its reply.
     fn complete(&self) -> Result<Asset> {
+        let what = "Asset upload completion";
         let complete_url = self.url(&["complete"])?;
         let response = self
             .session
             .http
-            .request_url(Method::POST, complete_url.clone(), &self.session.token)
+            .request_url(Method::POST, complete_url, &self.session.token)
             .timeout(Duration::from_secs(600))
             .send()
-            .with_context(|| format!("POST {complete_url}"))?;
-        let (status, text) = read_body("asset upload complete", response)?;
-        ok_json::<Asset>("asset upload complete", status, &text)
+            .with_context(|| format!("{what} failed"))?;
+        let (status, text) = read_body(what, response)?;
+        ok_json::<Asset>(what, status, &text)
     }
 
     /// Drop the upload on the server. Best effort: a failed abort only leaves
@@ -566,7 +564,10 @@ mod tests {
         };
         let err = upload.send_part(2, vec![0; 4]).unwrap_err();
         let message = err.to_string();
-        assert!(message.starts_with("asset part 2 failed."), "got {message}");
+        assert!(
+            message.starts_with("Asset upload part 2 failed."),
+            "got {message}"
+        );
         assert!(message.contains("Log in again"), "got {message}");
         assert_eq!(
             message_crate_http::classify_retry(&err),
@@ -574,9 +575,34 @@ mod tests {
         );
     }
 
+    /// A server that answers the completion of one Import Run with another
+    /// has not closed the run the Upload holds, so the completion fails and
+    /// names both runs.
+    #[test]
+    fn complete_import_fails_when_the_server_closes_another_run() {
+        let server = MockServer::start();
+        let _complete = server.mock(|when, then| {
+            when.method(POST).path("/v1/imports/7/complete");
+            then.status(200).json_body(serde_json::json!({ "id": 9 }));
+        });
+        let err = session(server.base_url())
+            .complete_import(
+                7,
+                &ImportOutcome {
+                    status: "completed",
+                    bytes_uploaded: 0,
+                },
+            )
+            .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "the server closed Import Run 9 when asked to complete Import Run 7"
+        );
+    }
+
     #[test]
     fn payload_too_large_mentions_64_mib_import_chunks() {
-        let msg = payload_too_large_message("import", Some(10));
+        let msg = payload_too_large_message("Import Run 42 batch", Some(10));
         assert!(
             msg.contains("imports under 64 MiB"),
             "413 help must name the import chunk size, got {msg}"
