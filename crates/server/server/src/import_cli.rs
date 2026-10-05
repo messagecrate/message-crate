@@ -38,7 +38,7 @@ pub struct CliImportOptions {
 
 /// Counts and inputs reported by a CLI directory import.
 #[derive(Debug)]
-pub struct CliImportStats {
+pub struct CliImportCounts {
     /// Input folder that was imported.
     pub input_dir: PathBuf,
     /// Source ids written, one Import Run each.
@@ -106,7 +106,7 @@ impl SourcePlan {
 ///
 /// Returns an error when the input directory is missing, has no `.jsonl`
 /// files, or import / duplicate detection fails.
-pub async fn run(opened: &OpenDb, opts: &CliImportOptions) -> Result<CliImportStats> {
+pub async fn run(opened: &OpenDb, opts: &CliImportOptions) -> Result<CliImportCounts> {
     let input = &opts.input_dir;
     if !input.is_dir() {
         bail!("input directory does not exist: {}", input.display());
@@ -141,7 +141,7 @@ pub async fn run(opened: &OpenDb, opts: &CliImportOptions) -> Result<CliImportSt
         Some(stats)
     };
 
-    Ok(CliImportStats {
+    Ok(CliImportCounts {
         input_dir: input.clone(),
         sources: plan.sources(),
         import: import_counts,
@@ -358,10 +358,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let (opened, opts) = fixture_with_export(dir.path()).await;
 
-        let stats = run(&opened, &opts).await.unwrap();
+        let counts = run(&opened, &opts).await.unwrap();
 
-        assert_eq!(stats.import.messages, 1);
-        assert_eq!(stats.import.mode, ImportMode::Append);
+        assert_eq!(counts.import.messages, 1);
+        assert_eq!(counts.import.mode, ImportMode::Append);
         assert_eq!(
             count(
                 &opened,
@@ -386,9 +386,9 @@ mod tests {
             .replace("g-contacts-1", "g-apple-1");
         fs::write(opts.input_dir.join("apple.jsonl"), apple).unwrap();
 
-        let stats = run(&opened, &opts).await.unwrap();
+        let counts = run(&opened, &opts).await.unwrap();
 
-        assert_eq!(stats.import.messages, 2);
+        assert_eq!(counts.import.messages, 2);
         assert_eq!(
             count(
                 &opened,
@@ -463,9 +463,9 @@ mod tests {
             .replace("g-contacts-1", "g-apple-1");
         fs::write(opts.input_dir.join("apple.jsonl"), apple).unwrap();
 
-        let stats = run(&opened, &opts).await.unwrap();
+        let counts = run(&opened, &opts).await.unwrap();
 
-        assert_eq!(stats.import.messages, 2, "both runs' messages are counted");
+        assert_eq!(counts.import.messages, 2, "both runs' messages are counted");
         assert_eq!(
             count(
                 &opened,

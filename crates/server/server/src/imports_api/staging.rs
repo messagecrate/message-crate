@@ -351,7 +351,7 @@ pub(super) async fn import_file_to_staging(
             .to_string(),
         asset_stats,
         media_work,
-        stats: ImportCounts::default(),
+        counts: ImportCounts::default(),
     };
     // `jsonl::read_records` refuses a file whose first record is not a
     // conversation header, so every message here follows one.
@@ -378,7 +378,7 @@ pub(super) async fn import_file_to_staging(
         )));
     };
     staging.stage(header, messages).await?;
-    Ok(staging.stats)
+    Ok(staging.counts)
 }
 
 /// A conversation header as read from the file, with the source it resolved to.
@@ -421,7 +421,7 @@ struct FileStaging<'a> {
     source_file: String,
     asset_stats: &'a mut AssetStats,
     media_work: &'a Path,
-    stats: ImportCounts,
+    counts: ImportCounts,
 }
 
 impl FileStaging<'_> {
@@ -464,7 +464,7 @@ impl FileStaging<'_> {
         conversation: StagedConversation,
         mut prepared_messages: Vec<(MessageRecord, Vec<PreparedAttachment>)>,
     ) -> Result<()> {
-        let mut stats = ImportCounts::default();
+        let mut counts = ImportCounts::default();
         // The title's time: the latest message of this copy, when it has a
         // title. Every timestamp has one fixed RFC 3339 form, so the greatest
         // string is the latest instant.
@@ -510,7 +510,7 @@ impl FileStaging<'_> {
         )
         .await?;
         if flagged {
-            stats.phones_needing_review += 1;
+            counts.phones_needing_review += 1;
         }
         // Only a one-to-one chat's identifier is a person. A group's id (or
         // `orphaned`) names the conversation, so it gets a handle row and no
@@ -545,14 +545,14 @@ impl FileStaging<'_> {
                 chat_handle_type,
             );
         if chat_is_an_address && !with_yourself {
-            count_other_identity(chat_handle_type, chat_cached, &mut stats);
+            count_other_identity(chat_handle_type, chat_cached, &mut counts);
             let _ = ensure_contact_for_handle(
                 self.tx,
                 self.stmts.account_id,
                 self.stmts.import_id,
                 chat_handle_id,
                 None,
-                &mut stats,
+                &mut counts,
             )
             .await?;
         }
@@ -568,7 +568,7 @@ impl FileStaging<'_> {
             },
         )
         .await?;
-        stats.conversations = 1;
+        counts.conversations = 1;
 
         for participant in conversation.participants {
             insert_participant(
@@ -577,7 +577,7 @@ impl FileStaging<'_> {
                 conversation_id,
                 participant,
                 platform,
-                &mut stats,
+                &mut counts,
             )
             .await?;
         }
@@ -603,7 +603,7 @@ impl FileStaging<'_> {
             first_sort_order,
             platform,
             &header_types,
-            &mut stats,
+            &mut counts,
         )
         .await?;
         let msg_chunk = db_staging::message_chunk_rows();
@@ -611,7 +611,7 @@ impl FileStaging<'_> {
             flush_staging_message_chunk(
                 self.tx,
                 self.stmts,
-                &mut stats,
+                &mut counts,
                 conversation_id,
                 &conversation.source,
                 self.opts.assets_dir,
@@ -619,7 +619,7 @@ impl FileStaging<'_> {
             )
             .await?;
         }
-        self.stats.merge_file(&stats);
+        self.counts.merge_file(&counts);
         Ok(())
     }
 }
@@ -691,7 +691,7 @@ async fn insert_participant(
     conversation_id: i64,
     (handle, name_alias, handle_type): StagedParticipant,
     platform: HandleService,
-    stats: &mut ImportCounts,
+    counts: &mut ImportCounts,
 ) -> Result<()> {
     // Prefer the source-provided type; fall back to `Handle::parse`.
     let handle_type = handle_type.unwrap_or_else(|| handle_type_of(&handle));
@@ -712,9 +712,9 @@ async fn insert_participant(
     )
     .await?;
     if flagged {
-        stats.phones_needing_review += 1;
+        counts.phones_needing_review += 1;
     }
-    count_other_identity(handle_type, cached, stats);
+    count_other_identity(handle_type, cached, counts);
     let backup_name = name_alias.as_deref().and_then(nonempty);
     ensure_contact_for_handle(
         tx,
@@ -722,7 +722,7 @@ async fn insert_participant(
         stmts.import_id,
         handle_id,
         backup_name.as_deref(),
-        stats,
+        counts,
     )
     .await?;
     // `participants.name_alias` keeps what this backup called them in this
@@ -731,7 +731,7 @@ async fn insert_participant(
     if db_staging::insert_participant(tx, conversation_id, handle_id, backup_name.as_deref())
         .await?
     {
-        stats.participants += 1;
+        counts.participants += 1;
     }
     Ok(())
 }
@@ -753,7 +753,7 @@ async fn resolve_message_rows(
     first_sort_order: i64,
     platform: HandleService,
     header_types: &HashMap<String, HandleType>,
-    stats: &mut ImportCounts,
+    counts: &mut ImportCounts,
 ) -> Result<Vec<PendingStagingMessage>> {
     let mut rows = Vec::with_capacity(prepared.len());
     for (sort_order, (msg, attachments)) in (first_sort_order..).zip(prepared) {
@@ -783,7 +783,7 @@ async fn resolve_message_rows(
                     .or(msg.sender_handle_type),
                 platform: sender_platform.as_str(),
             },
-            stats,
+            counts,
         )
         .await?;
         let owner_handle_id =
@@ -848,7 +848,7 @@ struct PendingStagingMessage {
 async fn flush_staging_message_chunk(
     tx: &mut SqliteConnection,
     stmts: &mut StagingInserts,
-    stats: &mut ImportCounts,
+    counts: &mut ImportCounts,
     conversation_id: i64,
     source: &str,
     assets_dir: &Path,
@@ -865,22 +865,22 @@ async fn flush_staging_message_chunk(
         // Consume the RETURNING id so a conflicted row (duplicate guid) is
         // skipped instead of attaching children to another message.
         let Some(message_id) = by_sort.remove(&row.sort_order) else {
-            stats.messages_deduped += 1;
+            counts.messages_deduped += 1;
             continue;
         };
-        stats.messages += 1;
+        counts.messages += 1;
         att_rows.extend(
             row.attachments
                 .iter()
                 .map(|prepared| attachment_row(message_id, prepared, assets_dir)),
         );
         for tap in &row.msg.tapbacks {
-            tap_rows.push(tapback_row(tx, stmts, stats, message_id, row, tap).await?);
+            tap_rows.push(tapback_row(tx, stmts, counts, message_id, row, tap).await?);
         }
     }
 
-    stats.attachments += db_staging::insert_attachments(tx, &att_rows).await?;
-    stats.tapbacks += db_staging::insert_tapbacks(tx, &tap_rows).await?;
+    counts.attachments += db_staging::insert_attachments(tx, &att_rows).await?;
+    counts.tapbacks += db_staging::insert_tapbacks(tx, &tap_rows).await?;
     Ok(())
 }
 
@@ -963,7 +963,7 @@ fn attachment_row(
 async fn tapback_row(
     tx: &mut SqliteConnection,
     stmts: &mut StagingInserts,
-    stats: &mut ImportCounts,
+    counts: &mut ImportCounts,
     message_id: i64,
     row: &PendingStagingMessage,
     tap: &TapbackRecord,
@@ -980,7 +980,7 @@ async fn tapback_row(
             handle_type: None,
             platform: &row.sender_platform,
         },
-        stats,
+        counts,
     )
     .await?;
     Ok(StagingTapback {

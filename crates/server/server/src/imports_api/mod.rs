@@ -217,7 +217,7 @@ impl OwnedSession {
     /// error: the import's own result is what the caller returns.
     pub(crate) async fn finish(self, conn: &mut SqliteConnection, result: &Result<ImportCounts>) {
         let outcome = match result {
-            Ok(stats) => CompleteImportArgs::succeeded(stats.messages, stats.attachments),
+            Ok(counts) => CompleteImportArgs::succeeded(counts.messages, counts.attachments),
             Err(_) => CompleteImportArgs::failed(),
         };
         // The import itself is done either way; a failure to record that is
@@ -320,7 +320,7 @@ pub async fn import_jsonl_files_on_conn(
         ));
     }
 
-    let mut stats = ImportCounts {
+    let mut counts = ImportCounts {
         mode: opts.mode,
         ..Default::default()
     };
@@ -342,13 +342,13 @@ pub async fn import_jsonl_files_on_conn(
     if let Some(import_id) = opts.import_id {
         crate::db::imports::require_running_import(&mut tx, opts.account_id, import_id).await?;
     }
-    let asset_stats = stage_all_files(&mut tx, paths, opts, &mut stats, started).await?;
+    let asset_stats = stage_all_files(&mut tx, paths, opts, &mut counts, started).await?;
 
     say(&format!(
         "  import:   promoting staging → production ({:.0}s so far)…",
         started.elapsed().as_secs_f64()
     ));
-    promote_step(&mut tx, opts, &wipe_sources, &mut stats).await?;
+    promote_step(&mut tx, opts, &wipe_sources, &mut counts).await?;
     crate::db::staging::reset_for_account(&mut tx, opts.account_id)
         .await
         .map_err(ImportError::Internal)?;
@@ -356,18 +356,18 @@ pub async fn import_jsonl_files_on_conn(
         .await
         .map_err(|err| ImportError::Internal(err.into()))?;
 
-    stats.assets_copied = asset_stats.copied;
-    stats.assets_deduped = asset_stats.deduped;
-    stats.assets_missing = asset_stats.missing;
+    counts.assets_copied = asset_stats.copied;
+    counts.assets_deduped = asset_stats.deduped;
+    counts.assets_missing = asset_stats.missing;
     say(&format!(
         "  import:   finished in {:.1}s  files={} msgs={} attachments={} assets_copied={}",
         started.elapsed().as_secs_f64(),
-        stats.files,
-        stats.messages,
-        stats.attachments,
-        stats.assets_copied
+        counts.files,
+        counts.messages,
+        counts.attachments,
+        counts.assets_copied
     ));
-    Ok(stats)
+    Ok(counts)
 }
 
 /// Everything an import does before its transaction: the asset store
@@ -438,7 +438,7 @@ async fn stage_all_files(
     tx: &mut SqliteConnection,
     paths: &[PathBuf],
     opts: &ImportOptions<'_>,
-    stats: &mut ImportCounts,
+    counts: &mut ImportCounts,
     started: Instant,
 ) -> Result<AssetStats, ImportError> {
     let total_files = paths.len();
@@ -457,7 +457,7 @@ async fn stage_all_files(
     let mut stmts = StagingInserts::new(opts.account_id, opts.import_id, identities);
 
     for (idx, path) in paths.iter().enumerate() {
-        let file_stats = staging::import_file_to_staging(
+        let file_counts = staging::import_file_to_staging(
             tx,
             &mut stmts,
             opts,
@@ -467,16 +467,16 @@ async fn stage_all_files(
         )
         .await
         .map_err(|err| ImportError::staging(path, err))?;
-        stats.merge_file(&file_stats);
-        stats.files += 1;
+        counts.merge_file(&file_counts);
+        counts.files += 1;
 
         let n = idx + 1;
         if n == 1 || n == total_files || n % progress_every == 0 {
             let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("?");
             say(&format!(
                 "  import:   [{n}/{total_files}] {name}  msgs={} attachments={} assets_copied={} missing={}  ({:.0}s)",
-                stats.messages,
-                stats.attachments,
+                counts.messages,
+                counts.attachments,
                 asset_stats.copied,
                 asset_stats.missing,
                 started.elapsed().as_secs_f64()
@@ -486,7 +486,7 @@ async fn stage_all_files(
     Ok(asset_stats)
 }
 
-/// Move staged rows into production and fold the promote counts into `stats`.
+/// Move staged rows into production and fold the promote counts into `counts`.
 ///
 /// In append mode the promote step is the only place the final row counts
 /// are known, so they replace the staging counts.
@@ -499,7 +499,7 @@ async fn promote_step(
     tx: &mut SqliteConnection,
     opts: &ImportOptions<'_>,
     wipe_sources: &[String],
-    stats: &mut ImportCounts,
+    counts: &mut ImportCounts,
 ) -> Result<(), promote::PromoteError> {
     let promote_stats = promote::promote_append(
         tx,
@@ -509,14 +509,14 @@ async fn promote_step(
         wipe_sources,
     )
     .await?;
-    stats.messages_deduped += promote_stats.messages_deduped;
-    stats.messages_appended = promote_stats.messages_appended;
+    counts.messages_deduped += promote_stats.messages_deduped;
+    counts.messages_appended = promote_stats.messages_appended;
     if opts.mode == ImportMode::Append {
-        stats.conversations = promote_stats.conversations;
-        stats.participants = promote_stats.participants;
-        stats.messages = promote_stats.messages;
-        stats.attachments = promote_stats.attachments;
-        stats.tapbacks = promote_stats.tapbacks;
+        counts.conversations = promote_stats.conversations;
+        counts.participants = promote_stats.participants;
+        counts.messages = promote_stats.messages;
+        counts.attachments = promote_stats.attachments;
+        counts.tapbacks = promote_stats.tapbacks;
     }
     Ok(())
 }
@@ -558,7 +558,7 @@ pub(crate) struct CreateImportBatchResponse {
     source: String,
     account: i64,
     #[serde(flatten)]
-    stats: ImportCounts,
+    counts: ImportCounts,
     #[serde(skip_serializing_if = "Option::is_none")]
     dedupe: Option<DedupeCounts>,
 }
@@ -1734,7 +1734,7 @@ async fn run_import_path(
         imports_api::ImportSchemaMode::AssumeReady,
     )
     .await;
-    let stats = import_result?;
+    let counts = import_result?;
     let dedupe_stats = if do_dedupe {
         Some(dedupe::dedupe_cross_source(&mut conn, account, None, 2).await?)
     } else {
@@ -1744,7 +1744,7 @@ async fn run_import_path(
     Ok(Json(CreateImportBatchResponse {
         source: source_id,
         account,
-        stats,
+        counts,
         dedupe: dedupe_stats.map(|d| DedupeCounts {
             keys_filled: d.keys_filled,
             exact_groups: d.exact_groups,

@@ -43,7 +43,7 @@ pub(super) async fn ensure_contact_for_handle(
     import_id: Option<i64>,
     handle_id: i64,
     backup_name: Option<&str>,
-    stats: &mut ImportCounts,
+    counts: &mut ImportCounts,
 ) -> Result<i64> {
     let name = backup_name.and_then(trimmed).unwrap_or("");
     let trashed = match ensure_sibling_contact_link(tx, account_id, import_id, handle_id).await? {
@@ -73,18 +73,18 @@ pub(super) async fn ensure_contact_for_handle(
             }
             for unknown in trash::discard_trashed_contact(tx, account_id, trashed).await? {
                 import_contacts::record(tx, import_id, unknown, ContactReason::Created).await?;
-                stats.contacts_created += 1;
+                counts.contacts_created += 1;
             }
             ContactReason::ReplacedTrashed
         }
         None => ContactReason::Created,
     };
     import_contacts::record(tx, import_id, contact_id, reason).await?;
-    stats.contacts_created += 1;
+    counts.contacts_created += 1;
     Ok(contact_id)
 }
 
-/// Count `handle_type` in `stats` when it is `Other` and this run meets the
+/// Count `handle_type` in `counts` when it is `Other` and this run meets the
 /// identity for the first time (`cached` is false). An identity of type
 /// `other` that is a person is a name with no address, or a sender such as
 /// `AMAZON`: something the exporter could not tie to an address, which the
@@ -92,16 +92,16 @@ pub(super) async fn ensure_contact_for_handle(
 pub(super) fn count_other_identity(
     handle_type: HandleType,
     cached: bool,
-    stats: &mut ImportCounts,
+    counts: &mut ImportCounts,
 ) {
     if handle_type == HandleType::Other && !cached {
-        stats.other_identities += 1;
+        counts.other_identities += 1;
     }
 }
 
 /// What one message says about who sent it. Its own type because these four
 /// facts travel together and come from the message, while the connection,
-/// handle cache, account and stats around them belong to the import run.
+/// handle cache, account and counts around them belong to the import run.
 pub(super) struct IncomingSender<'a> {
     /// True when the account owner sent it, in which case there is no sender
     /// handle to resolve.
@@ -138,7 +138,7 @@ pub(super) async fn resolve_incoming_sender_handle(
     account_id: i64,
     import_id: Option<i64>,
     sender: IncomingSender<'_>,
-    stats: &mut ImportCounts,
+    counts: &mut ImportCounts,
 ) -> Result<Option<i64>> {
     if sender.is_from_me {
         return Ok(None);
@@ -159,9 +159,9 @@ pub(super) async fn resolve_incoming_sender_handle(
     )
     .await?;
     if flagged {
-        stats.phones_needing_review += 1;
+        counts.phones_needing_review += 1;
     }
-    count_other_identity(handle_type, cached, stats);
+    count_other_identity(handle_type, cached, counts);
     // A sender is a person the import met, whether or not a conversation
     // header named them: `orphaned.jsonl` names nobody, and a group header
     // can leave out someone who wrote in it. So the sender gets a contact
@@ -172,7 +172,7 @@ pub(super) async fn resolve_incoming_sender_handle(
     // identities. A sender at one is the holder, who never gets a contact
     // here (#1093); the message still records the address it came from.
     if !cached && !is_account_identity(identities, address, handle_type) {
-        ensure_contact_for_handle(tx, account_id, import_id, handle_id, None, stats).await?;
+        ensure_contact_for_handle(tx, account_id, import_id, handle_id, None, counts).await?;
     }
     Ok(Some(handle_id))
 }

@@ -393,7 +393,7 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
     .unwrap();
     let assets = dir.join("assets");
     let mut conn = fixture.conn().await;
-    let stats = crate::imports_api::import_jsonl_files_on_conn(
+    let counts = crate::imports_api::import_jsonl_files_on_conn(
         &mut conn,
         &[path],
         &crate::imports_api::ImportOptions::fixed(crate::imports_api::FixedImportArgs {
@@ -409,8 +409,8 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
     )
     .await
     .unwrap();
-    assert_eq!(stats.messages, 3);
-    assert_eq!(stats.tapbacks, 3);
+    assert_eq!(counts.messages, 3);
+    assert_eq!(counts.tapbacks, 3);
 }
 
 /// An Apple Messages conversation file holding a message the owner deleted
@@ -428,7 +428,7 @@ async fn import_deletions(fixture: &TestFixture, account_id: i64) {
     std::fs::write(&path, APPLE_MESSAGES_DELETIONS).unwrap();
     let assets = dir.join("assets");
     let mut conn = fixture.conn().await;
-    let stats = crate::imports_api::import_jsonl_files_on_conn(
+    let counts = crate::imports_api::import_jsonl_files_on_conn(
         &mut conn,
         &[path],
         &crate::imports_api::ImportOptions::fixed(crate::imports_api::FixedImportArgs {
@@ -445,7 +445,7 @@ async fn import_deletions(fixture: &TestFixture, account_id: i64) {
     .await
     .unwrap();
     assert_eq!(
-        stats.messages, 3,
+        counts.messages, 3,
         "a marked message is imported like any other"
     );
 }

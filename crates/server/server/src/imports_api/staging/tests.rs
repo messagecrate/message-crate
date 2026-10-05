@@ -374,11 +374,11 @@ async fn orphaned_jsonl_is_staged_as_the_orphaned_conversation() {
     let body = ORPHANED_HEADER.to_string()
         + &incoming("g-orphan-1", "+15555550154")
         + &incoming("g-orphan-2", "+15555550154");
-    let stats = import_one(&mut conn, "orphaned.jsonl", &body)
+    let counts = import_one(&mut conn, "orphaned.jsonl", &body)
         .await
         .unwrap();
-    assert_eq!(stats.conversations, 1);
-    assert_eq!(stats.messages, 2);
+    assert_eq!(counts.conversations, 1);
+    assert_eq!(counts.messages, 2);
 
     let (chat, kind, file): (String, String, String) = sqlx::query_as(
         "SELECT h.raw, c.conversation_type, c.source_file FROM conversations c

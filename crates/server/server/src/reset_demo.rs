@@ -868,7 +868,7 @@ async fn import_demo_sources_with(
             .await
             .map_err(anyhow::Error::from);
             match imported {
-                Ok(stats) => run.add_run(&stats),
+                Ok(counts) => run.add_run(&counts),
                 Err(error) => {
                     result = Err(error);
                     break;

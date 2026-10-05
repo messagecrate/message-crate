@@ -475,7 +475,7 @@ async fn dump_openapi_writes_the_document_to_the_output_path() {
 
 #[test]
 fn import_counts_print_one_line_for_each_count() {
-    let stats = crate::imports_api::ImportCounts {
+    let counts = crate::imports_api::ImportCounts {
         conversations: 2,
         messages: 5,
         mode: ImportMode::Replace,
@@ -483,7 +483,7 @@ fn import_counts_print_one_line_for_each_count() {
     };
 
     assert_eq!(
-        format_import_counts(&stats),
+        format_import_counts(&counts),
         "  files:         0\n\
          \x20 conversations: 2\n\
          \x20 participants:  0\n\
