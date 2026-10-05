@@ -236,6 +236,15 @@ fn mock_asset<'a>(server: &'a MockServer, sha256: &str, bytes: &[u8]) -> httpmoc
     })
 }
 
+/// The temporary files a fetch left in `dir`: every name ending in `.part`.
+fn part_files_in(dir: &Path) -> Vec<String> {
+    fs::read_dir(dir)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .filter(|name| name.ends_with(".part"))
+        .collect()
+}
+
 /// A pull of every message into `out_dir`: two messages a page, one download
 /// worker so the counts in the log are fixed.
 fn config(out_dir: &Path, base_url: String) -> PullConfig {
@@ -296,9 +305,10 @@ fn a_pull_records_one_run_and_writes_the_conversation_and_every_asset_once_acros
         fs::read(out.join("attachments").join(PHOTO_SHA)).unwrap(),
         PHOTO_BYTES
     );
-    assert!(
-        !out.join("attachments/menu.part").exists(),
-        "the .part file is renamed into place"
+    assert_eq!(
+        part_files_in(&out.join("attachments")),
+        Vec::<String>::new(),
+        "each temporary file is renamed into place"
     );
     let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
     assert_eq!(doc.export.source, "sms-backup-restore");
@@ -821,9 +831,10 @@ fn bytes_whose_sha256_is_not_the_one_asked_for_fail_the_run_and_are_not_kept() {
         !photo_path.exists(),
         "the login page is not kept as the photo"
     );
-    assert!(
-        !photo_path.with_extension("part").exists(),
-        "the .part file is removed"
+    assert_eq!(
+        part_files_in(&out.join("attachments")),
+        Vec::<String>::new(),
+        "the temporary file is removed"
     );
     let state = journal::load(&journal::journal_path(&out), &server.base_url(), "alice").unwrap();
     assert!(
