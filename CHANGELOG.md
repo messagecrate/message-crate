@@ -21,13 +21,17 @@ released versions carry their date on the heading.
 
 ### Features
 
-- 2026-10-04 **The conversation shows which messages were deleted in the app
-  they came from, and which were unsent.** A message deleted in the source
-  app keeps its text in a faded bubble with a dashed outline, and the line
-  under it reads like "4:56 PM · Deleted in Apple Messages". An unsent
-  message is an empty faded bubble with a dashed outline that reads
-  "Unsent", with its time under it. Every source draws them the same way.
-  The Demo Account has a few of each in its Apple Messages conversations.
+- 2026-10-04 **The conversation and the Messages list show which messages
+  were deleted in the app they came from, and which were unsent.** A message
+  deleted in the source app keeps its text in a faded bubble with a dashed
+  outline, and the line under it reads like "4:56 PM · Deleted in Apple
+  Messages". An unsent message is an empty faded bubble with a dashed
+  outline that reads "Unsent", with its time under it. Every source draws
+  them the same way. The Messages list marks them too: a row for a message
+  deleted in the source app keeps its text, with a faded "Deleted in Apple
+  Messages" line under it, and a row for an unsent message reads "Unsent" in
+  place of its text. The Demo Account has a few of each in its Apple
+  Messages conversations.
 - 2026-10-04 **A message deleted in Apple Messages, or unsent, is kept and
   marked.** A message deleted in Apple Messages that its recently deleted
   list still holds is imported with its text and marked Deleted in the
@@ -1085,6 +1089,11 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-04 **On the light theme, the contact drawer's shadow falls on the
+  list it covers.** The drawer opens from the right, and its shadow fell to
+  the right, under the drawer itself, so the drawer's left edge had no
+  shadow. It now falls to the left, as on the dark theme and as the Sources
+  drawer's does.
 - 2026-10-04 **Panels, menus and drawers stand out on the dark theme.**
   Their shadows were tuned for the light theme and all but vanished on the
   dark theme's dark surfaces. The dark theme now has its own, darker
