@@ -63,9 +63,9 @@ A saved directory is applied again each time the app starts.
 ## Exports
 
 **Exports** names the Export Directory and opens it.
-Each [Export](/docs/user/features/messages/export/) and each [Convert](/docs/user/features/settings/convert/) gets a directory of its own there, named for what it is, when it started and its format, such as `export-2026-10-04-1430-mbox` or `convert-2026-10-04-1502-csv`.
-The result is written there unless the Export or Convert form names another directory.
-The directory holds only the result once the run finishes; a run that fails or is cancelled deletes it.
+Each [Export](/docs/user/features/messages/export/), and each [Convert](/docs/user/features/settings/convert/) with no output directory chosen, gets a directory of its own there, named for what it is, when it started and its format, such as `export-2026-10-04-1430-mbox` or `convert-2026-10-04-1502-csv`.
+The result is written there unless the Export form names another directory.
+The directory holds only the result once the run finishes; a run that fails or is cancelled deletes it, and one the app did not see to its end is deleted the next time the app starts.
 
 The Export Directory is `exports` in the operating system's app-data directory, such as `~/.local/share/app.messagecrate.desktop/exports` on Linux.
 Message Crate never deletes a finished export from it.

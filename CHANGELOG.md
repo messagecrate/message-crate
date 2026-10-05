@@ -235,9 +235,10 @@ released versions carry their date on the heading.
   output directory is chosen. A directory can still be chosen for either.
   The JSON Lines an export converts from now wait in that directory instead
   of the Staging Directory, and are deleted when it finishes, leaving only
-  the result; a failed or cancelled export deletes its directory. Screens,
-  the user guide and the glossary say "directory" everywhere they said
-  "folder".
+  the result; a failed or cancelled export deletes its directory, and one
+  the app did not see to its end is deleted the next time it starts.
+- 2026-10-04 **Screens, the user guide and the glossary say "directory"
+  everywhere they said "folder".**
 - 2026-10-04 **A reaction travels on the message it reacts to.** An Apple
   Messages tapback or emoji reaction is written into an export on the
   message it reacts to, with the person who reacted named, and an import
@@ -1471,12 +1472,9 @@ released versions carry their date on the heading.
 
 ### Upgrading
 
-- Exports and conversions written with no directory chosen now go into the
-  Export Directory, `exports` in the app's data directory
-  (`~/.local/share/app.messagecrate.desktop/exports` on Linux,
-  `~/Library/Application Support/app.messagecrate.desktop/exports` on macOS,
-  `%APPDATA%\app.messagecrate.desktop\exports` on Windows). Settings →
-  System opens it. Export no longer writes into the Staging Directory.
+- An export, or a conversion with no output directory chosen, now goes into
+  the Export Directory; look for it there, through Settings → System, rather
+  than in the Staging Directory.
 - The database format changed. **An existing Message Crate is rebuilt
   empty on first start and its messages must be imported again.**
 - If your configuration file sets `asset_max_bytes` under `[server]`, delete

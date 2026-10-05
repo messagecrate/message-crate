@@ -35,11 +35,11 @@ Its first line names the format found in the input directory, such as `Detected 
 Its second line gives the number of conversations, such as `Conversations: 384`.
 
 A finished conversion shows a green panel that names the format and the output directory, such as "Conversion complete. MBOX (.mbox) written to /home/sam/exports/mbox."
+A failed one shows the reason in a red panel and as an `Error:` line in the log.
 
 With **Output directory** left empty, the conversion writes into a directory of its own in the Export Directory, named `convert-` followed by the date, the time and the format, such as `convert-2026-10-04-1502-mbox`.
 [**Settings → System**](/docs/user/features/settings/system/#exports) names the Export Directory and opens it.
 A conversion that fails or is cancelled deletes that directory.
-A failed one shows the reason in a red panel and as an `Error:` line in the log.
 
 ## What it reads
 
