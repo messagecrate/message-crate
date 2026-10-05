@@ -1,4 +1,4 @@
-//! `push` command — upload an extract folder to a Message Crate server.
+//! `push` command — upload an extract directory to a Message Crate server.
 
 use message_crate_push::ImportMode;
 use std::path::PathBuf;
@@ -69,7 +69,7 @@ pub struct PushArgs {
     /// The logged-in Session's token, sent as the bearer token. Never an API
     /// Token, and never a password.
     pub token: String,
-    /// Folder of conversation files to upload.
+    /// Directory of conversation files to upload.
     pub input_dir: String,
     /// Import mode. `append` adds to existing data (safe to re-run);
     /// `replace` deletes existing messages for this source, then imports.
@@ -118,13 +118,13 @@ pub fn push(
 /// small files over a local network; each number says why.
 ///
 /// The attachment size limit comes from the media settings Staging recorded
-/// in the folder ([`message_staging::read_media_settings`]): the number the
+/// in the directory ([`message_staging::read_media_settings`]): the number the
 /// Staging Review forecast against, read from the one place that holds it
 /// after Staging.
 ///
 /// # Errors
 ///
-/// Returns an error when the folder holds no readable media settings,
+/// Returns an error when the directory holds no readable media settings,
 /// because its Staging never finished.
 fn push_config(args: PushArgs) -> anyhow::Result<PushConfig> {
     let input = PathBuf::from(&args.input_dir);
@@ -135,7 +135,7 @@ fn push_config(args: PushArgs) -> anyhow::Result<PushConfig> {
         username: args.username,
         token: args.token,
         mode: args.mode,
-        // A resumed Upload skips what the journal in the staging folder
+        // A resumed Upload skips what the journal in the run directory
         // already recorded as sent.
         force: false,
         skip_attachments: args.skip_attachments,
@@ -159,7 +159,7 @@ fn push_config(args: PushArgs) -> anyhow::Result<PushConfig> {
         asset_max_bytes: recorded.asset_max_bytes,
         report_path: None,
         log_path: None,
-        // The journal stays in the staging folder, beside the files it tracks.
+        // The journal stays in the run directory, beside the files it tracks.
         journal_path: None,
         cancel: None,
         import_id: args.import_id,
@@ -234,9 +234,9 @@ mod tests {
     };
     use serde_json::json;
 
-    /// A staging folder with the media settings Staging records, its
+    /// A run directory with the media settings Staging records, its
     /// attachment size limit `asset_max_bytes`.
-    fn staged_folder(asset_max_bytes: u64) -> tempfile::TempDir {
+    fn staged_directory(asset_max_bytes: u64) -> tempfile::TempDir {
         let staging = tempfile::tempdir().unwrap();
         message_staging::write_media_settings(
             staging.path(),
@@ -250,11 +250,11 @@ mod tests {
         staging
     }
 
-    /// Upload holds a file to the limit Staging recorded in the folder, the
+    /// Upload holds a file to the limit Staging recorded in the directory, the
     /// number the Staging Review forecast against.
     #[test]
-    fn upload_uses_the_attachment_size_limit_the_folder_recorded() {
-        let staging = staged_folder(123_456_789);
+    fn upload_uses_the_attachment_size_limit_the_directory_recorded() {
+        let staging = staged_directory(123_456_789);
         let args: PushArgs = serde_json::from_value(json!({
             "baseUrl": "http://127.0.0.1:8080",
             "username": "",
@@ -269,11 +269,11 @@ mod tests {
         assert_eq!(push_config(args).unwrap().asset_max_bytes, 123_456_789);
     }
 
-    /// The limit has no default in the desktop app: a folder whose Staging
+    /// The limit has no default in the desktop app: a directory whose Staging
     /// never recorded one is refused, because the app has no number of its
     /// own to fall back on.
     #[test]
-    fn upload_from_a_folder_with_no_media_settings_is_refused() {
+    fn upload_from_a_directory_with_no_media_settings_is_refused() {
         let staging = tempfile::tempdir().unwrap();
         let args: PushArgs = serde_json::from_value(json!({
             "baseUrl": "http://127.0.0.1:8080",
@@ -290,7 +290,7 @@ mod tests {
         assert!(format!("{err:#}").contains("no media settings"), "{err:#}");
     }
 
-    /// A resumed Upload runs over the staging folder the interrupted Upload
+    /// A resumed Upload runs over the run directory the interrupted Upload
     /// left, journal included. Sending the journaled messages again would
     /// only make the server count each one as a Duplicate.
     #[test]
@@ -312,7 +312,7 @@ mod tests {
             }));
         });
 
-        let staging = staged_folder(512 * 1024 * 1024);
+        let staging = staged_directory(512 * 1024 * 1024);
         let header = json!({
             "schema_version": SCHEMA_VERSION,
             "export": ExportMeta {

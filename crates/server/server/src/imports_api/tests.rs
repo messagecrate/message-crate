@@ -55,7 +55,7 @@ async fn stored_summary(fixture: &TestFixture, import_id: i64) -> Option<serde_j
 #[tokio::test]
 async fn a_stage_change_with_a_summary_stores_it() {
     // The Review screen posts what the user approved so it survives a
-    // reload — recomputing the summary from the folder is a different
+    // reload — recomputing the summary from the directory is a different
     // question from what was actually approved.
     let (fixture, account) = fixture_with_account().await;
     let (location, created): (String, serde_json::Value) = post_created_json(
@@ -2196,7 +2196,7 @@ fn one_attachment_batch(path: &str, sha: Option<&str>) -> String {
     )
 }
 
-/// S1-11: an attachment path that leaves the folder is the sender's to fix,
+/// S1-11: an attachment path that leaves the directory is the sender's to fix,
 /// so it answers 422 naming the path, not 500.
 #[tokio::test]
 async fn a_batch_with_an_unsafe_attachment_path_is_a_422_naming_the_path() {

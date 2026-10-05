@@ -55,7 +55,7 @@ A file the server cannot read answers `400 Bad Request` with a `malformed-body` 
 
 A batch holds one pooled database connection for the whole of its work: parsing the JSONL, placing attachments, and promoting messages. At most two batches run at once across the whole server, so the rest of the pool stays free for logins, browsing, and export while an import runs. Batches for the same account run one at a time.
 
-`message-crate-server import` reads a folder of JSONL without the HTTP interface. It defaults to `replace` and runs dedupe unless given `--skip-dedupe`.
+`message-crate-server import` reads a directory of JSONL without the HTTP interface. It defaults to `replace` and runs dedupe unless given `--skip-dedupe`.
 
 ## Export Run
 

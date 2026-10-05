@@ -26,9 +26,9 @@ fn photo(bytes: &[u8]) -> IrAttachment {
     }
 }
 
-/// Every `.eml` under `dir/folder`, in file name order, as raw bytes.
-fn mails(dir: &Path, folder: &str) -> Vec<(String, Vec<u8>)> {
-    let mut out: Vec<(String, Vec<u8>)> = fs::read_dir(dir.join(folder))
+/// Every `.eml` under `dir/directory`, in file name order, as raw bytes.
+fn mails(dir: &Path, directory: &str) -> Vec<(String, Vec<u8>)> {
+    let mut out: Vec<(String, Vec<u8>)> = fs::read_dir(dir.join(directory))
         .unwrap()
         .map(|entry| {
             let entry = entry.unwrap();
@@ -255,11 +255,11 @@ fn only_sms_and_mms_are_written_and_the_rest_are_counted() {
         .write(tmp.path(), &[imessage, sms, whatsapp], &mut report)
         .unwrap();
 
-    let folders: Vec<String> = fs::read_dir(tmp.path())
+    let directories: Vec<String> = fs::read_dir(tmp.path())
         .unwrap()
         .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
-    assert_eq!(folders, ["+15555550101"]);
+    assert_eq!(directories, ["+15555550101"]);
     assert_eq!(report.extra(NOT_SMS_OR_MMS_LEFT_OUT), 3);
 }
 
@@ -277,8 +277,8 @@ fn a_message_of_unknown_service_and_sms_kind_is_written() {
     archive().write(tmp.path(), &[doc], &mut report).unwrap();
 
     assert_eq!(report.extra(NOT_SMS_OR_MMS_LEFT_OUT), 0);
-    let folder = tmp.path().join("+15555550101");
-    let mail = fs::read_dir(&folder)
+    let directory = tmp.path().join("+15555550101");
+    let mail = fs::read_dir(&directory)
         .unwrap()
         .next()
         .unwrap()

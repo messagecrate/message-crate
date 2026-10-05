@@ -83,7 +83,7 @@ describe("importOutcome", () => {
   });
 
   // A failed Upload is paused, not failed (#1233): the run stays open at
-  // its Upload with its folder, and the next visit offers Resume or Discard.
+  // its Upload with its directory, and the next visit offers Resume or Discard.
   it("is paused when the job threw, whatever the report says", () => {
     expect(importOutcome({ report: report(), threw: true, issues: [] })).toBe("paused");
   });

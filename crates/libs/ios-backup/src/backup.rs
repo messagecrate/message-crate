@@ -1,4 +1,4 @@
-//! What an iPhone backup folder says about itself before anything is opened.
+//! What an iPhone backup directory says about itself before anything is opened.
 
 use std::{fs::File, path::Path};
 

@@ -1376,7 +1376,7 @@ async fn deleting_one_accounts_messages_leaves_the_others_alone() {
 
 /// Deleting an account's messages removes the attachment files of every
 /// source it has, originals and browser copies both, and nothing else: a
-/// folder beside them, a file at the account's root and another account's
+/// directory beside them, a file at the account's root and another account's
 /// files all stay. Without this the rows go and every photo stays on disk.
 #[tokio::test]
 async fn deleting_messages_removes_the_accounts_attachment_files_and_only_those() {
@@ -1693,15 +1693,15 @@ async fn the_owner_deletes_any_account_outright() {
     );
 }
 
-/// A data folder that cannot be removed does not turn a delete that happened
+/// A data directory that cannot be removed does not turn a delete that happened
 /// into a failure: the row is gone, so the delete answers `204 No Content`.
 #[tokio::test]
-async fn a_folder_that_cannot_be_removed_still_answers_no_content() {
+async fn a_directory_that_cannot_be_removed_still_answers_no_content() {
     let fixture = test_fixture().await;
     let state = fixture.state.clone();
     let owner = claim_as_owner(&state, "keeper", "hunter2hunter2").await;
     let victim = register_via_api(&state, "bob", "hunter2hunter2").await;
-    // A file where the account's folder belongs makes `remove_dir_all` fail
+    // A file where the account's directory belongs makes `remove_dir_all` fail
     // whoever runs the test, root included.
     let data_dir = &state.cfg.paths.data_dir;
     std::fs::create_dir_all(data_dir).unwrap();

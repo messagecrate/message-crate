@@ -130,7 +130,7 @@ builds a binary and nothing else.
 
 Because `crabapple` is the only code in the repository that can decrypt an
 iPhone backup, the program also serves one request that is not about Apple
-Messages: decrypt every file of one backup domain into a folder the app
+Messages: decrypt every file of one backup domain into a directory the app
 names (#941). The WhatsApp importer uses it for an encrypted iPhone backup,
 because wtsexporter asks for the backup password on a terminal and takes it
 no other way. The decrypting stays on the GPL side of the boundary; the
@@ -160,9 +160,9 @@ dev-dependency only; no shipped binary links it.
 
 `crates/libs/ios-backup` is FCL and is the one crate that starts the reader.
 Its `Helper` finds the program, writes the request, relays progress lines,
-and kills the program when dropped. The folder one request decrypts into
+and kills the program when dropped. The directory one request decrypts into
 is a `ScratchDir` from `message-crate-core`, under the desktop app's cache
-folder. It also holds what is asked of an iPhone backup
+directory. It also holds what is asked of an iPhone backup
 itself, which several sources read: whether it is encrypted, the addresses
 its device sent from, and one domain's files decrypted for the WhatsApp
 importer. `cargo tree -p ios-backup` shows no GPL crate.
@@ -199,7 +199,7 @@ that:
 - **A notice in the app.** Settings → System shows a "Third-party software"
   block in the desktop app only (the website ships no reader), naming the
   Apple Messages reader (imessage-reader), its licence, and two links built
-  from the app's own Build: the reader's folder at the release tag
+  from the app's own Build: the reader's directory at the release tag
   (`.../tree/v<version>/crates/helpers/imessage-reader`) and the GPL text at
   the same tag. The tag, not `main`, so an old install keeps pointing at the
   source that matches its binary. `web/src/lib/thirdPartySoftware.ts`.

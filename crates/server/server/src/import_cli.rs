@@ -1,4 +1,4 @@
-//! CLI directory import: any JSONL folder; source from IR `export.source` unless overridden.
+//! CLI directory import: any JSONL directory; source from IR `export.source` unless overridden.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -20,7 +20,7 @@ use media::MediaMode;
 pub struct CliImportOptions {
     /// Account the import writes into.
     pub account_id: i64,
-    /// Folder of `*.jsonl` conversation files (+ attachments).
+    /// Directory of `*.jsonl` conversation files (+ attachments).
     pub input_dir: PathBuf,
     /// Originals asset store override; per-account default when `None`.
     pub assets_dir: Option<PathBuf>,
@@ -39,7 +39,7 @@ pub struct CliImportOptions {
 /// Counts and inputs reported by a CLI directory import.
 #[derive(Debug)]
 pub struct CliImportStats {
-    /// Input folder that was imported.
+    /// Input directory that was imported.
     pub input_dir: PathBuf,
     /// Source ids written, one Import Run each.
     pub sources: Vec<String>,
@@ -66,7 +66,7 @@ impl SourcePlan {
     /// # Errors
     ///
     /// Returns an error for an invalid source id, an unreadable file, a file
-    /// holding conversations of two sources, or a folder with no
+    /// holding conversations of two sources, or a directory with no
     /// `export.source` anywhere.
     fn resolve(opts: &CliImportOptions, paths: &[PathBuf], input: &Path) -> Result<Self> {
         if let Some(source) = &opts.source_override {
@@ -99,7 +99,7 @@ impl SourcePlan {
     }
 }
 
-/// Import a folder of JSON Lines files into the database, then optionally run
+/// Import a directory of JSON Lines files into the database, then optionally run
 /// cross-source duplicate hiding.
 ///
 /// # Errors
@@ -317,7 +317,7 @@ mod tests {
         )
     }
 
-    /// A database with account alice and an export folder holding one
+    /// A database with account alice and an export directory holding one
     /// conversation with `PHONE`.
     async fn fixture_with_export(dir: &Path) -> (OpenDb, CliImportOptions) {
         let opened = OpenDb::create_or_open(fresh_config(dir)).await.unwrap();
@@ -374,7 +374,7 @@ mod tests {
         opened.close().await;
     }
 
-    /// Issue #1173: an Apple Messages export and an SMS export in one folder,
+    /// Issue #1173: an Apple Messages export and an SMS export in one directory,
     /// each with a chat with `PHONE`, import as one conversation holding both
     /// exports' messages. Both services resolve to the one phone handle.
     #[tokio::test]
@@ -452,10 +452,10 @@ mod tests {
         opened.close().await;
     }
 
-    /// Issue #1107: a folder holding two sources imports as two Import Runs,
+    /// Issue #1107: a directory holding two sources imports as two Import Runs,
     /// each with one source, its own Contact Group and its own Saved Search.
     #[tokio::test]
-    async fn a_folder_of_two_sources_imports_as_one_run_per_source() {
+    async fn a_directory_of_two_sources_imports_as_one_run_per_source() {
         let dir = TempDir::new().unwrap();
         let (opened, opts) = fixture_with_export(dir.path()).await;
         let apple = conversation_with("+14075550123")
@@ -485,10 +485,10 @@ mod tests {
         opened.close().await;
     }
 
-    /// Issue #1166: an entry of the folder that cannot be read fails the
-    /// listing, naming the folder, instead of being skipped.
+    /// Issue #1166: an entry of the directory that cannot be read fails the
+    /// listing, naming the directory, instead of being skipped.
     #[test]
-    fn an_unreadable_folder_entry_fails_the_listing() {
+    fn an_unreadable_directory_entry_fails_the_listing() {
         let dir = Path::new("/exports/phone");
         let entries = vec![
             Ok(dir.join("a.jsonl")),

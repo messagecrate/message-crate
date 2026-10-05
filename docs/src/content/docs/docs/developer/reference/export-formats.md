@@ -3,21 +3,21 @@ title: Export formats
 description: What each of the seven export formats produces on disk.
 ---
 
-Message Crate writes an export in one of seven formats. Which one you get is chosen on the [Export](/docs/user/features/messages/export/) screen in the desktop app. This page describes what each format produces, so you can pick knowing what lands in the folder.
+Message Crate writes an export in one of seven formats. Which one you get is chosen on the [Export](/docs/user/features/messages/export/) screen in the desktop app. This page describes what each format produces, so you can pick knowing what lands in the directory.
 
 ## What each format writes
 
 | Format | Shape | Media |
 |---|---|---|
-| **JSON Lines** | One `.jsonl` per conversation, one JSON object per line | `attachments/` folder |
-| **JSON** | One indented `.json` per conversation | `attachments/` folder |
-| **CSV** | One `.csv` per conversation | `attachments/` folder. Columns: [CSV columns](/docs/developer/reference/csv-columns/) |
-| **EML** | One folder per conversation, one `.eml` per message | Embedded in each message |
+| **JSON Lines** | One `.jsonl` per conversation, one JSON object per line | `attachments/` directory |
+| **JSON** | One indented `.json` per conversation | `attachments/` directory |
+| **CSV** | One `.csv` per conversation | `attachments/` directory. Columns: [CSV columns](/docs/developer/reference/csv-columns/) |
+| **EML** | One directory per conversation, one `.eml` per message | Embedded in each message |
 | **MBOX** | One `.mbox` per conversation | Embedded |
 | **Android XML** | A single `smses.xml` | Embedded. Apple-only fields are dropped |
-| **EML (SMS Backup+)** | One folder per conversation, one `.eml` per SMS or MMS | Embedded in each message. Other messages are left out |
+| **EML (SMS Backup+)** | One directory per conversation, one `.eml` per SMS or MMS | Embedded in each message. Other messages are left out |
 
-Folder layout for the formats that use an `attachments/` folder: [Export structure](/docs/developer/reference/export-structure/).
+Directory layout for the formats that use an `attachments/` directory: [Export structure](/docs/developer/reference/export-structure/).
 
 ## Which to pick
 
@@ -31,12 +31,12 @@ Folder layout for the formats that use an `attachments/` folder: [Export structu
 
 **Android XML** matches the SMS Backup & Restore schema, which is what makes it useful for moving messages back onto an Android phone. It is the lossiest option: fields that exist only on Apple platforms are dropped.
 
-**EML (SMS Backup+)** writes SMS and MMS as the mail SMS Backup+ writes, with its `X-smssync-*` headers, so a person who brought SMS Backup+ mail in has it back in that shape. Message Crate's SMS Backup+ import reads it again, and any mail program can archive it. Messages that are not SMS or MMS are left out and counted in the run's log. Fields the database does not keep, such as the phone's message and thread ids and read flags, are not written. SMS Backup+ itself cannot restore these files: it restores only from an IMAP folder, and never MMS.
+**EML (SMS Backup+)** writes SMS and MMS as the mail SMS Backup+ writes, with its `X-smssync-*` headers, so a person who brought SMS Backup+ mail in has it back in that shape. Message Crate's SMS Backup+ import reads it again, and any mail program can archive it. Messages that are not SMS or MMS are left out and counted in the run's log. Fields the database does not keep, such as the phone's message and thread ids and read flags, are not written. SMS Backup+ itself cannot restore these files: it restores only from an IMAP directory, and never MMS.
 
 ## How conversion works
 
 Every export is written as JSON Lines first, then rewritten into the format you asked for. Only JSON Lines skips the second step.
 
-The intermediate copy goes in the staging directory, `~/message-crate` by default and changeable in [Settings → System](/docs/user/features/settings/system/). It is deleted when the export finishes, including when the conversion fails, so a folder with room for one extra copy of the exported messages is enough.
+The intermediate copy goes in the staging directory, `~/message-crate` by default and changeable in [Settings → System](/docs/user/features/settings/system/). It is deleted when the export finishes, including when the conversion fails, so a directory with room for one extra copy of the exported messages is enough.
 
 Reading an existing export back in is a separate operation, on [Settings → Convert](/docs/user/features/settings/convert/). The `message-reexport` library reads every format but EML (SMS Backup+) and converts between them, and Settings → Convert calls it that way. EML (SMS Backup+) is read back by the SMS Backup+ import.

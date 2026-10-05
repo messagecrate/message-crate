@@ -385,10 +385,10 @@ function SessionProvider({
         setDialog(null);
       }
       if (deletedAccountDirectories) {
-        // The run went with the account, so nothing resumes; its folders go
+        // The run went with the account, so nothing resumes; its directories go
         // too, and one that stays is named rather than left without a word.
         // An Upload that did not pause in time may still write into its
-        // folder, so the folders go once it has ended. The deleted account's
+        // directory, so the directories go once it has ended. The deleted account's
         // token is refused, so that is soon.
         await pause.ended;
         const undeleted = await deleteStagingDirectories(deletedAccountDirectories);

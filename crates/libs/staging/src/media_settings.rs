@@ -1,10 +1,10 @@
 //! The media settings an Import Run decides once, recorded in its staging
-//! folder.
+//! directory.
 //!
 //! Staging writes the run's [`TranscodeOptions`] (the attachment mode, the
 //! compress options and the attachment size limit) beside the export
 //! sentinel. The Staging Review's summary, the Media stage and Upload read
-//! them back from the folder instead of being handed the form's fields
+//! them back from the directory instead of being handed the form's fields
 //! again, so no stage after Staging can disagree with it about what the run
 //! asked for. The summary carries the mode on to the screen, which decides
 //! from it whether the run has a Media stage.
@@ -15,9 +15,9 @@ use anyhow::{Context, Result};
 
 use crate::TranscodeOptions;
 
-/// File name of the recorded settings, directly under the staging folder.
+/// File name of the recorded settings, directly under the run directory.
 ///
-/// It has no `.json` extension on purpose: a fresh export into a folder
+/// It has no `.json` extension on purpose: a fresh export into a directory
 /// removes every `*.json` file it finds there as an earlier run's output.
 pub const MEDIA_SETTINGS_FILE: &str = ".message-crate-media";
 
@@ -36,7 +36,7 @@ pub fn write_media_settings(staging_dir: &Path, options: &TranscodeOptions) -> R
 ///
 /// # Errors
 ///
-/// Returns an error when the folder has no record, because its Staging never
+/// Returns an error when the directory has no record, because its Staging never
 /// finished, or the record cannot be read.
 pub fn read_media_settings(staging_dir: &Path) -> Result<TranscodeOptions> {
     let path = staging_dir.join(MEDIA_SETTINGS_FILE);
@@ -74,7 +74,7 @@ mod tests {
     }
 
     #[test]
-    fn a_folder_with_no_settings_is_refused() {
+    fn a_directory_with_no_settings_is_refused() {
         // Without the record a summary would fall back to some mode the run
         // never chose, which is the disagreement this file exists to end.
         let dir = tempfile::tempdir().unwrap();

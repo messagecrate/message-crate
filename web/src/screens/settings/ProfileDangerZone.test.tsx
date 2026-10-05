@@ -121,7 +121,7 @@ describe("ProfileDangerZone", () => {
     expect(deleteAccount).toHaveBeenCalledWith({ confirm: true, current_password: undefined });
   });
 
-  it("holds the confirm while it looks for the folders again, rather than send the last list", async () => {
+  it("holds the confirm while it looks for the directories again, rather than send the last list", async () => {
     desktop.value = true;
     // The list from the last time the dialog was open, and a new look that
     // has not answered yet.
@@ -188,7 +188,7 @@ describe("ProfileDangerZone", () => {
     );
   });
 
-  it("deletes no folder outside the desktop app", async () => {
+  it("deletes no directory outside the desktop app", async () => {
     deleteAccount.mockResolvedValue(undefined);
     const user = setupUser();
     render(

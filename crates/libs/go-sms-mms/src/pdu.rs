@@ -1,7 +1,7 @@
 //! A GO SMS Pro `.pdu` file as one message: who sent it, who received it,
 //! its text, and its attachments.
 //!
-//! GO SMS Pro's backup folder holds one file per MMS beside the SMS XML,
+//! GO SMS Pro's backup directory holds one file per MMS beside the SMS XML,
 //! named `I_<unix seconds>_<n>_<m>.pdu` for a received message and
 //! `S_<unix seconds>_<n>_<m>.pdu` for a sent one. The bytes are the MMS PDU
 //! the phone's MMS stack held, unchanged, so they decode by the WAP-209

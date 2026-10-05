@@ -33,7 +33,7 @@ pub struct Cli {
 /// One subcommand per CLI operation: import, serve, and maintenance.
 #[derive(Debug, Subcommand)]
 pub enum Commands {
-    /// Import a message-ir JSONL folder, one Import Run per source (source from export.source unless --source)
+    /// Import a message-ir JSONL directory, one Import Run per source (source from export.source unless --source)
     Import(ImportArgs),
 
     /// Work on an account's Import Runs (`discard` clears a stranded one)
@@ -117,7 +117,7 @@ pub struct ImportArgs {
     #[arg(long, default_value = "config/config.toml")]
     pub config: PathBuf,
 
-    /// Folder of `*.jsonl` conversation files (+ attachments)
+    /// Directory of `*.jsonl` conversation files (+ attachments)
     #[arg(long = "input", visible_aliases = ["dir", "staging-dir", "export-dir"])]
     pub input: PathBuf,
 
@@ -230,7 +230,7 @@ pub struct ServeArgs {
     #[arg(long, default_value = "config/config.toml")]
     pub config: PathBuf,
 
-    /// Keep the whole Message Crate in this folder and read no config file:
+    /// Keep the whole Message Crate in this directory and read no config file:
     /// the database is `messagecrate.db` inside it, with every other setting
     /// at its default
     #[arg(long, conflicts_with = "config")]
@@ -240,7 +240,7 @@ pub struct ServeArgs {
     #[arg(long)]
     pub bind: Option<String>,
 
-    /// Folder holding the built website (overrides `[server] static_dir`;
+    /// Directory holding the built website (overrides `[server] static_dir`;
     /// default `static`)
     #[arg(long)]
     pub static_dir: Option<PathBuf>,
@@ -369,7 +369,7 @@ fn validate_window_secs(window_secs: i64) -> Result<()> {
     Ok(())
 }
 
-/// Import a folder of conversation files, then print the counts.
+/// Import a directory of conversation files, then print the counts.
 async fn run_import(args: ImportArgs) -> Result<()> {
     let cfg = Config::load_with_db(&args.config, args.db)?;
     validate_window_secs(args.window_secs)?;
@@ -624,7 +624,7 @@ async fn run_serve(args: ServeArgs) -> Result<()> {
     crate::server::run(cfg).await
 }
 
-/// The config `serve` runs on: the folder `--data-dir` names, or else the
+/// The config `serve` runs on: the directory `--data-dir` names, or else the
 /// config file, with the other flags applied over either. A relative
 /// `--static-dir` resolves where the config file's paths do; with
 /// `--data-dir`, which reads no config file, that is the working directory,

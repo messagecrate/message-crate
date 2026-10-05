@@ -25,11 +25,11 @@ default address needs no change. That is also why a Message Crate already
 answering there is used rather than treated as a clash: a person with Docker
 on the same computer gets the Message Crate they already have.
 
-The data is in the operating system's app-data folder, under `data`, and the
-app has a button that opens it. A folder under Documents is often synced by
+The data is in the operating system's app-data directory, under `data`, and the
+app has a button that opens it. A directory under Documents is often synced by
 OneDrive or iCloud, which can corrupt a database that is in use.
 A dev build (`cargo tauri dev`) uses `data-dev` beside it instead, because
-both builds share one app-data folder and a branch with another Schema
+both builds share one app-data directory and a branch with another Schema
 Fingerprint would rebuild the installed app's database empty.
 
 The server listens on this computer only. A setting in the app opens it to

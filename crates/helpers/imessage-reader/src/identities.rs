@@ -24,7 +24,7 @@ pub(crate) struct Identities {
 
 /// Open the source and read the addresses its device sent from. An
 /// encrypted backup's databases are decrypted into the request's scratch
-/// folder.
+/// directory.
 ///
 /// Each per-column query falls back to an empty list when the table or
 /// column is missing, so an unusual schema degrades to fewer signals rather
@@ -123,7 +123,7 @@ mod tests {
     use rusqlite::Connection;
 
     /// The identities request for the `chat.db` at `db_path`, with the
-    /// folder beside it as the scratch folder.
+    /// directory beside it as the scratch directory.
     fn source(db_path: &std::path::Path) -> IdentitiesRequest {
         IdentitiesRequest {
             source: Source {

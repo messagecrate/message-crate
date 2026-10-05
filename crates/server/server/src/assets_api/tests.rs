@@ -1230,7 +1230,7 @@ async fn starting_an_upload_for_a_stored_blob_answers_200_already_present() {
     assert!(!incoming.exists(), "no upload session may be opened");
 }
 
-/// Aborting a chunked upload answers 204 and removes the session's folder,
+/// Aborting a chunked upload answers 204 and removes the session's directory,
 /// manifest and parts included, so an abandoned upload holds no disk.
 #[tokio::test]
 async fn deleting_an_upload_answers_204_and_removes_its_files() {
@@ -1276,7 +1276,7 @@ async fn deleting_an_upload_answers_204_and_removes_its_files() {
         .await
         .unwrap();
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
-    assert!(!session.exists(), "the session folder must be gone");
+    assert!(!session.exists(), "the session directory must be gone");
 
     // The session is gone, so a part for it has nowhere to go.
     let response = client
@@ -1722,7 +1722,7 @@ async fn a_preview_is_read_under_the_same_rule_as_the_original() {
     );
 }
 
-/// C1-1: a server that cannot write its assets folder has a storage fault,
+/// C1-1: a server that cannot write its assets directory has a storage fault,
 /// not a body that broke a rule. It answers 500, not 422.
 #[tokio::test]
 async fn c1_1_a_put_the_server_cannot_store_is_not_a_422() {
@@ -1735,8 +1735,8 @@ async fn c1_1_a_put_the_server_cannot_store_is_not_a_422() {
         .paths
         .assets_dir_for_account(user.account_id);
     std::fs::create_dir_all(&assets_dir).unwrap();
-    // A file where the shard folder must go: create_dir_all in install_blob fails.
-    std::fs::write(assets_dir.join(&sha[..2]), b"not a folder").unwrap();
+    // A file where the shard directory must go: create_dir_all in install_blob fails.
+    std::fs::write(assets_dir.join(&sha[..2]), b"not a directory").unwrap();
     let (status, text) = crate::test_support::put_raw(
         &fixture.state,
         &format!("/v1/assets/{sha}"),
@@ -1781,7 +1781,7 @@ async fn a_part_or_completion_for_an_unknown_upload_is_not_found() {
 }
 
 /// S2-1: the fingerprint segment must not name a path outside the account's
-/// own `.incoming` folder before it is checked.
+/// own `.incoming` directory before it is checked.
 #[tokio::test]
 async fn a_put_with_a_path_in_the_fingerprint_writes_nothing_outside_the_store() {
     let (fixture, user) = crate::test_support::fixture_with_account().await;

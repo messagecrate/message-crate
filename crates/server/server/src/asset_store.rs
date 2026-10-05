@@ -2,7 +2,7 @@
 //! them.
 //!
 //! An account's files sit under `data_dir/<account>/`, in one set of
-//! folders for all of the account's sources, so one file imported from two
+//! directories for all of the account's sources, so one file imported from two
 //! sources is stored once:
 //!
 //! - `<assets_dir>/<aa>/<sha256><ext>` is an original, named by its
@@ -10,7 +10,7 @@
 //! - `<assets_dir>/<aa>/.<sha256>.mime` is the MIME sidecar beside an
 //!   original whose name carries no type.
 //! - `<assets_dir>/.incoming/` holds uploads in progress: `{sha256}-*.part`
-//!   files and multipart folders `{sha256}/{upload_id}/`.
+//!   files and multipart directories `{sha256}/{upload_id}/`.
 //! - `<assets_converted_dir>/<aa>/<sha256><ext>` is a Preview or a
 //!   Thumbnail, named by the fingerprint of its own bytes.
 //! - `.removing/<id>/` beside the two holds files on their way out: see
@@ -60,7 +60,7 @@
 //!   ends.
 //! - [`sweep_incoming`]: abandoned upload temps, by age.
 //! - [`sweep_shard_temps`]: temporary files a killed write left in the
-//!   shard folders, by age.
+//!   shard directories, by age.
 //!
 //! Upload and `process-assets` still remove their own temporary and
 //! replaced files. Those are never an Asset a row names.
@@ -81,7 +81,7 @@ use crate::db::imports::has_running_import;
 use crate::db::trash::OrphanedFile;
 use crate::db::write_tx::begin_write;
 
-/// The folder that holds everything on disk for `account_id`.
+/// The directory that holds everything on disk for `account_id`.
 pub(crate) fn account_dir(paths: &PathsConfig, account_id: i64) -> PathBuf {
     paths.data_dir.join(account_id.to_string())
 }
@@ -258,7 +258,7 @@ pub(crate) fn remove_file(path: &Path) -> io::Result<()> {
     gone_is_ok(std::fs::remove_file(path))
 }
 
-/// Remove the folder tree at `path`; a missing folder is not an error.
+/// Remove the directory tree at `path`; a missing directory is not an error.
 fn remove_tree(path: &Path) -> io::Result<()> {
     gone_is_ok(std::fs::remove_dir_all(path))
 }
@@ -315,7 +315,7 @@ fn remove_each(account_id: i64, paths: &[PathBuf], mut removal: Option<&mut Remo
 }
 
 /// The paths `file` occupies on disk: the file and, for an original, its
-/// MIME sidecar. A stored path that would leave its folder is logged and
+/// MIME sidecar. A stored path that would leave its directory is logged and
 /// passed over.
 fn paths_of(paths: &PathsConfig, account_id: i64, file: &OrphanedFile) -> Vec<PathBuf> {
     let (dir, assets_path, sidecar) = match file {
@@ -465,7 +465,7 @@ where
 ///
 /// # Errors
 ///
-/// Returns the error of a folder that exists and cannot be removed.
+/// Returns the error of a directory that exists and cannot be removed.
 pub(crate) fn remove_account_dir(paths: &PathsConfig, account_id: i64) -> io::Result<()> {
     remove_tree(&account_dir(paths, account_id))
 }
@@ -697,12 +697,12 @@ fn sweep_store_dir(
 }
 
 /// Age after which an upload temp under `.incoming/` counts as abandoned: a
-/// `{sha}-*.part` file or a multipart session folder `{sha}/{upload_id}/`.
+/// `{sha}-*.part` file or a multipart session directory `{sha}/{upload_id}/`.
 /// A live upload keeps writing its temp while a sweep runs, so only a temp
 /// left untouched this long is removed.
 pub(crate) const STALE_UPLOAD_SECS: u64 = 24 * 60 * 60;
 
-/// Remove abandoned `{sha}-*.part` temps and multipart session folders under
+/// Remove abandoned `{sha}-*.part` temps and multipart session directories under
 /// `originals_dir/.incoming/`, and return how many it removed (or would
 /// remove, in a dry run).
 ///
@@ -742,20 +742,20 @@ pub(crate) fn sweep_incoming(originals_dir: &Path, dry_run: bool) -> u64 {
     removed
 }
 
-/// Age after which a temporary file in a shard folder counts as left by a
+/// Age after which a temporary file in a shard directory counts as left by a
 /// killed write. A file being installed is written without a pause and
 /// renamed as soon as it is whole, so one untouched this long is not being
 /// written. `process-assets` takes no lock against `serve`, so an import
 /// may be writing a younger one into an originals shard while it runs.
 pub(crate) const STALE_TEMP_SECS: u64 = 60 * 60;
 
-/// How the name of every temporary file written into a shard folder
+/// How the name of every temporary file written into a shard directory
 /// starts, so [`sweep_shard_temps`] can tell one from a stored file. A
 /// fingerprint is hex and a sidecar starts with `.` and a hex digit, so
 /// neither can start with it.
 pub(crate) const SHARD_TEMP_PREFIX: &str = ".tmp";
 
-/// A new temporary file in the shard folder `shard`, named with
+/// A new temporary file in the shard directory `shard`, named with
 /// [`SHARD_TEMP_PREFIX`]. Every write of an original, a sidecar or a
 /// Preview goes through one and is renamed over its name.
 ///
@@ -769,10 +769,10 @@ pub(crate) fn shard_temp_file(shard: &Path) -> io::Result<tempfile::NamedTempFil
 }
 
 /// Remove the temporary files at least [`STALE_TEMP_SECS`] old in the shard
-/// folders of `store_dir`, and return how many it removed (or would remove,
+/// directories of `store_dir`, and return how many it removed (or would remove,
 /// in a dry run). A write killed between creating its
 /// [`shard_temp_file`] and renaming it leaves that file behind, and nothing
-/// else ever removes it. Folders starting with a dot, `.incoming/` among
+/// else ever removes it. Directories starting with a dot, `.incoming/` among
 /// them, are not shards and are left alone.
 ///
 /// A file that is gone by the time the sweep reaches it is passed over, and
@@ -844,7 +844,7 @@ fn remove_stale_files(files: &[PathBuf], now: SystemTime, secs: u64, dry_run: bo
     removed
 }
 
-/// Remove each multipart session folder under `sha_dir`
+/// Remove each multipart session directory under `sha_dir`
 /// (`.incoming/{sha256}/{upload_id}/`) that is stale at `now`, then
 /// `sha_dir` itself once it is empty. Returns how many sessions it removed
 /// (or would remove, in a dry run).
@@ -895,7 +895,7 @@ fn remove_stale_sessions(sha_dir: &Path, now: SystemTime, dry_run: bool) -> u64 
             println!("[dry-run] would remove empty {}", sha_dir.display());
         } else {
             // A new upload for this fingerprint may have made a session in
-            // the meantime, and then the folder stays.
+            // the meantime, and then the directory stays.
             let _ = std::fs::remove_dir(sha_dir);
         }
     }
@@ -903,7 +903,7 @@ fn remove_stale_sessions(sha_dir: &Path, now: SystemTime, dry_run: bool) -> u64 
 }
 
 /// True when a multipart upload session's manifest (or, failing that, its
-/// folder) is older than the abandoned-upload limit.
+/// directory) is older than the abandoned-upload limit.
 fn upload_session_is_stale(session: &Path, now: SystemTime) -> io::Result<bool> {
     let manifest = session.join("manifest.json");
     if manifest.is_file() {

@@ -22,8 +22,8 @@ fn eml(date_ms: &str, text: &str) -> String {
     )
 }
 
-/// A folder with one message and one dated past any calendar.
-fn backup_folder(root: &Path) -> std::path::PathBuf {
+/// A directory with one message and one dated past any calendar.
+fn backup_directory(root: &Path) -> std::path::PathBuf {
     let input = root.join("backup");
     fs::create_dir_all(&input).unwrap();
     fs::write(
@@ -47,7 +47,7 @@ fn source(include_summary: bool) -> SourceConfig {
 #[test]
 fn run_writes_the_conversation_and_counts_the_bad_date_row() {
     let tmp = tempfile::tempdir().unwrap();
-    let input = backup_folder(tmp.path());
+    let input = backup_directory(tmp.path());
     let output = tmp.path().join("out");
 
     let result = crate::run(&jsonl_run_config(&[&input], &output, source(true))).expect("run");
@@ -68,7 +68,7 @@ fn run_writes_the_conversation_and_counts_the_bad_date_row() {
 #[test]
 fn run_without_a_summary_still_writes_the_export() {
     let tmp = tempfile::tempdir().unwrap();
-    let input = backup_folder(tmp.path());
+    let input = backup_directory(tmp.path());
     let output = tmp.path().join("out");
 
     let result = crate::run(&jsonl_run_config(&[&input], &output, source(false))).expect("run");

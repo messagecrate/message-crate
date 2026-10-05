@@ -507,7 +507,7 @@ pub async fn ensure_accounts_schema(conn: &mut SqliteConnection) -> Result<()> {
 }
 
 /// True when `table` exists. [`crate::process_assets::run`] uses it to fall
-/// back to the account folders on a database with no `accounts` table.
+/// back to the account directories on a database with no `accounts` table.
 pub async fn table_exists(conn: &mut SqliteConnection, name: &str) -> Result<bool> {
     let found: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = $1")

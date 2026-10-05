@@ -1,14 +1,16 @@
 //! Convert iMazing Messages / WhatsApp rows into the shared conversation
 //! structure, then write the chosen output format via [`ExportWriter`].
 
-use crate::attachments::{FolderFiles, attachment_cell, file_name_second, mime_hint, row_sources};
+use crate::attachments::{
+    DirectoryFiles, attachment_cell, file_name_second, mime_hint, row_sources,
+};
 use crate::attachments_emit::{attachment_digests, pending_attachment_to_ir};
 use crate::parse::{DiscoveredCsv, RawRow, SourceKind, discover_csv_files, parse_csv_file};
 use crate::parse_emit::{
     Session, group_vendor_id, group_vendor_id_with_name, handle_type_for, is_notification,
     is_outgoing, parse_message_date, resolve_sender, session_key,
 };
-use crate::unnamed_files::{FolderRows, UnnamedFile, unnamed_files};
+use crate::unnamed_files::{DirectoryRows, UnnamedFile, unnamed_files};
 use anyhow::Result;
 use message_crate_core::{
     CancelFlag, ExportReport, ExportTransforms, IssueSink, OutputFormat, prepare_outputs,
@@ -82,8 +84,8 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         copy_attachments,
         conversations: BTreeMap::new(),
         claims: Vec::new(),
-        folder_texts: BTreeMap::new(),
-        whatsapp_folders: HashSet::new(),
+        directory_texts: BTreeMap::new(),
+        whatsapp_directories: HashSet::new(),
         report: ExportReport::with_issues(issues.cloned()),
     };
     for (csv_index, discovered) in discover_csv_files(input)?.iter().enumerate() {
@@ -183,7 +185,7 @@ struct GroupSession {
 /// second. Of the groups that share an earliest row:
 ///
 /// - Those with one session name are one group, read from two exports in
-///   the same input folder, and are merged. Groups with different session
+///   the same input directory, and are merged. Groups with different session
 ///   names are never merged, even when one's rows are the first rows of the
 ///   other's.
 /// - Each other one hashes its earliest rows, as few as tell it apart from
@@ -299,18 +301,18 @@ struct Ingest {
     conversations: BTreeMap<ConvoKey, Conversation>,
     /// Every row matched to a file, in the order the rows were read.
     claims: Vec<FileClaim>,
-    /// Each Messages chat folder's Messages row texts, keyed by the row's
+    /// Each Messages chat directory's Messages row texts, keyed by the row's
     /// `Message Date` as iMazing writes it into a file name, filled only when
-    /// attachments are copied. A Messages chat folder is one that holds a
+    /// attachments are copied. A Messages chat directory is one that holds a
     /// Messages CSV; only iMazing's Messages export writes files without a
-    /// row (Live Photo videos, link previews), so only these folders are
+    /// row (Live Photo videos, link previews), so only these directories are
     /// walked for them.
-    folder_texts: BTreeMap<PathBuf, HashMap<String, Vec<String>>>,
-    /// Every chat folder that holds a WhatsApp CSV. A file there that no row
+    directory_texts: BTreeMap<PathBuf, HashMap<String, Vec<String>>>,
+    /// Every chat directory that holds a WhatsApp CSV. A file there that no row
     /// names may be a WhatsApp file, so `attach_unnamed_files` counts none of
     /// them, and attaches only a Live Photo video whose picture a Messages
     /// row names.
-    whatsapp_folders: HashSet<PathBuf>,
+    whatsapp_directories: HashSet<PathBuf>,
     report: ExportReport,
 }
 
@@ -341,16 +343,16 @@ impl Ingest {
     ///
     /// # Errors
     ///
-    /// Returns an error when the CSV's chat folder, or one of its entries,
+    /// Returns an error when the CSV's chat directory, or one of its entries,
     /// cannot be read while looking for the rows' files.
     fn ingest_file(&mut self, csv_index: usize, discovered: &DiscoveredCsv) -> Result<()> {
         match discovered.kind {
             SourceKind::Messages => self.report.bump("messages_files", 1),
             SourceKind::WhatsApp => self.report.bump("whatsapp_files", 1),
         }
-        let folder = csv_folder(discovered).to_path_buf();
+        let directory = csv_directory(discovered).to_path_buf();
         if discovered.kind == SourceKind::WhatsApp {
-            self.whatsapp_folders.insert(folder.clone());
+            self.whatsapp_directories.insert(directory.clone());
         }
         let rows = match parse_csv_file(&discovered.path, discovered.kind) {
             Ok(rows) => rows,
@@ -370,15 +372,15 @@ impl Ingest {
             .collect();
         // Only a run that copies attachments looks for a row's file.
         let sources = if self.copy_attachments {
-            row_sources(&rows, &seconds, &FolderFiles::read(&folder)?)
+            row_sources(&rows, &seconds, &DirectoryFiles::read(&directory)?)
         } else {
             vec![None; rows.len()]
         };
-        // Only a run that copies attachments looks at the folder's files
-        // (`attach_unnamed_files`), and only in a Messages chat folder, so
+        // Only a run that copies attachments looks at the directory's files
+        // (`attach_unnamed_files`), and only in a Messages chat directory, so
         // only a Messages CSV in such a run gives texts.
         let mut texts = (self.copy_attachments && discovered.kind == SourceKind::Messages)
-            .then(|| self.folder_texts.entry(folder).or_default());
+            .then(|| self.directory_texts.entry(directory).or_default());
         let mut by_session: BTreeMap<String, Vec<(usize, &RawRow)>> = BTreeMap::new();
         for (row_index, row) in rows.iter().enumerate() {
             if let Some(second) = &seconds[row_index]
@@ -551,10 +553,10 @@ impl Ingest {
         })
     }
 
-    /// Deal with the files that no row names in each Messages chat folder:
+    /// Deal with the files that no row names in each Messages chat directory:
     /// attach a Live Photo's video to the message of the Messages Image row
     /// that names its picture, and count link previews and every other such
-    /// file in the report. In a folder that also holds a WhatsApp CSV, such a
+    /// file in the report. In a directory that also holds a WhatsApp CSV, such a
     /// file may be WhatsApp's, so only the Live Photo videos are dealt with.
     ///
     /// Runs only when attachments are copied, because only then is any row
@@ -562,7 +564,7 @@ impl Ingest {
     ///
     /// # Errors
     ///
-    /// Returns an error when a chat folder, or one of its entries, cannot be
+    /// Returns an error when a chat directory, or one of its entries, cannot be
     /// read.
     fn attach_unnamed_files(&mut self) -> Result<()> {
         let named: HashSet<PathBuf> = self.claims.iter().map(|c| c.source.clone()).collect();
@@ -580,15 +582,15 @@ impl Ingest {
             rows.sort_by_key(|&index| self.claims[index].order);
         }
         let mut found = Vec::new();
-        for (folder, texts_at) in &self.folder_texts {
-            let rows = FolderRows {
+        for (directory, texts_at) in &self.directory_texts {
+            let rows = DirectoryRows {
                 named: &named,
                 pictures: &pictures,
                 texts_at,
             };
-            let counted = !self.whatsapp_folders.contains(folder);
+            let counted = !self.whatsapp_directories.contains(directory);
             found.extend(
-                unnamed_files(folder, &rows)?
+                unnamed_files(directory, &rows)?
                     .into_iter()
                     .map(|file| (file, counted)),
             );
@@ -655,8 +657,8 @@ impl Ingest {
     }
 }
 
-/// The chat folder a CSV sits in: the folder iMazing wrote its media into.
-fn csv_folder(discovered: &DiscoveredCsv) -> &Path {
+/// The chat directory a CSV sits in: the directory iMazing wrote its media into.
+fn csv_directory(discovered: &DiscoveredCsv) -> &Path {
     discovered.path.parent().unwrap_or_else(|| Path::new("."))
 }
 

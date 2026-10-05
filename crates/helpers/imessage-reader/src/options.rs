@@ -20,7 +20,7 @@ pub(crate) struct ReaderOptions {
     pub platform: Platform,
     pub cleartext_password: Option<String>,
     pub contacts_path: Option<PathBuf>,
-    /// Where decrypted files go. The app owns this folder.
+    /// Where decrypted files go. The app owns this directory.
     pub scratch_dir: PathBuf,
 }
 
@@ -61,7 +61,7 @@ impl ReaderOptions {
         }
     }
 
-    /// The folder decrypted files are written to.
+    /// The directory decrypted files are written to.
     pub fn scratch_dir(&self) -> &Path {
         &self.scratch_dir
     }
@@ -100,7 +100,7 @@ mod tests {
 
     /// An export request carries everything the source alone does not: the
     /// attachment root, the contacts file, the caller-id choice and the
-    /// scratch folder.
+    /// scratch directory.
     #[test]
     fn an_export_request_fills_every_option() {
         let options = ReaderOptions::from_export(ExportRequest {
@@ -119,9 +119,9 @@ mod tests {
         assert_eq!(options.scratch_dir(), Path::new("/scratch"));
     }
 
-    /// A source and a scratch folder are enough to open the database: the
+    /// A source and a scratch directory are enough to open the database: the
     /// identities request sends nothing else. Decrypted files go to the
-    /// scratch folder it names, never to the system's temporary folder.
+    /// scratch directory it names, never to the system's temporary directory.
     #[test]
     fn a_source_alone_opens_with_defaults() {
         let options = ReaderOptions::from_source(
@@ -136,7 +136,7 @@ mod tests {
         assert_eq!(options.scratch_dir(), Path::new("/app/scratch/one"));
     }
 
-    /// A Mac `chat.db` is the path itself; an iOS backup folder holds the
+    /// A Mac `chat.db` is the path itself; an iOS backup directory holds the
     /// database under its hashed file name.
     #[test]
     fn the_database_path_depends_on_the_platform() {

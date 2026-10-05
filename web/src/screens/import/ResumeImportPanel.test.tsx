@@ -98,7 +98,7 @@ describe("ResumeImportPanel", () => {
     expect(screen.getByText("Pick up where you left off")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Your messages are staged. Opening the import again shows you the same summary, read fresh from the folder.",
+        "Your messages are staged. Opening the import again shows you the same summary, read fresh from the directory.",
       ),
     ).toBeInTheDocument();
 
@@ -138,7 +138,7 @@ describe("ResumeImportPanel", () => {
     const onResume = vi.fn();
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
-      kind: "folder_missing",
+      kind: "directory_missing",
       session: session({ staging_dir: "/home/u/message-crate/staging-260830" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
@@ -146,7 +146,7 @@ describe("ResumeImportPanel", () => {
     expect(screen.getByText("The staged files are gone")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "This import's folder is no longer at /home/u/message-crate/staging-260830. Discarding it lets you start a new one.",
+        "This import's directory is no longer at /home/u/message-crate/staging-260830. Discarding it lets you start a new one.",
       ),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
@@ -164,7 +164,7 @@ describe("ResumeImportPanel", () => {
     // Every Import Run created outside the desktop app — the CLI importer,
     // a tool of someone's own — stores a null staging_dir.
     const decision: ResumeDecision = {
-      kind: "folder_missing",
+      kind: "directory_missing",
       session: session({ staging_dir: null }),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
@@ -172,7 +172,7 @@ describe("ResumeImportPanel", () => {
     expect(screen.getByText("There is nothing staged to pick up")).toBeInTheDocument();
     expect(
       screen.getByText(
-        "This import did not record a staged folder, so there is nothing here to carry on from. Discarding it lets you start a new one.",
+        "This import did not record a staged directory, so there is nothing here to carry on from. Discarding it lets you start a new one.",
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/no longer at/)).not.toBeInTheDocument();
@@ -183,12 +183,12 @@ describe("ResumeImportPanel", () => {
     expect(onResume).not.toHaveBeenCalled();
   });
 
-  it("says the folder could not be checked rather than calling it gone", async () => {
+  it("says the directory could not be checked rather than calling it gone", async () => {
     const user = setupUser();
     const onResume = vi.fn();
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
-      kind: "folder_unknown",
+      kind: "directory_unknown",
       session: session({ staging_dir: "/home/u/message-crate/staging-260830" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);

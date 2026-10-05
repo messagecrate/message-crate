@@ -14,7 +14,7 @@ Two checks come first, because an update can empty the database.
 1. The [changelog](https://github.com/messagecrate/message-crate/blob/main/CHANGELOG.md) has an **Upgrading** heading under a release when that release needs something done. A release that changes the database layout rebuilds the database empty, as described [below](#when-the-database-layout-changes).
 2. The phone backups the messages were imported from must still be at hand, because they are what a rebuilt Message Crate is filled from again.
 
-For the app's own Message Crate, a copy of the data folder (**Settings → System → Open data folder**), made while the app is closed, allows going back. For Docker, a copy of the `message-crate-data` volume, made as in [Run on another machine](/docs/user/features/owner/run-on-another-machine/#save-the-volume-to-a-file), does the same.
+For the app's own Message Crate, a copy of the data directory (**Settings → System → Open data directory**), made while the app is closed, allows going back. For Docker, a copy of the `message-crate-data` volume, made as in [Run on another machine](/docs/user/features/owner/run-on-another-machine/#save-the-volume-to-a-file), does the same.
 
 ## Update a server in Docker
 

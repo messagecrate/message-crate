@@ -377,7 +377,7 @@ async fn a_file_that_cannot_be_removed_does_not_stop_the_others() {
     let doomed = seed(&fixture, &alice, "+15555550179").await;
     let stuck = attach_stored_file(&fixture.state, alice.account_id, doomed, &stuck_sha).await;
     let gone = attach_stored_file(&fixture.state, alice.account_id, doomed, &gone_sha).await;
-    // A folder where the first file belongs: removing it as a file fails.
+    // A directory where the first file belongs: removing it as a file fails.
     std::fs::remove_file(&stuck).unwrap();
     std::fs::create_dir_all(stuck.join("inside")).unwrap();
     trash(&fixture, &alice, Trashable::Conversation(doomed)).await;
@@ -394,7 +394,7 @@ async fn a_file_that_cannot_be_removed_does_not_stop_the_others() {
     );
 }
 
-/// A stored fingerprint shorter than two characters names no shard folder.
+/// A stored fingerprint shorter than two characters names no shard directory.
 /// Empty Trash passes over its sidecar instead of panicking.
 #[tokio::test]
 async fn a_short_stored_fingerprint_does_not_stop_empty_trash() {
@@ -547,7 +547,7 @@ async fn a_file_imported_from_two_sources_is_stored_once() {
             .paths
             .assets_dir_for_account(alice.account_id)
             .join(format!("{}/{sha}", &sha[..2]))],
-        "one copy, in the account's one assets folder"
+        "one copy, in the account's one assets directory"
     );
     let (status, body) =
         crate::test_support::get_raw(&fixture.state, &format!("/v1/assets/{sha}"), &alice.token)

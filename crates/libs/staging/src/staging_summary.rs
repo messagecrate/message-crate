@@ -1,11 +1,11 @@
-//! Recompute what a staged folder holds, for the reviews.
+//! Recompute what a staged directory holds, for the reviews.
 //!
-//! Everything here is measured from the folder. The one estimate is what the
+//! Everything here is measured from the directory. The one estimate is what the
 //! media step will do to a file's size, and it is labelled as an estimate all
 //! the way to the screen.
 //!
-//! Decision 39: this is always recomputed from the folder, never read back
-//! from a previously-written `summary_json` — the folder is the truth, and
+//! Decision 39: this is always recomputed from the directory, never read back
+//! from a previously-written `summary_json` — the directory is the truth, and
 //! that is what makes resuming at a gate work: reopening the session
 //! recomputes rather than restoring.
 //!
@@ -23,7 +23,7 @@
 //! file: the first reference to a given recorded path is measured and
 //! classified, and every later reference at that same path is folded into
 //! the `attachments` count alone. Mirrors `pending_in`'s dedup in
-//! `transcode.rs`, which faces the identical fact about the folder.
+//! `transcode.rs`, which faces the identical fact about the directory.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;
@@ -38,7 +38,7 @@ use message_ir_format::read_conversation_jsonl;
 /// How often [`summarize_staging`] reports progress, over attachments.
 ///
 /// Matches the media crate's own cadence (its private `MEDIA_PROGRESS_EVERY`
-/// is 100 too) so a summary pass and a media pass over the same folder feel
+/// is 100 too) so a summary pass and a media pass over the same directory feel
 /// the same to whatever is watching progress.
 const SUMMARY_PROGRESS_EVERY: usize = 100;
 
@@ -46,7 +46,7 @@ const SUMMARY_PROGRESS_EVERY: usize = 100;
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AttachmentForecast {
-    /// Relative path inside the staging folder.
+    /// Relative path inside the run directory.
     pub path: String,
     /// Name to show on the screen: the attachment's original name when the
     /// document recorded one, else the staged (content-addressed) file
@@ -74,11 +74,11 @@ pub struct OwnerIdentityCount {
     pub received: u64,
 }
 
-/// What a staged folder holds.
+/// What a staged directory holds.
 #[derive(Debug, Clone, Default, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StagingSummary {
-    /// Conversation files found in the folder.
+    /// Conversation files found in the directory.
     pub conversations: usize,
     /// Messages across every conversation.
     pub messages: u64,
@@ -106,7 +106,7 @@ pub struct StagingSummary {
     pub asset_max_bytes: u64,
     /// The attachment mode Staging recorded for the run. The screen decides
     /// from it whether the run has a Media stage, so after Staging that
-    /// choice comes from the folder and not from the form the run started
+    /// choice comes from the directory and not from the form the run started
     /// with. Sent under the form's name for it ([`MediaMode::form_name`]),
     /// because that is the screen's vocabulary.
     #[serde(serialize_with = "serialize_form_name")]
@@ -131,7 +131,7 @@ pub struct SummaryProgress {
     pub total: usize,
 }
 
-/// Recompute a staged folder's summary: exact conversation/message/attachment
+/// Recompute a staged directory's summary: exact conversation/message/attachment
 /// counts plus a per-attachment size forecast, for the reviews.
 ///
 /// Walks the same `*.jsonl` list the media pass walks. For each attachment
@@ -174,7 +174,7 @@ pub struct SummaryProgress {
 ///
 /// # Errors
 ///
-/// Returns an error when the folder cannot be read or a conversation file
+/// Returns an error when the directory cannot be read or a conversation file
 /// cannot be parsed.
 pub fn summarize_staging(
     staging_dir: &Path,

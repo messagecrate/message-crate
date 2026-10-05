@@ -33,8 +33,8 @@ const SKIPS_XML: &str = r#"<?xml version='1.0' encoding='UTF-8' standalone='yes'
 </smses>
 "#;
 
-/// A backup folder holding `SKIPS_XML` and a file cut off mid-element.
-fn backup_folder(root: &Path) -> std::path::PathBuf {
+/// A backup directory holding `SKIPS_XML` and a file cut off mid-element.
+fn backup_directory(root: &Path) -> std::path::PathBuf {
     let input = root.join("backup");
     fs::create_dir_all(&input).unwrap();
     fs::write(input.join("sms-1.xml"), SKIPS_XML).unwrap();
@@ -49,7 +49,7 @@ fn backup_folder(root: &Path) -> std::path::PathBuf {
 #[test]
 fn run_writes_the_conversation_and_reports_every_skip_and_error() {
     let tmp = tempfile::tempdir().unwrap();
-    let input = backup_folder(tmp.path());
+    let input = backup_directory(tmp.path());
     let output = tmp.path().join("out");
     let mut config = jsonl_run_config(
         &[&input],
@@ -114,7 +114,7 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
 #[test]
 fn the_report_counts_conversations_and_directions() {
     let tmp = tempfile::tempdir().unwrap();
-    let input = backup_folder(tmp.path());
+    let input = backup_directory(tmp.path());
     let cache = tempfile::tempdir().unwrap();
     let report = convert_export(ConvertExportArgs {
         input: &input,

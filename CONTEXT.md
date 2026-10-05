@@ -372,9 +372,9 @@ phone's file that Import reads.
 _Avoid_: Export Job, Backup, Download
 
 **Convert**:
-Rewriting a folder of already-exported files into a different format,
+Rewriting a directory of already-exported files into a different format,
 reading neither the original backup nor the database. Export uses it for any
-format other than JSON Lines. As an operation a person starts on a folder of
+format other than JSON Lines. As an operation a person starts on a directory of
 their own it is an advanced tool most people never need, so it lives under
 Settings rather than beside Import and Export.
 _Avoid_: Reexport, Transcode, Reformat

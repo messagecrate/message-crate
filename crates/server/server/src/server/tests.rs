@@ -1692,11 +1692,11 @@ async fn a_session_works_when_its_connecting_app_cannot_be_written() {
     assert_eq!(identity.account_id, TEST_ACCOUNT);
 }
 
-/// The website is served from the folder the config names, so a server
-/// started somewhere other than beside a `static` folder, as the desktop
+/// The website is served from the directory the config names, so a server
+/// started somewhere other than beside a `static` directory, as the desktop
 /// app's is (#970), still has its website.
 #[tokio::test]
-async fn the_website_is_served_from_the_configured_folder() {
+async fn the_website_is_served_from_the_configured_directory() {
     let fixture = crate::test_support::test_fixture().await;
     let site = fixture.dir().join("site");
     std::fs::create_dir_all(&site).unwrap();

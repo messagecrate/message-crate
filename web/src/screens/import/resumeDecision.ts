@@ -6,14 +6,14 @@ export type ResumeDecision = {
   kind:
     | "none"
     | "other_device"
-    | "folder_missing"
-    // The staging folder was recorded but the stat of it failed, so whether
-    // it is there is not known. Distinct from folder_missing because an IPC
-    // error is not evidence the folder is gone.
-    | "folder_unknown"
+    | "directory_missing"
+    // The run directory was recorded but the stat of it failed, so whether
+    // it is there is not known. Distinct from directory_missing because an IPC
+    // error is not evidence the directory is gone.
+    | "directory_unknown"
     | "resume_push"
     // A session waiting at either review: the summary is recomputed
-    // fresh from the folder (decision 39) and shown again, nothing restored.
+    // fresh from the directory (decision 39) and shown again, nothing restored.
     | "resume_review"
     // A session that died mid media pass: the pass re-runs over whatever
     // originals it had not reached yet (Task 3 makes this safe), then
@@ -23,7 +23,7 @@ export type ResumeDecision = {
     // again and skips the conversations already written.
     | "resume_write"
     // The backup this session was reading is not the one on disk now, so
-    // copying more of it into the same folder would mix two sources.
+    // copying more of it into the same directory would mix two sources.
     | "source_changed"
     | "restart"
     // resumeDecisionFor never returns this: it has no way to know whether a
@@ -34,8 +34,8 @@ export type ResumeDecision = {
   session: ActiveImportSession | null;
 };
 
-/** Whether a session's staging folder is on disk, or that the check itself failed. */
-export type FolderCheck = "present" | "missing" | "unknown";
+/** Whether a session's run directory is on disk, or that the check itself failed. */
+export type DirectoryCheck = "present" | "missing" | "unknown";
 
 /**
  * Decide what to show when Import opens and the server reports a session.
@@ -52,19 +52,19 @@ export type FolderCheck = "present" | "missing" | "unknown";
 export function resumeDecisionFor(args: {
   session: ActiveImportSession | null;
   deviceId: string;
-  folder: FolderCheck;
+  directory: DirectoryCheck;
   fingerprint: FingerprintCheck;
 }): ResumeDecision {
-  const { session, deviceId, folder, fingerprint } = args;
+  const { session, deviceId, directory, fingerprint } = args;
   if (!session) return { kind: "none", session: null };
   if (session.device_id && session.device_id !== deviceId) {
     return { kind: "other_device", session };
   }
-  if (!session.staging_dir || folder === "missing") {
-    return { kind: "folder_missing", session };
+  if (!session.staging_dir || directory === "missing") {
+    return { kind: "directory_missing", session };
   }
-  if (folder === "unknown") {
-    return { kind: "folder_unknown", session };
+  if (directory === "unknown") {
+    return { kind: "directory_unknown", session };
   }
   if (session.stage === "upload") {
     return { kind: "resume_push", session };
@@ -76,7 +76,7 @@ export function resumeDecisionFor(args: {
     return { kind: "resume_media", session };
   }
   // Only the copy cares whether the backup still matches: every later stage
-  // works from the staged folder, not from the source.
+  // works from the staged directory, not from the source.
   if (session.stage === "write") {
     if (fingerprint === "mismatch" || fingerprint === "source_missing") {
       return { kind: "source_changed", session };
@@ -90,7 +90,7 @@ export function resumeDecisionFor(args: {
  * Whether acting on this decision runs extract over the backup again.
  *
  * A resumed Staging and both restarts do. A resume into a Review, Media, or
- * Upload works from the staged folder, and the rest only discard.
+ * Upload works from the staged directory, and the rest only discard.
  */
 export function resumeReadsBackup(kind: ResumeDecision["kind"]): boolean {
   return kind === "resume_write" || kind === "restart" || kind === "source_changed";

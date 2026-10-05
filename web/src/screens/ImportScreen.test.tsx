@@ -341,13 +341,13 @@ describe("ImportScreen entering Import", () => {
     expect(screen.queryByTestId("import-form")).not.toBeInTheDocument();
   });
 
-  it("says the staging folder could not be checked, not that it is gone, when the stat fails", async () => {
+  it("says the run directory could not be checked, not that it is gone, when the stat fails", async () => {
     getActiveImportSessionMock.mockResolvedValue(session({ stage: "upload" }));
     invokePathStatMock.mockRejectedValue(new Error("ipc down"));
     renderWithProviders(<ImportScreen />);
 
     expect(await screen.findByTestId("resume-panel")).toBeInTheDocument();
-    expect(screen.getByTestId("resume-kind")).toHaveTextContent("folder_unknown");
+    expect(screen.getByTestId("resume-kind")).toHaveTextContent("directory_unknown");
   });
 
   it("discards the session and drops through to the form", async () => {
@@ -397,11 +397,11 @@ describe("ImportScreen entering Import", () => {
     await waitFor(() => expect(screen.getByTestId("import-badge")).toHaveTextContent("null"));
   });
 
-  it("also deletes the staging folder when discarding a this-device session", async () => {
-    // W7: cancelRun already deletes the staging folder when a review is
+  it("also deletes the run directory when discarding a this-device session", async () => {
+    // W7: cancelRun already deletes the run directory when a review is
     // cancelled (decision 16) -- a panel discard is the same operation reached
     // through a different button, and used to only call
-    // discardImportSession, orphaning a potentially multi-GB folder.
+    // discardImportSession, orphaning a potentially multi-GB directory.
     const user = setupUser();
     getActiveImportSessionMock.mockResolvedValue(
       session({
@@ -422,9 +422,9 @@ describe("ImportScreen entering Import", () => {
     expect(await screen.findByTestId("import-form")).toBeInTheDocument();
   });
 
-  it("says which staging folder could not be deleted, until dismissed", async () => {
+  it("says which run directory could not be deleted, until dismissed", async () => {
     // A discard used to drop a refused delete without a word, leaving a
-    // folder of several gigabytes on disk (#1154).
+    // directory of several gigabytes on disk (#1154).
     const user = setupUser();
     getActiveImportSessionMock.mockResolvedValue(null);
     hookState.stagingDeleteFailure = {
@@ -638,7 +638,7 @@ describe("ImportScreen entering Import", () => {
     await user.click(screen.getByText("resume-action"));
 
     expect(discardImportSessionMock).toHaveBeenCalledWith(7);
-    // The old folder goes with the session: a restart writes into a new one,
+    // The old directory goes with the session: a restart writes into a new one,
     // and nothing will ever reach this one again.
     expect(invokeDeleteStagingMock).toHaveBeenCalledWith({
       staging_dir: "/home/u/message-crate/staging-260830",
@@ -649,7 +649,7 @@ describe("ImportScreen entering Import", () => {
     expect(resume).toBeUndefined();
   });
 
-  it("picks up an interrupted copy in the folder it was already writing into", async () => {
+  it("picks up an interrupted copy in the directory it was already writing into", async () => {
     const user = setupUser();
     getActiveImportSessionMock.mockResolvedValue(
       session({
@@ -685,7 +685,7 @@ describe("ImportScreen entering Import", () => {
         },
       }),
     );
-    // The staged folder first, then the backup: same size and mtime, so the
+    // The staged directory first, then the backup: same size and mtime, so the
     // fingerprint matches and the copy is safe to continue.
     invokePathStatMock
       .mockResolvedValueOnce({ exists: true, isFile: false, isDirectory: true })

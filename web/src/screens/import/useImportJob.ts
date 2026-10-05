@@ -1030,12 +1030,12 @@ async function finishImport(args: {
   let stagingDir = store.get().stagingDir;
   if (runEnded) {
     // An ended run's directory goes: the staged messages, the push log, journal
-    // and report, and the run record. When the delete fails, the folder link
+    // and report, and the run record. When the delete fails, the directory link
     // stays and the failure is shown, so the person can find what was left
     // and remove it by hand. A record write still on its way finishes
     // first, so it cannot land in the directory after the delete.
     await recordWrites;
-    if (stagingDir != null && (await discardStagingFolder(stagingDir))) stagingDir = null;
+    if (stagingDir != null && (await discardStagingDirectory(stagingDir))) stagingDir = null;
   } else {
     await saveCarriedRecord(pushReport, uploadMs);
   }
@@ -1049,7 +1049,7 @@ async function finishImport(args: {
  * throws: a refusal or failed delete is kept on `stagingDeleteFailure` for
  * the screen to show. Returns whether the directory is gone.
  */
-async function discardStagingFolder(stagingDir: string): Promise<boolean> {
+async function discardStagingDirectory(stagingDir: string): Promise<boolean> {
   try {
     await invokeDeleteStaging({ staging_dir: stagingDir });
     store.set((state) =>
@@ -1584,7 +1584,7 @@ async function discardRun(sessionId: number | null, stagingDir: string | null): 
     sessionId != null
       ? discardImportSession(sessionId, issueRequests(issues), notes)
       : Promise.resolve(),
-    stagingDir != null ? discardStagingFolder(stagingDir) : Promise.resolve(),
+    stagingDir != null ? discardStagingDirectory(stagingDir) : Promise.resolve(),
   ]);
 }
 

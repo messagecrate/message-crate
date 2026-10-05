@@ -65,14 +65,14 @@ function formatLabel(id: ExportFormat): string {
 }
 
 /**
- * Desktop export: `message-crate-pull` downloads the account's conversations into a folder, and for any
- * format other than JSONL `message-reexport` rewrites that folder into the
+ * Desktop export: `message-crate-pull` downloads the account's conversations into a directory, and for any
+ * format other than JSONL `message-reexport` rewrites that directory into the
  * chosen format.
  *
- * The two steps need two folders. `message-crate-pull` only writes JSONL, and
- * `message-reexport` refuses to convert a folder into itself, so a non-JSONL
- * export pulls into a staging folder first and converts out of it into the
- * folder the person picked. The staging folder is deleted either way, so a
+ * The two steps need two directories. `message-crate-pull` only writes JSONL, and
+ * `message-reexport` refuses to convert a directory into itself, so a non-JSONL
+ * export pulls into a run directory first and converts out of it into the
+ * directory the person picked. The run directory is deleted either way, so a
  * failed conversion does not leave a copy of the conversations behind.
  *
  * The scope is Everything or Search. The screen opens in Search when its URL
@@ -104,10 +104,10 @@ export default function ExportScreen() {
   // resolves (a `home_dir` round trip on the first export), and between the
   // pull and the conversion. The desktop refuses a second job while one runs
   // (`jobs.rs`), but between two jobs it has nothing to refuse, and two exports
-  // begun in the same second would share a staging folder, so the first
+  // begun in the same second would share a run directory, so the first
   // cleanup would delete the second's files. This covers the whole run.
   const [busy, setBusy] = useState(false);
-  // The folder and format each export was started with, so the success
+  // The directory and format each export was started with, so the success
   // message names what was written even after the form changes.
   const { running, finished, run } = useTauriJob<{ savePath: string; format: ExportFormat }>({
     job: "Export",
@@ -180,13 +180,13 @@ export default function ExportScreen() {
             { onLog: appendLog },
           );
         } finally {
-          // Best effort: a staging folder left behind is worth a log line, not
+          // Best effort: a run directory left behind is worth a log line, not
           // a failed export the person cannot tell apart from a real one.
           try {
             await invokeDeleteStaging({ staging_dir: stagingDir });
           } catch (cleanupError: unknown) {
             appendLog(
-              `Could not remove the staging folder ${stagingDir}: ${
+              `Could not remove the run directory ${stagingDir}: ${
                 cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
               }`,
             );
@@ -218,7 +218,7 @@ export default function ExportScreen() {
       error={error}
       intro={
         <p className="mb-6 text-[0.875rem] text-muted">
-          Export every conversation, or only the ones a search finds, into a folder in the format
+          Export every conversation, or only the ones a search finds, into a directory in the format
           you choose. Attachments come with the messages.
         </p>
       }
@@ -285,7 +285,7 @@ export default function ExportScreen() {
           value={savePath}
           onChange={setSavePath}
           directory
-          placeholder="Choose folder…"
+          placeholder="Choose directory…"
           isDisabled={running || busy}
         />
       </FormRow>

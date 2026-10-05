@@ -5,7 +5,7 @@ import type { WhatsappMethodId } from "./whatsappImport";
 /**
  * Build extract payload fields for a WhatsApp method.
  *
- * Media options apply to both platforms. The Android key, media folder,
+ * Media options apply to both platforms. The Android key, media directory,
  * and message database are sent only for Android when the trimmed value
  * is non-empty. Contacts database is sent on both platforms when
  * non-empty. WhatsApp Business is sent only for iPhone when the checkbox

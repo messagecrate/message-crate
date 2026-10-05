@@ -915,9 +915,9 @@ pub async fn delete_account(
     }
 
     account_profile::delete_account(&mut conn, target, reach.actor()).await?;
-    // The account is gone once its row is, so a folder that cannot be removed
+    // The account is gone once its row is, so a directory that cannot be removed
     // (a permission error, a busy file) is logged with its path rather than
-    // answered as a failure. No later account takes this id, so the folder
+    // answered as a failure. No later account takes this id, so the directory
     // stays out of every account's reach until someone removes it.
     let paths = state.cfg.paths.clone();
     let removed =
@@ -933,7 +933,7 @@ pub async fn delete_account(
             account_id = target,
             path = %crate::asset_store::account_dir(&state.cfg.paths, target).display(),
             %error,
-            "account deleted, but its data folder could not be removed"
+            "account deleted, but its data directory could not be removed"
         );
     }
     Ok(StatusCode::NO_CONTENT)

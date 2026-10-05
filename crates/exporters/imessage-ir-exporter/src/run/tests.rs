@@ -70,7 +70,7 @@ fn missing_chat_db_uses_locked_copy() {
 }
 
 #[test]
-fn missing_attachment_folder_uses_locked_copy() {
+fn missing_attachment_directory_uses_locked_copy() {
     let dir = tempfile::tempdir().unwrap();
     let chat = dir.path().join("chat.db");
     fs::write(&chat, b"sqlite").unwrap();
@@ -83,7 +83,7 @@ fn missing_attachment_folder_uses_locked_copy() {
         },
     ))
     .unwrap_err();
-    assert_eq!(err.to_string(), ATTACHMENT_FOLDER_MISSING);
+    assert_eq!(err.to_string(), ATTACHMENT_DIRECTORY_MISSING);
 }
 
 #[test]
@@ -104,7 +104,7 @@ fn missing_apple_contacts_uses_locked_copy() {
 }
 
 #[test]
-fn empty_folder_is_not_an_iphone_backup() {
+fn empty_directory_is_not_an_iphone_backup() {
     let dir = tempfile::tempdir().unwrap();
     let err = options_from_export_config(&apple_cfg(
         dir.path(),
@@ -166,7 +166,7 @@ fn an_unencrypted_backup_with_its_messages_database_is_accepted() {
     assert_eq!(options.source.db_path, dir.path());
 }
 
-/// The writer cleans its output folder before it writes, so an output
+/// The writer cleans its output directory before it writes, so an output
 /// that is or holds the backup or `chat.db` would delete what is being
 /// read.
 #[test]
@@ -214,7 +214,7 @@ fn an_output_that_is_or_contains_the_input_is_refused() {
 }
 
 #[test]
-fn auto_detects_a_backup_folder_by_its_hashed_database() {
+fn auto_detects_a_backup_directory_by_its_hashed_database() {
     let dir = tempfile::tempdir().unwrap();
     assert_eq!(detect_platform(dir.path()).unwrap(), Platform::MacOs);
 
@@ -225,7 +225,7 @@ fn auto_detects_a_backup_folder_by_its_hashed_database() {
 
     let err = detect_platform(&hashed).unwrap_err();
     assert!(
-        err.to_string().contains("choose the backup folder"),
+        err.to_string().contains("choose the backup directory"),
         "{err}"
     );
 }
@@ -746,12 +746,12 @@ fn a_reader_that_stops_during_the_attachments_stops_the_run() {
     }
 }
 
-/// The program decrypts into a folder under the app's cache folder,
-/// beside the identities request's, never into the output folder, and the
-/// folder is gone once the run ends (#1402).
+/// The program decrypts into a directory under the app's cache directory,
+/// beside the identities request's, never into the output directory, and the
+/// directory is gone once the run ends (#1402).
 #[cfg(unix)]
 #[test]
-fn the_scratch_folder_is_under_the_cache_folder_and_deleted_after() {
+fn the_scratch_directory_is_under_the_cache_directory_and_deleted_after() {
     use ios_backup::testutil::{fake_helper, spawn_fake};
 
     let dir = tempfile::tempdir().unwrap();
@@ -784,7 +784,7 @@ fn the_scratch_folder_is_under_the_cache_folder_and_deleted_after() {
     };
     let reader_root = config
         .cache_dir
-        .join(message_crate_core::IMESSAGE_READER_FOLDER);
+        .join(message_crate_core::IMESSAGE_READER_DIRECTORY);
     assert_eq!(
         sent.scratch_dir.parent(),
         Some(reader_root.as_path()),
@@ -805,11 +805,11 @@ fn the_scratch_folder_is_under_the_cache_folder_and_deleted_after() {
     );
 }
 
-/// A run that fails removes its scratch folder, as one that completes
-/// does, and never leaves one in the output folder (#1402).
+/// A run that fails removes its scratch directory, as one that completes
+/// does, and never leaves one in the output directory (#1402).
 #[cfg(unix)]
 #[test]
-fn a_failed_run_leaves_no_scratch_folder() {
+fn a_failed_run_leaves_no_scratch_directory() {
     use ios_backup::testutil::{fake_helper, spawn_fake};
 
     let dir = tempfile::tempdir().unwrap();
@@ -839,12 +839,12 @@ fn a_failed_run_leaves_no_scratch_folder() {
     );
     let reader_root = config
         .cache_dir
-        .join(message_crate_core::IMESSAGE_READER_FOLDER);
+        .join(message_crate_core::IMESSAGE_READER_DIRECTORY);
     assert!(names_in(&reader_root).is_empty());
 }
 
 /// The databases the reader decrypts out of an encrypted backup are
-/// counted against the disk that holds the cache folder before the reader
+/// counted against the disk that holds the cache directory before the reader
 /// starts, so a short disk fails the run with the space it needs rather
 /// than part-way through a decrypt (#1402).
 #[cfg(unix)]
@@ -878,14 +878,14 @@ fn a_decrypt_the_cache_disk_cannot_hold_is_refused_before_the_reader_starts() {
 
     assert!(
         err.to_string().starts_with(
-            "Not enough space on the disk that holds the app's cache folder: \
+            "Not enough space on the disk that holds the app's cache directory: \
              reading this backup needs about "
         ),
         "{err:#}"
     );
     let reader_root = config
         .cache_dir
-        .join(message_crate_core::IMESSAGE_READER_FOLDER);
+        .join(message_crate_core::IMESSAGE_READER_DIRECTORY);
     assert!(names_in(&reader_root).is_empty());
 }
 

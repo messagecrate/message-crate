@@ -205,7 +205,7 @@ fn transcode_file_clears_scratch_beside_the_source_only() {
     assert!(!own_scratch.exists(), "this file's own leftovers go");
     assert!(
         other_scratch.exists(),
-        "another file's in-flight scratch must survive: a folder-wide sweep \
+        "another file's in-flight scratch must survive: a directory-wide sweep \
          destroys work that is still running"
     );
     assert!(
@@ -1031,7 +1031,7 @@ fn collect_media_files_keeps_media_and_leaves_everything_else() {
     assert_eq!(
         files,
         vec![nested.join("clip.mp4"), dir.path().join("photo.png")],
-        "only media, found in subfolders too, sorted; never a PDF or an \
+        "only media, found in subdirectories too, sorted; never a PDF or an \
          ffmpeg temp file"
     );
 }

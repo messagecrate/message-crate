@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 const PEER: &str = "+14075550107";
 const OWNER: &str = "+15555550100";
 
-/// The backup folder: five PDUs and two stray files.
+/// The backup directory: five PDUs and two stray files.
 fn write_backup(dir: &Path) {
     fs::create_dir_all(dir).unwrap();
     let received = PduBuilder::received(PEER)

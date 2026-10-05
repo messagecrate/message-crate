@@ -4,7 +4,7 @@ import PlainButton from "../components/PlainButton";
 import { setBaseUrl } from "../lib/api";
 import { useAuth } from "../lib/auth";
 import { DEFAULT_TAURI_SERVER_URL, initialLoginServerUrl } from "../lib/authGuards";
-import { isOwnAddress, type LocalServerStatus, openDataFolder } from "../lib/localServer";
+import { isOwnAddress, type LocalServerStatus, openDataDirectory } from "../lib/localServer";
 import { checkServerHealth, type ServerHealthStatus } from "../lib/serverHealth";
 import { isTauri } from "../lib/tauri-check";
 import { accentLink, authCard, authCardBody, authScreenTitle, pageCenter } from "../lib/uiStyles";
@@ -81,12 +81,12 @@ function StartFailed({
           variant="secondary"
           onPress={() => {
             setOpenError(null);
-            openDataFolder().catch((caught: unknown) => {
+            openDataDirectory().catch((caught: unknown) => {
               setOpenError(caught instanceof Error ? caught.message : String(caught));
             });
           }}
         >
-          Open data folder
+          Open data directory
         </Button>
       </div>
       {openError ? <p className="m-0 mt-1 text-[0.75rem] text-danger">{openError}</p> : null}

@@ -1,9 +1,9 @@
 ---
 title: Import your backup
-description: Point the desktop app's Import form at the backup folder, approve the review, and open the imported conversations.
+description: Point the desktop app's Import form at the backup directory, approve the review, and open the imported conversations.
 ---
 
-This step reads the phone's backup folder and stores its messages in the Message Crate.
+This step reads the phone's backup directory and stores its messages in the Message Crate.
 It happens in the desktop app, logged in as the account made in [Create the Owner and an account](/docs/user/your-messages/create-the-owner-and-an-account/).
 
 ## Open Import
@@ -20,13 +20,13 @@ The Owner's login doesn't show **Import**, because the Owner holds no messages.
 
 1. The first list is the source. Choose **iMessage**. It covers SMS and MMS as well as iMessage, because an iPhone keeps all three together.
 2. **Platform**: **iPhone backup**.
-3. **iPhone Backup Directory**: select **Browse** and pick the device folder of the backup, the one that contains `Manifest.plist`.
+3. **iPhone Backup Directory**: select **Browse** and pick the device directory of the backup, the one that contains `Manifest.plist`.
 4. **Encryption password**: the backup's password. The field is marked required when the app finds the backup is encrypted, and optional when it isn't.
 
 ### For an Android backup
 
 1. The first list is the source. Choose **SMS Backup & Restore**.
-2. **Backup Directory**: select **Browse** and pick the folder that holds the `.xml` files.
+2. **Backup Directory**: select **Browse** and pick the directory that holds the `.xml` files.
 3. **Backup Device Phone Numbers**: every number that belonged to the phone. The numbers on the account's profile are filled in already.
 
 When none of the numbers in the field is on the account's profile, **Import** stays greyed out until **Allow import from phone numbers not on my profile** is ticked.
@@ -54,13 +54,13 @@ When none match, it stops and lists the phone's addresses.
 The screen changes to a list of stages, in order.
 The run works through them from the top.
 
-1. **Staging** reads the backup and copies the messages and attachments into a working folder on this computer. Nothing has reached the Message Crate yet. A large backup takes a while here.
+1. **Staging** reads the backup and copies the messages and attachments into a working directory on this computer. Nothing has reached the Message Crate yet. A large backup takes a while here.
 2. **Staging Review** stops the run and reads **Awaiting approval**. It shows what was found: the contacts, split into **Existing** and **New**, any attachment too large to upload, and the addresses the phone sent from. The counts of conversations, messages and attachments are in the **Staging** row above it.
 3. **Upload** writes everything into the Message Crate.
 
 Nothing is stored until the review is approved.
 **Upload to Message Crate** approves it.
-**Cancel this import** ends the run and deletes the working folder.
+**Cancel this import** ends the run and deletes the working directory.
 
 The app can be used for other things while a run works, and the run waits at the review for as long as it takes.
 

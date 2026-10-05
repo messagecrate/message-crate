@@ -7,8 +7,8 @@ type StagingDeleteFailureNoticeProps = {
 };
 
 /**
- * Says that a staging folder of a discarded, cancelled or finished Import
- * Run is still on disk, and why. A staging folder can hold several
+ * Says that a run directory of a discarded, cancelled or finished Import
+ * Run is still on disk, and why. A run directory can hold several
  * gigabytes, so a failed delete is never dropped without a word.
  */
 export default function StagingDeleteFailureNotice({

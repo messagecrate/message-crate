@@ -31,11 +31,9 @@ describe("OpenPathButton", () => {
 
   it("shows an alert when opening fails", async () => {
     const user = setupUser();
-    openPathInExplorer.mockRejectedValue(new Error("Path is outside the import staging folder"));
+    openPathInExplorer.mockRejectedValue(new Error("Path is outside the import run directory"));
     render(<OpenPathButton path="/tmp/nope">Open</OpenPathButton>);
     await user.click(screen.getByRole("button", { name: "Open" }));
-    expect(screen.getByRole("alert")).toHaveTextContent(
-      "Path is outside the import staging folder",
-    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Path is outside the import run directory");
   });
 });

@@ -18,7 +18,7 @@ export type TauriJobRunCallbacks = {
  * and holds the desktop job under `job` while it runs. `start` only collects
  * a log; no screen calls it.
  *
- * `Request` is what the screen asked the job to do, such as a folder and a
+ * `Request` is what the screen asked the job to do, such as a directory and a
  * format. Each job is started with one, and `finished` hands back the request
  * of the job that finished, so a success message names what the job wrote
  * rather than what the form holds now.

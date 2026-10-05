@@ -1,7 +1,7 @@
 use super::*;
 use std::sync::atomic::Ordering;
 
-/// A staging folder holding one conversation and one attachment.
+/// A run directory holding one conversation and one attachment.
 ///
 /// Writes `attachments/<name>` with `bytes`, and one `.jsonl` whose
 /// single message has non-empty text and one attachment pointing at
@@ -477,7 +477,7 @@ fn a_convert_failed_attachment_keeps_its_path_and_is_retried_on_resume() {
 }
 
 #[test]
-fn cancelling_stops_the_pass_without_corrupting_the_folder() {
+fn cancelling_stops_the_pass_without_corrupting_the_directory() {
     let (dir, jsonl, _) = staged_one("photo.png", &test_png_bytes());
     let cancel = CancelFlag::default();
     cancel.store(true, Ordering::Relaxed);
@@ -791,7 +791,7 @@ fn two_documents_sharing_one_original_both_end_pointing_at_the_committed_derivat
     };
     let (dir, jsonl_a, original) = staged_one("shared.png", &test_png_bytes());
 
-    // A second, independent conversation staged in the same folder whose
+    // A second, independent conversation staged in the same directory whose
     // attachment happens to record the identical path — two different
     // chats that received the same bytes.
     let mut doc_b = message_ir::testutil::sample_document("second conversation, same photo");
@@ -1175,12 +1175,12 @@ fn the_committed_suffix_guard_excludes_an_already_final_video_from_pending() {
 /// Every file under `dir`, keyed by its path relative to `dir`, with its bytes.
 fn snapshot_tree(dir: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
     let mut files = std::collections::BTreeMap::new();
-    let mut folders = vec![dir.to_path_buf()];
-    while let Some(folder) = folders.pop() {
-        for entry in std::fs::read_dir(&folder).unwrap() {
+    let mut directories = vec![dir.to_path_buf()];
+    while let Some(directory) = directories.pop() {
+        for entry in std::fs::read_dir(&directory).unwrap() {
             let path = entry.unwrap().path();
             if path.is_dir() {
-                folders.push(path);
+                directories.push(path);
             } else {
                 let rel = path.strip_prefix(dir).unwrap().to_path_buf();
                 files.insert(rel, std::fs::read(&path).unwrap());
@@ -1194,7 +1194,7 @@ fn snapshot_tree(dir: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
 fn without_ffmpeg_the_whole_pass_fails_and_touches_nothing() {
     // The module's contract: when ffmpeg/ffprobe are missing, the pass fails
     // before any document is touched and never brands an attachment
-    // `convert_failed`. The folder holds work for both modes: an image, a
+    // `convert_failed`. The directory holds work for both modes: an image, a
     // video, and an audio file, across two conversation files.
     let (dir, jsonl, _) = staged_one("photo.png", &test_png_bytes());
     let mut doc = read_conversation_jsonl(&jsonl).unwrap();

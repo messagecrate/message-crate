@@ -25,14 +25,14 @@ Reads a backup directory with `gosms_sys*.xml` (SMS) and `I_*.pdu` files (MMS).
 
 Reads Messages or WhatsApp CSV files from the third-party iMazing backup tool.
 
-- **What you need**: iMazing CSV export files, chat folders, or a full device export tree
+- **What you need**: iMazing CSV export files, chat directories, or a full device export tree
 - **Known gaps**: CSV format omits information present in a native iPhone backup. Group membership, reactions, and reply threads may be incomplete or absent
 
 ## OpenExtract
 
 Reads `all_conversations.csv` or `conversation_*.csv` files from the OpenExtract tool.
 
-- **What you need**: the CSV export folder
+- **What you need**: the CSV export directory
 - **Known gaps**: identity and attachment information can be limited. Group conversations may not include all participants
 
 ## SMS Backup+

@@ -20,7 +20,7 @@ describe("openPathInExplorer", () => {
   });
 
   it("invokes open_path with the path alone in the desktop app", async () => {
-    // The desktop process checks the path against the staging folders it
+    // The desktop process checks the path against the run directories it
     // made; a root from the window would be the setting as it is now.
     const { openPathInExplorer } = await import("./openPath");
     await openPathInExplorer("/home/sam/message-crate/staging");

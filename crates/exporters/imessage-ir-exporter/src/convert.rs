@@ -108,18 +108,18 @@ struct Collected {
     failures: u64,
 }
 
-/// Prepare the output folder and open the sink, before the program starts.
+/// Prepare the output directory and open the sink, before the program starts.
 ///
 /// Attachment files are written after the stream by the shared runner, so
 /// prior IR artifacts (including stale `attachments/`) must be cleaned
 /// first, the same pattern as WhatsApp and SMS Backup & Restore. A resumed
 /// run is the exception: what the interrupted run wrote is exactly the work
-/// this one gets to skip. The program's scratch folder is under the app's
-/// cache folder, so the clean never meets it.
+/// this one gets to skip. The program's scratch directory is under the app's
+/// cache directory, so the clean never meets it.
 ///
 /// # Errors
 ///
-/// Returns an error when the output folder cannot be prepared.
+/// Returns an error when the output directory cannot be prepared.
 pub(crate) fn open_output(options: &ExportOptions) -> Result<ExportWriterParts> {
     Ok(ExportWriter::open(
         &options.export_path,

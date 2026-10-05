@@ -1,7 +1,7 @@
 //! Per-conversation `.eml` / `.mbox` archive writer.
 //!
 //! Layout and headers follow the [mail archive format](https://messagecrate.app/docs/developer/formats/mail-archive/).
-//! The usual layout is one folder of `.eml` files per conversation.
+//! The usual layout is one directory of `.eml` files per conversation.
 //! [`write_mail_package`] writes **mboxrd** mailboxes for clients that prefer
 //! a single file. SMS/MMS fill the core fields. iMessage also sets reply,
 //! tapback, balloon, parts, and edits extension fields.
@@ -79,8 +79,8 @@ impl From<&MailAttachment> for message_ir::IrAttachment {
 /// How to package a conversation for mail-archive export.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MailPackage {
-    /// One folder of `.eml` files per conversation.
-    EmlFolders,
+    /// One directory of `.eml` files per conversation.
+    EmlDirectories,
     /// One `.mbox` (mboxrd) file per conversation.
     Mbox,
 }
@@ -93,7 +93,7 @@ pub enum MailPackage {
 /// the writer reads them straight from the IR instead of a flattened copy.
 #[derive(Debug, Clone)]
 pub struct MailMessage {
-    /// Conversation id → `X-ME-Chat-Identifier`, folder stem, group chat address local part.
+    /// Conversation id → `X-ME-Chat-Identifier`, directory stem, group chat address local part.
     pub chat_identifier: String,
     /// `individual` or `group`.
     pub conversation_type: String,
@@ -111,7 +111,7 @@ pub struct MailMessage {
     pub export_tool: String,
     /// → `X-ME-Export-Tool-Version`.
     pub export_tool_version: String,
-    /// Optional stem suffix (e.g. `"__whatsapp"`) for conversation folder / mbox names.
+    /// Optional stem suffix (e.g. `"__whatsapp"`) for conversation directory / mbox names.
     pub filename_suffix: Option<String>,
     /// The message itself (headers read guid, timestamp, direction, service,
     /// kind, sender, subject, text, and the iMessage / source bags from here;
@@ -128,7 +128,7 @@ impl MailMessage {
     }
 }
 
-/// Write one conversation as EML folders or a single mboxrd file.
+/// Write one conversation as EML directories or a single mboxrd file.
 ///
 /// # Errors
 ///
@@ -139,7 +139,7 @@ pub fn write_mail_package(
     messages: &[MailMessage],
 ) -> Result<PathBuf> {
     match package {
-        MailPackage::EmlFolders => write_conversation(output_root, messages),
+        MailPackage::EmlDirectories => write_conversation(output_root, messages),
         MailPackage::Mbox => write_conversation_mbox(output_root, messages),
     }
 }
@@ -192,7 +192,7 @@ fn write_message_file(conv_dir: &Path, sequence: u32, msg: &MailMessage) -> Resu
     Ok(path)
 }
 
-/// The file name of the `sequence`th `.eml` in a conversation folder:
+/// The file name of the `sequence`th `.eml` in a conversation directory:
 /// `000001_<local date>_<local time>_<first 8 hex of the guid>.eml`.
 ///
 /// # Errors
@@ -206,7 +206,7 @@ pub fn eml_file_name(sequence: u32, message: &IrMessage) -> Result<String> {
     Ok(format!("{sequence:06}_{date_part}_{time_part}_{guid8}.eml"))
 }
 
-/// Write one conversation folder of `.eml` files under `output_root`.
+/// Write one conversation directory of `.eml` files under `output_root`.
 ///
 /// Returns the conversation directory path. Messages are sorted by timestamp,
 /// then guid, before writing.

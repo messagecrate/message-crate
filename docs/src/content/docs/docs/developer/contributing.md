@@ -212,11 +212,11 @@ Most first PRs touch one of these:
 
 Don't start in `web-next/`; that's an old UI still in the tree.
 
-The full folder list is on [System Design → Directory map](/docs/developer/design/#directory-map).
+The full directory list is on [System Design → Directory map](/docs/developer/design/#directory-map).
 
 Once the server is running, [System Design](/docs/developer/design/) also lists the programs a build creates and shows how the website and the server talk to each other.
 
-Phone backups do not go into Message Crate as raw files. A converter reads the backup and writes a folder of chat files (one file per conversation, one message per line). Import loads that folder into the running server. [Message Transfer](/docs/developer/message-transfer/) explains that path and which converters are ready to use.
+Phone backups do not go into Message Crate as raw files. A converter reads the backup and writes a directory of chat files (one file per conversation, one message per line). Import loads that directory into the running server. [Message Transfer](/docs/developer/message-transfer/) explains that path and which converters are ready to use.
 
 ### Preview the guidebook
 

@@ -79,11 +79,11 @@ export function imessageStatsForMethod(
 }
 
 export const IMESSAGE_ERR_PATH_MISSING = "This path does not exist.";
-export const IMESSAGE_ERR_IPHONE_PATH_IS_FILE = "Pick the backup folder.";
+export const IMESSAGE_ERR_IPHONE_PATH_IS_FILE = "Pick the backup directory.";
 export const IMESSAGE_ERR_MAC_PATH_IS_DIR = "Pick chat.db.";
 export const IMESSAGE_ERR_JAILBREAK_PATH_IS_DIR = "Pick sms.db.";
 export const IMESSAGE_ERR_ATTACHMENT_IS_FILE =
-  "Pick the folder that contains Attachments and StickerCache.";
+  "Pick the directory that contains Attachments and StickerCache.";
 export const IMESSAGE_ERR_CONTACTS_IS_DIR = "Pick AddressBook-v22.abcddb or AddressBook.sqlitedb.";
 export const IMESSAGE_ERR_ENCRYPTED_PASSWORD =
   "The backup is encrypted — fill Encryption password.";

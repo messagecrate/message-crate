@@ -1,4 +1,4 @@
-//! Read an EML folder or mboxrd mailbox back into a [`ConversationDocument`].
+//! Read an EML directory or mboxrd mailbox back into a [`ConversationDocument`].
 
 use anyhow::{Context, Result, bail};
 use mail::{MailMessage, mail_message_from_eml_bytes, mail_messages_from_mbox};

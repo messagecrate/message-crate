@@ -24,7 +24,7 @@ const dangerButton = `${dangerButtonClass} !box-border !w-auto !min-w-[10.5rem] 
  * it has one (`hasPassword`) and logs out. In the desktop app it also deletes
  * the account's Staging Directories on this computer, which the dialog names
  * first: the server deletes the account's Import Runs with it, so nothing
- * would offer those folders again. Given `managedAccountId`, the owner is deleting someone
+ * would offer those directories again. Given `managedAccountId`, the owner is deleting someone
  * else's: no password is asked, because the owner does not know it, and the
  * owner lands back on User Accounts. The owner deletes on the strength of the
  * count and the account holder's word, so the confirmation states the count.
@@ -71,7 +71,7 @@ export function ProfileDangerZone({
   // An account the owner barred from deleting asks the owner instead.
   const notPermitted = !canDelete && !managed;
   const count = messageCount.toLocaleString();
-  // Only the desktop app can find and delete folders on this computer.
+  // Only the desktop app can find and delete directories on this computer.
   const checkDirectories = deleteDialogOpen && !managed && isTauri();
   const stagingDirectories = useRouteQuery(
     keys.imports.stagingDirectories,
@@ -114,7 +114,7 @@ export function ProfileDangerZone({
       await deleteAccount({ confirm: true, current_password: currentPassword });
       setDeleteDialogOpen(false);
       // The account is gone, so there is nothing to go back to: an Upload
-      // still running is paused without asking, and the folders the dialog
+      // still running is paused without asking, and the directories the dialog
       // named are deleted once the session is revoked.
       void logout({
         ask: false,
@@ -251,7 +251,7 @@ export function ProfileDangerZone({
             checkDirectories
               ? {
                   // A look still under way holds the confirm, even with an earlier
-                  // list cached: that list may miss a folder made since.
+                  // list cached: that list may miss a directory made since.
                   checking: stagingDirectories.isFetching,
                   paths: directoriesToDelete,
                   error: stagingDirectories.error?.message ?? "",

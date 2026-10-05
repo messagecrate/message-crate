@@ -17,7 +17,7 @@ use anyhow::Result;
 use message_crate_core::check_cancel;
 use message_crate_http::HttpError;
 
-use crate::folder::file_label;
+use crate::directory::file_label;
 use crate::http;
 use crate::journal::{JournalMessage, RunJournal};
 use crate::prepare::{ImportChunk, PreparedFile, SharedJournal};

@@ -121,7 +121,7 @@ An Upload that is running is paused first, without asking.
 In the desktop app, the dialog also names the account's Staging Directories on this computer, where its imports keep their files.
 Deleting the account deletes them, since the account's imports go with it and nothing would offer them again.
 A Staging Directory that cannot be deleted is named in a message afterwards, so it can be deleted by hand.
-The browser does not touch any folder.
+The browser does not touch any directory.
 
 Neither action can be undone.
 

@@ -41,5 +41,7 @@ pub use process::{
 };
 pub use progress::{ProgressEvent, ProgressSink, emit_progress};
 pub use run::{finish_run, run_pipeline};
-pub use scratch::{ATTACHMENT_SPOOL_FOLDER, IMESSAGE_READER_FOLDER, ScratchDir, sweep_scratch};
+pub use scratch::{
+    ATTACHMENT_SPOOL_DIRECTORY, IMESSAGE_READER_DIRECTORY, ScratchDir, sweep_scratch,
+};
 pub use transforms::ExportTransforms;

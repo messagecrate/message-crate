@@ -1,4 +1,4 @@
-//! Page exported messages, download attachments, and write JSON Lines folders.
+//! Page exported messages, download attachments, and write JSON Lines directories.
 //!
 //! JSON Lines means one JSON object per line. Message Crate is the HTTP server
 //! that stores imported messages.
@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use message_crate_core::{CancelFlag, check_cancel, parallel_for_each};
 use message_crate_http::{auth_check as authenticate, with_retries};
-use message_ir_format::mark_export_folder;
+use message_ir_format::mark_export_directory;
 use serde::Serialize;
 
 use crate::http::{ExportMessagesArgs, HttpSession};
@@ -28,10 +28,10 @@ pub const DEFAULT_ASSET_DOWNLOAD_WORKERS: usize = 8;
 /// Extra tries for transient HTTP failures, matching the message-crate-push default.
 const MAX_RETRIES: u32 = 3;
 
-/// Settings for one download run (output folder, URL, search, flags).
+/// Settings for one download run (output directory, URL, search, flags).
 #[derive(Debug, Clone)]
 pub struct PullConfig {
-    /// Folder the JSON Lines files and attachments are written into.
+    /// Directory the JSON Lines files and attachments are written into.
     pub out_dir: PathBuf,
     /// Server base URL, e.g. `http://127.0.0.1:8080`.
     pub base_url: String,
@@ -77,11 +77,11 @@ pub struct PullReport {
     pub attachments_downloaded: u64,
     /// Attachments already on disk according to the journal.
     pub attachments_skipped: u64,
-    /// Attachment paths the server sent that would leave the output folder,
+    /// Attachment paths the server sent that would leave the output directory,
     /// as the server sent them. Each such attachment is written at
     /// `attachments/{sha256}` instead.
     pub refused_attachment_paths: Vec<String>,
-    /// The output folder, as given.
+    /// The output directory, as given.
     pub out_dir: String,
 }
 
@@ -133,26 +133,26 @@ fn next_offset(offset: usize, limit: usize, total: u64) -> Option<usize> {
     (u64::try_from(next).unwrap_or(u64::MAX) < total).then_some(next)
 }
 
-/// Create the output folder, mark it as a Message Crate export, and create its
+/// Create the output directory, mark it as a Message Crate export, and create its
 /// `attachments/` child.
 ///
-/// The sentinel names this folder as one an export wrote. The desktop app
-/// refuses to act on a staging folder without it
-/// (`StagingFolders::folder` in `src-tauri/src/staging_folders.rs`), which is
+/// The sentinel names this directory as one an export wrote. The desktop app
+/// refuses to act on a run directory without it
+/// (`StagingDirectories::directory` in `src-tauri/src/staging_directories.rs`), which is
 /// part of what stands between a path bug and a recursive delete somewhere
-/// else on disk. A pulled folder that skipped the sentinel could not be used
-/// as export staging. Because a marked folder may be cleaned by a later
-/// export, a folder of the person's own files is refused rather than marked
-/// ([`mark_export_folder`]). The folder is marked before `attachments/` is
-/// created, so a new folder is still empty when it is checked.
+/// else on disk. A pulled directory that skipped the sentinel could not be used
+/// as export staging. Because a marked directory may be cleaned by a later
+/// export, a directory of the person's own files is refused rather than marked
+/// ([`mark_export_directory`]). The directory is marked before `attachments/` is
+/// created, so a new directory is still empty when it is checked.
 ///
 /// # Errors
 ///
-/// Returns an error when the folder, its `attachments/` child, or the
-/// sentinel cannot be written, or the folder holds files and no sentinel.
+/// Returns an error when the directory, its `attachments/` child, or the
+/// sentinel cannot be written, or the directory holds files and no sentinel.
 fn prepare_out_dir(out_dir: &Path, skip_attachments: bool) -> Result<()> {
     fs::create_dir_all(out_dir).with_context(|| format!("create {}", out_dir.display()))?;
-    mark_export_folder(out_dir)?;
+    mark_export_directory(out_dir)?;
     if !skip_attachments {
         let attachments_dir = out_dir.join("attachments");
         fs::create_dir_all(&attachments_dir)
@@ -169,7 +169,7 @@ fn prepare_out_dir(out_dir: &Path, skip_attachments: bool) -> Result<()> {
 ///
 /// # Errors
 ///
-/// Returns an error when the session token or output folder is missing, login fails, a
+/// Returns an error when the session token or output directory is missing, login fails, a
 /// page or download fails, or a conversation file cannot be written.
 pub fn run(cfg: &PullConfig, mut on_progress: Option<&mut ProgressFn<'_>>) -> Result<PullReport> {
     if cfg.token.trim().is_empty() {
@@ -192,10 +192,10 @@ pub fn run(cfg: &PullConfig, mut on_progress: Option<&mut ProgressFn<'_>>) -> Re
     // Nothing is recorded for a run the caller already gave up on.
     check_cancel(cfg.cancel.as_ref())?;
     let export = pull.start_export(&mut on_progress)?;
-    let outcome = pull.export_into_folder(&export, &mut on_progress);
+    let outcome = pull.export_into_directory(&export, &mut on_progress);
     // The client closes the run either way, so the server's record says how
     // it ended. A close that fails after the files are written is a warning,
-    // not a failed export: the folder is complete, only the record is not.
+    // not a failed export: the directory is complete, only the record is not.
     let action = if outcome.is_ok() {
         "complete"
     } else {
@@ -244,13 +244,13 @@ pub fn run(cfg: &PullConfig, mut on_progress: Option<&mut ProgressFn<'_>>) -> Re
 struct Fetched {
     /// Conversation key → (first message as the metadata seed, converted messages).
     by_conv: BTreeMap<String, (Message, Vec<message_ir::IrMessage>)>,
-    /// sha256 → relative path under the output folder.
+    /// sha256 → relative path under the output directory.
     assets: HashMap<String, String>,
     /// sha256 → every other path a message names for the same bytes. The
     /// file is downloaded once, at the path in `assets`, then placed at each
     /// of these.
     other_paths: BTreeMap<String, BTreeSet<String>>,
-    /// Attachment paths the server sent that would leave the output folder.
+    /// Attachment paths the server sent that would leave the output directory.
     refused_paths: BTreeSet<String>,
     total_messages: u64,
 }
@@ -392,7 +392,7 @@ impl<'a> Pull<'a> {
     /// Returns an error when a page or download fails after retries, a
     /// message cannot be converted, a file cannot be written, or the run is
     /// cancelled.
-    fn export_into_folder(
+    fn export_into_directory(
         &self,
         export: &ExportRun,
         out: &mut Option<&mut ProgressFn<'_>>,
@@ -692,7 +692,7 @@ fn note_asset_refs(
 ///
 /// # Errors
 ///
-/// Returns an error when a folder cannot be created or the file cannot be
+/// Returns an error when a directory cannot be created or the file cannot be
 /// linked or copied.
 fn place_other_paths(
     out_dir: &Path,
@@ -732,10 +732,10 @@ fn place_other_paths(
 fn refused_path_line(path: &str, rel: Option<&str>) -> String {
     match rel {
         Some(rel) => format!(
-            "warning: attachment path {path} would leave the output folder; written at {rel} instead"
+            "warning: attachment path {path} would leave the output directory; written at {rel} instead"
         ),
         None => format!(
-            "warning: attachment path {path} would leave the output folder; the conversation file names no path for it"
+            "warning: attachment path {path} would leave the output directory; the conversation file names no path for it"
         ),
     }
 }
@@ -876,10 +876,10 @@ mod out_dir_tests {
     use message_ir_format::EXPORT_SENTINEL;
 
     #[test]
-    fn marks_the_folder_as_an_export() {
+    fn marks_the_directory_as_an_export() {
         // Without the sentinel the desktop app's staging guard refuses to
-        // clean a pulled folder, so an export that staged into one would
-        // leave the staging folder behind.
+        // clean a pulled directory, so an export that staged into one would
+        // leave the run directory behind.
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("pulled");
 
@@ -902,8 +902,8 @@ mod out_dir_tests {
     }
 
     #[test]
-    fn runs_again_over_a_folder_it_already_prepared() {
-        // A second pull into the same folder is the resume path.
+    fn runs_again_over_a_directory_it_already_prepared() {
+        // A second pull into the same directory is the resume path.
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("pulled");
 
@@ -914,7 +914,7 @@ mod out_dir_tests {
     }
 
     #[test]
-    fn refuses_a_folder_of_the_persons_own_files() {
+    fn refuses_a_directory_of_the_persons_own_files() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("budget.csv"), "mine").unwrap();
 

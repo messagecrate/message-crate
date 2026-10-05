@@ -8,7 +8,7 @@ import type {
 
 /**
  * How an Upload ended. `paused` is an Upload that did not send every
- * conversation: the run stays open at its Upload with its staged folder,
+ * conversation: the run stays open at its Upload with its staged directory,
  * and the next visit to Import offers Resume or Discard (CONTEXT.md,
  * "Pause").
  */
@@ -89,7 +89,7 @@ function isApprovedOmission(
  * unsent, and an Upload that sent nothing at all. The push journal leaves
  * every such conversation for the next push, so resuming sends only what is
  * missing. Pausing on a failure keeps those conversations reachable: a run
- * recorded as finished would delete the folder they are staged in.
+ * recorded as finished would delete the directory they are staged in.
  *
  * A finished Upload with item-level problems is `completed_with_issues` —
  * unless `approved` already told the user about them: the plan the user

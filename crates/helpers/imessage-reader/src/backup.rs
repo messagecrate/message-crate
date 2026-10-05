@@ -7,14 +7,14 @@
 //! `get_decrypted_contacts_database` and `decrypt_file`, and the
 //! `MAX_IN_MEMORY_DECRYPT` threshold. Changes here: the password comes from
 //! the app instead of a prompt, decrypted files get unique names under a
-//! scratch folder the app owns with owner-only permissions, and progress is
+//! scratch directory the app owns with owner-only permissions, and progress is
 //! reported as events rather than printed. Copyright for the adapted parts
 //! remains with the original author; this file is distributed under the same
 //! license.
 //!
-//! Every decrypted file lands in the scratch folder the app named, so a
+//! Every decrypted file lands in the scratch directory the app named, so a
 //! helper the app kills mid-run leaves nothing behind once the app removes
-//! that folder.
+//! that directory.
 
 use std::{
     fs::{File, remove_file},
@@ -197,7 +197,7 @@ pub(crate) fn get_decrypted_contacts_database(
 /// Copy `decrypted` into a new owner-only file at `path`.
 ///
 /// A copy that fails part-way removes the file again, so a partial copy of
-/// decrypted data is not left in the scratch folder.
+/// decrypted data is not left in the scratch directory.
 ///
 /// # Errors
 ///
@@ -215,13 +215,13 @@ fn write_scratch_file(path: &Path, decrypted: &mut impl Read) -> Result<(), Runt
         });
     if written.is_err() {
         // The copy's own error is what the app is told; a file that will not
-        // go is left for the app, which deletes the whole scratch folder.
+        // go is left for the app, which deletes the whole scratch directory.
         let _ = remove_file(path);
     }
     written
 }
 
-/// Decrypt one iOS backup file into the scratch folder.
+/// Decrypt one iOS backup file into the scratch directory.
 ///
 /// # Errors
 ///
@@ -296,7 +296,7 @@ mod tests {
         assert_eq!(first.split('-').count(), 3, "pid-nanos-counter: {first}");
     }
 
-    /// A decrypted file in a shared temp folder is readable by its owner
+    /// A decrypted file in a shared temp directory is readable by its owner
     /// only.
     #[test]
     fn a_temp_file_is_restricted_to_its_owner() {
@@ -313,7 +313,7 @@ mod tests {
     }
 
     /// A decrypted copy that fails part-way is removed, so half of a
-    /// decrypted database is not left in the scratch folder (#1135).
+    /// decrypted database is not left in the scratch directory (#1135).
     #[test]
     fn a_copy_that_fails_part_way_leaves_no_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -343,11 +343,11 @@ mod tests {
         }
     }
 
-    /// A Mac source is never decrypted, and an iOS folder without a
+    /// A Mac source is never decrypted, and an iOS directory without a
     /// `Manifest.plist` is not a backup. The real decrypt path needs an
     /// encrypted backup, and none is built from anyone's own.
     #[test]
-    fn only_an_ios_backup_folder_is_opened() {
+    fn only_an_ios_backup_directory_is_opened() {
         let dir = tempfile::tempdir().unwrap();
         let mac = ReaderOptions::from_source(
             Source {

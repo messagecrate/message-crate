@@ -8,14 +8,14 @@
 //! is already there) or stages attachments and writes through
 //! `message_ir_format::FormatSink` for every other format. An exporter whose
 //! attachments arrive as bytes writes each payload to the writer's
-//! [`AttachmentSpool`], under the app's cache folder, as it parses, so parse
+//! [`AttachmentSpool`], under the app's cache directory, as it parses, so parse
 //! never holds the backup's attachments in memory, and the write reads them
 //! back a file at a time. Every write is checked for room first, against
 //! the disk that holds it ([`check_headroom`]).
 //! The transcode pass ([`transcode_staged`]) converts or compresses staged
 //! attachments afterwards as its own resumable pass, and
-//! [`summarize_staging`] reads a staging folder back for the Staging Review.
-//! Both work to the media settings Staging recorded in the folder
+//! [`summarize_staging`] reads a run directory back for the Staging Review.
+//! Both work to the media settings Staging recorded in the directory
 //! ([`write_media_settings`], [`read_media_settings`]).
 //!
 //! Formats live in `message-ir-format`; the run model in

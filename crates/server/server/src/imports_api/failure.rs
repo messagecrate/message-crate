@@ -35,7 +35,7 @@ pub enum ImportFailure {
     Invalid { line: usize, detail: String },
     /// The batch has no bytes.
     Empty,
-    /// An attachment path on the message at `line` could leave the folder it
+    /// An attachment path on the message at `line` could leave the directory it
     /// is read from.
     UnsafeAttachmentPath {
         refusal: UnsafeAttachmentPath,

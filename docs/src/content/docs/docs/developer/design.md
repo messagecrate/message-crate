@@ -9,7 +9,7 @@ Related contracts: [HTTP API](/docs/developer/reference/api/), [Database](/docs/
 
 ## Directory map
 
-These are the folders in the repository. [Contributing](/docs/developer/contributing/) says which ones a first change should use.
+These are the directories in the repository. [Contributing](/docs/developer/contributing/) says which ones a first change should use.
 
 ```text title="Repository layout"
 message-crate
@@ -46,7 +46,7 @@ The desktop installer carries two of these beside the app: `imessage-reader`
 and `message-crate-server`, with the built website. The app starts the server
 at `127.0.0.1:8080` when nothing answers there and stops it on close, so one
 install is a working Message Crate. It is the same server program the Docker
-image runs, given its data folder and address on the command line.
+image runs, given its data directory and address on the command line.
 Why: [ADR 0001](https://github.com/messagecrate/message-crate/blob/main/docs/adr/0001-no-command-line-except-the-server.md)
 and its amendment.
 
@@ -55,10 +55,10 @@ and its amendment.
 | `imessage-ir-exporter`, `sms-backup-restore-exporter`, `whatsapp-exporter` | `crates/exporters/` | Supported extract → JSONL |
 | `go-sms-pro-exporter`, `imazing-exporter`, `openextract-exporter`, `sms-backup-plus-exporter` | `crates/exporters/` | Rescue / experimental extract |
 | `ios-backup` | `crates/libs/ios-backup/` | Check an iPhone backup before an import and decrypt one of its domains, through `imessage-reader` |
-| `message-reexport` | `crates/libs/reexport/` | Convert an existing export folder |
+| `message-reexport` | `crates/libs/reexport/` | Convert an existing export directory |
 | `message-crate-push` / `message-crate-pull` | `crates/libs/` | JSONL → running server / server → JSONL |
 
-C4 PlantUML sources and SVG exports live in [`docs/src/assets/architecture/`](https://github.com/messagecrate/message-crate/tree/main/docs/src/assets/architecture). Edit the `.puml` file, export SVG into the same folder, and commit both in one change.
+C4 PlantUML sources and SVG exports live in [`docs/src/assets/architecture/`](https://github.com/messagecrate/message-crate/tree/main/docs/src/assets/architecture). Edit the `.puml` file, export SVG into the same directory, and commit both in one change.
 
 ## System context
 
@@ -194,7 +194,7 @@ sequenceDiagram
 
     participant DB as SQLite (data/messagecrate.db)
     participant Disk as data/ attachments
-    participant Out as Chosen folder
+    participant Out as Chosen directory
 
     Dev->>Desktop: Export messages
     Desktop->>Server: Export messages (Browse / export, API)

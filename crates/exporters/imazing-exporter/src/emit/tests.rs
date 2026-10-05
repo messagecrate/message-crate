@@ -312,12 +312,12 @@ Bob Sample,2020-01-01 12:00:00,,,,,SMS,Incoming,+15555550100,Bob,Read,,,Hi,,imag
     assert!(body.contains("attachments/"));
 }
 
-/// A chat folder the conversion can open files in but cannot list fails
-/// the conversion with the folder named, rather than reading as holding no
+/// A chat directory the conversion can open files in but cannot list fails
+/// the conversion with the directory named, rather than reading as holding no
 /// files and importing every row without its attachment (#1563).
 #[cfg(unix)]
 #[test]
-fn a_chat_folder_that_cannot_be_listed_fails_the_conversion_and_names_it() {
+fn a_chat_directory_that_cannot_be_listed_fails_the_conversion_and_names_it() {
     let dir = tempfile::tempdir().unwrap();
     let chat = dir.path().join("chat");
     fs::create_dir_all(&chat).unwrap();
@@ -334,7 +334,7 @@ Bob Sample,2020-01-01 12:00:00,,,,,SMS,Incoming,+15555550100,Bob,Read,,,Hi,,imag
     )
     .unwrap();
     // Write and search but no read: the CSV opens, the listing does not.
-    let Some(result) = crate::test_support::with_folder_mode(&chat, 0o300, || {
+    let Some(result) = crate::test_support::with_directory_mode(&chat, 0o300, || {
         convert(&csv, &dir.path().join("out"))
     }) else {
         return;
@@ -414,7 +414,7 @@ fn convert_rows(rows: &str) -> Vec<message_ir::ConversationDocument> {
     convert_files(&[("Messages.csv", &format!("{MESSAGES_HEADER}{rows}"))])
 }
 
-/// Write each `(path, contents)` under one input folder, convert it to JSON,
+/// Write each `(path, contents)` under one input directory, convert it to JSON,
 /// and read each conversation back, sorted by chat id.
 fn convert_files(files: &[(&str, &str)]) -> Vec<message_ir::ConversationDocument> {
     let dir = tempfile::tempdir().unwrap();
@@ -661,28 +661,28 @@ Bob,2020-01-01 12:01:00,iMessage,Incoming,+13215550100,Bob,Read,,,,,IMG_0001,Ima
     );
 }
 
-/// Two chat folders can each hold a file of the same name. A chat's
+/// Two chat directories can each hold a file of the same name. A chat's
 /// attachment is the file beside its own CSV, not the first one of that
 /// name anywhere in the export.
 #[test]
-fn a_same_named_file_in_two_chat_folders_goes_to_its_own_chat() {
+fn a_same_named_file_in_two_chat_directories_goes_to_its_own_chat() {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("in");
-    for (folder, number, bytes) in [
+    for (directory, number, bytes) in [
         ("alice", "+15555550111", "alice-photo"),
         ("bob", "+15555550122", "bob-photo"),
     ] {
-        let chat = input.join(folder);
+        let chat = input.join(directory);
         fs::create_dir_all(&chat).unwrap();
         fs::write(
             chat.join("Messages.csv"),
             format!(
-                "{MESSAGES_HEADER}{folder},2020-01-01 12:00:00,iMessage,Incoming,{number},{folder},Read,,,,,IMG_0001.jpg,Image\n"
+                "{MESSAGES_HEADER}{directory},2020-01-01 12:00:00,iMessage,Incoming,{number},{directory},Read,,,,,IMG_0001.jpg,Image\n"
             ),
         )
         .unwrap();
         fs::write(
-            chat.join(format!("2020-01-01 12 00 00 - {folder} - IMG_0001.jpg")),
+            chat.join(format!("2020-01-01 12 00 00 - {directory} - IMG_0001.jpg")),
             bytes,
         )
         .unwrap();
@@ -761,16 +761,16 @@ Alice Example & Bob Example,2020-01-01 12:01:00,iMessage,Outgoing,,,Sent,,,Hey,,
     );
 }
 
-/// What one converted chat folder gave: the report, its one conversation,
-/// and the output folder (kept alive by the temporary directory).
-struct ChatFolderExport {
+/// What one converted chat directory gave: the report, its one conversation,
+/// and the output directory (kept alive by the temporary directory).
+struct ChatDirectoryExport {
     report: ExportReport,
     doc: message_ir::ConversationDocument,
     out: PathBuf,
     _dir: tempfile::TempDir,
 }
 
-impl ChatFolderExport {
+impl ChatDirectoryExport {
     /// The contents of each copied attachment of the message with `text`, in order.
     fn attachment_bodies(&self, text: &str) -> Vec<String> {
         let message = self
@@ -790,23 +790,23 @@ impl ChatFolderExport {
     }
 }
 
-/// Convert one chat folder holding `Messages.csv` with `rows` and the named
+/// Convert one chat directory holding `Messages.csv` with `rows` and the named
 /// `files` to JSON.
-fn convert_chat_folder(rows: &str, files: &[(&str, &str)]) -> ChatFolderExport {
-    convert_chat_folder_with(
+fn convert_chat_directory(rows: &str, files: &[(&str, &str)]) -> ChatDirectoryExport {
+    convert_chat_directory_with(
         ("Messages.csv", &format!("{MESSAGES_HEADER}{rows}")),
         files,
         "+15555550100.json",
     )
 }
 
-/// Convert one chat folder holding the CSV `(name, contents)` and the named
+/// Convert one chat directory holding the CSV `(name, contents)` and the named
 /// `files` to JSON, and read back the conversation written to `doc_name`.
-fn convert_chat_folder_with(
+fn convert_chat_directory_with(
     (csv_name, csv): (&str, &str),
     files: &[(&str, &str)],
     doc_name: &str,
-) -> ChatFolderExport {
+) -> ChatDirectoryExport {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("in");
     let chat = input.join("2020-01-01 12 00 00 - Bob");
@@ -828,7 +828,7 @@ fn convert_chat_folder_with(
     })
     .unwrap();
     let doc = message_ir_format::read_conversation_json(&out.join(doc_name)).unwrap();
-    ChatFolderExport {
+    ChatDirectoryExport {
         report,
         doc,
         out,
@@ -843,7 +843,7 @@ fn convert_chat_folder_with(
 /// Any other file no row names is counted.
 #[test]
 fn a_live_photo_video_joins_its_picture_and_a_link_preview_is_counted() {
-    let export = convert_chat_folder(
+    let export = convert_chat_directory(
         "Bob,2020-01-01 12:00:00,iMessage,Incoming,+15555550100,Bob,Read,,,photo,,IMG_0001.jpg,Image\n\
 Bob,2020-01-01 12:01:00,iMessage,Incoming,+15555550100,Bob,Read,,,See https://example.com/page,,,\n",
         &[
@@ -881,7 +881,7 @@ Bob,2020-01-01 12:01:00,iMessage,Incoming,+15555550100,Bob,Read,,,See https://ex
 /// row names rather than as a link preview.
 #[test]
 fn a_link_preview_whose_address_no_message_shows_is_counted_as_unnamed() {
-    let export = convert_chat_folder(
+    let export = convert_chat_directory(
         "Bob,2020-01-01 12:01:00,iMessage,Incoming,+15555550100,Bob,Read,,,See https://example.com/other,,,\n\
 Bob,2020-01-01 12:02:00,iMessage,Incoming,+15555550100,Bob,Read,,,See https://example.com/page,,,\n",
         &[(
@@ -895,11 +895,11 @@ Bob,2020-01-01 12:02:00,iMessage,Incoming,+15555550100,Bob,Read,,,See https://ex
 
 /// When two rows name one picture, its Live Photo video goes to the first of
 /// them in CSV order, and the report names the picture in a note. Within one CSV each
-/// row has a file of its own, so only rows of two CSVs in one chat folder
+/// row has a file of its own, so only rows of two CSVs in one chat directory
 /// name one picture.
 #[test]
 fn a_live_photo_video_of_a_picture_two_rows_name_goes_to_the_first_row() {
-    let export = convert_chat_folder(
+    let export = convert_chat_directory(
         "Bob,2020-01-01 12:05:00,iMessage,Incoming,+15555550100,Bob,Read,,,first,,IMG_0002.jpg,Image\n",
         &[
             (
@@ -932,13 +932,13 @@ fn a_live_photo_video_of_a_picture_two_rows_name_goes_to_the_first_row() {
 /// columns.
 const WHATSAPP_ATTACHMENTS_HEADER: &str = "Chat Session,Message Date,Sent Date,Type,Sender ID,Sender Name,Status,Forwarded,Replying to,Text,Reactions,Attachment,Attachment type,Attachment info\n";
 
-/// A WhatsApp photo row and a WhatsApp row with a link, for the folder
+/// A WhatsApp photo row and a WhatsApp row with a link, for the directory
 /// files below.
 const WHATSAPP_PHOTO_AND_LINK_ROWS: &str = "Bob,2020-01-01 12:00:00,,Incoming,+15555550100,Bob,Read,,,photo,,IMG_0001.jpg,Image,\n\
 Bob,2020-01-01 12:01:00,,Incoming,+15555550100,Bob,Read,,,See https://example.com/page,,,,\n";
 
 /// Files no row names beside the rows of [`WHATSAPP_PHOTO_AND_LINK_ROWS`]:
-/// what a Messages chat folder's Live Photo video, link preview and stray
+/// what a Messages chat directory's Live Photo video, link preview and stray
 /// file would look like.
 const UNNAMED_FILES_BESIDE_A_WHATSAPP_PHOTO: [(&str, &str); 4] = [
     ("2020-01-01 12 00 00 - Bob - IMG_0001.jpg", "picture"),
@@ -952,7 +952,7 @@ const UNNAMED_FILES_BESIDE_A_WHATSAPP_PHOTO: [(&str, &str); 4] = [
 
 /// The photo row's message has its picture alone, and the report counts no
 /// Live Photo video, link preview or file named by no row.
-fn assert_whatsapp_folder_left_alone(export: &ChatFolderExport) {
+fn assert_whatsapp_directory_left_alone(export: &ChatDirectoryExport) {
     assert_eq!(export.attachment_bodies("photo"), vec!["picture"]);
     let report = &export.report;
     assert_eq!(report.attachments_saved, 1);
@@ -962,12 +962,12 @@ fn assert_whatsapp_folder_left_alone(export: &ChatFolderExport) {
 }
 
 /// The pass over files no row names is for what iMazing writes into a
-/// Messages chat folder. A WhatsApp chat folder's extra files are neither
+/// Messages chat directory. A WhatsApp chat directory's extra files are neither
 /// counted nor attached, and a `.mov` beside a picture there is not a Live
 /// Photo video (#1414).
 #[test]
-fn a_whatsapp_chat_folder_gets_no_live_photo_video_and_no_unnamed_file_count() {
-    let export = convert_chat_folder_with(
+fn a_whatsapp_chat_directory_gets_no_live_photo_video_and_no_unnamed_file_count() {
+    let export = convert_chat_directory_with(
         (
             "WhatsApp.csv",
             &format!("{WHATSAPP_ATTACHMENTS_HEADER}{WHATSAPP_PHOTO_AND_LINK_ROWS}"),
@@ -975,16 +975,16 @@ fn a_whatsapp_chat_folder_gets_no_live_photo_video_and_no_unnamed_file_count() {
         &UNNAMED_FILES_BESIDE_A_WHATSAPP_PHOTO,
         "+15555550100__whatsapp.json",
     );
-    assert_whatsapp_folder_left_alone(&export);
+    assert_whatsapp_directory_left_alone(&export);
 }
 
-/// In a chat folder that holds a Messages CSV and a WhatsApp CSV, a Live
+/// In a chat directory that holds a Messages CSV and a WhatsApp CSV, a Live
 /// Photo video whose picture a Messages Image row names still joins that
 /// row's message. A file no row names may be WhatsApp's there, so the
 /// WhatsApp photo's `.mov`, the link preview and the stray file are neither
-/// attached nor counted, as in a folder with only the WhatsApp CSV.
+/// attached nor counted, as in a directory with only the WhatsApp CSV.
 #[test]
-fn a_chat_folder_with_a_whatsapp_and_a_messages_csv_attaches_only_messages_live_photos() {
+fn a_chat_directory_with_a_whatsapp_and_a_messages_csv_attaches_only_messages_live_photos() {
     let messages_csv = format!(
         "{MESSAGES_HEADER}Bob,2020-01-01 12:03:00,iMessage,Incoming,+15555550100,Bob,Read,,,live,,IMG_0009.jpg,Image\n"
     );
@@ -997,7 +997,7 @@ fn a_chat_folder_with_a_whatsapp_and_a_messages_csv_attaches_only_messages_live_
         ),
         ("2020-01-01 12 03 00 - Bob - IMG_0009.mov", "messages video"),
     ]);
-    let export = convert_chat_folder_with(
+    let export = convert_chat_directory_with(
         (
             "WhatsApp.csv",
             &format!("{WHATSAPP_ATTACHMENTS_HEADER}{WHATSAPP_PHOTO_AND_LINK_ROWS}"),
@@ -1142,12 +1142,12 @@ Alice Example & Bob Example & Carol Silent,2020-01-01 12:01:00,iMessage,Incoming
 }
 
 /// iMazing gives no group id and a session name is not unique: two groups
-/// with the same name, each in its own chat folder, stay two conversations.
+/// with the same name, each in its own chat directory, stay two conversations.
 #[test]
 fn two_groups_with_one_name_in_two_files_stay_two_conversations() {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("in");
-    for (folder, rows) in [
+    for (directory, rows) in [
         (
             "2020-01-01 12 00 00 - Book Club",
             "Book Club,2020-01-01 12:00:00,iMessage,Incoming,+15555550111,Alice,Read,,,Hi,,,\n\
@@ -1159,7 +1159,7 @@ Book Club,2020-01-01 12:01:00,iMessage,Incoming,+15555550122,Bob,Read,,,Hey,,,\n
 Book Club,2021-01-01 12:01:00,iMessage,Incoming,+15555550122,Bob,Read,,,Yes,,,\n",
         ),
     ] {
-        let chat = input.join(folder);
+        let chat = input.join(directory);
         fs::create_dir_all(&chat).unwrap();
         fs::write(
             chat.join("Messages.csv"),
@@ -1297,10 +1297,10 @@ Hiking,2020-01-01 12:09:00,iMessage,Incoming,+15555550166,Fay,Read,,,Hi,,,\n",
     assert_eq!(climbing_id(&with_a_third), climbing_id(&in_order));
 }
 
-/// Two exports of one device in one input folder hold one group twice under
+/// Two exports of one device in one input directory hold one group twice under
 /// one session name. That is one group, not two that start with the same row.
 #[test]
-fn one_group_from_two_exports_in_one_folder_is_one_conversation() {
+fn one_group_from_two_exports_in_one_directory_is_one_conversation() {
     let older = "Book Club,2020-01-01 12:00:00,iMessage,Incoming,+15555550111,Alice,Read,,,Hi,,,\n\
 Book Club,2020-01-01 12:01:00,iMessage,Incoming,+15555550122,Bob,Read,,,Hey,,,\n";
     let newer = format!(
@@ -1413,16 +1413,16 @@ fn two_quiet_groups_with_the_same_one_row_stay_two_conversations() {
     );
 }
 
-/// iMazing writes a row's file into the row's own chat folder as
+/// iMazing writes a row's file into the row's own chat directory as
 /// `{Message Date} - {label} - {name}`, where the name is the row's
 /// `Attachment` with the extension converted, non-ASCII characters removed
 /// and the stem cut to 40 characters, and ` 2`, ` 3` added when rows of one
 /// second share the name iMazing writes, ignoring case. Each row gets the
-/// file of its own second, or none when its folder holds no such file or two
+/// file of its own second, or none when its directory holds no such file or two
 /// of them, when a row of its number group has no file, or when another row
 /// would take the same file.
 #[test]
-fn each_row_gets_the_file_imazing_wrote_for_it_in_its_own_folder() {
+fn each_row_gets_the_file_imazing_wrote_for_it_in_its_own_directory() {
     let input = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/attachment_match");
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("out");
@@ -1462,7 +1462,7 @@ fn each_row_gets_the_file_imazing_wrote_for_it_in_its_own_folder() {
         ("second of the second", "second of the second"),
         ("picture 3 at 12:07", "picture 3 at 12:07"),
         ("picture 3 at 12:08", "picture 3 at 12:08"),
-        // The file is only in Carol's folder, which is not this row's.
+        // The file is only in Carol's directory, which is not this row's.
         ("file in another chat", "file_missing"),
         // Two files of this second end with the row's name.
         ("two files", "file_missing"),
@@ -1486,7 +1486,7 @@ fn each_row_gets_the_file_imazing_wrote_for_it_in_its_own_folder() {
         // ignores case, so iMazing numbers them together.
         ("upper-case extension", "upper-case extension"),
         ("lower-case extension", "lower-case extension"),
-        // Two rows of one name, and the folder holds one of their files:
+        // Two rows of one name, and the directory holds one of their files:
         // nothing tells whose it is.
         ("first of a pair", "file_missing"),
         ("second of a pair", "file_missing"),

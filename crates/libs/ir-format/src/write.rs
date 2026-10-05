@@ -86,7 +86,7 @@ pub fn write_format(
         OutputFormat::Csv => write_conversation_csv(output_dir, &doc),
         OutputFormat::Json => write_conversation_json(output_dir, &doc),
         OutputFormat::Jsonl => write_conversation_jsonl(output_dir, &doc),
-        OutputFormat::Eml => write_conversation_mail(output_dir, &doc, MailPackage::EmlFolders),
+        OutputFormat::Eml => write_conversation_mail(output_dir, &doc, MailPackage::EmlDirectories),
         OutputFormat::Mbox => write_conversation_mail(output_dir, &doc, MailPackage::Mbox),
         OutputFormat::Xml | OutputFormat::SmsBackupPlus => anyhow::bail!(
             "{} is written by the crate that owns it: supply its merged archive to \

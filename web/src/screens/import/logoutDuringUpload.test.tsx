@@ -340,7 +340,7 @@ describe("logging out during an Upload", () => {
     expect(screen.queryByText(/could not delete/)).toBeNull();
   });
 
-  it("deletes a deleted account's folder only once an Upload that did not pause has ended", async () => {
+  it("deletes a deleted account's directory only once an Upload that did not pause has ended", async () => {
     const user = setupUser();
     const result = await startUpload();
     // A push that does not stop when asked.
@@ -355,7 +355,7 @@ describe("logging out during an Upload", () => {
     await user.click(await screen.findByRole("button", { name: "Log out now" }));
     await waitFor(() => expect(serverLogoutMock).toHaveBeenCalled());
 
-    // The push may still write into its folder: nothing is deleted yet.
+    // The push may still write into its directory: nothing is deleted yet.
     expect(calls).not.toContain("deleted /home/sam/staging-iphone");
 
     act(() => {

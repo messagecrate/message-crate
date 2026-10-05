@@ -1,8 +1,8 @@
 # imessage-reader
 
-Reads Apple Messages (a Mac `chat.db` or an iPhone backup folder) for the Message Crate desktop app, as a separate program.
+Reads Apple Messages (a Mac `chat.db` or an iPhone backup directory) for the Message Crate desktop app, as a separate program.
 
-The app starts this program, writes one JSON request on its stdin, and reads JSON events off its stdout: log lines, one record per conversation, one record per message, then a done line. For an encrypted backup the app then asks for attachments one at a time and the program decrypts each into a scratch folder the app owns. The protocol is [`imessage-reader-protocol`](../imessage-reader-protocol/). The installer places it beside the app and the app finds it there; nothing asks you to type it, though you can (below).
+The app starts this program, writes one JSON request on its stdin, and reads JSON events off its stdout: log lines, one record per conversation, one record per message, then a done line. For an encrypted backup the app then asks for attachments one at a time and the program decrypts each into a scratch directory the app owns. The protocol is [`imessage-reader-protocol`](../imessage-reader-protocol/). The installer places it beside the app and the app finds it there; nothing asks you to type it, though you can (below).
 
 ## Why a separate program
 
@@ -25,7 +25,7 @@ echo '{"op":"export","source":{"db_path":"/Users/you/Library/Messages/chat.db","
   | target/debug/imessage-reader
 ```
 
-For an iPhone backup, `db_path` is the backup folder (the one holding
+For an iPhone backup, `db_path` is the backup directory (the one holding
 `Manifest.plist`), `platform` is `"ios"`, and `backup_password` is the backup
 password when the backup is encrypted.
 `scratch_dir` is required: an encrypted backup's databases and attachments are decrypted into it, and the caller deletes it afterwards, because a killed program deletes nothing.
@@ -64,6 +64,6 @@ Workspace setup: [CONTRIBUTING.md](../../../CONTRIBUTING.md).
 
 ## License
 
-GNU General Public License v3.0 or later. See [`LICENSE`](LICENSE) in this folder. This is the one crate in the repository not under the Fair Core License.
+GNU General Public License v3.0 or later. See [`LICENSE`](LICENSE) in this directory. This is the one crate in the repository not under the Fair Core License.
 
 Parts of `src/backup.rs` and `src/error.rs` are adapted from [`imessage-exporter`](https://github.com/ReagentX/imessage-exporter) by Christopher Sardegna, GPL-3.0-or-later; each file says which parts. Every desktop installer ships this program with `imessage-reader-LICENSE.txt` beside it, made from [`NOTICE.txt`](NOTICE.txt) and `LICENSE` by `src-tauri/build.rs`, and the app's Settings → System, under Third-party software, names the program and links to the source and the license for the version installed.

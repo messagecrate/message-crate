@@ -35,7 +35,7 @@ Import and view messages in SQLite
 
 ###### **Subcommands:**
 
-* `import` — Import a message-ir JSONL folder, one Import Run per source (source from export.source unless --source)
+* `import` — Import a message-ir JSONL directory, one Import Run per source (source from export.source unless --source)
 * `imports` — Work on an account's Import Runs (`discard` clears a stranded one)
 * `dedupe-cross-source` — Soft-hide the same SMS when it appears under more than one import source
 * `reset-demo` — Rebuild the Demo Account: generate Demo Data, clear the account, import, and process assets. Adds the account when it is not there
@@ -52,7 +52,7 @@ Import and view messages in SQLite
 
 ## `message-crate-server import`
 
-Import a message-ir JSONL folder, one Import Run per source (source from export.source unless --source)
+Import a message-ir JSONL directory, one Import Run per source (source from export.source unless --source)
 
 **Usage:** `message-crate-server import [OPTIONS] --input <INPUT> --account <ACCOUNT>`
 
@@ -62,7 +62,7 @@ Import a message-ir JSONL folder, one Import Run per source (source from export.
 * `--config <CONFIG>` — Path to config.toml
 
   Default value: `config/config.toml`
-* `--input <INPUT>` [aliases: `dir`, `staging-dir`, `export-dir`] — Folder of `*.jsonl` conversation files (+ attachments)
+* `--input <INPUT>` [aliases: `dir`, `staging-dir`, `export-dir`] — Directory of `*.jsonl` conversation files (+ attachments)
 * `--db <DB>` — Output SQLite database path (overrides config)
 * `--assets-dir <ASSETS_DIR>` — Originals asset store directory (overrides the account's default)
 * `--media <MEDIA>` — Attachment handling: copy (default), none, convert, compress
@@ -175,9 +175,9 @@ Run the HTTP API. A database that does not exist yet is created with the Demo Ac
 * `--config <CONFIG>` — Path to config.toml (must include a `[server]` section)
 
   Default value: `config/config.toml`
-* `--data-dir <DATA_DIR>` — Keep the whole Message Crate in this folder and read no config file: the database is `messagecrate.db` inside it, with every other setting at its default
+* `--data-dir <DATA_DIR>` — Keep the whole Message Crate in this directory and read no config file: the database is `messagecrate.db` inside it, with every other setting at its default
 * `--bind <BIND>` — Address to listen on (overrides `[server] bind`; default 127.0.0.1:8080)
-* `--static-dir <STATIC_DIR>` — Folder holding the built website (overrides `[server] static_dir`; default `static`)
+* `--static-dir <STATIC_DIR>` — Directory holding the built website (overrides `[server] static_dir`; default `static`)
 * `--cors-origin <ORIGIN>` — Another website allowed to call this API, added to `[server] cors_origins`; repeat for more than one. The packaged desktop app's own origins are always allowed
 
 

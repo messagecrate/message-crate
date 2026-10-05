@@ -233,7 +233,7 @@ fn synthesize_sms(doc: &ConversationDocument, msg: &IrMessage, owner: &str) -> S
     SbrMessage::sms(attrs)
 }
 
-/// A minimal `<mms>` with a text part and one part per attachment, reading attachment bytes from the output folder.
+/// A minimal `<mms>` with a text part and one part per attachment, reading attachment bytes from the output directory.
 fn synthesize_mms(
     doc: &ConversationDocument,
     msg: &IrMessage,

@@ -171,7 +171,7 @@ pub async fn get_contact_detail(
 /// Most identifiers one request to `POST /v1/contacts/unmatched-identities`
 /// may ask about.
 ///
-/// A staged folder can reference thousands of participants; the client
+/// A staged directory can reference thousands of participants; the client
 /// batches. The query runs as a single statement with no chunking, so the
 /// cap keeps its bind count bounded (501 identifiers would mean 502 binds);
 /// raising it needs `SQLITE_IN_CHUNK`-style chunking first, not just a

@@ -26,7 +26,7 @@ Deployment_Node(workstation, "Developer workstation", "Linux, macOS, or Windows"
     }
 
     Deployment_Node(fs, "Filesystem", "Repo working directory") {
-        Container(web_src, "web/", "React + Vite source", "Vite serves this folder to Tauri. Server GET / serves the same app when built into static/.")
+        Container(web_src, "web/", "React + Vite source", "Vite serves this directory to Tauri. Server GET / serves the same app when built into static/.")
         ContainerDb(db, "SQLite", "data/messagecrate.db", "Messages, contacts, accounts. Embedded; not a separate process.")
         Container(data, "data/", "Attachment files", "Stored attachments by account on disk.")
     }
