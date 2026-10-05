@@ -1192,6 +1192,14 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-05 **The desktop app saves a large attachment without holding it
+  in memory.** Downloading a video of several hundred megabytes in the
+  desktop app loaded the whole file into memory two or three times over
+  before saving it, which could use more than a gigabyte and fail on a
+  smaller computer. The app now asks where to save first, then writes the
+  file to that place as it arrives from the server, so memory stays the same
+  whatever the size of the file. A download that breaks off part-way leaves
+  any file already at that place as it was.
 - 2026-10-04 **The Import, Export and Convert screens name running work as
   the desktop app does.** While an Export or a Convert was running, the
   screens said "An export is running." or "A conversion in Settings is

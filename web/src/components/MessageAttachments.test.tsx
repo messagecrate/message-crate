@@ -17,7 +17,7 @@ vi.mock("../lib/serverApi", () => ({
   fetchAssetObjectUrl: vi.fn(),
   createMediaLink: vi.fn(),
 }));
-vi.mock("../lib/saveFile", () => ({ saveFile: vi.fn() }));
+vi.mock("../lib/saveFile", () => ({ saveDownload: vi.fn(), saveFile: vi.fn() }));
 
 const LINK = {
   url: "http://server/v1/assets/x?media_link=l",

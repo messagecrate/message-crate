@@ -207,14 +207,14 @@ const FILE_NAME_HEADER: &str = "file-name";
 /// the window sent to the file the person chose, replacing a file already
 /// there.
 ///
-/// The window calls this for a file the server answered, such as the address
-/// book or an attachment's original. A desktop window has no downloads
-/// directory of its own, so the app writes the file where the person asked.
-/// The bytes are the request's raw body, so an attachment of megabytes is not
-/// written out as a JSON array of numbers, and the name is the `file-name`
-/// header. The path comes from the dialog this command shows, never from the
-/// window, so a script in the window cannot name a file for the app to
-/// overwrite.
+/// The window calls this for a file it already holds, such as the address
+/// book it exported. A desktop window has no downloads directory of its own,
+/// so the app writes the file where the person asked. The bytes are the
+/// request's raw body, so a file of megabytes is not written out as a JSON
+/// array of numbers, and the name is the `file-name` header. The path comes
+/// from the dialog [`choose_save_path`] shows, never from the window. An
+/// attachment's original goes through [`super::download::save_download`]
+/// instead, so its bytes never pass through the window.
 ///
 /// Returns `false` when the person closed the dialog without choosing a
 /// place, and `true` once the file is written.
@@ -226,8 +226,6 @@ const FILE_NAME_HEADER: &str = "file-name";
 /// written.
 #[tauri::command]
 pub async fn save_file(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<bool, String> {
-    use tauri_plugin_dialog::DialogExt;
-
     let tauri::ipc::InvokeBody::Raw(contents) = request.body() else {
         return Err("The file to save came without its bytes".into());
     };
@@ -240,8 +238,33 @@ pub async fn save_file(app: AppHandle, request: tauri::ipc::Request<'_>) -> Resu
         .filter(|name| !name.trim().is_empty())
         .ok_or("The file to save came without its name")?;
 
-    let mut dialog = app.dialog().file().set_file_name(&file_name);
-    if let Some(extension) = Path::new(&file_name)
+    let Some(path) = choose_save_path(&app, &file_name).await? else {
+        return Ok(false);
+    };
+    write_file(&path, contents)?;
+    Ok(true)
+}
+
+/// Show the Save dialog with `file_name` filled in, over the main window, and
+/// answer the path the person chose, or `None` when they closed it without
+/// choosing a place.
+///
+/// The path comes from this dialog, never from the window, so a script in the
+/// window cannot name a file for the app to overwrite. [`save_file`] and
+/// [`super::download::save_download`] both ask here.
+///
+/// # Errors
+///
+/// Returns an error when the dialog's thread fails, or when the choice is not
+/// a file path.
+pub(crate) async fn choose_save_path(
+    app: &AppHandle,
+    file_name: &str,
+) -> Result<Option<PathBuf>, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let mut dialog = app.dialog().file().set_file_name(file_name);
+    if let Some(extension) = Path::new(file_name)
         .extension()
         .and_then(|e| e.to_str())
         .filter(|e| !e.is_empty())
@@ -256,14 +279,13 @@ pub async fn save_file(app: AppHandle, request: tauri::ipc::Request<'_>) -> Resu
     let chosen = tauri::async_runtime::spawn_blocking(move || dialog.blocking_save_file())
         .await
         .map_err(|e| e.to_string())?;
-    let Some(chosen) = chosen else {
-        return Ok(false);
-    };
-    let path = chosen
-        .into_path()
-        .map_err(|e| format!("The place chosen to save to is not a file path: {e}"))?;
-    write_file(&path, contents)?;
-    Ok(true)
+    chosen
+        .map(|chosen| {
+            chosen
+                .into_path()
+                .map_err(|e| format!("The place chosen to save to is not a file path: {e}"))
+        })
+        .transpose()
 }
 
 /// Read the file name the window wrote as a JSON string.
