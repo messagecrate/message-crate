@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { messagesSearch, openedAt, pickedMessageSort, resultsView } from "./resultsView";
+import {
+  messagesSearch,
+  openedAt,
+  openedMatchedVersions,
+  pickedMessageSort,
+  resultsView,
+} from "./resultsView";
 
 const params = (s: string) => new URLSearchParams(s);
 
@@ -32,6 +38,16 @@ describe("openedAt", () => {
   });
 });
 
+describe("openedMatchedVersions", () => {
+  it("is the earlier versions a result was found by, by their place in the message's list", () => {
+    expect(openedMatchedVersions(params("matched=0,2"))).toEqual([0, 2]);
+    expect(openedMatchedVersions(params("matched=1"))).toEqual([1]);
+    expect(openedMatchedVersions(params(""))).toEqual([]);
+    // A part that is not a place in a list is left out, and the rest kept.
+    expect(openedMatchedVersions(params("matched=x,1,-2,1.5"))).toEqual([1]);
+  });
+});
+
 describe("messagesSearch", () => {
   it("carries the search and the Messages list's parameters, and drops the filter", () => {
     expect(
@@ -39,6 +55,21 @@ describe("messagesSearch", () => {
         at: "9",
       }),
     ).toBe("?q=photo&view=messages&sort=date&at=9");
+  });
+
+  it("carries the earlier versions the opened result was found by", () => {
+    expect(messagesSearch(params("q=noon&view=messages&at=7&matched=0"), {})).toBe(
+      "?q=noon&view=messages&at=7&matched=0",
+    );
+    expect(messagesSearch(params("q=noon&at=7&matched=0"), { q: "noon" })).toBe(
+      "?q=noon&at=7&matched=0",
+    );
+  });
+
+  it("drops those versions with a new search, or with no message opened", () => {
+    expect(messagesSearch(params("q=noon&at=7&matched=0"), { q: "pitied" })).toBe("?q=pitied&at=7");
+    expect(messagesSearch(params("q=noon&at=7&matched=0"), { at: "" })).toBe("?q=noon");
+    expect(messagesSearch(params("q=noon&at=7&matched=0"), { at: "9" })).toBe("?q=noon&at=9");
   });
 
   it("drops a parameter set to empty, and is empty when nothing is left", () => {

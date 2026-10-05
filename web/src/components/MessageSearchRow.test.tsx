@@ -3,6 +3,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Message } from "../lib/types";
+import { attachment, message as baseMessage, participant } from "../test/apiShapes";
 import { inTimeZone } from "../test/timeZone";
 import MessageSearchRow from "./MessageSearchRow";
 
@@ -12,17 +13,11 @@ afterEach(cleanup);
 const ZONE = "America/New_York";
 
 function message(over: Partial<Message> = {}): Message {
-  return {
+  return baseMessage({
     id: 10,
-    source: "imessage",
     guid: "g10",
     // 03:30 UTC on 2 January is still 1 January in New York.
     timestamp: "2024-01-02T03:30:00Z",
-    sort_order: 0,
-    is_from_me: false,
-    is_announcement: false,
-    is_reply: false,
-    num_replies: 0,
     sender: "+15555550100",
     text: "Here is the photo from the dentist",
     conversation: {
@@ -33,16 +28,12 @@ function message(over: Partial<Message> = {}): Message {
       group_title: "Family",
       label: "Family",
       participants: [
-        { name: "Alice", identity: "+15555550100" },
-        { name: "Bob", identity: "+15555550120" },
+        participant({ name: "Alice", identity: "+15555550100" }),
+        participant({ name: "Bob", identity: "+15555550120" }),
       ],
     },
-    attachments: [],
-    tapbacks: [],
-    earlier_versions: [],
-    matched_earlier_version: false,
     ...over,
-  };
+  });
 }
 
 function renderRow(m: Message, terms = [{ text: "photo", prefix: false }]) {
@@ -78,7 +69,10 @@ describe("MessageSearchRow", () => {
       message({
         is_from_me: true,
         sender: null,
-        attachments: [{ original_name: "a.jpg" }, { original_name: "b.jpg" }],
+        attachments: [
+          attachment({ original_name: "a.jpg" }),
+          attachment({ original_name: "b.jpg" }),
+        ],
       }),
     );
     const row = screen.getByRole("button");
@@ -94,7 +88,7 @@ describe("MessageSearchRow", () => {
   });
 
   it("shows the attachments' names for a message with no text, with a matching name in bold", () => {
-    renderRow(message({ text: null, attachments: [{ original_name: "photo 1.jpg" }] }));
+    renderRow(message({ text: null, attachments: [attachment({ original_name: "photo 1.jpg" })] }));
     const row = screen.getByRole("button");
     expect(row).toHaveTextContent("Alice: photo 1.jpg");
     expect(row.querySelector("strong")?.textContent).toBe("photo");
@@ -114,7 +108,7 @@ describe("MessageSearchRow", () => {
       message({
         deletion: "unsent",
         text: null,
-        attachments: [{ original_name: "photo 1.jpg" }],
+        attachments: [attachment({ original_name: "photo 1.jpg" })],
       }),
     );
     const row = screen.getByRole("button");

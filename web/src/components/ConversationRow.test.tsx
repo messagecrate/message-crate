@@ -5,12 +5,13 @@ import { afterEach, describe, expect, it } from "vitest";
 import { formatDay } from "../lib/formatDate";
 import { browserTimeZone } from "../lib/timeZone";
 import type { Conversation } from "../lib/types";
+import { participant } from "../test/apiShapes";
 import ConversationRow from "./ConversationRow";
 
 function conversation(overrides: Partial<Conversation> = {}): Conversation {
   return {
     id: 3,
-    participants: [{ name: "Ada Lovelace" }],
+    participants: [participant({ name: "Ada Lovelace" })],
     message_count: 1,
     first_message_at: "2024-06-01T12:00:00Z",
     last_message_at: "2024-06-01T12:00:00Z",
@@ -33,13 +34,13 @@ describe("ConversationRow", () => {
   });
 
   it("shows no date for a conversation whose messages are all duplicates", () => {
-    // The server leaves out `first_message_at` and `last_message_at` when no
-    // message is left once duplicates are set aside (issues #1206, #1484).
-    const {
-      first_message_at: _first,
-      last_message_at: _last,
-      ...undated
-    } = conversation({ message_count: 0 });
+    // The server sends `first_message_at` and `last_message_at` as null when
+    // no message is left once duplicates are set aside (issues #1206, #1484).
+    const undated = conversation({
+      message_count: 0,
+      first_message_at: null,
+      last_message_at: null,
+    });
     render(<ConversationRow conversation={undated} isSelected={false} onClick={() => {}} />);
     const row = screen.getByRole("button");
     expect(row.textContent).toBe("Ada LovelaceText Message");

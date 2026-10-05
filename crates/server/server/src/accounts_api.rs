@@ -86,7 +86,7 @@ pub struct Account {
     /// website, or `null` when the account has no session or no request on it
     /// has named an app.
     pub app: Option<crate::db::session_tokens::AppKind>,
-    /// The Build that app reported, such as `0.9.0+343fe0d8`. Present exactly
+    /// The Build that app reported, such as `0.9.0+343fe0d8`. `null` exactly
     /// when `app` is.
     pub app_build: Option<String>,
     /// May call the import endpoints.
@@ -302,15 +302,14 @@ pub struct CreateAccountRequest {
 }
 
 /// The account that was created, and the Session a stranger's registration
-/// opens on it. The owner's creation opens no session, so `token` is absent.
+/// opens on it. The owner's creation opens no session, so `token` is `null`.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct CreateAccountResponse {
     /// The new account.
     #[serde(flatten)]
     pub account: Account,
-    /// Session token to send as `Authorization: Bearer …`. Present only when
-    /// a stranger registered, because they are logged in on creation.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Session token to send as `Authorization: Bearer …`. `null` unless a
+    /// stranger registered, because only they are logged in on creation.
     pub token: Option<String>,
 }
 

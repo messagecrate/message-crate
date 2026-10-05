@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SearchList } from "../lib/searchFields";
 import { getConversation, listConversationMessages, trashConversation } from "../lib/serverApi";
 import type { Conversation, Message } from "../lib/types";
+import { message as baseMessage } from "../test/apiShapes";
 import { mockedAuth, Providers } from "../test/providers";
 import { searchFieldsFor } from "../test/searchFields";
 import { setupUser } from "../test/user";
@@ -57,6 +58,9 @@ vi.mock("../screens/MessageSearchList", () => ({
       <button type="button" onClick={() => onSelect(message(77, 6))}>
         Message result
       </button>
+      <button type="button" onClick={() => onSelect(editedHit())}>
+        Earlier version result
+      </button>
     </div>
   ),
 }));
@@ -74,6 +78,9 @@ class StubResizeObserver {
 
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", StubResizeObserver);
+  // jsdom lays nothing out and has no scrollIntoView, which the thread calls
+  // to land on the message a result opened at.
+  Element.prototype.scrollIntoView = () => {};
   getConversationMock.mockReset();
   listConversationMessagesMock.mockReset();
   trashConversationMock.mockReset();
@@ -100,28 +107,39 @@ function conv(id: number, label: string): Conversation {
 }
 
 function message(id: number, conversationId: number): Message {
-  return {
+  return baseMessage({
     id,
-    source: "imessage",
     guid: `g${id}`,
     timestamp: "2024-01-01T10:00:00Z",
-    sort_order: 0,
-    is_from_me: false,
-    is_announcement: false,
-    is_reply: false,
-    num_replies: 0,
     text: "photo",
     conversation: {
       id: conversationId,
       chat_identifier: "+1",
       conversation_type: "individual",
       is_group: false,
+      group_title: null,
+      label: null,
       participants: [],
     },
-    attachments: [],
-    tapbacks: [],
-    earlier_versions: [],
-    matched_earlier_version: false,
+  });
+}
+
+const VERSIONS = [
+  { part_index: 0, text: "a photo of the dog", edited_at: null, matched: false },
+  { part_index: 0, text: "a photo of the cat", edited_at: null, matched: false },
+];
+
+/** Message 78 in conversation 6, edited twice, as the conversation reads it. */
+function edited(): Message {
+  return { ...message(78, 6), text: "a picture of the cat", earlier_versions: VERSIONS };
+}
+
+/** Message 78 as a search for `dog` answers it: found only by its first version. */
+function editedHit(): Message {
+  return {
+    ...edited(),
+    matched_earlier_version: true,
+    earlier_versions: VERSIONS.map((v, i) => ({ ...v, matched: i === 0 })),
   };
 }
 
@@ -318,6 +336,51 @@ describe("MessageRoute", () => {
       );
     });
 
+    it("opens a result found only by an earlier version with that version shown and highlighted", async () => {
+      getConversationMock.mockImplementation(async (id) => conv(id, `Chat ${id}`));
+      listConversationMessagesMock.mockResolvedValue({
+        items: [edited()],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      });
+      const user = setupUser();
+
+      renderAt("/messages/5?q=dog&view=messages");
+      await user.click(screen.getByRole("button", { name: "Earlier version result" }));
+
+      expect(screen.getByTestId("location").textContent).toBe(
+        "/messages/6?q=dog&view=messages&at=78&matched=0",
+      );
+      expect(await screen.findByText("Matched an earlier version")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Edited" })).toHaveAttribute(
+        "aria-expanded",
+        "true",
+      );
+      expect(screen.getByText("a photo of the dog").closest("li")).toHaveAttribute("data-matched");
+      expect(screen.getByText("a photo of the cat").closest("li")).not.toHaveAttribute(
+        "data-matched",
+      );
+    });
+
+    it("opens a result its final text matched with its earlier versions closed", async () => {
+      getConversationMock.mockImplementation(async (id) => conv(id, `Chat ${id}`));
+      listConversationMessagesMock.mockResolvedValue({
+        items: [edited()],
+        total: 1,
+        limit: 50,
+        offset: 0,
+      });
+
+      renderAt("/messages/6?q=picture&view=messages&at=78");
+
+      expect(await screen.findByRole("button", { name: "Edited" })).toHaveAttribute(
+        "aria-expanded",
+        "false",
+      );
+      expect(screen.queryByText("Matched an earlier version")).not.toBeInTheDocument();
+    });
+
     // #1562: the tag rides apart from the typed words, and the list searches both.
     it("searches the tag in a conversation opened from a tag page with words typed", async () => {
       getConversationMock.mockImplementation(async (id) => conv(id, `Chat ${id}`));
@@ -352,9 +415,11 @@ describe("MessageRoute", () => {
       getConversationMock.mockImplementation(async (id) => conv(id, `Chat ${id}`));
       const user = setupUser();
 
-      renderAt("/messages/5?q=photo&view=messages&at=77");
+      renderAt("/messages/5?q=photo&view=messages&at=77&matched=0");
       await user.click(screen.getByRole("radio", { name: "Conversations" }));
-      expect(screen.getByTestId("location").textContent).toBe("/messages/5?q=photo&at=77");
+      expect(screen.getByTestId("location").textContent).toBe(
+        "/messages/5?q=photo&at=77&matched=0",
+      );
 
       await user.click(screen.getByRole("button", { name: "Second result" }));
       expect(screen.getByTestId("location").textContent).toBe("/messages/6?q=photo");

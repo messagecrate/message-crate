@@ -1,16 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { auditEntry } from "../test/apiShapes";
 import { type AuditEntry, describeAuditEntry } from "./auditTrail";
 
 /** An entry with only who, what and when; each test adds what it describes. */
 function entry(fields: Partial<AuditEntry> & Pick<AuditEntry, "action">): AuditEntry {
-  return {
-    id: 1,
-    at: "2026-10-02T10:00:00+00:00",
-    actor: "holder",
-    account_id: 101,
-    username: "alice",
-    ...fields,
-  };
+  return auditEntry({ account_id: 101, username: "alice", ...fields });
 }
 
 describe("describeAuditEntry", () => {

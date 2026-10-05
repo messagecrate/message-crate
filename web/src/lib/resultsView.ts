@@ -19,6 +19,14 @@ export const MESSAGE_SORT_PARAM = "sort";
 /** The message a search result opened its conversation at. */
 export const AT_PARAM = "at";
 /**
+ * The earlier versions a search found the opened result by, when it found it
+ * only by them: their places in the message's list, oldest first, joined by
+ * commas (`0,2`). The conversation reads its messages without the search, so
+ * the result's answer rides here, and the message opens with those versions
+ * shown and highlighted (#1143).
+ */
+export const MATCHED_PARAM = "matched";
+/**
  * The Message Tag a conversation was opened from: the tag's name, or `none`
  * for the No Message Tag page (#1562). The tag page names the tag in its
  * path and `/messages/:id` does not, so the tag rides here, apart from `q`,
@@ -66,21 +74,39 @@ export function openedAt(params: URLSearchParams): number | null {
   return Number.isSafeInteger(n) && n > 0 ? n : null;
 }
 
+/** The earlier versions the opened result was found by, as `MATCHED_PARAM` holds them. */
+export function openedMatchedVersions(params: URLSearchParams): number[] {
+  const raw = params.get(MATCHED_PARAM);
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .filter((part) => /^\d+$/.test(part))
+    .map(Number)
+    .filter(Number.isSafeInteger);
+}
+
 /**
  * The address search for a page of the Messages screen: `q`, the listed tag
  * and the Messages list's own parameters from `current`, with `overrides` on
  * top. An empty value drops the parameter. `f` is not carried: a typed search
  * replaces it.
+ *
+ * `matched` is carried only while `q` and `at` stay as they are, unless
+ * `overrides` sets it: the versions belong to one search's answer for one
+ * message, so a new search or another message drops them (#1648).
  */
 export function messagesSearch(
   current: URLSearchParams,
   overrides: Record<string, string>,
 ): string {
   const next = new URLSearchParams();
+  const value = (key: string) => (key in overrides ? overrides[key] : current.get(key)) || "";
   for (const key of ["q", TAG_PARAM, VIEW_PARAM, MESSAGE_SORT_PARAM, AT_PARAM]) {
-    const value = key in overrides ? overrides[key] : current.get(key);
-    if (value) next.set(key, value);
+    if (value(key)) next.set(key, value(key));
   }
+  const sameHit = ["q", AT_PARAM].every((key) => value(key) === (current.get(key) || ""));
+  const matched = MATCHED_PARAM in overrides || sameHit ? value(MATCHED_PARAM) : "";
+  if (matched && value(AT_PARAM)) next.set(MATCHED_PARAM, matched);
   const s = next.toString();
   return s ? `?${s}` : "";
 }

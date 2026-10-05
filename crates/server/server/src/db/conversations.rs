@@ -71,13 +71,11 @@ pub struct ConversationSummary {
     pub participants: Vec<Participant>,
     /// Messages in the conversation (excluding hidden duplicates).
     pub message_count: u64,
-    /// Timestamp of the conversation's first message. Left out when every
+    /// Timestamp of the conversation's first message. `null` when every
     /// message in the conversation is a duplicate, so none is left to date it.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub first_message_at: Option<String>,
-    /// Timestamp of the conversation's last message. Left out when every
+    /// Timestamp of the conversation's last message. `null` when every
     /// message in the conversation is a duplicate, so none is left to date it.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub last_message_at: Option<String>,
     /// Platform service of the conversation, e.g. `imessage`.
     pub service: String,
@@ -87,9 +85,8 @@ pub struct ConversationSummary {
     /// holder has with themselves, the account's display name or, without
     /// one, the conversation's own address; for one of orphaned messages, its
     /// sender's name and "Missing recipient", or "Unknown recipient" for the
-    /// account holder's; for any other, the export's title. Left out when
+    /// account holder's; for any other, the export's title. `null` when
     /// there is none, and the conversation goes by its participants.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     /// Message tags on this conversation.
     pub tags: Vec<String>,

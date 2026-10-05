@@ -1,39 +1,29 @@
 import { describe, expect, it } from "vitest";
+import { attachment, message as baseMessage, participant } from "../test/apiShapes";
 import { lightboxImages } from "./lightboxImages";
 import type { Message, MessageAttachment } from "./types";
 
 function photo(name: string): MessageAttachment {
-  return { original_name: name, mime_type: "image/jpeg", sha256: "aaa", path: name };
+  return attachment({ original_name: name, mime_type: "image/jpeg", sha256: "aaa", path: name });
 }
 
 function message(id: number, attachments: MessageAttachment[]): Message {
-  return {
+  return baseMessage({
     id,
-    source: "imessage",
     service: "iMessage",
-    guid: "g1",
-    timestamp: "2026-08-11T15:04:00Z",
-    is_from_me: false,
-    is_announcement: false,
-    is_reply: false,
-    num_replies: 0,
     sort_order: id,
     sender: "+1555",
-    subject: null,
-    text: null,
     attachments,
-    tapbacks: [],
-    earlier_versions: [],
-    matched_earlier_version: false,
     conversation: {
       id: 1,
       chat_identifier: "x",
       conversation_type: "individual",
       is_group: false,
       group_title: null,
-      participants: [{ identity: "+1555", name: "Ada", contact_id: null }],
+      label: null,
+      participants: [participant({ identity: "+1555", name: "Ada" })],
     },
-  };
+  });
 }
 
 describe("lightboxImages", () => {

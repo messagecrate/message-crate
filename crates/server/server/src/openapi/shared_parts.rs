@@ -45,7 +45,7 @@ pub(crate) fn apply(spec: &mut OpenApi) {
     }
 }
 
-fn operations_mut(item: &mut PathItem) -> impl Iterator<Item = &mut Operation> {
+pub(super) fn operations_mut(item: &mut PathItem) -> impl Iterator<Item = &mut Operation> {
     [
         &mut item.get,
         &mut item.put,

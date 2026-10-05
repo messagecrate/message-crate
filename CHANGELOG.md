@@ -21,6 +21,16 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-04 **The conversation shows an edited message's earlier
+  versions.** The line under an edited message reads like "4:56 PM · Edited",
+  and pressing "Edited" opens the earlier versions under the bubble, each
+  with the time it was written, and closes them again. They are closed when
+  a conversation opens. A message opened from the Messages list that the
+  search found only by a word an earlier version holds opens with its earlier
+  versions shown, that version highlighted, and the line "Matched an earlier
+  version" above them. Find does the same. Every source draws them the same
+  way. The Demo Account has a few edited messages in its Apple Messages
+  conversations.
 - 2026-10-04 **Messages a backup kept without saying which conversation
   they were in now sit in conversations of their own, one for each person who
   sent them.** An Apple Messages backup can hold messages that belong to no
@@ -40,8 +50,7 @@ released versions carry their date on the heading.
   earlier version held finds the message. A later import leaves a message
   already stored as it is, with its text and earlier versions. Export keeps the
   earlier versions, so a conversation exported and imported again keeps them
-  too. The conversation shows them, and which one a search found, in a
-  coming release.
+  too.
 - 2026-10-04 **The conversation and the Messages list show which messages
   were deleted in the app they came from, and which were unsent.** A message
   deleted in the source app keeps its text in a faded bubble with a dashed
@@ -239,9 +248,15 @@ released versions carry their date on the heading.
 
 ### Design
 
-- 2026-10-04 **The import code names a Review, the Upload and an Import
-  Run as the screens do.** Its internals no longer say gate, push or import
-  session for them. Nothing on screen changes.
+- 2026-10-04 **The import code names a Review, the Media stage, the Upload
+  and an Import Run as the screens do.** Its internals no longer say gate,
+  pass, push or import session for them. On screen, an Import Run that
+  stopped during Media now reads "The Media stage did not finish" instead of
+  "The media step did not finish".
+- 2026-10-04 **Every answer from the server carries the same fields.** A
+  field with nothing in it is sent empty instead of being left out, so a
+  program that talks to the server always finds the fields it expects.
+  Nothing changes on screen.
 - 2026-10-04 **An Import Run's log is kept for good, and scratch data has a
   directory of its own.** Each Import Run's log is written to the Logs
   Directory, named for the run, instead of the run's directory in the

@@ -459,6 +459,26 @@ impl<'a> World<'a> {
                 .fetch_one(&mut *conn)
                 .await
                 .unwrap();
+        // An attachment and a reaction, each with its optional columns empty,
+        // so the answers that list them carry rows with `null` fields for
+        // `document_rules` to read.
+        let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+        sqlx::query(
+            "INSERT INTO attachments (message_id, original_name, mime_type, sha256, size_bytes)
+             VALUES ($1, 'photo.png', 'image/png', $2, $3)",
+        )
+        .bind(message_id)
+        .bind(crate::assets_api::sha256_hex(ASSET_BYTES))
+        .bind(ASSET_BYTES.len() as i64)
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        sqlx::query("INSERT INTO tapbacks (message_id, kind, is_from_me) VALUES ($1, 'loved', 1)")
+            .bind(message_id)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
         drop(conn);
 
         let mut world = Self {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { attachment, message as baseMessage, participant } from "../test/apiShapes";
 import { messageConversationName, messageRowText, messageSenderName } from "./messageRowText";
 import type { Message, MessageConversation } from "./types";
 
@@ -9,31 +10,22 @@ function conversation(over: Partial<MessageConversation> = {}): MessageConversat
     conversation_type: "individual",
     is_group: false,
     group_title: null,
+    label: null,
     participants: [{ name: "Alice", identity: "+15555550100", contact_id: 4, service: "imessage" }],
     ...over,
   };
 }
 
 function message(over: Partial<Message> = {}): Message {
-  return {
+  return baseMessage({
     id: 10,
-    source: "imessage",
     guid: "g10",
     timestamp: "2024-01-01T10:00:00Z",
-    sort_order: 0,
-    is_from_me: false,
-    is_announcement: false,
-    is_reply: false,
-    num_replies: 0,
     sender: "+15555550100",
     text: "hello",
     conversation: conversation(),
-    attachments: [],
-    tapbacks: [],
-    earlier_versions: [],
-    matched_earlier_version: false,
     ...over,
-  };
+  });
 }
 
 describe("messageConversationName", () => {
@@ -53,8 +45,8 @@ describe("messageConversationName", () => {
 
   it("names a group conversation by its title, else by everyone in it", () => {
     const people = [
-      { name: "Alice", identity: "+1" },
-      { name: "Bob", identity: "+2" },
+      participant({ name: "Alice", identity: "+1" }),
+      participant({ name: "Bob", identity: "+2" }),
     ];
     expect(
       messageConversationName(
@@ -77,8 +69,8 @@ describe("messageConversationName", () => {
     // The server decides `is_group` for both lists, so a type the browser
     // does not know still names the conversation as the conversation list does.
     const people = [
-      { name: "Alice", identity: "+1" },
-      { name: "Bob", identity: "+2" },
+      participant({ name: "Alice", identity: "+1" }),
+      participant({ name: "Bob", identity: "+2" }),
     ];
     expect(
       messageConversationName(
@@ -110,7 +102,10 @@ describe("messageRowText", () => {
       messageRowText(
         message({
           text: null,
-          attachments: [{ original_name: "IMG_0001.jpg" }, { original_name: "notes.pdf" }],
+          attachments: [
+            attachment({ original_name: "IMG_0001.jpg" }),
+            attachment({ original_name: "notes.pdf" }),
+          ],
         }),
       ),
     ).toBe("IMG_0001.jpg, notes.pdf");

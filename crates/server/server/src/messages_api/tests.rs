@@ -822,7 +822,7 @@ async fn reactions_and_message_flags_are_read_back_as_imported() {
     assert_eq!(
         reply["tapbacks"],
         serde_json::json!([
-            {"part_index": 0, "kind": "liked",
+            {"part_index": 0, "kind": "liked", "emoji": null,
              "is_from_me": false, "sender": "+15555550167"},
             {"part_index": 1, "kind": "emoji", "emoji": "🎉",
              "is_from_me": false, "sender": "+15555550161"}
@@ -831,7 +831,7 @@ async fn reactions_and_message_flags_are_read_back_as_imported() {
     assert_eq!(
         announcement["tapbacks"],
         serde_json::json!([
-            {"part_index": 2, "kind": "loved",
+            {"part_index": 2, "kind": "loved", "emoji": null,
              "is_from_me": false, "sender": "+15555550167"}
         ])
     );

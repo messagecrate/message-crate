@@ -26,15 +26,12 @@ export default function SmsBubble({
 
   return (
     <ChatBubbleRow
-      messageId={String(message.id)}
-      mine={mine}
+      message={message}
       isActive={isActive}
       palette="sms"
       showSender={!mine && (showSender ?? nameSender)}
       senderLabel={senderName(message)}
       timeLabel={time}
-      deletion={message.deletion}
-      source={message.source}
       meta={service ? <span className="uppercase tracking-[0.04em]">{service}</span> : null}
       footer={
         hasAttachments ? (

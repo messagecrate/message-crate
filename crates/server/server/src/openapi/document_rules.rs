@@ -4,7 +4,8 @@
 //! routes someone remembered).
 //!
 //! Part of it reads the document: the page shape and paging parameters of every
-//! list, a `Location` on every `201`, a `404` on every path with an id, no body
+//! list, every property of a success answer required, a `Location` on every
+//! `201`, a `404` on every path with an id, no body
 //! on the success of a `HEAD`, one-sentence summaries, declared tags,
 //! kebab-case paths and the nesting depth. The rest calls every operation
 //! through the router, on the credential matrix's fixture: with no credential
@@ -15,8 +16,9 @@
 //! must be a problem document carrying its `request_id`, of a status and type
 //! the operation's document lists. An `Accept` that names nothing JSON must
 //! answer `406` exactly where the document lists it; a `GET` that succeeds must
-//! answer a media type its document declares; and a `201` must name in its
-//! `Location` a resource the same credential can `GET`.
+//! answer a media type its document declares; a success must carry every field
+//! its document declares, `null` where it has no value; and a `201` must name
+//! in its `Location` a resource the same credential can `GET`.
 //!
 //! The failures an operation's shape brings are written into the document
 //! by `shared_parts`, so a check that reads them back from the document
@@ -32,6 +34,7 @@ use serde_json::Value;
 
 use super::credential_matrix::{self, Operation, Shared, World};
 use super::dump_openapi_json;
+use super::response_fields::{self, schema_named};
 use super::shared_parts::{PROBLEM_TYPES, split_first_sentence};
 use crate::paging::MAX_LIST_OFFSET;
 use crate::problem::{Problem, ProblemType};
@@ -54,6 +57,17 @@ async fn every_operation_keeps_the_rules_the_document_can_show() {
             broken.push(format!("{}: {rule}", op.label()));
         }
     }
+    // Every component a success answer holds, including the ones a page
+    // holds without naming them ("Fields").
+    let mut optional = BTreeSet::new();
+    for name in response_fields::answer_schemas(&doc) {
+        optional_fields(&doc["components"]["schemas"][&name], &name, &mut optional);
+    }
+    broken.extend(
+        optional
+            .into_iter()
+            .map(|field| format!("{field} is optional in a success answer")),
+    );
 
     // Each operation gets accounts and rows of its own, so a call the server
     // wrongly accepts (a delete, a logout) cannot change what the next
@@ -157,6 +171,19 @@ fn read_rules(doc: &Value, op: &Operation, spec: &Value) -> Vec<String> {
     if op.path.contains('{') && !responses.contains_key("404") {
         broken.push("no 404, which an id in the path brings".to_string());
     }
+
+    // Every field of a success answer is sent, `null` when it has no value
+    // ("Fields"), so the document requires every one. A schema it names is
+    // checked once, over the whole document.
+    let mut optional = BTreeSet::new();
+    for schema in success_schemas(spec) {
+        optional_fields(schema, "answer", &mut optional);
+    }
+    broken.extend(
+        optional
+            .into_iter()
+            .map(|field| format!("{field} is optional in a success answer")),
+    );
 
     for page in page_schemas(doc, spec) {
         let required: BTreeSet<&str> = page["required"]
@@ -300,28 +327,52 @@ async fn called_rules(doc: &Value, world: &World<'_>, op: &Operation, spec: &Val
         }
     }
 
-    // A creation names the new resource in `Location`, and the credential
-    // that made it can read it there ("Status codes"). Last, because it
-    // makes something.
-    if !spec["responses"]["201"].is_null() && token.is_some() {
-        let answer = call(world, op, &path, token, sent()).await;
-        if answer.status == StatusCode::CREATED {
-            match &answer.location {
-                None => broken.push("a 201 with no Location".to_string()),
-                Some(location) => {
-                    let read = Operation {
-                        method: "get".to_string(),
-                        path: location.clone(),
-                        security: None,
-                    };
-                    let followed = call(world, &read, location, token, None).await;
-                    if followed.status != StatusCode::OK {
-                        broken.push(format!(
-                            "the 201's Location {location} answered GET with {}: {}",
-                            followed.status.as_u16(),
-                            followed.text
-                        ));
-                    }
+    // Last, because it may make, change or remove something: a success
+    // answers every field its document declares, `null` when it has no value
+    // ("Fields"), and a creation names the new resource in `Location`, where
+    // the credential that made it can read it ("Status codes"). An operation
+    // that answers no JSON and makes nothing is not called, so the owner's
+    // `DELETE /v1/session` leaves the shared Session alone.
+    let answers_json = success_schemas(spec).next().is_some();
+    let creates = !spec["responses"]["201"].is_null() && token.is_some();
+    if op.method == "head" || !(answers_json || creates) {
+        return broken;
+    }
+    let answer = call(world, op, &path, token, sent()).await;
+    if answer.status.is_success() && answer.content_type.starts_with("application/json") {
+        let status = answer.status.as_u16().to_string();
+        let schema = &spec["responses"][&status]["content"]["application/json"]["schema"];
+        match serde_json::from_str::<Value>(&answer.text) {
+            Err(e) => broken.push(format!(
+                "a {status} answered JSON that does not parse ({e})"
+            )),
+            Ok(body) => {
+                let mut missing = BTreeSet::new();
+                left_out(doc, schema, &body, "answer", &mut missing);
+                broken.extend(
+                    missing
+                        .into_iter()
+                        .map(|field| format!("a {status} left out {field}, which it declares")),
+                );
+            }
+        }
+    }
+    if creates && answer.status == StatusCode::CREATED {
+        match &answer.location {
+            None => broken.push("a 201 with no Location".to_string()),
+            Some(location) => {
+                let read = Operation {
+                    method: "get".to_string(),
+                    path: location.clone(),
+                    security: None,
+                };
+                let followed = call(world, &read, location, token, None).await;
+                if followed.status != StatusCode::OK {
+                    broken.push(format!(
+                        "the 201's Location {location} answered GET with {}: {}",
+                        followed.status.as_u16(),
+                        followed.text
+                    ));
                 }
             }
         }
@@ -519,6 +570,193 @@ async fn call_with(
     }
 }
 
+/// Add to `out` each property of `schema` that it does not require, as
+/// `at.field`, looking into the objects it holds but not into a schema it
+/// names, which is checked on its own.
+fn optional_fields(schema: &Value, at: &str, out: &mut BTreeSet<String>) {
+    let required: BTreeSet<&str> = schema["required"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    for (field, field_schema) in schema["properties"].as_object().into_iter().flatten() {
+        let at = format!("{at}.{field}");
+        if !required.contains(field.as_str()) {
+            out.insert(at.clone());
+        }
+        optional_fields(field_schema, &at, out);
+    }
+    for key in ["items", "additionalProperties"] {
+        if schema[key].is_object() {
+            optional_fields(&schema[key], at, out);
+        }
+    }
+    for key in ["allOf", "oneOf", "anyOf"] {
+        for branch in schema[key].as_array().into_iter().flatten() {
+            optional_fields(branch, at, out);
+        }
+    }
+}
+
+/// The schema `schema` names, followed through every `$ref`.
+fn resolved<'d>(doc: &'d Value, schema: &'d Value) -> &'d Value {
+    match schema_named(schema) {
+        Some(name) => resolved(doc, &doc["components"]["schemas"][name]),
+        None => schema,
+    }
+}
+
+/// Add to `out` each property `schema` declares that `value` does not carry,
+/// as `answer.field.field`, looking into every object `value` holds. Of a
+/// choice (`oneOf`, `anyOf`), the branches `value` fits are tried, and a
+/// value that carries every property of one of them leaves nothing out. A
+/// branch fits only a value of its own shape ([`fits`]), so a page of
+/// `ExportRun` is never read as a page of `OwnerExportRun`.
+fn left_out(doc: &Value, schema: &Value, value: &Value, at: &str, out: &mut BTreeSet<String>) {
+    let schema = resolved(doc, schema);
+    if value.is_null() {
+        return;
+    }
+    for branch in schema["allOf"].as_array().into_iter().flatten() {
+        left_out(doc, branch, value, at, out);
+    }
+    for key in ["oneOf", "anyOf"] {
+        let Some(branches) = schema[key].as_array() else {
+            continue;
+        };
+        let tried: Vec<BTreeSet<String>> = branches
+            .iter()
+            .map(|branch| resolved(doc, branch))
+            .filter(|branch| fits(doc, branch, value))
+            .map(|branch| {
+                let mut missing = BTreeSet::new();
+                left_out(doc, branch, value, at, &mut missing);
+                missing
+            })
+            .collect();
+        match tried.into_iter().min_by_key(BTreeSet::len) {
+            Some(fewest) => {
+                out.extend(fewest);
+            }
+            None => {
+                out.insert(format!(
+                    "{at}, which has the shape of no branch of its {key}"
+                ));
+            }
+        }
+    }
+    let properties = schema["properties"].as_object();
+    if let (Some(properties), Some(object)) = (properties, value.as_object()) {
+        for (field, field_schema) in properties {
+            let at = format!("{at}.{field}");
+            match object.get(field) {
+                None => {
+                    out.insert(at);
+                }
+                Some(field_value) => left_out(doc, field_schema, field_value, &at, out),
+            }
+        }
+    }
+    if schema["additionalProperties"].is_object()
+        && let Some(object) = value.as_object()
+    {
+        for (key, entry) in object {
+            if properties.is_none_or(|p| !p.contains_key(key)) {
+                let at = format!("{at}.{key}");
+                left_out(doc, &schema["additionalProperties"], entry, &at, out);
+            }
+        }
+    }
+    if let Some(items) = value.as_array() {
+        let at = format!("{at}[]");
+        for item in items {
+            left_out(doc, &schema["items"], item, &at, out);
+        }
+    }
+}
+
+/// Whether `value` has the shape of `schema`, which is how the branches of a
+/// choice are told apart: its JSON type is one the schema allows, it holds one
+/// of the values each `enum` property allows, it carries no key the schema
+/// does not declare (unless it takes any), and each object or list it holds
+/// has the shape of its own schema in turn. Missing keys do not count against
+/// it: those are what [`left_out`] reports.
+fn fits(doc: &Value, schema: &Value, value: &Value) -> bool {
+    let schema = resolved(doc, schema);
+    if value.is_null() {
+        return true;
+    }
+    let is = |kind: &str| match kind {
+        "null" => value.is_null(),
+        "object" => value.is_object(),
+        "array" => value.is_array(),
+        "string" => value.is_string(),
+        "integer" => value.is_i64() || value.is_u64(),
+        "number" => value.is_number(),
+        "boolean" => value.is_boolean(),
+        _ => true,
+    };
+    let type_fits = match &schema["type"] {
+        Value::String(kind) => is(kind),
+        Value::Array(kinds) => kinds.iter().filter_map(Value::as_str).any(is),
+        _ => true,
+    };
+    if !type_fits {
+        return false;
+    }
+    for key in ["oneOf", "anyOf"] {
+        if let Some(branches) = schema[key].as_array()
+            && !branches.iter().any(|branch| fits(doc, branch, value))
+        {
+            return false;
+        }
+    }
+    if let Some(items) = value.as_array() {
+        return !schema["items"].is_object()
+            || items.iter().all(|item| fits(doc, &schema["items"], item));
+    }
+    let Some(object) = value.as_object() else {
+        return true;
+    };
+    let mut properties = serde_json::Map::new();
+    declared_properties(doc, schema, &mut properties);
+    if properties.is_empty() {
+        return true;
+    }
+    object.iter().all(|(key, held)| match properties.get(key) {
+        None => takes_any_key(doc, schema),
+        Some(field_schema) => {
+            let tag_fits = resolved(doc, field_schema)["enum"]
+                .as_array()
+                .is_none_or(|allowed| allowed.contains(held));
+            tag_fits && fits(doc, field_schema, held)
+        }
+    })
+}
+
+/// The properties `schema` declares, with those of each `allOf` part.
+fn declared_properties(doc: &Value, schema: &Value, out: &mut serde_json::Map<String, Value>) {
+    let schema = resolved(doc, schema);
+    for (field, field_schema) in schema["properties"].as_object().into_iter().flatten() {
+        out.insert(field.clone(), field_schema.clone());
+    }
+    for part in schema["allOf"].as_array().into_iter().flatten() {
+        declared_properties(doc, part, out);
+    }
+}
+
+/// Whether `schema`, or an `allOf` part of it, takes keys it does not name.
+fn takes_any_key(doc: &Value, schema: &Value) -> bool {
+    let schema = resolved(doc, schema);
+    !schema["additionalProperties"].is_null() && schema["additionalProperties"] != false
+        || schema["allOf"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|part| takes_any_key(doc, part))
+}
+
 /// Whether the operation takes a credential and admits no request without
 /// one. `POST /v1/accounts` admits a stranger, so it has no such refusal.
 fn takes_a_credential_only(op: &Operation) -> bool {
@@ -539,13 +777,6 @@ fn is_kebab(segment: &str) -> bool {
                     .chars()
                     .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
         })
-}
-
-/// The schema name a `$ref` points at.
-fn schema_named(reference: &Value) -> Option<&str> {
-    reference["$ref"]
-        .as_str()
-        .and_then(|r| r.strip_prefix("#/components/schemas/"))
 }
 
 /// The page schemas a `200` answers: the page it names, or each page of a
@@ -594,4 +825,16 @@ fn query_parameters(spec: &Value) -> BTreeSet<&str> {
         .filter(|p| p["in"] == "query")
         .filter_map(|p| p["name"].as_str())
         .collect()
+}
+
+/// The schema of each success answer in JSON the operation declares.
+fn success_schemas(op: &Value) -> impl Iterator<Item = &Value> {
+    op["responses"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter(|(status, _)| status.starts_with('2'))
+        .flat_map(|(_, response)| response["content"].as_object().into_iter().flatten())
+        .filter(|(media_type, _)| *media_type == "application/json")
+        .map(|(_, content)| &content["schema"])
 }
