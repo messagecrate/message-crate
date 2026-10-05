@@ -516,7 +516,7 @@ async fn a_sender_no_header_names_still_gets_a_contact() {
 /// desktop app's import path, and the holder's a third, as
 /// [`assert_imported_as_three_orphaned_conversations`] says.
 #[tokio::test]
-async fn orphaned_messages_from_two_senders_make_two_conversations() {
+async fn orphaned_messages_make_one_conversation_per_sender_and_one_for_the_holder() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     import_files(
@@ -543,6 +543,45 @@ async fn the_orphaned_conversation_over_http_is_not_a_person() {
     .await;
     let mut conn = fixture.state.db.acquire().await.unwrap();
     assert_imported_as_three_orphaned_conversations(&mut conn, account.account_id).await;
+
+    let orphaned: Vec<i64> = sqlx::query_scalar(
+        "SELECT c.id FROM conversations c JOIN handles h ON h.id = c.chat_handle_id
+         WHERE c.account_id = $1 AND c.conversation_type = 'orphaned'
+         ORDER BY h.raw",
+    )
+    .bind(account.account_id)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap();
+    let mut read = Vec::new();
+    for id in orphaned {
+        let conversation: serde_json::Value = crate::test_support::get_json(
+            &fixture.state,
+            &format!("/v1/conversations/{id}"),
+            &account.token,
+        )
+        .await;
+        let people: Vec<&str> = conversation["participants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["identity"].as_str().unwrap())
+            .collect();
+        read.push((
+            conversation["label"].as_str().unwrap().to_string(),
+            people.join(","),
+        ));
+    }
+    assert_eq!(
+        read,
+        [
+            ("Unknown recipient", ""),
+            ("Ada · Missing recipient", "+15555550154"),
+            ("Bob · Missing recipient", "+15555550155"),
+        ]
+        .map(|(label, people)| (label.to_string(), people.to_string())),
+        "reading each orphaned conversation shows its sender alone, and no key"
+    );
 }
 
 /// Report (b): a sender whose number is on a trashed contact under another
