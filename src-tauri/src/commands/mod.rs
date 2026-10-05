@@ -11,6 +11,7 @@
 //! `extract:file-done`, `extract:finished`, `extract:error`).
 
 pub mod events;
+pub mod exports;
 pub mod extract;
 pub mod ffmpeg;
 pub mod format;

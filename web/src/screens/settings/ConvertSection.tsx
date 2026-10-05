@@ -5,6 +5,7 @@ import PathPicker from "../../components/PathPicker";
 import Select, { selectItemClassName } from "../../components/Select";
 import TauriJobFormShell from "../../components/TauriJobFormShell";
 import { useTauriJob } from "../../hooks/useTauriJob";
+import { writeInExportDir } from "../../lib/exportDir";
 import { parseSelectKey } from "../../lib/selectKey";
 import { EXPORT_FORMATS, type ExportFormat, invokeFormat } from "../../lib/tauri";
 import { isTauri } from "../../lib/tauri-check";
@@ -21,7 +22,9 @@ function formatLabel(id: ExportFormat): string {
  * Settings → Convert: rewrite a directory of already-exported files into another
  * format. `message-reexport` detects the input format from the directory, so the
  * screen picks the output format only, and it refuses to write into its own
- * input, so the two directories must differ.
+ * input, so the two directories must differ. With no output directory chosen,
+ * the conversion gets a directory of its own in the Export Directory
+ * (`convert-2026-10-04-1430-csv`), deleted again if it fails.
  *
  * Convert reads files and writes files. It never opens a backup or the server,
  * which is why it lives under Settings as a tool rather than in the sidebar
@@ -59,19 +62,32 @@ export function ConvertSection() {
     if (running || directoriesClash) return;
     setError("");
     setLog([]);
-    const request = { outputDir: outputDir.trim(), format };
+    const chosen = outputDir.trim();
+    const input = inputDir.trim();
+    const convertInto = (output: string) =>
+      run(
+        () =>
+          invokeFormat({
+            input_dir: input,
+            output_dir: output,
+            output_format: format,
+          }),
+        { outputDir: output, format },
+        { onLog: appendLog },
+      );
     void (async () => {
       try {
-        await run(
-          () =>
-            invokeFormat({
-              input_dir: inputDir.trim(),
-              output_dir: request.outputDir,
-              output_format: request.format,
-            }),
-          request,
-          { onLog: appendLog },
-        );
+        if (chosen) await convertInto(chosen);
+        else
+          await writeInExportDir(
+            "convert",
+            format,
+            "",
+            async (made) => {
+              await convertInto(made.dir);
+            },
+            appendLog,
+          );
       } catch (err: unknown) {
         const message = err instanceof Error ? err.message : String(err);
         appendLog(`Error: ${message}`);
@@ -88,14 +104,16 @@ export function ConvertSection() {
       runningLabel="Converting…"
       running={running}
       log={log}
-      startDisabled={!inputDir.trim() || !outputDir.trim() || directoriesClash}
+      startDisabled={!inputDir.trim() || directoriesClash}
       onStart={startConvert}
       onCancel={cancel}
       error={error}
       intro={
         <p className="mb-6 text-[0.875rem] text-muted">
           Convert rewrites a directory of exported files into another format. The input format is
-          read from the directory. Convert touches neither a backup nor your Message Crate.
+          read from the directory. With no output directory chosen, the result goes into a directory
+          of its own in the Export Directory. Convert touches neither a backup nor your Message
+          Crate.
         </p>
       }
       success={
@@ -120,7 +138,7 @@ export function ConvertSection() {
           value={outputDir}
           onChange={setOutputDir}
           directory
-          placeholder="A different directory to write into…"
+          placeholder="The Export Directory"
           isDisabled={running}
         />
       </FormRow>

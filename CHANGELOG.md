@@ -227,6 +227,18 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-04 **Every Export and Convert gets a directory of its own in the
+  Export Directory.** An export no longer needs a directory chosen before it
+  starts: it is written into a new directory named for its date, time and
+  format, such as `export-2026-10-04-1430-mbox`, in the Export Directory,
+  which Settings → System names and opens. Convert does the same when no
+  output directory is chosen. A directory can still be chosen for either.
+  The JSON Lines an export converts from now wait in that directory instead
+  of the Staging Directory, and are deleted when it finishes, leaving only
+  the result; a failed or cancelled export deletes its directory, and one
+  the app did not see to its end is deleted the next time it starts.
+- 2026-10-04 **Screens, the user guide and the glossary say "directory"
+  everywhere they said "folder".**
 - 2026-10-04 **A reaction travels on the message it reacts to.** An Apple
   Messages tapback or emoji reaction is written into an export on the
   message it reacts to, with the person who reacted named, and an import
@@ -1460,6 +1472,9 @@ released versions carry their date on the heading.
 
 ### Upgrading
 
+- An export, or a conversion with no output directory chosen, now goes into
+  the Export Directory; look for it there, through Settings → System, rather
+  than in the Staging Directory.
 - The database format changed. **An existing Message Crate is rebuilt
   empty on first start and its messages must be imported again.**
 - If your configuration file sets `asset_max_bytes` under `[server]`, delete

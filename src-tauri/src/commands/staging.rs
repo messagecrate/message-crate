@@ -77,7 +77,7 @@ pub fn set_staging_root(
 }
 
 /// Make a new run directory under the Staging Directory and return its
-/// path. `label` is the Import source, or `export` for Export.
+/// path. `label` is the Import source.
 ///
 /// # Errors
 ///
