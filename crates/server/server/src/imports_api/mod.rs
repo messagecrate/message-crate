@@ -25,6 +25,7 @@ use axum::http::HeaderMap;
 
 use crate::assets_api::AssetStats;
 use crate::config::validate_source_id;
+use crate::counts::words;
 #[cfg(test)]
 use crate::db::engine;
 use crate::db::imports::{self, CompleteImportArgs};
@@ -364,12 +365,12 @@ pub async fn import_jsonl_files_on_conn(
     counts.assets_deduped = asset_stats.deduped;
     counts.assets_missing = asset_stats.missing;
     say(&format!(
-        "  import:   finished in {:.1}s  files={} msgs={} attachments={} assets_copied={}",
+        "  import:   finished in {:.1}s: {}, {}, {}, {}",
         started.elapsed().as_secs_f64(),
-        counts.files,
-        counts.messages,
-        counts.attachments,
-        counts.assets_copied
+        words(counts.files, "1 file", "{n} files"),
+        words(counts.messages, "1 message", "{n} messages"),
+        words(counts.attachments, "1 attachment", "{n} attachments"),
+        words(counts.assets_copied, "1 asset copied", "{n} assets copied"),
     ));
     Ok(counts)
 }
@@ -478,11 +479,11 @@ async fn stage_all_files(
         if n == 1 || n == total_files || n % progress_every == 0 {
             let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("?");
             say(&format!(
-                "  import:   [{n}/{total_files}] {name}  msgs={} attachments={} assets_copied={} missing={}  ({:.0}s)",
-                counts.messages,
-                counts.attachments,
-                asset_stats.copied,
-                asset_stats.missing,
+                "  import:   [{n}/{total_files}] {name}: {}, {}, {}, {}  ({:.0}s)",
+                words(counts.messages, "1 message", "{n} messages"),
+                words(counts.attachments, "1 attachment", "{n} attachments"),
+                words(asset_stats.copied, "1 asset copied", "{n} assets copied"),
+                words(asset_stats.missing, "1 asset missing", "{n} assets missing"),
                 started.elapsed().as_secs_f64()
             ));
         }
