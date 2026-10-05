@@ -8,7 +8,6 @@ use message_ir::{HandleService, HandleType, nonempty, trimmed};
 use sqlx::SqliteConnection;
 
 use crate::assets_api::{self, AssetError, AssetStats, StoredAsset};
-use crate::config::validate_source_id;
 use crate::db::handles::{
     HandleIdCache, handle_type_of, upsert_handle_row, upsert_handle_row_cached,
 };
@@ -299,19 +298,7 @@ fn resolve_conversation_source(
     if !opts.source_from_jsonl {
         return Ok(opts.source.to_string());
     }
-    let refuse = |detail: String| ImportFailure::Invalid {
-        line: conversation.line,
-        detail,
-    };
-    let Some(source) = conversation.export_source.as_deref().and_then(trimmed) else {
-        return Err(refuse(format!(
-            "conversation '{}' has no export.source, which a directory import needs",
-            conversation.chat_identifier
-        )));
-    };
-    validate_source_id(source)
-        .map_err(|err| refuse(format!("export.source '{source}' is not valid: {err:#}")))?;
-    Ok(source.to_string())
+    conversation.directory_source().map(str::to_string)
 }
 
 /// Stage one JSON Lines file: each conversation header with the messages

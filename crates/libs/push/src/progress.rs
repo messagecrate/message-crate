@@ -11,6 +11,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use anyhow::{Context, Result};
+use message_crate_core::count_of;
 
 use crate::report::{FileResult, PushReport, UploadProfile, elapsed_ms, format_profile_line};
 
@@ -185,11 +186,11 @@ impl ProgressBatcher {
         // (those overlap when prepares run ahead of imports).
         let wall_ms = self.chunk_started.map_or(0, elapsed_ms);
         let line = format!(
-            "files {}/{} - conversations={} messages={} transfer size={}, import time={}, total time={}",
+            "files {}/{}: {} and {}, {} sent, {} importing, {} in all",
             self.done,
             self.total,
-            self.chunk_conversations,
-            self.chunk_messages,
+            count_of(self.chunk_conversations, "conversation", "conversations"),
+            count_of(self.chunk_messages, "message", "messages"),
             media::format_bytes(self.chunk_bytes),
             format_ms_seconds(self.chunk_import_ms),
             format_ms_seconds(wall_ms),
@@ -375,17 +376,16 @@ mod tests {
             assert!(batcher.note_ok(2, &profile).is_none());
         }
         let tenth = batcher.note_ok(2, &profile).unwrap();
-        assert!(tenth.starts_with("files 10/25 - "));
-        assert!(tenth.contains("conversations=10"));
-        assert!(tenth.contains("messages=20"));
-        assert!(tenth.contains("transfer size=7.0 MB"));
-        assert!(tenth.contains("import time=33.0s"));
-        // total time is wall-clock for the progress window, not sum of profile.total_ms.
-        assert!(tenth.contains("total time="));
-        assert!(!tenth.contains("total time=55.0s"));
-        assert!(!tenth.contains("bytes="));
-        assert!(!tenth.contains("import_ms="));
-        assert!(!tenth.contains("total_ms="));
+        assert!(
+            tenth.starts_with(
+                "files 10/25: 10 conversations and 20 messages, 7.0 MB sent, 33.0s importing, "
+            ),
+            "{tenth}"
+        );
+        // The time in all is wall-clock for the progress window, not the sum of profile.total_ms.
+        assert!(tenth.ends_with(" in all"));
+        assert!(!tenth.contains("55.0s in all"));
+        assert!(!tenth.contains('='));
         lines.push(tenth);
         for _ in 0..15 {
             if let Some(line) = batcher.note_ok(1, &profile) {
@@ -393,10 +393,27 @@ mod tests {
             }
         }
         assert_eq!(lines.len(), 3);
-        assert!(lines[1].starts_with("files 20/25 - "));
-        assert!(lines[1].contains("conversations=10"));
-        assert!(lines[2].starts_with("files 25/25 - "));
-        assert!(lines[2].contains("conversations=5"));
+        assert!(lines[1].starts_with("files 20/25: 10 conversations and 10 messages, "));
+        assert!(lines[2].starts_with("files 25/25: 5 conversations and 5 messages, "));
+    }
+
+    /// A window of one conversation with one message words both counts
+    /// singular (#1825).
+    #[test]
+    fn progress_line_counts_one_conversation_and_one_message() {
+        let mut batcher = ProgressBatcher::new(1);
+        let profile = UploadProfile {
+            message_import_ms: 200,
+            asset_bytes: 500,
+            ..UploadProfile::default()
+        };
+        let line = batcher.note_ok(1, &profile).unwrap();
+        assert!(
+            line.starts_with(
+                "files 1/1: 1 conversation and 1 message, 500 B sent, 0.2s importing, "
+            ),
+            "{line}"
+        );
     }
 
     #[test]

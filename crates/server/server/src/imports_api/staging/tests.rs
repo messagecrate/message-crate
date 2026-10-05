@@ -314,7 +314,8 @@ async fn a_directory_import_refuses_a_header_without_a_source() {
             assert_eq!(file, path);
             assert_eq!(
                 detail,
-                "conversation '+15555550154' has no export.source, which a directory import needs"
+                "conversation '+15555550154' has no export.source, which a directory import \
+                 needs unless --source names one"
             );
         }
         other => panic!("expected a rejection, got {other:?}"),

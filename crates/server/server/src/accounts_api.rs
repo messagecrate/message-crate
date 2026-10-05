@@ -1182,6 +1182,8 @@ pub(crate) struct AccountStorage {
     pub conversation_count: i64,
     /// Contacts, on the same terms as `conversation_count`.
     pub contact_count: i64,
+    /// The account's 100 largest attachments, largest first. An attachment
+    /// of 0 bytes or of unknown size is left out.
     pub top_attachments: Vec<imports::TopAttachment>,
 }
 
