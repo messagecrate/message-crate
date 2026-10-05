@@ -74,6 +74,14 @@ Why the download is the original: the original is the record of what was
 sent, and a Preview is a converted copy that may have lost quality or
 metadata.
 
+The desktop app downloads the original itself. The window makes a Media Link
+and hands its `url` to the app's `save_download` command, which shows the Save
+dialog and copies the server's answer to the chosen file as it arrives. Why:
+fetched into the window, a video of hundreds of megabytes was held whole
+there, again as the bytes sent to the app, and again in the request the app
+received (#1739). A browser has its own downloads, so the web app in a browser
+still fetches the original and hands it over.
+
 ## 3. An attachment has up to three versions
 
 - The **Thumbnail**, a JPEG at most 560 pixels on its long side and tens of

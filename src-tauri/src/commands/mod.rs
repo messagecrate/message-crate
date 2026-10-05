@@ -10,6 +10,7 @@
 //! as Tauri events (`extract:log`, `extract:progress`, `extract:issue`,
 //! `extract:file-done`, `extract:finished`, `extract:error`).
 
+pub mod download;
 pub mod events;
 pub mod exports;
 pub mod extract;
