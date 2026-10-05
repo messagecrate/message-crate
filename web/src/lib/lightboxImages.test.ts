@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { attachment, participant } from "../test/apiShapes";
 import { lightboxImages } from "./lightboxImages";
 import type { Message, MessageAttachment } from "./types";
 
 function photo(name: string): MessageAttachment {
-  return { original_name: name, mime_type: "image/jpeg", sha256: "aaa", path: name };
+  return attachment({ original_name: name, mime_type: "image/jpeg", sha256: "aaa", path: name });
 }
 
 function message(id: number, attachments: MessageAttachment[]): Message {
@@ -25,13 +26,18 @@ function message(id: number, attachments: MessageAttachment[]): Message {
     tapbacks: [],
     earlier_versions: [],
     matched_earlier_version: false,
+    deletion: null,
+    owner: null,
+    thread_originator_guid: null,
+    thread_originator_part: null,
     conversation: {
       id: 1,
       chat_identifier: "x",
       conversation_type: "individual",
       is_group: false,
       group_title: null,
-      participants: [{ identity: "+1555", name: "Ada", contact_id: null }],
+      label: null,
+      participants: [participant({ identity: "+1555", name: "Ada" })],
     },
   };
 }

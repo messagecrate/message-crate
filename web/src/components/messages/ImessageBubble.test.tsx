@@ -3,6 +3,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Message } from "../../lib/types";
+import { participant } from "../../test/apiShapes";
 import ImessageBubble from "./ImessageBubble";
 
 afterEach(() => {
@@ -28,13 +29,18 @@ function message(partial: Partial<Message> = {}): Message {
     tapbacks: [],
     earlier_versions: [],
     matched_earlier_version: false,
+    deletion: null,
+    owner: null,
+    thread_originator_guid: null,
+    thread_originator_part: null,
     conversation: {
       id: 1,
       chat_identifier: "x",
       conversation_type: "individual",
       is_group: false,
       group_title: null,
-      participants: [{ identity: "+1555", name: "Ada", contact_id: null }],
+      label: null,
+      participants: [participant({ identity: "+1555", name: "Ada" })],
     },
     ...partial,
   };

@@ -16,6 +16,7 @@ import {
   restoreConversation,
 } from "../lib/serverApi";
 import type { Conversation } from "../lib/types";
+import { participant } from "../test/apiShapes";
 import { mockedAuth, Providers } from "../test/providers";
 import { setupUser } from "../test/user";
 import TrashScreen from "./TrashScreen";
@@ -74,7 +75,7 @@ const restoreContactMock = vi.mocked(restoreContact);
 function conversation(overrides: Partial<Conversation> = {}): Conversation {
   return {
     id: 42,
-    participants: [{ name: "Ada Lovelace" }],
+    participants: [participant({ name: "Ada Lovelace" })],
     message_count: 5,
     first_message_at: "2024-01-01T10:00:00Z",
     last_message_at: "2024-01-01T10:00:00Z",
@@ -88,7 +89,16 @@ function conversation(overrides: Partial<Conversation> = {}): Conversation {
 
 /** One trashed contact as `GET /v1/contacts?q=trashed:yes` returns it. */
 function contact(id: number, name: string) {
-  return { id, name, unknown: false, identity_count: 1, last_modified: "2026-09-04T00:00:00Z" };
+  return {
+    id,
+    name,
+    unknown: false,
+    identity_count: 1,
+    last_modified: "2026-09-04T00:00:00Z",
+    addresses: [],
+    groups: [],
+    last_heard_at: null,
+  };
 }
 
 function contactPage(items: ReturnType<typeof contact>[]) {
@@ -481,7 +491,10 @@ describe("TrashScreen", () => {
   it("does not show a Restore error from one conversation on the next one selected", async () => {
     restoreConversationMock.mockRejectedValue(new Error("Restore refused."));
     getConversationMock.mockImplementation(async (id) =>
-      conversation({ id, participants: [{ name: id === 42 ? "Ada Lovelace" : "Bob Kahn" }] }),
+      conversation({
+        id,
+        participants: [participant({ name: id === 42 ? "Ada Lovelace" : "Bob Kahn" })],
+      }),
     );
     // The left column selects a row by setting `tsel`, as AppLayout does.
     function SelectBob() {

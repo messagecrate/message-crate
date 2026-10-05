@@ -985,11 +985,11 @@ mod asset_ref_tests {
             &message_from(
                 "imessage",
                 json!([
-                    { "path": "attachments/menu.pdf", "sha256": "ab" },
-                    { "path": "/attachments/photo.png", "sha256": "cd" },
-                    { "sha256": " ef " },
-                    { "path": "attachments/no-fingerprint.txt" },
-                    { "path": "../no-fingerprint.txt" }
+                    { "path": "attachments/menu.pdf", "sha256": "ab", "is_sticker": false },
+                    { "path": "/attachments/photo.png", "sha256": "cd", "is_sticker": false },
+                    { "sha256": " ef ", "is_sticker": false },
+                    { "path": "attachments/no-fingerprint.txt", "is_sticker": false },
+                    { "path": "../no-fingerprint.txt", "is_sticker": false }
                 ]),
             ),
             &mut assets,
@@ -999,8 +999,8 @@ mod asset_ref_tests {
             &message_from(
                 "sms",
                 json!([
-                    { "path": "other/menu.pdf", "sha256": "ab" },
-                    { "path": "attachments/menu.pdf", "sha256": "ab" }
+                    { "path": "other/menu.pdf", "sha256": "ab", "is_sticker": false },
+                    { "path": "attachments/menu.pdf", "sha256": "ab", "is_sticker": false }
                 ]),
             ),
             &mut assets,

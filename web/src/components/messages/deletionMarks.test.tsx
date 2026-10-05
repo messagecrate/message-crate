@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { missingAttachmentChipLabel } from "../../lib/missingAttachmentLabel";
 import { TimeZoneContext } from "../../lib/timeZone";
 import type { Message } from "../../lib/types";
+import { attachment, participant } from "../../test/apiShapes";
 import type { MessageBubbleProps } from "./chatBubbleShared";
 import DiscordBubble from "./DiscordBubble";
 import ImessageBubble from "./ImessageBubble";
@@ -66,11 +67,11 @@ const BUBBLES: {
 ];
 
 /** An attachment the import kept without its file, so it draws as a chip and fetches nothing. */
-const ATTACHMENT = {
+const ATTACHMENT = attachment({
   original_name: "notes.pdf",
   mime_type: "application/pdf",
   missing_reason: "file_missing",
-};
+});
 const ATTACHMENT_LABEL = missingAttachmentChipLabel(ATTACHMENT);
 
 function message(partial: Partial<Message>): Message {
@@ -92,13 +93,18 @@ function message(partial: Partial<Message>): Message {
     tapbacks: [],
     earlier_versions: [],
     matched_earlier_version: false,
+    deletion: null,
+    owner: null,
+    thread_originator_guid: null,
+    thread_originator_part: null,
     conversation: {
       id: 1,
       chat_identifier: "+15555550100",
       conversation_type: "individual",
       is_group: false,
       group_title: null,
-      participants: [{ identity: "+15555550100", name: "Ada", contact_id: null }],
+      label: null,
+      participants: [participant({ identity: "+15555550100", name: "Ada" })],
     },
     ...partial,
   };

@@ -110,18 +110,27 @@ function message(id: number, conversationId: number): Message {
     is_announcement: false,
     is_reply: false,
     num_replies: 0,
+    sender: null,
     text: "photo",
     conversation: {
       id: conversationId,
       chat_identifier: "+1",
       conversation_type: "individual",
       is_group: false,
+      group_title: null,
+      label: null,
       participants: [],
     },
     attachments: [],
     tapbacks: [],
     earlier_versions: [],
     matched_earlier_version: false,
+    deletion: null,
+    owner: null,
+    service: null,
+    subject: null,
+    thread_originator_guid: null,
+    thread_originator_part: null,
   };
 }
 

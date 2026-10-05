@@ -7,6 +7,7 @@ import {
   senderName,
   tapbackGroups,
 } from "../components/messages/chatBubbleShared";
+import { participant } from "../test/apiShapes";
 import type { Message, MessageTapback } from "./types";
 
 function message(partial: Partial<Message> & Pick<Message, "conversation">): Message {
@@ -28,6 +29,10 @@ function message(partial: Partial<Message> & Pick<Message, "conversation">): Mes
     tapbacks: [],
     earlier_versions: [],
     matched_earlier_version: false,
+    deletion: null,
+    owner: null,
+    thread_originator_guid: null,
+    thread_originator_part: null,
     ...partial,
   };
 }
@@ -77,7 +82,8 @@ describe("senderName / namesSender", () => {
         conversation_type: "individual",
         is_group: false,
         group_title: null,
-        participants: [{ identity: "+1", name: "Ada", contact_id: null }],
+        label: null,
+        participants: [participant({ identity: "+1", name: "Ada" })],
       },
     });
     expect(senderName(m)).toBe("Me");
@@ -90,12 +96,12 @@ describe("senderName / namesSender", () => {
       conversation_type: "individual",
       is_group: false,
       group_title: null,
+      label: null,
       participants: [
-        {
+        participant({
           identity: "+1555",
           name: "Ada",
-          contact_id: null,
-        },
+        }),
       ],
     };
     const m = message({ sender: "+1555", conversation });
@@ -110,7 +116,8 @@ describe("senderName / namesSender", () => {
         conversation_type: "individual",
         is_group: false,
         group_title: null,
-        participants: [{ identity: "a", name: "A", contact_id: null }],
+        label: null,
+        participants: [participant({ identity: "a", name: "A" })],
       },
     });
     expect(namesSender(one)).toBe(false);
@@ -137,9 +144,10 @@ describe("senderName / namesSender", () => {
         conversation_type: "individual",
         is_group: false,
         group_title: null,
+        label: null,
         participants: [
-          { identity: "a", name: "A", contact_id: null },
-          { identity: "b", name: "B", contact_id: null },
+          participant({ identity: "a", name: "A" }),
+          participant({ identity: "b", name: "B" }),
         ],
       },
     });
@@ -164,9 +172,10 @@ const conversation = {
   conversation_type: "group",
   is_group: true,
   group_title: null,
+  label: null,
   participants: [
-    { identity: "+1555", name: "Ada", contact_id: null },
-    { identity: "+1556", name: "Bob", contact_id: null },
+    participant({ identity: "+1555", name: "Ada" }),
+    participant({ identity: "+1556", name: "Bob" }),
   ],
 };
 

@@ -216,7 +216,7 @@ async fn an_import_run_completes_before_its_thumbnails_are_made() {
     );
     for attachment in attachments(state, &alice, imported.conversation_id).await {
         assert!(
-            attachment.get("thumbnail_mime_type").is_none(),
+            attachment["thumbnail_mime_type"].is_null(),
             "no Thumbnail is made yet: {attachment}"
         );
     }
@@ -255,16 +255,16 @@ fn the_pass_makes_a_thumbnail_of_each_image_and_video_and_a_preview_only_for_hev
                 attachment["thumbnail_mime_type"], "image/jpeg",
                 "{attachment}"
             );
-            let preview = attachment.get("preview_mime_type");
+            let preview = &attachment["preview_mime_type"];
             if attachment["sha256"] == imported.hevc.as_str() {
-                assert_eq!(preview, Some(&serde_json::json!("video/mp4")));
+                assert_eq!(preview, "video/mp4");
             } else {
                 let sha = attachment["sha256"].as_str().unwrap();
                 assert!(
                     sha == imported.photo || sha == imported.h264,
                     "{attachment}"
                 );
-                assert_eq!(preview, None, "browsers show it as it is: {attachment}");
+                assert!(preview.is_null(), "browsers show it as it is: {attachment}");
             }
         }
 

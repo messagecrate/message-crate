@@ -6,6 +6,7 @@ import { CANNOT_PLAY_HERE, NO_PLAYABLE_COPY, STOPPED } from "../hooks/useStreame
 import { saveFile } from "../lib/saveFile";
 import { createMediaLink, fetchAsset, fetchAssetObjectUrl } from "../lib/serverApi";
 import type { Message, MessageAttachment } from "../lib/types";
+import { attachment, participant } from "../test/apiShapes";
 import { installIntersectionObserver, scrollNear } from "../test/intersectionObserver";
 import { renderWithProviders } from "../test/providers";
 import { setupUser } from "../test/user";
@@ -56,13 +57,18 @@ function message(attachments: MessageAttachment[]): Message {
     tapbacks: [],
     earlier_versions: [],
     matched_earlier_version: false,
+    deletion: null,
+    owner: null,
+    thread_originator_guid: null,
+    thread_originator_part: null,
     conversation: {
       id: 1,
       chat_identifier: "x",
       conversation_type: "individual",
       is_group: false,
       group_title: null,
-      participants: [{ identity: "+1555", name: "Ada", contact_id: null }],
+      label: null,
+      participants: [participant({ identity: "+1555", name: "Ada" })],
     },
   };
 }
@@ -74,20 +80,20 @@ function fetches(): { sha256: string; version: string | undefined }[] {
     .mock.calls.map(([sha256, options]) => ({ sha256, version: options?.version }));
 }
 
-const photo: MessageAttachment = {
+const photo = attachment({
   original_name: "cat.jpg",
   mime_type: "image/jpeg",
   sha256: "aaa",
   thumbnail_mime_type: "image/jpeg",
-};
+});
 
-const heic: MessageAttachment = {
+const heic = attachment({
   original_name: "IMG_0001.heic",
   mime_type: "image/heic",
   sha256: "bbb",
   preview_mime_type: "image/jpeg",
   thumbnail_mime_type: "image/jpeg",
-};
+});
 
 /**
  * A conversation holds thousands of photos, and a phone photo is megabytes.
@@ -168,7 +174,7 @@ describe("downloading an attachment", () => {
     renderWithProviders(
       <MessageAttachments
         message={message([
-          { original_name: "lease.pdf", mime_type: "application/pdf", sha256: "fff" },
+          attachment({ original_name: "lease.pdf", mime_type: "application/pdf", sha256: "fff" }),
         ])}
       />,
     );
@@ -184,7 +190,7 @@ describe("downloading an attachment", () => {
     renderWithProviders(
       <MessageAttachments
         message={message([
-          { original_name: "lease.pdf", mime_type: "application/pdf", sha256: "fff" },
+          attachment({ original_name: "lease.pdf", mime_type: "application/pdf", sha256: "fff" }),
         ])}
       />,
     );
@@ -203,13 +209,13 @@ describe("downloading an attachment", () => {
  * as its type decides (`docs/architecture/media.md`, rules 1, 2 and 5).
  */
 describe("a video in the conversation", () => {
-  const mov: MessageAttachment = {
+  const mov = attachment({
     original_name: "clip.mov",
     mime_type: "video/quicktime",
     sha256: "ccc",
     preview_mime_type: "video/mp4",
     thumbnail_mime_type: "image/jpeg",
-  };
+  });
 
   it("shows its Thumbnail and a play button, and loads nothing of the video until play", async () => {
     const user = setupUser();
@@ -238,7 +244,9 @@ describe("a video in the conversation", () => {
     const user = setupUser();
     renderWithProviders(
       <MessageAttachments
-        message={message([{ original_name: "clip.mp4", mime_type: "video/mp4", sha256: "ddd" }])}
+        message={message([
+          attachment({ original_name: "clip.mp4", mime_type: "video/mp4", sha256: "ddd" }),
+        ])}
       />,
     );
 
@@ -274,7 +282,9 @@ describe("a video in the conversation", () => {
     const user = setupUser();
     renderWithProviders(
       <MessageAttachments
-        message={message([{ original_name: "hevc.mp4", mime_type: "video/mp4", sha256: "ddd" }])}
+        message={message([
+          attachment({ original_name: "hevc.mp4", mime_type: "video/mp4", sha256: "ddd" }),
+        ])}
       />,
     );
     await user.click(screen.getByRole("button", { name: "Play hevc.mp4" }));
@@ -299,7 +309,7 @@ describe("a video in the conversation", () => {
     renderWithProviders(
       <MessageAttachments
         message={message([
-          { original_name: "clip.mov", mime_type: "video/quicktime", sha256: null },
+          attachment({ original_name: "clip.mov", mime_type: "video/quicktime", sha256: null }),
         ])}
       />,
     );
@@ -310,12 +320,12 @@ describe("a video in the conversation", () => {
 
 /** A voice note plays in the conversation, streamed only once play is pressed. */
 describe("a recording in the conversation", () => {
-  const amr: MessageAttachment = {
+  const amr = attachment({
     original_name: "voice.amr",
     mime_type: "audio/amr",
     sha256: "eee",
     preview_mime_type: "audio/mpeg",
-  };
+  });
 
   it("loads nothing until play, then streams the Preview of an AMR voice note", async () => {
     const user = setupUser();

@@ -4,6 +4,7 @@ import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchAssetObjectUrl } from "../../lib/serverApi";
 import type { Message } from "../../lib/types";
+import { attachment, participant } from "../../test/apiShapes";
 import {
   installIntersectionObserver,
   observersWithin,
@@ -41,13 +42,18 @@ function message(partial: Partial<Message> = {}): Message {
     tapbacks: [],
     earlier_versions: [],
     matched_earlier_version: false,
+    deletion: null,
+    owner: null,
+    thread_originator_guid: null,
+    thread_originator_part: null,
     conversation: {
       id: 1,
       chat_identifier: "x",
       conversation_type: "individual",
       is_group: false,
       group_title: null,
-      participants: [{ identity: "+1555", name: "Ada", contact_id: null }],
+      label: null,
+      participants: [participant({ identity: "+1555", name: "Ada" })],
     },
     ...partial,
   };
@@ -103,9 +109,10 @@ describe("MessageThread", () => {
       conversation_type: "group",
       is_group: true,
       group_title: null,
+      label: null,
       participants: [
-        { identity: "+15555550101", name: "Ada", contact_id: null },
-        { identity: "+15555550102", name: "Bo", contact_id: null },
+        participant({ identity: "+15555550101", name: "Ada" }),
+        participant({ identity: "+15555550102", name: "Bo" }),
       ],
     };
     const from = (id: number, sender: string, timestamp: string) =>
@@ -146,12 +153,12 @@ describe("MessageThread and attachments", () => {
       id,
       text: null,
       attachments: [
-        {
+        attachment({
           original_name: `${sha256}.jpg`,
           mime_type: "image/jpeg",
           sha256,
           thumbnail_mime_type: "image/jpeg",
-        },
+        }),
       ],
     });
   }

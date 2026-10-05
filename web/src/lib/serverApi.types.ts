@@ -1583,12 +1583,12 @@ export interface components {
              * @description Account id.
              */
             account_id: number;
-            app?: components["schemas"]["AppKind"] | null;
+            app: components["schemas"]["AppKind"] | null;
             /**
-             * @description The Build that app reported, such as `0.9.0+343fe0d8`. Present exactly
+             * @description The Build that app reported, such as `0.9.0+343fe0d8`. `null` exactly
              *     when `app` is.
              */
-            app_build?: string | null;
+            app_build: string | null;
             /** @description May destroy message data. */
             can_delete: boolean;
             /** @description May call the export endpoints. */
@@ -1613,7 +1613,7 @@ export interface components {
              *     has. Logging in, claiming Message Crate and registering all count; a
              *     password change does not.
              */
-            last_login_at?: string | null;
+            last_login_at: string | null;
             /**
              * Format: int64
              * @description Messages this account owns.
@@ -1629,7 +1629,7 @@ export interface components {
             /** @description Phone numbers linked to the account. */
             phones: string[];
             /** @description Display name, when set. */
-            preferred_name?: string | null;
+            preferred_name: string | null;
             /**
              * Format: int64
              * @description Attachment bytes this account stores, each stored file counted once.
@@ -1719,8 +1719,8 @@ export interface components {
             created_at: string;
             /** @description True when the token is disabled and rejects requests. */
             disabled: boolean;
-            /** @description Unix-seconds expiry; absent means no expiry. */
-            expires_at?: string | null;
+            /** @description Unix-seconds expiry; `null` means no expiry. */
+            expires_at: string | null;
             /**
              * Format: int64
              * @description Token id (the secret itself is stored hashed).
@@ -1728,13 +1728,13 @@ export interface components {
             id: number;
             /** @description User-chosen label shown in Settings. */
             label: string;
-            /** @description Unix-seconds string of last use; absent when never used. */
-            last_accessed_at?: string | null;
+            /** @description Unix-seconds string of last use; `null` when never used. */
+            last_accessed_at: string | null;
             /**
-             * @description Masked secret for Settings (e.g. `mc-api-Sd..mE`). Absent when the
+             * @description Masked secret for Settings (e.g. `mc-api-Sd..mE`). `null` when the
              *     owner lists another account's tokens: the hint is part of the secret.
              */
-            token_hint?: string | null;
+            token_hint: string | null;
         };
         /**
          * @description Which app a session's requests come from. The server records it beside the
@@ -1770,30 +1770,30 @@ export interface components {
         /** @description One attachment of an exported message. */
         Attachment: {
             /** @description True for sticker files. */
-            is_sticker?: boolean;
+            is_sticker: boolean;
             /** @description MIME type, when known. */
-            mime_type?: string | null;
+            mime_type: string | null;
             /** @description Why the file is missing, when it is. */
-            missing_reason?: string | null;
+            missing_reason: string | null;
             /** @description File name from the export. */
-            original_name?: string | null;
+            original_name: string | null;
             /** @description Path inside the export. */
-            path?: string | null;
+            path: string | null;
             /**
              * @description MIME type of the attachment's preview, when it has one. The
              *     preview's bytes are at `/v1/assets/{sha256}/preview`.
              */
-            preview_mime_type?: string | null;
+            preview_mime_type: string | null;
             /** @description Content fingerprint of the stored bytes. */
-            sha256?: string | null;
+            sha256: string | null;
             /**
              * @description MIME type of the attachment's thumbnail, once the server has made
-             *     it; absent until then. The thumbnail's bytes are at
+             *     it; `null` until then. The thumbnail's bytes are at
              *     `/v1/assets/{sha256}/thumbnail`.
              */
-            thumbnail_mime_type?: string | null;
+            thumbnail_mime_type: string | null;
             /** @description OCR/ASR transcription, when processed. */
-            transcription?: string | null;
+            transcription: string | null;
         };
         /**
          * @description What an entry records.
@@ -1808,8 +1808,8 @@ export interface components {
         /**
          * @description One entry of the Audit Trail as the interface hands it out: an entry of
          *     `audit_entries`, an Import Run, or an Export Run. `id` is the row's id in
-         *     its own table, so `action` and `id` together name an entry. Fields that do
-         *     not describe the action are left out.
+         *     its own table, so `action` and `id` together name an entry. Every field is
+         *     sent, and the ones that do not describe the action are `null`.
          */
         AuditEntry: {
             /**
@@ -1831,7 +1831,7 @@ export interface components {
             /** @description The API token's label as it was then. */
             api_token_label?: string | null;
             app?: components["schemas"]["AppKind"] | null;
-            /** @description That app's Build, such as `0.9.0+343fe0d8`. Present exactly when `app` is. */
+            /** @description That app's Build, such as `0.9.0+343fe0d8`. `null` exactly when `app` is. */
             app_build?: string | null;
             /**
              * @description When, RFC 3339 UTC: the run's start for a run, the expiry for a
@@ -1962,7 +1962,7 @@ export interface components {
              */
             group_conversations: number;
             /** @description Group names on this contact (A–Z). */
-            groups?: string[];
+            groups: string[];
             /**
              * Format: int64
              * @description Contact id.
@@ -2008,7 +2008,7 @@ export interface components {
          *     are left out of both.
          */
         ContactSelectionSummary: {
-            /** @description When the contact sent its last message; absent when it sent none. */
+            /** @description When the contact sent its last message; `null` when it sent none. */
             end_date?: string | null;
             /**
              * Format: int64
@@ -2037,7 +2037,7 @@ export interface components {
             individual_message_count: number;
             /** @description The contact's preferred name; empty when it has none. */
             name: string;
-            /** @description When the contact sent its first message; absent when it sent none. */
+            /** @description When the contact sent its first message; `null` when it sent none. */
             start_date?: string | null;
         };
         /** @description Contact row for the list: name, addresses, groups. */
@@ -2101,10 +2101,10 @@ export interface components {
         /** @description Conversation row for the list: participants, counts, tags. */
         ConversationSummary: {
             /**
-             * @description Timestamp of the conversation's first message. Left out when every
+             * @description Timestamp of the conversation's first message. `null` when every
              *     message in the conversation is a duplicate, so none is left to date it.
              */
-            first_message_at?: string | null;
+            first_message_at: string | null;
             /**
              * Format: int64
              * @description The conversation's id; search for it as `in:#<id>`.
@@ -2116,15 +2116,15 @@ export interface components {
              * @description The title the conversation is shown by: for a conversation the account
              *     holder has with themselves, the account's display name or, without
              *     one, the conversation's own address; for any other, the export's
-             *     title. Left out when there is none, and the conversation goes by its
+             *     title. `null` when there is none, and the conversation goes by its
              *     participants.
              */
-            label?: string | null;
+            label: string | null;
             /**
-             * @description Timestamp of the conversation's last message. Left out when every
+             * @description Timestamp of the conversation's last message. `null` when every
              *     message in the conversation is a duplicate, so none is left to date it.
              */
-            last_message_at?: string | null;
+            last_message_at: string | null;
             /**
              * Format: int64
              * @description Messages in the conversation (excluding hidden duplicates).
@@ -2153,14 +2153,14 @@ export interface components {
         };
         /**
          * @description The account that was created, and the Session a stranger's registration
-         *     opens on it. The owner's creation opens no session, so `token` is absent.
+         *     opens on it. The owner's creation opens no session, so `token` is `null`.
          */
         CreateAccountResponse: components["schemas"]["Account"] & {
             /**
-             * @description Session token to send as `Authorization: Bearer …`. Present only when
-             *     a stranger registered, because they are logged in on creation.
+             * @description Session token to send as `Authorization: Bearer …`. `null` unless a
+             *     stranger registered, because only they are logged in on creation.
              */
-            token?: string | null;
+            token: string | null;
         };
         /**
          * @description Body for creating a token: label, permissions, optional expiry. A token
@@ -2188,8 +2188,8 @@ export interface components {
             can_import: boolean;
             /** @description Creation time as a Unix-seconds string. */
             created_at: string;
-            /** @description Unix-seconds expiry; absent means no expiry. */
-            expires_at?: string | null;
+            /** @description Unix-seconds expiry; `null` means no expiry. */
+            expires_at: string | null;
             /**
              * Format: int64
              * @description Token id.
@@ -2210,11 +2210,11 @@ export interface components {
         };
         /** @description Upload id and part size, or the already-stored asset. */
         CreateAssetUploadResponse: {
-            already_present?: boolean;
-            assets_path?: string | null;
-            part_size?: number | null;
-            sha256?: string | null;
-            upload_id?: string | null;
+            already_present: boolean;
+            assets_path: string | null;
+            part_size: number | null;
+            sha256: string | null;
+            upload_id: string | null;
         };
         /** @description What an address book load changed. */
         CreateContactsResponse: {
@@ -2275,7 +2275,7 @@ export interface components {
         CreateImportBatchResponse: components["schemas"]["ImportCounts"] & {
             /** Format: int64 */
             account: number;
-            dedupe?: components["schemas"]["DedupeCounts"] | null;
+            dedupe: components["schemas"]["DedupeCounts"] | null;
             source: string;
         };
         /**
@@ -2406,8 +2406,8 @@ export interface components {
         /** @description The Demo Account, as the owner manages it. */
         DemoAccount: {
             /** @description Why the last build failed, while `status` is `failed`. */
-            error?: string | null;
-            size?: components["schemas"]["DemoDataSize"] | null;
+            error: string | null;
+            size: components["schemas"]["DemoDataSize"] | null;
             /** @description Whether it exists, is being built, or failed to build. */
             status: components["schemas"]["DemoAccountStatus"];
         };
@@ -2443,7 +2443,7 @@ export interface components {
              *     later version's is when the edit that wrote it was made. `None`
              *     when the source does not record it.
              */
-            edited_at?: string | null;
+            edited_at: string | null;
             /**
              * @description True when the message's `matched_earlier_version` is, and this
              *     version holds a free-text word of the query: the version a search
@@ -2483,7 +2483,7 @@ export interface components {
              */
             conversation_count: number;
             /** @description UTC time the run finished, when it has. */
-            finished_at?: string | null;
+            finished_at: string | null;
             /**
              * Format: int64
              * @description Export Run id.
@@ -2509,7 +2509,7 @@ export interface components {
             /** @description Lifecycle status. */
             status: components["schemas"]["ExportStatus"];
             /** @description Exporting tool, e.g. `message-crate-pull`, when the client named one. */
-            tool?: string | null;
+            tool: string | null;
             /**
              * Format: int64
              * @description Sum of the known sizes of those distinct attachments, in bytes.
@@ -2615,7 +2615,7 @@ export interface components {
              */
             direct_messages: number;
             /** @description When the newest such message was sent, or null when there is none. */
-            end_date?: string | null;
+            end_date: string | null;
             /**
              * Format: int64
              * @description The identity's messages in group conversations, on the same terms.
@@ -2627,7 +2627,7 @@ export interface components {
              * @description When the identity's oldest message was sent, or null when there is
              *     none.
              */
-            start_date?: string | null;
+            start_date: string | null;
         };
         /**
          * @description The service an identity is on, as a request names it: `phone` or
@@ -2815,7 +2815,7 @@ export interface components {
              * Format: int64
              * @description Time spent on attachments, when finished.
              */
-            attachments_ms?: number | null;
+            attachments_ms: number | null;
             /**
              * Format: int64
              * @description Bytes uploaded so far.
@@ -2834,14 +2834,14 @@ export interface components {
             /** @description Whether cross-source dedupe runs after each batch. */
             dedupe: boolean;
             /** @description Which install created the run. */
-            device_id?: string | null;
+            device_id: string | null;
             /**
              * Format: int64
              * @description Total wall-clock duration, when finished.
              */
-            duration_ms?: number | null;
+            duration_ms: number | null;
             /** @description UTC time the run finished, when it has. */
-            finished_at?: string | null;
+            finished_at: string | null;
             /** @description Import form snapshot, or null. */
             form: unknown;
             /**
@@ -2870,21 +2870,21 @@ export interface components {
              * Format: int64
              * @description Time spent parsing, when finished.
              */
-            parse_ms?: number | null;
+            parse_ms: number | null;
             /**
              * Format: int64
              * @description Time spent preparing conversation files, when finished.
              */
-            prepare_ms?: number | null;
+            prepare_ms: number | null;
             /** @description Source id the run imports. */
             source: string;
             /** @description Source path, size, mtime, and message count, or null. */
             source_fingerprint: unknown;
             /** @description Addresses the backup's device sent from (JSON array), or null. */
             source_identities: unknown;
-            stage?: components["schemas"]["ImportStage"] | null;
+            stage: components["schemas"]["ImportStage"] | null;
             /** @description Absolute path to the staging folder on the client that owns the run. */
-            staging_dir?: string | null;
+            staging_dir: string | null;
             /** @description UTC time the run started. */
             started_at: string;
             /** @description Lifecycle status. */
@@ -2895,12 +2895,12 @@ export interface components {
              */
             summary: unknown;
             /** @description Importing tool, e.g. `message-crate-push`. */
-            tool?: string | null;
+            tool: string | null;
             /**
              * Format: int64
              * @description Time spent uploading, when finished.
              */
-            upload_ms?: number | null;
+            upload_ms: number | null;
         };
         /**
          * @description Where a running Import Run is: a part of one of its Stages, or a Review
@@ -3044,7 +3044,7 @@ export interface components {
             attachments: components["schemas"]["Attachment"][];
             /** @description The conversation this message belongs to. */
             conversation: components["schemas"]["MessageConversation"];
-            deletion?: components["schemas"]["Deletion"] | null;
+            deletion: components["schemas"]["Deletion"] | null;
             /**
              * @description The earlier versions of an edited message, oldest first within
              *     each part; `text` is the final version. Empty for a message never
@@ -3085,14 +3085,14 @@ export interface components {
              *     sent from, or the one it was received at. `None` when the backup
              *     named no owner.
              */
-            owner?: string | null;
+            owner: string | null;
             /** @description The sender's identity, for incoming messages. */
-            sender?: string | null;
+            sender: string | null;
             /**
              * @description Platform service, e.g. `imessage`, when known. It rides on the
              *     message, never on the conversation.
              */
-            service?: string | null;
+            service: string | null;
             /**
              * Format: int64
              * @description Ordering key within the conversation.
@@ -3101,18 +3101,18 @@ export interface components {
             /** @description Import source id. */
             source: string;
             /** @description Subject line, when set. */
-            subject?: string | null;
+            subject: string | null;
             /** @description Reactions on this message. */
             tapbacks: components["schemas"]["Tapback"][];
             /** @description Body text, when present. */
-            text?: string | null;
+            text: string | null;
             /** @description GUID of the message this replies to. */
-            thread_originator_guid?: string | null;
+            thread_originator_guid: string | null;
             /**
              * Format: int64
              * @description Part index of the originator (for tapbacks).
              */
-            thread_originator_part?: number | null;
+            thread_originator_part: number | null;
             /**
              * @description The instant the message was sent: RFC 3339 in UTC with a `Z`
              *     suffix. A caller shows it in the account's time zone
@@ -3128,7 +3128,7 @@ export interface components {
             /** @description `individual` or `group`. */
             conversation_type: string;
             /** @description The title the export gave the conversation, when it gave one. */
-            group_title?: string | null;
+            group_title: string | null;
             /**
              * Format: int64
              * @description Conversation row id.
@@ -3145,10 +3145,10 @@ export interface components {
              *     `label` gives it: for a conversation the account holder has with
              *     themselves, the account's display name or, without one, the
              *     conversation's own address; for any other, the export's title.
-             *     Left out when there is none, and the conversation goes by its
+             *     `null` when there is none, and the conversation goes by its
              *     participants.
              */
-            label?: string | null;
+            label: string | null;
             /** @description Participants of the conversation. */
             participants: components["schemas"]["Participant"][];
         };
@@ -3226,7 +3226,7 @@ export interface components {
              * Format: int64
              * @description Time spent on attachments, when finished.
              */
-            attachments_ms?: number | null;
+            attachments_ms: number | null;
             /**
              * Format: int64
              * @description Bytes uploaded so far.
@@ -3254,9 +3254,9 @@ export interface components {
              * Format: int64
              * @description Total wall-clock duration, when finished.
              */
-            duration_ms?: number | null;
+            duration_ms: number | null;
             /** @description UTC time the run finished, when it has. */
-            finished_at?: string | null;
+            finished_at: string | null;
             /**
              * Format: int64
              * @description Import Run id.
@@ -3285,12 +3285,12 @@ export interface components {
              * Format: int64
              * @description Time spent parsing, when finished.
              */
-            parse_ms?: number | null;
+            parse_ms: number | null;
             /**
              * Format: int64
              * @description Time spent preparing conversation files, when finished.
              */
-            prepare_ms?: number | null;
+            prepare_ms: number | null;
             /** @description Source id the run imports. */
             source: string;
             /** @description UTC time the run started. */
@@ -3298,12 +3298,12 @@ export interface components {
             /** @description Lifecycle status. */
             status: components["schemas"]["ImportStatus"];
             /** @description Importing tool, e.g. `message-crate-push`. */
-            tool?: string | null;
+            tool: string | null;
             /**
              * Format: int64
              * @description Time spent uploading, when finished.
              */
-            upload_ms?: number | null;
+            upload_ms: number | null;
         };
         /** @description One page of a list. */
         Page_Account: {
@@ -3314,12 +3314,12 @@ export interface components {
                  * @description Account id.
                  */
                 account_id: number;
-                app?: components["schemas"]["AppKind"] | null;
+                app: components["schemas"]["AppKind"] | null;
                 /**
-                 * @description The Build that app reported, such as `0.9.0+343fe0d8`. Present exactly
+                 * @description The Build that app reported, such as `0.9.0+343fe0d8`. `null` exactly
                  *     when `app` is.
                  */
-                app_build?: string | null;
+                app_build: string | null;
                 /** @description May destroy message data. */
                 can_delete: boolean;
                 /** @description May call the export endpoints. */
@@ -3344,7 +3344,7 @@ export interface components {
                  *     has. Logging in, claiming Message Crate and registering all count; a
                  *     password change does not.
                  */
-                last_login_at?: string | null;
+                last_login_at: string | null;
                 /**
                  * Format: int64
                  * @description Messages this account owns.
@@ -3360,7 +3360,7 @@ export interface components {
                 /** @description Phone numbers linked to the account. */
                 phones: string[];
                 /** @description Display name, when set. */
-                preferred_name?: string | null;
+                preferred_name: string | null;
                 /**
                  * Format: int64
                  * @description Attachment bytes this account stores, each stored file counted once.
@@ -3396,8 +3396,8 @@ export interface components {
                 created_at: string;
                 /** @description True when the token is disabled and rejects requests. */
                 disabled: boolean;
-                /** @description Unix-seconds expiry; absent means no expiry. */
-                expires_at?: string | null;
+                /** @description Unix-seconds expiry; `null` means no expiry. */
+                expires_at: string | null;
                 /**
                  * Format: int64
                  * @description Token id (the secret itself is stored hashed).
@@ -3405,13 +3405,13 @@ export interface components {
                 id: number;
                 /** @description User-chosen label shown in Settings. */
                 label: string;
-                /** @description Unix-seconds string of last use; absent when never used. */
-                last_accessed_at?: string | null;
+                /** @description Unix-seconds string of last use; `null` when never used. */
+                last_accessed_at: string | null;
                 /**
-                 * @description Masked secret for Settings (e.g. `mc-api-Sd..mE`). Absent when the
+                 * @description Masked secret for Settings (e.g. `mc-api-Sd..mE`). `null` when the
                  *     owner lists another account's tokens: the hint is part of the secret.
                  */
-                token_hint?: string | null;
+                token_hint: string | null;
             }[];
             /** @description Page size used. */
             limit: number;
@@ -3432,7 +3432,7 @@ export interface components {
                  * @description The account the entry is about, or `null` when it is about none, or
                  *     the account has been deleted.
                  */
-                account_id?: number | null;
+                account_id: number | null;
                 /** @description What happened. */
                 action: components["schemas"]["AuditAction"];
                 /** @description Who acted. */
@@ -3442,12 +3442,12 @@ export interface components {
                  *     Only on the entries about the reader's own account: the owner never
                  *     reads another account's.
                  */
-                api_token_hint?: string | null;
+                api_token_hint: string | null;
                 /** @description The API token's label as it was then. */
-                api_token_label?: string | null;
-                app?: components["schemas"]["AppKind"] | null;
-                /** @description That app's Build, such as `0.9.0+343fe0d8`. Present exactly when `app` is. */
-                app_build?: string | null;
+                api_token_label: string | null;
+                app: components["schemas"]["AppKind"] | null;
+                /** @description That app's Build, such as `0.9.0+343fe0d8`. `null` exactly when `app` is. */
+                app_build: string | null;
                 /**
                  * @description When, RFC 3339 UTC: the run's start for a run, the expiry for a
                  *     session that expired.
@@ -3457,39 +3457,39 @@ export interface components {
                  * Format: int64
                  * @description Attachments a run accepted or matched, or deleted for good.
                  */
-                attachments?: number | null;
+                attachments: number | null;
                 /**
                  * Format: int64
                  * @description Bytes an Import Run uploaded, or an Export Run's attachments total.
                  */
-                bytes?: number | null;
+                bytes: number | null;
                 /**
                  * Format: int64
                  * @description Contacts forgotten when the trash was emptied, or written to an
                  *     exported address book.
                  */
-                contacts?: number | null;
+                contacts: number | null;
                 /**
                  * Format: int64
                  * @description `address_book_loaded`: contacts made.
                  */
-                contacts_created?: number | null;
+                contacts_created: number | null;
                 /**
                  * Format: int64
                  * @description `address_book_loaded`: contacts removed.
                  */
-                contacts_deleted?: number | null;
+                contacts_deleted: number | null;
                 /**
                  * Format: int64
                  * @description `address_book_loaded`: contacts renamed or changed.
                  */
-                contacts_updated?: number | null;
+                contacts_updated: number | null;
                 /**
                  * Format: int64
                  * @description Conversations an Export Run matched, or deleted for good.
                  */
-                conversations?: number | null;
-                credential?: components["schemas"]["RunCredential"] | null;
+                conversations: number | null;
+                credential: components["schemas"]["RunCredential"] | null;
                 /**
                  * Format: int64
                  * @description The row's id: the entry's, the Import Run's or the Export Run's. For a
@@ -3500,28 +3500,28 @@ export interface components {
                  * Format: int64
                  * @description Identities written to an exported address book.
                  */
-                identities?: number | null;
+                identities: number | null;
                 /**
                  * Format: int64
                  * @description Messages a run accepted or matched.
                  */
-                messages?: number | null;
-                mode?: components["schemas"]["LoadMode"] | null;
+                messages: number | null;
+                mode: components["schemas"]["LoadMode"] | null;
                 /** @description `permissions_changed`: permissions turned on. */
-                permissions_added?: components["schemas"]["Permission"][] | null;
+                permissions_added: components["schemas"]["Permission"][] | null;
                 /** @description `permissions_changed`: permissions turned off. */
-                permissions_removed?: components["schemas"]["Permission"][] | null;
-                reason?: components["schemas"]["AuditReason"] | null;
-                scope_kind?: components["schemas"]["ExportScopeKind"] | null;
-                scope_list?: components["schemas"]["ExportQueryList"] | null;
+                permissions_removed: components["schemas"]["Permission"][] | null;
+                reason: components["schemas"]["AuditReason"] | null;
+                scope_kind: components["schemas"]["ExportScopeKind"] | null;
+                scope_list: components["schemas"]["ExportQueryList"] | null;
                 /** @description An Import Run: the source it imported, such as `imessage`. */
-                source?: string | null;
-                status?: components["schemas"]["RunStatus"] | null;
+                source: string | null;
+                status: components["schemas"]["RunStatus"] | null;
                 /**
                  * @description The username of the account the entry is about, as it was; for a
                  *     refused login, the username as typed. Kept after the account is deleted.
                  */
-                username?: string | null;
+                username: string | null;
             }[];
             /** @description Page size used. */
             limit: number;
@@ -3537,8 +3537,8 @@ export interface components {
         Page_ContactSelectionSummary: {
             /** @description The rows on this page. */
             items: {
-                /** @description When the contact sent its last message; absent when it sent none. */
-                end_date?: string | null;
+                /** @description When the contact sent its last message; `null` when it sent none. */
+                end_date: string | null;
                 /**
                  * Format: int64
                  * @description Group conversations with the contact.
@@ -3566,8 +3566,8 @@ export interface components {
                 individual_message_count: number;
                 /** @description The contact's preferred name; empty when it has none. */
                 name: string;
-                /** @description When the contact sent its first message; absent when it sent none. */
-                start_date?: string | null;
+                /** @description When the contact sent its first message; `null` when it sent none. */
+                start_date: string | null;
             }[];
             /** @description Page size used. */
             limit: number;
@@ -3587,9 +3587,9 @@ export interface components {
                  * @description Normalized (and raw when distinct) address strings of the contact's
                  *     identities, for client-side filter and label.
                  */
-                addresses?: string[];
+                addresses: string[];
                 /** @description Group names on this contact (A–Z). */
-                groups?: string[];
+                groups: string[];
                 /**
                  * Format: int64
                  * @description Contact id.
@@ -3608,7 +3608,7 @@ export interface components {
                  *     account owner sent, or another member of a group chat, does not
                  *     count. The same question `last-message:` asks on Contacts.
                  */
-                last_heard_at?: string | null;
+                last_heard_at: string | null;
                 /** @description When the contact’s address-book shape last changed (`datetime('now')`). */
                 last_modified: string;
                 /** @description The contact's preferred name; empty when it has none. */
@@ -3666,10 +3666,10 @@ export interface components {
             /** @description The rows on this page. */
             items: {
                 /**
-                 * @description Timestamp of the conversation's first message. Left out when every
+                 * @description Timestamp of the conversation's first message. `null` when every
                  *     message in the conversation is a duplicate, so none is left to date it.
                  */
-                first_message_at?: string | null;
+                first_message_at: string | null;
                 /**
                  * Format: int64
                  * @description The conversation's id; search for it as `in:#<id>`.
@@ -3681,15 +3681,15 @@ export interface components {
                  * @description The title the conversation is shown by: for a conversation the account
                  *     holder has with themselves, the account's display name or, without
                  *     one, the conversation's own address; for any other, the export's
-                 *     title. Left out when there is none, and the conversation goes by its
+                 *     title. `null` when there is none, and the conversation goes by its
                  *     participants.
                  */
-                label?: string | null;
+                label: string | null;
                 /**
-                 * @description Timestamp of the conversation's last message. Left out when every
+                 * @description Timestamp of the conversation's last message. `null` when every
                  *     message in the conversation is a duplicate, so none is left to date it.
                  */
-                last_message_at?: string | null;
+                last_message_at: string | null;
                 /**
                  * Format: int64
                  * @description Messages in the conversation (excluding hidden duplicates).
@@ -3753,7 +3753,7 @@ export interface components {
                  */
                 conversation_count: number;
                 /** @description UTC time the run finished, when it has. */
-                finished_at?: string | null;
+                finished_at: string | null;
                 /**
                  * Format: int64
                  * @description Export Run id.
@@ -3779,7 +3779,7 @@ export interface components {
                 /** @description Lifecycle status. */
                 status: components["schemas"]["ExportStatus"];
                 /** @description Exporting tool, e.g. `message-crate-pull`, when the client named one. */
-                tool?: string | null;
+                tool: string | null;
                 /**
                  * Format: int64
                  * @description Sum of the known sizes of those distinct attachments, in bytes.
@@ -3845,7 +3845,7 @@ export interface components {
                  */
                 direct_messages: number;
                 /** @description When the newest such message was sent, or null when there is none. */
-                end_date?: string | null;
+                end_date: string | null;
                 /**
                  * Format: int64
                  * @description The identity's messages in group conversations, on the same terms.
@@ -3857,7 +3857,7 @@ export interface components {
                  * @description When the identity's oldest message was sent, or null when there is
                  *     none.
                  */
-                start_date?: string | null;
+                start_date: string | null;
             }[];
             /** @description Page size used. */
             limit: number;
@@ -3913,7 +3913,7 @@ export interface components {
                  * Format: int64
                  * @description Time spent on attachments, when finished.
                  */
-                attachments_ms?: number | null;
+                attachments_ms: number | null;
                 /**
                  * Format: int64
                  * @description Bytes uploaded so far.
@@ -3932,14 +3932,14 @@ export interface components {
                 /** @description Whether cross-source dedupe runs after each batch. */
                 dedupe: boolean;
                 /** @description Which install created the run. */
-                device_id?: string | null;
+                device_id: string | null;
                 /**
                  * Format: int64
                  * @description Total wall-clock duration, when finished.
                  */
-                duration_ms?: number | null;
+                duration_ms: number | null;
                 /** @description UTC time the run finished, when it has. */
-                finished_at?: string | null;
+                finished_at: string | null;
                 /** @description Import form snapshot, or null. */
                 form: unknown;
                 /**
@@ -3968,21 +3968,21 @@ export interface components {
                  * Format: int64
                  * @description Time spent parsing, when finished.
                  */
-                parse_ms?: number | null;
+                parse_ms: number | null;
                 /**
                  * Format: int64
                  * @description Time spent preparing conversation files, when finished.
                  */
-                prepare_ms?: number | null;
+                prepare_ms: number | null;
                 /** @description Source id the run imports. */
                 source: string;
                 /** @description Source path, size, mtime, and message count, or null. */
                 source_fingerprint: unknown;
                 /** @description Addresses the backup's device sent from (JSON array), or null. */
                 source_identities: unknown;
-                stage?: components["schemas"]["ImportStage"] | null;
+                stage: components["schemas"]["ImportStage"] | null;
                 /** @description Absolute path to the staging folder on the client that owns the run. */
-                staging_dir?: string | null;
+                staging_dir: string | null;
                 /** @description UTC time the run started. */
                 started_at: string;
                 /** @description Lifecycle status. */
@@ -3993,12 +3993,12 @@ export interface components {
                  */
                 summary: unknown;
                 /** @description Importing tool, e.g. `message-crate-push`. */
-                tool?: string | null;
+                tool: string | null;
                 /**
                  * Format: int64
                  * @description Time spent uploading, when finished.
                  */
-                upload_ms?: number | null;
+                upload_ms: number | null;
             }[];
             /** @description Page size used. */
             limit: number;
@@ -4048,7 +4048,7 @@ export interface components {
                 attachments: components["schemas"]["Attachment"][];
                 /** @description The conversation this message belongs to. */
                 conversation: components["schemas"]["MessageConversation"];
-                deletion?: components["schemas"]["Deletion"] | null;
+                deletion: components["schemas"]["Deletion"] | null;
                 /**
                  * @description The earlier versions of an edited message, oldest first within
                  *     each part; `text` is the final version. Empty for a message never
@@ -4089,14 +4089,14 @@ export interface components {
                  *     sent from, or the one it was received at. `None` when the backup
                  *     named no owner.
                  */
-                owner?: string | null;
+                owner: string | null;
                 /** @description The sender's identity, for incoming messages. */
-                sender?: string | null;
+                sender: string | null;
                 /**
                  * @description Platform service, e.g. `imessage`, when known. It rides on the
                  *     message, never on the conversation.
                  */
-                service?: string | null;
+                service: string | null;
                 /**
                  * Format: int64
                  * @description Ordering key within the conversation.
@@ -4105,18 +4105,18 @@ export interface components {
                 /** @description Import source id. */
                 source: string;
                 /** @description Subject line, when set. */
-                subject?: string | null;
+                subject: string | null;
                 /** @description Reactions on this message. */
                 tapbacks: components["schemas"]["Tapback"][];
                 /** @description Body text, when present. */
-                text?: string | null;
+                text: string | null;
                 /** @description GUID of the message this replies to. */
-                thread_originator_guid?: string | null;
+                thread_originator_guid: string | null;
                 /**
                  * Format: int64
                  * @description Part index of the originator (for tapbacks).
                  */
-                thread_originator_part?: number | null;
+                thread_originator_part: number | null;
                 /**
                  * @description The instant the message was sent: RFC 3339 in UTC with a `Z`
                  *     suffix. A caller shows it in the account's time zone
@@ -4168,7 +4168,7 @@ export interface components {
                  */
                 conversation_count: number;
                 /** @description UTC time the run finished, when it has. */
-                finished_at?: string | null;
+                finished_at: string | null;
                 /**
                  * Format: int64
                  * @description Export Run id.
@@ -4191,7 +4191,7 @@ export interface components {
                 /** @description Lifecycle status. */
                 status: components["schemas"]["ExportStatus"];
                 /** @description Exporting tool, e.g. `message-crate-pull`, when the client named one. */
-                tool?: string | null;
+                tool: string | null;
                 /**
                  * Format: int64
                  * @description Sum of the known sizes of those distinct attachments, in bytes.
@@ -4221,7 +4221,7 @@ export interface components {
                  * Format: int64
                  * @description Time spent on attachments, when finished.
                  */
-                attachments_ms?: number | null;
+                attachments_ms: number | null;
                 /**
                  * Format: int64
                  * @description Bytes uploaded so far.
@@ -4249,9 +4249,9 @@ export interface components {
                  * Format: int64
                  * @description Total wall-clock duration, when finished.
                  */
-                duration_ms?: number | null;
+                duration_ms: number | null;
                 /** @description UTC time the run finished, when it has. */
-                finished_at?: string | null;
+                finished_at: string | null;
                 /**
                  * Format: int64
                  * @description Import Run id.
@@ -4280,12 +4280,12 @@ export interface components {
                  * Format: int64
                  * @description Time spent parsing, when finished.
                  */
-                parse_ms?: number | null;
+                parse_ms: number | null;
                 /**
                  * Format: int64
                  * @description Time spent preparing conversation files, when finished.
                  */
-                prepare_ms?: number | null;
+                prepare_ms: number | null;
                 /** @description Source id the run imports. */
                 source: string;
                 /** @description UTC time the run started. */
@@ -4293,12 +4293,12 @@ export interface components {
                 /** @description Lifecycle status. */
                 status: components["schemas"]["ImportStatus"];
                 /** @description Importing tool, e.g. `message-crate-push`. */
-                tool?: string | null;
+                tool: string | null;
                 /**
                  * Format: int64
                  * @description Time spent uploading, when finished.
                  */
-                upload_ms?: number | null;
+                upload_ms: number | null;
             }[];
             /** @description Page size used. */
             limit: number;
@@ -4378,13 +4378,13 @@ export interface components {
              *     them. Matches the `id` every other contact shape uses, so a caller
              *     can compare the two without converting either.
              */
-            contact_id?: number | null;
+            contact_id: number | null;
             /**
              * @description The identity as the source wrote it: a phone number, email address
              *     or username. `None` when the source named this person without
              *     recording any address for them.
              */
-            identity?: string | null;
+            identity: string | null;
             /**
              * @description What to show for this person. Never empty — the server falls back to
              *     the identity when nothing else names them, and to the name alone for
@@ -4395,7 +4395,7 @@ export interface components {
              * @description Platform service, e.g. `imessage`. `None` for the same reason as
              *     `identity`: with no address there is nothing to carry a service on.
              */
-            service?: string | null;
+            service: string | null;
         };
         /**
          * @description One of the three permissions, by name: what the Audit Trail lists when the
@@ -4643,12 +4643,12 @@ export interface components {
             /** Format: int64 */
             account_id: number;
             sources: string[];
-            username?: string | null;
+            username: string | null;
         };
         /** @description One tapback reaction on an exported message. */
         Tapback: {
             /** @description Emoji form of the reaction, when one exists. */
-            emoji?: string | null;
+            emoji: string | null;
             /** @description True when the account owner reacted. */
             is_from_me: boolean;
             /** @description Reaction type, e.g. `love`. */
@@ -4659,30 +4659,30 @@ export interface components {
              */
             part_index: number;
             /** @description The identity that reacted, for incoming reactions. */
-            sender?: string | null;
+            sender: string | null;
         };
         /** @description One of an account's largest attachments by byte size. */
         TopAttachment: {
             /** @description Raw text of the identity that keys the conversation. */
-            chat_identifier?: string | null;
+            chat_identifier: string | null;
             /**
              * Format: int64
              * @description Conversation that holds the attachment. Like the two fields after it,
-             *     absent when the owner reads another account's storage: which
+             *     `null` when the owner reads another account's storage: which
              *     conversation a file is in, and who it is with, is the holder's.
              */
-            conversation_id?: number | null;
+            conversation_id: number | null;
             /** @description Conversation label, when set. */
-            conversation_title?: string | null;
+            conversation_title: string | null;
             /**
              * Format: int64
              * @description Attachment id.
              */
             id: number;
             /** @description MIME type, when known. */
-            mime_type?: string | null;
+            mime_type: string | null;
             /** @description File name from the export. */
-            original_name?: string | null;
+            original_name: string | null;
             /**
              * Format: int64
              * @description Attachment byte size.

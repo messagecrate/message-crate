@@ -23,13 +23,13 @@ export type ApiTokenItem = {
   label: string;
   can_import: boolean;
   can_export: boolean;
-  /** Masked secret, e.g. `mc-api-Sd..mE`. Absent in the owner's list of another account's tokens. */
-  token_hint?: string | null;
+  /** Masked secret, e.g. `mc-api-Sd..mE`. Null in the owner's list of another account's tokens. */
+  token_hint: string | null;
   created_at: string;
-  /** Unix seconds string, or null/absent if never used. */
-  last_accessed_at?: string | null;
-  /** Unix seconds string, absent when the token never expires. */
-  expires_at?: string | null;
+  /** Unix seconds string, or null if never used. */
+  last_accessed_at: string | null;
+  /** Unix seconds string, or null when the token never expires. */
+  expires_at: string | null;
 };
 
 export const thClass = "px-3 py-2 text-left text-[0.75rem] font-bold text-muted";

@@ -12787,7 +12787,11 @@
           "can_export",
           "can_delete",
           "message_count",
-          "storage_bytes"
+          "storage_bytes",
+          "app",
+          "app_build",
+          "last_login_at",
+          "preferred_name"
         ],
         "properties": {
           "account_id": {
@@ -12811,7 +12815,7 @@
               "string",
               "null"
             ],
-            "description": "The Build that app reported, such as `0.9.0+343fe0d8`. Present exactly\nwhen `app` is."
+            "description": "The Build that app reported, such as `0.9.0+343fe0d8`. `null` exactly\nwhen `app` is."
           },
           "can_delete": {
             "type": "boolean",
@@ -13039,7 +13043,10 @@
           "can_import",
           "can_export",
           "created_at",
-          "disabled"
+          "disabled",
+          "expires_at",
+          "last_accessed_at",
+          "token_hint"
         ],
         "properties": {
           "can_export": {
@@ -13063,7 +13070,7 @@
               "string",
               "null"
             ],
-            "description": "Unix-seconds expiry; absent means no expiry."
+            "description": "Unix-seconds expiry; `null` means no expiry."
           },
           "id": {
             "type": "integer",
@@ -13079,14 +13086,14 @@
               "string",
               "null"
             ],
-            "description": "Unix-seconds string of last use; absent when never used."
+            "description": "Unix-seconds string of last use; `null` when never used."
           },
           "token_hint": {
             "type": [
               "string",
               "null"
             ],
-            "description": "Masked secret for Settings (e.g. `mc-api-Sd..mE`). Absent when the\nowner lists another account's tokens: the hint is part of the secret."
+            "description": "Masked secret for Settings (e.g. `mc-api-Sd..mE`). `null` when the\nowner lists another account's tokens: the hint is part of the secret."
           }
         }
       },
@@ -13161,6 +13168,17 @@
       "Attachment": {
         "type": "object",
         "description": "One attachment of an exported message.",
+        "required": [
+          "is_sticker",
+          "mime_type",
+          "missing_reason",
+          "original_name",
+          "path",
+          "preview_mime_type",
+          "sha256",
+          "thumbnail_mime_type",
+          "transcription"
+        ],
         "properties": {
           "is_sticker": {
             "type": "boolean",
@@ -13213,7 +13231,7 @@
               "string",
               "null"
             ],
-            "description": "MIME type of the attachment's thumbnail, once the server has made\nit; absent until then. The thumbnail's bytes are at\n`/v1/assets/{sha256}/thumbnail`."
+            "description": "MIME type of the attachment's thumbnail, once the server has made\nit; `null` until then. The thumbnail's bytes are at\n`/v1/assets/{sha256}/thumbnail`."
           },
           "transcription": {
             "type": [
@@ -13263,7 +13281,7 @@
       },
       "AuditEntry": {
         "type": "object",
-        "description": "One entry of the Audit Trail as the interface hands it out: an entry of\n`audit_entries`, an Import Run, or an Export Run. `id` is the row's id in\nits own table, so `action` and `id` together name an entry. Fields that do\nnot describe the action are left out.",
+        "description": "One entry of the Audit Trail as the interface hands it out: an entry of\n`audit_entries`, an Import Run, or an Export Run. `id` is the row's id in\nits own table, so `action` and `id` together name an entry. Every field is\nsent, and the ones that do not describe the action are `null`.",
         "required": [
           "id",
           "action",
@@ -13317,7 +13335,7 @@
               "string",
               "null"
             ],
-            "description": "That app's Build, such as `0.9.0+343fe0d8`. Present exactly when `app` is."
+            "description": "That app's Build, such as `0.9.0+343fe0d8`. `null` exactly when `app` is."
           },
           "at": {
             "type": "string",
@@ -13383,7 +13401,7 @@
             "oneOf": [
               {
                 "$ref": "#/components/schemas/RunCredential",
-                "description": "A run: what started it. Absent for a run the server started itself."
+                "description": "A run: what started it. `null` for a run the server started itself."
               },
               {
                 "type": "null"
@@ -13613,7 +13631,8 @@
           "direct_conversations",
           "group_conversations",
           "total_messages",
-          "last_modified"
+          "last_modified",
+          "groups"
         ],
         "properties": {
           "direct_conversations": {
@@ -13694,7 +13713,7 @@
               "string",
               "null"
             ],
-            "description": "When the contact sent its last message; absent when it sent none."
+            "description": "When the contact sent its last message; `null` when it sent none."
           },
           "group_conversations": {
             "type": "integer",
@@ -13734,7 +13753,7 @@
               "string",
               "null"
             ],
-            "description": "When the contact sent its first message; absent when it sent none."
+            "description": "When the contact sent its first message; `null` when it sent none."
           }
         }
       },
@@ -13837,7 +13856,10 @@
           "message_count",
           "service",
           "is_group",
-          "tags"
+          "tags",
+          "first_message_at",
+          "label",
+          "last_message_at"
         ],
         "properties": {
           "first_message_at": {
@@ -13845,7 +13867,7 @@
               "string",
               "null"
             ],
-            "description": "Timestamp of the conversation's first message. Left out when every\nmessage in the conversation is a duplicate, so none is left to date it."
+            "description": "Timestamp of the conversation's first message. `null` when every\nmessage in the conversation is a duplicate, so none is left to date it."
           },
           "id": {
             "type": "integer",
@@ -13861,14 +13883,14 @@
               "string",
               "null"
             ],
-            "description": "The title the conversation is shown by: for a conversation the account\nholder has with themselves, the account's display name or, without\none, the conversation's own address; for any other, the export's\ntitle. Left out when there is none, and the conversation goes by its\nparticipants."
+            "description": "The title the conversation is shown by: for a conversation the account\nholder has with themselves, the account's display name or, without\none, the conversation's own address; for any other, the export's\ntitle. `null` when there is none, and the conversation goes by its\nparticipants."
           },
           "last_message_at": {
             "type": [
               "string",
               "null"
             ],
-            "description": "Timestamp of the conversation's last message. Left out when every\nmessage in the conversation is a duplicate, so none is left to date it."
+            "description": "Timestamp of the conversation's last message. `null` when every\nmessage in the conversation is a duplicate, so none is left to date it."
           },
           "message_count": {
             "type": "integer",
@@ -13938,18 +13960,21 @@
           },
           {
             "type": "object",
+            "required": [
+              "token"
+            ],
             "properties": {
               "token": {
                 "type": [
                   "string",
                   "null"
                 ],
-                "description": "Session token to send as `Authorization: Bearer …`. Present only when\na stranger registered, because they are logged in on creation."
+                "description": "Session token to send as `Authorization: Bearer …`. `null` unless a\nstranger registered, because only they are logged in on creation."
               }
             }
           }
         ],
-        "description": "The account that was created, and the Session a stranger's registration\nopens on it. The owner's creation opens no session, so `token` is absent."
+        "description": "The account that was created, and the Session a stranger's registration\nopens on it. The owner's creation opens no session, so `token` is `null`."
       },
       "CreateApiTokenRequest": {
         "type": "object",
@@ -13992,7 +14017,8 @@
           "can_export",
           "created_at",
           "token",
-          "token_hint"
+          "token_hint",
+          "expires_at"
         ],
         "properties": {
           "can_export": {
@@ -14012,7 +14038,7 @@
               "string",
               "null"
             ],
-            "description": "Unix-seconds expiry; absent means no expiry."
+            "description": "Unix-seconds expiry; `null` means no expiry."
           },
           "id": {
             "type": "integer",
@@ -14056,6 +14082,13 @@
       "CreateAssetUploadResponse": {
         "type": "object",
         "description": "Upload id and part size, or the already-stored asset.",
+        "required": [
+          "already_present",
+          "assets_path",
+          "part_size",
+          "sha256",
+          "upload_id"
+        ],
         "properties": {
           "already_present": {
             "type": "boolean"
@@ -14181,7 +14214,8 @@
             "type": "object",
             "required": [
               "source",
-              "account"
+              "account",
+              "dedupe"
             ],
             "properties": {
               "account": {
@@ -14470,7 +14504,9 @@
         "type": "object",
         "description": "The Demo Account, as the owner manages it.",
         "required": [
-          "status"
+          "status",
+          "error",
+          "size"
         ],
         "properties": {
           "error": {
@@ -14545,7 +14581,8 @@
         "required": [
           "part_index",
           "text",
-          "matched"
+          "matched",
+          "edited_at"
         ],
         "properties": {
           "edited_at": {
@@ -14590,7 +14627,9 @@
           "conversation_count",
           "attachment_count",
           "total_bytes",
-          "messages_delivered"
+          "messages_delivered",
+          "finished_at",
+          "tool"
         ],
         "properties": {
           "attachment_count": {
@@ -14811,7 +14850,9 @@
           "service",
           "conversations",
           "direct_messages",
-          "group_messages"
+          "group_messages",
+          "end_date",
+          "start_date"
         ],
         "properties": {
           "address": {
@@ -15164,7 +15205,17 @@
           "issue_count",
           "note_count",
           "contacts_new",
-          "contacts_changed"
+          "contacts_changed",
+          "attachments_ms",
+          "device_id",
+          "duration_ms",
+          "finished_at",
+          "parse_ms",
+          "prepare_ms",
+          "stage",
+          "staging_dir",
+          "tool",
+          "upload_ms"
         ],
         "properties": {
           "attachment_count": {
@@ -15560,7 +15611,15 @@
           "attachments",
           "tapbacks",
           "earlier_versions",
-          "matched_earlier_version"
+          "matched_earlier_version",
+          "deletion",
+          "owner",
+          "sender",
+          "service",
+          "subject",
+          "text",
+          "thread_originator_guid",
+          "thread_originator_part"
         ],
         "properties": {
           "attachments": {
@@ -15702,7 +15761,9 @@
           "chat_identifier",
           "conversation_type",
           "is_group",
-          "participants"
+          "participants",
+          "group_title",
+          "label"
         ],
         "properties": {
           "chat_identifier": {
@@ -15734,7 +15795,7 @@
               "string",
               "null"
             ],
-            "description": "The title the conversation is shown by, as the conversation list's\n`label` gives it: for a conversation the account holder has with\nthemselves, the account's display name or, without one, the\nconversation's own address; for any other, the export's title.\nLeft out when there is none, and the conversation goes by its\nparticipants."
+            "description": "The title the conversation is shown by, as the conversation list's\n`label` gives it: for a conversation the account holder has with\nthemselves, the account's display name or, without one, the\nconversation's own address; for any other, the export's title.\n`null` when there is none, and the conversation goes by its\nparticipants."
           },
           "participants": {
             "type": "array",
@@ -15851,7 +15912,14 @@
           "issue_count",
           "note_count",
           "contacts_new",
-          "contacts_changed"
+          "contacts_changed",
+          "attachments_ms",
+          "duration_ms",
+          "finished_at",
+          "parse_ms",
+          "prepare_ms",
+          "tool",
+          "upload_ms"
         ],
         "properties": {
           "attachment_count": {
@@ -16011,7 +16079,11 @@
                 "can_export",
                 "can_delete",
                 "message_count",
-                "storage_bytes"
+                "storage_bytes",
+                "app",
+                "app_build",
+                "last_login_at",
+                "preferred_name"
               ],
               "properties": {
                 "account_id": {
@@ -16035,7 +16107,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "The Build that app reported, such as `0.9.0+343fe0d8`. Present exactly\nwhen `app` is."
+                  "description": "The Build that app reported, such as `0.9.0+343fe0d8`. `null` exactly\nwhen `app` is."
                 },
                 "can_delete": {
                   "type": "boolean",
@@ -16158,7 +16230,10 @@
                 "can_import",
                 "can_export",
                 "created_at",
-                "disabled"
+                "disabled",
+                "expires_at",
+                "last_accessed_at",
+                "token_hint"
               ],
               "properties": {
                 "can_export": {
@@ -16182,7 +16257,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "Unix-seconds expiry; absent means no expiry."
+                  "description": "Unix-seconds expiry; `null` means no expiry."
                 },
                 "id": {
                   "type": "integer",
@@ -16198,14 +16273,14 @@
                     "string",
                     "null"
                   ],
-                  "description": "Unix-seconds string of last use; absent when never used."
+                  "description": "Unix-seconds string of last use; `null` when never used."
                 },
                 "token_hint": {
                   "type": [
                     "string",
                     "null"
                   ],
-                  "description": "Masked secret for Settings (e.g. `mc-api-Sd..mE`). Absent when the\nowner lists another account's tokens: the hint is part of the secret."
+                  "description": "Masked secret for Settings (e.g. `mc-api-Sd..mE`). `null` when the\nowner lists another account's tokens: the hint is part of the secret."
                 }
               }
             },
@@ -16243,12 +16318,36 @@
             "type": "array",
             "items": {
               "type": "object",
-              "description": "One entry of the Audit Trail as the interface hands it out: an entry of\n`audit_entries`, an Import Run, or an Export Run. `id` is the row's id in\nits own table, so `action` and `id` together name an entry. Fields that do\nnot describe the action are left out.",
+              "description": "One entry of the Audit Trail as the interface hands it out: an entry of\n`audit_entries`, an Import Run, or an Export Run. `id` is the row's id in\nits own table, so `action` and `id` together name an entry. Every field is\nsent, and the ones that do not describe the action are `null`.",
               "required": [
                 "id",
                 "action",
                 "at",
-                "actor"
+                "actor",
+                "account_id",
+                "api_token_hint",
+                "api_token_label",
+                "app",
+                "app_build",
+                "attachments",
+                "bytes",
+                "contacts",
+                "contacts_created",
+                "contacts_deleted",
+                "contacts_updated",
+                "conversations",
+                "credential",
+                "identities",
+                "messages",
+                "mode",
+                "permissions_added",
+                "permissions_removed",
+                "reason",
+                "scope_kind",
+                "scope_list",
+                "source",
+                "status",
+                "username"
               ],
               "properties": {
                 "account_id": {
@@ -16297,7 +16396,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "That app's Build, such as `0.9.0+343fe0d8`. Present exactly when `app` is."
+                  "description": "That app's Build, such as `0.9.0+343fe0d8`. `null` exactly when `app` is."
                 },
                 "at": {
                   "type": "string",
@@ -16363,7 +16462,7 @@
                   "oneOf": [
                     {
                       "$ref": "#/components/schemas/RunCredential",
-                      "description": "A run: what started it. Absent for a run the server started itself."
+                      "description": "A run: what started it. `null` for a run the server started itself."
                     },
                     {
                       "type": "null"
@@ -16523,7 +16622,9 @@
                 "individual_conversations",
                 "group_conversations",
                 "individual_message_count",
-                "group_message_count"
+                "group_message_count",
+                "end_date",
+                "start_date"
               ],
               "properties": {
                 "end_date": {
@@ -16531,7 +16632,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "When the contact sent its last message; absent when it sent none."
+                  "description": "When the contact sent its last message; `null` when it sent none."
                 },
                 "group_conversations": {
                   "type": "integer",
@@ -16571,7 +16672,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "When the contact sent its first message; absent when it sent none."
+                  "description": "When the contact sent its first message; `null` when it sent none."
                 }
               }
             },
@@ -16615,7 +16716,10 @@
                 "name",
                 "unknown",
                 "identity_count",
-                "last_modified"
+                "last_modified",
+                "addresses",
+                "groups",
+                "last_heard_at"
               ],
               "properties": {
                 "addresses": {
@@ -16770,7 +16874,10 @@
                 "message_count",
                 "service",
                 "is_group",
-                "tags"
+                "tags",
+                "first_message_at",
+                "label",
+                "last_message_at"
               ],
               "properties": {
                 "first_message_at": {
@@ -16778,7 +16885,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "Timestamp of the conversation's first message. Left out when every\nmessage in the conversation is a duplicate, so none is left to date it."
+                  "description": "Timestamp of the conversation's first message. `null` when every\nmessage in the conversation is a duplicate, so none is left to date it."
                 },
                 "id": {
                   "type": "integer",
@@ -16794,14 +16901,14 @@
                     "string",
                     "null"
                   ],
-                  "description": "The title the conversation is shown by: for a conversation the account\nholder has with themselves, the account's display name or, without\none, the conversation's own address; for any other, the export's\ntitle. Left out when there is none, and the conversation goes by its\nparticipants."
+                  "description": "The title the conversation is shown by: for a conversation the account\nholder has with themselves, the account's display name or, without\none, the conversation's own address; for any other, the export's\ntitle. `null` when there is none, and the conversation goes by its\nparticipants."
                 },
                 "last_message_at": {
                   "type": [
                     "string",
                     "null"
                   ],
-                  "description": "Timestamp of the conversation's last message. Left out when every\nmessage in the conversation is a duplicate, so none is left to date it."
+                  "description": "Timestamp of the conversation's last message. `null` when every\nmessage in the conversation is a duplicate, so none is left to date it."
                 },
                 "message_count": {
                   "type": "integer",
@@ -16929,7 +17036,9 @@
                 "conversation_count",
                 "attachment_count",
                 "total_bytes",
-                "messages_delivered"
+                "messages_delivered",
+                "finished_at",
+                "tool"
               ],
               "properties": {
                 "attachment_count": {
@@ -17098,7 +17207,9 @@
                 "service",
                 "conversations",
                 "direct_messages",
-                "group_messages"
+                "group_messages",
+                "end_date",
+                "start_date"
               ],
               "properties": {
                 "address": {
@@ -17251,7 +17362,17 @@
                 "issue_count",
                 "note_count",
                 "contacts_new",
-                "contacts_changed"
+                "contacts_changed",
+                "attachments_ms",
+                "device_id",
+                "duration_ms",
+                "finished_at",
+                "parse_ms",
+                "prepare_ms",
+                "stage",
+                "staging_dir",
+                "tool",
+                "upload_ms"
               ],
               "properties": {
                 "attachment_count": {
@@ -17523,7 +17644,15 @@
                 "attachments",
                 "tapbacks",
                 "earlier_versions",
-                "matched_earlier_version"
+                "matched_earlier_version",
+                "deletion",
+                "owner",
+                "sender",
+                "service",
+                "subject",
+                "text",
+                "thread_originator_guid",
+                "thread_originator_part"
               ],
               "properties": {
                 "attachments": {
@@ -17750,7 +17879,9 @@
                 "conversation_count",
                 "attachment_count",
                 "total_bytes",
-                "messages_delivered"
+                "messages_delivered",
+                "finished_at",
+                "tool"
               ],
               "properties": {
                 "attachment_count": {
@@ -17859,7 +17990,14 @@
                 "issue_count",
                 "note_count",
                 "contacts_new",
-                "contacts_changed"
+                "contacts_changed",
+                "attachments_ms",
+                "duration_ms",
+                "finished_at",
+                "parse_ms",
+                "prepare_ms",
+                "tool",
+                "upload_ms"
               ],
               "properties": {
                 "attachment_count": {
@@ -18145,7 +18283,10 @@
         "type": "object",
         "description": "One participant of a conversation, carrying the name to show for them:\nthe Contact's name, else what that backup called them in that\nconversation, else the identity.",
         "required": [
-          "name"
+          "name",
+          "contact_id",
+          "identity",
+          "service"
         ],
         "properties": {
           "contact_id": {
@@ -18543,7 +18684,8 @@
         "description": "The logged-in credential's account, username, and import sources.",
         "required": [
           "sources",
-          "account_id"
+          "account_id",
+          "username"
         ],
         "properties": {
           "account_id": {
@@ -18570,7 +18712,9 @@
         "required": [
           "part_index",
           "kind",
-          "is_from_me"
+          "is_from_me",
+          "emoji",
+          "sender"
         ],
         "properties": {
           "emoji": {
@@ -18607,7 +18751,12 @@
         "description": "One of an account's largest attachments by byte size.",
         "required": [
           "id",
-          "size_bytes"
+          "size_bytes",
+          "chat_identifier",
+          "conversation_id",
+          "conversation_title",
+          "mime_type",
+          "original_name"
         ],
         "properties": {
           "chat_identifier": {
@@ -18623,7 +18772,7 @@
               "null"
             ],
             "format": "int64",
-            "description": "Conversation that holds the attachment. Like the two fields after it,\nabsent when the owner reads another account's storage: which\nconversation a file is in, and who it is with, is the holder's."
+            "description": "Conversation that holds the attachment. Like the two fields after it,\n`null` when the owner reads another account's storage: which\nconversation a file is in, and who it is with, is the holder's."
           },
           "conversation_title": {
             "type": [

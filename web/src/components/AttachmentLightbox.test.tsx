@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { saveFile } from "../lib/saveFile";
 import { fetchAsset, fetchAssetObjectUrl } from "../lib/serverApi";
 import type { MessageAttachment } from "../lib/types";
+import { attachment } from "../test/apiShapes";
 import { renderWithProviders } from "../test/providers";
 import { setupUser } from "../test/user";
 import AttachmentLightbox from "./AttachmentLightbox";
@@ -18,22 +19,22 @@ vi.mock("../lib/saveFile", () => ({ saveFile: vi.fn() }));
 const render = renderWithProviders;
 
 const items: MessageAttachment[] = [
-  {
+  attachment({
     path: "first.png",
     original_name: "first.png",
     mime_type: "image/png",
     sha256: "aaa",
     is_sticker: false,
     transcription: null,
-  },
-  {
+  }),
+  attachment({
     path: "second.png",
     original_name: "second.png",
     mime_type: "image/png",
     sha256: "bbb",
     is_sticker: false,
     transcription: null,
-  },
+  }),
 ];
 
 beforeEach(() => {
@@ -168,17 +169,17 @@ describe("AttachmentLightbox buttons", () => {
  * often cannot, and neither while that Preview is not made yet.
  */
 describe("AttachmentLightbox and the type rule", () => {
-  const jpeg: MessageAttachment = {
+  const jpeg = attachment({
     original_name: "IMG_0002.jpg",
     mime_type: "image/jpeg",
     sha256: "jjj",
-  };
-  const heic: MessageAttachment = {
+  });
+  const heic = attachment({
     original_name: "IMG_0001.heic",
     mime_type: "image/heic",
     sha256: "ccc",
     preview_mime_type: "image/jpeg",
-  };
+  });
 
   it("opens a JPEG's original", async () => {
     open(0, [jpeg]);

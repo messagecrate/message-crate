@@ -3,6 +3,7 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Message } from "../lib/types";
+import { attachment, participant } from "../test/apiShapes";
 import { inTimeZone } from "../test/timeZone";
 import MessageSearchRow from "./MessageSearchRow";
 
@@ -33,14 +34,20 @@ function message(over: Partial<Message> = {}): Message {
       group_title: "Family",
       label: "Family",
       participants: [
-        { name: "Alice", identity: "+15555550100" },
-        { name: "Bob", identity: "+15555550200" },
+        participant({ name: "Alice", identity: "+15555550100" }),
+        participant({ name: "Bob", identity: "+15555550200" }),
       ],
     },
     attachments: [],
     tapbacks: [],
     earlier_versions: [],
     matched_earlier_version: false,
+    deletion: null,
+    owner: null,
+    service: null,
+    subject: null,
+    thread_originator_guid: null,
+    thread_originator_part: null,
     ...over,
   };
 }
@@ -78,7 +85,10 @@ describe("MessageSearchRow", () => {
       message({
         is_from_me: true,
         sender: null,
-        attachments: [{ original_name: "a.jpg" }, { original_name: "b.jpg" }],
+        attachments: [
+          attachment({ original_name: "a.jpg" }),
+          attachment({ original_name: "b.jpg" }),
+        ],
       }),
     );
     const row = screen.getByRole("button");
@@ -94,7 +104,7 @@ describe("MessageSearchRow", () => {
   });
 
   it("shows the attachments' names for a message with no text, with a matching name in bold", () => {
-    renderRow(message({ text: null, attachments: [{ original_name: "photo 1.jpg" }] }));
+    renderRow(message({ text: null, attachments: [attachment({ original_name: "photo 1.jpg" })] }));
     const row = screen.getByRole("button");
     expect(row).toHaveTextContent("Alice: photo 1.jpg");
     expect(row.querySelector("strong")?.textContent).toBe("photo");
@@ -114,7 +124,7 @@ describe("MessageSearchRow", () => {
       message({
         deletion: "unsent",
         text: null,
-        attachments: [{ original_name: "photo 1.jpg" }],
+        attachments: [attachment({ original_name: "photo 1.jpg" })],
       }),
     );
     const row = screen.getByRole("button");

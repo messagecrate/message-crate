@@ -49,6 +49,8 @@ const token: ApiTokenItem = {
   can_export: true,
   created_at: "1700000000",
   token_hint: "mc-api-la..op",
+  last_accessed_at: null,
+  expires_at: null,
 };
 
 beforeEach(() => {

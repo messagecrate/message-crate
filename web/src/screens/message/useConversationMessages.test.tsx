@@ -39,12 +39,17 @@ function message(id: number): Message {
       conversation_type: "direct",
       is_group: false,
       group_title: null,
+      label: null,
       participants: [],
     },
     attachments: [],
     tapbacks: [],
     earlier_versions: [],
     matched_earlier_version: false,
+    deletion: null,
+    owner: null,
+    thread_originator_guid: null,
+    thread_originator_part: null,
   };
 }
 

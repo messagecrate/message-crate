@@ -1078,8 +1078,8 @@ async fn duplicate_only_threads_have_no_last_message_date_and_sort_last() {
         .expect("conversation 3 exists");
     for summary in [listed, read] {
         let json = serde_json::to_value(&summary).unwrap();
-        assert!(json.get("first_message_at").is_none(), "{json}");
-        assert!(json.get("last_message_at").is_none(), "{json}");
+        assert!(json["first_message_at"].is_null(), "{json}");
+        assert!(json["last_message_at"].is_null(), "{json}");
     }
 }
 

@@ -42,7 +42,8 @@ fn menu_attachment(path: Value) -> Value {
         "path": path,
         "original_name": "menu.pdf",
         "mime_type": "application/pdf",
-        "sha256": MENU_SHA
+        "sha256": MENU_SHA,
+        "is_sticker": false
     })
 }
 
@@ -52,7 +53,8 @@ fn photo_attachment() -> Value {
         "path": null,
         "original_name": "photo.png",
         "mime_type": "image/png",
-        "sha256": PHOTO_SHA
+        "sha256": PHOTO_SHA,
+        "is_sticker": false
     })
 }
 
@@ -367,7 +369,8 @@ fn an_attachment_path_that_leaves_the_output_folder_is_written_under_its_fingerp
                         "path": absolute,
                         "original_name": "photo.png",
                         "mime_type": "image/png",
-                        "sha256": PHOTO_SHA
+                        "sha256": PHOTO_SHA,
+                        "is_sticker": false
                     }])
                 )
             ],

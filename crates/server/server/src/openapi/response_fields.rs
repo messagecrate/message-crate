@@ -1,0 +1,165 @@
+//! Every field of a success answer is required in the reference
+//! (`docs/architecture/http-api.md`, "Fields").
+//!
+//! The server sends every field of a success answer, as `null` when it has no
+//! value, so every property of a schema a success answer names is required.
+//! utoipa makes an `Option` field optional, because serde lets a reader do
+//! without it, so this marks the rest required once the document is
+//! assembled. Whether the server keeps to it is what `document_rules` checks,
+//! by calling the routes and reading the keys of what they answer.
+//!
+//! A schema a request also names keeps what the derive gave it, because an
+//! absent request field stays allowed where it is today. `ExportScope` is the
+//! one such schema with properties: it is the body of `POST /v1/exports` and
+//! is answered back on the run.
+
+use std::collections::BTreeSet;
+
+use serde_json::Value;
+use utoipa::openapi::schema::{AdditionalProperties, ArrayItems, Schema};
+use utoipa::openapi::{OpenApi, RefOr};
+
+/// Mark every property of every schema a success answer names required,
+/// except in the schemas a request names too.
+pub(crate) fn require_every_field(spec: &mut OpenApi) {
+    let doc = serde_json::to_value(&*spec).expect("the OpenAPI document serializes to JSON");
+    let requests = request_schemas(&doc);
+    let answers = answer_schemas(&doc);
+    if let Some(components) = spec.components.as_mut() {
+        for name in answers.difference(&requests) {
+            if let Some(schema) = components.schemas.get_mut(name) {
+                require_all(schema);
+            }
+        }
+    }
+    for item in spec.paths.paths.values_mut() {
+        for op in super::shared_parts::operations_mut(item) {
+            for (status, response) in &mut op.responses.responses {
+                let RefOr::T(response) = response else {
+                    continue;
+                };
+                if !status.starts_with('2') {
+                    continue;
+                }
+                for (media_type, content) in &mut response.content {
+                    if let (true, RefOr::T(content)) = (is_json(media_type), content)
+                        && let Some(schema) = content.schema.as_mut()
+                    {
+                        require_all(schema);
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Add every property of each object in `schema` to its `required`, keeping
+/// the order the derive wrote and putting the rest after it. A `$ref` is left
+/// alone: the schema it names is marked on its own.
+fn require_all(schema: &mut RefOr<Schema>) {
+    let RefOr::T(schema) = schema else {
+        return;
+    };
+    match schema {
+        Schema::Object(object) => {
+            let missing: Vec<String> = object
+                .properties
+                .keys()
+                .filter(|name| !object.required.contains(name))
+                .cloned()
+                .collect();
+            object.required.extend(missing);
+            object.properties.values_mut().for_each(require_all);
+            if let Some(AdditionalProperties::RefOr(values)) =
+                object.additional_properties.as_deref_mut()
+            {
+                require_all(values);
+            }
+        }
+        Schema::Array(array) => {
+            if let ArrayItems::RefOrSchema(items) = &mut array.items {
+                require_all(items);
+            }
+        }
+        Schema::OneOf(one_of) => one_of.items.iter_mut().for_each(require_all),
+        Schema::AllOf(all_of) => all_of.items.iter_mut().for_each(require_all),
+        Schema::AnyOf(any_of) => any_of.items.iter_mut().for_each(require_all),
+        _ => {}
+    }
+}
+
+/// Whether a media type is JSON: `application/json` and the `+json` types.
+fn is_json(media_type: &str) -> bool {
+    media_type == "application/json" || media_type.ends_with("+json")
+}
+
+/// The component schemas a request body or a parameter names, and every
+/// schema those name in turn.
+pub(crate) fn request_schemas(doc: &Value) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    for op in operations(doc) {
+        name_refs(doc, &op["requestBody"], &mut names);
+        name_refs(doc, &op["parameters"], &mut names);
+    }
+    names
+}
+
+/// The component schemas a success answer in JSON names, and every schema
+/// those name in turn.
+pub(crate) fn answer_schemas(doc: &Value) -> BTreeSet<String> {
+    let mut names = BTreeSet::new();
+    for op in operations(doc) {
+        for schema in success_schemas(op) {
+            name_refs(doc, schema, &mut names);
+        }
+    }
+    names
+}
+
+/// The schema of each success answer in JSON the operation declares.
+pub(crate) fn success_schemas(op: &Value) -> impl Iterator<Item = &Value> {
+    op["responses"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .filter(|(status, _)| status.starts_with('2'))
+        .flat_map(|(_, response)| response["content"].as_object().into_iter().flatten())
+        .filter(|(media_type, _)| is_json(media_type))
+        .map(|(_, content)| &content["schema"])
+}
+
+/// Every operation of the document.
+fn operations(doc: &Value) -> impl Iterator<Item = &Value> {
+    doc["paths"]
+        .as_object()
+        .into_iter()
+        .flatten()
+        .flat_map(|(_, item)| item.as_object().into_iter().flatten())
+        .map(|(_, op)| op)
+}
+
+/// Add to `names` every component schema `node` names, and the ones those
+/// name.
+fn name_refs(doc: &Value, node: &Value, names: &mut BTreeSet<String>) {
+    match node {
+        Value::Object(map) => {
+            if let Some(name) = map
+                .get("$ref")
+                .and_then(Value::as_str)
+                .and_then(|r| r.strip_prefix("#/components/schemas/"))
+                && names.insert(name.to_string())
+            {
+                name_refs(doc, &doc["components"]["schemas"][name], names);
+            }
+            for value in map.values() {
+                name_refs(doc, value, names);
+            }
+        }
+        Value::Array(items) => {
+            for value in items {
+                name_refs(doc, value, names);
+            }
+        }
+        _ => {}
+    }
+}

@@ -20,6 +20,8 @@ describe("ApiTokensTable focus", () => {
             can_export: false,
             token_hint: "mc-api-Sd..mE",
             created_at: "1767225600",
+            last_accessed_at: null,
+            expires_at: null,
           },
         ]}
         busy={false}

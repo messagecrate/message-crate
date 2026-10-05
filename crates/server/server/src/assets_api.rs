@@ -1107,15 +1107,10 @@ pub(crate) struct CreateAssetUploadRequest {
 /// Upload id and part size, or the already-stored asset.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct CreateAssetUploadResponse {
-    #[serde(skip_serializing_if = "Option::is_none")]
     upload_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     part_size: Option<usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     sha256: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     assets_path: Option<String>,
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     already_present: bool,
 }
 
