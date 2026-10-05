@@ -520,18 +520,24 @@ mod tests {
         path
     }
 
-    /// The refusal the scan gives `path`, which must name the file and the
-    /// header's line as every other refusal of a file does.
-    fn scan_refusal(path: &Path) -> (String, usize, String) {
+    /// The rule the scan refuses `path` with. The refusal must be on line
+    /// `line` of that file and print as every other refusal of a file does:
+    /// the file, then the line and the rule.
+    fn scan_refusal(path: &Path, line: usize) -> String {
         let err = files_by_source(&[path.to_path_buf()]).expect_err("the scan refuses the file");
         let printed = format!("{err:#}");
-        match err.downcast::<imports_api::ImportError>() {
-            Ok(imports_api::ImportError::Rejected {
-                failure: imports_api::ImportFailure::Invalid { line, detail },
+        match err.downcast::<ImportError>() {
+            Ok(ImportError::Rejected {
+                failure: ImportFailure::Invalid { line: on, detail },
                 file,
             }) => {
                 assert_eq!(file, path);
-                (printed, line, detail)
+                assert_eq!(on, line);
+                assert_eq!(
+                    printed,
+                    format!("{}: Line {line} of the file: {detail}.", path.display())
+                );
+                detail
             }
             other => panic!("expected a rejection of a line, got {other:?}"),
         }
@@ -544,17 +550,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let path = file_whose_second_header_has_source(tmp.path(), r#""  ""#);
 
-        let (printed, line, detail) = scan_refusal(&path);
-
-        assert_eq!(line, 3);
         assert_eq!(
-            detail,
+            scan_refusal(&path, 3),
             "conversation '+14075550108' has no export.source, which a directory import \
              needs unless --source names one"
-        );
-        assert_eq!(
-            printed,
-            format!("{}: Line 3 of the file: {detail}.", path.display())
         );
     }
 
@@ -565,17 +564,10 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let path = file_whose_second_header_has_source(tmp.path(), r#""SMS Backup""#);
 
-        let (printed, line, detail) = scan_refusal(&path);
-
-        assert_eq!(line, 3);
         assert_eq!(
-            detail,
+            scan_refusal(&path, 3),
             "export.source 'SMS Backup' is not valid: source id 'SMS Backup' must use only \
              lowercase letters, digits, hyphens, and underscores"
-        );
-        assert_eq!(
-            printed,
-            format!("{}: Line 3 of the file: {detail}.", path.display())
         );
     }
 
@@ -586,18 +578,11 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let path = file_whose_second_header_has_source(tmp.path(), r#""imessage""#);
 
-        let (printed, line, detail) = scan_refusal(&path);
-
-        assert_eq!(line, 3);
         assert_eq!(
-            detail,
+            scan_refusal(&path, 3),
             "conversation '+14075550108' has export.source 'imessage', but the file's \
              earlier conversations have 'sms-backup-restore'; each file is imported in the \
              Import Run of its one source"
-        );
-        assert_eq!(
-            printed,
-            format!("{}: Line 3 of the file: {detail}.", path.display())
         );
     }
 

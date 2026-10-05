@@ -4,11 +4,12 @@ use anyhow::{Context, Result};
 use chrono::{TimeZone, Utc};
 use message_ir::{
     ConversationHeader, HandleService, HandleType, IrAttachment, IrDirection, IrMessage,
-    IrMessageKind, Reaction, check_schema_version_in_json,
+    IrMessageKind, Reaction, check_schema_version_in_json, trimmed,
 };
 use phone::Handle;
 use serde_json::Value;
 
+use crate::config::validate_source_id;
 use crate::imports_api::ImportFailure;
 
 /// One JSONL conversation after IR → database-row mapping.
@@ -53,14 +54,14 @@ impl ConversationRecord {
             line: self.line,
             detail,
         };
-        let Some(source) = self.export_source.as_deref().and_then(message_ir::trimmed) else {
+        let Some(source) = self.export_source.as_deref().and_then(trimmed) else {
             return Err(refuse(format!(
                 "conversation '{}' has no export.source, which a directory import needs \
                  unless --source names one",
                 self.chat_identifier
             )));
         };
-        crate::config::validate_source_id(source)
+        validate_source_id(source)
             .map_err(|err| refuse(format!("export.source '{source}' is not valid: {err:#}")))?;
         Ok(source)
     }
