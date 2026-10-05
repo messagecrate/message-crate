@@ -1205,7 +1205,6 @@ async function uploadAndFinish(
     uploadResult = await runJob(() =>
       invokeUpload({
         base_url: baseUrl,
-        username: "",
         token,
         input_dir: outputDir,
         mode: "append",

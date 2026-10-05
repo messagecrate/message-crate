@@ -66,8 +66,6 @@ fn finished_upload_events(
 pub struct UploadArgs {
     /// Base URL of the server, for example `http://127.0.0.1:8080`.
     pub base_url: String,
-    /// Account name.
-    pub username: String,
     /// The logged-in Session's token, sent as the bearer token. Never an API
     /// Token, and never a password.
     pub token: String,
@@ -140,7 +138,6 @@ fn upload_config(args: UploadArgs, logs_dir: &Path) -> anyhow::Result<PushConfig
     Ok(PushConfig {
         input,
         base_url: args.base_url,
-        username: args.username,
         token: args.token,
         mode: args.mode,
         // A resumed Upload skips what the journal in the run directory
@@ -265,7 +262,6 @@ mod tests {
         let run_dir = staged_directory(123_456_789);
         let args: UploadArgs = serde_json::from_value(json!({
             "baseUrl": "http://127.0.0.1:8080",
-            "username": "",
             "token": "token",
             "inputDir": run_dir.path(),
             "mode": "append",
@@ -290,7 +286,6 @@ mod tests {
         let run_dir = tempfile::tempdir().unwrap();
         let args: UploadArgs = serde_json::from_value(json!({
             "baseUrl": "http://127.0.0.1:8080",
-            "username": "",
             "token": "token",
             "inputDir": run_dir.path(),
             "mode": "append",
@@ -389,7 +384,6 @@ mod tests {
     ) -> message_crate_push::PushReport {
         let args: UploadArgs = serde_json::from_value(json!({
             "baseUrl": server.base_url(),
-            "username": "",
             "token": "mc_test",
             "inputDir": run_dir,
             "mode": "append",
