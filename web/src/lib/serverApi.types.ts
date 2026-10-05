@@ -3142,7 +3142,8 @@ export interface components {
             /**
              * @description True for a group conversation, by the rule the conversation list's
              *     `is_group` follows, so a client never reads `conversation_type` to
-             *     decide it.
+             *     decide whether it is a group. `conversation_type` is read only to
+             *     tell a conversation of orphaned messages from a one-to-one one.
              */
             is_group: boolean;
             /**

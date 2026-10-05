@@ -29,8 +29,9 @@ pub fn build_document(
 ) -> ConversationDocument {
     // The server says whether the conversation is a group; the pull does
     // not read `conversation_type` to decide it again. It reads it only to
-    // keep a conversation of orphaned messages one: written back as
-    // one-to-one, its `orphaned:` key would come back as a person (#1095).
+    // tell a conversation of orphaned messages from a one-to-one one, as the
+    // API type says: written back as one-to-one, its `orphaned:` key would
+    // come back as a person (#1095).
     let conversation_type = if seed.conversation.is_group {
         IrConversationType::Group
     } else if IrConversationType::parse(&seed.conversation.conversation_type)
