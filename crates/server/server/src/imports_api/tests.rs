@@ -795,6 +795,85 @@ async fn append_keeps_a_later_edit_against_an_earlier_backup_listing_more_versio
     assert_eq!(versions, ["see you at six", "see you at seven"]);
 }
 
+/// What a reader sees of the message `g-edit`: its text and content key,
+/// its earlier versions, and which words find it through each search index.
+async fn edit_snapshot(
+    conn: &mut sqlx::SqliteConnection,
+) -> (
+    (String, Option<String>),
+    Vec<(i64, String, Option<String>)>,
+    Vec<i64>,
+) {
+    let text_key = text_and_key(conn).await;
+    let versions =
+        sqlx::query_as("SELECT part_index, text, edited_at FROM message_versions ORDER BY id")
+            .fetch_all(&mut *conn)
+            .await
+            .unwrap();
+    let mut hits = Vec::new();
+    for word in ["six", "seven", "eight"] {
+        for table in ["messages_fts", "message_versions_fts"] {
+            let n: i64 = sqlx::query_scalar(&format!(
+                "SELECT COUNT(*) FROM {table} WHERE {table} MATCH $1"
+            ))
+            .bind(word)
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+            hits.push(n);
+        }
+    }
+    (text_key, versions, hits)
+}
+
+/// One import carrying an earlier and a later backup of a message the
+/// server does not hold yet gives it the later backup's text, exactly the
+/// later backup's earlier versions, and the content key and search entries
+/// an import of the later backup alone gives, in either file order. Only
+/// the first copy staged used to count, so the earlier text could win.
+#[tokio::test]
+async fn one_import_of_two_backups_gives_a_new_message_the_later_edit_in_either_order() {
+    let tmp = TempDir::new().unwrap();
+    let assets = tmp.path().join("assets");
+    let options = edit_options(&assets, tmp.path(), true);
+    let earlier = edit_file(
+        tmp.path(),
+        "earlier.jsonl",
+        "see you at seven",
+        &[edit_version(0, "see you at six", 1426183462000)],
+    );
+    let later = edit_file(
+        tmp.path(),
+        "later.jsonl",
+        "see you at eight",
+        &[
+            edit_version(0, "see you at six", 1426183462000),
+            edit_version(0, "see you at seven", 1426183600000),
+        ],
+    );
+
+    let alone = tmp.path().join("alone.db");
+    import_jsonl_files(&alone, std::slice::from_ref(&later), &options)
+        .await
+        .unwrap();
+    let expected = {
+        let (_pool, mut conn) = open_verify(&alone).await;
+        edit_snapshot(&mut conn).await
+    };
+    assert_eq!(expected.0.0, "see you at eight");
+    assert_eq!(expected.1.len(), 2);
+
+    for (name, files) in [
+        ("earlier-first.db", [earlier.clone(), later.clone()]),
+        ("later-first.db", [later.clone(), earlier.clone()]),
+    ] {
+        let db = tmp.path().join(name);
+        import_jsonl_files(&db, &files, &options).await.unwrap();
+        let (_pool, mut conn) = open_verify(&db).await;
+        assert_eq!(edit_snapshot(&mut conn).await, expected, "{name}");
+    }
+}
+
 #[tokio::test]
 async fn append_existing_guid_adds_missing_children() {
     let tmp = TempDir::new().unwrap();
