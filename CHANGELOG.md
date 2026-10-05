@@ -917,6 +917,16 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-05 **The log of an Export from a server says it fetches Assets,
+  and writes its warnings as sentences.** It read "Downloading 2 assets with
+  8 workers (0 already downloaded)…" and "Downloaded 2 assets (22 B) and
+  kept 0 already downloaded", and began each warning with "warning:". It
+  now reads "Fetching 2 Assets with 8 workers (0 already on disk)…" and
+  "Fetched 2 Assets (22 B) and kept 0 already on disk". A refused
+  completion reads "Export Run 7 completion failed (…): …. The Export wrote
+  every file all the same", and an attachment path that would leave the
+  Export's directory reads "Attachment path … would leave the Export's
+  directory, so the file is written at … instead".
 - 2026-10-05 **Two attachments whose names differ only in their extension
   both arrive whole in an Export from a server.** The Export wrote each
   attachment it fetched to a temporary file named after the attachment
