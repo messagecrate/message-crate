@@ -428,9 +428,10 @@ api_shape! {
     /// The message a reply quotes. A message that carries one is a reply,
     /// whether or not the quoted message could be named.
     pub struct ReplyTo {
-        /// The quoted message's `guid`, when that message was in the same
-        /// export as the reply; `null` when the backup named a message the
-        /// export did not hold, or named none.
+        /// The quoted message's `guid`, as the backup named it; `null` when
+        /// it named none. A named message can still be missing from this
+        /// Message Crate, for example one deleted on the phone before the
+        /// backup while its reply was kept.
         pub guid: Option<String>,
         /// The part of the quoted message the reply answers; 0 for the first
         /// or only part. `null` when the source does not record one.

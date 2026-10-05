@@ -523,9 +523,11 @@ pub struct EarlierVersion {
 /// defined here beside [`Reaction`] and `message-ir` re-exports it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ReplyTo {
-    /// The quoted message's GUID, when that message is in the same export;
-    /// `None` when the source names a message the export does not hold, or
-    /// names none.
+    /// The quoted message's GUID, as the source names it; `None` when the
+    /// source names none. A named message can still be missing from the
+    /// export: Apple Messages names a thread's originator after it was
+    /// deleted on the phone, and an export with a date range can leave it
+    /// out. WhatsApp names one only when it is in the same chat.
     pub guid: Option<String>,
     /// The part of the quoted message the reply answers; 0 for the first or
     /// only part. `None` when the source does not record one.

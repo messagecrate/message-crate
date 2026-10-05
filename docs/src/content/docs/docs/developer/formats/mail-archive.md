@@ -229,9 +229,9 @@ Align with the unified CSV inventory in [`message_ir_format::CSV_HEADERS`](https
 | Header | Role |
 |--------|------|
 | `Message-ID` | `<{apple-guid}@imessage.local>` |
-| `In-Reply-To` / `References` | The quoted message's `Message-ID`, when it is in the export |
+| `In-Reply-To` / `References` | The quoted message's `Message-ID`, when the source names it |
 | `X-ME-Is-Reply` | `true` on every reply |
-| `X-ME-Reply-To-Guid` | The quoted message's guid, when it is in the export |
+| `X-ME-Reply-To-Guid` | The quoted message's guid, when the source names it |
 | `X-ME-Reply-To-Part` | The part of the quoted message the reply answers |
 
 The reply headers come from the common message's `reply_to`, so every source that records replies writes them, WhatsApp included. A reply whose quoted message is not in the export carries `X-ME-Is-Reply` alone. A message that is not a reply carries none (no fake threads). No reply count is written: the server counts a message's replies when it reads it.

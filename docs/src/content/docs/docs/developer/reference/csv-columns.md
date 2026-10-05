@@ -36,7 +36,7 @@ CSV output contains one row per message. Conversation and export identity are re
 | `deletion` | `deleted_in_source_app` for a message deleted in the app it came from before the backup, `unsent` for one its sender took back, or empty for neither. A file with any other value is refused. |
 | `earlier_versions_json` | JSON array of an edited message's earlier versions, oldest first within each part, each with `part_index`, `text`, and `edited_at_unix_ms` when the source records when it was written. `text` holds the final version. Empty when the message was never edited. |
 | `is_reply` | `true` for a reply, whether or not the message it quotes is in the export; `false` otherwise. |
-| `reply_to_guid` | The `guid` of the message a reply quotes, when that message is in the same export; empty otherwise. |
+| `reply_to_guid` | The `guid` of the message a reply quotes, when the source names it; empty otherwise. The named message can be missing from the export. |
 | `reply_to_part` | The part of the quoted message a reply answers, `0` for the first or only part; empty when the source does not record one. |
 
 ## Source and owner

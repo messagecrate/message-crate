@@ -948,8 +948,8 @@ fn conversation_headers<'m>(
 }
 
 /// The reply headers: `X-ME-Is-Reply` on every reply, and for one whose
-/// quoted message is in the export, its guid and the standard `In-Reply-To`
-/// and `References`, so a mail client threads the two.
+/// quoted message is named, its guid and the standard `In-Reply-To` and
+/// `References`, so a mail client threads the two when both are exported.
 fn reply_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> MessageBuilder<'m> {
     let Some(reply_to) = msg.message.reply_to.as_ref() else {
         return builder;

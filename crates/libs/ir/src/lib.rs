@@ -489,8 +489,8 @@ pub struct IrMessage {
     pub edits: Vec<EarlierVersion>,
     /// The message this one replies to; `None`, and left out of the file,
     /// for a message that is not a reply or a source that records no
-    /// replies. [`ReplyTo::guid`] is set only when the quoted message is in
-    /// the same export.
+    /// replies. [`ReplyTo::guid`] is the quoted message's GUID when the
+    /// source names it, which does not promise the message is in the export.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reply_to: Option<ReplyTo>,
     /// Apple extensions; `None` for non-iMessage messages.
