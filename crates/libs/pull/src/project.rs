@@ -28,9 +28,16 @@ pub fn build_document(
     messages: Vec<IrMessage>,
 ) -> ConversationDocument {
     // The server says whether the conversation is a group; the pull does
-    // not read `conversation_type` to decide it again.
+    // not read `conversation_type` to decide it again. It reads it only to
+    // tell a conversation of orphaned messages from a one-to-one
+    // conversation, as the API type says: written back as one-to-one, its
+    // `orphaned:` key would come back as a person (#1095).
     let conversation_type = if seed.conversation.is_group {
         IrConversationType::Group
+    } else if IrConversationType::parse(&seed.conversation.conversation_type)
+        == IrConversationType::Orphaned
+    {
+        IrConversationType::Orphaned
     } else {
         IrConversationType::Individual
     };
@@ -628,6 +635,25 @@ mod tests {
         assert_eq!(
             doc.conversation.conversation_type,
             IrConversationType::Group
+        );
+    }
+
+    /// A conversation of orphaned messages is pulled as one, so importing
+    /// the pulled file again does not make its key a person (#1095).
+    #[test]
+    fn a_document_of_orphaned_messages_stays_orphaned() {
+        let mut seed = seed_message_with_participant(Participant {
+            identity: Some("+15555550154".into()),
+            name: "Ada".into(),
+            service: None,
+            contact_id: None,
+        });
+        seed.conversation.chat_identifier = "orphaned:+15555550154".into();
+        seed.conversation.conversation_type = "orphaned".into();
+        let doc = build_document("imessage", &seed, vec![]);
+        assert_eq!(
+            doc.conversation.conversation_type,
+            IrConversationType::Orphaned
         );
     }
 

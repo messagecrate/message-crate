@@ -309,17 +309,17 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
     }
     let a = ACCOUNT;
     let mut f = Fixture {
-        me_handle: handle(&mut conn, a, "+15550000", "imessage").await,
+        me_handle: handle(&mut conn, a, "+15555550100", "imessage").await,
         ..Fixture::default()
     };
 
     crate::test_support::link_identity(&mut conn, a, f.me_handle).await;
-    f.ana_handle = handle(&mut conn, a, "+15550001", "imessage").await;
-    f.bo_handle = handle(&mut conn, a, "+15550002", "sms").await;
+    f.ana_handle = handle(&mut conn, a, "+15555550101", "imessage").await;
+    f.bo_handle = handle(&mut conn, a, "+15555550102", "sms").await;
     f.jane_handle = handle(&mut conn, a, "jane.doe@example.com", "imessage").await;
     f.sam_handle = handle(&mut conn, a, "sam@example.org", "imessage").await;
-    f.nameless_handle = handle(&mut conn, a, "+15550009", "sms").await;
-    f.cy_handle = handle(&mut conn, a, "+15550003", "whatsapp").await;
+    f.nameless_handle = handle(&mut conn, a, "+15555550109", "sms").await;
+    f.cy_handle = handle(&mut conn, a, "+15555550103", "whatsapp").await;
 
     f.ana = contact(&mut conn, a, "Ana", &[f.ana_handle]).await;
     f.bo = contact(&mut conn, a, "Bo", &[f.bo_handle]).await;
@@ -623,7 +623,7 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
     // A conversation whose only message a later import superseded: marked a
     // duplicate, with no other kept copy in its conversation. The handle
     // links to no contact, so this adds no contact-level count.
-    let dup_only_handle = handle(&mut conn, a, "+15550098", "sms").await;
+    let dup_only_handle = handle(&mut conn, a, "+15555550198", "sms").await;
     f.dup_only_conv = conversation(
         &mut conn,
         a,
@@ -658,7 +658,7 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
     f.archive = tag(&mut conn, a, "Archive", &[f.archive_group]).await;
 
     // The other account has one contact and one message that must never show.
-    let other_handle = handle(&mut conn, OTHER_ACCOUNT, "+15559999", "imessage").await;
+    let other_handle = handle(&mut conn, OTHER_ACCOUNT, "+15555550199", "imessage").await;
     contact(&mut conn, OTHER_ACCOUNT, "Ana", &[other_handle]).await;
     let other_conv = conversation(
         &mut conn,
@@ -1118,7 +1118,7 @@ mod text_words {
     async fn name_finds_a_contact_linked_after_the_import() {
         let (pool, _dir, _f) = seeded().await;
         let mut conn = pool.acquire().await.unwrap();
-        let late_handle = handle(&mut conn, ACCOUNT, "+15550777", "imessage").await;
+        let late_handle = handle(&mut conn, ACCOUNT, "+15555550177", "imessage").await;
         let conv = conversation(
             &mut conn,
             ACCOUNT,
@@ -1510,7 +1510,7 @@ mod index_characters {
             .execute(&mut *conn)
             .await
             .unwrap();
-        let chat = handle(&mut conn, ACCOUNT, "+15550100", "imessage").await;
+        let chat = handle(&mut conn, ACCOUNT, "+15555550150", "imessage").await;
         let conv = conversation(&mut conn, ACCOUNT, chat, "individual", None, &[chat]).await;
         let mut ids = Vec::new();
         for body in bodies() {
@@ -1675,7 +1675,7 @@ mod people_words {
             vec![f.big_group_msg]
         );
         assert_eq!(
-            run(&mut conn, ListKind::Messages, "in:+15550002").await,
+            run(&mut conn, ListKind::Messages, "in:+15555550102").await,
             vec![f.bo_2023]
         );
     }
@@ -1903,6 +1903,81 @@ mod people_words {
 mod kind_words {
     use super::*;
 
+    /// `kind:orphaned` lists the conversations that hold orphaned messages,
+    /// one sender's and the account holder's, and `kind:direct` and
+    /// `kind:group` list neither (#1095). On Contacts it finds the sender, the
+    /// participant of their orphaned conversation. Their keys are no text to
+    /// match; their titles are.
+    #[tokio::test]
+    async fn kind_orphaned_is_neither_direct_nor_group() {
+        let (pool, _dir, f) = seeded().await;
+        let mut conn = pool.acquire().await.unwrap();
+        let direct = run(&mut conn, ListKind::Conversations, "kind:direct").await;
+        let groups = run(&mut conn, ListKind::Conversations, "kind:group").await;
+
+        let ana_key = handle(&mut conn, ACCOUNT, "orphaned:+15555550101", "imessage").await;
+        let ana_orphaned = conversation(
+            &mut conn,
+            ACCOUNT,
+            ana_key,
+            "orphaned",
+            None,
+            &[f.ana_handle],
+        )
+        .await;
+        let holder_key = handle(&mut conn, ACCOUNT, "orphaned:", "imessage").await;
+        let unknown = conversation(&mut conn, ACCOUNT, holder_key, "orphaned", None, &[]).await;
+        let from_ana = message(
+            &mut conn,
+            ACCOUNT,
+            msg(
+                ana_orphaned,
+                "2021-05-02T10:00:00Z",
+                false,
+                Some(f.ana_handle),
+                "lost",
+            ),
+        )
+        .await;
+        let mine = message(
+            &mut conn,
+            ACCOUNT,
+            msg(unknown, "2021-05-02T11:00:00Z", true, None, "lost too"),
+        )
+        .await;
+
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "kind:orphaned").await,
+            sorted(vec![ana_orphaned, unknown])
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "kind:direct").await,
+            direct
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "kind:group").await,
+            groups
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Contacts, "kind:orphaned").await,
+            vec![f.ana]
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Messages, "kind:orphaned").await,
+            sorted(vec![from_ana, mine])
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "orphaned").await,
+            Vec::<i64>::new(),
+            "a key is not text"
+        );
+        assert_eq!(
+            run(&mut conn, ListKind::Conversations, "recipient").await,
+            sorted(vec![ana_orphaned, unknown]),
+            "the titles are"
+        );
+    }
+
     #[tokio::test]
     async fn kind_service_and_source() {
         let (pool, _dir, f) = seeded().await;
@@ -1965,7 +2040,7 @@ mod kind_words {
     ) -> (i64, i64) {
         let path = dir.join(format!("{chat}.jsonl"));
         let header = serde_json::json!({
-            "schema_version": 8,
+            "schema_version": 9,
             "export": {"source": source, "tool": "test", "tool_version": "0",
                        "owner_identity": null, "owner_display_name": null},
             "conversation": {
@@ -2077,7 +2152,7 @@ mod kind_words {
         let (pool, _dir, f) = seeded().await;
         let mut conn = pool.acquire().await.unwrap();
         let a = ACCOUNT;
-        let quiet_h = handle(&mut conn, a, "+15550201", "sms").await;
+        let quiet_h = handle(&mut conn, a, "+15555550121", "sms").await;
         let quiet = contact(&mut conn, a, "Quiet", &[quiet_h]).await;
         let quiet_c = conversation(&mut conn, a, quiet_h, "individual", None, &[quiet_h]).await;
         let mut sent = msg(
@@ -2307,7 +2382,7 @@ mod trash_across_lists {
         let (pool, _dir, f) = seeded().await;
         let mut conn = pool.acquire().await.unwrap();
         let a = ACCOUNT;
-        let binned_h = handle(&mut conn, a, "+15550201", "sms").await;
+        let binned_h = handle(&mut conn, a, "+15555550121", "sms").await;
         let binned = contact(&mut conn, a, "Binned", &[binned_h]).await;
         sqlx::query("INSERT INTO participants (conversation_id, handle_id) VALUES ($1, $2)")
             .bind(f.trashed_conv)
@@ -2414,7 +2489,7 @@ mod trash_across_lists {
             );
         }
         assert_eq!(
-            run(&mut conn, ListKind::Conversations, "with:+15550001").await,
+            run(&mut conn, ListKind::Conversations, "with:+15555550101").await,
             anas
         );
         // `group:none` is the complement: Ana's conversations are in it now.
@@ -2624,7 +2699,7 @@ mod measure_words {
         );
 
         // You wrote in 2019 and they replied in 2020.
-        let reply_h = handle(&mut conn, a, "+15550101", "sms").await;
+        let reply_h = handle(&mut conn, a, "+15555550141", "sms").await;
         let reply = contact(&mut conn, a, "Replier", &[reply_h]).await;
         let reply_c = conversation(&mut conn, a, reply_h, "individual", None, &[reply_h]).await;
         message(
@@ -2640,7 +2715,7 @@ mod measure_words {
         )
         .await;
         // You texted them in 2019 and they never replied.
-        let silent_h = handle(&mut conn, a, "+15550102", "sms").await;
+        let silent_h = handle(&mut conn, a, "+15555550142", "sms").await;
         let silent = contact(&mut conn, a, "Silent", &[silent_h]).await;
         let silent_c = conversation(&mut conn, a, silent_h, "individual", None, &[silent_h]).await;
         message(
@@ -2650,9 +2725,9 @@ mod measure_words {
         )
         .await;
         // A 2015 group chat: one member never spoke, one first spoke in 2018.
-        let lurker_h = handle(&mut conn, a, "+15550103", "sms").await;
+        let lurker_h = handle(&mut conn, a, "+15555550143", "sms").await;
         let lurker = contact(&mut conn, a, "Lurker", &[lurker_h]).await;
-        let late_h = handle(&mut conn, a, "+15550104", "sms").await;
+        let late_h = handle(&mut conn, a, "+15555550144", "sms").await;
         let late = contact(&mut conn, a, "Late", &[late_h]).await;
         let chat = handle(&mut conn, a, "chat400", "sms").await;
         let old_group = conversation(
@@ -3918,7 +3993,7 @@ mod group_keyed_conversation {
             run(&mut conn, ListKind::Conversations, "with:\"Robin Quill\"").await,
             vec![untitled]
         );
-        for query in ["with:+15550001", "identity:+15550001"] {
+        for query in ["with:+15555550101", "identity:+15555550101"] {
             let found = run(&mut conn, ListKind::Conversations, query).await;
             for row in groups {
                 assert!(

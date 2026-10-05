@@ -3,12 +3,12 @@
 //! Every reader of a [`ConversationDocument`](crate::ConversationDocument) or
 //! its JSON Lines header — the format reader, the push client, the server's
 //! import — refuses a version other than [`SCHEMA_VERSION`] with the same
-//! words, and refuses it before parsing the rest of the file: a version-7
-//! file is not expected to match the version-8 field shapes (version 7 kept
-//! an Apple Messages edit history in `imessage.edits`, where nothing reads it
-//! now), and the person should read "schema version 7", not whichever field
-//! failed first or a conversation whose edited messages quietly lost their
-//! earlier versions.
+//! words, and refuses it before parsing the rest of the file: a version-8
+//! file is not expected to match version 9 (version 8 put every orphaned
+//! message in one `individual` conversation named `orphaned`, which version 9
+//! would read as a person of that name), and the person should read "schema
+//! version 8", not whichever field failed first or a contact named
+//! "orphaned".
 
 use crate::SCHEMA_VERSION;
 use serde::Deserialize;
@@ -76,22 +76,22 @@ mod tests {
     fn names_the_version_found_and_the_version_read() {
         assert_eq!(
             check_schema_version(3).unwrap_err().to_string(),
-            "This file is schema version 3; Message Crate reads version 8"
+            "This file is schema version 3; Message Crate reads version 9"
         );
         assert_eq!(check_schema_version(SCHEMA_VERSION), Ok(()));
     }
 
-    /// Version 7 kept an Apple Messages edit history in `imessage.edits`;
-    /// version 8 keeps the earlier versions in the message's own `edits`. A
-    /// version-7 file is refused by its version, never read with its
-    /// earlier versions dropped or upgraded.
+    /// Version 8 put every orphaned message in one `individual` conversation
+    /// named `orphaned`; version 9 gives them conversations of type
+    /// `orphaned`, one for each sender. A version-8 file is refused by its
+    /// version, never read with that conversation taken for a person.
     #[test]
-    fn refuses_a_version_7_file_by_name() {
+    fn refuses_a_version_8_file_by_name() {
         assert_eq!(
-            check_schema_version_in_json(r#"{"schema_version":7,"export":{}}"#)
+            check_schema_version_in_json(r#"{"schema_version":8,"export":{}}"#)
                 .unwrap_err()
                 .to_string(),
-            "This file is schema version 7; Message Crate reads version 8"
+            "This file is schema version 8; Message Crate reads version 9"
         );
     }
 
@@ -102,7 +102,7 @@ mod tests {
             Err(UnsupportedSchemaVersion { found: 3 })
         );
         assert_eq!(
-            check_schema_version_in_json(r#"{"schema_version":8,"export":{}}"#),
+            check_schema_version_in_json(r#"{"schema_version":9,"export":{}}"#),
             Ok(())
         );
         assert_eq!(check_schema_version_in_json(r#"{"export":{}}"#), Ok(()));

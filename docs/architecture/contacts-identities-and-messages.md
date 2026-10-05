@@ -52,7 +52,7 @@ allowed, and a crow's foot means many.
 of a message is a contact.** An import makes a contact for every person it
 meets: an unmatched phone number becomes a contact with that identity and no
 name. A message's sender counts as met even when no conversation header names
-them, as in `orphaned.jsonl` or a group header that leaves someone out. An
+them, as in a group header that leaves someone out. An
 identity can move to another contact, move to a new contact, or be deleted,
 and `contacts::move_identity` is the only way it leaves a contact. An identity
 a conversation or a message uses is never deleted and never left on no
@@ -99,8 +99,12 @@ as a name someone gave the contact.
 own, such as `chat1000000005`. The server stores it as the conversation's chat
 handle (`conversations.chat_handle_id`) so the same group is recognised on
 the next import. It gets no contact and is nobody's identity. The same holds
-for the `orphaned` conversation. Only a one-to-one conversation's chat handle
-is a person's address, and only that one gets a contact. Why: the id reaches
+for the key of a conversation of orphaned messages (below). Only a one-to-one
+conversation's chat handle is a person's address, and only that one gets a
+contact. Import decides it by the conversation's type, never by the name of
+the file it came in, so the desktop app's import path and the HTTP one, where
+every file is `_import.jsonl`, agree
+([#1169](https://github.com/messagecrate/message-crate/issues/1169)). Why: the id reaches
 nobody, and a contact made from it shows up in Contacts as a nameless person
 who never existed.
 
@@ -441,10 +445,29 @@ apart from the one-to-one conversation with them, titled with the contact's name
 and "Missing recipient". The ones the holder sent have no recorded recipient and
 sit together in one conversation with no participants, titled "Unknown
 recipient". These conversations are neither one-to-one nor a group, and
-`kind:orphaned` lists them. Why: one conversation holding hundreds of people's
-messages reads as an exchange that never happened, and putting them in the
-one-to-one conversation would claim something the backup does not say. Not
-built yet: [#1095](https://github.com/messagecrate/message-crate/issues/1095).
+`kind:orphaned` lists them, and `kind:direct` and `kind:group` do not. An
+import tags none of them, as it tags no conversation. Why: one conversation holding
+hundreds of people's messages reads as an exchange that never happened, and
+putting them in the one-to-one conversation would claim something the backup
+does not say
+([#1095](https://github.com/messagecrate/message-crate/issues/1095)).
+
+Each is keyed `orphaned:` and its sender's address, or `orphaned:` alone for
+the holder's (`message_ir::orphaned_chat_id`), so it never takes the key of
+the sender's one-to-one conversation, and its type is `orphaned`. The key is
+the conversation's own and nobody's address: it gets no contact, and search
+reads it as no text, as it does a group's id. The title is computed on every
+read (`db/conversations.rs`, `conversation_title_sql`) from the first
+participant's name as the conversation shows it, so it follows a rename of the
+sender's contact. The Apple Messages Reader writes these conversations for
+messages in no chat. The Reader puts every sent message in the holder's
+conversation. A sent row in a one-to-one chat can still name its recipient in
+`handle_id`. The Reader also puts a received message there when it names no
+sender, or names one of the holder's own addresses, because it has nobody to
+be a participant. Where these two kinds of row belong is open
+([#1778](https://github.com/messagecrate/message-crate/issues/1778)). OpenExtract writes the holder's for a sent row that names
+no recipient, and those rows carry a vendor key so that the same text sent to
+several people in the same second stays several messages.
 
 **An account's own identity means ownership, and its message counts
 describe the messages it holds.** A contact's identity says the person took

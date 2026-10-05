@@ -55,4 +55,4 @@ Prejudice (5274 sentences) under `crates/server/demo-seed/data/corpus/`. Names c
 - **Replies, tapbacks, attachments** — including one intentionally missing file
 - **Deleted in the source app and Unsent** — a few Apple Messages one-to-one messages carry each mark; an Unsent one keeps no text
 - **Edited messages** — a few Apple Messages one-to-one messages were edited once or twice and keep their earlier versions
-- **orphaned.jsonl** — synthetic orphaned conversation
+- **Orphaned messages** — one sender's in a conversation of their own, and the account holder's in one with no participants

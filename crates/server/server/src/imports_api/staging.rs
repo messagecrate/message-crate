@@ -314,16 +314,6 @@ fn resolve_conversation_source(
     Ok(source.to_string())
 }
 
-/// Messages with no conversation of their own live in `orphaned.jsonl`
-/// (older bundles used `orphaned.json`). Its header's chat id names the
-/// file's conversation, not a person.
-fn is_orphaned_export(path: &Path) -> bool {
-    let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
-        return false;
-    };
-    stem.eq_ignore_ascii_case("orphaned")
-}
-
 /// Stage one JSON Lines file: each conversation header with the messages
 /// that follow it.
 ///
@@ -489,7 +479,8 @@ impl FileStaging<'_> {
             .eq_ignore_ascii_case("individual");
         // Conversation identity: the chat handle. A group's id is the group's
         // key and nobody's address, so it is `Other` whatever its shape (a
-        // WhatsApp `…@g.us` has an `@`). A one-to-one chat's id takes the type
+        // WhatsApp `…@g.us` has an `@`), and so is an orphaned conversation's
+        // `orphaned:` key. A one-to-one chat's id takes the type
         // the header gives the participant with the same address, and
         // `Handle::parse`'s only when no participant has it.
         let chat_handle_type = if individual {
@@ -512,11 +503,11 @@ impl FileStaging<'_> {
         if flagged {
             counts.phones_needing_review += 1;
         }
-        // Only a one-to-one chat's identifier is a person. A group's id (or
-        // `orphaned`) names the conversation, so it gets a handle row and no
-        // contact; the people in it get theirs as participants. Exporters
-        // write `orphaned.jsonl` under an `individual` header, so the file
-        // name, not the type, says it is the orphaned conversation. The handle
+        // Only a one-to-one chat's identifier is a person. A group's id, and
+        // the `orphaned:` key of a conversation of orphaned messages, name
+        // the conversation, so they get a handle row and no contact; the
+        // people in it get theirs as participants. The conversation's type
+        // says which it is, whatever file it came in (#1095). The handle
         // cache is no guide here: it says this run has seen the handle, not
         // that anything gave it a contact.
         //
@@ -535,7 +526,6 @@ impl FileStaging<'_> {
         // (#1094). Its header's participant, if any, is the holder and
         // `insert_participant` drops it.
         let chat_is_an_address = individual
-            && !is_orphaned_export(Path::new(&self.source_file))
             && message_ir::name_of_chat_id(&conversation.chat_identifier).is_none()
             && conversation.chat_identifier != message_ir::NAMELESS_CHAT_ID;
         let with_yourself = chat_is_an_address

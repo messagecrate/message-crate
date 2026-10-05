@@ -264,7 +264,7 @@ below use these phrases for them:
 | List | Base row | Plain text searches | Defaults | Lifted by |
 |---|---|---|---|---|
 | Contacts | one contact | the contact's name, and the raw and normalized form of each of its identities | a contact in the trash is left out | `trashed:` |
-| Conversations | one conversation | the title, the conversation's own identity (its raw form, except for the keys below), the raw form of each participant's identity, and each participant's name. For a conversation known only by a name, its own identity is read as the name after the `name:` prefix; a group conversation's id, whatever its shape, and the `nameless:` key of the conversation that names nobody, are read as nothing (#1696, #1706). Why: every name key contains `name:`, so `nam` would find them all. A group conversation's id is the source's own id, which nobody knows it by. Every group conversation from one source shares the shape of its id (`group:…`, a WhatsApp `…@g.us`), so `group` or `g.us` would find them all. A group conversation is found by its title and its members | a conversation in the trash is left out; a conversation whose every message is a duplicate is left out | `trashed:` lifts the first; `source:` and `import:` lift the second |
+| Conversations | one conversation | the title, the conversation's own identity (its raw form, except for the keys below), the raw form of each participant's identity, and each participant's name. For a conversation known only by a name, its own identity is read as the name after the `name:` prefix; a group conversation's id, whatever its shape, and the `nameless:` key of the conversation that names nobody, are read as nothing (#1696, #1706). Why: every name key contains `name:`, so `nam` would find them all. A group conversation's id is the source's own id, which nobody knows it by. Every group conversation from one source shares the shape of its id (`group:…`, a WhatsApp `…@g.us`), so `group` or `g.us` would find them all. A group conversation is found by its title and its members. The `orphaned:` key of a conversation of orphaned messages is read as nothing for the same reason; it is found by its title and its sender | a conversation in the trash is left out; a conversation whose every message is a duplicate is left out | `trashed:` lifts the first; `source:` and `import:` lift the second |
 | Messages | one message | the full-text indexes (above): the final text and every earlier version, and attachment file names | a message whose conversation is in the trash is left out; a duplicate message is left out | `trashed:` lifts the first; `source:` and `import:` lift the second |
 
 A word lifts its default wherever it appears in the query, negated or inside
@@ -336,14 +336,14 @@ Text, `none`, `any`.
 Text, `none`, `any`. The raw or the normalized form of an identity.
 
 - **Contacts**: one of the contact's identities. `none` is a contact with no address: no identity, or only identities of type `other`, which hold a name the backup gave with no address.
-- **Conversations**: the conversation's own identity or a participant's. The conversation's own identity counts only when it is an address: a group conversation's id, whatever its shape, the `name:` key of a conversation known only by a name, and the `nameless:` key of one that names nobody, are not, as in `with:` (#1592, #1706). `none` is a conversation where no participant has an address (every participant's identity is of type `other`); `any` is one where some participant does.
+- **Conversations**: the conversation's own identity or a participant's. The conversation's own identity counts only when it is an address: a group conversation's id, whatever its shape, the `name:` key of a conversation known only by a name, the `nameless:` key of one that names nobody, and the `orphaned:` key of a conversation of orphaned messages, are not, as in `with:` (#1592, #1706, #1095). `none` is a conversation where no participant has an address (every participant's identity is of type `other`); `any` is one where some participant does.
 - **Messages**: the same, for the message's conversation.
 
 ### `with:`
 
 Person, `me`.
 
-- **Conversations**: this person is in the conversation: the conversation's own identity or a participant's identity is theirs, or a participant's name contains the text. The conversation's own identity counts only when it is an address, not a group conversation's id, whatever its shape, nor the `name:` or `nameless:` key of a conversation known by a name or by nobody. Why: every name key contains `name:`, so `identity:nam` would find them all. Every group conversation from one source shares the shape of its id (`group:…`, a WhatsApp `…@g.us`), so `with:group` or `with:g.us` would find them all (#1706). Not every source writes the `group:` prefix, so the conversation being a group conversation is what decides. The people in such a conversation are found by their participant rows. A contact `#id` reaches a participant only through the identity the participant takes part as, on the contact it is on now. `me` is a conversation the account holder has with themselves: a one-to-one conversation whose own identity is one of the account's identities. It has no participants, so it is the only conversation `me` finds. Why: the holder is never a participant, so a conversation with themselves is the one place the holder is the other party (#1094).
+- **Conversations**: this person is in the conversation: the conversation's own identity or a participant's identity is theirs, or a participant's name contains the text. The conversation's own identity counts only when it is an address, not a group conversation's id, whatever its shape, nor the `name:` or `nameless:` key of a conversation known by a name or by nobody, nor the `orphaned:` key of a conversation of orphaned messages, whose sender is its participant (#1095). Why: every name key contains `name:`, so `identity:nam` would find them all. Every group conversation from one source shares the shape of its id (`group:…`, a WhatsApp `…@g.us`), so `with:group` or `with:g.us` would find them all (#1706). Not every source writes the `group:` prefix, so the conversation being a group conversation is what decides. The people in such a conversation are found by their participant rows. A contact `#id` reaches a participant only through the identity the participant takes part as, on the contact it is on now. `me` is a conversation the account holder has with themselves: a one-to-one conversation whose own identity is one of the account's identities. It has no participants, so it is the only conversation `me` finds. Why: the holder is never a participant, so a conversation with themselves is the one place the holder is the other party (#1094).
 - **Messages**: the same, for the message's conversation.
 
 ### `from:`
@@ -362,7 +362,7 @@ Person, `me`.
 
 Name.
 
-- **Messages**: `#id` is the message's conversation. Text is contained in the conversation's title or in its own identity: the raw form, except for the keys below. For a conversation known only by a name, its own identity is read as the name after the `name:` prefix, so `in:sarah` finds it with no title; a group conversation's id, whatever its shape, and the `nameless:` key of the conversation that names nobody, are read as nothing. Why: every name key contains `name:`, so `in:nam` would find them all (#1696). Every group conversation from one source shares the shape of its id, so `in:grou` or `in:g.us` would find them all (#1706).
+- **Messages**: `#id` is the message's conversation. Text is contained in the conversation's title or in its own identity: the raw form, except for the keys below. For a conversation known only by a name, its own identity is read as the name after the `name:` prefix, so `in:sarah` finds it with no title; a group conversation's id, whatever its shape, the `nameless:` key of the conversation that names nobody, and the `orphaned:` key of a conversation of orphaned messages, are read as nothing. Why: every name key contains `name:`, so `in:nam` would find them all (#1696), and every orphaned key contains `orphaned:` (#1095). Every group conversation from one source shares the shape of its id, so `in:grou` or `in:g.us` would find them all (#1706).
 
 ### `group:`
 
@@ -382,10 +382,10 @@ Name, `none`.
 
 ### `kind:`
 
-Choice: `direct`, `group`.
+Choice: `direct`, `group`, `orphaned`.
 
-- **Contacts**: one of the contact's conversations is of this kind.
-- **Conversations**: `direct` is a one-to-one conversation, one with a single other person; `group` is a group conversation, one the source app keeps as a group.
+- **Contacts**: one of the contact's conversations is of this kind. The sender of orphaned messages is the participant of their orphaned conversation, so `kind:orphaned` finds them.
+- **Conversations**: `direct` is a one-to-one conversation, one with a single other person; `group` is a group conversation, one the source app keeps as a group; `orphaned` is a conversation of Orphaned messages, which is neither (#1095). Each conversation is of exactly one kind, so `kind:direct` and `kind:group` never list an orphaned one.
 - **Messages**: the message's conversation is.
 
 ### `service:`
