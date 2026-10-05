@@ -5,16 +5,17 @@ use crate::read::{ReadOptions, ReadReport, read_backup};
 use crate::write::SbrArchive;
 use anyhow::Result;
 use message_crate_core::{
-    CancelFlag, ExportReport, ExportTransforms, IssueSink, OutputFormat, SKIPPED_UNREADABLE_PART,
-    unreadable_parts_note,
+    CancelFlag, DUPLICATES_DROPPED, ExportReport, ExportTransforms, IssueSink, OutputFormat,
+    SKIPPED_INVALID_DATE, unreadable_parts_note,
 };
 use message_staging::{AttachmentSource, ExportWriter};
 use std::path::Path;
 
 /// Map the reader's [`ReadReport`] onto the shared [`ExportReport`] shape,
-/// moving reader-specific counters into `extra`, and send each error to
-/// `issues` as an Import Error and each message kept with something left
-/// out of it as a note naming the file and the message.
+/// moving reader-specific counters into `extra` with the words and in the
+/// order Convert's log gives them, and send each error to `issues` as an
+/// Import Error and each message kept with something left out of it as a
+/// note naming the file and the message.
 fn to_core_report(report: ReadReport, issues: Option<&IssueSink>) -> ExportReport {
     let mut out = ExportReport {
         conversations: report.conversations,
@@ -26,42 +27,27 @@ fn to_core_report(report: ReadReport, issues: Option<&IssueSink>) -> ExportRepor
         duplicates_dropped: report.duplicates_dropped,
         ..ExportReport::with_issues(issues.cloned())
     };
-    for error in report.errors {
-        out.error(
-            error.file,
-            format!("This file could not be read in full: {}", error.reason),
-        );
+    for error in &report.errors {
+        out.error(&error.file, error.explanation());
     }
-    out.extra.insert("sms_seen".into(), report.sms_seen);
-    out.extra.insert("mms_seen".into(), report.mms_seen);
-    out.extra.insert(
-        "skipped_unknown_address".into(),
-        report.skipped_unknown_address,
-    );
-    out.extra
-        .insert("skipped_unknown_type".into(), report.skipped_unknown_type);
-    out.extra.insert(
-        "skipped_draft_or_outbox".into(),
-        report.skipped_draft_or_outbox,
-    );
-    out.extra.insert(
-        "skipped_empty_participants".into(),
-        report.skipped_empty_participants,
-    );
+    // The invalid dates and the repeated copies have fields of their own;
+    // every other count goes to `extra` in the order Convert's log gives it.
+    for (counter, count) in report.counts() {
+        if count > 0 && counter != SKIPPED_INVALID_DATE && counter != DUPLICATES_DROPPED {
+            out.bump(counter, count);
+        }
+    }
+    // Counted in the totals above; each message is a note of its own.
     for left_out in report.left_out {
         let item = format!("{} ({})", left_out.file, left_out.message);
         if left_out.counts.unreadable_parts > 0 {
-            out.caveat(
-                SKIPPED_UNREADABLE_PART,
-                left_out.counts.unreadable_parts,
+            out.caveat_note(
                 item.as_str(),
                 unreadable_parts_note(left_out.counts.unreadable_parts),
             );
         }
         if left_out.counts.dropped_character_references > 0 {
-            out.caveat(
-                DROPPED_CHARACTER_REFERENCES,
-                left_out.counts.dropped_character_references,
+            out.caveat_note(
                 item,
                 dropped_references_note(left_out.counts.dropped_character_references),
             );
@@ -69,11 +55,6 @@ fn to_core_report(report: ReadReport, issues: Option<&IssueSink>) -> ExportRepor
     }
     out
 }
-
-/// The report counter for character references left out of kept messages
-/// because they are not a character, each message sent as a
-/// [`dropped_references_note`].
-const DROPPED_CHARACTER_REFERENCES: &str = "dropped_character_references";
 
 /// The note for a message kept with `n` character references left out
 /// because they are not a character.

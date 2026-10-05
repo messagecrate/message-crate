@@ -197,8 +197,8 @@ fn xml_writes_only_sms_and_mms_and_the_log_names_what_was_left_out() {
     );
     assert!(
         result.messages.contains(
-            &"Left out 3 message(s) that are not SMS or MMS, because SMS Backup & Restore \
-              holds only SMS and MMS"
+            &"Left out 3 messages that are not SMS or MMS, because SMS Backup & Restore holds \
+              only SMS and MMS"
                 .to_string()
         ),
         "{:?}",
@@ -442,8 +442,8 @@ fn run_from_an_sms_backup_logs_the_reader_counts_and_every_error() {
         "Skipped 1 message of an unknown type",
         "Skipped 1 draft or unsent message",
         "Skipped 1 MMS with no participants",
-        "Skipped 1 message part that could not be read",
-        "Dropped 1 character reference that is not a character",
+        "Left out 1 message part that could not be read",
+        "Left out 1 character reference that is not a character",
     ] {
         assert!(
             logged.iter().any(|line| line == expected),
@@ -455,7 +455,7 @@ fn run_from_an_sms_backup_logs_the_reader_counts_and_every_error() {
         assert!(
             logged
                 .iter()
-                .any(|line| line.starts_with("xml warning: ") && line.contains(&name)),
+                .any(|line| line.starts_with("error: ") && line.contains(&name)),
             "an error for {name} in the log: {logged:#?}"
         );
     }
@@ -545,8 +545,8 @@ fn log_lines_append_the_media_lines_after_the_count() {
         vec![
             "Detected input format: json".to_string(),
             "Conversations: 1".to_string(),
-            "  saved 4 attachments".to_string(),
-            "Obfuscated 2 conversation(s)".to_string(),
+            "  Saved 4 attachments".to_string(),
+            "Obfuscated 2 conversations".to_string(),
         ]
     );
 }
@@ -771,7 +771,7 @@ fn apply_reexport_convert_restages_attachments_and_marks_missing_files() {
     )
     .unwrap();
     assert_eq!(report.attachments_saved, 1, "one file was on disk to stage");
-    assert_eq!(report.extra("attachments_missing"), 2);
+    assert_eq!(report.extra(ATTACHMENTS_MISSING), 2);
 
     let staged = &document.messages[0].attachments[0];
     assert_eq!(
@@ -1347,11 +1347,11 @@ fn a_mail_attachment_without_bytes_keeps_its_reason_and_is_counted() {
     assert_eq!(unsent.path, None);
     assert_eq!(unsent.missing_reason.as_deref(), Some("too_large"));
     assert_eq!(report.report.attachments_saved, 1);
-    assert_eq!(report.report.extra("attachments_missing"), 1);
+    assert_eq!(report.report.extra(ATTACHMENTS_MISSING), 1);
     assert!(
         report
             .log_lines()
-            .contains(&"  1 attachments missing".to_string()),
+            .contains(&"  Left out 1 attachment whose file is missing".to_string()),
         "{:?}",
         report.log_lines()
     );
@@ -1436,8 +1436,8 @@ fn sms_backup_plus_writes_only_sms_and_mms_and_says_what_it_left_out() {
     assert!(mail.contains("X-smssync-type: 1"), "{mail}");
     assert!(
         report.log_lines().contains(
-            &"Left out 3 message(s) that are not SMS or MMS, because SMS Backup+ holds \
-              only SMS and MMS"
+            &"Left out 3 messages that are not SMS or MMS, because SMS Backup+ holds only SMS \
+              and MMS"
                 .to_string()
         ),
         "{:?}",

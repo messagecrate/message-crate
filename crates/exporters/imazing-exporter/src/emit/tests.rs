@@ -82,7 +82,7 @@ Bob Sample,2020-01-01 12:01:00,SMS,Outgoing,,,Read,,,Hi,,,\n",
     let out = dir.path().join("out");
     let report = convert(dir.path(), &out).unwrap();
     assert_eq!(report.conversations, 1);
-    assert_eq!(report.extra("name_only_chat"), 0);
+    assert_eq!(report.extra(message_crate_core::NAME_ONLY_CHAT), 0);
     assert_eq!(report.messages, 2);
     let csv_path = out.join("+13215550100.csv");
     let body = fs::read_to_string(&csv_path).unwrap();
@@ -104,7 +104,7 @@ Mystery Person,2020-01-01 12:01:00,SMS,Outgoing,,,Read,,,Hi,,,\n",
     );
     let out = dir.path().join("out");
     let report = convert(dir.path(), &out).unwrap();
-    assert!(report.extra("name_only_chat") >= 1);
+    assert!(report.extra(message_crate_core::NAME_ONLY_CHAT) >= 1);
     assert_eq!(report.conversations, 1);
     let file = out.join("name_Mystery_Person.csv");
     assert!(file.is_file());
@@ -162,7 +162,7 @@ Alice Example & Bob Example & Carol Silent,2020-01-01 12:01:00,iMessage,Incoming
     assert_eq!(report.conversations, 1);
     // Carol Silent sent nothing, so the source recorded no address for
     // her. The exporter reports her rather than inventing one.
-    assert_eq!(report.extra("unresolved_group_participants"), 1);
+    assert_eq!(report.extra(crate::emit::UNRESOLVED_GROUP_PARTICIPANTS), 1);
     let body = fs::read_to_string(out.join("group_+15555550111_+15555550122.csv")).unwrap();
     assert!(body.contains("group"));
 }
@@ -180,7 +180,7 @@ Alice Example & Bob Example & Carol Silent,2020-01-01 12:01:00,iMessage,Incoming
     let out = dir.path().join("out");
     let report = convert(dir.path(), &out).unwrap();
     assert_eq!(report.conversations, 1);
-    assert_eq!(report.extra("unresolved_group_participants"), 1);
+    assert_eq!(report.extra(crate::emit::UNRESOLVED_GROUP_PARTICIPANTS), 1);
 }
 
 #[test]
@@ -202,8 +202,8 @@ Bob,2020-01-01 12:00:00,,,,,SMS,Incoming,+15555550100,Bob,Read,,,SMS hi,,,\n",
     let out = dir.path().join("out");
     let report = convert(dir.path(), &out).unwrap();
     assert_eq!(report.conversations, 2);
-    assert_eq!(report.extra("messages_files"), 1);
-    assert_eq!(report.extra("whatsapp_files"), 1);
+    assert_eq!(report.extra(crate::emit::MESSAGES_FILES), 1);
+    assert_eq!(report.extra(crate::emit::WHATSAPP_FILES), 1);
     assert!(out.join("+15555550100.csv").is_file());
     assert!(out.join("+15555550100__whatsapp.csv").is_file());
     let wa = fs::read_to_string(out.join("+15555550100__whatsapp.csv")).unwrap();
@@ -878,9 +878,12 @@ Bob,2020-01-01 12:01:00,iMessage,Incoming,+15555550100,Bob,Read,,,See https://ex
     );
     let report = &export.report;
     assert_eq!(report.attachments_saved, 2);
-    assert_eq!(report.extra("live_photo_videos"), 1);
-    assert_eq!(report.extra("link_previews_already_in_message"), 1);
-    assert_eq!(report.extra("files_named_by_no_row"), 1);
+    assert_eq!(report.extra(crate::emit::LIVE_PHOTO_VIDEOS), 1);
+    assert_eq!(
+        report.extra(crate::emit::LINK_PREVIEWS_ALREADY_IN_MESSAGE),
+        1
+    );
+    assert_eq!(report.extra(crate::emit::FILES_NAMED_BY_NO_ROW), 1);
 }
 
 /// A link preview whose address no message of its second shows holds
@@ -896,8 +899,13 @@ Bob,2020-01-01 12:02:00,iMessage,Incoming,+15555550100,Bob,Read,,,See https://ex
             "[InternetShortcut]\nURL=https://example.com/page\n",
         )],
     );
-    assert_eq!(export.report.extra("link_previews_already_in_message"), 0);
-    assert_eq!(export.report.extra("files_named_by_no_row"), 1);
+    assert_eq!(
+        export
+            .report
+            .extra(crate::emit::LINK_PREVIEWS_ALREADY_IN_MESSAGE),
+        0
+    );
+    assert_eq!(export.report.extra(crate::emit::FILES_NAMED_BY_NO_ROW), 1);
 }
 
 /// When two rows name one picture, its Live Photo video goes to the first of
@@ -921,7 +929,7 @@ fn a_live_photo_video_of_a_picture_two_rows_name_goes_to_the_first_row() {
     );
     assert_eq!(export.attachment_bodies("first"), vec!["picture", "video"]);
     assert_eq!(export.attachment_bodies("second"), vec!["picture"]);
-    assert_eq!(export.report.extra("live_photo_videos"), 1);
+    assert_eq!(export.report.extra(crate::emit::LIVE_PHOTO_VIDEOS), 1);
     // The run did what it says it does, so it is a note and not an error (#1414).
     assert_eq!(export.report.errors, Vec::<String>::new());
     assert!(
@@ -963,9 +971,12 @@ fn assert_whatsapp_directory_left_alone(export: &ChatDirectoryExport) {
     assert_eq!(export.attachment_bodies("photo"), vec!["picture"]);
     let report = &export.report;
     assert_eq!(report.attachments_saved, 1);
-    assert_eq!(report.extra("live_photo_videos"), 0);
-    assert_eq!(report.extra("link_previews_already_in_message"), 0);
-    assert_eq!(report.extra("files_named_by_no_row"), 0);
+    assert_eq!(report.extra(crate::emit::LIVE_PHOTO_VIDEOS), 0);
+    assert_eq!(
+        report.extra(crate::emit::LINK_PREVIEWS_ALREADY_IN_MESSAGE),
+        0
+    );
+    assert_eq!(report.extra(crate::emit::FILES_NAMED_BY_NO_ROW), 0);
 }
 
 /// The pass over files no row names is for what iMazing writes into a
@@ -1027,9 +1038,12 @@ fn a_chat_directory_with_a_whatsapp_and_a_messages_csv_attaches_only_messages_li
         .collect();
     assert_eq!(bodies, vec!["messages picture", "messages video"]);
     let report = &export.report;
-    assert_eq!(report.extra("live_photo_videos"), 1);
-    assert_eq!(report.extra("link_previews_already_in_message"), 0);
-    assert_eq!(report.extra("files_named_by_no_row"), 0);
+    assert_eq!(report.extra(crate::emit::LIVE_PHOTO_VIDEOS), 1);
+    assert_eq!(
+        report.extra(crate::emit::LINK_PREVIEWS_ALREADY_IN_MESSAGE),
+        0
+    );
+    assert_eq!(report.extra(crate::emit::FILES_NAMED_BY_NO_ROW), 0);
 }
 
 /// #1080: a group's key is not built from who wrote, so a group in which one

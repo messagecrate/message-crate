@@ -399,6 +399,16 @@ released versions carry their date on the heading.
   takes the newer backup's text and earlier versions, and search finds it by
   both. An older backup imported after a newer one leaves the message as it
   is.
+- 2026-10-05 **An import's log and Convert's log say each count in the same
+  plain words.** Converting and importing one SMS Backup & Restore backup
+  used to word its counts two ways: Convert wrote "Skipped 1 message with no
+  usable address", and an import wrote `skipped_unknown_address: 1`, printed
+  even when the count was 0, along with "skipped 1 invalid-date rows" and
+  "saved 1 attachments". Every count an import's summary or Convert's log
+  gives now has one line, singular for one, such as "Skipped 1 message with
+  an invalid date" and "Read 7 SMS", and a count of 0 is left out. A file
+  that could not be read is an `error:` line in both. This holds for every
+  kind of backup, not only SMS Backup & Restore.
 - 2026-10-05 **An SMS Backup & Restore import names each message it kept
   with something left out.** A picture or other part whose data could not be
   read, and a character the backup wrote as a code that is not a character,
@@ -1222,6 +1232,15 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-05 **The desktop app reaches an HTTPS server whose certificate
+  your computer trusts.** A Message Crate behind a reverse proxy whose
+  certificate comes from a private certificate authority, such as one made
+  by mkcert or Caddy's internal authority, opened in the desktop app's
+  window, but an Upload, an Export from the server and an attachment
+  download failed with a certificate error. The app checked those against the
+  public authorities it carries and nothing else. It now also trusts the
+  authorities the operating system trusts, as the window does. A certificate
+  that neither trusts is still refused.
 - 2026-10-05 **The desktop app saves a large attachment without holding it
   in memory.** Downloading a video of several hundred megabytes in the
   desktop app loaded the whole file into memory two or three times over

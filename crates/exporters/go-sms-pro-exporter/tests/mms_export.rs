@@ -164,8 +164,12 @@ fn a_received_pdu_names_its_sender_and_a_sent_pdu_names_the_owner() {
 fn a_stub_pdu_is_counted_as_skipped_and_writes_no_message() {
     let (_tmp, output, report) = convert_backup();
 
-    assert_eq!(report.extra("skipped_empty_pdu"), 1, "{report:?}");
-    assert_eq!(report.extra("pdu_messages"), 3, "{report:?}");
+    assert_eq!(
+        report.extra(crate::emit::SKIPPED_EMPTY_PDU),
+        1,
+        "{report:?}"
+    );
+    assert_eq!(report.extra(crate::emit::PDU_MESSAGES), 3, "{report:?}");
     let rows = rows_by_text(&output);
     // The one empty-text row is the picture with no words; the stub is not
     // a message.
@@ -189,7 +193,11 @@ fn a_stub_pdu_is_counted_as_skipped_and_writes_no_message() {
 fn a_pdu_naming_only_the_owner_is_skipped_and_listed() {
     let (_tmp, output, report) = convert_backup();
 
-    assert_eq!(report.extra("skipped_no_other_party"), 1, "{report:?}");
+    assert_eq!(
+        report.extra(crate::emit::SKIPPED_NO_OTHER_PARTY),
+        1,
+        "{report:?}"
+    );
     let skipped = fs::read_to_string(output.join("skipped_no_party.csv")).unwrap();
     assert_eq!(
         skipped.lines().collect::<Vec<_>>(),
@@ -207,8 +215,16 @@ fn only_xml_and_prefixed_pdu_files_are_read() {
     let (_tmp, _, report) = convert_backup();
 
     assert!(report.errors.is_empty(), "{:?}", report.errors);
-    assert_eq!(report.extra("skipped_unparseable_pdu"), 0, "{report:?}");
-    assert_eq!(report.extra("xml_messages_seen"), 0, "{report:?}");
+    assert_eq!(
+        report.extra(crate::emit::SKIPPED_UNPARSEABLE_PDU),
+        0,
+        "{report:?}"
+    );
+    assert_eq!(
+        report.extra(crate::emit::XML_MESSAGES_SEEN),
+        0,
+        "{report:?}"
+    );
 }
 
 #[test]
@@ -226,7 +242,11 @@ fn a_sent_pdu_to_several_people_is_a_group_conversation() {
     let output = tmp.path().join("out");
     let report = convert(&input, &output);
 
-    assert_eq!(report.extra("pdu_group_messages"), 1, "{report:?}");
+    assert_eq!(
+        report.extra(crate::emit::PDU_GROUP_MESSAGES),
+        1,
+        "{report:?}"
+    );
     let files = csv_files(&output);
     assert_eq!(files.len(), 1, "{files:?}");
     let name = files[0].file_name().unwrap().to_string_lossy().into_owned();
@@ -253,7 +273,11 @@ fn a_pdu_that_breaks_the_mms_rules_is_counted_and_named() {
     let output = tmp.path().join("out");
     let report = convert(&input, &output);
 
-    assert_eq!(report.extra("skipped_unparseable_pdu"), 1, "{report:?}");
+    assert_eq!(
+        report.extra(crate::emit::SKIPPED_UNPARSEABLE_PDU),
+        1,
+        "{report:?}"
+    );
     assert_eq!(report.errors.len(), 1, "{:?}", report.errors);
     assert!(
         report.errors[0].ends_with(

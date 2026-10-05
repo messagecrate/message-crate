@@ -16,7 +16,7 @@ use crate::parse_emit::{
 use crate::unnamed_files::{DirectoryRows, UnnamedFile, unnamed_files};
 use anyhow::Result;
 use message_crate_core::{
-    CancelFlag, ExportReport, ExportTransforms, IssueSink, OutputFormat, prepare_outputs,
+    CancelFlag, Counter, ExportReport, ExportTransforms, IssueSink, OutputFormat, prepare_outputs,
     project_conversation,
 };
 use message_csv::Zone;
@@ -34,6 +34,50 @@ use std::path::{Path, PathBuf};
 const EXPORT_SOURCE: &str = "imazing";
 const EXPORT_TOOL: &str = "iMazing";
 const EXPORT_TOOL_VERSION: &str = "3.5.5";
+
+/// iMazing Messages CSVs read.
+pub(crate) const MESSAGES_FILES: Counter = Counter::new(
+    "messages_files",
+    "Read 1 Messages CSV",
+    "Read {n} Messages CSVs",
+);
+
+/// iMazing WhatsApp CSVs read.
+pub(crate) const WHATSAPP_FILES: Counter = Counter::new(
+    "whatsapp_files",
+    "Read 1 WhatsApp CSV",
+    "Read {n} WhatsApp CSVs",
+);
+
+/// Group members a group's name lists but no message gives a phone number
+/// or email address for, each kept by name and sent as a note.
+pub(crate) const UNRESOLVED_GROUP_PARTICIPANTS: Counter = Counter::new(
+    "unresolved_group_participants",
+    "Kept 1 group member by name alone, with no phone number or email address",
+    "Kept {n} group members by name alone, with no phone number or email address",
+);
+
+/// Link preview files no row names, left out because a message of their
+/// second already shows their link.
+pub(crate) const LINK_PREVIEWS_ALREADY_IN_MESSAGE: Counter = Counter::new(
+    "link_previews_already_in_message",
+    "Left out 1 link preview file whose link its message already shows",
+    "Left out {n} link preview files whose links their messages already show",
+);
+
+/// Files in a chat directory that no row names, left out.
+pub(crate) const FILES_NAMED_BY_NO_ROW: Counter = Counter::new(
+    "files_named_by_no_row",
+    "Left out 1 file that no row names",
+    "Left out {n} files that no row names",
+);
+
+/// Live Photo videos no row names, attached beside their picture.
+pub(crate) const LIVE_PHOTO_VIDEOS: Counter = Counter::new(
+    "live_photo_videos",
+    "Kept 1 Live Photo video with its picture",
+    "Kept {n} Live Photo videos with their pictures",
+);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub(super) enum TransportFamily {
@@ -384,8 +428,8 @@ impl Ingest {
     /// cannot be read while looking for the rows' files.
     fn ingest_file(&mut self, csv_index: usize, discovered: &DiscoveredCsv) -> Result<()> {
         match discovered.kind {
-            SourceKind::Messages => self.report.bump("messages_files", 1),
-            SourceKind::WhatsApp => self.report.bump("whatsapp_files", 1),
+            SourceKind::Messages => self.report.bump(MESSAGES_FILES, 1),
+            SourceKind::WhatsApp => self.report.bump(WHATSAPP_FILES, 1),
         }
         let directory = csv_directory(discovered).to_path_buf();
         if discovered.kind == SourceKind::WhatsApp {
@@ -468,7 +512,7 @@ impl Ingest {
         }
         for label in &session.unresolved_roster_labels {
             self.report.caveat(
-                "unresolved_group_participants",
+                UNRESOLVED_GROUP_PARTICIPANTS,
                 1,
                 format!("{csv_path} ({label})"),
                 "The group's name lists this member, but no message gives their phone number or \
@@ -639,9 +683,9 @@ impl Ingest {
                     self.attach_live_photo_video(&video, &picture, &pictures[&picture]);
                 }
                 UnnamedFile::LinkPreview if counted => {
-                    self.report.bump("link_previews_already_in_message", 1);
+                    self.report.bump(LINK_PREVIEWS_ALREADY_IN_MESSAGE, 1);
                 }
-                UnnamedFile::Other if counted => self.report.bump("files_named_by_no_row", 1),
+                UnnamedFile::Other if counted => self.report.bump(FILES_NAMED_BY_NO_ROW, 1),
                 UnnamedFile::LinkPreview | UnnamedFile::Other => {}
             }
         }
@@ -772,7 +816,7 @@ impl Ingest {
             name_hint: Some(name),
             size_bytes: None,
         });
-        self.report.bump("live_photo_videos", 1);
+        self.report.bump(LIVE_PHOTO_VIDEOS, 1);
     }
 }
 

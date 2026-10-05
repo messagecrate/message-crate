@@ -11,8 +11,8 @@ use crate::parse_emit::{ParsedEmlKind, collect_eml_paths, parse_one_eml};
 use crate::types::ParsedMessage;
 use anyhow::{Result, bail};
 use message_crate_core::{
-    CancelFlag, ExportReport, ExportTransforms, IssueSink, LogSink, OutputFormat, RunIssue,
-    emit_issue, emit_log, prepare_outputs, project_conversation,
+    CancelFlag, Counter, ExportReport, ExportTransforms, IssueSink, LogSink, OutputFormat,
+    RunIssue, emit_issue, emit_log, prepare_outputs, project_conversation,
 };
 use message_ir::{
     ConversationDocument, ExportMeta, IrConversationType, IrDirection, IrParticipant, IrService,
@@ -32,25 +32,43 @@ const EXPORT_TOOL_VERSION: &str = "1.5.11";
 /// Report counter: received group messages whose `From` names nobody in the
 /// group, kept with no sender. Counted after copies are reduced to one, and
 /// each one is also an issue in the Import Run.
-const GROUP_MESSAGES_WITHOUT_SENDER: &str = "group_messages_without_sender";
+const GROUP_MESSAGES_WITHOUT_SENDER: Counter = Counter::new(
+    "group_messages_without_sender",
+    "Kept 1 group message with no sender",
+    "Kept {n} group messages with no sender",
+);
 
 /// Report counter: received MMS whose `To` names a group but none of the
 /// owner's numbers or email addresses, filed one-to-one under `From` instead,
 /// or under `X-smssync-address` when `From` gives no address. Counted after
 /// copies are reduced to one, and each one is also a note in the Import Run.
-const GROUP_MESSAGES_OWNER_NOT_NAMED: &str = "group_messages_owner_not_named";
+const GROUP_MESSAGES_OWNER_NOT_NAMED: Counter = Counter::new(
+    "group_messages_owner_not_named",
+    "Kept 1 group message that names none of the owner's numbers or email addresses as a \
+     one-to-one message",
+    "Kept {n} group messages that name none of the owner's numbers or email addresses as \
+     one-to-one messages",
+);
 
 /// Report counter: messages that record no address for the other person,
 /// kept in a conversation under the name the mail gives, or in the one that
 /// names nobody. Counted after copies are reduced to one, and each one is
 /// also a note in the Import Run.
-const UNKNOWN_CHAT_MESSAGES: &str = "unknown_chat_messages";
+pub(crate) const UNKNOWN_CHAT_MESSAGES: Counter = Counter::new(
+    "unknown_chat_messages",
+    "Kept 1 message that names no phone number or email address for the other person",
+    "Kept {n} messages that name no phone number or email address for the other person",
+);
 
 /// Report counter: group members the archive names only by email address,
 /// never with a number, so the address stays their key. Each is counted
 /// once, however many mails name them (#1545), and is a note in the Import
 /// Run.
-const GROUP_MEMBERS_WITHOUT_NUMBER: &str = "group_members_without_number";
+const GROUP_MEMBERS_WITHOUT_NUMBER: Counter = Counter::new(
+    "group_members_without_number",
+    "Kept 1 group member by an email address, with no phone number",
+    "Kept {n} group members by an email address, with no phone number",
+);
 
 /// Report counter: group members whose email address the archive gives two
 /// or more numbers, as a contact card two people share does, so the address
@@ -58,7 +76,46 @@ const GROUP_MEMBERS_WITHOUT_NUMBER: &str = "group_members_without_number";
 /// form in some mails and international form in others (`07700900123`,
 /// `+447700900123`) counts as two, since only a `+` number is read as
 /// international. Each is a note in the Import Run.
-const GROUP_MEMBERS_WITH_SEVERAL_NUMBERS: &str = "group_members_with_several_numbers";
+const GROUP_MEMBERS_WITH_SEVERAL_NUMBERS: Counter = Counter::new(
+    "group_members_with_several_numbers",
+    "Kept 1 group member by an email address the backup gives more than one phone number",
+    "Kept {n} group members by email addresses the backup gives more than one phone number",
+);
+
+/// Mails read before repeated copies of a message were dropped.
+pub(crate) const MESSAGES_BEFORE_DEDUPE: Counter = Counter::new(
+    "messages_before_dedupe",
+    "Read 1 message before repeated copies were dropped",
+    "Read {n} messages before repeated copies were dropped",
+);
+
+/// "Flat" mails, each holding one text.
+pub(crate) const FLAT_EML: Counter = Counter::new(
+    "flat_eml",
+    "Read 1 mail holding one message",
+    "Read {n} mails holding one message each",
+);
+
+/// Mails skipped because they could not be read as a message.
+pub(crate) const SKIPPED_PARSE_ERROR: Counter = Counter::new(
+    "skipped_parse_error",
+    "Skipped 1 mail that could not be read as a message",
+    "Skipped {n} mails that could not be read as a message",
+);
+
+/// Call log mails skipped.
+pub(crate) const SKIPPED_CALL_LOG: Counter = Counter::new(
+    "skipped_call_log",
+    "Skipped 1 call log entry",
+    "Skipped {n} call log entries",
+);
+
+/// Mails skipped because SMS Backup+ did not write them.
+pub(crate) const SKIPPED_NOT_SMS_BACKUP_PLUS: Counter = Counter::new(
+    "skipped_not_sms_backup_plus",
+    "Skipped 1 mail that SMS Backup+ did not write",
+    "Skipped {n} mails that SMS Backup+ did not write",
+);
 
 /// The EML's path relative to the input root it was found under, for the vendor `source` bag.
 ///
@@ -169,7 +226,7 @@ fn add_message(
         peers,
     );
 
-    report.bump("messages_before_dedupe", 1);
+    report.bump(MESSAGES_BEFORE_DEDUPE, 1);
     convo.messages.push(pending_from_parsed(msg, pending_atts));
 }
 
@@ -601,7 +658,7 @@ impl<'a> EmlIngest<'a> {
         match outcome {
             ParsedEmlKind::Cancelled => bail!("cancelled"),
             ParsedEmlKind::Flat { msg } => {
-                self.report.bump("flat_eml", 1);
+                self.report.bump(FLAT_EML, 1);
                 if msg.unreadable_parts > 0 {
                     self.report.caveat(
                         message_crate_core::SKIPPED_UNREADABLE_PART,
@@ -612,15 +669,15 @@ impl<'a> EmlIngest<'a> {
                 }
                 self.add_parsed(*msg)?;
             }
-            ParsedEmlKind::FlatNone => self.report.bump("skipped_parse_error", 1),
-            ParsedEmlKind::CallLog => self.report.bump("skipped_call_log", 1),
-            ParsedEmlKind::NotSms => self.report.bump("skipped_not_sms_backup_plus", 1),
+            ParsedEmlKind::FlatNone => self.report.bump(SKIPPED_PARSE_ERROR, 1),
+            ParsedEmlKind::CallLog => self.report.bump(SKIPPED_CALL_LOG, 1),
+            ParsedEmlKind::NotSms => self.report.bump(SKIPPED_NOT_SMS_BACKUP_PLUS, 1),
             ParsedEmlKind::IoError { path, reason } => self.report.error(
                 path,
                 format!("This file could not be read and was left out: {reason}"),
             ),
             ParsedEmlKind::ParseError { path, reason } => {
-                self.report.bump("skipped_parse_error", 1);
+                self.report.bump(SKIPPED_PARSE_ERROR, 1);
                 self.report.error(
                     path,
                     format!("This file could not be read as a mail and was left out: {reason}"),
@@ -702,12 +759,12 @@ impl<'a> EmlIngest<'a> {
     fn parse_summary(&self) -> String {
         format!(
             "parsed: flat_eml={} messages={} unknown_chat={} skipped_call_log={} skipped_not_sms_backup_plus={} skipped_parse_error={}",
-            self.report.extra("flat_eml"),
-            self.report.extra("messages_before_dedupe"),
+            self.report.extra(FLAT_EML),
+            self.report.extra(MESSAGES_BEFORE_DEDUPE),
             self.caveats.unknown_chat.len(),
-            self.report.extra("skipped_call_log"),
-            self.report.extra("skipped_not_sms_backup_plus"),
-            self.report.extra("skipped_parse_error"),
+            self.report.extra(SKIPPED_CALL_LOG),
+            self.report.extra(SKIPPED_NOT_SMS_BACKUP_PLUS),
+            self.report.extra(SKIPPED_PARSE_ERROR),
         )
     }
 }
@@ -906,7 +963,12 @@ mod tests {
                 .absorb(ParsedEmlKind::Flat { msg: Box::new(msg) })
                 .unwrap();
         }
-        assert_eq!(ingest.report.extra("skipped_unreadable_part"), 3);
+        assert_eq!(
+            ingest
+                .report
+                .extra(message_crate_core::SKIPPED_UNREADABLE_PART),
+            3
+        );
     }
 
     #[test]

@@ -45,7 +45,7 @@ nothing else to read. Non-text MIME parts are exported as attachments.
 
 SMS Backup+ can also back up the phone's call log, one mail per call, into a label of its own ("Call log").
 Such a mail carries `X-smssync-datatype: CALLLOG`, and its `X-smssync-type` holds the call's type, not a message type.
-Message Crate has no model for a call, so the exporter skips every `CALLLOG` mail and counts it as `skipped_call_log` in the run summary.
+Message Crate has no model for a call, so the exporter skips every `CALLLOG` mail and counts it as `skipped_call_log`, which the run summary prints as `Skipped N call log entries`.
 
 ## Import mapping and deduplication
 

@@ -307,7 +307,7 @@ fn a_csv_export_writes_each_conversation_and_copies_the_photo() {
     let result =
         imessage_ir_exporter::run(&config_for(&db_path, &output, OutputFormat::Csv)).unwrap();
     assert!(
-        result.messages.iter().any(|l| l == "  saved 1 attachments"),
+        result.messages.iter().any(|l| l == "  Saved 1 attachment"),
         "{:#?}",
         result.messages
     );

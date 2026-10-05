@@ -59,7 +59,7 @@ fn run_writes_the_conversation_and_counts_the_bad_date_rows() {
         result
             .messages
             .iter()
-            .any(|l| l == "  skipped 2 invalid-date rows"),
+            .any(|l| l == "  Skipped 2 messages with an invalid date"),
         "{:?}",
         result.messages
     );

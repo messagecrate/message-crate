@@ -283,7 +283,7 @@ fn rows_the_program_skipped_are_counted_in_the_run_result() {
         result
             .messages
             .iter()
-            .any(|line| line == &format!("  {}: 2", convert::SKIPPED_UNREADABLE_MESSAGE)),
+            .any(|line| line == "  Skipped 2 messages that could not be read"),
         "{:#?}",
         result.messages
     );
@@ -316,7 +316,7 @@ fn a_run_with_no_skipped_rows_says_nothing_about_them() {
         !result
             .messages
             .iter()
-            .any(|line| line.contains(convert::SKIPPED_UNREADABLE_MESSAGE)),
+            .any(|line| line.contains("could not be read")),
         "{:#?}",
         result.messages
     );
@@ -433,7 +433,7 @@ fn inline_and_missing_attachments_reach_a_file_backed_export() {
         None,
     );
     assert!(
-        result.messages.iter().any(|l| l == "  saved 1 attachments"),
+        result.messages.iter().any(|l| l == "  Saved 1 attachment"),
         "{:#?}",
         result.messages
     );
@@ -663,7 +663,7 @@ fn an_attachment_that_fails_to_decrypt_is_counted_apart_from_missing_ones() {
         result
             .messages
             .iter()
-            .any(|line| line == &format!("  {}: 1", convert::ATTACHMENT_NOT_DECRYPTED)),
+            .any(|line| line == "  Left out 1 attachment that could not be decrypted"),
         "{:#?}",
         result.messages
     );
@@ -776,7 +776,7 @@ fn the_scratch_directory_is_under_the_scratch_directory_and_deleted_after() {
 
     let result = run_with(&config, |request, _, _| Ok(spawn_fake(&program, request))).unwrap();
     assert!(
-        result.messages.iter().any(|l| l == "  saved 1 attachments"),
+        result.messages.iter().any(|l| l == "  Saved 1 attachment"),
         "{:#?}",
         result.messages
     );

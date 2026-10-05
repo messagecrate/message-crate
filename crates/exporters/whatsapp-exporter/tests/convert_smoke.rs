@@ -94,14 +94,7 @@ fn copies_ios_style_media_true_data_paths() {
     .expect("convert");
 
     assert_eq!(report.attachments_saved, 1);
-    assert_eq!(
-        report
-            .extra
-            .get("attachments_missing")
-            .copied()
-            .unwrap_or(0),
-        0
-    );
+    assert_eq!(report.extra(message_crate_core::ATTACHMENTS_MISSING), 0);
     let csv = out.path().join("+15555550167__whatsapp.csv");
     let body = fs::read_to_string(&csv).expect("csv");
     assert!(body.contains("look at this"));
@@ -326,7 +319,7 @@ fn a_body_that_is_not_a_string_is_kept_and_missing_media_is_dropped() {
         ]
     );
     assert!(messages.iter().all(|m| m.attachments.is_empty()));
-    assert_eq!(report.extra.get("attachments_missing"), None);
+    assert_eq!(report.extra(message_crate_core::ATTACHMENTS_MISSING), 0);
 }
 
 /// Older dumps put the media path straight in `media` rather than setting
@@ -387,7 +380,7 @@ fn a_media_file_not_found_is_kept_as_file_missing_and_the_guid_does_not_change()
         missing.attachments[0].original_name.as_deref(),
         Some("photo.jpg")
     );
-    assert_eq!(report.extra.get("attachments_missing").copied(), Some(1));
+    assert_eq!(report.extra(message_crate_core::ATTACHMENTS_MISSING), 1);
 
     let dir = tempfile::tempdir().expect("tempdir");
     fs::write(dir.path().join("photo.jpg"), b"fake-jpeg").expect("write media");
@@ -471,6 +464,6 @@ fn status_updates_and_channel_posts_are_skipped_and_counted() {
     assert_eq!(documents.keys().collect::<Vec<_>>(), vec!["+15555550122"]);
     assert_eq!(report.conversations, 1);
     assert_eq!(report.messages, 1);
-    assert_eq!(report.extra("skipped_status_updates"), 2);
-    assert_eq!(report.extra("skipped_channel_posts"), 1);
+    assert_eq!(report.extra(crate::emit::SKIPPED_STATUS_UPDATES), 2);
+    assert_eq!(report.extra(crate::emit::SKIPPED_CHANNEL_POSTS), 1);
 }
