@@ -80,7 +80,7 @@ How is a rebuild recognised?
 
 - The browser shows **Create Owner**, as it did the first time.
 - **Schema fingerprint** under **Server Settings** shows a different number than before the update. The number is the same for every server with the same database layout.
-- `docker logs message-crate` shows the line `database schema differs from this server's; rebuilding empty (re-import your data)`.
+- `docker logs message-crate` shows the line `The database's schema differs from this server's, so the database is rebuilt empty and its messages must be imported again`.
 
 Everything the database held is gone after a rebuild:
 

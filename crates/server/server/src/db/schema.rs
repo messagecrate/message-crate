@@ -160,7 +160,7 @@ async fn migrate_schema(conn: &mut SqliteConnection) -> Result<()> {
         tracing::warn!(
             stamped = %stamped,
             expected = %SCHEMA_FINGERPRINT,
-            "database schema differs from this server's; rebuilding empty (re-import your data)"
+            "The database's schema differs from this server's, so the database is rebuilt empty and its messages must be imported again"
         );
     }
     rebuild_schema(conn).await?;

@@ -146,12 +146,16 @@ describe("wholeRun", () => {
 });
 
 describe("recordToCarry", () => {
-  it("keeps the attachment skips of a stopped Upload and drops what the resume reports again", () => {
+  it("keeps the attachment skips of a paused Upload and drops what the resume reports again", () => {
     const issues: ImportIssue[] = [
       { kind: "skip", stage: "staging", item: "a.jpg", reason: "missing" },
       { ...upload("a.jsonl", "a.jsonl:big.mov"), kind: "skip", reason: "too large" },
       { ...upload("b.jsonl"), kind: "error", reason: "connection refused" },
-      { ...upload("c.jsonl"), kind: "skip", reason: "the Upload was stopped" },
+      {
+        ...upload("c.jsonl"),
+        kind: "skip",
+        reason: "the Upload ended before this conversation was sent",
+      },
       { kind: "error", stage: "upload", item: "Import", reason: "the server went away" },
     ];
     const carried = recordToCarry(
@@ -216,7 +220,7 @@ describe("recordToCarry", () => {
     ]);
   });
 
-  it("drops an earlier stop's failed conversation once a later Upload reported on it", () => {
+  it("drops an earlier pause's failed conversation once a later Upload reported on it", () => {
     const earlier = {
       issues: [],
       lastStopIssues: [{ ...upload("b.jsonl"), kind: "error", reason: "connection refused" }],
@@ -255,7 +259,7 @@ describe("the record written while a stage runs (#1639)", () => {
     expect(sent.lastStopIssues).toEqual([]);
   });
 
-  it("drops an earlier stop's failed conversation as soon as the resumed Upload sends it", () => {
+  it("drops an earlier pause's failed conversation as soon as the resumed Upload sends it", () => {
     // Pause 1 left a.jsonl failed. The resumed Upload sends it, and the app
     // closes before that Upload ends: the record written then must not hold
     // the failure for a Discard to send.

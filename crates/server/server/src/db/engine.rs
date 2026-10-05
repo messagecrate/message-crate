@@ -63,7 +63,7 @@ async fn try_enable_wal(pool: &SqlitePool) {
     match sqlx::query("PRAGMA journal_mode = WAL").execute(pool).await {
         Ok(_) => {}
         Err(err) => {
-            tracing::warn!(error = %err, "could not enable write-ahead logging; continuing without it");
+            tracing::warn!(error = %err, "Write-ahead logging could not be turned on, so the database goes on without it");
         }
     }
 }

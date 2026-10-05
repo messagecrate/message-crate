@@ -149,7 +149,7 @@ fn print_plan(opts: &CliImportOptions, opened: &OpenDb, plan: &SourcePlan) {
     println!("Import");
     println!("  account:      {}", opts.account_id);
     println!("  input:        {}", opts.input_dir.display());
-    println!("  db:           {}", opened.location().display());
+    println!("  database:     {}", opened.location().display());
     println!("  sources:      {}", plan.sources().join(", "));
     if plan.from_jsonl {
         println!("  source mode:  from JSONL export.source");

@@ -626,7 +626,7 @@ impl ApiError {
             let Self::Internal(err) = self else {
                 unreachable!("every variant but Internal has a problem type");
             };
-            tracing::error!(error = %error_chain(err), "internal server error");
+            tracing::error!(error = %error_chain(err), "A request failed with 500 Internal Server Error");
             return Problem {
                 kind: crate::problem::INTERNAL_TYPE.to_string(),
                 title: "Internal server error".to_string(),
@@ -1332,7 +1332,7 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
             crate::logging::log_dir(&cfg.paths.data_dir).display()
         ))
     })?;
-    eprintln!("  log:  {}", log.dir().display());
+    eprintln!("The server's log is in {}", log.dir().display());
     let _operation_lock = crate::operation_lock::acquire_for_serve(&cfg.paths.db)?;
 
     // Every new Message Crate starts with the Demo Account: seed first, then
@@ -1348,13 +1348,13 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
         .await
         .unwrap_or_else(|_| "unknown".into());
     eprintln!(
-        "  db:   {} (journal_mode={mode})",
+        "The database at {} is open, in journal mode {mode}",
         opened.cfg.paths.db.display()
     );
     let state = AppState::new(opened, server.asset_part_size);
     if crate::server_api::recover_stopped_demo_build(&state).await? {
         eprintln!(
-            "  demo: the server stopped during a Demo Account build; the part-built Demo Account was removed"
+            "The server stopped during a Demo Account build, so the part-built Demo Account was removed"
         );
     }
     // Works through what earlier Import Runs queued, a server stopped
@@ -1366,7 +1366,7 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
     // limit starts the server: a part is never larger than the limit.
     let upload_limits = state.upload_limits().await?;
     eprintln!(
-        "  assets: max={} MiB  part_size={} MiB",
+        "An attachment may be up to {} MiB, and is uploaded in parts of {} MiB",
         upload_limits.max_bytes / message_ir::MIB,
         upload_limits.part_size as u64 / message_ir::MIB
     );
@@ -1387,7 +1387,7 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
         listener.local_addr()?
     );
     eprintln!(
-        "  routes: `message-crate-server dump-openapi` lists them all; set [server] openapi_ui = true for /docs"
+        "`message-crate-server dump-openapi` lists every route, and [server] openapi_ui = true serves the API reference at /docs"
     );
     let on_signal = {
         let demo_build = demo_build.clone();
@@ -1579,7 +1579,7 @@ pub async fn resolve_auth_on_conn(
                 tracing::warn!(
                     account_id = session.account_id,
                     error = %format!("{err:#}"),
-                    "could not record the connecting app"
+                    "The connecting app could not be recorded"
                 );
             }
         }

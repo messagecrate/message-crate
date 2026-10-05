@@ -21,6 +21,7 @@ use serde::Deserialize;
 use sqlx::{Row, SqlitePool};
 
 use crate::config::Config;
+use crate::counts::words;
 use crate::db::account_profile::{self, MessageBatch, MessagesToDelete};
 use crate::db::address_book::{self, LoadCounts, LoadMode};
 use crate::db::audit_trail::AuditActor;
@@ -95,7 +96,7 @@ struct PreparedBundle {
 /// [`DEMO_IMPORT_SOURCES`], so the sources, their order, and their
 /// Replace-then-Append modes are written down once.
 struct DemoImportSource {
-    /// Label printed in the "Reset demo — preparing replacement" header.
+    /// Label printed in the table [`print_reset_header`] prints.
     label: &'static str,
     /// Source id recorded on the imported conversations.
     source: &'static str,
@@ -128,7 +129,7 @@ const DEMO_IMPORT_SOURCES: [DemoImportSource; 3] = [
 
 /// Print the "preparing replacement" header every demo build prints.
 fn print_reset_header(account_id: i64, prepared: &PreparedBundle, db: &dyn std::fmt::Display) {
-    println!("Reset demo — preparing replacement");
+    println!("The Demo Account is built from these files");
     println!("  account:      {account_id}");
     for source in &DEMO_IMPORT_SOURCES {
         println!(
@@ -137,7 +138,7 @@ fn print_reset_header(account_id: i64, prepared: &PreparedBundle, db: &dyn std::
             (source.export_dir)(prepared).display()
         );
     }
-    println!("  db:           {db}");
+    println!("  database:     {db}");
 }
 
 /// Shared post-import tail: fill dedupe content keys, convert the account's
@@ -158,10 +159,12 @@ async fn dedupe_and_process_assets(
     // preview pass is an improvement and not a need. Without ffmpeg it would
     // fail once per attachment; say so once instead (#1018).
     if !media::ffmpeg_available() {
-        println!("Reset demo — ffmpeg not found; demo attachments stay as written");
+        println!(
+            "ffmpeg was not found, so the Demo Account's attachments get no Previews or Thumbnails"
+        );
         return Ok((dedupe_stats, process_assets::ProcessAssetsStats::default()));
     }
-    println!("Reset demo — processing prepared assets");
+    println!("Making the Demo Account's Previews and Thumbnails");
     let opened = OpenDb {
         cfg: cfg.clone(),
         db: db.clone(),
@@ -238,7 +241,7 @@ fn reset_account_work_dir(data_dir: &Path) -> Result<tempfile::TempDir> {
 pub async fn run_reset_demo(size: DemoSize, cfg: &Config) -> Result<ResetDemoStats> {
     let work = tempfile::tempdir().context("create temporary demo bundle directory")?;
     let bundle = work.path().join("bundle");
-    println!("Reset demo — generating the {size} data set");
+    println!("Generating the {size} Demo Data set");
     // `reset-demo` runs in the foreground and stops with its process, so
     // nothing sets the flag.
     let seed_stats = demo_seed::generate_size_to(size, &bundle, &AtomicBool::new(false))
@@ -282,7 +285,7 @@ pub async fn database_is_new(cfg: &Config) -> Result<bool> {
 /// and the owner can add the Demo Account later.
 pub async fn seed_new_database(cfg: &Config) {
     let size = DemoSize::Medium;
-    eprintln!("New database: adding the Demo Account ({size} data set)…");
+    eprintln!("The database is new, so the Demo Account is added, with the {size} Demo Data set…");
     let started = std::time::Instant::now();
     // Seeding runs before the server listens, on this thread, so no stop
     // can arrive while it generates and nothing sets the flag.
@@ -292,7 +295,7 @@ pub async fn seed_new_database(cfg: &Config) {
     .await
     {
         eprintln!(
-            "Demo Account ready: {messages} messages in {:.1} s",
+            "The Demo Account was added, with {messages} messages, in {:.1} s",
             started.elapsed().as_secs_f64()
         );
     }
@@ -925,12 +928,16 @@ async fn load_demo_address_book(
     let loaded = address_book::load(&mut conn, account_id, &text, LoadMode::Append).await;
     let counts = loaded.map_err(|e| anyhow::anyhow!("load the demo address book: {e}"))?;
     println!(
-        "  contacts: {} named from the address book ({} Unknowns named in place, {} new; {} identities moved from Unknowns, {} added)",
-        counts.contacts_changed(),
-        counts.contacts_updated,
+        "  The demo address book named {}: {} named in place and {} new. It moved {} and added {}",
+        words(counts.contacts_changed(), "1 contact", "{n} contacts"),
+        words(counts.contacts_updated, "1 Unknown", "{n} Unknowns"),
         counts.contacts_created,
-        counts.identities_moved,
-        counts.identities_added
+        words(
+            counts.identities_moved,
+            "1 identity from an Unknown",
+            "{n} identities from Unknowns"
+        ),
+        words(counts.identities_added, "1 identity", "{n} identities")
     );
     Ok(counts)
 }
@@ -1998,7 +2005,7 @@ async fn vacuum_after_demo(db: &SqlitePool) {
         Ok(conn) => conn,
         Err(err) => {
             eprintln!(
-                "  sql:      VACUUM did not run, because no connection could be opened: {err}"
+                "  VACUUM did not run, because no connection to the database could be opened: {err}"
             );
             return;
         }
@@ -2121,7 +2128,7 @@ async fn wipe_demo_account_with(
     mut after_batch: impl AsyncFnMut() -> Result<()>,
 ) -> Result<()> {
     println!(
-        "Reset demo — clearing account data in {}",
+        "Removing the Demo Account from the database at {}",
         cfg.paths.db.display()
     );
     let mut conn = db
@@ -2141,7 +2148,11 @@ async fn wipe_demo_account_with(
         }
     }
     let deleted = account_profile::delete_account(&mut conn, account_id, actor).await?;
-    println!("  sql:      demo account rows removed (account existed={deleted})");
+    if deleted {
+        println!("  The Demo Account is removed from the database");
+    } else {
+        println!("  The database held no Demo Account to remove");
+    }
     drop(conn);
 
     crate::asset_store::remove_account_dir(&cfg.paths, account_id).with_context(|| {

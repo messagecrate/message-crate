@@ -553,7 +553,7 @@ async fn run_reset_demo(args: ResetDemoArgs) -> Result<()> {
     let cfg = Config::load(&args.config)?;
     let stats = crate::reset_demo::run_reset_demo(args.size, &cfg).await?;
     println!();
-    println!("Demo reset complete");
+    println!("The Demo Account is rebuilt");
     if stats.seed.messages > 0 {
         println!("  generated messages: {}", stats.seed.messages);
     }

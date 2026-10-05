@@ -374,7 +374,7 @@ pub(crate) fn work_dir(data_dir: &Path) -> Result<TempDir> {
             tracing::warn!(
                 path = %entry.path().display(),
                 %error,
-                "a work directory a stopped pass left could not be removed"
+                "A work directory a stopped pass left could not be removed"
             );
         }
     }
@@ -483,7 +483,10 @@ impl<'a> AccountPass<'a> {
     ) -> Result<Option<Self>> {
         let assets_dir = cfg.paths.assets_dir_for_account(account_id);
         let converted_dir = cfg.paths.assets_converted_dir_for_account(account_id);
-        println!("account {account_id}: assets={}", assets_dir.display());
+        println!(
+            "Processing account {account_id}'s Assets in {}",
+            assets_dir.display()
+        );
         if !assets_dir.is_dir() {
             eprintln!(
                 "  {} is missing or is not a directory, so this account's Assets are not processed",
@@ -492,9 +495,9 @@ impl<'a> AccountPass<'a> {
             return Ok(None);
         }
         let cleaned_verb = if opts.dry_run {
-            "would clean"
+            "This dry run would remove"
         } else {
-            "cleaned"
+            "Removed"
         };
         let cleaned = crate::asset_store::sweep_incoming(&assets_dir, opts.dry_run);
         if cleaned > 0 {
@@ -570,8 +573,10 @@ impl<'a> AccountPass<'a> {
                 break;
             }
             for err in outcome.failures() {
-                self.log
-                    .fail(format!("failed {}: {err:#}", self.label(row)));
+                self.log.fail(format!(
+                    "{} could not be processed: {err:#}",
+                    self.label(row)
+                ));
             }
             stats.count(&outcome);
         }
@@ -668,7 +673,7 @@ impl<'a> AccountPass<'a> {
     ) -> Result<bool> {
         if damaged && let Some(rel) = row.named(version).assets_path.as_deref() {
             self.log.say(format!(
-                "{}: {version} {rel} does not hash to the fingerprint in its name; making it again",
+                "The {version} {rel} of {} does not hash to the fingerprint in its name, so it is made again",
                 self.label(row)
             ));
         }
@@ -691,13 +696,13 @@ impl<'a> AccountPass<'a> {
             // file: the same bytes may be the version of another original
             // that a concurrent pass is about to record.
             self.log.say(format!(
-                "{}: deleted while its {version} was made; the {version} is left for the sweep",
+                "{} was deleted while its {version} was made, so the {version} is left for the sweep at the next Import Run's end",
                 self.label(row)
             ));
             return Ok(false);
         }
         self.log.say(format!(
-            "{} -> {} ({version})",
+            "Made the {version} of {} at {}",
             self.label(row),
             blob.assets_path
         ));
@@ -736,7 +741,7 @@ impl<'a> AccountPass<'a> {
         };
         if self.opts.dry_run {
             self.log.say(format!(
-                "[dry-run] would point {} at {} (existing {version})",
+                "This dry run would point {} at its existing {version} {}",
                 self.label(row),
                 blob.assets_path
             ));
@@ -755,7 +760,7 @@ impl<'a> AccountPass<'a> {
             return Ok(false);
         }
         self.log.say(format!(
-            "{} -> {} (existing {version})",
+            "{} now names its existing {version} {}",
             self.label(row),
             blob.assets_path
         ));
@@ -787,7 +792,7 @@ impl<'a> AccountPass<'a> {
         };
         if self.opts.dry_run {
             self.log.say(format!(
-                "[dry-run] would drop the damaged {version} {rel} of {}",
+                "This dry run would drop the damaged {version} {rel} of {}",
                 self.label(row)
             ));
             return Ok(true);
@@ -800,8 +805,8 @@ impl<'a> AccountPass<'a> {
                 .with_context(|| format!("remove damaged {version} {}", path.display()))?;
         }
         self.log.say(format!(
-            "{}: {version} {rel} does not hash to the fingerprint in its name and is not made \
-             again; dropped the {version}",
+            "The {version} {rel} of {} does not hash to the fingerprint in its name and is not \
+             made again, so it is dropped",
             self.label(row)
         ));
         Ok(true)
@@ -820,14 +825,14 @@ impl<'a> AccountPass<'a> {
         }
         if self.opts.dry_run {
             self.log.say(format!(
-                "[dry-run] would remove incomplete {}",
+                "This dry run would remove the incomplete {}",
                 self.label(row)
             ));
         } else {
             crate::asset_store::remove_file(source_path)
                 .with_context(|| format!("remove incomplete {}", source_path.display()))?;
             self.log
-                .say(format!("removed incomplete {}", self.label(row)));
+                .say(format!("Removed the incomplete {}", self.label(row)));
         }
         Ok(true)
     }
@@ -868,8 +873,10 @@ impl<'a> AccountPass<'a> {
         row: &StoredOriginal,
     ) -> Result<Derived> {
         if self.opts.dry_run {
-            self.log
-                .say(format!("[dry-run] {version} {} -> {ext}", self.label(row)));
+            self.log.say(format!(
+                "This dry run would make the {version} of {} as {ext}",
+                self.label(row)
+            ));
             let _ = fs::remove_file(out);
             return Ok(Derived::DryRun);
         }

@@ -933,7 +933,7 @@ pub async fn delete_account(
             account_id = target,
             path = %crate::asset_store::account_dir(&state.cfg.paths, target).display(),
             %error,
-            "account deleted, but its data directory could not be removed"
+            "The account is deleted, but its data directory could not be removed"
         );
     }
     Ok(StatusCode::NO_CONTENT)

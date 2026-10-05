@@ -224,7 +224,7 @@ impl OwnedImportRun {
         // The import itself is done either way; a failure to record that is
         // worth a log line, not an error the caller would have to unwind.
         if let Err(error) = complete_run(conn, self.account_id, self.id, &outcome).await {
-            tracing::warn!(import_id = self.id, error = %error, "complete_import failed");
+            tracing::warn!(import_id = self.id, error = %error, "The Import Run could not be recorded as finished");
         }
     }
 }
@@ -283,7 +283,7 @@ pub(crate) async fn import_jsonl_files(
         .await
         .with_context(|| format!("failed to open database {}", db_path.display()))?;
     let mut conn = pool.acquire().await?;
-    println!("  sql:      opened {}", db_path.display());
+    println!("  Opened the database at {}", db_path.display());
     let _ = io::stdout().flush();
     Ok(import_jsonl_files_on_conn(&mut conn, paths, opts, ImportSchemaMode::Ensure).await?)
 }
@@ -311,17 +311,21 @@ pub async fn import_jsonl_files_on_conn(
         .await
         .map_err(ImportError::Internal)?;
     say(&format!(
-        "  import:   {}",
+        "  Importing {}",
         crate::counts::words(paths.len() as u64, "1 JSONL file", "{n} JSONL files")
     ));
-    if opts.mode == ImportMode::Replace {
+    if opts.mode == ImportMode::Replace && !wipe_sources.is_empty() {
         let names = wipe_sources.join(", ");
         say(&format!(
-            "  import:   {}",
+            "  {}",
             crate::counts::words(
                 wipe_sources.len() as u64,
-                &format!("will wipe source '{names}' after staging succeeds"),
-                &format!("will wipe {{n}} sources '{names}' after staging succeeds"),
+                &format!(
+                    "The account's messages from source {names} are deleted if the import succeeds"
+                ),
+                &format!(
+                    "The account's messages from the {{n}} sources {names} are deleted if the import succeeds"
+                ),
             )
         ));
     }
@@ -351,7 +355,7 @@ pub async fn import_jsonl_files_on_conn(
     let asset_stats = stage_all_files(&mut tx, paths, opts, &mut counts, started).await?;
 
     say(&format!(
-        "  import:   promoting staging → production ({:.0}s so far)…",
+        "  Writing what the files hold into the account, {:.0} s after the import started…",
         started.elapsed().as_secs_f64()
     ));
     promote_step(&mut tx, opts, &wipe_sources, &mut counts).await?;
@@ -366,12 +370,12 @@ pub async fn import_jsonl_files_on_conn(
     counts.assets_deduped = asset_stats.deduped;
     counts.assets_missing = asset_stats.missing;
     say(&format!(
-        "  import:   finished in {:.1}s: {}, {}, {}, {}",
+        "  The import finished in {:.1} s, with {}, {}, {} and {}",
         started.elapsed().as_secs_f64(),
         words(counts.files, "1 file", "{n} files"),
         words(counts.messages, "1 message", "{n} messages"),
         words(counts.attachments, "1 attachment", "{n} attachments"),
-        words(counts.assets_copied, "1 asset copied", "{n} assets copied"),
+        words(counts.assets_copied, "1 Asset copied", "{n} Assets copied"),
     ));
     Ok(counts)
 }
@@ -398,9 +402,9 @@ async fn prepare_import(
     crate::db::account_profile::ensure_account_row(conn, opts.account_id).await?;
 
     if schema_mode == ImportSchemaMode::Ensure {
-        say("  sql:      ensuring schema + resetting staging for account…");
+        say("  Checking the database schema and clearing the account's staging tables…");
     } else {
-        say("  sql:      resetting staging for account…");
+        say("  Clearing the account's staging tables…");
     }
     crate::db::staging::reset_for_account(conn, opts.account_id).await?;
     sources_to_wipe(opts)
@@ -480,11 +484,11 @@ async fn stage_all_files(
         if n == 1 || n == total_files || n % progress_every == 0 {
             let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("?");
             say(&format!(
-                "  import:   [{n}/{total_files}] {name}: {}, {}, {}, {}  ({:.0}s)",
+                "  Read {name}, file {n} of {total_files}. So far: {}, {}, {} and {}, in {:.0} s",
                 words(counts.messages, "1 message", "{n} messages"),
                 words(counts.attachments, "1 attachment", "{n} attachments"),
-                words(asset_stats.copied, "1 asset copied", "{n} assets copied"),
-                words(asset_stats.missing, "1 asset missing", "{n} assets missing"),
+                words(asset_stats.copied, "1 Asset copied", "{n} Assets copied"),
+                words(asset_stats.missing, "1 Asset missing", "{n} Assets missing"),
                 started.elapsed().as_secs_f64()
             ));
         }
@@ -1365,7 +1369,7 @@ async fn create_import_saved_search(
             import_id = row.id,
             messages = row.message_count,
             error = ?e,
-            "the import's saved search could not be created"
+            "The Import Run's Saved Search could not be created"
         );
     }
 }
@@ -1437,7 +1441,7 @@ async fn create_import_contact_group(
             tracing::warn!(
                 import_id = row.id,
                 error = %crate::server::error_chain(&e),
-                "the import could not list the contacts it touched"
+                "The Import Run could not list the contacts it touched"
             );
             return;
         }
@@ -1454,7 +1458,7 @@ async fn create_import_contact_group(
             tracing::warn!(
                 import_id = row.id,
                 error = %crate::server::error_chain(&e),
-                "the import's Contact Group could not be created"
+                "The Import Run's Contact Group could not be created"
             );
             return;
         }
@@ -1473,7 +1477,7 @@ async fn create_import_contact_group(
             import_id = row.id,
             contacts = touched.len(),
             error = ?e,
-            "the import's Contact Group was created but its contacts could not be added"
+            "The Import Run's Contact Group was created, but its contacts could not be added"
         );
     }
 }

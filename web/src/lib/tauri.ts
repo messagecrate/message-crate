@@ -199,11 +199,11 @@ export interface UploadConfig {
 
 export interface UploadFinishedReport {
   ok: boolean;
-  /** The cancel flag stopped the Upload: a pause the run resumes from, not a failure. */
+  /** The cancel flag paused the Upload: the run resumes from it, so it is not a failure. */
   cancelled: boolean;
   /**
    * The server refused the session the Upload sent (it expired or was ended),
-   * which stopped the Upload as a pause. The window ends the session too.
+   * which paused the Upload. The window ends the session too.
    */
   session_refused: boolean;
   messages_attempted: number;
@@ -216,7 +216,7 @@ export interface UploadFinishedReport {
   conversations_total: number;
   conversations_failed: number;
   conversations_skipped: number;
-  /** Conversations a stop left unsent; the next Upload sends them. */
+  /** Conversations a pause left unsent; the next Upload sends them. */
   conversations_cancelled: number;
   results: Array<{
     file: string;

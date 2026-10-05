@@ -143,7 +143,7 @@ fn the_promoted_line_counts_one_and_many() {
     };
     assert_eq!(
         promoted_line(&one),
-        "promoted 1 conversation, 1 participant, 1 message, 1 attachment and 1 tapback"
+        "Wrote 1 conversation, 1 participant, 1 message, 1 attachment and 1 tapback"
     );
     let many = PromoteStats {
         conversations: 2,
@@ -155,6 +155,6 @@ fn the_promoted_line_counts_one_and_many() {
     };
     assert_eq!(
         promoted_line(&many),
-        "promoted 2 conversations, 3 participants, 0 messages, 4 attachments and 5 tapbacks"
+        "Wrote 2 conversations, 3 participants, 0 messages, 4 attachments and 5 tapbacks"
     );
 }

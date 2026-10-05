@@ -211,7 +211,7 @@ function isRunError(issue: ImportIssue): boolean {
 /**
  * What this part's Upload said of each conversation: the files it finished
  * as they finished, and every file its report lists, which adds the ones a
- * stop left unsent (`cancelled`).
+ * pause left unsent (`cancelled`).
  */
 function conversationStatuses(part: RunPart): Map<string, ConversationStatus> {
   const statuses = new Map(part.conversations);
@@ -234,7 +234,7 @@ function isOnServer(status: ConversationStatus | undefined): boolean {
 }
 
 /**
- * Sort an earlier stop's rows by what this part's Upload said of their
+ * Sort an earlier pause's rows by what this part's Upload said of their
  * conversation. A row about a whole conversation this Upload reported on is
  * stale, and goes: this Upload reports that conversation itself. A
  * conversation this Upload sent (`ok`) was read again, so its other earlier

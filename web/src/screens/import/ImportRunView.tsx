@@ -333,8 +333,8 @@ export default function ImportRunView({
   const uploadStep = steps.find((step) => step.label === UPLOAD_LABEL);
   const mediaStep = steps.find((step) => step.label === MEDIA_LABEL);
 
-  // The same stop under two names: a stopped Upload is paused and resumes
-  // later, so its button says so.
+  // One button under two names: it cancels a Stage before the Upload and
+  // pauses the Upload, which resumes later.
   const stopButton = (label: "Cancel" | "Pause") =>
     running ? (
       <div className="mt-2">

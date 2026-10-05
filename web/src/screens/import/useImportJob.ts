@@ -651,9 +651,9 @@ function writeRunRecord(runDir: string, build: () => RunRecord): Promise<void> {
  * the window had received: each stage sends its issues the moment it
  * records them, and the Upload says when it has sent each conversation, so
  * a crash loses only what arrived while the last write was on its way to
- * disk. The record is the one a stop now would leave (`recordToCarry`): an
+ * disk. The record is the one a pause now would leave (`recordToCarry`): an
  * Upload's rows about a conversation not yet on the server wait apart, and
- * an earlier stop's rows about a conversation this Upload has since sent
+ * an earlier pause's rows about a conversation this Upload has since sent
  * go.
  */
 async function saveCarriedRecord(
@@ -1158,7 +1158,7 @@ async function runUpload(
   } finally {
     ended();
   }
-  // The Upload stopped because the server refused its session: every request
+  // The Upload paused because the server refused its session: every request
   // with that token is refused now, so the session ends here too (#1491).
   if (pushRefused && token) sessionRefused(token);
 }

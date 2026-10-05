@@ -1608,10 +1608,10 @@ describe("useImportJob wiring", () => {
     expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
   });
 
-  it("pauses an Upload the cancel flag stopped: no /complete, and the staged files stay", async () => {
+  it("pauses an Upload when the cancel flag is set: no /complete, and the staged files stay", async () => {
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
-    // What run.rs reports when the cancel flag stops `drive` after 200 of 681.
+    // What run.rs reports when the cancel flag pauses `drive` after 200 of 681.
     runMock.mockImplementationOnce(
       runResult({
         summary: "Upload complete",
@@ -1632,7 +1632,7 @@ describe("useImportJob wiring", () => {
     expect(result.current.runDir).toBe("/home/sam/message-crate/staging-iphone");
   });
 
-  it("pauses an Upload that stopped short without a cancel, and keeps the staged files", async () => {
+  it("pauses an Upload that ended short without a cancel, and keeps the staged files", async () => {
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     runMock.mockImplementationOnce(

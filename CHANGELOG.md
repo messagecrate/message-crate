@@ -358,13 +358,13 @@ released versions carry their date on the heading.
   understand.** A section or key the server does not use, a misspelt one
   included, stops it at startup with the name and section of each, instead
   of being ignored.
-- 2026-10-02 **A stopped Upload is paused, not finished.** Pressing the
+- 2026-10-02 **A paused Upload is not finished.** Pressing the
   Upload's button now pauses the Import Run and keeps what it staged, and
   the next visit to Import offers to resume it, sending only the
   conversations not yet sent. Before, the run was recorded as completed, the
   staged files were deleted, and the conversations it had not reached were
   never imported. The run's report now puts every conversation in exactly
-  one count, and names the ones the stop left unsent. An Upload that fails,
+  one count, and lists the ones it left unsent. An Upload that fails,
   or sends some conversations and fails the rest, is paused the same way
   instead of being recorded as failed or finished, and the Import badge
   reads Paused. Logging out during an Upload asks first, then pauses the
@@ -391,6 +391,11 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **The Upload's report no longer says the Upload stopped.** A
+  conversation the Upload did not reach before it was paused, or before the
+  server refused its session, was listed with "the Upload was stopped before
+  this conversation was sent". It now reads "the Upload ended before this
+  conversation was sent".
 - 2026-10-05 **An Import Run's log and the Upload write their last
   warnings as sentences.** A few lines in an Import Run's log started
   "Unable to", "Skipping" or "could not", and the desktop app wrote
@@ -496,7 +501,7 @@ released versions carry their date on the heading.
   other words for the same lines. Both now say "Authenticated as sam (1)",
   "Reusing Import Run 7 for sms", "Recording Import Run 7 for sms",
   "Skipping attachments (text-only import)", "The server no longer accepts
-  this session, so the Upload stopped" and "… so the Upload did not
+  this session, so the Upload paused" and "… so the Upload did not
   start".
 - 2026-10-05 **One import of two backups keeps the attachments and
   reactions of both.** When one import carried two backups holding the same
@@ -1689,6 +1694,26 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-05 **The server's progress lines and its log read as
+  sentences.** The server's output during an import, a Demo Account build
+  and `process-assets` started lines with labels such as "sql:", "dedupe:",
+  "import:", "db:" and "[dry-run]", and the Demo Account build started its
+  steps with "Reset demo —". Warnings in the server's log started in lower
+  case. Each now says what happened, for example:
+  - "sql:      promote: chunk 1: 5 messages inserted, 5 of 9 so far" is now
+    "Batch 1 wrote 5 messages, 5 of 9 so far".
+  - "dedupe:   pass A exact content_key…" is now "Hiding exact duplicates,
+    the messages that share a content key…".
+  - "import:   [2/5] chat.jsonl: …" is now "Read chat.jsonl, file 2 of 5.
+    So far: …".
+  - "[dry-run] would remove …" is now "This dry run would remove …", and
+    "account 1: assets=…" is now "Processing account 1's Assets in …".
+  - "Reset demo — generating the medium data set" is now "Generating the
+    medium Demo Data set", and "Demo reset complete" is now "The Demo
+    Account is rebuilt".
+  - "database schema differs from this server's; rebuilding empty (re-import
+    your data)" is now "The database's schema differs from this server's, so
+    the database is rebuilt empty and its messages must be imported again".
 - 2026-10-05 **The server and the demo seed write their last warnings as
   sentences.** Lines on standard error started with "warning:", "stopping:"
   or "skip —". Each now says what happened, for example:

@@ -1330,7 +1330,7 @@ pub(crate) async fn complete_asset_upload(
             tracing::warn!(
                 upload_id,
                 error = format!("{error:#}"),
-                "could not drop stale upload session"
+                "A stale upload session could not be dropped"
             );
         }
         return Ok(Asset::stored(stored, true).into_response());

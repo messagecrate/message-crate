@@ -365,10 +365,7 @@ impl<'p, 'f> Reporter<'p, 'f> {
         for result in results {
             let (kind, fallback) = match result.status.as_str() {
                 "failed" => ("error", "upload failed"),
-                "cancelled" => (
-                    "skip",
-                    "the Upload was stopped before this conversation was sent",
-                ),
+                "cancelled" => ("skip", "the Upload ended before this conversation was sent"),
                 _ => continue,
             };
             self.event(ProgressEvent::Issue {
@@ -567,7 +564,7 @@ mod tests {
                 (
                     "skip".to_string(),
                     "unsent.jsonl".to_string(),
-                    "the Upload was stopped before this conversation was sent".to_string()
+                    "the Upload ended before this conversation was sent".to_string()
                 ),
                 (
                     "error".to_string(),

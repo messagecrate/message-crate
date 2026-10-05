@@ -2704,8 +2704,8 @@ fn a_cancelled_push_sends_no_further_batch_and_resumes_later() {
 /// Every conversation of a cancelled push is in one category of the report:
 /// `ok + failed + skipped + cancelled = total`, with one result row per file.
 ///
-/// Guards the report of a stopped Upload. Without a result for each file the
-/// stop left unsent, the counts add up to less than the total and nothing in
+/// Guards the report of a paused Upload. Without a result for each file the
+/// pause left unsent, the counts add up to less than the total and nothing in
 /// the report names those files.
 #[test]
 fn a_cancelled_push_reports_every_conversation_in_one_category() {

@@ -203,7 +203,7 @@ fi
 if [[ "${OWNER}" -eq 1 ]]; then
   echo "Claiming the Message Crate as admin/admin…"
   server_cli create-owner --config "${CONFIG}" --username admin --password admin \
-    || echo "warning: create-owner failed (already claimed?); leaving it as it is"
+    || echo "create-owner did not set the owner, perhaps because this Message Crate is already claimed, so it is left as it is"
 fi
 
 echo

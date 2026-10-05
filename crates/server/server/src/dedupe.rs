@@ -208,7 +208,7 @@ pub async fn dedupe_cross_source(
     let started = Instant::now();
 
     {
-        println!("  dedupe:   refreshing content keys…");
+        println!("  Refreshing the content keys that match the same message across sources…");
         let _ = io::stdout().flush();
         stats.keys_filled = refresh_content_keys(&mut tx, account_id).await?;
         sqlx::query(
@@ -224,49 +224,41 @@ pub async fn dedupe_cross_source(
         .execute(&mut *tx)
         .await?;
         println!(
-            "  dedupe:   {}  ({:.1}s)",
-            words(
-                stats.keys_filled,
-                "1 content key written",
-                "{n} content keys written"
-            ),
+            "  Wrote {} in {:.1} s",
+            words(stats.keys_filled, "1 content key", "{n} content keys"),
             started.elapsed().as_secs_f64()
         );
     }
 
     {
-        println!("  dedupe:   pass A exact content_key…");
+        println!("  Hiding exact duplicates, the messages that share a content key…");
         let _ = io::stdout().flush();
         let (groups, flagged) = flag_exact_content_key_dupes(&mut tx, account_id, &prio).await?;
         stats.exact_groups = groups;
         stats.exact_flagged = flagged;
         println!(
-            "  dedupe:   {}, {}  ({:.1}s)",
+            "  Found {} and hid {}, {:.1} s in all",
             words(
                 stats.exact_groups,
                 "1 group of exact duplicates",
                 "{n} groups of exact duplicates"
             ),
-            words(
-                stats.exact_flagged,
-                "1 message hidden",
-                "{n} messages hidden"
-            ),
+            words(stats.exact_flagged, "1 message", "{n} messages"),
             started.elapsed().as_secs_f64()
         );
     }
 
     {
-        println!("  dedupe:   pass B near-time (±{near_window_secs}s)…");
+        println!("  Flagging near duplicates, sent within {near_window_secs} s of each other…");
         let _ = io::stdout().flush();
         stats.near_flagged =
             flag_near_time_dupes(&mut tx, account_id, &prio, near_window_secs).await?;
         println!(
-            "  dedupe:   {}  ({:.1}s total)",
+            "  Flagged {}, {:.1} s in all",
             words(
                 stats.near_flagged,
-                "1 near duplicate flagged",
-                "{n} near duplicates flagged"
+                "1 near duplicate",
+                "{n} near duplicates"
             ),
             started.elapsed().as_secs_f64()
         );
@@ -320,7 +312,7 @@ async fn insert_content_key_rows(
         let crossed_log_mark =
             written / CONTENT_KEY_WRITE_LOG_EVERY != previous / CONTENT_KEY_WRITE_LOG_EVERY;
         if written == total || crossed_log_mark {
-            println!("  sql:      writing content keys … {written} of {total}");
+            println!("  Wrote {written} of {total} content keys");
             let _ = io::stdout().flush();
         }
     }
@@ -343,7 +335,7 @@ async fn recompute_content_keys(
         return Ok(0);
     };
     println!(
-        "  sql:      hashing content keys ({})…",
+        "  Hashing the content keys of {}…",
         words(inputs.rows.len() as u64, "1 message", "{n} messages")
     );
     let _ = io::stdout().flush();
