@@ -274,9 +274,9 @@ mod tests {
     /// directory a running job holds, in either (#1421, #1402).
     #[test]
     fn the_start_up_sweep_deletes_a_killed_run_s_scratch_and_keeps_a_running_one() {
-        let cache = tempfile::tempdir().unwrap();
-        let spool_root = cache.path().join(ATTACHMENT_SPOOL_DIRECTORY);
-        let reader_root = cache.path().join(IMESSAGE_READER_DIRECTORY);
+        let scratch = tempfile::tempdir().unwrap();
+        let spool_root = scratch.path().join(ATTACHMENT_SPOOL_DIRECTORY);
+        let reader_root = scratch.path().join(IMESSAGE_READER_DIRECTORY);
         killed_request(&spool_root, "request-killed", "2cf24dba");
         killed_request(&reader_root, "request-killed", "crabapple-sms-x.db");
         let running_spool = ScratchDir::create(&spool_root).unwrap();
@@ -285,9 +285,9 @@ mod tests {
         // Made after the running requests, so their own clean-up did not
         // see it: only the sweep can.
         killed_request(&spool_root, "request-later", "9f86d081");
-        fs::write(cache.path().join("unrelated"), b"kept").unwrap();
+        fs::write(scratch.path().join("unrelated"), b"kept").unwrap();
 
-        sweep_scratch(cache.path());
+        sweep_scratch(scratch.path());
 
         let own = |scratch: &ScratchDir| {
             vec![
@@ -303,7 +303,7 @@ mod tests {
         assert_eq!(names_in(&reader_root), own(&running_reader));
         assert!(running_spool.path().join("e3b0c442").exists());
         assert!(
-            cache.path().join("unrelated").exists(),
+            scratch.path().join("unrelated").exists(),
             "only scratch directories are swept"
         );
     }
@@ -312,9 +312,9 @@ mod tests {
     /// any.
     #[test]
     fn the_sweep_of_an_empty_scratch_directory_makes_nothing() {
-        let cache = tempfile::tempdir().unwrap();
-        sweep_scratch(cache.path());
-        assert_eq!(fs::read_dir(cache.path()).unwrap().count(), 0);
+        let scratch = tempfile::tempdir().unwrap();
+        sweep_scratch(scratch.path());
+        assert_eq!(fs::read_dir(scratch.path()).unwrap().count(), 0);
     }
 
     /// A relative root would put decrypted data wherever the process runs,

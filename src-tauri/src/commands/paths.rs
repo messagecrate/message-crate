@@ -26,14 +26,11 @@ pub(crate) fn logs_dir(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(crate::app_directories::logs_dir_in(&app_data_dir(app)?))
 }
 
-/// `path`, resolved, when it is absolute and in `dir`.
-fn in_directory(path: &Path, dir: &Path) -> Option<PathBuf> {
-    if !path.is_absolute() {
-        return None;
-    }
-    let dir = dir.canonicalize().ok()?;
-    let path = path.canonicalize().ok()?;
-    path.starts_with(&dir).then_some(path)
+/// `path`, resolved, when it is in the Logs Directory `logs`, whether or not
+/// the log is there yet, so opening one not written yet says so
+/// ([`missing_path_error`]) rather than calling it outside.
+fn openable_in_logs(path: &str, logs: &Path) -> Option<PathBuf> {
+    resolve_openable_path(path, &logs.display().to_string()).ok()
 }
 
 /// The app-data directory.
@@ -192,7 +189,7 @@ pub fn open_path(
     let logs = logs_dir(&app)?;
     let resolved = match exports
         .openable(Path::new(path.trim()))
-        .or_else(|| in_directory(Path::new(path.trim()), &logs))
+        .or_else(|| openable_in_logs(&path, &logs))
     {
         Some(found) => found,
         None => directories.openable(&path)?,
@@ -658,6 +655,22 @@ mod tests {
         let err =
             resolve_openable_path(outside.to_str().unwrap(), root.to_str().unwrap()).unwrap_err();
         assert!(err.contains("outside"));
+    }
+
+    #[test]
+    fn a_log_not_written_yet_in_the_logs_directory_is_reported_missing_not_outside() {
+        let app_data = tempfile::tempdir().unwrap();
+        let logs = crate::app_directories::logs_dir_in(app_data.path());
+        let log = logs.join("import-whatsapp-261004-143000.log");
+
+        let resolved = openable_in_logs(&log.display().to_string(), &logs).unwrap();
+
+        assert_eq!(
+            missing_path_error(&resolved).unwrap_err(),
+            "Nothing exists at import-whatsapp-261004-143000.log yet"
+        );
+        let elsewhere = app_data.path().join("data").join("messagecrate.db");
+        assert!(openable_in_logs(&elsewhere.display().to_string(), &logs).is_none());
     }
 
     #[test]

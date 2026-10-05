@@ -35,6 +35,7 @@ use message_staging::{StagingSummary, TranscodeOptions, TranscodeReport};
 use super::events;
 use super::events::ExtractProgressEvent;
 use super::jobs::{spawn_job, start_job};
+use crate::app_directories::RunLog;
 use crate::staging_directories::{self, StagingDirectories, StagingRoot};
 use crate::state::AppState;
 
@@ -246,6 +247,7 @@ pub fn transcode_staging(
     args: StagingArgs,
 ) -> Result<(), String> {
     let (staging_dir, options) = staged_directory(&directories, &args.staging_dir)?;
+    let run_log = RunLog::open(&super::paths::logs_dir(&app)?, &staging_dir);
     let job = start_job(&state, "a Media pass")?;
     let cancel = job.cancel_flag();
     let has_media_step = matches!(
@@ -257,11 +259,9 @@ pub fn transcode_staging(
     let issues = events::issue_sink(&app);
     spawn_job(app, job, move || {
         if has_media_step {
-            events::emit(
-                &app_handle,
-                events::LOG,
-                "Converting and compressing attachments…".to_string(),
-            );
+            let line = "Converting and compressing attachments…";
+            run_log.line(line);
+            events::emit(&app_handle, events::LOG, line.to_string());
         }
 
         // Not `move`: the closure only needs `&app_handle` (`emit` takes
@@ -294,9 +294,10 @@ pub fn transcode_staging(
         // generic path a cancelled `extract` run already goes through. See
         // this function's doc comment for why the earlier quiet-cancel
         // special case was removed.
-        let report = outcome?;
+        let report = outcome.inspect_err(|error| run_log.line(&format!("Error: {error:#}")))?;
 
         let summary = transcode_summary(&report);
+        run_log.line(&summary);
         if report.failed > 0 || report.too_large > 0 {
             events::emit(&app_handle, events::LOG, summary.clone());
         }

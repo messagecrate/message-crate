@@ -35,7 +35,8 @@ use super::events;
 use super::events::ExtractProgressEvent;
 use super::jobs::{cancel_running_job, spawn_job, start_job};
 use super::last_log_line_or;
-use super::paths::scratch_dir;
+use super::paths::{logs_dir, scratch_dir};
+use crate::app_directories::RunLog;
 use crate::staging_directories::StagingDirectories;
 use crate::state::AppState;
 
@@ -197,8 +198,13 @@ pub fn extract(
     // Two channels, two jobs: log lines are for the person reading the log
     // panel, progress events are for the bar. Nothing reads counts out of
     // the prose.
+    // The same lines go into the run's log in the Logs Directory, which
+    // outlives the run's directory.
+    let run_log = RunLog::open(&logs_dir(&app)?, &output_dir);
     let log_app = app_handle.clone();
+    let sink_log = run_log.clone();
     config.log = Some(LogSink::new(move |line: &str| {
+        sink_log.line(line);
         events::emit(&log_app, events::LOG, line.to_string());
     }));
     let progress_app = app_handle.clone();
@@ -212,9 +218,11 @@ pub fn extract(
     config.issues = Some(events::issue_sink(&app_handle));
 
     spawn_job(app, job, move || {
-        let run_result = run_staging(&config, &output_dir, &media_settings)?;
+        let run_result = run_staging(&config, &output_dir, &media_settings)
+            .inspect_err(|error| run_log.line(&format!("Error: {error:#}")))?;
         let payload = finished_payload(&run_result);
         for line in run_result.messages {
+            run_log.line(&line);
             events::emit(&app_handle, events::LOG, line);
         }
         Ok(payload)

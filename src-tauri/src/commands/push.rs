@@ -303,7 +303,8 @@ mod tests {
         assert!(format!("{err:#}").contains("no media settings"), "{err:#}");
     }
 
-    /// A server that takes the session check and every batch for import 7.
+    /// A server that answers the session check. [`take_batches`] has it
+    /// take import 7's batches.
     fn upload_server() -> MockServer {
         let server = MockServer::start();
         server.mock(|when, then| {
@@ -314,6 +315,18 @@ mod tests {
             }));
         });
         server
+    }
+
+    /// Have `server` take every batch for import 7, one message each.
+    fn take_batches(server: &MockServer) -> httpmock::Mock<'_> {
+        server.mock(|when, then| {
+            when.method(POST).path("/v1/imports/7/batches");
+            then.status(200).json_body(json!({
+                "messages": 1,
+                "messages_appended": 1,
+                "conversations": 1
+            }));
+        })
     }
 
     /// A run directory holding one staged conversation of one message.
@@ -390,14 +403,7 @@ mod tests {
     #[test]
     fn a_resumed_upload_does_not_send_what_the_journal_recorded() {
         let server = upload_server();
-        let batches = server.mock(|when, then| {
-            when.method(POST).path("/v1/imports/7/batches");
-            then.status(200).json_body(json!({
-                "messages": 1,
-                "messages_appended": 1,
-                "conversations": 1
-            }));
-        });
+        let batches = take_batches(&server);
         let staging = staged_conversation();
         let logs = tempfile::tempdir().unwrap();
 
@@ -416,14 +422,7 @@ mod tests {
     #[test]
     fn an_import_run_s_log_survives_its_run_directory_being_deleted() {
         let server = upload_server();
-        server.mock(|when, then| {
-            when.method(POST).path("/v1/imports/7/batches");
-            then.status(200).json_body(json!({
-                "messages": 1,
-                "messages_appended": 1,
-                "conversations": 1
-            }));
-        });
+        take_batches(&server);
         let staging = staged_conversation();
         let logs = tempfile::tempdir().unwrap();
         let log = import_run_log(logs.path(), staging.path());

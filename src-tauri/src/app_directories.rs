@@ -5,13 +5,18 @@
 //!
 //! - The **Logs Directory** holds each Import Run's log, named for the run,
 //!   and keeps it after the run's directory in the Staging Directory is
-//!   deleted. Nothing deletes a log.
+//!   deleted. Staging, Media and Upload all write into it ([`RunLog`] for the
+//!   first two, the push library's own writer for the Upload). Nothing
+//!   deletes a log.
 //! - The **Scratch Directory** holds what a run writes that is neither its
 //!   output nor kept: the attachment spool and the databases the Apple
 //!   Messages Reader decrypts ([`message_crate_core::ScratchDir`]). What a
 //!   killed run left there is deleted at start-up.
 
+use std::fs::File;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use crate::export_directories::{self, EXPORT_DIRECTORY_NAME};
 
@@ -44,6 +49,40 @@ pub fn import_run_log(logs_dir: &Path, run_dir: &Path) -> PathBuf {
     logs_dir.join(format!("import-{run}.log"))
 }
 
+/// An Import Run's log, open for Staging or Media to add lines to. The
+/// Upload's own writer appends to the same file.
+#[derive(Debug, Clone)]
+pub struct RunLog {
+    /// The log, or `None` when it could not be opened: a run goes on without
+    /// it, as its lines still reach the window.
+    file: Option<Arc<Mutex<File>>>,
+}
+
+impl RunLog {
+    /// The log of the run whose directory is `run_dir`, in `logs_dir`,
+    /// opened to add to it.
+    pub fn open(logs_dir: &Path, run_dir: &Path) -> Self {
+        let path = import_run_log(logs_dir, run_dir);
+        let file = std::fs::create_dir_all(logs_dir)
+            .and_then(|()| File::options().create(true).append(true).open(&path))
+            .ok()
+            .map(|file| Arc::new(Mutex::new(file)));
+        Self { file }
+    }
+
+    /// Add `line` to the log. A line that cannot be written is dropped: the
+    /// window has it.
+    pub fn line(&self, line: &str) {
+        if let Some(file) = &self.file {
+            let mut file = file
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let _ = writeln!(file, "{line}");
+            let _ = file.flush();
+        }
+    }
+}
+
 /// What the app deletes when it starts, on a thread of its own so a large
 /// leftover does not hold up the window: what killed runs left in the
 /// Scratch Directory (decrypted databases, attachment payloads), and the
@@ -58,7 +97,7 @@ pub fn sweep_at_start_up(app_data_dir: &Path) {
 mod tests {
     use std::path::Path;
 
-    use super::{import_run_log, logs_dir_in, scratch_dir_in, sweep_at_start_up};
+    use super::{RunLog, import_run_log, logs_dir_in, scratch_dir_in, sweep_at_start_up};
 
     #[test]
     fn the_start_up_sweep_clears_the_scratch_directory() {
@@ -81,6 +120,22 @@ mod tests {
         assert!(!decrypted.exists());
         assert!(!spool.exists());
         assert!(scratch.starts_with(app_data.path()));
+    }
+
+    #[test]
+    fn staging_and_media_lines_go_into_the_run_s_log() {
+        let logs = tempfile::tempdir().unwrap();
+        let run = Path::new("/home/sam/message-crate/staging-whatsapp-261004-143000");
+        let staging = RunLog::open(logs.path(), run);
+        staging.line("Conversations: 3");
+        drop(staging);
+        RunLog::open(logs.path(), run).line("Converting and compressing attachments…");
+
+        let text = std::fs::read_to_string(import_run_log(logs.path(), run)).unwrap();
+        assert_eq!(
+            text,
+            "Conversations: 3\nConverting and compressing attachments…\n"
+        );
     }
 
     #[test]

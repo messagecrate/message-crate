@@ -49,7 +49,11 @@ fn main() {
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;
             let record = app_data_dir.join(staging_directories::RECORD_FILE);
-            app.manage(StagingDirectories::at(record, dirs::home_dir()));
+            app.manage(StagingDirectories::at(
+                record,
+                dirs::home_dir(),
+                app_directories::logs_dir_in(&app_data_dir),
+            ));
             app.manage(ExportDirectories::in_app_data(&app_data_dir));
             std::thread::spawn(move || app_directories::sweep_at_start_up(&app_data_dir));
             Ok(())
