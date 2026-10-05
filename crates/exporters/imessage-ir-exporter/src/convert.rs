@@ -175,9 +175,10 @@ pub(crate) fn export(
     // `attachments/`.
     let embeds = format.is_mail_archive() && options.attachment_embed == AttachmentEmbed::Embed;
     if !use_queue && embeds {
+        count_loads(&mut collected, options.log.as_ref());
         check_headroom(
             &options.export_path,
-            embedded_bytes(&mut collected, options.log.as_ref()),
+            embedded_bytes(&collected),
             Disk::Staging,
         )?;
     }
@@ -218,16 +219,13 @@ pub(crate) fn export(
     Ok(report)
 }
 
-/// The bytes a mail archive embeds for every attachment collected: one
-/// base64 copy per message. None has a digest before it is read, so each
-/// occurrence is counted.
-///
-/// Each load is first counted in place by the rule every run counts by
-/// ([`PathSources::count`]): in a backup that is not encrypted, a path with
-/// no file there becomes `Missing` and counts for nothing (#1744). A path
-/// in an encrypted backup names a file only the Apple Messages Reader can
-/// read, so it counts at its hint.
-fn embedded_bytes(collected: &mut Collected, log: Option<&LogSink>) -> u64 {
+/// Count every collected load in place by the rule every run counts by
+/// ([`PathSources::count`]), before the check for room: in a backup that is
+/// not encrypted, a path with no file there becomes `Missing`, so it counts
+/// for nothing (#1744) and is embedded as `file_missing`. A path in an
+/// encrypted backup names a file only the Apple Messages Reader can read,
+/// so it keeps its hint.
+fn count_loads(collected: &mut Collected, log: Option<&LogSink>) {
     let paths = if collected.encrypted {
         PathSources::ReadByLoader
     } else {
@@ -241,6 +239,13 @@ fn embedded_bytes(collected: &mut Collected, log: Option<&LogSink>) -> u64 {
         let taken = std::mem::replace(load, AttachmentLoad::Missing);
         *load = AttachmentLoad::from_source(paths.count(taken.into_source(), log));
     }
+}
+
+/// The bytes a mail archive embeds for every attachment collected: one
+/// base64 copy per message. None has a digest before it is read, so each
+/// occurrence is counted. [`count_loads`] has made every load with no file
+/// `Missing` first.
+fn embedded_bytes(collected: &Collected) -> u64 {
     bytes_embedded(
         collected
             .conversations
@@ -1132,7 +1137,6 @@ mod tests {
         );
     }
 
-    /// A bare message carrying `count` attachments, for pairing tests.
     /// What a mail archive embeds for three attachments of a backup at
     /// `encrypted`: a file on disk, a path with no file there, and a
     /// handwriting SVG, each recorded at the size given.
@@ -1164,7 +1168,8 @@ mod tests {
             encrypted,
             failures: 0,
         };
-        embedded_bytes(&mut collected, None)
+        count_loads(&mut collected, None);
+        embedded_bytes(&collected)
     }
 
     /// In a backup that is not encrypted, a path with no file there adds
@@ -1187,6 +1192,7 @@ mod tests {
         );
     }
 
+    /// A bare message carrying `count` attachments, for pairing tests.
     fn msg_with_attachments(ts: i64, count: usize) -> IrMessage {
         IrMessage {
             guid: format!("guid-{ts}"),

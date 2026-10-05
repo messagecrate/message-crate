@@ -1553,7 +1553,9 @@ fn a_conversion_the_staging_disk_cannot_hold_is_refused_before_writing() {
 
 /// An attachment with no file in the input adds nothing to the disk check,
 /// whatever size its record names: neither a path with nothing there nor a
-/// record the input already marked missing is copied (#1743).
+/// record the input already marked missing is copied (#1743). With the
+/// media converted, the run stages from the sources the check counted, and
+/// both attachments come out missing with the reason the input gave kept.
 #[test]
 fn the_disk_check_of_a_conversion_leaves_out_an_attachment_with_no_file() {
     let source = tempfile::tempdir().unwrap();
@@ -1579,6 +1581,18 @@ fn the_disk_check_of_a_conversion_leaves_out_an_attachment_with_no_file() {
         )
         .unwrap_or_else(|err| panic!("{format:?}: {err}"));
     }
+
+    let mut converted = config(source.path(), destination.path(), OutputFormat::Jsonl);
+    converted.media.mode = MediaMode::Convert;
+    let report = convert_export(source.path(), &converted).unwrap();
+    assert_eq!(report.report.extra(ATTACHMENTS_MISSING), 2);
+    let out = read_output(destination.path(), OutputFormat::Jsonl);
+    let reasons: Vec<_> = out.messages[0]
+        .attachments
+        .iter()
+        .map(|att| att.missing_reason.as_deref())
+        .collect();
+    assert_eq!(reasons, [Some("file_missing"), Some("file_missing")]);
 }
 
 /// What an earlier conversion left in the output's `attachments/` is

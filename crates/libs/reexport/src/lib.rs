@@ -118,7 +118,14 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
     // staged even when the media is only cloned.
     let stages_again = matches!(transforms.media, MediaMode::Convert | MediaMode::Compress)
         || (copy_attachments && detected.format.is_mail_archive());
-    let reasons = missing_reasons(&documents);
+    // Only the input's own sources, staged below from what the disk check
+    // counted, need the reasons taken before that count.
+    let stages_from_input = copy_attachments && stages_again && sms_backup.is_none();
+    let reasons = if stages_from_input {
+        missing_reasons(&documents)
+    } else {
+        Vec::new()
+    };
 
     // Every attachment the conversion writes is counted against the disk
     // that holds the output before anything is written or cleaned there,
@@ -137,13 +144,15 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
                 &mut documents,
                 input_dir,
                 staging_media(&transforms),
+                // A file found missing is logged only by a run that then
+                // stages: a cloned copy of `attachments/` reads no file.
                 config.log.as_ref().filter(|_| stages_again),
             ),
         };
         let needed = counted.bytes_to_write(config.output_format);
         let freed = previous_attachment_bytes(&config.output);
         check_headroom(&config.output, needed.saturating_sub(freed), Disk::Staging)?;
-        if sms_backup.is_none() && stages_again {
+        if stages_from_input {
             from_input = Some(counted);
         }
     }
@@ -234,12 +243,13 @@ fn attachments_in<'a>(
     )
 }
 
-/// Stage the attachments again through the shared step from the files
-/// copied into the output, after a backup's own step staged them there. A
-/// convert or compress pass then rewrites each document's paths, hashes and
-/// MIME types. Adds the distinct files written to
-/// `report.attachments_saved` and the attachments left without a file to
-/// `attachments_missing`.
+/// Stage the attachments again through the shared step from the files in
+/// the output: those a backup's own step staged there, or, for a run that
+/// copies no attachments (an obfuscated one with the media converted or
+/// compressed), whatever is there. A convert or compress pass then rewrites
+/// each document's paths, hashes and MIME types. Adds the distinct files
+/// written to `report.attachments_saved` and the attachments left without
+/// a file to `attachments_missing`.
 fn apply_reexport_convert(
     documents: &mut [ConversationDocument],
     config: &ExporterConfig,
