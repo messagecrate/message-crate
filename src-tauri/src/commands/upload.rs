@@ -171,6 +171,25 @@ fn upload_config(args: UploadArgs, logs_dir: &Path) -> anyhow::Result<PushConfig
     })
 }
 
+/// The log line for the Upload starting on conversation file `file`, the
+/// `index`th of `total`.
+fn file_start_line(index: usize, total: usize, file: &str) -> String {
+    format!("Uploading {file}, conversation {index} of {total}")
+}
+
+/// The log line for the Upload ending conversation file `file` with
+/// `status`. A failure's reason is already on the log, in the Upload's own
+/// "… failed: …" line, so this line does not repeat it. A skipped file is
+/// one the Upload's journal records as sent by an earlier attempt.
+fn file_done_line(file: &str, status: &str) -> String {
+    match status {
+        "ok" => format!("Uploaded {file}"),
+        "failed" => format!("{file} was not uploaded"),
+        "skipped" => format!("{file} was uploaded before, so it is not sent again"),
+        other => format!("{file} ended as {other}"),
+    }
+}
+
 /// Relay one Upload progress event to the window as `extract:*` events.
 fn forward_upload_event(app: &tauri::AppHandle, event: ProgressEvent) {
     match event {
@@ -179,7 +198,7 @@ fn forward_upload_event(app: &tauri::AppHandle, event: ProgressEvent) {
         }
         ProgressEvent::Auth { .. } => {}
         ProgressEvent::FileStart { index, total, file } => {
-            events::emit(app, events::LOG, format!("Starting: {file}"));
+            events::emit(app, events::LOG, file_start_line(index, total, &file));
             events::emit(
                 app,
                 events::PROGRESS,
@@ -194,7 +213,7 @@ fn forward_upload_event(app: &tauri::AppHandle, event: ProgressEvent) {
             );
         }
         ProgressEvent::FileDone { file, status } => {
-            events::emit(app, events::LOG, format!("Done: {file} ({status})"));
+            events::emit(app, events::LOG, file_done_line(&file, &status));
             events::emit(
                 app,
                 events::FILE_DONE,
@@ -238,6 +257,25 @@ mod tests {
         IrMessage, IrMessageKind, IrParticipant, IrService, SCHEMA_VERSION,
     };
     use serde_json::json;
+
+    /// Each conversation's lines are sentences, with no "Starting:" or
+    /// "Done: … (ok)" shorthand (#1904).
+    #[test]
+    fn a_conversation_s_log_lines_are_sentences() {
+        assert_eq!(
+            file_start_line(2, 5, "chat.jsonl"),
+            "Uploading chat.jsonl, conversation 2 of 5"
+        );
+        assert_eq!(file_done_line("chat.jsonl", "ok"), "Uploaded chat.jsonl");
+        assert_eq!(
+            file_done_line("chat.jsonl", "failed"),
+            "chat.jsonl was not uploaded"
+        );
+        assert_eq!(
+            file_done_line("chat.jsonl", "skipped"),
+            "chat.jsonl was uploaded before, so it is not sent again"
+        );
+    }
 
     /// A run directory with the media settings Staging records, its
     /// attachment size limit `asset_max_bytes`.

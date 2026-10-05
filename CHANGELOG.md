@@ -1645,11 +1645,12 @@ released versions carry their date on the heading.
 
 #### The server
 
-- 2026-10-05 **The server, the demo seed and an Import Run's log write their
-  last warnings as sentences.** Lines on standard error started with
-  "warning:", "stopping:" or "skip —", and a few lines in an Import Run's log
-  started "Unable to" or "could not". Each now says what happened, for
-  example:
+- 2026-10-05 **The server, the demo seed, an Import Run's log and the
+  Upload write their last warnings as sentences.** Lines on standard error
+  started with "warning:", "stopping:" or "skip —", a few lines in an Import
+  Run's log started "Unable to" or "could not", and the desktop app wrote
+  "Starting:" and "Done:" for each conversation of an Upload. Each now says
+  what happened, for example:
   - "warning: could not add the Demo Account: …" is now "The Demo Account
     could not be added: …", and the line after it starts with a capital.
   - "warning: the Demo Account has 1 original whose Preview or Thumbnail
@@ -1672,6 +1673,10 @@ released versions carry their date on the heading.
     so no contact is named from it: …".
   - "could not read …" for WhatsApp's preferences is now "WhatsApp's
     preferences file … could not be read: …".
+  - The desktop app's "Starting: chat.jsonl" and "Done: chat.jsonl (ok)" for
+    each conversation of an Upload are now "Uploading chat.jsonl,
+    conversation 2 of 5" and "Uploaded chat.jsonl", "chat.jsonl was not
+    uploaded", or "chat.jsonl was uploaded before, so it is not sent again".
 - 2026-10-05 **`process-assets` says what it did to an incomplete original
   and a damaged or shared Preview or Thumbnail.** A transfer that never
   finished leaves an incomplete original. When one could not be removed,
