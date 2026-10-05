@@ -347,15 +347,9 @@ fn a_pull_records_one_run_and_writes_the_conversation_and_every_asset_once_acros
     );
 }
 
-/// The server can hold an attachment path that climbs out of a directory or
-/// names an absolute one, because an import that reuses a stored fingerprint
-/// never read the file at that path. Joined onto the output directory, such a
-/// path would write the download anywhere on disk. Each one is refused: the
-/// file lands at `attachments/{sha256}`, the conversation file names that
-/// path, and the report and the log name the refused path.
 /// An attachment whose path would leave the Export's directory and that has
-/// no SHA-256 has nowhere else to go: the log says it is not written, and
-/// nothing is fetched for it.
+/// no SHA-256 has nowhere else to go: the log says it is not written, the
+/// conversation file names no path for it, and nothing is fetched for it.
 #[test]
 fn an_attachment_path_that_leaves_the_directory_with_no_sha256_is_not_written() {
     let server = MockServer::start();
@@ -396,6 +390,11 @@ fn an_attachment_path_that_leaves_the_directory_with_no_sha256_is_not_written() 
     assert_eq!(assets.calls(), 0, "nothing names a file to fetch");
     assert!(!dir.path().join("escape.pdf").exists());
     assert_eq!(report.refused_attachment_paths, [climbing.to_string()]);
+    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    assert_eq!(
+        doc.messages[0].attachments[0].path, None,
+        "the conversation file names no path outside the Export's directory"
+    );
     let line = format!(
         "Attachment path {climbing} would leave the Export's directory, and the \
          attachment has no SHA-256 to name another path by, so it is not written"
@@ -406,6 +405,12 @@ fn an_attachment_path_that_leaves_the_directory_with_no_sha256_is_not_written() 
     );
 }
 
+/// The server can hold an attachment path that climbs out of a directory or
+/// names an absolute one, because an import that reuses a stored fingerprint
+/// never read the file at that path. Joined onto the output directory, such a
+/// path would write the download anywhere on disk. Each one is refused: the
+/// file lands at `attachments/{sha256}`, the conversation file names that
+/// path, and the report and the log name the refused path.
 #[test]
 fn an_attachment_path_that_leaves_the_output_directory_is_written_under_its_fingerprint_instead() {
     let server = MockServer::start();

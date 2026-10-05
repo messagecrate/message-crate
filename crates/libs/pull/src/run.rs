@@ -829,8 +829,8 @@ struct DownloadAssetsParallelArgs<'a> {
 ///
 /// # Errors
 ///
-/// Returns an error when a fetch fails after retries, a file already at its
-/// path cannot be read, or the run is cancelled.
+/// Returns an error when a fetch fails after retries, the size of a file
+/// already at its path cannot be read, or the run is cancelled.
 fn download_assets_parallel(args: DownloadAssetsParallelArgs<'_>) -> Result<AssetDownloadStats> {
     let DownloadAssetsParallelArgs {
         session,
