@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { sourceLabel } from "../lib/exportSources";
 import { formatDay } from "../lib/formatDate";
 import type { FreeTextTerm } from "../lib/freeTextTerms";
 import { type MatchRange, snippet } from "../lib/messageMatch";
@@ -7,7 +8,6 @@ import { useTimeZone } from "../lib/timeZone";
 import { listRowDivider } from "../lib/tw";
 import type { Message } from "../lib/types";
 import { focusRing } from "../lib/uiStyles";
-import { DeletionNote } from "./messages/chatBubbleShared";
 import PlainButton from "./PlainButton";
 
 /** `text` with each range in bold. */
@@ -33,10 +33,10 @@ function boldRanges(text: string, ranges: readonly MatchRange[]): ReactNode[] {
  * the first matching word with the matching free-text words in bold, and a
  * 📎 count when it has attachments.
  *
- * A marked message shows its mark as the conversation does: one Deleted in
- * the source app keeps its text, and its date reads "<day> · Deleted in
- * <source>"; an Unsent one reads "Unsent" in place of its text and
- * attachments, because its sender took all of it back.
+ * A marked message shows its mark in the words the conversation uses: one
+ * Deleted in the source app keeps its text, with a muted "Deleted in
+ * <source>" line under it; an Unsent one reads "Unsent" in place of its text
+ * and attachments, because its sender took all of it back.
  */
 export default function MessageSearchRow({
   message,
@@ -68,8 +68,7 @@ export default function MessageSearchRow({
           {messageConversationName(message.conversation)}
         </span>
         <span className="shrink-0 text-[0.75rem] text-muted">
-          {formatDay(message.timestamp, zone)}{" "}
-          <DeletionNote deletion={message.deletion} source={message.source} />
+          {formatDay(message.timestamp, zone)}
         </span>
       </span>
       <span className="flex min-w-0 items-start justify-between gap-2 text-[0.813rem] leading-[1.35]">
@@ -90,6 +89,11 @@ export default function MessageSearchRow({
           </span>
         ) : null}
       </span>
+      {message.deletion === "deleted_in_source_app" ? (
+        <span className="text-[0.75rem] text-muted">
+          Deleted in {sourceLabel(message.source)}
+        </span>
+      ) : null}
     </PlainButton>
   );
 }

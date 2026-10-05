@@ -102,7 +102,7 @@ describe("MessageSearchRow", () => {
     renderRow(message({ deletion: "deleted_in_source_app" }));
     const row = screen.getByRole("button");
     expect(row).toHaveTextContent("Alice: Here is the photo from the dentist");
-    const note = screen.getByText("· Deleted in Apple Messages");
+    const note = screen.getByText("Deleted in Apple Messages");
     expect(note.closest(".text-muted")).not.toBeNull();
     expect(row).not.toHaveTextContent("Unsent");
   });

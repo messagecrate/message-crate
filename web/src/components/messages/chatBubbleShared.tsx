@@ -171,11 +171,10 @@ function MarkedBubble({
 
 /**
  * The note beside the time of a message Deleted in the source app, naming the
- * source as the product does: "· Deleted in Apple Messages". The conversation
- * and the Messages list's rows both show it. An Unsent message says so in
- * place of its text, and an unmarked one carries no note.
+ * source as the product does: "· Deleted in Apple Messages". An Unsent message
+ * says so in its bubble, and an unmarked one carries no note.
  */
-export function DeletionNote({ deletion, source }: { deletion?: Deletion | null; source: string }) {
+function DeletionNote({ deletion, source }: { deletion?: Deletion | null; source: string }) {
   if (deletion !== "deleted_in_source_app") return null;
   return <span>· Deleted in {sourceLabel(source)}</span>;
 }

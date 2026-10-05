@@ -860,9 +860,9 @@ released versions carry their date on the heading.
 
 - 2026-10-04 **The Messages list shows which messages were deleted in the
   app they came from, and which were unsent.** A message deleted in the
-  source app keeps its text in the list, and its date reads like "Oct 3 ·
-  Deleted in Apple Messages". An unsent message reads "Unsent" in place of
-  its text. Before, every row looked alike until the message was opened, so
+  source app keeps its text in the list, with a faded line under it that
+  reads like "Deleted in Apple Messages". An unsent message reads "Unsent"
+  in place of its text. Before, every row looked alike until the message was opened, so
   a `deleted:yes` search read like any other.
 - 2026-10-04 **A conversation opened from a Message Tag page keeps the
   search box as it was.** Opening a conversation from a Message Tag page put
