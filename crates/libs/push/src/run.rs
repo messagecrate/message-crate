@@ -490,9 +490,7 @@ fn start_import_run(
         out.show(format!("Reusing Import Run {import_id} for {source}"));
         return Ok(import_id);
     }
-    let id = session
-        .start_import(&source, cfg.mode, Some("message-crate-push"))
-        .context("start the Import Run on the server")?;
+    let id = session.start_import(&source, cfg.mode, Some("message-crate-push"))?;
     out.show(format!("Recording Import Run {id} for {source}"));
     Ok(id)
 }
@@ -698,15 +696,13 @@ fn complete_import_run(
     aborted: bool,
     out: &mut Reporter<'_, '_>,
 ) -> Result<()> {
-    session
-        .complete_import(
-            import_id,
-            &ImportOutcome {
-                status: outcome_status(report, aborted),
-                bytes_uploaded: report.assets_bytes,
-            },
-        )
-        .with_context(|| format!("complete Import Run {import_id} on the server"))?;
+    session.complete_import(
+        import_id,
+        &ImportOutcome {
+            status: outcome_status(report, aborted),
+            bytes_uploaded: report.assets_bytes,
+        },
+    )?;
     out.log(&format!("Import Run {import_id} completed"));
     Ok(())
 }
