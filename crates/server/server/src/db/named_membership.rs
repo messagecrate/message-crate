@@ -614,10 +614,13 @@ pub async fn patch_members(
     let conn: &mut SqliteConnection = &mut tx;
     get_set(spec, conn, account_id, id).await?;
     let remove = clean_ids(remove);
-    let add: Vec<i64> = clean_ids(add)
-        .into_iter()
-        .filter(|id| !remove.contains(id))
-        .collect();
+    // An id to add of 0 or below is kept, unlike one to remove: it names no
+    // row, so the check below refuses it as it refuses any other id the
+    // caller does not hold, rather than the call dropping it unseen.
+    let mut add = add.to_vec();
+    add.sort_unstable();
+    add.dedup();
+    add.retain(|id| !remove.contains(id));
     if add.is_empty() && remove.is_empty() {
         return Err(MembershipError::BadRequest(format!(
             "{} ids required",

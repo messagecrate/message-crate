@@ -32,9 +32,10 @@ pub(crate) struct NamedSet {
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct CreateNamedSetRequest {
     /// Name of the new set, which the server trims. A name that is blank,
-    /// over 80 characters, reserved (such as `trash`) or, for a Contact
-    /// Group, holds `;` is refused with `422 Unprocessable Entity`. A name
-    /// another set of the kind has, in any letter case, is refused with
+    /// over 80 characters, or reserved (such as `trash`) is refused with
+    /// `422 Unprocessable Entity`. So is a Contact Group name holding `;`,
+    /// because the address book separates Contact Group names with it. A
+    /// name another set of the kind has, in any letter case, is refused with
     /// `409 Conflict`.
     pub(crate) name: String,
 }
@@ -51,8 +52,9 @@ pub(crate) struct UpdateNamedSetRequest {
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct UpdateMembersRequest {
     /// Ids to put in the set: contact ids for a Contact Group, conversation
-    /// ids for a Message Tag. An id the account does not hold is refused
-    /// with `422 Unprocessable Entity`, and then nothing changes. An id
+    /// ids for a Message Tag. An id the account does not hold, 0 and below
+    /// included, is refused with `422 Unprocessable Entity`, and then nothing
+    /// changes. An id
     /// already in the set is left as it is. Empty when left out, and `add`
     /// and `remove` both empty is refused with `422 Unprocessable Entity`.
     #[serde(default)]

@@ -579,11 +579,11 @@ pub(crate) struct DedupeCounts {
     /// message's conversation, direction, sender, time, text and attachments.
     /// This is not a count of duplicates.
     keys_filled: u64,
-    /// Groups of messages that share one content key.
+    /// Groups of messages that share one content key and come from two or
+    /// more sources. Copies one source alone holds are not a group.
     exact_groups: u64,
-    /// Messages hidden as exact duplicates. Each group stays shown as many
-    /// times as the one source holding the message most often holds it, and
-    /// the rest of the group is hidden.
+    /// Messages hidden as exact duplicates. In each group, the source with
+    /// the most copies sets how many stay shown, and the rest are hidden.
     exact_flagged: u64,
     /// Messages hidden as near duplicates: a message that matches one from
     /// another source in the same conversation, from the same sender in the
@@ -599,8 +599,8 @@ pub(crate) struct CreateImportRequest {
     /// Source id the run imports, such as `imessage` or `whatsapp`, which
     /// every message the run brings in records. It holds lowercase letters,
     /// digits, `-` and `_`, starts with a letter or a digit, and is at most
-    /// 64 characters; any other id is refused with `422 Unprocessable
-    /// Entity`.
+    /// 64 characters. Any other id, one with a space around it included, is
+    /// refused with `422 Unprocessable Entity`.
     pub(crate) source: String,
     /// What happens to the messages this source brought in before: `replace`
     /// removes them on the run's first batch, and `append` keeps them and
@@ -920,11 +920,12 @@ pub(crate) struct ImportRunSummary {
     pub(crate) source_fingerprint: serde_json::Value,
     /// Addresses the backup's device sent from (JSON array), or null.
     pub(crate) source_identities: serde_json::Value,
-    /// While the run is running, what the person approved at the last Review
-    /// they passed, which `PATCH /v1/imports/{id}` writes with its `summary`.
-    /// Once the run is over, the final counts its
-    /// `POST /v1/imports/{id}/complete` sent instead. Null when neither wrote
-    /// one.
+    /// What the person approved at the last Review they passed, which
+    /// `PATCH /v1/imports/{id}` writes with its `summary`. A cancelled run
+    /// keeps it. A run that completed or failed holds instead the final
+    /// counts its `POST /v1/imports/{id}/complete` sent, and null when that
+    /// request sent none, because completing replaces the plan. Null too
+    /// while no Review has stored one.
     pub(crate) summary: serde_json::Value,
     /// How many issues the run recorded.
     pub(crate) issue_count: u64,
@@ -1245,6 +1246,14 @@ pub(crate) async fn create_import(
     if body.source.trim().is_empty() {
         // Blank answers as missing does: one validation failure.
         return Err(ApiError::validation("source is required"));
+    }
+    // `validate_source_id` checks the id trimmed, and the id is stored as
+    // given, so a space around it is refused here like any other character
+    // a source id cannot hold.
+    if body.source.trim() != body.source {
+        return Err(ApiError::validation(
+            "source id must not start or end with a space",
+        ));
     }
     validate_source_id(&body.source).map_err(|e| ApiError::validation(e.to_string()))?;
     let account = resolve_import_account(&auth);

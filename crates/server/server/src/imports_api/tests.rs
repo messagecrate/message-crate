@@ -3623,6 +3623,30 @@ async fn creating_an_import_with_a_blank_source_is_a_validation_failure() {
     assert_eq!(runs["total"], 0, "no run was created: {runs}");
 }
 
+/// The bug: `validate_source_id` checked the id trimmed and the run stored
+/// it as given, so ` imessage ` made a run whose source held spaces.
+#[tokio::test]
+async fn creating_an_import_with_a_space_around_the_source_is_a_validation_failure() {
+    let (state, _fixture, token) = importer().await;
+    for source in [" imessage", "imessage ", " imessage "] {
+        let (status, text) = crate::test_support::post_raw(
+            &state,
+            "/v1/imports",
+            &token,
+            "application/json",
+            serde_json::json!({ "source": source }).to_string(),
+        )
+        .await;
+        crate::test_support::expect_problem(
+            status,
+            &text,
+            crate::problem::ProblemType::ValidationFailed,
+        );
+    }
+    let runs: serde_json::Value = get_json(&state, "/v1/imports", &token).await;
+    assert_eq!(runs["total"], 0, "no run was created: {runs}");
+}
+
 /// One `whatsapp` conversation with `chat` holding one message `guid` whose
 /// text is `text`, with `attachments` as its JSON attachment array.
 fn one_message_batch(chat: &str, guid: &str, text: &str, attachments: &str) -> String {
