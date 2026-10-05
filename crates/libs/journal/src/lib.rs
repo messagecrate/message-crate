@@ -25,7 +25,7 @@ static JOURNAL_WRITE_LOCK: Mutex<()> = Mutex::new(());
 /// The event is serialized to a buffer first so a serialization failure cannot
 /// tear a half-written row. When a crash cut the last row short, the new row
 /// starts on a line of its own: joined to the partial row it would be one
-/// corrupt line, skipped on every later load.
+/// unreadable line, skipped on every later load.
 ///
 /// # Errors
 ///
@@ -73,30 +73,32 @@ fn ends_in_a_torn_row(file: &mut File) -> std::io::Result<bool> {
 /// Parse every event from a journal file.
 ///
 /// A missing file is treated as an empty journal. Each line that cannot be
-/// parsed is reported to `on_corrupt(line_number, parse_error)` and skipped —
-/// the caller decides whether to warn or stay silent.
+/// parsed is reported to `on_unreadable(line_number, parse_error)` and skipped —
+/// the caller decides whether to warn or stay silent. A line that is not
+/// valid UTF-8, such as a row a crash cut inside a character, is one of
+/// those lines, so it cannot stop every later run from reading the file.
 ///
 /// # Errors
 ///
-/// Returns an error when the file cannot be opened or a line cannot be read.
+/// Returns an error when the file cannot be opened or read.
 pub fn load_events<E: DeserializeOwned>(
     label: &str,
     path: &Path,
-    on_corrupt: &mut dyn FnMut(usize, &serde_json::Error),
+    on_unreadable: &mut dyn FnMut(usize, &serde_json::Error),
 ) -> Result<Vec<E>> {
     let mut events = Vec::new();
     if !path.is_file() {
         return Ok(events);
     }
     let file = File::open(path).with_context(|| format!("open {label} {}", path.display()))?;
-    for (i, line) in BufReader::new(file).lines().enumerate() {
+    for (i, line) in BufReader::new(file).split(b'\n').enumerate() {
         let line = line.with_context(|| format!("read {label} line {}", i + 1))?;
-        if line.trim().is_empty() {
+        if line.iter().all(u8::is_ascii_whitespace) {
             continue;
         }
-        match serde_json::from_str(&line) {
+        match serde_json::from_slice(&line) {
             Ok(event) => events.push(event),
-            Err(error) => on_corrupt(i + 1, &error),
+            Err(error) => on_unreadable(i + 1, &error),
         }
     }
     Ok(events)
@@ -179,7 +181,7 @@ mod tests {
     }
 
     #[test]
-    fn corrupt_lines_are_reported_and_skipped() {
+    fn unreadable_lines_are_reported_and_skipped() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.jsonl");
         fs::write(
@@ -200,6 +202,52 @@ mod tests {
         assert_eq!(events[1].key, "b");
         assert_eq!(reported.len(), 1);
         assert_eq!(reported[0].0, 2);
+    }
+
+    /// A line that is not valid UTF-8 is reported and skipped like any other
+    /// unreadable line, rather than failing the whole read.
+    #[test]
+    fn a_line_that_is_not_utf8_is_reported_and_skipped() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.jsonl");
+        let mut bytes = b"{\"url\":\"http://caf\xc3".to_vec();
+        bytes.extend_from_slice(
+            b"\n{\"url\":\"http://server\",\"user\":\"alice\",\"key\":\"b\"}\r\n",
+        );
+        fs::write(&path, bytes).unwrap();
+        let mut reported = Vec::new();
+        let events: Vec<TestEvent> = load_events("journal", &path, &mut |line, _| {
+            reported.push(line);
+        })
+        .unwrap();
+        assert_eq!(reported, [1]);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].key, "b");
+    }
+
+    fn parse_error(line: &str) -> serde_json::Error {
+        serde_json::from_str::<TestEvent>(line).unwrap_err()
+    }
+
+    /// serde's position is cut to its column, so a sentence naming the
+    /// journal's own line number names only one line.
+    #[test]
+    fn the_reason_keeps_only_serdes_column() {
+        let reason = unreadable_line_reason(&parse_error("{not json"));
+        assert!(reason.ends_with(" at column 2"), "{reason}");
+        assert!(!reason.contains(" at line "), "{reason}");
+    }
+
+    /// An error with no position, which a missing field of an internally
+    /// tagged event gives, keeps serde's text whole, even when a value in it
+    /// holds the words " at line ". `from_value` gives such an error.
+    #[test]
+    fn a_reason_with_no_position_keeps_serdes_text_whole() {
+        let error =
+            serde_json::from_value::<TestEvent>(serde_json::json!({"url": "sms at line 2"}))
+                .unwrap_err();
+        assert_eq!(error.line(), 0, "{error}");
+        assert_eq!(unreadable_line_reason(&error), error.to_string());
     }
 
     #[test]

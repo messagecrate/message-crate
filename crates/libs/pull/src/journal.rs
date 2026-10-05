@@ -311,8 +311,9 @@ mod tests {
     }
 
     /// An unreadable line is skipped while the lines around it are kept, and
-    /// the sentence counts it among every line of the file, with only serde's
-    /// column beside it (#1910). The rest of the sentence is checked by
+    /// the sentence counts it among every line of the file (#1910). serde's
+    /// position is checked by `jsonl_journal`'s own tests, and the rest of the
+    /// sentence by
     /// `an_unreadable_journal_line_is_a_sentence_in_the_exports_log`.
     #[test]
     fn an_unreadable_line_is_skipped_and_named_by_its_line_in_the_file() {
@@ -343,14 +344,11 @@ mod tests {
             "Line 2 of {}, the record of fetched Assets, could not be read (",
             path.display()
         );
-        let reason = lines[0]
-            .strip_prefix(&prefix)
-            .and_then(|rest| rest.split_once("), so the Export skips it"))
-            .map(|(reason, _)| reason)
-            .unwrap_or_else(|| panic!("{}", lines[0]));
-        // serde's own position is cut to its column.
-        assert!(reason.ends_with(" at column 2"), "{reason}");
-        assert!(!reason.contains(" at line "), "{reason}");
+        assert!(
+            lines[0].starts_with(&prefix) && lines[0].contains("), so the Export skips it"),
+            "{}",
+            lines[0]
+        );
     }
 
     /// One output directory used by Export for two servers, or two accounts

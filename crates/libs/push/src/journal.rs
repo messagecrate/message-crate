@@ -93,7 +93,7 @@ impl JournalState {
 /// The line may have recorded nothing this Upload needs (a failure, another
 /// server's events, or a conversation a later line records), so the sentence
 /// says only that what it recorded may be sent again.
-fn corrupt_line_sentence(path: &Path, line: usize, error: &serde_json::Error) -> String {
+fn unreadable_line_sentence(path: &Path, line: usize, error: &serde_json::Error) -> String {
     format!(
         "Line {line} of the Upload's journal {} could not be read ({}), \
          so the Upload skips it and may send again what it recorded. The server skips \
@@ -110,8 +110,8 @@ pub fn journal_path(input: &Path) -> PathBuf {
 
 /// Read the journal and keep events that match this server URL and username.
 ///
-/// A missing file is treated as an empty journal. A corrupt line is skipped,
-/// and `on_corrupt` gets one sentence for the Upload's log saying so. What
+/// A missing file is treated as an empty journal. An unreadable line is skipped,
+/// and `on_unreadable` gets one sentence for the Upload's log saying so. What
 /// the line recorded may be sent again, and the server skips what it already
 /// holds.
 ///
@@ -122,11 +122,11 @@ pub fn load(
     path: &Path,
     url: &str,
     username: &str,
-    on_corrupt: &mut dyn FnMut(String),
+    on_unreadable: &mut dyn FnMut(String),
 ) -> Result<JournalState> {
     let mut state = JournalState::default();
     let events: Vec<JournalEvent> = jsonl_journal::load_events("journal", path, &mut |i, e| {
-        on_corrupt(corrupt_line_sentence(path, i, e));
+        on_unreadable(unreadable_line_sentence(path, i, e));
     })?;
     for event in events {
         match event {
@@ -241,7 +241,7 @@ pub struct RunJournal {
 impl RunJournal {
     /// Load the journal for this server target, or start empty when `fresh` is
     /// set (force mode and replace mode both ignore earlier progress). Each
-    /// line that could not be read goes to `on_corrupt` as a sentence for the
+    /// line that could not be read goes to `on_unreadable` as a sentence for the
     /// Upload's log.
     ///
     /// # Errors
@@ -252,12 +252,12 @@ impl RunJournal {
         url: &str,
         username: &str,
         fresh: bool,
-        on_corrupt: &mut dyn FnMut(String),
+        on_unreadable: &mut dyn FnMut(String),
     ) -> Result<Self> {
         let state = if fresh {
             JournalState::default()
         } else {
-            load(&path, url, username, on_corrupt)?
+            load(&path, url, username, on_unreadable)?
         };
         Ok(Self {
             state,
@@ -451,12 +451,13 @@ mod tests {
         ]
     }
 
-    /// A corrupt line is skipped while the lines around it are kept, and the
-    /// sentence counts it among every line of the file, with only serde's
-    /// column beside it (#1889). The rest of the sentence is checked by
-    /// `a_corrupt_journal_line_is_a_sentence_in_the_uploads_log`.
+    /// An unreadable line is skipped while the line before it is kept, and the
+    /// sentence counts it among every line of the file (#1889). serde's
+    /// position is checked by `jsonl_journal`'s own tests, and the rest of the
+    /// sentence by
+    /// `an_unreadable_journal_line_is_a_sentence_in_the_uploads_log`.
     #[test]
-    fn a_corrupt_line_is_skipped_and_named_by_its_line_in_the_file() {
+    fn an_unreadable_line_is_skipped_and_named_by_its_line_in_the_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(JOURNAL_NAME);
         append(&path, &success_events("http://server", "alice", "kept")[2]).unwrap();
@@ -476,49 +477,11 @@ mod tests {
             "Line 2 of the Upload's journal {} could not be read (",
             path.display()
         );
-        let reason = lines[0]
-            .strip_prefix(&prefix)
-            .and_then(|rest| rest.split_once("), so the Upload skips it"))
-            .map(|(reason, _)| reason)
-            .unwrap_or_else(|| panic!("{}", lines[0]));
-        // serde's own position is cut to its column.
-        assert!(reason.ends_with(" at column 2"), "{reason}");
-        assert!(!reason.contains(" at line "), "{reason}");
-    }
-
-    /// A line that parses as JSON but misses a field gives serde no position,
-    /// and its text is kept whole, with no column, even when a value in it
-    /// holds the words " at line ".
-    #[test]
-    fn a_line_with_no_position_keeps_serdes_text_whole() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join(JOURNAL_NAME);
-        fs::write(
-            &path,
-            concat!(
-                "{\"event\":\"file_ok\",\"url\":\"http://server\",\"username\":\"alice\",",
-                "\"source\":\"sms at line 2\"}\n"
-            ),
-        )
-        .unwrap();
-
-        let mut lines = Vec::new();
-        load(&path, "http://server", "alice", &mut |line| {
-            lines.push(line)
-        })
-        .unwrap();
-
-        assert_eq!(lines.len(), 1, "{lines:?}");
-        let error =
-            serde_json::from_str::<JournalEvent>(fs::read_to_string(&path).unwrap().trim_end())
-                .unwrap_err();
-        assert_eq!(error.line(), 0, "{error}");
         assert!(
-            lines[0].contains(&format!("could not be read ({error}), so ")),
+            lines[0].starts_with(&prefix) && lines[0].contains("), so the Upload skips it"),
             "{}",
             lines[0]
         );
-        assert!(!lines[0].contains(" at column "), "{}", lines[0]);
     }
 
     #[test]

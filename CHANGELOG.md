@@ -959,11 +959,14 @@ released versions carry their date on the heading.
 #### Exporting and converting
 
 - 2026-10-05 **A line of an Export's record of fetched Assets that cannot
-  be read is named in the Export's log.** The Export skipped such a line of
-  `.message-crate-pull-state.jsonl` without a word. The log now says "Line 4
-  of …/.message-crate-pull-state.jsonl, the record of fetched Assets, could
-  not be read (…), so the Export skips it. An Asset that line recorded is
-  not fetched again while its file is in the directory."
+  be read is named in the Export's log.** The Export skipped such a line
+  without a word. A line a crash cut inside a character stopped every later
+  Export into that directory, and every later Upload of a directory whose
+  journal held one; such a line is now skipped and named too. The log now
+  says "Line 4 of …, the record of
+  fetched Assets, could not be read (…), so the Export skips it. An Asset
+  that line recorded is not fetched again while its file is in the
+  directory."
 - 2026-10-05 **The log of an Export from a server says it fetches Assets,
   and writes its warnings as sentences.** It read "Downloading 2 assets with
   8 workers (0 already downloaded)…" and "Downloaded 2 assets (22 B) and
