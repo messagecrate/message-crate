@@ -900,10 +900,10 @@ fn a_refused_completion_is_a_warning_that_names_the_run_once() {
 
     assert_eq!(complete.calls(), 1, "a 409 Conflict is not retried");
     assert!(
-        events.contains(&ProgressEvent::Log(
-            "warning: Export Run 7 completion failed (HTTP 409 Conflict): the run is already closed"
-                .into()
-        )),
+        events.contains(&ProgressEvent::Log(format!(
+            "warning: Export Run {EXPORT_ID} completion failed (HTTP 409 Conflict): \
+             the run is already closed"
+        ))),
         "{events:?}"
     );
 }

@@ -13,7 +13,7 @@ use message_crate_http::{auth_check as authenticate, with_retries};
 use message_ir_format::mark_export_directory;
 use serde::Serialize;
 
-use crate::http::{ExportMessagesArgs, HttpSession};
+use crate::http::{CloseAction, ExportMessagesArgs, HttpSession};
 use crate::project::{ExportPath, build_document, conversation_key, export_path, to_ir_message};
 use message_crate_api_types::{ExportQueryList, ExportRun, ExportScope, Message};
 
@@ -193,9 +193,9 @@ pub fn run(cfg: &PullConfig, mut on_progress: Option<&mut ProgressFn<'_>>) -> Re
     // it ended. A close that fails after the files are written is a warning,
     // not a failed export: the directory is complete, only the record is not.
     let action = if outcome.is_ok() {
-        "complete"
+        CloseAction::Complete
     } else {
-        "cancel"
+        CloseAction::Cancel
     };
     if let Err(error) = pull.close_export(export.id, action) {
         emit(
@@ -380,7 +380,7 @@ impl<'a> Pull<'a> {
     }
 
     /// Close the run with `complete` or `cancel`, retrying a transient failure.
-    fn close_export(&self, export_id: i64, action: &str) -> Result<ExportRun> {
+    fn close_export(&self, export_id: i64, action: CloseAction) -> Result<ExportRun> {
         let cfg = self.cfg;
         with_retries(MAX_RETRIES, || {
             crate::http::close_export(&self.session, &cfg.base_url, &cfg.token, export_id, action)
@@ -825,10 +825,7 @@ fn download_assets_parallel(args: DownloadAssetsParallelArgs<'_>) -> Result<Asse
 
     let results = parallel_for_each(&jobs, workers, cancel, |job| {
         with_retries(MAX_RETRIES, || {
-            crate::http::download_asset(session, base_url, token, &job.sha256, &job.dest)?;
-            let meta =
-                fs::metadata(&job.dest).with_context(|| format!("stat {}", job.dest.display()))?;
-            Ok(meta.len())
+            crate::http::download_asset(session, base_url, token, &job.sha256, &job.dest)
         })
         .map_err(|e| format!("{e:#}"))
     });
