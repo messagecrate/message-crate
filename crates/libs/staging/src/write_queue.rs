@@ -10,7 +10,7 @@
 //! whose file is empty or cut off.
 //!
 //! Writers never transcode. Convert and compress stage the originals here and
-//! run afterwards as their own resumable pass.
+//! run afterwards, on their own and resumable, through [`transcode_staged`].
 //!
 //! Only non-obfuscated JSONL exports are routed here. Obfuscation is stateful
 //! across documents and the other formats merge or embed at finish, so those
@@ -130,7 +130,7 @@ pub struct WriteQueueOptions {
     /// The mode the user asked for. Convert and compress stage originals here
     /// and transcode afterwards — writers do not transcode.
     pub media: MediaMode,
-    /// Compress settings, used by the post-pass.
+    /// Compress settings, used by the convert/compress run after the write.
     pub compress: CompressOptions,
     /// Skip units whose conversation file is already on disk.
     pub resume: bool,
@@ -147,7 +147,7 @@ pub struct WriteQueueReport {
     pub conversations_skipped: usize,
     /// Attachment records staged with a path and a digest, duplicates included.
     pub attachments_saved: usize,
-    /// Filled by the convert/compress post-pass; default otherwise.
+    /// Filled by the convert/compress run after the write; default otherwise.
     pub media: media::MediaReport,
 }
 
@@ -167,7 +167,7 @@ impl WriteQueueReport {
 ///
 /// `Bytes` are moved out of the source rather than copied — every source is
 /// loaded at most once, so taking them is safe and spares a full copy of the
-/// payload. `Missing` reads as an absent file, which the staging step turns
+/// payload. `Missing` reads as an absent file, which Staging turns
 /// into `file_missing`.
 ///
 /// # Errors
@@ -600,7 +600,7 @@ pub fn drain_write_queue(
 /// Convert or compress the staged originals, once every writer is done.
 ///
 /// Writers stage originals and nothing else, so this is where convert and
-/// compress actually happen. Running it as its own pass gives per-file commits,
+/// compress actually happen. Running it on its own gives per-file commits,
 /// so an interruption keeps every derivative already finished, and progress
 /// worth reporting.
 fn run_media_post_pass(
@@ -618,13 +618,13 @@ fn run_media_post_pass(
         mode: options.media,
         compress: options.compress.clone(),
         // No server limit applies to a local export, so nothing here is
-        // written off as too large. The desktop's own media pass, which does
+        // written off as too large. The desktop's own Media stage, which does
         // enforce the real limit, never reaches this code: it stages with
         // Clone and converts on its own.
         asset_max_bytes: u64::MAX,
     };
     // The desktop never runs this branch (it stages with Clone and converts
-    // on its own after the gate); the events are for any other consumer.
+    // on its own after the Staging Review); the events are for any other consumer.
     let report = transcode_staged(output_dir, &transcode_options, cancel, None, &mut |p| {
         let due = emit_progress(
             progress,
@@ -669,7 +669,7 @@ fn run_media_post_pass(
 /// Refuse a drain the staging disk plainly cannot hold.
 ///
 /// `needed` counts the originals the run will copy. Peak usage is those plus
-/// one in-flight derivative, since the media pass commits per file, so the
+/// one in-flight derivative, since the convert/compress run commits per file, so the
 /// sum plus a fixed slack is the honest requirement.
 ///
 /// With media turned off nothing is copied, so nothing is counted. A
@@ -771,7 +771,7 @@ fn write_one_unit(
         });
     }
 
-    // Writers copy originals; convert and compress run later as their own pass.
+    // Writers copy originals; convert and compress run later on their own.
     let stage_mode = match options.media {
         MediaMode::Disabled => MediaMode::Disabled,
         _ => MediaMode::Clone,

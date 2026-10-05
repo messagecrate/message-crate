@@ -202,7 +202,7 @@ describe("recordToCarry", () => {
 
   it("keeps an earlier stop's failed conversation when the next stop reported nothing on it", () => {
     // Pause 1 left conversation b.jsonl failed. The resumed Upload was paused
-    // before the push started, so it reported nothing on b.jsonl.
+    // before it started sending, so it reported nothing on b.jsonl.
     const earlier = {
       issues: [],
       lastStopIssues: [

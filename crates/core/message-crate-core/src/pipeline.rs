@@ -183,7 +183,7 @@ pub struct ExportReport {
     pub duplicates_dropped: u64,
     /// Attachment files saved to the output.
     pub attachments_saved: u64,
-    /// The convert or compress pass over the staged attachments.
+    /// The Media stage over the staged attachments.
     pub media: MediaReport,
     /// Documents whose handles, names and bodies were obfuscated.
     pub obfuscated_docs: u64,
@@ -276,12 +276,12 @@ impl ExportReport {
         })
     }
 
-    /// Refuse a run whose media pass failed on every file it tried, when
+    /// Refuse a run whose Media stage failed on every file it tried, when
     /// the mode needed ffmpeg: that is a missing tool, not a bad file.
     ///
     /// # Errors
     ///
-    /// Returns an error when `needs_tools` is set, the media pass reported
+    /// Returns an error when `needs_tools` is set, the Media stage reported
     /// errors, and it processed nothing.
     pub fn check_media(&self, needs_tools: bool) -> anyhow::Result<()> {
         if needs_tools && !self.media.errors.is_empty() && self.media.processed == 0 {
@@ -290,7 +290,7 @@ impl ExportReport {
         Ok(())
     }
 
-    /// Human-readable lines about the write tail: the media pass and
+    /// Human-readable lines about the write tail: the Media stage and
     /// obfuscation. Empty when neither did anything.
     pub fn media_lines(&self) -> Vec<String> {
         let mut lines = Vec::new();

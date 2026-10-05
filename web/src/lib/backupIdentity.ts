@@ -45,7 +45,7 @@ export function identityMessageCounts(
 }
 
 /**
- * Whether Import should stop before creating the session: identities were
+ * Whether Import should stop before creating the Import Run: identities were
  * read and none is on the profile. Fails open — no identities read, or no
  * profile loaded (fetch failed), never blocks an import.
  */
@@ -57,7 +57,7 @@ export function needsIdentityStop(
   return !identities.some((identity) => identityOnProfile(identity, profile));
 }
 
-/** The session's stored identity list, or null when absent or malformed. */
+/** The Import Run's stored identity list, or null when absent or malformed. */
 export function parseSourceIdentities(value: unknown): string[] | null {
   if (!Array.isArray(value)) return null;
   return value.every((item) => typeof item === "string") ? (value as string[]) : null;

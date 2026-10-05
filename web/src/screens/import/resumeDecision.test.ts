@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ActiveImportRun } from "../../lib/importRun";
 import { checkSourceFingerprint, resumeDecisionFor } from "./resumeDecision";
 
-function session(overrides: Partial<ActiveImportRun> = {}): ActiveImportRun {
+function importRun(overrides: Partial<ActiveImportRun> = {}): ActiveImportRun {
   return {
     id: 7,
     source: "imessage",
@@ -21,10 +21,10 @@ function session(overrides: Partial<ActiveImportRun> = {}): ActiveImportRun {
 }
 
 describe("resumeDecisionFor", () => {
-  it("has nothing to decide without a session", () => {
+  it("has nothing to decide without a run", () => {
     expect(
       resumeDecisionFor({
-        session: null,
+        run: null,
         deviceId: "this-device",
         directory: "missing",
         fingerprint: "unknown",
@@ -32,9 +32,9 @@ describe("resumeDecisionFor", () => {
     ).toBe("none");
   });
 
-  it("says where a session belongs when another install owns it", () => {
+  it("says where a run belongs when another install owns it", () => {
     const decision = resumeDecisionFor({
-      session: session({ device_id: "other-device" }),
+      run: importRun({ device_id: "other-device" }),
       deviceId: "this-device",
       directory: "present",
       fingerprint: "unknown",
@@ -44,7 +44,7 @@ describe("resumeDecisionFor", () => {
 
   it("offers discard alone when the run directory is gone", () => {
     const decision = resumeDecisionFor({
-      session: session(),
+      run: importRun(),
       deviceId: "this-device",
       directory: "missing",
       fingerprint: "unknown",
@@ -58,7 +58,7 @@ describe("resumeDecisionFor", () => {
     for (const stage of ["upload", "staging_review", "media", "write", "parse"] as const) {
       expect(
         resumeDecisionFor({
-          session: session({ stage }),
+          run: importRun({ stage }),
           deviceId: "this-device",
           directory: "unknown",
           fingerprint: "unknown",
@@ -67,10 +67,10 @@ describe("resumeDecisionFor", () => {
     }
   });
 
-  it("puts a session that never recorded a directory ahead of the directory check", () => {
+  it("puts a run that never recorded a directory ahead of the directory check", () => {
     expect(
       resumeDecisionFor({
-        session: session({ staging_dir: null }),
+        run: importRun({ staging_dir: null }),
         deviceId: "this-device",
         directory: "unknown",
         fingerprint: "unknown",
@@ -78,9 +78,9 @@ describe("resumeDecisionFor", () => {
     ).toBe("directory_missing");
   });
 
-  it("resumes the upload when a push was interrupted", () => {
+  it("resumes the upload when an Upload was interrupted", () => {
     const decision = resumeDecisionFor({
-      session: session({ stage: "upload" }),
+      run: importRun({ stage: "upload" }),
       deviceId: "this-device",
       directory: "present",
       fingerprint: "unknown",
@@ -93,7 +93,7 @@ describe("resumeDecisionFor", () => {
     // already copied are work worth keeping.
     expect(
       resumeDecisionFor({
-        session: session({ stage: "parse" }),
+        run: importRun({ stage: "parse" }),
         deviceId: "this-device",
         directory: "present",
         fingerprint: "match",
@@ -101,10 +101,10 @@ describe("resumeDecisionFor", () => {
     ).toBe("restart");
   });
 
-  it("sends a session waiting at a gate back to its gate", () => {
+  it("sends a run waiting at a Review back to its Review", () => {
     for (const stage of ["staging_review", "media_review"] as const) {
       const decision = resumeDecisionFor({
-        session: session({ stage }),
+        run: importRun({ stage }),
         deviceId: "this-device",
         directory: "present",
         fingerprint: "unknown",
@@ -113,9 +113,9 @@ describe("resumeDecisionFor", () => {
     }
   });
 
-  it("sends a session that died converting back to the media pass", () => {
+  it("sends a run that died converting back to the Media stage", () => {
     const decision = resumeDecisionFor({
-      session: session({ stage: "media" }),
+      run: importRun({ stage: "media" }),
       deviceId: "this-device",
       directory: "present",
       fingerprint: "unknown",
@@ -123,13 +123,13 @@ describe("resumeDecisionFor", () => {
     expect(decision.kind).toBe("resume_media");
   });
 
-  it("still offers discard only when the directory is gone at a gate", () => {
+  it("still offers discard only when the directory is gone at a Review", () => {
     // After a review, discard only. There is nothing to
     // recompute a summary from.
     for (const stage of ["staging_review", "media_review", "media"] as const) {
       expect(
         resumeDecisionFor({
-          session: session({ stage }),
+          run: importRun({ stage }),
           deviceId: "this-device",
           directory: "missing",
           fingerprint: "unknown",
@@ -141,7 +141,7 @@ describe("resumeDecisionFor", () => {
   it("treats a missing device id as this install rather than locking the user out", () => {
     expect(
       resumeDecisionFor({
-        session: session({ device_id: null }),
+        run: importRun({ device_id: null }),
         deviceId: "this-device",
         directory: "present",
         fingerprint: "unknown",
@@ -150,7 +150,7 @@ describe("resumeDecisionFor", () => {
   });
   it("offers to pick up a copy that was interrupted", () => {
     const decision = resumeDecisionFor({
-      session: session({ stage: "write" }),
+      run: importRun({ stage: "write" }),
       deviceId: "this-device",
       directory: "present",
       fingerprint: "match",
@@ -161,7 +161,7 @@ describe("resumeDecisionFor", () => {
   it("still offers to pick up when the backup cannot be checked", () => {
     expect(
       resumeDecisionFor({
-        session: session({ stage: "write" }),
+        run: importRun({ stage: "write" }),
         deviceId: "this-device",
         directory: "present",
         fingerprint: "unknown",
@@ -172,7 +172,7 @@ describe("resumeDecisionFor", () => {
   it("says the backup changed rather than copying against a different source", () => {
     for (const fingerprint of ["mismatch", "source_missing"] as const) {
       const decision = resumeDecisionFor({
-        session: session({ stage: "write" }),
+        run: importRun({ stage: "write" }),
         deviceId: "this-device",
         directory: "present",
         fingerprint,
@@ -181,10 +181,10 @@ describe("resumeDecisionFor", () => {
     }
   });
 
-  it("restarts a session that died in parse, whatever the backup looks like", () => {
+  it("restarts a run that died in parse, whatever the backup looks like", () => {
     expect(
       resumeDecisionFor({
-        session: session({ stage: "parse" }),
+        run: importRun({ stage: "parse" }),
         deviceId: "this-device",
         directory: "present",
         fingerprint: "mismatch",
@@ -194,10 +194,10 @@ describe("resumeDecisionFor", () => {
 
   it("ignores the fingerprint once the copy is done", () => {
     // A changed source is irrelevant at either Review and during
-    // the push — the staged directory is what those stages work from.
+    // the Upload — the staged directory is what those stages work from.
     expect(
       resumeDecisionFor({
-        session: session({ stage: "upload" }),
+        run: importRun({ stage: "upload" }),
         deviceId: "this-device",
         directory: "present",
         fingerprint: "mismatch",
@@ -208,7 +208,7 @@ describe("resumeDecisionFor", () => {
   it("puts a missing directory ahead of any fingerprint answer", () => {
     expect(
       resumeDecisionFor({
-        session: session({ stage: "write" }),
+        run: importRun({ stage: "write" }),
         deviceId: "this-device",
         directory: "missing",
         fingerprint: "match",
@@ -224,7 +224,7 @@ describe("checkSourceFingerprint", () => {
     modified_unix_ms: 1_700_000_000_000,
   };
 
-  it("cannot judge a session that stored no fingerprint", () => {
+  it("cannot judge a run that stored no fingerprint", () => {
     expect(
       checkSourceFingerprint(null, {
         exists: true,

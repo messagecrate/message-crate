@@ -1,8 +1,8 @@
 /**
- * The import form as the server stores it on a session, and the way back.
+ * The import form as the server stores it on an Import Run, and the way back.
  *
- * `formSnapshot` writes the record at session creation; `restoreFormFromSnapshot`
- * rebuilds form values from it when Import reopens on that session. They sit
+ * `formSnapshot` writes the record when the run is created; `restoreFormFromSnapshot`
+ * rebuilds form values from it when Import reopens on that run. They sit
  * together so a field added to one is added to the other in the same place.
  */
 import type { AttachmentMediaMode } from "../../lib/types";
@@ -12,7 +12,7 @@ import type { ImportJobFormValues } from "./useImportJob";
 export type SnapshotSecret = "backupPassword" | "whatsappKey";
 
 /**
- * Form snapshot for the session record, without the secrets.
+ * Form snapshot for the run record, without the secrets.
  *
  * It carries `assetMaxBytes`, the server's attachment size limit as the run
  * read it before Staging, so a resumed run works to the same number.
@@ -66,7 +66,7 @@ export function isStringArray(value: unknown): value is string[] {
 }
 
 /**
- * Rebuild form values from a session's stored snapshot.
+ * Rebuild form values from a run's stored snapshot.
  *
  * The snapshot omits `backupPassword` and `whatsappKey`, so both come back
  * as "". A resume into Upload, a Review, or Media reads no backup and needs
@@ -74,7 +74,7 @@ export function isStringArray(value: unknown): value is string[] {
  * `snapshotSecret` says the run had one, the Resume Import panel asks for
  * it and the screen fills it in before the import starts.
  *
- * The snapshot came from the database, not from this session's own state,
+ * The snapshot came from the database, not from this run's own state,
  * so its shape is checked field by field rather than trusted. Returns
  * null for anything that doesn't match, instead of throwing.
  */

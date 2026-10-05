@@ -1,4 +1,4 @@
-//! Everything a push says while it runs: the on-disk log, the live progress
+//! Everything an Upload says while it runs: the on-disk log, the live progress
 //! callback, and the "files N/M" batching that keeps big imports readable.
 //!
 //! [`Reporter`] is the one object the rest of the crate talks to. It owns the
@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 
 use crate::report::{FileResult, PushReport, UploadProfile, elapsed_ms, format_profile_line};
 
-/// Events the desktop app can show while a push is running.
+/// Events the desktop app can show while an Upload is running.
 #[derive(Debug, Clone)]
 pub enum ProgressEvent {
     /// One line for the log panel.
@@ -47,7 +47,7 @@ pub enum ProgressEvent {
     Issue {
         /// `skip` when the item was left out, `error` when it failed.
         kind: String,
-        /// Pipeline step that raised it, e.g. `upload`.
+        /// The Stage that raised it, e.g. `upload`.
         step: String,
         /// What was affected: an attachment path or a conversation file.
         item: String,
@@ -209,7 +209,7 @@ fn format_ms_seconds(ms: u64) -> String {
     format!("{:.1}s", ms as f64 / 1000.0)
 }
 
-/// The single outlet for everything a push run says.
+/// The single outlet for everything an Upload says.
 ///
 /// Quiet per-file detail goes to the log file only (`log`). Anything a person
 /// watching the desktop app should see goes to both the log and the progress
@@ -331,7 +331,7 @@ impl<'p, 'f> Reporter<'p, 'f> {
     /// Send one Import Errors row per conversation that failed or was left
     /// unsent by a stop, so any consumer can list them without reading the
     /// report.
-    /// A `skipped` conversation gets no row: the push journal skips only a
+    /// A `skipped` conversation gets no row: the Upload's journal skips only a
     /// conversation an earlier part of the same run sent, so it is on the
     /// server and is not a problem.
     /// The log already carries the `fail` line for each failure, so this

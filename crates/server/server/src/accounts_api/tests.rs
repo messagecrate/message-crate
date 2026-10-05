@@ -2803,7 +2803,7 @@ async fn c2_1_the_owner_reads_no_address_or_search_text_in_the_history() {
         serde_json::json!({ "source": "imessage" }),
     )
     .await;
-    // What the desktop app sends at the first review: its staging summary.
+    // What the desktop app sends at the Staging Review: its staging summary.
     let _: serde_json::Value = crate::test_support::patch_json(
         &fixture.state,
         &format!("/v1/imports/{}", import["id"]),

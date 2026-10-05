@@ -409,7 +409,7 @@ describe("ImportFormFields WhatsApp methods", () => {
  * `onImport` was in the props of every test in this file and was asserted in
  * none of them, over 320 lines. A form whose Import button was wired to
  * nothing rendered identically and passed: every test read the fields and the
- * gates, and none pressed the button.
+ * readiness checks, and none pressed the button.
  */
 describe("ImportFormFields Import button", () => {
   it("calls onImport when the form is ready", async () => {

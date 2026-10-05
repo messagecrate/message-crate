@@ -12,7 +12,7 @@ export function showsAttachmentOptions(source: string): boolean {
   return isImessageMethod(source) || isWhatsappMethod(source) || isAndroidSmsSource(source);
 }
 
-/** Import session / messages.source slug for a desktop Import method id. */
+/** Import Run / messages.source slug for a desktop Import method id. */
 export function sourceForMethod(source: string): string {
   if (isImessageMethod(source)) {
     return IMESSAGE_SOURCE_ID;

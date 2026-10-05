@@ -188,7 +188,7 @@ async fn an_issue_names_the_stage_it_came_from() {
         })
     };
 
-    // A finer step of the desktop app is not a Stage.
+    // A finer part of the desktop app's work is not a Stage.
     let (status, text) = crate::test_support::post_raw(
         &fixture.state,
         &format!("/v1/imports/{id}/complete"),
@@ -4711,7 +4711,9 @@ async fn the_sql_form_of_an_import_groups_name_is_the_name_the_group_is_given() 
         serde_json::json!({ "source": "imessage" }),
     )
     .await;
-    let import_id = created["id"].as_i64().expect("the created Import Run has an id");
+    let import_id = created["id"]
+        .as_i64()
+        .expect("the created Import Run has an id");
     let mut conn = fixture.state.db.acquire().await.unwrap();
     for finished_at in [None, Some("2031-02-03T04:05:06Z")] {
         sqlx::query("UPDATE imports SET finished_at = $1 WHERE id = $2")

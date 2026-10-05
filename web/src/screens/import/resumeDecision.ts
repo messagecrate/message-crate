@@ -1,7 +1,7 @@
 import type { ActiveImportRun, SourceFingerprint } from "../../lib/importRun";
 import type { PathStat } from "../../lib/tauri";
 
-/** What entering Import should do about a session that already exists. */
+/** What entering Import should do about an Import Run that already exists. */
 export type ResumeDecision = {
   kind:
     | "none"
@@ -12,80 +12,80 @@ export type ResumeDecision = {
     // error is not evidence the directory is gone.
     | "directory_unknown"
     | "resume_upload"
-    // A session waiting at either review: the summary is recomputed
+    // A run waiting at either review: the summary is recomputed
     // fresh from the directory and shown again, nothing restored, because the
     // directory is the truth.
     | "resume_review"
-    // A session that died mid media pass: the pass re-runs over whatever
+    // A run that died mid Media stage: the stage re-runs over whatever
     // originals it had not reached yet, which is safe because an original
     // still on disk always means work remains, then
     // continues to the Media Review exactly as the normal flow does.
     | "resume_media"
-    // A session whose copy was interrupted: the exporter reads the backup
+    // A run whose copy was interrupted: the exporter reads the backup
     // again and skips the conversations already written.
     | "resume_write"
-    // The backup this session was reading is not the one on disk now, so
+    // The backup this run was reading is not the one on disk now, so
     // copying more of it into the same directory would mix two sources.
     | "source_changed"
     | "restart"
     // resumeDecisionFor never returns this: it has no way to know whether a
-    // session's stored form snapshot is readable. The screen constructs it
+    // run's stored form snapshot is readable. The screen constructs it
     // itself when restoreFormFromSnapshot rejects the snapshot at the point
     // of trying to resume or restart.
     | "settings_unreadable";
-  session: ActiveImportRun | null;
+  run: ActiveImportRun | null;
 };
 
-/** Whether a session's run directory is on disk, or that the check itself failed. */
+/** Whether a run's directory is on disk, or that the check itself failed. */
 export type DirectoryCheck = "present" | "missing" | "unknown";
 
 /**
- * Decide what to show when Import opens and the server reports a session.
+ * Decide what to show when Import opens and the server reports a running Import Run.
  *
  * Pure so the table can be read and tested on its own: the caller does the
  * network and filesystem work and hands the answers in.
  *
- * A session with no recorded device is treated as this install's.
+ * A run with no recorded device is treated as this install's.
  * `device_id` is optional on `POST /v1/imports`, so the server's `import`
- * command, or a program using an API token, opens a session without one, and
+ * command, or a program using an API token, opens a run without one, and
  * locking someone out of their own staged work over a missing field would
  * be worse than the rare case of two installs sharing a server.
  */
 export function resumeDecisionFor(args: {
-  session: ActiveImportRun | null;
+  run: ActiveImportRun | null;
   deviceId: string;
   directory: DirectoryCheck;
   fingerprint: FingerprintCheck;
 }): ResumeDecision {
-  const { session, deviceId, directory, fingerprint } = args;
-  if (!session) return { kind: "none", session: null };
-  if (session.device_id && session.device_id !== deviceId) {
-    return { kind: "other_device", session };
+  const { run, deviceId, directory, fingerprint } = args;
+  if (!run) return { kind: "none", run: null };
+  if (run.device_id && run.device_id !== deviceId) {
+    return { kind: "other_device", run };
   }
-  if (!session.staging_dir || directory === "missing") {
-    return { kind: "directory_missing", session };
+  if (!run.staging_dir || directory === "missing") {
+    return { kind: "directory_missing", run };
   }
   if (directory === "unknown") {
-    return { kind: "directory_unknown", session };
+    return { kind: "directory_unknown", run };
   }
-  if (session.stage === "upload") {
-    return { kind: "resume_upload", session };
+  if (run.stage === "upload") {
+    return { kind: "resume_upload", run };
   }
-  if (session.stage === "staging_review" || session.stage === "media_review") {
-    return { kind: "resume_review", session };
+  if (run.stage === "staging_review" || run.stage === "media_review") {
+    return { kind: "resume_review", run };
   }
-  if (session.stage === "media") {
-    return { kind: "resume_media", session };
+  if (run.stage === "media") {
+    return { kind: "resume_media", run };
   }
   // Only the copy cares whether the backup still matches: every later stage
   // works from the staged directory, not from the source.
-  if (session.stage === "write") {
+  if (run.stage === "write") {
     if (fingerprint === "mismatch" || fingerprint === "source_missing") {
-      return { kind: "source_changed", session };
+      return { kind: "source_changed", run };
     }
-    return { kind: "resume_write", session };
+    return { kind: "resume_write", run };
   }
-  return { kind: "restart", session };
+  return { kind: "restart", run };
 }
 
 /**
@@ -98,11 +98,11 @@ export function resumeReadsBackup(kind: ResumeDecision["kind"]): boolean {
   return kind === "resume_write" || kind === "restart" || kind === "source_changed";
 }
 
-/** How a session's stored backup fingerprint compares to the backup now. */
+/** How a run's stored backup fingerprint compares to the backup now. */
 export type FingerprintCheck = "match" | "mismatch" | "source_missing" | "unknown";
 
 /**
- * Compare the fingerprint a session recorded against the source on disk.
+ * Compare the fingerprint a run recorded against the source on disk.
  *
  * Directory sources carry the blind spot `buildSourceFingerprint` documents:
  * a stat of the directory entry does not move when a file inside it grows.

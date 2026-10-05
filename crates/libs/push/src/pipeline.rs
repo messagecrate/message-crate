@@ -1,4 +1,4 @@
-//! The message-import side of a push: pack prepared chunks into HTTP batches,
+//! The message-import side of an Upload: pack prepared chunks into HTTP batches,
 //! send one batch at a time, and settle each conversation's outcome.
 //!
 //! [`ImportPipeline`] owns every piece of state the import loop mutates: the
@@ -212,7 +212,7 @@ impl BatchError {
     }
 }
 
-/// Owns the import-side state of one push run.
+/// Owns the import-side state of one Upload.
 pub(crate) struct ImportPipeline<'a> {
     cfg: &'a PushConfig,
     session: &'a Session,
@@ -513,10 +513,10 @@ impl<'a> ImportPipeline<'a> {
 
     /// Update journal + per-file trackers after one import HTTP request finishes.
     ///
-    /// On success: record each message id so a later push can skip them.
+    /// On success: record each message id so a later Upload can skip them.
     /// On failure: mark every conversation that contributed to this batch as
     /// failed, unless the server refused the session: that stops the run,
-    /// and the batch's conversations are left for the next push.
+    /// and the batch's conversations are left for the next Upload.
     ///
     /// # Errors
     ///

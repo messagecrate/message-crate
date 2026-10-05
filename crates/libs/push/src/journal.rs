@@ -1,7 +1,7 @@
 //! Local log of which conversations and files were already uploaded.
 //!
 //! The file is `.import-state.jsonl`. JSON Lines means one JSON object per
-//! line. A later push can skip work that already succeeded. The Message Crate
+//! line. A later Upload can skip work that already succeeded. The Message Crate
 //! HTTP server still ignores true duplicates if a line is sent again.
 
 use std::collections::HashSet;
@@ -14,9 +14,9 @@ use serde::{Deserialize, Serialize};
 
 /// Filename of the local upload log, written next to the conversation files.
 pub const JOURNAL_NAME: &str = ".import-state.jsonl";
-/// Filename of the JSON summary written at the end of a push.
+/// Filename of the JSON summary written at the end of an Upload.
 pub const REPORT_NAME: &str = "message-crate-push-report.json";
-/// Filename of the human-readable push log.
+/// Filename of the human-readable Upload log.
 pub const LOG_NAME: &str = "message-crate-push.log";
 
 /// One message identity recorded in the journal: conversation file plus guid.
@@ -208,7 +208,7 @@ pub fn compact(path: &Path, url: &str, username: &str, state: &JournalState) -> 
     })
 }
 
-/// The journal of one push run: the in-memory skip sets plus the file they
+/// The journal of one Upload: the in-memory skip sets plus the file they
 /// are appended to, bound to one server URL and username.
 ///
 /// Every write goes through here so callers never repeat the URL, username,

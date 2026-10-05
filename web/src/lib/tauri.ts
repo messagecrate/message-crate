@@ -144,9 +144,9 @@ export async function invokeSummarizeStaging(config: StagingConfig): Promise<Sta
 }
 
 /**
- * Run the convert/compress pass over a staged directory, after the first gate
+ * Run the Media stage over a staged directory, after the Staging Review
  * approves it. Reports through the `extract:*` events like every other long
- * job, so `awaitTauriJob` drives it exactly as it drives extract and push.
+ * job, so `awaitTauriJob` drives it exactly as it drives extract and the Upload.
  */
 export async function invokeTranscodeStaging(config: StagingConfig): Promise<void> {
   return invoke("transcode_staging", {
@@ -200,11 +200,11 @@ export interface UploadConfig {
 
 export interface UploadFinishedReport {
   ok: boolean;
-  /** The cancel flag stopped the push: a pause the run resumes from, not a failure. */
+  /** The cancel flag stopped the Upload: a pause the run resumes from, not a failure. */
   cancelled: boolean;
   /**
-   * The server refused the session the push sent (it expired or was ended),
-   * which stopped the push as a pause. The window ends the session too.
+   * The server refused the session the Upload sent (it expired or was ended),
+   * which stopped the Upload as a pause. The window ends the session too.
    */
   session_refused: boolean;
   messages_attempted: number;
@@ -217,7 +217,7 @@ export interface UploadFinishedReport {
   conversations_total: number;
   conversations_failed: number;
   conversations_skipped: number;
-  /** Conversations a stop left unsent; the next push sends them. */
+  /** Conversations a stop left unsent; the next Upload sends them. */
   conversations_cancelled: number;
   results: Array<{
     file: string;
@@ -485,7 +485,7 @@ export function onExtractEvents(callbacks: {
 
 /**
  * Run a desktop job and wait until it finishes.
- * Extract and push return as soon as the background thread starts, so callers
+ * Extract and upload return as soon as the background thread starts, so callers
  * must use this instead of awaiting the invoke call alone.
  *
  * `job` names the screen's job while it runs (`desktopJob.ts`), so the other

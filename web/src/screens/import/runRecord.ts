@@ -136,7 +136,7 @@ export type RunPart = {
    * far (`extract:file-done`), by file: `ok`, `skipped` or `failed`.
    */
   conversations: ReadonlyMap<string, ConversationStatus>;
-  /** This part's push report, when it ran an Upload that reported. */
+  /** This part's Upload report, when it ran an Upload that reported. */
   report: UploadFinishedReport | null;
 };
 
@@ -371,7 +371,7 @@ export function issueRequests(issues: readonly ImportIssue[]): ImportIssue[] {
 
 /**
  * Conversations the run found already imported. A resumed Upload's report
- * counts the conversations an earlier part sent as skipped, since the push
+ * counts the conversations an earlier part sent as skipped, since the Upload
  * journal lists them, so those are taken back out.
  */
 export function filesSkippedOverRun(carried: RunRecord, report: UploadFinishedReport): number {

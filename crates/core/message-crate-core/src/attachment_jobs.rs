@@ -80,7 +80,7 @@ impl std::error::Error for LoadError {}
 /// Returns `"cancelled"` when the flag is set before a job starts. Returns
 /// the message of a [`LoadError::Fatal`] from `load(i)`, leaving that job and
 /// every later one untouched. Returns an I/O or convert error string when the
-/// staging directory cannot be created or the convert pass cannot run.
+/// staging directory cannot be created or the conversion cannot run.
 pub fn run_attachment_jobs(
     jobs: &mut [AttachmentJob<'_>],
     attachments_dir: &Path,

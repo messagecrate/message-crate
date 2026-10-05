@@ -15,7 +15,6 @@ import { getImport } from "../../lib/serverApi";
 import { type AttachmentForecast, invokeImportRunLog, type StagingSummary } from "../../lib/tauri";
 import type { AttachmentMediaMode } from "../../lib/types";
 import ImportContactsPanel from "../settings/storage/ImportContactsPanel";
-import { estimatePiles, estimatesHeading, filesOverLimit } from "./reviewForecast";
 import {
   type ImportPhase,
   type ImportStep,
@@ -31,6 +30,7 @@ import {
   sourceDisplayName,
 } from "./importRunCopy";
 import { ExpandableFactRow, FactGroup, FactGroups, FactList, FactRow } from "./RunFacts";
+import { estimatePiles, estimatesHeading, filesOverLimit } from "./reviewForecast";
 import type { ImportJobFormValues } from "./useImportJob";
 
 const STAGING_REVIEW_LABEL = "Staging Review";
@@ -514,9 +514,7 @@ export default function ImportRunView({
                 <FactRow label="Uploaded" value={count(summaryView.attachmentsUploaded)} />
               </FactGroup>
             ) : null}
-            {succeeded && importRunId != null ? (
-              <UploadContacts importId={importRunId} />
-            ) : null}
+            {succeeded && importRunId != null ? <UploadContacts importId={importRunId} /> : null}
           </>
         ) : null}
         {logPath ? (
@@ -614,9 +612,7 @@ export default function ImportRunView({
         </p>
       ) : null}
 
-      {done && succeeded && importRunId != null ? (
-        <FinishedExits importId={importRunId} />
-      ) : null}
+      {done && succeeded && importRunId != null ? <FinishedExits importId={importRunId} /> : null}
 
       <StepProgress steps={rows} wide />
       {/* Running with no stage active (the summary is being read): Cancel has no row to sit in. */}

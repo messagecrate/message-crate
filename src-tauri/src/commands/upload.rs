@@ -382,7 +382,11 @@ mod tests {
 
     /// What the Import screen sends for an Upload of `staging` to `server`,
     /// first time and resumed, with the run's log in `logs`.
-    fn upload_to(server: &MockServer, staging: &Path, logs: &Path) -> message_crate_push::PushReport {
+    fn upload_to(
+        server: &MockServer,
+        staging: &Path,
+        logs: &Path,
+    ) -> message_crate_push::PushReport {
         let args: UploadArgs = serde_json::from_value(json!({
             "baseUrl": server.base_url(),
             "username": "",

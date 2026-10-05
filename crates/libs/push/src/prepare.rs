@@ -1,4 +1,4 @@
-//! The expensive per-conversation step: read one JSON Lines file, upload its
+//! The expensive per-conversation work: read one JSON Lines file, upload its
 //! attachments, and cut its messages into import-sized chunks.
 //!
 //! Prepare work runs on a small pool of worker threads ([`PrepareQueue`]) so
@@ -96,7 +96,7 @@ const CLAIM_WAIT_POLL: Duration = Duration::from_millis(100);
 /// Shared map: absolute file path → sha256 hex string.
 ///
 /// The same attachment file can appear in many chats. Caching the hash means
-/// that file is read and hashed only once per push run.
+/// that file is read and hashed only once per Upload.
 type DigestCache = Mutex<HashMap<PathBuf, String>>;
 
 /// Read-only inputs every prepare worker shares for the whole run.
@@ -251,7 +251,7 @@ pub(crate) fn prepare_file(
     })
 }
 
-/// What the attachment pass learned about one conversation.
+/// What the attachment scan learned about one conversation.
 struct AttachmentScan {
     /// Per message: how each attachment maps onto the import line.
     projections: Vec<Vec<AttachmentProjection>>,
@@ -268,7 +268,7 @@ struct AttachmentScan {
 }
 
 impl AttachmentScan {
-    /// The scan for a text-only push: count every attachment as skipped,
+    /// The scan for a text-only Upload: count every attachment as skipped,
     /// upload nothing, and reference nothing from the import lines.
     fn text_only(messages: &[IrMessage]) -> Self {
         let count = messages.iter().map(|m| m.attachments.len() as u64).sum();
@@ -430,7 +430,7 @@ fn build_import_chunks(
             project::message_line(msg, &projections[i])?
         };
         if !ctx.cfg.force && ctx.lock_journal().journal.has_message(name, &guid) {
-            // Already imported this message id on a previous successful push.
+            // Already imported this message id on a previous successful Upload.
             continue;
         }
         // A single message larger than the chunk limit cannot be split further.
@@ -936,7 +936,7 @@ struct PrepareJob {
     name: String,
 }
 
-/// How one conversation came out of the prepare step.
+/// How one conversation came out of preparing.
 pub(crate) enum PrepareOutcome {
     /// The journal says it already imported; nothing was read.
     Skipped,
@@ -945,7 +945,7 @@ pub(crate) enum PrepareOutcome {
     /// Reading, hashing, or uploading failed.
     Failed(String),
     /// The run was told to stop (a cancel, or a session the server refused)
-    /// before this conversation was ready. It is left for the next push, so
+    /// before this conversation was ready. It is left for the next Upload, so
     /// a request the stop cut short fails no conversation.
     Stopped,
 }

@@ -71,7 +71,7 @@ const MAX_MATCH_IDENTIFIERS = 500;
 const NO_IDENTIFIERS: readonly string[] = [];
 
 /** Nothing to decide -- the form renders. The one spelling of "no resume". */
-const NO_RESUME: ResumeDecision = { kind: "none", session: null };
+const NO_RESUME: ResumeDecision = { kind: "none", run: null };
 
 function mapPathStat(raw: { exists: boolean; isFile: boolean; isDirectory: boolean }): PathStat {
   return {
@@ -92,7 +92,7 @@ async function probePath(path: string): Promise<PathStat | null> {
 }
 
 /**
- * Whether a session's run directory is still on disk. A stat that fails
+ * Whether a run's directory is still on disk. A stat that fails
  * outright is "unknown", not "missing": an IPC error says nothing about the
  * directory, and reading it as gone would offer to discard staged work that
  * may well still be there.
@@ -248,10 +248,10 @@ export default function ImportScreen() {
   const resumingRef = useRef(false);
 
   /**
-   * Ask the server what session is open, on mount and on every return to the
+   * Ask the server which Import Run is open, on mount and on every return to the
    * form.
    *
-   * Re-checking matters because the server can hold a session the screen has
+   * Re-checking matters because the server can hold a run the screen has
    * already forgotten: a swallowed final /complete, or a restart whose
    * discard failed before the create 409'd. Without it, Back lands on a
    * blank form whose Import button 409s until the route is remounted.
@@ -261,7 +261,7 @@ export default function ImportScreen() {
    * badge too and the two cannot disagree.
    *
    * Nothing here writes `phase` or `cache`, so this cannot loop; the early
-   * return keeps it from running against a session an import is currently
+   * return keeps it from running against a run an import is currently
    * using.
    */
   useEffect(() => {
@@ -269,28 +269,26 @@ export default function ImportScreen() {
     let cancelled = false;
     void (async () => {
       try {
-        const session = await cache.fetch(keys.imports.running, (signal) =>
-          getActiveImportRun(signal),
-        );
-        const directory = session?.staging_dir
-          ? await stagingDirectoryCheck(session.staging_dir)
+        const run = await cache.fetch(keys.imports.running, (signal) => getActiveImportRun(signal));
+        const directory = run?.staging_dir
+          ? await stagingDirectoryCheck(run.staging_dir)
           : "missing";
         // Only a resume of the copy consults this; every later stage works
         // from the staged directory rather than the backup. The full stat, not
         // `probePath`'s narrowed one: the comparison needs the size and
         // modified time.
-        const sourceStat = session?.source_fingerprint?.path
-          ? await invokePathStat(session.source_fingerprint.path).catch(() => null)
+        const sourceStat = run?.source_fingerprint?.path
+          ? await invokePathStat(run.source_fingerprint.path).catch(() => null)
           : null;
         // A resume or discard that started while this was in flight owns
         // the decision -- a stale answer must not put the panel back.
         if (!cancelled && !resumingRef.current && !discardingRef.current) {
           setResume(
             resumeDecisionFor({
-              session,
+              run,
               deviceId: getDeviceId(),
               directory,
-              fingerprint: checkSourceFingerprint(session?.source_fingerprint ?? null, sourceStat),
+              fingerprint: checkSourceFingerprint(run?.source_fingerprint ?? null, sourceStat),
             }),
           );
         }
@@ -298,7 +296,7 @@ export default function ImportScreen() {
         // A server that cannot answer is not a reason to block the form.
         if (!cancelled && !resumingRef.current && !discardingRef.current) setResume(NO_RESUME);
       } finally {
-        // Only the first check gates what renders; a later one must not
+        // Only the first check decides what renders; a later one must not
         // blank the form while it runs.
         if (!cancelled) setResumeChecked(true);
       }
@@ -308,7 +306,7 @@ export default function ImportScreen() {
     };
   }, [phase, cache]);
 
-  /** Populate the visible form from a resumed or restarted session's settings. */
+  /** Populate the visible form from a resumed or restarted run's settings. */
   function applyRestoredFormState(restored: ReturnType<typeof restoreFormFromSnapshot>): void {
     if (!restored) return;
     setSource(restored.source);
@@ -342,24 +340,24 @@ export default function ImportScreen() {
    * Import Errors its record holds, and its directory goes, so it must not
    * orphan a multi-GB directory. A directory that could not be deleted is shown
    * above the form (`stagingDeleteFailure`), never dropped without a word.
-   * A session staged on another device is never touched on disk here,
+   * A run staged on another device is never touched on disk here,
    * because its files are staged on that device. The check is the same
    * `device_id` check `resumeDecisionFor` uses to route to `other_device`,
-   * and a session with no recorded device counts as this install's there too.
+   * and a run with no recorded device counts as this install's there too.
    */
-  async function discardOfferedRun(session: ActiveImportRun): Promise<void> {
-    const thisDevice = !session.device_id || session.device_id === getDeviceId();
-    await discardRun(session.id, thisDevice ? session.staging_dir : null);
+  async function discardOfferedRun(run: ActiveImportRun): Promise<void> {
+    const thisDevice = !run.device_id || run.device_id === getDeviceId();
+    await discardRun(run.id, thisDevice ? run.staging_dir : null);
   }
 
   async function handleDiscardResume(): Promise<void> {
-    const session = resume.session;
-    if (!session || discardingRef.current || resumingRef.current) return;
+    const run = resume.run;
+    if (!run || discardingRef.current || resumingRef.current) return;
     discardingRef.current = true;
     try {
-      // The panel drops to the form either way; if the session is still
+      // The panel drops to the form either way; if the run is still
       // live server-side, the next visit shows it again.
-      await discardOfferedRun(session);
+      await discardOfferedRun(run);
     } finally {
       discardingRef.current = false;
       setResume(NO_RESUME);
@@ -373,10 +371,10 @@ export default function ImportScreen() {
   // runs extract again. The snapshot records only that one was given, so the
   // panel asks for it. A resume into Upload reads no backup and asks nothing.
   const resumeSecret =
-    resume.session && resumeReadsBackup(resume.kind) ? snapshotSecret(resume.session.form) : null;
+    resume.run && resumeReadsBackup(resume.kind) ? snapshotSecret(resume.run.form) : null;
 
   async function handleResumeAction(typedSecret: string): Promise<void> {
-    if (resume.kind === "none" || !resume.session) return;
+    if (resume.kind === "none" || !resume.run) return;
     // The panel holds its button until the field is filled; this keeps an
     // extract with an empty password from starting by any other route.
     if (resumeSecret && typedSecret.trim() === "") return;
@@ -387,13 +385,13 @@ export default function ImportScreen() {
     if (resumingRef.current || discardingRef.current) return;
     resumingRef.current = true;
     try {
-      const session = resume.session;
-      const storedForm = restoreFormFromSnapshot(session.form);
+      const run = resume.run;
+      const storedForm = restoreFormFromSnapshot(run.form);
       if (!storedForm) {
         // The run directory is present -- the decision only reached here
         // because it is -- so directory_missing's copy would be false. This
         // kind exists solely for this screen to construct.
-        setResume({ kind: "settings_unreadable", session });
+        setResume({ kind: "settings_unreadable", run });
         return;
       }
       applyRestoredFormState(storedForm);
@@ -404,52 +402,52 @@ export default function ImportScreen() {
         : storedForm;
 
       if (resume.kind === "resume_upload") {
-        if (!session.staging_dir) return; // resumeDecisionFor guarantees this; defensive only.
+        if (!run.staging_dir) return; // resumeDecisionFor guarantees this; defensive only.
         setResume(NO_RESUME);
         await startImport(restoredForm, {
-          sessionId: session.id,
-          stagingDir: session.staging_dir,
-          // Without this, a resumed push has no plan to diff its expected
+          runId: run.id,
+          stagingDir: run.staging_dir,
+          // Without this, a resumed Upload has no plan to diff its expected
           // omissions against, which demotes an honest `completed` verdict
           // to `completed_with_issues` for exactly the interrupted-and-
           // resumed case. Undefined when the stored summary is missing or
           // unparsable — startImport/runUpload already tolerate that.
-          approved: parseStoredStagingSummary(session.summary),
+          approved: parseStoredStagingSummary(run.summary),
         });
         return;
       }
 
       if (resume.kind === "resume_review" || resume.kind === "resume_media") {
-        if (!session.staging_dir) return; // resumeDecisionFor guarantees this; defensive only.
+        if (!run.staging_dir) return; // resumeDecisionFor guarantees this; defensive only.
         setResume(NO_RESUME);
-        await resumeAtReview(session, restoredForm);
+        await resumeAtReview(run, restoredForm);
         return;
       }
 
       if (resume.kind === "resume_write") {
-        if (!session.staging_dir) return; // resumeDecisionFor guarantees this; defensive only.
+        if (!run.staging_dir) return; // resumeDecisionFor guarantees this; defensive only.
         setResume(NO_RESUME);
         await startImport(restoredForm, undefined, {
-          sessionId: session.id,
-          stagingDir: session.staging_dir,
-          // The write is resumed rather than re-probed, so Gate 1's identity
-          // section has to come from what was recorded on the session at
+          runId: run.id,
+          stagingDir: run.staging_dir,
+          // The write is resumed rather than re-probed, so the Staging Review's identity
+          // section has to come from what was recorded on the run at
           // creation rather than a fresh read of the backup.
-          identities: parseSourceIdentities(session.source_identities),
+          identities: parseSourceIdentities(run.source_identities),
         });
         return;
       }
 
       // Restart: a fresh extract writes into a new run directory, and the
-      // server allows only one live session per account, so give up the old
+      // server allows only one running Import Run per account, so give up the old
       // one before starting the new run. setResume stays put until right
       // before startImport, so the panel (not a blank form) covers the
-      // discard round trip. The old directory goes with the session: nothing
+      // discard round trip. The old directory goes with the run: nothing
       // will ever reach it again, and it can be multiple gigabytes. A failed
       // delete stays on screen through the new run.
       // If the server is unreachable, the create call below surfaces its
       // own error the same as any other failed import start.
-      await discardOfferedRun(session);
+      await discardOfferedRun(run);
       cache.invalidateAccount();
       setResume(NO_RESUME);
       await startImport(restoredForm);

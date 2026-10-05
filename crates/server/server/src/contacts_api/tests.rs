@@ -87,7 +87,7 @@ async fn contact_match_ignores_blank_identifiers_and_de_duplicates() {
 #[tokio::test]
 async fn contact_match_collapses_duplicates_by_normalized_form() {
     // Two spellings of the same phone number must read as one new
-    // person, not two — otherwise Gate 1's "N new" count
+    // person, not two — otherwise the Staging Review's "N new" count
     // double-counts a single human written two ways.
     let (fixture, account) = contacts_fixture_with_handles(&[]).await;
     let body = serde_json::json!({ "identifiers": ["+1 (555) 555-0115", "+15555550115"] });

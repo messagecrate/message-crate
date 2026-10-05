@@ -10,8 +10,8 @@ import type { ResumeDecision } from "./resumeDecision";
 type ResumableKind = Exclude<ResumeDecision["kind"], "none">;
 
 type PanelCopy = {
-  heading: (session: ActiveImportRun) => string;
-  body: (session: ActiveImportRun) => string;
+  heading: (run: ActiveImportRun) => string;
+  body: (run: ActiveImportRun) => string;
   primary: { label: string; action: "resume" | "discard" };
   secondary?: { label: string; action: "discard" };
 };
@@ -41,7 +41,7 @@ const COPY: Record<ResumableKind, PanelCopy> = {
   resume_media: {
     heading: () => "Finish preparing your media",
     body: () =>
-      "The media step did not finish. Carrying on picks up the files it had not reached yet.",
+      "The Media stage did not finish. Carrying on picks up the files it had not reached yet.",
     primary: { label: "Carry on", action: "resume" },
     secondary: { label: "Discard this import", action: "discard" },
   },
@@ -54,23 +54,23 @@ const COPY: Record<ResumableKind, PanelCopy> = {
   },
   source_changed: {
     heading: () => "The backup has changed",
-    body: (session) =>
-      session.source_fingerprint?.path
-        ? `This import was reading ${session.source_fingerprint.path}, and that backup is different now. Starting over reads it fresh with the same settings.`
+    body: (run) =>
+      run.source_fingerprint?.path
+        ? `This import was reading ${run.source_fingerprint.path}, and that backup is different now. Starting over reads it fresh with the same settings.`
         : "The backup this import was reading is different now. Starting over reads it fresh with the same settings.",
     primary: { label: "Start over", action: "resume" },
     secondary: { label: "Discard this import", action: "discard" },
   },
   // resumeDecisionFor routes here both when the staged directory has gone
-  // missing and when the session never recorded one — every session created
+  // missing and when the run never recorded one — every run created
   // outside the desktop app stores a null staging_dir — so the copy names
   // the path only when there is one.
   directory_missing: {
-    heading: (session) =>
-      session.staging_dir ? "The staged files are gone" : "There is nothing staged to pick up",
-    body: (session) =>
-      session.staging_dir
-        ? `This import's directory is no longer at ${session.staging_dir}. Discarding it lets you start a new one.`
+    heading: (run) =>
+      run.staging_dir ? "The staged files are gone" : "There is nothing staged to pick up",
+    body: (run) =>
+      run.staging_dir
+        ? `This import's directory is no longer at ${run.staging_dir}. Discarding it lets you start a new one.`
         : "This import did not record a staged directory, so there is nothing here to carry on from. Discarding it lets you start a new one.",
     primary: { label: "Discard this import", action: "discard" },
   },
@@ -78,8 +78,8 @@ const COPY: Record<ResumableKind, PanelCopy> = {
   // the directory is there, so the copy says that rather than calling it gone.
   directory_unknown: {
     heading: () => "The staged files could not be checked",
-    body: (session) =>
-      `Message Crate could not check ${session.staging_dir ?? "this import's directory"}. Open Import again to check once more, or discard this import to start a new one.`,
+    body: (run) =>
+      `Message Crate could not check ${run.staging_dir ?? "this import's directory"}. Open Import again to check once more, or discard this import to start a new one.`,
     primary: { label: "Discard this import", action: "discard" },
   },
   other_device: {
@@ -143,17 +143,17 @@ export default function ResumeImportPanel({
   // runs. The panel shows only while this window runs no Import Run, so any
   // job held here, an Import Run included, is another one.
   const runningJob = useDesktopJob();
-  if (decision.kind === "none" || !decision.session) return null;
+  if (decision.kind === "none" || !decision.run) return null;
   const copy = COPY[decision.kind];
-  const session = decision.session;
+  const run = decision.run;
   const resumes = copy.primary.action === "resume";
   const secretCopy = resumes && secret ? SECRET_COPY[secret] : null;
   const blockedBy = resumes ? runningJob : null;
 
   return (
     <>
-      <h1 className="m-0 mb-1 text-2xl font-bold">{copy.heading(session)}</h1>
-      <p className="m-0 mb-5 text-[0.875rem] text-muted">{copy.body(session)}</p>
+      <h1 className="m-0 mb-1 text-2xl font-bold">{copy.heading(run)}</h1>
+      <p className="m-0 mb-5 text-[0.875rem] text-muted">{copy.body(run)}</p>
       {error ? (
         <p className="m-0 mb-5 text-[0.813rem] text-danger" role="alert">
           That didn't go through: {error}. You can try again.

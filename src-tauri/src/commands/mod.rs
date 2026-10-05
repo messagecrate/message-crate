@@ -19,8 +19,8 @@ pub mod jobs;
 pub mod local_server;
 pub mod paths;
 pub mod pull;
-pub mod upload;
 pub mod staging;
+pub mod upload;
 
 /// Last log line from a job, or `fallback` when the job wrote none.
 pub(crate) fn last_log_line_or(messages: &[String], fallback: &str) -> String {

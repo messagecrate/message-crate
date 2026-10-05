@@ -102,7 +102,7 @@ impl From<ProgressEvent> for ExtractProgressEvent {
 }
 
 /// One row of the Import Run's issues, from an exporter's or the Media
-/// pass's [`RunIssue`], or from the Upload. Matches `ImportIssueEvent` in
+/// stage's [`RunIssue`], or from the Upload. Matches `ImportIssueEvent` in
 /// `web/src/lib/types.ts`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ExtractIssueEvent {

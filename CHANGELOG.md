@@ -239,6 +239,9 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-04 **The import code names a Review, the Upload and an Import
+  Run as the screens do.** Its internals no longer say gate, push or import
+  session for them. Nothing on screen changes.
 - 2026-10-04 **An Import Run's log is kept for good, and scratch data has a
   directory of its own.** Each Import Run's log is written to the Logs
   Directory, named for the run, instead of the run's directory in the
