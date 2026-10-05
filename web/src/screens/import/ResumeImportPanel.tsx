@@ -127,7 +127,7 @@ export default function ResumeImportPanel({
   secret?: SnapshotSecret | null;
   /**
    * Set when the last attempt to act on this decision failed partway
-   * through — today, only a gate/media resume whose recompute of the
+   * through — today, only a resume at a Review or in the Media stage whose recompute of the
    * staged folder failed (a transient read, not a run that actually
    * failed: only an explicit discard ends a run, so it is still here to try
    * again).

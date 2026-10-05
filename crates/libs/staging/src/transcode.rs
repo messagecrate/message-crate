@@ -752,10 +752,10 @@ fn apply_transcode(
                 // Skipped, not reverted: falling back to the original would
                 // store the format the person asked to be rid of. Both the
                 // derivative and the original go, so nothing survives to
-                // point at. The note
-                // is written first, while the original is still on disk: a
-                // stop before the delete leaves the original, and the next
-                // run converts it again and rewrites the note.
+                // point at. The note is written first, while the original is
+                // still on disk: a stop before the delete leaves the
+                // original, and the next run converts it again and rewrites
+                // the note.
                 let note = too_large_note(src);
                 std::fs::write(&note, produced_len.to_string())
                     .with_context(|| format!("write {}", note.display()))?;
