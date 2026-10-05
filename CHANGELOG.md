@@ -21,13 +21,17 @@ released versions carry their date on the heading.
 
 ### Features
 
-- 2026-10-04 **The conversation shows which messages were deleted in the app
-  they came from, and which were unsent.** A message deleted in the source
-  app keeps its text in a faded bubble with a dashed outline, and the line
-  under it reads like "4:56 PM · Deleted in Apple Messages". An unsent
-  message is an empty faded bubble with a dashed outline that reads
-  "Unsent", with its time under it. Every source draws them the same way.
-  The Demo Account has a few of each in its Apple Messages conversations.
+- 2026-10-04 **The conversation and the Messages list show which messages
+  were deleted in the app they came from, and which were unsent.** A message
+  deleted in the source app keeps its text in a faded bubble with a dashed
+  outline, and the line under it reads like "4:56 PM · Deleted in Apple
+  Messages". An unsent message is an empty faded bubble with a dashed
+  outline that reads "Unsent", with its time under it. Every source draws
+  them the same way. The Messages list marks them too: a row for a message
+  deleted in the source app keeps its text, with a faded "Deleted in Apple
+  Messages" line under it, and a row for an unsent message reads "Unsent" in
+  place of its text. The Demo Account has a few of each in its Apple
+  Messages conversations.
 - 2026-10-04 **A message deleted in Apple Messages, or unsent, is kept and
   marked.** A message deleted in Apple Messages that its recently deleted
   list still holds is imported with its text and marked Deleted in the
@@ -323,6 +327,26 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **An iMazing import keeps each of two pictures sent in one
+  second, and every picture stays with its own message.** When two photos
+  with one file name arrived in the same second, iMazing saved them as
+  `image0.jpg` and `image0 2.jpg`, and the import kept only the first
+  message, because it compared the file name the rows gave and not the
+  files. It now compares the files: two different pictures are two
+  messages, each with its own picture, and two copies of one picture are
+  still one message. Dropping that second message also moved every later
+  picture of the import onto the message before its own. Each picture now
+  goes to its own message.
+- 2026-10-04 **An iMazing import reads a phone number or an email address
+  the same way everywhere.** A sender, a chat name and a name in a group's
+  member list are now read by the one rule every other import uses. A chat
+  named `tel:` and a number is that number's conversation, and a group
+  member listed that way is that number, not a second member by that name.
+  An email address is matched whatever its capitals. A three-digit service
+  number is an address. A sender named rather than numbered, such as
+  `AMAZON` or `Promo2024`, is kept as that sender. Before, `Promo2024` was
+  read as the number `2024`, and in a chat with a number such a message was
+  shown as sent by that number.
 - 2026-10-04 **An import lists every backup file it could not read, and
   notes what it kept with a caveat.** A CSV, XML, mail or MMS file in the
   backup that the importer could not read, which before showed only in the
@@ -1085,6 +1109,11 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-04 **On the light theme, the contact drawer's shadow falls on the
+  list it covers.** The drawer opens from the right, and its shadow fell to
+  the right, under the drawer itself, so the drawer's left edge had no
+  shadow. It now falls to the left, as on the dark theme and as the Sources
+  drawer's does.
 - 2026-10-04 **Panels, menus and drawers stand out on the dark theme.**
   Their shadows were tuned for the light theme and all but vanished on the
   dark theme's dark surfaces. The dark theme now has its own, darker

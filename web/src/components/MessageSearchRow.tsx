@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { deletedInSourceText, UNSENT_TEXT } from "../lib/deletionMarkText";
 import { formatDay } from "../lib/formatDate";
 import type { FreeTextTerm } from "../lib/freeTextTerms";
 import { type MatchRange, snippet } from "../lib/messageMatch";
@@ -31,6 +32,11 @@ function boldRanges(text: string, ranges: readonly MatchRange[]): ReactNode[] {
  * date in the account's Time Zone, then who sent it and its text, cut around
  * the first matching word with the matching free-text words in bold, and a
  * 📎 count when it has attachments.
+ *
+ * A marked message shows its mark in the words the conversation uses: one
+ * Deleted in the source app keeps its text, with a muted "Deleted in
+ * <source>" line under it; an Unsent one reads "Unsent" in place of its text
+ * and attachments, because its sender took all of it back.
  */
 export default function MessageSearchRow({
   message,
@@ -44,8 +50,10 @@ export default function MessageSearchRow({
   onClick: () => void;
 }) {
   const zone = useTimeZone();
-  const cut = snippet(messageRowText(message), terms);
-  const attachmentCount = message.attachments.length;
+  const unsent = message.deletion === "unsent";
+  const deletedInSource = message.deletion === "deleted_in_source_app";
+  const cut = snippet(unsent ? "" : messageRowText(message), terms);
+  const attachmentCount = unsent ? 0 : message.attachments.length;
   const sender = messageSenderName(message);
 
   return (
@@ -71,7 +79,7 @@ export default function MessageSearchRow({
               <span className="font-medium text-text">{sender}:</span>{" "}
             </>
           ) : null}
-          {boldRanges(cut.text, cut.ranges)}
+          {unsent ? UNSENT_TEXT : boldRanges(cut.text, cut.ranges)}
         </span>
         {attachmentCount > 0 ? (
           <span
@@ -82,6 +90,9 @@ export default function MessageSearchRow({
           </span>
         ) : null}
       </span>
+      {deletedInSource ? (
+        <span className="text-[0.75rem] text-muted">{deletedInSourceText(message.source)}</span>
+      ) : null}
     </PlainButton>
   );
 }
