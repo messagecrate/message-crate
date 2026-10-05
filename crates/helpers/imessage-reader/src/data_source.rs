@@ -80,8 +80,8 @@ impl DataSource {
                         Ok(path) => Some(path),
                         Err(e) => {
                             emit_log(format!(
-                                "Could not decrypt Contacts database from iOS backup: {e:#}; \
-                                     continuing without contacts"
+                                "The contacts database in the iPhone backup could not be decrypted, \
+                                 so no contact is named from it: {e:#}"
                             ));
                             None
                         }
@@ -136,7 +136,7 @@ impl DataSource {
             Ok(index) => Some(index),
             Err(e) => {
                 emit_log(format!(
-                    "Unable to build contacts index: {e}\nContinuing without contact names..."
+                    "Contacts could not be read, so no contact is named from them: {e}"
                 ));
                 None
             }

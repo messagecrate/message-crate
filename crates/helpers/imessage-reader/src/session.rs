@@ -105,8 +105,9 @@ impl MailSession {
         let chat_id = message.chat_id.or(message.deleted_from)?;
         let chat = self.chatrooms.get(&chat_id);
         if chat.is_none() {
-            self.options
-                .emit_log(format!("Chat ID {chat_id} does not exist in chat table!"));
+            self.options.emit_log(format!(
+                "A message names conversation {chat_id}, which is not in the messages database"
+            ));
         }
         chat
     }

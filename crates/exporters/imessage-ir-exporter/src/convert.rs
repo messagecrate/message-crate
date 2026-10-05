@@ -47,11 +47,12 @@ pub(crate) const SKIPPED_UNREADABLE_MESSAGE: Counter = Counter::new(
     "Skipped {n} messages that could not be read",
 );
 /// The run result's count of attachments an encrypted backup holds that the
-/// program could not decrypt ([`NotDecrypted`]).
+/// program could not decrypt, or whose decrypted copy could not be read back
+/// ([`NotDecrypted`]).
 pub(crate) const ATTACHMENT_NOT_DECRYPTED: Counter = Counter::new(
     "attachment_not_decrypted",
-    "Left out 1 attachment that could not be decrypted",
-    "Left out {n} attachments that could not be decrypted",
+    "Left out 1 attachment that could not be decrypted or read back",
+    "Left out {n} attachments that could not be decrypted or read back",
 );
 
 /// Messages accumulated for one Apple `chat_identifier` before projection.
@@ -501,7 +502,8 @@ fn attachment_to_ir(
 /// over: the decrypt failed, or the decrypted copy could not be written or
 /// read back. Each one is recorded without its bytes, as a missing one is,
 /// but the run counts them apart, because a full scratch disk is a fault to
-/// fix and not a gap in the backup.
+/// fix and not a gap in the backup. Each entry holds the attachment's path
+/// and what happened to it, worded to follow "Attachment <path> ".
 #[derive(Debug, Default)]
 struct NotDecrypted(Vec<(PathBuf, String)>);
 
@@ -509,20 +511,22 @@ impl NotDecrypted {
     /// How many reasons the run's summary names; the rest are counted.
     const REASONS_NAMED: usize = 5;
 
-    /// Note one attachment, and say why on the log and to the issue sink as
-    /// it happens.
+    /// Note one attachment the program could not decrypt, and say why.
     fn record(&mut self, options: &ExportOptions, path: &Path, reason: String) {
-        options.emit_log(format!(
-            "Attachment {} could not be decrypted: {reason}",
-            path.display()
-        ));
+        self.note(options, path, format!("could not be decrypted: {reason}"));
+    }
+
+    /// Note one attachment and what happened to it, `what` following
+    /// "Attachment <path> ", on the log and to the issue sink as it happens.
+    fn note(&mut self, options: &ExportOptions, path: &Path, what: String) {
+        options.emit_log(format!("Attachment {} {what}", path.display()));
         options.emit_issue(RunIssue {
             kind: "error".into(),
             step: "attachments".into(),
             item: path.display().to_string(),
-            reason: format!("could not be decrypted: {reason}"),
+            reason: what.clone(),
         });
-        self.0.push((path.to_path_buf(), reason));
+        self.0.push((path.to_path_buf(), what));
     }
 
     /// Add the count and the first reasons to `report`.
@@ -531,11 +535,10 @@ impl NotDecrypted {
             return;
         }
         report.bump(ATTACHMENT_NOT_DECRYPTED, self.0.len() as u64);
-        for (path, reason) in self.0.iter().take(Self::REASONS_NAMED) {
-            report.errors.push(format!(
-                "attachment {} could not be decrypted: {reason}",
-                path.display()
-            ));
+        for (path, what) in self.0.iter().take(Self::REASONS_NAMED) {
+            report
+                .errors
+                .push(format!("attachment {} {what}", path.display()));
         }
     }
 }
@@ -572,15 +575,19 @@ fn read_attachment(
         let bytes = fs::read(&temp);
         if let Err(why) = fs::remove_file(&temp) {
             options.emit_log(format!(
-                "Unable to remove decrypted temp file {}: {why}",
+                "The decrypted copy of attachment {} at {} could not be removed: {why}",
+                path.display(),
                 temp.display()
             ));
         }
         return Ok(bytes.unwrap_or_else(|e| {
-            not_decrypted.record(
+            not_decrypted.note(
                 options,
                 path,
-                format!("read the decrypted copy {}: {e}", temp.display()),
+                format!(
+                    "was decrypted, but its copy at {} could not be read: {e}",
+                    temp.display()
+                ),
             );
             Vec::new()
         }));

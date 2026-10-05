@@ -166,7 +166,9 @@ impl Drop for ReadyWhileRebuilding {
             return;
         }
         if let Err(error) = mark_ready(&self.db) {
-            eprintln!("warning: could not write server.ready back: {error:#}");
+            eprintln!(
+                "server.ready could not be written back, so sqlite-web goes on waiting: {error:#}"
+            );
         }
     }
 }

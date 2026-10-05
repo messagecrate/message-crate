@@ -19,7 +19,13 @@ pub struct MediaReport {
     pub bytes_before: u64,
     /// Total bytes under `attachments/` after convert/compress (non-temp files).
     pub bytes_after: u64,
-    /// Per-file error messages (`path: error`) from the pass.
+    /// What the pass could not do, from either of its two writers.
+    /// [`process_attachment_files`] puts one `path: error` line here for
+    /// each file it could not convert or compress, and `message-crate-core`
+    /// splits each at its first `": "` to mark that file's attachment.
+    /// Staging's own Media pass (`run_media_post_pass` in `message-staging`)
+    /// puts one sentence counting the files it could not convert instead,
+    /// since each one's conversation entry already says why.
     pub errors: Vec<String>,
 }
 

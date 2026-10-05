@@ -100,7 +100,7 @@ impl ContactsIndex {
         let (index, unreadable) = Self::build_from_macos_sources(&macos_sources_dir())?;
         for line in unreadable {
             emit_log(format!(
-                "Unable to read a contacts source: {line}\nContinuing without its contact names..."
+                "A contacts source could not be read, so no contact is named from it: {line}"
             ));
         }
         Ok(index)
@@ -401,7 +401,7 @@ fn addressbook_db_paths(
             Ok(path) => path,
             Err(e) => {
                 scan.unreadable
-                    .push(format!("read an entry of {}: {e}", sources_dir.display()));
+                    .push(format!("an entry of {}: {e}", sources_dir.display()));
                 continue;
             }
         };
@@ -410,12 +410,9 @@ fn addressbook_db_paths(
             (Ok(Some(directory)), Ok(Some(db))) if directory.is_dir() && db.is_file() => {
                 scan.databases.push(db_path);
             }
-            (Err(e), _) => scan
-                .unreadable
-                .push(format!("read {}: {e}", path.display())),
+            (Err(e), _) => scan.unreadable.push(format!("{}: {e}", path.display())),
             (Ok(Some(directory)), Err(e)) if directory.is_dir() => {
-                scan.unreadable
-                    .push(format!("read {}: {e}", db_path.display()));
+                scan.unreadable.push(format!("{}: {e}", db_path.display()));
             }
             _ => {}
         }

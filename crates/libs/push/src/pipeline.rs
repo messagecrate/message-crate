@@ -21,7 +21,7 @@ use crate::directory::file_label;
 use crate::http;
 use crate::journal::{JournalMessage, RunJournal};
 use crate::prepare::{ImportChunk, PreparedFile, SharedJournal};
-use crate::progress::Reporter;
+use crate::progress::{FileStatus, Reporter};
 use crate::report::{
     FileResult, MessageAccounting, UploadProfile, elapsed_ms, format_profile_line,
 };
@@ -320,7 +320,7 @@ impl<'a> ImportPipeline<'a> {
     /// Record a conversation the journal already had, with no work done.
     pub(crate) fn record_skipped(&mut self, idx: usize, name: &str, out: &mut Reporter<'_, '_>) {
         self.results[idx] = Some(FileResult::skipped(name));
-        out.file_done(name, "skipped");
+        out.file_done(name, FileStatus::Skipped);
         out.note_skipped();
     }
 
@@ -336,7 +336,7 @@ impl<'a> ImportPipeline<'a> {
             .journal
             .record_failure("", name, "file", error);
         out.note_failed(name, error, None);
-        out.file_done(name, "failed");
+        out.file_done(name, FileStatus::Failed);
         self.results[idx] = Some(FileResult::failed(name, error));
     }
 
@@ -687,16 +687,17 @@ impl<'a> ImportPipeline<'a> {
         let profile = tracker.profile.clone();
         let attachments = tracker.attachments;
 
-        let result = if let Some(error) = tracker.failed.clone() {
+        let (result, status) = if let Some(error) = tracker.failed.clone() {
             out.note_failed(&name, &error, Some(&profile));
-            FileResult {
+            let result = FileResult {
                 file: name.clone(),
-                status: "failed".into(),
+                status: FileStatus::Failed.as_str().into(),
                 error: Some(error),
                 messages: 0,
                 attachments,
                 profile: Some(profile),
-            }
+            };
+            (result, FileStatus::Failed)
         } else {
             let messages = tracker.successful_messages;
             journal.file_ok(&tracker.source, &name)?;
@@ -708,16 +709,17 @@ impl<'a> ImportPipeline<'a> {
             ));
             out.log(&format_profile_line(&name, &profile));
             out.note_ok(messages, &profile);
-            FileResult {
+            let result = FileResult {
                 file: name.clone(),
-                status: "ok".into(),
+                status: FileStatus::Ok.as_str().into(),
                 error: None,
                 messages,
                 attachments,
                 profile: Some(profile),
-            }
+            };
+            (result, FileStatus::Ok)
         };
-        out.file_done(&name, &result.status);
+        out.file_done(&name, status);
         self.results[idx] = Some(result);
         Ok(())
     }

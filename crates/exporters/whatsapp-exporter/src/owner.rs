@@ -36,7 +36,10 @@ pub(crate) fn owner_from_backup(roots: &[PathBuf], log: &mut Vec<String>) -> Opt
         .find_map(|path| match owner_from_plist(&path) {
             Ok(owner) => owner,
             Err(err) => {
-                log.push(format!("could not read {}: {err:#}", path.display()));
+                log.push(format!(
+                    "WhatsApp's preferences file {} could not be read: {err:#}",
+                    path.display()
+                ));
                 None
             }
         })
@@ -172,7 +175,13 @@ mod tests {
             None
         );
         assert_eq!(log.len(), 1, "{log:?}");
-        assert!(log[0].starts_with("could not read "), "{log:?}");
+        assert!(
+            log[0].starts_with(&format!(
+                "WhatsApp's preferences file {} could not be read: ",
+                prefs.display()
+            )),
+            "{log:?}"
+        );
     }
 
     /// The form value is stored under the server's handle key, so a number

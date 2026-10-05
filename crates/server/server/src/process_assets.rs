@@ -485,7 +485,10 @@ impl<'a> AccountPass<'a> {
         let converted_dir = cfg.paths.assets_converted_dir_for_account(account_id);
         println!("account {account_id}: assets={}", assets_dir.display());
         if !assets_dir.is_dir() {
-            eprintln!("  skip — assets dir missing");
+            eprintln!(
+                "  {} is missing or is not a directory, so this account's Assets are not processed",
+                assets_dir.display()
+            );
             return Ok(None);
         }
         let cleaned_verb = if opts.dry_run {

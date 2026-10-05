@@ -2119,34 +2119,35 @@ async fn a_reset_leaves_a_demo_that_logs_in_and_holds_nothing_old() {
     assert_eq!(server["demo_account"], true);
 }
 
-/// The warning names what processing the demo originals could not do,
-/// count by count, and is silent when it did everything (#1849).
+/// The line names what processing the demo originals could not do,
+/// count by count, as a sentence with no `warning:` before it, and is silent
+/// when it did everything (#1849, #1900).
 #[test]
-fn the_not_done_warning_names_each_count_and_is_silent_at_zero() {
+fn the_not_done_line_names_each_count_and_is_silent_at_zero() {
     use crate::process_assets::ProcessAssetsStats;
 
-    assert_eq!(not_done_warning(&ProcessAssetsStats::default()), None);
+    assert_eq!(not_done_line(&ProcessAssetsStats::default()), None);
     assert_eq!(
-        not_done_warning(&ProcessAssetsStats {
+        not_done_line(&ProcessAssetsStats {
             not_made: 1,
             ..ProcessAssetsStats::default()
         })
         .as_deref(),
         Some(
-            "the Demo Account has 1 original whose Preview or Thumbnail could not be made. \
-             reset-demo continues"
+            "The Demo Account has 1 original whose Preview or Thumbnail could not be made. \
+             Its build goes on all the same"
         )
     );
     assert_eq!(
-        not_done_warning(&ProcessAssetsStats {
+        not_done_line(&ProcessAssetsStats {
             not_made: 2,
             not_removed: 1,
             ..ProcessAssetsStats::default()
         })
         .as_deref(),
         Some(
-            "the Demo Account has 2 originals whose Preview or Thumbnail could not be made \
-             and 1 incomplete original that could not be removed. reset-demo continues"
+            "The Demo Account has 2 originals whose Preview or Thumbnail could not be made \
+             and 1 incomplete original that could not be removed. Its build goes on all the same"
         )
     );
 }

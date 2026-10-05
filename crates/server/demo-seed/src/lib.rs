@@ -480,7 +480,7 @@ where
 
     if let Err(cleanup_error) = remove_backup(&backup) {
         eprintln!(
-            "warning: installed the generated demo bundle but could not remove backup {}: {cleanup_error}",
+            "The newly generated demo files are in place, but the backup of the previous ones at {} could not be removed: {cleanup_error}",
             backup.display()
         );
     }
