@@ -392,6 +392,13 @@ fn a_push_where_nothing_lands_completes_its_import_run_as_failed() {
 
     assert!(!report.ok);
     assert_eq!(complete.calls(), 1, "the Import Run is completed as failed");
+    let log = read_log(dir.path());
+    assert!(log.contains(".jsonl failed: "), "{log}");
+    assert!(!log.lines().any(|line| line.starts_with("fail ")), "{log}");
+    assert!(
+        log.contains("\nThe Upload completed in ") && log.contains(", with errors.\n"),
+        "{log}"
+    );
 }
 
 /// A push that started its own Import Run returns an error when the server
@@ -971,9 +978,10 @@ fn profiles_attachment_upload_phases() {
     assert_eq!(profile.unique_assets, 1);
     assert_eq!(profile.asset_bytes, ASSET_BYTES.len() as u64);
     assert!(
-        progress_lines
-            .iter()
-            .any(|line| line.starts_with("files ") && line.contains(" importing, "))
+        progress_lines.iter().any(|line| line
+            .starts_with("Finished 1 of 1 conversation. In the last ")
+            && line.contains(" the Upload sent 1 conversation with 1 message and ")),
+        "{progress_lines:?}"
     );
 
     let persisted_report: serde_json::Value =
@@ -983,8 +991,23 @@ fn profiles_attachment_upload_phases() {
         ASSET_BYTES.len() as u64
     );
     let persisted_log = fs::read_to_string(log_path).unwrap();
-    assert!(persisted_log.contains("attachment_scan_hash_ms="));
-    assert!(persisted_log.contains("Import "));
+    assert!(
+        persisted_log.contains(" in all: ")
+            && persisted_log.contains(" finding and hashing 1 Asset, "),
+        "{persisted_log}"
+    );
+    assert!(
+        persisted_log.contains("\nThe Upload completed in "),
+        "{persisted_log}"
+    );
+    assert!(
+        persisted_log.contains("\nUploaded 1 Asset.\n")
+            && !persisted_log.contains("were not uploaded"),
+        "{persisted_log}"
+    );
+    for shorthand in ["PROFILE ", "files ", "==== Summary", "Message accounting:"] {
+        assert!(!persisted_log.contains(shorthand), "{persisted_log}");
+    }
 }
 
 fn ir_attachment(rel: &str, digest: String) -> IrAttachment {
@@ -2087,6 +2110,14 @@ fn skips_oversized_attachment_keeps_conversation_ok() {
             "+15555550101.jsonl".to_string()
         )]
     );
+    let log = read_log(dir.path());
+    assert!(
+        log.contains(
+            "Did not upload +15555550101.jsonl:attachments/big.bin: attachment is 43 bytes "
+        ),
+        "{log}"
+    );
+    assert!(!log.lines().any(|line| line.starts_with("skip ")), "{log}");
 }
 
 #[test]
