@@ -5,6 +5,11 @@
 //! `String` errors at the edge when needed.
 
 use crate::config::OutputFormat;
+use crate::counter::{
+    ATTACHMENTS_SAVED, CONVERSATIONS_OBFUSCATED, CONVERSATIONS_RESUMED, Counter,
+    DUPLICATES_DROPPED, NOT_SMS_OR_MMS_LEFT_OUT, NOTIFICATIONS, SKIPPED_INVALID_DATE, error_line,
+    note_line,
+};
 use anyhow::{Context, bail};
 use media::MediaReport;
 use message_ir::{
@@ -105,18 +110,11 @@ pub struct RunIssue {
 /// caveat. The Import Run lists notes apart from its Import Errors.
 pub const NOTE: &str = "note";
 
-/// The report counter for chats that name their person with no address,
-/// each kept under the name alone and sent as a [`NAME_ONLY_CHAT_NOTE`].
-pub const NAME_ONLY_CHAT: &str = "name_only_chat";
-
 /// The note an exporter sends for a chat that names its person with no
-/// address, which it keeps under the name alone.
+/// address, which it keeps under the name alone, counted as
+/// [`crate::NAME_ONLY_CHAT`].
 pub const NAME_ONLY_CHAT_NOTE: &str = "This chat names its person with no phone number or email \
      address, so the conversation is kept under the name alone.";
-
-/// The report counter for parts of a message left out because they could
-/// not be read, each message sent as an [`unreadable_parts_note`].
-pub const SKIPPED_UNREADABLE_PART: &str = "skipped_unreadable_part";
 
 /// The note an exporter sends for a message it kept with `n` parts left out
 /// because they could not be read.
@@ -211,23 +209,15 @@ pub struct ExportReport {
     /// but did not fail, such as a choice it made between two rows. Shown
     /// apart from `errors`, so a note never reads as a failure.
     pub notes: Vec<String>,
-    /// Per-exporter extension counters keyed by name.
-    pub extra: std::collections::BTreeMap<String, u64>,
+    /// Per-exporter extension counters, each with the words its log line
+    /// uses.
+    pub extra: std::collections::BTreeMap<Counter, u64>,
     /// Where [`ExportReport::error`], [`ExportReport::note`] and
     /// [`ExportReport::caveat`] send each row the moment the run records it.
     /// `None` sends the rows nowhere, and the lines in `errors` and `notes`
     /// are all that is kept.
     pub issues: Option<IssueSink>,
 }
-
-/// The report counter for messages an export left out because its format
-/// holds only SMS and MMS: an iMessage or a WhatsApp message written as an
-/// SMS would come back from a re-import as an SMS under a new id (ADR 0021).
-pub const NOT_SMS_OR_MMS_LEFT_OUT: &str = "messages_not_sms_or_mms_left_out";
-
-/// The report counter for attachments an export could not write because
-/// their file was gone. Convert's log says how many.
-pub const ATTACHMENTS_MISSING: &str = "attachments_missing";
 
 impl ExportReport {
     /// An empty report that sends its rows to `issues`.
@@ -259,7 +249,7 @@ impl ExportReport {
     /// count, which says as much as a line per item would.
     pub fn caveat(
         &mut self,
-        counter: &str,
+        counter: Counter,
         by: u64,
         item: impl Into<String>,
         text: impl Into<String>,
@@ -288,8 +278,8 @@ impl ExportReport {
         let left_out = self.extra(NOT_SMS_OR_MMS_LEFT_OUT);
         (left_out > 0).then(|| {
             format!(
-                "Left out {left_out} message(s) that are not SMS or MMS, because {format} holds \
-                 only SMS and MMS"
+                "{}, because {format} holds only SMS and MMS",
+                NOT_SMS_OR_MMS_LEFT_OUT.line(left_out)
             )
         })
     }
@@ -314,8 +304,9 @@ impl ExportReport {
         let mut lines = Vec::new();
         if self.media.processed > 0 || self.media.skipped > 0 || !self.media.errors.is_empty() {
             lines.push(format!(
-                "Media: processed {} file(s), skipped {}",
-                self.media.processed, self.media.skipped
+                "Media: processed {}, skipped {}",
+                files(self.media.processed),
+                files(self.media.skipped)
             ));
             for err in self.media.errors.iter().take(10) {
                 lines.push(format!("  media warning: {err}"));
@@ -325,17 +316,15 @@ impl ExportReport {
             }
         }
         if self.obfuscated_docs > 0 {
-            lines.push(format!(
-                "Obfuscated {} conversation(s)",
-                self.obfuscated_docs
-            ));
+            lines.push(CONVERSATIONS_OBFUSCATED.line(self.obfuscated_docs));
         }
         lines
     }
 
     /// Append the summary lines to `out`: where the export went, then each
     /// resume, skip, duplicate, attachment, and extension count that is not
-    /// zero, then the notes, then the errors.
+    /// zero, each in its [`Counter`]'s words, then the notes, then the
+    /// errors.
     pub fn summary_lines(
         &self,
         format: OutputFormat,
@@ -347,46 +336,34 @@ impl ExportReport {
             format.as_str(),
             output.display()
         ));
-        if self.conversations_skipped > 0 {
-            out.push(format!(
-                "  resumed: {} conversation(s) were already written",
-                self.conversations_skipped
-            ));
-        }
-        if self.skipped_invalid_date > 0 {
-            out.push(format!(
-                "  skipped {} invalid-date rows",
-                self.skipped_invalid_date
-            ));
-        }
-        if self.duplicates_dropped > 0 {
-            out.push(format!(
-                "  dropped {} duplicate rows",
-                self.duplicates_dropped
-            ));
-        }
-        if self.attachments_saved > 0 {
-            out.push(format!("  saved {} attachments", self.attachments_saved));
-        }
-        for (key, count) in &self.extra {
-            out.push(format!("  {key}: {count}"));
+        let counts = [
+            (CONVERSATIONS_RESUMED, self.conversations_skipped),
+            (SKIPPED_INVALID_DATE, self.skipped_invalid_date),
+            (DUPLICATES_DROPPED, self.duplicates_dropped),
+            (ATTACHMENTS_SAVED, self.attachments_saved),
+        ];
+        let extra = self.extra.iter().map(|(counter, count)| (*counter, *count));
+        for (counter, count) in counts.into_iter().chain(extra) {
+            if count > 0 {
+                out.push(format!("  {}", counter.line(count)));
+            }
         }
         for note in &self.notes {
-            out.push(format!("  note: {note}"));
+            out.push(format!("  {}", note_line(note)));
         }
         for err in &self.errors {
-            out.push(format!("  error: {err}"));
+            out.push(format!("  {}", error_line(err)));
         }
     }
 
     /// Bump a per-exporter extension counter in the `extra` map.
-    pub fn bump(&mut self, key: &str, by: u64) {
-        *self.extra.entry(key.to_string()).or_insert(0) += by;
+    pub fn bump(&mut self, counter: Counter, by: u64) {
+        *self.extra.entry(counter).or_insert(0) += by;
     }
 
     /// Read a per-exporter extension counter from the `extra` map (0 when unset).
-    pub fn extra(&self, key: &str) -> u64 {
-        self.extra.get(key).copied().unwrap_or(0)
+    pub fn extra(&self, counter: Counter) -> u64 {
+        self.extra.get(&counter).copied().unwrap_or(0)
     }
 
     /// Fold the counts from one projected conversation into this report.
@@ -396,8 +373,17 @@ impl ExportReport {
         self.received += tally.received;
         self.duplicates_dropped += tally.duplicates;
         if tally.notifications > 0 {
-            self.bump("notifications", tally.notifications);
+            self.bump(NOTIFICATIONS, tally.notifications);
         }
+    }
+}
+
+/// `n` files, with the noun singular for one.
+fn files(n: usize) -> String {
+    if n == 1 {
+        "1 file".to_string()
+    } else {
+        format!("{n} files")
     }
 }
 
@@ -489,8 +475,8 @@ mod tests {
         assert_eq!(
             report.not_sms_or_mms_line("SMS Backup+").as_deref(),
             Some(
-                "Left out 3 message(s) that are not SMS or MMS, because SMS Backup+ holds only \
-                 SMS and MMS"
+                "Left out 3 messages that are not SMS or MMS, because SMS Backup+ holds only SMS \
+                 and MMS"
             )
         );
     }
@@ -512,6 +498,36 @@ mod tests {
                 "Wrote jsonl export under out",
                 "  note: a.jpg: 2 rows name this picture",
                 "  error: b.csv: unreadable",
+            ]
+        );
+    }
+
+    /// Every count is a line in its counter's words, singular for one, and a
+    /// count of zero is no line at all, whether the exporter set it or not
+    /// (#1700).
+    #[test]
+    fn summary_lines_word_each_count_and_leave_out_zero() {
+        const SEEN: Counter = Counter::new("seen", "Read 1 SMS", "Read {n} SMS");
+        let mut report = ExportReport {
+            conversations_skipped: 2,
+            skipped_invalid_date: 1,
+            duplicates_dropped: 3,
+            attachments_saved: 1,
+            ..ExportReport::default()
+        };
+        report.bump(crate::SKIPPED_UNKNOWN_ADDRESS, 1);
+        report.bump(SEEN, 0);
+        let mut lines = Vec::new();
+        report.summary_lines(OutputFormat::Jsonl, Path::new("out"), &mut lines);
+        assert_eq!(
+            lines,
+            [
+                "Wrote jsonl export under out",
+                "  Resumed past 2 conversations that were already written",
+                "  Skipped 1 message with an invalid date",
+                "  Dropped 3 repeated copies of messages",
+                "  Saved 1 attachment",
+                "  Skipped 1 message with no usable address",
             ]
         );
     }
@@ -589,7 +605,7 @@ mod tests {
             received: 6,
             ..ExportReport::default()
         };
-        report.bump("notifications", 2);
+        report.bump(NOTIFICATIONS, 2);
 
         report.absorb_tally(ProjectionTally {
             messages: 5,
@@ -602,7 +618,7 @@ mod tests {
         assert_eq!(report.messages, 15);
         assert_eq!(report.sent, 6);
         assert_eq!(report.received, 9);
-        assert_eq!(report.extra("notifications"), 5);
+        assert_eq!(report.extra(NOTIFICATIONS), 5);
         assert_eq!(report.duplicates_dropped, 4);
     }
 
@@ -622,10 +638,11 @@ mod tests {
     #[test]
     fn bump_adds_to_a_counter_and_extra_reads_zero_when_unset() {
         let mut report = ExportReport::default();
-        assert_eq!(report.extra("pdu"), 0);
-        report.bump("pdu", 3);
-        report.bump("pdu", 4);
-        assert_eq!(report.extra("pdu"), 7);
+        const PDU: Counter = Counter::new("pdu", "Read 1 PDU", "Read {n} PDUs");
+        assert_eq!(report.extra(PDU), 0);
+        report.bump(PDU, 3);
+        report.bump(PDU, 4);
+        assert_eq!(report.extra(PDU), 7);
     }
 
     #[test]

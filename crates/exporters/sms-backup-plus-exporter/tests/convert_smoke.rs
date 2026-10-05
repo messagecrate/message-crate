@@ -59,7 +59,7 @@ fn convert_smoke_writes_csv_not_json() {
     let report = convert(&[input.as_path()], tmp.path()).unwrap();
 
     assert!(report.conversations >= 1);
-    assert!(report.extra("flat_eml") >= 1);
+    assert!(report.extra(crate::emit::FLAT_EML) >= 1);
 
     assert_csv_export(
         tmp.path(),
@@ -117,8 +117,8 @@ fn end_dedupe_collapses_duplicate_flats() {
     let out = tmp.path().join("out");
     let report = convert(&[input_dir.as_path()], &out).unwrap();
 
-    assert_eq!(report.extra("flat_eml"), 2);
-    assert_eq!(report.extra("messages_before_dedupe"), 2);
+    assert_eq!(report.extra(crate::emit::FLAT_EML), 2);
+    assert_eq!(report.extra(crate::emit::MESSAGES_BEFORE_DEDUPE), 2);
     assert_eq!(report.messages, 1);
     assert_eq!(report.duplicates_dropped, 1);
     assert_eq!(report.conversations, 1);
@@ -180,7 +180,7 @@ Will do\r\n"
     let out = tmp.path().join("out");
     let report = convert(&[input_dir.as_path()], &out).unwrap();
 
-    assert_eq!(report.extra("messages_before_dedupe"), 3);
+    assert_eq!(report.extra(crate::emit::MESSAGES_BEFORE_DEDUPE), 3);
     assert_eq!(report.messages, 2, "the first two copies are one message");
     assert_eq!(report.duplicates_dropped, 1);
 

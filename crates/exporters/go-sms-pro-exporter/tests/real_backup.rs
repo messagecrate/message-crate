@@ -40,7 +40,7 @@ fn real_backup_exports_clean_conversations() {
     .unwrap();
     println!("{report:#?}");
     assert!(report.errors.is_empty(), "{:?}", report.errors);
-    assert_eq!(report.extra("skipped_unparseable_pdu"), 0);
+    assert_eq!(report.extra(crate::emit::SKIPPED_UNPARSEABLE_PDU), 0);
 
     for file in csv_files(&output) {
         let name = file.file_name().unwrap().to_string_lossy().into_owned();

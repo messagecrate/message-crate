@@ -90,7 +90,7 @@ mod tests {
 
         assert_eq!(
             result.messages,
-            ["Wrote jsonl export under out", "  saved 2 attachments"]
+            ["Wrote jsonl export under out", "  Saved 2 attachments"]
         );
         assert_eq!((result.conversations, result.message_count), (1, 3));
     }

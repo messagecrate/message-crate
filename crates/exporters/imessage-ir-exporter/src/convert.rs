@@ -22,7 +22,7 @@ use imessage_reader_protocol::{
 };
 use ios_backup::Helper;
 use message_crate_core::{
-    ExportReport, LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent, RunIssue,
+    Counter, ExportReport, LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent, RunIssue,
 };
 use message_ir::{
     ConversationDocument, ConversationMeta, ExportMeta, HandleType, IrAttachment,
@@ -40,12 +40,19 @@ use crate::run::{AttachmentEmbed, ExportOptions};
 const EXPORT_SOURCE: &str = "imessage";
 const EXPORT_TOOL: &str = "imessage-ir-exporter";
 const CONVERSATION_PROGRESS_EVERY: usize = 100;
-/// The run result's count of rows the program read but could not convert,
-/// named like the other exporters' `skipped_*` counts.
-pub(crate) const SKIPPED_UNREADABLE_MESSAGE: &str = "skipped_unreadable_message";
+/// The run result's count of rows the program read but could not convert.
+pub(crate) const SKIPPED_UNREADABLE_MESSAGE: Counter = Counter::new(
+    "skipped_unreadable_message",
+    "Skipped 1 message that could not be read",
+    "Skipped {n} messages that could not be read",
+);
 /// The run result's count of attachments an encrypted backup holds that the
 /// program could not decrypt ([`NotDecrypted`]).
-pub(crate) const ATTACHMENT_NOT_DECRYPTED: &str = "attachment_not_decrypted";
+pub(crate) const ATTACHMENT_NOT_DECRYPTED: Counter = Counter::new(
+    "attachment_not_decrypted",
+    "Left out 1 attachment that could not be decrypted",
+    "Left out {n} attachments that could not be decrypted",
+);
 
 /// Messages accumulated for one Apple `chat_identifier` before projection.
 struct PendingConversation {

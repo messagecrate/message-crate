@@ -391,6 +391,16 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **An import's log and Convert's log say each count in the same
+  plain words.** Converting and importing one SMS Backup & Restore backup
+  used to word its counts two ways: Convert wrote "Skipped 1 message with no
+  usable address", and an import wrote `skipped_unknown_address: 1`, printed
+  even when the count was 0, along with "skipped 1 invalid-date rows" and
+  "saved 1 attachments". Every count an import's summary or Convert's log
+  gives now has one line, singular for one, such as "Skipped 1 message with
+  an invalid date" and "Read 7 SMS", and a count of 0 is left out. A file
+  either could not read is `error:` in both. This holds for every kind of
+  backup, not only SMS Backup & Restore.
 - 2026-10-05 **An SMS Backup & Restore import names each message it kept
   with something left out.** A picture or other part whose data could not be
   read, and a character the backup wrote as a code that is not a character,

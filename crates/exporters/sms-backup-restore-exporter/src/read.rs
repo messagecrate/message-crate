@@ -3,8 +3,9 @@
 use anyhow::{Result, bail};
 use media::{CompressOptions, MediaMode};
 use message_crate_core::{
-    CancelFlag, LogSink, MediaConfig, ProgressSink, check_cancel, discover_files,
-    document_messages, is_cancelled,
+    CancelFlag, Counter, DUPLICATES_DROPPED, LogSink, MediaConfig, ProgressSink,
+    SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE, SKIPPED_UNREADABLE_PART,
+    check_cancel, discover_files, document_messages, error_line, is_cancelled,
 };
 use message_csv::format_local_ts;
 use message_ir::{
@@ -107,9 +108,17 @@ impl ReadError {
     }
 }
 
+impl ReadError {
+    /// What happened to the file, in the words every run gives it.
+    pub fn explanation(&self) -> String {
+        format!("This file could not be read in full: {}", self.reason)
+    }
+}
+
+/// The file, then its [`ReadError::explanation`], as the log gives it.
 impl std::fmt::Display for ReadError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}: {}", self.file, self.reason)
+        write!(f, "{}: {}", self.file, self.explanation())
     }
 }
 
@@ -131,75 +140,67 @@ impl ReadReport {
             .sum()
     }
 
-    /// One log line for each kind of message the read dropped or skipped,
-    /// leaving out the kinds it found none of, then one line for every
-    /// error, so a person can tell what did not come across.
-    pub fn log_lines(&self) -> Vec<String> {
-        let counts = [
+    /// Each count the read reports, beside its [`Counter`], in the order
+    /// Convert's log gives them.
+    fn counts(&self) -> [(Counter, u64); 10] {
+        [
+            (SMS_SEEN, self.sms_seen),
+            (MMS_SEEN, self.mms_seen),
+            (DUPLICATES_DROPPED, self.duplicates_dropped),
+            (SKIPPED_INVALID_DATE, self.skipped_invalid_date),
+            (SKIPPED_UNKNOWN_ADDRESS, self.skipped_unknown_address),
+            (SKIPPED_UNKNOWN_TYPE, self.skipped_unknown_type),
+            (SKIPPED_DRAFT_OR_OUTBOX, self.skipped_draft_or_outbox),
+            (SKIPPED_EMPTY_PARTICIPANTS, self.skipped_empty_participants),
+            (SKIPPED_UNREADABLE_PART, self.skipped_unreadable_part()),
             (
-                self.duplicates_dropped,
-                "Dropped",
-                "repeated copy of a message",
-                "repeated copies of messages",
-            ),
-            (
-                self.skipped_invalid_date,
-                "Skipped",
-                "message with an invalid date",
-                "messages with an invalid date",
-            ),
-            (
-                self.skipped_unknown_address,
-                "Skipped",
-                "message with no usable address",
-                "messages with no usable address",
-            ),
-            (
-                self.skipped_unknown_type,
-                "Skipped",
-                "message of an unknown type",
-                "messages of an unknown type",
-            ),
-            (
-                self.skipped_draft_or_outbox,
-                "Skipped",
-                "draft or unsent message",
-                "drafts or unsent messages",
-            ),
-            (
-                self.skipped_empty_participants,
-                "Skipped",
-                "MMS with no participants",
-                "MMS with no participants",
-            ),
-            (
-                self.skipped_unreadable_part(),
-                "Skipped",
-                "message part that could not be read",
-                "message parts that could not be read",
-            ),
-            (
+                DROPPED_CHARACTER_REFERENCES,
                 self.dropped_character_references(),
-                "Dropped",
-                "character reference that is not a character",
-                "character references that are not characters",
             ),
-        ];
-        counts
+        ]
+    }
+
+    /// One log line for each count the read reports, leaving out the ones
+    /// it found none of, then one line for every error, so a person can tell
+    /// what did not come across. Each line has the words an import's summary
+    /// gives the same count.
+    pub fn log_lines(&self) -> Vec<String> {
+        self.counts()
             .into_iter()
-            .filter(|(count, ..)| *count > 0)
-            .map(|(count, verb, one, many)| {
-                let what = if count == 1 { one } else { many };
-                format!("{verb} {count} {what}")
-            })
-            .chain(
-                self.errors
-                    .iter()
-                    .map(|error| format!("xml warning: {error}")),
-            )
+            .filter(|(_, count)| *count > 0)
+            .map(|(counter, count)| counter.line(count))
+            .chain(self.errors.iter().map(error_line))
             .collect()
     }
 }
+
+/// `<sms>` elements read.
+pub(crate) const SMS_SEEN: Counter = Counter::new("sms_seen", "Read 1 SMS", "Read {n} SMS");
+
+/// `<mms>` elements read.
+pub(crate) const MMS_SEEN: Counter = Counter::new("mms_seen", "Read 1 MMS", "Read {n} MMS");
+
+/// Drafts and outbox, failed and queued messages skipped.
+pub(crate) const SKIPPED_DRAFT_OR_OUTBOX: Counter = Counter::new(
+    "skipped_draft_or_outbox",
+    "Skipped 1 draft or unsent message",
+    "Skipped {n} drafts or unsent messages",
+);
+
+/// MMS skipped because they name no participant.
+pub(crate) const SKIPPED_EMPTY_PARTICIPANTS: Counter = Counter::new(
+    "skipped_empty_participants",
+    "Skipped 1 MMS with no participants",
+    "Skipped {n} MMS with no participants",
+);
+
+/// Character references left out of kept messages because they are not a
+/// character, each message sent as a note.
+pub(crate) const DROPPED_CHARACTER_REFERENCES: Counter = Counter::new(
+    "dropped_character_references",
+    "Left out 1 character reference that is not a character",
+    "Left out {n} character references that are not characters",
+);
 
 /// Options for [`read_backup`].
 #[derive(Debug)]

@@ -1,18 +1,22 @@
 //! Read SMS Backup & Restore XML into the shared conversation structure, then
 //! write the chosen output format via [`ExportWriter`].
 
-use crate::read::{ReadOptions, ReadReport, read_backup};
+use crate::read::{
+    DROPPED_CHARACTER_REFERENCES, MMS_SEEN, ReadOptions, ReadReport, SKIPPED_DRAFT_OR_OUTBOX,
+    SKIPPED_EMPTY_PARTICIPANTS, SMS_SEEN, read_backup,
+};
 use crate::write::SbrArchive;
 use anyhow::Result;
 use message_crate_core::{
-    CancelFlag, ExportReport, ExportTransforms, IssueSink, OutputFormat, SKIPPED_UNREADABLE_PART,
-    unreadable_parts_note,
+    CancelFlag, ExportReport, ExportTransforms, IssueSink, OutputFormat, SKIPPED_UNKNOWN_ADDRESS,
+    SKIPPED_UNKNOWN_TYPE, SKIPPED_UNREADABLE_PART, unreadable_parts_note,
 };
 use message_staging::{AttachmentSource, ExportWriter};
 use std::path::Path;
 
 /// Map the reader's [`ReadReport`] onto the shared [`ExportReport`] shape,
-/// moving reader-specific counters into `extra`, and send each error to
+/// moving reader-specific counters into `extra` with the words Convert's log
+/// gives them, and send each error to
 /// `issues` as an Import Error and each message kept with something left
 /// out of it as a note naming the file and the message.
 fn to_core_report(report: ReadReport, issues: Option<&IssueSink>) -> ExportReport {
@@ -26,28 +30,24 @@ fn to_core_report(report: ReadReport, issues: Option<&IssueSink>) -> ExportRepor
         duplicates_dropped: report.duplicates_dropped,
         ..ExportReport::with_issues(issues.cloned())
     };
-    for error in report.errors {
-        out.error(
-            error.file,
-            format!("This file could not be read in full: {}", error.reason),
-        );
+    for error in &report.errors {
+        out.error(&error.file, error.explanation());
     }
-    out.extra.insert("sms_seen".into(), report.sms_seen);
-    out.extra.insert("mms_seen".into(), report.mms_seen);
-    out.extra.insert(
-        "skipped_unknown_address".into(),
-        report.skipped_unknown_address,
-    );
-    out.extra
-        .insert("skipped_unknown_type".into(), report.skipped_unknown_type);
-    out.extra.insert(
-        "skipped_draft_or_outbox".into(),
-        report.skipped_draft_or_outbox,
-    );
-    out.extra.insert(
-        "skipped_empty_participants".into(),
-        report.skipped_empty_participants,
-    );
+    for (counter, count) in [
+        (SMS_SEEN, report.sms_seen),
+        (MMS_SEEN, report.mms_seen),
+        (SKIPPED_UNKNOWN_ADDRESS, report.skipped_unknown_address),
+        (SKIPPED_UNKNOWN_TYPE, report.skipped_unknown_type),
+        (SKIPPED_DRAFT_OR_OUTBOX, report.skipped_draft_or_outbox),
+        (
+            SKIPPED_EMPTY_PARTICIPANTS,
+            report.skipped_empty_participants,
+        ),
+    ] {
+        if count > 0 {
+            out.bump(counter, count);
+        }
+    }
     for left_out in report.left_out {
         let item = format!("{} ({})", left_out.file, left_out.message);
         if left_out.counts.unreadable_parts > 0 {
@@ -69,11 +69,6 @@ fn to_core_report(report: ReadReport, issues: Option<&IssueSink>) -> ExportRepor
     }
     out
 }
-
-/// The report counter for character references left out of kept messages
-/// because they are not a character, each message sent as a
-/// [`dropped_references_note`].
-const DROPPED_CHARACTER_REFERENCES: &str = "dropped_character_references";
 
 /// The note for a message kept with `n` character references left out
 /// because they are not a character.
