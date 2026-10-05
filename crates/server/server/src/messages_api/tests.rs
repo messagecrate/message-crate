@@ -1334,7 +1334,7 @@ async fn reactions_and_message_flags_are_read_back_as_imported() {
 /// A message's reply count is the number of replies that name it, counted
 /// when read: a reply whose quoted message was not in the export is a reply
 /// that counts toward nothing, and a reply later flagged as a duplicate stops
-/// counting, so the count always equals the replies a person can open.
+/// counting, so the count always equals the replies shown.
 #[tokio::test]
 async fn the_reply_count_is_the_replies_that_link_to_the_message() {
     let (fixture, alice) = fixture_with_account().await;
@@ -1402,7 +1402,92 @@ async fn the_reply_count_is_the_replies_that_link_to_the_message() {
     assert!(!messages.contains_key("g-reply-3"), "a duplicate is hidden");
     assert_eq!(
         messages["g-origin"].0, 2,
-        "a duplicate is not a reply a person can open"
+        "a reply hidden as a duplicate is not shown"
+    );
+}
+
+/// The quoted message's copy shown counts the replies that quote a copy
+/// hidden under it. iMazing, imported first, holds the message but not the
+/// reply; Apple Messages holds both, and its copy of the message is hidden
+/// under iMazing's while its reply, which has no other copy, is shown. The
+/// reply quotes the hidden copy's guid, so a count keyed by the shown copy's
+/// own guid alone would read 0. A reply in a trashed conversation does not
+/// count for a message the person kept.
+#[tokio::test]
+async fn the_reply_count_takes_the_replies_that_quote_a_hidden_copy() {
+    let (fixture, alice) = fixture_with_account().await;
+    let line = |guid: &str, text: &str, ms: i64| {
+        message_line(guid, text)
+            .at(ms)
+            .service(IrService::IMessage)
+            .sender("+15555550123")
+    };
+    // Two chats, so trashing the reply's conversation keeps the message's.
+    let header = |source: &str, chat: &str| {
+        conversation_header(source, chat).participant("+15555550123", None)
+    };
+    let imazing = header("imazing", "+15555550123").line()
+        + &line("imazing-origin", "lunch?", 1_426_183_462_000).line();
+    import_conversation_file(&fixture, alice.account_id, "imazing", &imazing, "imazing").await;
+    let apple = header("imessage", "chat-apple").line()
+        + &line("apple-origin", "lunch?", 1_426_183_462_000).line()
+        + &line("apple-reply", "yes", 1_426_183_463_000)
+            .reply_to(Some("apple-origin"))
+            .line();
+    import_conversation_file(&fixture, alice.account_id, "apple", &apple, "imessage").await;
+
+    let mut conn = fixture.conn().await;
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    sqlx::query(
+        "UPDATE messages SET duplicate_of = (SELECT id FROM messages WHERE guid = 'imazing-origin')
+         WHERE guid = 'apple-origin'",
+    )
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    drop(conn);
+
+    let read = || async {
+        let page: serde_json::Value = get_json(&fixture.state, "/v1/messages", &alice.token).await;
+        page["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| {
+                (
+                    m["guid"].as_str().unwrap().to_string(),
+                    m["reply_count"].as_i64().unwrap(),
+                )
+            })
+            .collect::<std::collections::BTreeMap<_, _>>()
+    };
+    let counts = read().await;
+    assert!(
+        !counts.contains_key("apple-origin"),
+        "the Apple copy is hidden"
+    );
+    assert_eq!(counts.get("apple-reply"), Some(&0), "the reply is shown");
+    assert_eq!(
+        counts["imazing-origin"], 1,
+        "the shown copy counts the reply that quotes the hidden copy"
+    );
+
+    let mut conn = fixture.conn().await;
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    sqlx::query(
+        "INSERT INTO trashed_conversations (account_id, conversation_id)
+         SELECT account_id, conversation_id FROM messages WHERE guid = 'apple-reply'",
+    )
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    drop(conn);
+    assert_eq!(
+        read().await["imazing-origin"],
+        0,
+        "a reply in a trashed conversation is not counted for a message kept"
     );
 }
 

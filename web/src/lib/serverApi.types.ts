@@ -3325,9 +3325,11 @@ export interface components {
             owner: string | null;
             /**
              * Format: int64
-             * @description How many replies name this message in their `reply_to.guid`: the
-             *     replies a person can open from it, counted when read. A duplicate
-             *     is not counted.
+             * @description How many replies quote this message, counted when read: each reply
+             *     shown whose `reply_to.guid` names this message, or a copy of it
+             *     hidden as a duplicate, counted once. A reply hidden as a duplicate
+             *     counts as the message it is shown as. A reply in a trashed
+             *     conversation counts only for a message in a trashed conversation.
              */
             reply_count: number;
             /**
@@ -4375,9 +4377,11 @@ export interface components {
                 owner: string | null;
                 /**
                  * Format: int64
-                 * @description How many replies name this message in their `reply_to.guid`: the
-                 *     replies a person can open from it, counted when read. A duplicate
-                 *     is not counted.
+                 * @description How many replies quote this message, counted when read: each reply
+                 *     shown whose `reply_to.guid` names this message, or a copy of it
+                 *     hidden as a duplicate, counted once. A reply hidden as a duplicate
+                 *     counts as the message it is shown as. A reply in a trashed
+                 *     conversation counts only for a message in a trashed conversation.
                  */
                 reply_count: number;
                 /**

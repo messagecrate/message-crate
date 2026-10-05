@@ -62,13 +62,37 @@ struct RawRow {
     label: Option<String>,
 }
 
-/// A message's reply count: the replies that name `m` as the message they
-/// quote, as `ix_messages_reply_to` keys them. Counted when read rather than
-/// stored, so it always equals the replies a person can open from it; a
-/// duplicate is not one of them.
-const REPLY_COUNT_SQL: &str = "SELECT COUNT(*) FROM messages r
-     WHERE r.account_id = m.account_id AND r.source = m.source
-       AND r.reply_to_guid = m.guid AND r.duplicate_of IS NULL";
+/// A message's reply count: the replies shown that quote `m`, counted when
+/// read rather than stored.
+///
+/// A reply names the copy it quotes by that copy's own (account, source,
+/// guid), as `ix_messages_reply_to` keys it. Dedupe can hide that copy under
+/// `m`, the copy of another source imported first, while the reply, which
+/// has no other copy, stays shown; so the replies of every copy hidden under
+/// `m` count for `m` too. A reply hidden under another message counts as the
+/// message it is shown as, and once however many of its copies quote `m`.
+/// A reply in a trashed conversation counts only for a message in a trashed
+/// conversation, the rule `earlier_versions_holder_sql` follows: a person
+/// who trashed the conversation holding the reply does not open it from a
+/// message they kept.
+const REPLY_COUNT_SQL: &str = "WITH RECURSIVE \
+       quoted(id) AS ( \
+         SELECT m.id \
+         UNION SELECT q.id FROM messages q JOIN quoted ON q.duplicate_of = quoted.id), \
+       shown(id) AS ( \
+         SELECT r.id FROM quoted JOIN messages qm ON qm.id = quoted.id \
+           JOIN messages r ON r.account_id = qm.account_id AND r.source = qm.source \
+                          AND r.reply_to_guid = qm.guid \
+         UNION SELECT t.duplicate_of FROM shown JOIN messages t ON t.id = shown.id \
+               WHERE t.duplicate_of IS NOT NULL) \
+     SELECT COUNT(*) FROM shown JOIN messages sm ON sm.id = shown.id \
+     WHERE sm.duplicate_of IS NULL \
+       AND (NOT EXISTS (SELECT 1 FROM trashed_conversations rtc \
+                        WHERE rtc.account_id = sm.account_id \
+                          AND rtc.conversation_id = sm.conversation_id) \
+            OR EXISTS (SELECT 1 FROM trashed_conversations mtc \
+                       WHERE mtc.account_id = m.account_id \
+                         AND mtc.conversation_id = m.conversation_id))";
 
 /// FROM clause for message queries. The compiled filter mentions only `m`;
 /// these joins are here for the SELECT list, which reports the conversation

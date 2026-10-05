@@ -396,9 +396,11 @@ api_shape! {
         /// The message this one replies to; `null` for a message that is not
         /// a reply.
         pub reply_to: Option<ReplyTo>,
-        /// How many replies name this message in their `reply_to.guid`: the
-        /// replies a person can open from it, counted when read. A duplicate
-        /// is not counted.
+        /// How many replies quote this message, counted when read: each reply
+        /// shown whose `reply_to.guid` names this message, or a copy of it
+        /// hidden as a duplicate, counted once. A reply hidden as a duplicate
+        /// counts as the message it is shown as. A reply in a trashed
+        /// conversation counts only for a message in a trashed conversation.
         pub reply_count: i64,
         /// The conversation this message belongs to.
         pub conversation: MessageConversation,

@@ -15776,7 +15776,7 @@
           "reply_count": {
             "type": "integer",
             "format": "int64",
-            "description": "How many replies name this message in their `reply_to.guid`: the\nreplies a person can open from it, counted when read. A duplicate\nis not counted."
+            "description": "How many replies quote this message, counted when read: each reply\nshown whose `reply_to.guid` names this message, or a copy of it\nhidden as a duplicate, counted once. A reply hidden as a duplicate\ncounts as the message it is shown as. A reply in a trashed\nconversation counts only for a message in a trashed conversation."
           },
           "reply_to": {
             "oneOf": [
@@ -17803,7 +17803,7 @@
                 "reply_count": {
                   "type": "integer",
                   "format": "int64",
-                  "description": "How many replies name this message in their `reply_to.guid`: the\nreplies a person can open from it, counted when read. A duplicate\nis not counted."
+                  "description": "How many replies quote this message, counted when read: each reply\nshown whose `reply_to.guid` names this message, or a copy of it\nhidden as a duplicate, counted once. A reply hidden as a duplicate\ncounts as the message it is shown as. A reply in a trashed\nconversation counts only for a message in a trashed conversation."
                 },
                 "reply_to": {
                   "oneOf": [
