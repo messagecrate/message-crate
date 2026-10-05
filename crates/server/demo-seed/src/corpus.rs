@@ -5,6 +5,9 @@ use rand::Rng;
 use rand::RngExt;
 use rand::seq::IndexedRandom;
 
+/// What a message reads when the corpus holds no sentence.
+const FALLBACK_SENTENCE: &str = "Okay.";
+
 /// Sentences taken from a public-domain book and used as message bodies.
 pub struct Corpus {
     sentences: Vec<String>,
@@ -37,11 +40,11 @@ impl Corpus {
         Ok(Self { sentences })
     }
 
-    /// Pick one sentence at random. Returns `"Okay."` if the list is empty.
+    /// Pick one sentence at random, or [`FALLBACK_SENTENCE`] if the list is empty.
     pub fn pick(&self, rng: &mut impl Rng) -> &str {
         match self.sentences.choose(rng) {
             Some(sentence) => sentence.as_str(),
-            None => "Okay.",
+            None => FALLBACK_SENTENCE,
         }
     }
 
@@ -61,7 +64,7 @@ impl Corpus {
     /// one without drawing from the random source.
     pub fn sentence(&self, index: usize) -> &str {
         if self.sentences.is_empty() {
-            return "Okay.";
+            return FALLBACK_SENTENCE;
         }
         &self.sentences[index % self.sentences.len()]
     }
