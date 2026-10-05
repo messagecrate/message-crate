@@ -193,7 +193,9 @@ fn write_message_file(conv_dir: &Path, sequence: u32, msg: &MailMessage) -> Resu
 }
 
 /// The file name of the `sequence`th `.eml` in a conversation directory:
-/// `000001_<local date>_<local time>_<first 8 hex of the guid>.eml`.
+/// `000001_<local date>_<local time>_<guid part>.eml`, where the guid part
+/// is the first eight hex digits of the guid, or else its first eight
+/// characters, with any a file name cannot hold written as `%XX`.
 ///
 /// # Errors
 ///
@@ -202,8 +204,10 @@ pub fn eml_file_name(sequence: u32, message: &IrMessage) -> Result<String> {
     let secs = message.timestamp_unix_ms.div_euclid(1000);
     let (date_part, time_part) = local_date_time_parts(secs)
         .with_context(|| format!("invalid timestamp_unix_ms {}", message.timestamp_unix_ms))?;
-    let guid8 = guid_prefix8(&message.guid);
-    Ok(format!("{sequence:06}_{date_part}_{time_part}_{guid8}.eml"))
+    let guid_part = guid_file_name_part(&message.guid);
+    Ok(format!(
+        "{sequence:06}_{date_part}_{time_part}_{guid_part}.eml"
+    ))
 }
 
 /// Write one conversation directory of `.eml` files under `output_root`.
@@ -364,25 +368,47 @@ fn local_date_time_parts(secs: i64) -> Option<(String, String)> {
     ))
 }
 
-/// The first eight hex characters of a guid, for file names.
-fn guid_prefix8(guid: &str) -> String {
+/// The guid's part of an `.eml` file name: its first eight hex digits, or,
+/// for a guid with fewer, its first eight characters padded with `0`.
+///
+/// Written as they were, those characters could hold a `/`, a line break or
+/// a character Windows reserves, and the file could not be created (#1824).
+/// Eight characters that every file system accepts are written as they are.
+/// Every guid a source app gives holds only such characters. When the
+/// eight hold any other character, each such character and each `%` is
+/// written as `%XX` for each of its UTF-8 bytes. Among guids with fewer
+/// than eight hex digits, two share a part only when their padded eight
+/// characters match: a part written as it is has eight characters, and an
+/// encoded part has more. The name begins with the
+/// sequence number and ends in `.eml`, so it is never a name Windows
+/// reserves and never ends in a dot or a space. The guid itself is kept in
+/// `X-ME-Guid`.
+fn guid_file_name_part(guid: &str) -> String {
     let hex: String = guid
         .chars()
         .filter(|c| c.is_ascii_hexdigit())
         .take(8)
         .collect();
     if hex.len() >= 8 {
-        hex[..8].to_string()
-    } else {
-        // Fall back to first 8 chars (not bytes) to avoid panicking on
-        // multi-byte UTF-8 characters. Pad with zeros if shorter.
-        let prefix: String = guid.chars().take(8).collect();
-        if prefix.chars().count() >= 8 {
-            prefix
+        return hex;
+    }
+    let prefix: String = guid.chars().take(8).collect();
+    let prefix = format!("{prefix:0<8}");
+    let unsafe_char = |c: char| c.is_control() || "/\\:*?\"<>|".contains(c);
+    if !prefix.contains(unsafe_char) {
+        return prefix;
+    }
+    let mut part = String::with_capacity(prefix.len() * 3);
+    for c in prefix.chars() {
+        if c == '%' || unsafe_char(c) {
+            for b in c.to_string().bytes() {
+                part.push_str(&format!("%{b:02X}"));
+            }
         } else {
-            format!("{prefix:0<8}")
+            part.push(c);
         }
     }
+    part
 }
 
 /// Synthetic RFC5322 address for an identity, with its display name.
