@@ -315,18 +315,37 @@ pub struct StagingMessageKey<'a> {
 }
 
 /// The columns of an attachment row, in the order every attachment
-/// statement here lists them.
-const ATTACHMENT_COLUMNS: &str = "message_id, path, original_name, mime_type, is_sticker, \
-     transcription, sha256, assets_path, size_bytes, missing_reason";
+/// statement here lists them and [`bind_attachments`] binds them.
+/// `message_id` comes first ([`staged_by_production_message`]).
+const ATTACHMENT_COLUMNS: &[&str] = &[
+    "message_id",
+    "path",
+    "original_name",
+    "mime_type",
+    "is_sticker",
+    "transcription",
+    "sha256",
+    "assets_path",
+    "size_bytes",
+    "missing_reason",
+];
 
 /// The columns of a tapback row, in the order every tapback statement here
-/// lists them.
-const TAPBACK_COLUMNS: &str = "message_id, part_index, kind, emoji, is_from_me, sender_handle_id";
+/// lists them and [`bind_tapbacks`] binds them. `message_id` comes first
+/// ([`staged_by_production_message`]).
+const TAPBACK_COLUMNS: &[&str] = &[
+    "message_id",
+    "part_index",
+    "kind",
+    "emoji",
+    "is_from_me",
+    "sender_handle_id",
+];
 
 /// Bind counts, in lockstep with the `INSERT` column lists below.
 const MESSAGE_BIND_COLUMNS: usize = 19;
-const ATTACHMENT_BIND_COLUMNS: usize = 10;
-const TAPBACK_BIND_COLUMNS: usize = 6;
+const ATTACHMENT_BIND_COLUMNS: usize = ATTACHMENT_COLUMNS.len();
+const TAPBACK_BIND_COLUMNS: usize = TAPBACK_COLUMNS.len();
 const EARLIER_VERSION_BIND_COLUMNS: usize = 4;
 
 /// The most message rows [`insert_messages`] takes in one statement.
@@ -429,8 +448,9 @@ pub async fn insert_attachments(
     for chunk in rows.chunks(size) {
         let sql = format!(
             r"
-            INSERT INTO staging_attachments ({ATTACHMENT_COLUMNS}) VALUES {}
+            INSERT INTO staging_attachments ({}) VALUES {}
             ",
+            ATTACHMENT_COLUMNS.join(", "),
             values_tuples(chunk.len(), ATTACHMENT_BIND_COLUMNS)
         );
         bind_attachments(sqlx::query(&sql), chunk)
@@ -439,6 +459,24 @@ pub async fn insert_attachments(
         inserted += chunk.len() as u64;
     }
     Ok(inserted)
+}
+
+/// `q` with the [`TAPBACK_BIND_COLUMNS`] values of each of `rows` bound in
+/// turn, in the order of [`TAPBACK_COLUMNS`].
+fn bind_tapbacks<'q>(
+    mut q: Query<'q, Sqlite, SqliteArguments<'q>>,
+    rows: &'q [StagingTapback],
+) -> Query<'q, Sqlite, SqliteArguments<'q>> {
+    for row in rows {
+        q = q
+            .bind(row.message_id)
+            .bind(row.part_index)
+            .bind(&row.kind)
+            .bind(row.emoji.as_deref())
+            .bind(row.is_from_me)
+            .bind(row.sender_handle_id);
+    }
+    q
 }
 
 /// Insert tapback rows in chunks that fit the bind limit. Returns how many
@@ -453,23 +491,14 @@ pub async fn insert_tapbacks(conn: &mut SqliteConnection, rows: &[StagingTapback
     for chunk in rows.chunks(size) {
         let sql = format!(
             r"
-            INSERT INTO staging_tapbacks (
-                message_id, part_index, kind, emoji, is_from_me, sender_handle_id
-            ) VALUES {}
+            INSERT INTO staging_tapbacks ({}) VALUES {}
             ",
+            TAPBACK_COLUMNS.join(", "),
             values_tuples(chunk.len(), TAPBACK_BIND_COLUMNS)
         );
-        let mut q = sqlx::query(&sql);
-        for row in chunk {
-            q = q
-                .bind(row.message_id)
-                .bind(row.part_index)
-                .bind(&row.kind)
-                .bind(row.emoji.as_deref())
-                .bind(row.is_from_me)
-                .bind(row.sender_handle_id);
-        }
-        q.execute(&mut *conn).await?;
+        bind_tapbacks(sqlx::query(&sql), chunk)
+            .execute(&mut *conn)
+            .await?;
         inserted += chunk.len() as u64;
     }
     Ok(inserted)
@@ -581,6 +610,23 @@ pub async fn take_later_staged_copy(
     Ok(true)
 }
 
+/// A `(SELECT ...)` of `rows` rows bound in turn, each with one value per
+/// column of `columns` (such as [`ATTACHMENT_COLUMNS`]), under those
+/// column names: the copies [`add_copy_attachments`] and
+/// [`add_copy_tapbacks`] hand the shared rules.
+fn bound_rows_sql(columns: &[&str], rows: usize) -> String {
+    let aliases: Vec<String> = columns
+        .iter()
+        .enumerate()
+        .map(|(i, name)| format!("column{} AS {name}", i + 1))
+        .collect();
+    format!(
+        "(SELECT {} FROM (VALUES {}))",
+        aliases.join(", "),
+        values_tuples(rows, columns.len())
+    )
+}
+
 /// Add the attachments `rows` of another copy of a staged message from the
 /// same import to that message, by the rule promotion adds a copy's
 /// attachments to a stored message: a row stored without its file takes
@@ -604,14 +650,7 @@ pub async fn add_copy_attachments(
     let size = max_rows_for_bind_limit(ATTACHMENT_BIND_COLUMNS).max(1);
     let mut inserted = 0u64;
     for chunk in rows.chunks(size) {
-        let copies = format!(
-            "(SELECT column1 AS message_id, column2 AS path, column3 AS original_name, \
-                     column4 AS mime_type, column5 AS is_sticker, column6 AS transcription, \
-                     column7 AS sha256, column8 AS assets_path, column9 AS size_bytes, \
-                     column10 AS missing_reason \
-              FROM (VALUES {}))",
-            values_tuples(chunk.len(), ATTACHMENT_BIND_COLUMNS)
-        );
+        let copies = bound_rows_sql(ATTACHMENT_COLUMNS, chunk.len());
         let fill = fill_attachments_sql("staging_attachments", &copies);
         bind_attachments(sqlx::query(&fill), chunk)
             .execute(&mut *conn)
@@ -642,24 +681,12 @@ pub async fn add_copy_tapbacks(
     let size = max_rows_for_bind_limit(TAPBACK_BIND_COLUMNS).max(1);
     let mut inserted = 0u64;
     for chunk in rows.chunks(size) {
-        let copies = format!(
-            "(SELECT column1 AS message_id, column2 AS part_index, column3 AS kind, \
-                     column4 AS emoji, column5 AS is_from_me, column6 AS sender_handle_id \
-              FROM (VALUES {}))",
-            values_tuples(chunk.len(), TAPBACK_BIND_COLUMNS)
-        );
+        let copies = bound_rows_sql(TAPBACK_COLUMNS, chunk.len());
         let sql = insert_new_tapbacks_sql("staging_tapbacks", &copies);
-        let mut q = sqlx::query(&sql);
-        for row in chunk {
-            q = q
-                .bind(row.message_id)
-                .bind(row.part_index)
-                .bind(&row.kind)
-                .bind(row.emoji.as_deref())
-                .bind(row.is_from_me)
-                .bind(row.sender_handle_id);
-        }
-        inserted += q.execute(&mut *conn).await?.rows_affected();
+        inserted += bind_tapbacks(sqlx::query(&sql), chunk)
+            .execute(&mut *conn)
+            .await?
+            .rows_affected();
     }
     Ok(inserted)
 }
@@ -1322,10 +1349,11 @@ fn fill_attachments_sql(held: &str, copies: &str) -> String {
 /// same attachment when its message, path, original name and sticker flag
 /// match; one without a path is the same only when every field matches.
 fn insert_new_attachments_sql(held: &str, copies: &str) -> String {
+    let columns = ATTACHMENT_COLUMNS.join(", ");
     format!(
         r"
-        INSERT INTO {held} ({ATTACHMENT_COLUMNS})
-        SELECT {ATTACHMENT_COLUMNS}
+        INSERT INTO {held} ({columns})
+        SELECT {columns}
         FROM {copies} AS sa
         WHERE NOT EXISTS (
             SELECT 1
@@ -1357,10 +1385,11 @@ fn insert_new_attachments_sql(held: &str, copies: &str) -> String {
 /// reaction is new, for a stored message ([`promote_tapbacks`]) and for
 /// two copies staged in one import ([`add_copy_tapbacks`]).
 fn insert_new_tapbacks_sql(held: &str, copies: &str) -> String {
+    let columns = TAPBACK_COLUMNS.join(", ");
     format!(
         r"
-        INSERT INTO {held} ({TAPBACK_COLUMNS})
-        SELECT {TAPBACK_COLUMNS}
+        INSERT INTO {held} ({columns})
+        SELECT {columns}
         FROM {copies} AS st
         WHERE NOT EXISTS (
             SELECT 1
@@ -1376,25 +1405,23 @@ fn insert_new_tapbacks_sql(held: &str, copies: &str) -> String {
     )
 }
 
-/// The staged attachments, each under its production message, as
-/// [`fill_attachments_sql`] and [`insert_new_attachments_sql`] take them.
-const STAGED_ATTACHMENTS_BY_PRODUCTION_MESSAGE: &str = r"(
-    SELECT
-        mm.prod_id AS message_id, sa.path, sa.original_name, sa.mime_type, sa.is_sticker,
-        sa.transcription, sa.sha256, sa.assets_path, sa.size_bytes, sa.missing_reason
-    FROM staging_attachments sa
-    JOIN _promote_msg_map mm ON mm.staging_id = sa.message_id
-)";
-
-/// The staged tapbacks, each under its production message, as
-/// [`insert_new_tapbacks_sql`] takes them.
-const STAGED_TAPBACKS_BY_PRODUCTION_MESSAGE: &str = r"(
-    SELECT
-        mm.prod_id AS message_id, st.part_index, st.kind, st.emoji, st.is_from_me,
-        st.sender_handle_id
-    FROM staging_tapbacks st
-    JOIN _promote_msg_map mm ON mm.staging_id = st.message_id
-)";
+/// The rows of the staging table `table`, whose columns are `columns`
+/// (such as [`ATTACHMENT_COLUMNS`]), each under its production message as
+/// the shared rules ([`insert_new_attachments_sql`] and the others) take
+/// them. `columns` starts with `message_id`, which becomes the production
+/// message's id, so the columns keep their order.
+fn staged_by_production_message(table: &str, columns: &[&str]) -> String {
+    debug_assert_eq!(columns.first(), Some(&"message_id"));
+    let rest: Vec<String> = columns[1..]
+        .iter()
+        .map(|name| format!("s.{name}"))
+        .collect();
+    format!(
+        "(SELECT mm.prod_id AS message_id, {} \
+          FROM {table} s JOIN _promote_msg_map mm ON mm.staging_id = s.message_id)",
+        rest.join(", ")
+    )
+}
 
 /// Insert the staged attachments under their production messages: fill in
 /// the stored rows another copy has the file for
@@ -1405,20 +1432,15 @@ const STAGED_TAPBACKS_BY_PRODUCTION_MESSAGE: &str = r"(
 ///
 /// Returns an error when a statement fails.
 pub async fn promote_attachments(conn: &mut SqliteConnection) -> Result<PromotedAttachments> {
-    let filled = sqlx::query(&fill_attachments_sql(
-        "attachments",
-        STAGED_ATTACHMENTS_BY_PRODUCTION_MESSAGE,
-    ))
-    .execute(&mut *conn)
-    .await?
-    .rows_affected();
-    let inserted = sqlx::query(&insert_new_attachments_sql(
-        "attachments",
-        STAGED_ATTACHMENTS_BY_PRODUCTION_MESSAGE,
-    ))
-    .execute(&mut *conn)
-    .await?
-    .rows_affected();
+    let staged = staged_by_production_message("staging_attachments", ATTACHMENT_COLUMNS);
+    let filled = sqlx::query(&fill_attachments_sql("attachments", &staged))
+        .execute(&mut *conn)
+        .await?
+        .rows_affected();
+    let inserted = sqlx::query(&insert_new_attachments_sql("attachments", &staged))
+        .execute(&mut *conn)
+        .await?
+        .rows_affected();
     Ok(PromotedAttachments { filled, inserted })
 }
 
@@ -1430,13 +1452,11 @@ pub async fn promote_attachments(conn: &mut SqliteConnection) -> Result<Promoted
 ///
 /// Returns an error when the statement fails.
 pub async fn promote_tapbacks(conn: &mut SqliteConnection) -> Result<u64> {
-    Ok(sqlx::query(&insert_new_tapbacks_sql(
-        "tapbacks",
-        STAGED_TAPBACKS_BY_PRODUCTION_MESSAGE,
-    ))
-    .execute(&mut *conn)
-    .await?
-    .rows_affected())
+    let staged = staged_by_production_message("staging_tapbacks", TAPBACK_COLUMNS);
+    Ok(sqlx::query(&insert_new_tapbacks_sql("tapbacks", &staged))
+        .execute(&mut *conn)
+        .await?
+        .rows_affected())
 }
 
 /// Insert the staged earlier versions under the production messages this
