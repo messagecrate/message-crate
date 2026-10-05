@@ -20,8 +20,15 @@ import PlainButton from "./PlainButton";
 
 /**
  * Overlay mode only: the list column's right edge, which `overlayDrawerLeft`
- * turns into the drawer's left edge.
+ * turns into the drawer's left edge, or `null` while there is no list column.
  * Skips setState when the measured edge is unchanged to avoid jitter.
+ *
+ * The column can mount or unmount while the drawer is open, such as when the
+ * route renders it after the drawer, so a `MutationObserver` on the page
+ * looks for it after every change to the page's elements. The column found
+ * is the one the `ResizeObserver` watches; a column that unmounts stops being
+ * watched, and the drawer takes the no-column placement until another
+ * appears.
  */
 function useDrawerLeft(open: boolean): number | null {
   const [left, setLeft] = useState<number | null>(null);
@@ -33,38 +40,49 @@ function useDrawerLeft(open: boolean): number | null {
     }
 
     let frame = 0;
-    let observer: ResizeObserver | null = null;
+    let column: HTMLElement | null = null;
 
     const measure = () => {
-      const col = document.querySelector<HTMLElement>("[data-list-column]");
-      if (!col) {
+      if (!column) {
         setLeft(null);
-        return null;
+        return;
       }
-      const next = Math.round(col.getBoundingClientRect().right);
+      const next = Math.round(column.getBoundingClientRect().right);
       setLeft((prev) => (prev === next ? prev : next));
-      return col;
     };
 
-    const col = measure();
-    if (col) {
-      observer = new ResizeObserver(() => {
-        cancelAnimationFrame(frame);
-        frame = requestAnimationFrame(measure);
-      });
-      observer.observe(col);
-    }
-
-    const onResize = () => {
+    const scheduleMeasure = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(measure);
     };
-    window.addEventListener("resize", onResize);
+
+    const sizes = new ResizeObserver(scheduleMeasure);
+
+    // Watches the list column now in the page, if it is not watched already.
+    // Returns whether the column changed.
+    const followColumn = () => {
+      const found = document.querySelector<HTMLElement>("[data-list-column]");
+      if (found === column) return false;
+      if (column) sizes.unobserve(column);
+      column = found;
+      if (column) sizes.observe(column);
+      return true;
+    };
+
+    const pageChanges = new MutationObserver(() => {
+      if (followColumn()) scheduleMeasure();
+    });
+    pageChanges.observe(document.body, { childList: true, subtree: true });
+
+    followColumn();
+    measure();
+    window.addEventListener("resize", scheduleMeasure);
 
     return () => {
       cancelAnimationFrame(frame);
-      window.removeEventListener("resize", onResize);
-      observer?.disconnect();
+      window.removeEventListener("resize", scheduleMeasure);
+      pageChanges.disconnect();
+      sizes.disconnect();
     };
   }, [open]);
 

@@ -832,4 +832,29 @@ describe("ContactDrawer", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(onClose).not.toHaveBeenCalled();
   });
+
+  it("moves against a list column that appears after it opened, and back when the column goes", async () => {
+    seed(detail(26));
+    render(<ContactDrawer variant="overlay" contactId="26" preview={null} onClose={() => {}} />);
+    const drawer = screen.getByRole("dialog");
+    expect(drawer.className).toMatch(/\bml-auto\b/);
+    expect(drawer.style.left).toContain("min(14rem,");
+
+    // The route renders the list column after the drawer, with no window resize.
+    const column = document.createElement("div");
+    column.setAttribute("data-list-column", "");
+    column.getBoundingClientRect = () => ({ right: 412.4 }) as DOMRect;
+    document.body.append(column);
+
+    await waitFor(() => {
+      expect(drawer.style.left).toContain("min(412px,");
+    });
+    expect(drawer.className).not.toMatch(/\bml-auto\b/);
+
+    column.remove();
+    await waitFor(() => {
+      expect(drawer.style.left).toContain("min(14rem,");
+    });
+    expect(drawer.className).toMatch(/\bml-auto\b/);
+  });
 });
