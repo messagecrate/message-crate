@@ -2126,13 +2126,13 @@ fn the_conversion_warning_names_the_failed_attachments_and_is_silent_at_zero() {
     assert_eq!(
         conversion_warning(1).as_deref(),
         Some(
-            "1 demo attachment failed conversion. Its original stays in place, and reset-demo continues."
+            "1 demo attachment failed conversion. Its original stays in place, and reset-demo continues"
         )
     );
     assert_eq!(
         conversion_warning(2).as_deref(),
         Some(
-            "2 demo attachments failed conversion. Their originals stay in place, and reset-demo continues."
+            "2 demo attachments failed conversion. Their originals stay in place, and reset-demo continues"
         )
     );
 }

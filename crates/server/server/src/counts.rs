@@ -5,7 +5,7 @@
 
 /// `one` for a count of 1, else `many` with `n` in place of `{n}`, so a
 /// line whose other words agree with the count, such as `1 conversion
-/// failed; that original` against `3 conversions failed; those originals`,
+/// failed. That original` against `3 conversions failed. Those originals`,
 /// is written whole for each.
 pub(crate) fn words(n: u64, one: &str, many: &str) -> String {
     if n == 1 {

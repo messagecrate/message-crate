@@ -192,8 +192,8 @@ fn conversion_warning(errors: u64) -> Option<String> {
     (errors > 0).then(|| {
         crate::counts::words(
             errors,
-            "1 demo attachment failed conversion. Its original stays in place, and reset-demo continues.",
-            "{n} demo attachments failed conversion. Their originals stay in place, and reset-demo continues.",
+            "1 demo attachment failed conversion. Its original stays in place, and reset-demo continues",
+            "{n} demo attachments failed conversion. Their originals stay in place, and reset-demo continues",
         )
     })
 }
