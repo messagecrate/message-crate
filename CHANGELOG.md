@@ -1047,6 +1047,14 @@ released versions carry their date on the heading.
 
 #### Search
 
+- 2026-10-05 **An edited message imported from two backups shows its
+  earlier versions.** The same iPhone imported through iMazing and through
+  Apple Messages gives two copies of each message, and the Message Crate
+  shows one of them. When it showed the iMazing copy, which records no
+  edits, the message listed no earlier versions, and a word only an earlier
+  version held found nothing. The copy shown now lists the earlier versions
+  of the hidden copy that holds them, search finds it by them, and Export
+  writes them.
 - 2026-10-04 **A conversation opened from a Message Tag page keeps the
   search box as it was.** Opening a conversation from a Message Tag page put
   `tag:Holiday` into the search box, as though it had been typed, and the

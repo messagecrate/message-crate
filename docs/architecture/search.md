@@ -234,6 +234,30 @@ final text is told apart by asking the final text's index alone (#1143,
 #1644). The web app opens such a hit with the matching version shown
 (#1648).
 
+**A message's earlier versions are the ones it shows, and a duplicate's
+count for the copy shown.** A message shows its own earlier versions, or,
+when it holds none, those of a copy hidden under it whose `duplicate_of`
+chain leads to it, through any number of links, the one with the lowest id
+when more than one does. A version therefore finds the message holding it
+and the copy shown in its place.
+
+A copy in a trashed conversation counts only for a message in a trashed
+conversation. Why: a person who trashed the conversation holding the copy
+does not expect it to answer for a message they kept, and a message in the
+trash is listed only when they ask for the trash. The rule reads no query,
+`trashed:` included. A message lists the same versions in its conversation,
+in Export and in every search, so a hit always lists the version that found
+it.
+
+One SQL expression, `earlier_versions_holder_sql` in
+`db/conversation_messages.rs`, names the holder for the versions listed,
+the `matched` marks and the free-text match, so a hit always lists the
+version that found it. Why: dedupe keeps the copy of the source imported
+first, and only Apple Messages records edits, so the copy shown can be an
+iMazing copy with no versions while the Apple Messages copy that holds them
+is hidden (#1757). One holder rather than every copy's versions together,
+so two copies that both record the edits never list them twice.
+
 ## Lists
 
 Each list has one base row, and every word is written as a question about it.
