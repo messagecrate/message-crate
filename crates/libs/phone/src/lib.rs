@@ -37,7 +37,7 @@ impl fmt::Display for PhoneRegion {
 
 impl PhoneRegion {
     /// Region for a raw value: a value with a `+` before its first digit
-    /// names its country, so international rules apply (`+65 9555 0100`,
+    /// names its country, so international rules apply (`+65 5555 0100`,
     /// `(+44) 7700 900123`, `tel:+447700900123`); anything else is treated
     /// as a US national number (this crate's home region).
     pub fn for_raw(raw: &str) -> Self {
@@ -411,7 +411,7 @@ impl OwnerHandleSet {
     /// Every handle matches by handle key. A phone also matches by its
     /// [`sanitize_number`] digits, for sources that record numbers with the
     /// `+` already gone.
-    /// Without the `+`, `6595550100` could be Singapore or the US; the
+    /// Without the `+`, `6555550100` could be Singapore or the US; the
     /// source has already thrown that information away.
     ///
     /// A value written without `+` also matches an owner number given with
@@ -514,6 +514,34 @@ fn group_id_slug(digits: &[String]) -> String {
         .join("_")
 }
 
+/// Non-US test numbers are no one's, in this crate and every other one
+/// outside the Demo Data generator (`demo-seed`). Each comes from a range
+/// its regulator reserves for fiction. Where a country reserves none, the
+/// number starts with a digit no number there starts with.
+///
+/// - UK: 020 7946 0xxx and 07700 900xxx. Source: Ofcom, "Telephone numbers
+///   for use in TV and radio drama programmes"
+///   (<https://www.ofcom.org.uk/phones-and-broadband/phone-numbers/numbers-for-drama>).
+/// - France: 06 39 98 xx xx. Source: ARCEP decision 2018-0881, Plan
+///   national de numérotation, "Numéros pour œuvres audiovisuelles", page 54
+///   (<https://www.arcep.fr/uploads/tx_gsavis/18-0881.pdf>).
+/// - Norway: 68 05 00 00 to 68 05 99 99. Source: Nkom, "Alle nummerserier
+///   for norske telefonnumre", the series for TV and film production
+///   (<https://nkom.no/telefoni-og-telefonnummer/telefonnummer-og-den-norske-nummerplan/alle-nummerserier-for-norske-telefonnumre>).
+/// - Denmark reserves no numbers for fiction, as Energistyrelsen told
+///   Søndag Aften (<https://soendagaften.dk/2020/10/sverige-telefonnumre-reserveres-til-kunst/>).
+///   An eight-digit Danish number starts with 2 to 9, so the tests use
+///   +45 0123 4567. Source: BEK nr. 1883 af 07/12/2020, § 11, stk. 2
+///   (<https://www.retsinformation.dk/eli/lta/2020/1883>).
+/// - Singapore reserves no numbers for fiction. Leading digit 5 is
+///   "Reserved for future use", so the tests use +65 5555 0100. Source:
+///   IMDA, National Numbering Plan, Table 2.1
+///   (<https://www.imda.gov.sg/-/media/imda/files/regulation-licensing-and-consultations/frameworks-and-policies/numbering/national-numbering-plan-and-allocation-process/imda-national-numbering-plan.pdf>).
+///   Read as a US number without its `+`, it is still in 555-0100.
+/// - `+7700900123`, in `an_owner_given_with_plus_matches_its_national_form`,
+///   is the UK drama number 07700 900123 written after `+7` instead of
+///   `+44`. It has nine digits after the 7, one short of any number under
+///   country code 7.
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -635,7 +663,7 @@ mod tests {
             normalize_checked("1555-4567", PhoneRegion::Usa).is_err(),
             "too short for USA certainty"
         );
-        assert!(normalize_checked("+442071838750", PhoneRegion::Usa).is_err());
+        assert!(normalize_checked("+442079460750", PhoneRegion::Usa).is_err());
     }
 
     #[test]
@@ -650,8 +678,8 @@ mod tests {
 
     #[test]
     fn guarded_certain_plus_prefixed() {
-        let g = normalize_guarded("+44 20 7183 8750", PhoneRegion::International);
-        assert_eq!(g.normalized, "+442071838750");
+        let g = normalize_guarded("+44 20 7946 0750", PhoneRegion::International);
+        assert_eq!(g.normalized, "+442079460750");
         assert_eq!(g.note, None);
     }
 
@@ -693,7 +721,7 @@ mod tests {
             PhoneRegion::International
         );
         assert_eq!(
-            PhoneRegion::for_raw("  +44 20 7183 8750 "),
+            PhoneRegion::for_raw("  +44 20 7946 0750 "),
             PhoneRegion::International
         );
         assert_eq!(PhoneRegion::for_raw("5555550100"), PhoneRegion::Usa);
@@ -704,10 +732,10 @@ mod tests {
     #[test]
     fn certain_international() {
         assert_eq!(
-            normalize_checked("+44 20 7183 8750", PhoneRegion::International)
+            normalize_checked("+44 20 7946 0750", PhoneRegion::International)
                 .ok()
                 .as_deref(),
-            Some("+442071838750")
+            Some("+442079460750")
         );
         assert!(
             normalize_checked("(542).555-0100", PhoneRegion::International).is_err(),
@@ -744,7 +772,7 @@ mod tests {
     #[test]
     fn lenient_one_arg_matches_guarded_for_raw() {
         assert_eq!(normalize_lenient("(555) 555-0100"), "+15555550100");
-        assert_eq!(normalize_lenient("+44 20 7183 8750"), "+442071838750");
+        assert_eq!(normalize_lenient("+44 20 7946 0750"), "+442079460750");
         assert_eq!(normalize_lenient("020 7946 0000"), "02079460000");
         assert_eq!(normalize_lenient("+02079460000"), "02079460000");
         assert_eq!(normalize_lenient("7535"), "7535");
@@ -882,9 +910,10 @@ mod tests {
 
     #[test]
     fn a_number_written_with_plus_keeps_its_country() {
+        // +65 5555 0100 is no one's number: the note on `mod tests` says why.
         assert_eq!(
-            parsed("+6595550100"),
-            (HandleType::Phone, "+6595550100".into())
+            parsed("+6555550100"),
+            (HandleType::Phone, "+6555550100".into())
         );
         assert_eq!(
             parsed("+447700900123"),
@@ -931,7 +960,7 @@ mod tests {
     #[test]
     fn a_handle_key_parses_to_itself() {
         for raw in [
-            "+6595550100",
+            "+6555550100",
             "5555550100",
             "7535",
             "jo@example.com",
@@ -982,10 +1011,10 @@ mod tests {
 
     #[test]
     fn a_group_title_keeps_each_number_s_country() {
-        let others = ["+6595550100".to_string(), "+447700900123".to_string()];
+        let others = ["+6555550100".to_string(), "+447700900123".to_string()];
         assert_eq!(
             group_chat_id("grp-", &others).1,
-            "Group: +447700900123, +6595550100"
+            "Group: +447700900123, +6555550100"
         );
     }
 

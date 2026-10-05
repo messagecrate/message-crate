@@ -373,7 +373,7 @@ fn an_attachment_carries_its_payload_digest() {
 fn the_owner_in_national_form_is_not_a_participant() {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("input.xml");
-    fs::write(&input, r#"<smses><mms date="1400773400000" msg_box="1" address="+447911123456~07700900123"><parts><part ct="text/plain" text="hi"/></parts><addrs><addr address="+447911123456" type="137"/><addr address="07700900123" type="151"/></addrs></mms></smses>"#).unwrap();
+    fs::write(&input, r#"<smses><mms date="1400773400000" msg_box="1" address="+447700900456~07700900123"><parts><part ct="text/plain" text="hi"/></parts><addrs><addr address="+447700900456" type="137"/><addr address="07700900123" type="151"/></addrs></mms></smses>"#).unwrap();
     let owner = vec!["+447700900123".to_string()];
     let (docs, _) = read_backup(&input, opts(&owner, None, None)).unwrap();
     assert_eq!(
@@ -406,14 +406,16 @@ fn the_first_owner_number_given_is_the_owner_handle() {
 
 #[test]
 fn an_international_number_keeps_its_country() {
+    // +65 5555 0100 is no one's number. The note on the `phone` crate's `mod
+    // tests` says why.
     let docs = read_xml(
-        r#"<sms protocol="0" address="+6595550100" date="1400773261000" type="1" body="hi"/><sms protocol="0" address="+447700900123" date="1400773261000" type="1" body="hi"/>"#,
+        r#"<sms protocol="0" address="+6555550100" date="1400773261000" type="1" body="hi"/><sms protocol="0" address="+447700900123" date="1400773261000" type="1" body="hi"/>"#,
     );
     let ids: Vec<_> = docs
         .iter()
         .map(|d| d.conversation.chat_identifier.as_str())
         .collect();
-    assert_eq!(ids, ["+447700900123", "+6595550100"]);
+    assert_eq!(ids, ["+447700900123", "+6555550100"]);
 }
 
 #[test]
@@ -450,11 +452,11 @@ fn a_sender_name_is_an_identity_of_type_other() {
 fn an_inferred_owner_outside_the_us_keeps_its_country() {
     let dir = tempfile::tempdir().unwrap();
     let input = dir.path().join("input.xml");
-    fs::write(&input, r#"<smses><mms date="1400773400000" msg_box="2" address="+447700900123"><parts><part ct="text/plain" text="hi"/></parts><addrs><addr address="+447911123456" type="137"/><addr address="+447700900123" type="151"/></addrs></mms></smses>"#).unwrap();
+    fs::write(&input, r#"<smses><mms date="1400773400000" msg_box="2" address="+447700900123"><parts><part ct="text/plain" text="hi"/></parts><addrs><addr address="+447700900456" type="137"/><addr address="+447700900123" type="151"/></addrs></mms></smses>"#).unwrap();
     let (docs, _) = read_backup(&input, opts(&[], None, None)).unwrap();
     assert_eq!(
         docs[0].export.owner_identity.as_deref(),
-        Some("+447911123456")
+        Some("+447700900456")
     );
     assert_eq!(docs[0].conversation.chat_identifier, "+447700900123");
 }
@@ -466,4 +468,47 @@ fn verify_e1_4_two_group_senders_in_one_second_get_two_guids() {
     );
     assert_eq!(docs[0].messages.len(), 2, "the exporter keeps both");
     assert_ne!(docs[0].messages[0].guid, docs[0].messages[1].guid);
+}
+
+/// Staging a backup's attachments knows before it starts which ones the
+/// spool holds no file for. Its byte total leaves them out from the first
+/// event and never drops mid-run (#1727).
+#[test]
+fn the_byte_total_stays_the_same_when_the_spool_holds_no_file() {
+    use message_crate_core::testutil::attachment_totals;
+
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("input.xml");
+    fs::write(&input, r#"<smses><mms date="1400773400000" msg_box="2" address="+15555550101"><parts><part seq="0" ct="image/jpeg" name="pic.jpg" data="aGVsbG8="/></parts><addrs><addr address="+15555550100" type="137" charset="106"/><addr address="+15555550101" type="151"/></addrs></mms></smses>"#).unwrap();
+    let stage = dir.path().join("output").join("attachments");
+    let spool = AttachmentSpool::new(dir.path());
+    let (mut docs, _) = read_backup(&input, opts(&[], Some(&stage), Some(&spool))).unwrap();
+    // A second attachment whose record gives a size, with no file spooled.
+    let mut unspooled = docs[0].messages[0].attachments[0].clone();
+    unspooled.digest_sha256 = Some("0".repeat(64));
+    unspooled.size_bytes = Some(700);
+    docs[0].messages[0].attachments.push(unspooled);
+    let (progress, totals) = attachment_totals();
+
+    stage_read_attachments(
+        &mut docs,
+        &ReadOptions {
+            progress: Some(&progress),
+            ..opts(&[], Some(&stage), Some(&spool))
+        },
+    )
+    .unwrap();
+
+    let totals = totals.lock().unwrap().clone();
+    assert!(totals.len() > 1, "{totals:?}");
+    assert!(
+        totals.iter().all(|&(_, _, bytes_total)| bytes_total == 5),
+        "every total: {totals:?}"
+    );
+    assert_eq!(
+        totals
+            .last()
+            .map(|&(done, bytes_done, _)| (done, bytes_done)),
+        Some((2, 5))
+    );
 }
