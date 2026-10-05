@@ -1,37 +1,11 @@
 //! Small shared helpers for reading and writing conversation documents.
 
 use anyhow::{Context, Result};
-use message_ir::{ConversationDocument, HandleType, IrAttachment};
+use message_ir::{ConversationDocument, IrAttachment};
 use std::ffi::OsStr;
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
-
-/// Guess the identity type of a raw identity string when no type is known.
-///
-/// Rules (mirrored by the CSV `identity_type` cell and the EML/mbox reader):
-/// - empty → [`HandleType::Other`]
-/// - contains `@` → [`HandleType::Email`]
-/// - digit-heavy string (digits, `+`, `-`, spaces, parentheses, dots, `#`,
-///   `*`) → [`HandleType::Phone`]
-/// - anything else → [`HandleType::Other`]
-pub(crate) fn infer_handle_type(handle: &str) -> HandleType {
-    let h = handle.trim();
-    if h.is_empty() {
-        return HandleType::Other;
-    }
-    if h.contains('@') {
-        return HandleType::Email;
-    }
-    let has_digit = h.bytes().any(|b| b.is_ascii_digit());
-    let all_phone_chars = h.bytes().all(|b| {
-        b.is_ascii_digit() || matches!(b, b'+' | b'-' | b' ' | b'(' | b')' | b'.' | b'#' | b'*')
-    });
-    if has_digit && all_phone_chars {
-        return HandleType::Phone;
-    }
-    HandleType::Other
-}
 
 /// Give `doc` back the stem suffix its file was written with.
 ///
@@ -194,20 +168,5 @@ mod tests {
         let att = att_with_path("attachments/missing.bin");
         let dir = tempfile::tempdir().unwrap();
         assert!(read_attachment_file(&att, dir.path()).unwrap().is_none());
-    }
-
-    #[test]
-    fn infer_handle_type_covers_email_phone_and_other() {
-        use message_ir::HandleType;
-        assert_eq!(infer_handle_type("alice@example.com"), HandleType::Email);
-        assert_eq!(infer_handle_type("+15555550101"), HandleType::Phone);
-        assert_eq!(infer_handle_type("1 (555) 555-0101"), HandleType::Phone);
-        assert_eq!(infer_handle_type("alice"), HandleType::Other);
-        assert_eq!(
-            infer_handle_type("user123"),
-            HandleType::Other,
-            "a name with digits in it is not a phone number"
-        );
-        assert_eq!(infer_handle_type(""), HandleType::Other);
     }
 }
