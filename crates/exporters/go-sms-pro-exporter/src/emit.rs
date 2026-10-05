@@ -7,8 +7,8 @@ use crate::xml::{SkippedBadAddrDetail, XmlMessage, parse_xml_file};
 use anyhow::{Context, Result, bail};
 use go_sms_mms::{ParsedPdu, PduError, parse_pdu_file};
 use message_crate_core::{
-    CancelFlag, ExportReport, ExportTransforms, IssueSink, OutputFormat, prepare_outputs,
-    project_conversation,
+    CancelFlag, Counter, ExportReport, ExportTransforms, IssueSink, OutputFormat,
+    SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE, prepare_outputs, project_conversation,
 };
 use message_ir::{
     ExportMeta, IrParticipant, IrService, IrSource, PendingAttachment, PendingConversation,
@@ -26,6 +26,56 @@ const EXPORT_TOOL: &str = "GO SMS Pro";
 const EXPORT_TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// Cap on retained skip-detail rows; overflow is counted and reported.
 pub(crate) const MAX_SKIP_DETAILS: usize = 20;
+
+/// Messages read from PDU files.
+pub(crate) const PDU_MESSAGES: Counter = Counter::new(
+    "pdu_messages",
+    "Read 1 message from a PDU file",
+    "Read {n} messages from PDU files",
+);
+
+/// Group messages read from PDU files, counted in [`PDU_MESSAGES`] as well.
+pub(crate) const PDU_GROUP_MESSAGES: Counter = Counter::new(
+    "pdu_group_messages",
+    "Read 1 group message from a PDU file",
+    "Read {n} group messages from PDU files",
+);
+
+/// PDU messages skipped because they name nobody but the owner.
+pub(crate) const SKIPPED_NO_OTHER_PARTY: Counter = Counter::new(
+    "skipped_no_other_party",
+    "Skipped 1 message that names nobody but the owner",
+    "Skipped {n} messages that name nobody but the owner",
+);
+
+/// `<SMS>` elements read from the XML.
+pub(crate) const XML_MESSAGES_SEEN: Counter = Counter::new(
+    "xml_messages_seen",
+    "Read 1 message from the XML",
+    "Read {n} messages from the XML",
+);
+
+/// Messages skipped because a reference in one of their fields is not a
+/// character.
+pub(crate) const SKIPPED_UNREADABLE_TEXT: Counter = Counter::new(
+    "skipped_unreadable_text",
+    "Skipped 1 message with a character reference that is not a character",
+    "Skipped {n} messages with a character reference that is not a character",
+);
+
+/// PDU files skipped because they are empty.
+pub(crate) const SKIPPED_EMPTY_PDU: Counter = Counter::new(
+    "skipped_empty_pdu",
+    "Skipped 1 empty PDU file",
+    "Skipped {n} empty PDU files",
+);
+
+/// PDU files skipped because they could not be read.
+pub(crate) const SKIPPED_UNPARSEABLE_PDU: Counter = Counter::new(
+    "skipped_unparseable_pdu",
+    "Skipped 1 PDU file that could not be read",
+    "Skipped {n} PDU files that could not be read",
+);
 
 /// Push one diagnostic row, keeping at most [`MAX_SKIP_DETAILS`] entries so
 /// huge backups cannot grow the detail vectors without bound.
@@ -159,9 +209,9 @@ fn add_pdu_message(
     let Some(target) = pdu_target(&parsed, &addresses, owners, report, skips) else {
         return;
     };
-    report.bump("pdu_messages", 1);
+    report.bump(PDU_MESSAGES, 1);
     if target.is_group {
-        report.bump("pdu_group_messages", 1);
+        report.bump(PDU_GROUP_MESSAGES, 1);
     }
     let pending = pdu_pending_message(parsed, addresses.sender, attachments);
     let convo = ensure_conversation(
@@ -192,7 +242,7 @@ fn pdu_target(
         .map(|p| p.key().to_string())
         .collect();
     if others.is_empty() {
-        report.bump("skipped_no_other_party", 1);
+        report.bump(SKIPPED_NO_OTHER_PARTY, 1);
         push_skip_detail(
             &mut skips.no_party,
             &mut skips.no_party_more,
@@ -491,14 +541,14 @@ impl Ingest<'_> {
                 return;
             }
         };
-        self.report.bump("xml_messages_seen", stats.messages);
+        self.report.bump(XML_MESSAGES_SEEN, stats.messages);
         self.report.skipped_invalid_date += stats.skipped_invalid_date;
         self.report
-            .bump("skipped_unknown_type", stats.skipped_unknown_type);
+            .bump(SKIPPED_UNKNOWN_TYPE, stats.skipped_unknown_type);
         self.report
-            .bump("skipped_unknown_address", stats.skipped_unknown_address);
+            .bump(SKIPPED_UNKNOWN_ADDRESS, stats.skipped_unknown_address);
         self.report
-            .bump("skipped_unreadable_text", stats.skipped_unreadable_text);
+            .bump(SKIPPED_UNREADABLE_TEXT, stats.skipped_unreadable_text);
         self.skips.invalid_address_more += stats.skipped_unknown_address_details_more;
         for detail in stats.skipped_unknown_address_details {
             push_skip_detail(
@@ -522,7 +572,7 @@ impl Ingest<'_> {
         let parsed = match parse_pdu_file(pdu_path) {
             Ok(parsed) => parsed,
             Err(PduError::Stub) => {
-                self.report.bump("skipped_empty_pdu", 1);
+                self.report.bump(SKIPPED_EMPTY_PDU, 1);
                 push_skip_detail(
                     &mut self.skips.empty_pdu,
                     &mut self.skips.empty_pdu_more,
@@ -537,7 +587,7 @@ impl Ingest<'_> {
                 return Ok(());
             }
             Err(err) => {
-                self.report.bump("skipped_unparseable_pdu", 1);
+                self.report.bump(SKIPPED_UNPARSEABLE_PDU, 1);
                 self.report.error(
                     pdu_path.display().to_string(),
                     format!("This MMS could not be read and was left out: {err}"),
@@ -732,7 +782,7 @@ mod tests {
         let convo = conversations.values().next().unwrap();
         assert!(convo.is_group);
         assert!(convo.chat_id.starts_with("chat-group-"));
-        assert_eq!(report.extra("pdu_group_messages"), 1);
+        assert_eq!(report.extra(PDU_GROUP_MESSAGES), 1);
     }
 
     /// The chat ids a received PDU from `sender` to the owner lands in.

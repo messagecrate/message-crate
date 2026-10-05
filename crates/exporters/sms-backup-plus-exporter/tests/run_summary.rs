@@ -59,7 +59,7 @@ fn run_writes_the_conversation_and_counts_the_bad_date_row() {
         result
             .messages
             .iter()
-            .any(|l| l == "  skipped 1 invalid-date rows"),
+            .any(|l| l == "  Skipped 1 message with an invalid date"),
         "{:?}",
         result.messages
     );
@@ -117,7 +117,10 @@ fn a_call_log_mail_is_skipped_and_counted_in_the_summary() {
     assert!(written.contains("Hello from Alice"), "{written}");
     assert!(!written.contains("123s"), "{written}");
     assert!(
-        result.messages.iter().any(|l| l == "  skipped_call_log: 1"),
+        result
+            .messages
+            .iter()
+            .any(|l| l == "  Skipped 1 call log entry"),
         "{:?}",
         result.messages
     );
@@ -154,7 +157,7 @@ fn a_group_message_with_no_readable_sender_is_kept_and_counted_once() {
         result
             .messages
             .iter()
-            .any(|l| l == "  group_messages_without_sender: 1"),
+            .any(|l| l == "  Kept 1 group message with no sender"),
         "{:?}",
         result.messages
     );
@@ -205,7 +208,7 @@ fn a_group_message_not_naming_the_owner_is_counted_once() {
         result
             .messages
             .iter()
-            .any(|l| l == "  group_messages_owner_not_named: 1"),
+            .any(|l| l == "  Kept 1 group message that names none of the owner's numbers or email addresses as a one-to-one message"),
         "{:?}",
         result.messages
     );
@@ -264,10 +267,8 @@ fn a_message_with_no_address_for_the_other_person_is_a_note() {
     let result = crate::run(&config).expect("run");
 
     assert!(
-        result
-            .messages
-            .iter()
-            .any(|l| l == "  unknown_chat_messages: 1"),
+        result.messages.iter().any(|l| l
+            == "  Kept 1 message that names no phone number or email address for the other person"),
         "{:?}",
         result.messages
     );
@@ -315,7 +316,7 @@ fn a_group_member_with_no_number_in_the_archive_is_counted_once() {
         result
             .messages
             .iter()
-            .any(|l| l == "  group_members_without_number: 1"),
+            .any(|l| l == "  Kept 1 group member by an email address, with no phone number"),
         "{:?}",
         result.messages
     );
@@ -389,7 +390,7 @@ fn a_group_member_whose_address_has_two_numbers_keeps_the_address() {
         result
             .messages
             .iter()
-            .any(|l| l == "  group_members_with_several_numbers: 1"),
+            .any(|l| l == "  Kept 1 group member by an email address the backup gives more than one phone number"),
         "{:?}",
         result.messages
     );
@@ -429,7 +430,7 @@ fn a_message_kept_without_a_part_it_could_not_read_is_a_note() {
         result
             .messages
             .iter()
-            .any(|l| l == "  skipped_unreadable_part: 1"),
+            .any(|l| l == "  Left out 1 message part that could not be read"),
         "{:?}",
         result.messages
     );

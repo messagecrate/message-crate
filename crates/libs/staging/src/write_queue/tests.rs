@@ -319,7 +319,7 @@ fn progress_lines_cover_all_units_with_global_counts() {
     assert!(
         lines
             .iter()
-            .any(|l| l == "Preparing 2 conversation file(s)..."),
+            .any(|l| l == "Preparing 2 conversation files..."),
         "banner missing from {lines:?}"
     );
     assert!(
@@ -327,7 +327,7 @@ fn progress_lines_cover_all_units_with_global_counts() {
         "counts run across units, not per unit: {lines:?}"
     );
     assert!(
-        lines.iter().any(|l| l == "Prepared 2 conversation file(s)"),
+        lines.iter().any(|l| l == "Prepared 2 conversation files"),
         "closing line missing from {lines:?}"
     );
     assert!(

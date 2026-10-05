@@ -67,16 +67,16 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
     assert!(written.contains("\"hey\""), "{written}");
     assert!(written.contains("broken photo"), "{written}");
     for line in [
-        "  skipped 1 invalid-date rows",
-        "  dropped 1 duplicate rows",
-        "  mms_seen: 2",
-        "  skipped_unreadable_part: 1",
-        "  dropped_character_references: 1",
-        "  skipped_draft_or_outbox: 1",
-        "  skipped_empty_participants: 1",
-        "  skipped_unknown_address: 1",
-        "  skipped_unknown_type: 1",
-        "  sms_seen: 7",
+        "  Skipped 1 message with an invalid date",
+        "  Dropped 1 repeated copy of a message",
+        "  Read 2 MMS",
+        "  Left out 1 message part that could not be read",
+        "  Left out 1 character reference that is not a character",
+        "  Skipped 1 draft or unsent message",
+        "  Skipped 1 MMS with no participants",
+        "  Skipped 1 message with no usable address",
+        "  Skipped 1 message of an unknown type",
+        "  Read 7 SMS",
     ] {
         assert!(
             result.messages.iter().any(|l| l == line),
@@ -130,6 +130,51 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
             ),
         ],
     );
+}
+
+/// Convert logs what the read counted the moment the read returns, and an
+/// import's summary gives the same counts after its write. Both give every
+/// count and every error in the same words and the same order (#1700).
+#[test]
+fn convert_and_import_word_every_count_and_error_alike() {
+    let tmp = tempfile::tempdir().unwrap();
+    let input = backup_directory(tmp.path());
+    let output = tmp.path().join("out");
+    let config = jsonl_run_config(
+        &[&input],
+        &output,
+        SourceConfig::SmsBackupRestore(SmsBackupRestoreConfig {
+            owner_phones: vec!["+15555550100".into()],
+        }),
+    );
+    let imported = crate::run(&config).expect("run").messages;
+    let owner = ["+15555550100".to_string()];
+    let (_, report) = crate::read_backup(
+        &input,
+        crate::ReadOptions {
+            owner_phones: &owner,
+            attachments_dir: None,
+            spool: None,
+            exclude_dir: None,
+            media: media::MediaMode::Disabled,
+            compress: media::CompressOptions::default(),
+            log: None,
+            progress: None,
+            cancel: None,
+        },
+    )
+    .expect("read");
+    let converted = report.log_lines();
+    assert_eq!(converted.len(), 11, "{converted:?}");
+    // Every line Convert logs is a line of the import's summary, in the same
+    // order.
+    let mut rest = imported.iter().map(|l| l.trim_start());
+    for line in &converted {
+        assert!(
+            rest.any(|l| l == line),
+            "{line:?} missing from, or out of order in, {imported:?}"
+        );
+    }
 }
 
 #[test]

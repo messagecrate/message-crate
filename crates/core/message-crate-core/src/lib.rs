@@ -6,6 +6,7 @@
 pub mod attachment_jobs;
 pub mod attachments;
 mod config;
+mod counter;
 mod exporters;
 mod pipeline;
 mod process;
@@ -27,15 +28,20 @@ pub use config::{
     ObfuscateConfig, OpenExtractConfig, OutputFormat, SmsBackupPlusConfig, SmsBackupRestoreConfig,
     SourceConfig, WhatsappConfig,
 };
+pub use counter::{
+    ATTACHMENTS_MISSING, ATTACHMENTS_SAVED, CONVERSATION_FILES_PREPARING, CONVERSATIONS_OBFUSCATED,
+    CONVERSATIONS_RESUMED, Counter, DUPLICATES_DROPPED, NAME_ONLY_CHAT, NOT_SMS_OR_MMS_LEFT_OUT,
+    NOTIFICATIONS, SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE,
+    SKIPPED_UNREADABLE_PART, count_of_files, error_line, note_line,
+};
 pub use exporters::{
     ApplePlatform, AttachmentMedia, CONVERT_COMPRESS_FFMPEG_REQUIRED, Exporter, Form,
     WhatsappPlatform, ensure_output_dir,
 };
 pub use pipeline::{
-    ATTACHMENTS_MISSING, CSV_NOT_READ, ExportReport, IssueSink, NAME_ONLY_CHAT,
-    NAME_ONLY_CHAT_NOTE, NOT_SMS_OR_MMS_LEFT_OUT, NOTE, RunIssue, RunResult,
-    SKIPPED_UNREADABLE_PART, discover_files, emit_issue, export_meta, prepare_outputs,
-    project_conversation, unreadable_parts_note,
+    CSV_NOT_READ, ExportReport, IssueSink, NAME_ONLY_CHAT_NOTE, NOTE, RunIssue, RunResult,
+    discover_files, emit_issue, export_meta, prepare_outputs, project_conversation,
+    unreadable_parts_note,
 };
 pub use process::{
     CancelFlag, Cancelled, LogSink, check_cancel, emit_log, is_cancelled, parallel_for_each,

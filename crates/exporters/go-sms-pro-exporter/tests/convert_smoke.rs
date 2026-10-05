@@ -44,8 +44,8 @@ fn convert_smoke_writes_csv_not_json() {
     let output = tmp.path().join("out");
     let report = convert(&input, &output).expect("convert_export should succeed");
     assert_eq!(report.conversations, 1);
-    assert_eq!(report.extra("xml_messages_seen"), 2);
-    assert_eq!(report.extra("pdu_messages"), 1);
+    assert_eq!(report.extra(crate::emit::XML_MESSAGES_SEEN), 2);
+    assert_eq!(report.extra(crate::emit::PDU_MESSAGES), 1);
 
     // Every message the fixture carries, read back out of the export. An
     // exporter that wrote a correct header and no messages must fail here.
