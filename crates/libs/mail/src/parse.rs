@@ -268,12 +268,12 @@ fn required_header(headers: &[MailHeader<'_>], name: &str) -> Result<String> {
         .with_context(|| format!("missing required header {name}"))
 }
 
-/// A header value trimmed, or `None` when missing or empty.
+/// A header value as the writer wrote it, or `None` when missing or empty.
+///
+/// Nothing is trimmed: the writer protects a value's own opening and closing
+/// spaces (`x_me_value`), so they belong to the value.
 fn optional_header(headers: &[MailHeader<'_>], name: &str) -> Option<String> {
-    headers
-        .get_first_value(name)
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
+    headers.get_first_value(name).filter(|s| !s.is_empty())
 }
 
 /// A header value, or `default` when missing.

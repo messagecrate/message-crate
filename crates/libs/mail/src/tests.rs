@@ -782,3 +782,167 @@ fn a_mail_whose_deletion_names_no_mark_is_refused() {
         "This mail's X-ME-Deletion header: \"trashed\" is neither deleted_in_source_app nor unsent"
     );
 }
+
+/// A copy of [`base_sms`] whose every free-text `X-ME-*` value is `value`:
+/// each plain-text header, and a string inside each JSON header. The guid
+/// and the reply guid are left out, because they also name the mail in
+/// `Message-ID` and `In-Reply-To`, which are not `X-ME-*` headers. The
+/// message is outgoing, so the sender identity goes only to
+/// `X-ME-Sender-Identity` and not into the `From` address, which is not an
+/// `X-ME-*` header either.
+fn with_every_x_me_text(value: &str) -> MailMessage {
+    let text = || Some(value.to_string());
+    let mut msg = base_sms();
+    msg.message.direction = IrDirection::Outgoing;
+    msg.chat_identifier = value.into();
+    msg.conversation_type = "group".into();
+    msg.group_title = text();
+    msg.participants[0].display_name = text();
+    msg.owner_display_name = text();
+    msg.export_source = value.into();
+    msg.export_tool = value.into();
+    msg.export_tool_version = value.into();
+    msg.message.sender_identity = text();
+    msg.message.sender_display_name = text();
+    msg.message.owner_identity = text();
+    msg.message.subject = text();
+    msg.message.reactions = vec![message_ir::Reaction {
+        part_index: 0,
+        kind: value.into(),
+        emoji: text(),
+        is_from_me: false,
+        reactor_identity: text(),
+        reactor_display_name: text(),
+    }];
+    msg.message.edits = vec![message_ir::EarlierVersion {
+        part_index: 0,
+        text: value.into(),
+        edited_at_unix_ms: None,
+    }];
+    msg.message.source.as_mut().unwrap().fields =
+        serde_json::from_value(serde_json::json!({ "note": value })).unwrap();
+    let im = im_mut(&mut msg);
+    im.send_effect = text();
+    im.shared_location = text();
+    im.announcement = text();
+    im.read_receipt_rfc3339 = text();
+    im.parts = Some(serde_json::json!([{ "index": 0, "text": value }]));
+    im.app = Some(serde_json::json!({ "title": value }));
+    im.balloon_bundle_id = text();
+    im.balloon_kind = text();
+    im.associated_guid = text();
+    im.tapback_kind = text();
+    im.tapback_emoji = text();
+    im.tapback_action = text();
+    msg.attachments = vec![MailAttachment {
+        bytes: b"x".to_vec(),
+        meta: message_ir::AttachmentMeta {
+            path: None,
+            original_name: Some("note.txt".into()),
+            mime_type: Some("text/plain".into()),
+            digest_sha256: None,
+            size_bytes: Some(1),
+            missing_reason: None,
+        },
+        is_sticker: false,
+        transcription: text(),
+        sticker_effect: text(),
+    }];
+    msg
+}
+
+/// Everything of `msg` the `X-ME-*` headers carry, as JSON, so a written
+/// message and the one read back compare whole.
+fn x_me_values(msg: &MailMessage) -> serde_json::Value {
+    serde_json::json!({
+        "chat_identifier": msg.chat_identifier,
+        "group_title": msg.group_title,
+        "participants": msg.participants,
+        "owner_display_name": msg.owner_display_name,
+        "export_source": msg.export_source,
+        "export_tool": msg.export_tool,
+        "export_tool_version": msg.export_tool_version,
+        "message": msg.message,
+        "transcriptions": msg.attachments.iter().map(|a| &a.transcription).collect::<Vec<_>>(),
+        "sticker_effects": msg.attachments.iter().map(|a| &a.sticker_effect).collect::<Vec<_>>(),
+    })
+}
+
+/// Assert that every value of `values`, written into every free-text
+/// `X-ME-*` value of a message, reads back from an EML file and from an mbox
+/// exactly as written. A failure counts the values that changed or did not
+/// read at all, and names the first few.
+fn assert_every_value_reads_back(values: &[String]) {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut changed = Vec::new();
+    for (i, value) in values.iter().enumerate() {
+        let msg = with_every_x_me_text(value);
+        let written = x_me_values(&msg);
+        let from_eml = crate::mail_message_from_eml_bytes(&build_eml(&msg).unwrap());
+        let mbox =
+            write_mail_package(&tmp.path().join(i.to_string()), MailPackage::Mbox, &[msg]).unwrap();
+        let from_mbox = crate::mail_messages_from_mbox(&mbox);
+        let same = from_eml.is_ok_and(|m| x_me_values(&m) == written)
+            && from_mbox.is_ok_and(|m| m.len() == 1 && x_me_values(&m[0]) == written);
+        if !same {
+            changed.push(value);
+        }
+    }
+    assert!(
+        changed.is_empty(),
+        "{} of {} values did not read back as written, such as {:?}",
+        changed.len(),
+        values.len(),
+        &changed[..changed.len().min(5)]
+    );
+}
+
+/// A run of spaces next to the characters RFC 2047 encoded words are made
+/// of (`=?`, `?=`, a quote, non-ASCII) reads back from every `X-ME-*`
+/// header byte for byte. mail-builder folds a long header value at a run of
+/// spaces, and mailparse's unfolding turned the run into one space (#1812).
+#[test]
+fn runs_of_spaces_next_to_encoded_word_characters_read_back_as_written() {
+    let pieces = [
+        "bcdefghij     ?=<",
+        "é     é",
+        "a     b",
+        "x  \"  y",
+        "=?     ?=",
+        "  leading and trailing  ",
+    ];
+    let mut values = Vec::new();
+    for piece in pieces {
+        for pad in 0..60 {
+            let z = "z".repeat(pad);
+            values.push(format!("{z}{piece}"));
+            values.push(format!("{z}{piece}{z}"));
+        }
+    }
+    assert_every_value_reads_back(&values);
+}
+
+/// Values made from the characters a mail header reader treats specially,
+/// in every order and length up to 120 characters, read back from every
+/// `X-ME-*` header byte for byte (#1812).
+#[test]
+fn generated_values_read_back_as_written() {
+    const ALPHABET: [&str; 16] = [
+        " ", " ", " ", "a", "z", "é", "😀", "=", "?", "_", "\"", "\\", "<", "\t", "\r\n", "=?",
+    ];
+    // xorshift64, seeded, so a failure names values that fail again.
+    let mut state: u64 = 0x1812_1812_1812_1812;
+    let mut next = move |bound: usize| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state % bound as u64) as usize
+    };
+    let values: Vec<String> = (0..1500)
+        .map(|_| {
+            let len = 1 + next(120);
+            (0..len).map(|_| ALPHABET[next(ALPHABET.len())]).collect()
+        })
+        .collect();
+    assert_every_value_reads_back(&values);
+}
