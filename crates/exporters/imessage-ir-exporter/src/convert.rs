@@ -47,11 +47,12 @@ pub(crate) const SKIPPED_UNREADABLE_MESSAGE: Counter = Counter::new(
     "Skipped {n} messages that could not be read",
 );
 /// The run result's count of attachments an encrypted backup holds that the
-/// program could not decrypt ([`NotDecrypted`]).
+/// program could not decrypt, or whose decrypted copy could not be read back
+/// ([`NotDecrypted`]).
 pub(crate) const ATTACHMENT_NOT_DECRYPTED: Counter = Counter::new(
     "attachment_not_decrypted",
-    "Left out 1 attachment that could not be decrypted",
-    "Left out {n} attachments that could not be decrypted",
+    "Left out 1 attachment that could not be decrypted or read back",
+    "Left out {n} attachments that could not be decrypted or read back",
 );
 
 /// Messages accumulated for one Apple `chat_identifier` before projection.

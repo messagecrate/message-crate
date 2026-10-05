@@ -486,7 +486,7 @@ impl<'a> AccountPass<'a> {
         println!("account {account_id}: assets={}", assets_dir.display());
         if !assets_dir.is_dir() {
             eprintln!(
-                "  {} is not a directory that can be read, so this account's Assets are not processed",
+                "  {} is missing or is not a directory, so this account's Assets are not processed",
                 assets_dir.display()
             );
             return Ok(None);

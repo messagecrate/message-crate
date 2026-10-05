@@ -687,16 +687,17 @@ impl<'a> ImportPipeline<'a> {
         let profile = tracker.profile.clone();
         let attachments = tracker.attachments;
 
-        let result = if let Some(error) = tracker.failed.clone() {
+        let (result, status) = if let Some(error) = tracker.failed.clone() {
             out.note_failed(&name, &error, Some(&profile));
-            FileResult {
+            let result = FileResult {
                 file: name.clone(),
-                status: "failed".into(),
+                status: FileStatus::Failed.as_str().into(),
                 error: Some(error),
                 messages: 0,
                 attachments,
                 profile: Some(profile),
-            }
+            };
+            (result, FileStatus::Failed)
         } else {
             let messages = tracker.successful_messages;
             journal.file_ok(&tracker.source, &name)?;
@@ -708,19 +709,15 @@ impl<'a> ImportPipeline<'a> {
             ));
             out.log(&format_profile_line(&name, &profile));
             out.note_ok(messages, &profile);
-            FileResult {
+            let result = FileResult {
                 file: name.clone(),
-                status: "ok".into(),
+                status: FileStatus::Ok.as_str().into(),
                 error: None,
                 messages,
                 attachments,
                 profile: Some(profile),
-            }
-        };
-        let status = if result.error.is_some() {
-            FileStatus::Failed
-        } else {
-            FileStatus::Ok
+            };
+            (result, FileStatus::Ok)
         };
         out.file_done(&name, status);
         self.results[idx] = Some(result);

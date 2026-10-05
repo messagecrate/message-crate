@@ -403,7 +403,10 @@ released versions carry their date on the heading.
   "Starting:" and "Done:" for each conversation of an Upload. Each now says
   what happened:
   - "Unable to remove decrypted temp file …" is now "The decrypted copy of
-    attachment … at … could not be removed: …".
+    attachment … at … could not be removed: …". An attachment whose decrypted
+    copy could not be read says "Attachment … was decrypted, but its copy at
+    … could not be read: …", and the run counts it in "Left out 1 attachment
+    that could not be decrypted or read back".
   - "Unable to build contacts index: …" and "Unable to read a contacts
     source: …" are now "Contacts could not be read, so no contact is named
     from them: …" and "A contacts source could not be read, so no contact is
@@ -411,8 +414,9 @@ released versions carry their date on the heading.
     …; continuing without contacts" is now "The contacts database in the
     iPhone backup could not be decrypted, so no contact is named from it: …".
   - "Skipping message (rowid=…, guid=…): …" and "2 messages skipped due to
-    formatting errors." are now "Message … (row …) could not be read, so it
-    is left out: …" and "2 messages could not be read and were left out".
+    formatting errors." are now "Message … (row … of the messages database)
+    could not be read, so it is left out: …" and "2 messages could not be
+    read and were left out".
     "Chat ID 7 does not exist in chat table!" is now "A message names
     conversation 7, which is not in the messages database".
   - "could not read …" for WhatsApp's preferences is now "WhatsApp's

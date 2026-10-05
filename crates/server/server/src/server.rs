@@ -1453,7 +1453,7 @@ pub(crate) async fn stop_requested() {
             // only without draining; Ctrl-C keeps working.
             Err(e) => {
                 eprintln!(
-                    "SIGTERM cannot be caught, so it stops this process at once, without a clean stop: {e}"
+                    "SIGTERM cannot be caught, so it ends this process at once, without finishing the work in progress: {e}"
                 );
                 std::future::pending::<()>().await;
             }

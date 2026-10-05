@@ -663,7 +663,7 @@ fn an_attachment_that_fails_to_decrypt_is_counted_apart_from_missing_ones() {
         result
             .messages
             .iter()
-            .any(|line| line == "  Left out 1 attachment that could not be decrypted"),
+            .any(|line| line == "  Left out 1 attachment that could not be decrypted or read back"),
         "{:#?}",
         result.messages
     );

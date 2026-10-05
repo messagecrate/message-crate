@@ -92,7 +92,7 @@ pub(crate) fn stream_export(session: &MailSession) -> Result<(), RuntimeError> {
             Err(why) => {
                 failures += 1;
                 session.options.emit_log(format!(
-                    "Message {} (row {}) could not be read, so it is left out: {}",
+                    "Message {} (row {} of the messages database) could not be read, so it is left out: {}",
                     msg.guid, msg.rowid, why
                 ));
             }
