@@ -664,6 +664,82 @@ async fn append_adds_a_later_deletion_mark_to_a_stored_message_and_keeps_it() {
     );
 }
 
+/// The stored text and content key of the message `g-edit`.
+async fn text_and_key(conn: &mut sqlx::SqliteConnection) -> (String, Option<String>) {
+    sqlx::query_as("SELECT body, content_key FROM messages WHERE guid = 'g-edit'")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap()
+}
+
+/// A message imported before it was edited takes the later text when an
+/// append-mode import carries the edit, and its content key is computed
+/// again from that text, the key a first import of the later backup gives
+/// it. A key left from the earlier text would let the dedupe join the
+/// message to another copy of the text it no longer holds.
+#[tokio::test]
+async fn append_gives_a_later_edit_to_a_stored_message_with_a_new_content_key() {
+    let tmp = TempDir::new().unwrap();
+    let assets = tmp.path().join("assets");
+    let header = r#"{"schema_version":9,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550123","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550123","display_name":null}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}"#;
+    let line = |text: &str, edits: &str| {
+        format!(
+            r#"{{"guid":"g-edit","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"{text}","attachments":[],{edits}"imessage":null,"source":null}}"#
+        )
+    };
+    let options = ImportOptions::fixed(FixedImportArgs {
+        assets_dir: &assets,
+        asset_root: tmp.path(),
+        mode: ImportMode::Append,
+        source: "imessage",
+        account_id: TEST_ACCOUNT,
+        fill_content_keys: true,
+        import_id: None,
+    });
+    let before = write_jsonl(
+        tmp.path(),
+        "before.jsonl",
+        &format!("{header}\n{}\n", line("see you at six", "")),
+    );
+    let after = write_jsonl(
+        tmp.path(),
+        "after.jsonl",
+        &format!(
+            "{header}\n{}\n",
+            line(
+                "see you at seven",
+                r#""edits":[{"part_index":0,"text":"see you at six","edited_at_unix_ms":1426183462000}],"#
+            )
+        ),
+    );
+
+    let fresh = tmp.path().join("fresh.db");
+    import_jsonl_files(&fresh, std::slice::from_ref(&after), &options)
+        .await
+        .unwrap();
+    let (later_text, later_key) = {
+        let (_pool, mut conn) = open_verify(&fresh).await;
+        text_and_key(&mut conn).await
+    };
+    assert_eq!(later_text, "see you at seven");
+    assert!(later_key.is_some(), "the import fills the content key");
+
+    let db = tmp.path().join("messagecrate.db");
+    import_jsonl_files(&db, &[before], &options).await.unwrap();
+    let earlier_key = {
+        let (_pool, mut conn) = open_verify(&db).await;
+        text_and_key(&mut conn).await.1
+    };
+    assert_ne!(earlier_key, later_key, "the key hashes the text");
+    import_jsonl_files(&db, &[after], &options).await.unwrap();
+    let (_pool, mut conn) = open_verify(&db).await;
+    assert_eq!(
+        text_and_key(&mut conn).await,
+        (later_text, later_key),
+        "the stored message reads as a first import of the later backup"
+    );
+}
+
 #[tokio::test]
 async fn append_existing_guid_adds_missing_children() {
     let tmp = TempDir::new().unwrap();

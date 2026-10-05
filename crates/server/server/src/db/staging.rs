@@ -2,8 +2,9 @@
 //! of their rows into production: every statement that reads or writes
 //! `staging_conversations`, `staging_participants`, `staging_messages`,
 //! `staging_attachments`, `staging_tapbacks` and `staging_message_versions`,
-//! and the two temp id maps
-//! (`_promote_conv_map`, `_promote_msg_map`) the promotion joins through.
+//! and the temp id maps
+//! (`_promote_conv_map`, `_promote_msg_map`, `_promote_edit_map`) the
+//! promotion joins through.
 //!
 //! `imports_api::staging` fills the tables and `imports_api::promote` runs
 //! the promotion. Those stages sequence the statements, log them and keep
@@ -941,6 +942,92 @@ pub async fn promote_deletion_marks(conn: &mut SqliteConnection) -> Result<u64> 
     .rows_affected())
 }
 
+/// Write `_promote_edit_map`: each message production held before this
+/// promotion, those at or below `messages_before`, whose staged row carries
+/// more earlier versions than the message holds, mapped from the staged row
+/// with the most. Returns how many messages it names.
+///
+/// An append skips a message production already holds, so a later backup in
+/// which it was edited again reaches it only here. A backup that lists more
+/// earlier versions saw more edits, so it is the later one; one that lists
+/// as many or fewer is the same backup or an earlier one, and the message
+/// keeps what it holds. Two staged rows for one message, from two files of
+/// one import, name it once.
+///
+/// # Errors
+///
+/// Returns an error when a statement fails.
+pub async fn write_edit_map(conn: &mut SqliteConnection, messages_before: i64) -> Result<u64> {
+    reset_id_map(conn, "_promote_edit_map").await?;
+    Ok(sqlx::query(
+        r"
+        INSERT INTO _promote_edit_map (staging_id, prod_id)
+        SELECT staging_id, prod_id
+        FROM (
+            SELECT
+                mm.staging_id,
+                mm.prod_id,
+                ROW_NUMBER() OVER (
+                    PARTITION BY mm.prod_id ORDER BY sv.n DESC, mm.staging_id DESC
+                ) AS pick
+            FROM _promote_msg_map mm
+            JOIN (
+                SELECT message_id, COUNT(*) AS n
+                FROM staging_message_versions
+                GROUP BY message_id
+            ) sv ON sv.message_id = mm.staging_id
+            WHERE mm.prod_id <= $1
+              AND sv.n > (
+                  SELECT COUNT(*) FROM message_versions v WHERE v.message_id = mm.prod_id
+              )
+        )
+        WHERE pick = 1
+        ",
+    )
+    .bind(messages_before)
+    .execute(&mut *conn)
+    .await?
+    .rows_affected())
+}
+
+/// Give each message `_promote_edit_map` names the text of its staged row,
+/// and delete the earlier versions it held, which
+/// [`promote_earlier_versions`] then replaces with the staged ones. The
+/// content key is cleared, because it hashes the text: the content-key fill
+/// computes it again. Returns how many messages changed.
+///
+/// The versions' search entries are not touched here: the caller removes
+/// them first (`schema::unindex_versions_of_edited_messages`), while the
+/// rows still say which entries they are.
+///
+/// # Errors
+///
+/// Returns an error when a statement fails.
+pub async fn promote_later_edits(conn: &mut SqliteConnection) -> Result<u64> {
+    let changed = sqlx::query(
+        r"
+        UPDATE messages
+        SET body = sm.body,
+            content_key = NULL
+        FROM _promote_edit_map em
+        JOIN staging_messages sm ON sm.id = em.staging_id
+        WHERE messages.id = em.prod_id
+        ",
+    )
+    .execute(&mut *conn)
+    .await?
+    .rows_affected();
+    sqlx::query(
+        r"
+        DELETE FROM message_versions
+        WHERE message_id IN (SELECT prod_id FROM _promote_edit_map)
+        ",
+    )
+    .execute(&mut *conn)
+    .await?;
+    Ok(changed)
+}
+
 /// What [`promote_attachments`] did.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub struct PromotedAttachments {
@@ -1063,13 +1150,12 @@ pub async fn promote_tapbacks(conn: &mut SqliteConnection) -> Result<u64> {
 }
 
 /// Insert the staged earlier versions under the production messages this
-/// promotion inserted, those above `messages_before`, in staging order.
+/// promotion inserted, those above `messages_before`, and under the stored
+/// messages [`promote_later_edits`] gave a later text, in staging order.
 ///
-/// A message production already held keeps the versions it has: an append
-/// skips such a message and keeps its text, so versions from a later backup,
-/// which edited it again, would list the text it holds as an earlier one and
-/// lose the text that replaced it. A message read again from the same
-/// backup is not inserted, so its versions are not added a second time.
+/// Any other message production already held keeps the versions it has:
+/// its staged row is the same backup read again or an earlier one, so its
+/// versions are ones the message holds already or fewer.
 /// Returns how many were inserted.
 ///
 /// # Errors
@@ -1086,6 +1172,7 @@ pub async fn promote_earlier_versions(
         FROM staging_message_versions sv
         JOIN _promote_msg_map mm ON mm.staging_id = sv.message_id
         WHERE mm.prod_id > $1
+           OR mm.staging_id IN (SELECT staging_id FROM _promote_edit_map)
         ORDER BY sv.id
         ",
     )

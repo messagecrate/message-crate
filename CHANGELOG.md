@@ -391,6 +391,14 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **A newer backup brings a message's later edit.** When a
+  message already in the Message Crate had been edited again on the phone,
+  importing the newer backup kept the old text and the old earlier versions,
+  because the import skips a message it already holds. A word only the new
+  text held found nothing, and Export wrote the old text. The message now
+  takes the newer backup's text and earlier versions, and search finds it by
+  both. A backup with fewer edits than the message holds, such as an older
+  one imported after a newer one, leaves the message as it is.
 - 2026-10-04 **An iMazing import keeps each of two pictures sent in one
   second, and every picture stays with its own message.** When two photos
   with one file name arrived in the same second, iMazing saved them as

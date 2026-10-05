@@ -388,7 +388,9 @@ pub(crate) async fn create_messages_secondary_indexes(conn: &mut SqliteConnectio
 /// index row holds the old attachment text, so it is removed and written
 /// again whole. `min_new_attachment_id`, the highest `attachments.id` that
 /// existed before the attachments were promoted, names those messages: an
-/// attachment above it was inserted by this promotion.
+/// attachment above it was inserted by this promotion. The same goes for an
+/// existing message that took a later edit, which `_promote_edit_map`
+/// names: its index row holds the text the edit replaced.
 pub(crate) async fn index_messages_fts_from_promote_map(
     conn: &mut SqliteConnection,
     min_new_message_id: i64,
@@ -400,6 +402,8 @@ pub(crate) async fn index_messages_fts_from_promote_map(
         WHERE rowid IN (
             SELECT message_id FROM attachments
             WHERE id > $2 AND message_id <= $1
+            UNION
+            SELECT prod_id FROM _promote_edit_map
         )
         ",
     )
@@ -426,12 +430,38 @@ pub(crate) async fn index_messages_fts_from_promote_map(
             SELECT prod_id FROM _promote_msg_map WHERE prod_id > $1
             UNION
             SELECT message_id FROM attachments WHERE id > $2 AND message_id <= $1
+            UNION
+            SELECT prod_id FROM _promote_edit_map
         ) mm
         JOIN messages m ON m.id = mm.prod_id
         ",
     )
     .bind(min_new_message_id)
     .bind(min_new_attachment_id)
+    .execute(&mut *conn)
+    .await?;
+    Ok(n.rows_affected())
+}
+
+/// Remove the search entries of the earlier versions held by the messages
+/// `_promote_edit_map` names, before `staging::promote_later_edits` deletes
+/// the versions: the sync triggers are paused during a promotion, and an
+/// entry left behind would be found under a version id the next version
+/// inserted may take.
+///
+/// # Errors
+///
+/// Returns an error when the delete fails.
+pub(crate) async fn unindex_versions_of_edited_messages(
+    conn: &mut SqliteConnection,
+) -> Result<u64> {
+    let n = sqlx::query(
+        "DELETE FROM message_versions_fts
+         WHERE rowid IN (
+             SELECT v.id FROM message_versions v
+             JOIN _promote_edit_map em ON em.prod_id = v.message_id
+         )",
+    )
     .execute(&mut *conn)
     .await?;
     Ok(n.rows_affected())

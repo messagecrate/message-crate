@@ -713,39 +713,156 @@ async fn importing_an_edited_message_again_keeps_one_copy_of_each_earlier_versio
     assert_eq!(guids(&museum), ["guid-edited-twice"], "{museum}");
 }
 
-/// An append from a later backup, in which the message was edited again,
-/// leaves the stored message as it was: its text and its earlier versions
-/// stay together, rather than the text it holds turning up as an earlier
-/// version beside it.
-#[tokio::test]
-async fn an_append_from_a_later_backup_keeps_a_stored_messages_versions_with_its_text() {
-    let (fixture, alice) = fixture_with_account().await;
-    import_edits(&fixture, alice.account_id).await;
-    let later = APPLE_MESSAGES_EDITS.replace(
-        r#""text":"Meet at the bakery","attachments":[],"edits":["#,
-        r#""text":"Meet at the park","attachments":[],"edits":[{"part_index":0,"text":"Meet at the bakery","edited_at_unix_ms":1578309090000},"#,
+/// [`APPLE_MESSAGES_EDITS`] as a later backup holds it: the message edited
+/// twice was edited a third time, from the bakery to the park, and the
+/// message never edited has been edited once, from "Nothing changed here".
+fn later_apple_messages_edits() -> String {
+    let later = APPLE_MESSAGES_EDITS
+        .replace(
+            r#""text":"Meet at the bakery","attachments":[],"#,
+            r#""text":"Meet at the park","attachments":[],"#,
+        )
+        .replace(
+            r#""text":"Meet at the museum","edited_at_unix_ms":1578309030000}]"#,
+            r#""text":"Meet at the museum","edited_at_unix_ms":1578309030000},{"part_index":0,"text":"Meet at the bakery","edited_at_unix_ms":1578309090000}]"#,
+        )
+        .replace(
+            r#""text":"Nothing changed here","attachments":[],"imessage""#,
+            r#""text":"Something changed here","attachments":[],"edits":[{"part_index":0,"text":"Nothing changed here","edited_at_unix_ms":1578309120000}],"imessage""#,
+        );
+    assert_eq!(
+        later.matches("edited_at_unix_ms").count(),
+        APPLE_MESSAGES_EDITS.matches("edited_at_unix_ms").count() + 2,
+        "the later backup edits both messages again"
     );
-    assert_ne!(
-        later, APPLE_MESSAGES_EDITS,
-        "the later backup edits the message again"
-    );
-    import_apple_messages_file(&fixture, alice.account_id, "edits-later", &later).await;
+    later
+}
 
-    let page: serde_json::Value =
-        get_json(&fixture.state, "/v1/messages?sort=date", &alice.token).await;
-    let edited = message_by_guid(&page, "guid-edited-twice");
-    assert_eq!(edited["text"], "Meet at the bakery", "{page}");
-    let texts: Vec<&str> = edited["earlier_versions"]
+/// The texts of a message's earlier versions, oldest first.
+fn earlier_texts(message: &serde_json::Value) -> Vec<&str> {
+    message["earlier_versions"]
         .as_array()
         .unwrap()
         .iter()
         .map(|v| v["text"].as_str().unwrap())
-        .collect();
+        .collect()
+}
+
+/// An append from a later backup, in which a stored message was edited
+/// again, takes the later text and the earlier versions it came with, for a
+/// message stored with earlier versions and for one stored never edited.
+/// Search finds each by its new text, finds it by the text it replaced only
+/// as an earlier version, and keeps no entry for the text it held before.
+#[tokio::test]
+async fn an_append_from_a_later_backup_takes_a_stored_messages_later_edit() {
+    let (fixture, alice) = fixture_with_account().await;
+    import_edits(&fixture, alice.account_id).await;
+    let again = import_apple_messages_file(
+        &fixture,
+        alice.account_id,
+        "edits-later",
+        &later_apple_messages_edits(),
+    )
+    .await;
+    assert_eq!(again.messages, 0, "every message is already stored");
+
+    let page: serde_json::Value =
+        get_json(&fixture.state, "/v1/messages?sort=date", &alice.token).await;
+    let twice = message_by_guid(&page, "guid-edited-twice");
+    assert_eq!(twice["text"], "Meet at the park", "{page}");
     assert_eq!(
-        texts,
-        ["Meet at the library", "Meet at the museum"],
+        earlier_texts(&twice),
+        [
+            "Meet at the library",
+            "Meet at the museum",
+            "Meet at the bakery"
+        ],
         "{page}"
     );
+    let once = message_by_guid(&page, "guid-never-edited");
+    assert_eq!(once["text"], "Something changed here", "{page}");
+    assert_eq!(earlier_texts(&once), ["Nothing changed here"], "{page}");
+    let untouched = message_by_guid(&page, "guid-edited-final-match");
+    assert_eq!(
+        earlier_texts(&untouched),
+        ["The library opens at eight"],
+        "a message the later backup holds as it was keeps its one version: {page}"
+    );
+
+    let park: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=park&sort=date",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(guids(&park), ["guid-edited-twice"], "{park}");
+    let bakery: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=bakery&sort=date",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(guids(&bakery), ["guid-edited-twice"], "{bakery}");
+    assert_eq!(
+        bakery["items"][0]["matched_earlier_version"], true,
+        "the bakery is an earlier version now: {bakery}"
+    );
+    let something: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=something&sort=date",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(guids(&something), ["guid-never-edited"], "{something}");
+
+    let mut conn = fixture.conn().await;
+    let stale: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM messages_fts WHERE messages_fts MATCH 'bakery OR nothing'",
+    )
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(stale, 0, "no final-text entry is left for a replaced text");
+    let versions: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM message_versions")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    let indexed: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM message_versions_fts WHERE message_versions_fts MATCH 'meet OR library OR nothing'",
+    )
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(versions, 5, "three, one and one");
+    assert_eq!(
+        indexed, versions,
+        "one search entry per version, none stale"
+    );
+}
+
+/// An append from an earlier backup, which holds a message before its last
+/// edit, leaves the later text and earlier versions the message already
+/// holds: a backup with fewer earlier versions is the older one.
+#[tokio::test]
+async fn an_append_from_an_earlier_backup_keeps_a_stored_messages_later_edit() {
+    let (fixture, alice) = fixture_with_account().await;
+    import_apple_messages_file(
+        &fixture,
+        alice.account_id,
+        "edits-later",
+        &later_apple_messages_edits(),
+    )
+    .await;
+    import_apple_messages_file(&fixture, alice.account_id, "edits", APPLE_MESSAGES_EDITS).await;
+
+    let page: serde_json::Value =
+        get_json(&fixture.state, "/v1/messages?sort=date", &alice.token).await;
+    let twice = message_by_guid(&page, "guid-edited-twice");
+    assert_eq!(twice["text"], "Meet at the park", "{page}");
+    assert_eq!(earlier_texts(&twice).len(), 3, "{page}");
+    let once = message_by_guid(&page, "guid-never-edited");
+    assert_eq!(once["text"], "Something changed here", "{page}");
+    assert_eq!(earlier_texts(&once), ["Nothing changed here"], "{page}");
 }
 
 /// Deleting an edited message deletes its earlier versions and their search
