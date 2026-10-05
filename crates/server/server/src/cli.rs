@@ -699,8 +699,8 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
             "{}",
             crate::counts::words(
                 stats.errors,
-                "1 conversion failed; that original stays without a Thumbnail or a browser preview",
-                "{n} conversions failed; those originals stay without a Thumbnail or a browser preview",
+                "1 conversion failed. That original stays without a Thumbnail or a browser preview",
+                "{n} conversions failed. Those originals stay without a Thumbnail or a browser preview",
             )
         );
     }

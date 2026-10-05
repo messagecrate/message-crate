@@ -313,11 +313,7 @@ pub async fn import_jsonl_files_on_conn(
         crate::counts::words(paths.len() as u64, "1 JSONL file", "{n} JSONL files")
     ));
     if opts.mode == ImportMode::Replace {
-        let sources = if wipe_sources.len() == 1 {
-            "source"
-        } else {
-            "sources"
-        };
+        let sources = crate::counts::words(wipe_sources.len() as u64, "source", "sources");
         say(&format!(
             "  import:   will wipe {sources} '{}' after staging succeeds",
             wipe_sources.join(", ")

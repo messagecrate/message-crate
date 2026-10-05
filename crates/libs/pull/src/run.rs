@@ -369,7 +369,7 @@ impl<'a> Pull<'a> {
         emit(
             out,
             ProgressEvent::Log(format!(
-                "Export Run {} holds {} in {}, with {} ({})",
+                "Export {} holds {} in {}, with {} ({})",
                 export.id,
                 count_of(count(export.message_count), "message", "messages"),
                 count_of(
@@ -564,10 +564,10 @@ impl<'a> Pull<'a> {
         emit(
             out,
             ProgressEvent::Log(format!(
-                "Assets: {} downloaded, {} skipped ({} total bytes)",
-                counts.downloaded,
-                counts.skipped,
-                media::format_bytes(stats.bytes)
+                "Downloaded {} ({}) and kept {} already downloaded",
+                count_of(counts.downloaded, "asset", "assets"),
+                media::format_bytes(stats.bytes),
+                counts.skipped
             )),
         );
         Ok(counts)

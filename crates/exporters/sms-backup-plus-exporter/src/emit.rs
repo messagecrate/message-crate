@@ -491,7 +491,7 @@ pub(crate) fn convert_export<P: AsRef<Path>>(
             "email addresses"
         ),
     ));
-    verbose.line(format!("output: {}", output_dir.display()));
+    verbose.line(format!("Output directory: {}", output_dir.display()));
 
     let input_paths: Vec<PathBuf> = inputs.iter().map(|p| p.as_ref().to_path_buf()).collect();
     let (inputs, output_dir) = prepare_outputs(&input_paths, output_dir)?;
