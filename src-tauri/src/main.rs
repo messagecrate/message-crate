@@ -51,7 +51,14 @@ fn main() {
             app.manage(StagingDirectories::at(record, dirs::home_dir()));
             // The Export Directory, where each Export and Convert gets a
             // directory of its own.
-            app.manage(ExportDirectories::in_app_data(&app_data_dir));
+            let exports = ExportDirectories::in_app_data(&app_data_dir);
+            // What an Export or Convert the app did not see to its end left
+            // in the Export Directory is deleted now, on a thread of its own.
+            // A run another app process has under way holds its marker and
+            // is kept.
+            let swept = ExportDirectories::in_app_data(&app_data_dir);
+            std::thread::spawn(move || swept.sweep());
+            app.manage(exports);
             // What killed runs left in the cache directory's scratch directories
             // (decrypted databases, attachment payloads) is deleted now,
             // not at the next run of the same kind. A directory a running job

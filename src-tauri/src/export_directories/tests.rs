@@ -6,7 +6,7 @@ use message_crate_core::{
 };
 use message_ir_format::{EXPORT_SENTINEL, FormatSink};
 
-use super::{CONVERTING, EXPORT_DIRECTORY_NAME, ExportDirectories, PULLED};
+use super::{CONVERTING, EXPORT_DIRECTORY_NAME, ExportDirectories, ExportKind, PULLED};
 
 /// An Export Directory in its own temporary app-data directory.
 fn exports() -> (tempfile::TempDir, ExportDirectories) {
@@ -59,7 +59,9 @@ fn convert(input: &Path, output: &Path, cache: &Path) {
 #[test]
 fn an_export_writes_its_result_to_its_own_directory_and_leaves_no_in_between_files() {
     let (app_data, exports) = exports();
-    let made = exports.create("export", "csv", "2026-10-04-1430").unwrap();
+    let made = exports
+        .create(ExportKind::Export, "csv", "2026-10-04-1430", None)
+        .unwrap();
     let dir = PathBuf::from(&made.dir);
     assert_eq!(
         dir,
@@ -99,7 +101,7 @@ fn an_export_writes_its_result_to_its_own_directory_and_leaves_no_in_between_fil
 fn a_json_lines_export_keeps_its_files_and_drops_the_pull_journal() {
     let (_app_data, exports) = exports();
     let made = exports
-        .create("export", "jsonl", "2026-10-04-1430")
+        .create(ExportKind::Export, "jsonl", "2026-10-04-1430", None)
         .unwrap();
     pull_into(Path::new(&made.dir));
 
@@ -118,7 +120,9 @@ fn a_json_lines_export_keeps_its_files_and_drops_the_pull_journal() {
 #[test]
 fn an_export_to_another_destination_leaves_no_directory_behind() {
     let (app_data, exports) = exports();
-    let made = exports.create("export", "csv", "2026-10-04-1430").unwrap();
+    let made = exports
+        .create(ExportKind::Export, "csv", "2026-10-04-1430", None)
+        .unwrap();
     let chosen = app_data.path().join("chosen");
     pull_into(Path::new(&made.pulled));
     convert(
@@ -136,8 +140,12 @@ fn an_export_to_another_destination_leaves_no_directory_behind() {
 #[test]
 fn two_exports_in_one_minute_get_two_directories() {
     let (_app_data, exports) = exports();
-    let first = exports.create("export", "mbox", "2026-10-04-1430").unwrap();
-    let second = exports.create("export", "mbox", "2026-10-04-1430").unwrap();
+    let first = exports
+        .create(ExportKind::Export, "mbox", "2026-10-04-1430", None)
+        .unwrap();
+    let second = exports
+        .create(ExportKind::Export, "mbox", "2026-10-04-1430", None)
+        .unwrap();
 
     assert_ne!(first.dir, second.dir);
     assert!(
@@ -150,7 +158,9 @@ fn two_exports_in_one_minute_get_two_directories() {
 #[test]
 fn a_failed_export_s_directory_is_deleted_whole() {
     let (_app_data, exports) = exports();
-    let made = exports.create("convert", "eml", "2026-10-04-1430").unwrap();
+    let made = exports
+        .create(ExportKind::Convert, "eml", "2026-10-04-1430", None)
+        .unwrap();
     std::fs::write(Path::new(&made.dir).join("half.eml"), "partial").unwrap();
 
     exports.discard(&made.dir).unwrap();
@@ -162,7 +172,9 @@ fn a_failed_export_s_directory_is_deleted_whole() {
 #[test]
 fn only_an_export_s_or_convert_s_directory_is_finished_or_discarded() {
     let (app_data, exports) = exports();
-    exports.create("export", "csv", "2026-10-04-1430").unwrap();
+    exports
+        .create(ExportKind::Export, "csv", "2026-10-04-1430", None)
+        .unwrap();
     let mine = app_data.path().join("my-messages");
     std::fs::create_dir_all(&mine).unwrap();
     std::fs::write(mine.join("keep.txt"), "mine").unwrap();
@@ -179,13 +191,96 @@ fn only_an_export_s_or_convert_s_directory_is_finished_or_discarded() {
 }
 
 #[test]
-fn a_kind_or_format_that_cannot_name_a_directory_is_refused() {
+fn a_format_that_cannot_name_a_directory_is_refused() {
     let (_app_data, exports) = exports();
-    assert!(exports.create("import", "csv", "2026-10-04-1430").is_err());
     assert!(
         exports
-            .create("export", "../csv", "2026-10-04-1430")
+            .create(ExportKind::Export, "../csv", "2026-10-04-1430", None)
             .is_err()
     );
-    assert!(exports.create("export", "", "2026-10-04-1430").is_err());
+    assert!(
+        exports
+            .create(ExportKind::Export, "", "2026-10-04-1430", None)
+            .is_err()
+    );
+}
+
+#[test]
+fn a_destination_that_holds_the_export_directory_is_refused_before_anything_is_made() {
+    let (app_data, exports) = exports();
+    for chosen in [app_data.path().to_path_buf(), exports.root().to_path_buf()] {
+        std::fs::create_dir_all(&chosen).unwrap();
+        let err = exports
+            .create(
+                ExportKind::Export,
+                "csv",
+                "2026-10-04-1430",
+                Some(chosen.to_str().unwrap()),
+            )
+            .unwrap_err();
+        assert!(err.contains("holds the Export Directory"), "{err}");
+    }
+    assert!(names(exports.root()).is_empty());
+
+    let inside = exports.root().join("mine");
+    std::fs::create_dir_all(&inside).unwrap();
+    assert!(
+        exports
+            .create(
+                ExportKind::Export,
+                "csv",
+                "2026-10-04-1430",
+                Some(inside.to_str().unwrap())
+            )
+            .is_ok()
+    );
+}
+
+#[test]
+fn the_start_up_sweep_deletes_an_interrupted_export_and_keeps_a_running_one() {
+    let (app_data, exports) = exports();
+    let interrupted = exports
+        .create(ExportKind::Export, "csv", "2026-10-04-1430", None)
+        .unwrap();
+    pull_into(Path::new(&interrupted.pulled));
+    let finished = exports
+        .create(ExportKind::Export, "jsonl", "2026-10-04-1430", None)
+        .unwrap();
+    pull_into(Path::new(&finished.dir));
+    exports.finish(&finished.dir).unwrap();
+    // The app quits mid-export: its hold on the marker ends with it.
+    drop(exports);
+
+    let next_start = ExportDirectories::in_app_data(app_data.path());
+    let running = next_start
+        .create(ExportKind::Convert, "csv", "2026-10-04-1431", None)
+        .unwrap();
+    // Another app process, started at the same time, sweeps too. A process
+    // another test forks holds a copy of every open marker until it runs its
+    // program, so the sweep is repeated for a while rather than once.
+    let sweeper = ExportDirectories::in_app_data(app_data.path());
+    for _ in 0..200 {
+        sweeper.sweep();
+        if !Path::new(&interrupted.dir).exists() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+
+    assert!(
+        !Path::new(&interrupted.dir).exists(),
+        "the copy of the messages is gone"
+    );
+    assert!(
+        Path::new(&finished.dir).is_dir(),
+        "a finished export is kept"
+    );
+    assert!(Path::new(&running.dir).is_dir(), "a run under way is kept");
+    assert!(
+        !names(next_start.root())
+            .iter()
+            .any(|name| name.starts_with("export-") && name.ends_with(".running")),
+        "{:?}",
+        names(next_start.root())
+    );
 }

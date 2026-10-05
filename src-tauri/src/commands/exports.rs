@@ -4,7 +4,7 @@
 //! The window makes the directory before the run starts, writes into it, and
 //! then either finishes it, leaving only the result, or discards it.
 
-use crate::export_directories::{ExportDir, ExportDirectories, started_now};
+use crate::export_directories::{ExportDir, ExportDirectories, ExportKind, started_now};
 
 /// The Export Directory, for Settings, made when it does not exist yet so
 /// Settings can open it.
@@ -21,19 +21,21 @@ pub fn export_directory(exports: tauri::State<'_, ExportDirectories>) -> Result<
 }
 
 /// Make the directory of a new Export or Convert in the Export Directory.
-/// `kind` is `export` or `convert`; `format` is the output format's id.
+/// `format` is the output format's id; `chosen` is the destination the person
+/// chose, if any.
 ///
 /// # Errors
 ///
-/// Returns an error when `kind` or `format` cannot name the directory, or it
-/// cannot be made.
+/// Returns an error when `format` cannot name the directory, `chosen` holds
+/// the Export Directory, or the directory cannot be made.
 #[tauri::command]
 pub fn create_export_dir(
     exports: tauri::State<'_, ExportDirectories>,
-    kind: String,
+    kind: ExportKind,
     format: String,
+    chosen: Option<String>,
 ) -> Result<ExportDir, String> {
-    exports.create(&kind, &format, &started_now())
+    exports.create(kind, &format, &started_now(), chosen.as_deref())
 }
 
 /// Finish an Export's or Convert's directory after the run succeeded, leaving
