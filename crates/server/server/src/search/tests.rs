@@ -623,7 +623,7 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
     // A conversation whose only message a later import superseded: marked a
     // duplicate, with no other kept copy in its conversation. The handle
     // links to no contact, so this adds no contact-level count.
-    let dup_only_handle = handle(&mut conn, a, "+15550098", "sms").await;
+    let dup_only_handle = handle(&mut conn, a, "+15555550198", "sms").await;
     f.dup_only_conv = conversation(
         &mut conn,
         a,
@@ -658,7 +658,7 @@ pub(crate) async fn seeded() -> (sqlx::SqlitePool, tempfile::TempDir, Fixture) {
     f.archive = tag(&mut conn, a, "Archive", &[f.archive_group]).await;
 
     // The other account has one contact and one message that must never show.
-    let other_handle = handle(&mut conn, OTHER_ACCOUNT, "+15559999", "imessage").await;
+    let other_handle = handle(&mut conn, OTHER_ACCOUNT, "+15555550199", "imessage").await;
     contact(&mut conn, OTHER_ACCOUNT, "Ana", &[other_handle]).await;
     let other_conv = conversation(
         &mut conn,
@@ -1118,7 +1118,7 @@ mod text_words {
     async fn name_finds_a_contact_linked_after_the_import() {
         let (pool, _dir, _f) = seeded().await;
         let mut conn = pool.acquire().await.unwrap();
-        let late_handle = handle(&mut conn, ACCOUNT, "+15550777", "imessage").await;
+        let late_handle = handle(&mut conn, ACCOUNT, "+15555550177", "imessage").await;
         let conv = conversation(
             &mut conn,
             ACCOUNT,
@@ -1510,7 +1510,7 @@ mod index_characters {
             .execute(&mut *conn)
             .await
             .unwrap();
-        let chat = handle(&mut conn, ACCOUNT, "+15550100", "imessage").await;
+        let chat = handle(&mut conn, ACCOUNT, "+15555550150", "imessage").await;
         let conv = conversation(&mut conn, ACCOUNT, chat, "individual", None, &[chat]).await;
         let mut ids = Vec::new();
         for body in bodies() {
@@ -2152,7 +2152,7 @@ mod kind_words {
         let (pool, _dir, f) = seeded().await;
         let mut conn = pool.acquire().await.unwrap();
         let a = ACCOUNT;
-        let quiet_h = handle(&mut conn, a, "+15550201", "sms").await;
+        let quiet_h = handle(&mut conn, a, "+15555550121", "sms").await;
         let quiet = contact(&mut conn, a, "Quiet", &[quiet_h]).await;
         let quiet_c = conversation(&mut conn, a, quiet_h, "individual", None, &[quiet_h]).await;
         let mut sent = msg(
@@ -2382,7 +2382,7 @@ mod trash_across_lists {
         let (pool, _dir, f) = seeded().await;
         let mut conn = pool.acquire().await.unwrap();
         let a = ACCOUNT;
-        let binned_h = handle(&mut conn, a, "+15550201", "sms").await;
+        let binned_h = handle(&mut conn, a, "+15555550121", "sms").await;
         let binned = contact(&mut conn, a, "Binned", &[binned_h]).await;
         sqlx::query("INSERT INTO participants (conversation_id, handle_id) VALUES ($1, $2)")
             .bind(f.trashed_conv)
@@ -2699,7 +2699,7 @@ mod measure_words {
         );
 
         // You wrote in 2019 and they replied in 2020.
-        let reply_h = handle(&mut conn, a, "+15550101", "sms").await;
+        let reply_h = handle(&mut conn, a, "+15555550141", "sms").await;
         let reply = contact(&mut conn, a, "Replier", &[reply_h]).await;
         let reply_c = conversation(&mut conn, a, reply_h, "individual", None, &[reply_h]).await;
         message(
@@ -2715,7 +2715,7 @@ mod measure_words {
         )
         .await;
         // You texted them in 2019 and they never replied.
-        let silent_h = handle(&mut conn, a, "+15550102", "sms").await;
+        let silent_h = handle(&mut conn, a, "+15555550142", "sms").await;
         let silent = contact(&mut conn, a, "Silent", &[silent_h]).await;
         let silent_c = conversation(&mut conn, a, silent_h, "individual", None, &[silent_h]).await;
         message(
@@ -2725,9 +2725,9 @@ mod measure_words {
         )
         .await;
         // A 2015 group chat: one member never spoke, one first spoke in 2018.
-        let lurker_h = handle(&mut conn, a, "+15550103", "sms").await;
+        let lurker_h = handle(&mut conn, a, "+15555550143", "sms").await;
         let lurker = contact(&mut conn, a, "Lurker", &[lurker_h]).await;
-        let late_h = handle(&mut conn, a, "+15550104", "sms").await;
+        let late_h = handle(&mut conn, a, "+15555550144", "sms").await;
         let late = contact(&mut conn, a, "Late", &[late_h]).await;
         let chat = handle(&mut conn, a, "chat400", "sms").await;
         let old_group = conversation(
