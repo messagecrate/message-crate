@@ -782,7 +782,10 @@ impl From<crate::db::imports::ImportLookupError> for ApiError {
             crate::db::imports::ImportLookupError::InvalidRun { message } => {
                 Self::StateConflict(message)
             }
-            crate::db::imports::ImportLookupError::Db(err) => Self::Internal(err),
+            err @ crate::db::imports::ImportLookupError::InvalidIssueKind { .. } => {
+                Self::validation(err.to_string())
+            }
+            crate::db::imports::ImportLookupError::Db(err) => Self::Internal(err.into()),
         }
     }
 }
