@@ -64,11 +64,11 @@ async fn empty_trash_deletes_trashed_conversations_and_forgets_trashed_contacts(
     let shared = fake_sha256('a');
     let only_in_doomed = fake_sha256('b');
 
-    let doomed = seed(&fixture, &alice, "+15550001").await;
+    let doomed = seed(&fixture, &alice, "+15550101").await;
     let shared_file = attach_stored_file(&fixture.state, alice.account_id, doomed, &shared).await;
     let doomed_file =
         attach_stored_file(&fixture.state, alice.account_id, doomed, &only_in_doomed).await;
-    let kept = seed(&fixture, &alice, "+15550002").await;
+    let kept = seed(&fixture, &alice, "+15550102").await;
     // The kept conversation points at the same stored bytes as `shared`.
     attach_stored_file(&fixture.state, alice.account_id, kept, &shared).await;
     let sidecar = doomed_file
@@ -148,7 +148,7 @@ async fn empty_trash_deletes_trashed_conversations_and_forgets_trashed_contacts(
 async fn empty_trash_leaves_another_accounts_trash_alone() {
     let (fixture, alice) = fixture_with_account().await;
     let bob = register_via_api(&fixture.state, "bob", "hunter2hunter2").await;
-    let bobs = seed(&fixture, &bob, "+15550001").await;
+    let bobs = seed(&fixture, &bob, "+15550101").await;
     trash(&fixture, &bob, Trashable::Conversation(bobs)).await;
 
     let status = delete_status(&fixture.state, "/v1/trash", &alice.token).await;
@@ -164,7 +164,7 @@ async fn empty_trash_leaves_another_accounts_trash_alone() {
 #[tokio::test]
 async fn empty_trash_needs_the_delete_permission() {
     let (fixture, alice) = fixture_with_account().await;
-    let doomed = seed(&fixture, &alice, "+15550001").await;
+    let doomed = seed(&fixture, &alice, "+15550101").await;
     trash(&fixture, &alice, Trashable::Conversation(doomed)).await;
     fixture.turn_off_delete(alice.account_id).await;
 

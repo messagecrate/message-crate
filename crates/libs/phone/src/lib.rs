@@ -91,7 +91,7 @@ const MAX_PHONE_DIGITS: usize = 15;
 /// numbers run together are rejected rather than concatenated into a handle
 /// that matches nothing.
 ///
-/// An extension suffix (`555-1234 x99`) is prose by the first rule and is
+/// An extension suffix (`555-0123 x99`) is prose by the first rule and is
 /// rejected whole, which is deliberate: gluing an extension onto a number
 /// produces a handle that matches nothing either.
 ///
@@ -514,19 +514,20 @@ fn group_id_slug(digits: &[String]) -> String {
         .join("_")
 }
 
-/// Non-US test numbers are no one's, in this crate and every other one. Each
-/// comes from a range its regulator reserves for fiction. Where a country
-/// reserves none, or a test needs a number outside that range, the number
-/// starts with a digit no number there starts with, or has a length no
-/// number there has.
+/// Test numbers are no one's, in this crate and every other one. Each comes
+/// from a range its regulator reserves for fiction. Where a country reserves
+/// none, or a test needs a number outside that range, the number starts with
+/// a digit no number there starts with, or has a length no number there has.
 ///
 /// - North America: 555-0100 to 555-0199, in any area code. Source: NANPA,
 ///   "Numbering Resources - 555 Line Numbers"
 ///   (<https://www.nationalnanpa.com/number_resource_info/555_numbers.html>).
-///   Only the `demo-seed` test of its fiction check holds North American
-///   numbers to this note. It needs numbers outside that range, so it puts
-///   them under area code 015. An area code starts with 2 to 9, never 0.
-///   Source: NANPA, "Number Resources - NPA (Area) Codes"
+///   A seven-digit 555-01xx, with or without a leading 1, is no one's
+///   either, since it takes its area code from where it is dialled.
+///   A test that needs a number outside that range puts it under an area
+///   code starting with 0 or 1, as the `demo-seed` test of its fiction check
+///   does with 015. An area code starts with 2 to 9, never 0 or 1. Source:
+///   NANPA, "Number Resources - NPA (Area) Codes"
 ///   (<https://www.nationalnanpa.com/area_codes/index.html>).
 /// - UK: 020 7946 0xxx and 07700 900xxx. Source: Ofcom, "Telephone numbers
 ///   for use in TV and radio drama programmes"
@@ -626,7 +627,7 @@ mod tests {
             None
         );
         assert_eq!(
-            sanitize_phone_shaped("555-1234 x99"),
+            sanitize_phone_shaped("555-0123 x99"),
             None,
             "an extension is prose"
         );
@@ -674,7 +675,7 @@ mod tests {
             Some("+15555550121")
         );
         assert!(
-            normalize_checked("1555-4567", PhoneRegion::Usa).is_err(),
+            normalize_checked("1555-0145", PhoneRegion::Usa).is_err(),
             "too short for USA certainty"
         );
         assert!(normalize_checked("+442079460750", PhoneRegion::Usa).is_err());

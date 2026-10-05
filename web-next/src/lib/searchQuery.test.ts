@@ -278,8 +278,8 @@ describe("formFromSearchQuery", () => {
     assert.equal(name.handle, "Ann Lee");
     assert.equal(name.firstName, undefined);
     assert.equal(name.phone, undefined);
-    const phone = formFromSearchQuery("search:contacts handle:+15551212");
-    assert.equal(phone.handle, "+15551212");
+    const phone = formFromSearchQuery("search:contacts handle:+15550112");
+    assert.equal(phone.handle, "+15550112");
     assert.equal(phone.phone, undefined);
   });
 

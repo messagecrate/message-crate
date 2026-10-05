@@ -59,7 +59,7 @@ async fn account_with_handle(fixture: &TestFixture, handle: &str) -> RegisteredA
 #[tokio::test]
 async fn contact_match_reports_only_the_identifiers_the_database_does_not_have() {
     let (fixture, account) = contacts_fixture_with_handles(&["+15550100"]).await;
-    let body = serde_json::json!({ "identifiers": ["+15550100", "+15550999"] });
+    let body = serde_json::json!({ "identifiers": ["+15550100", "+15550189"] });
     let response = post_json::<serde_json::Value>(
         &fixture.state,
         "/v1/contacts/unmatched-identities",
@@ -67,13 +67,13 @@ async fn contact_match_reports_only_the_identifiers_the_database_does_not_have()
         body,
     )
     .await;
-    assert_eq!(response["items"], serde_json::json!(["+15550999"]));
+    assert_eq!(response["items"], serde_json::json!(["+15550189"]));
 }
 
 #[tokio::test]
 async fn contact_match_ignores_blank_identifiers_and_de_duplicates() {
     let (fixture, account) = contacts_fixture_with_handles(&[]).await;
-    let body = serde_json::json!({ "identifiers": ["+15550999", "  ", "+15550999", ""] });
+    let body = serde_json::json!({ "identifiers": ["+15550189", "  ", "+15550189", ""] });
     let response = post_json::<serde_json::Value>(
         &fixture.state,
         "/v1/contacts/unmatched-identities",
@@ -81,7 +81,7 @@ async fn contact_match_ignores_blank_identifiers_and_de_duplicates() {
         body,
     )
     .await;
-    assert_eq!(response["items"], serde_json::json!(["+15550999"]));
+    assert_eq!(response["items"], serde_json::json!(["+15550189"]));
 }
 
 #[tokio::test]
@@ -148,7 +148,7 @@ async fn contact_match_matches_a_differently_spelled_identifier_against_the_stor
 #[tokio::test]
 async fn contact_match_preserves_order_across_multiple_unknowns() {
     let (fixture, account) = contacts_fixture_with_handles(&["+15550100"]).await;
-    let body = serde_json::json!({ "identifiers": ["+15550100", "+15550200", "+15550300"] });
+    let body = serde_json::json!({ "identifiers": ["+15550100", "+15550120", "+15550130"] });
     let response = post_json::<serde_json::Value>(
         &fixture.state,
         "/v1/contacts/unmatched-identities",
@@ -158,7 +158,7 @@ async fn contact_match_preserves_order_across_multiple_unknowns() {
     .await;
     assert_eq!(
         response["items"],
-        serde_json::json!(["+15550200", "+15550300"])
+        serde_json::json!(["+15550120", "+15550130"])
     );
 }
 

@@ -1121,7 +1121,10 @@ describe("ImportScreen gates", () => {
 
   it("batches the contact-match lookup at 500 identifiers per request and sums unknown across batches", async () => {
     hookState.phase = "staging_review";
-    const identifiers = Array.from({ length: 620 }, (_, i) => `+1555000${i}`);
+    const identifiers = Array.from(
+      { length: 620 },
+      (_, i) => `+1015555${String(i).padStart(4, "0")}`,
+    );
     hookState.stagingSummary = stagingSummary({ contactIdentifiers: identifiers });
     apiPostMock.mockResolvedValueOnce({
       items: Array(400).fill("x"),

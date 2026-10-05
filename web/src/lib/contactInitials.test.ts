@@ -23,11 +23,11 @@ describe("contactAvatarClass", () => {
   it("is stable for the same person seed", () => {
     const a = contactAvatarClass({
       preferredName: "Ada",
-      preferredHandle: "+15551212",
+      preferredHandle: "+15550112",
     });
     const b = contactAvatarClass({
       preferredName: "Ada",
-      preferredHandle: "+1 (555) 1212",
+      preferredHandle: "+1 (555) 0112",
     });
     expect(a).toBe(b);
   });

@@ -34,7 +34,7 @@ function message(over: Partial<Message> = {}): Message {
       label: "Family",
       participants: [
         { name: "Alice", identity: "+15555550100" },
-        { name: "Bob", identity: "+15555550200" },
+        { name: "Bob", identity: "+15555550120" },
       ],
     },
     attachments: [],

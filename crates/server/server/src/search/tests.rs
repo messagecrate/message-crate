@@ -2101,7 +2101,7 @@ mod kind_words {
         let mut copies = Vec::new();
         for (i, source) in IMPORT_SOURCES.iter().enumerate() {
             kept.push(import_from(&mut conn, dir.path(), source, &format!("+1555010{i}")).await);
-            copies.push(import_from(&mut conn, dir.path(), source, &format!("+1555020{i}")).await);
+            copies.push(import_from(&mut conn, dir.path(), source, &format!("+1555015{i}")).await);
         }
         for (i, (_, copy)) in copies.iter().enumerate() {
             let (_, original) = kept[(i + 1) % kept.len()];
