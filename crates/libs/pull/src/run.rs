@@ -680,9 +680,13 @@ fn note_asset_refs(
         else {
             continue;
         };
-        let first = assets.entry(sha.to_string()).or_insert_with(|| rel.clone());
+        // Lowercase, so one fingerprint in two cases is one fetch, never two
+        // fetches writing one temporary file on a case-insensitive file
+        // system.
+        let sha = sha.to_ascii_lowercase();
+        let first = assets.entry(sha.clone()).or_insert_with(|| rel.clone());
         if *first != rel {
-            other_paths.entry(sha.to_string()).or_default().insert(rel);
+            other_paths.entry(sha).or_default().insert(rel);
         }
     }
     refused
@@ -1045,6 +1049,32 @@ mod asset_ref_tests {
                 ("../no-fingerprint.txt".to_string(), None),
             ]
         );
+    }
+
+    #[test]
+    fn one_fingerprint_in_two_cases_is_one_asset() {
+        // Two keys would be two fetches at once writing one temporary file
+        // on a case-insensitive file system.
+        let mut assets = HashMap::new();
+        let mut other_paths = BTreeMap::new();
+
+        note_asset_refs(
+            &message_from(
+                "sms",
+                json!([
+                    { "path": "attachments/menu.pdf", "sha256": "AB", "is_sticker": false },
+                    { "path": "attachments/menu.pdf", "sha256": "ab", "is_sticker": false }
+                ]),
+            ),
+            &mut assets,
+            &mut other_paths,
+        );
+
+        assert_eq!(
+            assets,
+            HashMap::from([("ab".to_string(), "attachments/menu.pdf".to_string())])
+        );
+        assert!(other_paths.is_empty());
     }
 }
 

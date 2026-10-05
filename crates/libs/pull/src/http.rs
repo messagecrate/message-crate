@@ -203,12 +203,10 @@ pub fn download_asset(
         .into());
     }
 
-    // Write to a temporary file then rename, so a partial download (crash,
-    // cancel, network drop) never leaves a truncated file at the destination
-    // path.
     let mut len = 0;
     let written = write_asset(dest, sha_clean, |out| {
-        let (digest, written) = write_hashed(&mut response, out)?;
+        let (digest, written) = write_hashed(&mut response, out)
+            .with_context(|| format!("write {}", dest.display()))?;
         len = written;
         // A `200 OK` is not proof of the attachment: an access proxy whose
         // session has expired redirects to its login page, which answers
@@ -224,12 +222,14 @@ pub fn download_asset(
         }
         Ok(())
     });
-    match written {
-        // The answer that is not the Asset already names the fetch.
-        Err(error) if error.downcast_ref::<HttpError>().is_some() => return Err(error),
-        Err(error) => return Err(error.context(fetch_failed())),
-        Ok(()) => {}
-    }
+    // The answer that is not the Asset already names the fetch.
+    written.map_err(|error| {
+        if error.is::<HttpError>() {
+            error
+        } else {
+            error.context(fetch_failed())
+        }
+    })?;
     Ok(len)
 }
 
@@ -240,7 +240,7 @@ fn write_hashed(body: &mut impl Read, out: &mut dyn Write) -> Result<(String, u6
         inner: out,
         hasher: Sha256::new(),
     };
-    let len = std::io::copy(body, &mut writer).context("write the answer")?;
+    let len = std::io::copy(body, &mut writer)?;
     Ok((hex::encode(writer.hasher.finalize()), len))
 }
 
