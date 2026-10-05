@@ -138,18 +138,19 @@ impl Session {
     /// (`403 Forbidden`: disabled, or neither import nor export), or the
     /// request fails in any other way.
     pub(crate) fn head_asset(&self, sha256: &str) -> Result<bool> {
+        let what = "Asset check";
         let url = self.asset_url(&[sha256])?;
         let response = self
             .http
-            .request_url(Method::HEAD, url.clone(), &self.token)
+            .request_url(Method::HEAD, url, &self.token)
             .timeout(Duration::from_secs(15))
             .send()
-            .with_context(|| format!("HEAD {url}"))?;
+            .with_context(|| format!("{what} failed"))?;
         let status = response.status();
         match status.as_u16() {
             404 => return Ok(false),
             401 => {
-                return Err(session_refused("Asset check").into());
+                return Err(session_refused(what).into());
             }
             403 => {
                 return Err(HttpError::new(
@@ -165,10 +166,7 @@ impl Session {
             let text = response.text().unwrap_or_default();
             return Err(HttpError::new(
                 status.as_u16(),
-                format!(
-                    "Asset check failed (HTTP {status}): {}",
-                    error_sentence(&text)
-                ),
+                format!("{what} failed (HTTP {status}): {}", error_sentence(&text)),
             )
             .into());
         }
@@ -183,6 +181,7 @@ impl Session {
     /// Returns an error when the file cannot be read or the server rejects it;
     /// a 413 says how large a body the server accepts.
     pub(crate) fn put_asset(&self, asset: &AssetUpload<'_>) -> Result<Asset> {
+        let what = "Asset upload";
         let file_len = std::fs::metadata(asset.file)
             .with_context(|| format!("stat {}", asset.file.display()))?
             .len();
@@ -199,21 +198,21 @@ impl Session {
             .unwrap_or("application/octet-stream");
         let response = self
             .http
-            .request_url(Method::PUT, url.clone(), &self.token)
+            .request_url(Method::PUT, url, &self.token)
             .timeout(Duration::from_secs(600))
             .header("Content-Type", content_type)
             .body(bytes)
             .send()
-            .with_context(|| format!("PUT {url}"))?;
-        let (status, text) = read_body("Asset upload", response)?;
+            .with_context(|| format!("{what} failed"))?;
+        let (status, text) = read_body(what, response)?;
         if looks_like_payload_too_large(status, &text) {
             return Err(HttpError::new(
                 413,
-                payload_too_large_message("Asset upload", Some(file_len as usize)),
+                payload_too_large_message(what, Some(file_len as usize)),
             )
             .into());
         }
-        ok_json::<Asset>("Asset upload", status, &text)
+        ok_json::<Asset>(what, status, &text)
     }
 
     /// Upload in parts: open a multipart upload, send each part, complete
@@ -275,7 +274,7 @@ impl Session {
             .header("Content-Type", "application/jsonl")
             .body(ndjson)
             .send()
-            .with_context(|| format!("POST {path}"))?;
+            .with_context(|| format!("{what} failed"))?;
         let (status, text) = read_body(&what, response)?;
         if looks_like_payload_too_large(status, &text) {
             return Err(
@@ -298,6 +297,7 @@ impl Session {
         mode: ImportMode,
         tool: Option<&str>,
     ) -> Result<i64> {
+        let what = "Import Run start";
         let mut body = serde_json::json!({
             "source": source,
             "mode": mode,
@@ -312,9 +312,9 @@ impl Session {
             .header("Content-Type", "application/json")
             .json(&body)
             .send()
-            .context("Import Run start failed")?;
-        let (status, text) = read_body("Import Run start", response)?;
-        let parsed: CreateImportResponse = ok_json("Import Run start", status, &text)?;
+            .with_context(|| format!("{what} failed"))?;
+        let (status, text) = read_body(what, response)?;
+        let parsed: CreateImportResponse = ok_json(what, status, &text)?;
         Ok(parsed.id)
     }
 
@@ -375,6 +375,7 @@ impl<'a> MultipartUpload<'a> {
     /// Returns an error when the server refuses or its reply lacks an upload
     /// id or part size.
     fn start(session: &'a Session, asset: &AssetUpload<'a>, file_len: u64) -> Result<Option<Self>> {
+        let what = "Asset upload start";
         let start_url = session.asset_url(&[asset.sha256, "uploads"])?;
         let mut start_body = serde_json::json!({ "bytes": file_len });
         if let Some(mime) = asset.mime.filter(|m| !m.is_empty()) {
@@ -382,30 +383,28 @@ impl<'a> MultipartUpload<'a> {
         }
         let response = session
             .http
-            .request_url(Method::POST, start_url.clone(), &session.token)
+            .request_url(Method::POST, start_url, &session.token)
             .timeout(Duration::from_secs(30))
             .header("Content-Type", "application/json")
             .json(&start_body)
             .send()
-            .with_context(|| format!("POST {start_url}"))?;
-        let (status, text) = read_body("Asset upload start", response)?;
+            .with_context(|| format!("{what} failed"))?;
+        let (status, text) = read_body(what, response)?;
         if looks_like_payload_too_large(status, &text) {
-            return Err(
-                HttpError::new(413, payload_too_large_message("Asset upload start", None)).into(),
-            );
+            return Err(HttpError::new(413, payload_too_large_message(what, None)).into());
         }
-        let started: CreateAssetUploadResponse = ok_json("Asset upload start", status, &text)?;
+        let started: CreateAssetUploadResponse = ok_json(what, status, &text)?;
         if started.already_present {
             return Ok(None);
         }
         let upload_id = started
             .upload_id
             .filter(|s| !s.is_empty())
-            .ok_or_else(|| anyhow!("the server's answer to Asset upload start has no upload_id"))?;
+            .ok_or_else(|| anyhow!("the server's answer to {what} has no upload id"))?;
         let part_size = started
             .part_size
             .filter(|&n| n > 0)
-            .ok_or_else(|| anyhow!("the server's answer to Asset upload start has no part_size"))?;
+            .ok_or_else(|| anyhow!("the server's answer to {what} has no part size"))?;
         Ok(Some(Self {
             session,
             sha256: asset.sha256,
@@ -433,12 +432,12 @@ impl<'a> MultipartUpload<'a> {
         let response = self
             .session
             .http
-            .request_url(Method::PUT, part_url.clone(), &self.session.token)
+            .request_url(Method::PUT, part_url, &self.session.token)
             .timeout(Duration::from_secs(600))
             .header("Content-Type", "application/octet-stream")
             .body(buf)
             .send()
-            .with_context(|| format!("PUT {part_url}"))?;
+            .with_context(|| format!("{what} failed"))?;
         let status = response.status();
         let text = response.text().unwrap_or_default();
         if looks_like_payload_too_large(status, &text) {
@@ -461,16 +460,17 @@ impl<'a> MultipartUpload<'a> {
 
     /// Tell the server every part is in and read its reply.
     fn complete(&self) -> Result<Asset> {
+        let what = "Asset upload completion";
         let complete_url = self.url(&["complete"])?;
         let response = self
             .session
             .http
-            .request_url(Method::POST, complete_url.clone(), &self.session.token)
+            .request_url(Method::POST, complete_url, &self.session.token)
             .timeout(Duration::from_secs(600))
             .send()
-            .with_context(|| format!("POST {complete_url}"))?;
-        let (status, text) = read_body("Asset upload completion", response)?;
-        ok_json::<Asset>("Asset upload completion", status, &text)
+            .with_context(|| format!("{what} failed"))?;
+        let (status, text) = read_body(what, response)?;
+        ok_json::<Asset>(what, status, &text)
     }
 
     /// Drop the upload on the server. Best effort: a failed abort only leaves

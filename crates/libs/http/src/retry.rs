@@ -168,9 +168,15 @@ mod tests {
 
     #[test]
     fn http_status_errors_are_permanent_for_4xx() {
-        let e = anyhow::Error::from(HttpError::new(404, "Asset check failed (HTTP 404)"));
+        let e = anyhow::Error::from(HttpError::new(
+            404,
+            "Asset check failed (HTTP 404 Not Found)",
+        ));
         assert!(classified(classify_retry(&e)));
-        let e = anyhow::Error::from(HttpError::new(413, "Import Run 7 batch rejected: HTTP 413"));
+        let e = anyhow::Error::from(HttpError::new(
+            413,
+            "Import Run 7 batch rejected: HTTP 413 Payload Too Large",
+        ));
         assert!(classified(classify_retry(&e)));
         let e = anyhow::Error::from(HttpError::new(
             401,
@@ -207,7 +213,10 @@ mod tests {
 
     #[test]
     fn http_status_errors_are_transient_for_5xx() {
-        let e = anyhow::Error::from(HttpError::new(503, "Asset upload part 1 failed (HTTP 503)"));
+        let e = anyhow::Error::from(HttpError::new(
+            503,
+            "Asset upload part 1 failed (HTTP 503 Service Unavailable)",
+        ));
         assert!(!classified(classify_retry(&e)));
     }
 
