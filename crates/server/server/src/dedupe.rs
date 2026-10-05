@@ -21,7 +21,7 @@ const CONTENT_KEY_WRITE_LOG_EVERY: usize = 50_000;
 /// Column order matches the SELECT in [`ContentKeyInputs::load`]:
 /// `id`, `conversation_id`, `chat_id` (chat handle `normalized`),
 /// `conversation_type`, `is_from_me`, `timestamp`, `body`,
-/// `sender_normalized`. Two SQL columns are both named `normalized`, so
+/// `sender_normalized` ([`sender_for_key_sql`]). Two SQL columns are both named `normalized`, so
 /// this stays a positional tuple rather than `FromRow`.
 type ContentKeyRow = (
     i64,
@@ -363,6 +363,24 @@ async fn recompute_content_keys(
     Ok(keys.len() as u64)
 }
 
+/// The sender a message is matched by, as a SQL expression over the message's
+/// conversation `c` and its sender's handle `hs`: the sender's normalized
+/// address, or NULL in a conversation with yourself.
+///
+/// The holder is nobody's sender in a conversation with yourself, so an
+/// import drops the sender of each received note there (#1094). A copy
+/// imported before the chat's address was linked still names the holder, and
+/// one imported after does not; matching both with no sender lets the two
+/// copies of a received note pair (#1661). The question is asked of the
+/// identities the account has now, as every read of a conversation with
+/// yourself asks it.
+fn sender_for_key_sql() -> String {
+    format!(
+        "CASE WHEN {with_yourself} THEN NULL ELSE hs.normalized END",
+        with_yourself = crate::db::conversations::is_with_yourself_sql("c"),
+    )
+}
+
 /// Everything the content-key hash reads, loaded in three queries so the
 /// hashing runs off the database thread with no lookups of its own.
 struct ContentKeyInputs {
@@ -390,14 +408,15 @@ impl ContentKeyInputs {
             r"
             SELECT m.id, m.conversation_id, h.normalized, c.conversation_type,
                    m.is_from_me, m.timestamp, m.body,
-                   hs.normalized
+                   {sender}
             FROM messages m
             JOIN conversations c ON c.id = m.conversation_id
             JOIN handles h ON h.id = c.chat_handle_id
             LEFT JOIN handles hs ON hs.id = m.sender_handle_id
             {filter}
             ORDER BY m.id
-            "
+            ",
+            sender = sender_for_key_sql(),
         );
         let rows: Vec<ContentKeyRow> = sqlx::query_as(&sql)
             .bind(account_id)
@@ -719,20 +738,22 @@ async fn load_near_rows(
         String,
         String,
     );
-    let msg_rows: Vec<NearDedupeRow> = sqlx::query_as(
+    let msg_sql = format!(
         r"
         SELECT m.id, m.conversation_id, m.source, m.is_from_me, m.timestamp, m.body,
-               COALESCE(hs.normalized, ''), COALESCE(m.content_key, '')
+               COALESCE({sender}, ''), COALESCE(m.content_key, '')
         FROM messages m
         JOIN conversations c ON c.id = m.conversation_id
         LEFT JOIN handles hs ON hs.id = m.sender_handle_id
         WHERE c.account_id = $1
           AND m.duplicate_of IS NULL
         ",
-    )
-    .bind(account_id)
-    .fetch_all(&mut *conn)
-    .await?;
+        sender = sender_for_key_sql(),
+    );
+    let msg_rows: Vec<NearDedupeRow> = sqlx::query_as(&msg_sql)
+        .bind(account_id)
+        .fetch_all(&mut *conn)
+        .await?;
 
     let att_rows: Vec<(i64, String)> = sqlx::query_as(
         r"
