@@ -7,6 +7,7 @@
 
 mod http;
 pub mod journal;
+mod part_file;
 mod project;
 mod run;
 
