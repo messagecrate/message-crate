@@ -1070,14 +1070,20 @@ fn the_fictional_ranges_are_the_ones_nanpa_and_ofcom_set_aside() {
     assert!(is_fictional_phone("+12125550199"));
     assert!(is_fictional_phone("+447700900000"));
     assert!(is_fictional_phone("+447700900999"));
-    assert!(!is_fictional_phone("+14155550200"));
-    assert!(!is_fictional_phone("+14155559000"));
-    assert!(!is_fictional_phone("+14155550099"));
-    assert!(!is_fictional_phone("+18007438200"));
-    assert!(!is_fictional_phone("+447700901000"));
-    // +33 6 39 98 12 34 is in ARCEP's range for audiovisual works, so it is
-    // no one's number, and `is_fictional_phone` does not cover it. The note
-    // on the `phone` crate's `mod tests` gives the source.
+    // These numbers are outside 555-0100 to 555-0199, two of them just past
+    // its ends, and sit under area code 015. No North American area code
+    // starts with 0, so none of them is anyone's number, and
+    // `is_fictional_phone` reads past the area code.
+    // The note on the `phone` crate's `mod tests` gives the source.
+    assert!(!is_fictional_phone("+10155550200"));
+    assert!(!is_fictional_phone("+10155559000"));
+    assert!(!is_fictional_phone("+10155550099"));
+    assert!(!is_fictional_phone("+10157438200"));
+    // These are in Ofcom's 020 7946 0xxx drama range and ARCEP's range for
+    // audiovisual works, so they are no one's numbers, and
+    // `is_fictional_phone` covers neither range. The number just past
+    // 07700 900999 can be dialled, so no test asserts that end of the range.
+    assert!(!is_fictional_phone("+442079460000"));
     assert!(!is_fictional_phone("+33639981234"));
 }
 

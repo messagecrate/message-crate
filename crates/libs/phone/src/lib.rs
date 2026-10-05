@@ -514,10 +514,9 @@ fn group_id_slug(digits: &[String]) -> String {
         .join("_")
 }
 
-/// Non-US test numbers are no one's, in this crate and every other one
-/// outside the Demo Data generator (`demo-seed`). Each comes from a range
-/// its regulator reserves for fiction. Where a country reserves none, the
-/// number starts with a digit no number there starts with.
+/// Non-US test numbers are no one's, in this crate and every other one. Each
+/// comes from a range its regulator reserves for fiction. Where a country
+/// reserves none, the number starts with a digit no number there starts with.
 ///
 /// - UK: 020 7946 0xxx and 07700 900xxx. Source: Ofcom, "Telephone numbers
 ///   for use in TV and radio drama programmes"
@@ -542,6 +541,14 @@ fn group_id_slug(digits: &[String]) -> String {
 ///   is the UK drama number 07700 900123 written after `+7` instead of
 ///   `+44`. It has nine digits after the 7, one short of any number under
 ///   country code 7.
+///
+/// North America reserves 555-0100 to 555-0199, in any area code, for
+/// fiction. Source: NANPA, "Numbering Resources - 555 Line Numbers"
+/// (<https://www.nationalnanpa.com/number_resource_info/555_numbers.html>).
+/// The `demo-seed` test of its fiction check also needs numbers outside that
+/// range, so it puts them under area code 015: an area code starts with 2 to
+/// 9, never 0. Source: NANPA, "Number Resources - NPA (Area) Codes"
+/// (<https://www.nationalnanpa.com/area_codes/index.html>).
 #[cfg(test)]
 mod tests {
     use super::*;
