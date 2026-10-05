@@ -51,7 +51,7 @@ pub(crate) fn decrypt_for_app(session: &MailSession, source: &Path) -> Event {
             Ok(temp) => AttachmentFile::Ready { path: temp },
             Err(RuntimeError::BackupError(BackupError::FileNotFoundInBackup(_))) => {
                 session.options.emit_log(format!(
-                    "warning: attachment {} not found in encrypted backup; skipping bytes",
+                    "Attachment {} is not in the encrypted backup, so it is recorded without its file",
                     source.display()
                 ));
                 AttachmentFile::Missing
