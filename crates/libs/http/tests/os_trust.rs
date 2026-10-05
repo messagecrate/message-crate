@@ -8,7 +8,8 @@
 //! Each test serves HTTPS on a loopback port and fetches it with
 //! [`message_crate_http::build_client`], the client every caller uses.
 //!
-//! This file is its own test binary, so the variable reaches no other test.
+//! This file is its own test binary, so the variable reaches no other test
+//! binary, and each process writes its CA to a file named for its process id.
 
 use std::io::{Read, Write};
 use std::net::TcpListener;
@@ -39,7 +40,10 @@ fn trusted_ca() -> &'static TrustedCa {
         let issuer = CertifiedIssuer::self_signed(params, KeyPair::generate().expect("CA key"))
             .expect("self-sign the CA");
 
-        let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("os-trust-private-ca.pem");
+        // One file per process: cargo-nextest runs each test in a process of
+        // its own, and a shared name would let one overwrite another's CA.
+        let path = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+            .join(format!("os-trust-private-ca-{}.pem", std::process::id()));
         std::fs::write(&path, issuer.pem()).expect("write the CA file");
         // SAFETY: this runs inside `OnceLock::get_or_init`, which every test
         // calls first, before it starts a thread or builds a client, so no other
