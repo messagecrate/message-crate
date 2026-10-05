@@ -677,12 +677,19 @@ pub async fn discard_running_import(
 /// never rewritten, so completing one is
 /// [`ImportLookupError::InvalidRun`] (`409`), checked first and again by
 /// the update itself, so two completions racing cannot both land.
+///
+/// # Errors
+///
+/// [`ImportLookupError::NotFound`] when the account owns no such import,
+/// [`ImportLookupError::InvalidRun`] when it is no longer running, and
+/// [`ImportLookupError::Db`] for an issue kind the caller did not validate or
+/// a statement that fails.
 pub async fn complete_import(
     conn: &mut SqliteConnection,
     account_id: i64,
     import_id: i64,
     args: &CompleteImportArgs,
-) -> Result<ImportRow> {
+) -> std::result::Result<ImportRow, ImportLookupError> {
     for issue in &args.issues {
         validate_issue_kind(&issue.kind)?;
     }
@@ -761,14 +768,13 @@ pub async fn complete_import(
     if updated.rows_affected() == 0 {
         return Err(ImportLookupError::InvalidRun {
             message: format!("import {import_id} finished while it was being completed"),
-        }
-        .into());
+        });
     }
     insert_issues(&mut tx, import_id, &args.issues).await?;
     insert_notes(&mut tx, import_id, &args.notes).await?;
     tx.commit().await?;
 
-    Ok(get_owned_import(&mut *conn, account_id, import_id).await?)
+    get_owned_import(&mut *conn, account_id, import_id).await
 }
 
 /// Append issue rows for an import.

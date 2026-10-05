@@ -236,15 +236,16 @@ impl OwnedImportRun {
 ///
 /// # Errors
 ///
-/// Returns the error of recording the outcome, such as
-/// [`imports::ImportLookupError`] for a run that is not running. A shortcut
-/// that cannot be made is a warning, never an error.
+/// Returns the error of recording the outcome ([`imports::complete_import`]):
+/// a run that is not found or not running, kept apart from a database fault
+/// so the handler maps each to its status. A shortcut that cannot be made is
+/// a warning, never an error.
 pub(crate) async fn complete_run(
     conn: &mut SqliteConnection,
     account_id: i64,
     import_id: i64,
     outcome: &CompleteImportArgs,
-) -> Result<imports::ImportRow> {
+) -> std::result::Result<imports::ImportRow, imports::ImportLookupError> {
     let row = imports::complete_import(conn, account_id, import_id, outcome).await?;
     create_import_saved_search(conn, account_id, &row).await;
     create_import_contact_group(conn, account_id, &row).await;
@@ -1269,14 +1270,7 @@ pub(crate) async fn complete_import(
         notes: body.notes.into_iter().map(note_row).collect(),
     };
     let mut conn = state.db.acquire().await?;
-    let row = complete_run(&mut conn, account, import_id, &args)
-        .await
-        .map_err(
-            |e| match e.downcast::<crate::db::imports::ImportLookupError>() {
-                Ok(lookup) => ApiError::from(lookup),
-                Err(other) => ApiError::Internal(other),
-            },
-        )?;
+    let row = complete_run(&mut conn, account, import_id, &args).await?;
     let run = import_run(&mut conn, row).await;
     drop(conn);
     crate::asset_store::sweep_after_run(&state.db, &state.cfg.paths, account).await;

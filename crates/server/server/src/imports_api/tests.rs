@@ -215,6 +215,45 @@ async fn an_issue_names_the_stage_it_came_from() {
     assert_eq!(run["issues"][0]["stage"], "staging");
 }
 
+/// Completing a run the account does not have answers `404 Not Found`, and
+/// completing one that already finished answers `409 Conflict`: each is a
+/// run lookup failure, kept apart from a database fault, which answers
+/// `500 Internal Server Error` (#1682).
+#[tokio::test]
+async fn completing_a_missing_or_finished_run_answers_its_own_status() {
+    let (fixture, account) = fixture_with_account().await;
+    let complete = |id: i64| {
+        let state = fixture.state.clone();
+        let token = account.token.clone();
+        async move {
+            crate::test_support::post_raw(
+                &state,
+                &format!("/v1/imports/{id}/complete"),
+                &token,
+                "application/json",
+                serde_json::json!({ "status": "completed" }).to_string(),
+            )
+            .await
+        }
+    };
+
+    let (status, text) = complete(999_999).await;
+    crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::NotFound);
+
+    let (_, created): (String, serde_json::Value) = post_created_json(
+        &fixture.state,
+        "/v1/imports",
+        &account.token,
+        serde_json::json!({ "source": "imessage" }),
+    )
+    .await;
+    let id = created["id"].as_i64().unwrap();
+    let (status, text) = complete(id).await;
+    assert_eq!(status, axum::http::StatusCode::OK, "{text}");
+    let (status, text) = complete(id).await;
+    crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::StateConflict);
+}
+
 /// Open a verify connection to an on-disk test database.
 async fn open_verify(db: &Path) -> (sqlx::SqlitePool, sqlx::pool::PoolConnection<sqlx::Sqlite>) {
     let pool = engine::open_pool_for_path(db).await.unwrap();
