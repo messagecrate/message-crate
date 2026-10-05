@@ -2902,7 +2902,7 @@ fn a_cancel_after_the_last_request_leaves_a_completed_upload() {
 /// A session the server refuses on a batch that carries only a conversation
 /// that had already failed still halts the Upload as a pause.
 ///
-/// Guards the review of #1903: the run reads its halt from the conversations
+/// Guards a gap the review of #1913 found: the run reads its halt from the conversations
 /// left unsent, and here none is left, because the refused batch belongs to
 /// a conversation an earlier batch failed. Without the refusal counted too,
 /// the report said the session was refused and the Upload completed.
@@ -2958,6 +2958,12 @@ fn a_refused_session_after_a_failed_batch_still_halts_the_upload() {
         "a refused session halts the Upload: {report:?}"
     );
     assert!(!report.ok);
+    let log = read_log(dir.path());
+    assert!(
+        log.contains("\nThe Upload paused after ")
+            && log.contains(", because the server refused the session.\n"),
+        "{log}"
+    );
 }
 
 /// After one batch fails, a second push on the same directory sends only the
@@ -3410,7 +3416,7 @@ fn a_refused_session_stops_the_push_as_a_pause_and_fails_no_conversation() {
         "the report says the session was refused"
     );
     // The log and the desktop app say why in the same sentence (#1842).
-    let stopped = "The server no longer accepts this session, so the Upload stopped. \
+    let stopped = "The server no longer accepts this session, so the Upload paused. \
                    The next Upload sends what this one did not.";
     assert!(read_log(dir.path()).contains(stopped));
     assert!(shown.iter().any(|line| line == stopped), "{shown:?}");

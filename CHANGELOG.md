@@ -402,7 +402,9 @@ released versions carry their date on the heading.
   landed. Yet the desktop app kept the Import Run paused, and offered to
   resume a run with nothing left in it. A pause now keeps the Import Run
   paused only when it leaves a conversation for the next Upload, so this
-  one completes.
+  one completes. An Upload whose session the server refused always pauses,
+  and its log now says "so the Upload paused" where it said "so the Upload
+  stopped".
 - 2026-10-05 **A journal line the Upload cannot read is named in the
   Upload's log.** It went to standard error as "warning: journal … line … is
   corrupt (…). The affected entries will be re-submitted (server dedup is

@@ -319,7 +319,7 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
     let session_refused = session.is_refused();
     if session_refused {
         out.show(
-            "The server no longer accepts this session, so the Upload stopped. \
+            "The server no longer accepts this session, so the Upload paused. \
              The next Upload sends what this one did not."
                 .into(),
         );
@@ -330,7 +330,7 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
     let (results, accounting) = pipeline.into_results();
     let journal = shared.into_inner().expect("journal mutex poisoned").journal;
     let counted = count_file_results(&results);
-    // A cancel is the one halt the caller resumes from, so the report tells
+    // A pause is the one halt the caller resumes from, so the report tells
     // it apart from a failure. It halted the run only when it left a
     // conversation for the next Upload: one that came after the last
     // request went out halted nothing, so that Upload completed (#1903). A
@@ -656,7 +656,7 @@ fn absorb_prepared(prepared: &PreparedFile, assets: &mut AssetTotals, out: &mut 
 ///
 /// Whether the run halted is not decided here: a cancel that arrives while
 /// the last request is in flight halts nothing, so the caller reads the halt
-/// from the conversations left unsent instead.
+/// from the conversations left unsent and from a refused session instead.
 ///
 /// # Errors
 ///
