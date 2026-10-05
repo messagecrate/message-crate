@@ -7,8 +7,8 @@
 use crate::config::OutputFormat;
 use crate::counter::{
     ATTACHMENTS_SAVED, CONVERSATIONS_OBFUSCATED, CONVERSATIONS_RESUMED, Counter,
-    DUPLICATES_DROPPED, NOT_SMS_OR_MMS_LEFT_OUT, NOTIFICATIONS, SKIPPED_INVALID_DATE, error_line,
-    files, note_line,
+    DUPLICATES_DROPPED, NOT_SMS_OR_MMS_LEFT_OUT, NOTIFICATIONS, SKIPPED_INVALID_DATE,
+    count_of_files, error_line, note_line,
 };
 use anyhow::{Context, bail};
 use media::MediaReport;
@@ -178,7 +178,8 @@ pub fn emit_issue(sink: Option<&IssueSink>, issue: RunIssue) {
 
 /// Export run statistics: what was counted while parsing and what the
 /// write tail did. Per-exporter extension counters (PDU counts, dedupe
-/// counts, etc.) are stored in the `extra` map.
+/// counts, etc.) are stored in the `extra` list, in the order they were first
+/// counted.
 #[derive(Debug, Default, Clone)]
 pub struct ExportReport {
     /// Conversations exported.
@@ -312,8 +313,8 @@ impl ExportReport {
         if self.media.processed > 0 || self.media.skipped > 0 || !self.media.errors.is_empty() {
             lines.push(format!(
                 "Media: processed {}, skipped {}",
-                files(self.media.processed as u64),
-                files(self.media.skipped as u64)
+                count_of_files(self.media.processed as u64),
+                count_of_files(self.media.skipped as u64)
             ));
             for err in self.media.errors.iter().take(10) {
                 lines.push(format!("  media warning: {err}"));
@@ -362,7 +363,8 @@ impl ExportReport {
         }
     }
 
-    /// Bump a per-exporter extension counter in the `extra` map.
+    /// Bump a per-exporter extension counter in the `extra` list, adding it
+    /// at the end the first time it is counted.
     pub fn bump(&mut self, counter: Counter, by: u64) {
         match self.extra.iter_mut().find(|(c, _)| *c == counter) {
             Some((_, count)) => *count += by,
@@ -370,7 +372,7 @@ impl ExportReport {
         }
     }
 
-    /// Read a per-exporter extension counter from the `extra` map (0 when unset).
+    /// Read a per-exporter extension counter from the `extra` list (0 when unset).
     pub fn extra(&self, counter: Counter) -> u64 {
         self.extra
             .iter()

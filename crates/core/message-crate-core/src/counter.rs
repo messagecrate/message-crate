@@ -5,8 +5,11 @@
 //! is one [`Counter`] value, so every run that reports it words it the same
 //! way, and no run can print a counter's key in place of its words (#1700).
 
-/// One count a run reports: a key that tells it apart from the others, and
-/// the line that says it in plain words.
+/// One count a run reports, in its report's summary or in its log: a key
+/// that tells it apart from the others, and the line that says it in plain
+/// words. A count only a log line gives, such as the conversation files a
+/// run is about to write, is a counter as well, so its line is singular for
+/// one like every other.
 ///
 /// Two counters with one key are the same counter: they compare and hash by
 /// the key alone, so a report counts them as one and prints one line. Each
@@ -63,7 +66,7 @@ fn words(n: u64, one: &str, many: &str) -> String {
 }
 
 /// `n` files, singular for one, such as `1 file` or `3 files`.
-pub fn files(n: u64) -> String {
+pub fn count_of_files(n: u64) -> String {
     words(n, "1 file", "{n} files")
 }
 
@@ -200,8 +203,6 @@ mod tests {
         );
     }
 
-    /// Every counter here says its count in words: its lines carry the count
-    /// and no underscore, so none of them is a key printed in place of words.
     /// Two counters with one key are one counter, whatever their words, so
     /// a report never splits one count into two lines.
     #[test]
@@ -211,6 +212,8 @@ mod tests {
         assert_ne!(DUPLICATES_DROPPED, SKIPPED_INVALID_DATE);
     }
 
+    /// Every counter here says its count in words: its lines carry the count
+    /// and no underscore, so none of them is a key printed in place of words.
     #[test]
     fn every_shared_counter_says_its_count_in_words() {
         for counter in [
