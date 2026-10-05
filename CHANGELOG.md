@@ -327,6 +327,26 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-04 **An iMazing import keeps each of two pictures sent in one
+  second, and every picture stays with its own message.** When two photos
+  with one file name arrived in the same second, iMazing saved them as
+  `image0.jpg` and `image0 2.jpg`, and the import kept only the first
+  message, because it compared the file name the rows gave and not the
+  files. It now compares the files: two different pictures are two
+  messages, each with its own picture, and two copies of one picture are
+  still one message. Dropping that second message also moved every later
+  picture of the import onto the message before its own. Each picture now
+  goes to its own message.
+- 2026-10-04 **An iMazing import reads a phone number or an email address
+  the same way everywhere.** A sender, a chat name and a name in a group's
+  member list are now read by the one rule every other import uses. A chat
+  named `tel:` and a number is that number's conversation, and a group
+  member listed that way is that number, not a second member by that name.
+  An email address is matched whatever its capitals. A three-digit service
+  number is an address. A sender named rather than numbered, such as
+  `AMAZON` or `Promo2024`, is kept as that sender. Before, `Promo2024` was
+  read as the number `2024`, and in a chat with a number such a message was
+  shown as sent by that number.
 - 2026-10-04 **An import lists every backup file it could not read, and
   notes what it kept with a caveat.** A CSV, XML, mail or MMS file in the
   backup that the importer could not read, which before showed only in the
