@@ -1211,7 +1211,7 @@ released versions carry their date on the heading.
   certificate comes from a private certificate authority, such as one made
   by mkcert or Caddy's internal authority, opened in the desktop app's
   window, but an Upload, an Export from the server and an attachment
-  download failed with `UnknownIssuer`. The app checked those against the
+  download failed with a certificate error. The app checked those against the
   public authorities it carries and nothing else. It now also trusts the
   authorities the operating system trusts, as the window does. A certificate
   that neither trusts is still refused.
