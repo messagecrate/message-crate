@@ -10,30 +10,24 @@ use crate::imports_api::{
     ImportSchemaMode, import_jsonl_files_on_conn,
 };
 use crate::models::AttachmentRecord;
-use crate::test_support::{ConversationHeaderLine, conversation_header};
+use crate::test_support::conversation_header;
 use message_ir::HandleType;
 
 const TEST_ACCOUNT: i64 = 7;
 
 /// A one-to-one conversation with `+15555550154` whose header names nobody.
 fn one_to_one_header() -> String {
-    header_line(conversation_header("imessage", "+15555550154"))
+    (conversation_header("imessage", "+15555550154")).line()
 }
 
 /// The orphaned messages `+15555550154` sent, as the Apple Messages reader
 /// writes them: a conversation of type `orphaned`, keyed `orphaned:` and the
 /// sender's address, with the sender as its only participant.
 fn orphaned_header() -> String {
-    header_line(
-        conversation_header("imessage", "orphaned:+15555550154")
-            .conversation_type(message_ir::IrConversationType::Orphaned)
-            .participant("+15555550154", None),
-    )
-}
-
-/// `header` as the first line of a file, ending in its newline.
-fn header_line(header: ConversationHeaderLine) -> String {
-    format!("{header}\n")
+    (conversation_header("imessage", "orphaned:+15555550154")
+        .orphaned()
+        .participant("+15555550154", None))
+    .line()
 }
 
 /// An incoming iMessage line from `sender`.
@@ -296,7 +290,7 @@ async fn a_directory_import_refuses_a_header_without_a_source() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let tmp = TempDir::new().unwrap();
-    let header = header_line(conversation_header("  ", "+15555550154"));
+    let header = (conversation_header("  ", "+15555550154")).line();
     let path = tmp.path().join("+15555550154.jsonl");
     std::fs::write(
         &path,
@@ -471,11 +465,11 @@ async fn handle_types(conn: &mut SqliteConnection) -> Vec<(String, String)> {
 async fn a_group_chat_id_is_stored_as_other_whatever_its_shape() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let body = header_line(
-        conversation_header("whatsapp", "120363042@g.us")
-            .group()
-            .typed_participant("+15555550156", None, HandleType::Phone),
-    ) + &incoming_whatsapp("g-group-1", "+15555550156");
+    let body = (conversation_header("whatsapp", "120363042@g.us")
+        .group()
+        .typed_participant("+15555550156", None, HandleType::Phone))
+    .line()
+        + &incoming_whatsapp("g-group-1", "+15555550156");
     import_one(&mut conn, "120363042@g.us.jsonl", &body)
         .await
         .unwrap();
@@ -497,13 +491,13 @@ async fn a_group_chat_id_is_stored_as_other_whatever_its_shape() {
 async fn an_individual_chat_id_takes_the_type_its_participant_has_in_the_header() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let body = header_line(
-        conversation_header("whatsapp", "123456@lid").typed_participant(
-            "123456@lid",
-            None,
-            HandleType::Other,
-        ),
-    ) + &incoming_whatsapp("g-lid-1", "123456@lid");
+    let body = (conversation_header("whatsapp", "123456@lid").typed_participant(
+        "123456@lid",
+        None,
+        HandleType::Other,
+    ))
+    .line()
+        + &incoming_whatsapp("g-lid-1", "123456@lid");
     import_one(&mut conn, "123456@lid.jsonl", &body)
         .await
         .unwrap();
@@ -538,13 +532,13 @@ fn incoming_unknown_service(guid: &str, sender: &str) -> String {
 async fn a_participants_message_on_an_unknown_service_is_from_the_participant() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let body = header_line(
-        conversation_header("imessage", "+15555550101").typed_participant(
-            "+15555550101",
-            Some("Sam"),
-            HandleType::Phone,
-        ),
-    ) + &incoming("g-sat-1", "+15555550101")
+    let body = (conversation_header("imessage", "+15555550101").typed_participant(
+        "+15555550101",
+        Some("Sam"),
+        HandleType::Phone,
+    ))
+    .line()
+        + &incoming("g-sat-1", "+15555550101")
         + &incoming_unknown_service("g-sat-2", "+15555550101");
     import_one(&mut conn, "+15555550101.jsonl", &body)
         .await
@@ -573,11 +567,11 @@ async fn a_participants_message_on_an_unknown_service_is_from_the_participant() 
 async fn a_number_is_one_type_as_a_sender_and_as_an_untyped_participant() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let body = header_line(
-        conversation_header("imessage", "chat1000000006")
-            .group()
-            .participant("tel:+15555550157", None),
-    ) + &incoming("g-tel-1", "+15555550157");
+    let body = (conversation_header("imessage", "chat1000000006")
+        .group()
+        .participant("tel:+15555550157", None))
+    .line()
+        + &incoming("g-tel-1", "+15555550157");
     import_one(&mut conn, "chat1000000006.jsonl", &body)
         .await
         .unwrap();
@@ -603,11 +597,11 @@ async fn a_number_is_one_type_as_a_sender_and_as_an_untyped_participant() {
 async fn a_sender_who_is_not_a_participant_is_typed_by_the_address_not_the_service() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    let body = header_line(
-        conversation_header("imessage", "chat1000000005")
-            .group()
-            .typed_participant("+15555550156", None, HandleType::Phone),
-    ) + &incoming_unknown_service("g-sat-3", "+15555550199");
+    let body = (conversation_header("imessage", "chat1000000005")
+        .group()
+        .typed_participant("+15555550156", None, HandleType::Phone))
+    .line()
+        + &incoming_unknown_service("g-sat-3", "+15555550199");
     import_one(&mut conn, "chat1000000005.jsonl", &body)
         .await
         .unwrap();

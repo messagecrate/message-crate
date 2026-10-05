@@ -1,7 +1,6 @@
 use super::*;
 use crate::db::schema;
 use crate::test_support::conversation_header;
-use message_ir::IrConversationType;
 
 const TEST_ACCOUNT: i64 = 7;
 
@@ -281,10 +280,9 @@ fn outgoing(guid: &str) -> String {
 /// sender's address, with the sender as its only participant.
 fn orphaned_from(sender: &str, name: &str, guid: &str) -> String {
     conversation_header("imessage", &format!("orphaned:{sender}"))
-        .conversation_type(IrConversationType::Orphaned)
+        .orphaned()
         .participant(sender, Some(name))
-        .to_string()
-        + "\n"
+        .line()
         + &incoming(guid, sender)
         + "\n"
 }
@@ -294,9 +292,8 @@ fn orphaned_from(sender: &str, name: &str, guid: &str) -> String {
 /// participants.
 fn unknown_recipient(guids: &[&str]) -> String {
     let mut out = conversation_header("imessage", "orphaned:")
-        .conversation_type(IrConversationType::Orphaned)
-        .to_string()
-        + "\n";
+        .orphaned()
+        .line();
     for guid in guids {
         out += &outgoing(guid);
         out += "\n";
@@ -309,8 +306,7 @@ fn unknown_recipient(guids: &[&str]) -> String {
 fn backup_with_orphaned_messages() -> String {
     conversation_header("imessage", "+15555550154")
         .participant("+15555550154", Some("Ada"))
-        .to_string()
-        + "\n"
+        .line()
         + &incoming("g-ada", "+15555550154")
         + "\n"
         + &orphaned_from("+15555550154", "Ada", "g-ada-orphaned")
@@ -496,8 +492,7 @@ async fn a_sender_no_header_names_still_gets_a_contact() {
             conversation_header("imessage", "chat1000000701")
                 .group()
                 .participant("+15555550123", None)
-                .to_string()
-                + "\n"
+                .line()
                 + &incoming("g-group", "+15555550156")
                 + "\n",
         )],
@@ -610,8 +605,7 @@ async fn a_sender_is_never_linked_to_a_trashed_contact() {
             conversation_header("imessage", "chat1000000702")
                 .group()
                 .participant("+15555550123", None)
-                .to_string()
-                + "\n"
+                .line()
                 + &incoming("g-trashed", "+15555550157")
                 + "\n",
         )],
@@ -649,14 +643,13 @@ async fn a_one_to_one_chat_first_met_as_a_sender_gets_a_contact() {
                 conversation_header("imessage", "chat1000000704")
                     .group()
                     .participant("+15555550123", None)
-                    .to_string()
-                    + "\n"
+                    .line()
                     + &incoming("g-group", "+15555550158")
                     + "\n",
             ),
             (
                 "direct.jsonl",
-                conversation_header("imessage", "+15555550158").to_string() + "\n",
+                conversation_header("imessage", "+15555550158").line(),
             ),
         ],
     )

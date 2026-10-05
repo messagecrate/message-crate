@@ -1227,9 +1227,10 @@ impl ConversationHeaderLine {
         self
     }
 
-    /// The conversation's type, for a test that takes it as a parameter.
-    pub fn conversation_type(mut self, kind: message_ir::IrConversationType) -> Self {
-        self.0.conversation.conversation_type = kind;
+    /// An orphaned conversation: messages the backup holds without
+    /// recording which conversation they were said in.
+    pub fn orphaned(mut self) -> Self {
+        self.0.conversation.conversation_type = message_ir::IrConversationType::Orphaned;
         self
     }
 
@@ -1269,6 +1270,11 @@ impl ConversationHeaderLine {
                 identity_type,
             });
         self
+    }
+
+    /// The header as the first line of a file, ending in its newline.
+    pub fn line(&self) -> String {
+        format!("{self}\n")
     }
 }
 

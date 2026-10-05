@@ -592,12 +592,12 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         fs::write(
             tmp.path().join("a.jsonl"),
-            format!("{}\n", conversation_header("imessage", "+1")),
+            conversation_header("imessage", "+1").line(),
         )
         .unwrap();
         fs::write(
             tmp.path().join("b.jsonl"),
-            format!("{}\n", conversation_header("go-sms-pro", "+2")),
+            conversation_header("go-sms-pro", "+2").line(),
         )
         .unwrap();
         let paths = list_jsonl_files(tmp.path()).unwrap();

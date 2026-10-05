@@ -15,7 +15,7 @@ const ALICE: i64 = 7;
 /// A one-conversation JSON Lines export with no messages, enough for the
 /// import to record a conversation under source `imessage`.
 fn conversation_jsonl() -> String {
-    format!("{}\n", conversation_header("imessage", "+15555550118"))
+    conversation_header("imessage", "+15555550118").line()
 }
 
 /// A database under `dir`: its config file on disk, the way an operator has

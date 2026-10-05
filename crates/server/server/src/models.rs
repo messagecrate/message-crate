@@ -545,12 +545,11 @@ mod tests {
     /// fields are the JSON given.
     fn message_with(subject: &str, imessage: &str) -> MessageRecord {
         let header = conversation_header("imessage", "+15555550101")
-            .participant("+15555550101", Some("Sam"))
-            .to_string();
+            .participant("+15555550101", Some("Sam"));
         let message = format!(
             r#"{{"guid":"g1","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550101","sender_display_name":"Sam","subject":{subject},"text":"hello","attachments":[],"imessage":{imessage},"source":null}}"#
         );
-        let mut records = parse_ir_lines([header, message]).unwrap();
+        let mut records = parse_ir_lines([header.to_string(), message]).unwrap();
         match records.pop() {
             Some(ExportRecord::Message(m)) => m,
             _ => panic!("expected message"),
@@ -581,8 +580,7 @@ mod tests {
              "reactor_display_name": "Me"}
         ]"#;
         let header = conversation_header("imessage", "+15555550101")
-            .participant("+15555550101", Some("Ada"))
-            .to_string();
+            .participant("+15555550101", Some("Ada"));
         let message = |guid: &str, direction: &str, sender: &str| {
             format!(
                 r#"{{"guid":"{guid}","timestamp_unix_ms":1400773261000,"direction":"{direction}","service":"imessage","message_kind":"imessage","sender_identity":{sender},"sender_display_name":null,"subject":null,"text":"hello","attachments":[],"reactions":{reactions},"imessage":null,"source":null}}"#
@@ -591,7 +589,7 @@ mod tests {
         // The owner's own message and Ada's, each reacted to by Sam and then
         // by the owner.
         let records = parse_ir_lines([
-            header,
+            header.to_string(),
             message("g-mine", "outgoing", "null"),
             message("g-adas", "incoming", r#""+15555550101""#),
         ])
@@ -636,8 +634,7 @@ mod tests {
     #[test]
     fn a_reaction_row_is_not_a_message() {
         let header = conversation_header("imessage", "+15555550101")
-            .participant("+15555550101", Some("Sam"))
-            .to_string();
+            .participant("+15555550101", Some("Sam"));
         let target = r#"{"guid":"g-hi","timestamp_unix_ms":1400773261000,"direction":"outgoing","service":"imessage","message_kind":"imessage","sender_identity":null,"sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}"#.to_string();
         let row = |guid: &str, kind: &str, text: &str, action: &str| {
             format!(
@@ -645,7 +642,7 @@ mod tests {
             )
         };
         let records = parse_ir_lines([
-            header,
+            header.to_string(),
             target,
             row("g-love", "tapback", "Loved a message", "add"),
             row("g-unlove", "tapback", "Removed Heart", "remove"),
@@ -754,10 +751,9 @@ mod tests {
     #[test]
     fn parse_ir_lines_reports_a_message_with_an_impossible_timestamp_as_a_failure() {
         let header = conversation_header("sms-backup-restore", "+15555550101")
-            .participant("+15555550101", Some("Sam"))
-            .to_string();
+            .participant("+15555550101", Some("Sam"));
         let msg = r#"{"guid":"g1","timestamp_unix_ms":9223372036854775807,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}"#;
-        let failure = parse_ir_lines([header, msg.to_string()]).unwrap_err();
+        let failure = parse_ir_lines([header.to_string(), msg.to_string()]).unwrap_err();
         match failure {
             crate::imports_api::ImportFailure::Invalid { line, .. } => assert_eq!(line, 2),
             other => panic!("expected Invalid, got {other:?}"),
@@ -769,8 +765,7 @@ mod tests {
     #[test]
     fn parse_ir_lines_refuses_messages_without_a_guid_naming_every_line() {
         let header = conversation_header("sms-backup-restore", "+15555550101")
-            .participant("+15555550101", Some("Sam"))
-            .to_string();
+            .participant("+15555550101", Some("Sam"));
         let msg = |guid: &str| {
             format!(
                 r#"{{"guid":"{guid}","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}}"#

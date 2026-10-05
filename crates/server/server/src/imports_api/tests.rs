@@ -394,8 +394,7 @@ fn liked_by(reactor: &str) -> String {
 fn chunk_boundary_jsonl() -> String {
     let header = conversation_header("imessage", "+15555550123")
         .participant("+15555550123", None)
-        .participant("+15555550167", None)
-        .to_string();
+        .participant("+15555550167", None);
     let mut lines = vec![header.to_string()];
     for i in 0..56 {
         let guid = format!("g-{i:02}");
@@ -526,9 +525,8 @@ async fn a_removed_reaction_leaves_no_message_and_no_reaction() {
     let tmp = TempDir::new().unwrap();
     let db = tmp.path().join("messagecrate.db");
     let assets = tmp.path().join("assets");
-    let header = conversation_header("imessage", "+15555550123")
-        .participant("+15555550123", Some("Bob"))
-        .to_string();
+    let header =
+        conversation_header("imessage", "+15555550123").participant("+15555550123", Some("Bob"));
     let target = r#"{"guid":"g-hi","timestamp_unix_ms":1426183462000,"direction":"outgoing","service":"imessage","message_kind":"imessage","sender_identity":null,"sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}"#;
     let reaction = |guid: &str, ts: i64, text: &str, action: &str| {
         format!(
@@ -572,8 +570,7 @@ async fn a_second_copy_in_one_file_keeps_the_first_text_and_adds_its_children() 
     let assets = tmp.path().join("assets");
     let header = conversation_header("imessage", "+15555550123")
         .participant("+15555550123", None)
-        .participant("+15555550167", None)
-        .to_string();
+        .participant("+15555550167", None);
     let first = format!(
         r#"{{"guid":"g-once","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"first","attachments":{},"imessage":null,"source":null}}"#,
         missing_attachment_json("first.bin")
@@ -627,9 +624,7 @@ async fn staging_keeps_both_rows_when_guids_differ_only_by_whitespace() {
     let tmp = TempDir::new().unwrap();
     let db = tmp.path().join("messagecrate.db");
     let assets = tmp.path().join("assets");
-    let header = conversation_header("imessage", "+15555550123")
-        .participant("+15555550123", None)
-        .to_string();
+    let header = conversation_header("imessage", "+15555550123").participant("+15555550123", None);
     let first = format!(
         r#"{{"guid":"g-space","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"trimmed","attachments":{},"imessage":null,"source":null}}"#,
         missing_attachment_json("trim.bin")
@@ -676,9 +671,7 @@ async fn append_adds_a_later_deletion_mark_to_a_stored_message_and_keeps_it() {
     let tmp = TempDir::new().unwrap();
     let db = tmp.path().join("messagecrate.db");
     let assets = tmp.path().join("assets");
-    let header = conversation_header("imessage", "+15555550123")
-        .participant("+15555550123", None)
-        .to_string();
+    let header = conversation_header("imessage", "+15555550123").participant("+15555550123", None);
     let line = |deletion: &str| {
         format!(
             r#"{{"guid":"g-mark","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"later deleted","attachments":[],{deletion}"imessage":null,"source":null}}"#
@@ -745,9 +738,7 @@ fn edit_version(part: u32, text: &str, ms: i64) -> String {
 /// `text` and whose earlier versions are `versions` (from [`edit_version`]),
 /// written to `name` under `dir`.
 fn edit_file(dir: &Path, name: &str, text: &str, versions: &[String]) -> PathBuf {
-    let header = conversation_header("imessage", "+15555550123")
-        .participant("+15555550123", None)
-        .to_string();
+    let header = conversation_header("imessage", "+15555550123").participant("+15555550123", None);
     let edits = versions.join(",");
     let line = format!(
         r#"{{"guid":"g-edit","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"{text}","attachments":[],"edits":[{edits}],"imessage":null,"source":null}}"#
@@ -1113,8 +1104,7 @@ async fn append_existing_guid_adds_missing_children() {
     let assets = tmp.path().join("assets");
     let header = conversation_header("imessage", "+15555550123")
         .participant("+15555550123", None)
-        .participant("+15555550167", None)
-        .to_string();
+        .participant("+15555550167", None);
     let first = write_jsonl(
         tmp.path(),
         "children-first.jsonl",
@@ -4651,8 +4641,7 @@ async fn a_participant_listed_twice_under_one_identity_is_listed_once() {
         .group()
         .title("Trip")
         .participant("+1 (555) 555-0119", None)
-        .participant("5555550119", None)
-        .to_string();
+        .participant("5555550119", None);
     let body = format!(
         "{header}\n{}\n",
         same_second_message("m1", 1_426_183_462_000)
@@ -5464,7 +5453,7 @@ async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accoun
         let ada_header =
             conversation_header(source, "+15555550101").participant("+15555550101", Some("Ada"));
         let body = [
-            format!("{self_header}\n"),
+            self_header.line(),
             message(
                 &format!("{source}-note-sent"),
                 "outgoing",
@@ -5479,7 +5468,7 @@ async fn a_conversation_with_yourself_has_no_participants_and_goes_by_the_accoun
                 "Note to self",
                 &own_tapback,
             ),
-            format!("{ada_header}\n"),
+            ada_header.line(),
             message(
                 &format!("{source}-ada"),
                 "incoming",

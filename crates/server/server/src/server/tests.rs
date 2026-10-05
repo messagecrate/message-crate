@@ -1864,7 +1864,7 @@ async fn a_small_attachment_size_limit_holds_only_the_attachment_uploads() {
     let header = crate::test_support::conversation_header("whatsapp", "+15555550107")
         .owner("+15555550106", Some("Me"))
         .participant("+15555550107", None);
-    let mut batch = format!("{header}\n");
+    let mut batch = header.line();
     batch.push_str(&format!(
         r#"{{"guid":"g-1","timestamp_unix_ms":1700000000000,"direction":"incoming","service":"whatsapp","message_kind":"sms","sender_identity":"+15555550107","sender_display_name":null,"subject":null,"text":"{}","attachments":[],"imessage":null,"source":null}}"#,
         "a".repeat(4096)
