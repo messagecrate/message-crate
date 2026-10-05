@@ -11,7 +11,7 @@ use super::events::ExtractProgressEvent;
 use super::jobs::{spawn_job, start_job};
 use super::paths::logs_dir;
 use crate::app_directories::import_run_log;
-use crate::state::AppState;
+use crate::state::{AppState, JobName};
 
 /// Convert a report count to the `usize` the progress event uses.
 fn as_usize(value: u64) -> usize {
@@ -103,7 +103,7 @@ pub fn upload(
     args: UploadArgs,
 ) -> Result<(), String> {
     let logs = logs_dir(&app)?;
-    let job = start_job(&state, "an upload")?;
+    let job = start_job(&state, JobName::Upload)?;
     let cancel = job.cancel_flag();
     let app_handle = app.clone();
     spawn_job(app, job, move || {

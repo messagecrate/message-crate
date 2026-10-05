@@ -38,7 +38,7 @@ use super::last_log_line_or;
 use super::paths::{logs_dir, scratch_dir};
 use crate::app_directories::RunLog;
 use crate::run_directories::RunDirectories;
-use crate::state::AppState;
+use crate::state::{AppState, JobName};
 
 /// Ask this process to stop the job that is running. Does nothing when no
 /// job runs.
@@ -191,7 +191,7 @@ pub fn extract(
     )?;
     config.resume = args.resume.unwrap_or(false);
 
-    let job = start_job(&state, "an extract")?;
+    let job = start_job(&state, JobName::Staging)?;
 
     let app_handle = app.clone();
     config.cancel = Some(job.cancel_flag());

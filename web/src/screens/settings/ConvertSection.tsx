@@ -71,6 +71,7 @@ export function ConvertSection() {
             input_dir: input,
             output_dir: output,
             output_format: format,
+            started_from: "convert",
           }),
         { outputDir: output, format },
         { onLog: appendLog },
