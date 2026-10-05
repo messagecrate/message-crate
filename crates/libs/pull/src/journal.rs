@@ -117,7 +117,7 @@ pub fn compact(path: &Path, url: &str, username: &str, state: &PullJournalState)
         }
         if state.export_complete {
             // A later Export Run ignores the counts; an `export_complete` row
-            // only means the last run finished.
+            // only means the last Export Run finished.
             events.push(PullJournalEvent::ExportComplete {
                 url: url.to_string(),
                 username: username.to_string(),
@@ -210,7 +210,7 @@ mod tests {
         assert!(reloaded.export_complete);
     }
 
-    /// `append` is what a pull actually calls, once per asset, and nothing
+    /// `append` is what a pull actually calls, once per Asset, and nothing
     /// called it: every test here wrote the file by hand or went through
     /// `compact`. Replacing it with a no-op made a later Export Run start
     /// from nothing and fetch every Asset again, with the suite green.
@@ -229,8 +229,8 @@ mod tests {
         )
         .unwrap();
 
-        // Loading between the two appends is a later Export Run after one that was
-        // interrupted after one asset must find that one asset.
+        // Loading between the two appends stands for a later Export Run: after
+        // a run interrupted after one Asset, it must find that Asset.
         let after_first = load(&path, "http://server", "alice").unwrap();
         assert!(after_first.assets.contains("aaa"));
         assert!(!after_first.export_complete);

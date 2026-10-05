@@ -15,14 +15,13 @@ use anyhow::Result;
 /// own name is near the 255-byte limit of a file name still has room for
 /// one. And a later Export Run into the same directory fetches the Asset to
 /// the same name again, so a file a crash left behind is written over and
-/// renamed away rather than kept for good. One Export fetches each
+/// renamed away rather than kept for good. One Export Run fetches each
 /// fingerprint once, and copies it to its other paths only after every
 /// fetch has finished, one at a time, so nothing else writes this name while
-/// a write to it runs. That holds
-/// because of `run.rs`: `note_asset_refs` keys the Assets by their
-/// lowercased fingerprint, `fetch_assets_parallel` makes one job per key,
-/// and `place_other_paths` runs after it returns. The directory is
-/// `dest`'s, so the rename never crosses a file system.
+/// a write to it runs. That holds because of `run.rs`: `note_asset_refs`
+/// keys the Assets by their lowercased fingerprint, `fetch_assets_parallel`
+/// makes one job per key, and `place_other_paths` runs after it returns. The
+/// directory is `dest`'s, so the rename never crosses a file system.
 fn part_path(dest: &Path, sha256: &str) -> PathBuf {
     dest.with_file_name(format!(".{sha256}.part"))
 }
