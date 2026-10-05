@@ -15,7 +15,7 @@ const SKIPS_XML: &str = r#"<?xml version='1.0' encoding='UTF-8' standalone='yes'
 <smses count="9">
   <sms address="+15555550101" date="1400773261000" type="1" body="hello" contact_name="Sam" />
   <sms address="+15555550101" date="1400773261000" type="1" body="hello" contact_name="Sam" />
-  <sms address="+15555550101" date="1400773321000" type="2" body="hey" contact_name="Sam" />
+  <sms address="+15555550101" date="1400773321000" type="2" body="hey&#0;" contact_name="Sam" />
   <sms address="+15555550101" date="soon" type="1" body="bad date" />
   <sms address="" date="1400773500000" type="1" body="no address" />
   <sms address="+15555550101" date="1400773600000" type="9" body="unknown type" />
@@ -71,6 +71,7 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
         "  dropped 1 duplicate rows",
         "  mms_seen: 2",
         "  skipped_unreadable_part: 1",
+        "  dropped_character_references: 1",
         "  skipped_draft_or_outbox: 1",
         "  skipped_empty_participants: 1",
         "  skipped_unknown_address: 1",
@@ -90,24 +91,44 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
         .collect();
     assert_eq!(errors.len(), 1, "{:?}", result.messages);
     assert!(errors[0].contains("sms-2-broken.xml"), "{}", errors[0]);
-    // The file it could not read is an Import Error naming it (#1626).
+    // The file it could not read is an Import Error naming it (#1626), and
+    // each message kept with something left out is a note naming the file
+    // and the message (#1707).
     let issues = issues.lock().unwrap();
-    assert_eq!(issues.len(), 1, "{issues:?}");
+    let rows: Vec<(&str, &str, &str, &str)> = issues
+        .iter()
+        .map(|i| {
+            (
+                i.kind.as_str(),
+                i.step.as_str(),
+                i.item.as_str(),
+                i.reason.as_str(),
+            )
+        })
+        .collect();
+    let file = |name: &str| input.join(name).display().to_string();
+    let (sms_1, broken) = (file("sms-1.xml"), file("sms-2-broken.xml"));
+    let hey = format!("{sms_1} (message of 2014-05-22T15:42:01Z with +15555550101)");
+    let photo = format!("{sms_1} (message of 2014-05-22T15:51:40Z with +15555550101)");
     assert_eq!(
-        (
-            issues[0].kind.as_str(),
-            issues[0].step.as_str(),
-            issues[0].item.as_str()
-        ),
-        (
-            "error",
-            "parse",
-            input
-                .join("sms-2-broken.xml")
-                .display()
-                .to_string()
-                .as_str()
-        )
+        rows,
+        [
+            ("error", "parse", broken.as_str(), rows[0].3),
+            (
+                "note",
+                "parse",
+                hey.as_str(),
+                "1 character reference in this message is not a character and was left out. \
+                 The message itself is kept."
+            ),
+            (
+                "note",
+                "parse",
+                photo.as_str(),
+                "1 part of this message could not be read and was left out. The message \
+                 itself is kept."
+            ),
+        ],
     );
 }
 

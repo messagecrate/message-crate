@@ -44,7 +44,7 @@ Apple-only columns (`parts_json`, tapbacks, balloons, …) stay empty.
 - `address` → `chat_identifier` / participant handle, classified once by `phone::Handle::parse`: a number keeps the country its `+` names and is otherwise read as a US number, an address with `@` is an email address, and anything else (such as `AMAZON`) is a sender name, an identity of type `other`. Only a blank `address` is skipped, as `skipped_unknown_address`
 - `date` → `timestamp*` and `timestamp_unix_ms` (invalid or missing dates are skipped)
 - `type` `1` / `2` → `direction` incoming / outgoing; `3` (draft) and `4` (outbox) are skipped and counted as `skipped_draft_or_outbox`; other types are skipped and counted as `skipped_unknown_type`; raw value in `android_type`
-- `body` → `text` (character references and HTML entities decoded; a surrogate pair written as two references, such as `&#55357;&#56832;`, becomes one character; a reference that is not a character, such as `&#0;` or a lone surrogate, is dropped and counted as `dropped_character_references`)
+- `body` → `text` (character references and HTML entities decoded; a surrogate pair written as two references, such as `&#55357;&#56832;`, becomes one character; a reference that is not a character, such as `&#0;` or a lone surrogate, is dropped and counted as `dropped_character_references`. The message is kept, and the Import Run carries a note naming its file, its time in UTC and its address)
 - `subject` → `subject` when present
 - `contact_name` → `sender_display_name` for incoming and the peer's participant name (not a separate CSV column). The app writes `null` or `(Unknown)` where the phone has no contact, so an empty value, `null` and `(Unknown)`, compared without case, give no name and the peer stays Unknown
 - **Every** `<sms>` attribute → `source_fields_json.attrs`
@@ -62,7 +62,7 @@ Example: `<sms address="+15555550101" date="1400773261000" type="1" body="hello 
 - Every `text/plain` part → `text`, joined with a newline: the parts the SMIL (`application/smil`) names, by `name`, `cl`, `cid` or `fn`, in its order, then the rest in the order they are written. Nothing is sorted or removed for repeating another part
 - Every other part with content → files under `attachments/` and `attachments_json`, in the same order. A contact card (`ct="text/x-vcard" text="null" data="…"`) is an attachment, and two parts with one name, or with the same bytes, are two attachments. In `source_fields_json.parts`, `data` is replaced with `data_len` + `data_sha256`
 - Every `<mms>` / `<part>` / `<addr>` attribute → `source_fields_json`
-- Empty participant lists are skipped and counted in the run report. A part whose `data` is not base64 is dropped and counted as `skipped_unreadable_part`
+- Empty participant lists are skipped and counted in the run report. A part whose `data` is not base64 is dropped and counted as `skipped_unreadable_part`. The message is kept, and the Import Run carries a note naming its file, its time in UTC and its addresses, such as `smses.xml (message of 2014-05-22T15:51:40Z with +15555550101)`
 
 Example group address string: `+15555550101~+15555550102` with two From/To addrs becomes a group conversation titled from those two numbers.
 

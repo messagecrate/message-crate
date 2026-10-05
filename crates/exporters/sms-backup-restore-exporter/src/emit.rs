@@ -4,13 +4,17 @@
 use crate::read::{ReadOptions, ReadReport, read_backup};
 use crate::write::SbrArchive;
 use anyhow::Result;
-use message_crate_core::{CancelFlag, ExportReport, ExportTransforms, IssueSink, OutputFormat};
+use message_crate_core::{
+    CancelFlag, ExportReport, ExportTransforms, IssueSink, OutputFormat, SKIPPED_UNREADABLE_PART,
+    unreadable_parts_note,
+};
 use message_staging::{AttachmentSource, ExportWriter};
 use std::path::Path;
 
 /// Map the reader's [`ReadReport`] onto the shared [`ExportReport`] shape,
 /// moving reader-specific counters into `extra`, and send each error to
-/// `issues` as an Import Error.
+/// `issues` as an Import Error and each message kept with something left
+/// out of it as a note naming the file and the message.
 fn to_core_report(report: ReadReport, issues: Option<&IssueSink>) -> ExportReport {
     let mut out = ExportReport {
         conversations: report.conversations,
@@ -44,15 +48,40 @@ fn to_core_report(report: ReadReport, issues: Option<&IssueSink>) -> ExportRepor
         "skipped_empty_participants".into(),
         report.skipped_empty_participants,
     );
-    out.extra.insert(
-        "skipped_unreadable_part".into(),
-        report.skipped_unreadable_part,
-    );
-    out.extra.insert(
-        "dropped_character_references".into(),
-        report.dropped_character_references,
-    );
+    for left_out in report.left_out {
+        let item = format!("{} ({})", left_out.file, left_out.message);
+        if left_out.unreadable_parts > 0 {
+            out.caveat(
+                SKIPPED_UNREADABLE_PART,
+                left_out.unreadable_parts,
+                item.as_str(),
+                unreadable_parts_note(left_out.unreadable_parts),
+            );
+        }
+        if left_out.dropped_character_references > 0 {
+            out.caveat(
+                "dropped_character_references",
+                left_out.dropped_character_references,
+                item,
+                dropped_references_note(left_out.dropped_character_references),
+            );
+        }
+    }
     out
+}
+
+/// The note for a message kept with `n` character references left out
+/// because they are not a character.
+fn dropped_references_note(n: u64) -> String {
+    match n {
+        1 => "1 character reference in this message is not a character and was left out. The \
+              message itself is kept."
+            .into(),
+        n => format!(
+            "{n} character references in this message are not characters and were left out. \
+             The message itself is kept."
+        ),
+    }
 }
 
 /// Inputs for [`convert_export`].

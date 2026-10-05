@@ -50,14 +50,33 @@ pub struct ReadReport {
     pub skipped_draft_or_outbox: u64,
     /// MMS dropped with no participants.
     pub skipped_empty_participants: u64,
-    /// Parts with undecodable base64.
+    /// Parts left out of kept messages because their `data` is not base64.
     pub skipped_unreadable_part: u64,
-    /// Character references dropped because they are not a character.
+    /// Character references left out of kept messages because they are not
+    /// a character.
     pub dropped_character_references: u64,
     /// Repeated copies of a message dropped, one copy of each kept.
     pub duplicates_dropped: u64,
     /// What could not be read, each with the file it was in.
     pub errors: Vec<ReadError>,
+    /// Each kept message with a part or character references left out of
+    /// it, so the run can name it.
+    pub left_out: Vec<LeftOut>,
+}
+
+/// One message the read kept with a part or character references left out
+/// of it, and the file it is in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LeftOut {
+    /// The file, as a path.
+    pub file: String,
+    /// The message, by its time and its address, such as
+    /// `message of 2014-05-22T15:41:01Z with +15555550101`.
+    pub message: String,
+    /// Parts left out because their `data` is not base64.
+    pub unreadable_parts: u64,
+    /// Character references left out because they are not a character.
+    pub dropped_character_references: u64,
 }
 
 /// Something in one backup file the reader could not read.
@@ -205,6 +224,10 @@ struct PendingMessage {
     contact_name: String,
     android_type: String,
     source_fields: serde_json::Map<String, serde_json::Value>,
+    /// What the read left out of the message, if anything. Its `message`
+    /// is filled in once the conversation is complete, because a repeated
+    /// copy dropped later can change the message's time.
+    left_out: Option<LeftOut>,
 }
 
 #[derive(Debug, Default)]
@@ -247,8 +270,6 @@ fn merge_stats(report: &mut ReadReport, stats: ParseStats) {
     report.skipped_unknown_type += stats.skipped_unknown_type;
     report.skipped_draft_or_outbox += stats.skipped_draft_or_outbox;
     report.skipped_empty_participants += stats.skipped_empty_participants;
-    report.skipped_unreadable_part += stats.skipped_unreadable_part;
-    report.dropped_character_references += stats.dropped_character_references;
 }
 
 /// Pending attachments for a message's decoded parts, each payload written
@@ -343,9 +364,11 @@ fn chat_id(record: &Record) -> String {
     }
 }
 
-/// Append a parsed SMS or MMS to its conversation, creating the conversation on first sight.
+/// Append a parsed SMS or MMS from `file` to its conversation, creating the
+/// conversation on first sight.
 fn add_record(
     conversations: &mut BTreeMap<String, PendingConversation>,
+    file: &Path,
     record: Record,
     attachments: Vec<PendingAttachment>,
 ) -> Result<()> {
@@ -381,6 +404,14 @@ fn add_record(
         contact_name: record.contact_name,
         android_type: record.android_type,
         source_fields,
+        left_out: (record.unreadable_parts > 0 || record.dropped_character_references > 0).then(
+            || LeftOut {
+                file: file.display().to_string(),
+                message: String::new(),
+                unreadable_parts: record.unreadable_parts,
+                dropped_character_references: record.dropped_character_references,
+            },
+        ),
     });
     Ok(())
 }
@@ -491,6 +522,14 @@ fn to_document(
             } else {
                 report.received += 1;
             }
+            if let Some(left_out) = &message.left_out {
+                report.skipped_unreadable_part += left_out.unreadable_parts;
+                report.dropped_character_references += left_out.dropped_character_references;
+                report.left_out.push(LeftOut {
+                    message: describe(message, conversation),
+                    ..left_out.clone()
+                });
+            }
             ir_message(id, message, &owner)
         })
         .collect();
@@ -512,6 +551,20 @@ fn to_document(
     };
     document.finalize_stats();
     document
+}
+
+/// A message as a person can find it in its file: `message of <UTC time>
+/// with <every address in the conversation>`.
+fn describe(message: &PendingMessage, conversation: &PendingConversation) -> String {
+    let (ms, _) = message.time();
+    let time =
+        format_local_ts(ms.div_euclid(1000)).map_or_else(|| ms.to_string(), |(_, utc, _)| utc);
+    let with: Vec<&str> = conversation
+        .participants
+        .iter()
+        .map(|(handle, _)| handle.as_str())
+        .collect();
+    format!("message of {time} with {}", with.join(", "))
 }
 
 /// The IR message for one pending message. `owner` (handle, display name)
@@ -666,7 +719,7 @@ pub fn read_backup(
                     return Err(stop);
                 }
             };
-            match add_record(&mut conversations, record, attachments) {
+            match add_record(&mut conversations, &path, record, attachments) {
                 Ok(()) => Ok(()),
                 Err(error) => {
                     // Keep parsing the rest of the file; one bad record
