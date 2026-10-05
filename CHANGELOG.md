@@ -248,12 +248,6 @@ released versions carry their date on the heading.
 
 ### Design
 
-- 2026-10-05 **The size in an Export's "Fetched" line counts only what the
-  Export fetched.** A program that ran an Export into a directory already
-  holding some of its Assets could read "Fetched 0 Assets (5.0 MB) and kept
-  3 already on disk". It now reads "Fetched 0 Assets (0 B) and kept 3
-  already on disk". The app gives every Export a new directory, so nothing
-  changes on screen.
 - 2026-10-04 **A program that reads Import Runs from the server finds each
   run's directory under a new name.** The old name read as the Staging
   Directory, which holds every run's directory. Nothing changes on screen.
@@ -967,7 +961,10 @@ released versions carry their date on the heading.
   completion reads "Export Run 7 completion failed (…): …. The Export wrote
   every file all the same", and an attachment path that would leave the
   Export's directory reads "Attachment path … would leave the Export's
-  directory, so the file is written at … instead".
+  directory, so the file is written at … instead". An Export run again into
+  a directory where an earlier one stopped early counts the files already
+  there as kept, and the size counts only what it fetched. Nothing changes
+  on screen for that.
 - 2026-10-05 **Two attachments whose names differ only in their extension
   both arrive whole in an Export from a server.** The Export wrote each
   attachment it fetched to a temporary file named after the attachment
