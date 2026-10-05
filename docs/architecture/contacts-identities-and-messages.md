@@ -321,8 +321,8 @@ see the `+` go, so a wrong reading has to be shown before it matters.
 
 **An identity moves only from a contact the load may change.** When a row
 puts an identity on one contact and the database has it on another, it moves to
-the file's contact if the current holder is nameless (an Unknown an import
-made) or is itself in the file. Taking an identity from a named contact the
+the file's contact if the current holder is nameless (an Unknown, whatever
+made it) or is itself in the file. Taking an identity from a named contact the
 file does not mention refuses the load, naming the row, the identity and
 both contacts. The same identity under two ids in one file refuses the load
 too. Why: naming the Unknowns is the job the file exists for, so that move

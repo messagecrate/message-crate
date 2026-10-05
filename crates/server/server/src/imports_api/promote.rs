@@ -228,6 +228,24 @@ impl Promote<'_> {
         let phase = Self::begin("marking messages deleted in the source app or unsent…");
         let marked = staging::promote_deletion_marks(self.tx).await?;
         self.done(phase, format!("deletion marks done (changed={marked})"));
+
+        let phase = Self::begin("taking later edits of stored messages…");
+        let named = staging::write_edit_map(self.tx, messages_before).await?;
+        let unindexed = schema::unindex_versions_of_edited_messages(self.tx).await?;
+        let edits = staging::promote_later_edits(self.tx).await?;
+        if edits.messages != named {
+            bail!(
+                "promote later edits: the edit map names {named} messages, {} changed",
+                edits.messages
+            );
+        }
+        self.done(
+            phase,
+            format!(
+                "later edits done (changed={} versions removed={} search entries removed={unindexed})",
+                edits.messages, edits.versions_removed
+            ),
+        );
         Ok(messages_before)
     }
 
@@ -382,7 +400,8 @@ impl Promote<'_> {
     }
 
     /// Insert the staged earlier versions under the messages this promotion
-    /// inserted, those above `messages_before`. Returns the highest version
+    /// inserted, those above `messages_before`, and under the stored
+    /// messages that took a later edit. Returns the highest version
     /// id that existed before the insert: every new row lands above it,
     /// which is how [`Self::index_fts`] finds them.
     async fn promote_earlier_versions(&mut self, messages_before: i64) -> Result<i64> {
@@ -396,10 +415,11 @@ impl Promote<'_> {
         Ok(versions_before)
     }
 
-    /// Index the new messages (those above `messages_before`), the existing
-    /// messages that gained an attachment (one above `attachments_before`)
-    /// and the new earlier versions (those above `versions_before`) for
-    /// full-text search in one pass, then put the per-row triggers back.
+    /// Index for full-text search, in one pass, the new messages (those
+    /// above `messages_before`), the existing messages that gained an
+    /// attachment (one above `attachments_before`) or took a later edit,
+    /// and the new earlier versions (those above `versions_before`), then
+    /// put the per-row triggers back.
     async fn index_fts(
         &mut self,
         messages_before: i64,

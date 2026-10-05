@@ -400,6 +400,14 @@ released versions carry their date on the heading.
   Before it reads them out, the import checks that the disk holding the
   Scratch Directory has room for them, and stops with the space it needs
   when it does not.
+- 2026-10-05 **A newer backup brings a message's later edit.** When a
+  message already in the Message Crate had been edited again on the phone,
+  importing the newer backup kept the old text and the old earlier versions,
+  because the import skips a message it already holds. A word only the new
+  text held found nothing, and Export wrote the old text. The message now
+  takes the newer backup's text and earlier versions, and search finds it by
+  both. An older backup imported after a newer one leaves the message as it
+  is.
 - 2026-10-05 **An import's log and Convert's log say each count in the same
   plain words.** Converting and importing one SMS Backup & Restore backup
   used to word its counts two ways: Convert wrote "Skipped 1 message with no
@@ -840,6 +848,12 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-05 **An EML or mbox export keeps every space of a message's
+  details.** A run of spaces in a message's details, such as a name, a
+  transcription, an earlier version or a detail from the source app, could
+  come back as one space when the file was converted, and a space that
+  opened or closed one of them was lost. Such a detail is now written so
+  that converting the file gives it back exactly as it was exported.
 - 2026-10-05 **Converting writes each attachment once.** With Media set to
   Convert or Compress, Convert copied the export's whole attachments
   directory, converted the copy, and then wrote every attachment again from

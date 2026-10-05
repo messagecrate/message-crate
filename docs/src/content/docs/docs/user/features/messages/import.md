@@ -378,3 +378,5 @@ The record of the run stays under **Import history** in [**Settings → Storage*
 
 A second import of the same backup creates no duplicates.
 The Message Crate recognises the messages it already holds and skips them, so a newer backup of the same phone adds only what is new.
+A message edited again since the first import is the exception: it takes the newer backup's text and earlier versions ([Edited messages](/docs/user/features/messages/browse/#edited-messages)).
+An older backup imported after a newer one leaves the message as it is.

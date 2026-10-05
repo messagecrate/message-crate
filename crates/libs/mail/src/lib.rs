@@ -16,7 +16,7 @@ use mail_builder::encoders::{Base64Encoder, QuotedPrintableEncoder};
 use mail_builder::headers::address::Address;
 use mail_builder::headers::content_type::ContentType;
 use mail_builder::headers::date::Date;
-use mail_builder::headers::text::Text;
+use mail_builder::headers::raw::Raw;
 use mail_builder::mime::MimePart;
 use message_ir::{IrDirection, IrMessage};
 use serde::{Deserialize, Serialize};
@@ -526,20 +526,102 @@ fn value_as_string(v: Option<&serde_json::Value>) -> Option<String> {
     if v.is_null() {
         return None;
     }
-    Some(header_safe_json(
-        serde_json::to_string(v).unwrap_or_default(),
-    ))
-    .filter(|s| !s.is_empty())
+    Some(serde_json::to_string(v).unwrap_or_default()).filter(|s| !s.is_empty())
 }
 
-/// JSON text a mail header reader gives back unchanged.
+/// The longest value [`x_me_value`] writes as it is: the 78-character line
+/// RFC 5322 section 2.1.1 recommends, less one.
+const VERBATIM_MAX: usize = 77;
+
+/// The `charset` and `encoding` of every encoded word [`x_me_value`] writes
+/// (RFC 2047 section 2).
+const Q_WORD_START: &str = "=?utf-8?Q?";
+/// The end of an encoded word.
+const Q_WORD_END: &str = "?=";
+/// The longest encoded word, start and end included (RFC 2047 section 2).
+const Q_WORD_MAX: usize = 75;
+/// The longest line an encoded word sits on (RFC 2047 section 2).
+const Q_LINE_MAX: usize = 76;
+
+/// An `X-ME-*` header value, written so that a mail reader gives it back
+/// byte for byte.
 ///
-/// A header reader decodes RFC 2047 encoded words (`=?utf-8?Q?…?=`), so a
-/// name that looks like one would come back decoded, and a decoded `"` or `\`
-/// breaks the JSON. `=?` can only occur inside a JSON string, where `\u003f`
-/// is the same `?` and starts no encoded word.
-fn header_safe_json(json: String) -> String {
-    json.replace("=?", "=\\u003f")
+/// mail-builder folds a long value at whitespace, and a reader unfolds a
+/// fold followed by a run of spaces into one space (mailparse does, as RFC
+/// 5322 section 2.2.3 allows), so a run of spaces where a fold fell came
+/// back as one. A reader also drops the spaces that open a value,
+/// and decodes anything that looks like an RFC 2047 encoded word
+/// (`=?utf-8?Q?…?=`), so a value holding one came back decoded. The spaces
+/// that close a value are lost to anything that strips the end of a line,
+/// such as a hand edit, so a value ending in a space is encoded too.
+///
+/// A value that none of that can change is written as it is: printable
+/// ASCII and single spaces between them, with no `=?`, short enough that
+/// a fold can only fall at a single space. Every other value is written as
+/// RFC 2047 `Q` encoded words, in which a space is `_` and every other byte
+/// a reader could change is `=XX`. A fold falls only between two words, and
+/// a reader drops the whitespace between two encoded words (RFC 2047
+/// section 6.2), so nothing of the value sits where a fold can reach it.
+fn x_me_value(name: &str, value: &str) -> Raw<'static> {
+    if is_verbatim(value) {
+        Raw::new(value.to_string())
+    } else {
+        Raw::new(q_encoded_words(name, value))
+    }
+}
+
+/// True when a reader gives `value` back unchanged as it is written.
+fn is_verbatim(value: &str) -> bool {
+    value.len() <= VERBATIM_MAX
+        && value.bytes().all(|b| b == b' ' || b.is_ascii_graphic())
+        && !value.starts_with(' ')
+        && !value.ends_with(' ')
+        && !value.contains("  ")
+        && !value.contains("=?")
+}
+
+/// `value` as `Q` encoded words, separated by single spaces where
+/// mail-builder may fold. Each word holds whole characters, because a
+/// reader decodes each word to text on its own, and the first is short
+/// enough to sit on the header's own line after `name: `.
+fn q_encoded_words(name: &str, value: &str) -> String {
+    let overhead = Q_WORD_START.len() + Q_WORD_END.len();
+    let mut room = Q_LINE_MAX
+        .saturating_sub(name.len() + 2)
+        .min(Q_WORD_MAX)
+        .saturating_sub(overhead);
+    let mut words: Vec<String> = Vec::new();
+    let mut word = String::new();
+    let mut buf = [0u8; 4];
+    for ch in value.chars() {
+        let mut piece = String::new();
+        for &b in ch.encode_utf8(&mut buf).as_bytes() {
+            match b {
+                b' ' => piece.push('_'),
+                b if b.is_ascii_graphic() && !matches!(b, b'=' | b'?' | b'_') => {
+                    piece.push(char::from(b));
+                }
+                b => piece.push_str(&format!("={b:02X}")),
+            }
+        }
+        if !word.is_empty() && word.len() + piece.len() > room {
+            words.push(format!("{Q_WORD_START}{word}{Q_WORD_END}"));
+            word.clear();
+            room = Q_WORD_MAX - overhead;
+        }
+        word.push_str(&piece);
+    }
+    words.push(format!("{Q_WORD_START}{word}{Q_WORD_END}"));
+    words.join(" ")
+}
+
+/// Add `name: value`, written by [`x_me_value`].
+fn x_me_header<'m>(
+    builder: MessageBuilder<'m>,
+    name: &'static str,
+    value: &str,
+) -> MessageBuilder<'m> {
+    builder.header(name, x_me_value(name, value))
 }
 
 /// Add `name: value` when the value is present and non-empty.
@@ -549,7 +631,7 @@ fn opt_header<'m>(
     value: Option<&str>,
 ) -> MessageBuilder<'m> {
     match value.filter(|s| !s.is_empty()) {
-        Some(v) => builder.header(name, Text::new(v.to_string())),
+        Some(v) => x_me_header(builder, name, v),
         None => builder,
     }
 }
@@ -693,45 +775,33 @@ fn optional_headers<'m>(
 /// The headers that identify the conversation, the export, and the people in
 /// it. The first block is always present; the rest appear when the source
 /// recorded them.
-fn conversation_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> MessageBuilder<'m> {
-    let mut builder = builder
-        .header(
-            headers::CHAT_IDENTIFIER,
-            Text::new(msg.chat_identifier.clone()),
-        )
-        .header(
-            headers::CONVERSATION_TYPE,
-            Text::new(msg.conversation_type.clone()),
-        )
-        .header(
-            headers::DIRECTION,
-            Text::new(msg.message.direction.as_str()),
-        )
-        .header(
-            headers::SERVICE,
-            Text::new(msg.message.service.as_str().to_string()),
-        )
-        .header(
-            headers::MESSAGE_KIND,
-            Text::new(msg.message.message_kind.as_str().to_string()),
-        )
-        .header(
-            headers::TIMESTAMP_UNIX_MS,
-            Text::new(msg.message.timestamp_unix_ms.to_string()),
-        )
-        .header(headers::GUID, Text::new(msg.message.guid.clone()))
-        .header(headers::EXPORT_SOURCE, Text::new(msg.export_source.clone()))
-        .header(headers::EXPORT_TOOL, Text::new(msg.export_tool.clone()))
-        .header(
+fn conversation_headers<'m>(
+    mut builder: MessageBuilder<'m>,
+    msg: &MailMessage,
+) -> MessageBuilder<'m> {
+    let timestamp = msg.message.timestamp_unix_ms.to_string();
+    for (name, value) in [
+        (headers::CHAT_IDENTIFIER, msg.chat_identifier.as_str()),
+        (headers::CONVERSATION_TYPE, msg.conversation_type.as_str()),
+        (headers::DIRECTION, msg.message.direction.as_str()),
+        (headers::SERVICE, msg.message.service.as_str()),
+        (headers::MESSAGE_KIND, msg.message.message_kind.as_str()),
+        (headers::TIMESTAMP_UNIX_MS, &timestamp),
+        (headers::GUID, msg.message.guid.as_str()),
+        (headers::EXPORT_SOURCE, msg.export_source.as_str()),
+        (headers::EXPORT_TOOL, msg.export_tool.as_str()),
+        (
             headers::EXPORT_TOOL_VERSION,
-            Text::new(msg.export_tool_version.clone()),
-        );
+            msg.export_tool_version.as_str(),
+        ),
+    ] {
+        builder = x_me_header(builder, name, value);
+    }
     builder = opt_header(builder, headers::GROUP_TITLE, msg.group_title.as_deref());
     if msg.conversation_type.eq_ignore_ascii_case("group") || !msg.participants.is_empty() {
-        let participants_json = header_safe_json(
-            serde_json::to_string(&msg.participants).unwrap_or_else(|_| "[]".into()),
-        );
-        builder = builder.header(headers::PARTICIPANTS, Text::new(participants_json));
+        let participants_json =
+            serde_json::to_string(&msg.participants).unwrap_or_else(|_| "[]".into());
+        builder = x_me_header(builder, headers::PARTICIPANTS, &participants_json);
     }
     let source = msg.message.source.as_ref();
     optional_headers(
@@ -745,10 +815,7 @@ fn conversation_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> M
                 headers::SENDER_DISPLAY_NAME,
                 msg.message.sender_display_name.clone(),
             ),
-            (
-                headers::OWNER_IDENTITY,
-                Some(msg.owner_identity.trim().to_string()),
-            ),
+            (headers::OWNER_IDENTITY, Some(msg.owner_identity.clone())),
             (headers::OWNER_DISPLAY_NAME, msg.owner_display_name.clone()),
             (
                 headers::MESSAGE_OWNER_IDENTITY,
@@ -757,11 +824,8 @@ fn conversation_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> M
             (headers::SUBJECT, msg.message.subject.clone()),
             (
                 headers::REACTIONS,
-                (!msg.message.reactions.is_empty()).then(|| {
-                    header_safe_json(
-                        serde_json::to_string(&msg.message.reactions).unwrap_or_default(),
-                    )
-                }),
+                (!msg.message.reactions.is_empty())
+                    .then(|| serde_json::to_string(&msg.message.reactions).unwrap_or_default()),
             ),
             (
                 headers::DELETION,
@@ -769,9 +833,8 @@ fn conversation_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> M
             ),
             (
                 headers::EARLIER_VERSIONS,
-                (!msg.message.edits.is_empty()).then(|| {
-                    header_safe_json(serde_json::to_string(&msg.message.edits).unwrap_or_default())
-                }),
+                (!msg.message.edits.is_empty())
+                    .then(|| serde_json::to_string(&msg.message.edits).unwrap_or_default()),
             ),
             (
                 headers::ANDROID_TYPE,
@@ -781,9 +844,9 @@ fn conversation_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> M
             ),
             (
                 headers::SOURCE_FIELDS,
-                source.filter(|src| !src.fields.is_empty()).map(|src| {
-                    header_safe_json(serde_json::to_string(&src.fields).unwrap_or_default())
-                }),
+                source
+                    .filter(|src| !src.fields.is_empty())
+                    .map(|src| serde_json::to_string(&src.fields).unwrap_or_default()),
             ),
         ],
     )
@@ -798,10 +861,8 @@ fn imessage_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> Messa
     let mut builder = opt_header(builder, headers::IS_REPLY, im.is_reply.then_some("true"));
     if let Some(guid) = im.in_reply_to_guid.as_deref().filter(|s| !s.is_empty()) {
         let mid = format!("{guid}@{}", message_id_domain(msg));
-        builder = builder
-            .in_reply_to(mid.clone())
-            .references(mid)
-            .header(headers::THREAD_ORIGINATOR_GUID, Text::new(guid.to_string()));
+        builder = builder.in_reply_to(mid.clone()).references(mid);
+        builder = x_me_header(builder, headers::THREAD_ORIGINATOR_GUID, guid);
     }
     optional_headers(
         builder,
@@ -855,8 +916,8 @@ fn attachment_meta_header<'m>(
             missing_reason: a.meta.missing_reason.as_deref(),
         })
         .collect();
-    let meta_json = header_safe_json(serde_json::to_string(&meta).unwrap_or_else(|_| "[]".into()));
-    builder.header(headers::ATTACHMENT_META, Text::new(meta_json))
+    let meta_json = serde_json::to_string(&meta).unwrap_or_else(|_| "[]".into());
+    x_me_header(builder, headers::ATTACHMENT_META, &meta_json)
 }
 
 /// Stable conversation label for mail `Subject` (never message-body preview).
