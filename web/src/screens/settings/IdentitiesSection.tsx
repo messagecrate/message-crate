@@ -4,11 +4,11 @@ import Button from "../../components/Button";
 import ConfirmDialog from "../../components/ConfirmDialog";
 import IdentityTable, { type IdentityRow } from "../../components/IdentityTable";
 import { type AccountProfile, fixedSettings } from "../../lib/account";
+import { identityType } from "../../lib/backupIdentity";
 import {
   type HandleService,
-  type ListedService,
   listedServerService,
-  listedService,
+  type ServerService,
   serverService,
 } from "../../lib/handleService";
 import { phonesMatch } from "../../lib/phoneTokens";
@@ -20,29 +20,27 @@ import { type Identity, removeBody } from "./identities";
 import { sectionTitleClass } from "./profileStyles";
 
 /**
- * Whether `rows` hold `address` as `listedAs`, however the address was typed.
- *
- * An add and a removal are judged here rather than by `profile.phones`,
- * because one number can be a Text Message identity and a WhatsApp identity
- * at once, and `profile.phones` lists it for each with no service. `listedAs`
- * is the `service` the list gives the identity: its service for a number, and
- * `email`, its type, for an email address on any service.
+ * Whether `profile` holds `address` on `service`, however the address was
+ * typed. The profile names every service a number is an identity under, so a
+ * number on Text Message and on WhatsApp is told apart by its services. An
+ * email address is on the phone service, because WhatsApp carries none.
  */
-function listsIdentity(rows: Identity[], address: string, listedAs: ListedService): boolean {
-  const needle = address.trim().toLowerCase();
-  return rows.some(
-    (row) =>
-      row.service === listedAs &&
-      (listedAs === "email"
-        ? row.address.toLowerCase() === needle
-        : phonesMatch(address, row.address)),
+function profileHolds(profile: AccountProfile, address: string, service: ServerService): boolean {
+  if (identityType(address) === "email") {
+    const needle = address.trim().toLowerCase();
+    return profile.emails.some((email) => email.toLowerCase() === needle);
+  }
+  return profile.phones.some(
+    (phone) => phone.services.includes(service) && phonesMatch(address, phone.address),
   );
 }
 
 /** The profile's own identities as placeholder rows, shown until the server lists them. */
 function placeholderRows(profile: AccountProfile): Identity[] {
   return [
-    ...profile.phones.map((address) => ({ address, service: "phone" })),
+    ...profile.phones.flatMap(({ address, services }) =>
+      services.map((service) => ({ address, service })),
+    ),
     ...profile.emails.map((address) => ({ address, service: "email" })),
   ].map((row) => ({
     ...row,
@@ -97,32 +95,18 @@ export function IdentitiesSection({
   );
 
   /**
-   * Send `body`, then read the identities list again and require that it now
-   * holds `address` as `listedAs` (`listed`) or no longer does. The change is
-   * judged by the list, not by the profile the server answered, because the
-   * profile names no service for a number.
-   *
-   * A list that cannot be read again leaves the change unchecked, so the
-   * error says only that, and the dialog stays open. Sending the change
-   * again is harmless: an identity already linked, or already gone, stays
-   * as it is, and the list is read again.
+   * Send `body`, then require that the account the server answers with holds
+   * `address` on `service` (`listed`) or no longer does. A server that
+   * answers without making the change leaves the dialog open with
+   * `notChanged`.
    */
   const changeAndCheck = async (
     body: Parameters<typeof updateProfile.mutateAsync>[0],
-    { address, listedAs }: { address: string; listedAs: ListedService },
+    { address, service }: { address: string; service: ServerService },
     { listed, notChanged }: { listed: boolean; notChanged: string },
   ) => {
-    await updateProfile.mutateAsync(body);
-    let rows: Identity[];
-    try {
-      rows = (await identities.refetch({ throwOnError: true })).data ?? [];
-    } catch (e) {
-      const reason = e instanceof Error ? e.message : String(e);
-      throw new Error(
-        `The server answered, but Identities could not be loaded again to check the change: ${reason}. Try again.`,
-      );
-    }
-    if (listsIdentity(rows, address, listedAs) !== listed) {
+    const changed = await updateProfile.mutateAsync(body);
+    if (profileHolds(changed, address, service) !== listed) {
       throw new Error(notChanged);
     }
   };
@@ -130,16 +114,11 @@ export function IdentitiesSection({
   const confirmAdd = async ({ address, service }: { address: string; service: HandleService }) => {
     setAddError("");
     const identity = { address, service: serverService(service) };
-    const listedAs = listedService(address, identity.service);
     try {
-      await changeAndCheck(
-        { identities: [identity] },
-        { address, listedAs },
-        {
-          listed: true,
-          notChanged: "The server did not add that identity.",
-        },
-      );
+      await changeAndCheck({ identities: [identity] }, identity, {
+        listed: true,
+        notChanged: "The server did not add that identity.",
+      });
       setAdding(false);
     } catch (e) {
       setAddError(e instanceof Error ? e.message : String(e));
@@ -159,7 +138,7 @@ export function IdentitiesSection({
       }
       await changeAndCheck(
         { remove_identities: [{ address, service }] },
-        { address, listedAs: listedService(address, service) },
+        { address, service },
         {
           listed: false,
           notChanged: "The server did not remove that identity.",

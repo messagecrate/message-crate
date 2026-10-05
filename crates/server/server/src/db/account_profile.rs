@@ -2,10 +2,11 @@
 
 use anyhow::{Context, Result, bail};
 use message_ir::{HandleService, HandleType};
+use serde::{Deserialize, Serialize};
 use sqlx::SqliteConnection;
 
 use crate::db::begin_write;
-use crate::db::handles::{normalize_handle, upsert_handle_row};
+use crate::db::handles::{IdentityService, normalize_handle, upsert_handle_row};
 use crate::db::schema;
 
 /// Contact points linked to an account, for profile display.
@@ -13,8 +14,24 @@ use crate::db::schema;
 pub struct AccountProfile {
     /// Email addresses linked to the account.
     pub emails: Vec<String>,
-    /// Phone handles linked to the account.
-    pub phones: Vec<String>,
+    /// Phone numbers linked to the account, each once.
+    pub phones: Vec<AccountPhone>,
+}
+
+/// One phone number linked to an account, with every service it is an
+/// identity under. A number that is both a Text Message and a WhatsApp
+/// identity is one entry naming both.
+//
+// The two identities are two `handles` rows with one `normalized` value. The
+// profile listed the number once per row, with no service, so a client could
+// not tell them apart (#1570).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct AccountPhone {
+    /// The number, normalized: E.164 when it parses as one.
+    pub address: String,
+    /// The services the number is an identity under, `phone` (Text Message)
+    /// before `whatsapp`. Never empty.
+    pub services: Vec<IdentityService>,
 }
 
 /// Load the email and phone handles linked to an account. Both default to empty
@@ -23,17 +40,16 @@ pub async fn load_account_profile(
     conn: &mut SqliteConnection,
     account_id: i64,
 ) -> Result<AccountProfile> {
-    let emails = account_handle_addresses(conn, account_id, HandleType::Email).await?;
-    let phones = account_handle_addresses(conn, account_id, HandleType::Phone).await?;
+    let emails = account_email_addresses(conn, account_id).await?;
+    let phones = account_phones(conn, account_id).await?;
     Ok(AccountProfile { emails, phones })
 }
 
-/// The normalized addresses of the account's handles of `handle_type`, A to
-/// Z, from `account_handles`.
-async fn account_handle_addresses(
+/// The normalized addresses of the account's email handles, A to Z, from
+/// `account_handles`.
+async fn account_email_addresses(
     conn: &mut SqliteConnection,
     account_id: i64,
-    handle_type: HandleType,
 ) -> Result<Vec<String>> {
     Ok(sqlx::query_scalar::<_, String>(
         "SELECT h.normalized FROM handles h
@@ -42,17 +58,48 @@ async fn account_handle_addresses(
          ORDER BY h.normalized",
     )
     .bind(account_id)
-    .bind(handle_type.as_str())
+    .bind(HandleType::Email.as_str())
     .fetch_all(&mut *conn)
     .await?)
+}
+
+/// The account's phone numbers, A to Z, each once with the services it is
+/// linked under in `account_handles`.
+async fn account_phones(conn: &mut SqliteConnection, account_id: i64) -> Result<Vec<AccountPhone>> {
+    let rows: Vec<(String, String)> = sqlx::query_as(
+        "SELECT DISTINCT h.normalized, h.service FROM handles h
+         JOIN account_handles ah ON ah.handle_id = h.id
+         WHERE ah.account_id = $1 AND h.handle_type = $2
+         ORDER BY h.normalized",
+    )
+    .bind(account_id)
+    .bind(HandleType::Phone.as_str())
+    .fetch_all(&mut *conn)
+    .await?;
+    let mut phones: Vec<AccountPhone> = Vec::new();
+    for (address, service) in rows {
+        let service = IdentityService::from(HandleService::parse(&service));
+        match phones.last_mut() {
+            Some(phone) if phone.address == address => phone.services.push(service),
+            _ => phones.push(AccountPhone {
+                address,
+                services: vec![service],
+            }),
+        }
+    }
+    for phone in &mut phones {
+        phone.services.sort_unstable();
+        phone.services.dedup();
+    }
+    Ok(phones)
 }
 
 /// The account's identities as `(normalized address, handle type)`, whatever
 /// service each is linked under: one number is one person on every service,
 /// so a Text Message identity also names the number on WhatsApp.
 ///
-/// Separate from [`account_handle_addresses`], which lists one row per
-/// service for the profile (#1570), and from `IdentitiesOf::Account`, which
+/// Separate from [`account_phones`], which lists each number once with its
+/// services for the profile (#1570), and from `IdentitiesOf::Account`, which
 /// lists each identity with its counts. This is the set an import checks;
 /// [`is_account_identity_sql`] is the same match for a query that reads
 /// handles, and the two must agree.
@@ -834,7 +881,13 @@ mod tests {
         let profile = load_account_profile(&mut conn, ACCOUNT_ID).await.unwrap();
 
         assert_eq!(profile.emails, vec!["alice@example.com".to_string()]);
-        assert_eq!(profile.phones, vec!["+15555550100".to_string()]);
+        assert_eq!(
+            profile.phones,
+            vec![AccountPhone {
+                address: "+15555550100".to_string(),
+                services: vec![IdentityService::Phone],
+            }]
+        );
     }
 
     #[tokio::test]
@@ -1021,7 +1074,13 @@ mod tests {
             .await
             .unwrap();
         let loaded = load_account_profile(&mut conn, ACCOUNT_ID).await.unwrap();
-        assert_eq!(loaded.phones, vec!["+15555550100".to_string()]);
+        assert_eq!(
+            loaded.phones,
+            vec![AccountPhone {
+                address: "+15555550100".to_string(),
+                services: vec![IdentityService::Phone],
+            }]
+        );
         assert_eq!(
             load_preferred_name(&mut conn, ACCOUNT_ID).await.unwrap(),
             Some("MB".to_string())
