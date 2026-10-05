@@ -1,4 +1,5 @@
 use super::*;
+use media::testutil::PNG_1X1_RGB;
 use std::sync::atomic::Ordering;
 
 /// A run directory holding one conversation and one attachment.
@@ -54,18 +55,6 @@ fn options(mode: MediaMode, limit: u64) -> TranscodeOptions {
     }
 }
 
-fn test_png_bytes() -> Vec<u8> {
-    #[rustfmt::skip]
-    const PNG_1X1_RGB: &[u8] = &[
-        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
-        0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
-        0x00, 0x03, 0x01, 0x01, 0x00, 0xc9, 0xfe, 0x92, 0xef, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
-        0x44, 0xae, 0x42, 0x60, 0x82,
-    ];
-    PNG_1X1_RGB.to_vec()
-}
-
 fn hex_sha256(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     Sha256::digest(bytes)
@@ -79,7 +68,7 @@ fn a_converted_attachment_is_patched_before_its_final_name_exists() {
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
     };
-    let (dir, jsonl, original) = staged_one("photo.png", &test_png_bytes());
+    let (dir, jsonl, original) = staged_one("photo.png", PNG_1X1_RGB);
     let report = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, u64::MAX),
@@ -115,7 +104,7 @@ fn the_digest_and_size_are_recomputed_from_the_derivative() {
     // ffmpeg output is not byte-identical across runs, so a
     // replayed digest would be a silent corruption — the server dedupes
     // assets by sha256.
-    let (dir, jsonl, _) = staged_one("photo.png", &test_png_bytes());
+    let (dir, jsonl, _) = staged_one("photo.png", PNG_1X1_RGB);
     transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, u64::MAX),
@@ -144,7 +133,7 @@ fn an_interrupted_file_is_re_transcoded_not_adopted() {
     };
     // Nothing distinguishes a complete .in_progress from a
     // truncated one without hashing it, so the marker's bytes are never used.
-    let (dir, jsonl, _) = staged_one("photo.png", &test_png_bytes());
+    let (dir, jsonl, _) = staged_one("photo.png", PNG_1X1_RGB);
     let marker = dir.path().join("attachments/photo-mv.jpg.in_progress");
     std::fs::write(&marker, b"truncated garbage from a killed run").unwrap();
 
@@ -175,7 +164,7 @@ fn an_already_converted_attachment_is_left_alone_on_a_second_run() {
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
     };
-    let (dir, jsonl, _) = staged_one("photo.png", &test_png_bytes());
+    let (dir, jsonl, _) = staged_one("photo.png", PNG_1X1_RGB);
     transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, u64::MAX),
@@ -214,7 +203,7 @@ fn a_derivative_over_the_limit_becomes_too_large_and_keeps_the_message() {
     };
     // Skipped, not reverted. Falling back to the original would store the
     // format the person asked to be rid of.
-    let (dir, jsonl, original) = staged_one("photo.png", &test_png_bytes());
+    let (dir, jsonl, original) = staged_one("photo.png", PNG_1X1_RGB);
     let report = transcode_staged(
         dir.path(),
         &options(MediaMode::Convert, 1),
@@ -335,7 +324,7 @@ fn a_file_left_out_as_too_large_is_sent_as_a_skip_import_error() {
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
     };
-    let (dir, jsonl, _original) = staged_one("photo.png", &test_png_bytes());
+    let (dir, jsonl, _original) = staged_one("photo.png", PNG_1X1_RGB);
     let (sink, issues) = collecting_sink();
 
     transcode_staged(
@@ -405,8 +394,8 @@ fn a_failed_file_settled_by_a_repoint_resolves_its_earlier_row() {
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
     };
-    let png = test_png_bytes();
-    let (dir, _jsonl, _original) = staged_one("photo.png", &png);
+    let png = PNG_1X1_RGB;
+    let (dir, _jsonl, _original) = staged_one("photo.png", png);
     let jsonl_b = second_document_sharing(dir.path(), "attachments/photo.png", png.len() as u64);
     let mut doc_b = read_conversation_jsonl(&jsonl_b).unwrap();
     doc_b.messages[0].attachments[0].missing_reason = Some("convert_failed: earlier".into());
@@ -478,7 +467,7 @@ fn a_convert_failed_attachment_keeps_its_path_and_is_retried_on_resume() {
 
 #[test]
 fn cancelling_stops_the_media_stage_without_corrupting_the_directory() {
-    let (dir, jsonl, _) = staged_one("photo.png", &test_png_bytes());
+    let (dir, jsonl, _) = staged_one("photo.png", PNG_1X1_RGB);
     let cancel = CancelFlag::default();
     cancel.store(true, Ordering::Relaxed);
 
@@ -537,7 +526,7 @@ fn a_crash_between_the_patch_and_the_rename_heals_by_re_transcoding_the_original
     // name: the doc already points at the -mv
     // name, a marker sits under .in_progress, and the original is still
     // on disk under its old name because the delete never ran.
-    let (dir, jsonl, original) = staged_one("photo.png", &test_png_bytes());
+    let (dir, jsonl, original) = staged_one("photo.png", PNG_1X1_RGB);
     let mut doc = read_conversation_jsonl(&jsonl).unwrap();
     {
         let att = &mut doc.messages[0].attachments[0];
@@ -708,7 +697,7 @@ fn a_crash_that_lost_both_the_marker_and_the_original_is_unrecoverable() {
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
     };
-    let (dir, jsonl, original) = staged_one("photo.png", &test_png_bytes());
+    let (dir, jsonl, original) = staged_one("photo.png", PNG_1X1_RGB);
     let mut doc = read_conversation_jsonl(&jsonl).unwrap();
     {
         let att = &mut doc.messages[0].attachments[0];
@@ -745,7 +734,7 @@ fn two_attachments_in_one_document_sharing_a_path_are_patched_together() {
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
     };
-    let (dir, jsonl, original) = staged_one("photo.png", &test_png_bytes());
+    let (dir, jsonl, original) = staged_one("photo.png", PNG_1X1_RGB);
     // A second message in the same document, carrying an attachment
     // recorded at the exact same content-addressed path — a legitimate
     // state, not a fixture error.
@@ -789,7 +778,7 @@ fn two_documents_sharing_one_original_both_end_pointing_at_the_committed_derivat
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
     };
-    let (dir, jsonl_a, original) = staged_one("shared.png", &test_png_bytes());
+    let (dir, jsonl_a, original) = staged_one("shared.png", PNG_1X1_RGB);
 
     // A second, independent conversation staged in the same directory whose
     // attachment happens to record the identical path — two different
@@ -805,7 +794,7 @@ fn two_documents_sharing_one_original_both_end_pointing_at_the_committed_derivat
         is_sticker: false,
         transcription: None,
         sticker_effect: None,
-        size_bytes: Some(test_png_bytes().len() as u64),
+        size_bytes: Some(PNG_1X1_RGB.len() as u64),
         missing_reason: None,
         bytes: None,
     }];
@@ -856,7 +845,7 @@ fn a_write_failure_leaves_the_final_name_uncommitted_and_the_original_untouched(
     // after the transcode has already produced a derivative, and assert
     // the final name was never created and the original is untouched.
     use std::os::unix::fs::PermissionsExt;
-    let (dir, _jsonl, original) = staged_one("photo.png", &test_png_bytes());
+    let (dir, _jsonl, original) = staged_one("photo.png", PNG_1X1_RGB);
     let mut perms = std::fs::metadata(dir.path()).unwrap().permissions();
     perms.set_mode(0o555);
     std::fs::set_permissions(dir.path(), perms).unwrap();
@@ -1070,8 +1059,8 @@ fn two_documents_sharing_one_original_that_converts_too_large_both_record_too_la
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
     };
-    let png = test_png_bytes();
-    let (dir, jsonl_a, original) = staged_one("shared.png", &png);
+    let png = PNG_1X1_RGB;
+    let (dir, jsonl_a, original) = staged_one("shared.png", png);
     let jsonl_b = second_document_sharing(dir.path(), "attachments/shared.png", png.len() as u64);
 
     let report = transcode_staged(
@@ -1107,8 +1096,8 @@ fn a_too_large_drop_survives_a_stop_and_a_resume() {
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
     };
-    let png = test_png_bytes();
-    let (dir, jsonl_a, original) = staged_one("shared.png", &png);
+    let png = PNG_1X1_RGB;
+    let (dir, jsonl_a, original) = staged_one("shared.png", png);
     let jsonl_b = second_document_sharing(dir.path(), "attachments/shared.png", png.len() as u64);
 
     // Stop the Media stage right after the first conversation's attachment.
@@ -1196,7 +1185,7 @@ fn without_ffmpeg_the_whole_media_stage_fails_and_touches_nothing() {
     // before any document is touched and never brands an attachment
     // `convert_failed`. The directory holds work for both modes: an image, a
     // video, and an audio file, across two conversation files.
-    let (dir, jsonl, _) = staged_one("photo.png", &test_png_bytes());
+    let (dir, jsonl, _) = staged_one("photo.png", PNG_1X1_RGB);
     let mut doc = read_conversation_jsonl(&jsonl).unwrap();
     let image = doc.messages[0].attachments[0].clone();
     for (name, bytes) in [
