@@ -61,6 +61,17 @@ describe("messagesSearch", () => {
     expect(messagesSearch(params("q=noon&view=messages&at=7&matched=0"), {})).toBe(
       "?q=noon&view=messages&at=7&matched=0",
     );
+    expect(messagesSearch(params("q=noon&at=7&matched=0"), { q: "noon" })).toBe(
+      "?q=noon&at=7&matched=0",
+    );
+  });
+
+  it("drops those versions with a new search, or with no message opened", () => {
+    expect(messagesSearch(params("q=noon&at=7&matched=0"), { q: "pitied" })).toBe(
+      "?q=pitied&at=7",
+    );
+    expect(messagesSearch(params("q=noon&at=7&matched=0"), { at: "" })).toBe("?q=noon");
+    expect(messagesSearch(params("q=noon&at=7&matched=0"), { at: "9" })).toBe("?q=noon&at=9");
   });
 
   it("drops a parameter set to empty, and is empty when nothing is left", () => {

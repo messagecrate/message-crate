@@ -365,4 +365,15 @@ describe("AppLayout on a Contact Group or Message Tag page", () => {
     await user.click(screen.getByRole("button", { name: "Search for ada" }));
     expect(screen.getByTestId("location").textContent).toBe("/messages/6?q=ada&tag=Holiday");
   });
+
+  // #1648: the earlier versions a result was found by belong to that search.
+  it("drops the versions a result was found by when the header searches for something else", async () => {
+    const user = setupUser();
+    renderLayout("/messages/6?q=imprudent&view=messages&at=77&matched=0");
+
+    await user.click(screen.getByRole("button", { name: "Search for ada" }));
+    expect(screen.getByTestId("location").textContent).toBe(
+      "/messages/6?q=ada&view=messages&at=77",
+    );
+  });
 });

@@ -90,16 +90,23 @@ export function openedMatchedVersions(params: URLSearchParams): number[] {
  * and the Messages list's own parameters from `current`, with `overrides` on
  * top. An empty value drops the parameter. `f` is not carried: a typed search
  * replaces it.
+ *
+ * `matched` is carried only while `q` and `at` stay as they are, unless
+ * `overrides` sets it: the versions belong to one search's answer for one
+ * message, so a new search or another message drops them (#1648).
  */
 export function messagesSearch(
   current: URLSearchParams,
   overrides: Record<string, string>,
 ): string {
   const next = new URLSearchParams();
-  for (const key of ["q", TAG_PARAM, VIEW_PARAM, MESSAGE_SORT_PARAM, AT_PARAM, MATCHED_PARAM]) {
-    const value = key in overrides ? overrides[key] : current.get(key);
-    if (value) next.set(key, value);
+  const value = (key: string) => (key in overrides ? overrides[key] : current.get(key)) || "";
+  for (const key of ["q", TAG_PARAM, VIEW_PARAM, MESSAGE_SORT_PARAM, AT_PARAM]) {
+    if (value(key)) next.set(key, value(key));
   }
+  const sameHit = ["q", AT_PARAM].every((key) => value(key) === (current.get(key) || ""));
+  const matched = MATCHED_PARAM in overrides || sameHit ? value(MATCHED_PARAM) : "";
+  if (matched && value(AT_PARAM)) next.set(MATCHED_PARAM, matched);
   const s = next.toString();
   return s ? `?${s}` : "";
 }
