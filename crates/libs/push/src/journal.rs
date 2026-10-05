@@ -30,7 +30,8 @@ pub struct JournalMessage {
 /// and the username the session resolved to. One export directory can be
 /// uploaded to more than one, so every event names its target.
 ///
-/// On disk the two are a line's own `url` and `username` keys.
+/// On disk the two are a line's own `url` and `username` keys, beside the
+/// event's other fields, so each line reads whole on its own.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServerTarget {
     pub url: String,
@@ -475,8 +476,8 @@ mod tests {
         );
     }
 
-    /// A line on disk keeps the target as its own `url` and `username` keys,
-    /// so a journal written before `ServerTarget` existed reads the same.
+    /// A line names its target as its own `url` and `username` keys, beside
+    /// the event's other fields, as `ServerTarget`'s doc says.
     #[test]
     fn an_event_writes_its_target_as_url_and_username_keys() {
         let dir = tempfile::tempdir().unwrap();
@@ -553,10 +554,11 @@ mod tests {
 
         let mut state = JournalState::default();
         state.assets.insert("bbb".into());
+        let alice = ServerTarget::new("http://a", "alice");
         let bob = ServerTarget::new("http://b", "bob");
         compact(&path, &bob, &state).unwrap();
 
-        let a = load(&path, &ServerTarget::new("http://a", "alice"), &mut |_| {}).unwrap();
+        let a = load(&path, &alice, &mut |_| {}).unwrap();
         assert!(a.assets.contains("aaa"));
         let b = load(&path, &bob, &mut |_| {}).unwrap();
         assert!(b.assets.contains("bbb"));
@@ -569,15 +571,18 @@ mod tests {
     fn compact_keeps_other_accounts_on_the_same_server() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(JOURNAL_NAME);
-        for (url, username, file) in [
-            ("http://a", "alice", "alice-a.jsonl"),
-            ("http://a", "bob", "bob-a.jsonl"),
-            ("http://b", "alice", "alice-b.jsonl"),
+        let alice_a = ServerTarget::new("http://a", "alice");
+        let bob_a = ServerTarget::new("http://a", "bob");
+        let alice_b = ServerTarget::new("http://b", "alice");
+        for (target, file) in [
+            (&alice_a, "alice-a.jsonl"),
+            (&bob_a, "bob-a.jsonl"),
+            (&alice_b, "alice-b.jsonl"),
         ] {
             append(
                 &path,
                 &JournalEvent::FileOk {
-                    target: ServerTarget::new(url, username),
+                    target: target.clone(),
                     source: "sms".into(),
                     file: file.into(),
                 },
@@ -587,16 +592,12 @@ mod tests {
 
         let mut state = JournalState::default();
         state.files.insert("alice-a.jsonl".into());
-        compact(&path, &ServerTarget::new("http://a", "alice"), &state).unwrap();
+        compact(&path, &alice_a, &state).unwrap();
 
-        let files = |url: &str, username: &str| {
-            load(&path, &ServerTarget::new(url, username), &mut |_| {})
-                .unwrap()
-                .files
-        };
-        assert_eq!(files("http://a", "alice"), ["alice-a.jsonl".into()].into());
-        assert_eq!(files("http://a", "bob"), ["bob-a.jsonl".into()].into());
-        assert_eq!(files("http://b", "alice"), ["alice-b.jsonl".into()].into());
+        let files = |target: &ServerTarget| load(&path, target, &mut |_| {}).unwrap().files;
+        assert_eq!(files(&alice_a), ["alice-a.jsonl".into()].into());
+        assert_eq!(files(&bob_a), ["bob-a.jsonl".into()].into());
+        assert_eq!(files(&alice_b), ["alice-b.jsonl".into()].into());
     }
 
     #[test]
