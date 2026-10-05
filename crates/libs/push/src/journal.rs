@@ -94,19 +94,29 @@ impl JournalState {
 /// server's events, or a conversation a later line records), so the sentence
 /// says only that what it recorded may be sent again.
 fn corrupt_line_sentence(path: &Path, line: usize, error: &serde_json::Error) -> String {
-    // serde names a position within the line's JSON, whose line is always 1,
-    // so only its column is kept beside the journal's own line number.
-    let text = error.to_string();
-    let reason = text
-        .rfind(" at line ")
-        .map_or(text.as_str(), |at| &text[..at]);
     format!(
-        "Line {line} of the Upload's journal {} could not be read ({reason} at column {}), \
+        "Line {line} of the Upload's journal {} could not be read ({}), \
          so the Upload skips it and may send again what it recorded. The server skips \
          what it already holds.",
         path.display(),
-        error.column()
+        corrupt_line_reason(error)
     )
+}
+
+/// serde's text for why a journal line did not parse. serde names a position
+/// within the line's JSON, whose line is always 1, so only its column is kept
+/// beside the journal's own line number. An error with no position (line 0,
+/// which a missing or mistyped field gives) keeps serde's text whole.
+fn corrupt_line_reason(error: &serde_json::Error) -> String {
+    let text = error.to_string();
+    if error.line() == 0 {
+        return text;
+    }
+    let position = format!(" at line {} column {}", error.line(), error.column());
+    match text.strip_suffix(&position) {
+        Some(reason) => format!("{reason} at column {}", error.column()),
+        None => text,
+    }
 }
 
 /// Path of `.import-state.jsonl` inside the export directory.
@@ -478,14 +488,53 @@ mod tests {
 
         assert!(state.files.contains("file-kept.jsonl"));
         assert_eq!(lines.len(), 1, "{lines:?}");
+        let prefix = format!(
+            "Line 2 of the Upload's journal {} could not be read (",
+            path.display()
+        );
+        let reason = lines[0]
+            .strip_prefix(&prefix)
+            .and_then(|rest| rest.split_once("), so the Upload skips it"))
+            .map(|(reason, _)| reason)
+            .unwrap_or_else(|| panic!("{}", lines[0]));
+        // serde's own position is cut to its column.
+        assert!(reason.ends_with(" at column 2"), "{reason}");
+        assert!(!reason.contains(" at line "), "{reason}");
+    }
+
+    /// A line that parses as JSON but misses a field gives serde no position,
+    /// and its text is kept whole, with no column, even when a value in it
+    /// holds the words " at line ".
+    #[test]
+    fn a_line_with_no_position_keeps_serdes_text_whole() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(JOURNAL_NAME);
+        fs::write(
+            &path,
+            concat!(
+                "{\"event\":\"file_ok\",\"url\":\"http://server\",\"username\":\"alice\",",
+                "\"source\":\"sms at line 2\"}\n"
+            ),
+        )
+        .unwrap();
+
+        let mut lines = Vec::new();
+        load(&path, "http://server", "alice", &mut |line| {
+            lines.push(line)
+        })
+        .unwrap();
+
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        let error =
+            serde_json::from_str::<JournalEvent>(fs::read_to_string(&path).unwrap().trim_end())
+                .unwrap_err();
+        assert_eq!(error.line(), 0, "{error}");
         assert!(
-            lines[0].starts_with(&format!(
-                "Line 2 of the Upload's journal {} could not be read (key must be a string at column 2), ",
-                path.display()
-            )),
+            lines[0].contains(&format!("could not be read ({error}), so ")),
             "{}",
             lines[0]
         );
+        assert!(!lines[0].contains(" at column "), "{}", lines[0]);
     }
 
     #[test]
