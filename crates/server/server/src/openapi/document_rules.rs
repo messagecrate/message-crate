@@ -571,9 +571,11 @@ async fn call_with(
 }
 
 /// Every field's description sits on the field, where openapi-typescript
-/// reads it into the web app's generated types, never inside a `oneOf`
-/// branch beside a `$ref` (`field_descriptions`). Walks the whole document,
-/// since a schema no operation answers is still generated.
+/// reads it into the web app's generated types (`field_descriptions`). An
+/// optional field typed by a schema, a `oneOf` of one `$ref` and `null`, must
+/// carry no description inside the `$ref`'s branch. A choice between schemas
+/// keeps a description on each branch, and is not such a field. Walks the
+/// whole document, since a schema no operation answers is still generated.
 #[test]
 fn every_field_description_sits_on_the_field() {
     let doc: Value = serde_json::from_str(&dump_openapi_json()).unwrap();
@@ -585,25 +587,26 @@ fn every_field_description_sits_on_the_field() {
     );
 }
 
-/// Add to `out` each property under `value` whose `oneOf` has a `$ref` branch
-/// carrying a description, as its JSON pointer.
+/// Add to `out`, as its JSON pointer, each property under `value` that is a
+/// `oneOf` of one `$ref` and `null` whose `$ref` branch carries a description.
 fn descriptions_inside_branches(value: &Value, at: &str, out: &mut BTreeSet<String>) {
     match value {
         Value::Object(object) => {
-            for (field, schema) in object
-                .get("properties")
-                .and_then(Value::as_object)
-                .into_iter()
-                .flatten()
-            {
-                let inside = schema["oneOf"]
+            let fields = object.get("properties").and_then(Value::as_object);
+            for (field, schema) in fields.into_iter().flatten() {
+                let branches = schema["oneOf"]
                     .as_array()
-                    .into_iter()
-                    .flatten()
-                    .any(|branch| {
-                        branch.get("$ref").is_some() && branch.get("description").is_some()
-                    });
-                if inside {
+                    .map(Vec::as_slice)
+                    .unwrap_or_default();
+                let (refs, others): (Vec<&Value>, Vec<&Value>) = branches
+                    .iter()
+                    .partition(|branch| branch.get("$ref").is_some());
+                let optional_schema = refs.len() == 1
+                    && !others.is_empty()
+                    && others
+                        .iter()
+                        .all(|branch| **branch == serde_json::json!({ "type": "null" }));
+                if optional_schema && refs[0].get("description").is_some() {
                     out.insert(format!("{at}/properties/{field}"));
                 }
             }

@@ -22,7 +22,7 @@
 use std::collections::BTreeSet;
 
 use serde_json::Value;
-use utoipa::openapi::schema::{AdditionalProperties, ArrayItems, Schema};
+use utoipa::openapi::schema::Schema;
 use utoipa::openapi::{OpenApi, RefOr};
 
 /// Mark every property of every schema a success answer holds required.
@@ -61,35 +61,15 @@ pub(crate) fn require_every_field(spec: &mut OpenApi) {
 /// the order the derive wrote and putting the rest after it. A `$ref` is left
 /// alone: the schema it names is marked on its own.
 fn require_all(schema: &mut RefOr<Schema>) {
-    let RefOr::T(schema) = schema else {
-        return;
-    };
-    match schema {
-        Schema::Object(object) => {
-            let missing: Vec<String> = object
-                .properties
-                .keys()
-                .filter(|name| !object.required.contains(name))
-                .cloned()
-                .collect();
-            object.required.extend(missing);
-            object.properties.values_mut().for_each(require_all);
-            if let Some(AdditionalProperties::RefOr(values)) =
-                object.additional_properties.as_deref_mut()
-            {
-                require_all(values);
-            }
-        }
-        Schema::Array(array) => {
-            if let ArrayItems::RefOrSchema(items) = &mut array.items {
-                require_all(items);
-            }
-        }
-        Schema::OneOf(one_of) => one_of.items.iter_mut().for_each(require_all),
-        Schema::AllOf(all_of) => all_of.items.iter_mut().for_each(require_all),
-        Schema::AnyOf(any_of) => any_of.items.iter_mut().for_each(require_all),
-        _ => {}
-    }
+    super::shared_parts::for_each_object(schema, &mut |object| {
+        let missing: Vec<String> = object
+            .properties
+            .keys()
+            .filter(|name| !object.required.contains(name))
+            .cloned()
+            .collect();
+        object.required.extend(missing);
+    });
 }
 
 /// Whether a media type is JSON: `application/json` and the `+json` types.

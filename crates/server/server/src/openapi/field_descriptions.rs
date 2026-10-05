@@ -13,69 +13,44 @@
 //! each branch's description, because there it describes the branch, not a
 //! field.
 
-use utoipa::openapi::schema::{AdditionalProperties, ArrayItems, Schema, SchemaType, Type};
+use utoipa::openapi::schema::{Object, Schema, SchemaType, Type};
 use utoipa::openapi::{OpenApi, RefOr};
+
+use super::shared_parts::{for_each_object, operations_mut};
 
 /// Move the description of every optional field typed by a schema from
 /// inside its `oneOf` onto the field.
 pub(crate) fn lift(spec: &mut OpenApi) {
+    let lift_fields = &mut |object: &mut Object| {
+        object.properties.values_mut().for_each(lift_field);
+    };
     if let Some(components) = spec.components.as_mut() {
-        components.schemas.values_mut().for_each(visit);
+        for schema in components.schemas.values_mut() {
+            for_each_object(schema, lift_fields);
+        }
     }
     for item in spec.paths.paths.values_mut() {
-        for op in super::shared_parts::operations_mut(item) {
-            if let Some(RefOr::T(body)) = op.request_body.as_mut() {
-                for content in body.content.values_mut() {
-                    if let RefOr::T(content) = content
-                        && let Some(schema) = content.schema.as_mut()
-                    {
-                        visit(schema);
-                    }
+        for op in operations_mut(item) {
+            let request = op.request_body.iter_mut().flat_map(|body| match body {
+                RefOr::T(body) => Some(body.content.values_mut()),
+                RefOr::Ref(_) => None,
+            });
+            let responses =
+                op.responses
+                    .responses
+                    .values_mut()
+                    .flat_map(|response| match response {
+                        RefOr::T(response) => Some(response.content.values_mut()),
+                        RefOr::Ref(_) => None,
+                    });
+            for content in request.flatten().chain(responses.flatten()) {
+                if let RefOr::T(content) = content
+                    && let Some(schema) = content.schema.as_mut()
+                {
+                    for_each_object(schema, lift_fields);
                 }
             }
-            for response in op.responses.responses.values_mut() {
-                let RefOr::T(response) = response else {
-                    continue;
-                };
-                for content in response.content.values_mut() {
-                    if let RefOr::T(content) = content
-                        && let Some(schema) = content.schema.as_mut()
-                    {
-                        visit(schema);
-                    }
-                }
-            }
         }
-    }
-}
-
-/// Lift the description of each field of each object in `schema`. A `$ref`
-/// is left alone: the schema it names is visited on its own.
-fn visit(schema: &mut RefOr<Schema>) {
-    let RefOr::T(schema) = schema else {
-        return;
-    };
-    match schema {
-        Schema::Object(object) => {
-            for field in object.properties.values_mut() {
-                lift_field(field);
-                visit(field);
-            }
-            if let Some(AdditionalProperties::RefOr(values)) =
-                object.additional_properties.as_deref_mut()
-            {
-                visit(values);
-            }
-        }
-        Schema::Array(array) => {
-            if let ArrayItems::RefOrSchema(items) = &mut array.items {
-                visit(items);
-            }
-        }
-        Schema::OneOf(one_of) => one_of.items.iter_mut().for_each(visit),
-        Schema::AllOf(all_of) => all_of.items.iter_mut().for_each(visit),
-        Schema::AnyOf(any_of) => any_of.items.iter_mut().for_each(visit),
-        _ => {}
     }
 }
 

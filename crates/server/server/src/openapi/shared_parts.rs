@@ -20,6 +20,7 @@ use std::collections::BTreeMap;
 use serde_json::Value;
 use utoipa::openapi::extensions::ExtensionsBuilder;
 use utoipa::openapi::path::{Operation, ParameterIn, PathItem};
+use utoipa::openapi::schema::{AdditionalProperties, ArrayItems, Object, Schema};
 use utoipa::openapi::{Content, OpenApi, Ref, RefOr, Response, ResponseBuilder};
 
 use crate::problem::openapi::KEY_PREFIX;
@@ -58,6 +59,38 @@ pub(super) fn operations_mut(item: &mut PathItem) -> impl Iterator<Item = &mut O
     ]
     .into_iter()
     .filter_map(Option::as_mut)
+}
+
+/// Call `f` on each object in `schema`: the schema itself when it is one, then
+/// every object its properties, map values, array items and `allOf`, `oneOf`
+/// and `anyOf` branches hold. A `$ref` is left alone, because the schema it
+/// names is a component of its own, which a caller walks on its own.
+pub(super) fn for_each_object(schema: &mut RefOr<Schema>, f: &mut impl FnMut(&mut Object)) {
+    let RefOr::T(schema) = schema else {
+        return;
+    };
+    match schema {
+        Schema::Object(object) => {
+            f(object);
+            for field in object.properties.values_mut() {
+                for_each_object(field, f);
+            }
+            if let Some(AdditionalProperties::RefOr(values)) =
+                object.additional_properties.as_deref_mut()
+            {
+                for_each_object(values, f);
+            }
+        }
+        Schema::Array(array) => {
+            if let ArrayItems::RefOrSchema(items) = &mut array.items {
+                for_each_object(items, f);
+            }
+        }
+        Schema::OneOf(one_of) => one_of.items.iter_mut().for_each(|b| for_each_object(b, f)),
+        Schema::AllOf(all_of) => all_of.items.iter_mut().for_each(|b| for_each_object(b, f)),
+        Schema::AnyOf(any_of) => any_of.items.iter_mut().for_each(|b| for_each_object(b, f)),
+        _ => {}
+    }
 }
 
 /// Cut the summary to its first sentence and put the rest in front of the
