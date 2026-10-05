@@ -220,7 +220,7 @@ pub(crate) fn prepare_file(
     profile.attachment_scan_hash_ms = elapsed_ms(scan_started);
     profile.unique_assets = u64::try_from(scan.unique.len()).unwrap_or(u64::MAX);
 
-    let mut log_lines: Vec<String> = scan.warnings.iter().map(|w| format!("WARN {w}")).collect();
+    let mut log_lines = scan.warnings;
     let mut assets = AssetTotals {
         skipped: scan.skipped,
         ..AssetTotals::default()
@@ -557,12 +557,15 @@ impl DigestResolver {
             return Ok(digest);
         }
 
-        let claimed = claimed_raw.and_then(|raw| match normalize_digest_sha256(raw) {
-            Ok(digest) => Some(digest),
-            Err(e) => {
-                warn(format!("{name}: bad digest_sha256 for {rel}: {e}"));
-                None
+        let claimed = claimed_raw.and_then(|raw| {
+            let digest = normalize_digest_sha256(raw);
+            if digest.is_none() {
+                warn(format!(
+                    "{name}: the SHA-256 recorded for attachment {rel} is not \
+                     64 hexadecimal digits, so the Upload hashes the file instead"
+                ));
             }
+            digest
         });
 
         let disk_size = std::fs::metadata(abs)
@@ -583,20 +586,21 @@ impl DigestResolver {
         if let Some(claimed_digest) = claimed.as_deref()
             && claimed_digest != disk_digest
         {
-            let size_note = match claimed_size {
-                Some(cs) if cs != disk_size => {
-                    format!(", size changed from {cs} to {disk_size} bytes")
-                }
-                _ => String::new(),
-            };
-            let msg = format!(
-                "{name}: sha256 mismatch for {rel}: \
-                 claimed {claimed_digest}, got {disk_digest}{size_note}"
+            let mut msg = format!(
+                "{name}: attachment {rel} hashes to {disk_digest}, \
+                 not the {claimed_digest} its conversation file records"
             );
+            if let Some(cs) = claimed_size
+                && cs != disk_size
+            {
+                msg.push_str(&format!(
+                    ". Its size changed from {cs} to {disk_size} bytes"
+                ));
+            }
             if self.verify_digests {
                 bail!("{msg}");
             }
-            warn(msg);
+            warn(format!("{msg}. The Upload names it Asset {disk_digest}"));
         }
         self.remember(abs, &disk_digest);
         Ok(disk_digest)
@@ -620,17 +624,11 @@ impl DigestResolver {
     }
 }
 
-/// Check that a SHA-256 fingerprint is exactly 64 hex digits; return lowercase form.
-///
-/// # Errors
-///
-/// Returns an error when the string is not 64 hexadecimal characters.
-fn normalize_digest_sha256(digest: &str) -> Result<String> {
+/// The lowercase form of a SHA-256, or `None` when it is not exactly 64
+/// hexadecimal digits.
+fn normalize_digest_sha256(digest: &str) -> Option<String> {
     let s = digest.trim().to_ascii_lowercase();
-    if s.len() != 64 || !s.chars().all(|c| c.is_ascii_hexdigit()) {
-        bail!("invalid sha256 digest (expected 64 hex digits)");
-    }
-    Ok(s)
+    (s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit())).then_some(s)
 }
 
 /// One attachment a worker should HEAD/PUT.
@@ -1110,17 +1108,17 @@ mod tests {
     fn normalize_digest_sha256_accepts_hex() {
         let d = "A".repeat(64);
         assert_eq!(normalize_digest_sha256(&d).unwrap(), "a".repeat(64));
-        assert!(normalize_digest_sha256("not-a-digest").is_err());
+        assert!(normalize_digest_sha256("not-a-digest").is_none());
     }
 
     /// The fingerprint becomes part of a request path, so the right length
     /// alone or hex digits alone is not enough.
     #[test]
     fn normalize_digest_sha256_refuses_the_wrong_length_or_a_non_hex_digit() {
-        assert!(normalize_digest_sha256(&"a".repeat(63)).is_err());
-        assert!(normalize_digest_sha256(&"a".repeat(65)).is_err());
-        assert!(normalize_digest_sha256(&"z".repeat(64)).is_err());
-        assert!(normalize_digest_sha256(&format!("../{}", "a".repeat(61))).is_err());
+        assert!(normalize_digest_sha256(&"a".repeat(63)).is_none());
+        assert!(normalize_digest_sha256(&"a".repeat(65)).is_none());
+        assert!(normalize_digest_sha256(&"z".repeat(64)).is_none());
+        assert!(normalize_digest_sha256(&format!("../{}", "a".repeat(61))).is_none());
     }
 
     #[test]
