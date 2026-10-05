@@ -354,6 +354,47 @@ fn csv_serializes_identity_type_in_cell_and_column() {
     assert_eq!(row.get(identity_type_idx).unwrap(), "");
 }
 
+/// An address written with `tel:` is a phone number in the CSV
+/// `identity_type` cell and in a participant read back from EML or mbox, as
+/// `phone::Handle::parse` types it everywhere else (#1634).
+#[test]
+fn a_tel_address_is_a_phone_identity_in_csv_eml_and_mbox() {
+    let tel = "tel:+15555550157";
+    let mut doc = message_ir::testutil::sample_document("hello ir");
+    doc.conversation.participants[0].identity = Some(tel.into());
+    doc.messages[0].sender_identity = Some(tel.into());
+    let tmp = tempfile::tempdir().unwrap();
+
+    let csv_path = write_conversation_csv(tmp.path(), &doc).unwrap();
+    let mut rdr = csv::Reader::from_path(&csv_path).unwrap();
+    let identity_type_idx = rdr
+        .headers()
+        .unwrap()
+        .iter()
+        .position(|c| c == "identity_type")
+        .unwrap();
+    let row = rdr.records().next().unwrap().unwrap();
+    assert_eq!(row.get(identity_type_idx).unwrap(), "phone");
+
+    let eml_dir = write_format(tmp.path(), OutputFormat::Eml, doc.clone()).unwrap();
+    let mbox_path = write_format(tmp.path(), OutputFormat::Mbox, doc).unwrap();
+    for back in [
+        read_conversation_eml_dir(&eml_dir).unwrap(),
+        read_conversation_mbox(&mbox_path).unwrap(),
+    ] {
+        let participant = back
+            .conversation
+            .participants
+            .iter()
+            .find(|p| p.identity.as_deref() == Some(tel))
+            .expect("the tel: participant is read back");
+        assert_eq!(
+            participant.identity_type,
+            Some(message_ir::HandleType::Phone)
+        );
+    }
+}
+
 #[test]
 fn roundtrip_eml_and_mbox() {
     for doc in [

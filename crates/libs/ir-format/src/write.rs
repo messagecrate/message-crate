@@ -183,14 +183,13 @@ pub(crate) fn parts_are_trivial_text_duplicate(message_text: &str, parts: Option
     )
 }
 
-/// CSV `identity_type` cell: the sender's identity type, inferred from the
-/// sender identity with the same rules the EML/mbox reader uses on re-import.
-/// Empty when the message has no sender identity.
+/// CSV `identity_type` cell: the sender's identity type, as
+/// [`phone::Handle::parse`] types the sender identity. Empty when the message
+/// has no sender identity or it is blank.
 fn sender_identity_type_cell(sender_identity: Option<&str>) -> &'static str {
-    match sender_identity {
-        Some(handle) => crate::util::infer_handle_type(handle).as_str(),
-        None => "",
-    }
+    sender_identity
+        .and_then(phone::Handle::parse)
+        .map_or("", |handle| handle.kind().as_str())
 }
 
 /// Per-conversation CSV using the unified [`CSV_HEADERS`] contract.
