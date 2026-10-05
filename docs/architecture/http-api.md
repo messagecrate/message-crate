@@ -405,11 +405,15 @@ member of it matches `application/json`, `application/problem+json`,
 `application/json` (RFC 9110), so refusing it would refuse a client that asks
 for JSON. A missing `Accept` is a request for JSON. The check runs on every `/v1` route
 but the five that answer bytes: `GET /v1/assets/{sha256}`, which streams the
-asset's own contents, `GET /v1/assets/{sha256}/preview` and
-`GET /v1/assets/{sha256}/thumbnail`, which stream its Preview and its
-Thumbnail, `POST /v1/contacts/address-book`, which answers the address book
-as `text/csv`, and `GET /v1/server/log-files/{id}`, which answers a file of
-the server's log as `text/plain`. Nothing outside `/v1` is checked.
+asset's own contents, `GET` and `HEAD /v1/assets/{sha256}/preview` and
+`GET` and `HEAD /v1/assets/{sha256}/thumbnail`, which stream its Preview and
+its Thumbnail or answer the headers that stream would carry,
+`POST /v1/contacts/address-book`, which answers the address book as
+`text/csv`, and `GET /v1/server/log-files/{id}`, which answers a file of the
+server's log as `text/plain`. A media element probes a file with `HEAD` and an
+`Accept` such as `image/*`, so refusing that `HEAD` would refuse the probe.
+`HEAD /v1/assets/{sha256}` is checked, because it is the probe for whether an
+asset is stored and answers JSON. Nothing outside `/v1` is checked.
 
 Rejected: requiring `Accept: application/json`. None of the server's own clients
 send one, and the rule would refuse the web app on its first request.
