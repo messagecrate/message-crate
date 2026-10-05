@@ -32,6 +32,16 @@ const PROGRESS_EVENTS: u64 = 200;
 /// rows too, and no bytes.
 const FLAG_FILE: i64 = 1;
 
+/// One regular file of a domain, as `Manifest.db` lists it.
+pub(crate) struct DomainFile {
+    /// The backup's id for the file.
+    file_id: String,
+    /// The file's path inside the domain.
+    relative_path: String,
+    /// The size the manifest records, which is the size decrypting writes.
+    size: u64,
+}
+
 /// What one run wrote.
 pub(crate) struct Written {
     /// Files decrypted into the directory.
@@ -61,7 +71,43 @@ pub(crate) fn open(request: &BackupDomainRequest) -> Result<Backup, RuntimeError
         .ok_or_else(|| RuntimeError::InvalidOptions(UNENCRYPTED_BACKUP_CLEAR_PASSWORD.to_string()))
 }
 
-/// Decrypt every file of `request.domain` into `request.out_dir`.
+/// Every regular file of `request.domain`, with the size the manifest
+/// records for it, so the app can check its disk before anything is
+/// written. A file whose metadata cannot be read counts for nothing here;
+/// decrypting it fails the same way and is counted then.
+///
+/// # Errors
+///
+/// Returns an error when the manifest cannot be read.
+pub(crate) fn list_domain(
+    backup: &Backup,
+    request: &BackupDomainRequest,
+) -> Result<Vec<DomainFile>, RuntimeError> {
+    let manifest = Connection::open(backup.manifest_db_path())?;
+    Ok(domain_files(&manifest, &request.domain)?
+        .into_iter()
+        .map(|(file_id, relative_path)| {
+            let size = backup
+                .get_file(&file_id)
+                .map_or(0, |entry| entry.metadata.size);
+            DomainFile {
+                file_id,
+                relative_path,
+                size,
+            }
+        })
+        .collect())
+}
+
+/// The bytes decrypting `files` writes.
+pub(crate) fn total_bytes(files: &[DomainFile]) -> u64 {
+    files
+        .iter()
+        .fold(0, |total, file| total.saturating_add(file.size))
+}
+
+/// Decrypt `files`, the domain's files as [`list_domain`] listed them, into
+/// `request.out_dir`.
 ///
 /// A file that cannot be decrypted is reported on the log and counted; the
 /// rest are still written. A backup routinely lists a file whose bytes it
@@ -69,14 +115,12 @@ pub(crate) fn open(request: &BackupDomainRequest) -> Result<Backup, RuntimeError
 ///
 /// # Errors
 ///
-/// Returns an error when the manifest cannot be read or the domain is not a
-/// plain directory name.
+/// Returns an error when the domain is not a plain directory name.
 pub(crate) fn decrypt_domain(
     backup: &Backup,
     request: &BackupDomainRequest,
+    files: &[DomainFile],
 ) -> Result<Written, RuntimeError> {
-    let manifest = Connection::open(backup.manifest_db_path())?;
-    let files = domain_files(&manifest, &request.domain)?;
     let total = files.len() as u64;
     let every = (total / PROGRESS_EVENTS).max(1);
     emit_log(format!("Decrypting {total} files from the backup..."));
@@ -85,13 +129,14 @@ pub(crate) fn decrypt_domain(
         files: 0,
         failures: 0,
     };
-    for (index, (file_id, relative_path)) in files.iter().enumerate() {
+    for (index, file) in files.iter().enumerate() {
+        let relative_path = &file.relative_path;
         let Some(target) = target_path(&request.out_dir, &request.domain, relative_path) else {
             return Err(RuntimeError::InvalidOptions(format!(
                 "the backup names a file outside its own directory: {relative_path}"
             )));
         };
-        match decrypt_to(backup, file_id, &target) {
+        match decrypt_to(backup, &file.file_id, &target) {
             Ok(()) => written.files += 1,
             Err(why) => {
                 written.failures += 1;
@@ -167,7 +212,7 @@ fn decrypt_to(backup: &Backup, file_id: &str, target: &Path) -> Result<(), Runti
 
 #[cfg(test)]
 mod tests {
-    use super::{decrypt_domain, domain_files, open, target_path};
+    use super::{decrypt_domain, domain_files, list_domain, open, target_path, total_bytes};
     use crate::error::IOS_BACKUP_PASSWORD_INCORRECT;
     use imessage_reader_protocol::BackupDomainRequest;
     use rusqlite::Connection;
@@ -262,7 +307,14 @@ mod tests {
         let request = request(backup.path(), "secret", out.path());
 
         let opened = open(&request).unwrap();
-        let written = decrypt_domain(&opened, &request).unwrap();
+        let files = list_domain(&opened, &request).unwrap();
+        // Before anything is written, the domain's four files are measured
+        // by the sizes the manifest records: the one with no bytes in the
+        // backup still counts the size it is listed with.
+        assert_eq!(files.len(), 4);
+        assert_eq!(total_bytes(&files), 12 + 100_000 + 1);
+        assert_eq!(fs::read_dir(out.path()).unwrap().count(), 0);
+        let written = decrypt_domain(&opened, &request, &files).unwrap();
 
         assert_eq!((written.files, written.failures), (3, 1));
         let domain = out.path().join(DOMAIN);

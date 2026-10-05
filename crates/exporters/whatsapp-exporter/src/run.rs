@@ -2,14 +2,17 @@
 //! it in process.
 
 use crate::emit::{ConvertRequest, convert_json};
-use crate::ios_backup::decrypt_if_encrypted;
+use crate::ios_backup::{decrypt_if_encrypted, extract_bytes};
 use crate::owner::{owner_from_backup, owner_from_form};
-use crate::wtsexporter::{Platform, WtsexporterArgs, resolve_wtsexporter, run_wtsexporter};
+use crate::wtsexporter::{
+    Platform, WtsexporterArgs, extracts_ios_backup, resolve_wtsexporter, run_wtsexporter,
+};
 use anyhow::{Context, Result, bail};
 use message_crate_core::{
-    ExportTransforms, ExporterConfig, RunResult, SourceConfig, WhatsappPlatform as CorePlatform,
-    prepare_outputs,
+    ExportTransforms, ExporterConfig, RunResult, ScratchDir, SourceConfig, WHATSAPP_DIRECTORY,
+    WhatsappPlatform as CorePlatform, prepare_outputs,
 };
+use message_staging::{Disk, check_headroom};
 use std::env;
 use std::fs;
 
@@ -82,7 +85,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
 
         message_crate_core::check_cancel(config.cancel.as_ref())?;
         let bin = resolve_wtsexporter()?;
-        let work = mark_output_and_make_scratch_dir(config)?;
+        let work = mark_output_and_make_work_directory(config)?;
         let json_out = work.path().join("result.json");
 
         // Cooperative only: cancel is checked before and after the external process.
@@ -100,12 +103,18 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
             business: source.business,
         };
         // wtsexporter cannot be given an iPhone backup password, so an
-        // encrypted backup's WhatsApp files are decrypted into the work dir
-        // first and wtsexporter reads those instead of the backup.
-        if platform == Platform::Ios
-            && let Some(decrypted) = decrypt_if_encrypted(source, work.path(), config)?
-        {
-            args.read_decrypted(decrypted);
+        // encrypted backup's WhatsApp files are decrypted into the work
+        // directory first and wtsexporter reads those instead of the backup.
+        // From a backup that is not encrypted, wtsexporter extracts them into
+        // the work directory itself, so that disk is checked for room first.
+        if platform == Platform::Ios {
+            if let Some(decrypted) = decrypt_if_encrypted(source, work.path(), config)? {
+                args.read_decrypted(decrypted);
+            } else if extracts_ios_backup(&args)?
+                && let Some(bytes) = extract_bytes(source)?
+            {
+                check_headroom(work.path(), bytes, Disk::Scratch)?;
+            }
         }
         message_crate_core::check_cancel(config.cancel.as_ref())?;
         let log = run_wtsexporter(&bin, &args, &json_out)?;
@@ -119,7 +128,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         let kept = config.output.join("wtsexporter_result.json");
         fs::copy(&json_out, &kept).with_context(|| format!("copy JSON to {}", kept.display()))?;
 
-        // Work dir (wtsexporter extract) + backup input. The backup input is the
+        // Work directory (wtsexporter extract) + backup input. The backup input is the
         // process cwd when the config names no input.
         let mut media_roots = vec![work.path().to_path_buf(), input];
         media_roots.sort();
@@ -166,7 +175,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         resume: config.resume,
         issues: config.issues.as_ref(),
     })?;
-    // Drop tempdir after convert (media files already copied).
+    // The work directory goes once the conversion has copied the media.
     drop(_work_keep_alive);
 
     let mut result = message_crate_core::finish_run(config, &report, needs_media_tools)?;
@@ -175,10 +184,17 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
     Ok(result)
 }
 
-/// Mark the output directory as an export directory, then create the scratch
+/// Mark the output directory as an export directory, then make the work
 /// directory wtsexporter runs in (its working directory, the extract, and
-/// `result.json`) inside it. The scratch directory is kept until after convert so
-/// media copy can read the extracted files.
+/// `result.json`) under the Scratch Directory's [`WHATSAPP_DIRECTORY`]. The
+/// work directory is kept until after convert so media copy can read the
+/// extracted files.
+///
+/// The work directory holds WhatsApp's data in the clear: the decrypted
+/// files of an encrypted iPhone backup, and wtsexporter's extract. It is not
+/// output, so it is never in the output directory (#1651). It is deleted
+/// when the run ends, whichever way it ends; what a killed run left is
+/// deleted by the next WhatsApp run and by the sweep when the app starts.
 ///
 /// The writer cleans the output when it opens, and refuses a directory with no
 /// sentinel that is not empty, so a new directory must be marked before this
@@ -190,15 +206,12 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
 /// # Errors
 ///
 /// Returns an error when the output cannot be read or marked, holds files and
-/// no sentinel, or the scratch directory cannot be created.
-fn mark_output_and_make_scratch_dir(config: &ExporterConfig) -> Result<tempfile::TempDir> {
+/// no sentinel, or the work directory cannot be made.
+fn mark_output_and_make_work_directory(config: &ExporterConfig) -> Result<ScratchDir> {
     if !config.resume {
         message_ir_format::mark_export_directory(&config.output)?;
     }
-    tempfile::Builder::new()
-        .prefix("wtsexporter-")
-        .tempdir_in(&config.output)
-        .context("create temp dir for wtsexporter")
+    ScratchDir::create(&config.scratch_dir.join(WHATSAPP_DIRECTORY))
 }
 
 #[cfg(test)]
@@ -260,43 +273,60 @@ mod tests {
         }
     }
 
-    /// An empty output directory `out` in a new temporary directory, and a WhatsApp
-    /// run's config that writes into it.
+    /// An empty output directory `out` in a new temporary directory, and a
+    /// WhatsApp run's config that writes into it, with its Scratch Directory
+    /// at `scratch` beside it.
     fn empty_whatsapp_output() -> (tempfile::TempDir, PathBuf, ExporterConfig) {
         let tmp = tempfile::tempdir().unwrap();
         let output = tmp.path().join("out");
         fs::create_dir_all(&output).unwrap();
-        let config = jsonl_run_config(
+        let mut config = jsonl_run_config(
             &[],
             &output,
             SourceConfig::Whatsapp(WhatsappConfig::default()),
         );
+        config.scratch_dir = tmp.path().join("scratch");
         (tmp, output, config)
     }
 
-    /// wtsexporter writes into the output directory before the writer opens it,
-    /// and the writer's clean refuses a directory with no sentinel that is not
-    /// empty. The scratch directory is made only after the output is marked.
+    /// The work directory, which holds WhatsApp's data in the clear, is made
+    /// under the Scratch Directory's WhatsApp directory, where the sweep
+    /// finds what a killed run left, and never in the output directory. The
+    /// output is marked first, so wtsexporter's JSON copied there is
+    /// accepted by the writer's clean. The work directory is gone when the
+    /// run lets go of it (#1651).
     #[test]
-    fn the_writer_accepts_an_output_that_holds_the_wtsexporter_scratch_directory() {
+    fn the_work_directory_is_made_under_the_scratch_directory_not_the_output() {
         let (_tmp, output, config) = empty_whatsapp_output();
 
-        let work = super::mark_output_and_make_scratch_dir(&config).unwrap();
-        fs::write(output.join("wtsexporter_result.json"), "{}").unwrap();
+        let work = super::mark_output_and_make_work_directory(&config).unwrap();
 
+        let root = config
+            .scratch_dir
+            .join(message_crate_core::WHATSAPP_DIRECTORY);
+        assert_eq!(work.path().parent(), Some(root.as_path()));
+        assert_eq!(
+            entries(&output),
+            [message_ir_format::EXPORT_SENTINEL.to_string()],
+            "only the mark is in the output"
+        );
+        fs::write(output.join("wtsexporter_result.json"), "{}").unwrap();
         message_ir_format::clean_previous_ir_output(&output).unwrap();
-        assert!(work.path().is_dir(), "the scratch directory is kept");
+
+        let path = work.path().to_path_buf();
+        drop(work);
+        assert!(!path.exists(), "the work directory is deleted");
     }
 
-    /// Making the scratch directory leaves an earlier export in place, so a
+    /// Making the work directory leaves an earlier export in place, so a
     /// wtsexporter run that fails afterwards has not deleted it.
     #[test]
-    fn making_the_scratch_directory_keeps_an_earlier_export() {
+    fn making_the_work_directory_keeps_an_earlier_export() {
         let (_tmp, output, config) = empty_whatsapp_output();
         message_ir_format::mark_export_directory(&output).unwrap();
         fs::write(output.join("earlier.jsonl"), "{}").unwrap();
 
-        let _work = super::mark_output_and_make_scratch_dir(&config).unwrap();
+        let _work = super::mark_output_and_make_work_directory(&config).unwrap();
 
         assert!(output.join("earlier.jsonl").is_file());
     }

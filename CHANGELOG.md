@@ -391,6 +391,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **A WhatsApp import keeps its working files out of the
+  Staging Directory.** WhatsApp's files read out of an iPhone backup,
+  decrypted when the backup is encrypted, sat in a directory inside the
+  Staging Directory, and stayed there in the clear when the app was stopped
+  during Staging. They now go in the Scratch Directory, are deleted when the
+  run ends, and are deleted the next time the app starts if it was stopped.
+  Before it reads them out, the import checks that the disk holding the
+  Scratch Directory has room for them, and stops with the space it needs
+  when it does not.
 - 2026-10-05 **An Import Run whose session has ended logs you out and
   waits for you.** When your session ended while an import waited at a
   review, and you then approved it, cancelled it, or resumed an Upload, the

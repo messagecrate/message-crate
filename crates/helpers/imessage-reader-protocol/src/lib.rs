@@ -21,9 +21,14 @@
 //!    [`Event::Attachment`].
 //! 4. The app closes the helper's stdin, and the helper exits.
 //!
-//! [`Request::BackupDomain`] is a session of its own: the helper answers
-//! [`Event::Source`], streams [`Event::Log`] and [`Event::Progress`] lines
-//! while it decrypts, then sends [`Event::BackupDomainDone`].
+//! [`Request::BackupDomain`] is a session of its own:
+//!
+//! 1. The helper answers [`Event::Source`], then [`Event::BackupDomainSize`]
+//!    before it writes anything, so the app can check its disk for room.
+//! 2. The app sends [`Request::DecryptDomain`] to go ahead, or closes the
+//!    helper's stdin to stop, and the helper exits having written nothing.
+//! 3. The helper streams [`Event::Log`] and [`Event::Progress`] lines while it
+//!    decrypts, then sends [`Event::BackupDomainDone`].
 //!
 //! This crate carries the type definitions, their serde shapes, and one rule:
 //! [`bare_address`], which says what an owner address looks like on the wire.
@@ -67,7 +72,9 @@ use serde_json::Value;
 /// 11: a message in no chat is in the [`ORPHANED_CONVERSATION_TYPE`]
 /// conversation of its sender, keyed by [`orphaned_chat_id`], where every
 /// such message was in one `individual` conversation named `orphaned`.
-pub const PROTOCOL_VERSION: u32 = 11;
+/// 12: [`Request::BackupDomain`] answers [`Event::BackupDomainSize`] and waits
+/// for [`Request::DecryptDomain`] before it decrypts.
+pub const PROTOCOL_VERSION: u32 = 12;
 
 /// The [`Conversation::conversation_type`] of a conversation that holds
 /// orphaned messages: messages the backup holds without recording which
@@ -158,6 +165,9 @@ pub enum Request {
     /// directory. This is how another app's data (WhatsApp) comes out of an
     /// encrypted backup: the program that reads it cannot take the password.
     BackupDomain(BackupDomainRequest),
+    /// Go ahead with the decryption [`Event::BackupDomainSize`] measured.
+    /// Only meaningful after [`Request::BackupDomain`].
+    DecryptDomain,
 }
 
 /// What reading a backup's identities needs.
@@ -249,7 +259,15 @@ pub enum Event {
     },
     /// The answer to [`Request::Attachment`].
     Attachment(AttachmentFile),
-    /// The answer to [`Request::BackupDomain`].
+    /// What [`Request::BackupDomain`] would write, sent before anything is
+    /// written. The helper then waits for [`Request::DecryptDomain`].
+    BackupDomainSize {
+        /// Regular files the manifest lists under the domain.
+        files: u64,
+        /// Their bytes in all, as the manifest records each file's size.
+        bytes: u64,
+    },
+    /// The answer to [`Request::DecryptDomain`].
     BackupDomainDone {
         /// Files written. Zero means the backup does not hold the domain.
         files: u64,
@@ -597,6 +615,21 @@ mod tests {
         assert!(line.starts_with(r#"{"op":"backup_domain""#), "{line}");
         let back: Request = serde_json::from_str(&line).unwrap();
         assert!(matches!(back, Request::BackupDomain(_)));
+
+        let line = serde_json::to_string(&Request::DecryptDomain).unwrap();
+        assert_eq!(line, r#"{"op":"decrypt_domain"}"#);
+        let back: Request = serde_json::from_str(&line).unwrap();
+        assert!(matches!(back, Request::DecryptDomain));
+
+        let size = Event::BackupDomainSize {
+            files: 2,
+            bytes: 300,
+        };
+        let line = serde_json::to_string(&size).unwrap();
+        assert_eq!(
+            line,
+            r#"{"event":"backup_domain_size","files":2,"bytes":300}"#
+        );
 
         let source = AttachmentSource::Inline {
             text: "<svg/>".into(),
