@@ -14,7 +14,7 @@ use message_ir_format::mark_export_directory;
 use serde::Serialize;
 
 use crate::http::{CloseAction, ExportMessagesArgs, HttpSession};
-use crate::part_file::part_file_beside;
+use crate::part_file::write_asset;
 use crate::project::{ExportPath, build_document, conversation_key, export_path, to_ir_message};
 use message_crate_api_types::{ExportQueryList, ExportRun, ExportScope, Message};
 
@@ -718,36 +718,29 @@ fn place_other_paths(
                     .with_context(|| format!("mkdir {}", parent.display()))?;
             }
             if fs::hard_link(&from, &dest).is_err() {
-                copy_into_place(&from, &dest)?;
+                copy_into_place(&from, &dest, sha)?;
             }
         }
     }
     Ok(())
 }
 
-/// Copy `from` to `dest` through a temporary file of a unique name beside
-/// `dest` ([`part_file_beside`]), renamed onto `dest` once the copy is whole,
-/// so a crash never leaves a short file that a resume would take as finished,
-/// and a file already beside `dest`, whatever its name, is left alone.
+/// Copy `from`, the Asset whose SHA-256 is `sha256`, to `dest` through the
+/// Asset's own temporary file beside `dest` ([`write_asset`]), so a crash
+/// never leaves a short file that a resume would take as finished, and a
+/// file already beside `dest` under another name is left alone.
 ///
 /// # Errors
 ///
-/// Returns an error when the temporary file cannot be created, `from` cannot
-/// be read, or the rename fails.
-fn copy_into_place(from: &Path, dest: &Path) -> Result<()> {
-    let mut part = part_file_beside(dest)
-        .with_context(|| format!("create a temporary file beside {}", dest.display()))?;
+/// Returns an error when `from` cannot be read, or for any reason
+/// [`write_asset`] gives.
+fn copy_into_place(from: &Path, dest: &Path, sha256: &str) -> Result<()> {
     let mut source = fs::File::open(from).with_context(|| format!("open {}", from.display()))?;
-    std::io::copy(&mut source, part.as_file_mut())
-        .with_context(|| format!("copy {} -> {}", from.display(), part.path().display()))?;
-    // Closed before the rename, which Windows needs. Dropping `part` on an
-    // error removes it.
-    let part = part.into_temp_path();
-    fs::rename(&part, dest)
-        .with_context(|| format!("rename {} -> {}", part.display(), dest.display()))?;
-    // Renamed away, so there is nothing left for the drop to remove.
-    let _ = part.keep();
-    Ok(())
+    write_asset(dest, sha256, |out| {
+        std::io::copy(&mut source, out).with_context(|| format!("copy {}", from.display()))?;
+        Ok(())
+    })
+    .with_context(|| format!("copy {} -> {}", from.display(), dest.display()))
 }
 
 /// The progress line for an attachment path the export refused, naming the
@@ -1173,7 +1166,7 @@ mod asset_download_tests {
         fs::write(&from, b"the menu").unwrap();
         fs::write(dir.path().join("menu.part"), b"another attachment").unwrap();
 
-        copy_into_place(&from, &dest).unwrap();
+        copy_into_place(&from, &dest, &"ab".repeat(32)).unwrap();
 
         assert_eq!(fs::read(&dest).unwrap(), b"the menu");
         assert_eq!(

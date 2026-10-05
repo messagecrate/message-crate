@@ -1,44 +1,46 @@
-//! The temporary file a fetched or copied Asset is written to before it is
-//! renamed onto its path.
+//! Writing a fetched or copied Asset through a temporary file beside its path.
 
-use std::path::Path;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 
-use tempfile::NamedTempFile;
+use anyhow::Result;
 
-/// Create an empty file beside `dest` under a name no other file has, for
-/// bytes that are renamed onto `dest` once they are whole.
+/// The temporary file for the Asset whose SHA-256 is `sha256`, on its way to
+/// `dest`: `.<sha256>.part` in `dest`'s directory.
 ///
-/// The name is `.<file name of dest>.<random>.part`, made with `O_EXCL`, so
-/// two Assets whose paths differ only in extension (`menu.pdf` and
-/// `menu.jpg`) never write one file while several workers fetch at once, and
-/// an Asset whose own path ends in `.part` is never written over. The file is
-/// in `dest`'s directory, so the rename never crosses a file system. A
-/// dropped [`NamedTempFile`] removes its file.
+/// The name comes from the Asset, not from `dest`, for three reasons. Two
+/// Assets whose paths differ only in extension (`menu.pdf` and `menu.jpg`)
+/// are two fingerprints, so the workers that fetch them at once never share a
+/// file. The name is 70 bytes whatever `dest` is called, so an Asset whose
+/// own name is near the 255-byte limit of a file name still has room for
+/// one. And a resumed Export fetches the Asset to the same name again, so a
+/// file a crash left behind is written over and renamed away rather than
+/// kept for good. One Export fetches each fingerprint once, and copies it to
+/// its other paths only after every fetch has finished, one at a time, so
+/// nothing else writes this name while a write to it runs. The directory is
+/// `dest`'s, so the rename never crosses a file system.
+fn part_path(dest: &Path, sha256: &str) -> PathBuf {
+    dest.with_file_name(format!(".{sha256}.part"))
+}
+
+/// Write the Asset whose SHA-256 is `sha256` to `dest` through its temporary
+/// file ([`part_path`]), with [`message_ir::write_atomic_via`]: `write` fills
+/// the temporary file, which is synced and renamed onto `dest` only when
+/// `write` succeeds, and removed when it fails. A synced rename matters,
+/// because the pull journal records the Asset next, and a resumed Export
+/// skips an Asset the journal names whose file exists.
 ///
 /// # Errors
 ///
-/// Returns an error when the file cannot be created in `dest`'s directory.
-pub(crate) fn part_file_beside(dest: &Path) -> std::io::Result<NamedTempFile> {
-    let directory = dest
-        .parent()
-        .filter(|parent| !parent.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    let mut prefix = std::ffi::OsString::from(".");
-    if let Some(name) = dest.file_name() {
-        prefix.push(name);
-        prefix.push(".");
-    }
-    let mut builder = tempfile::Builder::new();
-    builder.prefix(&prefix).suffix(".part");
-    // tempfile makes its file readable by its owner alone, and the rename
-    // keeps that mode. The Asset gets the mode any new file gets instead,
-    // 0o666 less the umask, as `File::create` gives.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        builder.permissions(std::fs::Permissions::from_mode(0o666));
-    }
-    builder.tempfile_in(directory)
+/// Returns the error `write` returns, unchanged, or an error when the
+/// directory or the temporary file cannot be created, or the sync or the
+/// rename fails.
+pub(crate) fn write_asset(
+    dest: &Path,
+    sha256: &str,
+    write: impl FnOnce(&mut dyn Write) -> Result<()>,
+) -> Result<()> {
+    message_ir::write_atomic_via(&part_path(dest, sha256), dest, write)
 }
 
 #[cfg(test)]
@@ -46,17 +48,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn two_paths_that_differ_only_in_extension_get_two_files() {
+    fn an_asset_with_a_name_of_250_bytes_is_written() {
+        // A name of the whole file name plus a suffix ran past the 255-byte
+        // limit of ext4, APFS and NTFS, and every retry failed the same way.
         let dir = tempfile::tempdir().unwrap();
-        let pdf = part_file_beside(&dir.path().join("menu.pdf")).unwrap();
-        let jpg = part_file_beside(&dir.path().join("menu.jpg")).unwrap();
+        let dest = dir.path().join(format!("{}.pdf", "m".repeat(246)));
 
-        assert_ne!(pdf.path(), jpg.path());
-        assert_eq!(pdf.path().parent(), Some(dir.path()));
-        let name = pdf.path().file_name().unwrap().to_str().unwrap();
-        assert!(
-            name.starts_with(".menu.pdf.") && name.ends_with(".part"),
-            "{name}"
-        );
+        write_asset(&dest, &"ab".repeat(32), |out| Ok(out.write_all(b"menu")?)).unwrap();
+
+        assert_eq!(std::fs::read(&dest).unwrap(), b"menu");
+    }
+
+    #[test]
+    fn a_file_a_crash_left_is_written_over_by_the_next_fetch() {
+        // A random name was never reused, so every interrupted Export left
+        // its partial file behind for good.
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("menu.pdf");
+        let sha256 = "ab".repeat(32);
+        std::fs::write(part_path(&dest, &sha256), b"half of a longer m").unwrap();
+
+        write_asset(&dest, &sha256, |out| Ok(out.write_all(b"menu")?)).unwrap();
+
+        assert_eq!(std::fs::read(&dest).unwrap(), b"menu");
+        let names: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, ["menu.pdf"]);
     }
 }
