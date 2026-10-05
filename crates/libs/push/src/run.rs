@@ -714,7 +714,7 @@ fn complete_import_run(
                 bytes_uploaded: report.assets_bytes,
             },
         )
-        .with_context(|| format!("complete import run {import_id}"))?;
+        .with_context(|| format!("complete Import Run {import_id} on the server"))?;
     out.log(&format!("Import Run {import_id} completed"));
     Ok(())
 }
