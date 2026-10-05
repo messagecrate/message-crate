@@ -581,6 +581,43 @@ fn a_file_the_journal_lists_but_the_disk_lost_is_fetched_again() {
     );
 }
 
+/// A run that stopped after writing its Assets but before recording them in
+/// the pull-state file leaves files the next run keeps without fetching. The
+/// "Fetched" line counts only the bytes this run fetched, so it reads "0 B"
+/// rather than the size of the files it kept.
+#[test]
+fn a_file_on_disk_the_journal_does_not_list_is_kept_and_adds_no_fetched_bytes() {
+    let server = MockServer::start();
+    let _auth = mock_auth(&server);
+    let _run = mock_run(&server);
+    let _pages = mock_pages(&server, "sms-backup-restore");
+    let menu = mock_asset(&server, MENU_SHA, MENU_BYTES);
+    let photo = mock_asset(&server, PHOTO_SHA, PHOTO_BYTES);
+    let dir = tempdir().unwrap();
+    let out = dir.path().join("pulled");
+    let cfg = config(&out, server.base_url());
+    run(&cfg, None).unwrap();
+    fs::remove_file(journal::journal_path(&out)).unwrap();
+
+    let mut lines = Vec::new();
+    let report = {
+        let mut progress = |event| {
+            if let ProgressEvent::Log(line) = event {
+                lines.push(line);
+            }
+        };
+        run(&cfg, Some(&mut progress)).unwrap()
+    };
+
+    assert_eq!(report, report_for(&out, 0, 2));
+    assert_eq!(menu.calls(), 1);
+    assert_eq!(photo.calls(), 1);
+    assert!(
+        lines.contains(&"Fetched 0 Assets (0 B) and kept 2 already on disk".to_string()),
+        "{lines:#?}"
+    );
+}
+
 #[test]
 fn a_cancel_requested_before_the_run_records_nothing_on_the_server() {
     let server = MockServer::start();
