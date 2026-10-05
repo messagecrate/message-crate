@@ -25,6 +25,8 @@ use serde_json::Value;
 use utoipa::openapi::schema::Schema;
 use utoipa::openapi::{OpenApi, RefOr};
 
+use super::shared_parts::{for_each_object, operations_mut};
+
 /// Mark every property of every schema a success answer holds required.
 pub(crate) fn require_every_field(spec: &mut OpenApi) {
     let doc = serde_json::to_value(&*spec).expect("the OpenAPI document serializes to JSON");
@@ -37,7 +39,7 @@ pub(crate) fn require_every_field(spec: &mut OpenApi) {
         }
     }
     for item in spec.paths.paths.values_mut() {
-        for op in super::shared_parts::operations_mut(item) {
+        for op in operations_mut(item) {
             for (status, response) in &mut op.responses.responses {
                 let RefOr::T(response) = response else {
                     continue;
@@ -61,7 +63,7 @@ pub(crate) fn require_every_field(spec: &mut OpenApi) {
 /// the order the derive wrote and putting the rest after it. A `$ref` is left
 /// alone: the schema it names is marked on its own.
 fn require_all(schema: &mut RefOr<Schema>) {
-    super::shared_parts::for_each_object(schema, &mut |object| {
+    for_each_object(schema, &mut |object| {
         let missing: Vec<String> = object
             .properties
             .keys()

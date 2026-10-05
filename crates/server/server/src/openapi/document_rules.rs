@@ -588,7 +588,8 @@ fn every_field_description_sits_on_the_field() {
 }
 
 /// Add to `out`, as its JSON pointer, each property under `value` that is a
-/// `oneOf` of one `$ref` and `null` whose `$ref` branch carries a description.
+/// `oneOf` of one `$ref` and `null`, with no description of its own, whose
+/// `$ref` branch carries a description: what `field_descriptions` lifts.
 fn descriptions_inside_branches(value: &Value, at: &str, out: &mut BTreeSet<String>) {
     match value {
         Value::Object(object) => {
@@ -603,9 +604,8 @@ fn descriptions_inside_branches(value: &Value, at: &str, out: &mut BTreeSet<Stri
                     .partition(|branch| branch.get("$ref").is_some());
                 let optional_schema = refs.len() == 1
                     && !others.is_empty()
-                    && others
-                        .iter()
-                        .all(|branch| **branch == serde_json::json!({ "type": "null" }));
+                    && others.iter().all(|branch| branch["type"] == "null")
+                    && schema.get("description").is_none();
                 if optional_schema && refs[0].get("description").is_some() {
                     out.insert(format!("{at}/properties/{field}"));
                 }
