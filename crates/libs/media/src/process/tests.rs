@@ -1,22 +1,6 @@
 use super::*;
 use crate::kind_for_mime;
-
-/// Write a minimal valid 1x1 PNG, readable by ffmpeg, for conversion tests.
-///
-/// Plain RGB (PNG color type 2), not RGBA: this build's ffmpeg PNG decoder
-/// chokes on a 1x1 RGBA image ("chunk too big" / decode error) but reads
-/// this one cleanly.
-fn write_test_png(path: &Path) {
-    #[rustfmt::skip]
-    const PNG_1X1_RGB: &[u8] = &[
-        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
-        0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
-        0x00, 0x03, 0x01, 0x01, 0x00, 0xc9, 0xfe, 0x92, 0xef, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
-        0x44, 0xae, 0x42, 0x60, 0x82,
-    ];
-    fs::write(path, PNG_1X1_RGB).unwrap();
-}
+use crate::testutil::PNG_1X1_RGB;
 
 /// Write a coarsely-quantized JPEG through ffmpeg at `-q:v 20` that grows
 /// when re-encoded at compress mode's finer `-q:v 5`.
@@ -107,7 +91,7 @@ fn transcode_file_writes_the_derivative_and_leaves_the_original_alone() {
     };
     let dir = tempfile::tempdir().unwrap();
     let src = dir.path().join("photo.png");
-    write_test_png(&src);
+    fs::write(&src, PNG_1X1_RGB).unwrap();
     let before = fs::read(&src).unwrap();
 
     let name = derivative_name(&src, MediaMode::Convert).expect("png is converted");
@@ -156,7 +140,7 @@ fn derivative_name_matches_what_the_media_step_actually_produces() {
     // with the pass, a conversation file points at a name nothing wrote.
     let dir = tempfile::tempdir().unwrap();
     let src = dir.path().join("photo.png");
-    write_test_png(&src);
+    fs::write(&src, PNG_1X1_RGB).unwrap();
     let name = derivative_name(&src, MediaMode::Convert).unwrap();
     let dest = dir.path().join("out").join(&name);
     let outcome =
@@ -178,7 +162,7 @@ fn derivative_name_matches_what_the_media_step_actually_produces() {
 fn transcode_file_clears_scratch_beside_the_source_only() {
     let dir = tempfile::tempdir().unwrap();
     let src = dir.path().join("photo.png");
-    write_test_png(&src);
+    fs::write(&src, PNG_1X1_RGB).unwrap();
     let own_scratch = dir.path().join("photo.msgmedia.tmp.jpg");
     fs::write(&own_scratch, b"leftover").unwrap();
     let other_scratch = dir.path().join("other.msgmedia.tmp.jpg");
@@ -614,8 +598,8 @@ fn process_attachment_files_touches_only_the_listed_files() {
     fs::create_dir_all(&attachments).unwrap();
     let listed = attachments.join("a.png");
     let unlisted = attachments.join("b.png");
-    write_test_png(&listed);
-    write_test_png(&unlisted);
+    fs::write(&listed, PNG_1X1_RGB).unwrap();
+    fs::write(&unlisted, PNG_1X1_RGB).unwrap();
     let unlisted_before = fs::read(&unlisted).unwrap();
 
     let (_report, remap) = process_attachment_files(
@@ -652,7 +636,7 @@ fn transcode_file_as_converts_an_extensionless_source_by_the_given_kind() {
     let dir = tempfile::tempdir().unwrap();
     // The server stores originals under their fingerprint alone.
     let src = dir.path().join("3b1f");
-    write_test_png(&src);
+    fs::write(&src, PNG_1X1_RGB).unwrap();
     assert_eq!(classify(&src), None, "no extension, so no kind to read");
     let dest = dir.path().join("3b1f.jpg.in_progress");
 
@@ -807,7 +791,7 @@ fn convert_never_overwrites_a_file_that_already_has_the_target_name() {
     fs::create_dir_all(&attachments).unwrap();
     // a.png beside a.jpg, c.png beside c.jpg and c_1.jpg, and a plain b.png.
     for name in ["a.png", "b.png", "c.png"] {
-        write_test_png(&attachments.join(name));
+        fs::write(attachments.join(name), PNG_1X1_RGB).unwrap();
     }
     for name in ["a.jpg", "c.jpg", "c_1.jpg"] {
         fs::write(attachments.join(name), format!("the user's own {name}")).unwrap();
@@ -870,7 +854,7 @@ fn compress_shrinks_large_jpegs_converts_pngs_and_leaves_gifs_and_small_jpegs() 
         "fixture must clear the floor, or the size gate skips it"
     );
     let png = attachments.join("still.png");
-    write_test_png(&png);
+    fs::write(&png, PNG_1X1_RGB).unwrap();
     // Neither of these reaches ffmpeg, so their bytes need not decode.
     let gif = attachments.join("loop.gif");
     fs::write(&gif, b"GIF89a animated").unwrap();
