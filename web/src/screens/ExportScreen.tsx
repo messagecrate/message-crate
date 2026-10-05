@@ -156,7 +156,6 @@ export default function ExportScreen() {
                 exportCancel.guard(() =>
                   invokePull({
                     base_url: getBaseUrl(),
-                    username: "",
                     token,
                     out_dir: outDir,
                     query: scope === "search" ? query.trim() : "",
