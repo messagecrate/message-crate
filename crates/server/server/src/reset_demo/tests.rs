@@ -2120,19 +2120,31 @@ async fn a_reset_leaves_a_demo_that_logs_in_and_holds_nothing_old() {
     assert_eq!(server["demo_account"], true);
 }
 
+/// The warning names what processing the demo originals could not do,
+/// count by count, and is silent when it did everything (#1849).
 #[test]
-fn the_not_made_warning_names_the_originals_and_is_silent_at_zero() {
-    assert_eq!(not_made_warning(0), None);
+fn the_not_done_warning_names_each_count_and_is_silent_at_zero() {
+    use crate::process_assets::ProcessAssetsStats;
+
+    assert_eq!(not_done_warning(&ProcessAssetsStats::default()), None);
     assert_eq!(
-        not_made_warning(1).as_deref(),
-        Some(
-            "1 demo original whose Preview or Thumbnail could not be made stays as it was, and reset-demo continues"
-        )
+        not_done_warning(&ProcessAssetsStats {
+            errors: 1,
+            ..ProcessAssetsStats::default()
+        })
+        .as_deref(),
+        Some("reset-demo continues past 1 original whose Preview or Thumbnail could not be made")
     );
     assert_eq!(
-        not_made_warning(2).as_deref(),
+        not_done_warning(&ProcessAssetsStats {
+            errors: 2,
+            not_removed: 1,
+            ..ProcessAssetsStats::default()
+        })
+        .as_deref(),
         Some(
-            "2 demo originals whose Preview or Thumbnail could not be made stay as they were, and reset-demo continues"
+            "reset-demo continues past 2 originals whose Preview or Thumbnail could not be made \
+             and 1 incomplete original that could not be removed"
         )
     );
 }

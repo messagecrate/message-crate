@@ -597,12 +597,28 @@ async fn run_reset_demo(args: ResetDemoArgs) -> Result<()> {
         stats.process_assets.thumbnails
     );
     println!(
-        "  left as they were:     {} (originals for which nothing was written)",
+        "  incomplete removed:    {} (originals a transfer never finished)",
+        stats.process_assets.removed
+    );
+    println!(
+        "  damaged dropped:       {} (Previews and Thumbnails that could not be made again)",
+        stats.process_assets.dropped
+    );
+    println!(
+        "  left as they were:     {} (originals for which nothing was written, removed or dropped)",
         stats.process_assets.skipped
     );
     println!(
         "  not made:              {} (originals whose Preview or Thumbnail could not be made)",
         stats.process_assets.errors
+    );
+    println!(
+        "  not removed:           {} (incomplete originals that could not be removed)",
+        stats.process_assets.not_removed
+    );
+    println!(
+        "  not dropped:           {} (damaged Previews and Thumbnails that could not be dropped)",
+        stats.process_assets.not_dropped
     );
     Ok(())
 }
@@ -662,8 +678,9 @@ fn serve_config(args: ServeArgs) -> Result<Config> {
 /// # Errors
 ///
 /// Returns an error after the summary line when the Preview or Thumbnail of
-/// any original could not be made, so a cron job or script that runs the
-/// command sees a non-zero exit status.
+/// any original could not be made, an incomplete original could not be
+/// removed, or a damaged version could not be dropped, so a cron job or
+/// script that runs the command sees a non-zero exit status.
 /// Returns an error too when Ctrl-C or SIGTERM stops it, after killing the
 /// ffmpeg that runs and removing what it wrote (#1729). A second Ctrl-C or
 /// SIGTERM ends it at once.
@@ -702,15 +719,8 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
     stopper.abort();
     let stats = stats?;
     opened.close().await;
-    if stats.errors > 0 {
-        bail!(
-            "{}",
-            crate::counts::words(
-                stats.errors,
-                "1 original whose Preview or Thumbnail could not be made",
-                "{n} originals whose Preview or Thumbnail could not be made",
-            )
-        );
+    if let Some(failures) = stats.failures() {
+        bail!("{failures}");
     }
     Ok(())
 }

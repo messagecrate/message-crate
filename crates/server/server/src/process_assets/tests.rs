@@ -397,13 +397,18 @@ fn removing_an_incomplete_upload_deletes_the_part_file() {
     fs::write(&part, b"half").unwrap();
     let pass = pass(&opts, dir.path(), &assets, dir.path());
 
-    pass.remove_incomplete(&row("aa/upload.part"), &part)
-        .unwrap();
+    assert!(
+        pass.remove_incomplete(&row("aa/upload.part"), &part)
+            .unwrap()
+    );
 
     assert!(!part.exists());
-    // A file that is already gone is not an error.
-    pass.remove_incomplete(&row("aa/upload.part"), &part)
-        .unwrap();
+    // A file that is already gone is not an error, and nothing is removed.
+    assert!(
+        !pass
+            .remove_incomplete(&row("aa/upload.part"), &part)
+            .unwrap()
+    );
 }
 
 #[test]
@@ -419,8 +424,11 @@ fn a_dry_run_leaves_the_part_file_in_place() {
     fs::write(&part, b"half").unwrap();
     let pass = pass(&opts, dir.path(), &assets, dir.path());
 
-    pass.remove_incomplete(&row("aa/upload.part"), &part)
-        .unwrap();
+    // Counted as removed, as a dry run counts what it would make.
+    assert!(
+        pass.remove_incomplete(&row("aa/upload.part"), &part)
+            .unwrap()
+    );
 
     assert!(part.is_file());
 }
@@ -648,6 +656,7 @@ fn stats(
         thumbnails,
         skipped,
         errors,
+        ..ProcessAssetsStats::default()
     }
 }
 
@@ -1075,7 +1084,8 @@ async fn a_missing_original_is_counted_as_a_failure_and_the_run_goes_on() {
 /// The run drops it rather than leave the rows naming it, so the server
 /// stops serving it as if whole: every row that names it, from every
 /// source, is cleared, the file is deleted, and the attachment still counts
-/// as a failure. A dry run says so and changes nothing.
+/// as one whose Preview could not be made, and the Preview as dropped. A dry
+/// run counts the same, says so and changes nothing.
 #[tokio::test]
 async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_failure() {
     let (opened, _dir, imessage_attachment) = fixture_with_bmp("imessage").await;
@@ -1117,9 +1127,13 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
         dry_run: true,
         ..Default::default()
     };
+    let dropped_and_not_made = ProcessAssetsStats {
+        dropped: 1,
+        ..stats(1, 0, 0, 0, 1)
+    };
     assert_eq!(
         run(&opened, &dry_run, &NOT_STOPPED).await.unwrap(),
-        stats(1, 0, 0, 0, 1)
+        dropped_and_not_made
     );
     assert!(preview.is_file(), "a dry run deletes nothing");
     assert_eq!(derived_of(&mut conn, imessage_attachment).await, named);
@@ -1128,7 +1142,7 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
         run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
             .await
             .unwrap(),
-        stats(1, 0, 0, 0, 1)
+        dropped_and_not_made
     );
     assert!(!preview.exists(), "the damaged Preview is deleted");
     assert_eq!(derived_of(&mut conn, imessage_attachment).await, None);
@@ -1142,6 +1156,255 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
     .await
     .unwrap();
     assert_eq!(named_columns, 0, "every derived column is cleared");
+}
+
+/// A damaged Preview `preview_sha` named by the attachment `attachment_id`:
+/// a file under the converted directory whose bytes do not hash to its name.
+/// Returns the file's path.
+async fn name_damaged_preview(
+    opened: &OpenDb,
+    conn: &mut SqliteConnection,
+    attachment_id: i64,
+    preview_sha: &str,
+) -> PathBuf {
+    let rel = format!("{}/{preview_sha}.jpg", &preview_sha[..2]);
+    let preview = opened
+        .cfg
+        .paths
+        .assets_converted_dir_for_account(ACCOUNT)
+        .join(&rel);
+    fs::create_dir_all(preview.parent().unwrap()).unwrap();
+    fs::write(&preview, b"a Preview cut short").unwrap();
+    let mut tx = crate::db::begin_write(conn).await.unwrap();
+    sqlx::query(
+        "UPDATE attachments
+         SET derived_sha256 = $1, derived_assets_path = $2, derived_mime_type = 'image/jpeg'
+         WHERE id = $3",
+    )
+    .bind(preview_sha)
+    .bind(&rel)
+    .bind(attachment_id)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    preview
+}
+
+/// Await `f` with `dir` read-only, so nothing in it can be removed, and give
+/// its result. `None` when the directory can still be written, as it can by
+/// root, so the failure cannot be made and the test has nothing to check.
+#[cfg(unix)]
+pub(crate) async fn with_read_only<T>(dir: &Path, f: impl Future<Output = T>) -> Option<T> {
+    use std::os::unix::fs::PermissionsExt;
+
+    fs::set_permissions(dir, fs::Permissions::from_mode(0o555)).unwrap();
+    let probe = dir.join("probe");
+    let result = if fs::write(&probe, b"").is_ok() {
+        let _ = fs::remove_file(&probe);
+        eprintln!(
+            "skipped: {} can still be written when read-only",
+            dir.display()
+        );
+        None
+    } else {
+        Some(f.await)
+    };
+    fs::set_permissions(dir, fs::Permissions::from_mode(0o755)).unwrap();
+    result
+}
+
+/// An incomplete original that is removed counts as removed, not as an
+/// original left as it was, at one and at many (#1849). One already gone
+/// is left as it was.
+#[tokio::test]
+async fn an_incomplete_original_removed_is_counted_as_removed() {
+    let (opened, _dir) = open_db().await;
+    let mut conn = opened.conn().await.unwrap();
+    seed_account(&mut conn, ACCOUNT).await;
+    let message_id = seed_message(&mut conn, "imessage").await;
+    attach_stored_blob(&opened, &mut conn, message_id, SHA, ".part", b"half").await;
+    let dry_run = ProcessAssetsOptions {
+        dry_run: true,
+        ..Default::default()
+    };
+    let removed = |scanned, removed| ProcessAssetsStats {
+        removed,
+        ..stats(scanned, 0, 0, 0, 0)
+    };
+
+    assert_eq!(
+        run(&opened, &dry_run, &NOT_STOPPED).await.unwrap(),
+        removed(1, 1)
+    );
+
+    attach_stored_blob(
+        &opened,
+        &mut conn,
+        message_id,
+        &"b".repeat(64),
+        ".part",
+        b"half",
+    )
+    .await;
+    assert_eq!(
+        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
+            .await
+            .unwrap(),
+        removed(2, 2)
+    );
+    assert_eq!(
+        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
+            .await
+            .unwrap(),
+        stats(2, 0, 0, 2, 0),
+        "an incomplete original already gone is left as it was"
+    );
+}
+
+/// An incomplete original that cannot be removed is counted apart from an
+/// original whose Preview or Thumbnail could not be made, because nothing
+/// was being made (#1849).
+#[cfg(unix)]
+#[tokio::test]
+async fn an_incomplete_original_that_cannot_be_removed_is_counted_apart() {
+    let (opened, _dir) = open_db().await;
+    let mut conn = opened.conn().await.unwrap();
+    seed_account(&mut conn, ACCOUNT).await;
+    let message_id = seed_message(&mut conn, "imessage").await;
+    // Two in the read-only shard `aa/`, and one in `bb/` that can go.
+    attach_stored_blob(
+        &opened,
+        &mut conn,
+        message_id,
+        &"a".repeat(64),
+        ".part",
+        b"half",
+    )
+    .await;
+    let second = format!("{}b", "a".repeat(63));
+    attach_stored_blob(&opened, &mut conn, message_id, &second, ".part", b"half").await;
+    attach_stored_blob(
+        &opened,
+        &mut conn,
+        message_id,
+        &"b".repeat(64),
+        ".part",
+        b"half",
+    )
+    .await;
+    let shard = opened.cfg.paths.assets_dir_for_account(ACCOUNT).join("aa");
+
+    let Some(counted) = with_read_only(
+        &shard,
+        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED),
+    )
+    .await
+    else {
+        return;
+    };
+
+    assert_eq!(
+        counted.unwrap(),
+        ProcessAssetsStats {
+            removed: 1,
+            not_removed: 2,
+            ..stats(3, 0, 0, 0, 0)
+        }
+    );
+}
+
+/// A damaged Preview its original no longer gets, here an MP3 every browser
+/// plays, is dropped and counted as dropped, not as an original left as it
+/// was, at one and at many (#1849). Nothing failed, so nothing is counted
+/// as not made.
+#[tokio::test]
+async fn a_damaged_preview_the_original_no_longer_gets_is_counted_as_dropped() {
+    let (opened, _dir) = open_db().await;
+    let mut conn = opened.conn().await.unwrap();
+    seed_account(&mut conn, ACCOUNT).await;
+    let message_id = seed_message(&mut conn, "imessage").await;
+    let first = attach_stored_blob(&opened, &mut conn, message_id, SHA, ".mp3", b"x").await;
+    let first_preview = name_damaged_preview(&opened, &mut conn, first, &"c".repeat(64)).await;
+    let dropped = |scanned, dropped| ProcessAssetsStats {
+        dropped,
+        ..stats(scanned, 0, 0, 0, 0)
+    };
+    let dry_run = ProcessAssetsOptions {
+        dry_run: true,
+        ..Default::default()
+    };
+
+    assert_eq!(
+        run(&opened, &dry_run, &NOT_STOPPED).await.unwrap(),
+        dropped(1, 1)
+    );
+    assert!(first_preview.is_file(), "a dry run deletes nothing");
+
+    let second = attach_stored_blob(
+        &opened,
+        &mut conn,
+        message_id,
+        &"b".repeat(64),
+        ".mp3",
+        b"y",
+    )
+    .await;
+    let second_preview = name_damaged_preview(&opened, &mut conn, second, &"d".repeat(64)).await;
+    assert_eq!(
+        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
+            .await
+            .unwrap(),
+        dropped(2, 2)
+    );
+    assert!(!first_preview.exists() && !second_preview.exists());
+    assert_eq!(derived_of(&mut conn, first).await, None);
+    assert_eq!(derived_of(&mut conn, second).await, None);
+}
+
+/// A damaged Preview that cannot be deleted is counted as not dropped,
+/// apart from an original whose Preview or Thumbnail could not be made
+/// (#1849).
+#[cfg(unix)]
+#[tokio::test]
+async fn a_damaged_preview_that_cannot_be_dropped_is_counted_apart() {
+    let (opened, _dir) = open_db().await;
+    let mut conn = opened.conn().await.unwrap();
+    seed_account(&mut conn, ACCOUNT).await;
+    let message_id = seed_message(&mut conn, "imessage").await;
+    let first = attach_stored_blob(&opened, &mut conn, message_id, SHA, ".mp3", b"x").await;
+    let first_preview = name_damaged_preview(&opened, &mut conn, first, &"c".repeat(64)).await;
+    let second = attach_stored_blob(
+        &opened,
+        &mut conn,
+        message_id,
+        &"b".repeat(64),
+        ".mp3",
+        b"y",
+    )
+    .await;
+    let second_preview =
+        name_damaged_preview(&opened, &mut conn, second, &format!("{}d", "c".repeat(63))).await;
+    let shard = first_preview.parent().unwrap().to_path_buf();
+    assert_eq!(second_preview.parent(), Some(shard.as_path()));
+
+    let Some(counted) = with_read_only(
+        &shard,
+        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED),
+    )
+    .await
+    else {
+        return;
+    };
+
+    assert_eq!(
+        counted.unwrap(),
+        ProcessAssetsStats {
+            not_dropped: 2,
+            ..stats(2, 0, 0, 0, 0)
+        }
+    );
+    assert!(first_preview.is_file() && second_preview.is_file());
 }
 
 #[tokio::test]
@@ -1474,31 +1737,130 @@ async fn a_live_pass_keeps_its_work_directory_young() {
 }
 
 /// The line that ends `process-assets` words each count singular for one
-/// and plural for every other count (#1825).
+/// and plural for every other count (#1825), and names an incomplete
+/// original and a damaged version by what happened to them, not as a
+/// Preview or Thumbnail left as it was or not made (#1849).
 #[test]
 fn the_done_line_counts_one_and_many() {
     let one = ProcessAssetsStats {
         scanned: 1,
         derived: 1,
         thumbnails: 1,
+        removed: 1,
+        dropped: 1,
         skipped: 1,
         errors: 1,
+        not_removed: 1,
+        not_dropped: 1,
     };
     assert_eq!(
         done_line(&one, false),
-        "done: read 1 original, made 1 Preview and 1 Thumbnail, left 1 original as it was, \
-         1 original whose Preview or Thumbnail could not be made"
+        "done: read 1 original, made 1 Preview and 1 Thumbnail, removed 1 incomplete original, \
+         dropped 1 damaged Preview or Thumbnail, left 1 original as it was, \
+         1 original whose Preview or Thumbnail could not be made, \
+         1 incomplete original that could not be removed, \
+         1 damaged Preview or Thumbnail that could not be dropped"
     );
     let many = ProcessAssetsStats {
-        scanned: 4,
+        scanned: 9,
         derived: 2,
         thumbnails: 3,
+        removed: 2,
+        dropped: 3,
         skipped: 0,
-        errors: 0,
+        errors: 2,
+        not_removed: 3,
+        not_dropped: 4,
     };
     assert_eq!(
         done_line(&many, true),
+        "done: read 9 originals, made 2 Previews and 3 Thumbnails, removed 2 incomplete originals, \
+         dropped 3 damaged Previews or Thumbnails, left 0 originals as they were, \
+         2 originals whose Preview or Thumbnail could not be made, \
+         3 incomplete originals that could not be removed, \
+         4 damaged Previews or Thumbnails that could not be dropped (dry run)"
+    );
+}
+
+/// Most runs meet no incomplete original and no damaged version, so the
+/// line leaves those counts out at zero, and still says that no Preview or
+/// Thumbnail failed.
+#[test]
+fn the_done_line_leaves_out_what_the_run_never_met() {
+    assert_eq!(
+        done_line(&stats(4, 2, 3, 0, 0), true),
         "done: read 4 originals, made 2 Previews and 3 Thumbnails, left 0 originals as they were, \
          0 originals whose Preview or Thumbnail could not be made (dry run)"
+    );
+}
+
+/// What could not be done is named count by count, each at one and many,
+/// and nothing is named when everything was done (#1849).
+#[test]
+fn the_failures_name_each_count_and_nothing_at_zero() {
+    assert_eq!(stats(3, 1, 1, 1, 0).failures(), None);
+    let not_made = |errors| ProcessAssetsStats {
+        errors,
+        ..ProcessAssetsStats::default()
+    };
+    assert_eq!(
+        not_made(1).failures().as_deref(),
+        Some("1 original whose Preview or Thumbnail could not be made")
+    );
+    assert_eq!(
+        not_made(2).failures().as_deref(),
+        Some("2 originals whose Preview or Thumbnail could not be made")
+    );
+    let not_removed = |not_removed| ProcessAssetsStats {
+        not_removed,
+        ..ProcessAssetsStats::default()
+    };
+    assert_eq!(
+        not_removed(1).failures().as_deref(),
+        Some("1 incomplete original that could not be removed")
+    );
+    assert_eq!(
+        not_removed(2).failures().as_deref(),
+        Some("2 incomplete originals that could not be removed")
+    );
+    let not_dropped = |not_dropped| ProcessAssetsStats {
+        not_dropped,
+        ..ProcessAssetsStats::default()
+    };
+    assert_eq!(
+        not_dropped(1).failures().as_deref(),
+        Some("1 damaged Preview or Thumbnail that could not be dropped")
+    );
+    assert_eq!(
+        not_dropped(2).failures().as_deref(),
+        Some("2 damaged Previews or Thumbnails that could not be dropped")
+    );
+    assert_eq!(
+        ProcessAssetsStats {
+            not_removed: 1,
+            not_dropped: 2,
+            ..ProcessAssetsStats::default()
+        }
+        .failures()
+        .as_deref(),
+        Some(
+            "1 incomplete original that could not be removed and \
+             2 damaged Previews or Thumbnails that could not be dropped"
+        )
+    );
+    assert_eq!(
+        ProcessAssetsStats {
+            errors: 1,
+            not_removed: 1,
+            not_dropped: 1,
+            ..ProcessAssetsStats::default()
+        }
+        .failures()
+        .as_deref(),
+        Some(
+            "1 original whose Preview or Thumbnail could not be made, \
+             1 incomplete original that could not be removed and \
+             1 damaged Preview or Thumbnail that could not be dropped"
+        )
     );
 }

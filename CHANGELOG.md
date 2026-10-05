@@ -1556,6 +1556,18 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-05 **`process-assets` says what it did to an incomplete original
+  and a damaged Preview or Thumbnail.** An incomplete original, left by a
+  transfer that never finished, that could not be removed made
+  `process-assets` end with "1 original whose Preview or Thumbnail could not
+  be made", although nothing was being made. One that was removed, and a
+  damaged Preview or Thumbnail that was dropped, counted in "left 1 original
+  as it was". The line that ends the run now adds "removed 1 incomplete
+  original" and "dropped 1 damaged Preview or Thumbnail", and on a failure
+  "1 incomplete original that could not be removed" and "1 damaged Preview
+  or Thumbnail that could not be dropped", each only when it happened. The
+  run ends with an error naming each failure. The `reset-demo` summary has a
+  line for each of the four counts.
 - 2026-10-05 **`process-assets` and `reset-demo` no longer call a failed
   Thumbnail a failed conversion.** When the Preview or Thumbnail of an
   original could not be made, `process-assets` ended with "1 conversion

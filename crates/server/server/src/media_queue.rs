@@ -254,7 +254,11 @@ pub(crate) async fn work_through(
         tracing::info!(
             thumbnails = stats.thumbnails,
             previews = stats.derived,
-            failures = stats.errors,
+            removed = stats.removed,
+            dropped = stats.dropped,
+            not_made = stats.errors,
+            not_removed = stats.not_removed,
+            not_dropped = stats.not_dropped,
             "the queued Assets are done"
         );
     }
