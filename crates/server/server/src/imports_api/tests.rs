@@ -980,7 +980,9 @@ fn file_with_children(
     attachments: &[String],
     reactions: &[String],
 ) -> PathBuf {
-    let header = r#"{"schema_version":9,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550123","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550123","display_name":null},{"identity":"+15555550167","display_name":null}],"stats":{"message_count":2,"attachment_count":3,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183463000}}}"#;
+    let header = conversation_header("imessage", "+15555550123")
+        .participant("+15555550123", None)
+        .participant("+15555550167", None);
     let message = format!(
         r#"{{"guid":"g-kids","timestamp_unix_ms":1426183463000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"look","attachments":[{}],"reactions":[{}],"imessage":null,"source":null}}"#,
         attachments.join(","),
