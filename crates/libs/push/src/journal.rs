@@ -26,30 +26,51 @@ pub struct JournalMessage {
     pub guid: String,
 }
 
+/// The server and account a journal records progress for: the server's URL
+/// and the username the session resolved to. One export directory can be
+/// uploaded to more than one, so every event names its target.
+///
+/// On disk the two are a line's own `url` and `username` keys.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServerTarget {
+    pub url: String,
+    pub username: String,
+}
+
+impl ServerTarget {
+    /// The target for `url` and `username`.
+    pub fn new(url: impl Into<String>, username: impl Into<String>) -> Self {
+        Self {
+            url: url.into(),
+            username: username.into(),
+        }
+    }
+}
+
 /// One row in `.import-state.jsonl`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "event", rename_all = "snake_case")]
 pub enum JournalEvent {
     AssetOk {
-        url: String,
-        username: String,
+        #[serde(flatten)]
+        target: ServerTarget,
         sha256: String,
     },
     MessageBatchOk {
-        url: String,
-        username: String,
+        #[serde(flatten)]
+        target: ServerTarget,
         source: String,
         messages: Vec<JournalMessage>,
     },
     FileOk {
-        url: String,
-        username: String,
+        #[serde(flatten)]
+        target: ServerTarget,
         source: String,
         file: String,
     },
     Fail {
-        url: String,
-        username: String,
+        #[serde(flatten)]
+        target: ServerTarget,
         source: String,
         file: String,
         #[serde(skip_serializing_if = "Option::is_none")]
@@ -62,18 +83,18 @@ pub enum JournalEvent {
 }
 
 impl JournalEvent {
-    /// Server URL and username this event belongs to.
-    fn target(&self) -> (&str, &str) {
+    /// The server and account this event belongs to.
+    fn target(&self) -> &ServerTarget {
         match self {
-            Self::AssetOk { url, username, .. }
-            | Self::MessageBatchOk { url, username, .. }
-            | Self::FileOk { url, username, .. }
-            | Self::Fail { url, username, .. } => (url.as_str(), username.as_str()),
+            Self::AssetOk { target, .. }
+            | Self::MessageBatchOk { target, .. }
+            | Self::FileOk { target, .. }
+            | Self::Fail { target, .. } => target,
         }
     }
 }
 
-/// In-memory skip sets rebuilt from the journal for one server URL and username.
+/// In-memory skip sets rebuilt from the journal for one [`ServerTarget`].
 #[derive(Debug, Default)]
 pub struct JournalState {
     pub assets: HashSet<String>,
@@ -108,7 +129,7 @@ pub fn journal_path(input: &Path) -> PathBuf {
     input.join(JOURNAL_NAME)
 }
 
-/// Read the journal and keep events that match this server URL and username.
+/// Read the journal and keep the events for `target`.
 ///
 /// A missing file is treated as an empty journal. An unreadable line is skipped,
 /// and `on_unreadable` gets one sentence for the Upload's log saying so. What
@@ -120,45 +141,29 @@ pub fn journal_path(input: &Path) -> PathBuf {
 /// Returns an error when the file cannot be opened or a line cannot be read.
 pub fn load(
     path: &Path,
-    url: &str,
-    username: &str,
+    target: &ServerTarget,
     on_unreadable: &mut dyn FnMut(String),
 ) -> Result<JournalState> {
     let mut state = JournalState::default();
     let events: Vec<JournalEvent> = jsonl_journal::load_events("journal", path, &mut |i, e| {
         on_unreadable(unreadable_line_sentence(path, i, e));
     })?;
-    for event in events {
+    for event in events.into_iter().filter(|event| event.target() == target) {
         match event {
-            JournalEvent::AssetOk {
-                url: u,
-                username: a,
-                sha256,
-                ..
-            } if u == url && a == username => {
+            JournalEvent::AssetOk { sha256, .. } => {
                 state.assets.insert(sha256);
             }
-            JournalEvent::MessageBatchOk {
-                url: u,
-                username: a,
-                messages,
-                ..
-            } if u == url && a == username => {
+            JournalEvent::MessageBatchOk { messages, .. } => {
                 for message in messages {
                     state
                         .messages
                         .insert(JournalState::message_key(&message.file, &message.guid));
                 }
             }
-            JournalEvent::FileOk {
-                url: u,
-                username: a,
-                file,
-                ..
-            } if u == url && a == username => {
+            JournalEvent::FileOk { file, .. } => {
                 state.files.insert(file);
             }
-            _ => {}
+            JournalEvent::Fail { .. } => {}
         }
     }
     Ok(state)
@@ -174,37 +179,32 @@ pub fn append(path: &Path, event: &JournalEvent) -> Result<()> {
     jsonl_journal::append("journal", path, event)
 }
 
-/// Rewrite the journal from in-memory `state` for one server URL and username.
+/// Rewrite the journal from in-memory `state` for `target`.
 ///
-/// Events for other URL and username pairs are kept, so one export directory can
-/// resume against more than one server.
+/// Events for other targets are kept, so one export directory can resume
+/// against more than one server and account.
 ///
 /// # Errors
 ///
 /// Returns an error when the existing file cannot be read, the temporary file
 /// cannot be written, or the rename fails.
-pub fn compact(path: &Path, url: &str, username: &str, state: &JournalState) -> Result<()> {
+pub fn compact(path: &Path, target: &ServerTarget, state: &JournalState) -> Result<()> {
     jsonl_journal::compact_with::<JournalEvent, _>("journal", path, |mut events| {
         // Preserve other server targets so one export directory can resume against
         // multiple servers without wiping their skip state.
-        events.retain(|event| {
-            let (u, a) = event.target();
-            u != url || a != username
-        });
+        events.retain(|event| event.target() != target);
         let mut assets: Vec<_> = state.assets.iter().collect();
         assets.sort_unstable();
         for sha in assets {
             events.push(JournalEvent::AssetOk {
-                url: url.to_string(),
-                username: username.to_string(),
+                target: target.clone(),
                 sha256: sha.clone(),
             });
         }
         let messages = messages_from_state_keys(state);
         for batch in messages.chunks(1_000) {
             events.push(JournalEvent::MessageBatchOk {
-                url: url.to_string(),
-                username: username.to_string(),
+                target: target.clone(),
                 source: String::new(),
                 messages: batch.to_vec(),
             });
@@ -213,8 +213,7 @@ pub fn compact(path: &Path, url: &str, username: &str, state: &JournalState) -> 
         files.sort_unstable();
         for file in files {
             events.push(JournalEvent::FileOk {
-                url: url.to_string(),
-                username: username.to_string(),
+                target: target.clone(),
                 source: String::new(),
                 file: file.clone(),
             });
@@ -224,18 +223,17 @@ pub fn compact(path: &Path, url: &str, username: &str, state: &JournalState) -> 
 }
 
 /// The journal of one Upload: the in-memory skip sets plus the file they
-/// are appended to, bound to one server URL and username.
+/// are appended to, bound to one [`ServerTarget`].
 ///
-/// Every write goes through here so callers never repeat the URL, username,
-/// and path that every [`JournalEvent`] carries. Successful events update the
+/// Every write goes through here so callers never repeat the target and path
+/// that every [`JournalEvent`] carries. Successful events update the
 /// in-memory sets *and* append to disk; failures are best-effort diagnostics
 /// and never fail the run.
 #[derive(Debug)]
 pub struct RunJournal {
     state: JournalState,
     path: PathBuf,
-    url: String,
-    username: String,
+    target: ServerTarget,
 }
 
 impl RunJournal {
@@ -249,21 +247,19 @@ impl RunJournal {
     /// Returns an error when an existing journal file cannot be read.
     pub fn open(
         path: PathBuf,
-        url: &str,
-        username: &str,
+        target: ServerTarget,
         fresh: bool,
         on_unreadable: &mut dyn FnMut(String),
     ) -> Result<Self> {
         let state = if fresh {
             JournalState::default()
         } else {
-            load(&path, url, username, on_unreadable)?
+            load(&path, &target, on_unreadable)?
         };
         Ok(Self {
             state,
             path,
-            url: url.to_string(),
-            username: username.to_string(),
+            target,
         })
     }
 
@@ -300,8 +296,7 @@ impl RunJournal {
         append(
             &self.path,
             &JournalEvent::AssetOk {
-                url: self.url.clone(),
-                username: self.username.clone(),
+                target: self.target.clone(),
                 sha256: sha256.to_string(),
             },
         )
@@ -321,8 +316,7 @@ impl RunJournal {
         append(
             &self.path,
             &JournalEvent::MessageBatchOk {
-                url: self.url.clone(),
-                username: self.username.clone(),
+                target: self.target.clone(),
                 source: source.to_string(),
                 messages,
             },
@@ -339,8 +333,7 @@ impl RunJournal {
         append(
             &self.path,
             &JournalEvent::FileOk {
-                url: self.url.clone(),
-                username: self.username.clone(),
+                target: self.target.clone(),
                 source: source.to_string(),
                 file: file.to_string(),
             },
@@ -353,8 +346,7 @@ impl RunJournal {
         let _ = append(
             &self.path,
             &JournalEvent::Fail {
-                url: self.url.clone(),
-                username: self.username.clone(),
+                target: self.target.clone(),
                 source: source.to_string(),
                 file: file.to_string(),
                 guid: None,
@@ -371,7 +363,7 @@ impl RunJournal {
     ///
     /// Returns an error when the file cannot be rewritten.
     pub fn compact(&self) -> Result<()> {
-        compact(&self.path, &self.url, &self.username, &self.state)
+        compact(&self.path, &self.target, &self.state)
     }
 }
 
@@ -397,6 +389,11 @@ mod tests {
     use std::sync::Arc;
     use std::thread;
 
+    /// The target most tests upload to.
+    fn alice() -> ServerTarget {
+        ServerTarget::new("http://server", "alice")
+    }
+
     #[test]
     fn loads_batch_message_success_events() {
         let dir = tempfile::tempdir().unwrap();
@@ -411,7 +408,7 @@ mod tests {
         )
         .unwrap();
 
-        let state = load(&path, "http://server", "alice", &mut |_| {}).unwrap();
+        let state = load(&path, &alice(), &mut |_| {}).unwrap();
 
         assert!(
             state
@@ -425,17 +422,15 @@ mod tests {
         );
     }
 
-    /// One event of each success kind, all for the given server target.
-    fn success_events(url: &str, username: &str, tag: &str) -> Vec<JournalEvent> {
+    /// One event of each success kind, all for `target`.
+    fn success_events(target: &ServerTarget, tag: &str) -> Vec<JournalEvent> {
         vec![
             JournalEvent::AssetOk {
-                url: url.into(),
-                username: username.into(),
+                target: target.clone(),
                 sha256: format!("sha-{tag}"),
             },
             JournalEvent::MessageBatchOk {
-                url: url.into(),
-                username: username.into(),
+                target: target.clone(),
                 source: "sms".into(),
                 messages: vec![JournalMessage {
                     file: "chat.jsonl".into(),
@@ -443,8 +438,7 @@ mod tests {
                 }],
             },
             JournalEvent::FileOk {
-                url: url.into(),
-                username: username.into(),
+                target: target.clone(),
                 source: "sms".into(),
                 file: format!("file-{tag}.jsonl"),
             },
@@ -460,16 +454,13 @@ mod tests {
     fn an_unreadable_line_is_skipped_and_named_by_its_line_in_the_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(JOURNAL_NAME);
-        append(&path, &success_events("http://server", "alice", "kept")[2]).unwrap();
+        append(&path, &success_events(&alice(), "kept")[2]).unwrap();
         let mut text = fs::read_to_string(&path).unwrap();
         text.push_str("{not json\n");
         fs::write(&path, text).unwrap();
 
         let mut lines = Vec::new();
-        let state = load(&path, "http://server", "alice", &mut |line| {
-            lines.push(line)
-        })
-        .unwrap();
+        let state = load(&path, &alice(), &mut |line| lines.push(line)).unwrap();
 
         assert!(state.files.contains("file-kept.jsonl"));
         assert_eq!(lines.len(), 1, "{lines:?}");
@@ -484,20 +475,43 @@ mod tests {
         );
     }
 
+    /// A line on disk keeps the target as its own `url` and `username` keys,
+    /// so a journal written before `ServerTarget` existed reads the same.
+    #[test]
+    fn an_event_writes_its_target_as_url_and_username_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(JOURNAL_NAME);
+        let mut journal = RunJournal::open(path.clone(), alice(), false, &mut |_| {}).unwrap();
+        journal.file_ok("sms", "chat.jsonl").unwrap();
+
+        let line: serde_json::Value =
+            serde_json::from_str(fs::read_to_string(&path).unwrap().trim()).unwrap();
+        assert_eq!(
+            line,
+            serde_json::json!({
+                "event": "file_ok",
+                "url": "http://server",
+                "username": "alice",
+                "source": "sms",
+                "file": "chat.jsonl"
+            })
+        );
+    }
+
     #[test]
     fn load_keeps_only_events_for_this_server_and_username() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(JOURNAL_NAME);
         let events = [
-            success_events("http://other", "alice", "other-url"),
-            success_events("http://server", "bob", "other-user"),
-            success_events("http://server", "alice", "mine"),
+            success_events(&ServerTarget::new("http://other", "alice"), "other-url"),
+            success_events(&ServerTarget::new("http://server", "bob"), "other-user"),
+            success_events(&alice(), "mine"),
         ];
         for event in events.iter().flatten() {
             append(&path, event).unwrap();
         }
 
-        let state = load(&path, "http://server", "alice", &mut |_| {}).unwrap();
+        let state = load(&path, &alice(), &mut |_| {}).unwrap();
 
         let expected_assets: HashSet<String> = ["sha-mine".to_string()].into();
         assert_eq!(state.assets, expected_assets);
@@ -512,14 +526,12 @@ mod tests {
     fn a_recorded_asset_is_skipped_after_reopening_the_journal() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(JOURNAL_NAME);
-        let mut journal =
-            RunJournal::open(path.clone(), "http://server", "alice", false, &mut |_| {}).unwrap();
+        let mut journal = RunJournal::open(path.clone(), alice(), false, &mut |_| {}).unwrap();
         assert!(!journal.has_asset("sha-1"));
         journal.asset_ok("sha-1").unwrap();
         drop(journal);
 
-        let reopened =
-            RunJournal::open(path, "http://server", "alice", false, &mut |_| {}).unwrap();
+        let reopened = RunJournal::open(path, alice(), false, &mut |_| {}).unwrap();
         assert!(reopened.has_asset("sha-1"));
         assert!(!reopened.has_asset("sha-2"));
     }
@@ -541,11 +553,12 @@ mod tests {
 
         let mut state = JournalState::default();
         state.assets.insert("bbb".into());
-        compact(&path, "http://b", "bob", &state).unwrap();
+        let bob = ServerTarget::new("http://b", "bob");
+        compact(&path, &bob, &state).unwrap();
 
-        let a = load(&path, "http://a", "alice", &mut |_| {}).unwrap();
+        let a = load(&path, &ServerTarget::new("http://a", "alice"), &mut |_| {}).unwrap();
         assert!(a.assets.contains("aaa"));
-        let b = load(&path, "http://b", "bob", &mut |_| {}).unwrap();
+        let b = load(&path, &bob, &mut |_| {}).unwrap();
         assert!(b.assets.contains("bbb"));
         assert!(!b.files.contains("chat.jsonl"));
     }
@@ -564,8 +577,7 @@ mod tests {
             append(
                 &path,
                 &JournalEvent::FileOk {
-                    url: url.into(),
-                    username: username.into(),
+                    target: ServerTarget::new(url, username),
                     source: "sms".into(),
                     file: file.into(),
                 },
@@ -575,10 +587,13 @@ mod tests {
 
         let mut state = JournalState::default();
         state.files.insert("alice-a.jsonl".into());
-        compact(&path, "http://a", "alice", &state).unwrap();
+        compact(&path, &ServerTarget::new("http://a", "alice"), &state).unwrap();
 
-        let files =
-            |url: &str, username: &str| load(&path, url, username, &mut |_| {}).unwrap().files;
+        let files = |url: &str, username: &str| {
+            load(&path, &ServerTarget::new(url, username), &mut |_| {})
+                .unwrap()
+                .files
+        };
         assert_eq!(files("http://a", "alice"), ["alice-a.jsonl".into()].into());
         assert_eq!(files("http://a", "bob"), ["bob-a.jsonl".into()].into());
         assert_eq!(files("http://b", "alice"), ["alice-b.jsonl".into()].into());
@@ -603,8 +618,7 @@ mod tests {
                     append(
                         &path,
                         &JournalEvent::MessageBatchOk {
-                            url: "http://server".into(),
-                            username: "alice".into(),
+                            target: alice(),
                             source: "sms".into(),
                             messages,
                         },
