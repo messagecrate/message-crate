@@ -111,6 +111,11 @@ fn obfuscate_document(doc: &mut ConversationDocument, anon: &mut Obfuscator) -> 
         for reaction in &mut msg.reactions {
             obfuscate_reactor(reaction, anon);
         }
+        // Earlier versions are imported too, so each keeps its part and time
+        // and has its text rewritten like the final version's.
+        for version in &mut msg.edits {
+            version.text = anon.obfuscate_text(&version.text);
+        }
         if let Some(im) = msg.imessage.as_mut() {
             obfuscate_imessage(im, anon);
         }
@@ -175,15 +180,14 @@ fn reply_and_tapback_targets(doc: &mut ConversationDocument) -> impl Iterator<It
 
 /// Obfuscate the iMessage extension's announcement.
 ///
-/// `parts` repeats the body, `edits` holds its earlier wording, `app` holds
-/// link previews, and `shared_location` holds a place. None of them is read
-/// on import, so obfuscated output drops them whole.
+/// `parts` repeats the body, `app` holds link previews, and
+/// `shared_location` holds a place. None of them is read on import, so
+/// obfuscated output drops them whole.
 fn obfuscate_imessage(im: &mut IrImessage, anon: &mut Obfuscator) {
     if let Some(a) = im.announcement.as_mut() {
         *a = anon.obfuscate_text(a);
     }
     im.parts = None;
-    im.edits = None;
     im.app = None;
     im.shared_location = None;
 }

@@ -416,7 +416,7 @@ type AttachmentFilesRow = (
 /// report the attachment files nothing references any more. The `DELETE`
 /// checks the Trash marker itself, so a conversation restored since the
 /// caller listed it stays. The schema's cascades remove messages, attachments, tapbacks,
-/// participants and tag memberships; `duplicate_of` on a message elsewhere
+/// earlier versions, participants and tag memberships; `duplicate_of` on a message elsewhere
 /// that pointed at one of these is set NULL, so the surviving copy becomes
 /// the one that shows.
 async fn delete_conversations(

@@ -1,7 +1,8 @@
 //! The import's staging tables (`schema/sql/staging.sql`) and the promotion
 //! of their rows into production: every statement that reads or writes
 //! `staging_conversations`, `staging_participants`, `staging_messages`,
-//! `staging_attachments` and `staging_tapbacks`, and the two temp id maps
+//! `staging_attachments`, `staging_tapbacks` and `staging_message_versions`,
+//! and the two temp id maps
 //! (`_promote_conv_map`, `_promote_msg_map`) the promotion joins through.
 //!
 //! `imports_api::staging` fills the tables and `imports_api::promote` runs
@@ -272,10 +273,24 @@ pub struct StagingTapback {
     pub sender_handle_id: Option<i64>,
 }
 
+/// One earlier version of a staged message, as the import stages it.
+pub struct StagingEarlierVersion<'a> {
+    /// Parent staging message.
+    pub message_id: i64,
+    /// The part of the message the version belongs to.
+    pub part_index: i64,
+    /// The part's text in this version.
+    pub text: &'a str,
+    /// When the version was written, in the form a message's timestamp
+    /// takes; `None` when the source does not record it.
+    pub edited_at: Option<&'a str>,
+}
+
 /// Bind counts, in lockstep with the `INSERT` column lists below.
 const MESSAGE_BIND_COLUMNS: usize = 19;
 const ATTACHMENT_BIND_COLUMNS: usize = 10;
 const TAPBACK_BIND_COLUMNS: usize = 6;
+const EARLIER_VERSION_BIND_COLUMNS: usize = 4;
 
 /// The most message rows [`insert_messages`] takes in one statement.
 pub fn message_chunk_rows() -> usize {
@@ -409,6 +424,41 @@ pub async fn insert_tapbacks(conn: &mut SqliteConnection, rows: &[StagingTapback
                 .bind(row.emoji.as_deref())
                 .bind(row.is_from_me)
                 .bind(row.sender_handle_id);
+        }
+        q.execute(&mut *conn).await?;
+        inserted += chunk.len() as u64;
+    }
+    Ok(inserted)
+}
+
+/// Insert earlier-version rows in chunks that fit the bind limit, in the
+/// order given, so their ids ascend in that order. Returns how many were
+/// inserted.
+///
+/// # Errors
+///
+/// Returns an error when an insert fails.
+pub async fn insert_earlier_versions(
+    conn: &mut SqliteConnection,
+    rows: &[StagingEarlierVersion<'_>],
+) -> Result<u64> {
+    let size = max_rows_for_bind_limit(EARLIER_VERSION_BIND_COLUMNS).max(1);
+    let mut inserted = 0u64;
+    for chunk in rows.chunks(size) {
+        let sql = format!(
+            r"
+            INSERT INTO staging_message_versions (message_id, part_index, text, edited_at)
+            VALUES {}
+            ",
+            values_tuples(chunk.len(), EARLIER_VERSION_BIND_COLUMNS)
+        );
+        let mut q = sqlx::query(&sql);
+        for row in chunk {
+            q = q
+                .bind(row.message_id)
+                .bind(row.part_index)
+                .bind(row.text)
+                .bind(row.edited_at);
         }
         q.execute(&mut *conn).await?;
         inserted += chunk.len() as u64;
@@ -656,6 +706,20 @@ pub async fn max_message_id(conn: &mut SqliteConnection) -> Result<i64> {
 pub async fn max_attachment_id(conn: &mut SqliteConnection) -> Result<i64> {
     Ok(
         sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM attachments")
+            .fetch_one(&mut *conn)
+            .await?,
+    )
+}
+
+/// The highest `message_versions.id`, or 0 when there is none. Every
+/// version a promotion inserts lands above it.
+///
+/// # Errors
+///
+/// Returns an error when the query fails.
+pub async fn max_earlier_version_id(conn: &mut SqliteConnection) -> Result<i64> {
+    Ok(
+        sqlx::query_scalar("SELECT COALESCE(MAX(id), 0) FROM message_versions")
             .fetch_one(&mut *conn)
             .await?,
     )
@@ -993,6 +1057,39 @@ pub async fn promote_tapbacks(conn: &mut SqliteConnection) -> Result<u64> {
         )
         ",
     )
+    .execute(&mut *conn)
+    .await?
+    .rows_affected())
+}
+
+/// Insert the staged earlier versions under the production messages this
+/// promotion inserted, those above `messages_before`, in staging order.
+///
+/// A message production already held keeps the versions it has: an append
+/// skips such a message and keeps its text, so versions from a later backup,
+/// which edited it again, would list the text it holds as an earlier one and
+/// lose the text that replaced it. A message read again from the same
+/// backup is not inserted, so its versions are not added a second time.
+/// Returns how many were inserted.
+///
+/// # Errors
+///
+/// Returns an error when the statement fails.
+pub async fn promote_earlier_versions(
+    conn: &mut SqliteConnection,
+    messages_before: i64,
+) -> Result<u64> {
+    Ok(sqlx::query(
+        r"
+        INSERT INTO message_versions (message_id, part_index, text, edited_at)
+        SELECT mm.prod_id, sv.part_index, sv.text, sv.edited_at
+        FROM staging_message_versions sv
+        JOIN _promote_msg_map mm ON mm.staging_id = sv.message_id
+        WHERE mm.prod_id > $1
+        ORDER BY sv.id
+        ",
+    )
+    .bind(messages_before)
     .execute(&mut *conn)
     .await?
     .rows_affected())

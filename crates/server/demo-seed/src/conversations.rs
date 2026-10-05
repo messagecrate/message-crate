@@ -331,6 +331,7 @@ impl SharedMessage {
             attachments: vec![],
             reactions: Vec::new(),
             deletion: None,
+            edits: Vec::new(),
             imessage: None,
             source: None,
         }
@@ -1040,6 +1041,7 @@ impl<R: Rng> Seeder<'_, R> {
             attachments: vec![],
             reactions: Vec::new(),
             deletion: None,
+            edits: Vec::new(),
             imessage: None,
             source: None,
         }

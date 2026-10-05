@@ -351,6 +351,7 @@ fn one_message_script(attachments: Vec<imessage_reader_protocol::Attachment>) ->
             owner_display_name: None,
             reactions: Vec::new(),
             deletion: None,
+            edits: Vec::new(),
             imessage: None,
             attachments,
         })),
@@ -509,6 +510,7 @@ fn a_jsonl_run_reports_its_conversations_and_messages() {
             owner_display_name: None,
             reactions: Vec::new(),
             deletion: None,
+            edits: Vec::new(),
             imessage: None,
             attachments: Vec::new(),
         }))
@@ -594,6 +596,7 @@ fn encrypted_export_script(dir: &Path, video: &str, photo: &str) -> String {
             owner_display_name: None,
             reactions: Vec::new(),
             deletion: None,
+            edits: Vec::new(),
             imessage: None,
             attachments: vec![
                 attachment("IMG_0001.MOV", "video/quicktime"),

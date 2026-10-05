@@ -2,9 +2,9 @@ use super::*;
 use media::MediaMode;
 use message_crate_core::{ExportReport, OutputFormat};
 use message_ir::{
-    ConversationMeta, ConversationStats, ExportMeta, HandleType, IrConversationType, IrImessage,
-    IrMessage, IrMessageKind, IrParticipant, IrService, IrSource, MessageGuid, MessageIdentity,
-    Reaction, SCHEMA_VERSION,
+    ConversationMeta, ConversationStats, EarlierVersion, ExportMeta, HandleType,
+    IrConversationType, IrImessage, IrMessage, IrMessageKind, IrParticipant, IrService, IrSource,
+    MessageGuid, MessageIdentity, Reaction, SCHEMA_VERSION,
 };
 use serde_json::{Value, json};
 use std::fs;
@@ -55,6 +55,7 @@ fn doc_with_image_attachment() -> ConversationDocument {
             }],
             reactions: vec![],
             deletion: None,
+            edits: Vec::new(),
             imessage: None,
             source: None,
         }],
@@ -265,6 +266,11 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
                 reactor_display_name: Some("LEAK-21".into()),
             }],
             deletion: None,
+            edits: vec![EarlierVersion {
+                part_index: 0,
+                text: "LEAK-19".into(),
+                edited_at_unix_ms: Some(1),
+            }],
             imessage: Some(IrImessage {
                 is_reply: true,
                 in_reply_to_guid: Some("LEAK-28".into()),
@@ -275,7 +281,6 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
                 announcement: Some("LEAK-17".into()),
                 read_receipt_rfc3339: Some("2014-05-22T12:21:01Z".into()),
                 parts: Some(json!([{ "text": "LEAK-18", "attachment_indices": [0] }])),
-                edits: Some(json!([{ "text": "LEAK-19", "timestamp_unix_ms": 1 }])),
                 app: Some(json!({ "url": "https://LEAK-24.example/", "title": "LEAK-25" })),
                 balloon_bundle_id: Some("com.apple.DigitalTouchBalloonProvider".into()),
                 balloon_kind: Some("sketch".into()),

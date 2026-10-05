@@ -310,9 +310,9 @@ pub enum MessageBatch {
 }
 
 /// Delete up to `limit` of `account_id`'s messages of the kind `which`, in
-/// one write transaction of its own. Their attachments, tapbacks and
-/// search-index rows go with them, through `ON DELETE CASCADE` and the
-/// search triggers.
+/// one write transaction of its own. Their attachments, tapbacks, earlier
+/// versions and search-index rows go with them, through `ON DELETE CASCADE`
+/// and the search triggers.
 ///
 /// Messages are nearly all of an account's rows, so deleting them this way
 /// before [`delete_account`] leaves that one statement little to do. A

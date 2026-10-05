@@ -104,6 +104,10 @@ pub(crate) struct ListCtx {
     pub zone: chrono_tz::Tz,
     /// Whether trashed rows on another list count.
     pub trash: TrashScope,
+    /// Whether a free-text word on Messages also matches an edited message's
+    /// earlier versions. True for every search; false only for the copy of
+    /// a query that asks whether a hit's final text matches on its own.
+    pub earlier_versions: bool,
 }
 
 impl ListCtx {

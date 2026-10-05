@@ -125,13 +125,16 @@ pub async fn database_bytes(conn: &mut SqliteConnection) -> Result<i64> {
 }
 
 /// Bytes the full-text search index takes: the four shadow tables behind
-/// `messages_fts`, measured through `dbstat`, which the bundled library is
-/// compiled with (`SQLITE_ENABLE_DBSTAT_VTAB`).
+/// each of `messages_fts` and `message_versions_fts`, measured through
+/// `dbstat`, which the bundled library is compiled with
+/// (`SQLITE_ENABLE_DBSTAT_VTAB`).
 pub async fn fts_bytes(conn: &mut SqliteConnection) -> Result<i64> {
     let n: i64 = sqlx::query_scalar(
         "SELECT COALESCE(SUM(pgsize), 0) FROM dbstat \
          WHERE name IN ('messages_fts_data', 'messages_fts_idx', \
-                        'messages_fts_docsize', 'messages_fts_config')",
+                        'messages_fts_docsize', 'messages_fts_config', \
+                        'message_versions_fts_data', 'message_versions_fts_idx', \
+                        'message_versions_fts_docsize', 'message_versions_fts_config')",
     )
     .fetch_one(&mut *conn)
     .await?;
