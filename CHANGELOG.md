@@ -391,6 +391,13 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **One import of two backups keeps the attachments and
+  reactions of both.** When one import carried two backups holding the same
+  message, the message kept only the attachments and reactions of the file
+  read first, so a Like only the newer backup held was lost. Two separate
+  imports of the same files kept it. The message now takes the attachments
+  and reactions of both, each one once, and a file one backup has and the
+  other lacks fills in the missing attachment, as a second import does.
 - 2026-10-05 **An import's log says its counts in words, not as
   `name=value`.** The Upload, the attachment conversion, and the server's
   import, duplicate check and `process-assets` command wrote counts such as
