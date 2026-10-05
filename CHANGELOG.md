@@ -397,6 +397,13 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **An Upload paused or cancelled while its last request is in
+  flight completes.** The pause or cancel arrived with nothing left to send,
+  and every conversation still landed, yet the Upload's report said it was
+  cancelled and not ok, and the server recorded its Import Run as failed. A
+  pause or cancel now counts as a stop only when it leaves a conversation
+  for the next Upload, so this Upload completes, and its Import Run is
+  recorded as completed or completed with issues.
 - 2026-10-05 **A journal line the Upload cannot read is named in the
   Upload's log.** It went to standard error as "warning: journal … line … is
   corrupt (…). The affected entries will be re-submitted (server dedup is

@@ -2836,6 +2836,77 @@ fn a_conversation_cut_off_mid_way_by_a_cancel_is_counted_as_cancelled() {
     );
 }
 
+/// A cancel that arrives while the last request is in flight stops nothing:
+/// every conversation still lands, so the Upload completed and the server
+/// records its Import Run as completed.
+///
+/// Guards #1903: the run took the cancel flag alone as a stop, so it reported
+/// the Upload as cancelled and not `ok`, and completed its Import Run as
+/// `failed`, although no conversation was left for the next Upload.
+#[test]
+fn a_cancel_after_the_last_request_leaves_a_completed_upload() {
+    let server = MockServer::start();
+    let _auth = mock_session(&server);
+    let _run = mock_import_start(&server, 7);
+    // The delay keeps the only batch in flight long enough to cancel while
+    // nothing is left to send.
+    let batch = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/7/batches");
+        then.status(200)
+            .delay(std::time::Duration::from_millis(1_000))
+            .json_body(json!({
+                "messages": 1,
+                "messages_appended": 1,
+                "conversations": 1
+            }));
+    });
+    let complete = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/imports/7/complete")
+            .json_body_includes(r#"{ "status": "completed" }"#);
+        then.status(200).json_body(json!({ "id": 7 }));
+    });
+
+    let dir = tempdir().unwrap();
+    write_jsonl(dir.path(), &sample_doc());
+    let cancel = Arc::new(AtomicBool::new(false));
+    let cfg = PushConfig {
+        batch_size: 1,
+        cancel: Some(cancel.clone()),
+        ..text_only_config(dir.path(), server.base_url())
+    };
+
+    let report = std::thread::scope(|scope| {
+        let pusher = scope.spawn(|| run(&cfg, None).unwrap());
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while batch.calls() == 0 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "the batch was never posted"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        cancel.store(true, Ordering::SeqCst);
+        pusher.join().unwrap()
+    });
+
+    assert_eq!(batch.calls(), 1);
+    assert_eq!(report.conversations_ok, 1, "{:?}", report.results);
+    assert_eq!(report.conversations_cancelled, 0, "{:?}", report.results);
+    assert!(report.ok, "every conversation landed: {report:?}");
+    assert!(!report.cancelled, "the cancel stopped nothing: {report:?}");
+    assert_eq!(
+        complete.calls(),
+        1,
+        "the Import Run is completed as completed"
+    );
+    assert!(
+        read_log(dir.path()).contains("\nThe Upload completed in "),
+        "{}",
+        read_log(dir.path())
+    );
+}
+
 /// After one batch fails, a second push on the same directory sends only the
 /// failed conversation's messages, and the journal then has every file ok.
 ///

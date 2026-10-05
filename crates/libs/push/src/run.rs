@@ -314,8 +314,8 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
         ImportPipeline::new(cfg, &session, &shared, import_id, batch_size, files.len());
     let mut assets = AssetTotals::default();
 
-    let aborted = drive(&ctx, &files, &mut pipeline, &mut assets, &mut out)?;
-    let aborted = settle(cfg, &mut pipeline, aborted, &mut out)?;
+    let stopped = drive(&ctx, &files, &mut pipeline, &mut assets, &mut out)?;
+    settle(cfg, &mut pipeline, stopped, &mut out)?;
     let session_refused = session.is_refused();
     if session_refused {
         out.show(
@@ -325,20 +325,22 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
         );
     }
     pipeline.record_cancelled(&files, &mut out);
-    // A cancel is the one stop the caller resumes from, so the report tells
-    // it apart from a failure.
-    let cancelled = check_cancel(cfg.cancel.as_ref()).is_err();
     out.flush_file_counter();
 
     let (results, accounting) = pipeline.into_results();
     let journal = shared.into_inner().expect("journal mutex poisoned").journal;
     let counted = count_file_results(&results);
+    // A cancel is the one stop the caller resumes from, so the report tells
+    // it apart from a failure. It stopped the run only when it left a
+    // conversation for the next Upload: one that came after the last
+    // request went out stopped nothing, so that Upload completed.
+    let cancelled = counted.cancelled > 0;
     // Only shrink/rewrite the journal after a clean run so a failed run can retry.
-    if counted.failed == 0 && !aborted {
+    if counted.failed == 0 && !cancelled {
         let _ = journal.compact();
     }
     let mut report = PushReport {
-        ok: counted.failed == 0 && !aborted,
+        ok: counted.failed == 0 && !cancelled,
         cancelled,
         session_refused,
         account: session.auth.account_id,
@@ -366,7 +368,7 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
     // refused session cannot complete it: the run stays open on the server
     // for the next Upload.
     let completed = if cfg.import_id.is_none() && !session_refused {
-        complete_import_run(&session, import_id, &report, aborted, &mut out)
+        complete_import_run(&session, import_id, &report, &mut out)
     } else {
         Ok(())
     };
@@ -646,9 +648,13 @@ fn absorb_prepared(prepared: &PreparedFile, assets: &mut AssetTotals, out: &mut 
     out.attachment_skips(&prepared.attachment_skips);
 }
 
-/// End of run: send any leftover batch and wait for the last import. An
-/// aborted run still waits for the in-flight import so the journal stays
-/// consistent. Returns the final aborted flag.
+/// End of run: send any leftover batch and wait for the last import. A
+/// stopped run (`stopped`, or the cancel flag) sends nothing more, and still
+/// waits for the in-flight import so the journal stays consistent.
+///
+/// Whether the run stopped is not decided here: a cancel that arrives while
+/// the last request is in flight stops nothing, so the caller reads the stop
+/// from the conversations left unsent instead.
 ///
 /// # Errors
 ///
@@ -656,17 +662,14 @@ fn absorb_prepared(prepared: &PreparedFile, assets: &mut AssetTotals, out: &mut 
 fn settle(
     cfg: &PushConfig,
     pipeline: &mut ImportPipeline<'_>,
-    aborted: bool,
+    stopped: bool,
     out: &mut Reporter<'_, '_>,
-) -> Result<bool> {
-    let mut aborted = aborted || check_cancel(cfg.cancel.as_ref()).is_err();
-    if !aborted && !pipeline.flush_and_continue(true, out)? {
-        aborted = true;
-    }
-    if aborted {
+) -> Result<()> {
+    let stopped = stopped || check_cancel(cfg.cancel.as_ref()).is_err();
+    if stopped || !pipeline.flush_and_continue(true, out)? {
         let _ = pipeline.join_inflight(out);
     }
-    Ok(aborted)
+    Ok(())
 }
 
 /// Write the report JSON next to the export.
@@ -696,13 +699,12 @@ fn complete_import_run(
     session: &Session,
     import_id: i64,
     report: &PushReport,
-    aborted: bool,
     out: &mut Reporter<'_, '_>,
 ) -> Result<()> {
     session.complete_import(
         import_id,
         &ImportOutcome {
-            status: outcome_status(report, aborted),
+            status: outcome_status(report),
             bytes_uploaded: report.assets_bytes,
         },
     )?;
