@@ -1075,8 +1075,9 @@ fn the_fictional_ranges_are_the_ones_nanpa_and_ofcom_set_aside() {
     assert!(!is_fictional_phone("+14155550099"));
     assert!(!is_fictional_phone("+18007438200"));
     assert!(!is_fictional_phone("+447700901000"));
-    // +33 6 39 98 12 34 is no one's number, though Demo Data does not use
-    // ARCEP's range: the note on the `phone` crate's `mod tests` says why.
+    // +33 6 39 98 12 34 is in ARCEP's range for audiovisual works, so it is
+    // no one's number, and `is_fictional_phone` does not cover it. The note
+    // on the `phone` crate's `mod tests` gives the source.
     assert!(!is_fictional_phone("+33639981234"));
 }
 
