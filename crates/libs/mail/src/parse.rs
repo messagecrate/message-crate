@@ -176,11 +176,11 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
 /// The JSON in header `name`, or `None` when the header is absent.
 ///
 /// A value that does not read is refused, naming `what` it holds and the
-/// header, rather than read as empty: read as empty, a broken
-/// `X-ME-Attachment-Meta` would lose every attachment's metadata on Convert
-/// without a word. The most likely writer of such a value is an earlier
-/// Message Crate that named a field differently, such as `handle` where this
-/// one reads `identity` in the roster.
+/// header. Read as empty, a broken `X-ME-Attachment-Meta` would lose every
+/// attachment's metadata on Convert without a word. The most likely writer
+/// of such a value is an earlier Message Crate that named a field
+/// differently, such as `handle` where this one reads `identity` in
+/// `X-ME-Participants`.
 fn json_header<T: DeserializeOwned>(
     headers: &[MailHeader<'_>],
     name: &str,
@@ -191,7 +191,7 @@ fn json_header<T: DeserializeOwned>(
     };
     serde_json::from_str(&raw).map(Some).with_context(|| {
         format!(
-            "This mail's {what} ({name}) cannot be read; it may have been written by an earlier \
+            "This mail's {what} ({name}) cannot be read. It may have been written by an earlier \
              Message Crate, so export the backup again"
         )
     })
@@ -314,7 +314,7 @@ fn parse_earlier_versions(headers: &[MailHeader<'_>]) -> Result<Vec<EarlierVersi
 
 /// Participants from `X-ME-Participants`, or none when it is absent.
 fn parse_participants(headers: &[MailHeader<'_>]) -> Result<Vec<Participant>> {
-    Ok(json_header(headers, hn::PARTICIPANTS, "roster")?.unwrap_or_default())
+    Ok(json_header(headers, hn::PARTICIPANTS, "participants")?.unwrap_or_default())
 }
 
 /// The message text: the body of a simple mail, or the first `text/plain` part.
