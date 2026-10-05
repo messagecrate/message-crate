@@ -70,6 +70,19 @@ The directory holds only the result once the run finishes; a run that fails or i
 The Export Directory is `exports` in the operating system's app-data directory, such as `~/.local/share/app.messagecrate.desktop/exports` on Linux.
 Message Crate never deletes a finished export from it.
 
+## Where the app keeps its files
+
+The desktop app keeps everything that is not a phone backup or a chosen destination in the operating system's app-data directory, `~/.local/share/app.messagecrate.desktop` on Linux, `~/Library/Application Support/app.messagecrate.desktop` on macOS and `%APPDATA%\app.messagecrate.desktop` on Windows.
+
+| Directory | In the app-data directory | Holds |
+|---|---|---|
+| Data Directory | `data` | The database, each account's attachments and the server's log, of the Message Crate this app starts |
+| Export Directory | `exports` | One directory per Export, and per Convert with no output directory chosen. See [Exports](#exports) |
+| Logs Directory | `logs` | Each Import Run's log, named for the run, such as `import-iphone-ios-261004-143000.log`. Never deleted |
+| Scratch Directory | `scratch` | Decrypted iPhone backup databases and the attachments read out of SMS backups, while a run needs them. What a stopped run left is deleted the next time the app starts |
+
+The Staging Directory is the one directory outside it: see [Staging directory](#staging-directory).
+
 ## Message Crate on this computer
 
 This part is about the Message Crate the desktop app starts for itself.

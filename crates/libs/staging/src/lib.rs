@@ -8,7 +8,7 @@
 //! is already there) or stages attachments and writes through
 //! `message_ir_format::FormatSink` for every other format. An exporter whose
 //! attachments arrive as bytes writes each payload to the writer's
-//! [`AttachmentSpool`], under the app's cache directory, as it parses, so parse
+//! [`AttachmentSpool`], under the Scratch Directory, as it parses, so parse
 //! never holds the backup's attachments in memory, and the write reads them
 //! back a file at a time. Every write is checked for room first, against
 //! the disk that holds it ([`check_headroom`]).

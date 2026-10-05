@@ -22,6 +22,15 @@ vi.mock("../../lib/openPath", () => ({
   openPathInExplorer: (...args: unknown[]) => openPathInExplorer(...args),
 }));
 
+vi.mock("../../lib/tauri", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/tauri")>()),
+  invokeImportRunLog: async (stagingDir: string) =>
+    `/home/sam/.local/share/app.messagecrate.desktop/logs/import-${stagingDir
+      .split("/")
+      .pop()
+      ?.replace(/^staging-/, "")}.log`,
+}));
+
 vi.mock("../../lib/auth", () => ({
   useAuth: () => ({ accountId: 7, token: "test-token", isAuthenticated: true }),
 }));
@@ -239,19 +248,21 @@ describe("ImportRunView", () => {
     const user = setupUser();
     const staging = "/home/sam/message-crate/staging-iphone";
     const view = renderView({ stagingDir: staging });
-    expect(
-      screen.queryByRole("button", { name: "message-crate-push.log" }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "import-iphone.log" })).not.toBeInTheDocument();
 
     view.unmount();
     renderView({
       stagingDir: staging,
       steps: stepsAt("convert", { Staging: "done", Media: "done", Upload: "active" }),
     });
+    // The log is in the Logs Directory, named for the run, so it outlives
+    // the run's directory.
     await user.click(
-      within(stageRow("Upload")).getByRole("button", { name: "message-crate-push.log" }),
+      await within(stageRow("Upload")).findByRole("button", { name: "import-iphone.log" }),
     );
-    expect(openPathInExplorer).toHaveBeenCalledWith(`${staging}/message-crate-push.log`);
+    expect(openPathInExplorer).toHaveBeenCalledWith(
+      "/home/sam/.local/share/app.messagecrate.desktop/logs/import-iphone.log",
+    );
   });
 
   it("shows the options group only when Obfuscate is on", () => {

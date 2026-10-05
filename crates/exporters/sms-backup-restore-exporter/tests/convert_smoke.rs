@@ -17,7 +17,7 @@ fn convert(
     convert_export(ConvertExportArgs {
         input,
         output_dir: output,
-        cache_dir: cache.path(),
+        scratch_dir: cache.path(),
         owner_phones,
         transforms: ExportTransforms::none(),
         output_format,
@@ -238,7 +238,7 @@ fn cancel_during_the_write_phase_stops_the_export() {
     let err = convert_export(ConvertExportArgs {
         input: &fixture,
         output_dir: &out,
-        cache_dir: cache.path(),
+        scratch_dir: cache.path(),
         owner_phones: &["+15555550100".into()],
         transforms,
         output_format: OutputFormat::Csv,
@@ -410,7 +410,7 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
         convert_export(ConvertExportArgs {
             input: &fixture,
             output_dir: tmp.path(),
-            cache_dir: cache.path(),
+            scratch_dir: cache.path(),
             owner_phones: &[],
             transforms: ExportTransforms::none(),
             output_format: OutputFormat::Jsonl,

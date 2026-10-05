@@ -38,7 +38,7 @@ fn convert_and_compress_stage_originals_and_defer_the_media_step() {
         let mut options = test_options(vec!["+15550100".into()]);
         options.attachment_media = chosen;
         let config = build_exporter_config(
-            Path::new("/cache"),
+            Path::new("/scratch"),
             "imessage-ios",
             "/backup",
             "/out",
@@ -59,7 +59,7 @@ fn copy_and_skip_reach_the_exporter_unchanged() {
         let mut options = test_options(vec!["+15550100".into()]);
         options.attachment_media = chosen;
         let config = build_exporter_config(
-            Path::new("/cache"),
+            Path::new("/scratch"),
             "imessage-ios",
             "/backup",
             "/out",
@@ -84,7 +84,7 @@ fn non_imessage_sources_defer_the_media_step_too() {
         let mut options = test_options(vec!["+15555550100".into()]);
         options.attachment_media = chosen;
         let config = build_exporter_config(
-            Path::new("/cache"),
+            Path::new("/scratch"),
             "whatsapp-android",
             dump.path().to_str().unwrap(),
             "/out",
@@ -225,7 +225,7 @@ fn staging_records_the_media_settings_in_the_directory() {
     let mut options = test_options(vec!["+15555550100".into()]);
     options.attachment_media = AttachmentMedia::Convert;
     let config = build_exporter_config(
-        Path::new("/cache"),
+        Path::new("/scratch"),
         "sms-backup-restore",
         input.to_str().unwrap(),
         output.to_str().unwrap(),
@@ -270,7 +270,7 @@ fn a_staging_issue_reaches_the_issue_sink_before_staging_ends() {
     let mut options = test_options(vec!["+15555550100".into()]);
     options.owner_emails = vec!["me@example.com".into()];
     let mut config = build_exporter_config(
-        &tmp.path().join("cache"),
+        &tmp.path().join("scratch"),
         "sms-backup-plus",
         backup.to_str().unwrap(),
         output.to_str().unwrap(),
@@ -307,7 +307,7 @@ fn jailbreak_uses_macos_platform_and_attachment_root() {
     options.apple_contacts = "/mnt/iphone/AddressBook.sqlitedb".into();
     options.obfuscate = true;
     let config = build_exporter_config(
-        Path::new("/cache"),
+        Path::new("/scratch"),
         "imessage-jailbreak",
         "/mnt/iphone/sms.db",
         "/tmp/out",
@@ -339,7 +339,7 @@ fn ios_backup_does_not_forward_attachment_root() {
     options.apple_contacts = "/ignored-contacts".into();
     options.backup_password = "pw".into();
     let config = build_exporter_config(
-        Path::new("/cache"),
+        Path::new("/scratch"),
         "imessage-ios",
         "/backups/iphone",
         "/tmp/out",
@@ -363,7 +363,7 @@ fn macos_forwards_optional_attachment_root() {
     let mut options = test_options(Vec::new());
     options.attachment_root = "/Users/sam/Library/Messages".into();
     let config = build_exporter_config(
-        Path::new("/cache"),
+        Path::new("/scratch"),
         "imessage-macos",
         "/Users/sam/Library/Messages/chat.db",
         "/tmp/out",
@@ -385,7 +385,7 @@ fn macos_forwards_optional_attachment_root() {
 #[test]
 fn sms_backup_restore_requires_owner_phones() {
     let err = build_exporter_config(
-        Path::new("/cache"),
+        Path::new("/scratch"),
         "sms-backup-restore",
         "/tmp/backup",
         "/tmp/out",
@@ -402,7 +402,7 @@ fn sms_backup_restore_requires_owner_phones() {
 fn sms_backup_restore_passes_owner_phones() {
     let backup = tempfile::tempdir().unwrap();
     let config = build_exporter_config(
-        Path::new("/cache"),
+        Path::new("/scratch"),
         "sms-backup-restore",
         backup.path().to_str().unwrap(),
         "/tmp/out",
@@ -420,7 +420,7 @@ fn sms_backup_restore_passes_owner_phones() {
 #[test]
 fn every_source_requires_an_existing_input_path() {
     let err = build_exporter_config(
-        Path::new("/cache"),
+        Path::new("/scratch"),
         "sms-backup-restore",
         "/does/not/exist-sms-backup",
         "/tmp/out",
@@ -440,7 +440,7 @@ fn sms_backup_plus_requires_owner_emails() {
     // validation error the desktop surfaces, not something it papers over.
     let backup = tempfile::tempdir().unwrap();
     let err = build_exporter_config(
-        Path::new("/cache"),
+        Path::new("/scratch"),
         "sms-backup-plus",
         backup.path().to_str().unwrap(),
         "/tmp/out",
@@ -459,7 +459,7 @@ fn sms_backup_plus_passes_owner_phones_and_emails() {
     let mut options = test_options(vec!["+15551111".into()]);
     options.owner_emails = vec!["me@example.com".into(), "Me@Work.example".into()];
     let config = build_exporter_config(
-        Path::new("/cache"),
+        Path::new("/scratch"),
         "sms-backup-plus",
         backup.path().to_str().unwrap(),
         "/tmp/out",
@@ -485,7 +485,7 @@ fn whatsapp_android_forwards_key_and_optional_paths() {
     options.whatsapp_business = true;
     let dump = tempfile::tempdir().unwrap();
     let config = build_exporter_config(
-        Path::new("/cache"),
+        Path::new("/scratch"),
         "whatsapp-android",
         dump.path().to_str().unwrap(),
         "/tmp/out",
@@ -520,7 +520,7 @@ fn whatsapp_android_forwards_key_and_optional_paths() {
 fn whatsapp_android_refuses_an_empty_owner_phone() {
     let dump = tempfile::tempdir().unwrap();
     let err = build_exporter_config(
-        Path::new("/cache"),
+        Path::new("/scratch"),
         "whatsapp-android",
         dump.path().to_str().unwrap(),
         "/tmp/out",
@@ -543,7 +543,8 @@ fn whatsapp_ios_forwards_the_backup_password() {
     options.backup_password = "pw".into();
     for (source, expected) in [("whatsapp-ios", Some("pw")), ("whatsapp-android", None)] {
         let config =
-            build_exporter_config(Path::new("/cache"), source, path, "/tmp/out", &options).unwrap();
+            build_exporter_config(Path::new("/scratch"), source, path, "/tmp/out", &options)
+                .unwrap();
         let SourceConfig::Whatsapp(wa) = config.source else {
             panic!("{:?}", config.source);
         };
@@ -558,7 +559,7 @@ fn whatsapp_ios_forwards_the_owner_phone_as_a_fallback() {
     let backup = tempfile::tempdir().unwrap();
     let path = backup.path().to_str().unwrap();
     let empty = build_exporter_config(
-        Path::new("/cache"),
+        Path::new("/scratch"),
         "whatsapp-ios",
         path,
         "/tmp/out",
@@ -571,7 +572,7 @@ fn whatsapp_ios_forwards_the_owner_phone_as_a_fallback() {
     assert!(wa.owner_phone.is_none());
 
     let filled = build_exporter_config(
-        Path::new("/cache"),
+        Path::new("/scratch"),
         "whatsapp-ios",
         path,
         "/tmp/out",
@@ -592,7 +593,7 @@ fn whatsapp_ios_omits_leftover_android_media_and_db() {
     options.whatsapp_wa = "/tmp/ContactsV2.sqlite".into();
     let backup = tempfile::tempdir().unwrap();
     let config = build_exporter_config(
-        Path::new("/cache"),
+        Path::new("/scratch"),
         "whatsapp-ios",
         backup.path().to_str().unwrap(),
         "/tmp/out",
@@ -618,7 +619,7 @@ fn whatsapp_ios_sets_backup_from_directory_and_business() {
     options.whatsapp_business = true;
     let backup = tempfile::tempdir().unwrap();
     let config = build_exporter_config(
-        Path::new("/cache"),
+        Path::new("/scratch"),
         "whatsapp-ios",
         backup.path().to_str().unwrap(),
         "/tmp/out",
@@ -646,7 +647,7 @@ fn imazing_reads_dates_in_the_zone_the_screen_sent() {
     options.timezone = "America/New_York".into();
     let directory = tempfile::tempdir().unwrap();
     let config = build_exporter_config(
-        Path::new("/cache"),
+        Path::new("/scratch"),
         "imazing",
         directory.path().to_str().unwrap(),
         "/tmp/out",
@@ -662,7 +663,7 @@ fn imazing_with_no_zone_leaves_the_exporter_its_fallback() {
     let options = test_options(Vec::new());
     let directory = tempfile::tempdir().unwrap();
     let config = build_exporter_config(
-        Path::new("/cache"),
+        Path::new("/scratch"),
         "imazing",
         directory.path().to_str().unwrap(),
         "/tmp/out",
@@ -696,7 +697,7 @@ fn counts_for_a_jsonl_attachment(data: &str) -> (u64, u64) {
     let input = tmp.path().join("sms.xml");
     fs::write(&input, xml).unwrap();
     let output = tmp.path().join("out");
-    let cache = tmp.path().join("cache");
+    let cache = tmp.path().join("scratch");
     let config = build_exporter_config(
         &cache,
         "sms-backup-restore",

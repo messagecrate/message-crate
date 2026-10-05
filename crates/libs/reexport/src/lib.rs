@@ -104,7 +104,7 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
     // refuses, such as a file of another schema version or a broken SMS
     // backup, stops the run with the previous output left as it was.
     let (mut documents, sms_backup) = if detected.format == OutputFormat::Xml {
-        let backup = SmsBackupRead::open(&inputs[0], output, &config.cache_dir, copy_attachments);
+        let backup = SmsBackupRead::open(&inputs[0], output, &config.scratch_dir, copy_attachments);
         (backup.read(config)?, Some(backup))
     } else {
         (read_conversation_files(input_dir, detected.format)?, None)
@@ -379,10 +379,10 @@ struct SmsBackupRead {
 impl SmsBackupRead {
     /// Prepare to read the backup in `input` for a conversion into
     /// `output`, both resolved by `prepare_outputs`. Each payload goes to
-    /// a spool under `cache_dir`, the app's cache directory, as its record is
+    /// a spool under `scratch_dir`, the Scratch Directory, as its record is
     /// read, so the backup's attachments are never all in memory and never
     /// in the output before they are staged.
-    fn open(input: &Path, output: PathBuf, cache_dir: &Path, copy_attachments: bool) -> Self {
+    fn open(input: &Path, output: PathBuf, scratch_dir: &Path, copy_attachments: bool) -> Self {
         Self {
             input: input.to_path_buf(),
             attachments_dir: output.join("attachments"),
@@ -390,7 +390,7 @@ impl SmsBackupRead {
             // No copy directory: the output still holds an earlier conversion
             // while the backup is read, so the copy is checked once, before
             // the clean, counting what the clean frees.
-            spool: copy_attachments.then(|| AttachmentSpool::new(cache_dir)),
+            spool: copy_attachments.then(|| AttachmentSpool::new(scratch_dir)),
         }
     }
 

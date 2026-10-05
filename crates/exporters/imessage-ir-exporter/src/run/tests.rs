@@ -7,7 +7,7 @@ fn apple_cfg(input: &Path, apple: AppleConfig) -> ExporterConfig {
     ExporterConfig {
         inputs: vec![input.to_path_buf()],
         output: input.with_extension("export_out"),
-        cache_dir: input.with_extension("cache"),
+        scratch_dir: input.with_extension("cache"),
         timezone: None,
         obfuscate: Default::default(),
         media: MediaConfig::default(),
@@ -749,12 +749,12 @@ fn a_reader_that_stops_during_the_attachments_stops_the_run() {
     }
 }
 
-/// The program decrypts into a directory under the app's cache directory,
+/// The program decrypts into a directory under the Scratch Directory,
 /// beside the identities request's, never into the output directory, and the
 /// directory is gone once the run ends (#1402).
 #[cfg(unix)]
 #[test]
-fn the_scratch_directory_is_under_the_cache_directory_and_deleted_after() {
+fn the_scratch_directory_is_under_the_scratch_directory_and_deleted_after() {
     use ios_backup::testutil::{fake_helper, spawn_fake};
 
     let dir = tempfile::tempdir().unwrap();
@@ -786,7 +786,7 @@ fn the_scratch_directory_is_under_the_cache_directory_and_deleted_after() {
         panic!("the program was sent an export request: {sent}");
     };
     let reader_root = config
-        .cache_dir
+        .scratch_dir
         .join(message_crate_core::IMESSAGE_READER_DIRECTORY);
     assert_eq!(
         sent.scratch_dir.parent(),
@@ -841,18 +841,18 @@ fn a_failed_run_leaves_no_scratch_directory() {
         names_in(&config.output)
     );
     let reader_root = config
-        .cache_dir
+        .scratch_dir
         .join(message_crate_core::IMESSAGE_READER_DIRECTORY);
     assert!(names_in(&reader_root).is_empty());
 }
 
 /// The databases the reader decrypts out of an encrypted backup are
-/// counted against the disk that holds the cache directory before the reader
+/// counted against the disk that holds the Scratch Directory before the reader
 /// starts, so a short disk fails the run with the space it needs rather
 /// than part-way through a decrypt (#1402).
 #[cfg(unix)]
 #[test]
-fn a_decrypt_the_cache_disk_cannot_hold_is_refused_before_the_reader_starts() {
+fn a_decrypt_the_scratch_disk_cannot_hold_is_refused_before_the_reader_starts() {
     let dir = tempfile::tempdir().unwrap();
     let backup = dir.path().join("backup");
     fs::create_dir_all(&backup).unwrap();
@@ -881,13 +881,13 @@ fn a_decrypt_the_cache_disk_cannot_hold_is_refused_before_the_reader_starts() {
 
     assert!(
         err.to_string().starts_with(
-            "Not enough space on the disk that holds the app's cache directory: \
+            "Not enough space on the disk that holds the Scratch Directory: \
              reading this backup needs about "
         ),
         "{err:#}"
     );
     let reader_root = config
-        .cache_dir
+        .scratch_dir
         .join(message_crate_core::IMESSAGE_READER_DIRECTORY);
     assert!(names_in(&reader_root).is_empty());
 }

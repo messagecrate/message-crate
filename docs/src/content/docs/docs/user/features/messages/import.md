@@ -210,10 +210,10 @@ The Staging row shows:
 Each run gets a new directory in the Staging Directory, named `staging-` followed by the source and the date and time.
 The Staging Directory is `~/message-crate` unless **Settings → System** names another **Staging directory**.
 
-While Staging reads the backup, it keeps two kinds of working files in the app's cache directory, never in the Staging Directory: the databases it decrypts from an encrypted iPhone backup, and the attachments it reads out of an SMS Backup & Restore, GO SMS Pro or SMS Backup+ backup.
+While Staging reads the backup, it keeps two kinds of working files in the Scratch Directory, `scratch` in the operating system's app-data directory, never in the Staging Directory: the databases it decrypts from an encrypted iPhone backup, and the attachments it reads out of an SMS Backup & Restore, GO SMS Pro or SMS Backup+ backup.
 They are deleted when Staging ends, whether it finished or failed.
 If the app was closed or stopped during Staging, they are deleted the next time the app starts.
-Before it writes, Staging checks that the disk holding the cache directory and the disk holding the Staging Directory each have room, and stops with the space it needs when one does not.
+Before it writes, Staging checks that the disk holding the Scratch Directory and the disk holding the Staging Directory each have room, and stops with the space it needs when one does not.
 
 ### Staging Review
 
@@ -259,7 +259,7 @@ The Upload row shows, once the run finishes:
 - **Messages**: the count sent, split into **New**, **Duplicate**, and **Failed**. A duplicate is a message the Message Crate already holds, which is skipped.
 - **Attachments**: the count **Uploaded**.
 - **Contacts**: **New** and **Modified**, and a **Contact list** that opens to each contact the run touched.
-- **Import log**: a link to `message-crate-push.log` in this Import Run's directory.
+- **Import log**: a link to the run's log in the Logs Directory, named for the run, such as `import-iphone-ios-261004-143000.log`.
 
 ### Approved Reviews, errors and notes
 
@@ -358,7 +358,8 @@ The heading of a finished run says how it ended.
 | `Import cancelled` | Staging or Media was cancelled. |
 | `Import paused` | The Upload was paused, or it failed before every conversation was sent. The run can be resumed. |
 
-A run that ends deletes its directory, and the import log and the journal with it.
+A run that ends deletes its directory, and the journal with it.
+Its log stays in the Logs Directory, `logs` in the operating system's app-data directory (`~/.local/share/app.messagecrate.desktop/logs` on Linux), and Message Crate never deletes it.
 After a success the Message Crate holds the messages, so the staged copy is no longer needed.
 After a failed Staging or Media, nothing complete was staged, so there is nothing to upload.
 A run that is cancelled or paused leaves its directory in place, because the staged files are what a resume reads.

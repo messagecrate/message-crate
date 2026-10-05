@@ -10,6 +10,7 @@
 // window appears.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod app_directories;
 mod commands;
 mod export_directories;
 mod local_server;
@@ -43,29 +44,14 @@ fn main() {
         // The Message Crate this app starts for itself, when asked to.
         .manage(LocalServer::default())
         // The Staging Directory and the run directories made under it, kept
-        // in the app-data directory, and the sweep of the cache directory's
-        // scratch directories.
+        // in the app-data directory; the Export Directory; and the start-up
+        // sweep of the Scratch and Export Directories.
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;
             let record = app_data_dir.join(staging_directories::RECORD_FILE);
             app.manage(StagingDirectories::at(record, dirs::home_dir()));
-            // The Export Directory, where each Export and Convert gets a
-            // directory of its own.
-            let exports = ExportDirectories::in_app_data(&app_data_dir);
-            // What an Export or Convert the app did not see to its end left
-            // in the Export Directory is deleted now, on a thread of its own.
-            // A run another app process has under way holds its marker and
-            // is kept.
-            let exports_root = exports.root().to_path_buf();
-            std::thread::spawn(move || export_directories::sweep(&exports_root));
-            app.manage(exports);
-            // What killed runs left in the cache directory's scratch directories
-            // (decrypted databases, attachment payloads) is deleted now,
-            // not at the next run of the same kind. A directory a running job
-            // holds is kept. On a thread of its own, so a large leftover
-            // does not hold up the window.
-            let cache_dir = commands::paths::app_cache_dir(app.handle())?;
-            std::thread::spawn(move || message_crate_core::sweep_scratch(&cache_dir));
+            app.manage(ExportDirectories::in_app_data(&app_data_dir));
+            std::thread::spawn(move || app_directories::sweep_at_start_up(&app_data_dir));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -93,6 +79,7 @@ fn main() {
             commands::staging::staging_root,
             commands::staging::set_staging_root,
             commands::staging::create_staging_dir,
+            commands::staging::import_run_log,
             commands::staging::summarize_staging,
             commands::staging::transcode_staging,
             commands::staging::delete_staging,

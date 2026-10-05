@@ -7,16 +7,40 @@ use tauri::{AppHandle, Manager};
 use crate::export_directories::ExportDirectories;
 use crate::staging_directories::StagingDirectories;
 
-/// The app's cache directory, which every run's scratch directories go under
+/// The Scratch Directory, which every run's scratch directories go under
 /// (`message_crate_core::ScratchDir`).
 ///
 /// # Errors
 ///
-/// Returns an error when the operating system names no cache directory.
-pub(crate) fn app_cache_dir(app: &AppHandle) -> Result<PathBuf, String> {
+/// Returns an error when the operating system names no app-data directory.
+pub(crate) fn scratch_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(crate::app_directories::scratch_dir_in(&app_data_dir(app)?))
+}
+
+/// The Logs Directory, which holds every Import Run's log.
+///
+/// # Errors
+///
+/// Returns an error when the operating system names no app-data directory.
+pub(crate) fn logs_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(crate::app_directories::logs_dir_in(&app_data_dir(app)?))
+}
+
+/// `path`, resolved, when it is absolute and in `dir`.
+fn in_directory(path: &Path, dir: &Path) -> Option<PathBuf> {
+    if !path.is_absolute() {
+        return None;
+    }
+    let dir = dir.canonicalize().ok()?;
+    let path = path.canonicalize().ok()?;
+    path.starts_with(&dir).then_some(path)
+}
+
+/// The app-data directory.
+fn app_data_dir(app: &AppHandle) -> Result<PathBuf, String> {
     app.path()
-        .app_cache_dir()
-        .map_err(|e| format!("Could not find the app's cache directory: {e}"))
+        .app_data_dir()
+        .map_err(|e| format!("Could not find the app-data directory: {e}"))
 }
 
 /// The logged-in user's home directory, plus which OS this process is running on.
@@ -110,7 +134,7 @@ pub fn ios_backup_encrypted(path: String) -> Option<bool> {
 /// identity check.
 ///
 /// Runs on a blocking-pool thread: for an encrypted backup, answering this
-/// decrypts `chat.db` into a directory under the app's cache directory, which the
+/// decrypts `chat.db` into a directory under the Scratch Directory, which the
 /// next request cleans if this one is killed.
 #[tauri::command]
 pub async fn imessage_backup_identities(
@@ -119,7 +143,7 @@ pub async fn imessage_backup_identities(
     ios: bool,
     backup_password: Option<String>,
 ) -> Result<Vec<String>, String> {
-    let scratch_root = app_cache_dir(&app)?.join(message_crate_core::IMESSAGE_READER_DIRECTORY);
+    let scratch_root = scratch_dir(&app)?.join(message_crate_core::IMESSAGE_READER_DIRECTORY);
     tauri::async_runtime::spawn_blocking(move || {
         let password = backup_password.as_deref().and_then(message_ir::trimmed);
         ios_backup::backup_identities(Path::new(path.trim()), ios, password, &scratch_root)
@@ -149,9 +173,10 @@ pub fn home_dir() -> Result<HomeDirInfo, String> {
 
 /// Open a file or directory with the operating system's default handler.
 ///
-/// Only a run directory this app made, or a path inside one such as its
-/// `message-crate-push.log` ([`StagingDirectories::openable`]), or the Export
-/// Directory and what is in it ([`ExportDirectories::openable`]), is opened.
+/// Only a run directory this app made, or a path inside one
+/// ([`StagingDirectories::openable`]), the Export Directory and
+/// what is in it ([`ExportDirectories::openable`]), or an Import Run's log in
+/// the Logs Directory, is opened.
 ///
 /// # Errors
 ///
@@ -159,12 +184,17 @@ pub fn home_dir() -> Result<HomeDirInfo, String> {
 /// missing on disk, or the OS cannot open it.
 #[tauri::command]
 pub fn open_path(
+    app: AppHandle,
     directories: tauri::State<'_, StagingDirectories>,
     exports: tauri::State<'_, ExportDirectories>,
     path: String,
 ) -> Result<(), String> {
-    let resolved = match exports.openable(Path::new(path.trim())) {
-        Some(export) => export,
+    let logs = logs_dir(&app)?;
+    let resolved = match exports
+        .openable(Path::new(path.trim()))
+        .or_else(|| in_directory(Path::new(path.trim()), &logs))
+    {
+        Some(found) => found,
         None => directories.openable(&path)?,
     };
     missing_path_error(&resolved)?;

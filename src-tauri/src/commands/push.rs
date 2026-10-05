@@ -1,7 +1,7 @@
 //! `push` command — upload an extract directory to a Message Crate server.
 
 use message_crate_push::ImportMode;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use message_crate_push::{ProgressEvent, PushConfig, run as run_push};
@@ -9,6 +9,8 @@ use message_crate_push::{ProgressEvent, PushConfig, run as run_push};
 use super::events;
 use super::events::ExtractProgressEvent;
 use super::jobs::{spawn_job, start_job};
+use super::paths::logs_dir;
+use crate::app_directories::import_run_log;
 use crate::state::AppState;
 
 /// Convert a report count to the `usize` the progress event uses.
@@ -100,11 +102,12 @@ pub fn push(
     app: tauri::AppHandle,
     args: PushArgs,
 ) -> Result<(), String> {
+    let logs = logs_dir(&app)?;
     let job = start_job(&state, "an upload")?;
     let cancel = job.cancel_flag();
     let app_handle = app.clone();
     spawn_job(app, job, move || {
-        let mut cfg = push_config(args)?;
+        let mut cfg = push_config(args, &logs)?;
         cfg.cancel = Some(cancel);
         let mut progress = |event: ProgressEvent| forward_push_event(&app_handle, event);
         let report = run_push(&cfg, Some(&mut progress))?;
@@ -122,13 +125,18 @@ pub fn push(
 /// Staging Review forecast against, read from the one place that holds it
 /// after Staging.
 ///
+/// The run's log goes to the Logs Directory, `logs_dir`, named for the run
+/// ([`import_run_log`]), so it outlives the run's directory, which is
+/// deleted when the run ends.
+///
 /// # Errors
 ///
 /// Returns an error when the directory holds no readable media settings,
 /// because its Staging never finished.
-fn push_config(args: PushArgs) -> anyhow::Result<PushConfig> {
+fn push_config(args: PushArgs, logs_dir: &Path) -> anyhow::Result<PushConfig> {
     let input = PathBuf::from(&args.input_dir);
     let recorded = message_staging::read_media_settings(&input)?;
+    let log_path = Some(import_run_log(logs_dir, &input));
     Ok(PushConfig {
         input,
         base_url: args.base_url,
@@ -158,7 +166,7 @@ fn push_config(args: PushArgs) -> anyhow::Result<PushConfig> {
         // JSONL import batches use MAX_IMPORT_BODY_BYTES.
         asset_max_bytes: recorded.asset_max_bytes,
         report_path: None,
-        log_path: None,
+        log_path,
         // The journal stays in the run directory, beside the files it tracks.
         journal_path: None,
         cancel: None,
@@ -266,7 +274,12 @@ mod tests {
             "importId": 7,
         }))
         .unwrap();
-        assert_eq!(push_config(args).unwrap().asset_max_bytes, 123_456_789);
+        assert_eq!(
+            push_config(args, Path::new("/logs"))
+                .unwrap()
+                .asset_max_bytes,
+            123_456_789
+        );
     }
 
     /// The limit has no default in the desktop app: a directory whose Staging
@@ -286,32 +299,25 @@ mod tests {
             "importId": 7,
         }))
         .unwrap();
-        let err = push_config(args).unwrap_err();
+        let err = push_config(args, Path::new("/logs")).unwrap_err();
         assert!(format!("{err:#}").contains("no media settings"), "{err:#}");
     }
 
-    /// A resumed Upload runs over the run directory the interrupted Upload
-    /// left, journal included. Sending the journaled messages again would
-    /// only make the server count each one as a Duplicate.
-    #[test]
-    fn a_resumed_upload_does_not_send_what_the_journal_recorded() {
+    /// A server that takes the session check and every batch for import 7.
+    fn upload_server() -> MockServer {
         let server = MockServer::start();
-        let _session = server.mock(|when, then| {
+        server.mock(|when, then| {
             when.method(GET).path("/v1/session");
             then.status(200).json_body(json!({
                 "account_id": 1,
                 "username": "alice",
             }));
         });
-        let batches = server.mock(|when, then| {
-            when.method(POST).path("/v1/imports/7/batches");
-            then.status(200).json_body(json!({
-                "messages": 1,
-                "messages_appended": 1,
-                "conversations": 1
-            }));
-        });
+        server
+    }
 
+    /// A run directory holding one staged conversation of one message.
+    fn staged_conversation() -> tempfile::TempDir {
         let staging = staged_directory(512 * 1024 * 1024);
         let header = json!({
             "schema_version": SCHEMA_VERSION,
@@ -358,30 +364,80 @@ mod tests {
         )
         .unwrap();
 
-        // What the Import screen sends for an Upload, first time and resumed.
-        let upload = || {
-            let args: PushArgs = serde_json::from_value(json!({
-                "baseUrl": server.base_url(),
-                "username": "",
-                "token": "mc_test",
-                "inputDir": staging.path(),
-                "mode": "append",
-                "skipAttachments": false,
-                "trustExport": true,
-                "importId": 7,
-            }))
-            .unwrap();
-            run_push(&push_config(args).unwrap(), None).unwrap()
-        };
+        staging
+    }
 
-        let first = upload();
+    /// What the Import screen sends for an Upload of `staging` to `server`,
+    /// first time and resumed, with the run's log in `logs`.
+    fn upload(server: &MockServer, staging: &Path, logs: &Path) -> message_crate_push::PushReport {
+        let args: PushArgs = serde_json::from_value(json!({
+            "baseUrl": server.base_url(),
+            "username": "",
+            "token": "mc_test",
+            "inputDir": staging,
+            "mode": "append",
+            "skipAttachments": false,
+            "trustExport": true,
+            "importId": 7,
+        }))
+        .unwrap();
+        run_push(&push_config(args, logs).unwrap(), None).unwrap()
+    }
+
+    /// A resumed Upload runs over the run directory the interrupted Upload
+    /// left, journal included. Sending the journaled messages again would
+    /// only make the server count each one as a Duplicate.
+    #[test]
+    fn a_resumed_upload_does_not_send_what_the_journal_recorded() {
+        let server = upload_server();
+        let batches = server.mock(|when, then| {
+            when.method(POST).path("/v1/imports/7/batches");
+            then.status(200).json_body(json!({
+                "messages": 1,
+                "messages_appended": 1,
+                "conversations": 1
+            }));
+        });
+        let staging = staged_conversation();
+        let logs = tempfile::tempdir().unwrap();
+
+        let first = upload(&server, staging.path(), logs.path());
         assert!(first.ok, "{:?}", first.results);
         assert_eq!(batches.calls(), 1);
 
-        let resumed = upload();
+        let resumed = upload(&server, staging.path(), logs.path());
         assert!(resumed.ok, "{:?}", resumed.results);
         assert_eq!(resumed.messages_attempted, 0);
         assert_eq!(batches.calls(), 1, "the resumed Upload sends no batch");
+    }
+
+    /// The run's log is in the Logs Directory, so deleting the run's
+    /// directory when the run ends leaves it, kept for good.
+    #[test]
+    fn an_import_run_s_log_survives_its_run_directory_being_deleted() {
+        let server = upload_server();
+        server.mock(|when, then| {
+            when.method(POST).path("/v1/imports/7/batches");
+            then.status(200).json_body(json!({
+                "messages": 1,
+                "messages_appended": 1,
+                "conversations": 1
+            }));
+        });
+        let staging = staged_conversation();
+        let logs = tempfile::tempdir().unwrap();
+        let log = import_run_log(logs.path(), staging.path());
+
+        let report = upload(&server, staging.path(), logs.path());
+        assert!(report.ok, "{:?}", report.results);
+        assert!(
+            !staging.path().join(message_crate_push::LOG_NAME).exists(),
+            "no log in the run's directory"
+        );
+        staging.close().unwrap();
+
+        let text = std::fs::read_to_string(&log).unwrap();
+        assert!(text.contains("sam.jsonl"), "{text}");
     }
 
     #[test]

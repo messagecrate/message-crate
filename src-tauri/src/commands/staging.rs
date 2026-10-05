@@ -76,6 +76,23 @@ pub fn set_staging_root(
     directories.describe()
 }
 
+/// The log of the Import Run whose directory is `staging_dir`, in the Logs
+/// Directory. The log is there once the run's Upload has started, and stays
+/// after the run's directory is deleted.
+///
+/// # Errors
+///
+/// Returns an error when the operating system names no app-data directory.
+#[tauri::command]
+pub fn import_run_log(app: tauri::AppHandle, staging_dir: String) -> Result<String, String> {
+    let logs = super::paths::logs_dir(&app)?;
+    Ok(
+        crate::app_directories::import_run_log(&logs, std::path::Path::new(staging_dir.trim()))
+            .display()
+            .to_string(),
+    )
+}
+
 /// Make a new run directory under the Staging Directory and return its
 /// path. `label` is the Import source.
 ///
