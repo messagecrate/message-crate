@@ -15,6 +15,7 @@
 
 import { act, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "../../lib/api";
 import { currentDesktopJob } from "../../lib/desktopJob";
 import type { ActiveImportRun } from "../../lib/importRun";
 import type {
@@ -102,8 +103,11 @@ vi.mock("../../lib/useAccountProfile", () => ({
 /** What `onAccountIdChange` was given; `logInAs` calls them, as `setAccountId` does. */
 const accountListeners = vi.hoisted(() => new Set<() => void>());
 
-vi.mock("../../lib/api", () => ({
+vi.mock("../../lib/api", async (importOriginal) => ({
+  // `ApiError`, which tells a refused session from another failure.
+  ...(await importOriginal<typeof import("../../lib/api")>()),
   getBaseUrl: () => "http://127.0.0.1:8080",
+  getToken: () => auth.token,
   getAccountId: () => auth.accountId,
   onAccountIdChange: (listener: () => void) => {
     accountListeners.add(listener);
@@ -570,6 +574,45 @@ describe("useImportJob wiring", () => {
     expect(result.current.summaryView?.status).toBe("failed");
     expect(result.current.summaryView?.issues[0]?.reason).toMatch(/Failed to fetch/);
     expect(rowStatus(result.current.steps, "Upload")).toBe("error");
+    expect(completeImportMock).not.toHaveBeenCalled();
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
+  });
+
+  /** What the server answers a call whose session token it no longer accepts. */
+  function sessionRefusal(): ApiError {
+    return new ApiError(401, "Authentication required.", {
+      type: "https://messagecrate.app/problems/authentication-required",
+      title: "Authentication required.",
+      status: 401,
+    });
+  }
+
+  it("goes back to the form, with no Import Error and no directory left, when the server refuses the session to the run's creation (#1677)", async () => {
+    createImportMock.mockRejectedValue(sessionRefusal());
+    const { result } = renderHook(() => useImportJob());
+    await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
+
+    expect(invokeExtractMock).not.toHaveBeenCalled();
+    expect(result.current.phase).toBe("form");
+    expect(result.current.running).toBe(false);
+    expect(result.current.summaryView).toBeNull();
+    // No run exists on the server to offer the directory again.
+    expect(invokeDeleteRunDirMock).toHaveBeenCalled();
+    expect(completeImportMock).not.toHaveBeenCalled();
+  });
+
+  it("goes back to the form, keeping the run and its directory, when the server refuses the session to the `media` stage (#1677)", async () => {
+    const { result } = renderHook(() => useImportJob());
+    await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
+    setImportStageMock.mockImplementation((_id: number, stage: string) =>
+      stage === "media" ? Promise.reject(sessionRefusal()) : Promise.resolve(),
+    );
+    await act(() => result.current.approve());
+
+    expect(invokeTranscodeStagingMock).not.toHaveBeenCalled();
+    expect(result.current.phase).toBe("form");
+    expect(result.current.running).toBe(false);
+    expect(result.current.summaryView).toBeNull();
     expect(completeImportMock).not.toHaveBeenCalled();
     expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
   });

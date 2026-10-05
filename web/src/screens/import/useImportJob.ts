@@ -6,7 +6,7 @@ import {
 } from "../../components/import/ImportSummaryPanel";
 import type { ImportIssueStage } from "../../components/import/importIssueStage";
 import { profileAddresses } from "../../lib/account";
-import { getAccountId, getBaseUrl } from "../../lib/api";
+import { getAccountId, getBaseUrl, getToken } from "../../lib/api";
 import { formatAttachmentProgress } from "../../lib/attachmentProgressCopy";
 import { useAuth } from "../../lib/auth";
 import { needsIdentityStop, parseSourceIdentities } from "../../lib/backupIdentity";
@@ -22,8 +22,9 @@ import {
   setImportStage,
 } from "../../lib/importRun";
 import { importRunCreateBody, showsAttachmentOptions } from "../../lib/importSource";
+import { endsSession } from "../../lib/routeQuery";
 import { CANCELLED_MESSAGE, createRunCancel, type RunCancel } from "../../lib/runCancel";
-import { registerRunningUpload, uploadSessionRefused } from "../../lib/runningUpload";
+import { registerRunningUpload, sessionRefused } from "../../lib/runningUpload";
 import { sbrExtractFields } from "../../lib/sbrExtractFields";
 import { completeImport, createImport, getServerState } from "../../lib/serverApi";
 import {
@@ -841,6 +842,48 @@ async function summarizeStagingWithProgress(config: RunDirConfig): Promise<Stagi
 class StageNotRecordedError extends Error {}
 
 /**
+ * A call the server refused the session to. `callServer` has already ended
+ * the session here, so the run stops where the server has it, for its
+ * account's next login to offer again. The run did nothing wrong, so the
+ * refusal is no Import Error (#1677).
+ */
+class SessionRefusedError extends Error {}
+
+/**
+ * Make one of the run's own server calls. These go through `serverApi.ts`
+ * rather than TanStack Query, so the query client never sees their failures:
+ * a `401 Unauthorized` that ends the session ends it here instead, as the
+ * query client's would, and throws `SessionRefusedError`.
+ *
+ * The token is read before the call, because it is the one the call sends:
+ * a refusal that arrives after a later login says nothing of that login's
+ * session.
+ */
+async function callServer<T>(call: () => Promise<T>): Promise<T> {
+  const token = getToken();
+  try {
+    return await call();
+  } catch (e: unknown) {
+    if (token == null || !endsSession(e)) throw e;
+    sessionRefused(token);
+    throw new SessionRefusedError(e instanceof Error ? e.message : String(e));
+  }
+}
+
+/**
+ * Leave a run whose session the server refused, back on the form. The server
+ * keeps the run where it got to, with its run directory, and the form's
+ * resume check offers it again at the account's next login. A run the server
+ * never created has nothing to offer, so its directory goes.
+ */
+async function leaveRefusedRun(runId: number | null): Promise<void> {
+  const { runDir } = store.get();
+  if (runId == null && runDir != null) await discardRunDirectory(runDir);
+  returnToForm();
+  store.set({ running: false });
+}
+
+/**
  * Move a live run to another stage, carrying the summary the person just
  * approved when there is one. `approvedPlan` is simply forwarded, undefined
  * and all: `setImportStage` posts `{ stage, summary: approvedPlan }`, and
@@ -848,9 +891,10 @@ class StageNotRecordedError extends Error {}
  * omitted plan and an explicit `undefined` reach the server identically —
  * no `summary` key at all, leaving whatever plan is already stored untouched.
  *
- * Throws `StageNotRecordedError` when the write fails. A later visit resumes
- * the run from the stage the server holds, so the caller must not go on to
- * work the server does not know the run reached.
+ * Throws `StageNotRecordedError` when the write fails, or
+ * `SessionRefusedError` when the server refused the session. A later visit
+ * resumes the run from the stage the server holds, so the caller must not go
+ * on to work the server does not know the run reached.
  */
 async function moveStage(
   runId: number,
@@ -858,10 +902,13 @@ async function moveStage(
   approvedPlan?: StagingSummary,
 ): Promise<void> {
   try {
-    await setImportStage(runId, stage, approvedPlan);
+    await callServer(() => setImportStage(runId, stage, approvedPlan));
   } catch (e: unknown) {
     const reason = e instanceof Error ? e.message : String(e);
-    throw new StageNotRecordedError(`Message Crate didn't record the run's progress: ${reason}`);
+    const message = `Message Crate didn't record the run's progress: ${reason}`;
+    throw e instanceof SessionRefusedError
+      ? new SessionRefusedError(message)
+      : new StageNotRecordedError(message);
   }
 }
 
@@ -976,34 +1023,38 @@ async function finishImport(args: {
   );
   const posts = runId != null && !skipComplete && status !== "paused";
   let completeRefused: string | null = null;
+  let sessionWasRefused = false;
   if (posts) {
     try {
       // The server counts the messages and attachments the run holds: a
       // resumed Upload's report counts only what the resume sent.
-      await completeImport(runId, {
-        status,
-        bytes_uploaded: whole.bytesUploaded,
-        parse_ms: whole.parseMs,
-        attachments_ms: whole.attachmentsMs,
-        prepare_ms: whole.prepareMs,
-        upload_ms: whole.uploadMs,
-        duration_ms: whole.durationMs,
-        summary: {
-          files_total: finalSummary.filesTotal,
-          files_succeeded: finalSummary.filesSucceeded,
-          files_failed: finalSummary.filesFailed,
-          files_skipped: finalSummary.filesSkipped,
-          messages_parsed: finalSummary.messagesParsed,
-          messages_attempted: finalSummary.messagesAttempted,
-          messages_inserted: finalSummary.messagesInserted,
-          messages_deduped: finalSummary.messagesDeduped,
-          messages_failed: finalSummary.messagesFailed,
-        },
-        issues: issueRequests(finalSummary.issues),
-        notes: whole.notes ?? [],
-      });
+      await callServer(() =>
+        completeImport(runId, {
+          status,
+          bytes_uploaded: whole.bytesUploaded,
+          parse_ms: whole.parseMs,
+          attachments_ms: whole.attachmentsMs,
+          prepare_ms: whole.prepareMs,
+          upload_ms: whole.uploadMs,
+          duration_ms: whole.durationMs,
+          summary: {
+            files_total: finalSummary.filesTotal,
+            files_succeeded: finalSummary.filesSucceeded,
+            files_failed: finalSummary.filesFailed,
+            files_skipped: finalSummary.filesSkipped,
+            messages_parsed: finalSummary.messagesParsed,
+            messages_attempted: finalSummary.messagesAttempted,
+            messages_inserted: finalSummary.messagesInserted,
+            messages_deduped: finalSummary.messagesDeduped,
+            messages_failed: finalSummary.messagesFailed,
+          },
+          issues: issueRequests(finalSummary.issues),
+          notes: whole.notes ?? [],
+        }),
+      );
     } catch (e: unknown) {
       completeRefused = e instanceof Error ? e.message : String(e);
+      sessionWasRefused = e instanceof SessionRefusedError;
     }
   }
   if (completeRefused != null) {
@@ -1012,16 +1063,19 @@ async function finishImport(args: {
       setRowByLabel(UPLOAD_LABEL, { status: "error", detail: "Paused" });
     }
     // Shown here only, since the server never took the issues it would be
-    // recorded with.
-    finalSummary.issues = [
-      ...finalSummary.issues,
-      {
-        kind: "error",
-        stage: "upload",
-        item: RUN_ERROR_ITEM,
-        reason: `Message Crate didn't record the import as finished: ${completeRefused}`,
-      },
-    ];
+    // recorded with. A refused session is no fault of the run: the session
+    // has ended, and the next login completes the run.
+    if (!sessionWasRefused) {
+      finalSummary.issues = [
+        ...finalSummary.issues,
+        {
+          kind: "error",
+          stage: "upload",
+          item: RUN_ERROR_ITEM,
+          reason: `Message Crate didn't record the import as finished: ${completeRefused}`,
+        },
+      ];
+    }
   }
   // A run with no server record at all (its creation failed) is ended too:
   // nothing will ever offer its directory again.
@@ -1093,15 +1147,15 @@ async function runUpload(
     await upload;
   };
   const ended = registerRunningUpload(pause);
-  let sessionRefused = false;
+  let pushRefused = false;
   try {
-    sessionRefused = await upload;
+    pushRefused = await upload;
   } finally {
     ended();
   }
   // The Upload stopped because the server refused its session: every request
   // with that token is refused now, so the session ends here too (#1491).
-  if (sessionRefused && token) uploadSessionRefused(token);
+  if (pushRefused && token) sessionRefused(token);
 }
 
 /**
@@ -1120,6 +1174,10 @@ async function uploadAndFinish(
   try {
     await moveStage(runId, "upload", approvedPlan);
   } catch (e: unknown) {
+    if (e instanceof SessionRefusedError) {
+      await leaveRefusedRun(runId);
+      return false;
+    }
     // The server still has the run at its review, so the run stays there
     // and is not completed: a later visit offers that review again.
     recordError("upload", e instanceof Error ? e.message : String(e));
@@ -1223,6 +1281,10 @@ async function runMediaStage(
   try {
     await moveStage(runId, "media", approvedSummary);
   } catch (e: unknown) {
+    if (e instanceof SessionRefusedError) {
+      await leaveRefusedRun(runId);
+      return;
+    }
     // The server still has the run at the Staging Review, so the run stays
     // there and is not completed: a later visit offers that review again.
     recordError("media", e instanceof Error ? e.message : String(e));
@@ -1390,7 +1452,7 @@ async function runImport(
       // A new Import Run works to the server's attachment size limit as it is
       // now. It goes into the form the run is created with, so every later
       // stage, and a resume, measures against this same number.
-      const server = await getServerState();
+      const server = await callServer(() => getServerState());
       form = { ...form, assetMaxBytes: server.asset_max_bytes };
       scratch.form = form;
       store.set({ form });
@@ -1444,15 +1506,19 @@ async function runImport(
       const backupStat = await invokePathStat(form.backupPath).catch(() => null);
       // The run is created in the account of the session logged in now.
       stopIfAccountLeft();
-      const importRun = await createImport({
-        ...importRunCreateBody(form.source),
-        stage: "parse",
-        run_dir: outputDir,
-        device_id: getDeviceId(),
-        form: formSnapshot(form),
-        source_fingerprint: backupStat ? buildSourceFingerprint(form.backupPath, backupStat) : null,
-        source_identities: identities,
-      });
+      const importRun = await callServer(() =>
+        createImport({
+          ...importRunCreateBody(form.source),
+          stage: "parse",
+          run_dir: outputDir,
+          device_id: getDeviceId(),
+          form: formSnapshot(form),
+          source_fingerprint: backupStat
+            ? buildSourceFingerprint(form.backupPath, backupStat)
+            : null,
+          source_identities: identities,
+        }),
+      );
       runId = importRun.id;
       store.set({ importRunId: runId });
       setRowByLabel(STAGING_LABEL, { detail: "Extracting…" });
@@ -1531,6 +1597,10 @@ async function runImport(
       returnToForm();
     }
   } catch (e: unknown) {
+    if (e instanceof SessionRefusedError) {
+      await leaveRefusedRun(runId);
+      return;
+    }
     const msg = e instanceof Error ? e.message : String(e);
     // A cancelled Staging is not a failure: the conversations already
     // written are real work, and Staging can pick up from them. Leaving the
@@ -1561,8 +1631,10 @@ async function runImport(
  *
  * The record is in the directory, so it is read before the directory goes, and a
  * record that cannot be read discards the run with no Import Errors. The
- * close and the delete then run regardless of the other's outcome: a live
- * run with no directory blocks the next import, and a directory with no run is
+ * delete then runs whatever the close's outcome, but one: a session the
+ * server refused to the close. The run stays open for the account's next
+ * login to offer again, so its directory stays with it. Otherwise a live run
+ * with no directory blocks the next import, and a directory with no run is
  * litter nothing will ever clean up. `runDir` is null for a run whose
  * directory is not on this device. Never throws.
  */
@@ -1579,10 +1651,14 @@ async function discardRun(runId: number | null, runDir: string | null): Promise<
       // Discarded with no Import Errors: the run still has to close.
     }
   }
-  await Promise.allSettled([
-    runId != null ? discardImportRun(runId, issueRequests(issues), notes) : Promise.resolve(),
-    runDir != null ? discardRunDirectory(runDir) : Promise.resolve(),
-  ]);
+  if (runId != null) {
+    try {
+      await callServer(() => discardImportRun(runId, issueRequests(issues), notes));
+    } catch (e: unknown) {
+      if (e instanceof SessionRefusedError) return;
+    }
+  }
+  if (runDir != null) await discardRunDirectory(runDir);
 }
 
 /** Cancel the run at a Review: end it (`discardRun`) and go back to the form. */
