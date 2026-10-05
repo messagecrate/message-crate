@@ -8,7 +8,7 @@ records what each app offers today. A feature present in one and absent from
 the other is a fact about the two trees, not a verdict on either.
 
 The screenshots are of the running app against the demo data
-(`./scripts/run-vault-dev.sh --reset-demo`: 442 contacts, 382 conversations,
+(`./scripts/run-dev.sh --reset-demo`: 442 contacts, 382 conversations,
 609,436 messages, no Contact Groups), in Chromium at 1360 × 860 with the
 default dark theme. They live in [`web-next/`](web-next/).
 
@@ -18,7 +18,7 @@ web-next reads from the server through the `/v1` HTTP API, the same way `web/`
 does. It needs a running server and Node 22.
 
 ```bash
-./scripts/run-vault-dev.sh --reset-demo   # server API on http://127.0.0.1:8080
+./scripts/run-dev.sh --reset-demo   # server API on http://127.0.0.1:8080
 
 cd web-next
 npm ci
@@ -33,7 +33,7 @@ Two costs are worth knowing before browsing. The Group Messages list splits
 every conversation by calendar year, which costs one count request per
 conversation per year: about four seconds for the demo's 185 groups. A search
 with body text runs through the message list, and on the demo data an
-unscoped text search takes about fifty seconds (issue #413).
+unscoped text search took about fifty seconds (#413, closed 22 September 2026).
 
 ## What works and what does not
 
@@ -48,17 +48,12 @@ changing the profile or password, and creating an account all fail visibly.
 Undo and redo are not features of web-next: the history engine is unwired and
 its controls are gone from the list menus.
 
-Some reads have no `/v1` route and are approximated or absent. Display
-preferences live in a browser cookie. Transcoded media is not served; HEIC and
-MOV attachments show a notice with a link to the raw file. Trash timestamps,
-per-message trash, "delete messages only", surrounding-context search,
-relevance ordering, the import-source filter on lists, the duplicate-copy
-count, contact CSV export, unassigned handles, demo reset, and Hanko login
-are all listed with their nearest routes in issue #412. Two behaviours were
-observed on this build: right-clicking a message search result opens no menu,
-and clicking a message hit opens the conversation and then walks it back one
-page of 80 at a time until it reaches the message, so a hit from 2014 in a
-long thread takes a while to appear.
+Some reads have no `/v1` route and are approximated or absent; they are listed
+with their nearest routes under "What the `/v1` API cannot serve" below. Two
+behaviours were observed on this build: right-clicking a message search result
+opens no menu, and clicking a message hit opens the conversation and then
+walks it back one page of 80 at a time until it reaches the message, so a hit
+from 2014 in a long thread takes a while to appear.
 
 ## Screens
 
@@ -78,7 +73,7 @@ beside it. Account creation posts to a route that answers 501 on this build.
 
 `src/components/HomePageClient.tsx`. Overview tiles for messages, contacts,
 group chats and attachments; recent contacts with last-message date, group
-count and direct-message count; a vault history panel with date range,
+count and direct-message count; a message history panel with date range,
 sent/received proportion, import sources and duplicate copies; and Explore
 tiles for all contacts and contacts with no messages, the second of which is a
 prefilled search.
@@ -287,7 +282,7 @@ has no such feature.
 |---|---|---|
 | Three-pane layout | navigation, list column, right pane; two resizable | tree, reader, inspector; all resizable, inspector collapsible |
 | Collapsible navigation | sections collapse individually | whole navigation collapses to an icon rail |
-| Home dashboard | — | tiles, recent contacts, vault history, explore |
+| Home dashboard | — | tiles, recent contacts, message history, explore |
 | Deep links in the URL | query, filter, trash selection | contact, conversation, group, year, query |
 | Recent searches | per scope, ten most recent | — |
 | Search autocomplete | words, values and contact names from the server | people and labels for person and label words |
@@ -401,3 +396,103 @@ has no such feature.
 | Read-only mode | — | yes |
 | Confirmation dialogs | yes | yes |
 | Theme applied before first paint | yes | yes |
+
+## What the `/v1` API cannot serve
+
+Mapping web-next's screens onto the `/v1` API in September 2026 (#412)
+surfaced the list below: things the screens do, or did, that the API does not
+serve. Each entry names the screen, what it needs, and the nearest route at
+the time. It is the first written account of which behaviours would need API
+support if they were carried into `web/`. Nothing here is decided: a gap is a
+fact about the API, not a request to build it, and the list is not rewritten
+until someone scopes the port.
+
+Read the route names as historical. Item 8's proposal shipped as
+`GET /v1/messages` (#424). `/v1/export/messages`, `/v1/admin/users` and the
+`/v1/auth/*` and `/v1/account/*` names in the writes table have since been
+renamed. `account_prefs` (item 2) is still in `schema/sql/accounts.sql` and
+nothing in the server reads it. Two items were built in `web/`, and their
+issues closed on 3 October 2026. Item 7, surrounding messages for a search
+hit, was built by #1391 (the conversation panel loads around any message) and
+#313 (a search result opens there). Item 8, conversation-grouped body search,
+was built by #313 (a Messages list of every matching message beside the
+Conversations list). Item 4's slow count was fixed by #413, closed 22
+September 2026.
+
+### Reads the API cannot serve, or serves only approximately
+
+1.  **Transcoded media.** `MessageAttachments` used `assets_converted/` for
+   HEIC, MOV and similar formats browsers cannot play. Nearest:
+   `GET /v1/assets/{sha256}` serves the raw bytes only. The screen shows a "no
+   /v1 route for converted media" notice with a link to the raw file.
+2.  **Display preferences** (theme, date and time format, list badges).
+   Settings › Appearance. Nearest: none; the `account_prefs` table exists
+   without a route. web-next keeps them in a browser cookie.
+3.  **Per-year message histogram.** The Group Messages list and the contact
+   detail's "activity by year" bucket a conversation by calendar year.
+   Nearest: `GET /v1/export/messages/count?q=in:#id date:YYYY`, one call per
+   conversation per year. Attachments per year come from the same call. First
+   and last message dates within a year are not available; web-next clips the
+   conversation's range to the year. 185 groups cost about 3.9 s on the Demo
+   Account.
+4.  **Per-contact message totals and date range** on the contact list (All, No
+   messages, the label sections, the Home "recent contacts"). Nearest: derived
+   from the whole `GET /v1/conversations` list, summing direct conversations
+   by `contact_id`. `GET /v1/contacts` carries no counts, and `q=messages:0`
+   on it did not answer in minutes on the Demo Account (#413, fixed).
+5.  **When a contact or conversation was trashed.** The Trash lists sort by
+   that time. Nearest: `GET /v1/contacts?q=trashed:yes` and
+   `GET /v1/conversations?q=trashed:yes` list the rows without a `trashed_at`
+   field.
+6.  **Per-message trash and "delete messages only"** (trashed handles). Trash
+   tab, per-message context menu. The server trashes conversations and
+   contacts; the concept is gone. web-next's trashed-handle lists are empty.
+7.  **Surrounding messages for a search hit** (`context:N`, `?around=`).
+   Search results. Nearest: none; a hit opens on its own.
+8.  **Conversation-grouped body search.** The default search mode groups
+   matching messages by conversation. Free text on `GET /v1/conversations`
+   matches names and titles only. web-next reads the first 500 hits from
+   `GET /v1/export/messages` and groups them client-side, so totals are
+   partial. Related: #313 proposes `GET /v1/messages?q=`.
+9.  **Relevance ordering** (`sort:relevance`). `GET /v1/conversations` sorts
+   by date or message count only.
+10.  **Import-source filter.** The thread view's source picker filters by
+   import source id (`imessage`, `sms-backup-restore`, `whatsapp`). The list
+   routes cannot filter by it; the `source:` word takes a backup family.
+   web-next filters loaded messages client-side and counts ignore the filter.
+   `GET /v1/conversations/{id}/sources` gives per-conversation totals by
+   backup name.
+11.  **Hidden duplicate count.** Home shows "Duplicate copies". Nearest: none;
+   web-next shows 0.
+12.  **Contact CSV export.** Contacts toolbar. Nearest: none; the route
+   answers `501 Not Implemented`.
+13.  **Unassigned handles.** Concept gone; `/unassigned` redirects to `/all`
+   and the route answers `501 Not Implemented`.
+14.  **Account list and username check** on the login screen.
+   `GET /v1/admin/users` is admin-only; register answers `409 Conflict` for a
+   taken name. web-next answers an empty list.
+15.  **Demo reset.** CLI-only by ADR-0001. The title menu never offers it.
+16.  **Hanko passkeys.** No counterpart; the path is unwired.
+
+### Writes, deferred rather than missing
+
+Every write route handler in web-next answers `501 Not Implemented` until the
+writes are named. The nearest `/v1` routes, for when they are:
+
+| web-next action | Nearest `/v1` route |
+|---|---|
+| Rename a contact | `PATCH /v1/contacts/{id}` with `name` |
+| Add, change or remove a handle | `PATCH /v1/contacts/{id}` with `add_handle`, `update_handle`, `remove_handle` |
+| Create, rename, delete a label | `POST`, `PATCH`, `DELETE /v1/contact-groups` |
+| Change label membership | `PATCH /v1/contact-groups/{id}/members` |
+| Trash or restore a contact | `POST /v1/contacts/{id}/trash`, `/restore` |
+| Trash or restore a group conversation | `POST /v1/conversations/{id}/trash`, `/restore` |
+| Merge contacts | none; could be emulated with handle moves |
+| Import a vCard | `POST /v1/contacts/address-book` |
+| Update display name and phones | `POST /v1/account/profile` |
+| Change password | `POST /v1/auth/change-password` |
+| Delete account | `POST /v1/auth/delete-account` |
+| Delete all messages | `POST /v1/account/delete-messages` |
+| Create an account | `POST /v1/auth/register` |
+| Create or delete an API token | `POST`, `DELETE /v1/account/api-tokens` |
+| Undo and redo | not a feature of web-next; nothing to map |
