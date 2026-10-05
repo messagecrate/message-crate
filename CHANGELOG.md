@@ -1198,6 +1198,13 @@ released versions carry their date on the heading.
   extract", naming the work with words that appear nowhere else. It now names
   both the running work and what you started the way the screens do, as in
   "An Export is running. Staging can start once it ends."
+- 2026-10-04 **The desktop app names the work a bug in Message Crate
+  ended.** When Staging, the Media Stage, the Upload, an Export or a Convert
+  ended because of a bug in Message Crate, the app said "The job stopped
+  because of a bug in Message Crate.", naming the work with a word that
+  appears nowhere else. It now names it the way the screens do, as in
+  "Staging failed because of a bug in Message Crate." The Upload says it
+  paused, since its run keeps everything staged and can be resumed.
 - 2026-10-04 **On the light theme, the contact drawer's shadow falls on the
   list it covers.** The drawer opens from the right, and its shadow fell to
   the right, under the drawer itself, so the drawer's left edge had no

@@ -15,7 +15,7 @@ pub struct AppState {
 
 /// What a desktop job is, as the screens and `CONTEXT.md` name it. "Job" is
 /// a word for the code only, so the refusal of a second job names both jobs
-/// by this.
+/// by this, and a job that panics is named by it too (`commands::jobs`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JobName {
     /// The `extract` command: the Staging Stage of an Import Run.

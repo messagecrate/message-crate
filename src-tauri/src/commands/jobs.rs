@@ -34,6 +34,8 @@ use crate::state::{AppState, JobName, RunningJob};
 /// that returns an error after starting its job does not leave it running.
 pub(crate) struct Job {
     state: Arc<Mutex<AppState>>,
+    /// What the job is, for the message that reports a panic.
+    name: JobName,
     cancel: CancelFlag,
 }
 
@@ -77,6 +79,7 @@ pub(crate) fn start_job(state: &Arc<Mutex<AppState>>, name: JobName) -> Result<J
     });
     Ok(Job {
         state: Arc::clone(state),
+        name,
         cancel,
     })
 }
@@ -131,19 +134,37 @@ where
 /// `extract:error` payload the UI needs.
 ///
 /// A panic counts as a failure. Without this, a panicking job sends neither
-/// `extract:finished` nor `extract:error`, and the UI waits forever.
+/// `extract:finished` nor `extract:error`, and the UI waits forever. The
+/// message the person reads names the work as the screens do, because "job"
+/// is a word for the code only.
 fn run_job<F>(job: Job, run: F) -> Result<String, ExtractErrorEvent>
 where
     F: FnOnce() -> Result<String, ExtractErrorEvent>,
 {
+    let name = job.name;
     let outcome = panic::catch_unwind(AssertUnwindSafe(run));
     drop(job);
     outcome.unwrap_or_else(|payload| {
         Err(ExtractErrorEvent {
             detail: format!("the job panicked: {}", panic_message(payload.as_ref())),
-            user_message: Some("The job stopped because of a bug in Message Crate.".into()),
+            user_message: Some(panic_text(name)),
         })
     })
+}
+
+/// What the person reads when `name` panics. The Upload pauses rather than
+/// fails, as `CONTEXT.md` ("Pause") says: the import screen keeps its run at
+/// the Upload with everything staged (`importOutcome` in
+/// `web/src/screens/import/importOutcome.ts`), so it can be resumed.
+fn panic_text(name: JobName) -> String {
+    let outcome = match name {
+        JobName::Upload => "paused",
+        JobName::Staging | JobName::Media | JobName::Export | JobName::Convert => "failed",
+    };
+    format!(
+        "{} {outcome} because of a bug in Message Crate.",
+        name.label()
+    )
 }
 
 /// The text a panic was raised with. `panic!` carries a `&str` for a plain
@@ -278,6 +299,37 @@ mod tests {
             error.detail
         );
         assert!(error.user_message.is_some());
+    }
+
+    #[test]
+    fn a_panic_names_the_work_and_what_became_of_it_in_the_screens_words() {
+        let cases = [
+            (
+                JobName::Staging,
+                "Staging failed because of a bug in Message Crate.",
+            ),
+            (
+                JobName::Media,
+                "The Media Stage failed because of a bug in Message Crate.",
+            ),
+            (
+                JobName::Upload,
+                "The Upload paused because of a bug in Message Crate.",
+            ),
+            (
+                JobName::Export,
+                "An Export failed because of a bug in Message Crate.",
+            ),
+            (
+                JobName::Convert,
+                "A Convert failed because of a bug in Message Crate.",
+            ),
+        ];
+        for (name, text) in cases {
+            let job = start_job(&new_state(), name).unwrap();
+            let error = run_job(job, || panic!("bug")).expect_err("a panic reports an error");
+            assert_eq!(error.user_message.as_deref(), Some(text));
+        }
     }
 
     #[test]
