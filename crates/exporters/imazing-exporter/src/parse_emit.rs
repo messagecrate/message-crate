@@ -6,7 +6,7 @@ use crate::parse::{RawRow, SourceKind};
 use chrono::NaiveDateTime;
 use message_csv::Zone;
 use message_ir::{ConversationKey, HandleType, IrParticipant};
-use phone::{sanitize_number, sanitize_phone_shaped};
+use phone::Handle;
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -25,6 +25,10 @@ impl TransportFamily {
 #[derive(Debug)]
 pub(super) struct Session {
     pub(super) key: ConversationKey,
+    /// For a one-to-one conversation with an address, that address as
+    /// [`Handle::parse`] classified it; `None` for a group or a name-only
+    /// chat.
+    pub(super) address: Option<Handle>,
     /// The session name, or empty when the session name is the chat's address.
     pub(super) contact_name: String,
     /// Members a Messages group's session name lists by a name no row pairs
@@ -56,44 +60,39 @@ pub(super) fn session_key(kind: SourceKind, session: &str, rows: &[&RawRow]) -> 
                 vendor_id: group_vendor_id(&row_digests, 1),
                 members,
             },
+            address: None,
             contact_name: session.trim().to_string(),
             unresolved_roster_labels,
             row_digests,
         };
     }
     let session = session.trim();
-    let named_by_address = session.contains('@') || sanitize_phone_shaped(session).is_some();
-    let key = match one_to_one_handle(session, rows) {
-        Some(handle) => ConversationKey::OneToOne(handle),
+    let named_by_address = address(session).is_some();
+    let address = one_to_one_address(session, rows);
+    let key = match &address {
+        Some(handle) => ConversationKey::OneToOne(handle.key().to_string()),
         None => ConversationKey::NameOnly(session.to_string()),
     };
     Session {
-        contact_name: if named_by_address && !key.is_name_only() {
+        contact_name: if named_by_address {
             String::new()
         } else {
             session.to_string()
         },
         key,
+        address,
         unresolved_roster_labels: Vec::new(),
         row_digests: Vec::new(),
     }
 }
 
-/// The address a `Sender ID` holds, or `None` when it holds none.
-///
-/// Email first: a sender like `bob2024@example.com` has 4+ digits and must
-/// never be reduced to a phone number. A number is formatted as E.164 (the
-/// international phone-number format that starts with +) when unambiguous,
-/// otherwise kept as digits; never an invented `+0…`.
-fn sender_address(sender_id: &str) -> Option<String> {
-    let sid = sender_id.trim();
-    if sid.contains('@') {
-        Some(sid.to_string())
-    } else if sanitize_number(sid).is_some() {
-        Some(phone::normalize_lenient(sid))
-    } else {
-        None
-    }
+/// The address a `Sender ID`, a session name or a roster label holds,
+/// classified once by [`Handle::parse`]: an email address, or a number keyed
+/// as E.164 (the international phone-number format that starts with +) when
+/// unambiguous and as its digits otherwise. `None` for a blank value or a
+/// name such as `Trip 2024`, which is no address.
+fn address(raw: &str) -> Option<Handle> {
+    Handle::parse(raw).filter(|handle| handle.kind() != HandleType::Other)
 }
 
 /// True for a row someone other than the account holder wrote.
@@ -127,7 +126,7 @@ fn people_who_wrote(kind: SourceKind, rows: &[&RawRow]) -> usize {
         .map(|row| {
             let name = row.sender_name.trim().to_lowercase();
             (
-                sender_address(&row.sender_id),
+                address(&row.sender_id).map(Handle::into_key),
                 (!name.is_empty()).then_some(name),
             )
         })
@@ -186,27 +185,21 @@ impl<'a> RowOrder<'a> {
     }
 }
 
-/// The address of a one-to-one chat: the one its session name gives, else
-/// the address of the earliest received row that has one. New messages do
-/// not change it; it changes only when the oldest messages are gone from the
-/// export. `None` when the source records no address for the person.
-fn one_to_one_handle(session: &str, rows: &[&RawRow]) -> Option<String> {
-    if let Some(phone) = phones_in_text(session).into_iter().next() {
-        return Some(phone);
-    }
-    // Email first: an address like `bob2024@example.com` has 4+ digits and must
-    // not be treated as a phone number.
-    if session.contains('@') {
-        return Some(session.to_string());
-    }
-    if sanitize_phone_shaped(session).is_some() {
-        return Some(phone::normalize_lenient(session));
-    }
-    rows.iter()
-        .filter(|row| written_by_someone_else(row))
-        .filter_map(|row| Some((RowOrder::of(row), sender_address(&row.sender_id)?)))
-        .min_by(|a, b| a.0.cmp(&b.0))
-        .map(|(_, address)| address)
+/// The address of a one-to-one chat: the session name when it is an
+/// address, else the first number written in it ("Bob (+13215550100)"),
+/// else the address of the earliest received row that has one. New messages
+/// do not change it; it changes only when the oldest messages are gone from
+/// the export. `None` when the source records no address for the person.
+fn one_to_one_address(session: &str, rows: &[&RawRow]) -> Option<Handle> {
+    address(session)
+        .or_else(|| numbers_in_name(session).into_iter().next())
+        .or_else(|| {
+            rows.iter()
+                .filter(|row| written_by_someone_else(row))
+                .filter_map(|row| Some((RowOrder::of(row), address(&row.sender_id)?)))
+                .min_by(|a, b| a.0.cmp(&b.0))
+                .map(|(_, address)| address)
+        })
 }
 
 /// A group's members: everyone who wrote, every number in the session name,
@@ -224,12 +217,14 @@ fn group_members(
     rows: &[&RawRow],
 ) -> (Vec<IrParticipant>, Vec<String>) {
     let mut members: BTreeMap<String, IrParticipant> = BTreeMap::new();
-    let mut add = |handle: String, name: &str, handle_type: HandleType| {
-        let member = members.entry(handle.clone()).or_insert(IrParticipant {
-            identity: Some(handle),
-            display_name: None,
-            identity_type: Some(handle_type),
-        });
+    let mut add = |handle: Handle, name: &str| {
+        let member = members
+            .entry(handle.key().to_string())
+            .or_insert_with(|| IrParticipant {
+                identity_type: Some(handle.kind()),
+                identity: Some(handle.into_key()),
+                display_name: None,
+            });
         let name = name.trim();
         if member.display_name.is_none() && !name.is_empty() {
             member.display_name = Some(name.to_string());
@@ -238,9 +233,9 @@ fn group_members(
 
     // The rows themselves pair a sender's name with their address. That is
     // the only name-to-address mapping the source gives.
-    let mut handle_by_sender_name: HashMap<String, String> = HashMap::new();
+    let mut handle_by_sender_name: HashMap<String, Handle> = HashMap::new();
     for row in rows.iter().filter(|row| !is_outgoing(&row.msg_type)) {
-        let Some(address) = sender_address(&row.sender_id) else {
+        let Some(address) = address(&row.sender_id) else {
             continue;
         };
         let name = row.sender_name.trim();
@@ -249,11 +244,10 @@ fn group_members(
                 .entry(name.to_lowercase())
                 .or_insert_with(|| address.clone());
         }
-        let handle_type = handle_type_for(&address);
-        add(address, name, handle_type);
+        add(address, name);
     }
-    for phone in phones_in_text(session) {
-        add(phone, "", HandleType::Phone);
+    for number in numbers_in_name(session) {
+        add(number, "");
     }
 
     let mut unresolved = Vec::new();
@@ -263,12 +257,10 @@ fn group_members(
             if label.is_empty() {
                 continue;
             }
-            if label.contains('@') {
-                add(label.to_string(), "", HandleType::Email);
-            } else if sanitize_phone_shaped(label).is_some() {
-                add(phone::normalize_lenient(label), "", HandleType::Phone);
+            if let Some(handle) = address(label) {
+                add(handle, "");
             } else if let Some(handle) = handle_by_sender_name.get(&label.to_lowercase()) {
-                add(handle.clone(), label, handle_type_for(handle));
+                add(handle.clone(), label);
             } else {
                 // A member who never wrote, shown by name: the export holds
                 // no address for them.
@@ -399,16 +391,6 @@ pub(super) fn group_vendor_id_with_name(row_digests: &[[u8; 32]], session_name: 
     hex::encode(hasher.finalize())
 }
 
-/// iMazing identifiers are E.164 phones or emails; infer the type from the
-/// handle shape.
-pub(super) fn handle_type_for(handle: &str) -> HandleType {
-    if handle.contains('@') {
-        HandleType::Email
-    } else {
-        HandleType::Phone
-    }
-}
-
 /// An iMazing date string (`YYYY-MM-DD HH:MM[:SS]`, no zone) as written.
 fn naive_date(raw: &str) -> Option<NaiveDateTime> {
     let raw = raw.trim();
@@ -438,26 +420,27 @@ pub(super) fn is_notification(msg_type: &str) -> bool {
     msg_type.trim().eq_ignore_ascii_case("notification")
 }
 
-/// Every `+`-prefixed phone number mentioned in the text.
-fn phones_in_text(text: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let bytes = text.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'+' {
-            let start = i;
-            i += 1;
-            while i < bytes.len() && bytes[i].is_ascii_digit() {
-                i += 1;
-            }
-            if i > start + 1 && sanitize_number(&text[start..i]).is_some() {
-                let e164 = phone::normalize_lenient(&text[start..i]);
-                if !out.contains(&e164) {
-                    out.push(e164);
-                }
-            }
-        } else {
-            i += 1;
+/// The fewest digits a number written inside a name has, so `Party +1`
+/// names no number.
+const MIN_DIGITS_IN_NAME: usize = 4;
+
+/// Every number written inside a name as `+` and its digits, as iMazing
+/// writes "Bob (+13215550100)", each classified by [`Handle::parse`], in
+/// the order the name gives them and without repeats.
+fn numbers_in_name(name: &str) -> Vec<Handle> {
+    let mut out: Vec<Handle> = Vec::new();
+    for (start, _) in name.match_indices('+') {
+        let digits = name[start + 1..]
+            .bytes()
+            .take_while(u8::is_ascii_digit)
+            .count();
+        if digits < MIN_DIGITS_IN_NAME {
+            continue;
+        }
+        if let Some(number) = address(&name[start..=start + digits])
+            && !out.iter().any(|held| held.key() == number.key())
+        {
+            out.push(number);
         }
     }
     out
@@ -479,7 +462,7 @@ pub(super) fn resolve_sender(
     if is_from_me {
         return (String::new(), String::new());
     }
-    let address = sender_address(&row.sender_id);
+    let address = address(&row.sender_id).map(Handle::into_key);
     if is_notification {
         // Keep any available identity from the notification row; often empty.
         return (
@@ -487,8 +470,8 @@ pub(super) fn resolve_sender(
             row.sender_name.trim().to_string(),
         );
     }
-    let handle = address.unwrap_or_else(|| match &session.key {
-        ConversationKey::OneToOne(handle) if !handle.contains('@') => handle.clone(),
+    let handle = address.unwrap_or_else(|| match &session.address {
+        Some(peer) if peer.kind() == HandleType::Phone => peer.key().to_string(),
         _ => String::new(),
     });
     let mut display = row.sender_name.trim().to_string();

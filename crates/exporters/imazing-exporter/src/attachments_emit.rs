@@ -1,16 +1,21 @@
 //! Attachment helpers for the emitter.
 
+use crate::emit::attachment_content_key;
 use message_ir::{IrAttachment, PendingAttachment, PendingMessage};
 
 /// What tells a message's attachments apart, for its id and for the dedupe
-/// step: the content digest, so a later run that finds and copies a
-/// previously missing file does not change the message id, else the path.
-pub(super) fn attachment_digests(attachments: &[PendingAttachment]) -> Vec<String> {
-    let mut digests: Vec<String> = attachments
+/// step: the digest of the file's content where the run hashed it
+/// (`Ingest::tell_apart_files_of_one_name`), else the attachment's digest,
+/// else its path, which for an iMazing row is its `Attachment` cell.
+pub(super) fn attachment_digests(msg: &PendingMessage) -> Vec<String> {
+    let mut digests: Vec<String> = msg
+        .attachments
         .iter()
-        .map(|a| {
-            a.digest_sha256
-                .clone()
+        .enumerate()
+        .map(|(index, a)| {
+            message_ir::trimmed(msg.extra_str(&attachment_content_key(index)))
+                .map(str::to_string)
+                .or_else(|| a.digest_sha256.clone())
                 .unwrap_or_else(|| a.rel_path.clone())
         })
         .collect();

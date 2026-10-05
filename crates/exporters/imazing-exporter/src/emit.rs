@@ -5,8 +5,8 @@ use crate::attachments::{FolderFiles, attachment_cell, file_name_second, mime_hi
 use crate::attachments_emit::{attachment_digests, pending_attachment_to_ir};
 use crate::parse::{DiscoveredCsv, RawRow, SourceKind, discover_csv_files, parse_csv_file};
 use crate::parse_emit::{
-    Session, group_vendor_id, group_vendor_id_with_name, handle_type_for, is_notification,
-    is_outgoing, parse_message_date, resolve_sender, session_key,
+    Session, group_vendor_id, group_vendor_id_with_name, is_notification, is_outgoing,
+    parse_message_date, resolve_sender, session_key,
 };
 use crate::unnamed_files::{FolderRows, UnnamedFile, unnamed_files};
 use anyhow::Result;
@@ -20,7 +20,9 @@ use message_ir::{
     PendingAttachment, PendingConversation, PendingMessage, ProjectedRole, ProjectionHooks,
 };
 use message_staging::{AttachmentSource, ExportWriter};
+use phone::Handle;
 use serde_json::Map;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
@@ -92,6 +94,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     }
     if copy_attachments {
         ingest.attach_unnamed_files()?;
+        ingest.tell_apart_files_of_one_name();
     }
     let Ingest {
         mut conversations,
@@ -109,16 +112,27 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
     );
     let mut documents = Vec::new();
     let mut sources = Vec::new();
-    for (_, Conversation { key, mut convo, .. }) in conversations {
+    for (
+        _,
+        Conversation {
+            key,
+            address,
+            mut convo,
+            ..
+        },
+    ) in conversations
+    {
         let hooks = ImazingProjection {
             export: &export,
             key: &key,
+            address: address.as_ref(),
+            sources: RefCell::new(Vec::new()),
         };
         let chat_id = convo.chat_id.clone();
         let Some(doc) = project_conversation(&chat_id, &mut convo, &hooks, &mut report) else {
             continue;
         };
-        collect_attachment_sources(&convo, &mut sources);
+        sources.extend(hooks.sources.into_inner());
         documents.push(doc);
     }
 
@@ -146,6 +160,8 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
 /// One conversation being read: its key, and its messages so far.
 struct Conversation {
     key: ConversationKey,
+    /// A one-to-one conversation's address (`Session::address`).
+    address: Option<Handle>,
     convo: PendingConversation,
     /// For a group, its rows' digests, earliest first (`Session::row_digests`).
     row_digests: Vec<[u8; 32]>,
@@ -333,6 +349,13 @@ fn attachment_source_key(index: usize) -> String {
     format!("attachment_source.{index}")
 }
 
+/// The `extra` key of the content digest of a message's `index`-th
+/// attachment, set only where [`Ingest::tell_apart_files_of_one_name`]
+/// needs it.
+pub(super) fn attachment_content_key(index: usize) -> String {
+    format!("attachment_content.{index}")
+}
+
 impl Ingest {
     /// Parse one CSV and fold every chat session in it into the pending conversations.
     ///
@@ -460,6 +483,7 @@ impl Ingest {
                     .insert("source_kind".into(), discovered.kind.as_str().to_string());
                 Conversation {
                     key: session.key.clone(),
+                    address: session.address.clone(),
                     convo,
                     row_digests: session.row_digests.clone(),
                 }
@@ -608,6 +632,50 @@ impl Ingest {
         Ok(())
     }
 
+    /// Give the dedupe step what tells apart the rows of one conversation and
+    /// one second that name one file and that iMazing wrote different files
+    /// for (`image0.jpg`, `image0 2.jpg`): the SHA-256 of each file. The
+    /// `Attachment` cell is the same for every such row, so without the
+    /// digest the step keeps one of them and drops the other row and its
+    /// picture. Files with the same content give one digest, so their rows
+    /// are still one message. A file that cannot be read is told apart by
+    /// its path; the writer reports it when it copies the file.
+    ///
+    /// Only these rows are hashed: every other row's cell already tells it
+    /// apart, and its message id stays the same whether its file is found.
+    fn tell_apart_files_of_one_name(&mut self) {
+        let mut by_name: BTreeMap<(&ConvoKey, &str, i64), Vec<&FileClaim>> = BTreeMap::new();
+        for claim in &self.claims {
+            let second =
+                self.conversations[&claim.convo_key].convo.messages[claim.message].sort_key;
+            by_name
+                .entry((&claim.convo_key, claim.csv_name.as_str(), second))
+                .or_default()
+                .push(claim);
+        }
+        let mut digests: Vec<(ConvoKey, usize, String)> = Vec::new();
+        for claims in by_name.into_values() {
+            let files: HashSet<&Path> = claims.iter().map(|c| c.source.as_path()).collect();
+            if files.len() < 2 {
+                continue;
+            }
+            for claim in claims {
+                let digest = message_ir::file_sha256(&claim.source)
+                    .unwrap_or_else(|_| claim.source.to_string_lossy().into_owned());
+                digests.push((claim.convo_key.clone(), claim.message, digest));
+            }
+        }
+        for (convo_key, message, digest) in digests {
+            self.conversations
+                .get_mut(&convo_key)
+                .expect("a claim names a conversation that exists")
+                .convo
+                .messages[message]
+                .extra
+                .insert(attachment_content_key(0), digest);
+        }
+    }
+
     /// Add `video` to the message of the first of `rows`, the claims of the
     /// Image rows that name `picture` in CSV order. When more than one row
     /// names it, the report says which picture and that the first row took
@@ -708,15 +776,6 @@ struct CsvContext<'a> {
     sources: &'a [Option<PathBuf>],
 }
 
-fn collect_attachment_sources(convo: &PendingConversation, out: &mut Vec<Option<PathBuf>>) {
-    for msg in &convo.messages {
-        for index in 0..msg.attachments.len() {
-            let source = msg.extra_str(&attachment_source_key(index));
-            out.push((!source.is_empty()).then(|| PathBuf::from(source)));
-        }
-    }
-}
-
 /// `__whatsapp` for WhatsApp chats so their files do not collide with Messages files for the same peer.
 fn imazing_packaging_stem_suffix(source_kind: &str) -> Option<String> {
     if source_kind == "whatsapp" {
@@ -732,6 +791,13 @@ struct ImazingProjection<'a> {
     export: &'a ExportMeta,
     /// The key of the conversation being projected.
     key: &'a ConversationKey,
+    /// A one-to-one conversation's address (`Session::address`).
+    address: Option<&'a Handle>,
+    /// The source file of each attachment of the messages the projection
+    /// keeps, in the order it writes them, which is the order the writer
+    /// asks for them. A message the dedupe step drops is never mapped, so
+    /// its file is not here and cannot go to the next message.
+    sources: RefCell<Vec<Option<PathBuf>>>,
 }
 
 impl ProjectionHooks for ImazingProjection<'_> {
@@ -758,10 +824,19 @@ impl ProjectionHooks for ImazingProjection<'_> {
     }
 
     fn attachment_digests(&self, msg: &PendingMessage) -> Vec<String> {
-        attachment_digests(&msg.attachments)
+        attachment_digests(msg)
     }
 
     fn attachment_to_ir(&self, att: &PendingAttachment, msg: &PendingMessage) -> IrAttachment {
+        let index = msg
+            .attachments
+            .iter()
+            .position(|held| std::ptr::eq(held, att))
+            .expect("the projection maps a message's own attachments");
+        let source = msg.extra_str(&attachment_source_key(index));
+        self.sources
+            .borrow_mut()
+            .push((!source.is_empty()).then(|| PathBuf::from(source)));
         pending_attachment_to_ir(att, msg)
     }
 
@@ -775,7 +850,7 @@ impl ProjectionHooks for ImazingProjection<'_> {
             ConversationKey::OneToOne(handle) => vec![IrParticipant {
                 identity: Some(handle.clone()),
                 display_name: convo.first_contact_name(),
-                identity_type: Some(handle_type_for(handle)),
+                identity_type: self.address.map(Handle::kind),
             }],
             ConversationKey::NameOnly(_) => vec![IrParticipant {
                 identity: None,

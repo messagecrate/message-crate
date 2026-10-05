@@ -36,30 +36,37 @@ fn pending_att(rel_path: &str, digest: Option<&str>) -> PendingAttachment {
     }
 }
 
+/// What tells apart the attachments of a message that carries `attachments`.
+fn digests_of(attachments: Vec<PendingAttachment>) -> Vec<String> {
+    attachment_digests(&PendingMessage {
+        sort_key: 0,
+        is_from_me: false,
+        sender_identity: String::new(),
+        sender_display_name: None,
+        text: String::new(),
+        attachments,
+        extra: BTreeMap::new(),
+    })
+}
+
 #[test]
 fn message_guid_prefers_digest_over_rel_path() {
     // Same digest, different relative paths → same GUID material.
     let a = pending_att("attachments/old_name.jpg", Some("abc123"));
     let b = pending_att("attachments/new_name.jpg", Some("abc123"));
-    assert_eq!(attachment_digests(&[a]), attachment_digests(&[b]));
+    assert_eq!(digests_of(vec![a]), digests_of(vec![b]));
 
     // Digest present wins over path; path alone differs from digest.
     let with_digest = pending_att("attachments/x.jpg", Some("deadbeef"));
     let path_only = pending_att("attachments/x.jpg", None);
-    assert_ne!(
-        attachment_digests(&[with_digest]),
-        attachment_digests(&[path_only])
-    );
+    assert_ne!(digests_of(vec![with_digest]), digests_of(vec![path_only]));
 
     // Order of attachments must not change the sorted material list.
-    let mixed = [
+    let mixed = vec![
         pending_att("a.jpg", Some("bb")),
         pending_att("b.jpg", Some("aa")),
     ];
-    assert_eq!(
-        attachment_digests(&mixed),
-        vec!["aa".to_string(), "bb".to_string()]
-    );
+    assert_eq!(digests_of(mixed), vec!["aa".to_string(), "bb".to_string()]);
 }
 
 #[test]
@@ -1495,4 +1502,113 @@ fn each_row_gets_the_file_imazing_wrote_for_it_in_its_own_folder() {
     ] {
         assert_eq!(file_of(text), file, "{text}");
     }
+}
+
+/// #1516: iMazing writes a file for each of two rows of one second that name
+/// one file (`image0.jpg`, `image0 2.jpg`). Rows whose files differ are two
+/// messages, each with its own picture; rows whose files are the same are
+/// one message. A message after a dropped repeat keeps its own picture.
+#[test]
+fn rows_of_one_second_and_one_file_name_are_told_apart_by_their_files() {
+    let input =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/same_second_pictures");
+    let dir = tempfile::tempdir().unwrap();
+    let out = dir.path().join("out");
+    let report = convert_export(ConvertExportArgs {
+        input: &input,
+        output: &out,
+        timezone: Some("UTC"),
+        transforms: ExportTransforms::none(),
+        output_format: OutputFormat::Json,
+        cancel: None,
+        resume: false,
+        issues: None,
+    })
+    .unwrap();
+    let doc = message_ir_format::read_conversation_json(&out.join("+15555550101.json")).unwrap();
+    let pictures: Vec<Vec<String>> = doc
+        .messages
+        .iter()
+        .map(|message| {
+            message
+                .attachments
+                .iter()
+                .map(|a| {
+                    let path = a.path.as_deref().expect("the attachment was copied");
+                    fs::read_to_string(out.join(path)).unwrap()
+                })
+                .collect()
+        })
+        .collect();
+    assert_eq!(
+        pictures,
+        vec![
+            vec!["first picture".to_string()],
+            vec!["second picture".to_string()],
+            vec!["same picture".to_string()],
+            vec!["third picture".to_string()],
+        ]
+    );
+    assert_eq!(report.duplicates_dropped, 1);
+}
+
+/// #1540: an address is classified once, by `Handle::parse`. A chat named
+/// `tel:` and a number and a chat named by the same number padded with a
+/// tab are one conversation with one address, typed as a phone number.
+#[test]
+fn a_tel_number_and_a_tab_padded_number_are_one_address() {
+    let documents = convert_rows(
+        "tel:5555550101,2020-01-01 12:00:00,SMS,Outgoing,,,Sent,,,From the tel chat,,,\n\
+\"\t555-555-0101\",2020-01-01 12:01:00,SMS,Outgoing,,,Sent,,,From the padded chat,,,\n",
+    );
+    assert_eq!(documents.len(), 1);
+    let doc = &documents[0];
+    assert_eq!(doc.conversation.chat_identifier, "+15555550101");
+    assert_eq!(doc.messages.len(), 2);
+    let participants: Vec<_> = doc
+        .conversation
+        .participants
+        .iter()
+        .map(|p| (p.identity.as_deref(), p.identity_type))
+        .collect();
+    assert_eq!(
+        participants,
+        vec![(Some("+15555550101"), Some(message_ir::HandleType::Phone))]
+    );
+}
+
+/// #1540: a roster label written as `tel:` and a number is that number, so
+/// the member is one phone number and not a second member by that name.
+#[test]
+fn a_tel_label_in_a_roster_is_one_member() {
+    let documents = convert_rows(
+        "tel:+15555550122 & Alice Example,2020-01-01 12:00:00,iMessage,Incoming,+15555550111,Alice Example,Read,,,Hi,,,\n",
+    );
+    let members: Vec<_> = documents[0]
+        .conversation
+        .participants
+        .iter()
+        .map(|p| {
+            (
+                p.identity.as_deref(),
+                p.display_name.as_deref(),
+                p.identity_type,
+            )
+        })
+        .collect();
+    assert_eq!(
+        members,
+        vec![
+            (
+                Some("+15555550111"),
+                Some("Alice Example"),
+                Some(message_ir::HandleType::Phone)
+            ),
+            (
+                Some("+15555550122"),
+                None,
+                Some(message_ir::HandleType::Phone)
+            ),
+        ]
+    );
 }
