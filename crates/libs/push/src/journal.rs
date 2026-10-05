@@ -10,6 +10,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
+use jsonl_journal::ServerTarget;
 use serde::{Deserialize, Serialize};
 
 /// Filename of the local upload log, written next to the conversation files.
@@ -24,28 +25,6 @@ pub const LOG_NAME: &str = "message-crate-push.log";
 pub struct JournalMessage {
     pub file: String,
     pub guid: String,
-}
-
-/// The server and account a journal records progress for: the server's URL
-/// and the username the session resolved to. One export directory can be
-/// uploaded to more than one, so every event names its target.
-///
-/// On disk the two are a line's own `url` and `username` keys, beside the
-/// event's other fields, so each line reads whole on its own.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ServerTarget {
-    pub url: String,
-    pub username: String,
-}
-
-impl ServerTarget {
-    /// The target for `url` and `username`.
-    pub fn new(url: impl Into<String>, username: impl Into<String>) -> Self {
-        Self {
-            url: url.into(),
-            username: username.into(),
-        }
-    }
 }
 
 /// One row in `.import-state.jsonl`.
@@ -477,7 +456,7 @@ mod tests {
     }
 
     /// A line names its target as its own `url` and `username` keys, beside
-    /// the event's other fields, as `ServerTarget`'s doc says.
+    /// the event's other fields, as [`ServerTarget`]'s doc says.
     #[test]
     fn an_event_writes_its_target_as_url_and_username_keys() {
         let dir = tempfile::tempdir().unwrap();

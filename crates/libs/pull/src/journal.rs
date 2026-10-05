@@ -9,6 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::Result;
+pub use jsonl_journal::ServerTarget;
 use serde::{Deserialize, Serialize};
 
 /// Filename of the journal, written in the output directory.
@@ -20,19 +21,17 @@ pub const PULL_JOURNAL_NAME: &str = ".message-crate-pull-state.jsonl";
 pub enum PullJournalEvent {
     /// One Asset is on disk, so a later run can skip fetching it.
     AssetOk {
-        /// Server base URL the Asset came from.
-        url: String,
-        /// Account username the run logged in as.
-        username: String,
+        /// Server and account the Asset came from.
+        #[serde(flatten)]
+        target: ServerTarget,
         /// Hex SHA-256 fingerprint of the Asset's bytes; the skip key.
         sha256: String,
     },
     /// An Export Run finished, with its counts.
     ExportComplete {
-        /// Server base URL the Export Run read from.
-        url: String,
-        /// Account username the run logged in as.
-        username: String,
+        /// Server and account the Export Run read from.
+        #[serde(flatten)]
+        target: ServerTarget,
         /// Conversations written.
         conversations: u64,
         /// Messages written.
@@ -44,7 +43,7 @@ pub enum PullJournalEvent {
 }
 
 #[derive(Debug, Default)]
-/// Skip sets rebuilt from the journal for one server URL and username.
+/// Skip sets rebuilt from the journal for one [`ServerTarget`].
 pub struct PullJournalState {
     /// SHA-256 fingerprints (hex of the file bytes) of attachments already on disk.
     pub assets: HashSet<String>,
@@ -71,7 +70,7 @@ fn unreadable_line_sentence(path: &Path, line: usize, error: &serde_json::Error)
     )
 }
 
-/// Read the journal and keep events that match this server URL and username.
+/// Read the journal and keep the events for `target`.
 ///
 /// A missing file is treated as an empty journal. A line that cannot be
 /// parsed is skipped, and `on_unreadable` gets one sentence for the Export's
@@ -82,8 +81,7 @@ fn unreadable_line_sentence(path: &Path, line: usize, error: &serde_json::Error)
 /// Returns an error when the file cannot be opened or a line cannot be read.
 pub fn load(
     path: &Path,
-    url: &str,
-    username: &str,
+    target: &ServerTarget,
     on_unreadable: &mut dyn FnMut(String),
 ) -> Result<PullJournalState> {
     let mut state = PullJournalState::default();
@@ -91,7 +89,7 @@ pub fn load(
         jsonl_journal::load_events("pull journal", path, &mut |line, error| {
             on_unreadable(unreadable_line_sentence(path, line, error));
         })?;
-    for event in events.into_iter().filter(|e| e.is_for(url, username)) {
+    for event in events.into_iter().filter(|event| event.target() == target) {
         match event {
             PullJournalEvent::AssetOk { sha256, .. } => {
                 state.assets.insert(sha256);
@@ -112,28 +110,27 @@ pub fn append(path: &Path, event: &PullJournalEvent) -> Result<()> {
     jsonl_journal::append("pull journal", path, event)
 }
 
-/// Rewrite the lines of one server URL and username from in-memory `state`,
-/// and keep every line of every other server URL and username as it was.
+/// Rewrite the lines of `target` from in-memory `state`, and keep every line
+/// of every other target as it was.
 ///
 /// One output directory can hold the journal of Export runs from several
-/// servers, or several accounts on one server. Each pair's lines are its own
-/// skip list, so finishing a run for one pair must not drop another's.
+/// servers, or several accounts on one server. Each target's lines are its
+/// own skip list, so finishing a run for one target must not drop another's.
 ///
 /// # Errors
 ///
 /// Returns an error when the temporary file cannot be written or the rename fails.
-pub fn compact(path: &Path, url: &str, username: &str, state: &PullJournalState) -> Result<()> {
+pub fn compact(path: &Path, target: &ServerTarget, state: &PullJournalState) -> Result<()> {
     jsonl_journal::compact_with::<PullJournalEvent, _>("pull journal", path, |read| {
         let mut events: Vec<PullJournalEvent> = read
             .into_iter()
-            .filter(|event| !event.is_for(url, username))
+            .filter(|event| event.target() != target)
             .collect();
         let mut assets: Vec<_> = state.assets.iter().collect();
         assets.sort_unstable();
         for sha in assets {
             events.push(PullJournalEvent::AssetOk {
-                url: url.to_string(),
-                username: username.to_string(),
+                target: target.clone(),
                 sha256: sha.clone(),
             });
         }
@@ -141,8 +138,7 @@ pub fn compact(path: &Path, url: &str, username: &str, state: &PullJournalState)
             // A later Export Run ignores the counts; an `export_complete` row
             // only means the last Export Run finished.
             events.push(PullJournalEvent::ExportComplete {
-                url: url.to_string(),
-                username: username.to_string(),
+                target: target.clone(),
                 conversations: 0,
                 messages: 0,
                 assets: 0,
@@ -153,20 +149,22 @@ pub fn compact(path: &Path, url: &str, username: &str, state: &PullJournalState)
 }
 
 impl PullJournalEvent {
-    /// Whether this line was written by a run against server `url` as `username`.
-    fn is_for(&self, url: &str, username: &str) -> bool {
-        let (u, a) = match self {
-            Self::AssetOk { url, username, .. } | Self::ExportComplete { url, username, .. } => {
-                (url, username)
-            }
-        };
-        u == url && a == username
+    /// The server and account of the run that wrote this line.
+    fn target(&self) -> &ServerTarget {
+        match self {
+            Self::AssetOk { target, .. } | Self::ExportComplete { target, .. } => target,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The target most tests export from.
+    fn alice() -> ServerTarget {
+        ServerTarget::new("http://server", "alice")
+    }
 
     #[test]
     fn loads_asset_and_export_complete_events() {
@@ -185,7 +183,7 @@ mod tests {
         )
         .unwrap();
 
-        let state = load(&path, "http://server", "alice", &mut |_| {}).unwrap();
+        let state = load(&path, &alice(), &mut |_| {}).unwrap();
 
         assert!(state.assets.contains("aaabbbccc"));
         assert!(state.assets.contains("dddeeefff"));
@@ -207,7 +205,12 @@ mod tests {
         )
         .unwrap();
 
-        let state = load(&path, "http://server-a", "alice", &mut |_| {}).unwrap();
+        let state = load(
+            &path,
+            &ServerTarget::new("http://server-a", "alice"),
+            &mut |_| {},
+        )
+        .unwrap();
         assert!(state.assets.contains("aaa"));
         assert!(!state.assets.contains("bbb"));
     }
@@ -222,9 +225,9 @@ mod tests {
         state.assets.insert("bbb".into());
         state.export_complete = true;
 
-        compact(&path, "http://server", "alice", &state).unwrap();
+        compact(&path, &alice(), &state).unwrap();
 
-        let reloaded = load(&path, "http://server", "alice", &mut |_| {}).unwrap();
+        let reloaded = load(&path, &alice(), &mut |_| {}).unwrap();
         assert_eq!(reloaded.assets.len(), 3);
         assert!(reloaded.assets.contains("aaa"));
         assert!(reloaded.assets.contains("bbb"));
@@ -244,8 +247,7 @@ mod tests {
         append(
             &path,
             &PullJournalEvent::AssetOk {
-                url: "http://server".into(),
-                username: "alice".into(),
+                target: alice(),
                 sha256: "aaa".into(),
             },
         )
@@ -253,21 +255,20 @@ mod tests {
 
         // Loading between the two appends stands for a later Export Run: after
         // a run interrupted after one Asset, it must find that Asset.
-        let after_first = load(&path, "http://server", "alice", &mut |_| {}).unwrap();
+        let after_first = load(&path, &alice(), &mut |_| {}).unwrap();
         assert!(after_first.assets.contains("aaa"));
         assert!(!after_first.export_complete);
 
         append(
             &path,
             &PullJournalEvent::AssetOk {
-                url: "http://server".into(),
-                username: "alice".into(),
+                target: alice(),
                 sha256: "bbb".into(),
             },
         )
         .unwrap();
 
-        let after_second = load(&path, "http://server", "alice", &mut |_| {}).unwrap();
+        let after_second = load(&path, &alice(), &mut |_| {}).unwrap();
         assert!(
             after_second.assets.contains("aaa"),
             "the second append must not have replaced the first"
@@ -294,8 +295,7 @@ mod tests {
         append(
             &path,
             &PullJournalEvent::AssetOk {
-                url: "http://server".into(),
-                username: "alice".into(),
+                target: alice(),
                 sha256: "aaa".into(),
             },
         )
@@ -303,7 +303,7 @@ mod tests {
 
         assert!(path.is_file());
         assert!(
-            load(&path, "http://server", "alice", &mut |_| {})
+            load(&path, &alice(), &mut |_| {})
                 .unwrap()
                 .assets
                 .contains("aaa")
@@ -332,10 +332,7 @@ mod tests {
         .unwrap();
 
         let mut lines = Vec::new();
-        let state = load(&path, "http://server", "alice", &mut |line| {
-            lines.push(line)
-        })
-        .unwrap();
+        let state = load(&path, &alice(), &mut |line| lines.push(line)).unwrap();
 
         assert!(state.assets.contains("aaa"));
         assert!(state.assets.contains("bbb"));
@@ -358,24 +355,25 @@ mod tests {
     fn compact_keeps_the_lines_of_every_other_server_and_account() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(PULL_JOURNAL_NAME);
-        let asset = |url: &str, username: &str, sha256: &str| PullJournalEvent::AssetOk {
-            url: url.into(),
-            username: username.into(),
+        let alice_a = ServerTarget::new("http://server-a", "alice");
+        let bob_a = ServerTarget::new("http://server-a", "bob");
+        let alice_b = ServerTarget::new("http://server-b", "alice");
+        let asset = |target: &ServerTarget, sha256: &str| PullJournalEvent::AssetOk {
+            target: target.clone(),
             sha256: sha256.into(),
         };
-        let complete = |url: &str, username: &str| PullJournalEvent::ExportComplete {
-            url: url.into(),
-            username: username.into(),
+        let complete = |target: &ServerTarget| PullJournalEvent::ExportComplete {
+            target: target.clone(),
             conversations: 1,
             messages: 1,
             assets: 1,
         };
         for event in [
-            asset("http://server-a", "alice", "aaa"),
-            complete("http://server-a", "alice"),
-            asset("http://server-a", "bob", "bbb"),
-            asset("http://server-b", "alice", "ccc"),
-            asset("http://server-b", "alice", "ccc"),
+            asset(&alice_a, "aaa"),
+            complete(&alice_a),
+            asset(&bob_a, "bbb"),
+            asset(&alice_b, "ccc"),
+            asset(&alice_b, "ccc"),
         ] {
             append(&path, &event).unwrap();
         }
@@ -384,19 +382,72 @@ mod tests {
         state.assets.insert("ddd".into());
         state.export_complete = true;
 
-        compact(&path, "http://server-b", "alice", &state).unwrap();
+        compact(&path, &alice_b, &state).unwrap();
 
-        let server_a = load(&path, "http://server-a", "alice", &mut |_| {}).unwrap();
+        let server_a = load(&path, &alice_a, &mut |_| {}).unwrap();
         assert!(server_a.assets.contains("aaa"));
         assert!(server_a.export_complete);
-        let other_account = load(&path, "http://server-a", "bob", &mut |_| {}).unwrap();
+        let other_account = load(&path, &bob_a, &mut |_| {}).unwrap();
         assert!(other_account.assets.contains("bbb"));
         assert!(!other_account.export_complete);
-        let server_b = load(&path, "http://server-b", "alice", &mut |_| {}).unwrap();
+        let server_b = load(&path, &alice_b, &mut |_| {}).unwrap();
         assert_eq!(server_b.assets.len(), 2);
         assert!(server_b.export_complete);
         // Server B's duplicate line is gone: one line per attachment.
         let text = fs::read_to_string(&path).unwrap();
         assert_eq!(text.lines().count(), 6, "{text}");
+    }
+
+    /// Each line names its target as its own `url` and `username` keys,
+    /// beside the event's other fields, as [`ServerTarget`]'s doc says. A
+    /// change to the shape on disk would make a later Export Run read none of
+    /// the lines an earlier one wrote.
+    #[test]
+    fn each_event_writes_its_target_as_url_and_username_keys() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(PULL_JOURNAL_NAME);
+        append(
+            &path,
+            &PullJournalEvent::AssetOk {
+                target: alice(),
+                sha256: "aaa".into(),
+            },
+        )
+        .unwrap();
+        append(
+            &path,
+            &PullJournalEvent::ExportComplete {
+                target: alice(),
+                conversations: 2,
+                messages: 3,
+                assets: 1,
+            },
+        )
+        .unwrap();
+
+        let lines: Vec<serde_json::Value> = fs::read_to_string(&path)
+            .unwrap()
+            .lines()
+            .map(|line| serde_json::from_str(line).unwrap())
+            .collect();
+        assert_eq!(
+            lines,
+            [
+                serde_json::json!({
+                    "event": "asset_ok",
+                    "url": "http://server",
+                    "username": "alice",
+                    "sha256": "aaa"
+                }),
+                serde_json::json!({
+                    "event": "export_complete",
+                    "url": "http://server",
+                    "username": "alice",
+                    "conversations": 2,
+                    "messages": 3,
+                    "assets": 1
+                }),
+            ]
+        );
     }
 }
