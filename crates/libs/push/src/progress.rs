@@ -367,7 +367,7 @@ impl<'p, 'f> Reporter<'p, 'f> {
                 "failed" => ("error", "upload failed"),
                 "cancelled" => (
                     "skip",
-                    "the Upload was stopped before this conversation was sent",
+                    "the Upload was paused before this conversation was sent",
                 ),
                 _ => continue,
             };
@@ -567,7 +567,7 @@ mod tests {
                 (
                     "skip".to_string(),
                     "unsent.jsonl".to_string(),
-                    "the Upload was stopped before this conversation was sent".to_string()
+                    "the Upload was paused before this conversation was sent".to_string()
                 ),
                 (
                     "error".to_string(),

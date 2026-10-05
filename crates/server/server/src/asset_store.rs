@@ -135,7 +135,7 @@ impl RemovalDir {
                         account_id = self.account_id,
                         path = %self.root.display(),
                         %error,
-                        "a directory for removed files could not be made; they are removed in place"
+                        "A directory for removed files could not be made, so they are removed in place"
                     );
                     RemovalDirState::Unusable
                 }
@@ -177,8 +177,8 @@ fn take_out(
                     account_id,
                     path = %path.display(),
                     %error,
-                    "a stored file or directory could not be moved out of the store; \
-                     it is removed in place while the database write lock is held"
+                    "A stored file or directory could not be moved out of the store, so it is \
+                     removed in place while the database write lock is held"
                 ),
             }
         }
@@ -190,7 +190,7 @@ fn take_out(
                 account_id,
                 path = %path.display(),
                 %error,
-                "a stored file or directory could not be removed"
+                "A stored file or directory could not be removed"
             );
             false
         }
@@ -215,7 +215,7 @@ fn delete_removed(account_id: i64, paths: Vec<PathBuf>) {
                 account_id,
                 path = %path.display(),
                 %error,
-                "removed files could not be deleted; the sweep at the next Import Run's end will try again"
+                "Removed files could not be deleted. The sweep at the next Import Run's end tries again"
             );
         }
     }
@@ -337,7 +337,7 @@ fn paths_of(paths: &PathsConfig, account_id: i64, file: &OrphanedFile) -> Vec<Pa
         tracing::warn!(
             account_id,
             assets_path,
-            "a stored attachment path is not a plain relative path; its file is left alone"
+            "A stored attachment path is not a plain relative path, so its file is left alone"
         );
         return Vec::new();
     };
@@ -445,7 +445,7 @@ async fn unless_import_running_then<F, D>(
         tracing::warn!(
             account_id,
             error = format!("{error:#}"),
-            "files were not removed; the sweep at the next Import Run's end will try again"
+            "Files were not removed. The sweep at the next Import Run's end tries again"
         );
     }
 }
@@ -456,7 +456,7 @@ where
     F: FnOnce() + Send + 'static,
 {
     if let Err(error) = tokio::task::spawn_blocking(work).await {
-        tracing::warn!(account_id, %error, "removing files stopped");
+        tracing::warn!(account_id, %error, "The task removing files did not finish");
     }
 }
 
@@ -590,7 +590,7 @@ pub(crate) async fn sweep_after_run(pool: &SqlitePool, paths: &PathsConfig, acco
         tracing::warn!(
             account_id,
             error = format!("{error:#}"),
-            "unreferenced files could not be swept after an Import Run"
+            "Unreferenced files could not be swept after an Import Run"
         );
     }
 }
@@ -832,13 +832,13 @@ fn remove_stale_files(files: &[PathBuf], now: SystemTime, secs: u64, dry_run: bo
             }
         }
         if dry_run {
-            println!("[dry-run] would remove {}", file.display());
+            println!("This dry run would remove {}", file.display());
             removed += 1;
             continue;
         }
         match remove_file(file) {
             Ok(()) => removed += 1,
-            Err(err) => log_sweep_error("remove leftover", file, &err),
+            Err(err) => log_sweep_error("removed", file, &err),
         }
     }
     removed
@@ -878,7 +878,7 @@ fn remove_stale_sessions(sha_dir: &Path, now: SystemTime, dry_run: bool) -> u64 
         }
         if dry_run {
             println!(
-                "[dry-run] would remove stale upload session {}",
+                "This dry run would remove the stale upload session {}",
                 session.display()
             );
             removed += 1;
@@ -886,13 +886,16 @@ fn remove_stale_sessions(sha_dir: &Path, now: SystemTime, dry_run: bool) -> u64 
         }
         match remove_tree(&session) {
             Ok(()) => removed += 1,
-            Err(err) => log_sweep_error("remove stale upload session", &session, &err),
+            Err(err) => log_sweep_error("removed", &session, &err),
         }
     }
     let is_empty = std::fs::read_dir(sha_dir).is_ok_and(|mut rest| rest.next().is_none());
     if is_empty {
         if dry_run {
-            println!("[dry-run] would remove empty {}", sha_dir.display());
+            println!(
+                "This dry run would remove the empty directory {}",
+                sha_dir.display()
+            );
         } else {
             // A new upload for this fingerprint may have made a session in
             // the meantime, and then the directory stays.
@@ -927,7 +930,7 @@ fn modified_at_least(path: &Path, now: SystemTime, secs: u64) -> io::Result<bool
 /// write finishes, and that is the outcome the sweep wanted.
 fn log_sweep_error(action: &str, path: &Path, err: &io::Error) {
     if err.kind() != io::ErrorKind::NotFound {
-        tracing::warn!(path = %path.display(), error = %err, "could not {action} a temporary file");
+        tracing::warn!(path = %path.display(), error = %err, "A temporary file or directory could not be {action}");
     }
 }
 

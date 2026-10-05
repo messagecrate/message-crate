@@ -1158,7 +1158,7 @@ async function runUpload(
   } finally {
     ended();
   }
-  // The Upload stopped because the server refused its session: every request
+  // The Upload paused because the server refused its session: every request
   // with that token is refused now, so the session ends here too (#1491).
   if (pushRefused && token) sessionRefused(token);
 }

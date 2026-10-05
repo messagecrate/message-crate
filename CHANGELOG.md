@@ -496,7 +496,7 @@ released versions carry their date on the heading.
   other words for the same lines. Both now say "Authenticated as sam (1)",
   "Reusing Import Run 7 for sms", "Recording Import Run 7 for sms",
   "Skipping attachments (text-only import)", "The server no longer accepts
-  this session, so the Upload stopped" and "… so the Upload did not
+  this session, so the Upload paused" and "… so the Upload did not
   start".
 - 2026-10-05 **One import of two backups keeps the attachments and
   reactions of both.** When one import carried two backups holding the same
@@ -1689,6 +1689,32 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-05 **The server's progress lines and its log read as
+  sentences.** The server's output during an import, a Demo Account build
+  and `process-assets` started lines with labels such as "sql:", "dedupe:",
+  "import:", "db:" and "[dry-run]", and the Demo Account build started its
+  steps with "Reset demo —". Warnings in the server's log started in lower
+  case. Each now says what happened, for example:
+  - "sql:      promote: chunk 1: 5 messages inserted, 5 of 9 so far" is now
+    "Batch 1 wrote 5 messages, 5 of 9 so far".
+  - "dedupe:   pass A exact content_key…" is now "Hiding exact duplicates,
+    the messages that share a content key…".
+  - "import:   [2/5] chat.jsonl: …" is now "Read chat.jsonl, file 2 of 5.
+    So far: …".
+  - "[dry-run] would remove …" is now "This dry run would remove …", and
+    "account 1: assets=…" is now "Processing account 1's Assets in …".
+  - "Reset demo — generating the medium data set" is now "Generating the
+    medium Demo Data set", and "Demo reset complete" is now "The Demo
+    Account is rebuilt".
+  - "database schema differs from this server's; rebuilding empty (re-import
+    your data)" is now "The database's schema differs from this server's, so
+    the database is rebuilt empty and its messages must be imported again".
+  - The development script's "warning: create-owner failed" now says that
+    create-owner did not set the owner, perhaps because this Message Crate
+    is already claimed.
+  - A conversation an Upload did not reach before it was paused is listed
+    with "the Upload was paused before this conversation was sent", where it
+    said "stopped".
 - 2026-10-05 **The server and the demo seed write their last warnings as
   sentences.** Lines on standard error started with "warning:", "stopping:"
   or "skip —". Each now says what happened, for example:

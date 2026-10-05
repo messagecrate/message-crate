@@ -112,7 +112,7 @@ pub fn generate_cancellable(cfg: &SeedConfig, cancel: &AtomicBool) -> Result<Gen
         Err(error) => return Err(keep_prepared_if_restore_failed(prepared, error)),
     };
 
-    println!("demo-seed: wrote {}", out.display());
+    println!("The Demo Data is written to {}", out.display());
     println!("  seed:          {}", cfg.seed);
     println!("  contacts:      {}", stats.contacts);
     println!("  groups:        {}", stats.groups);

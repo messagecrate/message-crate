@@ -147,7 +147,7 @@ pub async fn lookup_account_for_api_token(
             .execute(&mut *conn)
             .await
             {
-                tracing::warn!(account_id, error = %err, "could not record when an API token was last used");
+                tracing::warn!(account_id, error = %err, "An API Token's last use could not be recorded");
             }
             Ok(Some(ApiTokenAuth {
                 account_id,

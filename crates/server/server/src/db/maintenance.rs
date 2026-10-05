@@ -11,7 +11,7 @@ use sqlx::SqliteConnection;
 async fn run_sql_warn(conn: &mut SqliteConnection, statements: &[&str]) {
     for sql in statements {
         if let Err(err) = sqlx::query(sql).execute(&mut *conn).await {
-            eprintln!("  sql:      {sql} did not complete: {err}");
+            eprintln!("  {sql} did not complete: {err}");
         }
     }
 }
@@ -30,7 +30,7 @@ pub async fn analyze_import_tables(conn: &mut SqliteConnection) {
     )
     .await;
     println!(
-        "  sql:      analyze messages, attachments, tapbacks ({:.1}s)",
+        "  ANALYZE of messages, attachments and tapbacks took {:.1} s",
         started.elapsed().as_secs_f64()
     );
     let _ = io::stdout().flush();
@@ -42,7 +42,7 @@ pub async fn vacuum_import_tables(conn: &mut SqliteConnection) {
     let started = Instant::now();
     run_sql_warn(conn, &["VACUUM"]).await;
     println!(
-        "  sql:      vacuum database ({:.1}s)",
+        "  VACUUM of the database took {:.1} s",
         started.elapsed().as_secs_f64()
     );
     let _ = io::stdout().flush();

@@ -140,7 +140,7 @@ describe("importOutcome", () => {
     expect(importOutcome({ report: r, threw: false, issues: [] })).toBe("completed_with_issues");
   });
 
-  it("is paused when the cancel flag stopped the Upload partway", () => {
+  it("is paused when the cancel flag paused the Upload partway", () => {
     // What run.rs reports when the cancel flag stops `drive` after 200 of 681.
     const r = report({
       ok: false,
@@ -152,7 +152,7 @@ describe("importOutcome", () => {
     expect(importOutcome({ report: r, threw: false, issues: [] })).toBe("paused");
   });
 
-  it("is paused when the Upload stopped short with no failed conversation and no cancel", () => {
+  it("is paused when the Upload ended short with no failed conversation and no cancel", () => {
     const r = report({
       ok: false,
       conversations_total: 681,

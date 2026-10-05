@@ -80,7 +80,7 @@ impl MediaQueue {
                         if let Err(error) = work_through(&pool, &cfg, &stop).await {
                             tracing::warn!(
                                 error = format!("{error:#}"),
-                                "the pass that makes Thumbnails and Previews stopped; it starts again after the next Import Run"
+                                "The pass that makes Thumbnails and Previews stopped. It starts again after the next Import Run"
                             );
                         }
                         if stop.load(Ordering::Relaxed) {
@@ -118,7 +118,7 @@ impl MediaQueue {
         };
         let ended = tokio::task::spawn_blocking(move || thread.join()).await;
         if !matches!(ended, Ok(Ok(()))) {
-            tracing::warn!("the pass that makes Thumbnails and Previews did not end cleanly");
+            tracing::warn!("The pass that makes Thumbnails and Previews did not end cleanly");
         }
     }
 }
@@ -160,7 +160,7 @@ pub(crate) async fn queue_without_waking(
                     account_id,
                     import_id,
                     count,
-                    "queued Assets for Thumbnails and Previews"
+                    "Assets are queued for Thumbnails and Previews"
                 );
             }
             count
@@ -177,7 +177,7 @@ fn log_not_queued(account_id: i64, import_id: i64, error: &sqlx::Error) {
         account_id,
         import_id,
         %error,
-        "the Import Run's Assets could not be queued for Thumbnails and Previews"
+        "The Import Run's Assets could not be queued for Thumbnails and Previews"
     );
 }
 
@@ -209,7 +209,7 @@ pub(crate) async fn work_through(
     if !media::ffmpeg_available() {
         tracing::warn!(
             waiting,
-            "ffmpeg was not found, so no Thumbnail or Preview is made; the Assets wait in the queue until the server finds it"
+            "ffmpeg was not found, so no Thumbnail or Preview is made. The Assets wait in the queue until the server finds it"
         );
         return Ok(stats);
     }
@@ -232,7 +232,7 @@ pub(crate) async fn work_through(
             tracing::info!(
                 account_id = asset.account_id,
                 sha256 = asset.sha256,
-                "the server is stopping; the Asset stays queued"
+                "The server is stopping, so the Asset stays queued"
             );
             break;
         }
@@ -244,7 +244,7 @@ pub(crate) async fn work_through(
                     account_id = asset.account_id,
                     sha256 = asset.sha256,
                     error = format!("{error:#}"),
-                    "an Asset's Thumbnail and Preview could not be made"
+                    "An Asset's Thumbnail and Preview could not be made"
                 );
             }
         }
@@ -260,7 +260,7 @@ pub(crate) async fn work_through(
             not_made = stats.not_made,
             not_removed = stats.not_removed,
             not_dropped = stats.not_dropped,
-            "the queued Assets are done"
+            "The queued Assets are done"
         );
     }
     Ok(stats)

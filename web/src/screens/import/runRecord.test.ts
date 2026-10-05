@@ -146,12 +146,16 @@ describe("wholeRun", () => {
 });
 
 describe("recordToCarry", () => {
-  it("keeps the attachment skips of a stopped Upload and drops what the resume reports again", () => {
+  it("keeps the attachment skips of a paused Upload and drops what the resume reports again", () => {
     const issues: ImportIssue[] = [
       { kind: "skip", stage: "staging", item: "a.jpg", reason: "missing" },
       { ...upload("a.jsonl", "a.jsonl:big.mov"), kind: "skip", reason: "too large" },
       { ...upload("b.jsonl"), kind: "error", reason: "connection refused" },
-      { ...upload("c.jsonl"), kind: "skip", reason: "the Upload was stopped" },
+      {
+        ...upload("c.jsonl"),
+        kind: "skip",
+        reason: "the Upload was paused before this conversation was sent",
+      },
       { kind: "error", stage: "upload", item: "Import", reason: "the server went away" },
     ];
     const carried = recordToCarry(

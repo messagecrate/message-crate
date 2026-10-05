@@ -563,12 +563,12 @@ impl DemoBuild {
                     DemoBuildState::Failed(format!("{error:#}"))
                 }
                 Err(stopped) if stopped.is_cancelled() => {
-                    tracing::warn!("{STOPPED_DURING_BUILD}");
+                    tracing::warn!("The Demo Account build did not finish: {STOPPED_DURING_BUILD}");
                     if let Err(error) =
                         crate::reset_demo::remove_part_built_demo_account(&cfg, &db).await
                     {
                         tracing::error!(
-                            "could not remove the part-built Demo Account: {error:#}; the next start removes it"
+                            "The part-built Demo Account could not be removed, so the next start removes it: {error:#}"
                         );
                     }
                     DemoBuildState::Failed(STOPPED_DURING_BUILD.into())
@@ -577,7 +577,9 @@ impl DemoBuild {
                     tracing::error!("Demo Account build stopped unexpectedly: {panicked}");
                     if let Err(error) = crate::reset_demo::remove_failed_demo_build(&cfg, &db).await
                     {
-                        tracing::error!("could not remove the part-built Demo Account: {error:#}");
+                        tracing::error!(
+                            "The part-built Demo Account could not be removed: {error:#}"
+                        );
                     }
                     DemoBuildState::Failed(format!(
                         "the Demo Account build stopped unexpectedly: {panicked}"
