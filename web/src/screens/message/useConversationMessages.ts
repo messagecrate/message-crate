@@ -69,6 +69,18 @@ export type Landing = {
   to: "bottom" | { id: number; align: "center" | "start" };
 };
 
+/** The highlighted message, and the earlier versions a search found it by when only by them. */
+type Highlight = { id: number; versions: readonly number[] };
+
+function sameHighlight(a: Highlight | null, b: Highlight): boolean {
+  return (
+    a !== null &&
+    a.id === b.id &&
+    a.versions.length === b.versions.length &&
+    a.versions.every((v, i) => v === b.versions[i])
+  );
+}
+
 /** Every loaded message once, oldest first. */
 function flatten(pages: WindowPage[] | undefined): Message[] {
   if (!pages) return [];
@@ -117,10 +129,14 @@ export function useConversationMessages(
     seq: 0,
     to: openAt === null ? "bottom" : { id: openAt, align: "center" },
   });
-  /** The message a jump was for, drawn highlighted: a search result or a Find match. */
-  const [highlightId, setHighlightId] = useState<number | null>(openAt);
-  /** The earlier versions a search found the highlighted message by, when only by them. */
-  const [highlightVersions, setHighlightVersions] = useState<readonly number[]>(openMatched);
+  /**
+   * The message a jump was for, drawn highlighted: a search result or a Find
+   * match, with the earlier versions the search found it by when only by them.
+   */
+  const [highlight, setHighlight] = useState<Highlight | null>(
+    openAt === null ? null : { id: openAt, versions: openMatched },
+  );
+  const highlightId = highlight?.id ?? null;
   const [jumpError, setJumpError] = useState<Error | null>(null);
 
   const key = keys.conversations.messages(conversationId, startKey(start));
@@ -138,10 +154,12 @@ export function useConversationMessages(
   const loaded = useMemo(() => flatten(query.data?.pages), [query.data?.pages]);
   const messages = useMemo(
     () =>
-      highlightId === null || highlightVersions.length === 0
+      highlight === null || highlight.versions.length === 0
         ? loaded
-        : loaded.map((m) => (m.id === highlightId ? withMatchedVersions(m, highlightVersions) : m)),
-    [loaded, highlightId, highlightVersions],
+        : loaded.map((m) =>
+            m.id === highlight.id ? withMatchedVersions(m, highlight.versions) : m,
+          ),
+    [loaded, highlight],
   );
   const pages = query.data?.pages;
   const total = pages?.[pages.length - 1]?.total ?? 0;
@@ -167,8 +185,7 @@ export function useConversationMessages(
   const hasNewer = query.hasNextPage;
   const jumpToNewest = () => {
     setJumpError(null);
-    setHighlightId(null);
-    setHighlightVersions([]);
+    setHighlight(null);
     if (hasNewer || messages.length === 0) setStart({ kind: "newest" });
     land("bottom");
   };
@@ -176,8 +193,7 @@ export function useConversationMessages(
   /** Show the first message of `year`, or the first one after it when the year has none. */
   const jumpToYear = async (year: number) => {
     setJumpError(null);
-    setHighlightId(null);
-    setHighlightVersions([]);
+    setHighlight(null);
     const q = threadQueryFor(conversationId, `>=${year}`, "");
     try {
       const page = await cache.fetch(
@@ -223,11 +239,14 @@ export function useConversationMessages(
 
   // Typing, or stepping to another match, jumps to it.
   const jumpedMatch = useRef<number | null>(null);
+  // A term refined on the same match can find it by other versions, or by its
+  // final text, so the versions follow every answer, and only a new match jumps.
   useEffect(() => {
-    if (activeMatch === null || activeMatch.id === jumpedMatch.current) return;
+    if (activeMatch === null) return;
+    const next = { id: activeMatch.id, versions: matchedVersionIndexes(activeMatch) };
+    setHighlight((current) => (sameHighlight(current, next) ? current : next));
+    if (activeMatch.id === jumpedMatch.current) return;
     jumpedMatch.current = activeMatch.id;
-    setHighlightId(activeMatch.id);
-    setHighlightVersions(matchedVersionIndexes(activeMatch));
     jumpToMessage(activeMatch.id);
   }, [activeMatch, jumpToMessage]);
 
@@ -253,8 +272,7 @@ export function useConversationMessages(
     setFindOpen(false);
     setFindTermState("");
     setMatchIndex(0);
-    setHighlightId(null);
-    setHighlightVersions([]);
+    setHighlight(null);
     jumpedMatch.current = null;
   };
 

@@ -254,6 +254,47 @@ describe("useConversationMessages", () => {
     for (const m of result.current.messages) expect(m.matched_earlier_version).toBe(false);
   });
 
+  it("follows the versions a Find match was found by as the term is refined on the same message", async () => {
+    const versions = [
+      { part_index: 0, text: "pizza at noon", edited_at: null, matched: false },
+      { part_index: 0, text: "pizza tonight", edited_at: null, matched: false },
+    ];
+    getMessages.mockResolvedValue({
+      items: [{ ...message(60), earlier_versions: versions }],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    });
+    // `pizz` finds message 60 only by its first version; `pizza tonight` by its second.
+    searchMessages.mockImplementation((async ({ q }: { q?: string }) => ({
+      items: [
+        {
+          ...message(60),
+          matched_earlier_version: true,
+          earlier_versions: versions.map((v, i) => ({
+            ...v,
+            matched: q?.includes("tonight") ? i === 1 : i === 0,
+          })),
+        },
+      ],
+      total: 1,
+      limit: 50,
+      offset: 0,
+    })) as unknown as typeof listMessages);
+
+    const { result } = renderHook(() => useConversationMessages(7), { wrapper: Providers });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    const matchedOf60 = () =>
+      result.current.messages.find((m) => m.id === 60)?.earlier_versions.map((v) => v.matched);
+
+    act(() => result.current.find.openFind());
+    act(() => result.current.find.setTerm("pizz"));
+    await waitFor(() => expect(matchedOf60()).toEqual([true, false]));
+
+    act(() => result.current.find.setTerm("pizza tonight"));
+    await waitFor(() => expect(matchedOf60()).toEqual([false, true]));
+  });
+
   it("jumps to a year's first message, searched for in the conversation", async () => {
     getMessages.mockImplementation((async (_id: number, params: { around?: number }) => ({
       items: params.around === undefined ? [message(99)] : [message(params.around)],
