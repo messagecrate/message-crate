@@ -434,7 +434,7 @@ fn a_refused_completion_is_an_error_the_push_returns() {
     );
     let message = format!("{error:#}");
     assert!(
-        message.contains("import run 42") && message.contains("intentional completion failure"),
+        message.contains("Import Run 42") && message.contains("intentional completion failure"),
         "{message}"
     );
     let written: serde_json::Value = serde_json::from_str(
@@ -485,7 +485,7 @@ fn a_refused_completion_outranks_a_report_that_cannot_be_written() {
     let error = run(&cfg, None).expect_err("a refused completion fails the push");
 
     let message = format!("{error:#}");
-    assert!(message.contains("import run 42"), "{message}");
+    assert!(message.contains("Import Run 42"), "{message}");
 }
 
 #[test]
