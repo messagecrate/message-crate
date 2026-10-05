@@ -74,6 +74,8 @@ jpg_base_stride = 5
 other_base_stride = 7
 tapback_stride = 6
 reply_stride = 8
+deleted_in_source_app_stride = 9
+unsent_stride = 13
 apple_fallback_transport_fraction = 0.2
 
 [edge_cases]

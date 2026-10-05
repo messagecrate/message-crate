@@ -1,9 +1,9 @@
 //! One HTTP surface for Contact Groups and Message Tags.
 //!
 //! Both are a named set the account owns plus a membership of contact or
-//! conversation ids. The request and response types and the six operations
+//! conversation ids. The request and response types and the seven operations
 //! live here once, over [`MembershipSpec`]; the `named_set_routes!` macro
-//! stamps out both collections' twelve route handlers from them, one
+//! stamps out both collections' fourteen route handlers from them, one
 //! `#[utoipa::path]` function per route, because utoipa needs a concrete
 //! function with literal strings to describe each route and cannot see
 //! through a generic or a `concat!`. The two invocations below name every
@@ -94,6 +94,19 @@ pub(crate) async fn create(
     })
 }
 
+/// One set by id, as the list shows it. An unknown or another account's id
+/// answers 404.
+pub(crate) async fn get(
+    spec: &'static MembershipSpec,
+    state: &AppState,
+    account_id: i64,
+    id: i64,
+) -> Result<Json<NamedSet>, ApiError> {
+    let mut conn = state.db.acquire().await?;
+    let (id, name) = named_membership::get_set(spec, &mut conn, account_id, id).await?;
+    Ok(Json(NamedSet { id, name }))
+}
+
 /// Rename a set by id, answering its id and the new name. An unknown or
 /// another account's id answers 404; a blank or over-long name, a name holding
 /// the spec's refused character, or a reserved name answers 422; another set's
@@ -162,9 +175,9 @@ pub(crate) async fn members_update(
     Ok(Json(UpdateMembersResponse { added, removed }))
 }
 
-/// One collection's six HTTP handlers.
+/// One collection's seven HTTP handlers.
 ///
-/// Contact Groups and Message Tags are the same six operations over
+/// Contact Groups and Message Tags are the same seven operations over
 /// [`MembershipSpec`]; what differs is the paths, the tag, the noun in the
 /// prose, and which spec function to call. utoipa needs a concrete function
 /// per route with literal strings in its attribute — it cannot describe a
@@ -176,7 +189,7 @@ pub(crate) async fn members_update(
 /// in `docs/src/assets/openapi.json`.
 ///
 /// Adding a third collection is this macro invoked a third time, plus a
-/// `MembershipSpec` for it in `db/named_membership.rs` and six
+/// `MembershipSpec` for it in `db/named_membership.rs` and seven
 /// `.routes(routes!(..))` lines in `openapi.rs` — `utoipa_axum` needs each
 /// route named there and that cannot be folded in here.
 ///
@@ -193,6 +206,7 @@ macro_rules! named_set_routes {
         members_path: $members_path:literal,
         list: $list_fn:ident, $list_doc:literal,
         create: $create_fn:ident, $create_doc:literal,
+        get: $get_fn:ident, $get_doc:literal,
         update: $update_fn:ident, $update_doc:literal,
         delete: $delete_fn:ident, $delete_doc:literal,
         members_list: $members_list_fn:ident, $members_list_doc:literal,
@@ -242,6 +256,25 @@ macro_rules! named_set_routes {
             Json(body): Json<CreateNamedSetRequest>,
         ) -> Result<Created<NamedSet>, ApiError> {
             create($spec(), $root_path, &state, auth.account_id, body).await
+        }
+
+        #[doc = $get_doc]
+        #[utoipa::path(
+            get,
+            path = $id_path,
+            tag = $tag,
+            security(("session" = [])),
+            params(("id" = i64, Path, description = $id_description)),
+            responses(
+                (status = 200, body = NamedSet),
+            )
+        )]
+        pub(crate) async fn $get_fn(
+            axum::extract::State(state): axum::extract::State<AppState>,
+            FullAccess(auth): FullAccess,
+            crate::extract::Path(id): crate::extract::Path<i64>,
+        ) -> Result<Json<NamedSet>, ApiError> {
+            get($spec(), &state, auth.account_id, id).await
         }
 
         #[doc = $update_doc]
@@ -341,6 +374,7 @@ named_set_routes! {
     members_path: "/v1/contact-groups/{id}/members",
     list: list_contact_groups, "The account's Contact Groups, A–Z.",
     create: create_contact_group, "Create a Contact Group.",
+    get: get_contact_group, "One Contact Group, as the list shows it.",
     update: update_contact_group, "Rename a Contact Group.",
     delete: delete_contact_group, "Delete a Contact Group and its memberships.",
     members_list: list_contact_group_members, "Contact ids in one Contact Group.",
@@ -357,6 +391,7 @@ named_set_routes! {
     members_path: "/v1/message-tags/{id}/members",
     list: list_message_tags, "The account's Message Tags, A–Z.",
     create: create_message_tag, "Create a Message Tag.",
+    get: get_message_tag, "One Message Tag, as the list shows it.",
     update: update_message_tag, "Rename a Message Tag.",
     delete: delete_message_tag, "Delete a Message Tag and its memberships.",
     members_list: list_message_tag_members, "Conversation ids in one Message Tag.",

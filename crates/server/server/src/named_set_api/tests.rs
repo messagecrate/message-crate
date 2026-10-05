@@ -1,10 +1,11 @@
 use axum::http::StatusCode;
 use serde_json::{Value, json};
 
+use crate::problem::ProblemType;
 use crate::server::AppState;
 use crate::test_support::{
-    RegisteredAccount, delete_status, get_json, get_status, patch_failure, patch_json,
-    patch_status, post_created_json, post_raw, post_status, problem, register_via_api,
+    RegisteredAccount, delete_status, expect_problem, get_json, get_raw, get_status, patch_failure,
+    patch_json, patch_status, post_created_json, post_raw, post_status, problem, register_via_api,
     test_fixture,
 };
 
@@ -407,5 +408,42 @@ async fn another_accounts_set_is_not_visible() {
             StatusCode::NOT_FOUND
         );
         assert_eq!(names(state, kind, &bob.token).await, vec!["Holiday"]);
+    }
+}
+
+#[tokio::test]
+async fn a_set_is_read_at_its_location_as_its_list_shows_it() {
+    for kind in [Kind::Groups, Kind::Tags] {
+        let fixture = test_fixture().await;
+        let state = &fixture.state;
+        let user = alice(state).await;
+        let (location, created): (String, Value) = post_created_json(
+            state,
+            kind.base(),
+            &user.token,
+            json!({ "name": " Holiday " }),
+        )
+        .await;
+
+        let read: Value = get_json(state, &location, &user.token).await;
+        let list: Value = get_json(state, kind.base(), &user.token).await;
+        assert_eq!(read, list["items"][0], "GET {location}");
+        assert_eq!(read, created, "GET {location}");
+    }
+}
+
+#[tokio::test]
+async fn another_accounts_set_answers_404_to_get() {
+    for kind in [Kind::Groups, Kind::Tags] {
+        let fixture = test_fixture().await;
+        let state = &fixture.state;
+        let user = alice(state).await;
+        let bob = register_via_api(state, "bob", "hunter2hunter2").await;
+        let id = create(state, kind, &bob.token, "Holiday").await;
+        let path = format!("{}/{id}", kind.base());
+
+        let (status, text) = get_raw(state, &path, &user.token).await;
+        expect_problem(status, &text, ProblemType::NotFound);
+        assert_eq!(get_status(state, &path, &bob.token).await, StatusCode::OK);
     }
 }
