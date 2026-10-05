@@ -1192,6 +1192,12 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-04 **The Import, Export and Convert screens name running work as
+  the desktop app does.** While an Export or a Convert was running, the
+  screens said "An export is running." or "A conversion in Settings is
+  running.", where the desktop app's own refusal says "An Export is running."
+  and "A Convert is running." The screens now use those names too, so each
+  piece of work has one name wherever you meet it.
 - 2026-10-04 **The desktop app names what is running in the words its
   screens use.** When you started an Import Run, an Export or a Convert while
   another was running, the app could say "Another job is running: an

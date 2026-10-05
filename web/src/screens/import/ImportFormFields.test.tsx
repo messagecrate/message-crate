@@ -151,7 +151,7 @@ describe("ImportFormFields iMessage methods", () => {
       renderForm({ source: "imessage-ios" });
       expect(screen.getByRole("button", { name: "Import" })).toBeDisabled();
       expect(screen.getByRole("status").textContent).toBe(
-        "An export is running. Import can start once it ends.",
+        "An Export is running. Import can start once it ends.",
       );
     } finally {
       release();

@@ -456,7 +456,7 @@ describe("ResumeImportPanel", () => {
 
       expect(screen.getByRole("button", { name: "Resume" })).toBeDisabled();
       expect(screen.getByRole("status")).toHaveTextContent(
-        "An export is running. Resume can start once it ends.",
+        "An Export is running. Resume can start once it ends.",
       );
       await user.click(screen.getByRole("button", { name: "Discard this import" }));
       expect(onDiscard).toHaveBeenCalledTimes(1);

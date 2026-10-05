@@ -58,8 +58,8 @@ export function useDesktopJob(): DesktopJobName | null {
 
 const RUNNING: Record<DesktopJobName, string> = {
   "Import Run": "An Import Run is running.",
-  Export: "An export is running.",
-  Convert: "A conversion in Settings is running.",
+  Export: "An Export is running.",
+  Convert: "A Convert is running.",
 };
 
 /** Why `start` can't start: the job that is running, and when it can. */
