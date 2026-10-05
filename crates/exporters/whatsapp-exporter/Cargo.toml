@@ -23,6 +23,7 @@ serde_json = { workspace = true }
 
 [dev-dependencies]
 message-crate-core = { path = "../../core/message-crate-core", features = ["testutil"] }
+rusqlite = { version = "=0.40.0", features = ["bundled"] }
 tempfile = { workspace = true }
 
 [lints]

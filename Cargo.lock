@@ -1687,6 +1687,7 @@ dependencies = [
  "ios-backup",
  "message-crate-core",
  "plist",
+ "rusqlite",
  "serde_json",
  "tempfile",
 ]
@@ -4241,6 +4242,7 @@ dependencies = [
  "message-staging",
  "phone",
  "plist",
+ "rusqlite",
  "serde",
  "serde_json",
  "tempfile",

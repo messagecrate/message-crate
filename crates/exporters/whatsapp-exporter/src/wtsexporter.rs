@@ -129,7 +129,7 @@ pub(crate) fn resolve_wtsexporter() -> Result<PathBuf> {
 ///
 /// # Errors
 ///
-/// Returns an error when the work dir is missing, the process cannot start, or
+/// Returns an error when the work directory is missing, the process cannot start, or
 /// wtsexporter exits with a non-zero status.
 pub(crate) fn run_wtsexporter(
     bin: &Path,
@@ -137,7 +137,7 @@ pub(crate) fn run_wtsexporter(
     json_out: &Path,
 ) -> Result<String> {
     if !args.work_dir.is_dir() {
-        bail!("work dir does not exist: {}", args.work_dir.display());
+        bail!("work directory does not exist: {}", args.work_dir.display());
     }
     let out_dir = json_out
         .parent()
@@ -179,7 +179,7 @@ pub(crate) fn run_wtsexporter(
 }
 
 /// The wtsexporter command for `args`, writing media to `out_dir` and JSON
-/// to `json_out`. A hex key is written to a file in the work dir here.
+/// to `json_out`. A hex key is written to a file in the work directory here.
 ///
 /// # Errors
 ///
@@ -218,7 +218,7 @@ fn wtsexporter_command(
             cmd.arg("-k").arg(key);
         }
         // Hex key material — write the decoded bytes to a 0600 file in the
-        // scratch work dir and pass the path, so the secret never appears in
+        // scratch work directory and pass the path, so the secret never appears in
         // the process command line (/proc/<pid>/cmdline).
         Some(key) => {
             let key_path = write_key_file(&args.work_dir, key)?;
@@ -233,7 +233,7 @@ fn wtsexporter_command(
         cmd.arg("--business");
     }
     // Never pass `-c` (--move-media): wtsexporter would shutil.move the user's
-    // media directory into the scratch work dir, which is deleted when the run
+    // media directory into the scratch work directory, which is deleted when the run
     // finishes — permanently destroying the original media. Always copy.
     Ok(cmd)
 }
@@ -382,7 +382,7 @@ fn push_opt(cmd: &mut Command, flag: &str, path: Option<&Path>) {
     }
 }
 
-/// Write hex-encoded decryption key bytes to a 0600 file in the scratch work dir.
+/// Write hex-encoded decryption key bytes to a 0600 file in the scratch work directory.
 ///
 /// wtsexporter's `-k` accepts a hex string or a key file path (there is no
 /// stdin key support upstream), so the file path is forwarded instead of the

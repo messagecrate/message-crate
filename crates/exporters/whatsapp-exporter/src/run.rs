@@ -2,7 +2,7 @@
 //! it in process.
 
 use crate::emit::{ConvertRequest, convert_json};
-use crate::ios_backup::decrypt_if_encrypted;
+use crate::ios_backup::{decrypt_if_encrypted, extract_bytes};
 use crate::owner::{owner_from_backup, owner_from_form};
 use crate::wtsexporter::{Platform, WtsexporterArgs, resolve_wtsexporter, run_wtsexporter};
 use anyhow::{Context, Result, bail};
@@ -10,6 +10,7 @@ use message_crate_core::{
     ExportTransforms, ExporterConfig, RunResult, ScratchDir, SourceConfig, WHATSAPP_DIRECTORY,
     WhatsappPlatform as CorePlatform, prepare_outputs,
 };
+use message_staging::{Disk, check_headroom};
 use std::env;
 use std::fs;
 
@@ -100,12 +101,16 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
             business: source.business,
         };
         // wtsexporter cannot be given an iPhone backup password, so an
-        // encrypted backup's WhatsApp files are decrypted into the work dir
-        // first and wtsexporter reads those instead of the backup.
-        if platform == Platform::Ios
-            && let Some(decrypted) = decrypt_if_encrypted(source, work.path(), config)?
-        {
-            args.read_decrypted(decrypted);
+        // encrypted backup's WhatsApp files are decrypted into the work
+        // directory first and wtsexporter reads those instead of the backup.
+        // From a backup that is not encrypted, wtsexporter extracts them into
+        // the work directory itself, so that disk is checked for room first.
+        if platform == Platform::Ios {
+            if let Some(decrypted) = decrypt_if_encrypted(source, work.path(), config)? {
+                args.read_decrypted(decrypted);
+            } else if let Some(bytes) = extract_bytes(source)? {
+                check_headroom(work.path(), bytes, Disk::Scratch)?;
+            }
         }
         message_crate_core::check_cancel(config.cancel.as_ref())?;
         let log = run_wtsexporter(&bin, &args, &json_out)?;
@@ -119,7 +124,7 @@ pub fn run(config: &ExporterConfig) -> Result<RunResult> {
         let kept = config.output.join("wtsexporter_result.json");
         fs::copy(&json_out, &kept).with_context(|| format!("copy JSON to {}", kept.display()))?;
 
-        // Work dir (wtsexporter extract) + backup input. The backup input is the
+        // Work directory (wtsexporter extract) + backup input. The backup input is the
         // process cwd when the config names no input.
         let mut media_roots = vec![work.path().to_path_buf(), input];
         media_roots.sort();

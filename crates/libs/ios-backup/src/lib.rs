@@ -6,7 +6,9 @@
 //! itself: whether it is encrypted ([`ios_backup_encrypted_flag`]), which
 //! phone number it names ([`ios_backup_phone_number`]), which addresses its
 //! device sent from ([`backup_identities`], which also reads a Mac
-//! `chat.db`), and the files of one domain decrypted to a directory
+//! `chat.db`), the files of one domain of a backup that is not encrypted,
+//! with their sizes ([`ios_backup_domain_files`]), and the files of one
+//! domain of an encrypted backup decrypted to a directory
 //! ([`decrypt_ios_backup_domain`]).
 //!
 //! Opening a backup's databases and decrypting its files needs
@@ -28,7 +30,7 @@ pub mod reader_build;
 #[cfg(all(unix, any(test, feature = "testutil")))]
 pub mod testutil;
 
-pub use backup::ios_backup_encrypted_flag;
+pub use backup::{ios_backup_domain_files, ios_backup_encrypted_flag};
 pub use backup_domain::{DecryptedDomain, decrypt_ios_backup_domain};
 pub use helper::Helper;
 pub use identity::{backup_identities, ios_backup_phone_number};

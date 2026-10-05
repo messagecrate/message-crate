@@ -10,9 +10,9 @@
 //! are plain copies of personal data that no screen names, so they live in
 //! directories under the Scratch Directory ([`IMESSAGE_READER_DIRECTORY`],
 //! [`ATTACHMENT_SPOOL_DIRECTORY`], [`WHATSAPP_DIRECTORY`]), never in the
-//! output directory the person chose. The app deletes a request's directory when the request ends, and
-//! [`sweep_scratch`] at app start, and every new request, delete what a
-//! killed one left.
+//! output directory the person chose. The app deletes a request's directory
+//! when the request ends, and [`sweep_scratch`] at app start, and every new
+//! request, delete what a killed one left.
 //!
 //! Two requests can run at once (the Import form can ask for a second
 //! backup's identities while an Import Run decrypts the first), so the

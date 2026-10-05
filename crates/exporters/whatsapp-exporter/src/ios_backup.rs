@@ -3,14 +3,16 @@
 //! wtsexporter reads an unencrypted iPhone backup by itself. For an
 //! encrypted one it asks for the password on a terminal and takes it no
 //! other way, so the app decrypts WhatsApp's app-group domain into the
-//! run's work dir first (through `imessage-reader`, the only program here
+//! run's work directory first (through `imessage-reader`, the only program here
 //! that can decrypt an iPhone backup) and wtsexporter reads that directory as
-//! it reads a backup someone extracted by hand. The work dir is under the
+//! it reads a backup someone extracted by hand. The work directory is under the
 //! Scratch Directory, and the domain is measured against that disk before
 //! anything is decrypted.
 
 use anyhow::{Result, bail};
-use ios_backup::{DecryptedDomain, decrypt_ios_backup_domain, ios_backup_encrypted_flag};
+use ios_backup::{
+    DecryptedDomain, decrypt_ios_backup_domain, ios_backup_domain_files, ios_backup_encrypted_flag,
+};
 use message_crate_core::{ExporterConfig, WhatsappConfig};
 use message_staging::{Disk, check_headroom};
 use std::path::{Path, PathBuf};
@@ -27,6 +29,54 @@ pub(crate) struct DecryptedWhatsapp {
     pub domain_dir: PathBuf,
     /// `ChatStorage.sqlite`, the message database.
     pub database: PathBuf,
+}
+
+/// The databases wtsexporter copies beside its extract of a backup that is
+/// not encrypted, as well as inside it: so each is written twice.
+const DATABASES_COPIED_TWICE: [&str; 3] = [
+    "ChatStorage.sqlite",
+    "ContactsV2.sqlite",
+    "CallHistory.sqlite",
+];
+
+/// The bytes wtsexporter writes into its working directory when it extracts
+/// WhatsApp's domain from `source.backup`, an iPhone backup that is not
+/// encrypted: every file of the domain, and the message, contacts and call
+/// databases a second time. `None` when there is no such extract: no backup
+/// is named, it is encrypted (its files are decrypted, and measured, by
+/// [`decrypt_if_encrypted`]), or it is not a backup directory.
+///
+/// # Errors
+///
+/// Returns an error when the backup's `Manifest.db` cannot be read.
+pub(crate) fn extract_bytes(source: &WhatsappConfig) -> Result<Option<u64>> {
+    let Some(backup) = source.backup.as_deref() else {
+        return Ok(None);
+    };
+    if ios_backup_encrypted_flag(backup) != Some(false) {
+        return Ok(None);
+    }
+    let files = ios_backup_domain_files(backup, domain(source))?;
+    let bytes = files
+        .iter()
+        .map(|(path, size)| {
+            if DATABASES_COPIED_TWICE.contains(&path.as_str()) {
+                size.saturating_mul(2)
+            } else {
+                *size
+            }
+        })
+        .fold(0, u64::saturating_add);
+    Ok(Some(bytes))
+}
+
+/// The app-group domain `source` names.
+fn domain(source: &WhatsappConfig) -> &'static str {
+    if source.business {
+        BUSINESS_DOMAIN
+    } else {
+        DOMAIN
+    }
 }
 
 /// Decrypt WhatsApp's files into `work` when `source.backup` is an
@@ -77,11 +127,7 @@ fn decrypt_with(
             bail!("This backup is not encrypted. Clear Encryption password.")
         }
         (Some(true), Some(password)) => {
-            let domain = if source.business {
-                BUSINESS_DOMAIN
-            } else {
-                DOMAIN
-            };
+            let domain = domain(source);
             decrypt(backup, password, domain)?;
             let domain_dir = work.join(domain);
             let database = domain_dir.join("ChatStorage.sqlite");
@@ -113,7 +159,7 @@ fn decrypt_with(
 
 #[cfg(test)]
 mod tests {
-    use super::{BUSINESS_DOMAIN, DOMAIN, DecryptedWhatsapp, decrypt_with};
+    use super::{BUSINESS_DOMAIN, DOMAIN, DecryptedWhatsapp, decrypt_with, extract_bytes};
     use ios_backup::DecryptedDomain;
     use message_crate_core::WhatsappConfig;
     use std::fs;
@@ -179,7 +225,7 @@ mod tests {
     }
 
     /// The password and the app's own domain go to the decryption, and the
-    /// answer names the files it left in the work dir.
+    /// answer names the files it left in the work directory.
     #[test]
     fn an_encrypted_backup_is_decrypted_into_the_work_dir() {
         let backup = backup(true);
@@ -235,5 +281,70 @@ mod tests {
             "WhatsApp is not in this iPhone backup. \
              If the phone has WhatsApp Business, tick WhatsApp Business."
         );
+    }
+
+    /// A backup that is not encrypted, holding `files` (domain, path inside
+    /// it, size) at the places its plain `Manifest.db` names.
+    fn unencrypted_backup(files: &[(&str, &str, usize)]) -> TempDir {
+        let dir = backup(false);
+        let manifest = rusqlite::Connection::open(dir.path().join("Manifest.db")).unwrap();
+        manifest
+            .execute_batch(
+                "CREATE TABLE Files (fileID TEXT, domain TEXT, relativePath TEXT, flags INTEGER);",
+            )
+            .unwrap();
+        for (index, (domain, path, size)) in files.iter().enumerate() {
+            let id = format!("{index:040x}");
+            manifest
+                .execute(
+                    "INSERT INTO Files VALUES (?1, ?2, ?3, 1)",
+                    (&id, domain, path),
+                )
+                .unwrap();
+            let stored = dir.path().join(&id[..2]);
+            fs::create_dir_all(&stored).unwrap();
+            fs::write(stored.join(&id), vec![0u8; *size]).unwrap();
+        }
+        dir
+    }
+
+    /// wtsexporter extracts every file of the domain from a backup that is
+    /// not encrypted, and copies the three databases beside the extract as
+    /// well, so those count twice. The Business app's domain is measured
+    /// when Business is ticked, and another domain's file never (#1651).
+    #[test]
+    fn the_extract_of_an_unencrypted_backup_is_measured_before_it_starts() {
+        let backup = unencrypted_backup(&[
+            (DOMAIN, "ChatStorage.sqlite", 30),
+            (DOMAIN, "ContactsV2.sqlite", 5),
+            (DOMAIN, "CallHistory.sqlite", 2),
+            (DOMAIN, "Message/Media/photo.jpg", 700),
+            (BUSINESS_DOMAIN, "ChatStorage.sqlite", 40),
+            ("HomeDomain", "Library/SMS/sms.db", 9),
+        ]);
+
+        let personal = source(backup.path(), None);
+        assert_eq!(
+            extract_bytes(&personal).unwrap(),
+            Some(30 * 2 + 5 * 2 + 2 * 2 + 700)
+        );
+        let business = WhatsappConfig {
+            business: true,
+            ..personal
+        };
+        assert_eq!(extract_bytes(&business).unwrap(), Some(40 * 2));
+    }
+
+    /// An encrypted backup's files are measured as they are decrypted, and
+    /// a run that names no backup extracts nothing, so neither is measured
+    /// here.
+    #[test]
+    fn only_an_unencrypted_backup_has_an_extract_to_measure() {
+        let encrypted = backup(true);
+        assert_eq!(
+            extract_bytes(&source(encrypted.path(), Some("secret"))).unwrap(),
+            None
+        );
+        assert_eq!(extract_bytes(&WhatsappConfig::default()).unwrap(), None);
     }
 }
