@@ -180,22 +180,19 @@ async fn dedupe_and_process_assets(
     )
     .await
     .context("process-assets after prepared demo import")?;
-    if let Some(warning) = not_made_warning(process_stats.errors) {
+    if let Some(warning) = not_done_warning(&process_stats) {
         eprintln!("warning: {warning}");
     }
     Ok((dedupe_stats, process_stats))
 }
 
-/// The warning printed when the Preview or Thumbnail of `errors` demo
-/// originals could not be made, or `None` when every one was made.
-fn not_made_warning(errors: u64) -> Option<String> {
-    (errors > 0).then(|| {
-        crate::counts::words(
-            errors,
-            "1 demo original whose Preview or Thumbnail could not be made stays as it was, and reset-demo continues",
-            "{n} demo originals whose Preview or Thumbnail could not be made stay as they were, and reset-demo continues",
-        )
-    })
+/// The warning printed when processing the demo originals could not do
+/// everything, naming each count of what it could not do, or `None` when it
+/// did everything.
+fn not_done_warning(stats: &process_assets::ProcessAssetsStats) -> Option<String> {
+    stats
+        .failures()
+        .map(|failures| format!("the Demo Account has {failures}. reset-demo continues"))
 }
 
 struct ResetPreparedStats {

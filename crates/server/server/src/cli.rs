@@ -588,22 +588,57 @@ async fn run_reset_demo(args: ResetDemoArgs) -> Result<()> {
     );
     println!();
     println!("Previews and Thumbnails (assets_converted/; needs ffmpeg)");
-    println!(
-        "  Previews made:         {} (JPEG/MP4/MP3 copies of originals a browser may not show)",
-        stats.process_assets.derived
-    );
-    println!(
-        "  Thumbnails made:       {}",
-        stats.process_assets.thumbnails
-    );
-    println!(
-        "  left as they were:     {} (originals for which nothing was written)",
-        stats.process_assets.skipped
-    );
-    println!(
-        "  not made:              {} (originals whose Preview or Thumbnail could not be made)",
-        stats.process_assets.errors
-    );
+    let rows = [
+        (
+            "Previews made",
+            stats.process_assets.derived,
+            "JPEG/MP4/MP3 copies of originals a browser may not show",
+        ),
+        ("Thumbnails made", stats.process_assets.thumbnails, ""),
+        (
+            "incomplete originals removed",
+            stats.process_assets.removed,
+            "left by a transfer that never finished",
+        ),
+        (
+            "damaged Previews and Thumbnails dropped",
+            stats.process_assets.dropped,
+            "they could not be made again",
+        ),
+        (
+            "existing Previews and Thumbnails shared",
+            stats.process_assets.shared,
+            "given to more attachments",
+        ),
+        (
+            "left as they were",
+            stats.process_assets.skipped,
+            "originals for which nothing was done",
+        ),
+        (
+            "not made",
+            stats.process_assets.not_made,
+            "originals whose Preview or Thumbnail could not be made",
+        ),
+        (
+            "not removed",
+            stats.process_assets.not_removed,
+            "incomplete originals that could not be removed",
+        ),
+        (
+            "not dropped",
+            stats.process_assets.not_dropped,
+            "damaged Previews and Thumbnails that could not be dropped",
+        ),
+    ];
+    for (label, count, what) in rows {
+        let label = format!("{label}:");
+        if what.is_empty() {
+            println!("  {label:<40} {count}");
+        } else {
+            println!("  {label:<40} {count} ({what})");
+        }
+    }
     Ok(())
 }
 
@@ -662,8 +697,9 @@ fn serve_config(args: ServeArgs) -> Result<Config> {
 /// # Errors
 ///
 /// Returns an error after the summary line when the Preview or Thumbnail of
-/// any original could not be made, so a cron job or script that runs the
-/// command sees a non-zero exit status.
+/// any original could not be made, an incomplete original could not be
+/// removed, or a damaged version could not be dropped, so a cron job or
+/// script that runs the command sees a non-zero exit status.
 /// Returns an error too when Ctrl-C or SIGTERM stops it, after killing the
 /// ffmpeg that runs and removing what it wrote (#1729). A second Ctrl-C or
 /// SIGTERM ends it at once.
@@ -702,15 +738,8 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
     stopper.abort();
     let stats = stats?;
     opened.close().await;
-    if stats.errors > 0 {
-        bail!(
-            "{}",
-            crate::counts::words(
-                stats.errors,
-                "1 original whose Preview or Thumbnail could not be made",
-                "{n} originals whose Preview or Thumbnail could not be made",
-            )
-        );
+    if let Some(failures) = stats.failures() {
+        bail!("{failures}");
     }
     Ok(())
 }

@@ -210,6 +210,42 @@ pub async fn record(
     Ok(done.rows_affected())
 }
 
+/// Point the attachment rows of `account_id` for the original
+/// `original_sha` that name no `version` at `file`, and answer how many
+/// rows it pointed. Rows that already name one are left alone. 0 when no
+/// such row is left, such as when they were deleted meanwhile. The update
+/// runs in a write transaction of its own, as [`record`] does.
+///
+/// # Errors
+///
+/// Returns a database error when the statement fails.
+pub async fn share(
+    conn: &mut SqliteConnection,
+    version: Version,
+    account_id: i64,
+    original_sha: &str,
+    file: &VersionFile,
+) -> Result<u64, sqlx::Error> {
+    let [sha_column, path_column, mime_column] = version.columns();
+    let mut tx = begin_write(conn).await?;
+    let done = sqlx::query(&format!(
+        "UPDATE attachments
+         SET {sha_column} = $1, {path_column} = $2, {mime_column} = $3
+         WHERE sha256 = $4
+           AND COALESCE({path_column}, '') = ''
+           AND message_id IN (SELECT id FROM messages WHERE account_id = $5)"
+    ))
+    .bind(&file.sha256)
+    .bind(&file.assets_path)
+    .bind(&file.mime_type)
+    .bind(original_sha)
+    .bind(account_id)
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+    Ok(done.rows_affected())
+}
+
 /// Clear the `version` columns of every attachment row of `account_id` that
 /// names the file at `assets_path`, in a write transaction of its own, as
 /// [`record`] does.
