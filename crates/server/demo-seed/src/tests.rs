@@ -1065,20 +1065,33 @@ fn phone_numbers_in_bundle(out: &Path) -> std::collections::BTreeSet<String> {
 }
 
 #[test]
-fn the_fictional_ranges_are_the_ones_nanpa_and_ofcom_set_aside() {
+fn is_fictional_phone_accepts_only_555_01xx_and_07700_900xxx() {
     assert!(is_fictional_phone("+14155550100"));
     assert!(is_fictional_phone("+12125550199"));
     assert!(is_fictional_phone("+447700900000"));
     assert!(is_fictional_phone("+447700900999"));
-    assert!(!is_fictional_phone("+14155550200"));
-    assert!(!is_fictional_phone("+14155559000"));
-    assert!(!is_fictional_phone("+14155550099"));
-    assert!(!is_fictional_phone("+18007438200"));
-    assert!(!is_fictional_phone("+447700901000"));
-    // +33 6 39 98 12 34 is in ARCEP's range for audiovisual works, so it is
-    // no one's number, and `is_fictional_phone` does not cover it. The note
-    // on the `phone` crate's `mod tests` gives the source.
+    // These numbers are outside 555-0100 to 555-0199. Two of them sit one
+    // past its ends. All four are under area code 015, and no North American
+    // area code starts with 0, so no one has them. They test only the check
+    // of 555-01xx, because `is_fictional_phone` does not read the
+    // area code. The note on the `phone` crate's `mod tests` gives the
+    // source.
+    assert!(!is_fictional_phone("+10155550200"));
+    assert!(!is_fictional_phone("+10155559000"));
+    assert!(!is_fictional_phone("+10155550099"));
+    assert!(!is_fictional_phone("+10157438200"));
+    // These numbers are in Ofcom's 020 7946 0xxx drama range and ARCEP's
+    // range for audiovisual works. No one has them, and `is_fictional_phone`
+    // covers neither range.
+    assert!(!is_fictional_phone("+442079460000"));
     assert!(!is_fictional_phone("+33639981234"));
+    // These numbers have a length no UK mobile number has, so no one has
+    // them. They pin the length check on the drama mobile range. The number
+    // just past 07700 900999 can be dialled, so the `900` part of the prefix
+    // has no test. The note on the `phone` crate's `mod tests` gives the
+    // source.
+    assert!(!is_fictional_phone("+4477009001000"));
+    assert!(!is_fictional_phone("+447700900"));
 }
 
 /// The Demo Account ships with every Message Crate, so a number in it that
