@@ -75,8 +75,6 @@ pub struct PendingReply {
     /// [`ProjectionHooks::reply_key`] in the same conversation; `None` when
     /// the source names no key.
     pub quoted_key: Option<String>,
-    /// The part of the quoted message the reply answers, when recorded.
-    pub part_index: Option<u32>,
 }
 
 /// Per-exporter deltas of the shared [`pending_to_document`] projection.
@@ -354,9 +352,11 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
             .quoted_key
             .as_ref()
             .and_then(|key| guid_by_reply_key.get(key).cloned().flatten());
+        // No source that stages its rows here records the part a reply
+        // answers.
         messages[index].reply_to = Some(ReplyTo {
             guid,
-            part_index: reply.part_index,
+            part_index: None,
         });
     }
 
@@ -569,7 +569,6 @@ mod tests {
         fn reply(&self, msg: &PendingMessage) -> Option<PendingReply> {
             msg.extra.get("quotes").map(|quoted| PendingReply {
                 quoted_key: crate::trimmed(quoted).map(str::to_string),
-                part_index: None,
             })
         }
     }

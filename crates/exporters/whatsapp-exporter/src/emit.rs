@@ -246,10 +246,10 @@ fn ingest_chat(
                     key_string(msg.full_key_id.as_ref()).unwrap_or_default(),
                 );
                 if is_reply(msg) {
-                    e.insert(
-                        "reply_key_id".into(),
-                        key_string(msg.reply_key_id.as_ref()).unwrap_or_default(),
-                    );
+                    e.insert("is_reply".into(), "true".into());
+                }
+                if let Some(quoted) = key_string(msg.reply_key_id.as_ref()) {
+                    e.insert("reply_key_id".into(), quoted);
                 }
                 e.insert("reply_json".into(), optional_json(msg.reply.as_ref()));
                 e.insert("reactions_json".into(), reactions_json(&msg.reactions));
@@ -495,9 +495,8 @@ impl ProjectionHooks for WhatsappProjection {
     /// of the same chat whose `full_key_id` it equals. A reply from a JSON
     /// with no `reply_key_id` is still a reply, with no link.
     fn reply(&self, msg: &PendingMessage) -> Option<PendingReply> {
-        msg.extra.get("reply_key_id").map(|quoted| PendingReply {
-            quoted_key: message_ir::trimmed(quoted).map(str::to_string),
-            part_index: None,
+        (msg.extra_str("is_reply") == "true").then(|| PendingReply {
+            quoted_key: message_ir::trimmed(msg.extra_str("reply_key_id")).map(str::to_string),
         })
     }
 
