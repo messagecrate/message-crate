@@ -913,7 +913,8 @@ fn is_part_path(path: &str) -> bool {
 /// What one stored original needs, decided before any file is touched.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Plan {
-    /// A `.part` left by an interrupted transfer: delete it, never hand it to ffmpeg.
+    /// A `.part` left by an interrupted transfer: delete it, never hand it to
+    /// ffmpeg.
     RemoveIncomplete,
     /// Leave the original and its versions as they are.
     Skip(SkipReason),
@@ -1077,7 +1078,8 @@ fn mime_for_ext(ext: &str) -> &'static str {
     media::mime_for_ext(ext).unwrap_or("application/octet-stream")
 }
 
-/// Write derived bytes into the content-addressed store; the same bytes always land at the same path.
+/// Write derived bytes into the content-addressed store; the same bytes
+/// always land at the same path.
 ///
 /// A file already at that path is kept only when its bytes hash to the
 /// fingerprint in its name. Anything else, such as a version cut short by an
@@ -1123,7 +1125,8 @@ fn store_derived_bytes(derived_dir: &Path, buf: &[u8], ext: &str) -> Result<Vers
     })
 }
 
-/// Read a derived file from `work_dir` and store it like [`store_derived_bytes`].
+/// Read a derived file from `work_dir` and store it like
+/// [`store_derived_bytes`].
 fn store_derived_file(derived_dir: &Path, file_path: &Path, ext: &str) -> Result<VersionFile> {
     let buf = fs::read(file_path)?;
     store_derived_bytes(derived_dir, &buf, ext)
