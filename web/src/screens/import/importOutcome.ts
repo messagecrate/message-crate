@@ -84,7 +84,7 @@ function isApprovedOmission(
  *
  * An Upload finishes only when every conversation was sent or was already
  * sent: anything else is `paused`, never failed (#1233). That covers an Upload
- * the cancel flag stopped, one that threw or left no report, a conversation
+ * the cancel flag paused, one that threw or left no report, a conversation
  * the server did not take (a server that stops answering part-way fails
  * every later conversation and the Upload moves on), a conversation left
  * unsent, and an Upload that sent nothing at all. The Upload journal leaves

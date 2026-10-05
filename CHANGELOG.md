@@ -364,7 +364,7 @@ released versions carry their date on the heading.
   conversations not yet sent. Before, the run was recorded as completed, the
   staged files were deleted, and the conversations it had not reached were
   never imported. The run's report now puts every conversation in exactly
-  one count, and names the ones the pause left unsent. An Upload that fails,
+  one count, and lists the ones it left unsent. An Upload that fails,
   or sends some conversations and fails the rest, is paused the same way
   instead of being recorded as failed or finished, and the Import badge
   reads Paused. Logging out during an Upload asks first, then pauses the

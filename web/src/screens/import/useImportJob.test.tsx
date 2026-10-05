@@ -1611,7 +1611,7 @@ describe("useImportJob wiring", () => {
   it("pauses an Upload when the cancel flag is set: no /complete, and the staged files stay", async () => {
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
-    // What run.rs reports when the cancel flag stops `drive` after 200 of 681.
+    // What run.rs reports when the cancel flag pauses `drive` after 200 of 681.
     runMock.mockImplementationOnce(
       runResult({
         summary: "Upload complete",

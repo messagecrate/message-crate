@@ -185,7 +185,7 @@ impl Promote<'_> {
         Ok(())
     }
 
-    /// Insert the staged messages with the FTS triggers paused and, for a
+    /// Insert the staged messages with the FTS triggers off and, for a
     /// large batch, the secondary indexes dropped and rebuilt; then write
     /// `_promote_msg_map` for the child rows. Returns the highest message id
     /// that existed before the insert: every new row lands above it, which
@@ -198,7 +198,7 @@ impl Promote<'_> {
             words(as_count(total), "1 message", "{n} messages"),
             self.mode.as_str()
         ));
-        self.pause_fts_triggers().await?;
+        self.turn_off_fts_triggers().await?;
 
         let existing = staging::count_messages(self.tx).await?;
         let rebuild_indexes = should_drop_messages_secondary_indexes(total, existing);
@@ -282,7 +282,7 @@ impl Promote<'_> {
     /// Skip per-row full-text search trigger work during the bulk inserts;
     /// [`Self::index_fts`] indexes once after and reinstalls the sync
     /// triggers dropped here.
-    async fn pause_fts_triggers(&mut self) -> Result<()> {
+    async fn turn_off_fts_triggers(&mut self) -> Result<()> {
         let phase = Self::begin("Turning off the search index triggers…");
         schema::drop_messages_fts_triggers(self.tx).await?;
         self.done(phase, "The search index triggers are off");

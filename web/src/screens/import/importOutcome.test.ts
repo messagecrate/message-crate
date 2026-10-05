@@ -141,7 +141,7 @@ describe("importOutcome", () => {
   });
 
   it("is paused when the cancel flag paused the Upload partway", () => {
-    // What run.rs reports when the cancel flag stops `drive` after 200 of 681.
+    // What run.rs reports when the cancel flag pauses `drive` after 200 of 681.
     const r = report({
       ok: false,
       cancelled: true,
