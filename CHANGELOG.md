@@ -1110,8 +1110,10 @@ released versions carry their date on the heading.
   the window.** In a window narrower than the list plus the drawer, its right
   side ran past the window's edge and was cut off. It now ends at the
   window's edge, and in a window as narrow as a phone it covers the list
-  instead. The table of a contact's numbers and addresses no longer runs a
-  little past its card's edge either.
+  instead.
+- 2026-10-04 **The Contact Identity table fits inside its card.** Its card,
+  and the card that sums up the contacts you selected, were a little wider
+  than the panel they sit in, so the panel scrolled sideways.
 
 #### Accounts, Settings and screens
 

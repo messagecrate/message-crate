@@ -19,7 +19,8 @@ import { PencilIcon } from "./icons";
 import PlainButton from "./PlainButton";
 
 /**
- * Overlay mode only: dock to the right edge of the list column.
+ * Overlay mode only: the list column's right edge, which `overlayDrawerLeft`
+ * turns into the drawer's left edge.
  * Skips setState when the measured edge is unchanged to avoid jitter.
  */
 function useDrawerLeft(open: boolean): number | null {
@@ -71,9 +72,10 @@ function useDrawerLeft(open: boolean): number | null {
 }
 
 /**
- * The overlay drawer's left edge. Its right edge is always the window's, so
- * the drawer can never run past it, and it is never narrower than 20rem
- * (or the whole window, when the window is narrower than that).
+ * The overlay drawer's left edge. Its right edge is `right: 0`, so it is never
+ * past the window's, though the 920px cap can end it sooner. The drawer is
+ * never narrower than 20rem (or the whole window, when the window is narrower
+ * than that).
  *
  * Next to the list column, the drawer starts at the column's right edge; when
  * that leaves less than 20rem, it moves left over the column. With no list
@@ -259,7 +261,7 @@ function OneContactDrawer({
   const panelClass =
     variant === "docked"
       ? "flex h-full min-h-0 min-w-0 flex-col overflow-auto [scrollbar-gutter:stable] bg-panel px-6 pb-6 pt-2 outline-none"
-      : `fixed top-0 right-0 bottom-0 max-w-[920px] overflow-auto [scrollbar-gutter:stable] border-l border-border bg-panel p-6 shadow-contact-drawer outline-none ${drawerLeft == null ? "ml-auto" : ""} ${Z_CONTACT_DRAWER}`;
+      : `fixed top-0 right-0 bottom-0 max-w-[920px] overflow-auto [scrollbar-gutter:stable] border-l border-border bg-panel p-6 shadow-contact-drawer outline-none ${drawerLeft == null ? "ml-auto " : ""}${Z_CONTACT_DRAWER}`;
 
   const panelStyle = variant === "overlay" ? { left: overlayDrawerLeft(drawerLeft) } : undefined;
 
