@@ -2780,21 +2780,17 @@ async fn an_empty_batch_is_a_422() {
 
 /// One conversation whose single message has one attachment at `path`,
 /// stating `sha` when there is one. Every caller tests a refusal of the path
-/// or the fingerprint, so the line stays written out.
+/// or the fingerprint, so the line stays written out. `path` and `sha` go
+/// into the JSON as they are, so neither may hold `"` or `\`.
 fn one_attachment_batch(path: &str, sha: Option<&str>) -> String {
-    let digest = sha.map_or("null".to_string(), |s| format!(r#""{s}""#));
+    let header = conversation_header("whatsapp", "+15555550151")
+        .owner("+15555550150", Some("Me"))
+        .participant("+15555550151", None);
+    let digest = sha.map_or("null".to_string(), |sha| format!(r#""{sha}""#));
     format!(
-        concat!(
-            "{header}\n",
-            r#"{{"guid":"g-att","timestamp_unix_ms":1700000000000,"direction":"incoming","service":"whatsapp","message_kind":"sms","sender_identity":"+15555550151","sender_display_name":null,"subject":null,"text":"x","#,
-            r#""attachments":[{{"path":"{path}","original_name":"a.bin","mime_type":"application/octet-stream","digest_sha256":{digest},"is_sticker":false,"transcription":null,"sticker_effect":null}}],"imessage":null,"source":null}}"#,
-            "\n",
-        ),
-        header = conversation_header("whatsapp", "+15555550151")
-            .owner("+15555550150", Some("Me"))
-            .participant("+15555550151", None),
-        path = path,
-        digest = digest,
+        r#"{header}
+{{"guid":"g-att","timestamp_unix_ms":1700000000000,"direction":"incoming","service":"whatsapp","message_kind":"sms","sender_identity":"+15555550151","sender_display_name":null,"subject":null,"text":"x","attachments":[{{"path":"{path}","original_name":"a.bin","mime_type":"application/octet-stream","digest_sha256":{digest},"is_sticker":false,"transcription":null,"sticker_effect":null}}],"imessage":null,"source":null}}
+"#
     )
 }
 

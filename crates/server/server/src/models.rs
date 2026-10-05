@@ -518,7 +518,7 @@ fn format_utc_timestamp(secs: i64) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use message_ir::{IrImessage, IrService, UnsupportedSchemaVersion};
+    use message_ir::{IrImessage, UnsupportedSchemaVersion};
 
     use crate::test_support::{MessageLine, conversation_header, message_line};
 
@@ -559,9 +559,10 @@ mod tests {
         let header = conversation_header("imessage", "+15555550101")
             .participant("+15555550101", Some("Sam"))
             .to_string();
-        let mut message = from_sam("g1")
-            .service(IrService::IMessage)
-            .kind(IrMessageKind::IMessage);
+        let mut message = message_line("g1", "hello")
+            .at(1_400_773_261_000)
+            .sender("+15555550101")
+            .sender_display_name("Sam");
         if let Some(subject) = subject {
             message = message.subject(subject);
         }
@@ -816,7 +817,7 @@ mod tests {
         let header = conversation_header("sms-backup-restore", "+15555550101")
             .participant("+15555550101", Some("Sam"))
             .to_string();
-        // The guids are the input under test, so the line stays written out.
+        // The guids are the input under test, so the lines stay written out.
         let msg = |guid: &str| {
             format!(
                 r#"{{"guid":"{guid}","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}}"#
