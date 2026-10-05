@@ -17,6 +17,40 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 Bullets under the version still in development carry the date they landed;
 released versions carry their date on the heading.
 
+## [0.10.2] — in development
+
+### Features
+
+- 2026-10-05: **A WhatsApp reply now names the message it quotes.** When
+  the quoted message is in the same chat of the same backup, the reply is
+  linked to it, as Apple Messages replies already were: a mail export threads
+  the reply under that message, and a CSV or JSON export names it. A reply
+  whose quoted message is not in the backup is still kept as a reply. The
+  link needs a WhatsApp Chat Exporter that records the quoted message's whole
+  id; a backup read by an older one gives replies with no link.
+
+### Design
+
+- 2026-10-05: **A message's reply count is counted when it is read.** It is
+  the number of replies that name the message, so it always equals the
+  replies there are to open, and a reply set aside as a duplicate no longer
+  counts.
+
+### Upgrading
+
+- The database format changed. **An existing Message Crate is rebuilt empty
+  on first start and its messages must be imported again.**
+- Message files exported before replies moved onto the message itself are
+  refused when you import or convert them, rather than read with their
+  replies taken for plain messages. This holds for JSON, JSONL, CSV, EML and
+  mbox exports, and for an Import Run an earlier build left paused. Export
+  the backup again with this build, then import or convert the new files;
+  discard a paused run and start the import again.
+- If you have a program that reads messages from the HTTP API, it must read
+  a reply from `reply_to`, which names the quoted message's `guid` and part,
+  in place of `is_reply`, `thread_originator_guid` and
+  `thread_originator_part`.
+
 ## [0.10.1] - 2026-10-05
 
 ### Features

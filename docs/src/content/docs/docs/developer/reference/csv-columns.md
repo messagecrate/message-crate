@@ -35,6 +35,9 @@ CSV output contains one row per message. Conversation and export identity are re
 | `reactions_json` | JSON array of the message's reactions, each with `part_index`, `kind`, `emoji` for an emoji reaction, `is_from_me`, and the person who reacted (`reactor_identity`, `reactor_display_name`). Empty when the message has none. |
 | `deletion` | `deleted_in_source_app` for a message deleted in the app it came from before the backup, `unsent` for one its sender took back, or empty for neither. A file with any other value is refused. |
 | `earlier_versions_json` | JSON array of an edited message's earlier versions, oldest first within each part, each with `part_index`, `text`, and `edited_at_unix_ms` when the source records when it was written. `text` holds the final version. Empty when the message was never edited. |
+| `is_reply` | `true` for a reply, whether or not the message it quotes is in the export; `false` otherwise. |
+| `reply_to_guid` | The `guid` of the message a reply quotes, when that message is in the same export; empty otherwise. |
+| `reply_to_part` | The part of the quoted message a reply answers, `0` for the first or only part; empty when the source does not record one. |
 
 ## Source and owner
 
@@ -55,7 +58,6 @@ The remaining columns hold iMessage features. They are empty or `false` for sour
 
 - `read_receipt`, `send_effect`, and `shared_location`;
 - `is_announcement` and `announcement`;
-- `is_reply`, `thread_originator_guid`, `thread_originator_part`, and `num_replies`;
 - `parts_json` and `app_json`;
 - `balloon_bundle_id` and `balloon_kind`; and
 - `associated_guid`, `associated_part`, `tapback_kind`, `tapback_emoji`, and `tapback_action`.
