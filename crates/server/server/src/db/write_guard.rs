@@ -1,12 +1,14 @@
 //! In tests, every SQLite connection refuses a write to `messages`,
-//! `attachments` or `messages_fts` that is not inside a transaction.
+//! `attachments`, `message_versions` or their full-text search tables
+//! (`messages_fts`, `message_versions_fts`) that is not inside a transaction.
 //!
-//! The full-text search triggers fire on a write to `messages` or
-//! `attachments`. A connection whose copy of the schema is out of date (a
-//! promote dropped and re-created those triggers on another connection)
-//! fails such a statement as "no such table" when it runs on its own, because
-//! SQLite cannot reload the schema while it connects to `messages_fts` in the
-//! middle of preparing it (#1628). [`crate::db::begin_write`] brings the copy
+//! The full-text search triggers fire on a write to `messages`,
+//! `attachments` or `message_versions`. A connection whose copy of the
+//! schema is out of date (a promote dropped and re-created those triggers on
+//! another connection) fails such a statement as "no such table" when it
+//! runs on its own, because SQLite cannot reload the schema while it
+//! connects to a full-text search table in the middle of preparing it
+//! (#1628). [`crate::db::begin_write`] brings the copy
 //! up to date before its first statement (#1600), so every such write goes
 //! through a write transaction. Deleting a conversation, a handle or an
 //! account deletes messages through `ON DELETE CASCADE`, and is held to the
@@ -14,7 +16,7 @@
 //!
 //! The guard is an SQLite authorizer: while a statement is prepared, SQLite
 //! names each table it writes, cascades and trigger bodies included, and the
-//! guard refuses the statement when one of the three is among them and the
+//! guard refuses the statement when one of the five is among them and the
 //! connection is in autocommit mode. The refused statement fails with
 //! "not authorized", and the guard names the table on standard error. It
 //! is installed on every connection the test binary opens, through
@@ -29,7 +31,7 @@
 //! with foreign keys off. With foreign keys on, SQLite also asks about a
 //! second delete of the table and a delete of each table that refers to it;
 //! on a bare connection the guard refuses the second delete, and the delete
-//! of a referring table that is one of the three.
+//! of a referring table that is one of the five.
 //!
 //! What the guard does not see:
 //!
@@ -51,7 +53,13 @@ use std::sync::Once;
 use libsqlite3_sys as ffi;
 
 /// The tables a write to which runs only inside a transaction.
-const GUARDED_TABLES: [&str; 3] = ["messages", "attachments", "messages_fts"];
+const GUARDED_TABLES: [&str; 5] = [
+    "messages",
+    "attachments",
+    "message_versions",
+    "messages_fts",
+    "message_versions_fts",
+];
 
 thread_local! {
     /// The table whose drop SQLite asked about last on this thread. SQLite

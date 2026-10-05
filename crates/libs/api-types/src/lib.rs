@@ -413,6 +413,36 @@ api_shape! {
         /// took back; `null` for neither. The message is listed and found
         /// like any other either way.
         pub deletion: Option<Deletion>,
+        /// The earlier versions of an edited message, oldest first within
+        /// each part; `text` is the final version. Empty for a message never
+        /// edited, or from a source that records no edits.
+        pub earlier_versions: Vec<EarlierVersion>,
+        /// True in a Messages search answer (`GET /v1/messages` with `q`)
+        /// when the message is a hit only because of its earlier versions:
+        /// its final text alone does not match the query, and the versions
+        /// that hold a free-text word of it carry `matched`. False for a hit
+        /// its final text matches, and on every other route.
+        pub matched_earlier_version: bool,
+    }
+}
+
+api_shape! {
+    /// One earlier version of one part of an edited message.
+    pub struct EarlierVersion {
+        /// The part of the message this version belongs to; 0 for the first
+        /// or only part.
+        pub part_index: i64,
+        /// The part's text in this version.
+        pub text: String,
+        /// When this version was written: RFC 3339 in UTC with a `Z` suffix,
+        /// as `Message.timestamp`. The original's is when it was sent, a
+        /// later version's is when the edit that wrote it was made. `None`
+        /// when the source does not record it.
+        pub edited_at: Option<String>,
+        /// True when the message's `matched_earlier_version` is, and this
+        /// version holds a free-text word of the query: the version a search
+        /// found the message by. False everywhere else.
+        pub matched: bool,
     }
 }
 
@@ -605,6 +635,13 @@ mod tests {
                 sender: None,
             }],
             deletion: Some(Deletion::DeletedInSourceApp),
+            earlier_versions: vec![EarlierVersion {
+                part_index: 0,
+                text: "helo".into(),
+                edited_at: Some("2023-12-31T23:59:00Z".into()),
+                matched: false,
+            }],
+            matched_earlier_version: false,
         };
 
         let json = serde_json::to_string(&message).expect("serializes");
@@ -627,6 +664,11 @@ mod tests {
         assert_eq!(read.tapbacks[0].kind, "loved");
         assert_eq!(written["deletion"], "deleted_in_source_app");
         assert_eq!(read.deletion, Some(Deletion::DeletedInSourceApp));
+        assert_eq!(read.earlier_versions[0].text, "helo");
+        assert_eq!(
+            read.earlier_versions[0].edited_at.as_deref(),
+            Some("2023-12-31T23:59:00Z")
+        );
     }
 }
 

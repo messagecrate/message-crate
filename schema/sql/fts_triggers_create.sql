@@ -111,3 +111,19 @@ CREATE TRIGGER attachments_fts_au AFTER UPDATE OF original_name, transcription O
         )
     FROM messages m WHERE m.id = new.message_id;
 END;
+
+-- Keep message_versions_fts in step with message_versions: one index row per
+-- version, under the version's id. Deleting a message deletes its versions
+-- through ON DELETE CASCADE, which fires the delete trigger for each.
+CREATE TRIGGER message_versions_fts_ai AFTER INSERT ON message_versions BEGIN
+    INSERT INTO message_versions_fts(rowid, text) VALUES (new.id, new.text);
+END;
+
+CREATE TRIGGER message_versions_fts_ad AFTER DELETE ON message_versions BEGIN
+    DELETE FROM message_versions_fts WHERE rowid = old.id;
+END;
+
+CREATE TRIGGER message_versions_fts_au AFTER UPDATE OF text ON message_versions BEGIN
+    DELETE FROM message_versions_fts WHERE rowid = old.id;
+    INSERT INTO message_versions_fts(rowid, text) VALUES (new.id, new.text);
+END;

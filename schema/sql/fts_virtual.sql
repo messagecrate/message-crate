@@ -14,3 +14,16 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
     contentless_delete=1,
     tokenize='unicode61 remove_diacritics 2'
 );
+
+-- Contentless FTS5 index over each earlier version of an edited message
+-- (message_versions.text), one row per version under the version's id.
+-- Separate from messages_fts so a search can tell a message it found by its
+-- final text from one it found only by an earlier version, and say which
+-- version that was. Same tokenizer, so a word matches the same way in both.
+CREATE VIRTUAL TABLE IF NOT EXISTS message_versions_fts USING fts5(
+    -- Indexed version text (synced from message_versions.text).
+    text,
+    content='',
+    contentless_delete=1,
+    tokenize='unicode61 remove_diacritics 2'
+);

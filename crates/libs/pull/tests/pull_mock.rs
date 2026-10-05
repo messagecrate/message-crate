@@ -17,7 +17,7 @@ use std::sync::atomic::AtomicBool;
 
 use httpmock::prelude::*;
 use message_crate_pull::{ExportQueryList, ProgressEvent, PullConfig, PullReport, journal, run};
-use message_ir::{Deletion, Reaction};
+use message_ir::{Deletion, EarlierVersion, Reaction};
 use message_ir_format::{EXPORT_SENTINEL, read_conversation_jsonl};
 use serde_json::{Value, json};
 use tempfile::tempdir;
@@ -95,7 +95,9 @@ fn message(
             ]
         },
         "attachments": attachments,
-        "tapbacks": []
+        "tapbacks": [],
+        "earlier_versions": [],
+        "matched_earlier_version": false
     })
 }
 
@@ -1109,5 +1111,60 @@ fn a_pulled_message_keeps_its_deletion_mark() {
             None
         ],
         "the file reads back as the same marks"
+    );
+}
+
+/// Export keeps an edited message's earlier versions: each one the server
+/// returns is written in the message's `edits` with its part, text and time,
+/// in the server's order, and the file reads back as the same versions.
+#[test]
+fn a_pulled_message_keeps_its_earlier_versions() {
+    let server = MockServer::start();
+    let _auth = mock_auth(&server);
+    let _run = mock_run(&server);
+    let mut edited = message(
+        1,
+        "sms-backup-restore",
+        "guid-edited",
+        "2020-01-06T12:14:00Z",
+        "See you at noon",
+        json!([]),
+    );
+    edited["earlier_versions"] = json!([
+        { "part_index": 0, "text": "See you at 11", "edited_at": "2020-01-06T12:14:00Z", "matched": false },
+        { "part_index": 0, "text": "See you at 11:30", "edited_at": "2020-01-06T12:15:00Z", "matched": false }
+    ]);
+    let _page = server.mock(|when, then| {
+        when.method(GET)
+            .path(format!("/v1/exports/{EXPORT_ID}/messages"))
+            .query_param("offset", "0");
+        then.status(200).json_body(json!({
+            "items": [edited],
+            "total": 1,
+            "limit": 500,
+            "offset": 0
+        }));
+    });
+    let dir = tempdir().unwrap();
+    let out = dir.path().join("pulled");
+
+    run(&config(&out, server.base_url()), None).unwrap();
+
+    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    assert_eq!(doc.messages[0].text, "See you at noon");
+    assert_eq!(
+        doc.messages[0].edits,
+        [
+            EarlierVersion {
+                part_index: 0,
+                text: "See you at 11".into(),
+                edited_at_unix_ms: Some(1_578_312_840_000),
+            },
+            EarlierVersion {
+                part_index: 0,
+                text: "See you at 11:30".into(),
+                edited_at_unix_ms: Some(1_578_312_900_000),
+            },
+        ]
     );
 }

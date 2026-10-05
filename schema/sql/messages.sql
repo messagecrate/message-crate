@@ -202,6 +202,29 @@ CREATE TABLE IF NOT EXISTS tapbacks (
 
 CREATE INDEX IF NOT EXISTS ix_tapbacks_message_id ON tapbacks (message_id);
 
+-- One earlier version of one part of an edited message: the text that part
+-- held before an edit replaced it. messages.body is the final version; these
+-- are the versions before it. Search finds a message by any of them
+-- (message_versions_fts in fts_virtual.sql).
+CREATE TABLE IF NOT EXISTS message_versions (
+    -- Surrogate primary key; also the version's rowid in message_versions_fts.
+    -- Ascending within a message in the order the source listed its versions,
+    -- oldest first within each part.
+    id INTEGER PRIMARY KEY,
+    -- The edited message (`messages.id`).
+    message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    -- Which part of a multi-part message this version belongs to (0 = first/only).
+    part_index INTEGER NOT NULL DEFAULT 0,
+    -- The part's text in this version.
+    text TEXT NOT NULL,
+    -- When this version was written, RFC 3339 in UTC with a Z suffix, as
+    -- messages.timestamp: the send time for the original, the edit's time for
+    -- a later one. NULL when the source does not record it.
+    edited_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ix_message_versions_message_id ON message_versions (message_id);
+
 -- Named tag a user can stamp on whole conversations.
 CREATE TABLE IF NOT EXISTS message_tags (
     -- Surrogate primary key for this tag.

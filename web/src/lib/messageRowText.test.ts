@@ -30,6 +30,8 @@ function message(over: Partial<Message> = {}): Message {
     conversation: conversation(),
     attachments: [],
     tapbacks: [],
+    earlier_versions: [],
+    matched_earlier_version: false,
     ...over,
   };
 }

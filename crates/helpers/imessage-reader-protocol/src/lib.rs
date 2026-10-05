@@ -29,10 +29,10 @@
 //! [`bare_address`], which says what an owner address looks like on the wire.
 //! It is MIT OR Apache-2.0 so that both sides can link it.
 //!
-//! [`Reaction`] is defined here and nowhere else. It is the shape of a
-//! reaction in the conversation file too (`message_ir::Reaction` is this
-//! type), for every source, and this is the one crate both the GPL reader and
-//! the app may link.
+//! [`Reaction`], [`Deletion`] and [`EarlierVersion`] are defined here and
+//! nowhere else. Each is the shape the conversation file carries too
+//! (`message_ir` re-exports them), for every source, and this is the one
+//! crate both the GPL reader and the app may link.
 
 use std::path::PathBuf;
 
@@ -61,7 +61,10 @@ use serde_json::Value;
 /// [`Reaction`], and no longer a JSON value in `Imessage::tapbacks`.
 /// 9: a message deleted in Messages or unsent by its sender carries
 /// [`Message::deletion`], and `Imessage::is_deleted` is gone.
-pub const PROTOCOL_VERSION: u32 = 9;
+/// 10: an edited message carries its earlier versions in
+/// [`Message::edits`], a list of [`EarlierVersion`], and `Imessage::edits`
+/// is gone.
+pub const PROTOCOL_VERSION: u32 = 10;
 
 /// The owner address behind a raw `chat.account_login` or
 /// `message.destination_caller_id` value, or `None` when nothing is left.
@@ -342,6 +345,9 @@ pub struct Message {
     /// Whether the message was deleted in Messages or unsent by its sender;
     /// `None` for neither.
     pub deletion: Option<Deletion>,
+    /// The earlier versions of an edited message, oldest first within each
+    /// part; empty for a message never edited. `text` is the final version.
+    pub edits: Vec<EarlierVersion>,
     /// The owner's address on this row (`destination_caller_id` through
     /// [`bare_address`]), or empty when the row carries none.
     pub owner_identity: String,
@@ -374,8 +380,6 @@ pub struct Imessage {
     pub read_receipt_rfc3339: Option<String>,
     /// Body parts as a JSON array.
     pub parts: Option<Value>,
-    /// Edit history as a JSON array.
-    pub edits: Option<Value>,
     /// An app balloon's payload.
     pub app: Option<Value>,
     /// The balloon's bundle id.
@@ -451,6 +455,27 @@ impl Deletion {
             Self::Unsent => "unsent",
         }
     }
+}
+
+/// One earlier version of one part of an edited message: the text that part
+/// held before an edit replaced it.
+///
+/// A message's own text is its final version, so a list of these holds only
+/// the versions before it, oldest first within each part. Every source that
+/// records edits writes the same shape, so the type is defined here beside
+/// [`Reaction`] and `message-ir` re-exports it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EarlierVersion {
+    /// The part of the message this version belongs to; 0 for the first or
+    /// only part.
+    pub part_index: u32,
+    /// The part's text in this version.
+    pub text: String,
+    /// When this version was written, as milliseconds since 1970-01-01 UTC:
+    /// the send time for the original, the time of the edit that wrote it for
+    /// a later one. `None` when the source does not record it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub edited_at_unix_ms: Option<i64>,
 }
 
 /// One attachment's metadata and where its bytes are.

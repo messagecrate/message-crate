@@ -14539,6 +14539,37 @@
           }
         }
       },
+      "EarlierVersion": {
+        "type": "object",
+        "description": "One earlier version of one part of an edited message.",
+        "required": [
+          "part_index",
+          "text",
+          "matched"
+        ],
+        "properties": {
+          "edited_at": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "When this version was written: RFC 3339 in UTC with a `Z` suffix,\nas `Message.timestamp`. The original's is when it was sent, a\nlater version's is when the edit that wrote it was made. `None`\nwhen the source does not record it."
+          },
+          "matched": {
+            "type": "boolean",
+            "description": "True when the message's `matched_earlier_version` is, and this\nversion holds a free-text word of the query: the version a search\nfound the message by. False everywhere else."
+          },
+          "part_index": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The part of the message this version belongs to; 0 for the first\nor only part."
+          },
+          "text": {
+            "type": "string",
+            "description": "The part's text in this version."
+          }
+        }
+      },
       "ExportQueryList": {
         "type": "string",
         "description": "Which list an Export Run's query is for (`docs/architecture/http-api.md`,\n\"Runs\"). The list decides which search words the query may use and what\nthe run hands over.",
@@ -15527,7 +15558,9 @@
           "num_replies",
           "conversation",
           "attachments",
-          "tapbacks"
+          "tapbacks",
+          "earlier_versions",
+          "matched_earlier_version"
         ],
         "properties": {
           "attachments": {
@@ -15552,6 +15585,13 @@
               }
             ]
           },
+          "earlier_versions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EarlierVersion"
+            },
+            "description": "The earlier versions of an edited message, oldest first within\neach part; `text` is the final version. Empty for a message never\nedited, or from a source that records no edits."
+          },
           "guid": {
             "type": "string",
             "description": "Export GUID for replies and grouping. Every message has one,\nbecause the import refuses a message without one."
@@ -15572,6 +15612,10 @@
           "is_reply": {
             "type": "boolean",
             "description": "True when part of a reply thread."
+          },
+          "matched_earlier_version": {
+            "type": "boolean",
+            "description": "True in a Messages search answer (`GET /v1/messages` with `q`)\nwhen the message is a hit only because of its earlier versions:\nits final text alone does not match the query, and the versions\nthat hold a free-text word of it carry `matched`. False for a hit\nits final text matches, and on every other route."
           },
           "num_replies": {
             "type": "integer",
@@ -17477,7 +17521,9 @@
                 "num_replies",
                 "conversation",
                 "attachments",
-                "tapbacks"
+                "tapbacks",
+                "earlier_versions",
+                "matched_earlier_version"
               ],
               "properties": {
                 "attachments": {
@@ -17502,6 +17548,13 @@
                     }
                   ]
                 },
+                "earlier_versions": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EarlierVersion"
+                  },
+                  "description": "The earlier versions of an edited message, oldest first within\neach part; `text` is the final version. Empty for a message never\nedited, or from a source that records no edits."
+                },
                 "guid": {
                   "type": "string",
                   "description": "Export GUID for replies and grouping. Every message has one,\nbecause the import refuses a message without one."
@@ -17522,6 +17575,10 @@
                 "is_reply": {
                   "type": "boolean",
                   "description": "True when part of a reply thread."
+                },
+                "matched_earlier_version": {
+                  "type": "boolean",
+                  "description": "True in a Messages search answer (`GET /v1/messages` with `q`)\nwhen the message is a hit only because of its earlier versions:\nits final text alone does not match the query, and the versions\nthat hold a free-text word of it carry `matched`. False for a hit\nits final text matches, and on every other route."
                 },
                 "num_replies": {
                   "type": "integer",

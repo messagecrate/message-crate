@@ -329,7 +329,7 @@ fn ir_message(
 /// reaction, and a plain message with none of these.
 async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
     let header = serde_json::json!({
-        "schema_version": 7,
+        "schema_version": 8,
         "export": {"source": "imessage", "tool": "test", "tool_version": "0",
                    "owner_identity": null, "owner_display_name": null},
         "conversation": {
@@ -422,13 +422,44 @@ const APPLE_MESSAGES_DELETIONS: &str =
 /// Import [`APPLE_MESSAGES_DELETIONS`] into `account_id` through the whole
 /// pipeline.
 async fn import_deletions(fixture: &TestFixture, account_id: i64) {
-    let dir = fixture.dir().join("deletions");
+    let stats =
+        import_apple_messages_file(fixture, account_id, "deletions", APPLE_MESSAGES_DELETIONS)
+            .await;
+    assert_eq!(
+        stats.messages, 3,
+        "a marked message is imported like any other"
+    );
+}
+
+/// An Apple Messages conversation file holding a message edited twice whose
+/// earlier versions alone mention the library and the museum, a message
+/// edited once that mentions the library in its final text and its earlier
+/// version, and a message never edited.
+const APPLE_MESSAGES_EDITS: &str = include_str!("../../tests/fixtures/apple-messages-edits.jsonl");
+
+/// Import [`APPLE_MESSAGES_EDITS`] into `account_id` through the whole
+/// pipeline.
+async fn import_edits(fixture: &TestFixture, account_id: i64) {
+    let stats =
+        import_apple_messages_file(fixture, account_id, "edits", APPLE_MESSAGES_EDITS).await;
+    assert_eq!(stats.messages, 3);
+}
+
+/// Import one Apple Messages conversation file, `contents`, into
+/// `account_id` through the whole pipeline, from a directory named `name`.
+async fn import_apple_messages_file(
+    fixture: &TestFixture,
+    account_id: i64,
+    name: &str,
+    contents: &str,
+) -> crate::imports_api::ImportStats {
+    let dir = fixture.dir().join(name);
     std::fs::create_dir_all(&dir).unwrap();
-    let path = dir.join("deletions.jsonl");
-    std::fs::write(&path, APPLE_MESSAGES_DELETIONS).unwrap();
+    let path = dir.join(format!("{name}.jsonl"));
+    std::fs::write(&path, contents).unwrap();
     let assets = dir.join("assets");
     let mut conn = fixture.conn().await;
-    let stats = crate::imports_api::import_jsonl_files_on_conn(
+    crate::imports_api::import_jsonl_files_on_conn(
         &mut conn,
         &[path],
         &crate::imports_api::ImportOptions::fixed(crate::imports_api::FixedImportArgs {
@@ -443,11 +474,7 @@ async fn import_deletions(fixture: &TestFixture, account_id: i64) {
         crate::imports_api::ImportSchemaMode::Ensure,
     )
     .await
-    .unwrap();
-    assert_eq!(
-        stats.messages, 3,
-        "a marked message is imported like any other"
-    );
+    .unwrap()
 }
 
 /// The guids of a messages page, in its order.
@@ -534,6 +561,241 @@ async fn deleted_yes_and_no_split_the_messages_by_their_mark() {
         ["guid-16"],
         "a message deleted in the source app is found by its text: {found}"
     );
+}
+
+/// The message of a messages page whose guid is `guid`.
+fn message_by_guid(page: &serde_json::Value, guid: &str) -> serde_json::Value {
+    page["items"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|m| m["guid"] == guid)
+        .unwrap_or_else(|| panic!("no message {guid:?} in {page}"))
+        .clone()
+}
+
+/// An edited message imports with each earlier version, its part, text and
+/// time, oldest first, and the messages route returns them beside the final
+/// text. A message never edited has none.
+#[tokio::test]
+async fn an_edited_message_is_returned_with_its_earlier_versions_and_their_times() {
+    let (fixture, alice) = fixture_with_account().await;
+    import_edits(&fixture, alice.account_id).await;
+
+    let page: serde_json::Value =
+        get_json(&fixture.state, "/v1/messages?sort=date", &alice.token).await;
+    let edited = message_by_guid(&page, "guid-edited-twice");
+    assert_eq!(edited["text"], "Meet at the bakery", "{page}");
+    assert_eq!(
+        edited["earlier_versions"],
+        serde_json::json!([
+            {"part_index": 0, "text": "Meet at the library",
+             "edited_at": "2020-01-06T11:10:00Z", "matched": false},
+            {"part_index": 0, "text": "Meet at the museum",
+             "edited_at": "2020-01-06T11:10:30Z", "matched": false}
+        ]),
+        "{page}"
+    );
+    assert_eq!(edited["matched_earlier_version"], false, "{page}");
+    let never = message_by_guid(&page, "guid-never-edited");
+    assert_eq!(never["earlier_versions"], serde_json::json!([]), "{page}");
+}
+
+/// A word that only an earlier version holds finds the message, which says
+/// it matched an earlier version and which one. A word the final text holds
+/// finds its message as an ordinary hit, even when an earlier version holds
+/// it too.
+#[tokio::test]
+async fn a_word_only_an_earlier_version_holds_finds_the_message_and_says_which_version() {
+    let (fixture, alice) = fixture_with_account().await;
+    import_edits(&fixture, alice.account_id).await;
+
+    let museum: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=museum&sort=date",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(guids(&museum), ["guid-edited-twice"], "{museum}");
+    let hit = message_by_guid(&museum, "guid-edited-twice");
+    assert_eq!(hit["matched_earlier_version"], true, "{museum}");
+    let matched: Vec<bool> = hit["earlier_versions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v["matched"].as_bool().unwrap())
+        .collect();
+    assert_eq!(
+        matched,
+        [false, true],
+        "the second version holds it: {museum}"
+    );
+
+    let library: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=library&sort=date",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(
+        guids(&library),
+        ["guid-edited-twice", "guid-edited-final-match"],
+        "{library}"
+    );
+    let only_earlier = message_by_guid(&library, "guid-edited-twice");
+    assert_eq!(only_earlier["matched_earlier_version"], true, "{library}");
+    assert_eq!(
+        only_earlier["earlier_versions"][0]["matched"], true,
+        "{library}"
+    );
+    assert_eq!(
+        only_earlier["earlier_versions"][1]["matched"], false,
+        "{library}"
+    );
+    let final_match = message_by_guid(&library, "guid-edited-final-match");
+    assert_eq!(final_match["matched_earlier_version"], false, "{library}");
+    assert_eq!(
+        final_match["earlier_versions"][0]["matched"], false,
+        "{library}"
+    );
+
+    // The final text alone: a message found by it is never marked.
+    let bakery: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=bakery&sort=date",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(guids(&bakery), ["guid-edited-twice"], "{bakery}");
+    assert_eq!(
+        bakery["items"][0]["matched_earlier_version"], false,
+        "{bakery}"
+    );
+
+    // A negated word an earlier version holds leaves the message out, as
+    // the same word in its final text would.
+    let not_museum: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=meet%20-museum&sort=date",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(guids(&not_museum), Vec::<String>::new(), "{not_museum}");
+}
+
+/// Importing the same file again adds no earlier version a second time, and
+/// a word only an earlier version holds still finds its message once.
+#[tokio::test]
+async fn importing_an_edited_message_again_keeps_one_copy_of_each_earlier_version() {
+    let (fixture, alice) = fixture_with_account().await;
+    import_edits(&fixture, alice.account_id).await;
+    let again = import_apple_messages_file(
+        &fixture,
+        alice.account_id,
+        "edits-again",
+        APPLE_MESSAGES_EDITS,
+    )
+    .await;
+    assert_eq!(again.messages, 0, "every message is already stored");
+
+    let mut conn = fixture.conn().await;
+    let versions: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM message_versions")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(versions, 3);
+    let museum: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=museum&sort=date",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(guids(&museum), ["guid-edited-twice"], "{museum}");
+}
+
+/// An append from a later backup, in which the message was edited again,
+/// leaves the stored message as it was: its text and its earlier versions
+/// stay together, rather than the text it holds turning up as an earlier
+/// version beside it.
+#[tokio::test]
+async fn an_append_from_a_later_backup_keeps_a_stored_messages_versions_with_its_text() {
+    let (fixture, alice) = fixture_with_account().await;
+    import_edits(&fixture, alice.account_id).await;
+    let later = APPLE_MESSAGES_EDITS.replace(
+        r#""text":"Meet at the bakery","attachments":[],"edits":["#,
+        r#""text":"Meet at the park","attachments":[],"edits":[{"part_index":0,"text":"Meet at the bakery","edited_at_unix_ms":1578309090000},"#,
+    );
+    assert_ne!(
+        later, APPLE_MESSAGES_EDITS,
+        "the later backup edits the message again"
+    );
+    import_apple_messages_file(&fixture, alice.account_id, "edits-later", &later).await;
+
+    let page: serde_json::Value =
+        get_json(&fixture.state, "/v1/messages?sort=date", &alice.token).await;
+    let edited = message_by_guid(&page, "guid-edited-twice");
+    assert_eq!(edited["text"], "Meet at the bakery", "{page}");
+    let texts: Vec<&str> = edited["earlier_versions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v["text"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        texts,
+        ["Meet at the library", "Meet at the museum"],
+        "{page}"
+    );
+}
+
+/// Deleting an edited message deletes its earlier versions and their search
+/// entries with it, so a word only those versions held finds nothing.
+#[tokio::test]
+async fn deleting_an_edited_message_removes_its_earlier_versions() {
+    let (fixture, alice) = fixture_with_account().await;
+    import_edits(&fixture, alice.account_id).await;
+    let mut conn = fixture.conn().await;
+    let versions = |guid: &'static str| {
+        sqlx::query_scalar::<_, i64>(
+            "SELECT COUNT(*) FROM message_versions v JOIN messages m ON m.id = v.message_id
+             WHERE m.guid = $1",
+        )
+        .bind(guid)
+    };
+    assert_eq!(
+        versions("guid-edited-twice")
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap(),
+        2
+    );
+
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    sqlx::query("DELETE FROM messages WHERE guid = 'guid-edited-twice'")
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM message_versions")
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(left, 1, "only the other edited message's version is left");
+    let indexed: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM message_versions_fts WHERE message_versions_fts MATCH 'museum'",
+    )
+    .fetch_one(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(indexed, 0, "the deleted version's search entry is gone");
+    let museum: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=museum&sort=date",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(guids(&museum), Vec::<String>::new(), "{museum}");
 }
 
 /// Reactions and the reply, announcement and sticker flags survive the trip

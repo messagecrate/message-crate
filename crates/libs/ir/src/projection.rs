@@ -302,6 +302,8 @@ pub fn pending_to_document<H: ProjectionHooks + ?Sized>(
             reactions: Vec::new(),
             // Nor a message deleted in the source app or unsent.
             deletion: None,
+            // Nor an edited message's earlier versions.
+            edits: Vec::new(),
             imessage: None,
             source: hooks.source(convo, msg).into_option(),
         });

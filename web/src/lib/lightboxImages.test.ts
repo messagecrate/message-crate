@@ -23,6 +23,8 @@ function message(id: number, attachments: MessageAttachment[]): Message {
     text: null,
     attachments,
     tapbacks: [],
+    earlier_versions: [],
+    matched_earlier_version: false,
     conversation: {
       id: 1,
       chat_identifier: "x",
