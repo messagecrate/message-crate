@@ -405,11 +405,15 @@ member of it matches `application/json`, `application/problem+json`,
 `application/json` (RFC 9110), so refusing it would refuse a client that asks
 for JSON. A missing `Accept` is a request for JSON. The check runs on every `/v1` route
 but the five that answer bytes: `GET /v1/assets/{sha256}`, which streams the
-asset's own contents, `GET /v1/assets/{sha256}/preview` and
-`GET /v1/assets/{sha256}/thumbnail`, which stream its Preview and its
-Thumbnail, `POST /v1/contacts/address-book`, which answers the address book
-as `text/csv`, and `GET /v1/server/log-files/{id}`, which answers a file of
-the server's log as `text/plain`. Nothing outside `/v1` is checked.
+asset's own contents, `GET` and `HEAD /v1/assets/{sha256}/preview` and
+`GET` and `HEAD /v1/assets/{sha256}/thumbnail`, which stream its Preview and
+its Thumbnail or answer the headers that stream would carry,
+`POST /v1/contacts/address-book`, which answers the address book as
+`text/csv`, and `GET /v1/server/log-files/{id}`, which answers a file of the
+server's log as `text/plain`. A media element probes a file with `HEAD` and an
+`Accept` such as `image/*`, so refusing that `HEAD` would refuse the probe.
+`HEAD /v1/assets/{sha256}` is checked, because it is the probe for whether an
+asset is stored and answers JSON. Nothing outside `/v1` is checked.
 
 Rejected: requiring `Accept: application/json`. None of the server's own clients
 send one, and the rule would refuse the web app on its first request.
@@ -455,7 +459,12 @@ security scheme with its scopes, so every route says which it accepts.
   remedy is a new link rather than a new login.
   Why: a media element (`<img>`, `<video>`, `<audio>`) loads its own `src`
   and cannot send a header, and a video that streams must be loaded by the
-  element itself (`docs/architecture/media.md`, rule 1).
+  element itself (`docs/architecture/media.md`, rule 1). The desktop app's
+  download of an original takes one too. The app copies the answer to the
+  file the person chose as it arrives, so a video of hundreds of megabytes is
+  never held whole in the window or sent to the app as bytes. The window holds
+  the Session and the app does not, and a link that reads one asset for an
+  hour reaches far less than the Session token would.
   How: the value is `<account_id>.<expires>.<signature>`, an HMAC-SHA256
   under a key the server makes when it starts and never writes down, over
   the account, the asset's fingerprint, the expiry and the hash of the
@@ -507,8 +516,9 @@ What each reaches:
   attachment's content as much as the original is, so a caller who may not
   read one may not read the others, and the owner reads none.
 - `POST /v1/assets/{sha256}/media-links` takes an account's Session only.
-  Why: only a screen has a media element to put a link in, and a program
-  sends its token in the header. The owner holds no attachment to read.
+  Why: only a screen has a media element to put a link in, or a download for
+  the desktop app to make, and a program sends its token in the header. The
+  owner holds no attachment to read.
 - `HEAD /v1/assets/{sha256}` also accepts the `import` scope: a program that
   can only push may ask whether an asset exists, and may not read it.
 - Permanent deletion (`DELETE /v1/conversations/{id}`,

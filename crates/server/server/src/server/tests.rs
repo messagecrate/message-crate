@@ -1243,7 +1243,7 @@ async fn accept_is_checked_on_v1_json_routes_only() {
         .unwrap();
     assert_ne!(page.status(), StatusCode::NOT_ACCEPTABLE);
 
-    // The asset download, one of three /v1 routes that answer bytes, takes
+    // The asset download, one of five /v1 routes that answer bytes, takes
     // any Accept; the route then refuses for its own reasons (no source
     // named), never for the header.
     let asset = client

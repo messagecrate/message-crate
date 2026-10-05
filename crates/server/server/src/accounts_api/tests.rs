@@ -464,11 +464,65 @@ async fn an_account_patches_its_own_profile_and_reads_it_back() {
     assert_eq!(patched["username"], "alice");
     assert_eq!(patched["preferred_name"], "Alex");
     assert_eq!(patched["time_zone"], "America/New_York");
-    assert_eq!(patched["phones"], serde_json::json!(["+15555550100"]));
+    assert_eq!(
+        patched["phones"],
+        serde_json::json!([{ "address": "+15555550100", "services": ["phone"] }])
+    );
     assert_eq!(patched["emails"], serde_json::json!(["alex@example.com"]));
     assert_eq!(patched["must_set_up_profile"], false);
     let read_back: serde_json::Value = get_json(&fixture.state, &path, &account.token).await;
     assert_eq!(read_back, patched);
+}
+
+/// One number linked as a Text Message identity and as a WhatsApp identity is
+/// two `handles` rows, and the profile lists it once, naming both services.
+/// It listed the number once per row with no service, so a client could not
+/// tell the two apart (#1570). A number on one service reads as one entry
+/// naming that service, whichever order the services were linked in.
+#[tokio::test]
+async fn the_profile_lists_a_number_once_with_every_service_it_is_on() {
+    let (fixture, account) = fixture_with_account().await;
+    let path = member(account.account_id);
+
+    let patched: serde_json::Value = patch_json(
+        &fixture.state,
+        &path,
+        &account.token,
+        serde_json::json!({
+            "identities": [
+                { "address": "+1 555 555 0100", "service": "whatsapp" },
+                { "address": "+15555550100", "service": "phone" },
+                { "address": "+15555550111", "service": "whatsapp" },
+                { "address": "+15555550122", "service": "phone" }
+            ]
+        }),
+    )
+    .await;
+
+    assert_eq!(
+        patched["phones"],
+        serde_json::json!([
+            { "address": "+15555550100", "services": ["phone", "whatsapp"] },
+            { "address": "+15555550111", "services": ["whatsapp"] },
+            { "address": "+15555550122", "services": ["phone"] }
+        ])
+    );
+    let read_back: serde_json::Value = get_json(&fixture.state, &path, &account.token).await;
+    assert_eq!(read_back["phones"], patched["phones"]);
+
+    let removed: serde_json::Value = patch_json(
+        &fixture.state,
+        &path,
+        &account.token,
+        serde_json::json!({
+            "remove_identities": [{ "address": "+15555550100", "service": "phone" }]
+        }),
+    )
+    .await;
+    assert_eq!(
+        removed["phones"][0],
+        serde_json::json!({ "address": "+15555550100", "services": ["whatsapp"] })
+    );
 }
 
 /// An account's identity is typed by its address, never by the service the
@@ -805,7 +859,10 @@ async fn a_phone_given_at_creation_is_linked_to_the_account() {
     let path = member(created["account_id"].as_i64().unwrap());
 
     let read: serde_json::Value = get_json(&state, &path, &owner.token).await;
-    assert_eq!(read["phones"], serde_json::json!(["+15555550142"]));
+    assert_eq!(
+        read["phones"],
+        serde_json::json!([{ "address": "+15555550142", "services": ["phone"] }])
+    );
 }
 
 /// Clearing a permission narrows the account, and every token it has already
@@ -2313,8 +2370,18 @@ async fn apply_profile_update_sets_name_and_handles() {
 
     let loaded = require_account(&mut conn, account_id).await.unwrap();
     assert_eq!(loaded.preferred_name.as_deref(), Some("Alex"));
-    assert!(loaded.phones.iter().any(|p| p == "+15555550100"));
-    assert!(loaded.phones.iter().any(|p| p == "+15555550199"));
+    assert!(
+        loaded
+            .phones
+            .iter()
+            .any(|p| p.address == "+15555550100" && p.services == [IdentityService::Phone])
+    );
+    assert!(
+        loaded
+            .phones
+            .iter()
+            .any(|p| p.address == "+15555550199" && p.services == [IdentityService::Whatsapp])
+    );
     assert!(loaded.emails.iter().any(|e| e == "alex@example.com"));
 
     let wa_service: String =

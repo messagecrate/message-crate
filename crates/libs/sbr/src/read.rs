@@ -139,6 +139,12 @@ pub struct Record {
     pub android_type: String,
     /// Serde-tagged raw source bag for write-back.
     pub source_fields: SourceFields,
+    /// Parts left out of the message because their `data` is not base64.
+    pub unreadable_parts: u64,
+    /// Character references left out of the message's element, its parts
+    /// and its addresses because they are not a character, such as `&#0;`
+    /// or a lone surrogate.
+    pub dropped_character_references: u64,
 }
 
 /// Counters for seen and skipped messages.
@@ -158,11 +164,6 @@ pub struct ParseStats {
     pub skipped_draft_or_outbox: u64,
     /// MMS records dropped with no participants.
     pub skipped_empty_participants: u64,
-    /// Parts with undecodable base64 `data`.
-    pub skipped_unreadable_part: u64,
-    /// Character references dropped from an attribute because they are not
-    /// a character, such as `&#0;` or a lone surrogate.
-    pub dropped_character_references: u64,
 }
 
 /// The element's attributes as a map with lower-case keys.
@@ -417,12 +418,9 @@ fn part_content<'a>(part: &MmsPart, decoded: &'a DecodedPartData) -> mms_parts::
 }
 
 /// The message text and attachment blobs the MMS parts make, by the rules of
-/// [`mms_parts`]. A part whose `data` is not base64 is counted in `stats`.
-fn mms_body(
-    parts: &[MmsPart],
-    decoded: &[DecodedPartData],
-    stats: &mut ParseStats,
-) -> (String, Vec<AttachmentBlob>) {
+/// [`mms_parts`], and how many parts it left out because their `data` is not
+/// base64.
+fn mms_body(parts: &[MmsPart], decoded: &[DecodedPartData]) -> (String, Vec<AttachmentBlob>, u64) {
     let shaped: Vec<mms_parts::Part<'_>> = parts
         .iter()
         .zip(decoded)
@@ -433,7 +431,6 @@ fn mms_body(
         })
         .collect();
     let body = mms_parts::body_of(&shaped);
-    stats.skipped_unreadable_part += body.unreadable.len() as u64;
     let attachments = body
         .attachments
         .iter()
@@ -451,7 +448,7 @@ fn mms_body(
             Some(attachment_blob(&parts[index], bytes, digest_hex))
         })
         .collect();
-    (body.text, attachments)
+    (body.text, attachments, body.unreadable.len() as u64)
 }
 
 /// One attachment blob, named by its digest and the extension its type gives.
@@ -497,8 +494,13 @@ fn part_fields(part: &MmsPart, decoded: &DecodedPartData) -> BTreeMap<String, St
     attrs
 }
 
-/// One `<sms>` element as a record, counting rows skipped for a bad date or address.
-fn parse_sms(attrs: &HashMap<String, String>, stats: &mut ParseStats) -> Option<Record> {
+/// One `<sms>` element as a record, counting rows skipped for a bad date or
+/// address. `dropped` is how many character references its attributes lost.
+fn parse_sms(
+    attrs: &HashMap<String, String>,
+    dropped: u64,
+    stats: &mut ParseStats,
+) -> Option<Record> {
     stats.sms_seen += 1;
     let (date_ms, timestamp_secs) = timestamp_from_date(attrs, stats)?;
     let address = address_handle(get(attrs, "address")).or_else(|| {
@@ -542,6 +544,8 @@ fn parse_sms(attrs: &HashMap<String, String>, stats: &mut ParseStats) -> Option<
         source_fields: SourceFields::Sms {
             attrs: btree(attrs),
         },
+        unreadable_parts: 0,
+        dropped_character_references: dropped,
     })
 }
 
@@ -571,9 +575,12 @@ fn timestamp_from_date(
 }
 
 /// One `<mms>` element as a [`Record`], or `None` (counted in `stats`) when it
-/// is a draft, has no participants, or names nobody but the owner.
+/// is a draft, has no participants, or names nobody but the owner. `dropped`
+/// is how many character references the element, its parts and its
+/// addresses lost.
 fn parse_mms(
     attrs: &HashMap<String, String>,
+    dropped: u64,
     parts: &[MmsPart],
     addrs: &[MmsAddr],
     owners: Option<&OwnerHandleSet>,
@@ -606,7 +613,7 @@ fn parse_mms(
         mms_sender(addrs, &peers, owners)
     };
     let decoded: Vec<DecodedPartData> = parts.iter().map(|p| decode_part_data(&p.data)).collect();
-    let (text, attachments) = mms_body(parts, &decoded, stats);
+    let (text, attachments, unreadable_parts) = mms_body(parts, &decoded);
     let raw_name = raw_name(attrs);
     let conversation = MmsConversation::for_peers(peers, &raw_name);
     let hint = contact_name(&raw_name, conversation.kind).map(String::from);
@@ -635,6 +642,8 @@ fn parse_mms(
                 .collect(),
             addrs: addrs.iter().map(|a| a.attrs.clone()).collect(),
         },
+        unreadable_parts,
+        dropped_character_references: dropped,
     })
 }
 
@@ -812,37 +821,40 @@ where
     let mut buf = Vec::new();
     let (mut sms, mut mms, mut parts, mut addrs) =
         (HashMap::new(), HashMap::new(), Vec::new(), Vec::new());
+    // Character references the open `<sms>` or `<mms>` element, its parts
+    // and its addresses have lost so far, so its record can say so.
+    let mut dropped = 0;
     loop {
         match xml.read_event_into(&mut buf) {
             Ok(Event::Start(e)) => match e.name().as_ref().to_ascii_lowercase().as_str() {
-                "sms" => sms = attrs(&e, &mut stats.dropped_character_references),
+                "sms" => {
+                    dropped = 0;
+                    sms = attrs(&e, &mut dropped);
+                }
                 "mms" => {
-                    mms = attrs(&e, &mut stats.dropped_character_references);
+                    dropped = 0;
+                    mms = attrs(&e, &mut dropped);
                     parts.clear();
                     addrs.clear();
                 }
-                "part" => parts.push(part(&attrs(&e, &mut stats.dropped_character_references))),
-                "addr" => addrs.push(addr(&attrs(&e, &mut stats.dropped_character_references))),
+                "part" => parts.push(part(&attrs(&e, &mut dropped))),
+                "addr" => addrs.push(addr(&attrs(&e, &mut dropped))),
                 _ => {}
             },
             Ok(Event::Empty(e)) => match e.name().as_ref().to_ascii_lowercase().as_str() {
                 "sms" => {
-                    if let Some(r) =
-                        parse_sms(&attrs(&e, &mut stats.dropped_character_references), stats)
-                    {
+                    let mut own = 0;
+                    let attrs = attrs(&e, &mut own);
+                    if let Some(r) = parse_sms(&attrs, own, stats) {
                         on_record(r)?;
                     }
                 }
-                "part" => parts.push(part(&attrs(&e, &mut stats.dropped_character_references))),
-                "addr" => addrs.push(addr(&attrs(&e, &mut stats.dropped_character_references))),
+                "part" => parts.push(part(&attrs(&e, &mut dropped))),
+                "addr" => addrs.push(addr(&attrs(&e, &mut dropped))),
                 "mms" => {
-                    if let Some(r) = parse_mms(
-                        &attrs(&e, &mut stats.dropped_character_references),
-                        &[],
-                        &[],
-                        owners,
-                        stats,
-                    ) {
+                    let mut own = 0;
+                    let attrs = attrs(&e, &mut own);
+                    if let Some(r) = parse_mms(&attrs, own, &[], &[], owners, stats) {
                         on_record(r)?;
                     }
                 }
@@ -850,12 +862,12 @@ where
             },
             Ok(Event::End(e)) => match e.name().as_ref().to_ascii_lowercase().as_str() {
                 "sms" => {
-                    if let Some(r) = parse_sms(&sms, stats) {
+                    if let Some(r) = parse_sms(&sms, dropped, stats) {
                         on_record(r)?;
                     }
                 }
                 "mms" => {
-                    let record = parse_mms(&mms, &parts, &addrs, owners, stats);
+                    let record = parse_mms(&mms, dropped, &parts, &addrs, owners, stats);
                     // Drop the base64 `data` strings before the callback stages
                     // decoded bytes, so peak RAM is one payload, not payload plus
                     // the still-resident encoding.
@@ -1215,8 +1227,8 @@ mod tests {
     #[test]
     fn skipped_unreadable_part_records_decode_error() {
         let xml = br#"<smses><mms date="1" msg_box="1" address="+15555550101"><parts><part ct="image/jpeg" name="pic.jpg" data="@@@not-base64@@@"/></parts><addrs><addr address="+15555550101" type="137"/></addrs></mms></smses>"#;
-        let (records, stats) = parse_reader(xml.as_slice(), None).unwrap();
-        assert_eq!(stats.skipped_unreadable_part, 1);
+        let (records, _) = parse_reader(xml.as_slice(), None).unwrap();
+        assert_eq!(records[0].unreadable_parts, 1);
         assert!(records[0].attachments.is_empty());
         let SourceFields::Mms { parts, .. } = &records[0].source_fields else {
             panic!("mms")
@@ -1327,10 +1339,25 @@ mod tests {
     #[test]
     fn a_reference_that_is_no_character_costs_only_itself() {
         let xml = br#"<smses><sms protocol="0" address="+15555550101" date="1" type="1" body="a&#0;b &#55357;c &#xDE00;d&nbsp;e"/><mms date="2" msg_box="1" address="+15555550101"><parts><part ct="text/plain" text="x&#55357;y"/></parts><addrs><addr address="+15555550101" type="137"/></addrs></mms></smses>"#;
-        let (records, stats) = parse_reader(xml.as_slice(), None).unwrap();
+        let (records, _) = parse_reader(xml.as_slice(), None).unwrap();
         assert_eq!(records[0].text, "ab c d\u{a0}e");
         assert_eq!(records[1].text, "xy");
-        assert_eq!(stats.dropped_character_references, 4);
+        assert_eq!(records[0].dropped_character_references, 3);
+        assert_eq!(records[1].dropped_character_references, 1);
+    }
+
+    /// Each record counts only the references dropped from its own element
+    /// and its parts and addresses, so a note can name the message that lost
+    /// them (#1707).
+    #[test]
+    fn each_record_counts_the_references_it_lost() {
+        let xml = br#"<smses><sms address="+15555550101" date="1" type="1" body="a&#0;b"/><mms date="2" msg_box="1" address="+15555550101" sub="&#0;"><parts><part ct="text/plain" text="x&#0;y"/></parts><addrs><addr address="+15555550101" type="137" charset="&#0;"/></addrs></mms><sms address="+15555550101" date="3" type="1" body="clean"></sms><sms address="+15555550101" date="4" type="1" body="&#0;&#0;"></sms></smses>"#;
+        let (records, _) = parse_reader(xml.as_slice(), None).unwrap();
+        let dropped: Vec<u64> = records
+            .iter()
+            .map(|r| r.dropped_character_references)
+            .collect();
+        assert_eq!(dropped, [1, 3, 0, 2]);
     }
 
     #[test]
@@ -1469,8 +1496,8 @@ mod tests {
     #[test]
     fn a_part_whose_data_cannot_be_decoded_is_counted() {
         let xml = br#"<smses><mms date="1" msg_box="1" address="+15555550101"><parts><part ct="text/x-vcard" name="sam.vcf" data="@@@@"/></parts><addrs><addr address="+15555550101" type="137"/></addrs></mms></smses>"#;
-        let (records, stats) = parse_reader(xml.as_slice(), None).unwrap();
+        let (records, _) = parse_reader(xml.as_slice(), None).unwrap();
         assert!(records[0].attachments.is_empty());
-        assert_eq!(stats.skipped_unreadable_part, 1);
+        assert_eq!(records[0].unreadable_parts, 1);
     }
 }

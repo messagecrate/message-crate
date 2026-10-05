@@ -1626,8 +1626,11 @@ export interface components {
              *     data and a second browser.
              */
             must_set_up_profile: boolean;
-            /** @description Phone numbers linked to the account. */
-            phones: string[];
+            /**
+             * @description Phone numbers linked to the account, each once with every service it
+             *     is an identity under.
+             */
+            phones: components["schemas"]["AccountPhone"][];
             /** @description Display name, when set. */
             preferred_name: string | null;
             /**
@@ -1677,6 +1680,20 @@ export interface components {
              */
             text_bytes: number;
             username: string;
+        };
+        /**
+         * @description One phone number linked to an account, with every service it is an
+         *     identity under. A number that is both a Text Message and a WhatsApp
+         *     identity is one entry naming both.
+         */
+        AccountPhone: {
+            /** @description The number, normalized: E.164 when it parses as one. */
+            address: string;
+            /**
+             * @description The services the number is an identity under, `phone` (Text Message)
+             *     before `whatsapp`. Never empty.
+             */
+            services: components["schemas"]["IdentityService"][];
         };
         /** @description What an account holds: counts, attachment bytes and the largest files. */
         AccountStorage: {
@@ -2631,10 +2648,11 @@ export interface components {
             start_date: string | null;
         };
         /**
-         * @description The service an identity is on, as a request names it: `phone` or
-         *     `whatsapp`. `phone` is Text Message, which carries SMS, MMS, iMessage and
-         *     RCS, and reaches an email address through iMessage. The service never
-         *     decides the identity's type, which comes from the address.
+         * @description The service an identity is on, as a request names it and the profile
+         *     reports it: `phone` or `whatsapp`. `phone` is Text Message, which carries
+         *     SMS, MMS, iMessage and RCS, and reaches an email address through iMessage.
+         *     The service never decides the identity's type, which comes from the
+         *     address.
          * @enum {string}
          */
         IdentityService: "phone" | "whatsapp";
@@ -3365,8 +3383,11 @@ export interface components {
                  *     data and a second browser.
                  */
                 must_set_up_profile: boolean;
-                /** @description Phone numbers linked to the account. */
-                phones: string[];
+                /**
+                 * @description Phone numbers linked to the account, each once with every service it
+                 *     is an identity under.
+                 */
+                phones: components["schemas"]["AccountPhone"][];
                 /** @description Display name, when set. */
                 preferred_name: string | null;
                 /**

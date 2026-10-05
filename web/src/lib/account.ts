@@ -10,6 +10,22 @@ import type { components } from "./serverApi.types";
  */
 export type AccountProfile = components["schemas"]["Account"];
 
+/** The account's phone numbers, each once, whatever services they are on. */
+export function phoneNumbers(profile: Pick<AccountProfile, "phones">): string[] {
+  return profile.phones.map((phone) => phone.address);
+}
+
+/**
+ * The account's own addresses, phone numbers and email addresses, each once,
+ * for matching a backup's identities against them.
+ */
+export function profileAddresses(profile: Pick<AccountProfile, "phones" | "emails">): {
+  phones: string[];
+  emails: string[];
+} {
+  return { phones: phoneNumbers(profile), emails: profile.emails };
+}
+
 /**
  * What nobody may change on an account, the owner included: each field is
  * true when the server refuses that change for the account.

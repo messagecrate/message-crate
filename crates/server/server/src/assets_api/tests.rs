@@ -1633,6 +1633,79 @@ async fn the_preview_route_serves_the_preview_and_the_asset_route_the_original()
     crate::test_support::expect_problem(status, &text, crate::problem::ProblemType::NotFound);
 }
 
+/// A `HEAD` of a Preview or a Thumbnail is how a media element probes the
+/// file before it loads it, with an `Accept` that names no JSON. It answers
+/// the headers the `GET` would, never `406 Not Acceptable` (#1683). A `HEAD`
+/// of the asset itself is the JSON probe for whether it is stored, so it still
+/// refuses an `Accept` that names no JSON.
+#[tokio::test]
+async fn a_head_of_a_preview_or_a_thumbnail_takes_any_accept() {
+    let (fixture, user) = crate::test_support::fixture_with_account().await;
+    let state = &fixture.state;
+    let seeded = seed_attachment_with_preview(state, user.account_id).await;
+    let sha = &seeded.with_preview;
+    // The Thumbnail is the Preview's file here: what is served does not
+    // matter, only that the route has a file to describe.
+    let mut conn = state.db.acquire().await.unwrap();
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    sqlx::query(
+        "UPDATE attachments SET thumbnail_sha256 = derived_sha256,
+            thumbnail_assets_path = derived_assets_path,
+            thumbnail_mime_type = derived_mime_type
+         WHERE sha256 = $1",
+    )
+    .bind(sha)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    drop(conn);
+    let server = crate::test_support::serve(state).await;
+    let client = reqwest::Client::new();
+    let head = |path: String, range: Option<&'static str>| {
+        let mut request = client
+            .head(format!("{}{path}", server.base()))
+            .bearer_auth(&user.token)
+            .header(reqwest::header::ACCEPT, "image/*");
+        if let Some(range) = range {
+            request = request.header(reqwest::header::RANGE, range);
+        }
+        request.send()
+    };
+    let header = |response: &reqwest::Response, name: reqwest::header::HeaderName| {
+        response
+            .headers()
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_string()
+    };
+
+    for version in ["preview", "thumbnail"] {
+        let path = format!("/v1/assets/{sha}/{version}");
+        let whole = head(path.clone(), None).await.unwrap();
+        assert_eq!(whole.status(), StatusCode::OK, "{version}");
+        assert_eq!(header(&whole, reqwest::header::CONTENT_TYPE), "image/jpeg");
+        assert_eq!(
+            header(&whole, reqwest::header::CONTENT_LENGTH),
+            PREVIEW_BYTES.len().to_string(),
+            "{version}"
+        );
+        assert_eq!(header(&whole, reqwest::header::ACCEPT_RANGES), "bytes");
+
+        let part = head(path, Some("bytes=0-3")).await.unwrap();
+        assert_eq!(part.status(), StatusCode::PARTIAL_CONTENT, "{version}");
+        assert_eq!(header(&part, reqwest::header::CONTENT_LENGTH), "4");
+    }
+
+    let probe = head(format!("/v1/assets/{sha}"), None).await.unwrap();
+    assert_eq!(
+        probe.status(),
+        StatusCode::NOT_ACCEPTABLE,
+        "the asset probe answers JSON"
+    );
+}
+
 /// A preview is the attachment's content as much as the original is, so it is
 /// read under the same rule: the account that holds it and nobody else, any
 /// session of that account, an API token only with the export scope, and

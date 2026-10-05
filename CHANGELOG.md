@@ -399,6 +399,15 @@ released versions carry their date on the heading.
   takes the newer backup's text and earlier versions, and search finds it by
   both. An older backup imported after a newer one leaves the message as it
   is.
+- 2026-10-05 **An SMS Backup & Restore import names each message it kept
+  with something left out.** A picture or other part whose data could not be
+  read, and a character the backup wrote as a code that is not a character,
+  such as `&#0;`, are left out and the message is kept. The run used to count
+  them and say nothing more. Each such message is now a note on the run that
+  names its file, its time and its `address` as the backup writes it, such as
+  `/backups/smses.xml (message of 2014-05-22T15:51:40Z with +15555550101)`. A
+  repeated copy of a message is named once, and a message the import skips
+  is not named.
 - 2026-10-04 **An iMazing import keeps each of two pictures sent in one
   second, and every picture stays with its own message.** When two photos
   with one file name arrived in the same second, iMazing saved them as
@@ -820,6 +829,14 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-05 **Converting an EML or mbox file refuses a damaged message
+  instead of quietly dropping what it could not read.** A message whose
+  attachment details, app message, message parts or details from the source
+  app could not be read was converted as if it had none, so a conversion
+  could lose every attachment's name and type without saying so. Such a
+  message now stops the conversion with a message that names what could not
+  be read and says to export the backup again, as a damaged list of
+  participants, reactions or earlier versions already did.
 - 2026-10-04 **Exporting to CSV, and reading an EML or mbox file back,
   type a phone number written with `tel:` as a phone number.** The
   `identity_type` column of a CSV export, and a participant read back from
@@ -1072,6 +1089,11 @@ released versions carry their date on the heading.
 
 #### Contacts and identities
 
+- 2026-10-05 **Your profile lists a phone number once when it is both a
+  Text Message and a WhatsApp identity.** The account's phone numbers named
+  such a number twice, with no service, so the Android SMS owner numbers an
+  import offers listed it twice too. Each number now comes once, naming every
+  service it is your identity under.
 - 2026-10-04 **An import names a nameless contact, whatever made it.** A
   contact with a number and no name stayed Unknown after an import that knew
   the number's name, when an Address Book load or you had made it rather
@@ -1200,6 +1222,14 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-05 **The desktop app saves a large attachment without holding it
+  in memory.** Downloading a video of several hundred megabytes in the
+  desktop app loaded the whole file into memory two or three times over
+  before saving it, which could use more than a gigabyte and fail on a
+  smaller computer. The app now asks where to save first, then writes the
+  file to that place as it arrives from the server, so memory stays the same
+  whatever the size of the file. A download that breaks off part-way leaves
+  any file already at that place as it was.
 - 2026-10-04 **The Import, Export and Convert screens name running work as
   the desktop app does.** While an Export or a Convert was running, the
   screens said "An export is running." or "A conversion in Settings is
@@ -1393,6 +1423,12 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-05 **A media player can check a Preview or a Thumbnail before
+  loading it.** A player that asked first what kind of file an attachment's
+  Preview or Thumbnail was, and how large, was turned away when it said it
+  would take only a picture or a video, while loading the file itself
+  worked. It is now told the file's type and size, and that it can ask for
+  part of the file.
 - 2026-10-04 **Stopping the server stops the conversion it was running.** A
   server stopped with Ctrl-C or `docker stop` while it made a browser copy
   of a video left that conversion running after the server had stopped,
@@ -1590,6 +1626,10 @@ released versions carry their date on the heading.
   3. Import those backups again.
 - The server's `process-assets` command no longer takes `--source`: it
   makes previews for every attachment of each account.
+- If you have a program that reads an account from the HTTP API, it must
+  read each entry of `phones` as an object: the number is in `address`, and
+  `services` names `phone` (Text Message), `whatsapp`, or both. A number on
+  both services is one entry, where it used to be the same string twice.
 - If you have a program that reads a conversation from the HTTP API, it
   must read `first_message_at` in place of `date_range_start` and
   `last_message_at` in place of `date_range_end`. The old names are gone.

@@ -5,6 +5,7 @@ import {
   type ImportSummaryView,
 } from "../../components/import/ImportSummaryPanel";
 import type { ImportIssueStage } from "../../components/import/importIssueStage";
+import { profileAddresses } from "../../lib/account";
 import { getAccountId, getBaseUrl } from "../../lib/api";
 import { formatAttachmentProgress } from "../../lib/attachmentProgressCopy";
 import { useAuth } from "../../lib/auth";
@@ -1675,7 +1676,7 @@ export function useImportJob() {
         // The account logged out during the probe: the profile just read
         // is another account's, and no run exists yet to resume.
         if (accountLeft()) return;
-        if (needsIdentityStop(identities, profile)) {
+        if (needsIdentityStop(identities, profile && profileAddresses(profile))) {
           scratch.pendingIdentityForm = form;
           store.set({ phase: "identity_stop" });
           return;
