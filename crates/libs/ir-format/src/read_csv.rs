@@ -162,15 +162,12 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
 /// The message a reply quotes, from the `is_reply`, `reply_to_guid` and
 /// `reply_to_part` cells; `None` for a row that is not a reply.
 fn reply_to_from_cells(is_reply: bool, guid: &str, part: &str) -> Option<ReplyTo> {
-    let guid = nonempty(guid);
-    (is_reply || guid.is_some()).then(|| ReplyTo {
-        guid,
-        part_index: if part.is_empty() {
-            None
-        } else {
-            part.parse().ok()
-        },
-    })
+    let part_index = if part.is_empty() {
+        None
+    } else {
+        part.parse().ok()
+    };
+    ReplyTo::from_mark(is_reply, nonempty(guid), part_index)
 }
 
 /// Check every required column is present and return the name → index map

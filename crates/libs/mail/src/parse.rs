@@ -189,9 +189,11 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
 /// The message a reply quotes, from `X-ME-Is-Reply` and the `X-ME-Reply-To-*`
 /// headers; `None` for a mail that is not a reply.
 fn parse_reply_to(headers: &[MailHeader<'_>]) -> Option<ReplyTo> {
-    let guid = optional_header(headers, hn::REPLY_TO_GUID);
-    let part_index = header_u32(headers, hn::REPLY_TO_PART);
-    (header_bool(headers, hn::IS_REPLY) || guid.is_some()).then_some(ReplyTo { guid, part_index })
+    ReplyTo::from_mark(
+        header_bool(headers, hn::IS_REPLY),
+        optional_header(headers, hn::REPLY_TO_GUID),
+        header_u32(headers, hn::REPLY_TO_PART),
+    )
 }
 
 /// The JSON in header `name`, or `None` when the header is absent.

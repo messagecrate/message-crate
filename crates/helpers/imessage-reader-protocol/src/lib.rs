@@ -534,6 +534,21 @@ pub struct ReplyTo {
     pub part_index: Option<u32>,
 }
 
+impl ReplyTo {
+    /// The reply a flat record describes, from its reply mark and the quoted
+    /// message's guid and part: CSV cells and mail headers both carry a
+    /// reply this way. A record that names a quoted guid is a reply even
+    /// without its mark; one with neither is not a reply.
+    #[must_use]
+    pub fn from_mark(
+        is_reply: bool,
+        guid: Option<String>,
+        part_index: Option<u32>,
+    ) -> Option<Self> {
+        (is_reply || guid.is_some()).then_some(Self { guid, part_index })
+    }
+}
+
 /// One attachment's metadata and where its bytes are.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Attachment {
