@@ -213,7 +213,7 @@ fn authenticate_and_push_text_only_conversation() {
 }
 
 #[test]
-fn reuses_supplied_import_session_without_starting_or_completing_one() {
+fn reuses_supplied_import_run_without_starting_or_completing_one() {
     let server = MockServer::start();
     let _auth = server.mock(|when, then| {
         when.method(GET).path("/v1/session");
@@ -266,11 +266,15 @@ fn reuses_supplied_import_session_without_starting_or_completing_one() {
 
     assert!(report.ok);
     assert_eq!(report.conversations_ok, 1);
-    assert_eq!(start.calls(), 0, "push must not start a new session");
+    assert_eq!(
+        start.calls(),
+        0,
+        "the Upload must not start a new Import Run"
+    );
     assert_eq!(
         complete.calls(),
         0,
-        "push must not complete a reused session"
+        "the Upload must not complete an Import Run it was handed"
     );
     import.assert();
 }

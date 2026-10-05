@@ -682,7 +682,7 @@ fn typed_progress_covers_prepare_and_attachments_across_units() {
         !seen
             .iter()
             .any(|event| matches!(event, ProgressEvent::Media { .. })),
-        "clone mode runs no media pass"
+        "clone mode converts nothing"
     );
 }
 
@@ -971,7 +971,7 @@ const PNG_1X1_RGB: &[u8] = &[
 ];
 
 #[test]
-fn clone_mode_runs_no_media_pass() {
+fn clone_mode_converts_nothing() {
     let tmp = tempfile::tempdir().unwrap();
     let out = tmp.path().join("out");
     fs::create_dir_all(&out).unwrap();
@@ -984,7 +984,7 @@ fn clone_mode_runs_no_media_pass() {
 }
 
 #[test]
-fn convert_runs_as_a_pass_after_the_drain_stages_originals() {
+fn convert_runs_after_the_drain_stages_originals() {
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
     };
@@ -1004,7 +1004,7 @@ fn convert_runs_as_a_pass_after_the_drain_stages_originals() {
     assert_eq!(report.conversations_written, 1);
     assert_eq!(
         report.media.processed, 1,
-        "the post-pass converted the staged original"
+        "the convert run after the drain converted the staged original"
     );
 
     let stem = doc_with(&test_number(6), 0).filename_stem();

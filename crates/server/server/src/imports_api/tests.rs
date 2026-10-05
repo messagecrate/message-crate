@@ -83,7 +83,7 @@ async fn a_stage_change_with_a_summary_stores_it() {
 }
 
 #[tokio::test]
-async fn active_session_reports_the_summary_a_stage_change_stored() {
+async fn running_import_run_reports_the_summary_a_stage_change_stored() {
     // The completion call is allowed to overwrite summary_json with the
     // outcome once the run finishes — that is the intended history
     // record. But mid-run, between an approval and completion, a
@@ -188,7 +188,7 @@ async fn an_issue_names_the_stage_it_came_from() {
         })
     };
 
-    // A finer step of the desktop app is not a Stage.
+    // A finer part of the desktop app's work is not a Stage.
     let (status, text) = crate::test_support::post_raw(
         &fixture.state,
         &format!("/v1/imports/{id}/complete"),
@@ -2414,8 +2414,8 @@ fn replace_run_batch(chat: &str, guids: &[&str]) -> String {
     lines.join("\n") + "\n"
 }
 
-/// A replace run wipes the source on its first batch only, and the push
-/// client posts a batch again when the first attempt times out. So the
+/// A replace run wipes the source on its first batch only, and the
+/// Upload posts a batch again when the first attempt times out. So the
 /// second batch must not wipe the first, and a retried batch must add
 /// nothing. This guards both against a change to how a batch picks wipe
 /// or append (today: whether the run has stamped a message yet).
@@ -3037,7 +3037,7 @@ async fn completing_an_import_with_messages_creates_its_saved_search_and_contact
 }
 
 /// The counts of a finished run are the server's own, never the client's.
-/// A resumed Upload's push report counts only what the resume sent, which
+/// A resumed Upload's report counts only what the resume sent, which
 /// is nothing when the run's first `/complete` was refused after every
 /// message landed. A count from the client would record that run as
 /// holding no messages, and give it no Saved Search.
@@ -4711,7 +4711,9 @@ async fn the_sql_form_of_an_import_groups_name_is_the_name_the_group_is_given() 
         serde_json::json!({ "source": "imessage" }),
     )
     .await;
-    let import_id = created["id"].as_i64().expect("created session has an id");
+    let import_id = created["id"]
+        .as_i64()
+        .expect("the created Import Run has an id");
     let mut conn = fixture.state.db.acquire().await.unwrap();
     for finished_at in [None, Some("2031-02-03T04:05:06Z")] {
         sqlx::query("UPDATE imports SET finished_at = $1 WHERE id = $2")

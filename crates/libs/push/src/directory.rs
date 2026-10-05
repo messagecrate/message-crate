@@ -1,7 +1,7 @@
 //! The export directory on disk: which files in it are conversations, and how
 //! attachment paths inside those files map back to real files.
 //!
-//! Nothing here talks to the network. It is the push run's read-only view of
+//! Nothing here talks to the network. It is the Upload's read-only view of
 //! the directory.
 
 use std::fs::{self, File};
@@ -14,7 +14,7 @@ use message_ir::ConversationHeader;
 use crate::journal;
 use crate::project;
 
-/// The directory a push works from. A conversation file path is accepted too and
+/// The directory an Upload works from. A conversation file path is accepted too and
 /// resolved to its parent, because the desktop app hands over whichever the
 /// person picked.
 ///
@@ -44,7 +44,7 @@ fn is_push_artifact(name: &str) -> bool {
         || name.starts_with('.')
 }
 
-/// True when `path` is a conversation JSON Lines file, not a push log or report.
+/// True when `path` is a conversation JSON Lines file, not an Upload log or report.
 fn is_conversation_jsonl(path: &Path, exclude: &[&Path]) -> bool {
     if exclude.contains(&path) {
         return false;
@@ -111,7 +111,7 @@ pub(crate) fn file_label(path: &Path) -> String {
 
 /// Read the first conversation file's header and return its `export.source` string.
 ///
-/// The push run labels the Import Run with it (for example `imessage`).
+/// The Upload labels the Import Run with it (for example `imessage`).
 ///
 /// # Errors
 ///

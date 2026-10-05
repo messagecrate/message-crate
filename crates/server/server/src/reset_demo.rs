@@ -836,7 +836,7 @@ async fn import_demo_sources_with(
         let paths = crate::import_cli::list_jsonl_files(export_dir)?;
         let assets_dir = cfg.paths.assets_dir_for_account(account_id);
         let mut conn = db.acquire().await?;
-        let session = imports_api::OwnedSession::start(
+        let import_run = imports_api::OwnedImportRun::start(
             &mut conn,
             account_id,
             source.source,
@@ -865,7 +865,7 @@ async fn import_demo_sources_with(
                     source: source.source,
                     account_id,
                     fill_content_keys: true,
-                    import_id: Some(session.id),
+                    import_id: Some(import_run.id),
                 }),
                 ImportSchemaMode::AssumeReady,
             )
@@ -884,7 +884,7 @@ async fn import_demo_sources_with(
             }
         }
         let result = result.map(|()| run);
-        session.finish(&mut conn, &result).await;
+        import_run.finish(&mut conn, &result).await;
         totals.add_run(&result?);
     }
     Ok(totals)

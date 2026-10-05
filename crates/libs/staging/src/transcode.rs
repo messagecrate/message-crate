@@ -6,6 +6,10 @@
 //! with no progress record: a file under its final derivative name is fully
 //! patched, and an original still on disk means work remains.
 //!
+//! The desktop app runs it as an Import Run's Media stage, which is what
+//! "the Media stage" means below. A local export runs the same code through
+//! the write queue's `run_media_post_pass`, outside any Import Run.
+//!
 //! ## Naming and resume
 //!
 //! The final name for a converted attachment is `{original_stem}-mv.{target_ext}`
@@ -14,7 +18,7 @@
 //! (`clip.mp4` → `clip.mp4`) would otherwise produce a final name equal to
 //! the source's own name, or equal to an already-committed derivative's own
 //! name on a later resume — both break the "an original on disk means work
-//! remains" invariant this pass depends on for resume. The `-mv` suffix
+//! remains" invariant the Media stage depends on for resume. The `-mv` suffix
 //! cannot collide with a staged original's own name: staged names come from
 //! `attachment_dest_name` (`{utc-date}-{digest16}{ext}`), whose stem is
 //! hex, and hex digits never include `m` or `v`.
@@ -29,7 +33,7 @@
 //! When the recorded path's stem ends in `-mv` but the file is *not* on
 //! disk, the previous run crashed between patching the conversation file and
 //! renaming the derivative into place. The original is still there under its
-//! old name, so the pass heals: it strips the `-mv` suffix and looks under
+//! old name, so the Media stage heals: it strips the `-mv` suffix and looks under
 //! `attachments/` for a file with that stem (any extension) that
 //! `derivative_name` still wants, and re-transcodes it — the recorded
 //! digest/size/path are stale regardless, so a heal re-patches
@@ -54,7 +58,7 @@
 //!
 //! A shared original whose derivative comes out over the size limit is
 //! deleted together with the derivative, so a later attachment
-//! recording the same path finds neither. Before deleting, the pass writes a
+//! recording the same path finds neither. Before deleting, the Media stage writes a
 //! note beside the original's name, `{original_name}.too_large`, holding the
 //! derivative's size. A recorded path that is gone, has no committed
 //! derivative, and has that note records `too_large` with the size, in this
@@ -65,7 +69,7 @@
 //!
 //! ffmpeg/ffprobe are probed once, before any document is touched — parity
 //! with `media::process_attachment_files`. A missing pair fails the whole
-//! pass; it must never brand every attachment `convert_failed: ffmpeg not
+//! Media stage; it must never brand every attachment `convert_failed: ffmpeg not
 //! found`. An attachment ffmpeg genuinely fails on, by contrast, is an
 //! item-level issue: `missing_reason` gets `convert_failed: <detail>` and the
 //! original — still on disk, untouched — keeps its `path` and
@@ -74,16 +78,16 @@
 //!
 //! ## Issues
 //!
-//! Every attachment the pass leaves without a converted file goes to the
+//! Every attachment the Media stage leaves without a converted file goes to the
 //! issue sink as a `skip` row naming the conversation file and the
 //! attachment: one it could not convert, one whose converted file is over
-//! the size limit, and one an interrupted earlier pass lost. Each row is sent
+//! the size limit, and one an interrupted earlier attempt lost. Each row is sent
 //! before the conversation file is written, so a stop between the two leaves
-//! the work pending and the resumed pass reports it again. A row's item is
+//! the work pending and the resumed Media stage reports it again. A row's item is
 //! the conversation file and the original's staged path, which no other
-//! file in the conversation shares. A file an earlier pass could not convert
-//! is settled again by a later pass, which first sends a [`RESOLVED`] row
-//! for it: the earlier row no longer holds, whatever the later pass does.
+//! file in the conversation shares. A file an earlier attempt could not convert
+//! is settled again by a later attempt, which first sends a [`RESOLVED`] row
+//! for it: the earlier row no longer holds, whatever the later attempt does.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
@@ -119,15 +123,15 @@ const TOO_LARGE_SUFFIX: &str = ".too_large";
 /// `pending_in` will never queue for it again.
 pub(crate) const COMMITTED_SUFFIX: &str = "-mv";
 
-/// What the media pass should do.
+/// What the Media stage should do.
 ///
 /// Staging records these in the Staging Directory
 /// ([`write_media_settings`](crate::write_media_settings)), and the summary
-/// and the pass read them back from there, so the whole Import Run works to
+/// and the Media stage read them back from there, so the whole Import Run works to
 /// one set of values.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TranscodeOptions {
-    /// Convert or Compress. Clone and Disabled make the pass a no-op.
+    /// Convert or Compress. Clone and Disabled make the Media stage a no-op.
     pub mode: MediaMode,
     /// Video targets, from the import form.
     pub compress: CompressOptions,
@@ -135,21 +139,21 @@ pub struct TranscodeOptions {
     pub asset_max_bytes: u64,
 }
 
-/// How far the pass has got.
+/// How far the Media stage has got.
 #[derive(Debug, Clone, Copy)]
 pub struct TranscodeProgress {
     /// Files finished, however they finished.
     pub done: usize,
-    /// Files the pass found work for.
+    /// Files the Media stage found work for.
     pub total: usize,
 }
 
-/// What the pass did.
+/// What the Media stage did.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct TranscodeReport {
     /// Attachments replaced by a derivative.
     pub converted: usize,
-    /// Attachments the media step left alone.
+    /// Attachments the Media stage left alone.
     pub skipped: usize,
     /// Attachments dropped because their derivative came out over the size
     /// limit, counted once per conversation that records the dropped file.
@@ -164,7 +168,7 @@ pub struct TranscodeReport {
     /// transcode — the aliasing case: another attachment (this document or
     /// another) already converted and deleted the shared original.
     pub repointed: usize,
-    /// Total bytes of the originals the pass replaced.
+    /// Total bytes of the originals the Media stage replaced.
     pub bytes_before: u64,
     /// Total bytes of the derivatives it wrote.
     pub bytes_after: u64,
@@ -177,7 +181,7 @@ pub struct TranscodeReport {
 ///
 /// # Errors
 ///
-/// Returns an error when the pass is cancelled, ffmpeg/ffprobe are
+/// Returns an error when the Media stage is cancelled, ffmpeg/ffprobe are
 /// unavailable, or the directory cannot be read, or a conversation file cannot
 /// be parsed or written. A single attachment ffmpeg cannot process is an
 /// item-level issue, counted in the report and sent to `issues` as it
@@ -195,7 +199,7 @@ pub fn transcode_staged(
     // A cancel already requested short-circuits before we even ask whether
     // the tools are there.
     check_cancel(cancel)?;
-    // Parity with `process_attachment_files`: fail the whole pass up front
+    // Parity with `process_attachment_files`: fail the whole Media stage up front
     // when the tools are missing, rather than branding every attachment
     // `convert_failed: ffmpeg not found`.
     if !media::ffmpeg_available() {
@@ -220,7 +224,7 @@ pub fn transcode_staged(
         let work = pending_in(staging_dir, &doc, options.mode)?;
         for item in work {
             check_cancel(cancel)?;
-            // An earlier pass could not convert this file, and this pass
+            // An earlier attempt could not convert this file, and this one
             // settles it now, however: the earlier row no longer holds. A
             // new failure sends a fresh row after this one.
             let recorded_rel = item.recorded_rel();
@@ -356,7 +360,7 @@ enum PendingWork {
     Unrecoverable { recorded_rel: String },
 }
 
-/// Attachments in `doc` still needing the media step, deduplicated by
+/// Attachments in `doc` still needing the Media stage, deduplicated by
 /// recorded path.
 ///
 /// See the module docs for the pending rule, the crash-heal rule, and the
@@ -383,7 +387,7 @@ fn pending_in(
             let committed = stem.ends_with(COMMITTED_SUFFIX);
 
             if abs.is_file() {
-                // A committed derivative (or anything the media step does
+                // A committed derivative (or anything the Media stage does
                 // not touch) is not work; only a fresh, still-original file
                 // is.
                 if !committed && media::derivative_name(&abs, mode).is_some() {
@@ -402,7 +406,7 @@ fn pending_in(
                 // derivative into place.
                 // The original may instead have been dropped for size by
                 // another attachment sharing it, which leaves its note. The
-                // pass reaches that state only when a conversation sorted
+                // Media stage reaches that state only when a conversation sorted
                 // before this one failed to convert the original in the
                 // interrupted run, and its retry on resume came out over the
                 // limit where this attachment's conversion had not (a
@@ -435,9 +439,9 @@ fn pending_in(
             // bytes to measure, so the candidate name is derived stat-free:
             // the size floors exist to skip a small *live* file, and are
             // meaningless against a file that is not there. When
-            // `derivative_name` returns `None`, the mode has no media step
+            // `derivative_name` returns `None`, the mode converts nothing
             // for this kind of file at all — its absence has nothing to do
-            // with the media pass, and it is left alone.
+            // with the Media stage, and it is left alone.
             if let Some(name) = final_derivative_name_for_missing(&abs, mode) {
                 let derivative = staging_dir.join("attachments").join(&name);
                 if derivative.is_file() {
@@ -465,7 +469,7 @@ fn pending_in(
 }
 
 /// Find a file under `staging_dir/attachments` whose stem is `orig_stem` and
-/// that the media step would still touch — the crash-heal search.
+/// that the Media stage would still touch — the crash-heal search.
 fn find_recoverable_original(
     staging_dir: &Path,
     orig_stem: &str,
@@ -623,7 +627,7 @@ struct DiskAttachmentFields {
 ///
 /// Used by [`apply_repoint`] (aiming at an existing derivative) and by both
 /// places a heal has to fall back to the recovered original rather than a
-/// derivative: the media step declining the file (`Skipped`), and ffmpeg
+/// derivative: the Media stage declining the file (`Skipped`), and ffmpeg
 /// failing on it (`Err`). In the heal cases `recorded_rel` — the phantom
 /// `-mv` name a crashed prior run already wrote into the document — must not
 /// be left standing, since nothing will ever exist under it.
@@ -649,7 +653,7 @@ fn disk_attachment_fields(src: &Path) -> Result<DiskAttachmentFields> {
 ///
 /// `is_heal` marks a crash-heal recovery: `recorded_rel` currently points at
 /// a `-mv` name nothing produced yet, rather than at `src` itself. That
-/// distinction only matters when the media step declines the file (see the
+/// distinction only matters when the Media stage declines the file (see the
 /// `Skipped` arm) — everywhere else a heal behaves exactly like a fresh
 /// transcode.
 #[allow(clippy::too_many_arguments)]
@@ -728,7 +732,7 @@ fn apply_transcode(
         Ok(TranscodeOutcome::Skipped) => {
             if is_heal {
                 // The doc currently points at a phantom `-mv` name that
-                // nothing will ever produce — the media step declined this
+                // nothing will ever produce — the Media stage declined this
                 // file. Repoint it back at the recovered original so a
                 // resume does not chase a name that can never exist.
                 let r = disk_attachment_fields(src)?;
@@ -811,7 +815,7 @@ fn apply_transcode(
     }
 }
 
-/// The `kind` of a row for an attachment the pass left without a converted
+/// The `kind` of a row for an attachment the Media stage left without a converted
 /// file.
 pub const SKIP: &str = "skip";
 
@@ -830,7 +834,7 @@ fn recorded_at<'a>(
         .filter(move |att| att.path.as_deref() == Some(recorded_rel))
 }
 
-/// True when an earlier pass recorded that it could not convert the file at
+/// True when an earlier attempt recorded that it could not convert the file at
 /// `recorded_rel`.
 fn had_convert_failure(doc: &ConversationDocument, recorded_rel: &str) -> bool {
     recorded_at(doc, recorded_rel).any(|att| {
@@ -842,7 +846,7 @@ fn had_convert_failure(doc: &ConversationDocument, recorded_rel: &str) -> bool {
 
 /// A Media row about the attachment at `recorded_rel`. Its `item` is the
 /// conversation file and the original's staged path `item_rel`, which no
-/// other file in the conversation shares, and which a row the pass reports
+/// other file in the conversation shares, and which a row the Media stage reports
 /// again on a resume has too. Its `reason` opens with the attachment's
 /// original name, when it has one, and goes on with `what`.
 fn media_issue(
@@ -865,7 +869,7 @@ fn media_issue(
     }
 }
 
-/// The row for an attachment the pass left out because its converted file is
+/// The row for an attachment the Media stage left out because its converted file is
 /// `size` bytes, over the server's attachment size limit.
 fn too_large_issue(
     jsonl: &Path,
@@ -913,7 +917,7 @@ fn apply_repoint(
 
 /// Mark every attachment recorded at `recorded_rel` `too_large` with the
 /// derivative size `size`: an earlier attachment sharing the path converted
-/// over the limit and the pass dropped the shared original.
+/// over the limit and the Media stage dropped the shared original.
 fn apply_too_large(
     jsonl: &Path,
     doc: &mut ConversationDocument,

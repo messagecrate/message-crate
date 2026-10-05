@@ -37,7 +37,7 @@ export type ImportRunState = {
   form: ImportJobFormValues | null;
   summaryView: ImportSummaryView | null;
   stagingDir: string | null;
-  importSessionId: number | null;
+  importRunId: number | null;
   /** What the run directory held once Staging finished; the Staging row's facts. */
   stagingSummary: StagingSummary | null;
   /**
@@ -47,7 +47,7 @@ export type ImportRunState = {
   mediaSummary: StagingSummary | null;
   /**
    * Files Media tried and could not convert or compress. Null when Media
-   * has not run, and on a resume, where the pass's own report is gone.
+   * has not run, and on a resume, where the Media stage's own report is gone.
    */
   mediaFailedCount: number | null;
   mediaToolsMissing: boolean;
@@ -95,7 +95,7 @@ export function initialImportRunState(steps: ImportStep[]): ImportRunState {
     form: null,
     summaryView: null,
     stagingDir: null,
-    importSessionId: null,
+    importRunId: null,
     stagingSummary: null,
     mediaSummary: null,
     mediaFailedCount: null,

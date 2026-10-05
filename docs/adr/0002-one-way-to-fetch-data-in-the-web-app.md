@@ -163,7 +163,7 @@ nothing — the opposite of the pattern this decision removes.
 - `useResource`, `usePagedList`, `contactDetailCache`, and the four
   `mv-*-changed` events are removed. `nameCollection.ts`, `savedSearches.ts`,
   `contactGroups.ts`, `messageTags.ts`, `useAccountProfile.ts`, and
-  `importSession.ts` survive as
+  `importRun.ts` survive as
   the per-feature layer over TanStack Query, without caches of their own.
   `InfiniteOffsetList` and `VirtualList` are untouched: they render the items
   they are given and never fetch.

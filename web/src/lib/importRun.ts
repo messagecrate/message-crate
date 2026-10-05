@@ -10,15 +10,15 @@ import { invokePathStat, type PathStat } from "./tauri";
 /** Where a running Import Run is: the server's `ImportStage`. */
 export type ImportStage = components["schemas"]["ImportStage"];
 
-/** Identity of the backup a session was started from. */
+/** Identity of the backup an Import Run was started from. */
 export type SourceFingerprint = {
   path: string;
   size_bytes: number;
   modified_unix_ms: number | null;
 };
 
-/** The account's live import session, as the server reports it. */
-export type ActiveImportSession = {
+/** The account's running Import Run, as the server reports it. */
+export type ActiveImportRun = {
   id: number;
   source: string;
   mode: string;
@@ -31,7 +31,7 @@ export type ActiveImportSession = {
   source_fingerprint: SourceFingerprint | null;
   /** Addresses the backup's device sent from (JSON array), or null. */
   source_identities: unknown;
-  /** What was approved at the last gate passed, or null. Mirrors what
+  /** What was approved at the last Review, or null. Mirrors what
    * `setImportStage`'s `approvedPlan` argument last wrote. */
   summary: unknown;
 };
@@ -40,17 +40,15 @@ export type ActiveImportSession = {
  * The account's running Import Run, or null when there is none. At most one
  * runs at a time, so the first item of `status=running` is the one.
  */
-export async function getActiveImportSession(
-  signal?: AbortSignal,
-): Promise<ActiveImportSession | null> {
-  const session = (await listImports({ status: "running", limit: 1 }, { signal })).items[0];
-  if (!session) return null;
+export async function getActiveImportRun(signal?: AbortSignal): Promise<ActiveImportRun | null> {
+  const run = (await listImports({ status: "running", limit: 1 }, { signal })).items[0];
+  if (!run) return null;
   return {
-    ...session,
-    stage: session.stage ?? null,
-    staging_dir: session.staging_dir ?? null,
-    device_id: session.device_id ?? null,
-    source_fingerprint: session.source_fingerprint as SourceFingerprint | null,
+    ...run,
+    stage: run.stage ?? null,
+    staging_dir: run.staging_dir ?? null,
+    device_id: run.device_id ?? null,
+    source_fingerprint: run.source_fingerprint as SourceFingerprint | null,
   };
 }
 
@@ -75,10 +73,10 @@ export async function accountStagingDirectories(signal?: AbortSignal): Promise<s
 }
 
 /**
- * Move a live session to another stage.
+ * Move a running Import Run to another stage.
  *
- * `approvedPlan`, when given, is recorded as the session's `summary_json` —
- * what the user approved at the gate they just passed. Omitting it leaves
+ * `approvedPlan`, when given, is recorded as the run's `summary_json` —
+ * what the user approved at the Review the run just left. Omitting it leaves
  * whatever plan is already stored untouched; it is never nulled out.
  */
 export async function setImportStage(
@@ -90,11 +88,11 @@ export async function setImportStage(
 }
 
 /**
- * Close a session the user gave up on, freeing the account's slot. The run is
+ * Close an Import Run the user gave up on, freeing the account's slot. The run is
  * recorded as cancelled with `issues`, the Import Errors it recorded before,
  * and `notes`.
  */
-export async function discardImportSession(
+export async function discardImportRun(
   id: number,
   issues: components["schemas"]["ImportIssueRequest"][],
   notes: components["schemas"]["ImportNoteRequest"][],
@@ -103,7 +101,7 @@ export async function discardImportSession(
 }
 
 /**
- * Identity of the backup this session reads.
+ * Identity of the backup this run reads.
  *
  * The size and mtime come from a stat of the path itself, so for a
  * directory source -- an iOS backup directory, a WhatsApp directory -- they

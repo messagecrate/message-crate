@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { ImportIssue } from "../../components/import/ImportSummaryPanel";
 import type {
   AttachmentForecast,
-  PushFinishedReport,
   SizeVerdict,
   StagingSummary,
+  UploadFinishedReport,
 } from "../../lib/tauri";
 import { importOutcome, stableStem } from "./importOutcome";
 
-function report(overrides: Partial<PushFinishedReport> = {}): PushFinishedReport {
+function report(overrides: Partial<UploadFinishedReport> = {}): UploadFinishedReport {
   return {
     ok: true,
     cancelled: false,
@@ -29,7 +29,7 @@ function report(overrides: Partial<PushFinishedReport> = {}): PushFinishedReport
   };
 }
 
-/** `n` push issues for attachments the plan flagged as too big to upload —
+/** `n` Upload issues for attachments the plan flagged as too big to upload —
  * the `"{conversationFile}:{relativePath}"` shape `message-crate-push` actually
  * emits (`AttachmentSkip`, built in `crates/libs/push/src/prepare.rs`), not
  * a bare path. */
@@ -105,7 +105,7 @@ describe("importOutcome", () => {
     expect(importOutcome({ report: r, threw: false, issues: [] })).toBe("paused");
   });
 
-  it("is completed when a re-push dedupes everything to skips", () => {
+  it("is completed when a second Upload dedupes everything to skips", () => {
     const r = report({
       conversations_total: 10,
       conversations_ok: 0,
@@ -117,7 +117,7 @@ describe("importOutcome", () => {
   });
 
   it("is paused when some conversations failed but others landed", () => {
-    // What a server that stops answering part-way leaves: the push records
+    // What a server that stops answering part-way leaves: the Upload records
     // every later conversation as failed and moves on. The journal does not
     // mark them sent, so a resume sends them.
     const r = report({ ok: false, conversations_ok: 8, conversations_failed: 2 });
@@ -140,7 +140,7 @@ describe("importOutcome", () => {
     expect(importOutcome({ report: r, threw: false, issues: [] })).toBe("completed_with_issues");
   });
 
-  it("is paused when the cancel flag stopped the push partway", () => {
+  it("is paused when the cancel flag stopped the Upload partway", () => {
     // What run.rs reports when the cancel flag stops `drive` after 200 of 681.
     const r = report({
       ok: false,
@@ -152,7 +152,7 @@ describe("importOutcome", () => {
     expect(importOutcome({ report: r, threw: false, issues: [] })).toBe("paused");
   });
 
-  it("is paused when the push stopped short with no failed conversation and no cancel", () => {
+  it("is paused when the Upload stopped short with no failed conversation and no cancel", () => {
     const r = report({
       ok: false,
       conversations_total: 681,
@@ -175,7 +175,7 @@ describe("importOutcome", () => {
 
 describe("importOutcome against an approved plan", () => {
   it("an approved omission is not an issue", () => {
-    // The user saw "12 attachments too big" at the gate and said go.
+    // The user saw "12 attachments too big" at a Review and said go.
     // Reporting that back as a problem makes a normal import look like a
     // failure.
     const outcome = importOutcome({
@@ -263,7 +263,7 @@ describe("importOutcome against an approved plan", () => {
         {
           kind: "skip",
           stage: "upload",
-          // The committed derivative after the media pass: same stem,
+          // The committed derivative after the Media stage: same stem,
           // "-mv" suffix, new extension.
           item: "conversation.jsonl:attachments/2024-01-15-9f2a3b4c-mv.jpg",
           reason: "attachment is 200000000 bytes, over the configured asset max",

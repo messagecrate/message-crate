@@ -21,8 +21,8 @@ vi.mock("../../lib/tauri-check", () => ({
   isTauri: () => desktop.value,
 }));
 
-vi.mock("../../lib/importSession", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../lib/importSession")>()),
+vi.mock("../../lib/importRun", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../lib/importRun")>()),
   accountStagingDirectories: (...a: unknown[]) => accountStagingDirectories(...a),
 }));
 

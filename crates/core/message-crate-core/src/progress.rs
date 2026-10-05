@@ -57,11 +57,11 @@ pub enum ProgressEvent {
         /// Conversation files the run will write.
         total: usize,
     },
-    /// Attachments converted or compressed so far by the media pass.
+    /// Attachments converted or compressed so far by the Media stage.
     Media {
         /// Files finished.
         done: usize,
-        /// Files the pass covers.
+        /// Files the Media stage covers.
         total: usize,
     },
 }

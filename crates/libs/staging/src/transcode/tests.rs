@@ -38,7 +38,7 @@ fn staged_one(name: &str, bytes: &[u8]) -> (tempfile::TempDir, PathBuf, PathBuf)
     (dir, jsonl, original)
 }
 
-/// An issue sink, and the rows it receives in the order the pass sent them.
+/// An issue sink, and the rows it receives in the order the Media stage sent them.
 fn collecting_sink() -> (IssueSink, std::sync::Arc<std::sync::Mutex<Vec<RunIssue>>>) {
     let issues = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let sink_issues = std::sync::Arc::clone(&issues);
@@ -240,7 +240,7 @@ fn a_derivative_over_the_limit_becomes_too_large_and_keeps_the_message() {
 fn a_conversion_failure_becomes_a_per_item_reason_carrying_the_detail() {
     // Needs ffmpeg present and failing on this specific input: after the
     // ffmpeg preflight check, an *absent* ffmpeg now fails the whole
-    // pass (see without_ffmpeg_the_whole_pass_fails_and_touches_nothing)
+    // Media stage (see without_ffmpeg_the_whole_media_stage_fails_and_touches_nothing)
     // rather than reaching this per-item path.
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
@@ -254,7 +254,7 @@ fn a_conversion_failure_becomes_a_per_item_reason_carrying_the_detail() {
         &mut |_| {},
     );
 
-    // ffmpeg failing on one file is an issue, never a failed pass.
+    // ffmpeg failing on one file is an issue, never a failed Media stage.
     let report = report.unwrap();
     assert_eq!(report.failed, 1);
     let doc = read_conversation_jsonl(&jsonl).unwrap();
@@ -277,10 +277,10 @@ fn a_conversion_failure_becomes_a_per_item_reason_carrying_the_detail() {
 }
 
 /// A file ffmpeg cannot convert is a `skip` Import Error naming the
-/// conversation file and the attachment, sent while the pass runs (#1639).
-/// Before, the pass only counted it.
+/// conversation file and the attachment, sent while the Media stage runs (#1639).
+/// Before, the Media stage only counted it.
 #[test]
-fn a_file_the_pass_cannot_convert_is_sent_as_a_skip_import_error() {
+fn a_file_the_media_stage_cannot_convert_is_sent_as_a_skip_import_error() {
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
     };
@@ -328,7 +328,7 @@ fn a_file_the_pass_cannot_convert_is_sent_as_a_skip_import_error() {
 }
 
 /// An attachment whose converted file is over the limit is left out, and
-/// the pass says so as a `skip` row. The Upload sends no row for it, since
+/// the Media stage says so as a `skip` row. The Upload sends no row for it, since
 /// the conversation file records why it has no file.
 #[test]
 fn a_file_left_out_as_too_large_is_sent_as_a_skip_import_error() {
@@ -363,7 +363,7 @@ fn a_file_left_out_as_too_large_is_sent_as_a_skip_import_error() {
     );
 }
 
-/// A resumed pass tries a file again that an earlier pass could not
+/// A resumed Media stage tries a file again that an earlier attempt could not
 /// convert. It says first that the earlier row no longer holds, then
 /// reports the new outcome, so a file converted on the second try keeps no
 /// row.
@@ -396,7 +396,7 @@ fn a_file_tried_again_resolves_its_earlier_row_first() {
     );
 }
 
-/// An attachment an earlier pass could not convert can be settled without a
+/// An attachment an earlier attempt could not convert can be settled without a
 /// conversion of its own: here another conversation sharing the file
 /// converted it since, so this one is repointed. Its earlier row is
 /// resolved all the same.
@@ -477,7 +477,7 @@ fn a_convert_failed_attachment_keeps_its_path_and_is_retried_on_resume() {
 }
 
 #[test]
-fn cancelling_stops_the_pass_without_corrupting_the_directory() {
+fn cancelling_stops_the_media_stage_without_corrupting_the_directory() {
     let (dir, jsonl, _) = staged_one("photo.png", &test_png_bytes());
     let cancel = CancelFlag::default();
     cancel.store(true, Ordering::Relaxed);
@@ -494,7 +494,7 @@ fn cancelling_stops_the_pass_without_corrupting_the_directory() {
     assert_eq!(
         err.to_string(),
         "cancelled",
-        "the same word every other cancelled step returns; the import screen matches it"
+        "the same word every other cancelled stage returns; the import screen matches it"
     );
     let doc = read_conversation_jsonl(&jsonl).unwrap();
     assert_eq!(
@@ -522,7 +522,7 @@ fn progress_counts_the_work_it_actually_has() {
         &mut |p| seen.push((p.done, p.total)),
     )
     .unwrap();
-    // A file the media step does not handle is not work.
+    // A file the Media stage does not handle is not work.
     assert_eq!(report.converted, 0);
     assert!(seen.iter().all(|(_, total)| *total == 0));
 }
@@ -551,7 +551,7 @@ fn a_crash_between_the_patch_and_the_rename_heals_by_re_transcoding_the_original
     std::fs::write(&marker, b"leftover bytes from the crashed run").unwrap();
     assert!(
         original.exists(),
-        "the original is still there before the pass runs"
+        "the original is still there before the Media stage runs"
     );
 
     let report = transcode_staged(
@@ -610,7 +610,7 @@ fn a_heal_that_fails_to_transcode_repoints_at_the_original_before_recording_the_
     write_conversation_jsonl_to(&jsonl, &doc).unwrap();
     assert!(
         original.exists(),
-        "the original is still there before the pass runs"
+        "the original is still there before the Media stage runs"
     );
 
     let report = transcode_staged(
@@ -670,7 +670,7 @@ fn a_heal_that_the_media_step_skips_repoints_at_the_original_deterministically()
     write_conversation_jsonl_to(&jsonl, &doc).unwrap();
     assert!(
         original.exists(),
-        "the original is still there before the pass runs"
+        "the original is still there before the Media stage runs"
     );
     // Default min_size_bytes is 20 MB; our fixture is a few dozen bytes.
     assert!(CompressOptions::default().min_size_bytes > 1000);
@@ -702,7 +702,7 @@ fn a_heal_that_the_media_step_skips_repoints_at_the_original_deterministically()
 
 #[test]
 fn a_crash_that_lost_both_the_marker_and_the_original_is_unrecoverable() {
-    // The whole pass still needs ffmpeg present up front (the preflight
+    // The whole Media stage still needs ffmpeg present up front (the preflight
     // check runs before any per-attachment classification), even though
     // no transcode is ever attempted for this particular attachment.
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
@@ -1001,13 +1001,13 @@ fn a_missing_original_with_no_committed_derivative_becomes_file_missing() {
     };
     // Covers the other half of the same bug: a recorded path that is
     // gone for good (nothing shares it, no committed derivative exists,
-    // and no too-large note says the pass dropped it). Before the fix
+    // and no too-large note says the Media stage dropped it). Before the fix
     // this fell through the repoint branch's `if let Some(name) = …`
     // silently, leaving the attachment dangling with no `missing_reason`
     // at all.
     let (dir, jsonl, original) = staged_one(
         "ghost.jpg",
-        b"content is irrelevant; deleted before the pass looks",
+        b"content is irrelevant; deleted before the Media stage looks",
     );
     std::fs::remove_file(&original).unwrap();
 
@@ -1111,7 +1111,7 @@ fn a_too_large_drop_survives_a_stop_and_a_resume() {
     let (dir, jsonl_a, original) = staged_one("shared.png", &png);
     let jsonl_b = second_document_sharing(dir.path(), "attachments/shared.png", png.len() as u64);
 
-    // Stop the pass right after the first conversation's attachment.
+    // Stop the Media stage right after the first conversation's attachment.
     let cancel = CancelFlag::default();
     let err = transcode_staged(
         dir.path(),
@@ -1124,7 +1124,7 @@ fn a_too_large_drop_survives_a_stop_and_a_resume() {
             }
         },
     )
-    .expect_err("the pass stops after the first attachment");
+    .expect_err("the Media stage stops after the first attachment");
     assert_eq!(err.to_string(), "cancelled");
     assert!(
         !original.exists(),
@@ -1191,8 +1191,8 @@ fn snapshot_tree(dir: &Path) -> std::collections::BTreeMap<PathBuf, Vec<u8>> {
 }
 
 #[test]
-fn without_ffmpeg_the_whole_pass_fails_and_touches_nothing() {
-    // The module's contract: when ffmpeg/ffprobe are missing, the pass fails
+fn without_ffmpeg_the_whole_media_stage_fails_and_touches_nothing() {
+    // The module's contract: when ffmpeg/ffprobe are missing, the Media stage fails
     // before any document is touched and never brands an attachment
     // `convert_failed`. The directory holds work for both modes: an image, a
     // video, and an audio file, across two conversation files.
@@ -1233,7 +1233,7 @@ fn without_ffmpeg_the_whole_pass_fails_and_touches_nothing() {
                 progress_calls += 1;
             },
         )
-        .expect_err("a missing ffmpeg fails the whole pass");
+        .expect_err("a missing ffmpeg fails the whole Media stage");
 
         let message = err.to_string();
         assert!(
@@ -1242,7 +1242,10 @@ fn without_ffmpeg_the_whole_pass_fails_and_touches_nothing() {
         );
         assert!(message.contains("ffmpeg not found"), "{mode:?}: {message}");
         assert!(message.contains("ffprobe not found"), "{mode:?}: {message}");
-        assert_eq!(progress_calls, 0, "{mode:?}: the pass reported progress");
+        assert_eq!(
+            progress_calls, 0,
+            "{mode:?}: the Media stage reported progress"
+        );
         assert_eq!(
             snapshot_tree(dir.path()),
             before,
@@ -1277,7 +1280,7 @@ fn crash_recovery_finds_only_an_original_with_the_same_stem() {
         find_recoverable_original(dir.path(), "a", MediaMode::Convert).unwrap(),
         Some(attachments.join("a.png"))
     );
-    // `c.gif` has the stem but the media step never touches a GIF, and
+    // `c.gif` has the stem but the Media stage never touches a GIF, and
     // `a.png` and `b.png` are convertible but belong to other attachments.
     assert_eq!(
         find_recoverable_original(dir.path(), "c", MediaMode::Convert).unwrap(),

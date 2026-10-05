@@ -118,7 +118,7 @@ pub async fn insert_conversation(
 /// or 0 when they hold none.
 ///
 /// `sort_order` is a message's place in its conversation, not in the batch
-/// that carried it. The push splits a long conversation across batches and an
+/// that carried it. The Upload splits a long conversation across batches and an
 /// append adds to one already stored, and the conversation is read back by
 /// timestamp then `sort_order`, so a message staged later has to sort after
 /// every stored message that shares its timestamp. The staged conversation

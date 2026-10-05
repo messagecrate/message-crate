@@ -4,7 +4,7 @@
 //! metadata, participants, and messages. Backup converters parse vendor
 //! formats into this type. Writing files (JSON, CSV, EML, and so on) lives
 //! in `message-ir-format`. The atomic, synced write those files go through
-//! ([`write_atomic`]) lives here, so attachment staging, the media pass and
+//! ([`write_atomic`]) lives here, so attachment staging, media conversion and
 //! the journal use the same one. Converting an existing export directory lives in
 //! `message-reexport`. See the [common message](https://messagecrate.app/docs/developer/architecture/common-message/) page.
 //!

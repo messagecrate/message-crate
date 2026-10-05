@@ -2016,7 +2016,7 @@ mod kind_words {
         );
     }
 
-    /// The source id each exporter writes into `export.source`, which push
+    /// The source id each exporter writes into `export.source`, which the Upload
     /// sends as the Import Run's source and the import stamps on every
     /// message.
     const IMPORT_SOURCES: [&str; 7] = [

@@ -186,7 +186,7 @@ describe("verbs", () => {
   });
 });
 
-describe("import session routes", () => {
+describe("Import Run routes", () => {
   it("patches the run to move its stage", async () => {
     await setImportStage(9, { stage: "parse" });
     expect(patch).toHaveBeenCalledWith("/v1/imports/9", { stage: "parse" });

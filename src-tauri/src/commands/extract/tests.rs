@@ -28,8 +28,8 @@ fn test_options(owner_phones: Vec<String>) -> ExtractOptions {
 }
 
 #[test]
-fn convert_and_compress_stage_originals_and_defer_the_media_step() {
-    // The desktop runs conversion as its own pass so a gate can sit in
+fn convert_and_compress_stage_originals_and_defer_the_media_stage() {
+    // The desktop runs conversion as its own Media stage so a Review can sit in
     // front of it. Asking the exporter to convert would spend the time
     // before the user has approved anything. Checked against the
     // iMessage source; every source routes attachment_media through
@@ -75,8 +75,8 @@ fn copy_and_skip_reach_the_exporter_unchanged() {
 }
 
 #[test]
-fn non_imessage_sources_defer_the_media_step_too() {
-    // `exporter_attachment_media` gates `Form.attachment_media` for every
+fn non_imessage_sources_defer_the_media_stage_too() {
+    // `exporter_attachment_media` decides `Form.attachment_media` for every
     // source, so a non-iMessage source (whatsapp-android here) must also
     // reach the exporter with Clone when Convert or Compress was chosen.
     let dump = tempfile::tempdir().unwrap();

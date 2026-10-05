@@ -678,8 +678,8 @@ async fn a_stored_form_snapshot_drops_credentials() {
     );
 }
 
-/// The identity list a client read from the backup rides on the session
-/// so a resumed Gate 1 can show it without re-reading the backup.
+/// The identity list a client read from the backup rides on the Import Run
+/// so a resumed Staging Review can show it without re-reading the backup.
 #[tokio::test]
 async fn imports_create_stores_source_identities() {
     let (_dir, state, token, import_id) = test_state().await;

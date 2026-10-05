@@ -103,7 +103,7 @@ export type ImportFormFieldsProps = {
   /** The account's phones for SBR mismatch checks (empty until loaded). */
   profilePhones: string[];
   profilePhonesReady: boolean;
-  /** True when the profile request failed (fail open on mismatch gate). */
+  /** True when the profile request failed (fail open on the mismatch check). */
   profilePhonesError: boolean;
   showMissingAccountPhoneWarning: boolean;
   formatOpen: boolean;
@@ -253,7 +253,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
     whatsappMethod !== null && !whatsappOwnerPhoneRequired(whatsappMethod);
   // The section is left out for a source with no field in it.
   const hasProcessingOptions = isIos || isAndroidSms || isImazing || whatsappFallbackPhone;
-  const imessageGate = imessageMethod
+  const imessageReadiness = imessageMethod
     ? imessageCanImport({
         method: imessageMethod,
         backupPath: props.backupPath,
@@ -263,7 +263,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
         stats: props.pathStats,
       })
     : null;
-  const whatsappGate = whatsappMethod
+  const whatsappReadiness = whatsappMethod
     ? whatsappCanImport({
         method: whatsappMethod,
         backupPath: props.backupPath,
@@ -276,8 +276,8 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
         stats: props.whatsappStats,
       })
     : null;
-  const imessageErrors = imessageGate?.errors ?? {};
-  const whatsappErrors = whatsappGate?.errors ?? {};
+  const imessageErrors = imessageReadiness?.errors ?? {};
+  const whatsappErrors = whatsappReadiness?.errors ?? {};
   const whatsappKeyRequired = whatsappMethod
     ? whatsappCryptRequired(props.whatsappStats.hasMsgstoreDb, props.whatsappStats.cryptName)
     : false;
@@ -307,7 +307,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
     }
   }, [isAndroidSms]);
 
-  // The fields a source without a gate of its own (Android SMS, iMazing,
+  // The fields a source without a readiness check of its own (Android SMS, iMazing,
   // OpenExtract) needs. The asterisks and `canImport` both read this, so a
   // field cannot be needed and unmarked.
   const required = {
@@ -333,10 +333,10 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
 
   const canImport =
     blockedBy === null &&
-    (imessageGate
-      ? imessageGate.enabled && !props.running
-      : whatsappGate
-        ? whatsappGate.enabled && !props.running
+    (imessageReadiness
+      ? imessageReadiness.enabled && !props.running
+      : whatsappReadiness
+        ? whatsappReadiness.enabled && !props.running
         : requiredFilled &&
           !props.running &&
           (!isAndroidSms || props.profilePhonesReady) &&

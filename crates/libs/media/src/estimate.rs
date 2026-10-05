@@ -122,11 +122,11 @@ fn size_only(size_bytes: u64, limit_bytes: u64, over: SizeVerdict) -> SizeVerdic
     }
 }
 
-/// Does the media pass recognize this extension at all?
+/// Does media conversion recognize this extension at all?
 ///
 /// Mirrors [`crate::process::classify`] exactly — same three extension lists,
 /// `false` for anything else — by calling it on a synthetic path, so a new
-/// extension added to the media pass cannot be missed by the forecast.
+/// extension added to media conversion cannot be missed by the forecast.
 fn is_processable(ext: &str) -> bool {
     classify(&Path::new("f").with_extension(ext)).is_some()
 }

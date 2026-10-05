@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { currentDesktopJob, holdDesktopJob } from "./desktopJob";
-import type { PushFinishedReport } from "./tauri";
+import type { UploadFinishedReport } from "./tauri";
 import {
   awaitTauriJob,
   invokeCreateStagingDir,
@@ -27,7 +27,7 @@ vi.mock("@tauri-apps/api/event", () => ({
   },
 }));
 
-function reportJson(overrides: Partial<PushFinishedReport> = {}): string {
+function reportJson(overrides: Partial<UploadFinishedReport> = {}): string {
   const report = {
     ok: true,
     cancelled: false,
@@ -59,7 +59,7 @@ describe("parseTauriJobResult", () => {
 
   // Regression for the last path back to the 2026-08-27 incident: a report
   // JSON blob missing conversations_failed/conversations_skipped must not
-  // narrow to PushFinishedReport, or importOutcome computes
+  // narrow to UploadFinishedReport, or importOutcome computes
   // `undefined === 0` -> false and reports "completed" for a run where
   // nothing landed.
   it("does not attach a report missing conversations_failed", () => {

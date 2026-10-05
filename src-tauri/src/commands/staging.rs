@@ -3,7 +3,7 @@
 //!
 //! These back the two reviews a staged import stops at:
 //! `summarize_staging` recomputes what a staged directory holds so the first
-//! review can show it, `transcode_staging` runs the convert/compress pass the
+//! review can show it, `transcode_staging` runs the Media stage the
 //! exporter deferred (see `extract::exporter_attachment_media`), and
 //! `delete_staging` removes the run directory — when a review is closed
 //! without approving, when a paused run is discarded, and when the server
@@ -13,7 +13,7 @@
 //!
 //! `summarize_staging` and `transcode_staging` take only the directory. They
 //! read the run's media settings from it, where `extract` recorded them
-//! ([`message_staging::read_media_settings`]), so a summary, the pass it
+//! ([`message_staging::read_media_settings`]), so a summary, the Media stage it
 //! forecasts, and the Staging before them all work to the one set of values
 //! the Import Run was started with.
 //!
@@ -174,16 +174,16 @@ fn plural_s(count: usize) -> &'static str {
     if count == 1 { "" } else { "s" }
 }
 
-/// One human-readable sentence describing a transcode pass's outcome.
+/// One human-readable sentence describing the Media stage's outcome.
 ///
 /// Used both as the `extract:finished` payload's `summary` field (so a
 /// client that falls back to raw JSON still has readable text) and, when
 /// either count is nonzero, as an `extract:log` line so the same wording is
-/// visible while the pass runs, not only after it finishes.
+/// visible while the Media stage runs, not only after it finishes.
 ///
 /// `too_large` and `failed` get separate clauses on purpose: a `too_large`
 /// file WAS converted — it just came out over the limit and will not be
-/// uploaded — which is a different fact from `failed`, a file the pass could
+/// uploaded — which is a different fact from `failed`, a file the Media stage could
 /// not convert at all. The report has no per-file reasons (those are written
 /// into the conversation files' `missing_reason` instead), so this can only
 /// speak in counts.
@@ -208,26 +208,26 @@ fn transcode_summary(report: &TranscodeReport) -> String {
     format!("{}.", clauses.join("; "))
 }
 
-/// Run the convert/compress pass over a staged directory, after the first review
+/// Run the Media stage over a staged directory, after the Staging Review
 /// approves it.
 ///
 /// Follows `extract`'s job shape: the job starts through [`start_job`], with
-/// a cancel flag of its own, the pass runs on a background thread, and
+/// a cancel flag of its own, the Media stage runs on a background thread, and
 /// progress/log/finished go back as `extract:*` events so the UI reuses one
-/// progress view. A cancelled pass is reported through `extract:error` the
+/// progress view. A cancelled Media stage is reported through `extract:error` the
 /// same way any other failure is — exactly how a cancelled `extract` run
 /// already behaves (`extract` never special-cases its own cancellation
 /// either; `spawn_job`'s generic `Err` handling covers both). An earlier
-/// version of this command ended a cancelled pass quietly instead (an
+/// version of this command ended a cancelled Media stage quietly instead (an
 /// `extract:log` line, `Ok(())`, no `extract:error`); that left
 /// `awaitTauriJob`'s promise on the web side permanently unsettled — no
 /// `extract:finished`, no `extract:error` — wedging the screen with `running`
 /// stuck true and no way back except restarting the app. Do not restore the
 /// quiet path.
 ///
-/// Each file the pass could not convert goes to the window as an
-/// `extract:issue` the moment the pass gives up on it, so the window has
-/// written it into the run record before an app that closes mid-pass stops.
+/// Each file the Media stage could not convert goes to the window as an
+/// `extract:issue` the moment the Media stage gives up on it, so the window has
+/// written it into the run record before an app that closes during the Media stage stops.
 /// The report carries counts only, so a nonzero `failed`/`too_large` count
 /// is also surfaced as one summarizing `extract:log` line (see
 /// [`transcode_summary`]).
@@ -236,7 +236,7 @@ fn transcode_summary(report: &TranscodeReport) -> String {
 ///
 /// Returns an error if `staging_dir` is not a run directory this app made
 /// or holds no media settings, another job is running, or another thread
-/// panicked while holding the shared state lock. Failures during the pass —
+/// panicked while holding the shared state lock. Failures during the Media stage —
 /// including a cancellation and ffmpeg/ffprobe being unavailable — are sent
 /// as `extract:error`, verbatim, not returned here.
 #[tauri::command(async)]
@@ -248,9 +248,9 @@ pub fn transcode_staging(
 ) -> Result<(), String> {
     let (staging_dir, options) = staged_directory(&directories, &args.staging_dir)?;
     let run_log = RunLog::open(&super::paths::logs_dir(&app)?, &staging_dir);
-    let job = start_job(&state, "a Media pass")?;
+    let job = start_job(&state, "the Media stage")?;
     let cancel = job.cancel_flag();
-    let has_media_step = matches!(
+    let media_stage_converts = matches!(
         options.mode,
         media::MediaMode::Convert | media::MediaMode::Compress
     );
@@ -258,7 +258,7 @@ pub fn transcode_staging(
     let app_handle = app.clone();
     let issues = events::issue_sink(&app);
     spawn_job(app, job, move || {
-        if has_media_step {
+        if media_stage_converts {
             events::log_to_run(
                 &app_handle,
                 &run_log,
@@ -322,8 +322,8 @@ pub fn transcode_staging(
 }
 
 /// Delete a run directory: the decline path's terminal action (Decision
-/// 16), and the last step of a successful import, whose staged copy of the
-/// messages, push log, journal and report the server has no further use for.
+/// 16), and the last action of a successful import, whose staged copy of the
+/// messages, Upload log, journal and report the server has no further use for.
 ///
 /// Runs on the async task pool (`#[tauri::command(async)]`) rather than the
 /// main thread: `remove_dir_all` over a large run directory would otherwise
@@ -350,7 +350,7 @@ pub fn delete_staging(
 ///
 /// A paused run posts no completion, so the server never sees what its
 /// earlier parts recorded. The window writes the record here, beside the
-/// push journal, and reads it back when the run resumes, so the completion
+/// Upload's journal, and reads it back when the run resumes, so the completion
 /// it finally posts covers the whole run. The leading dot keeps it out of
 /// every listing of conversation files, and it is deleted with the directory.
 /// It has no `.json` extension, for the reason the media settings file has

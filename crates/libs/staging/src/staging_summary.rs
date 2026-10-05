@@ -1,12 +1,12 @@
 //! Recompute what a staged directory holds, for the reviews.
 //!
 //! Everything here is measured from the directory. The one estimate is what the
-//! media step will do to a file's size, and it is labelled as an estimate all
+//! Media stage will do to a file's size, and it is labelled as an estimate all
 //! the way to the screen.
 //!
 //! This is always recomputed from the directory, never read back
 //! from a previously-written `summary_json` — the directory is the truth, and
-//! that is what makes resuming at a gate work: reopening the session
+//! that is what makes resuming at a Review work: reopening the Import Run
 //! recomputes rather than restoring.
 //!
 //! Contact matching is not done here — the server answers which identifiers
@@ -38,7 +38,7 @@ use message_ir_format::read_conversation_jsonl;
 /// How often [`summarize_staging`] reports progress, over attachments.
 ///
 /// Matches the media crate's own cadence (its private `MEDIA_PROGRESS_EVERY`
-/// is 100 too) so a summary pass and a media pass over the same directory feel
+/// is 100 too) so a summary and the Media stage over the same directory feel
 /// the same to whatever is watching progress.
 const SUMMARY_PROGRESS_EVERY: usize = 100;
 
@@ -55,8 +55,8 @@ pub struct AttachmentForecast {
     pub name: String,
     /// Bytes on disk now.
     pub size_bytes: u64,
-    /// Bytes expected after the media step. Equal to `size_bytes` when there
-    /// is no media step.
+    /// Bytes expected after the Media stage. Equal to `size_bytes` when there
+    /// is nothing for the Media stage to do.
     pub estimate_bytes: u64,
     /// How it is expected to land against the limit.
     pub verdict: SizeVerdict,
@@ -134,7 +134,7 @@ pub struct SummaryProgress {
 /// Recompute a staged directory's summary: exact conversation/message/attachment
 /// counts plus a per-attachment size forecast, for the reviews.
 ///
-/// Walks the same `*.jsonl` list the media pass walks. For each attachment
+/// Walks the same `*.jsonl` list the Media stage walks. For each attachment
 /// already carrying a `missing_reason` — settled, whether or not its `path`
 /// still points at a file on disk (a `convert_failed` original keeps its
 /// path so a resume can retry it, but it has already been flagged and must
@@ -144,22 +144,22 @@ pub struct SummaryProgress {
 ///
 /// Everything else reads its length from disk (never the document's stale
 /// `size_bytes`). A recorded path whose stem already ends in `-mv` names a
-/// derivative the media pass has committed and will never touch again
+/// derivative the Media stage has committed and will never touch again
 /// (`pending_in`'s own exclusion rule, in `transcode.rs`); it is classified
 /// on that size alone, with no probe and `estimate_bytes` equal to
 /// `size_bytes` — applying a mode's growth or shrink factor to it would
 /// forecast a transcode that can never happen. Every other file is probed
 /// when [`media::needs_probe`] says it is close enough to the limit to
-/// matter and `options.mode` has a media step, then classified with
+/// matter and `options.mode` converts or compresses, then classified with
 /// [`media::classify_probed`]. Under [`MediaMode::Clone`] and
-/// [`MediaMode::Disabled`] there is no media step at all: probing is skipped
+/// [`MediaMode::Disabled`] the Media stage does nothing: probing is skipped
 /// entirely — not an optimization, since probing would forecast work that
 /// will never run — `estimate_bytes` equals `size_bytes`, and the file is
 /// classified on its current size alone.
 ///
 /// The probe is best-effort: a failed ffprobe call on one file means
-/// classifying it with no probe in hand, never failing the summary — a gate
-/// that cannot render because one file is unreadable is worse than a gate
+/// classifying it with no probe in hand, never failing the summary — a Review
+/// that cannot render because one file is unreadable is worse than a Review
 /// with one rougher estimate.
 ///
 /// Content-addressed staging means two attachment records can share one
@@ -191,7 +191,7 @@ pub fn summarize_staging(
     let mut contacts = BTreeSet::new();
     let mut owner: BTreeMap<String, (u64, u64)> = BTreeMap::new();
     // Gathered while walking the documents for their conversation/message/
-    // contact counts, so the classification pass below can run over a flat
+    // contact counts, so the classification loop below can run over a flat
     // list with a known total up front, matching `on_progress`'s contract.
     let mut attachments: Vec<AttachmentRef> = Vec::new();
 
@@ -265,7 +265,7 @@ pub fn summarize_staging(
 }
 
 /// One attachment reference gathered from a document, stripped to the fields
-/// [`summarize_staging`]'s classification pass needs.
+/// [`summarize_staging`]'s classification loop needs.
 struct AttachmentRef {
     path: Option<String>,
     missing_reason: Option<String>,

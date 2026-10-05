@@ -373,7 +373,7 @@ fn remap_updates_mime_and_continues_when_one_file_is_unreadable() {
 }
 #[test]
 fn clone_mode_reports_nothing_to_the_log_sink() {
-    // Clone has no media pass, so nothing should reach the sink. This
+    // Clone converts nothing, so nothing should reach the sink. This
     // pins that the new `log` parameter is wired end to end without
     // requiring ffmpeg in this crate's tests.
     let dir = tempfile::tempdir().unwrap();
@@ -405,7 +405,7 @@ fn clone_mode_reports_nothing_to_the_log_sink() {
     }
     assert!(
         lines.lock().unwrap().is_empty(),
-        "clone mode runs no media pass, so it has nothing to report"
+        "clone mode converts nothing, so it has nothing to report"
     );
 }
 #[test]
