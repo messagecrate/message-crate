@@ -488,7 +488,7 @@ fn message_of<'a>(
 /// `reply_key_id` equal to that message's `full_key_id`. On an iPhone two
 /// messages can share the 17-character `key_id`, so the whole key decides
 /// which one is quoted. A reply whose quoted message is not in the chat, or
-/// one from an older JSON with no `reply_key_id`, is still a reply, with no
+/// one from a JSON with no `reply_key_id`, is still a reply, with no
 /// link, and a key that names a message in another chat links nothing.
 #[test]
 fn a_reply_links_to_the_message_it_quotes_in_the_same_chat() {
@@ -523,7 +523,7 @@ fn a_reply_links_to_the_message_it_quotes_in_the_same_chat() {
     assert_eq!(
         message_of(sam, "From an older export").reply_to,
         no_link,
-        "an older JSON names no reply_key_id"
+        "a JSON with no reply_key_id"
     );
 
     let ada = &documents["+15555550133"];

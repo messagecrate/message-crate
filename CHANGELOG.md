@@ -26,8 +26,10 @@ released versions carry their date on the heading.
   linked to it, as Apple Messages replies already were: a mail export threads
   the reply under that message, and a CSV or JSON export names it. A reply
   whose quoted message is not in the backup is still kept as a reply. The
-  link needs a WhatsApp Chat Exporter that records the quoted message's whole
-  id; a backup read by an older one gives replies with no link.
+  link needs a `wtsexporter` that records the quoted message's whole id,
+  which only Message Crate's fork of WhatsApp Chat Exporter does, on its
+  `main` branch and in no release yet; a backup read by any other gives
+  replies with no link.
 
 ### Design
 

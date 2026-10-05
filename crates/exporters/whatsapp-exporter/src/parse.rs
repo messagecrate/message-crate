@@ -38,16 +38,18 @@ pub(crate) struct MessageJson {
     pub key_id: Option<Value>,
     /// The whole id the backup stores for the message. On an iPhone
     /// `key_id` is its first 17 characters; on Android the two are equal.
-    /// `null` for a message from WhatsApp's own text export, and absent from
-    /// a JSON written before the fork added it.
+    /// `null` for a message from WhatsApp's own text export. Absent from a
+    /// JSON that upstream WhatsApp Chat Exporter wrote: only Message Crate's
+    /// fork, `messagecrate/WhatsApp-Chat-Exporter`, writes it, from commit
+    /// 96e6b80 on its `main`.
     #[serde(default)]
     pub full_key_id: Option<Value>,
     /// What the message quotes, when it is a reply: the quoted message's
     /// `key_id` as wtsexporter writes it.
     pub reply: Option<Value>,
     /// The whole id of the quoted message, as its `full_key_id`, on a quoted
-    /// reply; `null` when the message is not a reply, and absent from an
-    /// older JSON.
+    /// reply; `null` when the message is not a reply. Absent where
+    /// [`Self::full_key_id`] is.
     #[serde(default)]
     pub reply_key_id: Option<Value>,
     #[serde(default)]
