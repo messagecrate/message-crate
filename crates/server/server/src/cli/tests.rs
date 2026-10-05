@@ -474,8 +474,8 @@ async fn dump_openapi_writes_the_document_to_the_output_path() {
 }
 
 #[test]
-fn import_stats_print_one_line_for_each_count() {
-    let stats = crate::imports_api::ImportStats {
+fn import_counts_print_one_line_for_each_count() {
+    let counts = crate::imports_api::ImportCounts {
         conversations: 2,
         messages: 5,
         mode: ImportMode::Replace,
@@ -483,7 +483,7 @@ fn import_stats_print_one_line_for_each_count() {
     };
 
     assert_eq!(
-        format_import_stats(&stats),
+        format_import_counts(&counts),
         "  files:         0\n\
          \x20 conversations: 2\n\
          \x20 participants:  0\n\
@@ -496,13 +496,13 @@ fn import_stats_print_one_line_for_each_count() {
          \x20 media files missing: 0 (attachment path not found on disk)\n"
     );
 
-    let appended = crate::imports_api::ImportStats {
+    let appended = crate::imports_api::ImportCounts {
         mode: ImportMode::Append,
         messages_appended: 4,
         phones_needing_review: 1,
         ..Default::default()
     };
-    let text = format_import_stats(&appended);
+    let text = format_import_counts(&appended);
     assert!(text.contains("  messages appended: 4\n"), "{text}");
     assert!(
         text.ends_with(
@@ -511,11 +511,11 @@ fn import_stats_print_one_line_for_each_count() {
         "{text}"
     );
 
-    let incomplete = crate::imports_api::ImportStats {
+    let incomplete = crate::imports_api::ImportCounts {
         other_identities: 2,
         ..Default::default()
     };
-    let text = format_import_stats(&incomplete);
+    let text = format_import_counts(&incomplete);
     assert!(
         text.ends_with(
             "  identities with no address: 2 (a name the backup gave in place of an address; the export is incomplete)\n"

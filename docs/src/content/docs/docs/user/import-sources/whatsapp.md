@@ -54,7 +54,7 @@ A rooted phone gives access to WhatsApp's private storage, where the unencrypted
 Rooting differs for every phone model and is outside this guide.
 The [WhatsApp Chat Exporter documentation](https://github.com/KnugiHK/WhatsApp-Chat-Exporter) describes which files to copy.
 
-### Fill in the Import form
+### Fill in the Import form for Android
 
 1. Open **Import** and choose **WhatsApp** as the source.
 2. **Platform**: **Android**.
@@ -70,7 +70,7 @@ WhatsApp's data is inside the iPhone backup made in [Back up an iPhone](/docs/us
 The backup can be encrypted or not.
 A backup that was encrypted for importing iPhone messages is used here as it is, with the same password.
 
-### Fill in the Import form
+### Fill in the Import form for iPhone
 
 1. Open **Import** and choose **WhatsApp** as the source.
 2. **Platform**: **iPhone**.

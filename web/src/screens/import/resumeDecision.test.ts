@@ -124,7 +124,7 @@ describe("resumeDecisionFor", () => {
   });
 
   it("still offers discard only when the directory is gone at a gate", () => {
-    // Decision 36: after a review, discard only. There is nothing to
+    // After a review, discard only. There is nothing to
     // recompute a summary from.
     for (const stage of ["staging_review", "media_review", "media"] as const) {
       expect(
@@ -193,7 +193,7 @@ describe("resumeDecisionFor", () => {
   });
 
   it("ignores the fingerprint once the copy is done", () => {
-    // Decision 36: a changed source is irrelevant at either gate and during
+    // A changed source is irrelevant at either Review and during
     // the push — the staged directory is what those stages work from.
     expect(
       resumeDecisionFor({
@@ -222,7 +222,6 @@ describe("checkSourceFingerprint", () => {
     path: "/backups/chat.db",
     size_bytes: 1000,
     modified_unix_ms: 1_700_000_000_000,
-    message_count: null,
   };
 
   it("cannot judge a session that stored no fingerprint", () => {

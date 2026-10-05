@@ -385,7 +385,7 @@ async fn run_import(args: ImportArgs) -> Result<()> {
     let opened = OpenDb::open(cfg).await?;
     let account = opened.account_id(&args.account).await?;
 
-    let stats = crate::import_cli::run(
+    let counts = crate::import_cli::run(
         &opened,
         &crate::import_cli::CliImportOptions {
             account_id: account,
@@ -402,10 +402,10 @@ async fn run_import(args: ImportArgs) -> Result<()> {
 
     println!();
     println!("Import into {}", opened.location().display());
-    println!("  input:         {}", stats.input_dir.display());
-    println!("  sources:       {}", stats.sources.join(", "));
-    print!("{}", format_import_stats(&stats.import));
-    match stats.dedupe {
+    println!("  input:         {}", counts.input_dir.display());
+    println!("  sources:       {}", counts.sources.join(", "));
+    print!("{}", format_import_counts(&counts.import));
+    match counts.dedupe {
         Some(dedupe) => {
             println!("Cross-source soft-dedupe (hide the same SMS across sources)");
             print!("{}", format_dedupe_stats(&dedupe));
@@ -456,7 +456,7 @@ fn format_discarded_import(
 }
 
 /// The counts from one import stage, one line each, ready to print.
-fn format_import_stats(import: &crate::imports_api::ImportStats) -> String {
+fn format_import_counts(import: &crate::imports_api::ImportCounts) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "  files:         {}", import.files);
     let _ = writeln!(out, "  conversations: {}", import.conversations);

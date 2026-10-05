@@ -111,7 +111,6 @@ Later sessions, start with no flags so `data/` stays. With no database yet, the 
 
 `--reset` alone leaves Message Crate **unclaimed**, so the first screen is Create Owner. Add `--owner` to claim it as `admin`/`admin` instead and land on the login. `--reset-demo` seeds the Demo Account and no owner, so it also leaves Message Crate unclaimed unless `--owner` is added.
 
-
 ### Open the website (terminal 2)
 
 Install the frontend packages once, then start the Vite UI. Vite is the local web server for `web/`.

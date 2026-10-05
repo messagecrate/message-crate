@@ -217,7 +217,7 @@ fn transcode_file_clears_scratch_beside_the_source_only() {
     assert!(
         marker.exists(),
         "the .in_progress marker is the resume signal and must survive the \
-         scratch sweep (decision 30)"
+         scratch sweep"
     );
 }
 

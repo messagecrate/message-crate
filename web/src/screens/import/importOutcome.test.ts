@@ -198,7 +198,7 @@ describe("importOutcome against an approved plan", () => {
   });
 
   it("an Upload that sent nothing is paused however clean the issue list is", () => {
-    // Decision 21's floor: conversations_total > 0 with nothing ok and
+    // The zero floor: conversations_total > 0 with nothing ok and
     // nothing skipped means nothing landed at all, so the run is not finished.
     const outcome = importOutcome({
       report: report({ conversations_ok: 0, messages_inserted: 0 }),
@@ -323,7 +323,7 @@ describe("importOutcome against an approved plan", () => {
   it("a fits_as_is forecast row does not excuse a skip for that file", () => {
     // Only the verdicts that predict an omission (`probably_too_big`,
     // `cannot_process`) count as approved — a row the plan expected to land
-    // is not the kind of "expected omission" decision 15 describes.
+    // is not an expected omission.
     const approved: StagingSummary = {
       ...approvedPlan(),
       forecasts: [

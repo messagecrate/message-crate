@@ -57,8 +57,7 @@ fn store_verified_replaces_corrupt_destination() {
     fs::create_dir_all(destination.parent().unwrap()).unwrap();
     fs::write(&destination, b"corrupt").unwrap();
 
-    let (stored, already_present) =
-        store_verified(&source, &sha, root, None, false, false).unwrap();
+    let (stored, already_present) = store_verified(&source, &sha, root, None, false).unwrap();
 
     assert!(!already_present);
     assert_eq!(
@@ -211,7 +210,7 @@ fn store_verified_records_mime_for_extensionless_media_blobs() {
         fs::write(&source, name.as_bytes()).unwrap();
         let sha = Sha256::of_bytes(name.as_bytes());
 
-        let (stored, _) = store_verified(&source, &sha, dir.path(), None, false, false).unwrap();
+        let (stored, _) = store_verified(&source, &sha, dir.path(), None, false).unwrap();
 
         assert!(Path::new(&stored.assets_path).extension().is_none());
         assert_eq!(stored.mime_type.as_deref(), Some(expected));
@@ -241,7 +240,7 @@ fn lookup_by_sha256_preserves_mime_for_extensionless_assets() {
     fs::write(&source, b"new-jpeg").unwrap();
     let sha = Sha256::of_bytes(b"new-jpeg");
 
-    let (stored, _) = store_verified(&source, &sha, dir.path(), None, false, false).unwrap();
+    let (stored, _) = store_verified(&source, &sha, dir.path(), None, false).unwrap();
     let looked_up = lookup_by_sha256(dir.path(), &sha).unwrap();
 
     assert!(Path::new(&stored.assets_path).extension().is_none());
@@ -287,7 +286,7 @@ fn store_verified_skips_temp_copy_on_valid_dedup() {
     fs::write(&source, b"dedup-asset").unwrap();
     let sha = Sha256::of_bytes(b"dedup-asset");
 
-    let (first, present) = store_verified(&source, &sha, root, None, false, false).unwrap();
+    let (first, present) = store_verified(&source, &sha, root, None, false).unwrap();
     assert!(!present);
 
     let copied = std::cell::Cell::new(false);
@@ -329,7 +328,7 @@ fn store_verified_hashes_source_before_deduplication() {
 
     let sha = Sha256::parse(&hash_file(src.path()).unwrap()).unwrap();
     let (first, present) =
-        store_verified(src.path(), &sha, root, Some("text/plain"), false, false).unwrap();
+        store_verified(src.path(), &sha, root, Some("text/plain"), false).unwrap();
     assert!(!present);
     assert_eq!(first.sha256, sha.as_str());
     assert!(src.path().is_file(), "non-consuming store must keep source");
@@ -339,8 +338,7 @@ fn store_verified_hashes_source_before_deduplication() {
     let mut other = tempfile::NamedTempFile::new().unwrap();
     other.write_all(b"different-bytes").unwrap();
     other.flush().unwrap();
-    let err =
-        store_verified(other.path(), &sha, root, Some("text/plain"), false, false).unwrap_err();
+    let err = store_verified(other.path(), &sha, root, Some("text/plain"), false).unwrap_err();
     assert!(err.to_string().contains("sha256 mismatch"));
     assert_eq!(
         fs::read(root.join(first.assets_path)).unwrap(),
@@ -386,15 +384,8 @@ fn store_verified_renames_same_filesystem_temp() {
     fs::write(&tmp, b"rename-me").unwrap();
     let sha = Sha256::parse(&hash_file(&tmp).unwrap()).unwrap();
 
-    let (stored, present) = store_verified(
-        &tmp,
-        &sha,
-        root,
-        Some("application/octet-stream"),
-        true,
-        false,
-    )
-    .unwrap();
+    let (stored, present) =
+        store_verified(&tmp, &sha, root, Some("application/octet-stream"), true).unwrap();
     assert!(!present);
     assert!(!tmp.exists(), "rename should consume the temp file");
     assert!(root.join(&stored.assets_path).is_file());
@@ -415,7 +406,7 @@ fn store_verified_rejects_symlink_source() {
     {
         std::os::unix::fs::symlink(&real, &link).unwrap();
         let sha = Sha256::parse(&hash_file(&real).unwrap()).unwrap();
-        let err = store_verified(&link, &sha, root, None, false, false).unwrap_err();
+        let err = store_verified(&link, &sha, root, None, false).unwrap_err();
         assert!(
             err.to_string().contains("symlink"),
             "unexpected error: {err}"
@@ -1077,8 +1068,7 @@ fn mime_for_a_stored_blob_is_the_claim_then_the_source_name() {
     fs::write(&source, b"stored-blob").unwrap();
 
     let stored = |export_mime: Option<&str>| {
-        let (stored, present) =
-            store_verified(&source, &sha, root, export_mime, false, false).unwrap();
+        let (stored, present) = store_verified(&source, &sha, root, export_mime, false).unwrap();
         assert!(present, "the blob is already stored");
         stored.mime_type
     };
@@ -1110,7 +1100,7 @@ fn lookup_ignores_a_file_named_with_an_extension() {
     // Storing the bytes creates the extensionless path beside it.
     let source = root.join("source.jpg");
     fs::write(&source, b"named-with-extension").unwrap();
-    let (stored, present) = store_verified(&source, &sha, root, None, false, false).unwrap();
+    let (stored, present) = store_verified(&source, &sha, root, None, false).unwrap();
     assert!(!present);
     assert_eq!(stored.assets_path, shard_rel_path(&sha, ""));
     assert!(root.join(shard_rel_path(&sha, "")).is_file());

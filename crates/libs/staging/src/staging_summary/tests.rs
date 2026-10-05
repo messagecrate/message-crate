@@ -380,10 +380,8 @@ fn two_attachments_in_one_document_sharing_one_file_count_bytes_and_forecast_onc
     // Same aliasing fact as the cross-document test above, but both
     // references live in ONE document — the dedup loop (`classified_paths`)
     // walks a single flattened list across every document, so it is
-    // document-agnostic by construction, but the same-document case had
-    // no test pinning it (deferred from Task 4's review as a coverage
-    // gap, closed here at the final review alongside the transcode.rs
-    // aliasing fix, which faces the identical blind spot).
+    // document-agnostic by construction, and this pins the same-document
+    // case, which `transcode.rs` faces too.
     let dir = tempfile::tempdir().unwrap();
     let attachments_dir = dir.path().join("attachments");
     std::fs::create_dir_all(&attachments_dir).unwrap();

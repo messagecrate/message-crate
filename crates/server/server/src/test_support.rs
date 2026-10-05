@@ -1085,7 +1085,7 @@ pub async fn import_jsonl_text(
     account_id: i64,
     source: &str,
     body: &str,
-) -> crate::imports_api::ImportStats {
+) -> crate::imports_api::ImportCounts {
     use crate::imports_api::{
         FixedImportArgs, ImportMode, ImportOptions, ImportSchemaMode, import_jsonl_files_on_conn,
     };

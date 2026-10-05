@@ -13,10 +13,12 @@ export type ResumeDecision = {
     | "directory_unknown"
     | "resume_push"
     // A session waiting at either review: the summary is recomputed
-    // fresh from the directory (decision 39) and shown again, nothing restored.
+    // fresh from the directory and shown again, nothing restored, because the
+    // directory is the truth.
     | "resume_review"
     // A session that died mid media pass: the pass re-runs over whatever
-    // originals it had not reached yet (Task 3 makes this safe), then
+    // originals it had not reached yet, which is safe because an original
+    // still on disk always means work remains, then
     // continues to the Media Review exactly as the normal flow does.
     | "resume_media"
     // A session whose copy was interrupted: the exporter reads the backup

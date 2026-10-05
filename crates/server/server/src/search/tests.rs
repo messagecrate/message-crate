@@ -1985,7 +1985,7 @@ mod kind_words {
         });
         std::fs::write(&path, format!("{header}\n{line}\n")).unwrap();
         let assets = dir.join("assets");
-        let stats = crate::imports_api::import_jsonl_files_on_conn(
+        let counts = crate::imports_api::import_jsonl_files_on_conn(
             conn,
             &[path],
             &crate::imports_api::ImportOptions::fixed(crate::imports_api::FixedImportArgs {
@@ -2001,7 +2001,7 @@ mod kind_words {
         )
         .await
         .unwrap();
-        assert_eq!(stats.messages, 1, "{source}");
+        assert_eq!(counts.messages, 1, "{source}");
         sqlx::query_as(
             "SELECT m.conversation_id, m.id FROM messages m
              JOIN handles h ON h.id = (SELECT chat_handle_id FROM conversations WHERE id = m.conversation_id)

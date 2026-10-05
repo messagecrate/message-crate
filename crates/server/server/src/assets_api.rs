@@ -210,9 +210,9 @@ pub fn lookup_by_sha256_unverified(assets_root: &Path, sha256: &Sha256) -> Optio
 /// When `consume_source` is true (HTTP upload temps), the source is removed
 /// after the verified temporary copy is installed.
 ///
-/// `skip_hash` is kept only so the function signature stays stable. Sources are
-/// always hashed before reuse, so a wrong upload cannot be accepted just
-/// because a matching file already exists.
+/// The source is always hashed, even when a file with that fingerprint is
+/// already stored, so a wrong upload cannot be accepted just because a
+/// matching file already exists.
 ///
 /// Returns `(stored, already_present)`.
 ///
@@ -226,7 +226,6 @@ pub fn store_verified(
     assets_root: &Path,
     export_mime: Option<&str>,
     consume_source: bool,
-    _skip_hash: bool,
 ) -> Result<(StoredAsset, bool), AssetError> {
     store_verified_inner(
         source,
@@ -437,7 +436,7 @@ pub fn hash_and_store(
 
     let sha = hash_file(source).with_context(|| format!("failed to hash {}", source.display()))?;
     let sha = Sha256::parse(&sha)?;
-    let (stored, already) = store_verified(source, &sha, assets_root, export_mime, false, false)?;
+    let (stored, already) = store_verified(source, &sha, assets_root, export_mime, false)?;
     if already {
         stats.deduped += 1;
     } else {
@@ -1075,7 +1074,6 @@ pub(crate) async fn replace_asset(
             &assets_dir_store,
             mime.as_deref(),
             true,
-            false,
         )
     })
     .await;

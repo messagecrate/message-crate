@@ -542,7 +542,7 @@ pub async fn require_running_import(
 /// `summary_json` is written to `imports.summary_json` only when
 /// `Some`; `None` leaves whatever is already stored there untouched. Most
 /// stage changes carry no summary, and treating absent as null would erase
-/// the plan decision 15 later diffs the outcome against.
+/// the approved plan the outcome is later diffed against.
 ///
 /// # Errors
 ///
