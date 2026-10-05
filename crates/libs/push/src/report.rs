@@ -233,10 +233,11 @@ pub fn format_duration_ms(ms: u64) -> String {
     }
 }
 
-/// Three-way session status for `/v1/imports/{id}/complete` (import-session
-/// spec, decisions 21–22). `failed` has a zero floor: aborted, or nothing
-/// landed at all. A skip-only re-push is a no-op, not a failure. Item-level
-/// failures beside successes are `completed_with_issues`.
+/// Three-way Import Run status for `/v1/imports/{id}/complete`, read from the
+/// push report rather than from whether the push returned. `failed` has a
+/// zero floor: aborted, or nothing landed at all. A skip-only re-push is a
+/// no-op, not a failure. Item-level failures beside successes are
+/// `completed_with_issues`.
 pub fn outcome_status(report: &PushReport, aborted: bool) -> &'static str {
     let nothing_landed = report.conversations_total > 0
         && report.conversations_ok == 0

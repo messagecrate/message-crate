@@ -34,7 +34,7 @@ pub use exporters::{
 pub use pipeline::{
     ATTACHMENTS_MISSING, CSV_NOT_READ, ExportReport, IssueSink, NAME_ONLY_CHAT,
     NAME_ONLY_CHAT_NOTE, NOT_SMS_OR_MMS_LEFT_OUT, NOTE, RunIssue, RunResult, discover_files,
-    emit_issue, export_meta, prepare_outputs, project_conversation, prune_and_finish_conversation,
+    emit_issue, export_meta, prepare_outputs, project_conversation,
 };
 pub use process::{
     CancelFlag, Cancelled, LogSink, check_cancel, emit_log, is_cancelled, parallel_for_each,

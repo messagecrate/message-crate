@@ -16,7 +16,7 @@ async fn import_one_message(conn: &mut SqliteConnection, dir: &std::path::Path, 
     )
     .unwrap();
     let assets = dir.join("assets");
-    let stats = super::super::import_jsonl_files_on_conn(
+    let counts = super::super::import_jsonl_files_on_conn(
         conn,
         &[path],
         &super::super::ImportOptions::fixed(super::super::FixedImportArgs {
@@ -32,7 +32,7 @@ async fn import_one_message(conn: &mut SqliteConnection, dir: &std::path::Path, 
     )
     .await
     .unwrap();
-    assert_eq!(stats.messages, 1, "the import must insert its message");
+    assert_eq!(counts.messages, 1, "the import must insert its message");
 }
 
 /// Promotion reads only rows staging accepted, so a promote that fails is

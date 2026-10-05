@@ -398,8 +398,8 @@ describe("ImportScreen entering Import", () => {
   });
 
   it("also deletes the staging folder when discarding a this-device session", async () => {
-    // W7: cancelRun already deletes the staging folder when a review is
-    // cancelled (decision 16) -- a panel discard is the same operation reached
+    // cancelRun already deletes the staging folder when a review is
+    // cancelled -- a panel discard is the same operation reached
     // through a different button, and used to only call
     // discardImportSession, orphaning a potentially multi-GB folder.
     const user = setupUser();
@@ -566,13 +566,13 @@ describe("ImportScreen entering Import", () => {
     },
   );
 
-  it("re-fetches and reshows the resume panel with the failure surfaced when a gate resume's recompute fails", async () => {
-    // Decision 37: only an explicit discard ends a waiting session, so a
-    // failed recompute (useImportJob's resumeAtReview) never completes or
-    // discards it -- it returns to the form phase instead. That phase
-    // transition is what re-triggers this screen's own active-session
-    // check, and since nothing was touched server-side, it finds the exact
-    // same session and shows the panel again -- this is the retry.
+  it("re-fetches and reshows the resume panel with the failure surfaced when a Review resume's recompute fails", async () => {
+    // Only an explicit discard ends a waiting run, so a failed recompute
+    // (useImportJob's resumeAtReview) never completes or discards it -- it
+    // returns to the form phase instead. That phase transition is what
+    // re-triggers this screen's own check for a running Import Run, and
+    // since nothing was touched server-side, it finds the same run and
+    // shows the panel again -- this is the retry.
     getActiveImportSessionMock.mockResolvedValue(
       session({ stage: "staging_review", form: restorableForm }),
     );
@@ -658,7 +658,6 @@ describe("ImportScreen entering Import", () => {
           path: "/backups/iphone.tar",
           size_bytes: 1000,
           modified_unix_ms: 1_700_000_000_000,
-          message_count: null,
         },
         form: {
           source: "imessage-ios",
@@ -723,7 +722,6 @@ describe("ImportScreen entering Import", () => {
           path: "/backups/iphone.tar",
           size_bytes: 1000,
           modified_unix_ms: 1_700_000_000_000,
-          message_count: null,
         },
       }),
     );

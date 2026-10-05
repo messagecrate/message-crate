@@ -1124,6 +1124,14 @@ released versions carry their date on the heading.
 - 2026-10-03 **The contact drawer opened from a conversation covers the
   column resize handles.** It sat below the handles, so a handle could show
   through it.
+- 2026-10-04 **The contact drawer opened from a conversation stays inside
+  the window.** In a window narrower than the list plus the drawer, its right
+  side ran past the window's edge and was cut off. It now stays inside the
+  window, and in a window as narrow as a phone it covers the list instead.
+- 2026-10-04 **The Contact Identity card and the selected-contacts card fit
+  inside their panel.** The Contact Identity card, and the card that sums up
+  the contacts you selected, were a little wider than the panel they sit in,
+  so the panel scrolled sideways.
 
 #### Accounts, Settings and screens
 
