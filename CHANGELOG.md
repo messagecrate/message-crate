@@ -858,6 +858,12 @@ released versions carry their date on the heading.
 
 #### Search
 
+- 2026-10-04 **The Messages list shows which messages were deleted in the
+  app they came from, and which were unsent.** A message deleted in the
+  source app keeps its text in the list, and its date reads like "Oct 3 ·
+  Deleted in Apple Messages". An unsent message reads "Unsent" in place of
+  its text. Before, every row looked alike until the message was opened, so
+  a `deleted:yes` search read like any other.
 - 2026-10-04 **A conversation opened from a Message Tag page keeps the
   search box as it was.** Opening a conversation from a Message Tag page put
   `tag:Holiday` into the search box, as though it had been typed, and the
@@ -1071,6 +1077,11 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-04 **On the light theme, the contact drawer's shadow falls on the
+  list it covers.** The drawer opens from the right, and its shadow fell to
+  the right, under the drawer itself, so the drawer's left edge had no
+  shadow. It now falls to the left, as on the dark theme and as the Sources
+  drawer's does.
 - 2026-10-04 **Panels, menus and drawers stand out on the dark theme.**
   Their shadows were tuned for the light theme and all but vanished on the
   dark theme's dark surfaces. The dark theme now has its own, darker

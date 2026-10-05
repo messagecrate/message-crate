@@ -7,6 +7,7 @@ import { useTimeZone } from "../lib/timeZone";
 import { listRowDivider } from "../lib/tw";
 import type { Message } from "../lib/types";
 import { focusRing } from "../lib/uiStyles";
+import { DeletionNote } from "./messages/chatBubbleShared";
 import PlainButton from "./PlainButton";
 
 /** `text` with each range in bold. */
@@ -31,6 +32,11 @@ function boldRanges(text: string, ranges: readonly MatchRange[]): ReactNode[] {
  * date in the account's Time Zone, then who sent it and its text, cut around
  * the first matching word with the matching free-text words in bold, and a
  * 📎 count when it has attachments.
+ *
+ * A marked message shows its mark as the conversation does: one Deleted in
+ * the source app keeps its text, and its date reads "<day> · Deleted in
+ * <source>"; an Unsent one reads "Unsent" in place of its text and
+ * attachments, because its sender took all of it back.
  */
 export default function MessageSearchRow({
   message,
@@ -44,8 +50,9 @@ export default function MessageSearchRow({
   onClick: () => void;
 }) {
   const zone = useTimeZone();
-  const cut = snippet(messageRowText(message), terms);
-  const attachmentCount = message.attachments.length;
+  const unsent = message.deletion === "unsent";
+  const cut = snippet(unsent ? "" : messageRowText(message), terms);
+  const attachmentCount = unsent ? 0 : message.attachments.length;
   const sender = messageSenderName(message);
 
   return (
@@ -61,7 +68,8 @@ export default function MessageSearchRow({
           {messageConversationName(message.conversation)}
         </span>
         <span className="shrink-0 text-[0.75rem] text-muted">
-          {formatDay(message.timestamp, zone)}
+          {formatDay(message.timestamp, zone)}{" "}
+          <DeletionNote deletion={message.deletion} source={message.source} />
         </span>
       </span>
       <span className="flex min-w-0 items-start justify-between gap-2 text-[0.813rem] leading-[1.35]">
@@ -71,7 +79,7 @@ export default function MessageSearchRow({
               <span className="font-medium text-text">{sender}:</span>{" "}
             </>
           ) : null}
-          {boldRanges(cut.text, cut.ranges)}
+          {unsent ? "Unsent" : boldRanges(cut.text, cut.ranges)}
         </span>
         {attachmentCount > 0 ? (
           <span

@@ -97,4 +97,36 @@ describe("MessageSearchRow", () => {
     expect(row).toHaveTextContent("Alice: photo 1.jpg");
     expect(row.querySelector("strong")?.textContent).toBe("photo");
   });
+
+  it("keeps the text of a message Deleted in the source app and notes the source by its name", () => {
+    renderRow(message({ deletion: "deleted_in_source_app" }));
+    const row = screen.getByRole("button");
+    expect(row).toHaveTextContent("Alice: Here is the photo from the dentist");
+    const note = screen.getByText("· Deleted in Apple Messages");
+    expect(note.closest(".text-muted")).not.toBeNull();
+    expect(row).not.toHaveTextContent("Unsent");
+  });
+
+  it('shows "Unsent" in place of the text of an Unsent message, in the muted colour', () => {
+    renderRow(
+      message({
+        deletion: "unsent",
+        text: null,
+        attachments: [{ original_name: "photo 1.jpg" }],
+      }),
+    );
+    const row = screen.getByRole("button");
+    expect(row).toHaveTextContent("Alice: Unsent");
+    expect(row).not.toHaveTextContent("photo 1.jpg");
+    expect(row).not.toHaveTextContent("📎");
+    expect(row).not.toHaveTextContent("Deleted in");
+    expect(screen.getByText("Unsent").closest(".text-muted")).not.toBeNull();
+  });
+
+  it("carries no mark for an unmarked message", () => {
+    renderRow(message());
+    const row = screen.getByRole("button");
+    expect(row).not.toHaveTextContent("Deleted in");
+    expect(row).not.toHaveTextContent("Unsent");
+  });
 });
