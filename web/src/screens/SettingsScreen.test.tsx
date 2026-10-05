@@ -50,6 +50,9 @@ function baseProfile(): Awaited<ReturnType<typeof getAccountProfile>> {
   return {
     account_id: 7,
     username: "bob",
+    app: null,
+    app_build: null,
+    last_login_at: null,
     preferred_name: null,
     phones: [],
     emails: [],

@@ -3,6 +3,7 @@
 import { cleanup, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { missingAttachmentChipLabel } from "../../lib/missingAttachmentLabel";
+import { attachment } from "../../test/apiShapes";
 import { BUBBLES, renderBubbleInUtc as renderInUtc } from "../../test/bubbles";
 import { sampleMessage as message } from "../../test/messages";
 
@@ -11,11 +12,11 @@ afterEach(() => {
 });
 
 /** An attachment the import kept without its file, so it draws as a chip and fetches nothing. */
-const ATTACHMENT = {
+const ATTACHMENT = attachment({
   original_name: "notes.pdf",
   mime_type: "application/pdf",
   missing_reason: "file_missing",
-};
+});
 const ATTACHMENT_LABEL = missingAttachmentChipLabel(ATTACHMENT);
 
 /** The element drawn as the message's bubble: the one holding `text`, with a dashed outline. */

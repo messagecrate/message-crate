@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SearchList } from "../lib/searchFields";
 import { getConversation, listConversationMessages, trashConversation } from "../lib/serverApi";
 import type { Conversation, Message } from "../lib/types";
+import { message as baseMessage } from "../test/apiShapes";
 import { mockedAuth, Providers } from "../test/providers";
 import { searchFieldsFor } from "../test/searchFields";
 import { setupUser } from "../test/user";
@@ -106,29 +107,21 @@ function conv(id: number, label: string): Conversation {
 }
 
 function message(id: number, conversationId: number): Message {
-  return {
+  return baseMessage({
     id,
-    source: "imessage",
     guid: `g${id}`,
     timestamp: "2024-01-01T10:00:00Z",
-    sort_order: 0,
-    is_from_me: false,
-    is_announcement: false,
-    is_reply: false,
-    num_replies: 0,
     text: "photo",
     conversation: {
       id: conversationId,
       chat_identifier: "+1",
       conversation_type: "individual",
       is_group: false,
+      group_title: null,
+      label: null,
       participants: [],
     },
-    attachments: [],
-    tapbacks: [],
-    earlier_versions: [],
-    matched_earlier_version: false,
-  };
+  });
 }
 
 const VERSIONS = [

@@ -248,6 +248,10 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-04 **Every answer from the server carries the same fields.** A
+  field with nothing in it is sent empty instead of being left out, so a
+  program that talks to the server always finds the fields it expects.
+  Nothing changes on screen.
 - 2026-10-04 **An Import Run's log is kept for good, and scratch data has a
   directory of its own.** Each Import Run's log is written to the Logs
   Directory, named for the run, instead of the run's directory in the

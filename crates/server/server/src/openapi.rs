@@ -253,11 +253,13 @@ pub fn api_openapi() -> OpenApiRouter<AppState> {
 }
 
 /// Finish the assembled document with the parts no handler writes: the
-/// shared error responses and one-sentence summaries ([`shared_parts`]).
+/// shared error responses and one-sentence summaries ([`shared_parts`]), and
+/// every field of a success answer required ([`response_fields`]).
 /// The server and the dump both call this, so what `/openapi.json` serves
 /// and what is checked in are one document.
 pub(crate) fn finish(spec: &mut utoipa::openapi::OpenApi) {
     shared_parts::apply(spec);
+    response_fields::require_every_field(spec);
 }
 
 /// Pretty OpenAPI JSON. Same string the CLI writes and the stale-spec test compares.
@@ -288,6 +290,7 @@ pub fn write_openapi(path: Option<&Path>) -> anyhow::Result<()> {
     Ok(())
 }
 
+pub(crate) mod response_fields;
 pub(crate) mod shared_parts;
 
 #[cfg(test)]

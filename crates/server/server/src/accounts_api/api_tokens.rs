@@ -4,7 +4,7 @@
 //! owner lists, reads and revokes them too, and makes and renames none: the
 //! owner must be able to end a credential that has leaked, and a token's label,
 //! permissions and last use are not message content. The owner never reads any
-//! part of a secret, so what it is shown leaves out `token_hint`. A logged-in
+//! part of a secret, so `token_hint` is `null` in what it is shown. A logged-in
 //! session is required; a token cannot mint, rename or revoke tokens.
 
 use crate::extract::{Json, Path, Query};
@@ -36,17 +36,14 @@ pub struct ApiToken {
     pub can_import: bool,
     /// May call the export endpoints.
     pub can_export: bool,
-    /// Masked secret for Settings (e.g. `mc-api-Sd..mE`). Absent when the
+    /// Masked secret for Settings (e.g. `mc-api-Sd..mE`). `null` when the
     /// owner lists another account's tokens: the hint is part of the secret.
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub token_hint: Option<String>,
     /// Creation time as a Unix-seconds string.
     pub created_at: String,
-    /// Unix-seconds string of last use; absent when never used.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Unix-seconds string of last use; `null` when never used.
     pub last_accessed_at: Option<String>,
-    /// Unix-seconds expiry; absent means no expiry.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Unix-seconds expiry; `null` means no expiry.
     pub expires_at: Option<String>,
     /// True when the token is disabled and rejects requests.
     pub disabled: bool,
@@ -113,8 +110,7 @@ pub struct CreateApiTokenResponse {
     pub can_export: bool,
     /// Creation time as a Unix-seconds string.
     pub created_at: String,
-    /// Unix-seconds expiry; absent means no expiry.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// Unix-seconds expiry; `null` means no expiry.
     pub expires_at: Option<String>,
     /// Plaintext secret — returned once at creation.
     pub token: String,
@@ -540,8 +536,9 @@ mod tests {
         assert_eq!(item["can_export"], true, "{listed}");
         assert_eq!(item["created_at"], created["created_at"], "{listed}");
         assert!(item["last_accessed_at"].is_string(), "{listed}");
-        assert!(
-            item.get("token_hint").is_none(),
+        assert_eq!(
+            item.get("token_hint"),
+            Some(&serde_json::Value::Null),
             "the owner never reads any part of a secret: {listed}"
         );
 

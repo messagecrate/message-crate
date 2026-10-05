@@ -57,11 +57,9 @@ pub struct ContactSelectionSummary {
     pub id: i64,
     /// The contact's preferred name; empty when it has none.
     pub name: String,
-    /// When the contact sent its first message; absent when it sent none.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// When the contact sent its first message; `null` when it sent none.
     pub start_date: Option<String>,
-    /// When the contact sent its last message; absent when it sent none.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// When the contact sent its last message; `null` when it sent none.
     pub end_date: Option<String>,
     /// 1:1 conversations with the contact.
     pub individual_conversations: u64,

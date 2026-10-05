@@ -4,6 +4,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { listConversationMessages, listMessages } from "../../lib/serverApi";
 import type { Message } from "../../lib/types";
+import { message as baseMessage } from "../../test/apiShapes";
 import { mockedAuth, Providers } from "../../test/providers";
 import { conversationYears, useConversationMessages } from "./useConversationMessages";
 
@@ -19,19 +20,13 @@ const getMessages = vi.mocked(listConversationMessages);
 const searchMessages = vi.mocked(listMessages);
 
 function message(id: number): Message {
-  return {
+  return baseMessage({
     id,
     source: "test",
     service: "sms",
-    guid: "g1",
     timestamp: "2024-01-01T00:00:00Z",
-    is_from_me: false,
     sender: "someone",
-    subject: null,
     text: `from-${id}`,
-    is_announcement: false,
-    is_reply: false,
-    num_replies: 0,
     sort_order: id,
     conversation: {
       id: 1,
@@ -39,13 +34,10 @@ function message(id: number): Message {
       conversation_type: "direct",
       is_group: false,
       group_title: null,
+      label: null,
       participants: [],
     },
-    attachments: [],
-    tapbacks: [],
-    earlier_versions: [],
-    matched_earlier_version: false,
-  };
+  });
 }
 
 /** A promise plus the handles that settle it, so a test can control landing order. */

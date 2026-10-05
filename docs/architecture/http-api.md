@@ -57,6 +57,31 @@ stays the name of a table and nothing a client sees.
 Why: the web app, the docs and the interface name one thing one way, and the
 generated types carry the interface's words into the web app's code.
 
+## Fields
+
+A success answer sends every field its type has, as `null` when the field has
+no value, and never leaves one out. The reference marks every property of a
+success answer required, and nullable where it can be empty, so the web app's
+generated types read `field: T | null`, never `field?: T | null`.
+Why: a client sees the same keys in every answer of a type, a key a client
+forgot to handle is a type error in the generated types rather than an
+`undefined` at run time, and a reader has two states to handle, a value and
+`null`, not a third, absent.
+
+A schema that a request body also names keeps the request's optional fields,
+because a request may still leave out a field it has no value for.
+`ExportScope` is the one: it is the body of `POST /v1/exports` and is answered
+back on the run, and the server sends both of its lists.
+
+A failure is not a success answer. A problem document carries the members
+[Failures](#failures) gives it and leaves out the rest, because RFC 7807
+defines `detail` as a string, and an extension member such as `retry_after`
+belongs to the problem types that carry it.
+
+Rejected: leaving out a field that has no value. It makes the answers a little
+smaller, but they are small JSON pages, and every reader would have to handle
+a key that is sometimes there.
+
 ## Naming a route
 
 A collection is plural, and a member is `/{collection}/{id}`. A singular path
@@ -709,8 +734,10 @@ route's reach: the page shape and paging parameters on every list, a
 problem document on every failure, `401` without a credential, a refused
 unknown query parameter, `415` for a body without an accepted `Content-Type`,
 `400` for a JSON body that is not JSON, `406` exactly where the document lists
-it, a successful `GET` in a media type its document declares, no body on a
-`HEAD` answer, kebab-case paths and the nesting depth. Why: a rule checked one
+it, a successful `GET` in a media type its document declares, every property of
+a success answer required and every one of them in what the route answers
+([Fields](#fields)), no body on a `HEAD` answer, kebab-case paths and the
+nesting depth. Why: a rule checked one
 route at a time is checked on the routes someone remembered.
 
 The shared failures are checked by calling each operation into them, and the
