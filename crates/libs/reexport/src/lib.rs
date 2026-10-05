@@ -162,11 +162,12 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
 
     clean_previous_ir_output(&config.output)?;
 
-    // A run that stages from the input writes every attachment from there,
-    // so it copies none of the input's `attachments/`: the copy would stay
-    // beside the staged files, under the input's names, on a disk the
-    // check counted for one copy (#1759).
-    if copy_attachments && from_input.is_none() {
+    // Only an export whose attachments are not staged again is copied. A
+    // run that stages from the input writes every attachment from there,
+    // and a backup's come from its XML, so a copy of the input's
+    // `attachments/` would stay beside the staged files on a disk the check
+    // counted for one copy (#1759).
+    if copy_attachments && from_input.is_none() && sms_backup.is_none() {
         copy_attachments_dir(input_dir, &config.output)?;
     }
     let mut report = ExportReport::default();

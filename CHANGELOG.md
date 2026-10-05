@@ -821,13 +821,15 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
-- 2026-10-05 **Converting with Media set to Convert or Compress writes each
-  attachment once.** Convert copied the export's whole attachments directory
-  and then wrote every attachment again from the export, so the copy stayed
-  in the new output beside the files the conversation named. The output
-  could hold two of each attachment, on a disk checked for room for one.
-  Convert now writes only the files the conversation names, and the check
-  for room counts what the run writes.
+- 2026-10-05 **Converting writes each attachment once.** With Media set to
+  Convert or Compress, Convert copied the export's whole attachments
+  directory, converted the copy, and then wrote every attachment again from
+  the export. The copy stayed in the new output beside the files the
+  conversation named, so the output could hold two of each attachment on a
+  disk checked for room for one. Converting an SMS Backup & Restore backup
+  also copied any attachments directory beside it, though the backup holds
+  its own. Convert now writes only the files the conversation names, and
+  the check for room counts what the run writes.
 - 2026-10-04 **Exporting to CSV, and reading an EML or mbox file back,
   type a phone number written with `tel:` as a phone number.** The
   `identity_type` column of a CSV export, and a participant read back from

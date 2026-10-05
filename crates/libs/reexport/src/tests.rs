@@ -1596,89 +1596,95 @@ fn a_converted_conversion_stages_from_the_sources_its_disk_check_counted() {
     assert_eq!(reasons, [Some("file_missing"), Some("too_large")]);
 }
 
-/// With the media converted or compressed, a conversion stages every
-/// attachment from the input and copies none of the input's `attachments/`,
-/// so the output holds one file per attachment, as many as the disk check
-/// counted. A copy under the input's names stayed beside the staged files
-/// and could fill a disk the check had passed (#1759).
-#[test]
-fn a_converted_conversion_writes_each_attachment_once() {
-    // Converting needs FFmpeg even when no attachment is media.
+/// A 1x1 PNG, which the convert pass turns into a JPEG in both Convert and
+/// Compress.
+#[rustfmt::skip]
+const PNG_1X1: &[u8] = &[
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+    0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+    0xde, 0x00, 0x00, 0x00, 0x0c, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9c, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+    0x00, 0x03, 0x01, 0x01, 0x00, 0xc9, 0xfe, 0x92, 0xef, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
+    0x44, 0xae, 0x42, 0x60, 0x82,
+];
+
+/// [`PNG_1X1`] in base64, as an SMS Backup & Restore backup holds a part.
+/// This crate has no base64 encoder, so the encoding is written out.
+const PNG_1X1_BASE64: &str =
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC";
+
+/// Convert `source`, which holds one conversation with one PNG attachment,
+/// to JSON Lines with the media cloned, converted and compressed. Each run's
+/// `attachments/` must hold exactly the one file the conversation names: a
+/// JPEG once the media is converted or compressed. A second file there is
+/// a copy the disk check did not count (#1759).
+fn assert_converted_writes_each_attachment_once(source: &Path) {
+    // Converting needs FFmpeg.
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
     };
+    for mode in [MediaMode::Clone, MediaMode::Convert, MediaMode::Compress] {
+        let destination = tempfile::tempdir().unwrap();
+        let mut converted = config(source, destination.path(), OutputFormat::Jsonl);
+        converted.media.mode = mode;
+
+        convert_export(source, &converted).unwrap();
+
+        let out = read_output(destination.path(), OutputFormat::Jsonl);
+        let named = out.messages[0].attachments[0].path.clone().unwrap();
+        let written: Vec<_> = snapshot(&destination.path().join("attachments"))
+            .into_iter()
+            .map(|(path, _)| format!("attachments/{}", path.to_string_lossy().replace('\\', "/")))
+            .collect();
+        assert_eq!(written, std::slice::from_ref(&named), "{mode:?}");
+        let extension = if mode == MediaMode::Clone {
+            ".png"
+        } else {
+            ".jpg"
+        };
+        assert!(named.ends_with(extension), "{mode:?}: {named}");
+    }
+}
+
+/// A conversion of an export stages every attachment from the input when
+/// it converts or compresses the media, so it copies none of the input's
+/// `attachments/`. The copy stayed beside the staged files, and the convert
+/// pass converted it too (#1759).
+#[test]
+fn a_converted_conversion_writes_each_attachment_once() {
     let source = tempfile::tempdir().unwrap();
-    fs::create_dir_all(source.path()).unwrap();
     clean_previous_ir_output(source.path()).unwrap();
-    let mut doc = message_ir::testutil::sample_document("a note");
-    doc.messages[0].attachments = vec![attachment("note.txt", Some("attachments/note.txt"))];
+    let mut doc = message_ir::testutil::sample_document("a photo");
+    let mut photo = attachment("photo.png", Some("attachments/photo.png"));
+    photo.mime_type = Some("image/png".into());
+    doc.messages[0].attachments = vec![photo];
     let mut sink =
         FormatSink::open(source.path(), OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
     sink.write_document(doc).unwrap();
     sink.finish(&mut ExportReport::default()).unwrap();
     fs::create_dir_all(source.path().join("attachments")).unwrap();
-    fs::write(source.path().join("attachments/note.txt"), b"hello note").unwrap();
+    fs::write(source.path().join("attachments/photo.png"), PNG_1X1).unwrap();
 
-    for mode in [MediaMode::Convert, MediaMode::Compress] {
-        let destination = tempfile::tempdir().unwrap();
-        let mut converted = config(source.path(), destination.path(), OutputFormat::Jsonl);
-        converted.media.mode = mode;
-
-        convert_export(source.path(), &converted).unwrap();
-
-        let out = read_output(destination.path(), OutputFormat::Jsonl);
-        let staged = out.messages[0].attachments[0].path.clone().unwrap();
-        let written: Vec<_> = snapshot(&destination.path().join("attachments"))
-            .into_iter()
-            .map(|(path, bytes)| (path.to_string_lossy().replace('\\', "/"), bytes))
-            .collect();
-        assert_eq!(
-            written,
-            [(
-                staged.trim_start_matches("attachments/").to_string(),
-                b"hello note".to_vec()
-            )],
-            "{mode:?}"
-        );
-    }
+    assert_converted_writes_each_attachment_once(source.path());
 }
 
-/// With the media converted or compressed, a conversion of an SMS backup
-/// stages the spooled attachments and then stages them again from the
-/// output under the same names, so the output holds one file per
-/// attachment, as many as the disk check counted (#1759).
+/// A conversion of an SMS Backup & Restore backup takes every attachment
+/// from the backup's XML, so it copies none of an `attachments/` beside
+/// the backup, which the disk check never counted (#1759).
 #[test]
 fn a_converted_sms_backup_writes_each_attachment_once() {
-    // Converting needs FFmpeg even when no attachment is media.
-    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
-        return;
-    };
     let source = tempfile::tempdir().unwrap();
-    let backup = r#"<smses><mms date="1400773400000" msg_box="1" address="+15555550101"><parts><part ct="application/pdf" name="note.pdf" data="aGVsbG8gbm90ZQ=="/></parts><addrs><addr address="+15555550101" type="137"/><addr address="+15555550100" type="151"/></addrs></mms></smses>"#;
+    let backup = format!(
+        r#"<smses><mms date="1400773400000" msg_box="1" address="+15555550101"><parts><part ct="image/png" name="photo.png" data="{PNG_1X1_BASE64}"/></parts><addrs><addr address="+15555550101" type="137"/><addr address="+15555550100" type="151"/></addrs></mms></smses>"#
+    );
     fs::write(source.path().join("smses.xml"), backup).unwrap();
+    fs::create_dir_all(source.path().join("attachments")).unwrap();
+    fs::write(
+        source.path().join("attachments/stray.txt"),
+        b"not in the backup",
+    )
+    .unwrap();
 
-    for mode in [MediaMode::Convert, MediaMode::Compress] {
-        let destination = tempfile::tempdir().unwrap();
-        let mut converted = config(source.path(), destination.path(), OutputFormat::Jsonl);
-        converted.media.mode = mode;
-
-        convert_export(source.path(), &converted).unwrap();
-
-        let out = read_output(destination.path(), OutputFormat::Jsonl);
-        let staged = out.messages[0].attachments[0].path.clone().unwrap();
-        let written: Vec<_> = snapshot(&destination.path().join("attachments"))
-            .into_iter()
-            .map(|(path, bytes)| (path.to_string_lossy().replace('\\', "/"), bytes))
-            .collect();
-        assert_eq!(
-            written,
-            [(
-                staged.trim_start_matches("attachments/").to_string(),
-                b"hello note".to_vec()
-            )],
-            "{mode:?}"
-        );
-    }
+    assert_converted_writes_each_attachment_once(source.path());
 }
 
 /// A JSON Lines export in `dir` whose two attachments name a size no disk
