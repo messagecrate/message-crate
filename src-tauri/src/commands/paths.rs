@@ -5,7 +5,7 @@ use std::path::{Component, Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
 use crate::export_directories::ExportDirectories;
-use crate::staging_directories::StagingDirectories;
+use crate::run_directories::RunDirectories;
 
 /// The Scratch Directory, which every run's scratch directories go under
 /// (`message_crate_core::ScratchDir`).
@@ -171,7 +171,7 @@ pub fn home_dir() -> Result<HomeDirInfo, String> {
 /// Open a file or directory with the operating system's default handler.
 ///
 /// Only a run directory this app made, or a path inside one
-/// ([`StagingDirectories::openable`]), the Export Directory and
+/// ([`RunDirectories::openable`]), the Export Directory and
 /// what is in it ([`ExportDirectories::openable`]), or an Import Run's log in
 /// the Logs Directory, is opened.
 ///
@@ -182,7 +182,7 @@ pub fn home_dir() -> Result<HomeDirInfo, String> {
 #[tauri::command]
 pub fn open_path(
     app: AppHandle,
-    directories: tauri::State<'_, StagingDirectories>,
+    directories: tauri::State<'_, RunDirectories>,
     exports: tauri::State<'_, ExportDirectories>,
     path: String,
 ) -> Result<(), String> {
@@ -278,7 +278,7 @@ pub(crate) fn write_file(path: &Path, contents: &[u8]) -> Result<(), String> {
         .map_err(|error| format!("Could not save {}: {error}", path.display()))
 }
 
-/// Error when a resolved staging path is not on disk yet.
+/// Error when a resolved path is not on disk yet.
 ///
 /// The OS opener often reports success for a missing path (for example
 /// `xdg-open` exiting 0), so the UI must fail here to show an inline alert.
@@ -357,7 +357,7 @@ fn resolve_on_disk(path: &Path) -> std::io::Result<PathBuf> {
 /// [`resolve_on_disk`] (so a root not made yet still resolves), and never the
 /// filesystem root.
 ///
-/// Shared by [`resolve_openable_path`] and `StagingDirectories`, which checks
+/// Shared by [`resolve_openable_path`] and `RunDirectories`, which checks
 /// the Staging Directory from Settings with it, so a root and a path under
 /// it are resolved the identical way.
 ///

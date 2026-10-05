@@ -2296,14 +2296,14 @@ export interface components {
              */
             form?: unknown;
             mode?: components["schemas"]["ImportMode"];
+            /** @description Absolute path to the run directory on the client that owns this Import Run. */
+            run_dir?: string | null;
             source: string;
             /** @description Source path, size, mtime, and message count. */
             source_fingerprint?: unknown;
             /** @description Addresses the backup's device sent from, when the client read them. */
             source_identities?: unknown;
             stage?: components["schemas"]["ImportStage"] | null;
-            /** @description Absolute staging path on the client that owns this Import Run. */
-            staging_dir?: string | null;
             tool?: string | null;
         };
         /** @description The new Import Run's id. */
@@ -2877,6 +2877,8 @@ export interface components {
              * @description Time spent preparing conversation files, when finished.
              */
             prepare_ms: number | null;
+            /** @description Absolute path to the run directory on the client that owns the run. */
+            run_dir: string | null;
             /** @description Source id the run imports. */
             source: string;
             /** @description Source path, size, mtime, and message count, or null. */
@@ -2884,8 +2886,6 @@ export interface components {
             /** @description Addresses the backup's device sent from (JSON array), or null. */
             source_identities: unknown;
             stage: components["schemas"]["ImportStage"] | null;
-            /** @description Absolute path to the run directory on the client that owns the run. */
-            staging_dir: string | null;
             /** @description UTC time the run started. */
             started_at: string;
             /** @description Lifecycle status. */
@@ -3983,6 +3983,8 @@ export interface components {
                  * @description Time spent preparing conversation files, when finished.
                  */
                 prepare_ms: number | null;
+                /** @description Absolute path to the run directory on the client that owns the run. */
+                run_dir: string | null;
                 /** @description Source id the run imports. */
                 source: string;
                 /** @description Source path, size, mtime, and message count, or null. */
@@ -3990,8 +3992,6 @@ export interface components {
                 /** @description Addresses the backup's device sent from (JSON array), or null. */
                 source_identities: unknown;
                 stage: components["schemas"]["ImportStage"] | null;
-                /** @description Absolute path to the run directory on the client that owns the run. */
-                staging_dir: string | null;
                 /** @description UTC time the run started. */
                 started_at: string;
                 /** @description Lifecycle status. */

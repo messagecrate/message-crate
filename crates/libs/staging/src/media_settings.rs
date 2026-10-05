@@ -21,29 +21,29 @@ use crate::TranscodeOptions;
 /// removes every `*.json` file it finds there as an earlier run's output.
 pub const MEDIA_SETTINGS_FILE: &str = ".message-crate-media";
 
-/// Record `options` in `staging_dir`, replacing any earlier record.
+/// Record `options` in `run_dir`, replacing any earlier record.
 ///
 /// # Errors
 ///
 /// Returns an error when the file cannot be written.
-pub fn write_media_settings(staging_dir: &Path, options: &TranscodeOptions) -> Result<()> {
-    let path = staging_dir.join(MEDIA_SETTINGS_FILE);
+pub fn write_media_settings(run_dir: &Path, options: &TranscodeOptions) -> Result<()> {
+    let path = run_dir.join(MEDIA_SETTINGS_FILE);
     let json = serde_json::to_vec_pretty(options).context("encode the media settings")?;
     std::fs::write(&path, json).with_context(|| format!("write {}", path.display()))
 }
 
-/// Read the settings Staging recorded in `staging_dir`.
+/// Read the settings Staging recorded in `run_dir`.
 ///
 /// # Errors
 ///
 /// Returns an error when the directory has no record, because its Staging never
 /// finished, or the record cannot be read.
-pub fn read_media_settings(staging_dir: &Path) -> Result<TranscodeOptions> {
-    let path = staging_dir.join(MEDIA_SETTINGS_FILE);
+pub fn read_media_settings(run_dir: &Path) -> Result<TranscodeOptions> {
+    let path = run_dir.join(MEDIA_SETTINGS_FILE);
     let bytes = std::fs::read(&path).with_context(|| {
         format!(
             "{} holds no media settings, so its Staging did not finish",
-            staging_dir.display()
+            run_dir.display()
         )
     })?;
     serde_json::from_slice(&bytes).with_context(|| format!("read {}", path.display()))

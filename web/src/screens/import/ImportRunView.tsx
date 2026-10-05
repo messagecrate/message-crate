@@ -196,29 +196,29 @@ function FinishedExits({ importId }: { importId: number }) {
 }
 
 /**
- * The log of the Import Run whose directory is `stagingDir`, in the Logs
+ * The log of the Import Run whose directory is `runDir`, in the Logs
  * Directory, as the desktop names it. Null until it answers. When the run
- * ends its directory is deleted and `stagingDir` goes, but the log stays, so
+ * ends its directory is deleted and `runDir` goes, but the log stays, so
  * with `keep` the last log named is kept rather than dropped.
  */
-function useImportRunLog(stagingDir: string | null, keep: boolean): string | null {
+function useImportRunLog(runDir: string | null, keep: boolean): string | null {
   const [log, setLog] = useState<string | null>(null);
   // The run directory the log was last asked for: `keep` changing on its own
   // asks again for nothing.
   const askedFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!stagingDir) {
+    if (!runDir) {
       if (!keep) {
         askedFor.current = null;
         setLog(null);
       }
       return;
     }
-    if (askedFor.current === stagingDir) return;
-    askedFor.current = stagingDir;
+    if (askedFor.current === runDir) return;
+    askedFor.current = runDir;
     setLog(null);
     let live = true;
-    invokeImportRunLog(stagingDir).then(
+    invokeImportRunLog(runDir).then(
       (path) => {
         if (live) setLog(path);
       },
@@ -230,7 +230,7 @@ function useImportRunLog(stagingDir: string | null, keep: boolean): string | nul
     return () => {
       live = false;
     };
-  }, [stagingDir, keep]);
+  }, [runDir, keep]);
   return log;
 }
 
@@ -254,7 +254,7 @@ export default function ImportRunView({
   mediaSummary,
   mediaFailedCount,
   summaryView,
-  stagingDir,
+  runDir,
   importRunId,
   completionText,
   reviewWaiting,
@@ -282,7 +282,7 @@ export default function ImportRunView({
   /** Files Media could not process; null when unknown. */
   mediaFailedCount: number | null;
   summaryView: ImportSummaryView | null;
-  stagingDir: string | null;
+  runDir: string | null;
   importRunId: number | null;
   completionText?: string;
   /** The review the run is waiting at, when it is. */
@@ -323,7 +323,7 @@ export default function ImportRunView({
    */
   cancelDisabled?: boolean;
 }) {
-  const trimmedStaging = stagingDir?.trim() || null;
+  const trimmedStaging = runDir?.trim() || null;
   const done = phase === "done";
   const logPath = useImportRunLog(trimmedStaging, done);
   const mode = form?.attachmentMedia ?? "copy";

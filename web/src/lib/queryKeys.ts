@@ -128,7 +128,7 @@ export const keys = {
      */
     running: ["imports", "running"] as const,
     /** The account's run directories found on this computer (desktop app). */
-    stagingDirectories: ["imports", "staging-directories"] as const,
+    runDirectories: ["imports", "run-directories"] as const,
     /** The contacts one Import Run created or changed, as a paged list. */
     contacts: (id: number) => ["imports", String(id), "contacts"] as const,
   },

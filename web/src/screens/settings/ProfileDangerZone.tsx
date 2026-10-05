@@ -5,7 +5,7 @@ import ConfirmDialog from "../../components/ConfirmDialog";
 import DeleteAccountDialog from "../../components/DeleteAccountDialog";
 import PlainButton from "../../components/PlainButton";
 import { useAuth } from "../../lib/auth";
-import { accountStagingDirectories } from "../../lib/importRun";
+import { accountRunDirectories } from "../../lib/importRun";
 import { keys } from "../../lib/queryKeys";
 import { useRouteCache, useRouteQuery } from "../../lib/routeQuery";
 import { deleteAccount, deleteAllMessages as deleteAllMessagesRoute } from "../../lib/serverApi";
@@ -73,15 +73,15 @@ export function ProfileDangerZone({
   const count = messageCount.toLocaleString();
   // Only the desktop app can find and delete directories on this computer.
   const checkDirectories = deleteDialogOpen && !managed && isTauri();
-  const stagingDirectories = useRouteQuery(
-    keys.imports.stagingDirectories,
-    (signal) => accountStagingDirectories(signal),
+  const runDirectories = useRouteQuery(
+    keys.imports.runDirectories,
+    (signal) => accountRunDirectories(signal),
     { enabled: checkDirectories, staleTime: 0 },
   );
   // A look that failed deletes nothing, as the dialog says, even with an
   // earlier list still cached.
   const directoriesToDelete =
-    checkDirectories && !stagingDirectories.isError ? (stagingDirectories.data ?? []) : [];
+    checkDirectories && !runDirectories.isError ? (runDirectories.data ?? []) : [];
 
   const deleteAllMessages = async () => {
     if (messagesFixed || notPermitted) return;
@@ -247,14 +247,14 @@ export function ProfileDangerZone({
           open={deleteDialogOpen}
           username={username}
           hasPassword={hasPassword}
-          stagingDirectories={
+          runDirectories={
             checkDirectories
               ? {
                   // A look still under way holds the confirm, even with an earlier
                   // list cached: that list may miss a directory made since.
-                  checking: stagingDirectories.isFetching,
+                  checking: runDirectories.isFetching,
                   paths: directoriesToDelete,
-                  error: stagingDirectories.error?.message ?? "",
+                  error: runDirectories.error?.message ?? "",
                 }
               : undefined
           }

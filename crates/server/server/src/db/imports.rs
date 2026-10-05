@@ -191,7 +191,7 @@ pub struct ImportRow {
     /// Where the run is while it is live; `None` once it is over.
     pub stage: Option<ImportStage>,
     /// Absolute path to the run directory on the client that owns it.
-    pub staging_dir: Option<String>,
+    pub run_dir: Option<String>,
     /// Which install created the run.
     pub device_id: Option<String>,
     /// Import form snapshot, for restoring the screen.
@@ -335,8 +335,8 @@ pub struct StartImportArgs<'a> {
     pub tool: Option<&'a str>,
     /// Stage the run opens at.
     pub stage: ImportStage,
-    /// Absolute staging path on the client.
-    pub staging_dir: Option<&'a str>,
+    /// Absolute path to the run directory on the client.
+    pub run_dir: Option<&'a str>,
     /// Which install is creating this run.
     pub device_id: Option<&'a str>,
     /// Import form snapshot as JSON.
@@ -361,7 +361,7 @@ impl<'a> StartImportArgs<'a> {
             dedupe: false,
             tool,
             stage: ImportStage::Parse,
-            staging_dir: None,
+            run_dir: None,
             device_id: None,
             form_json: None,
             source_fingerprint: None,
@@ -405,7 +405,7 @@ pub async fn start_import(
         INSERT INTO imports (
             account_id, source, tool, mode, dedupe, status, started_at,
             message_count, attachment_count, bytes_uploaded,
-            stage, staging_dir, device_id, form_json, source_fingerprint,
+            stage, run_dir, device_id, form_json, source_fingerprint,
             source_identities
         ) VALUES ($1, $2, $3, $4, $12, 'running', $5, 0, 0, 0, $6, $7, $8, $9, $10, $11)
         RETURNING id
@@ -417,7 +417,7 @@ pub async fn start_import(
     .bind(args.mode)
     .bind(started_at)
     .bind(args.stage.as_str())
-    .bind(args.staging_dir)
+    .bind(args.run_dir)
     .bind(args.device_id)
     .bind(args.form_json)
     .bind(args.source_fingerprint)
@@ -445,7 +445,7 @@ fn is_unique_violation(err: &sqlx::Error) -> bool {
 /// Column list for `imports`, in the order reads map to a row.
 const IMPORT_COLUMNS: &str = "id, account_id, source, tool, mode, status, started_at, \
      finished_at, message_count, attachment_count, bytes_uploaded, duration_ms, parse_ms, \
-     attachments_ms, prepare_ms, upload_ms, summary_json, stage, staging_dir, device_id, \
+     attachments_ms, prepare_ms, upload_ms, summary_json, stage, run_dir, device_id, \
      form_json, source_fingerprint, source_identities, dedupe";
 
 /// Map one `imports` row by column position.
@@ -483,7 +483,7 @@ fn import_from_row(row: &SqliteRow) -> Result<ImportRow, sqlx::Error> {
                 })
             })
             .transpose()?,
-        staging_dir: row.try_get(18)?,
+        run_dir: row.try_get(18)?,
         device_id: row.try_get(19)?,
         form_json: row.try_get(20)?,
         source_fingerprint: row.try_get(21)?,
@@ -1224,7 +1224,7 @@ pub async fn detach_from_account(
     .execute(&mut *conn)
     .await?;
     sqlx::query(
-        "UPDATE imports SET username = $2, deletion_entry_id = $3, form_json = NULL, staging_dir = NULL,
+        "UPDATE imports SET username = $2, deletion_entry_id = $3, form_json = NULL, run_dir = NULL,
                 source_fingerprint = NULL, source_identities = NULL, summary_json = NULL
          WHERE account_id = $1",
     )

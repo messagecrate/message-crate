@@ -28,8 +28,8 @@ import { completeImport, createImport, getServerState } from "../../lib/serverAp
 import {
   type AttachmentForecast,
   awaitTauriJob,
-  invokeCreateStagingDir,
-  invokeDeleteStaging,
+  invokeCreateRunDir,
+  invokeDeleteRunDir,
   invokeExtract,
   invokeImessageBackupIdentities,
   invokePathStat,
@@ -282,7 +282,7 @@ export type ImportJobFormValues = {
 /** An Import Run whose copy was interrupted, and the directory it was writing into. */
 export type ResumeWrite = {
   runId: number;
-  stagingDir: string;
+  runDir: string;
   /** The list recorded on the run at creation (`source_identities`,
    * parsed by the caller). A resumed write lands back on the Staging Review
    * without re-probing the backup, so this is the only way that Review's identity
@@ -293,7 +293,7 @@ export type ResumeWrite = {
 /** Pick up an Import Run whose run directory is already complete. */
 export type ResumeUpload = {
   runId: number;
-  stagingDir: string;
+  runDir: string;
   /** The plan approved at the last Review the run left, parsed from
    * its stored `summary` (`parseStoredStagingSummary`). Undefined when the
    * run recorded nothing usable — `runUpload` and `importOutcome`
@@ -538,7 +538,7 @@ function returnToForm(): void {
   store.set({
     phase: "form",
     summaryView: null,
-    stagingDir: null,
+    runDir: null,
     importRunId: null,
     stagingSummary: null,
     mediaSummary: null,
@@ -593,16 +593,16 @@ function currentPart(
  * record that cannot be read leaves the run with only what this part
  * records: the resume itself goes ahead.
  */
-async function loadCarriedRecord(stagingDir: string): Promise<void> {
+async function loadCarriedRecord(runDir: string): Promise<void> {
   try {
-    scratch.carried = parseRunRecord(await invokeReadImportRunRecord({ staging_dir: stagingDir }));
+    scratch.carried = parseRunRecord(await invokeReadImportRunRecord({ run_dir: runDir }));
   } catch {
     scratch.carried = EMPTY_RUN_RECORD;
   }
 }
 
 /** A write of the run record waiting for the one before it to finish. */
-type RecordWrite = { stagingDir: string; build: () => RunRecord };
+type RecordWrite = { runDir: string; build: () => RunRecord };
 
 /** Every write of the run record so far, in order: settles when the last has. */
 let recordWrites: Promise<void> = Promise.resolve();
@@ -619,17 +619,17 @@ let queuedRecordWrite: RecordWrite | null = null;
  * next. A failed write is not shown: the run goes on, and a resume starts
  * from the record the directory already held.
  */
-function writeRunRecord(stagingDir: string, build: () => RunRecord): Promise<void> {
-  if (queuedRecordWrite?.stagingDir === stagingDir) {
+function writeRunRecord(runDir: string, build: () => RunRecord): Promise<void> {
+  if (queuedRecordWrite?.runDir === runDir) {
     queuedRecordWrite.build = build;
     return recordWrites;
   }
-  const write: RecordWrite = { stagingDir, build };
+  const write: RecordWrite = { runDir, build };
   queuedRecordWrite = write;
   recordWrites = recordWrites.then(async () => {
     if (queuedRecordWrite === write) queuedRecordWrite = null;
     try {
-      await invokeSaveImportRunRecord({ staging_dir: write.stagingDir, record: write.build() });
+      await invokeSaveImportRunRecord({ run_dir: write.runDir, record: write.build() });
     } catch {
       // Nothing to show; see above.
     }
@@ -657,10 +657,10 @@ async function saveCarriedRecord(
   report: UploadFinishedReport | null = null,
   uploadMs: number | null = null,
 ): Promise<void> {
-  const { stagingDir } = store.get();
-  if (stagingDir == null) return;
+  const { runDir } = store.get();
+  if (runDir == null) return;
   const run = scratch;
-  await writeRunRecord(stagingDir, () =>
+  await writeRunRecord(runDir, () =>
     recordToCarry(run.carried, currentPart(report, uploadMs, run)),
   );
 }
@@ -1025,7 +1025,7 @@ async function finishImport(args: {
   // A run with no server record at all (its creation failed) is ended too:
   // nothing will ever offer its directory again.
   const runEnded = runId == null || (posts && completeRefused == null);
-  let stagingDir = store.get().stagingDir;
+  let runDir = store.get().runDir;
   if (runEnded) {
     // An ended run's directory goes: the staged messages, the Upload's log, journal
     // and report, and the run record. When the delete fails, the directory link
@@ -1033,31 +1033,31 @@ async function finishImport(args: {
     // and remove it by hand. A record write still on its way finishes
     // first, so it cannot land in the directory after the delete.
     await recordWrites;
-    if (stagingDir != null && (await discardStagingDirectory(stagingDir))) stagingDir = null;
+    if (runDir != null && (await discardRunDirectory(runDir))) runDir = null;
   } else {
     await saveCarriedRecord(uploadReport, uploadMs);
   }
   // The server writes this run's saved search and Contact Group when the run
   // completes, so a window closed mid-import still gets them.
-  store.set({ summaryView: finalSummary, phase: "done", running: false, stagingDir });
+  store.set({ summaryView: finalSummary, phase: "done", running: false, runDir });
 }
 
 /**
  * Delete a run directory of a run that has ended or been discarded. Never
- * throws: a refusal or failed delete is kept on `stagingDeleteFailure` for
+ * throws: a refusal or failed delete is kept on `runDirDeleteFailure` for
  * the screen to show. Returns whether the directory is gone.
  */
-async function discardStagingDirectory(stagingDir: string): Promise<boolean> {
+async function discardRunDirectory(runDir: string): Promise<boolean> {
   try {
-    await invokeDeleteStaging({ staging_dir: stagingDir });
+    await invokeDeleteRunDir({ run_dir: runDir });
     store.set((state) =>
-      state.stagingDeleteFailure?.path === stagingDir ? { stagingDeleteFailure: null } : {},
+      state.runDirDeleteFailure?.path === runDir ? { runDirDeleteFailure: null } : {},
     );
     return true;
   } catch (e: unknown) {
     store.set({
-      stagingDeleteFailure: {
-        path: stagingDir,
+      runDirDeleteFailure: {
+        path: runDir,
         reason: e instanceof Error ? e.message : String(e),
       },
     });
@@ -1066,8 +1066,8 @@ async function discardStagingDirectory(stagingDir: string): Promise<boolean> {
 }
 
 /** The person has read that a run directory was left behind. */
-function dismissStagingDeleteFailure(): void {
-  store.set({ stagingDeleteFailure: null });
+function dismissRunDirDeleteFailure(): void {
+  store.set({ runDirDeleteFailure: null });
 }
 
 /**
@@ -1241,7 +1241,7 @@ async function runMediaStage(
   let threw = false;
   let cancelled = false;
   try {
-    const result = await runJob(() => invokeTranscodeStaging({ staging_dir: outputDir }));
+    const result = await runJob(() => invokeTranscodeStaging({ run_dir: outputDir }));
     transcodeReport = result.transcode;
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
@@ -1286,7 +1286,7 @@ async function runMediaStage(
   // from this Review after the app closes.
   await saveCarriedRecord();
   try {
-    const actual = await summarizeStagingWithProgress({ staging_dir: outputDir });
+    const actual = await summarizeStagingWithProgress({ run_dir: outputDir });
     store.set({ mediaSummary: actual, mediaFailedCount: transcodeReport?.failed ?? null });
     waitAtReview("media_review");
   } catch (e: unknown) {
@@ -1368,7 +1368,7 @@ async function runImport(
     phase: "running",
     form,
     summaryView: null,
-    stagingDir: null,
+    runDir: null,
     importRunId: null,
     stagingSummary: null,
     mediaSummary: null,
@@ -1402,14 +1402,14 @@ async function runImport(
       // last review, so there IS a plan from it: it rides along as
       // `resume.approved` (parsed from the run's stored summary) when it
       // parses. Straight to Upload.
-      const outputDir = resume.stagingDir;
+      const outputDir = resume.runDir;
       runId = resume.runId;
       await loadCarriedRecord(outputDir);
       // The approved plan was read from the directory at its review, so it
       // carries the mode Staging recorded there.
       form = adoptRecordedMode(form, resume.approved);
       store.set({
-        stagingDir: outputDir,
+        runDir: outputDir,
         importRunId: runId,
         steps: stepsFor(form.attachmentMedia).map((step) =>
           step.label === UPLOAD_LABEL
@@ -1430,15 +1430,15 @@ async function runImport(
       // The run already exists and its Staging was interrupted. Reuse it and
       // its run directory: the exporter reads the backup again and skips
       // the conversations already written.
-      outputDir = resumeWrite.stagingDir;
+      outputDir = resumeWrite.runDir;
       runId = resumeWrite.runId;
       await loadCarriedRecord(outputDir);
-      store.set({ stagingDir: outputDir, importRunId: runId });
+      store.set({ runDir: outputDir, importRunId: runId });
       setRowByLabel(STAGING_LABEL, { detail: "Extracting…" });
       await moveStage(runId, "write");
     } else {
-      outputDir = await invokeCreateStagingDir(form.source);
-      store.set({ stagingDir: outputDir });
+      outputDir = await invokeCreateRunDir(form.source);
+      store.set({ runDir: outputDir });
 
       const backupStat = await invokePathStat(form.backupPath).catch(() => null);
       // The run is created in the account of the session logged in now.
@@ -1446,7 +1446,7 @@ async function runImport(
       const importRun = await createImport({
         ...importRunCreateBody(form.source),
         stage: "parse",
-        staging_dir: outputDir,
+        run_dir: outputDir,
         device_id: getDeviceId(),
         form: formSnapshot(form),
         source_fingerprint: backupStat ? buildSourceFingerprint(form.backupPath, backupStat) : null,
@@ -1510,7 +1510,7 @@ async function runImport(
     // written above (`staging_review`) stays as it is: the next visit's
     // resume check finds the same run and offers this recompute again.
     try {
-      const summary = await summarizeStagingWithProgress({ staging_dir: outputDir });
+      const summary = await summarizeStagingWithProgress({ run_dir: outputDir });
       // Staging has finished, so the directory decides the stages from here.
       const recorded = adoptRecordedMode(form, summary);
       updateSteps((steps) =>
@@ -1562,16 +1562,16 @@ async function runImport(
  * record that cannot be read discards the run with no Import Errors. The
  * close and the delete then run regardless of the other's outcome: a live
  * run with no directory blocks the next import, and a directory with no run is
- * litter nothing will ever clean up. `stagingDir` is null for a run whose
+ * litter nothing will ever clean up. `runDir` is null for a run whose
  * directory is not on this device. Never throws.
  */
-async function discardRun(runId: number | null, stagingDir: string | null): Promise<void> {
+async function discardRun(runId: number | null, runDir: string | null): Promise<void> {
   let issues: ImportIssue[] = [];
   let notes: ImportNote[] = [];
-  if (stagingDir != null) {
+  if (runDir != null) {
     await recordWrites;
     try {
-      const record = parseRunRecord(await invokeReadImportRunRecord({ staging_dir: stagingDir }));
+      const record = parseRunRecord(await invokeReadImportRunRecord({ run_dir: runDir }));
       issues = issuesToDiscard(record);
       notes = notesToDiscard(record);
     } catch {
@@ -1580,7 +1580,7 @@ async function discardRun(runId: number | null, stagingDir: string | null): Prom
   }
   await Promise.allSettled([
     runId != null ? discardImportRun(runId, issueRequests(issues), notes) : Promise.resolve(),
-    stagingDir != null ? discardStagingDirectory(stagingDir) : Promise.resolve(),
+    runDir != null ? discardRunDirectory(runDir) : Promise.resolve(),
   ]);
 }
 
@@ -1589,7 +1589,7 @@ async function cancelRun(): Promise<void> {
   if (scratch.reviewAction) return;
   scratch.reviewAction = true;
   try {
-    const { importRunId: runId, stagingDir: outputDir } = store.get();
+    const { importRunId: runId, runDir: outputDir } = store.get();
     await discardRun(runId, outputDir);
   } finally {
     scratch.reviewAction = false;
@@ -1714,7 +1714,7 @@ export function useImportJob() {
     const {
       phase,
       importRunId: runId,
-      stagingDir: outputDir,
+      runDir: outputDir,
       stagingSummary,
       mediaSummary,
       reviewError,
@@ -1754,7 +1754,7 @@ export function useImportJob() {
    * / `media_review`) or mid Media (`media`).
    *
    * `approve` can't do this itself: it depends on what the store holds
-   * (`stagingSummary`, the form, `stagingDir`, `importRunId`) that a
+   * (`stagingSummary`, the form, `runDir`, `importRunId`) that a
    * reload has none of, and it branches on the phase rather than the run's
    * own stored stage. This rebuilds that state from `importRun` instead, then
    * routes exactly the way the normal flow would have got here.
@@ -1796,10 +1796,10 @@ export function useImportJob() {
     ) {
       return;
     }
-    if (!importRun.staging_dir) return; // resumeDecisionFor guarantees this; defensive only.
+    if (!importRun.run_dir) return; // resumeDecisionFor guarantees this; defensive only.
 
     const runId = importRun.id;
-    const outputDir = importRun.staging_dir;
+    const outputDir = importRun.run_dir;
     const approved = parseStoredStagingSummary(importRun.summary);
     // Staging has finished for every stage resumed here, so the mode comes
     // from the directory: through the plan approved at the Staging Review until
@@ -1813,7 +1813,7 @@ export function useImportJob() {
       reviewError: null,
       form: known,
       summaryView: null,
-      stagingDir: outputDir,
+      runDir: outputDir,
       importRunId: runId,
       stagingSummary: null,
       mediaSummary: null,
@@ -1836,7 +1836,7 @@ export function useImportJob() {
         running: true,
       });
       try {
-        const actual = await summarizeStagingWithProgress({ staging_dir: outputDir });
+        const actual = await summarizeStagingWithProgress({ run_dir: outputDir });
         const recorded = adoptRecordedMode(known, actual);
         store.set({ steps: resumeSteps(recorded.attachmentMedia, mediaDone) });
         if (review === "staging_review") {
@@ -1896,7 +1896,7 @@ export function useImportJob() {
     running: state.running,
     form: state.form,
     summaryView: state.summaryView,
-    stagingDir: state.stagingDir,
+    runDir: state.runDir,
     importRunId: state.importRunId,
     stagingSummary: state.stagingSummary,
     mediaSummary: state.mediaSummary,
@@ -1909,9 +1909,9 @@ export function useImportJob() {
     completionText:
       state.phase === "done" ? completionTextFor(state.summaryView?.status) : undefined,
     sourceIdentities: state.sourceIdentities,
-    stagingDeleteFailure: state.stagingDeleteFailure,
+    runDirDeleteFailure: state.runDirDeleteFailure,
     discardRun,
-    dismissStagingDeleteFailure,
+    dismissRunDirDeleteFailure,
     startImport,
     continueAfterIdentityStop,
     cancelIdentityStop,

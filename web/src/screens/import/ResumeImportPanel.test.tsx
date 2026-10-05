@@ -20,7 +20,7 @@ function importRun(overrides: Partial<ActiveImportRun> = {}): ActiveImportRun {
     status: "running",
     started_at: "2026-08-30T00:00:00Z",
     stage: "upload",
-    staging_dir: "/home/u/message-crate/staging-260830",
+    run_dir: "/home/u/message-crate/staging-260830",
     device_id: "this-device",
     form: { source: "imessage-ios" },
     source_fingerprint: null,
@@ -139,7 +139,7 @@ describe("ResumeImportPanel", () => {
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
       kind: "directory_missing",
-      run: importRun({ staging_dir: "/home/u/message-crate/staging-260830" }),
+      run: importRun({ run_dir: "/home/u/message-crate/staging-260830" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
@@ -162,10 +162,10 @@ describe("ResumeImportPanel", () => {
     const onResume = vi.fn();
     const onDiscard = vi.fn();
     // Every Import Run created outside the desktop app — the CLI importer,
-    // a tool of someone's own — stores a null staging_dir.
+    // a tool of someone's own — stores a null run_dir.
     const decision: ResumeDecision = {
       kind: "directory_missing",
-      run: importRun({ staging_dir: null }),
+      run: importRun({ run_dir: null }),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 
@@ -189,7 +189,7 @@ describe("ResumeImportPanel", () => {
     const onDiscard = vi.fn();
     const decision: ResumeDecision = {
       kind: "directory_unknown",
-      run: importRun({ staging_dir: "/home/u/message-crate/staging-260830" }),
+      run: importRun({ run_dir: "/home/u/message-crate/staging-260830" }),
     };
     render(<ResumeImportPanel decision={decision} onResume={onResume} onDiscard={onDiscard} />);
 

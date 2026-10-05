@@ -577,7 +577,7 @@ async fn active_session_is_empty_then_reports_the_live_one() {
         mode: ImportMode::Append,
         tool: Some("message-crate".into()),
         stage: Some(crate::db::imports::ImportStage::Write),
-        staging_dir: Some("/home/u/message-crate/staging-260830".into()),
+        run_dir: Some("/home/u/message-crate/staging-260830".into()),
         device_id: Some("device-a".into()),
         form: Some(serde_json::json!({ "source": "imessage-ios" })),
         source_fingerprint: Some(serde_json::json!({ "size_bytes": 42 })),
@@ -610,7 +610,7 @@ async fn active_session_is_empty_then_reports_the_live_one() {
     assert_eq!(session.id, created.body.id);
     assert_eq!(session.stage, Some(crate::db::imports::ImportStage::Write));
     assert_eq!(
-        session.staging_dir.as_deref(),
+        session.run_dir.as_deref(),
         Some("/home/u/message-crate/staging-260830")
     );
     assert_eq!(session.device_id.as_deref(), Some("device-a"));
@@ -640,7 +640,7 @@ async fn a_stored_form_snapshot_drops_credentials() {
         mode: ImportMode::Append,
         tool: None,
         stage: None,
-        staging_dir: None,
+        run_dir: None,
         device_id: None,
         // A client that has not learned the rule.
         form: Some(serde_json::json!({
@@ -701,7 +701,7 @@ async fn imports_create_stores_source_identities() {
         mode: ImportMode::Append,
         tool: None,
         stage: None,
-        staging_dir: None,
+        run_dir: None,
         device_id: None,
         form: None,
         source_fingerprint: None,
@@ -733,7 +733,7 @@ async fn a_second_session_is_refused_with_conflict() {
         mode: ImportMode::Append,
         tool: None,
         stage: None,
-        staging_dir: None,
+        run_dir: None,
         device_id: None,
         form: None,
         source_fingerprint: None,

@@ -17,5 +17,5 @@ pub mod app_directories;
 pub mod commands;
 pub mod export_directories;
 pub mod local_server;
-pub mod staging_directories;
+pub mod run_directories;
 pub mod state;

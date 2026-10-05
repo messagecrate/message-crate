@@ -62,7 +62,7 @@ export function resumeDecisionFor(args: {
   if (run.device_id && run.device_id !== deviceId) {
     return { kind: "other_device", run };
   }
-  if (!run.staging_dir || directory === "missing") {
+  if (!run.run_dir || directory === "missing") {
     return { kind: "directory_missing", run };
   }
   if (directory === "unknown") {

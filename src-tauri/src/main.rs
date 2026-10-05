@@ -14,12 +14,12 @@ mod app_directories;
 mod commands;
 mod export_directories;
 mod local_server;
-mod staging_directories;
+mod run_directories;
 mod state;
 
 use export_directories::ExportDirectories;
 use local_server::LocalServer;
-use staging_directories::StagingDirectories;
+use run_directories::RunDirectories;
 use state::AppState;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
@@ -48,8 +48,8 @@ fn main() {
         // sweep of the Scratch and Export Directories.
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;
-            let record = app_data_dir.join(staging_directories::RECORD_FILE);
-            app.manage(StagingDirectories::at(
+            let record = app_data_dir.join(run_directories::RECORD_FILE);
+            app.manage(RunDirectories::at(
                 record,
                 dirs::home_dir(),
                 app_directories::logs_dir_in(&app_data_dir),
@@ -82,11 +82,11 @@ fn main() {
             commands::exports::discard_export_dir,
             commands::staging::staging_root,
             commands::staging::set_staging_root,
-            commands::staging::create_staging_dir,
+            commands::staging::create_run_dir,
             commands::staging::import_run_log,
             commands::staging::summarize_staging,
             commands::staging::transcode_staging,
-            commands::staging::delete_staging,
+            commands::staging::delete_run_dir,
             commands::staging::read_import_run_record,
             commands::staging::save_import_run_record,
         ]);

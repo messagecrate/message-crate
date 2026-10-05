@@ -25,7 +25,7 @@ export type ActiveImportRun = {
   status: string;
   started_at: string;
   stage: ImportStage | null;
-  staging_dir: string | null;
+  run_dir: string | null;
   device_id: string | null;
   form: unknown;
   source_fingerprint: SourceFingerprint | null;
@@ -46,7 +46,7 @@ export async function getActiveImportRun(signal?: AbortSignal): Promise<ActiveIm
   return {
     ...run,
     stage: run.stage ?? null,
-    staging_dir: run.staging_dir ?? null,
+    run_dir: run.run_dir ?? null,
     device_id: run.device_id ?? null,
     source_fingerprint: run.source_fingerprint as SourceFingerprint | null,
   };
@@ -60,9 +60,9 @@ export async function getActiveImportRun(signal?: AbortSignal): Promise<ActiveIm
  * whichever computer ran it, so each one is looked for here and only the
  * directories found are named. Desktop app only: it asks the app for each path.
  */
-export async function accountStagingDirectories(signal?: AbortSignal): Promise<string[]> {
+export async function accountRunDirectories(signal?: AbortSignal): Promise<string[]> {
   const runs = await listEveryImport({ signal });
-  const paths = [...new Set(runs.flatMap((run) => (run.staging_dir ? [run.staging_dir] : [])))];
+  const paths = [...new Set(runs.flatMap((run) => (run.run_dir ? [run.run_dir] : [])))];
   const found = await Promise.all(
     paths.map(async (path) => {
       const stat = await invokePathStat(path);

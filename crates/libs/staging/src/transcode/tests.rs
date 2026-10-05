@@ -9,7 +9,7 @@ use std::sync::atomic::Ordering;
 /// and written with `write_conversation_jsonl_to`, so the fixture and the
 /// code under test agree on the on-disk shape.
 ///
-/// Returns (staging dir, conversation file path, attachment path).
+/// Returns (run directory, conversation file path, attachment path).
 fn staged_one(name: &str, bytes: &[u8]) -> (tempfile::TempDir, PathBuf, PathBuf) {
     let dir = tempfile::tempdir().unwrap();
     let attachments_dir = dir.path().join("attachments");
@@ -851,7 +851,7 @@ fn a_write_failure_leaves_the_final_name_uncommitted_and_the_original_untouched(
     // The headline "patched before the final name exists" test only
     // checks terminal state, which would pass even if the patch and the
     // rename were swapped. This makes the ordering falsifiable: force
-    // the conversation-file write to fail (a read-only staging dir, so
+    // the conversation-file write to fail (a read-only run directory, so
     // `write_conversation_jsonl_to`'s `.tmp` sibling can't be created)
     // after the transcode has already produced a derivative, and assert
     // the final name was never created and the original is untouched.

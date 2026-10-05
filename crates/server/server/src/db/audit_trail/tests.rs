@@ -29,7 +29,7 @@ async fn deleting_an_account_keeps_an_import_runs_counts_and_drops_its_details()
     let mut conn = fixture.conn().await;
     let import_id: i64 = sqlx::query_scalar(
         "INSERT INTO imports (account_id, source, mode, status, started_at, message_count,
-                              staging_dir, form_json, source_identities)
+                              run_dir, form_json, source_identities)
          VALUES ($1, 'imessage', 'append', 'running', '2026-10-01T00:00:00+00:00', 12,
                  '/home/alice/staging', '{}', '[\"+15555550123\"]')
          RETURNING id",
@@ -67,7 +67,7 @@ async fn deleting_an_account_keeps_an_import_runs_counts_and_drops_its_details()
         Option<String>,
         Option<String>,
     ) = sqlx::query_as(
-        "SELECT account_id, username, status, message_count, staging_dir, source_identities
+        "SELECT account_id, username, status, message_count, run_dir, source_identities
              FROM imports WHERE id = $1",
     )
     .bind(import_id)

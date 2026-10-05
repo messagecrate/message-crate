@@ -15,7 +15,7 @@ const deleteAccount = vi.hoisted(() => vi.fn());
 const deleteAllMessages = vi.hoisted(() => vi.fn());
 const logout = vi.hoisted(() => vi.fn());
 const desktop = vi.hoisted(() => ({ value: false }));
-const accountStagingDirectories = vi.hoisted(() => vi.fn());
+const accountRunDirectories = vi.hoisted(() => vi.fn());
 
 vi.mock("../../lib/tauri-check", () => ({
   isTauri: () => desktop.value,
@@ -23,7 +23,7 @@ vi.mock("../../lib/tauri-check", () => ({
 
 vi.mock("../../lib/importRun", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../../lib/importRun")>()),
-  accountStagingDirectories: (...a: unknown[]) => accountStagingDirectories(...a),
+  accountRunDirectories: (...a: unknown[]) => accountRunDirectories(...a),
 }));
 
 vi.mock("../../lib/auth", () => ({
@@ -46,7 +46,7 @@ beforeEach(() => {
   deleteAllMessages.mockReset();
   logout.mockReset();
   desktop.value = false;
-  accountStagingDirectories.mockReset();
+  accountRunDirectories.mockReset();
 });
 
 afterEach(cleanup);
@@ -84,7 +84,7 @@ describe("ProfileDangerZone", () => {
 
   it("names the directories of the account's Import Runs on this computer, and deletes them with the account", async () => {
     desktop.value = true;
-    accountStagingDirectories.mockResolvedValue(["/home/carol/staging/iphone-2026-10-04"]);
+    accountRunDirectories.mockResolvedValue(["/home/carol/staging/iphone-2026-10-04"]);
     deleteAccount.mockResolvedValue(undefined);
     const user = setupUser();
     render(
@@ -126,9 +126,9 @@ describe("ProfileDangerZone", () => {
     // The list from the last time the dialog was open, and a new look that
     // has not answered yet.
     const client = testQueryClient();
-    seedEntries(client, 7, [keys.imports.stagingDirectories]);
-    client.setQueryData(routeQueryKey(7, keys.imports.stagingDirectories), ["/home/carol/old"]);
-    accountStagingDirectories.mockReturnValue(new Promise(() => {}));
+    seedEntries(client, 7, [keys.imports.runDirectories]);
+    client.setQueryData(routeQueryKey(7, keys.imports.runDirectories), ["/home/carol/old"]);
+    accountRunDirectories.mockReturnValue(new Promise(() => {}));
     const user = setupUser();
     render(
       <QueryClientProvider client={client}>
@@ -148,7 +148,7 @@ describe("ProfileDangerZone", () => {
     const dialog = screen.getByRole("dialog");
     await fill(user, within(dialog).getByRole("textbox", { name: /Type your username/ }), "carol");
 
-    expect(accountStagingDirectories).toHaveBeenCalled();
+    expect(accountRunDirectories).toHaveBeenCalled();
     expect(
       within(dialog).getByRole("button", { name: "Permanently delete my account" }),
     ).toBeDisabled();
@@ -159,9 +159,9 @@ describe("ProfileDangerZone", () => {
     desktop.value = true;
     deleteAccount.mockResolvedValue(undefined);
     const client = testQueryClient();
-    seedEntries(client, 7, [keys.imports.stagingDirectories]);
-    client.setQueryData(routeQueryKey(7, keys.imports.stagingDirectories), ["/home/carol/old"]);
-    accountStagingDirectories.mockRejectedValue(new Error("path_stat failed"));
+    seedEntries(client, 7, [keys.imports.runDirectories]);
+    client.setQueryData(routeQueryKey(7, keys.imports.runDirectories), ["/home/carol/old"]);
+    accountRunDirectories.mockRejectedValue(new Error("path_stat failed"));
     const user = setupUser();
     render(
       <QueryClientProvider client={client}>
@@ -214,7 +214,7 @@ describe("ProfileDangerZone", () => {
     await waitFor(() =>
       expect(logout).toHaveBeenCalledWith({ ask: false, deletedAccountDirectories: [] }),
     );
-    expect(accountStagingDirectories).not.toHaveBeenCalled();
+    expect(accountRunDirectories).not.toHaveBeenCalled();
   });
 
   it("tells an account without the delete permission to ask the owner", async () => {

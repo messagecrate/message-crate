@@ -17,7 +17,7 @@ import { createQueryClient } from "./routeQuery";
 import { isUploadRunning, onUploadSessionRefused, pauseRunningUpload } from "./runningUpload";
 import { getSession, logout as serverLogout } from "./serverApi";
 import { readPref, removePref, writePref } from "./storage";
-import { invokeDeleteStaging } from "./tauri";
+import { invokeDeleteRunDir } from "./tauri";
 import { isTauri } from "./tauri-check";
 import { fetchAccountProfileFor } from "./useAccountProfile";
 
@@ -391,7 +391,7 @@ function SessionProvider({
         // directory, so the directories go once it has ended. The deleted account's
         // token is refused, so that is soon.
         await pause.ended;
-        const undeleted = await deleteStagingDirectories(deletedAccountDirectories);
+        const undeleted = await deleteRunDirectories(deletedAccountDirectories);
         if (undeleted.length > 0) {
           setDialog({
             kind: "notice",
@@ -493,13 +493,11 @@ const UPLOAD_NOT_PAUSED_BODY = (
 type UndeletedDirectory = { path: string; reason: string };
 
 /** Delete each directory, and return the ones that could not be deleted. */
-async function deleteStagingDirectories(
-  directories: readonly string[],
-): Promise<UndeletedDirectory[]> {
+async function deleteRunDirectories(directories: readonly string[]): Promise<UndeletedDirectory[]> {
   const undeleted: UndeletedDirectory[] = [];
   for (const path of directories) {
     try {
-      await invokeDeleteStaging({ staging_dir: path });
+      await invokeDeleteRunDir({ run_dir: path });
     } catch (e) {
       undeleted.push({ path, reason: e instanceof Error ? e.message : String(e) });
     }

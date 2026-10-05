@@ -20,7 +20,7 @@ const completeImportMock = vi.fn();
 const setImportStageMock = vi.fn();
 const saveRunRecordMock = vi.fn();
 const cancelMock = vi.fn();
-const deleteStagingMock = vi.fn();
+const deleteRunDirMock = vi.fn();
 
 /** Settles the running Upload with the report the desktop side sends. */
 let finishUpload: ((result: TauriJobResult) => void) | null = null;
@@ -43,9 +43,9 @@ vi.mock("../../lib/tauri", () => ({
     calls.push("pause recorded");
     saveRunRecordMock();
   },
-  invokeDeleteStaging: async ({ staging_dir }: { staging_dir: string }) => {
-    calls.push(`deleted ${staging_dir}`);
-    await deleteStagingMock(staging_dir);
+  invokeDeleteRunDir: async ({ run_dir }: { run_dir: string }) => {
+    calls.push(`deleted ${run_dir}`);
+    await deleteRunDirMock(run_dir);
   },
 }));
 
@@ -156,7 +156,7 @@ async function startUpload(): Promise<{ current: Screen }> {
   act(() => {
     void result.current.job.startImport(form, {
       runId: 42,
-      stagingDir: "/home/sam/staging-iphone",
+      runDir: "/home/sam/staging-iphone",
     });
   });
   await waitFor(() => expect(calls).toContain("upload started"));
@@ -183,7 +183,7 @@ describe("logging out during an Upload", () => {
     setImportStageMock.mockResolvedValue(undefined);
     saveRunRecordMock.mockReset();
     cancelMock.mockReset();
-    deleteStagingMock.mockReset();
+    deleteRunDirMock.mockReset();
     // The Upload stops when the cancel flag is set, the way `run.rs` does.
     cancelMock.mockImplementation(() =>
       finishUpload?.({ summary: "Upload", report: pausedReport() }),
@@ -404,7 +404,7 @@ describe("logging out during an Upload", () => {
   });
 
   it("names a directory of a deleted account's Import Runs it could not delete", async () => {
-    deleteStagingMock.mockRejectedValueOnce(new Error("permission denied"));
+    deleteRunDirMock.mockRejectedValueOnce(new Error("permission denied"));
     const result = await logIn();
 
     await act(() =>

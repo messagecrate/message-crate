@@ -38,13 +38,13 @@ const getServerStateMock = vi.fn();
 const completeImportMock = vi.fn();
 const runMock = vi.fn<(fn: () => Promise<unknown>) => Promise<TauriJobResult>>();
 const cancelMock = vi.fn();
-const createStagingDirMock = vi.fn();
+const createRunDirMock = vi.fn();
 const invokePathStatMock = vi.fn();
 const invokeUploadMock = vi.fn();
 const invokeExtractMock = vi.fn();
 const invokeSummarizeStagingMock = vi.fn();
 const invokeTranscodeStagingMock = vi.fn();
-const invokeDeleteStagingMock = vi.fn();
+const invokeDeleteRunDirMock = vi.fn();
 const probeFfmpegToolsMock = vi.fn<(dir: string | null) => Promise<FfmpegToolsProbe>>();
 const setImportStageMock = vi.fn();
 const discardImportRunMock = vi.fn();
@@ -81,8 +81,8 @@ vi.mock("../../lib/tauri", async (importOriginal) => ({
   invokePathStat: (...args: unknown[]) => invokePathStatMock(...args),
   invokeSummarizeStaging: (...args: unknown[]) => invokeSummarizeStagingMock(...args),
   invokeTranscodeStaging: (...args: unknown[]) => invokeTranscodeStagingMock(...args),
-  invokeDeleteStaging: (...args: unknown[]) => invokeDeleteStagingMock(...args),
-  invokeCreateStagingDir: (...args: unknown[]) => createStagingDirMock(...args),
+  invokeDeleteRunDir: (...args: unknown[]) => invokeDeleteRunDirMock(...args),
+  invokeCreateRunDir: (...args: unknown[]) => createRunDirMock(...args),
   invokeReadImportRunRecord: (...args: unknown[]) => readRunRecordMock(...args),
   invokeSaveImportRunRecord: (...args: unknown[]) => saveRunRecordMock(...args),
   probeFfmpegTools: (...args: [string | null]) => probeFfmpegToolsMock(...args),
@@ -310,8 +310,8 @@ describe("useImportJob wiring", () => {
     createImportMock.mockResolvedValue({ id: 1 });
     completeImportMock.mockReset();
     completeImportMock.mockResolvedValue({});
-    createStagingDirMock.mockReset();
-    createStagingDirMock.mockResolvedValue("/home/sam/message-crate/staging-iphone");
+    createRunDirMock.mockReset();
+    createRunDirMock.mockResolvedValue("/home/sam/message-crate/staging-iphone");
     invokePathStatMock.mockReset();
     invokePathStatMock.mockResolvedValue(null);
     invokeExtractMock.mockReset();
@@ -323,8 +323,8 @@ describe("useImportJob wiring", () => {
       stagingSummary({ mediaMode: stagedMode() }),
     );
     invokeTranscodeStagingMock.mockReset();
-    invokeDeleteStagingMock.mockReset();
-    invokeDeleteStagingMock.mockResolvedValue(undefined);
+    invokeDeleteRunDirMock.mockReset();
+    invokeDeleteRunDirMock.mockResolvedValue(undefined);
     probeFfmpegToolsMock.mockReset();
     probeFfmpegToolsMock.mockResolvedValue(okProbe());
     setImportStageMock.mockReset();
@@ -384,7 +384,7 @@ describe("useImportJob wiring", () => {
     await act(() => result.current.approve());
 
     // The summaries and the Media stage read the settings from the directory.
-    const directory = { staging_dir: "/home/sam/message-crate/staging-iphone" };
+    const directory = { run_dir: "/home/sam/message-crate/staging-iphone" };
     expect(invokeSummarizeStagingMock.mock.calls.map((call) => call[0])).toEqual([
       directory,
       directory,
@@ -436,7 +436,7 @@ describe("useImportJob wiring", () => {
     await act(() =>
       result.current.startImport(
         { ...form({ attachmentMedia: "copy" }), assetMaxBytes: 7 * MIB },
-        { runId: 9, stagingDir: "/home/sam/message-crate/staging-iphone" },
+        { runId: 9, runDir: "/home/sam/message-crate/staging-iphone" },
       ),
     );
 
@@ -452,7 +452,7 @@ describe("useImportJob wiring", () => {
       result.current.startImport(
         { ...form({ attachmentMedia: "copy" }), assetMaxBytes: 7 * MIB },
         undefined,
-        { runId: 9, stagingDir: "/home/sam/message-crate/staging-iphone" },
+        { runId: 9, runDir: "/home/sam/message-crate/staging-iphone" },
       ),
     );
 
@@ -557,7 +557,7 @@ describe("useImportJob wiring", () => {
     expect(result.current.summaryView?.issues[0]?.reason).toMatch(/Failed to fetch/);
     expect(rowStatus(result.current.steps, "Media")).toBe("error");
     expect(completeImportMock).not.toHaveBeenCalled();
-    expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
   });
 
   it("does not start the Upload when the server does not record the upload stage", async () => {
@@ -571,7 +571,7 @@ describe("useImportJob wiring", () => {
     expect(result.current.summaryView?.issues[0]?.reason).toMatch(/Failed to fetch/);
     expect(rowStatus(result.current.steps, "Upload")).toBe("error");
     expect(completeImportMock).not.toHaveBeenCalled();
-    expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
   });
 
   it("shows a failed staging_review write on the Staging Review, and approving writes it again first", async () => {
@@ -800,12 +800,12 @@ describe("useImportJob wiring", () => {
   });
 
   it("declining closes the run and deletes the directory", async () => {
-    createStagingDirMock.mockResolvedValue("/staging/run-1");
+    createRunDirMock.mockResolvedValue("/staging/run-1");
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.cancelRun());
     expect(discardImportRunMock).toHaveBeenCalledWith(1, [], []);
-    expect(invokeDeleteStagingMock).toHaveBeenCalledWith({ staging_dir: "/staging/run-1" });
+    expect(invokeDeleteRunDirMock).toHaveBeenCalledWith({ run_dir: "/staging/run-1" });
     expect(result.current.phase).toBe("form");
   });
 
@@ -835,7 +835,7 @@ describe("useImportJob wiring", () => {
       [],
     );
     expect(readRunRecordMock.mock.invocationCallOrder.at(-1)).toBeLessThan(
-      invokeDeleteStagingMock.mock.invocationCallOrder[0] ?? 0,
+      invokeDeleteRunDirMock.mock.invocationCallOrder[0] ?? 0,
     );
   });
 
@@ -899,11 +899,11 @@ describe("useImportJob wiring", () => {
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.discardRun(7, "/staging/paused"));
 
-    expect(readRunRecordMock).toHaveBeenCalledWith({ staging_dir: "/staging/paused" });
+    expect(readRunRecordMock).toHaveBeenCalledWith({ run_dir: "/staging/paused" });
     expect(discardImportRunMock).toHaveBeenCalledWith(7, [carried], []);
-    expect(invokeDeleteStagingMock).toHaveBeenCalledWith({ staging_dir: "/staging/paused" });
+    expect(invokeDeleteRunDirMock).toHaveBeenCalledWith({ run_dir: "/staging/paused" });
     expect(readRunRecordMock.mock.invocationCallOrder[0]).toBeLessThan(
-      invokeDeleteStagingMock.mock.invocationCallOrder[0] ?? 0,
+      invokeDeleteRunDirMock.mock.invocationCallOrder[0] ?? 0,
     );
   });
 
@@ -928,7 +928,7 @@ describe("useImportJob wiring", () => {
     await act(() => result.current.discardRun(7, "/staging/paused"));
 
     expect(discardImportRunMock).toHaveBeenCalledWith(7, [], []);
-    expect(invokeDeleteStagingMock).toHaveBeenCalledWith({ staging_dir: "/staging/paused" });
+    expect(invokeDeleteRunDirMock).toHaveBeenCalledWith({ run_dir: "/staging/paused" });
   });
 
   it("discards another device's run without reading or deleting a directory here", async () => {
@@ -937,7 +937,7 @@ describe("useImportJob wiring", () => {
 
     expect(readRunRecordMock).not.toHaveBeenCalled();
     expect(discardImportRunMock).toHaveBeenCalledWith(7, [], []);
-    expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
   });
 
   it("deletes the directory even when discarding the run fails", async () => {
@@ -948,7 +948,7 @@ describe("useImportJob wiring", () => {
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.cancelRun());
-    expect(invokeDeleteStagingMock).toHaveBeenCalled();
+    expect(invokeDeleteRunDirMock).toHaveBeenCalled();
   });
 
   it("still discards the run, and still returns to the form, even when deleting the directory fails", async () => {
@@ -957,21 +957,21 @@ describe("useImportJob wiring", () => {
     // let a rejected delete propagate out of cancelRun and skip
     // returnToForm — leaving the screen stuck on the Staging Review with a run the
     // server already considers discarded.
-    invokeDeleteStagingMock.mockRejectedValueOnce(new Error("disk full"));
+    invokeDeleteRunDirMock.mockRejectedValueOnce(new Error("disk full"));
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     await act(() => result.current.cancelRun());
     expect(discardImportRunMock).toHaveBeenCalledWith(1, [], []);
     expect(result.current.phase).toBe("form");
     // The directory is still on disk, and the screen says so (#1154).
-    expect(result.current.stagingDeleteFailure).toEqual({
+    expect(result.current.runDirDeleteFailure).toEqual({
       path: "/home/sam/message-crate/staging-iphone",
       reason: "disk full",
     });
   });
 
   it("declines from the Media Review the same way — closes the run and deletes the directory", async () => {
-    createStagingDirMock.mockResolvedValue("/staging/run-2");
+    createRunDirMock.mockResolvedValue("/staging/run-2");
     runMock.mockImplementationOnce(
       runResult({ summary: "Transcode finished.", transcode: undefined }),
     );
@@ -983,12 +983,12 @@ describe("useImportJob wiring", () => {
     await act(() => result.current.cancelRun());
 
     expect(discardImportRunMock).toHaveBeenCalledWith(1, [], []);
-    expect(invokeDeleteStagingMock).toHaveBeenCalledWith({ staging_dir: "/staging/run-2" });
+    expect(invokeDeleteRunDirMock).toHaveBeenCalledWith({ run_dir: "/staging/run-2" });
     expect(result.current.phase).toBe("form");
   });
 
-  it("a successful import deletes its staging directory once the server has recorded it", async () => {
-    createStagingDirMock.mockResolvedValue("/staging/run-3");
+  it("a successful import deletes its run directory once the server has recorded it", async () => {
+    createRunDirMock.mockResolvedValue("/staging/run-3");
     runMock.mockImplementationOnce(runResult({ summary: "Upload finished.", report: okReport() }));
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
@@ -996,13 +996,13 @@ describe("useImportJob wiring", () => {
 
     expect(result.current.phase).toBe("done");
     expect(result.current.summaryView?.status).toBe("completed");
-    expect(invokeDeleteStagingMock).toHaveBeenCalledWith({ staging_dir: "/staging/run-3" });
+    expect(invokeDeleteRunDirMock).toHaveBeenCalledWith({ run_dir: "/staging/run-3" });
     // The server's record is written first; the directory goes after it.
     expect(completeImportMock.mock.invocationCallOrder[0]).toBeLessThan(
-      invokeDeleteStagingMock.mock.invocationCallOrder[0] ?? 0,
+      invokeDeleteRunDirMock.mock.invocationCallOrder[0] ?? 0,
     );
     // Nothing on the finished screen points at a directory that no longer exists.
-    expect(result.current.stagingDir).toBeNull();
+    expect(result.current.runDir).toBeNull();
     expect(discardImportRunMock).not.toHaveBeenCalled();
   });
 
@@ -1010,7 +1010,7 @@ describe("useImportJob wiring", () => {
   // the run stays at `upload` and the next visit to Import offers Resume
   // or Discard; the staged directory is what Resume sends from.
   it("pauses a failed Upload: no /complete, the run stays at upload, and its directory stays", async () => {
-    createStagingDirMock.mockResolvedValue("/staging/run-4");
+    createRunDirMock.mockResolvedValue("/staging/run-4");
     runMock.mockImplementationOnce(
       runResult({ summary: "Upload finished.", report: failedReport() }),
     );
@@ -1023,8 +1023,8 @@ describe("useImportJob wiring", () => {
     expect(completeImportMock).not.toHaveBeenCalled();
     expect(discardImportRunMock).not.toHaveBeenCalled();
     expect(setImportStageMock).toHaveBeenLastCalledWith(1, "upload", expect.anything());
-    expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
-    expect(result.current.stagingDir).toBe("/staging/run-4");
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
+    expect(result.current.runDir).toBe("/staging/run-4");
   });
 
   it("pauses an Upload whose job failed outright, the same way", async () => {
@@ -1044,7 +1044,7 @@ describe("useImportJob wiring", () => {
       }),
     );
     expect(completeImportMock).not.toHaveBeenCalled();
-    expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
   });
 
   it("pauses an Upload that left conversations unsent instead of finishing it and deleting them", async () => {
@@ -1069,7 +1069,7 @@ describe("useImportJob wiring", () => {
 
     expect(result.current.summaryView?.status).toBe("paused");
     expect(completeImportMock).not.toHaveBeenCalled();
-    expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
   });
 
   it("keeps a paused Upload's Import Errors in its directory, leaving out what the resume reports again", async () => {
@@ -1126,10 +1126,10 @@ describe("useImportJob wiring", () => {
     await act(() => result.current.approve());
 
     expect(result.current.summaryView?.status).toBe("paused");
-    const [{ staging_dir, record }] = saveRunRecordMock.mock.lastCall as [
-      { staging_dir: string; record: Record<string, unknown> },
+    const [{ run_dir, record }] = saveRunRecordMock.mock.lastCall as [
+      { run_dir: string; record: Record<string, unknown> },
     ];
-    expect(staging_dir).toBe("/home/sam/message-crate/staging-iphone");
+    expect(run_dir).toBe("/home/sam/message-crate/staging-iphone");
     expect(record.issues).toEqual([
       { kind: "skip", stage: "staging", item: "IMG_1.HEIC", reason: "missing" },
       {
@@ -1190,13 +1190,13 @@ describe("useImportJob wiring", () => {
         return EXTRACT_RESULT;
       },
     );
-    createStagingDirMock.mockResolvedValue("/staging/run-9");
+    createRunDirMock.mockResolvedValue("/staging/run-9");
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
 
     expect(savedBeforeStageEnded).toEqual([
       {
-        staging_dir: "/staging/run-9",
+        run_dir: "/staging/run-9",
         record: expect.objectContaining({
           issues: [
             {
@@ -1244,7 +1244,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("completes a failed Staging as failed and deletes its directory, since nothing complete exists to upload", async () => {
-    createStagingDirMock.mockResolvedValue("/staging/run-6");
+    createRunDirMock.mockResolvedValue("/staging/run-6");
     runMock.mockReset();
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
@@ -1258,15 +1258,15 @@ describe("useImportJob wiring", () => {
       1,
       expect.objectContaining({ status: "failed" }),
     );
-    expect(invokeDeleteStagingMock).toHaveBeenCalledWith({ staging_dir: "/staging/run-6" });
+    expect(invokeDeleteRunDirMock).toHaveBeenCalledWith({ run_dir: "/staging/run-6" });
     expect(completeImportMock.mock.invocationCallOrder[0]).toBeLessThan(
-      invokeDeleteStagingMock.mock.invocationCallOrder[0] ?? 0,
+      invokeDeleteRunDirMock.mock.invocationCallOrder[0] ?? 0,
     );
-    expect(result.current.stagingDir).toBeNull();
+    expect(result.current.runDir).toBeNull();
   });
 
   it("completes a failed Media stage as failed and deletes its directory", async () => {
-    createStagingDirMock.mockResolvedValue("/staging/run-7");
+    createRunDirMock.mockResolvedValue("/staging/run-7");
     runMock.mockImplementationOnce(async (fn: () => Promise<unknown>) => {
       await fn();
       throw new Error("ffmpeg exited with status 1");
@@ -1280,7 +1280,7 @@ describe("useImportJob wiring", () => {
       1,
       expect.objectContaining({ status: "failed" }),
     );
-    expect(invokeDeleteStagingMock).toHaveBeenCalledWith({ staging_dir: "/staging/run-7" });
+    expect(invokeDeleteRunDirMock).toHaveBeenCalledWith({ run_dir: "/staging/run-7" });
   });
 
   it("keeps a failed Staging's directory when the server does not take its completion, since the run is still open", async () => {
@@ -1293,13 +1293,13 @@ describe("useImportJob wiring", () => {
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
 
     expect(completeImportMock).toHaveBeenCalled();
-    expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
   });
 
   it("a successful import still finishes when deleting the staging directory fails", async () => {
-    createStagingDirMock.mockResolvedValue("/staging/run-5");
+    createRunDirMock.mockResolvedValue("/staging/run-5");
     runMock.mockImplementationOnce(runResult({ summary: "Upload finished.", report: okReport() }));
-    invokeDeleteStagingMock.mockRejectedValueOnce(new Error("permission denied"));
+    invokeDeleteRunDirMock.mockRejectedValueOnce(new Error("permission denied"));
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "copy" })));
     await act(() => result.current.approve());
@@ -1308,8 +1308,8 @@ describe("useImportJob wiring", () => {
     expect(result.current.summaryView?.status).toBe("completed");
     // The directory is still there, so the screen keeps pointing at it and
     // says why it is.
-    expect(result.current.stagingDir).toBe("/staging/run-5");
-    expect(result.current.stagingDeleteFailure).toEqual({
+    expect(result.current.runDir).toBe("/staging/run-5");
+    expect(result.current.runDirDeleteFailure).toEqual({
       path: "/staging/run-5",
       reason: "permission denied",
     });
@@ -1318,7 +1318,7 @@ describe("useImportJob wiring", () => {
     await act(async () => {
       await result.current.discardRun(null, "/staging/run-5");
     });
-    expect(result.current.stagingDeleteFailure).toBeNull();
+    expect(result.current.runDirDeleteFailure).toBeNull();
   });
 
   it("approving at the Media Review writes upload carrying the recomputed summary, not the Staging Review's", async () => {
@@ -1528,7 +1528,7 @@ describe("useImportJob wiring", () => {
     // The Upload is paused, not ended: the run stays at `upload` with its directory.
     expect(result.current.summaryView?.status).toBe("paused");
     expect(completeImportMock).not.toHaveBeenCalled();
-    expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
   });
 
   it("pauses an Upload the cancel flag stopped: no /complete, and the staged files stay", async () => {
@@ -1551,8 +1551,8 @@ describe("useImportJob wiring", () => {
 
     expect(result.current.summaryView?.status).toBe("paused");
     expect(completeImportMock).not.toHaveBeenCalled();
-    expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
-    expect(result.current.stagingDir).toBe("/home/sam/message-crate/staging-iphone");
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
+    expect(result.current.runDir).toBe("/home/sam/message-crate/staging-iphone");
   });
 
   it("pauses an Upload that stopped short without a cancel, and keeps the staged files", async () => {
@@ -1573,7 +1573,7 @@ describe("useImportJob wiring", () => {
 
     expect(result.current.summaryView?.status).toBe("paused");
     expect(completeImportMock).not.toHaveBeenCalled();
-    expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
   });
 
   it("keeps the staged files when Message Crate does not take the run's completion", async () => {
@@ -1585,8 +1585,8 @@ describe("useImportJob wiring", () => {
 
     expect(completeImportMock).toHaveBeenCalled();
     // The run is left at `upload`; its resume needs this directory.
-    expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
-    expect(result.current.stagingDir).toBe("/home/sam/message-crate/staging-iphone");
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
+    expect(result.current.runDir).toBe("/home/sam/message-crate/staging-iphone");
     // Not finished, so not shown as an import with a Saved Search and a
     // Contact Group: it is paused, and the next visit resumes it.
     expect(result.current.summaryView?.status).toBe("paused");
@@ -1716,7 +1716,7 @@ describe("useImportJob wiring", () => {
     // failed. Completing the run would delete the converted directory, so this
     // lands the way the recompute after Staging does: back to the form, the
     // run left open at the Media Review for the next visit to offer again.
-    createStagingDirMock.mockResolvedValue("/staging/run-8");
+    createRunDirMock.mockResolvedValue("/staging/run-8");
     runMock.mockImplementationOnce(
       runResult({ summary: "Transcode finished.", transcode: undefined }),
     );
@@ -1732,12 +1732,12 @@ describe("useImportJob wiring", () => {
     expect(result.current.phase).toBe("form");
     expect(result.current.resumeError).toBe("disk full");
     expect(completeImportMock).not.toHaveBeenCalled();
-    expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
     // The server holds the run at the Media Review, whose resume recomputes
     // the summary rather than running Media again.
     expect(setImportStageMock).toHaveBeenLastCalledWith(1, "media_review", expect.anything());
-    const lastSave = saveRunRecordMock.mock.lastCall as [{ staging_dir: string }];
-    expect(lastSave[0].staging_dir).toBe("/staging/run-8");
+    const lastSave = saveRunRecordMock.mock.lastCall as [{ run_dir: string }];
+    expect(lastSave[0].run_dir).toBe("/staging/run-8");
   });
 
   it("does not run the Media stage twice on a double click", async () => {
@@ -1813,7 +1813,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("records the run directory and device on the run it creates", async () => {
-    createStagingDirMock.mockResolvedValue("/home/u/message-crate/staging-260830");
+    createRunDirMock.mockResolvedValue("/home/u/message-crate/staging-260830");
     invokePathStatMock.mockResolvedValue({
       exists: true,
       isFile: false,
@@ -1830,12 +1830,12 @@ describe("useImportJob wiring", () => {
     const body = createCall?.[0] as Record<string, unknown>;
     expect(body.stage).toBe("parse");
     expect(body.device_id).toEqual(expect.any(String));
-    expect(body.staging_dir).toBe("/home/u/message-crate/staging-260830");
+    expect(body.run_dir).toBe("/home/u/message-crate/staging-260830");
     expect(body.form).toMatchObject({ source: "imessage-ios" });
   });
 
   it("keeps the backup password out of the stored form snapshot", async () => {
-    createStagingDirMock.mockResolvedValue("/tmp/staging");
+    createRunDirMock.mockResolvedValue("/tmp/staging");
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport({ ...baseForm, backupPassword: "hunter2" }));
 
@@ -1849,7 +1849,7 @@ describe("useImportJob wiring", () => {
   // A WhatsApp import from an encrypted iPhone backup reads the backup with
   // the same password, so its resume has to ask for it again too (#941).
   it("records that a WhatsApp iPhone import was given the backup password", async () => {
-    createStagingDirMock.mockResolvedValue("/tmp/staging");
+    createRunDirMock.mockResolvedValue("/tmp/staging");
     const { result } = renderHook(() => useImportJob());
     await act(() =>
       result.current.startImport({
@@ -1865,7 +1865,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("keeps the WhatsApp key out of the stored form snapshot", async () => {
-    createStagingDirMock.mockResolvedValue("/tmp/staging");
+    createRunDirMock.mockResolvedValue("/tmp/staging");
     const { result } = renderHook(() => useImportJob());
     await act(() =>
       result.current.startImport({
@@ -1883,7 +1883,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("records that no password or key was given when the form had none", async () => {
-    createStagingDirMock.mockResolvedValue("/tmp/staging");
+    createRunDirMock.mockResolvedValue("/tmp/staging");
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(baseForm));
 
@@ -1892,7 +1892,7 @@ describe("useImportJob wiring", () => {
   });
 
   it("moves the run to upload before the upload starts", async () => {
-    createStagingDirMock.mockResolvedValue("/tmp/staging");
+    createRunDirMock.mockResolvedValue("/tmp/staging");
     runMock.mockImplementationOnce(
       runResult({ summary: "Upload finished.", report: failedReport() }),
     );
@@ -1910,7 +1910,7 @@ describe("useImportJob wiring", () => {
     // Pins the mode-dependent assembly stepsFor/stepIndexFor exist for: this
     // hook does not run the Media stage until the Staging Review is approved, so the row
     // must sit pending, not silently vanish or get marked done.
-    createStagingDirMock.mockResolvedValue("/tmp/staging");
+    createRunDirMock.mockResolvedValue("/tmp/staging");
 
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport({ ...baseForm, attachmentMedia: "convert" }));
@@ -1925,7 +1925,7 @@ describe("useImportJob wiring", () => {
     // The media row sits pending after extract; this test continues the
     // same run through review: active while the Media stage runs,
     // done once it finishes.
-    createStagingDirMock.mockResolvedValue("/tmp/staging");
+    createRunDirMock.mockResolvedValue("/tmp/staging");
     runMock.mockImplementationOnce(
       runResult({ summary: "Transcode finished.", transcode: undefined }),
     );
@@ -1943,7 +1943,7 @@ describe("useImportJob wiring", () => {
     // (ruling 3) — the staging row must say what extract actually did, not
     // what the user ultimately asked for. The media row (index 1) still
     // tells the convert/compress story once the Media stage itself runs.
-    createStagingDirMock.mockResolvedValue("/tmp/staging");
+    createRunDirMock.mockResolvedValue("/tmp/staging");
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport({ ...baseForm, attachmentMedia: "convert" }));
 
@@ -2135,7 +2135,7 @@ describe("useImportJob wiring", () => {
       await act(async () => {
         await result.current.startImport(imessageForm(), undefined, {
           runId: 42,
-          stagingDir: "/home/u/message-crate/staging-260830",
+          runDir: "/home/u/message-crate/staging-260830",
           identities: ["+15555550110"],
         });
       });
@@ -2153,7 +2153,7 @@ describe("useImportJob wiring", () => {
           undefined,
           {
             runId: 42,
-            stagingDir: "/home/u/message-crate/staging-260830",
+            runDir: "/home/u/message-crate/staging-260830",
             identities: null,
           },
         );
@@ -2190,7 +2190,7 @@ describe("useImportJob resume path", () => {
     createImportMock.mockResolvedValue({ id: 1 });
     completeImportMock.mockReset();
     completeImportMock.mockResolvedValue({});
-    createStagingDirMock.mockReset();
+    createRunDirMock.mockReset();
     invokePathStatMock.mockReset();
     invokePathStatMock.mockResolvedValue(null);
     invokeUploadMock.mockReset();
@@ -2201,12 +2201,12 @@ describe("useImportJob resume path", () => {
     discardImportRunMock.mockReset();
   });
 
-  it("passes the resumed run id and staging dir through to invokeUpload", async () => {
+  it("passes the resumed run id and run directory through to invokeUpload", async () => {
     const { result } = renderHook(() => useImportJob());
     await act(async () => {
       await result.current.startImport(baseForm, {
         runId: 99,
-        stagingDir: "/home/u/message-crate/staging-260830",
+        runDir: "/home/u/message-crate/staging-260830",
       });
     });
 
@@ -2227,15 +2227,15 @@ describe("useImportJob resume path", () => {
     await act(async () => {
       await result.current.startImport(baseForm, {
         runId: 99,
-        stagingDir: "/home/u/message-crate/staging-260830",
+        runDir: "/home/u/message-crate/staging-260830",
       });
     });
 
-    expect(createStagingDirMock).not.toHaveBeenCalled();
+    expect(createRunDirMock).not.toHaveBeenCalled();
     expect(invokePathStatMock).not.toHaveBeenCalled();
     expect(createImportMock.mock.calls.length > 0).toBe(false);
     expect(runMock).toHaveBeenCalledTimes(1); // Upload only, no extract
-    expect(result.current.stagingDir).toBe("/home/u/message-crate/staging-260830");
+    expect(result.current.runDir).toBe("/home/u/message-crate/staging-260830");
     expect(result.current.importRunId).toBe(99);
   });
 
@@ -2251,7 +2251,7 @@ describe("useImportJob resume path", () => {
     await act(async () => {
       await result.current.startImport(baseForm, {
         runId: 99,
-        stagingDir: "/home/u/message-crate/staging-260830",
+        runDir: "/home/u/message-crate/staging-260830",
       });
     });
 
@@ -2274,7 +2274,7 @@ describe("useImportJob resume path", () => {
     await act(async () => {
       await result.current.startImport(baseForm, {
         runId: 99,
-        stagingDir: "/home/u/message-crate/staging-260830",
+        runDir: "/home/u/message-crate/staging-260830",
         approved: stagingSummary({ mediaMode: "compress" }),
       });
     });
@@ -2311,7 +2311,7 @@ describe("useImportJob resume path", () => {
     await act(async () => {
       await result.current.startImport(baseForm, {
         runId: 99,
-        stagingDir: "/home/u/message-crate/staging-260830",
+        runDir: "/home/u/message-crate/staging-260830",
         approved,
       });
     });
@@ -2334,7 +2334,7 @@ describe("useImportJob resume path", () => {
     await act(async () => {
       await result.current.startImport(baseForm, {
         runId: 99,
-        stagingDir: "/home/u/message-crate/staging-260830",
+        runDir: "/home/u/message-crate/staging-260830",
       });
     });
 
@@ -2379,12 +2379,12 @@ describe("useImportJob resume path", () => {
     await act(async () => {
       await result.current.startImport(baseForm, {
         runId: 99,
-        stagingDir: "/home/u/message-crate/staging-260830",
+        runDir: "/home/u/message-crate/staging-260830",
       });
     });
 
     expect(readRunRecordMock).toHaveBeenCalledWith({
-      staging_dir: "/home/u/message-crate/staging-260830",
+      run_dir: "/home/u/message-crate/staging-260830",
     });
     const [, body] = completeImportMock.mock.calls[0] as [number, Record<string, unknown>];
     expect(body.issues).toEqual([carriedIssue]);
@@ -2405,7 +2405,7 @@ describe("useImportJob resume path", () => {
       }),
     );
     // The run ended, so its directory goes, the record with it.
-    expect(invokeDeleteStagingMock).toHaveBeenCalled();
+    expect(invokeDeleteRunDirMock).toHaveBeenCalled();
   });
 
   /**
@@ -2467,7 +2467,7 @@ describe("useImportJob resume path", () => {
     );
     const { result } = renderHook(() => useImportJob());
     await act(async () => {
-      await result.current.startImport(baseForm, { runId: 7, stagingDir: "/staging/paused" });
+      await result.current.startImport(baseForm, { runId: 7, runDir: "/staging/paused" });
     });
 
     expect(seen.record?.issues).toEqual([
@@ -2503,7 +2503,7 @@ describe("useImportJob resume path", () => {
     );
     const { result } = renderHook(() => useImportJob());
     await act(async () => {
-      await result.current.startImport(baseForm, { runId: 7, stagingDir: "/staging/paused" });
+      await result.current.startImport(baseForm, { runId: 7, runDir: "/staging/paused" });
     });
     expect(seen.record).toBeDefined();
     readRunRecordMock.mockResolvedValue(seen.record);
@@ -2520,7 +2520,7 @@ describe("useImportJob resume path", () => {
     await act(async () => {
       await result.current.startImport(baseForm, {
         runId: 99,
-        stagingDir: "/home/u/message-crate/staging-260830",
+        runDir: "/home/u/message-crate/staging-260830",
       });
     });
 
@@ -2603,7 +2603,7 @@ function activeRun(overrides: Partial<ActiveImportRun> = {}): ActiveImportRun {
     status: "running",
     started_at: "2026-08-30T00:00:00Z",
     stage: "staging_review",
-    staging_dir: "/home/u/message-crate/staging-260830",
+    run_dir: "/home/u/message-crate/staging-260830",
     device_id: "this-device",
     form: validSnapshot,
     source_fingerprint: null,
@@ -2622,7 +2622,7 @@ describe("useImportJob resumeAtReview", () => {
     createImportMock.mockResolvedValue({ id: 1 });
     completeImportMock.mockReset();
     completeImportMock.mockResolvedValue({});
-    createStagingDirMock.mockReset();
+    createRunDirMock.mockReset();
     invokePathStatMock.mockReset();
     invokeExtractMock.mockReset();
     invokeUploadMock.mockReset();
@@ -2630,7 +2630,7 @@ describe("useImportJob resumeAtReview", () => {
     saveRunRecordMock.mockReset();
     invokeSummarizeStagingMock.mockReset();
     invokeTranscodeStagingMock.mockReset();
-    invokeDeleteStagingMock.mockReset();
+    invokeDeleteRunDirMock.mockReset();
     probeFfmpegToolsMock.mockReset();
     probeFfmpegToolsMock.mockResolvedValue(okProbe());
     setImportStageMock.mockReset();
@@ -3081,11 +3081,11 @@ describe("one desktop app, two accounts (#1085)", () => {
     createImportMock.mockResolvedValue({ id: 1 });
     completeImportMock.mockReset();
     completeImportMock.mockResolvedValue({});
-    createStagingDirMock.mockReset();
-    createStagingDirMock.mockResolvedValue("/home/sam/message-crate/staging-iphone");
+    createRunDirMock.mockReset();
+    createRunDirMock.mockResolvedValue("/home/sam/message-crate/staging-iphone");
     invokePathStatMock.mockResolvedValue(null);
     invokeSummarizeStagingMock.mockResolvedValue(stagingSummary());
-    invokeDeleteStagingMock.mockReset();
+    invokeDeleteRunDirMock.mockReset();
     invokeUploadMock.mockReset();
     readRunRecordMock.mockReset();
     saveRunRecordMock.mockReset();
@@ -3178,14 +3178,14 @@ describe("one desktop app, two accounts (#1085)", () => {
     const b = renderHook(() => useImportJob());
     expect(b.result.current.phase).toBe("form");
     expect(b.result.current.form).toBeNull();
-    expect(b.result.current.stagingDir).toBeNull();
+    expect(b.result.current.runDir).toBeNull();
     expect(b.result.current.stagingSummary).toBeNull();
 
     await act(() => b.result.current.cancelRun());
     await act(() => b.result.current.approve());
     act(() => b.result.current.returnToForm());
     // A's staged directory and A's run are A's to delete or carry on.
-    expect(invokeDeleteStagingMock).not.toHaveBeenCalled();
+    expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
     expect(discardImportRunMock).not.toHaveBeenCalled();
     expect(invokeUploadMock).not.toHaveBeenCalled();
     b.unmount();
@@ -3194,11 +3194,11 @@ describe("one desktop app, two accounts (#1085)", () => {
     auth = ACCOUNT_A;
     const aAgain = renderHook(() => useImportJob());
     expect(aAgain.result.current.phase).toBe("staging_review");
-    expect(aAgain.result.current.stagingDir).toBe("/home/sam/message-crate/staging-iphone");
+    expect(aAgain.result.current.runDir).toBe("/home/sam/message-crate/staging-iphone");
   });
 
   it("stops account A's Staging before account B's run starts, and keeps A's end out of it", async () => {
-    createStagingDirMock
+    createRunDirMock
       .mockResolvedValueOnce("/home/sam/message-crate/staging-of-A")
       .mockResolvedValueOnce("/home/sam/message-crate/staging-of-B");
     createImportMock.mockResolvedValueOnce({ id: 11 }).mockResolvedValueOnce({ id: 22 });
@@ -3232,12 +3232,12 @@ describe("one desktop app, two accounts (#1085)", () => {
     // A's run stays open on the server, resumable from its own directory.
     expect(completeImportMock).not.toHaveBeenCalled();
     expect(saveRunRecordMock).toHaveBeenCalledWith(
-      expect.objectContaining({ staging_dir: "/home/sam/message-crate/staging-of-A" }),
+      expect.objectContaining({ run_dir: "/home/sam/message-crate/staging-of-A" }),
     );
     // B's run is B's alone.
     expect(b.result.current.phase).toBe("staging_review");
     expect(b.result.current.importRunId).toBe(22);
-    expect(b.result.current.stagingDir).toBe("/home/sam/message-crate/staging-of-B");
+    expect(b.result.current.runDir).toBe("/home/sam/message-crate/staging-of-B");
     expect(importRunStore.get().accountId).toBe(ACCOUNT_B.accountId);
   });
 });

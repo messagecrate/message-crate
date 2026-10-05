@@ -58,7 +58,7 @@ export async function invokeCancel(): Promise<void> {
  * run that started under the earlier one.
  */
 export interface StagingConfig {
-  staging_dir: string;
+  run_dir: string;
 }
 
 /** The Staging Directory, and the directory used when Settings name none. */
@@ -81,19 +81,19 @@ export async function invokeSetStagingRoot(root: string): Promise<StagingRoot> {
 }
 
 /**
- * The log of the Import Run whose directory is `stagingDir`, in the Logs
+ * The log of the Import Run whose directory is `runDir`, in the Logs
  * Directory, where it stays after the run's directory is deleted.
  */
-export async function invokeImportRunLog(stagingDir: string): Promise<string> {
-  return invoke("import_run_log", { stagingDir });
+export async function invokeImportRunLog(runDir: string): Promise<string> {
+  return invoke("import_run_log", { runDir });
 }
 
 /**
  * Make a new run directory under the Staging Directory and return its path.
  * `label` is the Import source.
  */
-export async function invokeCreateStagingDir(label: string): Promise<string> {
-  return invoke("create_staging_dir", { label });
+export async function invokeCreateRunDir(label: string): Promise<string> {
+  return invoke("create_run_dir", { label });
 }
 
 /** How a staged attachment is expected to land against the size limit. */
@@ -139,7 +139,7 @@ export interface StagingSummary {
 /** Recompute what a staged directory holds, for the first review. */
 export async function invokeSummarizeStaging(config: StagingConfig): Promise<StagingSummary> {
   return invoke("summarize_staging", {
-    args: { stagingDir: config.staging_dir },
+    args: { runDir: config.run_dir },
   });
 }
 
@@ -150,7 +150,7 @@ export async function invokeSummarizeStaging(config: StagingConfig): Promise<Sta
  */
 export async function invokeTranscodeStaging(config: StagingConfig): Promise<void> {
   return invoke("transcode_staging", {
-    args: { stagingDir: config.staging_dir },
+    args: { runDir: config.run_dir },
   });
 }
 
@@ -158,9 +158,9 @@ export async function invokeTranscodeStaging(config: StagingConfig): Promise<voi
  * Delete a run directory — the decline path's terminal action: closing an
  * review without approving deletes the directory outright.
  */
-export async function invokeDeleteStaging(config: { staging_dir: string }): Promise<void> {
-  return invoke("delete_staging", {
-    args: { stagingDir: config.staging_dir },
+export async function invokeDeleteRunDir(config: { run_dir: string }): Promise<void> {
+  return invoke("delete_run_dir", {
+    args: { runDir: config.run_dir },
   });
 }
 
@@ -170,20 +170,20 @@ export async function invokeDeleteStaging(config: { staging_dir: string }): Prom
  * Null when the directory holds none. The caller checks its shape.
  */
 export async function invokeReadImportRunRecord(config: {
-  staging_dir: string;
+  run_dir: string;
 }): Promise<unknown | null> {
   return invoke("read_import_run_record", {
-    args: { stagingDir: config.staging_dir },
+    args: { runDir: config.run_dir },
   });
 }
 
 /** Write the Import Run record into its run directory (`save_import_run_record`). */
 export async function invokeSaveImportRunRecord(config: {
-  staging_dir: string;
+  run_dir: string;
   record: unknown;
 }): Promise<void> {
   return invoke("save_import_run_record", {
-    args: { stagingDir: config.staging_dir, record: config.record },
+    args: { runDir: config.run_dir, record: config.record },
   });
 }
 
