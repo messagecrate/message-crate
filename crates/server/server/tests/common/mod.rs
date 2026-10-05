@@ -1,5 +1,6 @@
-//! Starting `message-crate-server serve` as the desktop app does, shared by
-//! the tests that run the binary.
+//! Starting `message-crate-server serve` as the desktop app does, and the
+//! lines of a JSON Lines batch to send it, shared by the tests that run the
+//! binary.
 
 use std::io::{BufRead, BufReader};
 use std::net::SocketAddr;
@@ -10,6 +11,14 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use message_crate_serve_protocol::LISTENING_LINE;
+
+// The unit tests' own builders, compiled into each test binary, because a
+// test under `tests/` cannot reach the library's `cfg(test)` `test_support`
+// (#1898). A test binary uses only some of them, so the rest would warn as
+// dead code there.
+#[allow(dead_code)]
+#[path = "../../src/test_support/lines.rs"]
+pub mod lines;
 
 /// How long a server on an empty database may take to listen or to exit.
 pub const WAIT: Duration = Duration::from_secs(60);
