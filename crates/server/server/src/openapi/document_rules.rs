@@ -40,14 +40,6 @@ use crate::problem::{Problem, ProblemType};
 /// "Naming a route").
 const MULTIPART_PART: &str = "/v1/assets/{sha256}/uploads/{upload_id}/parts/{part}";
 
-/// The creations whose `Location` names a path with no `GET` yet (#1486).
-/// The list empties when that issue is fixed, and nothing is added to it.
-const UNREADABLE_LOCATIONS: [&str; 3] = [
-    "/v1/contact-groups",
-    "/v1/message-tags",
-    "/v1/saved-searches",
-];
-
 /// The four keys of every page.
 const PAGE_KEYS: [&str; 4] = ["items", "total", "limit", "offset"];
 
@@ -311,10 +303,7 @@ async fn called_rules(doc: &Value, world: &World<'_>, op: &Operation, spec: &Val
     // A creation names the new resource in `Location`, and the credential
     // that made it can read it there ("Status codes"). Last, because it
     // makes something.
-    if !spec["responses"]["201"].is_null()
-        && token.is_some()
-        && !UNREADABLE_LOCATIONS.contains(&op.path.as_str())
-    {
+    if !spec["responses"]["201"].is_null() && token.is_some() {
         let answer = call(world, op, &path, token, sent()).await;
         if answer.status == StatusCode::CREATED {
             match &answer.location {
