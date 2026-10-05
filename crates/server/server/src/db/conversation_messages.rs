@@ -578,26 +578,53 @@ async fn load_tapbacks(
 
 /// The id of the message whose earlier versions the message `alias` shows,
 /// as an SQL expression over that alias: its own id when it holds any, or
-/// else the lowest id among the duplicates hidden under it
-/// (`duplicate_of`) that hold any. NULL when none of them holds one.
+/// else the lowest id among the copies hidden under it that hold any and
+/// whose conversation is not in the trash. NULL when there is none.
+///
+/// A copy is hidden under `alias` when its `duplicate_of` chain leads
+/// there, through any number of links: dedupe's near-time pass can hide a
+/// copy the exact pass kept, so the copy holding the versions can be two
+/// links below the one shown.
 ///
 /// Why: dedupe keeps the copy of the source imported first, and only Apple
 /// Messages records edits, so the copy shown can be one from a backup that
 /// records none, such as iMazing, while the copy that holds the earlier
 /// versions is hidden (#1757). One holder rather than every copy's
 /// versions together, so two copies that both record the edits never list
-/// them twice. Every reader of earlier versions goes through this one
-/// expression: [`EARLIER_VERSIONS_FROM`] for the versions a message shows,
-/// and the Messages list's free text, which finds a message by the versions
-/// it shows ([`crate::search`]).
+/// them twice. A copy in a trashed conversation is passed over, because a
+/// search leaves the trash out everywhere it looks
+/// (`docs/architecture/search.md`). Every reader of earlier versions goes
+/// through this one expression: [`earlier_versions_from`] for the versions
+/// a message shows, and the Messages list's free text, which finds a
+/// message by the versions it shows ([`crate::search`]).
 pub(crate) fn earlier_versions_holder_sql(alias: &str) -> String {
     format!(
         "CASE WHEN EXISTS (SELECT 1 FROM message_versions hv WHERE hv.message_id = {alias}.id) \
          THEN {alias}.id \
-         ELSE (SELECT MIN(hd.id) FROM messages hd \
-               WHERE hd.duplicate_of = {alias}.id \
-                 AND EXISTS (SELECT 1 FROM message_versions hdv WHERE hdv.message_id = hd.id)) \
+         ELSE (WITH RECURSIVE hidden_under(id) AS ( \
+                 SELECT hd.id FROM messages hd WHERE hd.duplicate_of = {alias}.id \
+                 UNION SELECT hn.id FROM messages hn \
+                       JOIN hidden_under hu ON hn.duplicate_of = hu.id) \
+               SELECT MIN(hm.id) FROM hidden_under hu JOIN messages hm ON hm.id = hu.id \
+               WHERE EXISTS (SELECT 1 FROM message_versions hdv WHERE hdv.message_id = hm.id) \
+                 AND NOT EXISTS (SELECT 1 FROM trashed_conversations htc \
+                                 WHERE htc.account_id = hm.account_id \
+                                   AND htc.conversation_id = hm.conversation_id)) \
          END"
+    )
+}
+
+/// A `SELECT` of the message `alias` and every message its `duplicate_of`
+/// chain leads to: the copies that may show `alias`'s earlier versions
+/// through [`earlier_versions_holder_sql`]. The Messages list's free text
+/// reads it to go from a matching version to the messages that show it.
+pub(crate) fn duplicate_chain_sql(alias: &str) -> String {
+    format!(
+        "WITH RECURSIVE chain(id) AS ( \
+           SELECT {alias}.id \
+           UNION SELECT cm.duplicate_of FROM messages cm JOIN chain ON cm.id = chain.id \
+                 WHERE cm.duplicate_of IS NOT NULL) \
+         SELECT id FROM chain"
     )
 }
 

@@ -236,18 +236,20 @@ final text is told apart by asking the final text's index alone (#1143,
 
 **A message's earlier versions are the ones it shows, and a duplicate's
 count for the copy shown.** A message shows its own earlier versions, or,
-when it holds none, those of the duplicate hidden under it
-(`duplicate_of`) that holds them, the one with the lowest id when more than
-one does. A version therefore finds the message holding it and, when that
-message is hidden, the copy it is hidden under. One SQL expression,
-`earlier_versions_holder_sql` in `db/conversation_messages.rs`, names the
-holder for the versions listed, the `matched` marks and the free-text
-match, so a hit always lists the version that found it. Why: dedupe keeps
-the copy of the source imported first, and only Apple Messages records
-edits, so the copy shown can be an iMazing copy with no versions while the
-Apple Messages copy that holds them is hidden (#1757). One holder rather
-than every copy's versions together, so two copies that both record the
-edits never list them twice.
+when it holds none, those of a copy hidden under it whose `duplicate_of`
+chain leads to it, through any number of links, the one with the lowest id
+when more than one does. A copy whose conversation is in the trash is passed
+over, because a search leaves the trash out everywhere it looks. A version
+therefore finds the message holding it and the copy shown in its place.
+
+One SQL expression, `earlier_versions_holder_sql` in
+`db/conversation_messages.rs`, names the holder for the versions listed,
+the `matched` marks and the free-text match, so a hit always lists the
+version that found it. Why: dedupe keeps the copy of the source imported
+first, and only Apple Messages records edits, so the copy shown can be an
+iMazing copy with no versions while the Apple Messages copy that holds them
+is hidden (#1757). One holder rather than every copy's versions together,
+so two copies that both record the edits never list them twice.
 
 ## Lists
 
