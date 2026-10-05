@@ -1,0 +1,6 @@
+Chat Session,Message Date,Service,Type,Sender ID,Sender Name,Status,Replying to,Subject,Text,Reactions,Attachment,Attachment type
+Bob Example,2020-01-01 12:05:00,iMessage,Incoming,+15555550101,Bob Example,Read,,,,,image0.jpg,Image
+Bob Example,2020-01-01 12:05:00,iMessage,Incoming,+15555550101,Bob Example,Read,,,,,image0.jpg,Image
+Bob Example,2020-01-01 12:06:00,iMessage,Incoming,+15555550101,Bob Example,Read,,,,,image1.jpg,Image
+Bob Example,2020-01-01 12:06:00,iMessage,Incoming,+15555550101,Bob Example,Read,,,,,image1.jpg,Image
+Bob Example,2020-01-01 12:07:00,iMessage,Incoming,+15555550101,Bob Example,Read,,,,,image2.jpg,Image
