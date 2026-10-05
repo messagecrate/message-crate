@@ -60,6 +60,15 @@ pub use imessage_reader_protocol::Reaction;
 /// file carries.
 pub use imessage_reader_protocol::Deletion;
 
+/// One earlier version of one part of an edited message: its part, its text,
+/// and when it was written. A message's `text` is its final version, so
+/// [`IrMessage::edits`] holds only the versions before it.
+///
+/// Defined in `imessage-reader-protocol` beside [`Reaction`], for the same
+/// reason: the Apple Messages Reader writes it in the shape the conversation
+/// file carries.
+pub use imessage_reader_protocol::EarlierVersion;
+
 /// The mark a text field holds, as the CSV `deletion` cell and the
 /// `X-ME-Deletion` mail header write it: blank for no mark, else
 /// [`Deletion::as_str`]'s text.
@@ -96,8 +105,8 @@ impl std::fmt::Display for UnknownDeletion {
 
 impl std::error::Error for UnknownDeletion {}
 
-/// Schema version written into every [`ConversationDocument`] (currently 7).
-pub const SCHEMA_VERSION: u32 = 7;
+/// Schema version written into every [`ConversationDocument`] (currently 8).
+pub const SCHEMA_VERSION: u32 = 8;
 
 /// One exported chat: export metadata, conversation roster and stats, and messages.
 ///
@@ -105,7 +114,7 @@ pub const SCHEMA_VERSION: u32 = 7;
 /// parses. See the [common message](https://messagecrate.app/docs/developer/architecture/common-message/) page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationDocument {
-    /// Schema version written into this document (currently 6).
+    /// Schema version written into this document (currently 8).
     pub schema_version: u32,
     /// Where and how this export was produced.
     pub export: ExportMeta,
@@ -446,6 +455,11 @@ pub struct IrMessage {
     /// file, for a message that is neither or a source that records neither.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deletion: Option<Deletion>,
+    /// The earlier versions of an edited message, oldest first within each
+    /// part; [`Self::text`] is the final version. Empty, and left out of the
+    /// file, for a message never edited or a source that records no edits.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub edits: Vec<EarlierVersion>,
     /// Apple extensions; `None` for non-iMessage messages.
     pub imessage: Option<IrImessage>,
     /// Vendor leftovers (Android type code and raw fields).
@@ -603,8 +617,6 @@ pub struct IrImessage {
     pub read_receipt_rfc3339: Option<String>,
     /// Apple `parts` blob as a JSON value.
     pub parts: Option<Value>,
-    /// Apple `edits` blob as a JSON value.
-    pub edits: Option<Value>,
     /// Apple `app` blob as a JSON value.
     pub app: Option<Value>,
     /// Digital Touch balloon bundle id.
@@ -635,7 +647,6 @@ impl IrImessage {
             && self.announcement.is_none()
             && self.read_receipt_rfc3339.is_none()
             && self.parts.is_none()
-            && self.edits.is_none()
             && self.app.is_none()
             && self.balloon_bundle_id.is_none()
             && self.balloon_kind.is_none()

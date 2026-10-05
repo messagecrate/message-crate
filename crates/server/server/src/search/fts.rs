@@ -1,6 +1,7 @@
-//! The full-text index's answer to a free-text term on Messages: the
-//! contentless FTS5 table, which indexes body, subject, attachment names,
-//! and transcriptions.
+//! The full-text indexes' answer to a free-text term on Messages: the
+//! contentless FTS5 table over each message's final text (body, subject,
+//! attachment names, and transcriptions), and the one over each earlier
+//! version of an edited message.
 
 use super::bridge::Sql;
 use super::parse::TextTerm;
@@ -19,6 +20,20 @@ fn fts5_literal(term: &str) -> String {
 pub(crate) fn matching_ids(out: &mut Sql, term: &TextTerm) {
     out.push("SELECT rowid FROM messages_fts WHERE messages_fts MATCH ");
     out.bind_text(match_expr(term));
+}
+
+/// A `SELECT` of the ids of every earlier version whose text matches
+/// `term`, asked once for the whole search as [`matching_ids`] is. The caller
+/// turns them into message ids through `message_versions`.
+pub(crate) fn matching_version_ids(out: &mut Sql, term: &TextTerm) {
+    version_ids_matching(out, &match_expr(term));
+}
+
+/// A `SELECT` of the ids of every earlier version the FTS5 query `query`
+/// matches.
+pub(crate) fn version_ids_matching(out: &mut Sql, query: &str) {
+    out.push("SELECT rowid FROM message_versions_fts WHERE message_versions_fts MATCH ");
+    out.bind_text(query);
 }
 
 /// One term as an FTS5 query: a quoted phrase, with `*` after it for a prefix.

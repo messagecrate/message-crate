@@ -411,6 +411,7 @@ fn message_to_ir(
         attachments,
         reactions: record.reactions,
         deletion: record.deletion,
+        edits: record.edits,
         imessage: record.imessage.map(imessage_to_ir),
         source: None,
     };
@@ -429,7 +430,6 @@ fn imessage_to_ir(fields: ImessageRecord) -> IrImessage {
         announcement: fields.announcement,
         read_receipt_rfc3339: fields.read_receipt_rfc3339,
         parts: fields.parts,
-        edits: fields.edits,
         app: fields.app,
         balloon_bundle_id: fields.balloon_bundle_id,
         balloon_kind: fields.balloon_kind,
@@ -1006,6 +1006,7 @@ mod tests {
             text: "hi".into(),
             reactions: Vec::new(),
             deletion: None,
+            edits: Vec::new(),
             owner_identity: "+15555550100".into(),
             owner_display_name: None,
             imessage: None,
@@ -1029,7 +1030,6 @@ mod tests {
             announcement: text("renamed"),
             read_receipt_rfc3339: text("2021-01-01T00:00:00+00:00"),
             parts: json("part"),
-            edits: json("edit"),
             app: json("app"),
             balloon_bundle_id: text("com.example.app"),
             balloon_kind: text("app"),
@@ -1059,11 +1059,22 @@ mod tests {
             reactor_display_name: Some("Ray".into()),
         };
         with_fields.reactions = vec![reaction.clone()];
+        let earlier = message_ir::EarlierVersion {
+            part_index: 0,
+            text: "hu".into(),
+            edited_at_unix_ms: Some(1_609_459_200_000),
+        };
+        with_fields.edits = vec![earlier.clone()];
         let (message, _) = message_to_ir(with_fields, AttachmentEmbed::Embed, true);
         assert_eq!(
             message.reactions,
             [reaction],
             "the reader's reactions as they are"
+        );
+        assert_eq!(
+            message.edits,
+            [earlier],
+            "the reader's earlier versions as they are"
         );
         assert!(message.imessage.is_some_and(|fields| fields.is_reply));
     }
@@ -1221,6 +1232,7 @@ mod tests {
                 .collect(),
             reactions: Vec::new(),
             deletion: None,
+            edits: Vec::new(),
             imessage: None,
             source: None,
         }

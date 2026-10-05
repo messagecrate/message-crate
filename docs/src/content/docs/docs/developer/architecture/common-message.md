@@ -30,13 +30,13 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
 
 - **Common-message path** (`ConversationDocument` → `message_ir_format::FormatSink`, one of json/jsonl/csv/eml/mbox/xml): all exporters, including iMessage (`imessage-ir-exporter`). Per-chat formats also accept `write_format`; XML uses a single `smses.xml` via the sink.
 - **Media + obfuscate** run inside `FormatSink::finish` for every format (`message_crate_core::ExportTransforms`: none / copy / convert / compress, plus optional obfuscate). When obfuscate is on, exporters skip staging real attachment bytes and convert/compress is not run — only placeholder files are written. Exporters pass transforms from `ExporterConfig.media` / `.obfuscate`; there is no CSV-only post-step. EML / MBOX / XML embed media and drop the staged `attachments/` directory afterward.
-- **Schema version 7 only** (breaking). Version 7 keeps a message's mark, Deleted in the source app or Unsent, in its own `deletion`, for every source, where version 6 kept the Apple Messages deleted mark in `imessage.is_deleted`. Version 6 had moved a message's reactions into its own `reactions` list, one shape for every source, where version 5 kept Apple Messages reactions as a JSON value in `imessage.tapbacks`. Version 5 had named every address an identity (`identity`, `identity_type`, `owner_identity`, `sender_identity`, `reactor_identity`) where version 4 said `handle`. Version 6 and older are refused, never upgraded. Typed enums/bags, filled outgoing identity, conversation stats, stable null/`[]` keys. Older common-message JSON is not read — regenerate exports after schema changes.
+- **Schema version 8 only** (breaking). Version 8 keeps an edited message's earlier versions in its own `edits`, for every source, where version 7 kept the Apple Messages edit history as a JSON value in `imessage.edits`. Version 7 had moved a message's mark, Deleted in the source app or Unsent, in its own `deletion`, for every source, where version 6 kept the Apple Messages deleted mark in `imessage.is_deleted`. Version 6 had moved a message's reactions into its own `reactions` list, one shape for every source, where version 5 kept Apple Messages reactions as a JSON value in `imessage.tapbacks`. Version 5 had named every address an identity (`identity`, `identity_type`, `owner_identity`, `sender_identity`, `reactor_identity`) where version 4 said `handle`. Version 7 and older are refused, never upgraded. Typed enums/bags, filled outgoing identity, conversation stats, stable null/`[]` keys. Older common-message JSON is not read — regenerate exports after schema changes.
 
-## Document schema (`schema_version: 7`)
+## Document schema (`schema_version: 8`)
 
 ```json
 {
-  "schema_version": 7,
+  "schema_version": 8,
   "export": {
     "source": "sms-backup-restore",
     "tool": "SMS Backup & Restore",
@@ -83,7 +83,7 @@ Pipeline: `backup → common message → FormatSink → user-picked format`.
 | Tier | Contents |
 |------|----------|
 | Core | typed conversation + message fields |
-| `imessage` | typed Apple extensions (`IrImessage`); nested `parts` / `edits` / `app` are JSON values |
+| `imessage` | typed Apple extensions (`IrImessage`); nested `parts` / `app` are JSON values |
 | `source` | `android_type` (`i32` or null) + vendor `fields` object |
 
 ### Identity
@@ -127,6 +127,20 @@ A message with neither leaves `deletion` out of the file. A message only partly 
 
 `Deletion` is defined in `imessage-reader-protocol` beside `Reaction`, for the same reason, and `message_ir::Deletion` is that type. Apple Messages fills it: a message in a chat's recently deleted list is `deleted_in_source_app`, and a message whose every part was unsent is `unsent` rather than an announcement that someone unsent it. Every other source writes none yet.
 
+### Earlier versions
+
+`edits` holds the earlier versions of an edited message, oldest first within each part. `text` is always the final version, so the list holds only the versions before it. Each one is an `EarlierVersion`:
+
+| Field | Meaning |
+|-------|---------|
+| `part_index` | The part of the message the version belongs to; `0` for the first or only part |
+| `text` | The part's text in this version |
+| `edited_at_unix_ms` | When this version was written, in milliseconds since 1970: the send time for the original, the time of the edit that wrote it for a later one. Left out when the source does not record it |
+
+A message never edited leaves `edits` out of the file. The server stores each version and its time, and search finds the message by any of them as well as by its final text.
+
+`EarlierVersion` is defined in `imessage-reader-protocol` beside `Reaction`, for the same reason, and `message_ir::EarlierVersion` is that type. Apple Messages fills it from each part's edit history: every entry but the last, which is the text the message holds now. An unsent part has no history and so no earlier version; `deletion` says what was unsent. Every other source writes none yet.
+
 ### Attachments
 
 Attachment **bytes** are never stored in JSON/JSONL (`#[serde(skip)]`). Paths + digests point at sidecar files under `attachments/`. For EML / MBOX / XML, FormatSink loads those files, embeds the bytes, then removes the staged `attachments/` directory so the output directory is the archive product.
@@ -140,7 +154,7 @@ Attachment **bytes** are never stored in JSON/JSONL (`#[serde(skip)]`). Paths + 
 ### Serialization rules
 
 - Optional strings / bags serialize as `null` when absent (stable keys).
-- Empty `participants` / `attachments` serialize as `[]`. An empty `reactions` list and a `deletion` of neither are left out.
+- Empty `participants` / `attachments` serialize as `[]`. An empty `reactions` list, an empty `edits` list and a `deletion` of neither are left out.
 - Packaging stem suffix is not part of the document (internal `packaging_stem_suffix` only).
 
 ### Conversation stats
@@ -150,7 +164,7 @@ Attachment **bytes** are never stored in JSON/JSONL (`#[serde(skip)]`). Paths + 
 ## JSONL layout
 
 ```text
-{"schema_version":7,"export":{…},"conversation":{…}}
+{"schema_version":8,"export":{…},"conversation":{…}}
 {"guid":"…","timestamp_unix_ms":…, …}
 …
 ```

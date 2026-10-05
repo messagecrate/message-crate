@@ -39,7 +39,7 @@ export default function DataCard({
   const hasHeader = title != null || toolbar != null;
   return (
     <div
-      className={`w-full ${maxWidthClass} rounded-lg border border-border bg-panel p-4 ${className}`.trim()}
+      className={`box-border w-full ${maxWidthClass} rounded-lg border border-border bg-panel p-4 ${className}`.trim()}
     >
       {hasHeader ? (
         <div className="mb-3 flex items-start justify-between gap-3">

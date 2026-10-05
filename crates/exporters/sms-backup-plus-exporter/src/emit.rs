@@ -812,6 +812,7 @@ mod tests {
                 attachments: std::mem::take(&mut atts),
                 reactions: Vec::new(),
                 deletion: None,
+                edits: Vec::new(),
                 imessage: None,
                 source: None,
             }],

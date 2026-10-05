@@ -830,7 +830,7 @@ fn a_json_that_is_not_an_ir_export_is_refused() {
         // The right version but missing a required section.
         (
             "partial.json",
-            r#"{"schema_version":7,"export":{},"messages":[]}"#,
+            r#"{"schema_version":8,"export":{},"messages":[]}"#,
         ),
         // Not JSON at all.
         ("broken.json", "{not json"),
@@ -852,7 +852,7 @@ fn a_jsonl_whose_first_line_is_not_a_conversation_is_refused() {
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join("log.jsonl"),
-        "{\"level\":\"info\",\"msg\":\"started\"}\n         {\"schema_version\":7,\"export\":{},\"conversation\":{},\"messages\":[]}\n",
+        "{\"level\":\"info\",\"msg\":\"started\"}\n         {\"schema_version\":8,\"export\":{},\"conversation\":{},\"messages\":[]}\n",
     )
     .unwrap();
 
@@ -934,7 +934,7 @@ fn an_xml_that_is_not_an_smses_export_is_refused() {
 #[test]
 fn every_kind_of_sidecar_is_skipped() {
     let dir = tempfile::tempdir().unwrap();
-    let ir_json = r#"{"schema_version":7,"export":{},"conversation":{},"messages":[]}"#;
+    let ir_json = r#"{"schema_version":8,"export":{},"conversation":{},"messages":[]}"#;
     for name in [
         "conversation.meta.json",
         "conversation.json.tmp",
@@ -1100,7 +1100,7 @@ fn a_jsonl_file_with_a_json_name_is_not_a_jsonl_conversation() {
 
 /// Write `dir`'s conversation in `format` again as `name`, with its
 /// `schema_version` set to 3. The reader refuses the file before it parses
-/// anything else, so the rest can keep the version-6 shape.
+/// anything else, so the rest can keep the current shape.
 fn write_version_3_copy(dir: &Path, format: OutputFormat, name: &str) {
     let scratch = tempfile::tempdir().unwrap();
     write_fixture(scratch.path(), format);
@@ -1138,7 +1138,7 @@ fn a_directory_of_version_3_files_is_refused_by_name() {
         .unwrap_err();
         let message = format!("{error:#}");
         assert!(
-            message.contains("This file is schema version 3; Message Crate reads version 7"),
+            message.contains("This file is schema version 3; Message Crate reads version 8"),
             "{message}"
         );
         assert!(
@@ -1148,10 +1148,10 @@ fn a_directory_of_version_3_files_is_refused_by_name() {
     }
 }
 
-/// One version-3 file among version-6 files stops the run before the output
+/// One version-3 file among current files stops the run before the output
 /// is touched, so no conversation goes missing from the output unreported.
 #[test]
-fn a_version_3_file_among_version_5_files_stops_the_run_and_writes_nothing() {
+fn a_version_3_file_among_current_files_stops_the_run_and_writes_nothing() {
     let source = tempfile::tempdir().unwrap();
     write_fixture(source.path(), OutputFormat::Jsonl);
     write_version_3_copy(source.path(), OutputFormat::Jsonl, "old.jsonl");
@@ -1167,7 +1167,7 @@ fn a_version_3_file_among_version_5_files_stops_the_run_and_writes_nothing() {
     .unwrap_err();
     let message = format!("{error:#}");
     assert!(
-        message.contains("This file is schema version 3; Message Crate reads version 7"),
+        message.contains("This file is schema version 3; Message Crate reads version 8"),
         "{message}"
     );
     assert!(message.contains("old.jsonl"), "{message}");

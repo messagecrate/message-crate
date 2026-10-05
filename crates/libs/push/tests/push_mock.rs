@@ -58,6 +58,7 @@ fn sample_doc() -> ConversationDocument {
             attachments: vec![],
             reactions: Vec::new(),
             deletion: None,
+            edits: Vec::new(),
             imessage: None,
             source: None,
         }],

@@ -1324,16 +1324,16 @@ async fn non_demo_state_on_conn(
         .collect();
     let mut state = BTreeMap::new();
     for table in &virtual_tables {
-        if *table != SEARCH_INDEX {
+        let Some(index) = SEARCH_INDEXES.iter().find(|index| index.table == *table) else {
             bail!("cannot compare the virtual table {table}");
-        }
+        };
         state.insert(
             (*table).to_owned(),
-            search_index_digest(conn, demo.account).await?,
+            search_index_digest(conn, index, demo.account).await?,
         );
         state.insert(
             format!("{table} searches"),
-            search_sample_digest(conn, demo.account, search_terms).await?,
+            search_sample_digest(conn, index, demo.account, search_terms).await?,
         );
     }
     for (table, _) in &tables {
@@ -1422,30 +1422,60 @@ async fn digest_rows(
     Ok(digest.finish())
 }
 
-/// The full-text search index over `messages`, the one virtual table the
-/// schema has.
-const SEARCH_INDEX: &str = "messages_fts";
+/// One full-text search index, the only virtual tables the schema has, and
+/// how an entry's rowid reaches the message whose account it belongs to.
+struct SearchIndex {
+    /// The FTS5 table.
+    table: &'static str,
+    /// Joins that bind `m` to the message the entry `{rowid}` belongs to,
+    /// `LEFT` so an entry whose rows are gone is still read.
+    owner_join: &'static str,
+}
 
-/// Which messages outside the Demo Account the search index holds, and how
-/// many terms each holds in each column, read from its `_docsize` table. An
-/// entry whose message is gone belongs to no account and is read too.
-/// Deleting a message's entry removes its row there (#1450).
+/// The search index over messages, whose rowid is the message's id, and the
+/// one over earlier versions, whose rowid is the version's id.
+const SEARCH_INDEXES: [SearchIndex; 2] = [
+    SearchIndex {
+        table: "messages_fts",
+        owner_join: "LEFT JOIN messages m ON m.id = {rowid}",
+    },
+    SearchIndex {
+        table: "message_versions_fts",
+        owner_join: "LEFT JOIN message_versions v ON v.id = {rowid} \
+                     LEFT JOIN messages m ON m.id = v.message_id",
+    },
+];
+
+impl SearchIndex {
+    /// [`Self::owner_join`] for the entry whose rowid is `rowid`.
+    fn owner_join(&self, rowid: &str) -> String {
+        self.owner_join.replace("{rowid}", rowid)
+    }
+}
+
+/// Which entries outside the Demo Account a search index holds, and how many
+/// terms each holds in each column, read from its `_docsize` table. An entry
+/// whose message is gone belongs to no account and is read too. Deleting a
+/// message's entry removes its row there (#1450).
 async fn search_index_digest(
     conn: &mut sqlx::SqliteConnection,
+    index: &SearchIndex,
     demo_id: i64,
 ) -> Result<TableDigest> {
+    let table = index.table;
     let sql = format!(
         "SELECT d.id || ',' || hex(d.sz)
-         FROM {SEARCH_INDEX}_docsize d LEFT JOIN messages m ON m.id = d.id
+         FROM {table}_docsize d {join}
          WHERE m.account_id IS NOT $1
-         ORDER BY d.id"
+         ORDER BY d.id",
+        join = index.owner_join("d.id"),
     );
     let rows = sqlx::query_scalar::<_, String>(&sql)
         .bind(demo_id)
         .fetch(&mut *conn);
     digest_rows(rows)
         .await
-        .with_context(|| format!("read {SEARCH_INDEX}"))
+        .with_context(|| format!("read {table}"))
 }
 
 /// How many messages outside the Demo Account [`sample_search_terms`] takes
@@ -1484,22 +1514,25 @@ async fn sample_search_terms(
     Ok(terms.into_iter().collect())
 }
 
-/// Every message outside the Demo Account each of `terms` finds in the
-/// search index, as a search runs it. An entry whose message is gone is
+/// Every entry outside the Demo Account each of `terms` finds in a search
+/// index, as a search runs it. An entry whose message is gone is
 /// found too. Two indexes that hold the same messages with the same term
 /// counts ([`search_index_digest`]) can still find different messages for a
 /// word; this catches that for a sample of words (#1450).
 async fn search_sample_digest(
     conn: &mut sqlx::SqliteConnection,
+    index: &SearchIndex,
     demo_id: i64,
     terms: &[String],
 ) -> Result<TableDigest> {
     use futures_util::TryStreamExt;
 
+    let table = index.table;
     let sql = format!(
-        "SELECT f.rowid FROM {SEARCH_INDEX} f LEFT JOIN messages m ON m.id = f.rowid
-         WHERE {SEARCH_INDEX} MATCH $1 AND m.account_id IS NOT $2
-         ORDER BY f.rowid"
+        "SELECT f.rowid FROM {table} f {join}
+         WHERE {table} MATCH $1 AND m.account_id IS NOT $2
+         ORDER BY f.rowid",
+        join = index.owner_join("f.rowid"),
     );
     // Hashed as they come: a common word finds most messages.
     let mut digest = DigestBuilder::default();
@@ -1512,7 +1545,7 @@ async fn search_sample_digest(
         while let Some(message) = found
             .try_next()
             .await
-            .with_context(|| format!("search {SEARCH_INDEX} for {phrase}"))?
+            .with_context(|| format!("search {table} for {phrase}"))?
         {
             digest.add(&format!("{term},{message}"));
         }

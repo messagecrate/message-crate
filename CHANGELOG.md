@@ -21,6 +21,15 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-04 **An edited Apple Messages message keeps every earlier
+  version, and search finds it by any of them.** A message edited in Apple
+  Messages is imported with its final text and each version before it, with
+  the time each one was written. Searching Messages for a word that only an
+  earlier version held finds the message. A later import leaves a message
+  already stored as it is, with its text and earlier versions. Export keeps the
+  earlier versions, so a conversation exported and imported again keeps them
+  too. The conversation shows them, and which one a search found, in a
+  coming release.
 - 2026-10-04 **The conversation and the Messages list show which messages
   were deleted in the app they came from, and which were unsent.** A message
   deleted in the source app keeps its text in a faded bubble with a dashed
@@ -1106,6 +1115,14 @@ released versions carry their date on the heading.
 - 2026-10-03 **The contact drawer opened from a conversation covers the
   column resize handles.** It sat below the handles, so a handle could show
   through it.
+- 2026-10-04 **The contact drawer opened from a conversation stays inside
+  the window.** In a window narrower than the list plus the drawer, its right
+  side ran past the window's edge and was cut off. It now stays inside the
+  window, and in a window as narrow as a phone it covers the list instead.
+- 2026-10-04 **The Contact Identity card and the selected-contacts card fit
+  inside their panel.** The Contact Identity card, and the card that sums up
+  the contacts you selected, were a little wider than the panel they sit in,
+  so the panel scrolled sideways.
 
 #### Accounts, Settings and screens
 
@@ -1502,6 +1519,12 @@ released versions carry their date on the heading.
   exports, and for an Import Run an earlier build left paused. Export the
   backup again with this build, then import or convert the new files; discard
   a paused run and start the import again.
+- Message files exported before an edited message kept its earlier versions
+  are refused when you import or convert them, rather than read with those
+  versions lost. This holds for JSON, JSONL, CSV, EML and mbox exports, and
+  for an Import Run an earlier build left paused. Export the backup again
+  with this build, then import or convert the new files; discard a paused run
+  and start the import again.
 - `reset-demo` no longer writes a configuration file, and reads the one given
   with `--config`. If an earlier `reset-demo` replaced your configuration
   file, the server stops at startup with a missing `[server]` section: put

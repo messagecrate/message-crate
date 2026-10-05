@@ -30,6 +30,7 @@ fn base_sms() -> MailMessage {
             attachments: Vec::new(),
             reactions: Vec::new(),
             deletion: None,
+            edits: Vec::new(),
             imessage: None,
             source: Some(message_ir::IrSource {
                 android_type: Some(1),
@@ -702,6 +703,47 @@ fn a_mail_that_keeps_the_deleted_mark_in_x_me_is_deleted_is_refused() {
         format!("{err:#}"),
         "This mail was written by an earlier Message Crate, which kept the deleted mark in \
          X-ME-Is-Deleted; export the backup again"
+    );
+}
+
+/// An earlier Message Crate kept the Apple Messages edit history in
+/// `X-ME-Edits`, which no reader looks for now, so the mail is refused
+/// rather than read with its earlier versions gone.
+#[test]
+fn a_mail_that_keeps_the_edit_history_in_x_me_edits_is_refused() {
+    let eml = concat!(
+        "X-ME-Chat-Identifier: +15555550101\r\n",
+        "X-ME-Guid: g1\r\n",
+        "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
+        "X-ME-Edits: [{\"part_index\":0,\"status\":\"edited\",\"text\":\"helo\"}]\r\n",
+        "\r\n",
+        "hello\r\n",
+    );
+    let err = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap_err();
+    assert_eq!(
+        format!("{err:#}"),
+        "This mail was written by an earlier Message Crate, which kept the edit history in \
+         X-ME-Edits; export the backup again"
+    );
+}
+
+/// Earlier versions that do not read are refused rather than read as none.
+#[test]
+fn a_mail_whose_earlier_versions_do_not_read_is_refused() {
+    let eml = concat!(
+        "X-ME-Chat-Identifier: +15555550101\r\n",
+        "X-ME-Guid: g1\r\n",
+        "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
+        "X-ME-Earlier-Versions: [{\"part_index\":0}]\r\n",
+        "\r\n",
+        "hello\r\n",
+    );
+    let err = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap_err();
+    assert!(
+        format!("{err:#}").starts_with(
+            "This mail's earlier versions (X-ME-Earlier-Versions) do not read; export the backup again"
+        ),
+        "{err:#}"
     );
 }
 

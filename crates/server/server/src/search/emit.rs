@@ -43,12 +43,52 @@ pub(crate) fn not_trashed_contact_id(account_expr: &str, id_expr: &str) -> Strin
 }
 
 /// Compile a parsed query into one parenthesised WHERE fragment.
+///
+/// On Messages, a query with a free-text word to rank by is compiled a
+/// second time with its free-text words reading only the final text: the
+/// filter's [`Filter::final_text`], which tells a hit found only by an
+/// earlier version from one its final text matches.
 pub(crate) fn compile(
     list: ListKind,
     expr: Option<&Expr>,
     account_id: i64,
     zone: chrono_tz::Tz,
 ) -> Result<Filter, QueryError> {
+    let rank_query = match (list, expr) {
+        (ListKind::Messages, Some(expr)) => fts::rank_query(&expr.positive_text_terms()),
+        _ => None,
+    };
+    let (where_sql, params) = compile_where(list, expr, account_id, zone, true)?;
+    // Only a free-text word that is not negated can find a message by an
+    // earlier version alone: a negated one only leaves messages out, and
+    // reading earlier versions too leaves out more, never adds.
+    let final_text = match rank_query {
+        Some(_) => Some(compile_where(list, expr, account_id, zone, false)?),
+        None => None,
+    };
+    let earlier_version_match = rank_query.as_deref().map(|query| {
+        let mut out = Sql::default();
+        fts::version_ids_matching(&mut out, query);
+        (out.text, out.params)
+    });
+    Ok(Filter {
+        where_sql,
+        params,
+        rank_query,
+        final_text,
+        earlier_version_match,
+    })
+}
+
+/// The WHERE fragment and its values for `expr` on `list`, its free-text
+/// words reading earlier versions too when `earlier_versions` is true.
+fn compile_where(
+    list: ListKind,
+    expr: Option<&Expr>,
+    account_id: i64,
+    zone: chrono_tz::Tz,
+    earlier_versions: bool,
+) -> Result<(String, Vec<crate::db::sql::SqlParam>), QueryError> {
     let uses = |word: &str| expr.is_some_and(|e| e.uses(word));
     // `trashed:` anywhere in the query lifts the trash everywhere the search
     // looks: the list's own default below, and the rows a word reaches on
@@ -63,6 +103,7 @@ pub(crate) fn compile(
         account_id,
         zone,
         trash,
+        earlier_versions,
     };
     let mut out = Sql::default();
     out.push("(");
@@ -111,15 +152,7 @@ pub(crate) fn compile(
         emit_expr(&ctx, &mut out, expr)?;
     }
     out.push(")");
-    let rank_query = match (list, expr) {
-        (ListKind::Messages, Some(expr)) => fts::rank_query(&expr.positive_text_terms()),
-        _ => None,
-    };
-    Ok(Filter {
-        where_sql: out.text,
-        params: out.params,
-        rank_query,
-    })
+    Ok((out.text, out.params))
 }
 
 /// Write the SQL for one expression node, recursing into and, or, and not.
@@ -257,11 +290,12 @@ fn emit_text(ctx: &ListCtx, out: &mut Sql, term: &TextTerm) {
             free_text_match(out, PARTICIPANT_NAME, term);
             out.push(")))");
         }
-        // The index, or an attachment's file name. Both are needed: the
-        // index finds whole words and word prefixes, and the file-name match
-        // makes any part of a file name findable.
+        // The index, an attachment's file name, or an earlier version of an
+        // edited message. The index finds whole words and word prefixes, the
+        // file-name match makes any part of a file name findable, and the
+        // earlier versions' own index finds a word an edit took out.
         //
-        // One `IN` over the union of both id sets, so the planner walks the
+        // One `IN` over the union of the id sets, so the planner walks the
         // matching ids rather than every message of the account: an `OR`
         // between the index and an `EXISTS` on attachments forced that scan
         // (0.26 s on the demo database against 2 ms for this shape).
@@ -270,6 +304,13 @@ fn emit_text(ctx: &ListCtx, out: &mut Sql, term: &TextTerm) {
             fts::matching_ids(out, term);
             out.push(" UNION ALL SELECT a.message_id FROM attachments a WHERE ");
             free_text_match(out, "coalesce(a.original_name, '')", term);
+            if ctx.earlier_versions {
+                out.push(
+                    " UNION ALL SELECT mv.message_id FROM message_versions mv WHERE mv.id IN (",
+                );
+                fts::matching_version_ids(out, term);
+                out.push(")");
+            }
             out.push(")");
         }
     }

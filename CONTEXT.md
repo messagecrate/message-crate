@@ -70,6 +70,15 @@ sender took the message back for everyone rather than a person deleting
 their own copy.
 _Avoid_: Retracted, Recalled, Deleted
 
+**Earlier version**:
+The text one part of an edited Message held before an edit replaced it,
+with the time it was written. A message's own text is always its final
+version, and its earlier versions are kept beside it, oldest first; search
+finds the message by any of them, and says when it found a message only by
+an earlier version. The message is shown with its final text and the word
+"Edited", which opens its earlier versions.
+_Avoid_: Revision, Old text, Edit history
+
 **Orphaned message**:
 A Message the backup holds without recording which Conversation it was said
 in. Orphaned messages one person sent sit in a Conversation of their own with

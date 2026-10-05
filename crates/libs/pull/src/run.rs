@@ -969,7 +969,9 @@ mod asset_ref_tests {
                 "participants": []
             },
             "attachments": attachments,
-            "tapbacks": []
+            "tapbacks": [],
+            "earlier_versions": [],
+            "matched_earlier_version": false
         }))
         .unwrap()
     }

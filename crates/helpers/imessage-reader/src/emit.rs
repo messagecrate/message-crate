@@ -34,7 +34,7 @@ use crate::{
     body::apply_body,
     error::RuntimeError,
     fields::{
-        balloon_kind_label, balloon_summary, build_balloon_value, build_edit_records,
+        balloon_kind_label, balloon_summary, build_balloon_value, build_earlier_versions,
         expressive_label, parse_thread_part, shared_location_label,
     },
     log::emit,
@@ -451,6 +451,11 @@ fn build_record(
     } else {
         build_reactions(session, message)
     };
+    let edits = message
+        .edited_parts
+        .as_ref()
+        .map(|edited| build_earlier_versions(edited, session.offset))
+        .unwrap_or_default();
     let imessage = imessage_fields(session, message, row, &parts);
 
     let record = MessageRecord {
@@ -466,6 +471,7 @@ fn build_record(
         text,
         reactions,
         deletion,
+        edits,
         owner_identity: owner_address(message).unwrap_or_default(),
         owner_display_name: owner_display_name(session, message),
         imessage: (!is_empty(&imessage)).then_some(imessage),
@@ -687,11 +693,6 @@ fn imessage_fields(
     parts: &[crate::fields::PartRecord],
 ) -> ImessageRecord {
     let thread = thread_fields(message, row.tapback.as_ref());
-    let edits = message
-        .edited_parts
-        .as_ref()
-        .map(|edited| build_edit_records(edited, &session.offset))
-        .unwrap_or_default();
     let read_receipt = read_receipt_rfc3339(message, session.offset);
     let tapback = row.tapback.as_ref();
     ImessageRecord {
@@ -704,7 +705,6 @@ fn imessage_fields(
         announcement: trimmed(row.announcement),
         read_receipt_rfc3339: trimmed(read_receipt),
         parts: json_if_any(parts),
-        edits: json_if_any(&edits),
         balloon_kind: trimmed(row.app.as_ref().and_then(balloon_kind_label)),
         balloon_bundle_id: trimmed(message.balloon_bundle_id.clone()),
         associated_guid: trimmed(tapback.and_then(|t| t.associated_guid.clone())),
@@ -727,7 +727,6 @@ fn is_empty(fields: &ImessageRecord) -> bool {
         && fields.announcement.is_none()
         && fields.read_receipt_rfc3339.is_none()
         && fields.parts.is_none()
-        && fields.edits.is_none()
         && fields.app.is_none()
         && fields.balloon_bundle_id.is_none()
         && fields.balloon_kind.is_none()

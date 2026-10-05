@@ -90,6 +90,8 @@ function message(partial: Partial<Message>): Message {
     text: "See you at noon",
     attachments: [],
     tapbacks: [],
+    earlier_versions: [],
+    matched_earlier_version: false,
     conversation: {
       id: 1,
       chat_identifier: "+15555550100",

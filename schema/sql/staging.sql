@@ -140,3 +140,20 @@ CREATE TABLE IF NOT EXISTS staging_tapbacks (
 );
 
 CREATE INDEX IF NOT EXISTS ix_staging_tapbacks_message_id ON staging_tapbacks (message_id);
+
+-- Import scratch copy of message_versions: an edited message's earlier versions.
+CREATE TABLE IF NOT EXISTS staging_message_versions (
+    -- Surrogate primary key; ascending in the order the file listed the versions.
+    id INTEGER PRIMARY KEY,
+    -- Parent staging message (`staging_messages.id`).
+    message_id INTEGER NOT NULL REFERENCES staging_messages(id) ON DELETE CASCADE,
+    -- Which part of a multi-part message this version belongs to (0 = first/only).
+    part_index INTEGER NOT NULL DEFAULT 0,
+    -- The part's text in this version.
+    text TEXT NOT NULL,
+    -- When this version was written, in the form staging_messages.timestamp
+    -- holds; NULL when the source does not record it.
+    edited_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS ix_staging_message_versions_message_id ON staging_message_versions (message_id);

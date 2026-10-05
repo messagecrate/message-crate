@@ -1,9 +1,9 @@
 //! Shared test fixture for crate tests (behind the `testutil` feature).
 
 use crate::{
-    ConversationDocument, ConversationMeta, ConversationStats, Deletion, ExportMeta, HandleType,
-    IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind, IrParticipant,
-    IrService, IrSource, Reaction, SCHEMA_VERSION,
+    ConversationDocument, ConversationMeta, ConversationStats, Deletion, EarlierVersion,
+    ExportMeta, HandleType, IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind,
+    IrParticipant, IrService, IrSource, Reaction, SCHEMA_VERSION,
 };
 use serde_json::json;
 
@@ -45,6 +45,7 @@ pub fn sample_document(text: &str) -> ConversationDocument {
             attachments: vec![],
             reactions: vec![],
             deletion: None,
+            edits: vec![],
             imessage: None,
             source: Some(IrSource {
                 android_type: Some(1),
@@ -127,6 +128,18 @@ pub fn sample_imessage_document() -> ConversationDocument {
                     reactor_display_name: Some("Me".into()),
                 }],
                 deletion: Some(Deletion::DeletedInSourceApp),
+                edits: vec![
+                    EarlierVersion {
+                        part_index: 0,
+                        text: "helo imessage".into(),
+                        edited_at_unix_ms: Some(1_400_773_261_000),
+                    },
+                    EarlierVersion {
+                        part_index: 0,
+                        text: "hello imesage".into(),
+                        edited_at_unix_ms: None,
+                    },
+                ],
                 imessage: Some(IrImessage {
                     is_reply: true,
                     in_reply_to_guid: Some("parent-guid-1111".into()),
@@ -152,6 +165,7 @@ pub fn sample_imessage_document() -> ConversationDocument {
                 attachments: vec![],
                 reactions: vec![],
                 deletion: None,
+                edits: vec![],
                 imessage: Some(IrImessage {
                     associated_guid: Some("parent-guid-1111".into()),
                     associated_part: Some(0),

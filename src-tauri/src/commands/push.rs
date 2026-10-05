@@ -348,6 +348,7 @@ mod tests {
             attachments: vec![],
             reactions: vec![],
             deletion: None,
+            edits: Vec::new(),
             imessage: None,
             source: None,
         });

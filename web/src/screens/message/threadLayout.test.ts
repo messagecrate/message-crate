@@ -32,6 +32,8 @@ function message(
     },
     attachments: [],
     tapbacks: [],
+    earlier_versions: [],
+    matched_earlier_version: false,
   };
 }
 
