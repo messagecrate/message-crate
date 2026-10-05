@@ -48,7 +48,7 @@ use message_crate_core::{CancelFlag, check_cancel};
 use crate::AuthInfo;
 use crate::directory::{detect_source, file_label, input_directory, list_jsonl_files};
 use crate::http::{HttpSession, ImportOutcome};
-use crate::journal::{self, RunJournal};
+use crate::journal::{self, RunJournal, ServerTarget};
 use crate::pipeline::{ChunkStep, ImportPipeline};
 use crate::prepare::{
     PrepareContext, PrepareOutcome, PrepareQueue, PrepareResult, PreparedFile, SharedJournal,
@@ -299,8 +299,7 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
     };
     let journal = RunJournal::open(
         paths.journal.clone(),
-        &session.url,
-        &session.username,
+        ServerTarget::new(&session.url, &session.username),
         cfg.force || cfg.mode == ImportMode::Replace,
         &mut |line| out.show(line),
     )?;
