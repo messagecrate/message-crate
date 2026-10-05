@@ -1,4 +1,4 @@
-//! Page exported messages, download attachments, and write JSON Lines directories.
+//! Page exported messages, fetch their Assets, and write JSON Lines directories.
 //!
 //! JSON Lines means one JSON object per line. Message Crate is the HTTP server
 //! that stores imported messages.
@@ -24,8 +24,8 @@ pub const DEFAULT_PAGE_LIMIT: usize = 500;
 pub const MAX_PAGE_LIMIT: usize = 500;
 /// The `tool` every run this crate creates is recorded under.
 pub const TOOL_NAME: &str = "message-crate-pull";
-/// Default number of parallel asset download workers.
-pub const DEFAULT_ASSET_DOWNLOAD_WORKERS: usize = 8;
+/// Default number of workers that fetch Assets in parallel.
+pub const DEFAULT_ASSET_FETCH_WORKERS: usize = 8;
 /// Extra tries for transient HTTP failures, matching the message-crate-push default.
 const MAX_RETRIES: u32 = 3;
 
@@ -46,15 +46,15 @@ pub struct PullConfig {
     /// or every message of the conversations it shows on the Conversations
     /// list. Unused when `query` is blank.
     pub list: ExportQueryList,
-    /// Write messages only; download no attachments.
+    /// Write messages only; fetch no Assets.
     pub skip_attachments: bool,
     /// Messages per `GET /v1/exports/{id}/messages` page, clamped to
     /// `1..=MAX_PAGE_LIMIT`.
     pub page_limit: usize,
-    /// Checked between pages and downloads; set it to stop the run early.
+    /// Checked between pages and Asset fetches; set it to stop the run early.
     pub cancel: Option<CancelFlag>,
-    /// Number of parallel asset download workers (default 8).
-    pub asset_download_workers: usize,
+    /// Number of workers that fetch Assets in parallel (default 8).
+    pub asset_fetch_workers: usize,
 }
 
 /// Final summary of an Export Run (conversations, messages, attachment counts).
@@ -70,10 +70,10 @@ pub struct PullReport {
     pub conversations: u64,
     /// Messages written.
     pub messages: u64,
-    /// Attachments fetched this run.
-    pub attachments_downloaded: u64,
-    /// Attachments already on disk according to the journal.
-    pub attachments_skipped: u64,
+    /// Assets fetched this run.
+    pub assets_fetched: u64,
+    /// Assets already on disk, kept without fetching them.
+    pub assets_kept: u64,
     /// Attachment paths the server sent that would leave the output directory,
     /// as the server sent them. Each such attachment is written at
     /// `attachments/{sha256}` instead.
@@ -161,13 +161,13 @@ fn prepare_out_dir(out_dir: &Path, skip_attachments: bool) -> Result<()> {
 /// Export the matching messages into `cfg.out_dir` as JSON Lines plus attachments.
 ///
 /// JSON Lines means one JSON object per line. A local journal
-/// (`.message-crate-pull-state.jsonl`) records which files were already downloaded so a
+/// (`.message-crate-pull-state.jsonl`) records which Assets were already fetched so a
 /// later run can skip them.
 ///
 /// # Errors
 ///
 /// Returns an error when the session token or output directory is missing, login fails, a
-/// page or download fails, or a conversation file cannot be written.
+/// page or Asset fetch fails, or a conversation file cannot be written.
 pub fn run(cfg: &PullConfig, mut on_progress: Option<&mut ProgressFn<'_>>) -> Result<PullReport> {
     if cfg.token.trim().is_empty() {
         bail!("session token is required");
@@ -220,8 +220,8 @@ pub fn run(cfg: &PullConfig, mut on_progress: Option<&mut ProgressFn<'_>>) -> Re
         query: pull.query,
         conversations,
         messages,
-        attachments_downloaded: assets.downloaded,
-        attachments_skipped: assets.skipped,
+        assets_fetched: assets.fetched,
+        assets_kept: assets.kept,
         refused_attachment_paths: refused_paths.into_iter().collect(),
         out_dir: cfg.out_dir.display().to_string(),
     };
@@ -246,7 +246,7 @@ struct Fetched {
     /// sha256 → relative path under the output directory.
     assets: HashMap<String, String>,
     /// sha256 → every other path a message names for the same bytes. The
-    /// file is downloaded once, at the path in `assets`, then placed at each
+    /// Asset is fetched once, at the path in `assets`, then placed at each
     /// of these.
     other_paths: BTreeMap<String, BTreeSet<String>>,
     /// Attachment paths the server sent that would leave the output directory.
@@ -254,11 +254,11 @@ struct Fetched {
     total_messages: u64,
 }
 
-/// Attachment outcome counts for the report.
+/// How many Assets this run fetched and kept, for the report.
 #[derive(Debug, Default, Clone, Copy)]
 struct AssetCounts {
-    downloaded: u64,
-    skipped: u64,
+    fetched: u64,
+    kept: u64,
 }
 
 /// What one run left on disk.
@@ -319,7 +319,7 @@ impl<'a> Pull<'a> {
                 }
             }),
         );
-        // Load the local skip log so a later run does not re-download files already on disk.
+        // Load the local skip log so a later run does not fetch again Assets already on disk.
         let journal_path = crate::journal::journal_path(&cfg.out_dir);
         let journal = crate::journal::load(&journal_path, &cfg.base_url, &username)?;
         Ok(Self {
@@ -391,12 +391,12 @@ impl<'a> Pull<'a> {
         })
     }
 
-    /// Page the run's messages, download their attachments, and write the
+    /// Page the run's messages, fetch their Assets, and write the
     /// conversation files; the journal records the result.
     ///
     /// # Errors
     ///
-    /// Returns an error when a page or download fails after retries, a
+    /// Returns an error when a page or Asset fetch fails after retries, a
     /// message cannot be converted, a file cannot be written, or the run is
     /// cancelled.
     fn export_into_directory(
@@ -408,7 +408,7 @@ impl<'a> Pull<'a> {
         let assets = if self.cfg.skip_attachments {
             AssetCounts::default()
         } else {
-            let counts = self.download_assets(&fetched.assets, out)?;
+            let counts = self.fetch_assets(&fetched.assets, out)?;
             place_other_paths(&self.cfg.out_dir, &fetched.assets, &fetched.other_paths)?;
             counts
         };
@@ -502,49 +502,49 @@ impl<'a> Pull<'a> {
         Ok(fetched)
     }
 
-    /// Download every referenced attachment the journal does not already
-    /// have, and journal each one that is now on disk so a resume skips it.
+    /// Fetch every referenced Asset the journal does not already
+    /// have, and journal each one that is now on disk so a later run skips it.
     ///
     /// # Errors
     ///
-    /// Returns an error when a download fails after retries or the run is cancelled.
-    fn download_assets(
+    /// Returns an error when a fetch fails after retries or the run is cancelled.
+    fn fetch_assets(
         &self,
         assets: &HashMap<String, String>,
         out: &mut Option<&mut ProgressFn<'_>>,
     ) -> Result<AssetCounts> {
         let cfg = self.cfg;
-        let to_download = assets_needing_download(assets, &self.journal.assets, &cfg.out_dir);
-        let skipped_by_journal = assets.len() as u64 - to_download.len() as u64;
-        if to_download.is_empty() {
+        let to_fetch = assets_to_fetch(assets, &self.journal.assets, &cfg.out_dir);
+        let kept_by_journal = assets.len() as u64 - to_fetch.len() as u64;
+        if to_fetch.is_empty() {
             return Ok(AssetCounts {
-                downloaded: 0,
-                skipped: skipped_by_journal,
+                fetched: 0,
+                kept: kept_by_journal,
             });
         }
         emit(
             out,
             ProgressEvent::Log(format!(
                 "Fetching {} with {} ({} already on disk)…",
-                count_of(to_download.len() as u64, "Asset", "Assets"),
-                count_of(cfg.asset_download_workers as u64, "worker", "workers"),
-                skipped_by_journal
+                count_of(to_fetch.len() as u64, "Asset", "Assets"),
+                count_of(cfg.asset_fetch_workers as u64, "worker", "workers"),
+                kept_by_journal
             )),
         );
-        let stats = download_assets_parallel(DownloadAssetsParallelArgs {
+        let stats = fetch_assets_parallel(FetchAssetsParallelArgs {
             session: &self.session,
             base_url: &cfg.base_url,
             token: &cfg.token,
-            assets: &to_download,
+            assets: &to_fetch,
             out_dir: &cfg.out_dir,
-            workers: cfg.asset_download_workers,
+            workers: cfg.asset_fetch_workers,
             cancel: cfg.cancel.as_ref(),
         })?;
         let counts = AssetCounts {
-            downloaded: stats.downloaded,
-            skipped: stats.skipped + skipped_by_journal,
+            fetched: stats.fetched,
+            kept: stats.kept + kept_by_journal,
         };
-        for sha in to_download.keys() {
+        for sha in to_fetch.keys() {
             if !self.journal.assets.contains(sha) {
                 let event = crate::journal::PullJournalEvent::AssetOk {
                     url: cfg.base_url.clone(),
@@ -567,9 +567,9 @@ impl<'a> Pull<'a> {
             out,
             ProgressEvent::Log(format!(
                 "Fetched {} ({}) and kept {} already on disk",
-                count_of(counts.downloaded, "Asset", "Assets"),
+                count_of(counts.fetched, "Asset", "Assets"),
                 media::format_bytes(stats.bytes),
-                counts.skipped
+                counts.kept
             )),
         );
         Ok(counts)
@@ -631,7 +631,7 @@ impl<'a> Pull<'a> {
             username: self.username.clone(),
             conversations,
             messages,
-            assets: assets.downloaded + assets.skipped,
+            assets: assets.fetched + assets.kept,
         };
         if let Err(error) = crate::journal::append(&self.journal_path, &event) {
             emit(
@@ -669,7 +669,7 @@ impl<'a> Pull<'a> {
 /// and return each attachment path [`export_path`] refused, with the path
 /// used in its place.
 ///
-/// The first message to mention a sha256 decides the path it downloads to;
+/// The first message to mention a sha256 decides the path it is fetched to;
 /// the server stores one blob per fingerprint for the account, whatever the
 /// source, so later mentions are the same file. A later mention under
 /// another path goes into `other_paths`, because staging names a file by
@@ -704,11 +704,11 @@ fn note_asset_refs(
     refused
 }
 
-/// Put each downloaded file at every other path a message names for it, so
+/// Put each fetched Asset at every other path a message names for it, so
 /// every path in the conversation files exists. A hard link costs no space;
 /// a copy stands in where the file system has no hard links (exFAT on a USB
 /// drive). A path that already holds a file is left alone, the same way the
-/// download skips one.
+/// fetch skips one.
 ///
 /// # Errors
 ///
@@ -775,42 +775,42 @@ fn refused_path_line(path: &str, rel: Option<&str>) -> String {
     }
 }
 
-struct AssetDownloadJob {
+struct AssetFetchJob {
     sha256: String,
     dest: PathBuf,
 }
 
 #[derive(Default)]
-struct AssetDownloadStats {
+struct AssetFetchStats {
     /// The bytes this run fetched. A file already at its path adds nothing.
     bytes: u64,
-    downloaded: u64,
-    skipped: u64,
+    fetched: u64,
+    kept: u64,
 }
 
-/// Attachments whose SHA-256 fingerprint is not already on disk from a prior run.
+/// Assets whose SHA-256 fingerprint is not already on disk from a prior run.
 ///
 /// SHA-256 is a short hex fingerprint of the file bytes. The journal lists
-/// fingerprints already downloaded; those files are skipped when they still exist.
-fn assets_needing_download(
+/// fingerprints already fetched; those files are skipped when they still exist.
+fn assets_to_fetch(
     assets: &HashMap<String, String>,
     journal_assets: &HashSet<String>,
     out_dir: &Path,
 ) -> HashMap<String, String> {
-    let mut to_download = HashMap::new();
+    let mut to_fetch = HashMap::new();
     for (sha, rel) in assets {
         if journal_assets.contains(sha) && out_dir.join(rel).is_file() {
             continue;
         }
-        to_download.insert(sha.clone(), rel.clone());
+        to_fetch.insert(sha.clone(), rel.clone());
     }
-    to_download
+    to_fetch
 }
 
-/// What [`download_assets_parallel`] fetches, from where, and how: the
+/// What [`fetch_assets_parallel`] fetches, from where, and how: the
 /// server and session, each Asset's SHA-256 with the path under `out_dir` it
 /// is written at, the number of workers, and the run's cancel flag.
-struct DownloadAssetsParallelArgs<'a> {
+struct FetchAssetsParallelArgs<'a> {
     session: &'a crate::http::HttpSession,
     base_url: &'a str,
     token: &'a str,
@@ -825,15 +825,15 @@ struct DownloadAssetsParallelArgs<'a> {
 ///
 /// The same pattern as the Upload's `upload_assets`: the jobs are collected,
 /// then [`parallel_for_each`] runs them. An Asset whose file is already at its
-/// path is not fetched: it is counted as `skipped`, and its size is left out
+/// path is not fetched: it is counted as `kept`, and its size is left out
 /// of the bytes, which are only what this run fetched. Each fetch retries a
 /// transient HTTP failure, as the Upload does.
 ///
 /// # Errors
 ///
 /// Returns an error when a fetch fails after retries or the run is cancelled.
-fn download_assets_parallel(args: DownloadAssetsParallelArgs<'_>) -> Result<AssetDownloadStats> {
-    let DownloadAssetsParallelArgs {
+fn fetch_assets_parallel(args: FetchAssetsParallelArgs<'_>) -> Result<AssetFetchStats> {
+    let FetchAssetsParallelArgs {
         session,
         base_url,
         token,
@@ -842,16 +842,16 @@ fn download_assets_parallel(args: DownloadAssetsParallelArgs<'_>) -> Result<Asse
         workers,
         cancel,
     } = args;
-    let mut jobs: Vec<AssetDownloadJob> = Vec::with_capacity(assets.len());
-    let mut stats = AssetDownloadStats::default();
+    let mut jobs: Vec<AssetFetchJob> = Vec::with_capacity(assets.len());
+    let mut stats = AssetFetchStats::default();
 
     for (sha256, rel) in assets {
         let dest = out_dir.join(rel);
         if dest.is_file() {
-            stats.skipped += 1;
+            stats.kept += 1;
             continue;
         }
-        jobs.push(AssetDownloadJob {
+        jobs.push(AssetFetchJob {
             sha256: sha256.clone(),
             dest,
         });
@@ -859,7 +859,7 @@ fn download_assets_parallel(args: DownloadAssetsParallelArgs<'_>) -> Result<Asse
 
     let results = parallel_for_each(&jobs, workers, cancel, |job| {
         with_retries(MAX_RETRIES, || {
-            crate::http::download_asset(session, base_url, token, &job.sha256, &job.dest)
+            crate::http::fetch_asset(session, base_url, token, &job.sha256, &job.dest)
         })
         .map_err(|e| format!("{e:#}"))
     });
@@ -868,7 +868,7 @@ fn download_assets_parallel(args: DownloadAssetsParallelArgs<'_>) -> Result<Asse
         match result {
             Ok(bytes) => {
                 stats.bytes = stats.bytes.saturating_add(bytes);
-                stats.downloaded += 1;
+                stats.fetched += 1;
             }
             Err(error) => {
                 bail!("{error}");
@@ -1096,7 +1096,7 @@ mod asset_ref_tests {
 }
 
 #[cfg(test)]
-mod asset_download_tests {
+mod asset_fetch_tests {
     use super::*;
     use sha2::{Digest, Sha256};
     use std::io::{BufRead, BufReader, Write};
@@ -1181,7 +1181,7 @@ mod asset_download_tests {
             (jpg_sha, "attachments/menu.jpg".to_string()),
         ]);
 
-        let stats = download_assets_parallel(DownloadAssetsParallelArgs {
+        let stats = fetch_assets_parallel(FetchAssetsParallelArgs {
             session: &HttpSession::new().unwrap(),
             base_url: &base_url,
             token: "token",
@@ -1192,7 +1192,7 @@ mod asset_download_tests {
         })
         .unwrap();
 
-        assert_eq!(stats.downloaded, 2);
+        assert_eq!(stats.fetched, 2);
         let attachments = dir.path().join("attachments");
         assert_eq!(fs::read(attachments.join("menu.pdf")).unwrap(), pdf);
         assert_eq!(fs::read(attachments.join("menu.jpg")).unwrap(), jpg);

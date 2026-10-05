@@ -19,7 +19,7 @@ use anyhow::Result;
 /// its other paths only after every fetch has finished, one at a time, so
 /// nothing else writes this name while a write to it runs. That holds
 /// because of `run.rs`: `note_asset_refs` keys the Assets by their
-/// lowercased fingerprint, `download_assets_parallel` makes one job per key,
+/// lowercased fingerprint, `fetch_assets_parallel` makes one job per key,
 /// and `place_other_paths` runs after it returns. The directory is
 /// `dest`'s, so the rename never crosses a file system.
 fn part_path(dest: &Path, sha256: &str) -> PathBuf {

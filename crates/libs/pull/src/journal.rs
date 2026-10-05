@@ -1,7 +1,7 @@
-//! Local log of which attachments an Export from a server already downloaded.
+//! Local log of which Assets an Export from a server already fetched.
 //!
 //! The file is `.message-crate-pull-state.jsonl`. JSON Lines means one JSON object per
-//! line. A later Export Run can skip attachments that are already on disk.
+//! line. A later Export Run can skip Assets that are already on disk.
 
 use std::collections::HashSet;
 #[cfg(test)]
@@ -18,13 +18,13 @@ pub const PULL_JOURNAL_NAME: &str = ".message-crate-pull-state.jsonl";
 #[serde(tag = "event", rename_all = "snake_case")]
 /// One row in `.message-crate-pull-state.jsonl`.
 pub enum PullJournalEvent {
-    /// One attachment is on disk, so a later run can skip downloading it.
+    /// One Asset is on disk, so a later run can skip fetching it.
     AssetOk {
-        /// Server base URL the attachment came from.
+        /// Server base URL the Asset came from.
         url: String,
         /// Account username the run logged in as.
         username: String,
-        /// Hex SHA-256 fingerprint of the attachment bytes; the skip key.
+        /// Hex SHA-256 fingerprint of the Asset's bytes; the skip key.
         sha256: String,
     },
     /// An Export Run finished, with its counts.
@@ -37,8 +37,8 @@ pub enum PullJournalEvent {
         conversations: u64,
         /// Messages written.
         messages: u64,
-        /// Attachments downloaded, plus those already on disk according to
-        /// the journal.
+        /// Assets fetched, plus those kept because they were already on
+        /// disk.
         assets: u64,
     },
 }
@@ -212,7 +212,7 @@ mod tests {
     /// `append` is what a pull actually calls, once per asset, and nothing
     /// called it: every test here wrote the file by hand or went through
     /// `compact`. Replacing it with a no-op made a pull that resumed from
-    /// nothing and downloaded every asset again, with the suite green.
+    /// nothing and fetched every Asset again, with the suite green.
     #[test]
     fn appended_events_are_on_disk_and_load_back() {
         let dir = tempfile::tempdir().unwrap();
@@ -289,7 +289,7 @@ mod tests {
 
     /// One output directory used by Export for two servers, or two accounts
     /// on one server: finishing a run for one rewrites only its own lines,
-    /// so the next run for another still skips what it downloaded (#1532).
+    /// so the next run for another still skips what it fetched (#1532).
     #[test]
     fn compact_keeps_the_lines_of_every_other_server_and_account() {
         let dir = tempfile::tempdir().unwrap();
