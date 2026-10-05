@@ -5,8 +5,8 @@
 //! integration tests under `tests/` cannot reach a `cfg(test)` module of the
 //! library, so `tests/common/mod.rs` compiles this file into each test binary
 //! with `#[path]` (#1898). It uses nothing from the server crate for that
-//! reason: only `message_ir` and `serde_json`, which both kinds of test can
-//! name.
+//! reason: only `message_ir`, `serde` and `serde_json`, which both kinds of
+//! test can name.
 
 /// The conversation header line that opens a test's JSON Lines batch, built
 /// from `message_ir`'s own header type at [`message_ir::SCHEMA_VERSION`]. A
@@ -114,7 +114,7 @@ impl ConversationHeaderLine {
 
 impl std::fmt::Display for ConversationHeaderLine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&serde_json::to_string(&self.0).map_err(|_| std::fmt::Error)?)
+        write_json(&self.0, f)
     }
 }
 
@@ -258,7 +258,7 @@ impl MessageLine {
 
 impl std::fmt::Display for MessageLine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&serde_json::to_string(&self.0).map_err(|_| std::fmt::Error)?)
+        write_json(&self.0, f)
     }
 }
 
@@ -279,4 +279,10 @@ pub fn attachment(path: &str, original_name: &str, mime_type: &str) -> message_i
         missing_reason: None,
         bytes: None,
     }
+}
+
+/// Write `value` as one line of JSON, without a trailing newline: how both
+/// line types display.
+fn write_json(value: &impl serde::Serialize, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    f.write_str(&serde_json::to_string(value).map_err(|_| std::fmt::Error)?)
 }
