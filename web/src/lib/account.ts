@@ -10,12 +10,6 @@ import type { components } from "./serverApi.types";
  */
 export type AccountProfile = components["schemas"]["Account"];
 
-/**
- * One phone number on the account, with every service it is an identity
- * under: a number on Text Message and on WhatsApp is one entry naming both.
- */
-export type AccountPhone = components["schemas"]["AccountPhone"];
-
 /** The account's phone numbers, each once, whatever services they are on. */
 export function phoneNumbers(profile: Pick<AccountProfile, "phones">): string[] {
   return profile.phones.map((phone) => phone.address);

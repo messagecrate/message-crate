@@ -63,8 +63,9 @@ async fn account_email_addresses(
     .await?)
 }
 
-/// The account's phone numbers, A to Z, each once with the services it is
-/// linked under in `account_handles`.
+/// The account's phone numbers, A to Z, each listed once. A number's services
+/// are the `handles.service` values of every `handles` row for that number
+/// that `account_handles` links to the account.
 async fn account_phones(conn: &mut SqliteConnection, account_id: i64) -> Result<Vec<AccountPhone>> {
     let rows: Vec<(String, String)> = sqlx::query_as(
         "SELECT DISTINCT h.normalized, h.service FROM handles h
