@@ -19,13 +19,14 @@ use imessage_database::{
             Message,
             models::{GroupAction, Service},
         },
-        table::{ME, ORPHANED, Table, YOU},
+        table::{ME, Table, YOU},
     },
     util::dates::TIMESTAMP_FACTOR,
 };
 use imessage_reader_protocol::{
     Conversation as ConversationRecord, Deletion, Event, Imessage as ImessageRecord,
-    Message as MessageRecord, Participant, Progress, Reaction, bare_address,
+    Message as MessageRecord, ORPHANED_CONVERSATION_TYPE, Participant, Progress, Reaction,
+    bare_address, orphaned_chat_id,
 };
 use serde_json::Value;
 
@@ -204,6 +205,32 @@ fn participants_for(session: &MailSession, chatroom: &Chat) -> (Vec<Participant>
     (records, conversation_type)
 }
 
+/// The conversation an orphaned message sits in: the one of the person who
+/// sent it, with that person as its only participant, kept apart from their
+/// one-to-one conversation because the backup does not say the message was
+/// said there. A message the account holder sent records no recipient, so
+/// every such message sits in one conversation with no participants. A
+/// received message that names no sender, or names one of the holder's own
+/// addresses, has nobody to be a participant either, and sits there too.
+fn orphaned_conversation(session: &MailSession, message: &Message) -> ConversationRecord {
+    let sender = message
+        .handle_id
+        .filter(|_| !message.is_from_me())
+        .and_then(|handle_id| {
+            let address = session.handle_address(handle_id)?.trim();
+            (!address.is_empty() && !session.is_owner(address)).then(|| Participant {
+                identity: address.to_string(),
+                display_name: session.handle_name(handle_id).map(str::to_string),
+            })
+        });
+    ConversationRecord {
+        chat_identifier: orphaned_chat_id(sender.as_ref().map(|p| p.identity.as_str())),
+        conversation_type: ORPHANED_CONVERSATION_TYPE.to_string(),
+        group_title: None,
+        participants: sender.into_iter().collect(),
+    }
+}
+
 /// Human-readable text for a group announcement (rename, add, leave, and similar).
 fn announcement_text(session: &MailSession, msg: &Message) -> Option<String> {
     let announcement = msg.get_announcement()?;
@@ -369,18 +396,15 @@ struct RowContext {
     service: String,
 }
 
-/// Resolve the conversation and sender a row belongs to. A row whose chat is
-/// gone lands in the `orphaned` conversation.
+/// Resolve the conversation and sender a row belongs to. A row in no chat,
+/// or in a chat with no identifier to key it by, is an orphaned message and
+/// lands in its sender's orphaned conversation ([`orphaned_conversation`]).
 fn resolve_context(session: &MailSession, message: &Message) -> RowContext {
     let conversation = match session.conversation(message) {
-        Some(chatroom) => {
+        Some(chatroom) if !chatroom.chat_identifier.is_empty() => {
             let (participants, conversation_type) = participants_for(session, chatroom);
             ConversationRecord {
-                chat_identifier: if chatroom.chat_identifier.is_empty() {
-                    ORPHANED.to_string()
-                } else {
-                    chatroom.chat_identifier.clone()
-                },
+                chat_identifier: chatroom.chat_identifier.clone(),
                 conversation_type: conversation_type.to_string(),
                 group_title: chatroom
                     .display_name()
@@ -390,12 +414,7 @@ fn resolve_context(session: &MailSession, message: &Message) -> RowContext {
                 participants,
             }
         }
-        None => ConversationRecord {
-            chat_identifier: ORPHANED.to_string(),
-            conversation_type: "individual".to_string(),
-            group_title: None,
-            participants: Vec::new(),
-        },
+        _ => orphaned_conversation(session, message),
     };
 
     let is_from_me = message.is_from_me();
@@ -1116,7 +1135,7 @@ mod tests {
         assert_eq!(record.chat_identifier, FRIEND_PHONE_EMAIL);
 
         let (lost, record) = build_record(&session, &messages[11]).unwrap();
-        assert_eq!(lost.chat_identifier, ORPHANED);
+        assert_eq!(lost.chat_identifier, format!("orphaned:{FRIEND_EMAIL}"));
         assert_eq!(record.sender_identity.as_deref(), Some(FRIEND_EMAIL));
 
         // A group with no handle rows lists nobody; its sender is still named.
@@ -1267,8 +1286,49 @@ mod tests {
         assert_eq!(reply.imessage.unwrap().read_receipt_rfc3339, None);
     }
 
-    /// A row whose chat is gone lands in the orphaned conversation, and one
-    /// whose service is unknown is SMS or MMS by its attachments.
+    /// Orphaned messages sit in one conversation for each sender, with that
+    /// sender as its only participant, and the account holder's in one with
+    /// nobody. Each is keyed `orphaned:` and the sender's address, so the
+    /// sender's one-to-one conversation stays as it is (#1095).
+    #[test]
+    fn orphaned_rows_make_one_conversation_for_each_sender() {
+        let fixture = FixtureDb::write();
+        let session = fixture.session_with_contacts();
+        let orphaned = |index: usize| {
+            let mut message = FixtureDb::messages(&session).remove(index);
+            message.chat_id = Some(42);
+            message.deleted_from = None;
+            resolve_context(&session, &message).conversation
+        };
+
+        let sam = orphaned(0);
+        assert_eq!(sam.chat_identifier, format!("orphaned:{FRIEND_PHONE}"));
+        assert_eq!(sam.conversation_type, "orphaned");
+        assert_eq!(handles_of(&sam.participants), vec![FRIEND_PHONE]);
+        assert_eq!(
+            sam.participants[0].display_name.as_deref(),
+            Some("Sam Example")
+        );
+
+        let robin = orphaned(2);
+        assert_eq!(robin.chat_identifier, format!("orphaned:{FRIEND_EMAIL}"));
+        assert_eq!(robin.conversation_type, "orphaned");
+        assert_eq!(handles_of(&robin.participants), vec![FRIEND_EMAIL]);
+
+        for mine in [1, 3] {
+            let holder = orphaned(mine);
+            assert_eq!(holder.chat_identifier, "orphaned:");
+            assert_eq!(holder.conversation_type, "orphaned");
+            assert!(holder.participants.is_empty());
+        }
+
+        let (one_to_one, _) = build_record(&session, &FixtureDb::messages(&session)[0]).unwrap();
+        assert_eq!(one_to_one.chat_identifier, FRIEND_PHONE);
+        assert_eq!(one_to_one.conversation_type, "individual");
+    }
+
+    /// A row whose chat is gone lands in its sender's orphaned conversation,
+    /// and one whose service is unknown is SMS or MMS by its attachments.
     #[test]
     fn an_orphaned_row_and_a_non_imessage_row_are_classified() {
         let fixture = FixtureDb::write();
@@ -1278,7 +1338,7 @@ mod tests {
         message.service = Some("SMS".to_string());
 
         let context = resolve_context(&session, &message);
-        assert_eq!(context.conversation.chat_identifier, ORPHANED);
+        assert_eq!(context.conversation.chat_identifier, "orphaned:");
         assert!(context.conversation.participants.is_empty());
         assert_eq!(context.service, "SMS");
 
@@ -1524,8 +1584,8 @@ mod tests {
                 r#"conversation "+15555550106""#,
                 r#"message "guid-10" in "+15555550106""#,
                 r#"message "guid-11" in "+15555550106""#,
-                r#"conversation "orphaned""#,
-                r#"message "guid-12" in "orphaned""#,
+                r#"conversation "orphaned:friend@example.com""#,
+                r#"message "guid-12" in "orphaned:friend@example.com""#,
                 r#"message "00000000-0000-4000-8000-000000000013" in "chat100""#,
                 r#"message "guid-14" in "chat100""#,
                 r#"message "guid-15" in "chat100""#,

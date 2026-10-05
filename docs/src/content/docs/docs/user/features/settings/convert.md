@@ -22,11 +22,11 @@ The tab holds three fields and two buttons.
 | Field | Holds |
 |---|---|
 | **Input directory** | The directory holding one existing export |
-| **Output directory** | A different directory to write into |
+| **Output directory** | A different directory to write into. Left empty, the conversion gets a directory of its own in the Export Directory |
 | **Output format** | The format to write. The default is **JSON Lines (.jsonl)** |
 
 **Convert** starts the conversion.
-It stays disabled until both directories are filled in and differ.
+It stays disabled until **Input directory** is filled in, and while **Output directory** names the same directory.
 The desktop app runs one job at a time, so **Convert** also stays disabled from the start of an Import Run to its end, its Reviews included, and from the start of an export to its end. A Review holds it back only for the account that started the run; another account logged in on the same desktop app can use it. The screen names the job it waits for.
 **Cancel** stops a running conversion.
 
@@ -36,6 +36,10 @@ Its second line gives the number of conversations, such as `Conversations: 384`.
 
 A finished conversion shows a green panel that names the format and the output directory, such as "Conversion complete. MBOX (.mbox) written to /home/sam/exports/mbox."
 A failed one shows the reason in a red panel and as an `Error:` line in the log.
+
+With **Output directory** left empty, the conversion writes into a directory of its own in the Export Directory, named `convert-` followed by the date, the time and the format, such as `convert-2026-10-04-1502-mbox`.
+[**Settings → System**](/docs/user/features/settings/system/#exports) names the Export Directory and opens it.
+A conversion that fails or is cancelled deletes that directory.
 
 ## What it reads
 
@@ -59,7 +63,7 @@ A directory must hold exactly one format.
 A directory that holds more than one is refused with `unsupported input: mixed formats`, followed by the formats and files found, because Convert can't tell which export to read.
 A directory that holds none is refused with `unsupported input: no Message Crate IR export found`.
 
-A `.json` or `.jsonl` export of another schema version, such as an export written before version 8, is refused with "This file is schema version 7; Message Crate reads version 8" and the file's name.
+A `.json` or `.jsonl` export of another schema version, such as an export written before version 9, is refused with "This file is schema version 8; Message Crate reads version 9" and the file's name.
 Nothing is upgraded: export the conversations again with the current app.
 Convert reads every file before it writes, so a refused file stops the whole run and the output directory is left as it was.
 

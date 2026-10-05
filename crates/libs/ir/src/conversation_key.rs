@@ -7,10 +7,12 @@
 //! read back out of its id.
 //!
 //! Every key that is not an address starts with a prefix of its own:
-//! `group:` for a group, `name:` for a person known only by name, and
-//! `nameless:` for the conversation that names nobody. So a name can never
-//! take a group's key, an address's key, or the key of the conversation that
-//! names nobody.
+//! `group:` for a group, `name:` for a person known only by name,
+//! `nameless:` for the conversation that names nobody, and `orphaned:` for
+//! a conversation of orphaned messages ([`crate::orphaned_chat_id`]). So a
+//! name can never take a group's key, an address's key, or the key of the
+//! conversation that names nobody, and a sender's orphaned messages never
+//! take the key of their one-to-one conversation.
 
 use crate::IrParticipant;
 

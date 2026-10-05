@@ -3,7 +3,7 @@ use std::path::Path;
 use sqlx::SqliteConnection;
 use tempfile::TempDir;
 
-use super::{StagingError, is_orphaned_export, store_claimed_or_path};
+use super::{StagingError, store_claimed_or_path};
 use crate::assets_api::{self, AssetStats};
 use crate::imports_api::{
     FixedImportArgs, ImportCounts, ImportError, ImportFailure, ImportMode, ImportOptions,
@@ -13,9 +13,14 @@ use crate::models::AttachmentRecord;
 
 const TEST_ACCOUNT: i64 = 7;
 
-/// The header demo-seed writes for `orphaned.jsonl`: an `individual`
-/// conversation whose chat id is `orphaned` and which names nobody.
-const ORPHANED_HEADER: &str = r#"{"schema_version":8,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"orphaned","conversation_type":"individual","group_title":null,"participants":[],"stats":{"message_count":2,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}
+/// A one-to-one conversation with `+15555550154` whose header names nobody.
+const ONE_TO_ONE_HEADER: &str = r#"{"schema_version":9,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550154","conversation_type":"individual","group_title":null,"participants":[],"stats":{"message_count":2,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}
+"#;
+
+/// The orphaned messages `+15555550154` sent, as the Apple Messages reader
+/// writes them: a conversation of type `orphaned`, keyed `orphaned:` and the
+/// sender's address, with the sender as its only participant.
+const ORPHANED_HEADER: &str = r#"{"schema_version":9,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"orphaned:+15555550154","conversation_type":"orphaned","group_title":null,"participants":[{"identity":"+15555550154","display_name":null}],"stats":{"message_count":2,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}
 "#;
 
 /// An incoming iMessage line from `sender`.
@@ -176,7 +181,7 @@ async fn an_attachment_staging_refuses_is_a_rejection_naming_its_file() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let tmp = TempDir::new().unwrap();
-    let header = ORPHANED_HEADER.replace("orphaned", "+15555550154");
+    let header = ONE_TO_ONE_HEADER.to_string();
     let message = incoming("g-escape", "+15555550154").replace(
         r#""attachments":[]"#,
         r#""attachments":[{"path":"../escape.txt","original_name":null,"mime_type":null,"is_sticker":false,"transcription":null,"sticker_effect":null}]"#,
@@ -278,9 +283,7 @@ async fn a_directory_import_refuses_a_header_without_a_source() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let tmp = TempDir::new().unwrap();
-    let header = ORPHANED_HEADER
-        .replace("orphaned", "+15555550154")
-        .replace(r#""source":"imessage""#, r#""source":"  ""#);
+    let header = ONE_TO_ONE_HEADER.replace(r#""source":"imessage""#, r#""source":"  ""#);
     let path = tmp.path().join("+15555550154.jsonl");
     std::fs::write(
         &path,
@@ -330,7 +333,7 @@ async fn a_file_that_does_not_match_its_claimed_sha256_fails_the_import_and_is_n
     let assets = tmp.path().join("assets");
     std::fs::write(tmp.path().join("photo.bin"), b"the bytes on disk").unwrap();
     let claimed_sha = assets_api::Sha256::of_bytes(b"the bytes the export saw");
-    let header = ORPHANED_HEADER.replace("orphaned", "+15555550154");
+    let header = ONE_TO_ONE_HEADER.to_string();
     let message = format!(
         r#"{{"guid":"g-mismatch","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550154","sender_display_name":null,"subject":null,"text":"hi","attachments":[{{"path":"photo.bin","original_name":"photo.bin","mime_type":"application/octet-stream","digest_sha256":"{claimed_sha}","is_sticker":false,"transcription":null,"sticker_effect":null}}],"imessage":null,"source":null}}"#
     );
@@ -354,33 +357,23 @@ async fn a_file_that_does_not_match_its_claimed_sha256_fails_the_import_and_is_n
     }
 }
 
-#[test]
-fn only_a_file_named_orphaned_is_the_orphaned_export() {
-    assert!(is_orphaned_export(Path::new("out/orphaned.jsonl")));
-    assert!(is_orphaned_export(Path::new("Orphaned.json")));
-    assert!(!is_orphaned_export(Path::new("out/+15555550100.jsonl")));
-    assert!(!is_orphaned_export(Path::new("orphaned-2.jsonl")));
-}
-
-/// `orphaned.jsonl` is staged as one conversation under the file's own
-/// chat id, with its messages under the import's source. The chat id
-/// `orphaned` names the file, not a person, so it gets no contact; the
-/// sender does.
+/// An orphaned conversation is staged under its own key and type, whatever
+/// the file is named, with its messages under the import's source. Its key
+/// names the conversation, not a person, so it gets no contact; the sender
+/// does (#1095).
 #[tokio::test]
-async fn orphaned_jsonl_is_staged_as_the_orphaned_conversation() {
+async fn an_orphaned_conversation_is_staged_by_its_type_not_its_file_name() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     let body = ORPHANED_HEADER.to_string()
         + &incoming("g-orphan-1", "+15555550154")
         + &incoming("g-orphan-2", "+15555550154");
-    let counts = import_one(&mut conn, "orphaned.jsonl", &body)
-        .await
-        .unwrap();
+    let counts = import_one(&mut conn, "_import.jsonl", &body).await.unwrap();
     assert_eq!(counts.conversations, 1);
     assert_eq!(counts.messages, 2);
 
-    let (chat, kind, file): (String, String, String) = sqlx::query_as(
-        "SELECT h.raw, c.conversation_type, c.source_file FROM conversations c
+    let (chat, kind): (String, String) = sqlx::query_as(
+        "SELECT h.raw, c.conversation_type FROM conversations c
          JOIN handles h ON h.id = c.chat_handle_id
          WHERE c.account_id = $1",
     )
@@ -389,8 +382,8 @@ async fn orphaned_jsonl_is_staged_as_the_orphaned_conversation() {
     .await
     .unwrap();
     assert_eq!(
-        (chat.as_str(), kind.as_str(), file.as_str()),
-        ("orphaned", "individual", "orphaned.jsonl")
+        (chat.as_str(), kind.as_str()),
+        ("orphaned:+15555550154", "orphaned")
     );
 
     let sources: Vec<String> =
@@ -413,13 +406,13 @@ async fn orphaned_jsonl_is_staged_as_the_orphaned_conversation() {
     assert_eq!(contacts, ["+15555550154"], "only the sender is a person");
 }
 
-/// Every file, `orphaned.jsonl` included, needs its conversation header
-/// before its messages: the reader refuses the file before staging sees it.
+/// Every file needs its conversation header before its messages: the reader
+/// refuses the file before staging sees it.
 #[tokio::test]
 async fn a_file_with_messages_and_no_header_is_refused() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
-    for name in ["orphaned.jsonl", "+15555550100.jsonl"] {
+    for name in ["_import.jsonl", "+15555550100.jsonl"] {
         let result = import_one(&mut conn, name, &incoming("g1", "+15555550100")).await;
         assert_eq!(
             refusal(result),
@@ -444,7 +437,7 @@ async fn a_file_with_neither_header_nor_messages_is_refused() {
 /// participants JSON array `participants`.
 fn whatsapp_header(chat_identifier: &str, kind: &str, participants: &str) -> String {
     format!(
-        r#"{{"schema_version":8,"export":{{"source":"whatsapp","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{chat_identifier}","conversation_type":"{kind}","group_title":null,"participants":{participants},"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
+        r#"{{"schema_version":9,"export":{{"source":"whatsapp","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{chat_identifier}","conversation_type":"{kind}","group_title":null,"participants":{participants},"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
     ) + "\n"
 }
 

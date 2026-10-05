@@ -21,6 +21,18 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-04 **Messages a backup kept without saying which conversation
+  they were in now sit in conversations of their own, one for each person who
+  sent them.** An Apple Messages backup can hold messages that belong to no
+  chat. They used to arrive as one conversation named "orphaned", mixing many
+  people's messages into one list and showing a person named "orphaned" in
+  Contacts. Now the ones Ada sent are in "Ada · Missing recipient", with Ada in
+  it and apart from your conversation with her, and the ones you sent are in
+  "Unknown recipient". The same goes for messages you sent that an OpenExtract
+  export does not name a recipient for, and the same text sent to several
+  people in the same second is kept once for each of them. Search for these
+  conversations with `kind:orphaned`; `kind:direct` and `kind:group` leave
+  them out.
 - 2026-10-04 **An edited Apple Messages message keeps every earlier
   version, and search finds it by any of them.** A message edited in Apple
   Messages is imported with its final text and each version before it, with
@@ -231,6 +243,18 @@ released versions carry their date on the heading.
   field with nothing in it is sent empty instead of being left out, so a
   program that talks to the server always finds the fields it expects.
   Nothing changes on screen.
+- 2026-10-04 **Every Export and Convert gets a directory of its own in the
+  Export Directory.** An export no longer needs a directory chosen before it
+  starts: it is written into a new directory named for its date, time and
+  format, such as `export-2026-10-04-1430-mbox`, in the Export Directory,
+  which Settings → System names and opens. Convert does the same when no
+  output directory is chosen. A directory can still be chosen for either.
+  The JSON Lines an export converts from now wait in that directory instead
+  of the Staging Directory, and are deleted when it finishes, leaving only
+  the result; a failed or cancelled export deletes its directory, and one
+  the app did not see to its end is deleted the next time it starts.
+- 2026-10-04 **Screens, the user guide and the glossary say "directory"
+  everywhere they said "folder".**
 - 2026-10-04 **A reaction travels on the message it reacts to.** An Apple
   Messages tapback or emoji reaction is written into an export on the
   message it reacts to, with the person who reacted named, and an import
@@ -1464,6 +1488,9 @@ released versions carry their date on the heading.
 
 ### Upgrading
 
+- An export, or a conversion with no output directory chosen, now goes into
+  the Export Directory; look for it there, through Settings → System, rather
+  than in the Staging Directory.
 - The database format changed. **An existing Message Crate is rebuilt
   empty on first start and its messages must be imported again.**
 - If your configuration file sets `asset_max_bytes` under `[server]`, delete
@@ -1540,6 +1567,18 @@ released versions carry their date on the heading.
   for an Import Run an earlier build left paused. Export the backup again
   with this build, then import or convert the new files; discard a paused run
   and start the import again.
+- JSON and JSONL message files exported before orphaned messages had
+  conversations of their own are refused when you import or convert them,
+  rather than read with a person named "orphaned", and so is an Import Run an
+  earlier build left paused. CSV, EML and mbox files carry no version, so one
+  exported by an earlier build is still read, and its "orphaned" conversation
+  comes in as a person of that name. Export the backup again with this build,
+  then import or convert the new files; discard a paused run and start the
+  import again.
+- An Apple Messages backup imported by an earlier build keeps its one
+  "orphaned" conversation and the contact named "orphaned". To get a
+  conversation for each sender instead, use **Delete all messages** in
+  Settings, then import the backup again.
 - `reset-demo` no longer writes a configuration file, and reads the one given
   with `--config`. If an earlier `reset-demo` replaced your configuration
   file, the server stops at startup with a missing `[server]` section: put

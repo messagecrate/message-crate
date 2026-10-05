@@ -483,20 +483,25 @@ api_shape! {
         pub id: i64,
         /// The conversation's identifier as the export wrote it.
         pub chat_identifier: String,
-        /// `individual` or `group`.
+        /// `individual`, `group`, or `orphaned` for a conversation of
+        /// orphaned messages: ones the backup holds without recording which
+        /// conversation they were said in.
         pub conversation_type: String,
         /// True for a group conversation, by the rule the conversation list's
         /// `is_group` follows, so a client never reads `conversation_type` to
-        /// decide it.
+        /// decide whether it is a group. `conversation_type` is read only to
+        /// tell a conversation of orphaned messages from a one-to-one
+        /// conversation.
         pub is_group: bool,
         /// The title the export gave the conversation, when it gave one.
         pub group_title: Option<String>,
         /// The title the conversation is shown by, as the conversation list's
         /// `label` gives it: for a conversation the account holder has with
         /// themselves, the account's display name or, without one, the
-        /// conversation's own address; for any other, the export's title.
-        /// `null` when there is none, and the conversation goes by its
-        /// participants.
+        /// conversation's own address; for one of orphaned messages, its
+        /// sender's name and "Missing recipient", or "Unknown recipient" for
+        /// the account holder's; for any other, the export's title. `null`
+        /// when there is none, and the conversation goes by its participants.
         pub label: Option<String>,
         /// Participants of the conversation.
         pub participants: Vec<Participant>,

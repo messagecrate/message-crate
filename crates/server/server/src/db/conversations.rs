@@ -83,9 +83,10 @@ pub struct ConversationSummary {
     pub is_group: bool,
     /// The title the conversation is shown by: for a conversation the account
     /// holder has with themselves, the account's display name or, without
-    /// one, the conversation's own address; for any other, the export's
-    /// title. `null` when there is none, and the conversation goes by its
-    /// participants.
+    /// one, the conversation's own address; for one of orphaned messages, its
+    /// sender's name and "Missing recipient", or "Unknown recipient" for the
+    /// account holder's; for any other, the export's title. `null` when
+    /// there is none, and the conversation goes by its participants.
     pub label: Option<String>,
     /// Message tags on this conversation.
     pub tags: Vec<String>,
@@ -204,14 +205,23 @@ pub fn is_with_yourself_sql(c: &str) -> String {
     )
 }
 
+/// What an orphaned conversation's title adds to its sender's name.
+pub const MISSING_RECIPIENT: &str = "Missing recipient";
+
+/// The title of the orphaned conversation that holds the account holder's
+/// orphaned messages, which record no recipient.
+pub const UNKNOWN_RECIPIENT: &str = "Unknown recipient";
+
 /// The title conversation `c` is shown by, as a SQL expression. A
 /// conversation with yourself ([`is_with_yourself_sql`]) goes by the
 /// account's display name, or its own address when the account has none,
-/// whatever title the export gave it. Any other conversation goes by the
-/// export's title, and is NULL without one, going by its participants.
-/// Computed on every read, so it follows a change of the display name. The
-/// list, the single-conversation read, the message rows, `title:`, `in:` and
-/// plain text all read this one expression.
+/// whatever title the export gave it. An orphaned conversation goes by its
+/// sender's name and [`MISSING_RECIPIENT`], "Ada · Missing recipient", or,
+/// with no sender, by [`UNKNOWN_RECIPIENT`] (#1095). Any other conversation
+/// goes by the export's title, and is NULL without one, going by its
+/// participants. Computed on every read, so it follows a change of the
+/// display name or the sender's. The list, the single-conversation read, the
+/// message rows, `title:`, `in:` and plain text all read this one expression.
 #[must_use]
 pub fn conversation_title_sql(c: &str) -> String {
     format!(
@@ -219,8 +229,23 @@ pub fn conversation_title_sql(c: &str) -> String {
                   (SELECT NULLIF(trim(ay.preferred_name), '') FROM accounts ay
                    WHERE ay.id = {c}.account_id),
                   (SELECT hy.raw FROM handles hy WHERE hy.id = {c}.chat_handle_id))
+              WHEN {orphaned} THEN COALESCE({sender} || ' · {MISSING_RECIPIENT}',
+                                            '{UNKNOWN_RECIPIENT}')
               ELSE NULLIF(trim({c}.group_title), '') END",
-        with_yourself = is_with_yourself_sql(c)
+        with_yourself = is_with_yourself_sql(c),
+        orphaned = is_orphaned_sql(c),
+        sender = crate::db::participant_names::first_participant_name_sql(c),
+    )
+}
+
+/// A SQL condition, true when conversation `c` holds orphaned messages: its
+/// type is [`message_ir::ORPHANED_CONVERSATION_TYPE`], in any case. `c` is
+/// the alias of a `conversations` row.
+#[must_use]
+pub fn is_orphaned_sql(c: &str) -> String {
+    format!(
+        "lower({c}.conversation_type) = '{}'",
+        message_ir::ORPHANED_CONVERSATION_TYPE
     )
 }
 

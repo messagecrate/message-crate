@@ -13912,7 +13912,7 @@
               "string",
               "null"
             ],
-            "description": "The title the conversation is shown by: for a conversation the account\nholder has with themselves, the account's display name or, without\none, the conversation's own address; for any other, the export's\ntitle. `null` when there is none, and the conversation goes by its\nparticipants."
+            "description": "The title the conversation is shown by: for a conversation the account\nholder has with themselves, the account's display name or, without\none, the conversation's own address; for one of orphaned messages, its\nsender's name and \"Missing recipient\", or \"Unknown recipient\" for the\naccount holder's; for any other, the export's title. `null` when\nthere is none, and the conversation goes by its participants."
           },
           "last_message_at": {
             "type": [
@@ -15801,7 +15801,7 @@
           },
           "conversation_type": {
             "type": "string",
-            "description": "`individual` or `group`."
+            "description": "`individual`, `group`, or `orphaned` for a conversation of\norphaned messages: ones the backup holds without recording which\nconversation they were said in."
           },
           "group_title": {
             "type": [
@@ -15817,14 +15817,14 @@
           },
           "is_group": {
             "type": "boolean",
-            "description": "True for a group conversation, by the rule the conversation list's\n`is_group` follows, so a client never reads `conversation_type` to\ndecide it."
+            "description": "True for a group conversation, by the rule the conversation list's\n`is_group` follows, so a client never reads `conversation_type` to\ndecide whether it is a group. `conversation_type` is read only to\ntell a conversation of orphaned messages from a one-to-one\nconversation."
           },
           "label": {
             "type": [
               "string",
               "null"
             ],
-            "description": "The title the conversation is shown by, as the conversation list's\n`label` gives it: for a conversation the account holder has with\nthemselves, the account's display name or, without one, the\nconversation's own address; for any other, the export's title.\n`null` when there is none, and the conversation goes by its\nparticipants."
+            "description": "The title the conversation is shown by, as the conversation list's\n`label` gives it: for a conversation the account holder has with\nthemselves, the account's display name or, without one, the\nconversation's own address; for one of orphaned messages, its\nsender's name and \"Missing recipient\", or \"Unknown recipient\" for\nthe account holder's; for any other, the export's title. `null`\nwhen there is none, and the conversation goes by its participants."
           },
           "participants": {
             "type": "array",
@@ -16932,7 +16932,7 @@
                     "string",
                     "null"
                   ],
-                  "description": "The title the conversation is shown by: for a conversation the account\nholder has with themselves, the account's display name or, without\none, the conversation's own address; for any other, the export's\ntitle. `null` when there is none, and the conversation goes by its\nparticipants."
+                  "description": "The title the conversation is shown by: for a conversation the account\nholder has with themselves, the account's display name or, without\none, the conversation's own address; for one of orphaned messages, its\nsender's name and \"Missing recipient\", or \"Unknown recipient\" for the\naccount holder's; for any other, the export's title. `null` when\nthere is none, and the conversation goes by its participants."
                 },
                 "last_message_at": {
                   "type": [

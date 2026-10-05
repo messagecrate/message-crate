@@ -215,8 +215,8 @@ impl StagingDirectories {
     /// Staging Directory, write the export sentinel into it, and record it.
     /// Returns the directory in its canonical form.
     ///
-    /// `label` names what the directory is for: an Import source such as
-    /// `imessage-ios`, or `export`.
+    /// `label` names the Import source the directory is for, such as
+    /// `imessage-ios`.
     ///
     /// # Errors
     ///
@@ -585,7 +585,7 @@ mod tests {
     #[test]
     fn a_made_directory_that_holds_files_but_no_sentinel_is_refused() {
         let scratch = Scratch::new();
-        let run = scratch.directories.create("export", NOW).unwrap();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
         fs::write(run.join("notes.txt"), "someone's own").unwrap();
         fs::remove_file(run.join(EXPORT_SENTINEL)).unwrap();
 
@@ -601,7 +601,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
 
         let scratch = Scratch::new();
-        let run = scratch.directories.create("export", NOW).unwrap();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
         let locked = run.join("locked");
         fs::create_dir_all(locked.join("inner")).unwrap();
         fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
@@ -622,7 +622,7 @@ mod tests {
     #[test]
     fn deleting_a_directory_already_gone_succeeds_and_forgets_it() {
         let scratch = Scratch::new();
-        let run = scratch.directories.create("export", NOW).unwrap();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
         fs::remove_dir_all(&run).unwrap();
 
         scratch.reopen().delete(run.to_str().unwrap()).unwrap();
@@ -640,7 +640,7 @@ mod tests {
             .directories
             .set_root(drive.path().to_str().unwrap())
             .unwrap();
-        let run = scratch.directories.create("export", NOW).unwrap();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
         fs::remove_dir_all(drive.path()).unwrap();
 
         let err = scratch.reopen().delete(run.to_str().unwrap()).unwrap_err();
@@ -659,7 +659,7 @@ mod tests {
         // As when the drive is unplugged and its mount point stays behind as
         // an empty directory: the directory is not found, but nothing deleted it.
         let scratch = Scratch::new();
-        let run = scratch.directories.create("export", NOW).unwrap();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
         scratch
             .directories
             .change(|record| {
@@ -678,7 +678,7 @@ mod tests {
     #[test]
     fn a_delete_that_stopped_after_the_sentinel_went_is_finished() {
         let scratch = Scratch::new();
-        let run = scratch.directories.create("export", NOW).unwrap();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
         fs::remove_file(run.join(EXPORT_SENTINEL)).unwrap();
 
         scratch.directories.delete(run.to_str().unwrap()).unwrap();
@@ -691,7 +691,7 @@ mod tests {
     #[test]
     fn a_link_to_a_directory_elsewhere_is_removed_and_not_followed() {
         let scratch = Scratch::new();
-        let run = scratch.directories.create("export", NOW).unwrap();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
         let elsewhere = tempfile::tempdir().unwrap();
         fs::write(elsewhere.path().join("keep.txt"), "kept").unwrap();
         std::os::unix::fs::symlink(elsewhere.path(), run.join("link")).unwrap();
@@ -709,7 +709,7 @@ mod tests {
         let scratch = Scratch::new();
         let other = scratch.reopen();
 
-        let mine = scratch.directories.create("export", NOW).unwrap();
+        let mine = scratch.directories.create("whatsapp", NOW).unwrap();
         let theirs = other.create("imessage-ios", NOW).unwrap();
 
         assert!(
@@ -724,11 +724,11 @@ mod tests {
     #[test]
     fn a_damaged_record_is_an_error_and_is_never_written_over() {
         let scratch = Scratch::new();
-        let run = scratch.directories.create("export", NOW).unwrap();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
         let file = scratch.app_data.path().join(RECORD_FILE);
         fs::write(&file, "{ not json").unwrap();
 
-        let err = scratch.directories.create("export", NOW).unwrap_err();
+        let err = scratch.directories.create("whatsapp", NOW).unwrap_err();
 
         assert!(err.contains("damaged"), "{err}");
         assert!(
@@ -743,7 +743,7 @@ mod tests {
     #[test]
     fn a_file_inside_a_made_directory_is_openable_and_one_beside_it_is_not() {
         let scratch = Scratch::new();
-        let run = scratch.directories.create("export", NOW).unwrap();
+        let run = scratch.directories.create("whatsapp", NOW).unwrap();
         let log = run.join("message-crate-push.log");
         let beside = run.parent().unwrap().join("notes.txt");
         fs::write(&beside, "").unwrap();

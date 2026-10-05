@@ -10,6 +10,13 @@ const tauriState = vi.hoisted(() => ({ isTauri: true }));
 const invokeFormat = vi.hoisted(() => vi.fn());
 const invokeCancel = vi.hoisted(() => vi.fn());
 const awaitTauriJob = vi.hoisted(() => vi.fn());
+const invokeCreateExportDir = vi.hoisted(() => vi.fn());
+const invokeFinishExportDir = vi.hoisted(() => vi.fn());
+const invokeDiscardExportDir = vi.hoisted(() => vi.fn());
+
+/** The directory the desktop makes for a Convert in the Export Directory. */
+const CONVERT_DIR =
+  "/home/demo/.local/share/app.messagecrate.desktop/exports/convert-2026-10-04-1430-jsonl";
 
 vi.mock("../../lib/tauri-check", () => ({
   isTauri: () => tauriState.isTauri,
@@ -20,6 +27,9 @@ vi.mock("../../lib/tauri", async (importOriginal) => {
   return {
     EXPORT_FORMATS: actual.EXPORT_FORMATS,
     invokeFormat: (...args: unknown[]) => invokeFormat(...args),
+    invokeCreateExportDir: (...args: unknown[]) => invokeCreateExportDir(...args),
+    invokeFinishExportDir: (...args: unknown[]) => invokeFinishExportDir(...args),
+    invokeDiscardExportDir: (...args: unknown[]) => invokeDiscardExportDir(...args),
     invokeCancel: (...args: unknown[]) => invokeCancel(...args),
     // The job's name comes first; the mocks below take what follows it.
     awaitTauriJob: (_job: string, ...args: unknown[]) => awaitTauriJob(...args),
@@ -38,6 +48,13 @@ afterEach(() => {
 
 beforeEach(() => {
   tauriState.isTauri = true;
+  invokeCreateExportDir.mockResolvedValue({
+    dir: CONVERT_DIR,
+    pulled: `${CONVERT_DIR}/.pulled`,
+    converting: `${CONVERT_DIR}/.converting`,
+  });
+  invokeFinishExportDir.mockResolvedValue(CONVERT_DIR);
+  invokeDiscardExportDir.mockResolvedValue(undefined);
   // The hook's `run` goes through awaitTauriJob: call the invoke and resolve.
   awaitTauriJob.mockImplementation(async (invokeFn: () => Promise<void>) => {
     await invokeFn();
@@ -82,16 +99,52 @@ describe("ConvertSection", () => {
     expect(screen.queryByRole("button", { name: "Convert" })).toBeNull();
   });
 
-  it("keeps Convert disabled until both directories are filled", async () => {
+  it("keeps Convert disabled until the input directory is filled", async () => {
     const user = setupUser();
     render(<ConvertSection />);
     expect(convertButton()).toBeDisabled();
 
     await fill(user, screen.getByLabelText("Input directory"), "/home/demo/export-json");
-    expect(convertButton()).toBeDisabled();
-
-    await fill(user, screen.getByLabelText("Output directory"), "/home/demo/export-csv");
     expect(convertButton()).toBeEnabled();
+  });
+
+  it("converts into its own directory in the Export Directory when no output directory is chosen", async () => {
+    const user = setupUser();
+    render(<ConvertSection />);
+    await fill(user, screen.getByLabelText("Input directory"), "/home/demo/export-json");
+    await user.click(convertButton());
+
+    await waitFor(() => expect(invokeFinishExportDir).toHaveBeenCalledWith(CONVERT_DIR));
+    expect(invokeCreateExportDir).toHaveBeenCalledWith("convert", "jsonl", "");
+    expect(invokeFormat.mock.calls[0][0]).toMatchObject({
+      input_dir: "/home/demo/export-json",
+      output_dir: CONVERT_DIR,
+    });
+    expect(await screen.findByText(/Conversion complete/)).toHaveTextContent(
+      `Conversion complete. JSON Lines (.jsonl) written to ${CONVERT_DIR}.`,
+    );
+  });
+
+  it("deletes its own directory when the conversion fails", async () => {
+    awaitTauriJob.mockImplementation(async () => {
+      throw new Error("no conversation files in /home/demo/empty");
+    });
+    const user = setupUser();
+    render(<ConvertSection />);
+    await fill(user, screen.getByLabelText("Input directory"), "/home/demo/empty");
+    await user.click(convertButton());
+
+    await waitFor(() => expect(invokeDiscardExportDir).toHaveBeenCalledWith(CONVERT_DIR));
+    expect(invokeFinishExportDir).not.toHaveBeenCalled();
+  });
+
+  it("makes no directory of its own when an output directory is chosen", async () => {
+    const user = await fillDirectories("/home/demo/export-json", "/home/demo/export-csv");
+    await user.click(convertButton());
+
+    await waitFor(() => expect(invokeFormat).toHaveBeenCalledTimes(1));
+    expect(invokeFormat.mock.calls[0][0]).toMatchObject({ output_dir: "/home/demo/export-csv" });
+    expect(invokeCreateExportDir).not.toHaveBeenCalled();
   });
 
   it("refuses the same directory for input and output and says so", async () => {
