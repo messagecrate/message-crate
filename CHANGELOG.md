@@ -391,6 +391,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **Staging's log writes its attachment warnings as
+  sentences.** An attachment file Staging could not read was logged as
+  "warning: attachment … could not be read: …", one from an encrypted iPhone
+  backup that could not be decrypted as "warning: attachment … could not be
+  decrypted: …", and an Apple Messages attachment that could not be read as
+  "warning: failed to read attachment …: …". The log now writes "Attachment … could not
+  be read: …" and "Attachment … could not be decrypted: …". The Media
+  summary's "media warning: 1 file could not be converted; …" is now
+  "1 file could not be converted; …".
 - 2026-10-05 **The Upload's log writes its warnings as sentences.** An
   attachment whose recorded SHA-256 did not match the file was logged as
   "WARN … sha256 mismatch for …: claimed …, got …", and a report the Upload

@@ -742,7 +742,7 @@ fn an_unreadable_attachment_is_logged_before_it_becomes_a_chip() {
 
     let units = vec![unit_from(
         doc_with(&test_number(6), 1),
-        vec![AttachmentSource::Path(missing)],
+        vec![AttachmentSource::Path(missing.clone())],
     )];
     let report = drain_write_queue(
         &out,
@@ -756,11 +756,13 @@ fn an_unreadable_attachment_is_logged_before_it_becomes_a_chip() {
 
     assert_eq!(report.conversations_written, 1, "the drain carries on");
     let lines = lines.lock().unwrap().clone();
+    let said = format!(
+        "Attachment {} could not be read: no file there",
+        missing.display()
+    );
     assert!(
-        lines
-            .iter()
-            .any(|l| l.starts_with("warning: attachment ") && l.contains("could not be read")),
-        "an unreadable attachment says why before it turns into a chip: {lines:?}"
+        lines.contains(&said),
+        "an unreadable attachment says why, as a sentence, before it turns into a chip: {lines:?}"
     );
 
     let stem = doc_with(&test_number(6), 0).filename_stem();
@@ -811,7 +813,7 @@ fn a_resumed_run_does_not_report_a_gone_file_of_a_written_conversation_again() {
     assert_eq!(report.conversations_skipped, 1);
     let lines = lines.lock().unwrap().clone();
     assert!(
-        !lines.iter().any(|l| l.starts_with("warning: attachment ")),
+        !lines.iter().any(|l| l.starts_with("Attachment ")),
         "nothing was read, so nothing is reported: {lines:?}"
     );
 }

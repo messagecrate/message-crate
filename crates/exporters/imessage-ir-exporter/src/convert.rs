@@ -513,7 +513,7 @@ impl NotDecrypted {
     /// it happens.
     fn record(&mut self, options: &ExportOptions, path: &Path, reason: String) {
         options.emit_log(format!(
-            "warning: attachment {} could not be decrypted: {reason}",
+            "Attachment {} could not be decrypted: {reason}",
             path.display()
         ));
         options.emit_issue(RunIssue {
@@ -592,7 +592,7 @@ fn read_attachment(
         Ok(bytes) => Ok(bytes),
         Err(e) => {
             options.emit_log(format!(
-                "warning: failed to read attachment {}: {e}",
+                "Attachment {} could not be read: {e}",
                 path.display()
             ));
             Ok(Vec::new())
@@ -918,6 +918,26 @@ mod tests {
             cancel: None,
             resume: false,
         }
+    }
+
+    /// An attachment the program could not decrypt is a sentence on the
+    /// log, with no `warning:` before it (#1888).
+    #[test]
+    fn an_attachment_that_could_not_be_decrypted_is_a_sentence_in_the_log() {
+        let lines = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let sink_lines = std::sync::Arc::clone(&lines);
+        let mut options = options(OutputFormat::Jsonl, false);
+        options.log = Some(LogSink::new(move |l: &str| {
+            sink_lines.lock().unwrap().push(l.to_string());
+        }));
+
+        let mut not_decrypted = NotDecrypted::default();
+        not_decrypted.record(&options, Path::new("Library/SMS/a.jpg"), "bad key".into());
+
+        assert_eq!(
+            *lines.lock().unwrap(),
+            ["Attachment Library/SMS/a.jpg could not be decrypted: bad key"]
+        );
     }
 
     /// Attachment files are left for the write step only when the run both

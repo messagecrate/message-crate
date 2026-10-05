@@ -306,8 +306,9 @@ impl ExportReport {
         Ok(())
     }
 
-    /// Human-readable lines about the write tail: the Media stage and
-    /// obfuscation. Empty when neither did anything.
+    /// Human-readable lines about the write tail: the Media stage, with each
+    /// of its failures as the sentence it was written as, and obfuscation.
+    /// Empty when neither did anything.
     pub fn media_lines(&self) -> Vec<String> {
         let mut lines = Vec::new();
         if self.media.processed > 0 || self.media.skipped > 0 || !self.media.errors.is_empty() {
@@ -317,7 +318,7 @@ impl ExportReport {
                 count_of_files(self.media.skipped as u64)
             ));
             for err in self.media.errors.iter().take(10) {
-                lines.push(format!("  media warning: {err}"));
+                lines.push(format!("  {err}"));
             }
             if self.media.errors.len() > 10 {
                 lines.push(format!("  …and {} more", self.media.errors.len() - 10));
@@ -593,6 +594,20 @@ mod tests {
     #[test]
     fn check_media_accepts_a_pass_with_no_errors() {
         report_with_media(0, &[]).check_media(true).unwrap();
+    }
+
+    /// The Media stage's failures are sentences of their own, so the log
+    /// shows each as it is, with no `media warning:` before it (#1888).
+    #[test]
+    fn media_lines_show_each_failure_as_its_own_sentence() {
+        let failure = "1 file could not be converted; its conversation entry says why";
+        assert_eq!(
+            report_with_media(1, &[failure]).media_lines(),
+            [
+                "Media: processed 1 file, skipped 0 files".to_string(),
+                format!("  {failure}"),
+            ]
+        );
     }
 
     #[test]
