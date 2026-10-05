@@ -26,7 +26,7 @@ use message_staging::{AttachmentSource, ExportWriter};
 use phone::Handle;
 use serde_json::Map;
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 const EXPORT_SOURCE: &str = "imazing";
@@ -331,6 +331,29 @@ struct Ingest {
     /// row names.
     whatsapp_folders: HashSet<PathBuf>,
     report: ExportReport,
+}
+
+/// The rows [`Ingest::tell_apart_files_of_one_name`] compares: those of one
+/// conversation and one second whose row names one file.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+struct NameGroup {
+    convo_key: ConvoKey,
+    /// The row's `Attachment` cell, which is its attachment's `rel_path`.
+    name: String,
+    second: i64,
+}
+
+impl NameGroup {
+    /// The group of a message in `convo_key`, or `None` when its row names
+    /// no file.
+    fn of(convo_key: &ConvoKey, message: &PendingMessage) -> Option<Self> {
+        let attachment = message.attachments.first()?;
+        Some(Self {
+            convo_key: convo_key.clone(),
+            name: attachment.rel_path.clone(),
+            second: message.sort_key,
+        })
+    }
 }
 
 /// A row matched to a file on disk, and the message the row became.
@@ -643,18 +666,15 @@ impl Ingest {
     /// stays the same whether its file is found and whatever other export
     /// the run reads.
     fn tell_apart_files_of_one_name(&mut self) {
-        // Each claim, by conversation, `Attachment` cell and second.
-        let mut groups: BTreeMap<(ConvoKey, String, i64), Vec<usize>> = BTreeMap::new();
+        let mut groups: BTreeMap<NameGroup, Vec<usize>> = BTreeMap::new();
         for (index, claim) in self.claims.iter().enumerate() {
-            let second =
-                self.conversations[&claim.convo_key].convo.messages[claim.message].sort_key;
-            groups
-                .entry((claim.convo_key.clone(), claim.csv_name.clone(), second))
-                .or_default()
-                .push(index);
+            let message = &self.conversations[&claim.convo_key].convo.messages[claim.message];
+            if let Some(group) = NameGroup::of(&claim.convo_key, message) {
+                groups.entry(group).or_default().push(index);
+            }
         }
         let mut digests: Vec<(ConvoKey, usize, String)> = Vec::new();
-        let mut hashed: Vec<(ConvoKey, String, i64)> = Vec::new();
+        let mut hashed: BTreeSet<NameGroup> = BTreeSet::new();
         for (group, claims) in groups {
             let mut files_by_csv: BTreeMap<usize, HashSet<&Path>> = BTreeMap::new();
             for &index in &claims {
@@ -673,37 +693,38 @@ impl Ingest {
                     .unwrap_or_else(|_| claim.source.to_string_lossy().into_owned());
                 digests.push((claim.convo_key.clone(), claim.message, digest));
             }
-            hashed.push(group);
+            hashed.insert(group);
         }
         for (convo_key, message, digest) in digests {
-            self.conversations
-                .get_mut(&convo_key)
-                .expect("a claim names a conversation that exists")
-                .convo
-                .messages[message]
+            self.messages_mut(&convo_key)[message]
                 .extra
                 .insert(attachment_content_key(0), digest);
         }
-        for (convo_key, name, second) in hashed {
-            let messages = &mut self
-                .conversations
-                .get_mut(&convo_key)
-                .expect("a claim names a conversation that exists")
-                .convo
-                .messages;
-            for message in messages.iter_mut().filter(|message| {
-                message.sort_key == second
-                    && message
-                        .attachments
-                        .first()
-                        .is_some_and(|attachment| attachment.rel_path == name)
-                    && message.extra_str(&attachment_source_key(0)).is_empty()
-            }) {
-                message
-                    .extra
-                    .insert(attachment_matches_any_file_key(0), "true".into());
+        let convo_keys: BTreeSet<ConvoKey> =
+            hashed.iter().map(|group| group.convo_key.clone()).collect();
+        for convo_key in convo_keys {
+            for message in self.messages_mut(&convo_key) {
+                let no_file = message.extra_str(&attachment_source_key(0)).is_empty();
+                if no_file
+                    && NameGroup::of(&convo_key, message)
+                        .is_some_and(|group| hashed.contains(&group))
+                {
+                    message
+                        .extra
+                        .insert(attachment_matches_any_file_key(0), "true".into());
+                }
             }
         }
+    }
+
+    /// The messages of the conversation `convo_key` names.
+    fn messages_mut(&mut self, convo_key: &ConvoKey) -> &mut Vec<PendingMessage> {
+        &mut self
+            .conversations
+            .get_mut(convo_key)
+            .expect("a claim names a conversation that exists")
+            .convo
+            .messages
     }
 
     /// Add `video` to the message of the first of `rows`, the claims of the
