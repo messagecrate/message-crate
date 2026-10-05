@@ -528,11 +528,15 @@ mod tests {
         let printed = format!("{err:#}");
         match err.downcast::<ImportError>() {
             Ok(ImportError::Rejected {
-                failure: ImportFailure::Invalid { line: on, detail },
+                failure:
+                    ImportFailure::Invalid {
+                        line: refused_line,
+                        detail,
+                    },
                 file,
             }) => {
                 assert_eq!(file, path);
-                assert_eq!(on, line);
+                assert_eq!(refused_line, line);
                 assert_eq!(
                     printed,
                     format!("{}: Line {line} of the file: {detail}.", path.display())
