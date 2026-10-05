@@ -12,7 +12,7 @@ describe("normalizeHandle guarded phone policy", () => {
     assert.equal(normalizeHandle("5555550100", "phone"), "+15555550100");
     assert.equal(normalizeHandle("15555550100", "phone"), "+15555550100");
     assert.equal(normalizeHandle("+15555550100", "phone"), "+15555550100");
-    assert.equal(normalizeHandle("+44 20 7183 8750", "phone"), "+442071838750");
+    assert.equal(normalizeHandle("+44 20 7946 0750", "phone"), "+442079460750");
   });
 
   it("keeps ambiguous national numbers as digits (never +0…)", () => {
@@ -42,7 +42,7 @@ describe("normalizeHandle guarded phone policy", () => {
 
   it("infers handle types from shape", () => {
     assert.equal(inferHandleType("020 7946 0000"), "phone");
-    assert.equal(inferHandleType("+442071838750"), "phone");
+    assert.equal(inferHandleType("+442079460750"), "phone");
     assert.equal(inferHandleType("person@example.com"), "email");
     assert.equal(inferHandleType("discord#1234"), "other");
   });

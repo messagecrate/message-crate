@@ -192,9 +192,11 @@ fn a_ucs2_text_part_is_decoded_by_its_charset() {
 
 #[test]
 fn addresses_are_kept_as_written_without_their_type() {
+    // +65 5555 0100 is no one's number. The note on the `phone` crate's `mod
+    // tests` says why.
     assert_eq!(
-        address_value("+6595550100/TYPE=PLMN").as_deref(),
-        Some("+6595550100")
+        address_value("+6555550100/TYPE=PLMN").as_deref(),
+        Some("+6555550100")
     );
     assert_eq!(
         address_value("(407) 555-0107").as_deref(),

@@ -617,7 +617,7 @@ export interface paths {
          *     the file does not mention is left alone in both modes.
          *
          *     A phone number written without `+`, which a spreadsheet can save in place
-         *     of `+6595550100`, names the identity `+` and its digits when the row's
+         *     of `+6555550100`, names the identity `+` and its digits when the row's
          *     contact holds that key. Otherwise it is keyed as written: ten digits as a
          *     US number, any other count as bare digits. `notes` names each row read
          *     with its `+` back, and each such number that became a new identity.
