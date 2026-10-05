@@ -961,6 +961,7 @@ fn the_same_chat_twice_is_refused_rather_than_overwritten() {
     assert!(err.to_string().contains("would both be written"), "{err:#}");
     assert_eq!(staged_texts(&out), vec![], "nothing was written");
 }
+
 #[test]
 fn clone_mode_converts_nothing() {
     let tmp = tempfile::tempdir().unwrap();

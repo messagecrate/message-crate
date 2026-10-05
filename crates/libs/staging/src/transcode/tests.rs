@@ -394,9 +394,12 @@ fn a_failed_file_settled_by_a_repoint_resolves_its_earlier_row() {
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
     };
-    let png = PNG_1X1_RGB;
-    let (dir, _jsonl, _original) = staged_one("photo.png", png);
-    let jsonl_b = second_document_sharing(dir.path(), "attachments/photo.png", png.len() as u64);
+    let (dir, _jsonl, _original) = staged_one("photo.png", PNG_1X1_RGB);
+    let jsonl_b = second_document_sharing(
+        dir.path(),
+        "attachments/photo.png",
+        PNG_1X1_RGB.len() as u64,
+    );
     let mut doc_b = read_conversation_jsonl(&jsonl_b).unwrap();
     doc_b.messages[0].attachments[0].missing_reason = Some("convert_failed: earlier".into());
     write_conversation_jsonl_to(&jsonl_b, &doc_b).unwrap();
@@ -1059,9 +1062,12 @@ fn two_documents_sharing_one_original_that_converts_too_large_both_record_too_la
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
     };
-    let png = PNG_1X1_RGB;
-    let (dir, jsonl_a, original) = staged_one("shared.png", png);
-    let jsonl_b = second_document_sharing(dir.path(), "attachments/shared.png", png.len() as u64);
+    let (dir, jsonl_a, original) = staged_one("shared.png", PNG_1X1_RGB);
+    let jsonl_b = second_document_sharing(
+        dir.path(),
+        "attachments/shared.png",
+        PNG_1X1_RGB.len() as u64,
+    );
 
     let report = transcode_staged(
         dir.path(),
@@ -1096,9 +1102,12 @@ fn a_too_large_drop_survives_a_stop_and_a_resume() {
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
     };
-    let png = PNG_1X1_RGB;
-    let (dir, jsonl_a, original) = staged_one("shared.png", png);
-    let jsonl_b = second_document_sharing(dir.path(), "attachments/shared.png", png.len() as u64);
+    let (dir, jsonl_a, original) = staged_one("shared.png", PNG_1X1_RGB);
+    let jsonl_b = second_document_sharing(
+        dir.path(),
+        "attachments/shared.png",
+        PNG_1X1_RGB.len() as u64,
+    );
 
     // Stop the Media stage right after the first conversation's attachment.
     let cancel = CancelFlag::default();
