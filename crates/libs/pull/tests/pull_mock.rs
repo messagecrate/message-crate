@@ -242,7 +242,6 @@ fn config(out_dir: &Path, base_url: String) -> PullConfig {
     PullConfig {
         out_dir: out_dir.to_path_buf(),
         base_url,
-        username: "alice".into(),
         token: "mc_test".into(),
         query: String::new(),
         list: ExportQueryList::Messages,
