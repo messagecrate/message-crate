@@ -391,19 +391,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
-- 2026-10-05 **The Upload's log writes its progress, its skips, its
-  timings and its summary as sentences.** The log wrote "skip …: …" for an
-  attachment it did not upload, "fail …: …" for a conversation that failed,
-  "files 10/25: 10 conversations and 20 messages, 7.0 MB sent, …" as it
-  went, a "PROFILE … read_ms=… total_ms=…" line for each conversation, and
-  ended with a "==== Summary ====" block of labels such as "Message
-  accounting: 100 attempted = 90 new + 10 deduped + 0 failed". It now writes
-  "Did not upload …: …", "… failed: …", "Finished 10 of 25 conversations.
-  The last 10 conversations sent 20 messages and 7.0 MB of Assets in …",
-  "chat.jsonl took 5.5s in all: 0.1s reading the file, …", and ends with
-  sentences such as "The Upload completed in 1m00s." and "Sent 100
-  messages: 90 new, 10 the server already held, and 0 failed." A paused
-  Upload ends with "The Upload stopped after …, before it finished."
+- 2026-10-05 **The Upload's log writes its progress, skips, failures,
+  timings and summary as sentences.** The log wrote shorthand such as
+  "skip …: …", "files 10/25: …", "PROFILE … read_ms=… total_ms=…" and a
+  "==== Summary ====" block of labels. It now writes lines such as "Did not
+  upload …: …", "Finished 10 of 25 conversations. In the last 12.3s the
+  Upload sent 10 conversations with 20 messages and 7.0 MB of Assets." and
+  "The Upload completed in 1m00s." An Upload that left conversations for
+  the next Upload ends with "The Upload paused after …", where it used to
+  say it completed with errors.
 - 2026-10-05 **The Upload's log writes its warnings as sentences.** An
   attachment whose recorded SHA-256 did not match the file was logged as
   "WARN … sha256 mismatch for …: claimed …, got …", and a report the Upload

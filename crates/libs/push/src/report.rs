@@ -262,18 +262,31 @@ pub(crate) fn format_ms_seconds(ms: u64) -> String {
 /// what it did with the conversations, messages and Assets it read.
 pub fn format_push_summary(report: &PushReport) -> String {
     let elapsed = format_duration_ms(report.elapsed_ms);
+    // A run that left conversations unsent is paused, whatever stopped it:
+    // the person, a refused session, or a failed request (CONTEXT.md, Pause).
     let ending = if report.ok {
         format!("The Upload completed in {elapsed}.")
+    } else if report.session_refused {
+        format!("The Upload paused after {elapsed}, because the server refused the session.")
     } else if report.cancelled {
-        format!("The Upload stopped after {elapsed}, before it finished.")
+        format!("The Upload paused after {elapsed}.")
+    } else if report.conversations_cancelled > 0 {
+        format!("The Upload paused after {elapsed}, because a request failed.")
     } else {
         format!("The Upload completed in {elapsed}, with errors.")
+    };
+    let reason = "because the server already held them or the Upload left them out";
+    let not_uploaded = match report.assets_skipped {
+        0 => String::new(),
+        1 => format!(" The file of 1 attachment was not uploaded, {reason}."),
+        n => format!(" The files of {n} attachments were not uploaded, {reason}."),
     };
     format!(
         "{ending}\n\
 Sent {} of {}, with {} failed, {} sent before, and {} left for the next Upload.\n\
-Sent {}: {} new, {} the server already held, and {} failed.\n\
-Uploaded {} and skipped {}.",
+The Upload tried to send {}: the server added {} and already held {}, \
+and the requests for {} failed.\n\
+Uploaded {}.{not_uploaded}",
         report.conversations_ok,
         count_of(report.conversations_total, "conversation", "conversations"),
         report.conversations_failed,
@@ -284,7 +297,6 @@ Uploaded {} and skipped {}.",
         report.messages_deduped,
         report.messages_failed,
         count_of(report.assets_uploaded, "Asset", "Assets"),
-        report.assets_skipped,
     )
 }
 
@@ -361,52 +373,84 @@ mod tests {
             "The Upload completed in 12s.\n\
              Sent 8 of 10 conversations, with 1 failed, 1 sent before, \
              and 0 left for the next Upload.\n\
-             Sent 100 messages: 90 new, 10 the server already held, and 0 failed.\n\
-             Uploaded 4 Assets and skipped 2."
+             The Upload tried to send 100 messages: the server added 90 and already held 10, \
+             and the requests for 0 failed.\n\
+             Uploaded 4 Assets. The files of 2 attachments were not uploaded, \
+             because the server already held them or the Upload left them out."
         );
     }
 
-    /// One of each is worded singular, and a run that did not finish says
-    /// how it ended rather than "completed".
+    /// One of each is worded singular.
     #[test]
-    fn format_push_summary_words_one_and_says_how_the_upload_ended() {
+    fn format_push_summary_words_one_singular() {
         let one = PushReport {
-            ok: false,
             conversations_total: 1,
             conversations_ok: 1,
             messages_attempted: 1,
             messages_inserted: 1,
             messages_deduped: 0,
             assets_uploaded: 1,
+            assets_skipped: 1,
             ..sample_report()
         };
         let summary = format_push_summary(&one);
-        assert!(
-            summary.starts_with("The Upload completed in 1m00s, with errors.\n"),
-            "{summary}"
-        );
         assert!(summary.contains("Sent 1 of 1 conversation, "), "{summary}");
-        assert!(summary.contains("Sent 1 message: 1 new, "), "{summary}");
         assert!(
-            summary.ends_with("Uploaded 1 Asset and skipped 0."),
+            summary.contains("The Upload tried to send 1 message: "),
             "{summary}"
         );
+        assert!(
+            summary.contains("Uploaded 1 Asset. The file of 1 attachment was not uploaded, "),
+            "{summary}"
+        );
+    }
 
-        let paused = PushReport {
+    /// The first line says how the Upload ended, from the report's fields: a
+    /// run that left conversations for the next Upload is paused, never
+    /// "completed".
+    #[test]
+    fn format_push_summary_says_how_the_upload_ended() {
+        let first_line = |report: PushReport| {
+            format_push_summary(&report)
+                .lines()
+                .next()
+                .unwrap()
+                .to_string()
+        };
+        let not_ok = PushReport {
             ok: false,
-            cancelled: true,
-            conversations_ok: 4,
-            conversations_cancelled: 6,
             ..sample_report()
         };
-        let summary = format_push_summary(&paused);
-        assert!(
-            summary.starts_with("The Upload stopped after 1m00s, before it finished.\n"),
-            "{summary}"
+        assert_eq!(
+            first_line(PushReport {
+                cancelled: true,
+                conversations_cancelled: 6,
+                ..not_ok.clone()
+            }),
+            "The Upload paused after 1m00s."
         );
-        assert!(
-            summary.contains(" and 6 left for the next Upload."),
-            "{summary}"
+        assert_eq!(
+            first_line(PushReport {
+                cancelled: true,
+                session_refused: true,
+                conversations_cancelled: 6,
+                ..not_ok.clone()
+            }),
+            "The Upload paused after 1m00s, because the server refused the session."
+        );
+        assert_eq!(
+            first_line(PushReport {
+                conversations_cancelled: 6,
+                ..not_ok.clone()
+            }),
+            "The Upload paused after 1m00s, because a request failed."
+        );
+        assert_eq!(
+            first_line(PushReport {
+                conversations_failed: 1,
+                ..not_ok
+            }),
+            "The Upload completed in 1m00s, with errors."
         );
     }
 

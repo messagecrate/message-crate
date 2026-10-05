@@ -979,8 +979,8 @@ fn profiles_attachment_upload_phases() {
     assert_eq!(profile.asset_bytes, ASSET_BYTES.len() as u64);
     assert!(
         progress_lines.iter().any(|line| line
-            .starts_with("Finished 1 of 1 conversation. The last 1 conversation sent 1 message ")
-            && line.contains(" and importing the messages took ")),
+            .starts_with("Finished 1 of 1 conversation. In the last ")
+            && line.contains(" the Upload sent 1 conversation with 1 message and ")),
         "{progress_lines:?}"
     );
 
@@ -1001,7 +1001,8 @@ fn profiles_attachment_upload_phases() {
         "{persisted_log}"
     );
     assert!(
-        persisted_log.contains("\nUploaded 1 Asset and skipped 0.\n"),
+        persisted_log.contains("\nUploaded 1 Asset.\n")
+            && !persisted_log.contains("were not uploaded"),
         "{persisted_log}"
     );
     for shorthand in ["PROFILE ", "files ", "==== Summary", "Message accounting:"] {
