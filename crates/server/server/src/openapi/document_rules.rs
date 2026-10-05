@@ -580,7 +580,11 @@ async fn call_with(
 fn every_field_description_sits_on_the_field() {
     let doc: Value = serde_json::from_str(&dump_openapi_json()).unwrap();
     let mut broken = BTreeSet::new();
-    descriptions_inside_branches(&doc, "#", &mut broken);
+    for_each_property(&doc, "#", &mut |at, schema| {
+        if description_inside_branch(schema) {
+            broken.insert(at.to_string());
+        }
+    });
     assert!(
         broken.is_empty(),
         "these fields keep their description inside a `oneOf` branch: {broken:#?}"
@@ -595,71 +599,81 @@ fn every_field_description_sits_on_the_field() {
 fn every_field_has_a_description() {
     let doc: Value = serde_json::from_str(&dump_openapi_json()).unwrap();
     let mut undescribed = BTreeSet::new();
-    fields_without_description(&doc, "#", &mut undescribed);
+    for_each_property(&doc, "#", &mut |at, schema| {
+        if schema.get("description").is_none() {
+            undescribed.insert(at.to_string());
+        }
+    });
     assert!(
         undescribed.is_empty(),
         "these fields have no description; give each Rust field a doc comment: {undescribed:#?}"
     );
 }
 
-/// Add to `out`, as its JSON pointer, each property under `value` whose
-/// schema has no `description`.
-fn fields_without_description(value: &Value, at: &str, out: &mut BTreeSet<String>) {
+/// Call `f` with the JSON pointer and the schema of each property of every
+/// schema under `value`. A `properties` map is read as fields only where a
+/// schema holds it: the walk goes into each field's schema, never into the
+/// map as if it were a schema, so a field named `properties` is one field.
+/// An `example` or `examples` value is data, not a schema, and is skipped.
+fn for_each_property(value: &Value, at: &str, f: &mut impl FnMut(&str, &Value)) {
     match value {
         Value::Object(object) => {
-            let fields = object.get("properties").and_then(Value::as_object);
-            for (field, schema) in fields.into_iter().flatten() {
-                if schema.get("description").is_none() {
-                    out.insert(format!("{at}/properties/{field}"));
-                }
-            }
             for (key, child) in object {
-                fields_without_description(child, &format!("{at}/{key}"), out);
+                let at = format!("{at}/{key}");
+                match key.as_str() {
+                    "example" | "examples" => {}
+                    "properties" => {
+                        for (field, schema) in child.as_object().into_iter().flatten() {
+                            let at = format!("{at}/{field}");
+                            f(&at, schema);
+                            for_each_property(schema, &at, f);
+                        }
+                    }
+                    _ => for_each_property(child, &at, f),
+                }
             }
         }
         Value::Array(items) => {
             for (i, child) in items.iter().enumerate() {
-                fields_without_description(child, &format!("{at}/{i}"), out);
+                for_each_property(child, &format!("{at}/{i}"), f);
             }
         }
         _ => {}
     }
 }
 
-/// Add to `out`, as its JSON pointer, each property under `value` that is a
-/// `oneOf` of one `$ref` and `null`, with no description of its own, whose
-/// `$ref` branch carries a description: what `field_descriptions` lifts.
-fn descriptions_inside_branches(value: &Value, at: &str, out: &mut BTreeSet<String>) {
-    match value {
-        Value::Object(object) => {
-            let fields = object.get("properties").and_then(Value::as_object);
-            for (field, schema) in fields.into_iter().flatten() {
-                let branches = schema["oneOf"]
-                    .as_array()
-                    .map(Vec::as_slice)
-                    .unwrap_or_default();
-                let (refs, others): (Vec<&Value>, Vec<&Value>) = branches
-                    .iter()
-                    .partition(|branch| branch.get("$ref").is_some());
-                let optional_schema = refs.len() == 1
-                    && !others.is_empty()
-                    && others.iter().all(|branch| branch["type"] == "null")
-                    && schema.get("description").is_none();
-                if optional_schema && refs[0].get("description").is_some() {
-                    out.insert(format!("{at}/properties/{field}"));
-                }
-            }
-            for (key, child) in object {
-                descriptions_inside_branches(child, &format!("{at}/{key}"), out);
-            }
+/// Whether `field` is a `oneOf` of one `$ref` and `null`, with no description
+/// of its own, whose `$ref` branch carries a description: what
+/// `field_descriptions` lifts.
+fn description_inside_branch(field: &Value) -> bool {
+    let branches = field["oneOf"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let (refs, others): (Vec<&Value>, Vec<&Value>) = branches
+        .iter()
+        .partition(|branch| branch.get("$ref").is_some());
+    refs.len() == 1
+        && !others.is_empty()
+        && others.iter().all(|branch| branch["type"] == "null")
+        && field.get("description").is_none()
+        && refs[0].get("description").is_some()
+}
+
+/// A field named `properties` is one field, and an example holding a
+/// `properties` object is data: neither is read as a list of fields.
+#[test]
+fn a_field_named_properties_and_an_example_are_not_fields_lists() {
+    let doc = serde_json::json!({ "components": { "schemas": { "S": {
+        "type": "object",
+        "example": { "properties": { "x": {} } },
+        "properties": {
+            "properties": { "type": "string", "format": "uri", "description": "One field." }
         }
-        Value::Array(items) => {
-            for (i, child) in items.iter().enumerate() {
-                descriptions_inside_branches(child, &format!("{at}/{i}"), out);
-            }
-        }
-        _ => {}
-    }
+    } } } });
+    let mut seen = Vec::new();
+    for_each_property(&doc, "#", &mut |at, _| seen.push(at.to_string()));
+    assert_eq!(seen, ["#/components/schemas/S/properties/properties"]);
 }
 
 /// Add to `out` each property of `schema` that it does not require, as

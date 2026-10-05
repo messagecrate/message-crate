@@ -16,12 +16,12 @@
 //! The tag of an internally tagged enum (`#[serde(tag = "kind")]`), such as
 //! `ExportScope.kind`, is a field no Rust code declares, so it has no doc
 //! comment to carry. [`describe_tags`] writes its description from the tag's
-//! values.
+//! values and each form's own doc comment, the variant's.
 
 use utoipa::openapi::schema::{Object, Schema, SchemaType, Type};
 use utoipa::openapi::{OpenApi, RefOr};
 
-use super::shared_parts::{for_each_object, for_each_schema, operations_mut};
+use super::shared_parts::{for_each_object, for_each_schema, operations_mut, split_first_sentence};
 
 /// Move the description of every optional field typed by a schema from
 /// inside its `oneOf` onto the field.
@@ -33,7 +33,7 @@ pub(crate) fn lift(spec: &mut OpenApi) {
 }
 
 /// Describe the tag of every internally tagged enum: in each form, the tag
-/// names that form and the others.
+/// names that form, says what it means, and names the others.
 pub(crate) fn describe_tags(spec: &mut OpenApi) {
     each_root_schema(spec, &mut |schema| {
         for_each_schema(schema, &mut describe_tag)
@@ -74,8 +74,9 @@ fn each_root_schema(spec: &mut OpenApi, f: &mut impl FnMut(&mut RefOr<Schema>)) 
 
 /// When `schema` is a `oneOf` of two or more objects that each require one
 /// property, the tag, holding a single string that differs in every form,
-/// give each form's tag that has no description one that names the form and
-/// the others.
+/// give each form's tag that has no description one that names the form,
+/// says what it means from the first sentence of the form's own description,
+/// and names the others.
 fn describe_tag(schema: &mut Schema) {
     let Schema::OneOf(one_of) = schema else {
         return;
@@ -116,14 +117,34 @@ fn describe_tag(schema: &mut Schema) {
             .filter(|other| *other != value)
             .map(String::as_str)
             .collect();
+        let meaning = form.description.as_deref().map(form_meaning);
         if let Some(RefOr::T(Schema::Object(field))) = form.properties.get_mut(&tag)
             && field.description.is_none()
         {
+            let names = match meaning {
+                Some(meaning) => format!("Names this form, `{value}`: {meaning}"),
+                None => format!("Names this form, `{value}`."),
+            };
             field.description = Some(format!(
-                "Names this form, `{value}`. The other forms are {}.",
+                "{names} The other forms are {}.",
                 code_list(&others)
             ));
         }
+    }
+}
+
+/// The first sentence of a form's own description, its doc comment, to
+/// follow a colon: on one line, with its first letter lower case unless the
+/// word is an acronym such as `SMS`.
+fn form_meaning(description: &str) -> String {
+    let flat = description.split_whitespace().collect::<Vec<_>>().join(" ");
+    let (first, _) = split_first_sentence(&flat);
+    let mut chars = first.chars();
+    match (chars.next(), chars.next()) {
+        (Some(initial), Some(next)) if !next.is_uppercase() => {
+            format!("{}{}", initial.to_lowercase(), &first[initial.len_utf8()..])
+        }
+        _ => first.to_string(),
     }
 }
 
@@ -301,22 +322,46 @@ mod tests {
         })
     }
 
+    /// A form as `form` makes it, with `description`, its variant's doc
+    /// comment.
+    fn described_form(value: &str, description: &str) -> Value {
+        let mut form = form(value);
+        form["description"] = json!(description);
+        form
+    }
+
     /// The bug: the tag of `ExportScope` had no description, because no Rust
     /// field declares it.
     #[test]
-    fn each_form_of_a_tagged_enum_names_itself_and_the_others() {
+    fn each_form_of_a_tagged_enum_says_what_it_means_and_names_the_others() {
         let forms = tags_described(json!([
-            form("everything"),
-            form("query"),
-            form("selection")
+            described_form("everything", "Every message the account holds."),
+            described_form("query", "What a query finds.\nOn one of two lists. More."),
+            described_form("sms", "SMS messages only.")
         ]));
         assert_eq!(
             forms[0]["properties"]["kind"]["description"],
-            "Names this form, `everything`. The other forms are `query` and `selection`."
+            "Names this form, `everything`: every message the account holds. \
+             The other forms are `query` and `sms`."
         );
         assert_eq!(
             forms[1]["properties"]["kind"]["description"],
-            "Names this form, `query`. The other forms are `everything` and `selection`."
+            "Names this form, `query`: what a query finds. \
+             The other forms are `everything` and `sms`."
+        );
+        assert_eq!(
+            forms[2]["properties"]["kind"]["description"],
+            "Names this form, `sms`: SMS messages only. \
+             The other forms are `everything` and `query`."
+        );
+    }
+
+    #[test]
+    fn a_form_with_no_description_is_named_alone() {
+        let forms = tags_described(json!([form("one"), form("two")]));
+        assert_eq!(
+            forms[0]["properties"]["kind"]["description"],
+            "Names this form, `one`. The other forms are `two`."
         );
     }
 

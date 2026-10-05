@@ -349,7 +349,7 @@ pub struct ServerStorage {
 pub struct AccountMessages {
     /// Id of the account the numbers are for.
     pub account_id: i64,
-    /// The account's username, as the User Accounts table lists it.
+    /// The username the account logs in with.
     pub username: String,
     /// Messages the account holds.
     pub message_count: i64,

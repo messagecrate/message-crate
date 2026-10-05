@@ -12969,7 +12969,7 @@
           },
           "username": {
             "type": "string",
-            "description": "The account's username, as the User Accounts table lists it."
+            "description": "The username the account logs in with."
           }
         }
       },
@@ -14350,7 +14350,7 @@
           },
           "source": {
             "type": "string",
-            "description": "Source id the run imports, such as `imessage` or `whatsapp`, which\nevery message the run brings in records. It holds lowercase letters,\ndigits, `-` and `_`, starts with a letter or a digit, and is at most\n64 characters; any other id is refused with `422 Unprocessable\nEntity`."
+            "description": "Source id the run imports, such as `imessage` or `whatsapp`, which\nevery message the run brings in records. It holds lowercase letters,\ndigits, `-` and `_`, starts with a letter or a digit, and is at most\n64 characters. Any other id, one with a space around it included, is\nrefused with `422 Unprocessable Entity`."
           },
           "source_fingerprint": {
             "description": "Source path, size, mtime, and message count."
@@ -14401,7 +14401,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "Name of the new set, which the server trims. A name that is blank,\nover 80 characters, reserved (such as `trash`) or, for a Contact\nGroup, holds `;` is refused with `422 Unprocessable Entity`. A name\nanother set of the kind has, in any letter case, is refused with\n`409 Conflict`."
+            "description": "Name of the new set, which the server trims. A name that is blank,\nover 80 characters, or reserved (such as `trash`) is refused with\n`422 Unprocessable Entity`. So is a Contact Group name holding `;`,\nbecause the address book separates Contact Group names with it. A\nname another set of the kind has, in any letter case, is refused with\n`409 Conflict`."
           }
         }
       },
@@ -14477,13 +14477,13 @@
           "exact_flagged": {
             "type": "integer",
             "format": "int64",
-            "description": "Messages hidden as exact duplicates. Each group stays shown as many\ntimes as the one source holding the message most often holds it, and\nthe rest of the group is hidden.",
+            "description": "Messages hidden as exact duplicates. In each group, the source with\nthe most copies sets how many stay shown, and the rest are hidden.",
             "minimum": 0
           },
           "exact_groups": {
             "type": "integer",
             "format": "int64",
-            "description": "Groups of messages that share one content key.",
+            "description": "Groups of messages that share one content key and come from two or\nmore sources. Copies one source alone holds are not a group.",
             "minimum": 0
           },
           "keys_filled": {
@@ -14788,7 +14788,7 @@
             "properties": {
               "kind": {
                 "type": "string",
-                "description": "Names this form, `everything`. The other forms are `query` and `selection`.",
+                "description": "Names this form, `everything`: every non-trashed message the account holds. The other forms are `query` and `selection`.",
                 "enum": [
                   "everything"
                 ]
@@ -14806,7 +14806,7 @@
             "properties": {
               "kind": {
                 "type": "string",
-                "description": "Names this form, `query`. The other forms are `everything` and `selection`.",
+                "description": "Names this form, `query`: what a query in the search language finds on one of two lists. The other forms are `everything` and `selection`.",
                 "enum": [
                   "query"
                 ]
@@ -14838,7 +14838,7 @@
               },
               "kind": {
                 "type": "string",
-                "description": "Names this form, `selection`. The other forms are `everything` and `query`.",
+                "description": "Names this form, `selection`: conversations and messages picked by hand. The other forms are `everything` and `query`.",
                 "enum": [
                   "selection"
                 ]
@@ -15452,7 +15452,7 @@
             "description": "Lifecycle status."
           },
           "summary": {
-            "description": "While the run is running, what the person approved at the last Review\nthey passed, which `PATCH /v1/imports/{id}` writes with its `summary`.\nOnce the run is over, the final counts its\n`POST /v1/imports/{id}/complete` sent instead. Null when neither wrote\none."
+            "description": "What the person approved at the last Review they passed, which\n`PATCH /v1/imports/{id}` writes with its `summary`. A cancelled run\nkeeps it. A run that completed or failed holds instead the final\ncounts its `POST /v1/imports/{id}/complete` sent, and null when that\nrequest sent none, because completing replaces the plan. Null too\nwhile no Review has stored one."
           },
           "tool": {
             "type": [
@@ -17613,7 +17613,7 @@
                   "description": "Lifecycle status."
                 },
                 "summary": {
-                  "description": "While the run is running, what the person approved at the last Review\nthey passed, which `PATCH /v1/imports/{id}` writes with its `summary`.\nOnce the run is over, the final counts its\n`POST /v1/imports/{id}/complete` sent instead. Null when neither wrote\none."
+                  "description": "What the person approved at the last Review they passed, which\n`PATCH /v1/imports/{id}` writes with its `summary`. A cancelled run\nkeeps it. A run that completed or failed holds instead the final\ncounts its `POST /v1/imports/{id}/complete` sent, and null when that\nrequest sent none, because completing replaces the plan. Null too\nwhile no Review has stored one."
                 },
                 "tool": {
                   "type": [
@@ -19108,7 +19108,7 @@
               "type": "integer",
               "format": "int64"
             },
-            "description": "Ids to put in the set: contact ids for a Contact Group, conversation\nids for a Message Tag. An id the account does not hold is refused\nwith `422 Unprocessable Entity`, and then nothing changes. An id\nalready in the set is left as it is. Empty when left out, and `add`\nand `remove` both empty is refused with `422 Unprocessable Entity`."
+            "description": "Ids to put in the set: contact ids for a Contact Group, conversation\nids for a Message Tag. An id the account does not hold, 0 and below\nincluded, is refused with `422 Unprocessable Entity`, and then nothing\nchanges. An id\nalready in the set is left as it is. Empty when left out, and `add`\nand `remove` both empty is refused with `422 Unprocessable Entity`."
           },
           "remove": {
             "type": "array",

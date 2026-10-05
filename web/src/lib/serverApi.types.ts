@@ -1687,7 +1687,7 @@ export interface components {
              * @description Bytes of message text the account holds: every body and subject, added up.
              */
             text_bytes: number;
-            /** @description The account's username, as the User Accounts table lists it. */
+            /** @description The username the account logs in with. */
             username: string;
         };
         /**
@@ -2447,8 +2447,8 @@ export interface components {
              * @description Source id the run imports, such as `imessage` or `whatsapp`, which
              *     every message the run brings in records. It holds lowercase letters,
              *     digits, `-` and `_`, starts with a letter or a digit, and is at most
-             *     64 characters; any other id is refused with `422 Unprocessable
-             *     Entity`.
+             *     64 characters. Any other id, one with a space around it included, is
+             *     refused with `422 Unprocessable Entity`.
              */
             source: string;
             /** @description Source path, size, mtime, and message count. */
@@ -2477,9 +2477,10 @@ export interface components {
         CreateNamedSetRequest: {
             /**
              * @description Name of the new set, which the server trims. A name that is blank,
-             *     over 80 characters, reserved (such as `trash`) or, for a Contact
-             *     Group, holds `;` is refused with `422 Unprocessable Entity`. A name
-             *     another set of the kind has, in any letter case, is refused with
+             *     over 80 characters, or reserved (such as `trash`) is refused with
+             *     `422 Unprocessable Entity`. So is a Contact Group name holding `;`,
+             *     because the address book separates Contact Group names with it. A
+             *     name another set of the kind has, in any letter case, is refused with
              *     `409 Conflict`.
              */
             name: string;
@@ -2524,14 +2525,14 @@ export interface components {
         DedupeCounts: {
             /**
              * Format: int64
-             * @description Messages hidden as exact duplicates. Each group stays shown as many
-             *     times as the one source holding the message most often holds it, and
-             *     the rest of the group is hidden.
+             * @description Messages hidden as exact duplicates. In each group, the source with
+             *     the most copies sets how many stay shown, and the rest are hidden.
              */
             exact_flagged: number;
             /**
              * Format: int64
-             * @description Groups of messages that share one content key.
+             * @description Groups of messages that share one content key and come from two or
+             *     more sources. Copies one source alone holds are not a group.
              */
             exact_groups: number;
             /**
@@ -2726,13 +2727,13 @@ export interface components {
          */
         ExportScope: {
             /**
-             * @description Names this form, `everything`. The other forms are `query` and `selection`.
+             * @description Names this form, `everything`: every non-trashed message the account holds. The other forms are `query` and `selection`.
              * @enum {string}
              */
             kind: "everything";
         } | {
             /**
-             * @description Names this form, `query`. The other forms are `everything` and `selection`.
+             * @description Names this form, `query`: what a query in the search language finds on one of two lists. The other forms are `everything` and `selection`.
              * @enum {string}
              */
             kind: "query";
@@ -2751,7 +2752,7 @@ export interface components {
             /** @description Conversation ids whose every message is exported. */
             conversation_ids?: number[];
             /**
-             * @description Names this form, `selection`. The other forms are `everything` and `query`.
+             * @description Names this form, `selection`: conversations and messages picked by hand. The other forms are `everything` and `query`.
              * @enum {string}
              */
             kind: "selection";
@@ -3123,11 +3124,12 @@ export interface components {
             /** @description Lifecycle status. */
             status: components["schemas"]["ImportStatus"];
             /**
-             * @description While the run is running, what the person approved at the last Review
-             *     they passed, which `PATCH /v1/imports/{id}` writes with its `summary`.
-             *     Once the run is over, the final counts its
-             *     `POST /v1/imports/{id}/complete` sent instead. Null when neither wrote
-             *     one.
+             * @description What the person approved at the last Review they passed, which
+             *     `PATCH /v1/imports/{id}` writes with its `summary`. A cancelled run
+             *     keeps it. A run that completed or failed holds instead the final
+             *     counts its `POST /v1/imports/{id}/complete` sent, and null when that
+             *     request sent none, because completing replaces the plan. Null too
+             *     while no Review has stored one.
              */
             summary: unknown;
             /** @description Importing tool, e.g. `message-crate-push`. */
@@ -4268,11 +4270,12 @@ export interface components {
                 /** @description Lifecycle status. */
                 status: components["schemas"]["ImportStatus"];
                 /**
-                 * @description While the run is running, what the person approved at the last Review
-                 *     they passed, which `PATCH /v1/imports/{id}` writes with its `summary`.
-                 *     Once the run is over, the final counts its
-                 *     `POST /v1/imports/{id}/complete` sent instead. Null when neither wrote
-                 *     one.
+                 * @description What the person approved at the last Review they passed, which
+                 *     `PATCH /v1/imports/{id}` writes with its `summary`. A cancelled run
+                 *     keeps it. A run that completed or failed holds instead the final
+                 *     counts its `POST /v1/imports/{id}/complete` sent, and null when that
+                 *     request sent none, because completing replaces the plan. Null too
+                 *     while no Review has stored one.
                  */
                 summary: unknown;
                 /** @description Importing tool, e.g. `message-crate-push`. */
@@ -5101,8 +5104,9 @@ export interface components {
         UpdateMembersRequest: {
             /**
              * @description Ids to put in the set: contact ids for a Contact Group, conversation
-             *     ids for a Message Tag. An id the account does not hold is refused
-             *     with `422 Unprocessable Entity`, and then nothing changes. An id
+             *     ids for a Message Tag. An id the account does not hold, 0 and below
+             *     included, is refused with `422 Unprocessable Entity`, and then nothing
+             *     changes. An id
              *     already in the set is left as it is. Empty when left out, and `add`
              *     and `remove` both empty is refused with `422 Unprocessable Entity`.
              */
