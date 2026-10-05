@@ -135,7 +135,7 @@ pub(crate) static FIELDS: &[FieldSpec] = &[
         word: "kind",
         value_type: ValueType::Choice,
         lists: &[C, V, M],
-        values: &["direct", "group"],
+        values: &["direct", "group", "orphaned"],
         help: "the conversation's shape",
         example: "kind:direct",
     },

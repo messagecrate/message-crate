@@ -675,7 +675,7 @@ mod tests {
         let err = parse_err(ListKind::Messages, "kind:big");
         assert_eq!(
             err.message,
-            "kind: does not understand big. Write one of: direct, group."
+            "kind: does not understand big. Write one of: direct, group, orphaned."
         );
     }
 

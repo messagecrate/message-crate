@@ -37,6 +37,6 @@ Directory layout for the formats that use an `attachments/` directory: [Export s
 
 Every export is written as JSON Lines first, then rewritten into the format you asked for. Only JSON Lines skips the second step.
 
-The intermediate copy goes in the staging directory, `~/message-crate` by default and changeable in [Settings → System](/docs/user/features/settings/system/). It is deleted when the export finishes, including when the conversion fails, so a directory with room for one extra copy of the exported messages is enough.
+The intermediate copy goes in the export's own directory in the Export Directory ([Settings → System](/docs/user/features/settings/system/#exports) names it), beside the converted files while they are written. When the export finishes, the copy is deleted and the converted files are moved up, so the directory holds only the result; a failed or cancelled export deletes the directory. A disk with room for one extra copy of the exported messages is enough.
 
 Reading an existing export back in is a separate operation, on [Settings → Convert](/docs/user/features/settings/convert/). The `message-reexport` library reads every format but EML (SMS Backup+) and converts between them, and Settings → Convert calls it that way. EML (SMS Backup+) is read back by the SMS Backup+ import.

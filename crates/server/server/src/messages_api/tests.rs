@@ -329,7 +329,7 @@ fn ir_message(
 /// reaction, and a plain message with none of these.
 async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
     let header = serde_json::json!({
-        "schema_version": 8,
+        "schema_version": 9,
         "export": {"source": "imessage", "tool": "test", "tool_version": "0",
                    "owner_identity": null, "owner_display_name": null},
         "conversation": {

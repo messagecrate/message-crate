@@ -498,7 +498,7 @@ mod tests {
     #[test]
     fn parses_ir_sms_without_imessage_bag() {
         let lines = [
-            r#"{"schema_version":8,"export":{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Sam"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#.to_string(),
+            r#"{"schema_version":9,"export":{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Sam"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#.to_string(),
             r#"{"guid":"g1","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}"#.to_string(),
         ];
         let records = parse_ir_lines(lines).unwrap();
@@ -520,7 +520,7 @@ mod tests {
     /// The header and one incoming iMessage whose `subject` and `imessage`
     /// fields are the JSON given.
     fn message_with(subject: &str, imessage: &str) -> MessageRecord {
-        let header = r#"{"schema_version":8,"export":{"source":"imessage","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Sam"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#.to_string();
+        let header = r#"{"schema_version":9,"export":{"source":"imessage","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Sam"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#.to_string();
         let message = format!(
             r#"{{"guid":"g1","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550101","sender_display_name":"Sam","subject":{subject},"text":"hello","attachments":[],"imessage":{imessage},"source":null}}"#
         );
@@ -554,7 +554,7 @@ mod tests {
             {"part_index": 2, "kind": "emoji", "emoji": "🔥", "is_from_me": true,
              "reactor_display_name": "Me"}
         ]"#;
-        let header = r#"{"schema_version":8,"export":{"source":"imessage","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Ada"}],"stats":{"message_count":2,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773262000}}}"#.to_string();
+        let header = r#"{"schema_version":9,"export":{"source":"imessage","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Ada"}],"stats":{"message_count":2,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773262000}}}"#.to_string();
         let message = |guid: &str, direction: &str, sender: &str| {
             format!(
                 r#"{{"guid":"{guid}","timestamp_unix_ms":1400773261000,"direction":"{direction}","service":"imessage","message_kind":"imessage","sender_identity":{sender},"sender_display_name":null,"subject":null,"text":"hello","attachments":[],"reactions":{reactions},"imessage":null,"source":null}}"#
@@ -607,7 +607,7 @@ mod tests {
     /// not a message, and it carries no reaction of its own (#1213).
     #[test]
     fn a_reaction_row_is_not_a_message() {
-        let header = r#"{"schema_version":8,"export":{"source":"imessage","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Sam"}],"stats":{"message_count":3,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773263000}}}"#.to_string();
+        let header = r#"{"schema_version":9,"export":{"source":"imessage","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Sam"}],"stats":{"message_count":3,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773263000}}}"#.to_string();
         let target = r#"{"guid":"g-hi","timestamp_unix_ms":1400773261000,"direction":"outgoing","service":"imessage","message_kind":"imessage","sender_identity":null,"sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}"#.to_string();
         let row = |guid: &str, kind: &str, text: &str, action: &str| {
             format!(
@@ -643,7 +643,7 @@ mod tests {
     fn parses_concatenated_ir_conversations() {
         let header = |chat: &str| {
             format!(
-                r#"{{"schema_version":8,"export":{{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{chat}","conversation_type":"individual","group_title":null,"participants":[{{"identity":"{chat}","display_name":null}}],"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}}}}"#
+                r#"{{"schema_version":9,"export":{{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{chat}","conversation_type":"individual","group_title":null,"participants":[{{"identity":"{chat}","display_name":null}}],"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}}}}"#
             )
         };
         let msg = |guid: &str, handle: &str| {
@@ -723,7 +723,7 @@ mod tests {
 
     #[test]
     fn parse_ir_lines_reports_a_message_with_an_impossible_timestamp_as_a_failure() {
-        let header = r#"{"schema_version":8,"export":{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Sam"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#;
+        let header = r#"{"schema_version":9,"export":{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Sam"}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#;
         let msg = r#"{"guid":"g1","timestamp_unix_ms":9223372036854775807,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}"#;
         let failure = parse_ir_lines([header, msg]).unwrap_err();
         match failure {
@@ -736,7 +736,7 @@ mod tests {
     /// line that has no guid, before anything is staged.
     #[test]
     fn parse_ir_lines_refuses_messages_without_a_guid_naming_every_line() {
-        let header = r#"{"schema_version":8,"export":{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Sam"}],"stats":{"message_count":3,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#;
+        let header = r#"{"schema_version":9,"export":{"source":"sms-backup-restore","tool":"t","tool_version":"1","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Sam"}],"stats":{"message_count":3,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#;
         let msg = |guid: &str| {
             format!(
                 r#"{{"guid":"{guid}","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}}"#

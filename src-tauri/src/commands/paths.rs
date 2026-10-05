@@ -4,6 +4,7 @@ use serde::Serialize;
 use std::path::{Component, Path, PathBuf};
 use tauri::{AppHandle, Manager};
 
+use crate::export_directories::ExportDirectories;
 use crate::staging_directories::StagingDirectories;
 
 /// The app's cache directory, which every run's scratch directories go under
@@ -149,18 +150,23 @@ pub fn home_dir() -> Result<HomeDirInfo, String> {
 /// Open a file or directory with the operating system's default handler.
 ///
 /// Only a run directory this app made, or a path inside one such as its
-/// `message-crate-push.log`, is opened ([`StagingDirectories::openable`]).
+/// `message-crate-push.log` ([`StagingDirectories::openable`]), or the Export
+/// Directory and what is in it ([`ExportDirectories::openable`]), is opened.
 ///
 /// # Errors
 ///
-/// Returns an error when the path is empty or relative, is in no staging
-/// directory this app made, is missing on disk, or the OS cannot open it.
+/// Returns an error when the path is empty or relative, is in neither, is
+/// missing on disk, or the OS cannot open it.
 #[tauri::command]
 pub fn open_path(
     directories: tauri::State<'_, StagingDirectories>,
+    exports: tauri::State<'_, ExportDirectories>,
     path: String,
 ) -> Result<(), String> {
-    let resolved = directories.openable(&path)?;
+    let resolved = match exports.openable(Path::new(path.trim())) {
+        Some(export) => export,
+        None => directories.openable(&path)?,
+    };
     missing_path_error(&resolved)?;
     open::that_detached(&resolved).map_err(|error| format!("Could not open path: {error}"))
 }
