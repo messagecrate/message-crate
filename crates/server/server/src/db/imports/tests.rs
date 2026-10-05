@@ -110,10 +110,12 @@ async fn complete_import_rejects_invalid_issue_kind() {
         },
     )
     .await
-    .unwrap_err()
-    .to_string();
+    .unwrap_err();
 
-    assert!(err.contains("invalid import issue kind"));
+    assert!(matches!(
+        err,
+        ImportLookupError::InvalidIssueKind { ref kind } if kind == "warning"
+    ));
 
     let issue_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM import_issues WHERE import_id = $1")
