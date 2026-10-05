@@ -6,8 +6,8 @@ use tempfile::TempDir;
 use super::{StagingError, is_orphaned_export, store_claimed_or_path};
 use crate::assets_api::{self, AssetStats};
 use crate::imports_api::{
-    FixedImportArgs, ImportError, ImportFailure, ImportMode, ImportOptions, ImportSchemaMode,
-    ImportStats, import_jsonl_files_on_conn,
+    FixedImportArgs, ImportCounts, ImportError, ImportFailure, ImportMode, ImportOptions,
+    ImportSchemaMode, import_jsonl_files_on_conn,
 };
 use crate::models::AttachmentRecord;
 
@@ -31,7 +31,7 @@ async fn import_one(
     conn: &mut SqliteConnection,
     name: &str,
     body: &str,
-) -> anyhow::Result<ImportStats> {
+) -> anyhow::Result<ImportCounts> {
     let tmp = TempDir::new().unwrap();
     let path = tmp.path().join(name);
     std::fs::write(&path, body).unwrap();
@@ -57,7 +57,7 @@ fn append_opts<'a>(assets: &'a Path, root: &'a Path, source: &'a str) -> ImportO
 
 /// The reason an import was refused: its error text after the file's temp
 /// path, which no assertion should read.
-fn refusal(result: anyhow::Result<ImportStats>) -> String {
+fn refusal(result: anyhow::Result<ImportCounts>) -> String {
     let err = result.expect_err("the import is refused");
     let text = format!("{err:#}");
     let (_, reason) = text
@@ -373,11 +373,11 @@ async fn orphaned_jsonl_is_staged_as_the_orphaned_conversation() {
     let body = ORPHANED_HEADER.to_string()
         + &incoming("g-orphan-1", "+15555550154")
         + &incoming("g-orphan-2", "+15555550154");
-    let stats = import_one(&mut conn, "orphaned.jsonl", &body)
+    let counts = import_one(&mut conn, "orphaned.jsonl", &body)
         .await
         .unwrap();
-    assert_eq!(stats.conversations, 1);
-    assert_eq!(stats.messages, 2);
+    assert_eq!(counts.conversations, 1);
+    assert_eq!(counts.messages, 2);
 
     let (chat, kind, file): (String, String, String) = sqlx::query_as(
         "SELECT h.raw, c.conversation_type, c.source_file FROM conversations c
