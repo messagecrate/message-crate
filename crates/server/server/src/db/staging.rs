@@ -17,8 +17,9 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use sqlx::Row;
-use sqlx::SqliteConnection;
+use sqlx::query::Query;
+use sqlx::sqlite::SqliteArguments;
+use sqlx::{Row, Sqlite, SqliteConnection};
 
 use super::sql::{SQLITE_IN_CHUNK, max_rows_for_bind_limit, values_tuples};
 
@@ -313,6 +314,15 @@ pub struct StagingMessageKey<'a> {
     pub guid: &'a str,
 }
 
+/// The columns of an attachment row, in the order every attachment
+/// statement here lists them.
+const ATTACHMENT_COLUMNS: &str = "message_id, path, original_name, mime_type, is_sticker, \
+     transcription, sha256, assets_path, size_bytes, missing_reason";
+
+/// The columns of a tapback row, in the order every tapback statement here
+/// lists them.
+const TAPBACK_COLUMNS: &str = "message_id, part_index, kind, emoji, is_from_me, sender_handle_id";
+
 /// Bind counts, in lockstep with the `INSERT` column lists below.
 const MESSAGE_BIND_COLUMNS: usize = 19;
 const ATTACHMENT_BIND_COLUMNS: usize = 10;
@@ -382,6 +392,28 @@ pub async fn insert_messages(
     Ok(by_sort)
 }
 
+/// `q` with the [`ATTACHMENT_BIND_COLUMNS`] values of each of `rows` bound
+/// in turn, in the order of [`ATTACHMENT_COLUMNS`].
+fn bind_attachments<'q>(
+    mut q: Query<'q, Sqlite, SqliteArguments<'q>>,
+    rows: &'q [StagingAttachment],
+) -> Query<'q, Sqlite, SqliteArguments<'q>> {
+    for row in rows {
+        q = q
+            .bind(row.message_id)
+            .bind(row.path.as_deref())
+            .bind(row.original_name.as_deref())
+            .bind(row.mime_type.as_deref())
+            .bind(row.is_sticker)
+            .bind(row.transcription.as_deref())
+            .bind(row.sha256.as_deref())
+            .bind(row.assets_path.as_deref())
+            .bind(row.size_bytes)
+            .bind(row.missing_reason.as_deref());
+    }
+    q
+}
+
 /// Insert attachment rows in chunks that fit the bind limit. Returns how
 /// many were inserted.
 ///
@@ -397,28 +429,13 @@ pub async fn insert_attachments(
     for chunk in rows.chunks(size) {
         let sql = format!(
             r"
-            INSERT INTO staging_attachments (
-                message_id, path, original_name, mime_type, is_sticker, transcription,
-                sha256, assets_path, size_bytes, missing_reason
-            ) VALUES {}
+            INSERT INTO staging_attachments ({ATTACHMENT_COLUMNS}) VALUES {}
             ",
             values_tuples(chunk.len(), ATTACHMENT_BIND_COLUMNS)
         );
-        let mut q = sqlx::query(&sql);
-        for row in chunk {
-            q = q
-                .bind(row.message_id)
-                .bind(row.path.as_deref())
-                .bind(row.original_name.as_deref())
-                .bind(row.mime_type.as_deref())
-                .bind(row.is_sticker)
-                .bind(row.transcription.as_deref())
-                .bind(row.sha256.as_deref())
-                .bind(row.assets_path.as_deref())
-                .bind(row.size_bytes)
-                .bind(row.missing_reason.as_deref());
-        }
-        q.execute(&mut *conn).await?;
+        bind_attachments(sqlx::query(&sql), chunk)
+            .execute(&mut *conn)
+            .await?;
         inserted += chunk.len() as u64;
     }
     Ok(inserted)
@@ -493,7 +510,26 @@ pub async fn insert_earlier_versions(
     Ok(inserted)
 }
 
-/// Give the message staged under `key` the text `body` and the earlier
+/// The id of the message staged under `key`, when one is.
+///
+/// # Errors
+///
+/// Returns an error when the query fails.
+pub async fn staged_message_id(
+    conn: &mut SqliteConnection,
+    key: StagingMessageKey<'_>,
+) -> Result<Option<i64>> {
+    Ok(sqlx::query_scalar(
+        "SELECT id FROM staging_messages WHERE account_id = $1 AND source = $2 AND guid = $3",
+    )
+    .bind(key.account_id)
+    .bind(key.source)
+    .bind(key.guid)
+    .fetch_optional(&mut *conn)
+    .await?)
+}
+
+/// Give the staged message `staged` the text `body` and the earlier
 /// versions `versions` of another copy of it from the same import, when
 /// that copy records a later edit ([`later_edit_sql`]). Returns whether it
 /// did.
@@ -510,21 +546,10 @@ pub async fn insert_earlier_versions(
 /// Returns an error when a statement fails.
 pub async fn take_later_staged_copy(
     conn: &mut SqliteConnection,
-    key: StagingMessageKey<'_>,
+    staged: i64,
     body: Option<&str>,
     versions: &[crate::models::EarlierVersionRecord],
 ) -> Result<bool> {
-    let Some(staged): Option<i64> = sqlx::query_scalar(
-        "SELECT id FROM staging_messages WHERE account_id = $1 AND source = $2 AND guid = $3",
-    )
-    .bind(key.account_id)
-    .bind(key.source)
-    .bind(key.guid)
-    .fetch_optional(&mut *conn)
-    .await?
-    else {
-        return Ok(false);
-    };
     let n = i64::try_from(versions.len())?;
     let newest = versions.iter().filter_map(|v| v.edited_at.as_deref()).max();
     let later: bool = sqlx::query_scalar(&format!(
@@ -554,6 +579,89 @@ pub async fn take_later_staged_copy(
         .collect();
     insert_earlier_versions(conn, &rows).await?;
     Ok(true)
+}
+
+/// Add the attachments `rows` of another copy of a staged message from the
+/// same import to that message, by the rule promotion adds a copy's
+/// attachments to a stored message: a row stored without its file takes
+/// the copy's file ([`fill_attachments_sql`]), and a row the message does
+/// not hold yet is inserted ([`insert_new_attachments_sql`]). Every row's
+/// `message_id` is the staged message's. Returns how many were inserted.
+///
+/// Staging keeps one row per guid and skips a second copy, so without this
+/// one import of two backups kept only the first copy's attachments, while
+/// two separate imports of them keep both (#1837). The caller passes one
+/// copy at a time, after the staged row's own attachments are written, so
+/// a third copy is compared with the second as a third import would be.
+///
+/// # Errors
+///
+/// Returns an error when a statement fails.
+pub async fn add_copy_attachments(
+    conn: &mut SqliteConnection,
+    rows: &[StagingAttachment],
+) -> Result<u64> {
+    let size = max_rows_for_bind_limit(ATTACHMENT_BIND_COLUMNS).max(1);
+    let mut inserted = 0u64;
+    for chunk in rows.chunks(size) {
+        let copies = format!(
+            "(SELECT column1 AS message_id, column2 AS path, column3 AS original_name, \
+                     column4 AS mime_type, column5 AS is_sticker, column6 AS transcription, \
+                     column7 AS sha256, column8 AS assets_path, column9 AS size_bytes, \
+                     column10 AS missing_reason \
+              FROM (VALUES {}))",
+            values_tuples(chunk.len(), ATTACHMENT_BIND_COLUMNS)
+        );
+        let fill = fill_attachments_sql("staging_attachments", &copies);
+        bind_attachments(sqlx::query(&fill), chunk)
+            .execute(&mut *conn)
+            .await?;
+        let insert = insert_new_attachments_sql("staging_attachments", &copies);
+        inserted += bind_attachments(sqlx::query(&insert), chunk)
+            .execute(&mut *conn)
+            .await?
+            .rows_affected();
+    }
+    Ok(inserted)
+}
+
+/// Add the tapbacks `rows` of another copy of a staged message from the
+/// same import to that message, skipping any the message holds field for
+/// field, by the rule promotion adds a copy's tapbacks to a stored message
+/// ([`insert_new_tapbacks_sql`]). Every row's `message_id` is the staged
+/// message's. Returns how many were inserted. The caller passes one copy
+/// at a time, as for [`add_copy_attachments`].
+///
+/// # Errors
+///
+/// Returns an error when a statement fails.
+pub async fn add_copy_tapbacks(
+    conn: &mut SqliteConnection,
+    rows: &[StagingTapback],
+) -> Result<u64> {
+    let size = max_rows_for_bind_limit(TAPBACK_BIND_COLUMNS).max(1);
+    let mut inserted = 0u64;
+    for chunk in rows.chunks(size) {
+        let copies = format!(
+            "(SELECT column1 AS message_id, column2 AS part_index, column3 AS kind, \
+                     column4 AS emoji, column5 AS is_from_me, column6 AS sender_handle_id \
+              FROM (VALUES {}))",
+            values_tuples(chunk.len(), TAPBACK_BIND_COLUMNS)
+        );
+        let sql = insert_new_tapbacks_sql("staging_tapbacks", &copies);
+        let mut q = sqlx::query(&sql);
+        for row in chunk {
+            q = q
+                .bind(row.message_id)
+                .bind(row.part_index)
+                .bind(&row.kind)
+                .bind(row.emoji.as_deref())
+                .bind(row.is_from_me)
+                .bind(row.sender_handle_id);
+        }
+        inserted += q.execute(&mut *conn).await?.rows_affected();
+    }
+    Ok(inserted)
 }
 
 // ── Promotion: staging rows into the production tables ───────────────────
@@ -1172,60 +1280,57 @@ pub struct PromotedAttachments {
     pub inserted: u64,
 }
 
-/// Insert the staged attachments under their production messages.
+/// The statement that gives each attachment row of `held` stored without
+/// its file the file of the same attachment in `copies`, where `copies`
+/// is a table or `(SELECT ...)` with the [`ATTACHMENT_COLUMNS`] whose
+/// `message_id` is a row of `held`'s message.
 ///
-/// An attachment with a path is the same attachment when its message, path,
-/// original name and sticker flag match; one without a path is the same only
-/// when every field matches. A production row stored without its file takes
-/// the file from a staged row that has one, so importing again after the
-/// file turns up fills the row in instead of adding a second one.
-///
-/// # Errors
-///
-/// Returns an error when a statement fails.
-pub async fn promote_attachments(conn: &mut SqliteConnection) -> Result<PromotedAttachments> {
-    let filled = sqlx::query(
+/// The one rule for when another copy of an attachment fills one in, for
+/// a stored message ([`promote_attachments`]) and for two copies staged in
+/// one import ([`add_copy_attachments`]): the two are the same attachment
+/// when their message, path, original name and sticker flag match, the
+/// held row has no file and the copy has one. So importing again after
+/// the file turns up fills the row in instead of adding a second one.
+fn fill_attachments_sql(held: &str, copies: &str) -> String {
+    format!(
         r"
-        UPDATE attachments AS a
+        UPDATE {held} AS a
         SET sha256 = f.sha256,
             assets_path = f.assets_path,
             size_bytes = f.size_bytes,
             mime_type = COALESCE(f.mime_type, a.mime_type),
             missing_reason = NULL
-        FROM (
-            SELECT
-                mm.prod_id AS message_id, sa.path, sa.original_name, sa.is_sticker,
-                sa.sha256, sa.assets_path, sa.size_bytes, sa.mime_type
-            FROM staging_attachments sa
-            JOIN _promote_msg_map mm ON mm.staging_id = sa.message_id
-            WHERE sa.path IS NOT NULL
-              AND sa.sha256 IS NOT NULL
-        ) AS f
+        FROM {copies} AS f
         WHERE a.message_id = f.message_id
+          AND f.path IS NOT NULL
+          AND f.sha256 IS NOT NULL
           AND a.path = f.path
           AND a.original_name IS NOT DISTINCT FROM f.original_name
           AND a.is_sticker = f.is_sticker
           AND a.sha256 IS NULL
-        ",
+        "
     )
-    .execute(&mut *conn)
-    .await?
-    .rows_affected();
-    let inserted = sqlx::query(
+}
+
+/// The statement that inserts into `held` each attachment row of `copies`
+/// that `held` does not hold yet, where `copies` is as
+/// [`fill_attachments_sql`] takes it.
+///
+/// The one rule for when another copy of an attachment is new, for a
+/// stored message ([`promote_attachments`]) and for two copies staged in
+/// one import ([`add_copy_attachments`]): an attachment with a path is the
+/// same attachment when its message, path, original name and sticker flag
+/// match; one without a path is the same only when every field matches.
+fn insert_new_attachments_sql(held: &str, copies: &str) -> String {
+    format!(
         r"
-        INSERT INTO attachments (
-            message_id, path, original_name, mime_type, is_sticker, transcription,
-            sha256, assets_path, size_bytes, missing_reason
-        )
-        SELECT
-            mm.prod_id, sa.path, sa.original_name, sa.mime_type, sa.is_sticker, sa.transcription,
-            sa.sha256, sa.assets_path, sa.size_bytes, sa.missing_reason
-        FROM staging_attachments sa
-        JOIN _promote_msg_map mm ON mm.staging_id = sa.message_id
+        INSERT INTO {held} ({ATTACHMENT_COLUMNS})
+        SELECT {ATTACHMENT_COLUMNS}
+        FROM {copies} AS sa
         WHERE NOT EXISTS (
             SELECT 1
-            FROM attachments a
-            WHERE a.message_id = mm.prod_id
+            FROM {held} a
+            WHERE a.message_id = sa.message_id
               AND a.path IS NOT DISTINCT FROM sa.path
               AND a.original_name IS NOT DISTINCT FROM sa.original_name
               AND a.is_sticker = sa.is_sticker
@@ -1241,8 +1346,76 @@ pub async fn promote_attachments(conn: &mut SqliteConnection) -> Result<Promoted
                   )
               )
         )
-        ",
+        "
     )
+}
+
+/// The statement that inserts into `held` each tapback row of `copies`
+/// that `held` does not hold field for field, where `copies` is a table
+/// or `(SELECT ...)` with the [`TAPBACK_COLUMNS`] whose `message_id` is a
+/// row of `held`'s message. The one rule for when another copy of a
+/// reaction is new, for a stored message ([`promote_tapbacks`]) and for
+/// two copies staged in one import ([`add_copy_tapbacks`]).
+fn insert_new_tapbacks_sql(held: &str, copies: &str) -> String {
+    format!(
+        r"
+        INSERT INTO {held} ({TAPBACK_COLUMNS})
+        SELECT {TAPBACK_COLUMNS}
+        FROM {copies} AS st
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM {held} t
+            WHERE t.message_id = st.message_id
+              AND t.part_index = st.part_index
+              AND t.kind = st.kind
+              AND t.emoji IS NOT DISTINCT FROM st.emoji
+              AND t.is_from_me = st.is_from_me
+              AND t.sender_handle_id IS NOT DISTINCT FROM st.sender_handle_id
+        )
+        "
+    )
+}
+
+/// The staged attachments, each under its production message, as
+/// [`fill_attachments_sql`] and [`insert_new_attachments_sql`] take them.
+const STAGED_ATTACHMENTS_BY_PRODUCTION_MESSAGE: &str = r"(
+    SELECT
+        mm.prod_id AS message_id, sa.path, sa.original_name, sa.mime_type, sa.is_sticker,
+        sa.transcription, sa.sha256, sa.assets_path, sa.size_bytes, sa.missing_reason
+    FROM staging_attachments sa
+    JOIN _promote_msg_map mm ON mm.staging_id = sa.message_id
+)";
+
+/// The staged tapbacks, each under its production message, as
+/// [`insert_new_tapbacks_sql`] takes them.
+const STAGED_TAPBACKS_BY_PRODUCTION_MESSAGE: &str = r"(
+    SELECT
+        mm.prod_id AS message_id, st.part_index, st.kind, st.emoji, st.is_from_me,
+        st.sender_handle_id
+    FROM staging_tapbacks st
+    JOIN _promote_msg_map mm ON mm.staging_id = st.message_id
+)";
+
+/// Insert the staged attachments under their production messages: fill in
+/// the stored rows another copy has the file for
+/// ([`fill_attachments_sql`]), then insert the rows the message does not
+/// hold yet ([`insert_new_attachments_sql`]).
+///
+/// # Errors
+///
+/// Returns an error when a statement fails.
+pub async fn promote_attachments(conn: &mut SqliteConnection) -> Result<PromotedAttachments> {
+    let filled = sqlx::query(&fill_attachments_sql(
+        "attachments",
+        STAGED_ATTACHMENTS_BY_PRODUCTION_MESSAGE,
+    ))
+    .execute(&mut *conn)
+    .await?
+    .rows_affected();
+    let inserted = sqlx::query(&insert_new_attachments_sql(
+        "attachments",
+        STAGED_ATTACHMENTS_BY_PRODUCTION_MESSAGE,
+    ))
     .execute(&mut *conn)
     .await?
     .rows_affected();
@@ -1250,34 +1423,17 @@ pub async fn promote_attachments(conn: &mut SqliteConnection) -> Result<Promoted
 }
 
 /// Insert the staged tapbacks under their production messages, skipping any
-/// row production already has field for field. Returns how many were
-/// inserted.
+/// row production already has ([`insert_new_tapbacks_sql`]). Returns how
+/// many were inserted.
 ///
 /// # Errors
 ///
 /// Returns an error when the statement fails.
 pub async fn promote_tapbacks(conn: &mut SqliteConnection) -> Result<u64> {
-    Ok(sqlx::query(
-        r"
-        INSERT INTO tapbacks (
-            message_id, part_index, kind, emoji, is_from_me, sender_handle_id
-        )
-        SELECT
-            mm.prod_id, st.part_index, st.kind, st.emoji, st.is_from_me, st.sender_handle_id
-        FROM staging_tapbacks st
-        JOIN _promote_msg_map mm ON mm.staging_id = st.message_id
-        WHERE NOT EXISTS (
-            SELECT 1
-            FROM tapbacks t
-            WHERE t.message_id = mm.prod_id
-              AND t.part_index = st.part_index
-              AND t.kind = st.kind
-              AND t.emoji IS NOT DISTINCT FROM st.emoji
-              AND t.is_from_me = st.is_from_me
-              AND t.sender_handle_id IS NOT DISTINCT FROM st.sender_handle_id
-        )
-        ",
-    )
+    Ok(sqlx::query(&insert_new_tapbacks_sql(
+        "tapbacks",
+        STAGED_TAPBACKS_BY_PRODUCTION_MESSAGE,
+    ))
     .execute(&mut *conn)
     .await?
     .rows_affected())

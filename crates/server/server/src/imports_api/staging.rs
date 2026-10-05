@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context, Result, anyhow};
 use message_ir::{HandleService, HandleType, nonempty, trimmed};
 use sqlx::SqliteConnection;
 
@@ -853,18 +853,15 @@ async fn flush_staging_message_chunk(
     let mut att_rows = Vec::new();
     let mut tap_rows = Vec::new();
     let mut version_rows = Vec::new();
-    let mut later_copies = Vec::new();
+    let mut copies = Vec::new();
     for row in chunk {
-        // Consume the RETURNING id so a conflicted row (duplicate guid) is
-        // skipped instead of attaching children to another message. A
-        // conflicted row with earlier versions may be a later backup of
-        // the staged one, which is checked once the chunk's own versions
-        // are written.
+        // Consume the RETURNING id so a conflicted row (duplicate guid), a
+        // second copy of a staged message, is not inserted as a message of
+        // its own. Its children go to the staged message once the chunk's
+        // own are written.
         let Some(message_id) = by_sort.remove(&row.sort_order) else {
             counts.messages_deduped += 1;
-            if !row.msg.earlier_versions.is_empty() {
-                later_copies.push(row);
-            }
+            copies.push(row);
             continue;
         };
         counts.messages += 1;
@@ -887,19 +884,60 @@ async fn flush_staging_message_chunk(
     counts.attachments += db_staging::insert_attachments(tx, &att_rows).await?;
     counts.tapbacks += db_staging::insert_tapbacks(tx, &tap_rows).await?;
     db_staging::insert_earlier_versions(tx, &version_rows).await?;
-    for row in later_copies {
+    for row in copies {
+        add_staged_copy(tx, stmts, counts, source, assets_dir, row).await?;
+    }
+    Ok(())
+}
+
+/// Give the message staged under `row`'s guid what `row`, another copy of
+/// it from the same import, adds: its text and earlier versions when it
+/// records a later edit, and the attachments and reactions the staged
+/// message does not hold yet. One import of two backups then stores what
+/// two separate imports of them store (#1806, #1837). The copy's deletion
+/// mark is not taken (#1741).
+async fn add_staged_copy(
+    tx: &mut SqliteConnection,
+    stmts: &mut StagingInserts,
+    counts: &mut ImportCounts,
+    source: &str,
+    assets_dir: &Path,
+    row: &PendingStagingMessage,
+) -> Result<()> {
+    if row.msg.earlier_versions.is_empty()
+        && row.attachments.is_empty()
+        && row.msg.tapbacks.is_empty()
+    {
+        return Ok(());
+    }
+    let key = StagingMessageKey {
+        account_id: stmts.account_id,
+        source,
+        guid: &row.msg.guid,
+    };
+    let staged = db_staging::staged_message_id(tx, key)
+        .await?
+        .with_context(|| format!("no staged message holds the copy of {}", row.msg.guid))?;
+    if !row.msg.earlier_versions.is_empty() {
         db_staging::take_later_staged_copy(
             tx,
-            StagingMessageKey {
-                account_id: stmts.account_id,
-                source,
-                guid: &row.msg.guid,
-            },
+            staged,
             row.body.as_deref(),
             &row.msg.earlier_versions,
         )
         .await?;
     }
+    let att_rows: Vec<StagingAttachment> = row
+        .attachments
+        .iter()
+        .map(|prepared| attachment_row(staged, prepared, assets_dir))
+        .collect();
+    counts.attachments += db_staging::add_copy_attachments(tx, &att_rows).await?;
+    let mut tap_rows = Vec::with_capacity(row.msg.tapbacks.len());
+    for tap in &row.msg.tapbacks {
+        tap_rows.push(tapback_row(tx, stmts, counts, staged, row, tap).await?);
+    }
+    counts.tapbacks += db_staging::add_copy_tapbacks(tx, &tap_rows).await?;
     Ok(())
 }
 

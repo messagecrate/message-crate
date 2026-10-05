@@ -508,8 +508,12 @@ async fn a_removed_reaction_leaves_no_message_and_no_reaction() {
     assert_eq!(tapbacks, 0);
 }
 
+/// A second copy of a message in one file adds no message, and the staged
+/// message keeps the first copy's text, but the second copy's attachment
+/// and reaction are added to it, as a second import of the copy adds them
+/// (#1837).
 #[tokio::test]
-async fn staging_skips_duplicate_guid_in_same_file_and_keeps_first_attachment() {
+async fn a_second_copy_in_one_file_keeps_the_first_text_and_adds_its_children() {
     let tmp = TempDir::new().unwrap();
     let db = tmp.path().join("messagecrate.db");
     let assets = tmp.path().join("assets");
@@ -533,8 +537,8 @@ async fn staging_skips_duplicate_guid_in_same_file_and_keeps_first_attachment() 
         .unwrap();
     assert_eq!(stats.messages, 1);
     assert_eq!(stats.messages_deduped, 1);
-    assert_eq!(stats.attachments, 1);
-    assert_eq!(stats.tapbacks, 0);
+    assert_eq!(stats.attachments, 2);
+    assert_eq!(stats.tapbacks, 1);
 
     let (_pool, mut conn) = open_verify(&db).await;
     let (body, attachments, tapbacks): (String, i64, i64) = sqlx::query_as(
@@ -551,15 +555,15 @@ async fn staging_skips_duplicate_guid_in_same_file_and_keeps_first_attachment() 
     .await
     .unwrap();
     assert_eq!(body, "first");
-    assert_eq!(attachments, 1);
-    assert_eq!(tapbacks, 0);
-    let name: String = sqlx::query_scalar(
-        "SELECT original_name FROM attachments WHERE message_id = (SELECT id FROM messages WHERE guid = 'g-once')",
+    assert_eq!(attachments, 2);
+    assert_eq!(tapbacks, 1);
+    let names: Vec<String> = sqlx::query_scalar(
+        "SELECT original_name FROM attachments WHERE message_id = (SELECT id FROM messages WHERE guid = 'g-once') ORDER BY id",
     )
-    .fetch_one(&mut *conn)
+    .fetch_all(&mut *conn)
     .await
     .unwrap();
-    assert_eq!(name, "first.bin");
+    assert_eq!(names, ["first.bin", "second.bin"]);
 }
 
 #[tokio::test]
@@ -882,6 +886,159 @@ async fn one_import_of_two_backups_gives_a_new_message_the_later_edit_in_either_
         import_jsonl_files(&db, &files, &options).await.unwrap();
         let (_pool, mut conn) = open_verify(&db).await;
         assert_eq!(edit_snapshot(&mut conn).await, expected, "{name}");
+    }
+}
+
+/// One attachment of a message in a conversation file, missing unless
+/// `digest` names stored bytes.
+fn kids_attachment(name: &str, digest: Option<&str>) -> String {
+    let (digest, missing) = match digest {
+        Some(digest) => (format!(r#""{digest}""#), "null"),
+        None => ("null".to_string(), r#""not_found""#),
+    };
+    format!(
+        r#"{{"path":"attachments/{name}","original_name":"{name}","mime_type":"application/octet-stream","digest_sha256":{digest},"is_sticker":false,"transcription":null,"sticker_effect":null,"size_bytes":12,"missing_reason":{missing}}}"#
+    )
+}
+
+/// One reaction of kind `kind` from `+15555550167` to a message.
+fn kids_reaction(kind: &str) -> String {
+    format!(
+        r#"{{"part_index":0,"kind":"{kind}","is_from_me":false,"reactor_identity":"+15555550167"}}"#
+    )
+}
+
+/// A conversation file holding the message `g-kids` with `attachments`
+/// and `reactions` (from [`kids_attachment`] and [`kids_reaction`]),
+/// after the messages in `before`, written to `name` under `dir`.
+fn kids_file(
+    dir: &Path,
+    name: &str,
+    before: &[String],
+    attachments: &[String],
+    reactions: &[String],
+) -> PathBuf {
+    let header = r#"{"schema_version":9,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550123","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550123","display_name":null},{"identity":"+15555550167","display_name":null}],"stats":{"message_count":2,"attachment_count":3,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183463000}}}"#;
+    let kids = format!(
+        r#"{{"guid":"g-kids","timestamp_unix_ms":1426183463000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"look","attachments":[{}],"reactions":[{}],"imessage":null,"source":null}}"#,
+        attachments.join(","),
+        reactions.join(","),
+    );
+    let mut lines = vec![header.to_string()];
+    lines.extend(before.iter().cloned());
+    lines.push(kids);
+    write_jsonl(dir, name, &(lines.join("\n") + "\n"))
+}
+
+/// What a reader sees of the attachments and reactions in `conn`:
+/// `(guid, original name, sha256, missing reason)` for each attachment and
+/// `(guid, part, kind, reactor)` for each reaction, sorted.
+type ChildrenSnapshot = (
+    Vec<(String, String, Option<String>, Option<String>)>,
+    Vec<(String, i64, String, Option<String>)>,
+);
+
+/// The [`ChildrenSnapshot`] of `conn`.
+async fn children_snapshot(conn: &mut sqlx::SqliteConnection) -> ChildrenSnapshot {
+    let attachments = sqlx::query_as(
+        r"
+        SELECT m.guid, a.original_name, a.sha256, a.missing_reason
+        FROM attachments a JOIN messages m ON m.id = a.message_id
+        ORDER BY 1, 2, 3, 4
+        ",
+    )
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap();
+    let reactions = sqlx::query_as(
+        r"
+        SELECT m.guid, t.part_index, t.kind, h.raw
+        FROM tapbacks t
+        JOIN messages m ON m.id = t.message_id
+        LEFT JOIN handles h ON h.id = t.sender_handle_id
+        ORDER BY 1, 2, 3, 4
+        ",
+    )
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap();
+    (attachments, reactions)
+}
+
+/// One import of two backups stores the attachments and reactions two
+/// separate imports of them store, in either order. The earlier backup
+/// holds `g-kids` with `same.bin` and `late.bin` missing and a Love. The
+/// later one holds it with `late.bin` found, a new `new.bin`, the Love and
+/// a Like. Only the copy staged first used to count, so one import of the
+/// earlier backup first stored no Like, no `new.bin` and no `late.bin`
+/// file. A child both copies hold is stored once, as an append stores it.
+#[tokio::test]
+async fn one_import_of_two_backups_keeps_the_attachments_and_reactions_of_both() {
+    let tmp = TempDir::new().unwrap();
+    let assets = tmp.path().join("assets");
+    let options = edit_options(&assets, tmp.path(), false);
+    // `late.bin` is found in the later backup by the bytes of `blob.bin`,
+    // which a message staged before it stores: both backups read their
+    // files from one directory, so only a claimed digest tells them apart.
+    fs::create_dir_all(tmp.path().join("attachments")).unwrap();
+    fs::write(tmp.path().join("attachments/blob.bin"), b"late-bytes").unwrap();
+    let digest = assets_api::sha256_hex(b"late-bytes");
+    let blob = format!(
+        r#"{{"guid":"g-blob","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"blob","attachments":[{}],"imessage":null,"source":null}}"#,
+        kids_attachment("blob.bin", None),
+    );
+    let earlier = kids_file(
+        tmp.path(),
+        "earlier.jsonl",
+        &[],
+        &[
+            kids_attachment("same.bin", None),
+            kids_attachment("late.bin", None),
+        ],
+        &[kids_reaction("loved")],
+    );
+    let later = kids_file(
+        tmp.path(),
+        "later.jsonl",
+        &[blob],
+        &[
+            kids_attachment("same.bin", None),
+            kids_attachment("late.bin", Some(&digest)),
+            kids_attachment("new.bin", None),
+        ],
+        &[kids_reaction("loved"), kids_reaction("liked")],
+    );
+
+    for (name, files) in [
+        ("earlier-first", [earlier.clone(), later.clone()]),
+        ("later-first", [later.clone(), earlier.clone()]),
+    ] {
+        let apart = tmp.path().join(format!("{name}-apart.db"));
+        for file in &files {
+            import_jsonl_files(&apart, std::slice::from_ref(file), &options)
+                .await
+                .unwrap();
+        }
+        let expected = {
+            let (_pool, mut conn) = open_verify(&apart).await;
+            children_snapshot(&mut conn).await
+        };
+        let kids: Vec<_> = expected.0.iter().filter(|a| a.0 == "g-kids").collect();
+        assert_eq!(kids.len(), 3, "{name}: {kids:?}");
+        assert!(
+            kids.iter()
+                .any(|a| a.1 == "late.bin" && a.2.as_deref() == Some(digest.as_str())),
+            "{name}: {kids:?}"
+        );
+        let kinds: Vec<&str> = expected.1.iter().map(|t| t.2.as_str()).collect();
+        assert_eq!(kinds, ["liked", "loved"], "{name}");
+
+        let together = tmp.path().join(format!("{name}-together.db"));
+        import_jsonl_files(&together, &files, &options)
+            .await
+            .unwrap();
+        let (_pool, mut conn) = open_verify(&together).await;
+        assert_eq!(children_snapshot(&mut conn).await, expected, "{name}");
     }
 }
 
