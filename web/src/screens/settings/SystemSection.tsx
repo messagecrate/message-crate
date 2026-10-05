@@ -387,8 +387,8 @@ export function SystemSection() {
       <div>
         <AppVersion />
         <p className="m-0 mt-8 text-[0.875rem] text-muted">
-          System settings (staging directory, ffmpeg tools, and remembered importer paths) are
-          available in the desktop app.
+          System settings (the Staging Directory, remembered importer paths, ffmpeg tools, and the
+          Export Directory) are available in the desktop app.
         </p>
       </div>
     );
