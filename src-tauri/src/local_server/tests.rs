@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// The sockets holding the tests' ports, kept until the test program ends.
 ///
 /// Each is bound and never listens, so a connection to its port is refused,
-/// and no other socket can bind the port while it is held. A port that is
+/// and a search for a free port passes the port over while it is held. A port that is
 /// only let go of can be bound by any process on this computer, and a test
 /// suite running beside this one binds ports all the time. A start watched
 /// at such an address saw that process answer, and failed (#1783). Keeping
@@ -18,11 +18,24 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// a way to let its port go early.
 static HELD_PORTS: Mutex<Vec<socket2::Socket>> = Mutex::new(Vec::new());
 
+/// Whether a held port can also be bound by a listener of the test's own.
+#[derive(Debug, Clone, Copy)]
+enum Sharing {
+    /// No other socket can bind the port.
+    Alone,
+    /// Another socket set up the same way can bind the port too. Sets
+    /// `SO_REUSEADDR`, and `SO_REUSEPORT` on Apple systems, where
+    /// `SO_REUSEADDR` alone does not let two sockets bind one address. A
+    /// search for a free port still passes the port over, so only a program
+    /// that binds this port number by name, with the same options, could
+    /// share it.
+    WithOwnListener,
+}
+
 /// Bind a socket that never listens to `address` and keep it until the test
-/// program ends. Returns the address it is bound to. A `shared` port can
-/// also be bound by a listener of the test's own while it is held.
-fn hold_port(address: SocketAddr, shared: bool) -> SocketAddr {
-    let socket = bound_socket(address, shared);
+/// program ends. Returns the address it is bound to.
+fn hold_port(address: SocketAddr, sharing: Sharing) -> SocketAddr {
+    let socket = bound_socket(address, sharing);
     let address = socket.local_addr().unwrap().as_socket().unwrap();
     HELD_PORTS
         .lock()
@@ -31,11 +44,9 @@ fn hold_port(address: SocketAddr, shared: bool) -> SocketAddr {
     address
 }
 
-/// A TCP socket bound to `address`. A `shared` one sets `SO_REUSEADDR`, and
-/// `SO_REUSEPORT` on Apple systems, where `SO_REUSEADDR` alone does not let
-/// two sockets bind one address, so other `shared` sockets can bind the same
-/// port.
-fn bound_socket(address: SocketAddr, shared: bool) -> socket2::Socket {
+/// A TCP socket bound to `address`, shared as `sharing` says.
+fn bound_socket(address: SocketAddr, sharing: Sharing) -> socket2::Socket {
+    let shared = matches!(sharing, Sharing::WithOwnListener);
     let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::STREAM, None).unwrap();
     socket.set_reuse_address(shared).unwrap();
     #[cfg(target_vendor = "apple")]
@@ -46,7 +57,7 @@ fn bound_socket(address: SocketAddr, shared: bool) -> socket2::Socket {
 
 /// A loopback address that nothing listens on and nothing else can take.
 fn free_address() -> SocketAddr {
-    hold_port(SocketAddr::from(([127, 0, 0, 1], 0)), false)
+    hold_port(SocketAddr::from(([127, 0, 0, 1], 0)), Sharing::Alone)
 }
 
 /// Wait for a listener this test let go of to be gone. A process another
@@ -404,9 +415,13 @@ fn the_first_start_is_the_one_with_no_database() {
 fn a_found_message_crate_that_stops_is_not_reported_ready() {
     // A Message Crate that can be stopped: httpmock keeps its servers
     // listening after they are dropped. Its port is held before it listens,
-    // so once it stops, no other program can take the port (#1789).
-    let address = hold_port(SocketAddr::from(([127, 0, 0, 1], 0)), true);
-    let socket = bound_socket(address, true);
+    // so once it stops, a search for a free port passes the port over and a
+    // connection to it is refused (#1789).
+    let address = hold_port(
+        SocketAddr::from(([127, 0, 0, 1], 0)),
+        Sharing::WithOwnListener,
+    );
+    let socket = bound_socket(address, Sharing::WithOwnListener);
     socket.listen(128).unwrap();
     let listener = TcpListener::from(socket);
     listener.set_nonblocking(true).unwrap();
