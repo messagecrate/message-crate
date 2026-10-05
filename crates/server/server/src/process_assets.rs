@@ -705,7 +705,8 @@ impl<'a> AccountPass<'a> {
     /// the other rows already name. A file imported from a second source
     /// after its versions were made has such rows; without this they would
     /// never say a version exists, because the original is not converted
-    /// again. True when rows were pointed at it, or would be in a dry run.
+    /// again. Rows that name another version are left alone. True when rows
+    /// were pointed at it, or would be in a dry run.
     ///
     /// # Errors
     ///
@@ -738,7 +739,7 @@ impl<'a> AccountPass<'a> {
             ));
             return Ok(true);
         }
-        let named = versions_db::record(
+        let pointed = versions_db::share(
             &mut *db.acquire().await?,
             version,
             self.account_id,
@@ -746,8 +747,8 @@ impl<'a> AccountPass<'a> {
             &blob,
         )
         .await?;
-        if named == 0 {
-            // Every row of the original was deleted since it was read.
+        if pointed == 0 {
+            // The rows that named none were deleted since they were read.
             return Ok(false);
         }
         self.log.say(format!(

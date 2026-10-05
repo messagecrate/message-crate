@@ -601,14 +601,14 @@ async fn run_reset_demo(args: ResetDemoArgs) -> Result<()> {
             "left by a transfer that never finished",
         ),
         (
-            "damaged ones dropped",
+            "damaged Previews and Thumbnails dropped",
             stats.process_assets.dropped,
-            "Previews and Thumbnails that could not be made again",
+            "they could not be made again",
         ),
         (
-            "existing ones shared",
+            "existing Previews and Thumbnails shared",
             stats.process_assets.shared,
-            "Previews and Thumbnails given to more attachments",
+            "given to more attachments",
         ),
         (
             "left as they were",
@@ -634,9 +634,9 @@ async fn run_reset_demo(args: ResetDemoArgs) -> Result<()> {
     for (label, count, what) in rows {
         let label = format!("{label}:");
         if what.is_empty() {
-            println!("  {label:<30} {count}");
+            println!("  {label:<40} {count}");
         } else {
-            println!("  {label:<30} {count} ({what})");
+            println!("  {label:<40} {count} ({what})");
         }
     }
     Ok(())

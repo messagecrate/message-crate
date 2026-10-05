@@ -192,7 +192,7 @@ async fn dedupe_and_process_assets(
 fn not_done_warning(stats: &process_assets::ProcessAssetsStats) -> Option<String> {
     stats
         .failures()
-        .map(|failures| format!("in the Demo Account, {failures}. reset-demo continues"))
+        .map(|failures| format!("the Demo Account has {failures}. reset-demo continues"))
 }
 
 struct ResetPreparedStats {

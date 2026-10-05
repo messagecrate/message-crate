@@ -2134,7 +2134,7 @@ fn the_not_done_warning_names_each_count_and_is_silent_at_zero() {
         })
         .as_deref(),
         Some(
-            "in the Demo Account, 1 original whose Preview or Thumbnail could not be made. \
+            "the Demo Account has 1 original whose Preview or Thumbnail could not be made. \
              reset-demo continues"
         )
     );
@@ -2146,7 +2146,7 @@ fn the_not_done_warning_names_each_count_and_is_silent_at_zero() {
         })
         .as_deref(),
         Some(
-            "in the Demo Account, 2 originals whose Preview or Thumbnail could not be made \
+            "the Demo Account has 2 originals whose Preview or Thumbnail could not be made \
              and 1 incomplete original that could not be removed. reset-demo continues"
         )
     );

@@ -1569,7 +1569,7 @@ released versions carry their date on the heading.
   removed" and "1 damaged Preview or Thumbnail that could not be dropped".
   Each is there only when it happened. The run ends with an error naming
   each failure. The `reset-demo` summary has a line for each count, and its
-  warning now reads "in the Demo Account, 1 original whose Preview or
+  warning now reads "the Demo Account has 1 original whose Preview or
   Thumbnail could not be made. reset-demo continues".
 - 2026-10-05 **`process-assets` and `reset-demo` no longer call a failed
   Thumbnail a failed conversion.** When the Preview or Thumbnail of an
@@ -1577,10 +1577,10 @@ released versions carry their date on the heading.
   failed. That original stays without a Thumbnail or a browser preview",
   also when only the Thumbnail failed, and `reset-demo` warned "1 demo
   attachment failed conversion". They now say "1 original whose Preview
-  or Thumbnail could not be made", in the error and in the warning. The `reset-demo`
-  summary's "Browser previews" section, with its "converted for web",
-  "left as-is" and "conversion failures" lines, is now "Previews and
-  Thumbnails", with "Previews made", "Thumbnails made", "left as they
+  or Thumbnail could not be made", in the error and in the warning. The
+  `reset-demo` summary's "Browser previews" section, with its "converted
+  for web", "left as-is" and "conversion failures" lines, is now "Previews
+  and Thumbnails", with "Previews made", "Thumbnails made", "left as they
   were" and "not made". It also gives the count of Thumbnails, which it
   left out. Stopping `process-assets` says it stops the Preview or
   Thumbnail being made.

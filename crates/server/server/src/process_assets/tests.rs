@@ -1168,37 +1168,59 @@ async fn a_damaged_preview_whose_original_is_missing_is_dropped_and_still_a_fail
     assert_eq!(named_columns, 0, "every derived column is cleared");
 }
 
-/// A damaged Preview `preview_sha` named by the attachment `attachment_id`:
-/// a file under the converted directory whose bytes do not hash to its name.
-/// Returns the file's path.
-async fn name_damaged_preview(
+/// A `version` file named `<sha>.jpg` holding `bytes` under the converted
+/// directory, named by the attachment `attachment_id`. Bytes that do not
+/// hash to `sha` make it damaged. Returns the file's path.
+async fn name_version(
     opened: &OpenDb,
     conn: &mut SqliteConnection,
     attachment_id: i64,
-    preview_sha: &str,
+    version: Version,
+    sha: &str,
+    bytes: &[u8],
 ) -> PathBuf {
-    let rel = format!("{}/{preview_sha}.jpg", &preview_sha[..2]);
-    let preview = opened
+    let rel = format!("{}/{sha}.jpg", &sha[..2]);
+    let path = opened
         .cfg
         .paths
         .assets_converted_dir_for_account(ACCOUNT)
         .join(&rel);
-    fs::create_dir_all(preview.parent().unwrap()).unwrap();
-    fs::write(&preview, b"a Preview cut short").unwrap();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, bytes).unwrap();
+    let [sha_column, path_column, mime_column] = version.columns();
     let mut tx = crate::db::begin_write(conn).await.unwrap();
-    sqlx::query(
+    sqlx::query(&format!(
         "UPDATE attachments
-         SET derived_sha256 = $1, derived_assets_path = $2, derived_mime_type = 'image/jpeg'
-         WHERE id = $3",
-    )
-    .bind(preview_sha)
+         SET {sha_column} = $1, {path_column} = $2, {mime_column} = 'image/jpeg'
+         WHERE id = $3"
+    ))
+    .bind(sha)
     .bind(&rel)
     .bind(attachment_id)
     .execute(&mut *tx)
     .await
     .unwrap();
     tx.commit().await.unwrap();
-    preview
+    path
+}
+
+/// A damaged Preview `preview_sha` named by the attachment `attachment_id`:
+/// a file whose bytes do not hash to its name. Returns the file's path.
+async fn name_damaged_preview(
+    opened: &OpenDb,
+    conn: &mut SqliteConnection,
+    attachment_id: i64,
+    preview_sha: &str,
+) -> PathBuf {
+    name_version(
+        opened,
+        conn,
+        attachment_id,
+        Version::Preview,
+        preview_sha,
+        b"a Preview cut short",
+    )
+    .await
 }
 
 /// Await `f` with `dir` read-only, so nothing in it can be removed, and give
@@ -1381,27 +1403,15 @@ async fn an_existing_thumbnail_given_to_more_attachments_is_counted_as_shared() 
     let mut conn = opened.conn().await.unwrap();
     let bytes = b"a whole Thumbnail";
     let thumbnail_sha = crate::assets_api::Sha256::of_bytes(bytes).to_string();
-    let rel = format!("{}/{thumbnail_sha}.jpg", &thumbnail_sha[..2]);
-    let thumbnail = opened
-        .cfg
-        .paths
-        .assets_converted_dir_for_account(ACCOUNT)
-        .join(&rel);
-    fs::create_dir_all(thumbnail.parent().unwrap()).unwrap();
-    fs::write(&thumbnail, bytes).unwrap();
-    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
-    sqlx::query(
-        "UPDATE attachments
-         SET thumbnail_sha256 = $1, thumbnail_assets_path = $2, thumbnail_mime_type = 'image/jpeg'
-         WHERE id = $3",
+    name_version(
+        &opened,
+        &mut conn,
+        first,
+        Version::Thumbnail,
+        &thumbnail_sha,
+        bytes,
     )
-    .bind(&thumbnail_sha)
-    .bind(&rel)
-    .bind(first)
-    .execute(&mut *tx)
-    .await
-    .unwrap();
-    tx.commit().await.unwrap();
+    .await;
     let message_id = seed_message(&mut conn, "sms").await;
     let second = attach_stored_blob(&opened, &mut conn, message_id, SHA, ".png", PNG_1X1_RGB).await;
 
