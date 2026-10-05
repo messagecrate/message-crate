@@ -314,8 +314,8 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
         ImportPipeline::new(cfg, &session, &shared, import_id, batch_size, files.len());
     let mut assets = AssetTotals::default();
 
-    let stopped = drive(&ctx, &files, &mut pipeline, &mut assets, &mut out)?;
-    settle(cfg, &mut pipeline, stopped, &mut out)?;
+    let halted = drive(&ctx, &files, &mut pipeline, &mut assets, &mut out)?;
+    settle(cfg, &mut pipeline, halted, &mut out)?;
     let session_refused = session.is_refused();
     if session_refused {
         out.show(
@@ -330,11 +330,13 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
     let (results, accounting) = pipeline.into_results();
     let journal = shared.into_inner().expect("journal mutex poisoned").journal;
     let counted = count_file_results(&results);
-    // A cancel is the one stop the caller resumes from, so the report tells
-    // it apart from a failure. It stopped the run only when it left a
+    // A cancel is the one halt the caller resumes from, so the report tells
+    // it apart from a failure. It halted the run only when it left a
     // conversation for the next Upload: one that came after the last
-    // request went out stopped nothing, so that Upload completed.
-    let cancelled = counted.cancelled > 0;
+    // request went out halted nothing, so that Upload completed (#1903). A
+    // refused session always halts the run, even when the batch it refused
+    // carried only a conversation that had already failed.
+    let cancelled = counted.cancelled > 0 || session_refused;
     // Only shrink/rewrite the journal after a clean run so a failed run can retry.
     if counted.failed == 0 && !cancelled {
         let _ = journal.compact();
@@ -649,11 +651,11 @@ fn absorb_prepared(prepared: &PreparedFile, assets: &mut AssetTotals, out: &mut 
 }
 
 /// End of run: send any leftover batch and wait for the last import. A
-/// stopped run (`stopped`, or the cancel flag) sends nothing more, and still
+/// halted run (`halted`, or the cancel flag) sends nothing more, and still
 /// waits for the in-flight import so the journal stays consistent.
 ///
-/// Whether the run stopped is not decided here: a cancel that arrives while
-/// the last request is in flight stops nothing, so the caller reads the stop
+/// Whether the run halted is not decided here: a cancel that arrives while
+/// the last request is in flight halts nothing, so the caller reads the halt
 /// from the conversations left unsent instead.
 ///
 /// # Errors
@@ -662,11 +664,11 @@ fn absorb_prepared(prepared: &PreparedFile, assets: &mut AssetTotals, out: &mut 
 fn settle(
     cfg: &PushConfig,
     pipeline: &mut ImportPipeline<'_>,
-    stopped: bool,
+    halted: bool,
     out: &mut Reporter<'_, '_>,
 ) -> Result<()> {
-    let stopped = stopped || check_cancel(cfg.cancel.as_ref()).is_err();
-    if stopped || !pipeline.flush_and_continue(true, out)? {
+    let halted = halted || check_cancel(cfg.cancel.as_ref()).is_err();
+    if halted || !pipeline.flush_and_continue(true, out)? {
         let _ = pipeline.join_inflight(out);
     }
     Ok(())

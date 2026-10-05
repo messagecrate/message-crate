@@ -101,11 +101,10 @@ pub struct PushReport {
     /// `true` when the cancel flag stopped the run, which is when it left
     /// conversations unsent: they are in `conversations_cancelled`, and the
     /// journal leaves them for the next Upload. A cancel that arrives after
-    /// the last request went out stops nothing, so it is `false` then.
-    /// Only the cancel flag stops a run: a
-    /// failed request fails its conversations and the run goes on. A session
-    /// the server refused mid-run stops the run through the same flag, so it
-    /// is `true` then too.
+    /// the last request went out stops nothing, so it is `false` then. Only
+    /// the cancel flag stops a run: a failed request fails its conversations
+    /// and the run goes on. A session the server refused mid-run stops the
+    /// run through the same flag, so it is `true` then too.
     pub cancelled: bool,
     /// `true` when the server refused the session token during the run (it
     /// expired or was ended), which stopped the run as for a cancel. The
@@ -239,8 +238,8 @@ pub fn format_duration_ms(ms: u64) -> String {
 
 /// Three-way Import Run status for `/v1/imports/{id}/complete`, read from the
 /// Upload's report rather than from whether the Upload returned. `failed` has a
-/// zero floor: cancelled (a stop that left conversations for the next
-/// Upload), or nothing landed at all. A skip-only repeat Upload is a no-op,
+/// zero floor: cancelled (conversations left for the next Upload), or
+/// nothing landed at all. A skip-only repeat Upload is a no-op,
 /// not a failure. Item-level failures beside successes are
 /// `completed_with_issues`.
 pub fn outcome_status(report: &PushReport) -> &'static str {

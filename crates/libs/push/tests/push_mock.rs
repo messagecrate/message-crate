@@ -116,6 +116,19 @@ fn mock_import_start_and_complete(server: &MockServer, id: i64) -> httpmock::Moc
     mock_import_start(server, id)
 }
 
+/// Wait, for at most ten seconds, until the server has received a request
+/// for `mock`, so a test can act while that request is in flight.
+fn wait_for_first_call(mock: &httpmock::Mock<'_>) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while mock.calls() == 0 {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "the request was never sent"
+        );
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
 /// Push config with no retries, pointed at a mock server URL. Attachments are
 /// not skipped (`skip_attachments: false`).
 fn text_only_config(dir: &Path, base_url: String) -> PushConfig {
@@ -2584,14 +2597,7 @@ fn a_batch_retried_after_a_503_is_counted_and_journaled_once() {
     // 503 for a 200 once the first attempt has landed.
     let (report, accepted_calls) = std::thread::scope(|scope| {
         let pusher = scope.spawn(|| run(&cfg, None).unwrap());
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        while busy.calls() == 0 {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "the batch was never posted"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
+        wait_for_first_call(&busy);
         busy.delete();
         let accepted = server.mock(|when, then| {
             when.method(POST).path("/v1/imports/7/batches");
@@ -2807,14 +2813,7 @@ fn a_conversation_cut_off_mid_way_by_a_cancel_is_counted_as_cancelled() {
 
     let report = std::thread::scope(|scope| {
         let pusher = scope.spawn(|| run(&cfg, None).unwrap());
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        while first_batch.calls() == 0 {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "the first batch was never posted"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
+        wait_for_first_call(&first_batch);
         cancel.store(true, Ordering::SeqCst);
         pusher.join().unwrap()
     });
@@ -2878,14 +2877,7 @@ fn a_cancel_after_the_last_request_leaves_a_completed_upload() {
 
     let report = std::thread::scope(|scope| {
         let pusher = scope.spawn(|| run(&cfg, None).unwrap());
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-        while batch.calls() == 0 {
-            assert!(
-                std::time::Instant::now() < deadline,
-                "the batch was never posted"
-            );
-            std::thread::sleep(std::time::Duration::from_millis(5));
-        }
+        wait_for_first_call(&batch);
         cancel.store(true, Ordering::SeqCst);
         pusher.join().unwrap()
     });
@@ -2898,13 +2890,74 @@ fn a_cancel_after_the_last_request_leaves_a_completed_upload() {
     assert_eq!(
         complete.calls(),
         1,
-        "the Import Run is completed as completed"
+        "the Import Run is completed with the status completed"
     );
     assert!(
         read_log(dir.path()).contains("\nThe Upload completed in "),
         "{}",
         read_log(dir.path())
     );
+}
+
+/// A session the server refuses on a batch that carries only a conversation
+/// that had already failed still halts the Upload as a pause.
+///
+/// Guards the review of #1903: the run reads its halt from the conversations
+/// left unsent, and here none is left, because the refused batch belongs to
+/// a conversation an earlier batch failed. Without the refusal counted too,
+/// the report said the session was refused and the Upload completed.
+#[test]
+fn a_refused_session_after_a_failed_batch_still_halts_the_upload() {
+    let server = MockServer::start();
+    let _auth = mock_session(&server);
+    let failed = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/imports/7/batches")
+            .body_includes("guid-1");
+        then.status(500).json_body(json!({
+            "type": "about:blank",
+            "title": "Internal server error",
+            "status": 500,
+            "detail": "intentional batch failure"
+        }));
+    });
+    let refused = server.mock(|when, then| {
+        when.method(POST)
+            .path("/v1/imports/7/batches")
+            .body_includes("second-message");
+        then.status(401).json_body(json!({
+            "type": "about:blank",
+            "title": "Unauthorized",
+            "status": 401
+        }));
+    });
+
+    let dir = tempdir().unwrap();
+    let mut doc = sample_doc();
+    let mut second = doc.messages[0].clone();
+    second.guid = "second-message".into();
+    doc.messages.push(second);
+    write_jsonl(dir.path(), &doc);
+    let cfg = PushConfig {
+        batch_size: 1,
+        prepare_ahead: 1,
+        prepare_workers: 1,
+        import_id: Some(7),
+        ..text_only_config(dir.path(), server.base_url())
+    };
+
+    let report = run(&cfg, None).unwrap();
+
+    assert_eq!(failed.calls(), 1);
+    assert_eq!(refused.calls(), 1);
+    assert_eq!(report.conversations_failed, 1, "{:?}", report.results);
+    assert_eq!(report.conversations_cancelled, 0, "{:?}", report.results);
+    assert!(report.session_refused);
+    assert!(
+        report.cancelled,
+        "a refused session halts the Upload: {report:?}"
+    );
+    assert!(!report.ok);
 }
 
 /// After one batch fails, a second push on the same directory sends only the
