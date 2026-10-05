@@ -391,6 +391,13 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **One import of two backups gives a message its later edit.**
+  When one import carried an older and a newer backup of the same phone,
+  and a message new to the Message Crate was edited between them, the
+  message took the text and earlier versions of whichever file came first,
+  so it could keep the older text. It now takes the newer backup's text and
+  earlier versions in either order, and search finds it as an import of
+  the newer backup alone would.
 - 2026-10-05 **A WhatsApp import keeps its working files out of the
   Staging Directory.** WhatsApp's files read out of an iPhone backup,
   decrypted when the backup is encrypted, sat in a directory inside the
