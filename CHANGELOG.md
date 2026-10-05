@@ -766,6 +766,12 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-04 **Exporting to CSV, and reading an EML or mbox file back,
+  type a phone number written with `tel:` as a phone number.** The
+  `identity_type` column of a CSV export, and a participant read back from
+  an EML or mbox file, now follow the one rule every import uses. Before,
+  `tel:+15555550157` was typed `other` there and `phone` everywhere else,
+  so the same person could arrive as two identities.
 - 2026-10-04 **Converting no longer asks for room for an attachment whose
   file is missing.** Convert checks the disk for room before it starts,
   and that check counted the size an attachment's record gave even when
@@ -1128,6 +1134,11 @@ released versions carry their date on the heading.
   the window.** In a window narrower than the list plus the drawer, its right
   side ran past the window's edge and was cut off. It now stays inside the
   window, and in a window as narrow as a phone it covers the list instead.
+- 2026-10-04 **The contact drawer opened from a conversation lines up with a
+  list that appears after it.** When the list showed up only once the drawer
+  was already open, the drawer stayed against the right edge of the window,
+  as if there were no list, until the window was resized. It now moves to the
+  list's edge as soon as the list appears, and back when the list goes.
 - 2026-10-04 **The Contact Identity card and the selected-contacts card fit
   inside their panel.** The Contact Identity card, and the card that sums up
   the contacts you selected, were a little wider than the panel they sit in,
