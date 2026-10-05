@@ -737,6 +737,15 @@ operation's summary, and the rest is its description.
 Why: every mismatch between the reference and the handlers that the September
 2026 review found was in a hand-written list.
 
+A field's description sits on the field. utoipa writes the doc comment of an
+optional field typed by a schema of its own inside the `oneOf` branch beside
+the `$ref`, and the finished document moves it onto the `oneOf`. A `oneOf`
+that is a schema of its own keeps a description on each branch, because there
+it describes the branch.
+Why: openapi-typescript reads no description inside a branch, so the web app's
+generated type for such a field carried no doc, while the same field made
+required kept it.
+
 A rule that can be checked by walking every operation in the document is
 checked that way, by one test, as `openapi/credential_matrix.rs` checks every
 route's reach: the page shape and paging parameters on every list, a

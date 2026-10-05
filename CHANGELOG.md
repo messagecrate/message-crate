@@ -1496,6 +1496,11 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-05 **The HTTP API reference describes every optional field.** An
+  optional field that holds a group of values or one of a set of choices,
+  such as the identity a contact change links or the service it is on, had
+  no description in the HTTP API reference's field list. Each now shows its
+  description, as every other field does.
 - 2026-10-05 **A media player can check a Preview or a Thumbnail before
   loading it.** A player that asked first what kind of file an attachment's
   Preview or Thumbnail was, and how large, was turned away when it said it
