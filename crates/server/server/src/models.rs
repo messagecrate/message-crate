@@ -4,11 +4,12 @@ use anyhow::{Context, Result};
 use chrono::{TimeZone, Utc};
 use message_ir::{
     ConversationHeader, HandleService, HandleType, IrAttachment, IrDirection, IrMessage,
-    IrMessageKind, Reaction, check_schema_version_in_json,
+    IrMessageKind, Reaction, check_schema_version_in_json, trimmed,
 };
 use phone::Handle;
 use serde_json::Value;
 
+use crate::config::validate_source_id;
 use crate::imports_api::ImportFailure;
 
 /// One JSONL conversation after IR → database-row mapping.
@@ -38,6 +39,32 @@ pub struct ConversationRecord {
     pub participants: Vec<ParticipantRecord>,
     /// IR `export.source` — used as `messages.source` for directory import.
     pub export_source: Option<String>,
+}
+
+impl ConversationRecord {
+    /// The source id a directory import files this conversation under: its
+    /// header's `export.source`, trimmed.
+    ///
+    /// # Errors
+    ///
+    /// Refuses the header on its line when `export.source` is missing or
+    /// blank, or is not a valid source id: the sender's to fix in the file.
+    pub fn directory_source(&self) -> Result<&str, ImportFailure> {
+        let refuse = |detail: String| ImportFailure::Invalid {
+            line: self.line,
+            detail,
+        };
+        let Some(source) = self.export_source.as_deref().and_then(trimmed) else {
+            return Err(refuse(format!(
+                "conversation '{}' has no export.source, which a directory import needs \
+                 unless --source names one",
+                self.chat_identifier
+            )));
+        };
+        validate_source_id(source)
+            .map_err(|err| refuse(format!("export.source '{source}' is not valid: {err:#}")))?;
+        Ok(source)
+    }
 }
 
 /// One participant of an imported conversation.

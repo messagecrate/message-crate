@@ -1033,3 +1033,32 @@ fn the_starting_line_counts_one_file_and_many_files() {
         "Compressing attachments (3 files, 2.0 KB)…"
     );
 }
+
+/// The line that ends a pass words each count singular for one, and names
+/// the files that failed only when one did (#1825).
+#[test]
+fn the_done_line_counts_one_file_and_many_files() {
+    let one = MediaReport {
+        processed: 1,
+        skipped: 1,
+        bytes_before: 2_000,
+        bytes_after: 500,
+        errors: vec!["a.heic: ffmpeg failed".into()],
+    };
+    assert_eq!(
+        done_line_with_failures(MediaMode::Convert, &one),
+        "Attachment convert done: processed 1 file, skipped 1 file, size 2.0 KB → 500 B, \
+         1 file failed"
+    );
+    let many = MediaReport {
+        processed: 3,
+        skipped: 0,
+        bytes_before: 2_000,
+        bytes_after: 2_000,
+        errors: Vec::new(),
+    };
+    assert_eq!(
+        done_line_with_failures(MediaMode::Compress, &many),
+        "Attachment compress done: processed 3 files, skipped 0 files, size 2.0 KB → 2.0 KB"
+    );
+}

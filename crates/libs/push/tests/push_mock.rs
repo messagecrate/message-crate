@@ -497,8 +497,7 @@ fn aggregates_multiple_conversations_into_one_import_request() {
     );
     assert_eq!(import.calls(), 1);
     let log = fs::read_to_string(dir.path().join("message-crate-push.log")).unwrap();
-    assert!(log.contains("IMPORT_REQUEST ok"));
-    assert!(log.contains("conversations=2 messages=2"));
+    assert!(log.contains("Import request accepted: 2 conversations and 2 messages from "));
 }
 
 #[test]
@@ -942,7 +941,7 @@ fn profiles_attachment_upload_phases() {
     assert!(
         progress_lines
             .iter()
-            .any(|line| line.starts_with("files ") && line.contains("import time="))
+            .any(|line| line.starts_with("files ") && line.contains(" importing, "))
     );
 
     let persisted_report: serde_json::Value =

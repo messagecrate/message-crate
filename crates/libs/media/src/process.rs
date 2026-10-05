@@ -101,32 +101,54 @@ pub fn process_attachment_files(
     remove_msgmedia_temps(&attachments)?;
     report.bytes_after = attachments_dir_bytes(&attachments)?;
 
-    let mut summary = format!(
-        "Attachment {mode} done: processed={} skipped={} size {} → {}",
-        report.processed,
-        report.skipped,
-        format_bytes(report.bytes_before),
-        format_bytes(report.bytes_after),
-    );
-    if !report.errors.is_empty() {
-        let _ = write!(summary, " errors={}", report.errors.len());
-    }
-    emit(&mut log, &summary);
+    emit(&mut log, &done_line_with_failures(mode, &report));
 
     Ok((report, remap))
 }
 
-/// The line that starts the pass: `verb` is `Converting` or `Compressing`,
-/// over `total` files of `bytes` in all, the count singular for one. This
-/// crate sits below `message-crate-core`, so it words the count itself
-/// rather than through `count_of_files`.
-fn starting_line(verb: &str, total: usize, bytes: u64) -> String {
-    let files = if total == 1 {
+/// `n` files, singular for one. This crate sits below `message-crate-core`
+/// (core depends on it), so it words the count itself rather than through
+/// `count_of_files`.
+fn files(n: usize) -> String {
+    if n == 1 {
         "1 file".to_string()
     } else {
-        format!("{total} files")
-    };
-    format!("{verb} attachments ({files}, {})…", format_bytes(bytes))
+        format!("{n} files")
+    }
+}
+
+/// The line that starts the pass: `verb` is `Converting` or `Compressing`,
+/// over `total` files of `bytes` in all.
+fn starting_line(verb: &str, total: usize, bytes: u64) -> String {
+    format!(
+        "{verb} attachments ({}, {})…",
+        files(total),
+        format_bytes(bytes)
+    )
+}
+
+/// The line that ends a Convert or Compress pass over staged attachments:
+/// the files processed and skipped, and the attachments' size before and
+/// after. The write queue's own pass ends with it too, so both passes word
+/// it alike.
+pub fn done_line(mode: MediaMode, report: &MediaReport) -> String {
+    format!(
+        "Attachment {mode} done: processed {}, skipped {}, size {} → {}",
+        files(report.processed),
+        files(report.skipped),
+        format_bytes(report.bytes_before),
+        format_bytes(report.bytes_after),
+    )
+}
+
+/// [`done_line`] with the files that failed, when any did. The write queue
+/// counts its failures as one note instead, so only this pass adds them.
+fn done_line_with_failures(mode: MediaMode, report: &MediaReport) -> String {
+    let mut line = done_line(mode, report);
+    if !report.errors.is_empty() {
+        let _ = write!(line, ", {} failed", files(report.errors.len()));
+    }
+    line
 }
 
 /// Send one line to the log callback, if there is one.
