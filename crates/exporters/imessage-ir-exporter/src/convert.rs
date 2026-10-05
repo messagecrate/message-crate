@@ -22,7 +22,7 @@ use imessage_reader_protocol::{
 };
 use ios_backup::Helper;
 use message_crate_core::{
-    ExportReport, LoadError, MediaConfig, OutputFormat, ProgressEvent, RunIssue,
+    ExportReport, LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent, RunIssue,
 };
 use message_ir::{
     ConversationDocument, ConversationMeta, ExportMeta, HandleType, IrAttachment,
@@ -73,6 +73,29 @@ enum AttachmentLoad {
     Bytes(Vec<u8>),
     /// No source file.
     Missing,
+}
+
+impl AttachmentLoad {
+    /// This load as a staging source with its size hint; `Missing` has none.
+    fn into_source(self) -> (AttachmentSource, Option<u64>) {
+        match self {
+            Self::Path { path, size_hint } => (AttachmentSource::Path(path), size_hint),
+            Self::Bytes(bytes) => {
+                let hint = Some(bytes.len() as u64);
+                (AttachmentSource::Bytes(bytes), hint)
+            }
+            Self::Missing => (AttachmentSource::Missing, None),
+        }
+    }
+
+    /// The load for a staging source and its size hint.
+    fn from_source((source, size_hint): (AttachmentSource, Option<u64>)) -> Self {
+        match source {
+            AttachmentSource::Path(path) => Self::Path { path, size_hint },
+            AttachmentSource::Bytes(bytes) => Self::Bytes(bytes),
+            AttachmentSource::Missing => Self::Missing,
+        }
+    }
 }
 
 /// What the stream produced.
@@ -154,7 +177,7 @@ pub(crate) fn export(
     if !use_queue && embeds {
         check_headroom(
             &options.export_path,
-            embedded_bytes(&collected),
+            embedded_bytes(&mut collected, options.log.as_ref()),
             Disk::Staging,
         )?;
     }
@@ -198,7 +221,26 @@ pub(crate) fn export(
 /// The bytes a mail archive embeds for every attachment collected: one
 /// base64 copy per message. None has a digest before it is read, so each
 /// occurrence is counted.
-fn embedded_bytes(collected: &Collected) -> u64 {
+///
+/// Each load is first counted in place by the rule every run counts by
+/// ([`PathSources::count`]): in a backup that is not encrypted, a path with
+/// no file there becomes `Missing` and counts for nothing (#1744). A path
+/// in an encrypted backup names a file only the Apple Messages Reader can
+/// read, so it counts at its hint.
+fn embedded_bytes(collected: &mut Collected, log: Option<&LogSink>) -> u64 {
+    let paths = if collected.encrypted {
+        PathSources::ReadByLoader
+    } else {
+        PathSources::OnDisk
+    };
+    for load in collected
+        .conversations
+        .values_mut()
+        .flat_map(|convo| convo.attachment_loads.iter_mut())
+    {
+        let taken = std::mem::replace(load, AttachmentLoad::Missing);
+        *load = AttachmentLoad::from_source(paths.count(taken.into_source(), log));
+    }
     bytes_embedded(
         collected
             .conversations
@@ -677,12 +719,8 @@ fn attachment_source(
     att: &IrAttachment,
 ) -> (AttachmentSource, Option<u64>) {
     match load {
-        Some(AttachmentLoad::Path { path, size_hint }) => (AttachmentSource::Path(path), size_hint),
-        Some(AttachmentLoad::Bytes(bytes)) => {
-            let hint = Some(bytes.len() as u64);
-            (AttachmentSource::Bytes(bytes), hint)
-        }
         Some(AttachmentLoad::Missing) | None => (AttachmentSource::Missing, att.size_bytes),
+        Some(load) => load.into_source(),
     }
 }
 
@@ -1095,6 +1133,60 @@ mod tests {
     }
 
     /// A bare message carrying `count` attachments, for pairing tests.
+    /// What a mail archive embeds for three attachments of a backup at
+    /// `encrypted`: a file on disk, a path with no file there, and a
+    /// handwriting SVG, each recorded at the size given.
+    fn embedded_for(encrypted: bool) -> u64 {
+        let tmp = tempfile::tempdir().unwrap();
+        let present = tmp.path().join("present.jpg");
+        fs::write(&present, b"x").unwrap();
+        let convo = PendingConversation {
+            conversation_type: IrConversationType::Individual,
+            group_title: None,
+            participants: Vec::new(),
+            owner_identity: String::new(),
+            owner_display_name: None,
+            messages: vec![msg_with_attachments(1000, 3)],
+            attachment_loads: vec![
+                AttachmentLoad::Path {
+                    path: present,
+                    size_hint: Some(300),
+                },
+                AttachmentLoad::Path {
+                    path: tmp.path().join("gone.jpg"),
+                    size_hint: Some(6_000),
+                },
+                AttachmentLoad::Bytes(b"<svg/>".to_vec()),
+            ],
+        };
+        let mut collected = Collected {
+            conversations: BTreeMap::from([("+15555550101".to_string(), convo)]),
+            encrypted,
+            failures: 0,
+        };
+        embedded_bytes(&mut collected, None)
+    }
+
+    /// In a backup that is not encrypted, a path with no file there adds
+    /// nothing to the check for room before a mail export embeds it (#1744).
+    #[test]
+    fn the_embedding_check_leaves_out_a_path_with_no_file() {
+        assert_eq!(
+            embedded_for(false),
+            bytes_embedded([(None, 300), (None, 6)])
+        );
+    }
+
+    /// In an encrypted backup a path names a file only the Apple Messages
+    /// Reader can read, so it counts at its recorded size.
+    #[test]
+    fn the_embedding_check_counts_an_encrypted_path_at_its_hint() {
+        assert_eq!(
+            embedded_for(true),
+            bytes_embedded([(None, 300), (None, 6_000), (None, 6)])
+        );
+    }
+
     fn msg_with_attachments(ts: i64, count: usize) -> IrMessage {
         IrMessage {
             guid: format!("guid-{ts}"),

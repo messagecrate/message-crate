@@ -1531,6 +1531,8 @@ fn a_conversion_the_staging_disk_cannot_hold_is_refused_before_writing() {
         FormatSink::open(source.path(), OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
     sink.write_document(doc).unwrap();
     sink.finish(&mut ExportReport::default()).unwrap();
+    fs::create_dir_all(source.path().join("attachments")).unwrap();
+    fs::write(source.path().join("attachments/video.mov"), b"video").unwrap();
     let destination = tempfile::tempdir().unwrap();
     write_fixture(destination.path(), OutputFormat::Json);
     let previous = snapshot(destination.path());
@@ -1547,6 +1549,36 @@ fn a_conversion_the_staging_disk_cannot_hold_is_refused_before_writing() {
         "{err}"
     );
     assert_eq!(snapshot(destination.path()), previous);
+}
+
+/// An attachment with no file in the input adds nothing to the disk check,
+/// whatever size its record names: neither a path with nothing there nor a
+/// record the input already marked missing is copied (#1743).
+#[test]
+fn the_disk_check_of_a_conversion_leaves_out_an_attachment_with_no_file() {
+    let source = tempfile::tempdir().unwrap();
+    fs::create_dir_all(source.path()).unwrap();
+    clean_previous_ir_output(source.path()).unwrap();
+    let mut doc = message_ir::testutil::sample_document("two huge videos");
+    let mut gone = attachment("gone.mov", Some("attachments/gone.mov"));
+    gone.size_bytes = Some(u64::MAX / 2);
+    let mut marked = attachment("marked.mov", None);
+    marked.size_bytes = Some(u64::MAX / 2);
+    marked.missing_reason = Some("file_missing".to_string());
+    doc.messages[0].attachments = vec![gone, marked];
+    let mut sink =
+        FormatSink::open(source.path(), OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
+    sink.write_document(doc).unwrap();
+    sink.finish(&mut ExportReport::default()).unwrap();
+    let destination = tempfile::tempdir().unwrap();
+
+    for format in [OutputFormat::Csv, OutputFormat::Mbox] {
+        convert_export(
+            source.path(),
+            &config(source.path(), destination.path(), format),
+        )
+        .unwrap_or_else(|err| panic!("{format:?}: {err}"));
+    }
 }
 
 /// What an earlier conversion left in the output's `attachments/` is

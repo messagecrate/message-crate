@@ -718,6 +718,20 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-04 **Converting no longer asks for room for an attachment whose
+  file is missing.** Convert checks the disk for room before it starts,
+  and that check counted the size an attachment's record gave even when
+  the file was not in the export being converted, so a conversion could
+  be refused for space it would never use. An attachment with no file is
+  now left out of the check, and a refused conversion still leaves the
+  earlier output as it was.
+- 2026-10-04 **Exporting Apple Messages to EML or MBOX with attachments
+  embedded no longer asks for room for a file that is gone.** From a Mac,
+  or from an iPhone backup that is not encrypted, the check for room
+  counted an attachment whose file was missing at the size Messages
+  recorded. It now counts nothing for it, and the log names the file. In
+  an encrypted iPhone backup the files are inside the backup, so each one
+  is still counted at its recorded size.
 - 2026-10-04 **Converting, and exporting Apple Messages to a format other
   than JSON Lines, no longer count an attachment with no file in the byte
   total.** The byte total in the progress and in Convert's log counted

@@ -23,6 +23,30 @@ pub enum PathSources {
     ReadByLoader,
 }
 
+impl PathSources {
+    /// One attachment's source and size hint as a run counts them before it
+    /// starts: a source known to have no file (`Missing`, bytes that are
+    /// empty, or, with [`PathSources::OnDisk`], a path with nothing there)
+    /// becomes `Missing` with no hint, so no byte total and no disk check
+    /// counts it (#1701, #1727). A path checked on disk and found empty is
+    /// logged as the read would have logged it.
+    ///
+    /// [`CountedAttachments`] counts every attachment it holds this way. A
+    /// run that keeps its sources outside it, such as one that embeds them
+    /// in a mail archive without staging them, counts each one here.
+    pub fn count(
+        self,
+        source: (AttachmentSource, Option<u64>),
+        log: Option<&LogSink>,
+    ) -> (AttachmentSource, Option<u64>) {
+        let counted = counted_source(source);
+        match self {
+            Self::OnDisk => missing_if_no_file(counted, log),
+            Self::ReadByLoader => counted,
+        }
+    }
+}
+
 /// Every attachment of a run's messages with its source, counted before the
 /// run so that its byte total, and the disk check made from it, leave out
 /// every attachment known to have no file (#1701, #1727).
@@ -52,15 +76,16 @@ impl<'a> CountedAttachments<'a> {
         mut source_for: impl FnMut(&mut IrAttachment) -> (AttachmentSource, Option<u64>),
         log: Option<&LogSink>,
     ) -> Self {
-        let check_paths = paths == PathSources::OnDisk && media.mode != MediaMode::Disabled;
+        // With the media turned off nothing is read, so no path is checked.
+        let paths = if media.mode == MediaMode::Disabled {
+            PathSources::ReadByLoader
+        } else {
+            paths
+        };
         let mut jobs = attachment_jobs(messages);
         let mut sources = Vec::with_capacity(jobs.len());
         for job in &mut jobs {
-            let mut counted = counted_source(source_for(job.attachment));
-            if check_paths {
-                counted = missing_if_no_file(counted, log);
-            }
-            let (source, hint) = counted;
+            let (source, hint) = paths.count(source_for(job.attachment), log);
             job.size_hint = hint;
             sources.push(source);
         }
