@@ -67,7 +67,7 @@ pub(super) fn session_key(kind: SourceKind, session: &str, rows: &[&RawRow]) -> 
         };
     }
     let session = session.trim();
-    let named_by_address = address(session).is_some();
+    let named_by_address = parse_address(session).is_some();
     let address = one_to_one_address(session, rows);
     let key = match &address {
         Some(handle) => ConversationKey::OneToOne(handle.key().to_string()),
@@ -91,7 +91,7 @@ pub(super) fn session_key(kind: SourceKind, session: &str, rows: &[&RawRow]) -> 
 /// as E.164 (the international phone-number format that starts with +) when
 /// unambiguous and as its digits otherwise. `None` for a blank value or a
 /// name such as `Trip 2024`, which is no address.
-fn address(raw: &str) -> Option<Handle> {
+fn parse_address(raw: &str) -> Option<Handle> {
     Handle::parse(raw).filter(|handle| handle.kind() != HandleType::Other)
 }
 
@@ -126,7 +126,7 @@ fn people_who_wrote(kind: SourceKind, rows: &[&RawRow]) -> usize {
         .map(|row| {
             let name = row.sender_name.trim().to_lowercase();
             (
-                address(&row.sender_id).map(Handle::into_key),
+                parse_address(&row.sender_id).map(Handle::into_key),
                 (!name.is_empty()).then_some(name),
             )
         })
@@ -191,12 +191,12 @@ impl<'a> RowOrder<'a> {
 /// do not change it; it changes only when the oldest messages are gone from
 /// the export. `None` when the source records no address for the person.
 fn one_to_one_address(session: &str, rows: &[&RawRow]) -> Option<Handle> {
-    address(session)
+    parse_address(session)
         .or_else(|| numbers_in_name(session).into_iter().next())
         .or_else(|| {
             rows.iter()
                 .filter(|row| written_by_someone_else(row))
-                .filter_map(|row| Some((RowOrder::of(row), address(&row.sender_id)?)))
+                .filter_map(|row| Some((RowOrder::of(row), parse_address(&row.sender_id)?)))
                 .min_by(|a, b| a.0.cmp(&b.0))
                 .map(|(_, address)| address)
         })
@@ -235,7 +235,7 @@ fn group_members(
     // the only name-to-address mapping the source gives.
     let mut handle_by_sender_name: HashMap<String, Handle> = HashMap::new();
     for row in rows.iter().filter(|row| !is_outgoing(&row.msg_type)) {
-        let Some(address) = address(&row.sender_id) else {
+        let Some(address) = parse_address(&row.sender_id) else {
             continue;
         };
         let name = row.sender_name.trim();
@@ -257,7 +257,7 @@ fn group_members(
             if label.is_empty() {
                 continue;
             }
-            if let Some(handle) = address(label) {
+            if let Some(handle) = parse_address(label) {
                 add(handle, "");
             } else if let Some(handle) = handle_by_sender_name.get(&label.to_lowercase()) {
                 add(handle.clone(), label);
@@ -437,7 +437,7 @@ fn numbers_in_name(name: &str) -> Vec<Handle> {
         if digits < MIN_DIGITS_IN_NAME {
             continue;
         }
-        if let Some(number) = address(&name[start..=start + digits])
+        if let Some(number) = parse_address(&name[start..=start + digits])
             && !out.iter().any(|held| held.key() == number.key())
         {
             out.push(number);
@@ -447,7 +447,10 @@ fn numbers_in_name(name: &str) -> Vec<Handle> {
 }
 
 /// The sender handle and display name for a row: empty for outgoing, and
-/// otherwise the row's own Sender ID and Sender Name.
+/// otherwise the row's own Sender ID and Sender Name. A Sender ID that is
+/// no address, such as `AMAZON`, is still the sender: [`Handle::parse`]
+/// keys it as written, and the server gives it an identity of type `other`.
+/// It never becomes a conversation's key or a group's member.
 ///
 /// Only a one-to-one chat with a number or short code fills a received row
 /// that names no sender: it can only be from the chat's one other person. A
@@ -462,15 +465,15 @@ pub(super) fn resolve_sender(
     if is_from_me {
         return (String::new(), String::new());
     }
-    let address = address(&row.sender_id).map(Handle::into_key);
+    let sender = Handle::parse(&row.sender_id).map(Handle::into_key);
     if is_notification {
         // Keep any available identity from the notification row; often empty.
         return (
-            address.unwrap_or_default(),
+            sender.unwrap_or_default(),
             row.sender_name.trim().to_string(),
         );
     }
-    let handle = address.unwrap_or_else(|| match &session.address {
+    let handle = sender.unwrap_or_else(|| match &session.address {
         Some(peer) if peer.kind() == HandleType::Phone => peer.key().to_string(),
         _ => String::new(),
     });

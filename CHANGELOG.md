@@ -339,8 +339,10 @@ released versions carry their date on the heading.
   named `tel:` and a number is that number's conversation, and a group
   member listed that way is that number, not a second member by that name.
   An email address is matched whatever its capitals. A three-digit service
-  number is an address. A sender with letters among its digits, such as
-  `Promo2024`, is no longer read as the number `2024`.
+  number is an address. A sender named rather than numbered, such as
+  `AMAZON` or `Promo2024`, is kept as that sender. Before, `Promo2024` was
+  read as the number `2024`, and in a chat with a number such a message was
+  shown as sent by that number.
 - 2026-10-04 **An import lists every backup file it could not read, and
   notes what it kept with a caveat.** A CSV, XML, mail or MMS file in the
   backup that the importer could not read, which before showed only in the

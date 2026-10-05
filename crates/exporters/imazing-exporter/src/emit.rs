@@ -2,7 +2,10 @@
 //! structure, then write the chosen output format via [`ExportWriter`].
 
 use crate::attachments::{FolderFiles, attachment_cell, file_name_second, mime_hint, row_sources};
-use crate::attachments_emit::{attachment_digests, pending_attachment_to_ir};
+use crate::attachments_emit::{
+    attachment_content_key, attachment_digests, attachment_matches_any_file_key,
+    attachment_source_key, pending_attachment_to_ir,
+};
 use crate::parse::{DiscoveredCsv, RawRow, SourceKind, discover_csv_files, parse_csv_file};
 use crate::parse_emit::{
     Session, group_vendor_id, group_vendor_id_with_name, is_notification, is_outgoing,
@@ -344,18 +347,6 @@ struct FileClaim {
     message: usize,
 }
 
-/// The `extra` key of the source file of a message's `index`-th attachment.
-fn attachment_source_key(index: usize) -> String {
-    format!("attachment_source.{index}")
-}
-
-/// The `extra` key of the content digest of a message's `index`-th
-/// attachment, set only where [`Ingest::tell_apart_files_of_one_name`]
-/// needs it.
-pub(super) fn attachment_content_key(index: usize) -> String {
-    format!("attachment_content.{index}")
-}
-
 impl Ingest {
     /// Parse one CSV and fold every chat session in it into the pending conversations.
     ///
@@ -641,29 +632,48 @@ impl Ingest {
     /// are still one message. A file that cannot be read is told apart by
     /// its path; the writer reports it when it copies the file.
     ///
-    /// Only these rows are hashed: every other row's cell already tells it
-    /// apart, and its message id stays the same whether its file is found.
+    /// A group is hashed only when one CSV holds two or more of its rows
+    /// with different files. Its rows from every CSV are then hashed, so
+    /// the copies a second export of the chat holds still match. A row of
+    /// the group that has no file, from an export that lacks the files,
+    /// matches any of the hashed copies ([`attachment_digests`]) rather than
+    /// staying as a message of its own.
+    ///
+    /// Every other row's cell already tells it apart, and its message id
+    /// stays the same whether its file is found and whatever other export
+    /// the run reads.
     fn tell_apart_files_of_one_name(&mut self) {
-        let mut by_name: BTreeMap<(&ConvoKey, &str, i64), Vec<&FileClaim>> = BTreeMap::new();
-        for claim in &self.claims {
+        // Each claim, by conversation, `Attachment` cell and second.
+        let mut groups: BTreeMap<(ConvoKey, String, i64), Vec<usize>> = BTreeMap::new();
+        for (index, claim) in self.claims.iter().enumerate() {
             let second =
                 self.conversations[&claim.convo_key].convo.messages[claim.message].sort_key;
-            by_name
-                .entry((&claim.convo_key, claim.csv_name.as_str(), second))
+            groups
+                .entry((claim.convo_key.clone(), claim.csv_name.clone(), second))
                 .or_default()
-                .push(claim);
+                .push(index);
         }
         let mut digests: Vec<(ConvoKey, usize, String)> = Vec::new();
-        for claims in by_name.into_values() {
-            let files: HashSet<&Path> = claims.iter().map(|c| c.source.as_path()).collect();
-            if files.len() < 2 {
+        let mut hashed: Vec<(ConvoKey, String, i64)> = Vec::new();
+        for (group, claims) in groups {
+            let mut files_by_csv: BTreeMap<usize, HashSet<&Path>> = BTreeMap::new();
+            for &index in &claims {
+                let claim = &self.claims[index];
+                files_by_csv
+                    .entry(claim.order.0)
+                    .or_default()
+                    .insert(claim.source.as_path());
+            }
+            if files_by_csv.values().all(|files| files.len() < 2) {
                 continue;
             }
-            for claim in claims {
+            for index in claims {
+                let claim = &self.claims[index];
                 let digest = message_ir::file_sha256(&claim.source)
                     .unwrap_or_else(|_| claim.source.to_string_lossy().into_owned());
                 digests.push((claim.convo_key.clone(), claim.message, digest));
             }
+            hashed.push(group);
         }
         for (convo_key, message, digest) in digests {
             self.conversations
@@ -673,6 +683,26 @@ impl Ingest {
                 .messages[message]
                 .extra
                 .insert(attachment_content_key(0), digest);
+        }
+        for (convo_key, name, second) in hashed {
+            let messages = &mut self
+                .conversations
+                .get_mut(&convo_key)
+                .expect("a claim names a conversation that exists")
+                .convo
+                .messages;
+            for message in messages.iter_mut().filter(|message| {
+                message.sort_key == second
+                    && message
+                        .attachments
+                        .first()
+                        .is_some_and(|attachment| attachment.rel_path == name)
+                    && message.extra_str(&attachment_source_key(0)).is_empty()
+            }) {
+                message
+                    .extra
+                    .insert(attachment_matches_any_file_key(0), "true".into());
+            }
         }
     }
 
@@ -828,15 +858,16 @@ impl ProjectionHooks for ImazingProjection<'_> {
     }
 
     fn attachment_to_ir(&self, att: &PendingAttachment, msg: &PendingMessage) -> IrAttachment {
-        let index = msg
+        // A message's attachments have different names: the row's file, and
+        // a Live Photo video named as the picture with the video's extension.
+        let source = msg
             .attachments
             .iter()
-            .position(|held| std::ptr::eq(held, att))
-            .expect("the projection maps a message's own attachments");
-        let source = msg.extra_str(&attachment_source_key(index));
-        self.sources
-            .borrow_mut()
-            .push((!source.is_empty()).then(|| PathBuf::from(source)));
+            .position(|held| held.rel_path == att.rel_path)
+            .map(|index| msg.extra_str(&attachment_source_key(index)))
+            .filter(|source| !source.is_empty())
+            .map(PathBuf::from);
+        self.sources.borrow_mut().push(source);
         pending_attachment_to_ir(att, msg)
     }
 

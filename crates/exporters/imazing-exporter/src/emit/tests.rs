@@ -1504,14 +1504,12 @@ fn each_row_gets_the_file_imazing_wrote_for_it_in_its_own_folder() {
     }
 }
 
-/// #1516: iMazing writes a file for each of two rows of one second that name
-/// one file (`image0.jpg`, `image0 2.jpg`). Rows whose files differ are two
-/// messages, each with its own picture; rows whose files are the same are
-/// one message. A message after a dropped repeat keeps its own picture.
-#[test]
-fn rows_of_one_second_and_one_file_name_are_told_apart_by_their_files() {
-    let input =
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/same_second_pictures");
+/// Convert the fixture directory `name` under `tests/fixtures` to JSON and
+/// read back the conversation with `+15555550101`.
+fn convert_fixture(name: &str) -> ChatFolderExport {
+    let input = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures")
+        .join(name);
     let dir = tempfile::tempdir().unwrap();
     let out = dir.path().join("out");
     let report = convert_export(ConvertExportArgs {
@@ -1526,22 +1524,43 @@ fn rows_of_one_second_and_one_file_name_are_told_apart_by_their_files() {
     })
     .unwrap();
     let doc = message_ir_format::read_conversation_json(&out.join("+15555550101.json")).unwrap();
-    let pictures: Vec<Vec<String>> = doc
-        .messages
-        .iter()
-        .map(|message| {
-            message
-                .attachments
-                .iter()
-                .map(|a| {
-                    let path = a.path.as_deref().expect("the attachment was copied");
-                    fs::read_to_string(out.join(path)).unwrap()
-                })
-                .collect()
-        })
-        .collect();
+    ChatFolderExport {
+        report,
+        doc,
+        out,
+        _dir: dir,
+    }
+}
+
+impl ChatFolderExport {
+    /// The contents of every message's copied attachments, in message order.
+    fn pictures(&self) -> Vec<Vec<String>> {
+        self.doc
+            .messages
+            .iter()
+            .map(|message| {
+                message
+                    .attachments
+                    .iter()
+                    .map(|a| {
+                        let path = a.path.as_deref().expect("the attachment was copied");
+                        fs::read_to_string(self.out.join(path)).unwrap()
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+}
+
+/// #1516: iMazing writes a file for each of two rows of one second that name
+/// one file (`image0.jpg`, `image0 2.jpg`). Rows whose files differ are two
+/// messages, each with its own picture; rows whose files are the same are
+/// one message. A message after a dropped repeat keeps its own picture.
+#[test]
+fn rows_of_one_second_and_one_file_name_are_told_apart_by_their_files() {
+    let export = convert_fixture("same_second_pictures");
     assert_eq!(
-        pictures,
+        export.pictures(),
         vec![
             vec!["first picture".to_string()],
             vec!["second picture".to_string()],
@@ -1549,7 +1568,60 @@ fn rows_of_one_second_and_one_file_name_are_told_apart_by_their_files() {
             vec!["third picture".to_string()],
         ]
     );
-    assert_eq!(report.duplicates_dropped, 1);
+    assert_eq!(export.report.duplicates_dropped, 1);
+}
+
+/// #1516: a second export of the chat that lacks the pair's files (`B`)
+/// repeats the two messages the first export (`A`) tells apart by their
+/// files, and adds no third message with a missing picture.
+#[test]
+fn rows_without_their_files_repeat_the_copies_another_export_tells_apart() {
+    let export = convert_fixture("two_exports");
+    assert_eq!(
+        export.pictures(),
+        vec![
+            vec!["first picture".to_string()],
+            vec!["second picture".to_string()],
+            vec!["third picture".to_string()],
+        ]
+    );
+    assert_eq!(export.report.duplicates_dropped, 3);
+}
+
+/// #1516: a row that is the only one of its name in its second keeps the
+/// message id it has when its export is read alone, though a second export
+/// of the chat holds its own copy of the file.
+#[test]
+fn a_row_alone_in_its_second_keeps_its_id_beside_a_second_export() {
+    let guid_of_third = |export: &ChatFolderExport| {
+        export
+            .doc
+            .messages
+            .iter()
+            .find(|m| m.timestamp_unix_ms == 1_577_880_420_000)
+            .expect("the 12:07 message")
+            .guid
+            .clone()
+    };
+    assert_eq!(
+        guid_of_third(&convert_fixture("two_exports")),
+        guid_of_third(&convert_fixture("two_exports/A"))
+    );
+}
+
+/// #1540: a Sender ID that is no address, such as `AMAZON`, is still the
+/// message's sender, and never the chat's number or the chat's key.
+#[test]
+fn a_sender_id_that_is_no_address_is_still_the_sender() {
+    let documents = convert_rows(
+        "+15555550101,2020-01-01 12:00:00,SMS,Incoming,AMAZON,,Read,,,Your parcel,,,\n",
+    );
+    assert_eq!(documents.len(), 1);
+    assert_eq!(documents[0].conversation.chat_identifier, "+15555550101");
+    assert_eq!(
+        documents[0].messages[0].sender_identity.as_deref(),
+        Some("AMAZON")
+    );
 }
 
 /// #1540: an address is classified once, by `Handle::parse`. A chat named
