@@ -131,8 +131,7 @@ impl HttpSession {
 struct Session {
     #[serde(default)]
     account_id: Option<i64>,
-    #[serde(default)]
-    username: Option<String>,
+    username: String,
 }
 
 /// True when the body looks like an HTML error page instead of JSON.

@@ -506,7 +506,7 @@ mod tests {
             username: "alice".into(),
             auth: AuthInfo {
                 account_id: 1,
-                username: Some("alice".into()),
+                username: "alice".into(),
             },
             stop: Default::default(),
             refused: Default::default(),

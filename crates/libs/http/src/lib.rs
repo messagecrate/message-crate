@@ -27,8 +27,8 @@ use anyhow::{Context, Result};
 pub struct AuthInfo {
     /// The account id.
     pub account_id: i64,
-    /// The display username for the account, if one is set.
-    pub username: Option<String>,
+    /// The username the account logs in with.
+    pub username: String,
 }
 
 /// The desktop app's Build, set once at startup by [`identify_desktop_app`].

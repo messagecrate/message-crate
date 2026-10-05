@@ -73,14 +73,15 @@ pub(crate) struct Session {
     sources: Vec<String>,
     /// Id of the account the credential acts for.
     account_id: i64,
-    /// The username the account logs in with. Null only when the account was
-    /// deleted between the credential check and this read.
-    username: Option<String>,
+    /// The username the account logs in with.
+    username: String,
 }
 
 /// The Session the bearer token names: its account, username, and import
 /// sources. A session token and an API token both answer, because a program
 /// checking its token needs the same facts as a browser restoring a login.
+/// An account deleted after its credential was checked answers
+/// `401 Unauthorized`, as a credential naming no account does.
 #[utoipa::path(
     get,
     path = "/v1/session",
@@ -111,10 +112,14 @@ async fn list_account_sources(pool: &SqlitePool, account_id: i64) -> Result<Vec<
     Ok(dedupe::source_priority_from_db(&mut conn, account_id).await?)
 }
 
-/// Username for an account id, when the account has one.
-async fn load_username(pool: &SqlitePool, account_id: i64) -> Result<Option<String>, ApiError> {
+/// Username for the credential's account. An account deleted between the
+/// credential check and this read answers `401 Unauthorized`, as a credential
+/// naming no account does.
+async fn load_username(pool: &SqlitePool, account_id: i64) -> Result<String, ApiError> {
     let mut conn = pool.acquire().await?;
-    Ok(account_profile::username_for_account(&mut conn, account_id).await?)
+    account_profile::username_for_account(&mut conn, account_id)
+        .await?
+        .ok_or_else(ApiError::account_gone)
 }
 
 /// Log in: verify a local username and password and answer the Session, a

@@ -571,6 +571,13 @@ impl ApiError {
         Self::ValidationFailed(vec![sentence.into()])
     }
 
+    /// `401` for a credential whose account is gone: the token passed, but no
+    /// account row has its id any more. It answers as a credential that names
+    /// no account, because to the caller the two are the same.
+    pub(crate) fn account_gone() -> Self {
+        Self::AuthenticationRequired("account no longer exists".into())
+    }
+
     /// The registered type, or `None` for an internal error.
     #[must_use]
     pub fn problem_type(&self) -> Option<ProblemType> {
@@ -1592,7 +1599,7 @@ pub async fn resolve_auth_on_conn(
 
     let auth = account_profile::load_account_auth(&mut *conn, account_id)
         .await?
-        .ok_or_else(|| ApiError::AuthenticationRequired("account no longer exists".into()))?;
+        .ok_or_else(ApiError::account_gone)?;
     if auth.disabled {
         return Err(ApiError::AccountDisabled("this account is disabled".into()));
     }

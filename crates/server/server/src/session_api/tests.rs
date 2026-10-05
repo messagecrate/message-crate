@@ -34,6 +34,57 @@ async fn the_reference_marks_a_sessions_account_id_required() {
     );
 }
 
+/// Every Session the server answers names its account's username, so the
+/// reference marks `username` a required string, and a client generated from
+/// it never has to handle a Session without one.
+#[tokio::test]
+async fn the_reference_marks_a_sessions_username_a_required_string() {
+    let (fixture, account) = fixture_with_account().await;
+    let body: serde_json::Value = get_json(&fixture.state, "/v1/session", &account.token).await;
+    assert_eq!(body["username"], account.username, "{body}");
+
+    let doc: serde_json::Value =
+        serde_json::from_str(&crate::openapi::dump_openapi_json()).unwrap();
+    let session = &doc["components"]["schemas"]["Session"];
+    assert!(
+        session["required"]
+            .as_array()
+            .is_some_and(|r| r.iter().any(|f| f == "username")),
+        "{session}"
+    );
+    assert_eq!(
+        session["properties"]["username"]["type"], "string",
+        "{session}"
+    );
+}
+
+/// An account deleted between the credential check and the read of its
+/// username answers `401 Unauthorized` (`authentication-required`), as a
+/// credential naming no account does, rather than a Session with no
+/// username. The router cannot reach that moment, because the credential
+/// check refuses a token whose account is gone, so the handler is called with
+/// the identity the check would have handed it.
+#[tokio::test]
+async fn an_account_gone_before_its_username_is_read_answers_unauthorized() {
+    let fixture = test_fixture().await;
+    let auth = AuthIdentity {
+        account_id: 9_999,
+        capability: crate::server::AuthCapability::Session {
+            permissions: crate::db::permissions::Permissions::all(),
+        },
+        credential: crate::db::audit_trail::CredentialUsed::Session(None),
+    };
+
+    let err = get_session(State(fixture.state.clone()), auth)
+        .await
+        .expect_err("an account with no row has no Session");
+    assert_eq!(
+        err.problem_type(),
+        Some(ProblemType::AuthenticationRequired),
+        "{err:?}"
+    );
+}
+
 /// The Session is a singleton: logging in answers `201 Created` with a
 /// `Location` naming `/v1/session` itself, `GET` reads it back without an
 /// `ok` flag, and `DELETE` ends it with `204 No Content`.

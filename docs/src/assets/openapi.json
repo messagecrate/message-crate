@@ -12401,7 +12401,7 @@
           "Session"
         ],
         "summary": "The Session the bearer token names: its account, username, and import sources.",
-        "description": "A session token and an API token both answer, because a program checking its token needs the same facts as a browser restoring a login.",
+        "description": "A session token and an API token both answer, because a program checking its token needs the same facts as a browser restoring a login. An account deleted after its credential was checked answers `401 Unauthorized`, as a credential naming no account does.",
         "operationId": "get_session",
         "responses": {
           "200": {
@@ -18805,11 +18805,8 @@
             "description": "Source ids the account's messages came from, such as `imessage` or\n`whatsapp`, in the order their first messages were imported, earliest\nfirst."
           },
           "username": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "The username the account logs in with. Null only when the account was\ndeleted between the credential check and this read."
+            "type": "string",
+            "description": "The username the account logs in with."
           }
         }
       },

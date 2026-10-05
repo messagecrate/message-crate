@@ -1530,7 +1530,7 @@ export interface paths {
         };
         /**
          * The Session the bearer token names: its account, username, and import sources.
-         * @description A session token and an API token both answer, because a program checking its token needs the same facts as a browser restoring a login.
+         * @description A session token and an API token both answer, because a program checking its token needs the same facts as a browser restoring a login. An account deleted after its credential was checked answers `401 Unauthorized`, as a credential naming no account does.
          */
         get: operations["get_session"];
         put?: never;
@@ -4961,11 +4961,8 @@ export interface components {
              *     first.
              */
             sources: string[];
-            /**
-             * @description The username the account logs in with. Null only when the account was
-             *     deleted between the credential check and this read.
-             */
-            username: string | null;
+            /** @description The username the account logs in with. */
+            username: string;
         };
         /** @description One tapback reaction on an exported message. */
         Tapback: {

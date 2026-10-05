@@ -28,18 +28,23 @@ fn a_session_body_becomes_the_account_it_names() {
     let info = check_against(200, r#"{"account_id": 42, "username": "alice"}"#)
         .expect("a well-formed session must be accepted");
     assert_eq!(info.account_id, 42);
-    assert_eq!(info.username.as_deref(), Some("alice"));
+    assert_eq!(info.username, "alice");
 }
 
-/// A username is optional — an account that has not finished profile setup has
-/// none — but an account id is not, because every later call is made on its
+/// Every Session names its account's username, so a body without one is not
+/// a Session: the reply is refused as unreadable, not taken with a username
+/// made up from the account id.
+#[test]
+fn a_session_without_a_username_is_refused() {
+    let err = check_against(200, r#"{"account_id": 7}"#)
+        .expect_err("a session with no username is not a session");
+    assert_eq!(err.kind(), "bad_json");
+}
+
+/// An account id is required too, because every later call is made on its
 /// behalf.
 #[test]
 fn a_session_without_an_account_id_is_refused() {
-    let info = check_against(200, r#"{"account_id": 7}"#).expect("a missing username is allowed");
-    assert_eq!(info.account_id, 7);
-    assert_eq!(info.username, None);
-
     let err = check_against(200, r#"{"username": "alice"}"#)
         .expect_err("a session with no account id is not a session");
     assert_eq!(err.kind(), "missing_account");

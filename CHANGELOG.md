@@ -1539,6 +1539,12 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-05 **The Session always names its username.** `GET /v1/session`
+  described `username` as possibly empty, so every program reading it had to
+  allow for a Session with no username. It always carries one now. An
+  account deleted at the moment its Session is read answers
+  `401 Unauthorized`, as a credential naming no account does, instead of a
+  Session without a username.
 - 2026-10-05 **The HTTP API reference describes every field.** 59 fields,
   among them the Import Run's mode and source, an upload's part size, and a
   Contact Group's or Message Tag's name, showed no description in the HTTP
