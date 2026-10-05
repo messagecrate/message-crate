@@ -325,7 +325,7 @@ fn write_mboxrd_record(writer: &mut impl Write, msg: &MailMessage) -> Result<()>
 
 /// The address for the mbox `From_` line: the sender for incoming, the owner otherwise.
 fn envelope_sender(msg: &MailMessage) -> String {
-    let handle = match msg.message.direction {
+    let identity = match msg.message.direction {
         IrDirection::Incoming => msg
             .message
             .sender_identity
@@ -338,7 +338,7 @@ fn envelope_sender(msg: &MailMessage) -> String {
             if owner.is_empty() { "me" } else { owner }
         }
     };
-    synthetic_email(handle)
+    synthetic_email(identity)
 }
 
 /// The classic `Wed Jun 30 21:49:08 1993` form of a timestamp, in UTC.
@@ -385,47 +385,47 @@ fn guid_prefix8(guid: &str) -> String {
     }
 }
 
-/// Synthetic RFC5322 address for a phone or Apple handle.
-///
-/// Phones → `+E164@sms.local`. Email / other handles containing `@` →
-/// `local=domain@identity.local` (`MAIL_ARCHIVE` encoding).
-fn synthetic_address(handle: &str, display_name: Option<&str>) -> Address<'static> {
+/// Synthetic RFC5322 address for an identity, with its display name.
+fn synthetic_address(identity: &str, display_name: Option<&str>) -> Address<'static> {
     let name = display_name.and_then(message_ir::nonempty);
-    Address::new_address(name, synthetic_email(handle))
+    Address::new_address(name, synthetic_email(identity))
 }
 
-/// The address a handle is written as in `From`, `To` and the mbox `From_`
-/// line: `+15555550101@sms.local`, or `sam=example.com@identity.local` for a
-/// handle holding an `@`.
+/// The address an identity is written as in `From`, `To` and the mbox
+/// `From_` line: `+15555550101@sms.local`, or
+/// `sam=example.com@identity.local` for an identity holding an `@`, which is
+/// written as `=`.
 ///
-/// The local part is [`sanitize_addr_local`]'s, so every character an
-/// address cannot hold, a space or a line break among them, is `_`. Written
-/// as it was, a line break in a handle ended the header, and the mail no
-/// longer read. The handle itself is kept in its `X-ME-*` header.
-fn synthetic_email(handle: &str) -> String {
-    let handle = handle.trim();
-    let domain = if handle.contains('@') {
+/// The local part is [`dot_atom`]'s, so an identity an address can hold is
+/// written as it is, and every other one is encoded so that no space or line
+/// break reaches the header. Written as it was, a line break in an identity
+/// ended the header, and the mail no longer read. Two identities never share
+/// an address, because a mail client groups mails by it. The identity
+/// itself is kept in its `X-ME-*` header.
+fn synthetic_email(identity: &str) -> String {
+    let identity = identity.trim();
+    if identity.is_empty() {
+        return format!("unknown@{SMS_ADDRESS_DOMAIN}");
+    }
+    let domain = if identity.contains('@') {
         IDENTITY_ADDRESS_DOMAIN
     } else {
         SMS_ADDRESS_DOMAIN
     };
-    match sanitize_addr_local(handle) {
-        Some(local) => format!("{local}@{domain}"),
-        None => format!("unknown@{SMS_ADDRESS_DOMAIN}"),
-    }
+    format!("{}@{domain}", dot_atom(&identity.replace('@', "=")))
 }
 
-/// The owner's address: their handle (or `me`) with their display name (or
-/// `Me`).
+/// The owner's address: their identity (or `me`) with their display name
+/// (or `Me`).
 fn owner_address(msg: &MailMessage) -> Address<'static> {
-    let handle = msg.owner_identity.trim();
-    let handle = if handle.is_empty() { "me" } else { handle };
+    let identity = msg.owner_identity.trim();
+    let identity = if identity.is_empty() { "me" } else { identity };
     let display = msg
         .owner_display_name
         .as_deref()
         .and_then(message_ir::trimmed)
         .unwrap_or(OWNER_DISPLAY_NAME);
-    synthetic_address(handle, Some(display))
+    synthetic_address(identity, Some(display))
 }
 
 /// One browseable address for a group chat (roster stays in `X-ME-Participants`).
@@ -504,35 +504,43 @@ fn message_id_domain(msg: &MailMessage) -> &'static str {
 }
 
 /// The `Message-ID` of the message whose guid is `guid`, without its angle
-/// brackets: `{guid}@{domain}`. A reply's `In-Reply-To` and `References`
-/// name its parent by the same id.
+/// brackets: `{guid}@{domain}`, the guid written by [`dot_atom`]. A reply's
+/// `In-Reply-To` and `References` name its parent by the same id.
 ///
-/// A guid that is a `dot-atom-text` (RFC 5322 section 3.2.3) with no `%` is
-/// written as it is, as every guid a source app gives is. Every other guid
-/// has each byte that is not `atext`, and each `%` and `.`, written as `%XX`,
-/// so no space or line break reaches the header. Written as it was, a line
-/// break in a guid ended the mail's headers. Two guids never share an id,
-/// because a mail client threads replies by it: an id written as it is holds
-/// no `%`, and an encoded one does (the empty guid alone is written as
-/// nothing). The guid itself is kept in `X-ME-Guid`.
+/// Written as it was, a line break in a guid ended the mail's headers. Two
+/// guids never share an id, because a mail client threads replies by it.
+/// The guid itself is kept in `X-ME-Guid`.
 fn message_id(guid: &str, domain: &str) -> String {
+    format!("{}@{domain}", dot_atom(guid))
+}
+
+/// `text` as the left side of an address or a `Message-ID`.
+///
+/// Text that is a `dot-atom-text` (RFC 5322 section 3.2.3) with no `%` is
+/// written as it is, as every guid a source app gives and every phone number
+/// and email address is. Every other text has each byte that is not
+/// `atext`, and each `%` and `.`, written as `%XX`, so no space or line
+/// break is left in it. Two texts never give the same result: text written
+/// as it is holds no `%`, and encoded text does (the empty text alone is
+/// written as nothing).
+fn dot_atom(text: &str) -> String {
     let is_atext = |b: u8| b.is_ascii_alphanumeric() || b"!#$&'*+-/=?^_`{|}~".contains(&b);
-    let verbatim = !guid.is_empty()
-        && guid
+    let verbatim = !text.is_empty()
+        && text
             .split('.')
             .all(|atom| !atom.is_empty() && atom.bytes().all(is_atext));
     if verbatim {
-        return format!("{guid}@{domain}");
+        return text.to_string();
     }
-    let mut left = String::with_capacity(guid.len() * 3);
-    for b in guid.bytes() {
+    let mut encoded = String::with_capacity(text.len() * 3);
+    for b in text.bytes() {
         if is_atext(b) {
-            left.push(char::from(b));
+            encoded.push(char::from(b));
         } else {
-            left.push_str(&format!("%{b:02X}"));
+            encoded.push_str(&format!("%{b:02X}"));
         }
     }
-    format!("{left}@{domain}")
+    encoded
 }
 
 /// The `Content-Type` of an attachment's MIME part: its type when that is a

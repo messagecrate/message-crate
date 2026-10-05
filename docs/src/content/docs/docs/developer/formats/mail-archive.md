@@ -90,7 +90,7 @@ Do **not** use the `X-smssync-*` header namespace. This format is not Plus-compa
 - Phone: `+15555550119@sms.local` (E.164 in local-part; `+` allowed in addr-spec via quoting if required by the builder).
 - Email / Apple identity: `user=example.com@identity.local` or a documented safe encoding of the raw identity — never name-only as the sole identifier.
 - Display name may appear in the phrase (`Alice <+1555…@sms.local>`).
-- The local part keeps letters, digits, `+`, `-`, `_`, `.` and `=`, writes `@` as `=`, and writes every other character as `_`, a space or a line break among them. A line break written as it was would end the header. The identity itself is read from its `X-ME-*` header, never from the address. The mbox `From_` line names the same address.
+- The local part is the identity with `@` written as `=`. When that is not an RFC 5322 `dot-atom-text`, or holds a `%`, each byte outside `atext`, and each `%` and `.`, is written as `%XX`, as for `Message-ID` below: the identity `Ann Lee` is `Ann%20Lee@sms.local`. A space or line break written as it was would break the header. Two identities never share an address. The identity itself is read from its `X-ME-*` header, never from the address. The mbox `From_` line names the same address.
 
 ### Message-ID
 

@@ -1080,6 +1080,38 @@ fn guids_that_differ_in_unsafe_characters_keep_different_message_ids() {
     assert_eq!(distinct.len(), ids.len(), "Message-IDs were {ids:?}");
 }
 
+/// An identity an address can hold is written as it is, and identities
+/// that differ only in characters an address cannot hold still have
+/// different addresses, because a mail client groups mails by address.
+#[test]
+fn identities_keep_their_own_addresses() {
+    let address = |identity: &str| {
+        let mut msg = base_sms();
+        msg.message.direction = IrDirection::Outgoing;
+        msg.owner_identity = identity.into();
+        let from = standard_header(&msg, "From");
+        let [mailparse::MailAddr::Single(addr)] = &mailparse::addrparse(&from).unwrap()[..] else {
+            panic!("From was {from:?}");
+        };
+        addr.addr.clone()
+    };
+    assert_eq!(
+        address("o'brien/x@example.com"),
+        "o'brien/x=example.com@identity.local"
+    );
+    assert_eq!(address("+15555550101"), "+15555550101@sms.local");
+    let addresses: Vec<String> = ["a b", "a/b", "a_b", "a\r\nb", "a%20b", "josé", "jos_"]
+        .into_iter()
+        .map(address)
+        .collect();
+    let distinct: std::collections::BTreeSet<&String> = addresses.iter().collect();
+    assert_eq!(
+        distinct.len(),
+        addresses.len(),
+        "addresses were {addresses:?}"
+    );
+}
+
 /// An identity holding a line break, written into the `From` or `To`
 /// address as it was, made the mail unreadable (mailparse: "Header cannot
 /// start with a space") or broke the mbox `From_` line (#1816). Every
@@ -1159,18 +1191,14 @@ fn an_attachment_type_with_a_line_break_keeps_its_part_whole() {
         attachment("image/png", b"second"),
     ];
 
+    let types_and_bytes = |m: &MailMessage| -> Vec<(Option<String>, Vec<u8>)> {
+        m.attachments
+            .iter()
+            .map(|a| (a.meta.mime_type.clone(), a.bytes.clone()))
+            .collect()
+    };
     for read in <[MailMessage; 2]>::from(written_and_read_back(&msg)) {
-        let read: Vec<(Option<String>, Vec<u8>)> = read
-            .attachments
-            .iter()
-            .map(|a| (a.meta.mime_type.clone(), a.bytes.clone()))
-            .collect();
-        let written: Vec<(Option<String>, Vec<u8>)> = msg
-            .attachments
-            .iter()
-            .map(|a| (a.meta.mime_type.clone(), a.bytes.clone()))
-            .collect();
-        assert_eq!(read, written);
+        assert_eq!(types_and_bytes(&read), types_and_bytes(&msg));
     }
     let eml = String::from_utf8(build_eml(&msg).unwrap()).unwrap();
     assert!(!eml.contains("\r\nX-Injected"), "{eml}");
