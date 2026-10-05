@@ -24,7 +24,7 @@ pub enum ProgressEvent {
     Auth {
         /// Account id the token resolved to.
         account_id: i64,
-        /// Username the server reports for that account, else the account id.
+        /// Username the server reports for that account.
         username: String,
     },
     /// Work on one conversation file began.
