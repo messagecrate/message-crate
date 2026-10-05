@@ -465,8 +465,11 @@ async fn staging_chunks_56_messages_and_keeps_children_on_right_rows() {
 /// and the owner reacts to it with an emoji, as the Apple Messages exporter
 /// writes it: the reactions on the message reacted to, and each reaction's
 /// own row beside it.
-const APPLE_MESSAGES_REACTIONS: &str =
-    include_str!("../../tests/fixtures/apple-messages-reactions.jsonl");
+fn apple_messages_reactions() -> String {
+    crate::test_support::at_current_schema_version(include_str!(
+        "../../tests/fixtures/apple-messages-reactions.jsonl"
+    ))
+}
 
 /// The import stores each of a message's `reactions` under the person who
 /// reacted, not the author of the message: the friend's tapback under the
@@ -477,7 +480,7 @@ async fn an_apple_messages_tapback_and_emoji_reaction_are_stored_under_each_reac
     let tmp = TempDir::new().unwrap();
     let db = tmp.path().join("messagecrate.db");
     let assets = tmp.path().join("assets");
-    let path = write_jsonl(tmp.path(), "reactions.jsonl", APPLE_MESSAGES_REACTIONS);
+    let path = write_jsonl(tmp.path(), "reactions.jsonl", &apple_messages_reactions());
     let stats = import_jsonl_files(&db, &[path], &replace_opts(&assets, tmp.path(), "imessage"))
         .await
         .unwrap();
@@ -2546,10 +2549,10 @@ async fn http_import_of_a_schema_4_file_is_a_422_naming_both_versions() {
     );
     assert_eq!(
         problem.errors.unwrap(),
-        vec![
-            "This file is schema version 4; Message Crate reads version 9 (line 1 of the batch)."
-                .to_string()
-        ]
+        vec![format!(
+            "This file is schema version 4; Message Crate reads version {} (line 1 of the batch).",
+            message_ir::SCHEMA_VERSION
+        )]
     );
     assert_eq!(problem.line, Some(1), "{text}");
 }

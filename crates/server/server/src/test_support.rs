@@ -1284,6 +1284,22 @@ impl std::fmt::Display for ConversationHeaderLine {
     }
 }
 
+/// A conversation file an exporter wrote and the tests keep in
+/// `tests/fixtures/`, `contents`, with its header's `schema_version` set to
+/// [`message_ir::SCHEMA_VERSION`]. A schema version bump then reaches the
+/// committed files the way it reaches [`conversation_header`], with no file
+/// edited by hand (#1855). Only the header line is rewritten; every message
+/// line stays as the exporter wrote it.
+pub fn at_current_schema_version(contents: &str) -> String {
+    let (header, messages) = contents
+        .split_once('\n')
+        .expect("a conversation file opens with its header line");
+    let mut header: serde_json::Value =
+        serde_json::from_str(header).expect("the header line is JSON");
+    header["schema_version"] = message_ir::SCHEMA_VERSION.into();
+    format!("{header}\n{messages}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

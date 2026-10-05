@@ -2,9 +2,9 @@ use axum::http::StatusCode;
 
 use crate::problem::ProblemType;
 use crate::test_support::{
-    RegisteredAccount, SeedConversation, SeedMessage, TestFixture, conversation_header,
-    expect_problem, fixture_with_account, get_json, get_raw, get_status, register_via_api,
-    seed_conversation,
+    RegisteredAccount, SeedConversation, SeedMessage, TestFixture, at_current_schema_version,
+    conversation_header, expect_problem, fixture_with_account, get_json, get_raw, get_status,
+    register_via_api, seed_conversation,
 };
 
 /// Two conversations for alice (a direct thread and a group), and one for bob
@@ -405,17 +405,20 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
 /// An Apple Messages conversation file holding a message the owner deleted
 /// in Messages, one unsent whole, and one only partly unsent, as the Apple
 /// Messages exporter writes them from `chat-db-fixture`'s messages 16 to 18.
-const APPLE_MESSAGES_DELETIONS: &str =
-    include_str!("../../tests/fixtures/apple-messages-deletions.jsonl");
+fn apple_messages_deletions() -> String {
+    at_current_schema_version(include_str!(
+        "../../tests/fixtures/apple-messages-deletions.jsonl"
+    ))
+}
 
-/// Import [`APPLE_MESSAGES_DELETIONS`] into `account_id` through the whole
+/// Import [`apple_messages_deletions`] into `account_id` through the whole
 /// pipeline.
 async fn import_deletions(fixture: &TestFixture, account_id: i64) {
     let counts = import_conversation_file(
         fixture,
         account_id,
         "deletions",
-        APPLE_MESSAGES_DELETIONS,
+        &apple_messages_deletions(),
         "imessage",
     )
     .await;
@@ -429,16 +432,20 @@ async fn import_deletions(fixture: &TestFixture, account_id: i64) {
 /// earlier versions alone mention the library and the museum, a message
 /// edited once that mentions the library in its final text and its earlier
 /// version, and a message never edited.
-const APPLE_MESSAGES_EDITS: &str = include_str!("../../tests/fixtures/apple-messages-edits.jsonl");
+fn apple_messages_edits() -> String {
+    at_current_schema_version(include_str!(
+        "../../tests/fixtures/apple-messages-edits.jsonl"
+    ))
+}
 
-/// Import [`APPLE_MESSAGES_EDITS`] into `account_id` through the whole
+/// Import [`apple_messages_edits`] into `account_id` through the whole
 /// pipeline.
 async fn import_edits(fixture: &TestFixture, account_id: i64) {
     let counts = import_conversation_file(
         fixture,
         account_id,
         "edits",
-        APPLE_MESSAGES_EDITS,
+        &apple_messages_edits(),
         "imessage",
     )
     .await;
@@ -695,7 +702,7 @@ async fn importing_an_edited_message_again_keeps_one_copy_of_each_earlier_versio
         &fixture,
         alice.account_id,
         "edits-again",
-        APPLE_MESSAGES_EDITS,
+        &apple_messages_edits(),
         "imessage",
     )
     .await;
@@ -716,11 +723,12 @@ async fn importing_an_edited_message_again_keeps_one_copy_of_each_earlier_versio
     assert_eq!(guids(&museum), ["guid-edited-twice"], "{museum}");
 }
 
-/// [`APPLE_MESSAGES_EDITS`] as a later backup holds it: the message edited
+/// [`apple_messages_edits`] as a later backup holds it: the message edited
 /// twice was edited a third time, from the bakery to the park, and the
 /// message never edited has been edited once, from "Nothing changed here".
 fn later_apple_messages_edits() -> String {
-    let later = APPLE_MESSAGES_EDITS
+    let edits = apple_messages_edits();
+    let later = edits
         .replace(
             r#""text":"Meet at the bakery","attachments":[],"#,
             r#""text":"Meet at the park","attachments":[],"#,
@@ -735,7 +743,7 @@ fn later_apple_messages_edits() -> String {
         );
     assert_eq!(
         later.matches("edited_at_unix_ms").count(),
-        APPLE_MESSAGES_EDITS.matches("edited_at_unix_ms").count() + 2,
+        edits.matches("edited_at_unix_ms").count() + 2,
         "the later backup edits both messages again"
     );
     later
@@ -862,7 +870,7 @@ async fn an_append_from_an_earlier_backup_keeps_a_stored_messages_later_edit() {
         &fixture,
         alice.account_id,
         "edits",
-        APPLE_MESSAGES_EDITS,
+        &apple_messages_edits(),
         "imessage",
     )
     .await;
@@ -877,14 +885,14 @@ async fn an_append_from_an_earlier_backup_keeps_a_stored_messages_later_edit() {
     assert_eq!(earlier_texts(&once), ["Nothing changed here"], "{page}");
 }
 
-/// [`APPLE_MESSAGES_EDITS`] with its header line changed by `header` and
+/// [`apple_messages_edits`] with its header line changed by `header` and
 /// each message line by `message`.
 fn edits_file_with(
     header: impl Fn(&mut serde_json::Value),
     message: impl Fn(&mut serde_json::Value),
 ) -> String {
     let mut out = String::new();
-    for (i, line) in APPLE_MESSAGES_EDITS.lines().enumerate() {
+    for (i, line) in apple_messages_edits().lines().enumerate() {
         let mut value: serde_json::Value = serde_json::from_str(line).unwrap();
         if i == 0 {
             header(&mut value);
@@ -897,7 +905,7 @@ fn edits_file_with(
     out
 }
 
-/// One message line of [`APPLE_MESSAGES_EDITS`] as a backup that records no
+/// One message line of [`apple_messages_edits`] as a backup that records no
 /// edits holds it: its guid starting `prefix` in place of `guid-`, and no
 /// earlier versions.
 fn without_edits(message: &mut serde_json::Value, prefix: &str) {
@@ -909,7 +917,7 @@ fn without_edits(message: &mut serde_json::Value, prefix: &str) {
     message.as_object_mut().unwrap().remove("edits");
 }
 
-/// [`APPLE_MESSAGES_EDITS`] as a backup of the same iPhone from `source`
+/// [`apple_messages_edits`] as a backup of the same iPhone from `source`
 /// holds it, one that records no edits, such as iMazing: the same messages
 /// with their final text, their guids starting `prefix` in place of
 /// `guid-`, and no earlier versions.
