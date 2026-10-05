@@ -3402,13 +3402,12 @@ async fn an_address_book_load_needs_no_import_export_or_delete_permission() {
 async fn ada_in_a_conversation(conn: &mut sqlx::SqliteConnection, account: i64) -> i64 {
     let header =
         conversation_header("imessage", "+15555550123").participant("+15555550123", Some("Ada"));
-    let message = r#"{"guid":"g-ada-1105","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}
-"#;
+    let message = r#"{"guid":"g-ada-1105","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}"#;
     crate::test_support::import_jsonl_text(
         conn,
         account,
         "imessage",
-        &format!("{header}\n{message}"),
+        &format!("{header}\n{message}\n"),
     )
     .await;
     sqlx::query_scalar("SELECT id FROM contacts WHERE account_id = $1 AND preferred_name = 'Ada'")
