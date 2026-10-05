@@ -460,7 +460,12 @@ reads it as no text, as it does a group's id. The title is computed on every
 read (`db/conversations.rs`, `conversation_title_sql`) from the first
 participant's name as the conversation shows it, so it follows a rename of the
 sender's contact. The Apple Messages Reader writes these conversations for
-messages in no chat. OpenExtract writes the holder's for a sent row that names
+messages in no chat. The Reader puts every sent message in the holder's
+conversation. A sent row in a one-to-one chat can still name its recipient in
+`handle_id`. The Reader also puts a received message there when it names no
+sender, or names one of the holder's own addresses, because it has nobody to
+be a participant. Where these two kinds of row belong is open
+([#1778](https://github.com/messagecrate/message-crate/issues/1778)). OpenExtract writes the holder's for a sent row that names
 no recipient, and those rows carry a vendor key so that the same text sent to
 several people in the same second stays several messages.
 
