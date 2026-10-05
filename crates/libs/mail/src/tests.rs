@@ -782,3 +782,252 @@ fn a_mail_whose_deletion_names_no_mark_is_refused() {
         "This mail's X-ME-Deletion header: \"trashed\" is neither deleted_in_source_app nor unsent"
     );
 }
+
+/// A copy of [`base_sms`] whose every free-text `X-ME-*` value is `value`:
+/// each plain-text header, and a string inside each JSON header. Headers
+/// whose value is a number, a flag or a name from a fixed list are read
+/// trimmed (`typed_header`), so they keep their written values.
+///
+/// The `From` address of a group conversation is the owner's for an
+/// outgoing message and the sender's for an incoming one. `From` is not an
+/// `X-ME-*` header, so the identity it names keeps its phone number and the
+/// other identity takes `value`: run both directions to cover both. The guid
+/// and the reply guid name the mail in `Message-ID` and `In-Reply-To` as
+/// well, so [`assert_every_value_reads_back`] checks them apart.
+fn with_every_x_me_text(value: &str, direction: IrDirection) -> MailMessage {
+    let text = || Some(value.to_string());
+    let mut msg = base_sms();
+    msg.message.direction = direction;
+    msg.chat_identifier = value.into();
+    msg.conversation_type = "group".into();
+    msg.group_title = text();
+    msg.participants[0].display_name = text();
+    msg.owner_display_name = text();
+    msg.export_source = value.into();
+    msg.export_tool = value.into();
+    msg.export_tool_version = value.into();
+    match direction {
+        IrDirection::Outgoing => msg.message.sender_identity = text(),
+        IrDirection::Incoming => msg.owner_identity = value.into(),
+    }
+    msg.message.sender_display_name = text();
+    msg.message.owner_identity = text();
+    msg.message.subject = text();
+    msg.message.reactions = vec![message_ir::Reaction {
+        part_index: 0,
+        kind: value.into(),
+        emoji: text(),
+        is_from_me: false,
+        reactor_identity: text(),
+        reactor_display_name: text(),
+    }];
+    msg.message.edits = vec![message_ir::EarlierVersion {
+        part_index: 0,
+        text: value.into(),
+        edited_at_unix_ms: None,
+    }];
+    msg.message.source.as_mut().unwrap().fields =
+        serde_json::from_value(serde_json::json!({ "note": value })).unwrap();
+    let im = im_mut(&mut msg);
+    im.send_effect = text();
+    im.shared_location = text();
+    im.announcement = text();
+    im.parts = Some(serde_json::json!([{ "index": 0, "text": value }]));
+    im.app = Some(serde_json::json!({ "title": value }));
+    im.balloon_bundle_id = text();
+    im.associated_guid = text();
+    im.tapback_emoji = text();
+    msg.attachments = vec![MailAttachment {
+        bytes: b"x".to_vec(),
+        meta: message_ir::AttachmentMeta {
+            path: None,
+            original_name: text(),
+            mime_type: Some("text/plain".into()),
+            digest_sha256: None,
+            size_bytes: Some(1),
+            missing_reason: None,
+        },
+        is_sticker: false,
+        transcription: text(),
+        sticker_effect: text(),
+    }];
+    msg
+}
+
+/// Everything of `msg` the `X-ME-*` headers carry, as JSON, so a written
+/// message and the one read back compare whole.
+fn x_me_values(msg: &MailMessage) -> serde_json::Value {
+    serde_json::json!({
+        "chat_identifier": msg.chat_identifier,
+        "owner_identity": msg.owner_identity,
+        "group_title": msg.group_title,
+        "participants": msg.participants,
+        "owner_display_name": msg.owner_display_name,
+        "export_source": msg.export_source,
+        "export_tool": msg.export_tool,
+        "export_tool_version": msg.export_tool_version,
+        "message": msg.message,
+        "attachment_names": msg.attachments.iter().map(|a| &a.meta.original_name).collect::<Vec<_>>(),
+        "transcriptions": msg.attachments.iter().map(|a| &a.transcription).collect::<Vec<_>>(),
+        "sticker_effects": msg.attachments.iter().map(|a| &a.sticker_effect).collect::<Vec<_>>(),
+    })
+}
+
+/// Assert that every value of `values`, written into every free-text
+/// `X-ME-*` value of a message, reads back from an EML file and from an mbox
+/// exactly as written, in both directions. A failure counts the values that
+/// changed or did not read at all, and names the first few.
+fn assert_every_value_reads_back(values: &[String]) {
+    let tmp = tempfile::tempdir().unwrap();
+    let mut changed = Vec::new();
+    for (i, value) in values.iter().enumerate() {
+        let same = [IrDirection::Outgoing, IrDirection::Incoming]
+            .into_iter()
+            .enumerate()
+            .all(|(d, direction)| {
+                let msg = with_every_x_me_text(value, direction);
+                let written = x_me_values(&msg);
+                let from_eml = crate::mail_message_from_eml_bytes(&build_eml(&msg).unwrap());
+                let dir = tmp.path().join(format!("{i}-{d}"));
+                let mbox = write_mail_package(&dir, MailPackage::Mbox, &[msg]).unwrap();
+                let from_mbox = crate::mail_messages_from_mbox(&mbox);
+                from_eml.is_ok_and(|m| x_me_values(&m) == written)
+                    && from_mbox.is_ok_and(|m| m.len() == 1 && x_me_values(&m[0]) == written)
+            })
+            && guid_headers_read_back(value);
+        if !same {
+            changed.push(value);
+        }
+    }
+    assert!(
+        changed.is_empty(),
+        "{} of {} values did not read back as written, such as {:?}",
+        changed.len(),
+        values.len(),
+        &changed[..changed.len().min(5)]
+    );
+}
+
+/// True when `value`, as a message's guid and reply guid, reads back from
+/// `X-ME-Guid` and `X-ME-Thread-Originator-Guid` as written. Only the two
+/// headers are read, because the guid also names the mail in `Message-ID`
+/// and `In-Reply-To`, which are not `X-ME-*` headers. A value with a line
+/// break is not tried: written into `Message-ID` as it is, the line break
+/// ends the mail's headers (#1816).
+fn guid_headers_read_back(value: &str) -> bool {
+    if value.contains(['\r', '\n']) {
+        return true;
+    }
+    let mut msg = base_sms();
+    msg.message.guid = value.into();
+    im_mut(&mut msg).in_reply_to_guid = Some(value.into());
+    let eml = build_eml(&msg).unwrap();
+    let Ok((headers, _)) = mailparse::parse_headers(&eml) else {
+        return false;
+    };
+    headers.get_first_value("X-ME-Guid").as_deref() == Some(value)
+        && headers
+            .get_first_value("X-ME-Thread-Originator-Guid")
+            .as_deref()
+            == Some(value)
+}
+
+/// A run of spaces next to the characters RFC 2047 encoded words are made
+/// of (`=?`, `?=`, a quote, non-ASCII) reads back from every `X-ME-*`
+/// header byte for byte. mail-builder folds a long header value at a run of
+/// spaces, and mailparse's unfolding turned the run into one space (#1812).
+#[test]
+fn runs_of_spaces_next_to_encoded_word_characters_read_back_as_written() {
+    let pieces = [
+        "bcdefghij     ?=<",
+        "é     é",
+        "a     b",
+        "x  \"  y",
+        "=?     ?=",
+        "  leading and trailing  ",
+    ];
+    let mut values = Vec::new();
+    for piece in pieces {
+        for pad in 0..60 {
+            let z = "z".repeat(pad);
+            values.push(format!("{z}{piece}"));
+            values.push(format!("{z}{piece}{z}"));
+        }
+    }
+    assert_every_value_reads_back(&values);
+}
+
+/// Values made from the characters a mail header reader treats specially,
+/// in every order and length up to 120 characters, read back from every
+/// `X-ME-*` header byte for byte (#1812).
+#[test]
+fn generated_values_read_back_as_written() {
+    const ALPHABET: [&str; 16] = [
+        " ", " ", " ", "a", "z", "é", "😀", "=", "?", "_", "\"", "\\", "<", "\t", "\r\n", "=?",
+    ];
+    // xorshift64, seeded, so a failure names values that fail again.
+    let mut state: u64 = 0x1812_1812_1812_1812;
+    let mut next = move |bound: usize| {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state % bound as u64) as usize
+    };
+    // Each value is written and read four times (two directions, EML and
+    // mbox), so 1000 values keep the test to a few seconds.
+    let values: Vec<String> = (0..1000)
+        .map(|_| {
+            let len = 1 + next(120);
+            (0..len).map(|_| ALPHABET[next(ALPHABET.len())]).collect()
+        })
+        .collect();
+    assert_every_value_reads_back(&values);
+}
+
+/// A number, a flag or a name from a fixed list that ends in a space, as a
+/// mail rewritten by hand or by another tool can carry, reads as the value
+/// it names. Read untrimmed, `outgoing ` was read as incoming and the
+/// timestamp was refused.
+#[test]
+fn a_typed_header_that_ends_in_a_space_reads_as_its_value() {
+    let eml = concat!(
+        "X-ME-Chat-Identifier: +15555550101\r\n",
+        "X-ME-Conversation-Type: group \r\n",
+        "X-ME-Guid: g1\r\n",
+        "X-ME-Timestamp-Unix-Ms: 1400773261000 \r\n",
+        "X-ME-Direction: outgoing \r\n",
+        "X-ME-Service: imessage \r\n",
+        "X-ME-Message-Kind: imessage \r\n",
+        "X-ME-Android-Type: 2 \r\n",
+        "X-ME-Deletion: unsent \r\n",
+        "X-ME-Is-Reply: true \r\n",
+        "X-ME-Num-Replies: 3 \r\n",
+        "X-ME-Read-Receipt: 2014-05-22T15:41:01Z \r\n",
+        "X-ME-Balloon-Kind: url \r\n",
+        "X-ME-Tapback-Kind: loved \r\n",
+        "X-ME-Tapback-Action: add \r\n",
+        "\r\n",
+        "hello\r\n",
+    );
+    let msg = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap();
+    assert_eq!(msg.conversation_type, "group");
+    assert_eq!(msg.message.timestamp_unix_ms, 1_400_773_261_000);
+    assert_eq!(msg.message.direction, IrDirection::Outgoing);
+    assert_eq!(msg.message.service, message_ir::IrService::IMessage);
+    assert_eq!(
+        msg.message.message_kind,
+        message_ir::IrMessageKind::IMessage
+    );
+    assert_eq!(msg.message.source.unwrap().android_type, Some(2));
+    assert_eq!(msg.message.deletion, Some(message_ir::Deletion::Unsent));
+    let im = msg.message.imessage.unwrap();
+    assert!(im.is_reply);
+    assert_eq!(im.num_replies, Some(3));
+    assert_eq!(
+        im.read_receipt_rfc3339.as_deref(),
+        Some("2014-05-22T15:41:01Z")
+    );
+    assert_eq!(im.balloon_kind.as_deref(), Some("url"));
+    assert_eq!(im.tapback_kind.as_deref(), Some("loved"));
+    assert_eq!(im.tapback_action.as_deref(), Some("add"));
+}
