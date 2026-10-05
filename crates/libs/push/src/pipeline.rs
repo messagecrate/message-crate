@@ -600,7 +600,7 @@ impl<'a> ImportPipeline<'a> {
                     .failed
                     .saturating_add(outcome.message_count as u64);
                 let error = self.describe_batch_error(&outcome.batch, error);
-                out.log(&format!("Import request failed: {stats}: {error}"));
+                out.log(&format!("Import request failed ({stats}): {error}"));
                 for &index in &represented {
                     let Some(tracker) = self.trackers[index].as_mut() else {
                         continue;

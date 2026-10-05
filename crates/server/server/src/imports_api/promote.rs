@@ -146,7 +146,7 @@ impl Promote<'_> {
         let phase = Self::begin(format_args!(
             "{} → production…",
             words(
-                count(staged),
+                as_count(staged),
                 "1 staging conversation",
                 "{n} staging conversations"
             )
@@ -177,7 +177,7 @@ impl Promote<'_> {
         let phase = Self::begin(format_args!(
             "{} → production…",
             words(
-                count(staged),
+                as_count(staged),
                 "1 staging participant",
                 "{n} staging participants"
             )
@@ -207,7 +207,7 @@ impl Promote<'_> {
         let total = staging::count_staged_messages(self.tx, self.account_id).await?;
         promote_log(format_args!(
             "{} → production ({})…",
-            words(count(total), "1 staging message", "{n} staging messages"),
+            words(as_count(total), "1 staging message", "{n} staging messages"),
             self.mode.as_str()
         ));
         self.pause_fts_triggers().await?;
@@ -251,7 +251,7 @@ impl Promote<'_> {
 
         let phase = Self::begin(format_args!(
             "writing message id map ({})…",
-            words(count(msg_map.len()), "1 pair", "{n} pairs")
+            words(as_count(msg_map.len()), "1 pair", "{n} pairs")
         ));
         staging::write_message_map(self.tx, self.account_id, &msg_map).await?;
         self.done(phase, "message id map written");
@@ -262,7 +262,11 @@ impl Promote<'_> {
             phase,
             format!(
                 "deletion marks done: {}",
-                words(count(marked), "1 message changed", "{n} messages changed")
+                words(
+                    as_count(marked),
+                    "1 message changed",
+                    "{n} messages changed"
+                )
             ),
         );
 
@@ -273,7 +277,7 @@ impl Promote<'_> {
         if edits.messages != named {
             bail!(
                 "promote later edits: the edit map names {}, {} changed",
-                words(count(named), "1 message", "{n} messages"),
+                words(as_count(named), "1 message", "{n} messages"),
                 edits.messages
             );
         }
@@ -282,17 +286,17 @@ impl Promote<'_> {
             format!(
                 "later edits done: {}, {} and {}",
                 words(
-                    count(edits.messages),
+                    as_count(edits.messages),
                     "1 message changed",
                     "{n} messages changed"
                 ),
                 words(
-                    count(edits.versions_removed),
+                    as_count(edits.versions_removed),
                     "1 earlier version removed",
                     "{n} earlier versions removed"
                 ),
                 words(
-                    count(unindexed),
+                    as_count(unindexed),
                     "1 search entry removed",
                     "{n} search entries removed"
                 ),
@@ -354,9 +358,9 @@ impl Promote<'_> {
                     format!(
                         "promote replace message id map mismatch: {} against {} \
                          (chunk staging id {}..{hi})",
-                        words(count(n), "1 staging message", "{n} staging messages"),
+                        words(as_count(n), "1 staging message", "{n} staging messages"),
                         words(
-                            count(p),
+                            as_count(p),
                             "1 new production message",
                             "{n} new production messages"
                         ),
@@ -482,7 +486,7 @@ impl Promote<'_> {
             format!(
                 "earlier versions done: {}",
                 words(
-                    count(inserted),
+                    as_count(inserted),
                     "1 earlier version inserted",
                     "{n} earlier versions inserted"
                 )
@@ -515,8 +519,12 @@ impl Promote<'_> {
             phase,
             format!(
                 "FTS indexed {} and {} (triggers restored)",
-                words(count(indexed), "1 message", "{n} messages"),
-                words(count(versions), "1 earlier version", "{n} earlier versions")
+                words(as_count(indexed), "1 message", "{n} messages"),
+                words(
+                    as_count(versions),
+                    "1 earlier version",
+                    "{n} earlier versions"
+                )
             ),
         );
         Ok(())
@@ -531,7 +539,7 @@ impl Promote<'_> {
             format!(
                 "content keys done: {}",
                 words(
-                    count(keys),
+                    as_count(keys),
                     "1 content key filled",
                     "{n} content keys filled"
                 )
@@ -577,7 +585,7 @@ fn promote_log(msg: impl std::fmt::Display) {
 
 /// A count from the database or a collection as a `u64` for
 /// [`words`]; a count is never negative, and a negative one reads as 0.
-fn count(n: impl TryInto<u64>) -> u64 {
+fn as_count(n: impl TryInto<u64>) -> u64 {
     n.try_into().unwrap_or(0)
 }
 
@@ -586,9 +594,13 @@ fn count(n: impl TryInto<u64>) -> u64 {
 fn staging_and_existing(staging: i64, existing: i64) -> String {
     format!(
         "{} and {}",
-        words(count(staging), "1 staging message", "{n} staging messages"),
         words(
-            count(existing),
+            as_count(staging),
+            "1 staging message",
+            "{n} staging messages"
+        ),
+        words(
+            as_count(existing),
             "1 existing message",
             "{n} existing messages"
         )
@@ -611,7 +623,7 @@ fn chunk_line(chunk: impl std::fmt::Display, inserted: u64, so_far: u64, total: 
     format!(
         "chunk {chunk}: {}, {so_far} of {} so far",
         words(inserted, "1 message inserted", "{n} messages inserted"),
-        count(total)
+        as_count(total)
     )
 }
 

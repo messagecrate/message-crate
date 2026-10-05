@@ -28,7 +28,7 @@ use media::{CompressOptions, MediaMode};
 use message_crate_core::{
     AttachmentJob, CONVERSATION_FILES_PREPARING, CONVERSATIONS_RESUMED, CancelFlag, Counter,
     LoadError, LogSink, MediaConfig, OutputFormat, ProgressEvent, ProgressSink,
-    attachment_size_hint, count_of_files, emit_log, emit_progress, run_attachment_jobs,
+    attachment_size_hint, emit_log, emit_progress, run_attachment_jobs,
 };
 use message_ir::{ConversationDocument, IrAttachment, give_each_document_its_own_file};
 
@@ -650,17 +650,7 @@ fn run_media_post_pass(
         // The per-file reasons are already on the attachments themselves.
         media.errors.push(NOT_CONVERTED.line(report.failed as u64));
     }
-    emit_log(
-        log,
-        format!(
-            "Attachment {} done: converted {}, skipped {}, size {} → {}",
-            options.media,
-            count_of_files(media.processed as u64),
-            count_of_files(media.skipped as u64),
-            media::format_bytes(media.bytes_before),
-            media::format_bytes(media.bytes_after)
-        ),
-    );
+    emit_log(log, media::done_line(options.media, &media));
     Ok(media)
 }
 

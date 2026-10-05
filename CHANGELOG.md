@@ -396,8 +396,9 @@ released versions carry their date on the heading.
   import, duplicate check and `process-assets` command wrote counts such as
   "conversations=2 messages=2", "processed=1 skipped=0" and "promoted
   convs=1 parts=2 msgs=3". Each now reads like "2 conversations and 2
-  messages", "converted 1 file, skipped 0 files" and "promoted 1
-  conversation, 2 participants, 3 messages", singular for one. The server's
+  messages", "processed 1 file, skipped 0 files" and "promoted 1
+  conversation, 2 participants, 3 messages, 1 attachment and 0 tapbacks",
+  singular for one. The server's
   `import` command no longer prints its duplicate counts twice, because its
   summary already gives them.
 - 2026-10-05 **A WhatsApp import keeps its working files out of the

@@ -101,7 +101,7 @@ pub fn process_attachment_files(
     remove_msgmedia_temps(&attachments)?;
     report.bytes_after = attachments_dir_bytes(&attachments)?;
 
-    emit(&mut log, &done_line(mode, &report));
+    emit(&mut log, &done_line_with_failures(mode, &report));
 
     Ok((report, remap))
 }
@@ -127,16 +127,24 @@ fn starting_line(verb: &str, total: usize, bytes: u64) -> String {
     )
 }
 
-/// The line that ends the pass, in the words the write queue's own
-/// `Attachment … done` line uses, with the files that failed when any did.
-fn done_line(mode: MediaMode, report: &MediaReport) -> String {
-    let mut line = format!(
-        "Attachment {mode} done: converted {}, skipped {}, size {} → {}",
+/// The line that ends a Convert or Compress pass over staged attachments:
+/// the files processed and skipped, and the attachments' size before and
+/// after. The write queue's own pass ends with it too, so both passes word
+/// it alike.
+pub fn done_line(mode: MediaMode, report: &MediaReport) -> String {
+    format!(
+        "Attachment {mode} done: processed {}, skipped {}, size {} → {}",
         files(report.processed),
         files(report.skipped),
         format_bytes(report.bytes_before),
         format_bytes(report.bytes_after),
-    );
+    )
+}
+
+/// [`done_line`] with the files that failed, when any did. The write queue
+/// counts its failures as one note instead, so only this pass adds them.
+fn done_line_with_failures(mode: MediaMode, report: &MediaReport) -> String {
+    let mut line = done_line(mode, report);
     if !report.errors.is_empty() {
         let _ = write!(line, ", {} failed", files(report.errors.len()));
     }

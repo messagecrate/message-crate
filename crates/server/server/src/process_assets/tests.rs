@@ -1487,7 +1487,7 @@ fn the_done_line_counts_one_and_many() {
     assert_eq!(
         done_line(&one, false),
         "done: read 1 original, made 1 Preview and 1 Thumbnail, left 1 original as it was, \
-         1 conversion failed"
+         1 original whose Preview or Thumbnail could not be made"
     );
     let many = ProcessAssetsStats {
         scanned: 4,
@@ -1499,6 +1499,6 @@ fn the_done_line_counts_one_and_many() {
     assert_eq!(
         done_line(&many, true),
         "done: read 4 originals, made 2 Previews and 3 Thumbnails, left 0 originals as they were, \
-         0 conversions failed (dry run)"
+         0 originals whose Preview or Thumbnail could not be made (dry run)"
     );
 }

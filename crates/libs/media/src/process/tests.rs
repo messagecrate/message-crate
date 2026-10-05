@@ -1046,8 +1046,8 @@ fn the_done_line_counts_one_file_and_many_files() {
         errors: vec!["a.heic: ffmpeg failed".into()],
     };
     assert_eq!(
-        done_line(MediaMode::Convert, &one),
-        "Attachment convert done: converted 1 file, skipped 1 file, size 2.0 KB → 500 B, \
+        done_line_with_failures(MediaMode::Convert, &one),
+        "Attachment convert done: processed 1 file, skipped 1 file, size 2.0 KB → 500 B, \
          1 file failed"
     );
     let many = MediaReport {
@@ -1058,7 +1058,7 @@ fn the_done_line_counts_one_file_and_many_files() {
         errors: Vec::new(),
     };
     assert_eq!(
-        done_line(MediaMode::Compress, &many),
-        "Attachment compress done: converted 3 files, skipped 0 files, size 2.0 KB → 2.0 KB"
+        done_line_with_failures(MediaMode::Compress, &many),
+        "Attachment compress done: processed 3 files, skipped 0 files, size 2.0 KB → 2.0 KB"
     );
 }

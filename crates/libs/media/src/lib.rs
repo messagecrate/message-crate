@@ -23,8 +23,8 @@ pub use mime::{Kind, ext_for_mime, kind_for_ext, kind_for_mime, mime_for_ext};
 pub use probe::{MediaProbe, probe_media};
 pub use process::{
     MediaReport, TranscodeOutcome, classify, collect_media_files, derivative_name,
-    derivative_name_for_missing, format_bytes, kind_of, process_attachment_files, transcode_file,
-    transcode_file_as,
+    derivative_name_for_missing, done_line, format_bytes, kind_of, process_attachment_files,
+    transcode_file, transcode_file_as,
 };
 pub use tools::{FfmpegToolsProbe, ffmpeg_available, probe_ffmpeg_tools, set_tools_dir, tools_dir};
 pub use versions::{

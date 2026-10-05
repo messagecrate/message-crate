@@ -25,6 +25,7 @@ use sqlx::{SqliteConnection, SqlitePool};
 use tempfile::TempDir;
 
 use crate::config::Config;
+use crate::counts::words;
 use crate::db::attachment_versions::{self as versions_db, StoredOriginal, Version, VersionFile};
 use crate::db::{account_profile, schema};
 use crate::open_db::OpenDb;
@@ -185,7 +186,6 @@ pub async fn run(
 /// The line that ends `process-assets`: each count of `stats` in words,
 /// singular for one, and `(dry run)` when nothing was written.
 fn done_line(stats: &ProcessAssetsStats, dry_run: bool) -> String {
-    use crate::counts::words;
     format!(
         "done: read {}, made {} and {}, {}, {}{}",
         words(stats.scanned, "1 original", "{n} originals"),
@@ -198,8 +198,8 @@ fn done_line(stats: &ProcessAssetsStats, dry_run: bool) -> String {
         ),
         words(
             stats.errors,
-            "1 conversion failed",
-            "{n} conversions failed"
+            "1 original whose Preview or Thumbnail could not be made",
+            "{n} originals whose Preview or Thumbnail could not be made"
         ),
         if dry_run { " (dry run)" } else { "" }
     )
