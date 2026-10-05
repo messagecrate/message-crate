@@ -14,6 +14,7 @@ use message_ir_format::mark_export_directory;
 use serde::Serialize;
 
 use crate::http::{CloseAction, ExportMessagesArgs, HttpSession};
+use crate::journal::ServerTarget;
 use crate::part_file::write_asset;
 use crate::project::{ExportPath, build_document, conversation_key, export_path, to_ir_message};
 use message_crate_api_types::{ExportQueryList, ExportRun, ExportScope, Message};
@@ -276,8 +277,8 @@ struct Pull<'a> {
     cfg: &'a PullConfig,
     session: HttpSession,
     account: i64,
-    /// The server and account this pull's journal lines belong to.
-    target: crate::journal::ServerTarget,
+    /// The server and account this Export Run's journal lines belong to.
+    target: ServerTarget,
     /// The search query with surrounding whitespace removed.
     query: String,
     journal_path: PathBuf,
@@ -324,7 +325,7 @@ impl<'a> Pull<'a> {
         // Load the pull journal so a later Export Run does not fetch the Assets
         // already on disk again.
         let journal_path = crate::journal::journal_path(&cfg.out_dir);
-        let target = crate::journal::ServerTarget::new(&cfg.base_url, username);
+        let target = ServerTarget::new(&cfg.base_url, username);
         let journal = crate::journal::load(&journal_path, &target, &mut |line| {
             emit(out, ProgressEvent::Log(line));
         })?;

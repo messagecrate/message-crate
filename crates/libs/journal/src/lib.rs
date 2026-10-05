@@ -20,7 +20,8 @@ use serde::{Deserialize, Serialize};
 
 /// The server and account a journal records progress for: the server's URL
 /// and the username the session resolved to. One directory can be uploaded
-/// to, or exported from, more than one, so every event names its target.
+/// to more than one server and account, or hold Exports from more than one,
+/// so every event names its target.
 ///
 /// An event holds it as `#[serde(flatten)]`, so on disk the two are a line's
 /// own `url` and `username` keys, beside the event's other fields, and each
