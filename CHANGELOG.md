@@ -391,6 +391,13 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **An Import Run whose session has ended logs you out and
+  waits for you.** When your session ended while an import waited at a
+  review, and you then approved it, cancelled it, or resumed an Upload, the
+  import was marked failed with an error about recording its progress, and
+  you stayed on screens the server no longer answered. It now logs you out
+  and records no error. The import stays where it was, and Import offers it
+  again when you log back in.
 - 2026-10-05 **A newer backup brings a message's later edit.** When a
   message already in the Message Crate had been edited again on the phone,
   importing the newer backup kept the old text and the old earlier versions,
@@ -846,6 +853,14 @@ released versions carry their date on the heading.
   whole file. The same went for an attachment whose file type held one. Such
   a value is now written so the mail stays whole, and converting the file
   gives it back exactly as it was exported.
+- 2026-10-05 **The rest of the log says each count in plain words too.**
+  The lines around a run's summary still wrote counts as "1 file(s)" or
+  "3 conversion(s)": converting attachments, an Export from a server, and
+  the server's own commands. They now say "1 file" and "3 conversions",
+  and the words around a count agree with it, such as "1 conversion failed.
+  That original stays without a Thumbnail". An SMS Backup+ run with
+  verbose logging no longer ends with two lines of raw counts, because its
+  summary already gives each of those counts in words.
 - 2026-10-05 **An EML or mbox export keeps every space of a message's
   details.** A run of spaces in a message's details, such as a name, a
   transcription, an earlier version or a detail from the source app, could

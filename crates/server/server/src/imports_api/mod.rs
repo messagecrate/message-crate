@@ -309,14 +309,18 @@ pub async fn import_jsonl_files_on_conn(
         .await
         .map_err(ImportError::Internal)?;
     say(&format!(
-        "  import:   {} JSONL file{}",
-        paths.len(),
-        if paths.len() == 1 { "" } else { "s" }
+        "  import:   {}",
+        crate::counts::words(paths.len() as u64, "1 JSONL file", "{n} JSONL files")
     ));
     if opts.mode == ImportMode::Replace {
+        let names = wipe_sources.join(", ");
         say(&format!(
-            "  import:   will wipe source(s) '{}' after staging succeeds",
-            wipe_sources.join(", ")
+            "  import:   {}",
+            crate::counts::words(
+                wipe_sources.len() as u64,
+                &format!("will wipe source '{names}' after staging succeeds"),
+                &format!("will wipe {{n}} sources '{names}' after staging succeeds"),
+            )
         ));
     }
 

@@ -14,8 +14,9 @@ import PathList from "../components/PathList";
 import { ApiError, getToken, setAccountId, setBaseUrl, setToken } from "./api";
 import { parsePersistedAuth } from "./authGuards";
 import { createQueryClient } from "./routeQuery";
-import { isUploadRunning, onUploadSessionRefused, pauseRunningUpload } from "./runningUpload";
+import { isUploadRunning, pauseRunningUpload } from "./runningUpload";
 import { getSession, logout as serverLogout } from "./serverApi";
+import { onSessionRefused } from "./sessionRefusal";
 import { readPref, removePref, writePref } from "./storage";
 import { invokeDeleteRunDir } from "./tauri";
 import { isTauri } from "./tauri-check";
@@ -412,9 +413,10 @@ function SessionProvider({
   // An Upload that is running is paused all the same: its push sends the
   // same token, so it would only record every remaining conversation as
   // failed, and the run stays resumable.
-  // A push the server refused its session to ends the session the same way,
-  // unless a later login has replaced the token the push sent: a push that
-  // outlived a logout says nothing about the session after it.
+  // A session the server refused to an Import Run, its push or its own
+  // calls, ends the same way, unless a later login has replaced the token the
+  // run sent: a refusal that outlived a logout says nothing about the session
+  // after it.
   useEffect(() => {
     const end = (refusedToken?: string) => {
       const token = getToken();
@@ -423,7 +425,7 @@ function SessionProvider({
       clearSession();
     };
     sessionEnded.current = () => end();
-    return onUploadSessionRefused(end);
+    return onSessionRefused(end);
   }, [sessionEnded, clearSession]);
 
   // Desktop only: on window close, revoke the session then quit.
