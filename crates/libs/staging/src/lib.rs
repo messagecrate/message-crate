@@ -44,5 +44,5 @@ pub use transcode::{TranscodeOptions, TranscodeProgress, TranscodeReport, transc
 pub use write_queue::{
     AttachmentSource, ConversationUnit, UnitAttachment, WriteQueueOptions, WriteQueueReport,
     default_writer_count, drain_units, drain_write_queue, drain_write_queue_with_loader,
-    load_attachment_source,
+    load_attachment_source, unreadable_attachment_line,
 };

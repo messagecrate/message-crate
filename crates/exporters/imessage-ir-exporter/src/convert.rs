@@ -591,10 +591,7 @@ fn read_attachment(
     match fs::read(path) {
         Ok(bytes) => Ok(bytes),
         Err(e) => {
-            options.emit_log(format!(
-                "Attachment {} could not be read: {e}",
-                path.display()
-            ));
+            options.emit_log(message_staging::unreadable_attachment_line(path, e));
             Ok(Vec::new())
         }
     }
