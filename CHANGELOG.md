@@ -846,6 +846,14 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-05 **The rest of the log says each count in plain words too.**
+  The lines around a run's summary still wrote counts as "1 file(s)" or
+  "3 conversion(s)": converting attachments, an Export from a server, and
+  the server's own commands. They now say "1 file" and "3 conversions",
+  and the words around a count agree with it, such as "1 conversion failed.
+  That original stays without a Thumbnail". An SMS Backup+ run with
+  verbose logging no longer ends with two lines of raw counts, because its
+  summary already gives each of those counts in words.
 - 2026-10-05 **An EML or mbox export keeps every space of a message's
   details.** A run of spaces in a message's details, such as a name, a
   transcription, an earlier version or a detail from the source app, could

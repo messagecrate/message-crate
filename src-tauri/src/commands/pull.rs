@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use message_crate_core::count_of;
 use message_crate_pull::{
     DEFAULT_ASSET_DOWNLOAD_WORKERS, DEFAULT_PAGE_LIMIT, ExportQueryList, ProgressEvent, PullConfig,
     run as run_pull,
@@ -82,18 +83,57 @@ pub fn pull(
                 events::emit(
                     &app_handle,
                     events::LOG,
-                    format!("Fetched {messages} message(s) ({total_so_far} total)"),
+                    fetched_line(messages, total_so_far),
                 );
             }
             ProgressEvent::Done(_) => {}
         };
 
         let report = run_pull(&cfg, Some(&mut progress))?;
-        Ok(format!(
-            "Pull complete: {} messages, {} conversations",
-            report.messages, report.conversations,
-        ))
+        Ok(finished_line(report.messages, report.conversations))
     });
 
     Ok(())
+}
+
+/// The log line for one page of messages fetched, `total` being every
+/// message fetched so far.
+fn fetched_line(messages: usize, total: u64) -> String {
+    format!(
+        "Fetched {} ({total} so far)",
+        count_of(messages as u64, "message", "messages")
+    )
+}
+
+/// The line that ends an Export from a server.
+fn finished_line(messages: u64, conversations: u64) -> String {
+    format!(
+        "Export complete: {} in {}",
+        count_of(messages, "message", "messages"),
+        count_of(conversations, "conversation", "conversations")
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Each count is singular for one and plural otherwise, never `(s)`
+    /// (#1815).
+    #[test]
+    fn the_lines_count_one_and_many() {
+        assert_eq!(fetched_line(1, 1), "Fetched 1 message (1 so far)");
+        assert_eq!(
+            fetched_line(500, 1200),
+            "Fetched 500 messages (1200 so far)"
+        );
+        assert_eq!(
+            finished_line(1, 1),
+            "Export complete: 1 message in 1 conversation"
+        );
+        assert_eq!(
+            finished_line(3, 2),
+            "Export complete: 3 messages in 2 conversations"
+        );
+    }
 }

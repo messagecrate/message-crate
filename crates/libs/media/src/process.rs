@@ -79,13 +79,7 @@ pub fn process_attachment_files(
         _ => "Converting",
     };
     emit(&mut log, "");
-    emit(
-        &mut log,
-        &format!(
-            "{verb} attachments ({total} file(s), {})…",
-            format_bytes(report.bytes_before)
-        ),
-    );
+    emit(&mut log, &starting_line(verb, total, report.bytes_before));
 
     let mut done = 0usize;
     for path in files {
@@ -120,6 +114,19 @@ pub fn process_attachment_files(
     emit(&mut log, &summary);
 
     Ok((report, remap))
+}
+
+/// The line that starts the pass: `verb` is `Converting` or `Compressing`,
+/// over `total` files of `bytes` in all, the count singular for one. This
+/// crate sits below `message-crate-core`, so it words the count itself
+/// rather than through `count_of_files`.
+fn starting_line(verb: &str, total: usize, bytes: u64) -> String {
+    let files = if total == 1 {
+        "1 file".to_string()
+    } else {
+        format!("{total} files")
+    };
+    format!("{verb} attachments ({files}, {})…", format_bytes(bytes))
 }
 
 /// Send one line to the log callback, if there is one.
