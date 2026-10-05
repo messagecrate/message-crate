@@ -62,7 +62,7 @@ Import a message-ir JSONL directory, one Import Run per source (source from expo
 * `--config <CONFIG>` — Path to config.toml
 
   Default value: `config/config.toml`
-* `--input <INPUT>` [aliases: `dir`, `staging-dir`, `export-dir`] — Directory of `*.jsonl` conversation files (+ attachments)
+* `--input <INPUT>` [aliases: `dir`, `export-dir`] — Directory of `*.jsonl` conversation files (+ attachments)
 * `--db <DB>` — Output SQLite database path (overrides config)
 * `--assets-dir <ASSETS_DIR>` — Originals asset store directory (overrides the account's default)
 * `--media <MEDIA>` — Attachment handling: copy (default), none, convert, compress

@@ -118,7 +118,7 @@ pub struct ImportArgs {
     pub config: PathBuf,
 
     /// Directory of `*.jsonl` conversation files (+ attachments)
-    #[arg(long = "input", visible_aliases = ["dir", "staging-dir", "export-dir"])]
+    #[arg(long = "input", visible_aliases = ["dir", "export-dir"])]
     pub input: PathBuf,
 
     /// Output SQLite database path (overrides config)
