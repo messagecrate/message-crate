@@ -85,7 +85,7 @@ pub struct PullReport {
     pub out_dir: String,
 }
 
-/// Live progress sent to the desktop app during a query or download.
+/// Live progress sent to the desktop app during an Export Run.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ProgressEvent {
     /// One line for the log panel.
@@ -161,7 +161,7 @@ fn prepare_out_dir(out_dir: &Path, skip_attachments: bool) -> Result<()> {
     Ok(())
 }
 
-/// Download matching messages into `cfg.out_dir` as JSON Lines plus attachments.
+/// Export the matching messages into `cfg.out_dir` as JSON Lines plus attachments.
 ///
 /// JSON Lines means one JSON object per line. A local journal
 /// (`.message-crate-pull-state.jsonl`) records which files were already downloaded so a

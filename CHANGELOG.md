@@ -853,10 +853,10 @@ released versions carry their date on the heading.
   messages that match: from:sam" and "The previous Export Run finished.
   Checking for new messages…". The line with the run's counts names its
   record: "Export Run 7 holds 3 messages in 1 conversation", where it said
-  "Export 7". The first Export into a directory exported before this change
-  does not say the previous Export Run finished, because the record of it
-  is now written under a new name. It still skips every attachment already
-  there.
+  "Export 7". In a directory an earlier version exported into, the first
+  Export from each account does not say the previous Export Run finished,
+  because the note that run left in the directory is now written
+  differently. It still skips every attachment already there.
 - 2026-10-05 **The rest of the log says each count in plain words too.**
   The lines around a run's summary still wrote counts as "1 file(s)" or
   "3 conversion(s)": converting attachments, an Export from a server, and
