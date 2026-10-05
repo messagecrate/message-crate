@@ -165,7 +165,7 @@ pub(crate) struct Session {
     pub url: String,
     /// The session token every request carries.
     pub token: String,
-    /// The account the session token resolved to (server-reported name, or the id).
+    /// Username the server reports for the account the session token resolved to.
     pub username: String,
     pub auth: AuthInfo,
     /// The run's cancel flag, which a refused session sets.

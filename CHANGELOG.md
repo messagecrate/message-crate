@@ -391,6 +391,11 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **The Upload's log names each attachment it sends as an
+  Asset, in a sentence.** The log wrote "asset ok 3f2b…" for an attachment
+  the Upload sent and "asset skip 3f2b…" for one the server already had. It
+  now writes "Uploaded Asset 3f2b…" and "The server already holds Asset
+  3f2b…".
 - 2026-10-05 **When part of an Upload fails, the message names the Import
   Run or Asset in the words the app uses for them.** These messages used
   lowercase shorthand or a bare web address, and a refused completion of an

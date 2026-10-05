@@ -1093,6 +1093,10 @@ fn puts_two_new_assets_after_one_preflight_head() {
     assert_eq!(put_a.calls(), 1);
     assert_eq!(put_b.calls(), 1);
     assert_eq!(report.assets_uploaded, 2);
+    let log = read_log(dir.path());
+    for digest in [&digest_a, &digest_b] {
+        assert!(log.contains(&format!("Uploaded Asset {digest}\n")), "{log}");
+    }
 }
 
 #[test]
@@ -1164,6 +1168,13 @@ fn heads_later_assets_after_put_reports_already_present() {
     assert!(head_second.calls() >= 1);
     assert_eq!(put_second.calls(), 0);
     assert_eq!(report.assets_skipped, 2);
+    let log = read_log(dir.path());
+    for digest in [&first_digest, &second_digest] {
+        assert!(
+            log.contains(&format!("The server already holds Asset {digest}\n")),
+            "{log}"
+        );
+    }
 }
 
 #[test]
