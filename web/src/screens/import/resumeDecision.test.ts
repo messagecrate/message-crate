@@ -78,7 +78,7 @@ describe("resumeDecisionFor", () => {
     ).toBe("directory_missing");
   });
 
-  it("resumes the upload when an Upload was interrupted", () => {
+  it("resumes the Upload when it was interrupted", () => {
     const decision = resumeDecisionFor({
       run: importRun({ stage: "upload" }),
       deviceId: "this-device",

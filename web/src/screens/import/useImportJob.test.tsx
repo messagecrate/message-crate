@@ -546,7 +546,7 @@ describe("useImportJob wiring", () => {
     expect(completeImportMock).not.toHaveBeenCalled();
   });
 
-  it("does not start the Media stage when the server does not record the media stage", async () => {
+  it("does not start the Media stage when the server does not record the `media` stage", async () => {
     const { result } = renderHook(() => useImportJob());
     await act(() => result.current.startImport(form({ attachmentMedia: "convert" })));
     failStageWrite("media");

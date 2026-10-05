@@ -12,7 +12,7 @@ export type ResumeDecision = {
     // error is not evidence the directory is gone.
     | "directory_unknown"
     | "resume_upload"
-    // A run waiting at either review: the summary is recomputed
+    // A run waiting at either Review: the summary is recomputed
     // fresh from the directory and shown again, nothing restored, because the
     // directory is the truth.
     | "resume_review"
