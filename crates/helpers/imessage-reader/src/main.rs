@@ -104,12 +104,31 @@ fn main() {
                 protocol_version: PROTOCOL_VERSION,
                 encrypted: true,
             });
-            let written = domain::decrypt_domain(&backup, &request).unwrap_or_else(|e| fail(e));
+            let files = domain::list_domain(&backup, &request).unwrap_or_else(|e| fail(e));
+            emit(&Event::BackupDomainSize {
+                files: files.len() as u64,
+                bytes: domain::total_bytes(&files),
+            });
+            // The app checks its disk for room before anything is written.
+            // It says go, or closes stdin when the disk cannot hold the
+            // domain, and then nothing is written.
+            let Some(line) = lines.next() else {
+                return;
+            };
+            let line = line.unwrap_or_else(|e| fail(format!("could not read a request: {e}")));
+            match serde_json::from_str::<Request>(&line) {
+                Ok(Request::DecryptDomain) => {}
+                Ok(_) => fail("only a decrypt request may follow a backup domain request"),
+                Err(e) => fail(format!("the request is not valid JSON: {e}")),
+            }
+            let written =
+                domain::decrypt_domain(&backup, &request, &files).unwrap_or_else(|e| fail(e));
             emit(&Event::BackupDomainDone {
                 files: written.files,
                 failures: written.failures,
             });
         }
         Request::Attachment { .. } => fail("an attachment request needs an export first"),
+        Request::DecryptDomain => fail("a decrypt request needs a backup domain request first"),
     }
 }

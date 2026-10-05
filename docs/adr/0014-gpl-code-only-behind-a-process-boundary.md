@@ -166,8 +166,11 @@ and kills the program when dropped. The directory one request decrypts into
 is a `ScratchDir` from `message-crate-core`, under the desktop app's cache
 directory. It also holds what is asked of an iPhone backup
 itself, which several sources read: whether it is encrypted, the addresses
-its device sent from, and one domain's files decrypted for the WhatsApp
-importer. `cargo tree -p ios-backup` shows no GPL crate.
+its device sent from, the sizes of one domain's files in a backup that is not
+encrypted, and one domain's files decrypted for the WhatsApp importer. The
+sizes come from the plain `Manifest.db` of the unencrypted backup, read in
+process through `rusqlite` (MIT); an encrypted backup's manifest is opened
+only by the reader. `cargo tree -p ios-backup` shows no GPL crate.
 
 `crates/exporters/imessage-ir-exporter` stays FCL. It validates the options,
 starts the reader through `ios_backup::Helper`, relays its cancel, and turns

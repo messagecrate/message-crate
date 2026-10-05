@@ -129,7 +129,7 @@ pub(crate) fn resolve_wtsexporter() -> Result<PathBuf> {
 ///
 /// # Errors
 ///
-/// Returns an error when the work dir is missing, the process cannot start, or
+/// Returns an error when the work directory is missing, the process cannot start, or
 /// wtsexporter exits with a non-zero status.
 pub(crate) fn run_wtsexporter(
     bin: &Path,
@@ -137,7 +137,7 @@ pub(crate) fn run_wtsexporter(
     json_out: &Path,
 ) -> Result<String> {
     if !args.work_dir.is_dir() {
-        bail!("work dir does not exist: {}", args.work_dir.display());
+        bail!("work directory does not exist: {}", args.work_dir.display());
     }
     let out_dir = json_out
         .parent()
@@ -179,7 +179,7 @@ pub(crate) fn run_wtsexporter(
 }
 
 /// The wtsexporter command for `args`, writing media to `out_dir` and JSON
-/// to `json_out`. A hex key is written to a file in the work dir here.
+/// to `json_out`. A hex key is written to a file in the work directory here.
 ///
 /// # Errors
 ///
@@ -218,7 +218,7 @@ fn wtsexporter_command(
             cmd.arg("-k").arg(key);
         }
         // Hex key material — write the decoded bytes to a 0600 file in the
-        // scratch work dir and pass the path, so the secret never appears in
+        // scratch work directory and pass the path, so the secret never appears in
         // the process command line (/proc/<pid>/cmdline).
         Some(key) => {
             let key_path = write_key_file(&args.work_dir, key)?;
@@ -233,7 +233,7 @@ fn wtsexporter_command(
         cmd.arg("--business");
     }
     // Never pass `-c` (--move-media): wtsexporter would shutil.move the user's
-    // media directory into the scratch work dir, which is deleted when the run
+    // media directory into the scratch work directory, which is deleted when the run
     // finishes — permanently destroying the original media. Always copy.
     Ok(cmd)
 }
@@ -244,6 +244,22 @@ struct ForwardedPaths {
     wa: Option<PathBuf>,
     media: Option<PathBuf>,
     db: Option<PathBuf>,
+}
+
+/// Whether wtsexporter extracts WhatsApp's files from an iPhone backup into
+/// the work directory for `args`. It does when it is given a backup and no
+/// media directory that exists; with one, it says "WhatsApp directory
+/// already exists, skipping WhatsApp file extraction" and reads that.
+///
+/// # Errors
+///
+/// Returns an error when a forwarded path cannot be resolved.
+pub(crate) fn extracts_ios_backup(args: &WtsexporterArgs) -> Result<bool> {
+    if args.platform != Platform::Ios {
+        return Ok(false);
+    }
+    let paths = resolve_forwarded_paths(args)?;
+    Ok(paths.backup.is_some() && !paths.media.as_deref().is_some_and(Path::is_dir))
 }
 
 /// Absolutize user paths and fill Android/iOS defaults from `input` when missing.
@@ -382,7 +398,7 @@ fn push_opt(cmd: &mut Command, flag: &str, path: Option<&Path>) {
     }
 }
 
-/// Write hex-encoded decryption key bytes to a 0600 file in the scratch work dir.
+/// Write hex-encoded decryption key bytes to a 0600 file in the scratch work directory.
 ///
 /// wtsexporter's `-k` accepts a hex string or a key file path (there is no
 /// stdin key support upstream), so the file path is forwarded instead of the
@@ -416,7 +432,7 @@ fn write_key_file(work_dir: &Path, hex_key: &str) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::{
-        Platform, WtsexporterArgs, android_crypt_backup, input_search_root,
+        Platform, WtsexporterArgs, android_crypt_backup, extracts_ios_backup, input_search_root,
         resolve_forwarded_paths, wtsexporter_command,
     };
     use crate::ios_backup::DecryptedWhatsapp;
@@ -763,5 +779,37 @@ mod tests {
                 text(&shared),
             ]
         );
+    }
+
+    /// wtsexporter extracts an iPhone backup's WhatsApp files into the work
+    /// directory only when it gets the backup and no media directory that
+    /// exists, so only then is there an extract to measure. Android never
+    /// extracts one.
+    #[test]
+    fn only_an_iphone_backup_without_a_media_directory_is_extracted() {
+        let dir = tempdir().unwrap();
+        let backup = dir.path().join("backup");
+        let media = dir.path().join("WhatsApp");
+        fs::create_dir_all(&backup).unwrap();
+        let ios = |media: Option<&Path>| WtsexporterArgs {
+            platform: Platform::Ios,
+            backup: Some(backup.clone()),
+            media: media.map(Path::to_path_buf),
+            ..android_args(&backup, None)
+        };
+
+        assert!(extracts_ios_backup(&ios(None)).unwrap());
+        assert!(
+            extracts_ios_backup(&ios(Some(&media))).unwrap(),
+            "a media directory that does not exist is no reason to skip"
+        );
+        fs::create_dir_all(&media).unwrap();
+        assert!(!extracts_ios_backup(&ios(Some(&media))).unwrap());
+        let no_backup = WtsexporterArgs {
+            backup: None,
+            ..ios(None)
+        };
+        assert!(!extracts_ios_backup(&no_backup).unwrap());
+        assert!(!extracts_ios_backup(&android_args(&backup, None)).unwrap());
     }
 }

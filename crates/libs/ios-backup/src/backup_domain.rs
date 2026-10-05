@@ -28,15 +28,22 @@ pub struct DecryptedDomain {
 /// `backup_root` into `<out_dir>/<domain>/`, keeping each file's path inside
 /// the domain. Log lines and progress counts go to the given sinks.
 ///
+/// Before anything is written, `check` gets the bytes the domain's files
+/// hold, as the backup's manifest records them, so the caller can refuse a
+/// disk that cannot hold them. An error from `check` stops the program with
+/// nothing written and is returned as it is.
+///
 /// # Errors
 ///
 /// Returns an error when the directory is not an encrypted iPhone backup, the
-/// password is wrong, or there is no `imessage-reader` program to run.
+/// password is wrong, there is no `imessage-reader` program to run, or
+/// `check` refuses.
 pub fn decrypt_ios_backup_domain(
     backup_root: &Path,
     backup_password: &str,
     domain: &str,
     out_dir: &Path,
+    check: impl FnOnce(u64) -> Result<()>,
     log: Option<LogSink>,
     progress: Option<ProgressSink>,
 ) -> Result<DecryptedDomain> {
@@ -46,14 +53,34 @@ pub fn decrypt_ios_backup_domain(
         domain: domain.to_string(),
         out_dir: out_dir.to_path_buf(),
     });
-    read_answer(Helper::spawn(&request, log, progress)?)
+    read_answer(Helper::spawn(&request, log, progress)?, check)
 }
 
-/// The counts a started program answers the request with.
-fn read_answer(mut helper: Helper) -> Result<DecryptedDomain> {
+/// The counts a started program answers the request with, once `check` has
+/// passed the size it measured.
+fn read_answer(
+    mut helper: Helper,
+    check: impl FnOnce(u64) -> Result<()>,
+) -> Result<DecryptedDomain> {
+    let mut check = Some(check);
     let answer = loop {
         match helper.next_event()? {
             Event::Source { .. } => {}
+            Event::BackupDomainSize { bytes, .. } => {
+                let Some(check) = check.take() else {
+                    bail!("imessage-reader measured the domain twice");
+                };
+                if let Err(refused) = check(bytes) {
+                    // Closing stdin without the go stops the program before
+                    // it writes anything.
+                    helper.finish()?;
+                    return Err(refused);
+                }
+                helper.send(&Request::DecryptDomain)?;
+            }
+            Event::BackupDomainDone { .. } if check.is_some() => {
+                bail!("imessage-reader decrypted the domain before measuring it");
+            }
             Event::BackupDomainDone { files, failures } => {
                 break DecryptedDomain { files, failures };
             }
@@ -80,20 +107,58 @@ mod tests {
         })
     }
 
-    #[test]
-    fn the_counts_follow_the_source_event() {
-        let dir = tempfile::tempdir().unwrap();
+    /// A fake that measures the domain at 300 bytes, then decrypts only
+    /// when the next line on its stdin is the go, leaving `went` in `dir`
+    /// when it read one.
+    fn measuring_fake(dir: &std::path::Path) -> std::path::PathBuf {
+        let went = dir.join("went");
         let body = format!(
-            "{}\necho '{{\"event\":\"backup_domain_done\",\"files\":12,\"failures\":1}}'",
-            source_line(PROTOCOL_VERSION)
+            "{}\n\
+             echo '{{\"event\":\"backup_domain_size\",\"files\":2,\"bytes\":300}}'\n\
+             if read -r go; then\n\
+               echo \"$go\" > '{}'\n\
+               echo '{{\"event\":\"backup_domain_done\",\"files\":12,\"failures\":1}}'\n\
+             fi",
+            source_line(PROTOCOL_VERSION),
+            went.display()
         );
-        let helper = spawn_fake(&fake_helper(dir.path(), &body), &request());
+        fake_helper(dir, &body)
+    }
+
+    /// The size goes to the check before anything is decrypted, and a check
+    /// that passes sends the go and gets the counts.
+    #[test]
+    fn the_counts_follow_the_check_of_the_measured_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let helper = spawn_fake(&measuring_fake(dir.path()), &request());
+        let mut measured = None;
+        let answer = read_answer(helper, |bytes| {
+            measured = Some(bytes);
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(measured, Some(300));
         assert_eq!(
-            read_answer(helper).unwrap(),
+            answer,
             DecryptedDomain {
                 files: 12,
                 failures: 1
             }
         );
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join("went")).unwrap(),
+            "{\"op\":\"decrypt_domain\"}\n"
+        );
+    }
+
+    /// A check that refuses is returned as it is, and the program is never
+    /// told to go, so it decrypts nothing (#1651).
+    #[test]
+    fn a_refused_check_stops_the_program_before_it_decrypts() {
+        let dir = tempfile::tempdir().unwrap();
+        let helper = spawn_fake(&measuring_fake(dir.path()), &request());
+        let err = read_answer(helper, |_| anyhow::bail!("no room")).unwrap_err();
+        assert_eq!(err.to_string(), "no room");
+        assert!(!dir.path().join("went").exists());
     }
 }

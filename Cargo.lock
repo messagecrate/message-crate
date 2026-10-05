@@ -1687,6 +1687,7 @@ dependencies = [
  "ios-backup",
  "message-crate-core",
  "plist",
+ "rusqlite",
  "serde_json",
  "tempfile",
 ]

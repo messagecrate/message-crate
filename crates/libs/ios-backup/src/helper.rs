@@ -251,7 +251,7 @@ impl Helper {
     /// same "stopped" error a reply cut short gives, with its exit status and
     /// stderr, rather than a bare broken pipe. The reason the program gave on
     /// its way out, if any, follows it.
-    fn send(&mut self, request: &Request) -> Result<()> {
+    pub(crate) fn send(&mut self, request: &Request) -> Result<()> {
         let stdin = self
             .stdin
             .as_mut()
