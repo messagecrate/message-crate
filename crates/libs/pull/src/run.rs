@@ -14,7 +14,7 @@ use message_ir_format::mark_export_directory;
 use serde::Serialize;
 
 use crate::http::{CloseAction, ExportMessagesArgs, HttpSession};
-use crate::journal::ServerTarget;
+use crate::journal::{self, PullJournalEvent, PullJournalState, ServerTarget};
 use crate::part_file::write_asset;
 use crate::project::{ExportPath, build_document, conversation_key, export_path, to_ir_message};
 use message_crate_api_types::{ExportQueryList, ExportRun, ExportScope, Message};
@@ -64,7 +64,7 @@ pub struct PullConfig {
 pub struct PullReport {
     /// Account id the token resolved to.
     pub account: i64,
-    /// The Export Run the server recorded for this pull.
+    /// The Export Run the server recorded for this export.
     pub export_id: i64,
     /// The query the run asked the server for.
     pub query: String,
@@ -139,7 +139,7 @@ fn next_offset(offset: usize, limit: usize, total: u64) -> Option<usize> {
 /// refuses to act on a run directory without it
 /// (`RunDirectories::directory` in `src-tauri/src/run_directories.rs`), which is
 /// part of what stands between a path bug and a recursive delete somewhere
-/// else on disk. A pulled directory that skipped the sentinel could not be used
+/// else on disk. An exported directory that skipped the sentinel could not be used
 /// as export staging. Because a marked directory may be cleaned by a later
 /// export, a directory of the person's own files is refused rather than marked
 /// ([`mark_export_directory`]). The directory is marked before `attachments/` is
@@ -282,7 +282,7 @@ struct Pull<'a> {
     /// The search query with surrounding whitespace removed.
     query: String,
     journal_path: PathBuf,
-    journal: crate::journal::PullJournalState,
+    journal: PullJournalState,
 }
 
 impl<'a> Pull<'a> {
@@ -322,11 +322,11 @@ impl<'a> Pull<'a> {
                 }
             }),
         );
-        // Load the pull journal so a later Export Run does not fetch the Assets
+        // Load the journal so a later Export Run does not fetch the Assets
         // already on disk again.
-        let journal_path = crate::journal::journal_path(&cfg.out_dir);
+        let journal_path = journal::journal_path(&cfg.out_dir);
         let target = ServerTarget::new(&cfg.base_url, username);
-        let journal = crate::journal::load(&journal_path, &target, &mut |line| {
+        let journal = journal::load(&journal_path, &target, &mut |line| {
             emit(out, ProgressEvent::Log(line));
         })?;
         Ok(Self {
@@ -340,7 +340,7 @@ impl<'a> Pull<'a> {
         })
     }
 
-    /// The scope this pull asks the server for: the trimmed query for its
+    /// The scope this Export Run asks the server for: the trimmed query for its
     /// list, or everything when it is blank.
     fn scope(&self) -> ExportScope {
         if self.query.is_empty() {
@@ -353,7 +353,7 @@ impl<'a> Pull<'a> {
         }
     }
 
-    /// `POST /v1/exports` for this pull's scope, announcing what the server
+    /// `POST /v1/exports` for this Export Run's scope, announcing what the server
     /// counted for it.
     ///
     /// # Errors
@@ -561,17 +561,17 @@ impl<'a> Pull<'a> {
         };
         for sha in assets.keys() {
             if !self.journal.assets.contains(sha) {
-                let event = crate::journal::PullJournalEvent::AssetOk {
+                let event = PullJournalEvent::AssetOk {
                     target: self.target.clone(),
                     sha256: sha.clone(),
                 };
-                if let Err(error) = crate::journal::append(&self.journal_path, &event) {
+                if let Err(error) = journal::append(&self.journal_path, &event) {
                     emit(
                         out,
                         ProgressEvent::Log(format!(
                             "Asset {sha} could not be added to {}, the record of \
                              fetched Assets: {error:#}",
-                            crate::journal::PULL_JOURNAL_NAME
+                            journal::PULL_JOURNAL_NAME
                         )),
                     );
                 }
@@ -631,34 +631,33 @@ impl<'a> Pull<'a> {
         assets: &AssetCounts,
         seen_assets: HashMap<String, String>,
     ) {
-        let event = crate::journal::PullJournalEvent::ExportComplete {
+        let event = PullJournalEvent::ExportComplete {
             target: self.target.clone(),
             conversations,
             messages,
             assets: assets.fetched + assets.kept,
         };
-        if let Err(error) = crate::journal::append(&self.journal_path, &event) {
+        if let Err(error) = journal::append(&self.journal_path, &event) {
             emit(
                 out,
                 ProgressEvent::Log(format!(
                     "Export Run {export_id} could not be recorded as finished in {}: {error:#}",
-                    crate::journal::PULL_JOURNAL_NAME
+                    journal::PULL_JOURNAL_NAME
                 )),
             );
         }
         let mut recorded_assets = self.journal.assets.clone();
         recorded_assets.extend(seen_assets.into_keys());
-        let final_state = crate::journal::PullJournalState {
+        let final_state = PullJournalState {
             assets: recorded_assets,
             export_complete: true,
         };
-        if let Err(error) = crate::journal::compact(&self.journal_path, &self.target, &final_state)
-        {
+        if let Err(error) = journal::compact(&self.journal_path, &self.target, &final_state) {
             emit(
                 out,
                 ProgressEvent::Log(format!(
                     "{} could not be rewritten in its shortest form: {error:#}",
-                    crate::journal::PULL_JOURNAL_NAME
+                    journal::PULL_JOURNAL_NAME
                 )),
             );
         }
@@ -897,7 +896,7 @@ mod out_dir_tests {
     #[test]
     fn marks_the_directory_as_an_export() {
         // Without the sentinel the desktop app's staging guard refuses to
-        // clean a pulled directory, so an export that staged into one would
+        // clean an exported directory, so an export that staged into one would
         // leave the run directory behind.
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("pulled");
@@ -922,7 +921,7 @@ mod out_dir_tests {
 
     #[test]
     fn runs_again_over_a_directory_it_already_prepared() {
-        // A second pull into the same directory is a later Export Run over it.
+        // A second export into the same directory is a later Export Run over it.
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("pulled");
 
