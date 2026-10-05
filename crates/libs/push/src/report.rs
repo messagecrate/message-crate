@@ -110,7 +110,7 @@ pub struct PushReport {
     pub session_refused: bool,
     /// Account id the token resolved to.
     pub account: i64,
-    /// Username the server reports for that account, else the account id.
+    /// Username the server reports for that account.
     pub username: String,
     /// `append` or `replace`.
     pub mode: ImportMode,

@@ -715,16 +715,14 @@ fn upload_claimed(
         match result {
             Ok(response) => {
                 claims.uploaded(&job.digest)?;
-                let outcome = if response.already_present {
+                let line = if response.already_present {
                     stats.skipped += 1;
-                    "skip"
+                    format!("The server already holds Asset {}", job.digest)
                 } else {
                     stats.uploaded += 1;
-                    "ok"
+                    format!("Uploaded Asset {}", job.digest)
                 };
-                stats
-                    .log_lines
-                    .push(format!("asset {outcome} {}", job.digest));
+                stats.log_lines.push(line);
             }
             // The caller drops `claims`, which gives up the rest, so a retry
             // or a waiting conversation is not stuck forever.
