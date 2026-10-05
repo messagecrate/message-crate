@@ -31,23 +31,15 @@ fn a_session_body_becomes_the_account_it_names() {
     assert_eq!(info.username, "alice");
 }
 
-/// Every Session names its account's username, so a body without one is not
-/// a Session: the reply is refused as unreadable, not taken with a username
-/// made up from the account id.
+/// Every Session names its account id and its username, so a body missing
+/// either is not a Session: the reply is refused as unreadable, the same way
+/// for both, rather than taken with a value made up for the missing one.
 #[test]
-fn a_session_without_a_username_is_refused() {
-    let err = check_against(200, r#"{"account_id": 7}"#)
-        .expect_err("a session with no username is not a session");
-    assert_eq!(err.kind(), "bad_json");
-}
-
-/// An account id is required too, because every later call is made on its
-/// behalf.
-#[test]
-fn a_session_without_an_account_id_is_refused() {
-    let err = check_against(200, r#"{"username": "alice"}"#)
-        .expect_err("a session with no account id is not a session");
-    assert_eq!(err.kind(), "missing_account");
+fn a_session_without_an_account_id_or_a_username_is_refused() {
+    for body in [r#"{"account_id": 7}"#, r#"{"username": "alice"}"#] {
+        let err = check_against(200, body).expect_err("a partial session is not a session");
+        assert_eq!(err.kind(), "bad_json", "for body: {body}");
+    }
 }
 
 /// The wrong-host case, which is the most common mistake made at this screen:

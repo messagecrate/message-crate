@@ -117,9 +117,8 @@ impl HttpSession {
             status: status_code,
             snippet: truncate(&text, 200),
         })?;
-        let account_id = parsed.account_id.ok_or(AuthError::MissingAccountId)?;
         Ok(AuthInfo {
-            account_id,
+            account_id: parsed.account_id,
             username: parsed.username,
         })
     }
@@ -129,8 +128,7 @@ impl HttpSession {
 /// the clients read are here.
 #[derive(Debug, Deserialize)]
 struct Session {
-    #[serde(default)]
-    account_id: Option<i64>,
+    account_id: i64,
     username: String,
 }
 

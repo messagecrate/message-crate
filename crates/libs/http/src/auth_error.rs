@@ -133,9 +133,6 @@ pub enum AuthError {
         /// The rejection message from the server.
         message: String,
     },
-    /// The server did not return an account id.
-    #[error("session check did not return account_id")]
-    MissingAccountId,
 }
 
 impl AuthError {
@@ -157,7 +154,6 @@ impl AuthError {
             Self::HttpStatus { .. } => "http_status",
             Self::BadJson { .. } => "bad_json",
             Self::Rejected { .. } => "rejected",
-            Self::MissingAccountId => "missing_account",
         }
     }
 }
@@ -265,7 +261,6 @@ mod tests {
                 },
                 "rejected",
             ),
-            (AuthError::MissingAccountId, "missing_account"),
         ];
 
         for (error, kind) in cases {
@@ -278,7 +273,6 @@ mod tests {
             );
             match &error {
                 AuthError::Unauthorized => assert!(message.contains("Log in again")),
-                AuthError::MissingAccountId => {}
                 AuthError::HttpsRequired { url } => {
                     assert!(message.contains(url));
                     assert!(message.contains("https://"));
