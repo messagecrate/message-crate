@@ -486,6 +486,12 @@ fn a_refused_completion_outranks_a_report_that_cannot_be_written() {
 
     let message = format!("{error:#}");
     assert!(message.contains("Import Run 42"), "{message}");
+    let log = read_log(dir.path());
+    assert!(
+        log.contains("The Upload's report could not be written: write report "),
+        "{log}"
+    );
+    assert!(!log.contains("warning:"), "{log}");
 }
 
 #[test]
@@ -1507,7 +1513,7 @@ fn verify_digests_fails_on_mismatch() {
         path: Some("attachments/fixture.txt".into()),
         original_name: Some("fixture.txt".into()),
         mime_type: Some("text/plain".into()),
-        digest_sha256: Some(wrong_digest),
+        digest_sha256: Some(wrong_digest.clone()),
         is_sticker: false,
         transcription: None,
         sticker_effect: None,
@@ -1523,6 +1529,94 @@ fn verify_digests_fails_on_mismatch() {
     assert!(!report.ok);
     assert_eq!(report.conversations_failed, 1);
     assert_eq!(put.calls(), 0, "mismatch must fail before upload");
+    let disk_digest = hex::encode(Sha256::digest(ASSET_BYTES));
+    let error = report.results[0].error.as_deref().unwrap_or_default();
+    assert!(
+        error.contains(&format!(
+            "attachment attachments/fixture.txt hashes to {disk_digest}, \
+             not the {wrong_digest} its conversation file records"
+        )),
+        "{error}"
+    );
+    assert!(!error.contains("names it Asset"), "{error}");
+}
+
+/// Without `verify_digests`, a recorded SHA-256 that is malformed or does not
+/// match the file is a log line in a sentence, and the Upload goes on with the
+/// file's own hash.
+#[test]
+fn a_digest_that_does_not_match_its_file_is_a_sentence_in_the_log() {
+    const ASSET_BYTES: &[u8] = b"on-disk bytes";
+    const OTHER_BYTES: &[u8] = b"other on-disk bytes";
+    let disk_digest = hex::encode(Sha256::digest(ASSET_BYTES));
+    let other_disk_digest = hex::encode(Sha256::digest(OTHER_BYTES));
+    let wrong_digest = hex::encode(Sha256::digest(b"other bytes"));
+
+    let server = MockServer::start();
+    let _auth = mock_session(&server);
+    let _run = mock_import_start_and_complete(&server, 7);
+    let _import = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/7/batches");
+        then.status(200).json_body(json!({
+            "messages": 1,
+            "messages_appended": 1,
+            "conversations": 1
+        }));
+    });
+    let _head = server.mock(|when, then| {
+        when.method("HEAD").path_includes("/v1/assets/");
+        then.status(404);
+    });
+    let put = server.mock(|when, then| {
+        when.method(PUT).path_includes("/v1/assets/");
+        then.status(200)
+            .json_body(json!({ "already_present": false }));
+    });
+
+    let dir = tempdir().unwrap();
+    let attachment_dir = dir.path().join("attachments");
+    fs::create_dir(&attachment_dir).unwrap();
+    fs::write(attachment_dir.join("mismatch.txt"), ASSET_BYTES).unwrap();
+    fs::write(attachment_dir.join("malformed.txt"), OTHER_BYTES).unwrap();
+    let mut doc = sample_doc();
+    let mut mismatch = ir_attachment("attachments/mismatch.txt", wrong_digest.clone());
+    mismatch.size_bytes = Some(4);
+    doc.messages[0].attachments.push(mismatch);
+    doc.messages[0].attachments.push(ir_attachment(
+        "attachments/malformed.txt",
+        "not-a-digest".into(),
+    ));
+    write_jsonl(dir.path(), &doc);
+
+    let cfg = text_only_config(dir.path(), server.base_url());
+    let report = run(&cfg, None).unwrap();
+    assert!(report.ok, "{report:?}");
+    assert_eq!(put.calls(), 2);
+
+    let log = read_log(dir.path());
+    let name = format!("{}.jsonl", doc.filename_stem());
+    assert!(
+        log.contains(&format!(
+            "{name}: attachment attachments/mismatch.txt hashes to {disk_digest}, \
+             not the {wrong_digest} its conversation file records. \
+             Its size changed from 4 to {} bytes. \
+             The Upload names it Asset {disk_digest}\n",
+            ASSET_BYTES.len()
+        )),
+        "{log}"
+    );
+    assert!(
+        log.contains(&format!(
+            "{name}: the SHA-256 recorded for attachment attachments/malformed.txt \
+             is not 64 hexadecimal digits, so the Upload hashes the file instead\n"
+        )),
+        "{log}"
+    );
+    assert!(
+        log.contains(&format!("Uploaded Asset {other_disk_digest}\n")),
+        "{log}"
+    );
+    assert!(!log.contains("WARN"), "{log}");
 }
 
 #[test]

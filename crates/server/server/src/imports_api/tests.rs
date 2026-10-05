@@ -2,8 +2,8 @@ use super::*;
 use crate::assets_api;
 use crate::test_support::{
     ConversationHeaderLine, RegisteredAccount, TestFixture, assert_every_person_is_on_a_contact,
-    conversation_header, fixture_with_account, get_json, import_jsonl_text, patch_json,
-    post_created_json, post_json, test_fixture,
+    conversation_header, fixture_with_account, get_json, import_ada_conversation,
+    import_jsonl_text, patch_json, post_created_json, post_json, test_fixture,
 };
 use tempfile::TempDir;
 
@@ -4779,16 +4779,7 @@ async fn c2_4_a_name_only_contact_counts_its_group() {
 async fn s6_1_with_follows_an_identity_an_address_book_moved() {
     let fixture = test_fixture().await;
     let mut conn = fixture.state.db.acquire().await.unwrap();
-    let header =
-        conversation_header("imessage", "+15555550123").participant("+15555550123", Some("Ada"));
-    let message = r#"{"guid":"g-s6-1","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}"#;
-    import_jsonl_text(
-        &mut conn,
-        TEST_ACCOUNT,
-        "imessage",
-        &format!("{header}\n{message}\n"),
-    )
-    .await;
+    import_ada_conversation(&mut conn, TEST_ACCOUNT, "+15555550123", "g-s6-1").await;
     let a = contact_named(&mut conn, "Ada").await;
     let conversation: i64 = sqlx::query_scalar("SELECT id FROM conversations")
         .fetch_one(&mut *conn)
@@ -4907,21 +4898,8 @@ async fn a_contact_with_only_other_identities_is_unknown() {
 async fn discarding_a_trashed_contact_leaves_none_of_its_identities_on_no_contact() {
     let fixture = test_fixture().await;
     let mut conn = fixture.state.db.acquire().await.unwrap();
-    let ada_texts = format!(
-        "{}\n{}",
-        conversation_header("imessage", "+15555550123").participant("+15555550123", Some("Ada")),
-        r#"{"guid":"g-discard-1","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}
-"#
-    );
-    let ada_mail = format!(
-        "{}\n{}",
-        conversation_header("imessage", "ada@example.com")
-            .participant("ada@example.com", Some("Ada")),
-        r#"{"guid":"g-discard-2","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"ada@example.com","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}
-"#
-    );
-    import_jsonl_text(&mut conn, TEST_ACCOUNT, "imessage", &ada_texts).await;
-    import_jsonl_text(&mut conn, TEST_ACCOUNT, "imessage", &ada_mail).await;
+    import_ada_conversation(&mut conn, TEST_ACCOUNT, "+15555550123", "g-discard-1").await;
+    import_ada_conversation(&mut conn, TEST_ACCOUNT, "ada@example.com", "g-discard-2").await;
     // Both of Ada's addresses are on one contact, which the person trashes.
     let ada: i64 = sqlx::query_scalar(
         "SELECT ch.contact_id FROM contact_handles ch JOIN handles h ON h.id = ch.handle_id
@@ -4953,8 +4931,7 @@ async fn discarding_a_trashed_contact_leaves_none_of_its_identities_on_no_contac
         .unwrap();
 
     // The next backup holds only her number.
-    let ada_texts_again = ada_texts.replace("g-discard-1", "g-discard-3");
-    import_jsonl_text(&mut conn, TEST_ACCOUNT, "imessage", &ada_texts_again).await;
+    import_ada_conversation(&mut conn, TEST_ACCOUNT, "+15555550123", "g-discard-3").await;
 
     assert_every_person_is_on_a_contact(&mut conn, "an import discarded a trashed contact").await;
     let holders: Vec<(String, String)> = sqlx::query_as(
