@@ -406,6 +406,23 @@ released versions carry their date on the heading.
   "The Upload completed in 1m00s." An Upload that left conversations for
   the next Upload ends with "The Upload paused after …", where it used to
   say it completed with errors.
+- 2026-10-05 **An Import Run's log writes its warnings as sentences.** Lines
+  written while reading a backup started with "warning:" or "media warning:".
+  Each now says what happened:
+  - "warning: attachment … could not be read: …" and "warning: failed to read
+    attachment …: …" are now "Attachment … could not be read: …".
+  - "warning: attachment … could not be decrypted: …" is now "Attachment …
+    could not be decrypted: …".
+  - "warning: attachment … not found in encrypted backup; skipping bytes" is
+    now "Attachment … is not in the encrypted backup, so it is recorded
+    without its file".
+  - "warning: … could not be decrypted: …", for a file of an encrypted
+    iPhone backup, is now "Backup file … could not be decrypted: …".
+  - "warning: failed to remove temporary messages database at …: …" is now
+    "The temporary copy of the messages database at … could not be removed:
+    …", and the same for the contacts database.
+  - The Media Stage's "media warning: 1 file could not be converted; …" is
+    now "1 file could not be converted; …".
 - 2026-10-05 **The Upload's log writes its warnings as sentences.** An
   attachment whose recorded SHA-256 did not match the file was logged as
   "WARN … sha256 mismatch for …: claimed …, got …", and a report the Upload

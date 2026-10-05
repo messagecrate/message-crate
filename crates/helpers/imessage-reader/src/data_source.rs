@@ -37,7 +37,7 @@ impl Drop for TempDatabase {
     fn drop(&mut self) {
         if let Err(why) = remove_file(&self.path) {
             emit_log(format!(
-                "warning: failed to remove temporary messages database at {}: {why}",
+                "The temporary copy of the messages database at {} could not be removed: {why}",
                 self.path.display(),
             ));
         }
@@ -100,7 +100,7 @@ impl DataSource {
                         && let Err(e) = remove_file(cp)
                     {
                         emit_log(format!(
-                            "warning: failed to remove temporary contacts database at {}: {e}",
+                            "The temporary copy of the contacts database at {} could not be removed: {e}",
                             cp.display()
                         ));
                     }

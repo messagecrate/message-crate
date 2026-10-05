@@ -407,13 +407,11 @@ pub(crate) fn missing_if_no_file(
     }
 }
 
-/// The log line for an attachment file that could not be read, naming the
-/// file and why.
-fn unreadable_attachment_line(path: &Path, why: impl std::fmt::Display) -> String {
-    format!(
-        "warning: attachment {} could not be read: {why}",
-        path.display()
-    )
+/// The log line for an attachment whose file could not be read, naming the
+/// file and why. Every exporter that reads an attachment's file itself logs
+/// with it too, so the line reads alike wherever the read fails.
+pub fn unreadable_attachment_line(path: &Path, why: impl std::fmt::Display) -> String {
+    format!("Attachment {} could not be read: {why}", path.display())
 }
 
 /// The conversation file a unit is written to.

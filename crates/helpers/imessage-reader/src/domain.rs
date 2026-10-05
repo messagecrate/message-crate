@@ -141,7 +141,7 @@ pub(crate) fn decrypt_domain(
             Err(why) => {
                 written.failures += 1;
                 emit_log(format!(
-                    "warning: {relative_path} could not be decrypted: {why}"
+                    "Backup file {relative_path} could not be decrypted: {why}"
                 ));
             }
         }
