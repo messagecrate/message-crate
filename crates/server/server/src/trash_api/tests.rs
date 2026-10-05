@@ -3,8 +3,8 @@ use axum::http::StatusCode;
 use crate::db::trash::{Trashable, move_to_trash};
 use crate::test_support::{
     RegisteredAccount, SeedConversation, SeedMessage, TestFixture, attach_stored_file,
-    delete_status, fake_sha256, fixture_with_account, get_json, get_status, register_via_api,
-    seed_conversation,
+    conversation_header, delete_status, fake_sha256, fixture_with_account, get_json, get_status,
+    register_via_api, seed_conversation,
 };
 
 /// One `imessage` conversation with one message on `handle`, returning its id.
@@ -197,7 +197,7 @@ fn batch_naming(sha: &str) -> String {
     );
     format!(
         "{}\n{message}\n",
-        r#"{"schema_version":9,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550123","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550123","display_name":null}],"stats":{"message_count":1,"attachment_count":1,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}"#,
+        conversation_header("imessage", "+15555550123").participant("+15555550123", None),
     )
 }
 
@@ -422,9 +422,7 @@ async fn a_short_stored_fingerprint_does_not_stop_empty_trash() {
 /// One batch of one incoming message from `source`, on `handle`, whose
 /// attachment is the file `sha`.
 fn batch_from_source(source: &str, handle: &str, sha: &str) -> String {
-    let header = format!(
-        r#"{{"schema_version":9,"export":{{"source":"{source}","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{handle}","conversation_type":"individual","group_title":null,"participants":[{{"identity":"{handle}","display_name":null}}],"stats":{{"message_count":1,"attachment_count":1,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
-    );
+    let header = conversation_header(source, handle).participant(handle, None);
     let message = format!(
         r#"{{"guid":"g-{source}","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"{handle}","sender_display_name":null,"subject":null,"text":"from {source}","attachments":[{{"path":"attachments/photo.jpg","original_name":"photo.jpg","mime_type":"image/jpeg","digest_sha256":"{sha}","is_sticker":false,"transcription":null,"sticker_effect":null}}],"imessage":null,"source":null}}"#
     );

@@ -2039,18 +2039,7 @@ mod kind_words {
         chat: &str,
     ) -> (i64, i64) {
         let path = dir.join(format!("{chat}.jsonl"));
-        let header = serde_json::json!({
-            "schema_version": 9,
-            "export": {"source": source, "tool": "test", "tool_version": "0",
-                       "owner_identity": null, "owner_display_name": null},
-            "conversation": {
-                "chat_identifier": chat, "conversation_type": "individual", "group_title": null,
-                "participants": [{"identity": chat, "display_name": null}],
-                "stats": {"message_count": 1, "attachment_count": 0,
-                          "first_timestamp_unix_ms": 1_426_183_462_000_i64,
-                          "last_timestamp_unix_ms": 1_426_183_462_000_i64}
-            }
-        });
+        let header = crate::test_support::conversation_header(source, chat).participant(chat, None);
         let line = serde_json::json!({
             "guid": format!("{source}-{chat}"), "timestamp_unix_ms": 1_426_183_462_000_i64,
             "direction": "incoming", "service": "sms", "message_kind": "sms",

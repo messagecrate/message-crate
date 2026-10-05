@@ -169,21 +169,33 @@ async fn the_server_log_never_holds_a_secret_message_text_or_a_contact() {
     )
     .await;
     assert!(status.is_success(), "{status} {answer}");
-    let header = json!({
-        "schema_version": message_ir::SCHEMA_VERSION,
-        "export": { "source": "whatsapp", "tool": "t", "tool_version": "0",
-                    "owner_identity": "+15555550106", "owner_display_name": "Me" },
-        "conversation": {
-            "chat_identifier": CONTACT_PHONE, "conversation_type": "individual", "group_title": null,
-            "participants": [
-                { "identity": CONTACT_PHONE, "display_name": CONTACT_NAME },
-                { "identity": CONTACT_EMAIL, "display_name": CONTACT_NAME }
-            ],
-            "stats": { "message_count": 1, "attachment_count": 1,
-                       "first_timestamp_unix_ms": 1_700_000_000_000_i64,
-                       "last_timestamp_unix_ms": 1_700_000_000_000_i64 }
-        }
-    });
+    // Built from message-ir's own header type, so the version and the field
+    // names follow the schema (#1732).
+    let participant = |identity: &str| message_ir::IrParticipant {
+        identity: Some(identity.to_string()),
+        display_name: Some(CONTACT_NAME.to_string()),
+        identity_type: None,
+    };
+    let header = serde_json::to_string(&message_ir::ConversationHeader {
+        schema_version: message_ir::SCHEMA_VERSION,
+        export: message_ir::ExportMeta {
+            source: "whatsapp".to_string(),
+            tool: "test".to_string(),
+            tool_version: "0".to_string(),
+            owner_identity: Some("+15555550106".to_string()),
+            owner_display_name: Some("Me".to_string()),
+        },
+        conversation: message_ir::ConversationMeta {
+            chat_identifier: CONTACT_PHONE.to_string(),
+            conversation_type: message_ir::IrConversationType::Individual,
+            group_title: None,
+            participants: vec![participant(CONTACT_PHONE), participant(CONTACT_EMAIL)],
+            // Left at zero, as test_support's builder leaves them: the
+            // import reads none of the header's stats.
+            stats: message_ir::ConversationStats::default(),
+        },
+    })
+    .unwrap();
     let message = json!({
         "guid": "g-1", "timestamp_unix_ms": 1_700_000_000_000_i64, "direction": "incoming",
         "service": "whatsapp", "message_kind": "sms", "sender_identity": CONTACT_PHONE,

@@ -1,5 +1,6 @@
 use super::*;
 use crate::db::schema;
+use crate::test_support::conversation_header;
 
 const TEST_ACCOUNT: i64 = 7;
 
@@ -260,14 +261,6 @@ async fn a_fresh_contact_takes_the_number_on_every_service() {
     );
 }
 
-/// A conversation header line. `participants` is the JSON array body.
-fn header(chat: &str, kind: &str, participants: &str) -> String {
-    let version = message_ir::SCHEMA_VERSION;
-    format!(
-        r#"{{"schema_version":{version},"export":{{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{chat}","conversation_type":"{kind}","group_title":null,"participants":[{participants}],"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
-    )
-}
-
 /// An incoming message line from `sender`.
 fn incoming(guid: &str, sender: &str) -> String {
     format!(
@@ -282,20 +275,14 @@ fn outgoing(guid: &str) -> String {
     )
 }
 
-/// One participant entry: `identity`, named `name`.
-fn person(identity: &str, name: &str) -> String {
-    format!(r#"{{"identity":"{identity}","display_name":"{name}"}}"#)
-}
-
 /// The orphaned messages one sender sent, as the Apple Messages reader
 /// writes them: a conversation of type `orphaned`, keyed `orphaned:` and the
 /// sender's address, with the sender as its only participant.
 fn orphaned_from(sender: &str, name: &str, guid: &str) -> String {
-    header(
-        &format!("orphaned:{sender}"),
-        "orphaned",
-        &person(sender, name),
-    ) + "\n"
+    conversation_header("imessage", &format!("orphaned:{sender}"))
+        .orphaned()
+        .participant(sender, Some(name))
+        .line()
         + &incoming(guid, sender)
         + "\n"
 }
@@ -304,7 +291,9 @@ fn orphaned_from(sender: &str, name: &str, guid: &str) -> String {
 /// recipient: one conversation of type `orphaned`, keyed `orphaned:`, with no
 /// participants.
 fn unknown_recipient(guids: &[&str]) -> String {
-    let mut out = header("orphaned:", "orphaned", "") + "\n";
+    let mut out = conversation_header("imessage", "orphaned:")
+        .orphaned()
+        .line();
     for guid in guids {
         out += &outgoing(guid);
         out += "\n";
@@ -315,8 +304,9 @@ fn unknown_recipient(guids: &[&str]) -> String {
 /// A backup holding Ada's one-to-one conversation and orphaned messages:
 /// one from Ada, one from Bob, and two the account holder sent.
 fn backup_with_orphaned_messages() -> String {
-    header("+15555550154", "individual", &person("+15555550154", "Ada"))
-        + "\n"
+    conversation_header("imessage", "+15555550154")
+        .participant("+15555550154", Some("Ada"))
+        .line()
         + &incoming("g-ada", "+15555550154")
         + "\n"
         + &orphaned_from("+15555550154", "Ada", "g-ada-orphaned")
@@ -499,11 +489,10 @@ async fn a_sender_no_header_names_still_gets_a_contact() {
         &mut conn,
         &[(
             "group.jsonl",
-            header(
-                "chat1000000701",
-                "group",
-                r#"{"identity":"+15555550123","display_name":null}"#,
-            ) + "\n"
+            conversation_header("imessage", "chat1000000701")
+                .group()
+                .participant("+15555550123", None)
+                .line()
                 + &incoming("g-group", "+15555550156")
                 + "\n",
         )],
@@ -613,11 +602,10 @@ async fn a_sender_is_never_linked_to_a_trashed_contact() {
         &mut conn,
         &[(
             "group.jsonl",
-            header(
-                "chat1000000702",
-                "group",
-                r#"{"identity":"+15555550123","display_name":null}"#,
-            ) + "\n"
+            conversation_header("imessage", "chat1000000702")
+                .group()
+                .participant("+15555550123", None)
+                .line()
                 + &incoming("g-trashed", "+15555550157")
                 + "\n",
         )],
@@ -652,17 +640,16 @@ async fn a_one_to_one_chat_first_met_as_a_sender_gets_a_contact() {
         &[
             (
                 "group.jsonl",
-                header(
-                    "chat1000000704",
-                    "group",
-                    r#"{"identity":"+15555550123","display_name":null}"#,
-                ) + "\n"
+                conversation_header("imessage", "chat1000000704")
+                    .group()
+                    .participant("+15555550123", None)
+                    .line()
                     + &incoming("g-group", "+15555550158")
                     + "\n",
             ),
             (
                 "direct.jsonl",
-                header("+15555550158", "individual", "") + "\n",
+                conversation_header("imessage", "+15555550158").line(),
             ),
         ],
     )

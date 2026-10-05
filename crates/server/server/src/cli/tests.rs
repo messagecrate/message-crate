@@ -8,13 +8,15 @@ use std::path::{Path, PathBuf};
 
 use super::*;
 use crate::db::account_profile;
+use crate::test_support::conversation_header;
 
 const ALICE: i64 = 7;
 
 /// A one-conversation JSON Lines export with no messages, enough for the
 /// import to record a conversation under source `imessage`.
-const CONVERSATION_JSONL: &str = r#"{"schema_version":9,"export":{"source":"imessage","tool":"t","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550118","conversation_type":"individual","group_title":null,"participants":[],"stats":{"message_count":0,"attachment_count":0,"first_timestamp_unix_ms":null,"last_timestamp_unix_ms":null}}}
-"#;
+fn conversation_jsonl() -> String {
+    conversation_header("imessage", "+15555550118").line()
+}
 
 /// A database under `dir`: its config file on disk, the way an operator has
 /// one, with absolute paths so the test does not depend on the working
@@ -139,7 +141,7 @@ async fn import_records_the_conversation_then_dedupe_and_process_assets_run_on_i
     with_alice(&config).await;
     let input = dir.path().join("export");
     fs::create_dir_all(&input).unwrap();
-    fs::write(input.join("chat.jsonl"), CONVERSATION_JSONL).unwrap();
+    fs::write(input.join("chat.jsonl"), conversation_jsonl()).unwrap();
 
     run(Cli {
         command: Commands::Import(import_args(&config, &input)),
@@ -275,7 +277,7 @@ async fn imports_discard_clears_a_stranded_import_run_so_the_next_import_runs() 
     with_alice(&config).await;
     let input = dir.path().join("export");
     fs::create_dir_all(&input).unwrap();
-    fs::write(input.join("chat.jsonl"), CONVERSATION_JSONL).unwrap();
+    fs::write(input.join("chat.jsonl"), conversation_jsonl()).unwrap();
 
     // An Import Run the way a killed `import` leaves it: running, never finished.
     let stranded = {
@@ -443,7 +445,7 @@ async fn import_refuses_an_unknown_account() {
     open(&config).await.close().await;
     let input = dir.path().join("export");
     fs::create_dir_all(&input).unwrap();
-    fs::write(input.join("chat.jsonl"), CONVERSATION_JSONL).unwrap();
+    fs::write(input.join("chat.jsonl"), conversation_jsonl()).unwrap();
 
     let err = run(Cli {
         command: Commands::Import(import_args(&config, &input)),

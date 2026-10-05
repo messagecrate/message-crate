@@ -5,11 +5,12 @@ use crate::db::api_tokens;
 use crate::db::permissions::Permissions;
 use crate::problem::ProblemType;
 use crate::test_support::{
-    SeedConversation, SeedMessage, claim_as_owner, delete_json, delete_json_with_body, delete_raw,
-    delete_status, delete_status_with_body, expect_problem, fixture_with_account, get_json,
-    get_raw, get_status, log_in, login_status, patch_failure, patch_json, patch_raw, patch_status,
-    post_created_json, post_logged_out, post_raw, post_status, post_status_logged_out, put_json,
-    put_raw, put_status, register_via_api, seed_conversation, seed_one_message, test_fixture,
+    SeedConversation, SeedMessage, claim_as_owner, conversation_header, delete_json,
+    delete_json_with_body, delete_raw, delete_status, delete_status_with_body, expect_problem,
+    fixture_with_account, get_json, get_raw, get_status, log_in, login_status, patch_failure,
+    patch_json, patch_raw, patch_status, post_created_json, post_logged_out, post_raw, post_status,
+    post_status_logged_out, put_json, put_raw, put_status, register_via_api, seed_conversation,
+    seed_one_message, test_fixture,
 };
 use message_ir::HandleType;
 
@@ -1598,7 +1599,7 @@ async fn deleting_messages_keeps_a_file_a_running_import_has_uploaded() {
     );
     let body = format!(
         "{}\n{message}\n",
-        r#"{"schema_version":9,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550123","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550123","display_name":null}],"stats":{"message_count":1,"attachment_count":1,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}"#,
+        conversation_header("imessage", "+15555550123").participant("+15555550123", None),
     );
     let (status, text) = crate::test_support::post_raw(
         &state,

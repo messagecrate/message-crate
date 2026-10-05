@@ -1,7 +1,7 @@
 use super::*;
 use crate::config::PathsConfig;
 use crate::imports_api::IMPORT_CONTACT_GROUP_NAME_SQL;
-use crate::test_support::MessageRow;
+use crate::test_support::{MessageRow, conversation_header};
 use sqlx::SqliteConnection;
 use std::collections::BTreeSet;
 
@@ -30,8 +30,9 @@ username = "demo"
     )
     .expect("write contacts");
     let conversation = |source: &str, chat: &str, guid: &str| {
+        let header = conversation_header(source, chat).participant(chat, None);
         format!(
-            r#"{{"schema_version":9,"export":{{"source":"{source}","tool":"t","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{chat}","conversation_type":"individual","group_title":null,"participants":[{{"identity":"{chat}","display_name":null}}],"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}
+            r#"{header}
 {{"guid":"{guid}","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"{chat}","sender_display_name":null,"subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}}
 "#
         )
@@ -1865,11 +1866,10 @@ async fn the_demo_address_book_names_the_unknowns_the_imports_made() {
 /// run directory, so the two sources carry one message twice and the
 /// dedupe has something to hide.
 fn write_overlap_conversation(bundle: &Path) {
-    let overlap = concat!(
-        r#"{"schema_version":9,"export":{"source":"sms-backup-restore","tool":"t","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":null}],"stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}"#,
-        "\n",
+    let overlap = format!(
+        "{}\n{}\n",
+        conversation_header("sms-backup-restore", "+15555550101").participant("+15555550101", None),
         r#"{"guid":"pg-demo-sbr-overlap","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":null,"subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}"#,
-        "\n",
     );
     fs::write(
         bundle

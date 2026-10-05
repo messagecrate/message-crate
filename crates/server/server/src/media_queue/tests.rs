@@ -10,7 +10,9 @@ use axum::http::StatusCode;
 
 use super::*;
 use crate::server::AppState;
-use crate::test_support::{RegisteredAccount, TestFixture, fixture_with_account};
+use crate::test_support::{
+    RegisteredAccount, TestFixture, conversation_header, fixture_with_account,
+};
 
 /// The three synthetic files the tests import: an 800x600 PNG, a half-second
 /// H.264 MP4 and a half-second HEVC `.mov`, each made with ffmpeg's test
@@ -53,10 +55,7 @@ fn batch(files: &[(&str, &str)], shas: &[String]) -> String {
         r#"{{"guid":"g-media","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"some files","attachments":[{}],"imessage":null,"source":null}}"#,
         attachments.join(",")
     );
-    let count = files.len();
-    let header = format!(
-        r#"{{"schema_version":9,"export":{{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"+15555550123","conversation_type":"individual","group_title":null,"participants":[{{"identity":"+15555550123","display_name":null}}],"stats":{{"message_count":1,"attachment_count":{count},"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
-    );
+    let header = conversation_header("imessage", "+15555550123").participant("+15555550123", None);
     format!("{header}\n{message}\n")
 }
 

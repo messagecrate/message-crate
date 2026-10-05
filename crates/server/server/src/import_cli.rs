@@ -301,6 +301,7 @@ mod tests {
     use crate::db::account_profile;
     use crate::imports_api::IMPORT_CONTACT_GROUP_NAME_SQL;
     use crate::open_db::fresh_config;
+    use crate::test_support::conversation_header;
     use tempfile::TempDir;
 
     const ALICE: i64 = 7;
@@ -310,8 +311,9 @@ mod tests {
 
     /// One incoming text from `phone`.
     fn conversation_with(phone: &str) -> String {
+        let header = conversation_header("sms-backup-restore", phone).participant(phone, None);
         format!(
-            r#"{{"schema_version":9,"export":{{"source":"sms-backup-restore","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{phone}","conversation_type":"individual","group_title":null,"participants":[{{"identity":"{phone}","display_name":null}}],"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}
+            r#"{header}
 {{"guid":"g-contacts-1","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"{phone}","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}}
 "#
         )
@@ -590,14 +592,12 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         fs::write(
             tmp.path().join("a.jsonl"),
-            r#"{"schema_version":9,"export":{"source":"imessage","tool":"t","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+1","conversation_type":"individual","group_title":null,"participants":[],"stats":{"message_count":0,"attachment_count":0,"first_timestamp_unix_ms":null,"last_timestamp_unix_ms":null}}}
-"#,
+            conversation_header("imessage", "+1").line(),
         )
         .unwrap();
         fs::write(
             tmp.path().join("b.jsonl"),
-            r#"{"schema_version":9,"export":{"source":"go-sms-pro","tool":"t","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+2","conversation_type":"individual","group_title":null,"participants":[],"stats":{"message_count":0,"attachment_count":0,"first_timestamp_unix_ms":null,"last_timestamp_unix_ms":null}}}
-"#,
+            conversation_header("go-sms-pro", "+2").line(),
         )
         .unwrap();
         let paths = list_jsonl_files(tmp.path()).unwrap();
