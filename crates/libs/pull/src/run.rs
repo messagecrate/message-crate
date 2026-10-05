@@ -323,7 +323,9 @@ impl<'a> Pull<'a> {
         // Load the pull journal so a later Export Run does not fetch the Assets
         // already on disk again.
         let journal_path = crate::journal::journal_path(&cfg.out_dir);
-        let journal = crate::journal::load(&journal_path, &cfg.base_url, &username)?;
+        let journal = crate::journal::load(&journal_path, &cfg.base_url, &username, &mut |line| {
+            emit(out, ProgressEvent::Log(line));
+        })?;
         Ok(Self {
             cfg,
             session: HttpSession::new()?,

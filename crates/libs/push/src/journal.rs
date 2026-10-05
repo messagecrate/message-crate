@@ -99,24 +99,8 @@ fn corrupt_line_sentence(path: &Path, line: usize, error: &serde_json::Error) ->
          so the Upload skips it and may send again what it recorded. The server skips \
          what it already holds.",
         path.display(),
-        corrupt_line_reason(error)
+        jsonl_journal::unreadable_line_reason(error)
     )
-}
-
-/// serde's text for why a journal line did not parse. serde names a position
-/// within the line's JSON, whose line is always 1, so only its column is kept
-/// beside the journal's own line number. An error with no position (line 0,
-/// which a missing or mistyped field gives) keeps serde's text whole.
-fn corrupt_line_reason(error: &serde_json::Error) -> String {
-    let text = error.to_string();
-    if error.line() == 0 {
-        return text;
-    }
-    let position = format!(" at line {} column {}", error.line(), error.column());
-    match text.strip_suffix(&position) {
-        Some(reason) => format!("{reason} at column {}", error.column()),
-        None => text,
-    }
 }
 
 /// Path of `.import-state.jsonl` inside the export directory.
