@@ -1039,7 +1039,8 @@ async fn limit_request_body(
 /// `/health` and the OpenAPI UI are mounted outside it, so they keep
 /// producing what they produce. Five routes answer bytes, not JSON, and are
 /// let through here by path: the asset download, its preview and its
-/// thumbnail stream a file's own bytes, the address book export answers
+/// thumbnail stream a file's own bytes (the preview and the thumbnail under
+/// `HEAD` as well), the address book export answers
 /// `text/csv`, and a file of the server's log downloads as `text/plain`.
 async fn require_json_acceptable(
     request: axum::extract::Request,
@@ -1067,20 +1068,28 @@ async fn require_json_acceptable(
 
 /// `GET /v1/assets/{sha256}`, `GET /v1/assets/{sha256}/preview` and
 /// `GET /v1/assets/{sha256}/thumbnail`: the asset's own bytes, its
-/// preview's or its thumbnail's, each in its own media type.
+/// preview's or its thumbnail's, each in its own media type. A `HEAD` of the
+/// preview or the thumbnail is let through too, because Axum answers it with
+/// the `GET` handler and its headers describe bytes, not JSON. A `HEAD` of
+/// the asset itself is not: it is `head_asset`, which answers JSON.
 fn is_asset_download(request: &axum::extract::Request) -> bool {
-    request.method() == axum::http::Method::GET
-        && request
-            .uri()
-            .path()
-            .strip_prefix("/v1/assets/")
-            .is_some_and(|rest| {
-                let sha256 = rest
-                    .strip_suffix("/preview")
-                    .or_else(|| rest.strip_suffix("/thumbnail"))
-                    .unwrap_or(rest);
-                !sha256.is_empty() && !sha256.contains('/')
-            })
+    let method = request.method();
+    let is_get = method == axum::http::Method::GET;
+    let is_head = method == axum::http::Method::HEAD;
+    if !is_get && !is_head {
+        return false;
+    }
+    let Some(rest) = request.uri().path().strip_prefix("/v1/assets/") else {
+        return false;
+    };
+    let (sha256, is_version) = match rest
+        .strip_suffix("/preview")
+        .or_else(|| rest.strip_suffix("/thumbnail"))
+    {
+        Some(sha256) => (sha256, true),
+        None => (rest, false),
+    };
+    !sha256.is_empty() && !sha256.contains('/') && (is_get || is_version)
 }
 
 /// The path segments after `/v1/assets/` of a `PUT`, or `None` for any other

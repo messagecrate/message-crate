@@ -1385,6 +1385,12 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-05 **A media player can check a Preview or a Thumbnail before
+  loading it.** A `HEAD` request for an attachment's Preview or Thumbnail
+  that asked for an image or a video, as a media player's check does, was
+  refused with `406 Not Acceptable`, while the same `GET` was served. It now
+  answers the headers the `GET` would: the media type, the size, and that a
+  part of the file can be asked for.
 - 2026-10-04 **Stopping the server stops the conversion it was running.** A
   server stopped with Ctrl-C or `docker stop` while it made a browser copy
   of a video left that conversion running after the server had stopped,

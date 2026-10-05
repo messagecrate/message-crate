@@ -11,4 +11,4 @@ editUrl: false
 | Status | `406 Not Acceptable` |
 | Type | `https://messagecrate.app/docs/developer/reference/errors/not-acceptable` |
 
-The request's `Accept` header named nothing this route can produce. Every `/v1` route but the asset download, its preview and the address book export answers `application/json`, and a failure `application/problem+json`; send `Accept: application/json`, `*/*`, or no `Accept` at all.
+The request's `Accept` header named nothing this route can produce. Every `/v1` route but the five that answer a file (the asset download, its preview, its thumbnail, the address book export and a file of the server's log) answers `application/json`, and a failure `application/problem+json`; send `Accept: application/json`, `*/*`, or no `Accept` at all.
