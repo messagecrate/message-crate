@@ -2,8 +2,8 @@ use super::*;
 use crate::assets_api;
 use crate::test_support::{
     ConversationHeaderLine, RegisteredAccount, TestFixture, assert_every_person_is_on_a_contact,
-    conversation_header, fixture_with_account, get_json, import_jsonl_text, patch_json,
-    post_created_json, post_json, test_fixture,
+    conversation_header, fixture_with_account, get_json, import_ada_conversation,
+    import_jsonl_text, patch_json, post_created_json, post_json, test_fixture,
 };
 use tempfile::TempDir;
 
@@ -4779,16 +4779,7 @@ async fn c2_4_a_name_only_contact_counts_its_group() {
 async fn s6_1_with_follows_an_identity_an_address_book_moved() {
     let fixture = test_fixture().await;
     let mut conn = fixture.state.db.acquire().await.unwrap();
-    let header =
-        conversation_header("imessage", "+15555550123").participant("+15555550123", Some("Ada"));
-    let message = r#"{"guid":"g-s6-1","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}"#;
-    import_jsonl_text(
-        &mut conn,
-        TEST_ACCOUNT,
-        "imessage",
-        &format!("{header}\n{message}\n"),
-    )
-    .await;
+    import_ada_conversation(&mut conn, TEST_ACCOUNT, "g-s6-1").await;
     let a = contact_named(&mut conn, "Ada").await;
     let conversation: i64 = sqlx::query_scalar("SELECT id FROM conversations")
         .fetch_one(&mut *conn)
