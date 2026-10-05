@@ -57,18 +57,40 @@ pub fn journal_path(out_dir: &Path) -> PathBuf {
     out_dir.join(PULL_JOURNAL_NAME)
 }
 
+/// The Export's log line for a line of the journal that could not be read.
+///
+/// Skipping the line costs no fetch: an Asset whose file is in the directory
+/// is kept whether the journal names it or not, so the sentence says so.
+fn unreadable_line_sentence(path: &Path, line: usize, error: &serde_json::Error) -> String {
+    format!(
+        "Line {line} of {}, the record of fetched Assets, could not be read ({}), \
+         so the Export skips it. An Asset that line recorded is not fetched again \
+         while its file is in the directory.",
+        path.display(),
+        jsonl_journal::unreadable_line_reason(error)
+    )
+}
+
 /// Read the journal and keep events that match this server URL and username.
 ///
-/// A missing file is treated as an empty journal. A line that cannot be parsed
-/// is skipped so a newer event type does not break an older client.
+/// A missing file is treated as an empty journal. A line that cannot be
+/// parsed is skipped, and `on_unreadable` gets one sentence for the Export's
+/// log naming it.
 ///
 /// # Errors
 ///
 /// Returns an error when the file cannot be opened or a line cannot be read.
-pub fn load(path: &Path, url: &str, username: &str) -> Result<PullJournalState> {
+pub fn load(
+    path: &Path,
+    url: &str,
+    username: &str,
+    on_unreadable: &mut dyn FnMut(String),
+) -> Result<PullJournalState> {
     let mut state = PullJournalState::default();
     let events: Vec<PullJournalEvent> =
-        jsonl_journal::load_events("pull journal", path, &mut |_, _| {})?;
+        jsonl_journal::load_events("pull journal", path, &mut |line, error| {
+            on_unreadable(unreadable_line_sentence(path, line, error));
+        })?;
     for event in events.into_iter().filter(|e| e.is_for(url, username)) {
         match event {
             PullJournalEvent::AssetOk { sha256, .. } => {
@@ -163,7 +185,7 @@ mod tests {
         )
         .unwrap();
 
-        let state = load(&path, "http://server", "alice").unwrap();
+        let state = load(&path, "http://server", "alice", &mut |_| {}).unwrap();
 
         assert!(state.assets.contains("aaabbbccc"));
         assert!(state.assets.contains("dddeeefff"));
@@ -185,7 +207,7 @@ mod tests {
         )
         .unwrap();
 
-        let state = load(&path, "http://server-a", "alice").unwrap();
+        let state = load(&path, "http://server-a", "alice", &mut |_| {}).unwrap();
         assert!(state.assets.contains("aaa"));
         assert!(!state.assets.contains("bbb"));
     }
@@ -202,7 +224,7 @@ mod tests {
 
         compact(&path, "http://server", "alice", &state).unwrap();
 
-        let reloaded = load(&path, "http://server", "alice").unwrap();
+        let reloaded = load(&path, "http://server", "alice", &mut |_| {}).unwrap();
         assert_eq!(reloaded.assets.len(), 3);
         assert!(reloaded.assets.contains("aaa"));
         assert!(reloaded.assets.contains("bbb"));
@@ -231,7 +253,7 @@ mod tests {
 
         // Loading between the two appends stands for a later Export Run: after
         // a run interrupted after one Asset, it must find that Asset.
-        let after_first = load(&path, "http://server", "alice").unwrap();
+        let after_first = load(&path, "http://server", "alice", &mut |_| {}).unwrap();
         assert!(after_first.assets.contains("aaa"));
         assert!(!after_first.export_complete);
 
@@ -245,7 +267,7 @@ mod tests {
         )
         .unwrap();
 
-        let after_second = load(&path, "http://server", "alice").unwrap();
+        let after_second = load(&path, "http://server", "alice", &mut |_| {}).unwrap();
         assert!(
             after_second.assets.contains("aaa"),
             "the second append must not have replaced the first"
@@ -281,10 +303,51 @@ mod tests {
 
         assert!(path.is_file());
         assert!(
-            load(&path, "http://server", "alice")
+            load(&path, "http://server", "alice", &mut |_| {})
                 .unwrap()
                 .assets
                 .contains("aaa")
+        );
+    }
+
+    /// An unreadable line is skipped while the lines around it are kept, and
+    /// the sentence counts it among every line of the file (#1910). serde's
+    /// position is checked by `jsonl_journal`'s own tests, and the rest of the
+    /// sentence by
+    /// `an_unreadable_journal_line_is_a_sentence_in_the_exports_log`.
+    #[test]
+    fn an_unreadable_line_is_skipped_and_named_by_its_line_in_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(PULL_JOURNAL_NAME);
+        fs::write(
+            &path,
+            concat!(
+                "{\"event\":\"asset_ok\",\"url\":\"http://server\",\"username\":\"alice\",",
+                "\"sha256\":\"aaa\"}\n",
+                "{not json\n",
+                "{\"event\":\"asset_ok\",\"url\":\"http://server\",\"username\":\"alice\",",
+                "\"sha256\":\"bbb\"}\n",
+            ),
+        )
+        .unwrap();
+
+        let mut lines = Vec::new();
+        let state = load(&path, "http://server", "alice", &mut |line| {
+            lines.push(line)
+        })
+        .unwrap();
+
+        assert!(state.assets.contains("aaa"));
+        assert!(state.assets.contains("bbb"));
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        let prefix = format!(
+            "Line 2 of {}, the record of fetched Assets, could not be read (",
+            path.display()
+        );
+        assert!(
+            lines[0].starts_with(&prefix) && lines[0].contains("), so the Export skips it"),
+            "{}",
+            lines[0]
         );
     }
 
@@ -323,13 +386,13 @@ mod tests {
 
         compact(&path, "http://server-b", "alice", &state).unwrap();
 
-        let server_a = load(&path, "http://server-a", "alice").unwrap();
+        let server_a = load(&path, "http://server-a", "alice", &mut |_| {}).unwrap();
         assert!(server_a.assets.contains("aaa"));
         assert!(server_a.export_complete);
-        let other_account = load(&path, "http://server-a", "bob").unwrap();
+        let other_account = load(&path, "http://server-a", "bob", &mut |_| {}).unwrap();
         assert!(other_account.assets.contains("bbb"));
         assert!(!other_account.export_complete);
-        let server_b = load(&path, "http://server-b", "alice").unwrap();
+        let server_b = load(&path, "http://server-b", "alice", &mut |_| {}).unwrap();
         assert_eq!(server_b.assets.len(), 2);
         assert!(server_b.export_complete);
         // Server B's duplicate line is gone: one line per attachment.

@@ -391,6 +391,10 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **A journal line a crash cut inside a character no longer
+  stops every later Upload.** Such a line stopped every Upload of that
+  directory until its journal was deleted by hand. It is now skipped and
+  named in the Upload's log like any other line the Upload cannot read.
 - 2026-10-05 **A journal line the Upload cannot read is named in the
   Upload's log.** It went to standard error as "warning: journal … line … is
   corrupt (…). The affected entries will be re-submitted (server dedup is
@@ -952,6 +956,13 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-05 **A line of an Export's record of fetched Assets that cannot
+  be read is named in the Export's log.** The Export skipped such a line
+  without a word, and a line a crash cut inside a character stopped every
+  later Export into that directory. Both are now skipped and named: "Line 4
+  of …, the record of fetched Assets, could not be read (…), so the Export
+  skips it. An Asset that line recorded is not fetched again while its file
+  is in the directory."
 - 2026-10-05 **The log of an Export from a server says it fetches Assets,
   and writes its warnings as sentences.** It read "Downloading 2 assets with
   8 workers (0 already downloaded)…" and "Downloaded 2 assets (22 B) and
