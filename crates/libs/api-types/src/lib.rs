@@ -399,7 +399,7 @@ api_shape! {
         /// How many replies name this message in their `reply_to.guid`: the
         /// replies a person can open from it, counted when read. A duplicate
         /// is not counted.
-        pub num_replies: i64,
+        pub reply_count: i64,
         /// The conversation this message belongs to.
         pub conversation: MessageConversation,
         /// Attachments on this message.
@@ -603,7 +603,7 @@ mod tests {
             text: None,
             is_announcement: false,
             reply_to: None,
-            num_replies: 0,
+            reply_count: 0,
             conversation: MessageConversation {
                 id: 9,
                 chat_identifier: "+15555550100".into(),

@@ -1371,7 +1371,7 @@ async fn the_reply_count_is_the_replies_that_link_to_the_message() {
             .map(|m| {
                 (
                     m["guid"].as_str().unwrap().to_string(),
-                    (m["num_replies"].as_i64().unwrap(), m["reply_to"].clone()),
+                    (m["reply_count"].as_i64().unwrap(), m["reply_to"].clone()),
                 )
             })
             .collect::<std::collections::BTreeMap<_, _>>()

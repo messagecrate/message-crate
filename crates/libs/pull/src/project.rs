@@ -388,7 +388,7 @@ mod tests {
           "text": "dinner at seven?",
           "is_announcement": false,
           "reply_to": null,
-          "num_replies": 0,
+          "reply_count": 0,
           "conversation": {
             "id": 9,
             "chat_identifier": "chat9000",
@@ -705,7 +705,7 @@ mod tests {
             text: Some("hi".into()),
             is_announcement: false,
             reply_to: None,
-            num_replies: 0,
+            reply_count: 0,
             sort_order: 0,
             conversation: MessageConversation {
                 id: 9,
@@ -861,7 +861,7 @@ mod tests {
             text: Some("hi".into()),
             is_announcement: false,
             reply_to: None,
-            num_replies: 0,
+            reply_count: 0,
             sort_order: 0,
             conversation: MessageConversation {
                 id: 9,

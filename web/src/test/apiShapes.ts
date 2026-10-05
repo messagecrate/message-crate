@@ -44,7 +44,7 @@ export function message(fields: Partial<Schema["Message"]> = {}): Schema["Messag
     sort_order: 0,
     is_from_me: false,
     is_announcement: false,
-    num_replies: 0,
+    reply_count: 0,
     sender: null,
     subject: null,
     text: null,

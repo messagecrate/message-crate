@@ -54,7 +54,7 @@ struct RawRow {
     is_reply: bool,
     reply_to_guid: Option<String>,
     reply_to_part: Option<i64>,
-    num_replies: i64,
+    reply_count: i64,
     deletion: Option<String>,
     chat_identifier: String,
     conversation_type: String,
@@ -66,7 +66,7 @@ struct RawRow {
 /// quote, as `ix_messages_reply_to` keys them. Counted when read rather than
 /// stored, so it always equals the replies a person can open from it; a
 /// duplicate is not one of them.
-const NUM_REPLIES_SQL: &str = "SELECT COUNT(*) FROM messages r
+const REPLY_COUNT_SQL: &str = "SELECT COUNT(*) FROM messages r
      WHERE r.account_id = m.account_id AND r.source = m.source
        AND r.reply_to_guid = m.guid AND r.duplicate_of IS NULL";
 
@@ -409,14 +409,14 @@ fn message_page_sql(
         "SELECT m.id, m.conversation_id, m.source, m.service, m.guid, m.timestamp,
                 m.sort_order, m.is_from_me, hs.raw AS sender, m.subject, m.body,
                 m.is_announcement, m.is_reply, m.reply_to_guid, m.reply_to_part,
-                ({num_replies}) AS num_replies,
+                ({reply_count}) AS reply_count,
                 hc.raw AS chat_identifier, c.conversation_type, c.group_title,
                 ho.raw AS owner, {label} AS label, m.deletion
          {from_sql}
          WHERE {where_sql}
          ORDER BY {order_by} LIMIT ? OFFSET ?",
         label = crate::db::conversations::conversation_title_sql("c"),
-        num_replies = NUM_REPLIES_SQL,
+        reply_count = REPLY_COUNT_SQL,
     );
     let mut params = params.to_vec();
     // An `offset` too large for SQLite's `i64` is past the end of any table,
@@ -452,7 +452,7 @@ async fn fetch_message_page(
                 is_reply: row.try_get::<i64, _>(12)? != 0,
                 reply_to_guid: row.try_get(13)?,
                 reply_to_part: row.try_get(14)?,
-                num_replies: row.try_get(15)?,
+                reply_count: row.try_get(15)?,
                 chat_identifier: row.try_get(16)?,
                 conversation_type: row.try_get(17)?,
                 group_title: row.try_get(18)?,
@@ -494,7 +494,7 @@ async fn fetch_message_page(
                     guid: r.reply_to_guid,
                     part_index: r.reply_to_part,
                 }),
-                num_replies: r.num_replies,
+                reply_count: r.reply_count,
                 conversation: MessageConversation {
                     id: r.conversation_id,
                     chat_identifier: r.chat_identifier,

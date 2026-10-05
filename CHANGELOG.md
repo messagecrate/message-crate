@@ -49,7 +49,8 @@ released versions carry their date on the heading.
 - If you have a program that reads messages from the HTTP API, it must read
   a reply from `reply_to`, which names the quoted message's `guid` and part,
   in place of `is_reply`, `thread_originator_guid` and
-  `thread_originator_part`.
+  `thread_originator_part`, and a message's reply count from `reply_count`
+  in place of `num_replies`.
 
 ## [0.10.1] - 2026-10-05
 

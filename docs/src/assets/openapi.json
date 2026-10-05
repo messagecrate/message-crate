@@ -15701,7 +15701,7 @@
           "sort_order",
           "is_from_me",
           "is_announcement",
-          "num_replies",
+          "reply_count",
           "conversation",
           "attachments",
           "tapbacks",
@@ -15766,17 +15766,17 @@
             "type": "boolean",
             "description": "True in a Messages search answer (`GET /v1/messages` with `q`)\nwhen the message is a hit only because of its earlier versions:\nits final text alone does not match the query, and the versions\nthat hold a free-text word of it carry `matched`. False for a hit\nits final text matches, and on every other route."
           },
-          "num_replies": {
-            "type": "integer",
-            "format": "int64",
-            "description": "How many replies name this message in their `reply_to.guid`: the\nreplies a person can open from it, counted when read. A duplicate\nis not counted."
-          },
           "owner": {
             "type": [
               "string",
               "null"
             ],
             "description": "The account holder's own address on this message: the one it was\nsent from, or the one it was received at. `None` when the backup\nnamed no owner."
+          },
+          "reply_count": {
+            "type": "integer",
+            "format": "int64",
+            "description": "How many replies name this message in their `reply_to.guid`: the\nreplies a person can open from it, counted when read. A duplicate\nis not counted."
           },
           "reply_to": {
             "oneOf": [
@@ -17728,7 +17728,7 @@
                 "sort_order",
                 "is_from_me",
                 "is_announcement",
-                "num_replies",
+                "reply_count",
                 "conversation",
                 "attachments",
                 "tapbacks",
@@ -17793,17 +17793,17 @@
                   "type": "boolean",
                   "description": "True in a Messages search answer (`GET /v1/messages` with `q`)\nwhen the message is a hit only because of its earlier versions:\nits final text alone does not match the query, and the versions\nthat hold a free-text word of it carry `matched`. False for a hit\nits final text matches, and on every other route."
                 },
-                "num_replies": {
-                  "type": "integer",
-                  "format": "int64",
-                  "description": "How many replies name this message in their `reply_to.guid`: the\nreplies a person can open from it, counted when read. A duplicate\nis not counted."
-                },
                 "owner": {
                   "type": [
                     "string",
                     "null"
                   ],
                   "description": "The account holder's own address on this message: the one it was\nsent from, or the one it was received at. `None` when the backup\nnamed no owner."
+                },
+                "reply_count": {
+                  "type": "integer",
+                  "format": "int64",
+                  "description": "How many replies name this message in their `reply_to.guid`: the\nreplies a person can open from it, counted when read. A duplicate\nis not counted."
                 },
                 "reply_to": {
                   "oneOf": [
@@ -18599,7 +18599,7 @@
               "string",
               "null"
             ],
-            "description": "The quoted message's `guid`, when that message was in the same\nexport as the reply; `null` when the backup named a message the\nexport did not hold, or named none."
+            "description": "The quoted message's `guid`, as the backup named it; `null` when\nit named none. A named message can still be missing from this\nMessage Crate, for example one deleted on the phone before the\nbackup while its reply was kept."
           },
           "part_index": {
             "type": [

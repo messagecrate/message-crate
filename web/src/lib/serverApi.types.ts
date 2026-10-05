@@ -3318,18 +3318,18 @@ export interface components {
              */
             matched_earlier_version: boolean;
             /**
-             * Format: int64
-             * @description How many replies name this message in their `reply_to.guid`: the
-             *     replies a person can open from it, counted when read. A duplicate
-             *     is not counted.
-             */
-            num_replies: number;
-            /**
              * @description The account holder's own address on this message: the one it was
              *     sent from, or the one it was received at. `None` when the backup
              *     named no owner.
              */
             owner: string | null;
+            /**
+             * Format: int64
+             * @description How many replies name this message in their `reply_to.guid`: the
+             *     replies a person can open from it, counted when read. A duplicate
+             *     is not counted.
+             */
+            reply_count: number;
             /**
              * @description The message this one replies to; `null` for a message that is not
              *     a reply.
@@ -4368,18 +4368,18 @@ export interface components {
                  */
                 matched_earlier_version: boolean;
                 /**
-                 * Format: int64
-                 * @description How many replies name this message in their `reply_to.guid`: the
-                 *     replies a person can open from it, counted when read. A duplicate
-                 *     is not counted.
-                 */
-                num_replies: number;
-                /**
                  * @description The account holder's own address on this message: the one it was
                  *     sent from, or the one it was received at. `None` when the backup
                  *     named no owner.
                  */
                 owner: string | null;
+                /**
+                 * Format: int64
+                 * @description How many replies name this message in their `reply_to.guid`: the
+                 *     replies a person can open from it, counted when read. A duplicate
+                 *     is not counted.
+                 */
+                reply_count: number;
                 /**
                  * @description The message this one replies to; `null` for a message that is not
                  *     a reply.
@@ -4822,9 +4822,10 @@ export interface components {
          */
         ReplyTo: {
             /**
-             * @description The quoted message's `guid`, when that message was in the same
-             *     export as the reply; `null` when the backup named a message the
-             *     export did not hold, or named none.
+             * @description The quoted message's `guid`, as the backup named it; `null` when
+             *     it named none. A named message can still be missing from this
+             *     Message Crate, for example one deleted on the phone before the
+             *     backup while its reply was kept.
              */
             guid: string | null;
             /**

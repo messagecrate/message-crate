@@ -85,7 +85,7 @@ fn message(
         "text": text,
         "is_announcement": false,
         "reply_to": null,
-        "num_replies": 0,
+        "reply_count": 0,
         "conversation": {
             "id": 9,
             "chat_identifier": "+15555550101",
