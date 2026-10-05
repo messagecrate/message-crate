@@ -11,7 +11,7 @@ out of the file, never made up.
 ## Why
 
 Restoring is the vendor app's job, and each app restores on its own terms.
-SMS Backup+ restores only from an IMAP directory, never from a file, and never
+SMS Backup+ restores only from an IMAP folder, never from a file, and never
 restores MMS; it has been off Google Play and F-Droid since 2025. Building
 toward a restore would tie Message Crate to apps it does not control, while a
 file in the vendor's format is useful whether or not the app still exists:

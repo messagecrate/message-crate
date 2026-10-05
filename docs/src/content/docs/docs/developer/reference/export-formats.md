@@ -31,7 +31,7 @@ Directory layout for the formats that use an `attachments/` directory: [Export s
 
 **Android XML** matches the SMS Backup & Restore schema, which is what makes it useful for moving messages back onto an Android phone. It is the lossiest option: fields that exist only on Apple platforms are dropped.
 
-**EML (SMS Backup+)** writes SMS and MMS as the mail SMS Backup+ writes, with its `X-smssync-*` headers, so a person who brought SMS Backup+ mail in has it back in that shape. Message Crate's SMS Backup+ import reads it again, and any mail program can archive it. Messages that are not SMS or MMS are left out and counted in the run's log. Fields the database does not keep, such as the phone's message and thread ids and read flags, are not written. SMS Backup+ itself cannot restore these files: it restores only from an IMAP directory, and never MMS.
+**EML (SMS Backup+)** writes SMS and MMS as the mail SMS Backup+ writes, with its `X-smssync-*` headers, so a person who brought SMS Backup+ mail in has it back in that shape. Message Crate's SMS Backup+ import reads it again, and any mail program can archive it. Messages that are not SMS or MMS are left out and counted in the run's log. Fields the database does not keep, such as the phone's message and thread ids and read flags, are not written. SMS Backup+ itself cannot restore these files: it restores only from an IMAP folder, and never MMS.
 
 ## How conversion works
 

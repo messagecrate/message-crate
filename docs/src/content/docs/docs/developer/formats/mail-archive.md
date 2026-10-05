@@ -48,7 +48,7 @@ Each file is one RFC 5322 message, written with the `mail-builder` crate.
 | Crash safety | Partial export remains usable | Truncation can corrupt the last record |
 | Plus anti-patterns | One message owns its MIME parts | Easier to regress into “fat archive” |
 | Large chats | Open one message | Some clients load the whole file |
-| Thunderbird “mailbox” UX | Import/drag varies | Often smoother import-as-directory |
+| Thunderbird “mailbox” UX | Import/drag varies | Often smoother import-as-folder |
 
 **Preferred packaging is a directory of EMLs.** Derived **mboxrd** (`OutputFormat::Mbox` / GUI **MBOX**) is also available: one `<conversation-stem>.mbox` per chat, same MIME/`X-ME-*` payload as the `.eml` files. Outlook has poor native support for both; do not optimize the preferred packaging for Outlook.
 
