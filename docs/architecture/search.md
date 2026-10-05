@@ -238,9 +238,16 @@ final text is told apart by asking the final text's index alone (#1143,
 count for the copy shown.** A message shows its own earlier versions, or,
 when it holds none, those of a copy hidden under it whose `duplicate_of`
 chain leads to it, through any number of links, the one with the lowest id
-when more than one does. A copy whose conversation is in the trash is passed
-over, because a search leaves the trash out everywhere it looks. A version
-therefore finds the message holding it and the copy shown in its place.
+when more than one does. A version therefore finds the message holding it
+and the copy shown in its place.
+
+A copy in a trashed conversation counts only for a message in a trashed
+conversation. Why: a person who trashed the conversation holding the copy
+does not expect it to answer for a message they kept, and a message in the
+trash is listed only when they ask for the trash. The rule reads no query,
+`trashed:` included. A message lists the same versions in its conversation,
+in Export and in every search, so a hit always lists the version that found
+it.
 
 One SQL expression, `earlier_versions_holder_sql` in
 `db/conversation_messages.rs`, names the holder for the versions listed,

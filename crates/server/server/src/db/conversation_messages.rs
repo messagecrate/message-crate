@@ -578,8 +578,9 @@ async fn load_tapbacks(
 
 /// The id of the message whose earlier versions the message `alias` shows,
 /// as an SQL expression over that alias: its own id when it holds any, or
-/// else the lowest id among the copies hidden under it that hold any and
-/// whose conversation is not in the trash. NULL when there is none.
+/// else the lowest id among the copies hidden under it that hold any,
+/// passing over a copy in the trash unless `alias` is in the trash too.
+/// NULL when there is none.
 ///
 /// A copy is hidden under `alias` when its `duplicate_of` chain leads
 /// there, through any number of links: dedupe's near-time pass can hide a
@@ -591,12 +592,18 @@ async fn load_tapbacks(
 /// records none, such as iMazing, while the copy that holds the earlier
 /// versions is hidden (#1757). One holder rather than every copy's
 /// versions together, so two copies that both record the edits never list
-/// them twice. A copy in a trashed conversation is passed over, because a
-/// search leaves the trash out everywhere it looks
-/// (`docs/architecture/search.md`). Every reader of earlier versions goes
-/// through this one expression: [`earlier_versions_from`] for the versions
-/// a message shows, and the Messages list's free text, which finds a
-/// message by the versions it shows ([`crate::search`]).
+/// them twice. A copy in a trashed conversation counts only for a message
+/// in a trashed conversation, which is listed only when the person asks
+/// for the trash: a person who trashed the conversation holding the copy
+/// does not expect it to answer for a message they kept. The rule reads no
+/// query, so a message lists the same versions in a conversation, in
+/// Export and in every search, and a hit always lists the version that
+/// found it (`docs/architecture/search.md`).
+///
+/// Every reader of earlier versions goes through this one expression:
+/// [`earlier_versions_from`] for the versions a message shows, and the
+/// Messages list's free text, which finds a message by the versions it
+/// shows ([`crate::search`]).
 pub(crate) fn earlier_versions_holder_sql(alias: &str) -> String {
     format!(
         "CASE WHEN EXISTS (SELECT 1 FROM message_versions hv WHERE hv.message_id = {alias}.id) \
@@ -607,9 +614,12 @@ pub(crate) fn earlier_versions_holder_sql(alias: &str) -> String {
                        JOIN hidden_under hu ON hn.duplicate_of = hu.id) \
                SELECT MIN(hm.id) FROM hidden_under hu JOIN messages hm ON hm.id = hu.id \
                WHERE EXISTS (SELECT 1 FROM message_versions hdv WHERE hdv.message_id = hm.id) \
-                 AND NOT EXISTS (SELECT 1 FROM trashed_conversations htc \
-                                 WHERE htc.account_id = hm.account_id \
-                                   AND htc.conversation_id = hm.conversation_id)) \
+                 AND (NOT EXISTS (SELECT 1 FROM trashed_conversations htc \
+                                  WHERE htc.account_id = hm.account_id \
+                                    AND htc.conversation_id = hm.conversation_id) \
+                      OR EXISTS (SELECT 1 FROM trashed_conversations atc \
+                                 WHERE atc.account_id = {alias}.account_id \
+                                   AND atc.conversation_id = {alias}.conversation_id))) \
          END"
     )
 }

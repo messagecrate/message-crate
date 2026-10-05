@@ -908,6 +908,18 @@ fn edits_file_with(
     out
 }
 
+/// One message line of [`APPLE_MESSAGES_EDITS`] as a backup that records no
+/// edits holds it: its guid starting `prefix` in place of `guid-`, and no
+/// earlier versions.
+fn without_edits(message: &mut serde_json::Value, prefix: &str) {
+    let guid = message["guid"]
+        .as_str()
+        .unwrap()
+        .replacen("guid-", prefix, 1);
+    message["guid"] = guid.into();
+    message.as_object_mut().unwrap().remove("edits");
+}
+
 /// [`APPLE_MESSAGES_EDITS`] as a backup of the same iPhone from `source`
 /// holds it, one that records no edits, such as iMazing: the same messages
 /// with their final text, their guids starting `prefix` in place of
@@ -916,12 +928,7 @@ fn copy_without_edits(source: &str, prefix: &str) -> String {
     edits_file_with(
         |header| header["export"]["source"] = source.into(),
         |message| {
-            let guid = message["guid"]
-                .as_str()
-                .unwrap()
-                .replacen("guid-", prefix, 1);
-            message["guid"] = guid.into();
-            message.as_object_mut().unwrap().remove("edits");
+            without_edits(message, prefix);
         },
     )
 }
@@ -1035,12 +1042,7 @@ async fn the_copy_shown_takes_the_earlier_versions_at_the_end_of_a_duplicate_cha
     let a_second_later = edits_file_with(
         |header| header["export"]["source"] = "sms-backup-restore".into(),
         |message| {
-            let guid = message["guid"]
-                .as_str()
-                .unwrap()
-                .replacen("guid-", "sms-", 1);
-            message["guid"] = guid.into();
-            message.as_object_mut().unwrap().remove("edits");
+            without_edits(message, "sms-");
             let at = message["timestamp_unix_ms"].as_i64().unwrap();
             message["timestamp_unix_ms"] = (at + 1000).into();
         },
@@ -1100,8 +1102,9 @@ async fn the_copy_shown_takes_the_earlier_versions_at_the_end_of_a_duplicate_cha
 /// The same group conversation from iMazing and from Apple Messages, under
 /// two names, is two conversations whose messages dedupe joins. With the
 /// Apple Messages conversation in the trash, the copy shown lists none of
-/// its earlier versions and no word only they hold finds it, because a
-/// search leaves the trash out everywhere it looks.
+/// its earlier versions and no word only they hold finds it, because the
+/// person set that conversation aside. With both in the trash, the copy
+/// lists them again, and the Trash screen's search finds it by them.
 #[tokio::test]
 async fn the_copy_shown_takes_no_earlier_versions_from_a_conversation_in_the_trash() {
     let (fixture, alice) = fixture_with_account().await;
@@ -1119,12 +1122,7 @@ async fn the_copy_shown_takes_no_earlier_versions_from_a_conversation_in_the_tra
         }
     };
     let imazing = edits_file_with(as_group("Plans", "imazing"), |message| {
-        let guid = message["guid"]
-            .as_str()
-            .unwrap()
-            .replacen("guid-", "imazing-", 1);
-        message["guid"] = guid.into();
-        message.as_object_mut().unwrap().remove("edits");
+        without_edits(message, "imazing-");
     });
     let apple = edits_file_with(as_group("Weekend plans", "imessage"), |_| {});
     import_conversation_file(&fixture, alice.account_id, "imazing", &imazing, "imazing").await;
@@ -1143,15 +1141,7 @@ async fn the_copy_shown_takes_no_earlier_versions_from_a_conversation_in_the_tra
         2,
         "{shown}"
     );
-    let mut conn = fixture.conn().await;
-    sqlx::query(
-        "INSERT INTO trashed_conversations (account_id, conversation_id)
-         SELECT account_id, conversation_id FROM messages WHERE guid = 'guid-edited-twice'",
-    )
-    .execute(&mut *conn)
-    .await
-    .unwrap();
-    drop(conn);
+    trash_conversation_of(&fixture, &alice, "guid-edited-twice").await;
 
     let page: serde_json::Value =
         get_json(&fixture.state, "/v1/messages?sort=date", &alice.token).await;
@@ -1164,6 +1154,47 @@ async fn the_copy_shown_takes_no_earlier_versions_from_a_conversation_in_the_tra
     )
     .await;
     assert_eq!(guids(&museum), Vec::<String>::new(), "{museum}");
+
+    trash_conversation_of(&fixture, &alice, "imazing-edited-twice").await;
+    let in_trash: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=museum%20trashed%3Ayes&sort=date",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(guids(&in_trash), ["imazing-edited-twice"], "{in_trash}");
+    assert_eq!(
+        earlier_texts(&in_trash["items"][0]),
+        ["Meet at the library", "Meet at the museum"],
+        "{in_trash}"
+    );
+    assert_eq!(
+        in_trash["items"][0]["matched_earlier_version"], true,
+        "{in_trash}"
+    );
+}
+
+/// Put the conversation of the message `guid` in the trash through the
+/// route the Trash button calls.
+async fn trash_conversation_of(fixture: &TestFixture, account: &RegisteredAccount, guid: &str) {
+    let mut conn = fixture.conn().await;
+    let conversation: i64 =
+        sqlx::query_scalar("SELECT conversation_id FROM messages WHERE guid = $1")
+            .bind(guid)
+            .fetch_one(&mut *conn)
+            .await
+            .unwrap();
+    drop(conn);
+    assert_eq!(
+        crate::test_support::post_status(
+            &fixture.state,
+            &format!("/v1/conversations/{conversation}/trash"),
+            &account.token,
+            serde_json::json!({}),
+        )
+        .await,
+        StatusCode::NO_CONTENT
+    );
 }
 
 /// Deleting an edited message deletes its earlier versions and their search
