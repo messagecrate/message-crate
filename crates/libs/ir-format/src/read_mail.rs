@@ -115,17 +115,13 @@ fn document_from_mail_messages(messages: &[MailMessage]) -> Result<ConversationD
 
 /// Build an [`IrParticipant`] from a mail participant.
 ///
-/// EML and mbox do not store an identity type, so the type is inferred from
-/// the identity string (`@` → email, digit-heavy → phone, else other).
+/// EML and mbox do not store an identity type, so [`phone::Handle::parse`]
+/// types the identity, as it does everywhere else; a blank identity has none.
 fn participant_from_mail(p: &mail::Participant) -> IrParticipant {
     IrParticipant {
         identity: nonempty(&p.identity),
         display_name: p.display_name.as_deref().and_then(nonempty),
-        identity_type: if p.identity.trim().is_empty() {
-            None
-        } else {
-            Some(crate::util::infer_handle_type(&p.identity))
-        },
+        identity_type: phone::Handle::parse(&p.identity).map(|handle| handle.kind()),
     }
 }
 

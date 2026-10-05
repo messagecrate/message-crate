@@ -2419,6 +2419,7 @@ dependencies = [
  "message-csv",
  "message-ir",
  "obfuscate",
+ "phone",
  "serde_json",
 ]
 
