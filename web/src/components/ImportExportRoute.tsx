@@ -98,7 +98,7 @@ export default function ImportExportRoute({
     return <PermissionMessage feature={feature} block={block} />;
   }
   // The desktop runs one job at a time, and an Import Run starts its stages'
-  // jobs one after another. An export started between two of them would make
+  // jobs one after another. An Export started between two of them would make
   // the desktop refuse the next stage, so Export waits for the run to end.
   if (feature === "export" && run.running) {
     return (

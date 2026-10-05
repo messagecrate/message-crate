@@ -326,7 +326,7 @@ export default function ImportFormFields(props: ImportFormFieldsProps) {
     (!required.ownerPhones || filled.ownerPhones) &&
     hasOwnerEmail;
 
-  // The desktop runs one job at a time, so an export or a conversion that
+  // The desktop runs one job at a time, so an Export or a Convert that
   // is running would make it refuse the Import Run's first job.
   const runningJob = useDesktopJob();
   const blockedBy = runningJob !== null && runningJob !== "Import Run" ? runningJob : null;

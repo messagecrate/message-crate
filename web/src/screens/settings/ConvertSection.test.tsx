@@ -220,7 +220,7 @@ describe("ConvertSection", () => {
     );
   });
 
-  it("locks both directory fields while a conversion runs", async () => {
+  it("locks both directory fields while a Convert runs", async () => {
     let release: () => void = () => {};
     const held = new Promise<void>((resolve) => {
       release = resolve;
