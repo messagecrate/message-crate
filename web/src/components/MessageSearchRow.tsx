@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { sourceLabel } from "../lib/exportSources";
+import { deletedInSourceText, UNSENT_TEXT } from "../lib/deletionMarkText";
 import { formatDay } from "../lib/formatDate";
 import type { FreeTextTerm } from "../lib/freeTextTerms";
 import { type MatchRange, snippet } from "../lib/messageMatch";
@@ -51,6 +51,7 @@ export default function MessageSearchRow({
 }) {
   const zone = useTimeZone();
   const unsent = message.deletion === "unsent";
+  const deletedInSource = message.deletion === "deleted_in_source_app";
   const cut = snippet(unsent ? "" : messageRowText(message), terms);
   const attachmentCount = unsent ? 0 : message.attachments.length;
   const sender = messageSenderName(message);
@@ -78,7 +79,7 @@ export default function MessageSearchRow({
               <span className="font-medium text-text">{sender}:</span>{" "}
             </>
           ) : null}
-          {unsent ? "Unsent" : boldRanges(cut.text, cut.ranges)}
+          {unsent ? UNSENT_TEXT : boldRanges(cut.text, cut.ranges)}
         </span>
         {attachmentCount > 0 ? (
           <span
@@ -89,8 +90,8 @@ export default function MessageSearchRow({
           </span>
         ) : null}
       </span>
-      {message.deletion === "deleted_in_source_app" ? (
-        <span className="text-[0.75rem] text-muted">Deleted in {sourceLabel(message.source)}</span>
+      {deletedInSource ? (
+        <span className="text-[0.75rem] text-muted">{deletedInSourceText(message.source)}</span>
       ) : null}
     </PlainButton>
   );
