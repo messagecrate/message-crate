@@ -843,10 +843,10 @@ async function summarizeStagingWithProgress(config: RunDirConfig): Promise<Stagi
 class StageNotRecordedError extends Error {}
 
 /**
- * A call the server refused the session to. `endSessionIfRefused` has already ended
- * the session here, so the run stops where the server has it, for its
- * account's next login to offer again. The run did nothing wrong, so the
- * refusal is no Import Error (#1677).
+ * A call the server refused the session to. `endSessionIfRefused` has
+ * already ended the session here, so the run stops where the server has it,
+ * for its account's next login to offer again. The run did nothing wrong, so
+ * the refusal is no Import Error (#1677).
  */
 class SessionRefusedError extends Error {}
 
@@ -914,25 +914,26 @@ async function moveStage(
 }
 
 /**
- * Record that the run is waiting at a review. A failure leaves the review on
- * screen with the error on it (`reviewError`), and approving writes the stage
- * again before anything else (`approve`). Returns whether the server has it.
- * A refused session is no failure of the run, so it throws
- * `SessionRefusedError` for the caller to leave the run (`leaveIfRefused`).
+ * Record that the run is waiting at a review. Returns `recorded` when the
+ * server has it. A failure returns `failed` and leaves the review on screen
+ * with the error on it (`reviewError`), and approving writes the stage again
+ * before anything else (`approve`). A refused session is no failure of the
+ * run: the run leaves for the form (`leaveIfRefused`), and this returns
+ * `refused`, for the caller to stop.
  */
 async function moveStageAtReview(
   runId: number,
   stage: "staging_review" | "media_review",
   approvedPlan?: StagingSummary,
-): Promise<boolean> {
+): Promise<"recorded" | "failed" | "refused"> {
   try {
     await moveStage(runId, stage, approvedPlan);
     store.set({ reviewError: null });
-    return true;
+    return "recorded";
   } catch (e: unknown) {
-    if (e instanceof SessionRefusedError) throw e;
+    if (await leaveIfRefused(e, runId)) return "refused";
     store.set({ reviewError: e instanceof Error ? e.message : String(e) });
-    return false;
+    return "failed";
   }
 }
 
@@ -1342,12 +1343,7 @@ async function runMediaStage(
   });
 
   store.set({ computingSummary: true });
-  try {
-    await moveStageAtReview(runId, "media_review", approvedSummary);
-  } catch (e: unknown) {
-    if (await leaveIfRefused(e, runId)) return;
-    throw e;
-  }
+  if ((await moveStageAtReview(runId, "media_review", approvedSummary)) === "refused") return;
   // Media's times are only in memory until now, and the run may be resumed
   // from this Review after the app closes.
   await saveCarriedRecord();
@@ -1567,7 +1563,7 @@ async function runImport(
       computingSummary: true,
     });
 
-    await moveStageAtReview(runId, "staging_review");
+    if ((await moveStageAtReview(runId, "staging_review")) === "refused") return;
     // Staging's issues and times are only in memory until now, and the run
     // may be resumed from this Review after the app closes.
     await saveCarriedRecord();
@@ -1813,16 +1809,13 @@ export function useImportJob() {
             phase === "media_review"
               ? await moveStageAtReview(runId, "media_review", stagingSummary ?? undefined)
               : await moveStageAtReview(runId, "staging_review");
-          if (!recorded) return;
+          if (recorded !== "recorded") return;
         }
         if (phase === "staging_review" && mediaJobVerb(form.attachmentMedia) !== null) {
           await runMediaStage(form, runId, outputDir, approvedSummary);
         } else {
           await runUpload(token, runId, outputDir, approvedSummary);
         }
-      } catch (e: unknown) {
-        // The review's own stage write, above: the stages themselves never throw.
-        if (!(await leaveIfRefused(e, runId))) throw e;
       } finally {
         approving.reviewAction = false;
       }
