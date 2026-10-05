@@ -126,7 +126,12 @@ function stepsAt(
 }
 
 function renderView(props: Partial<Parameters<typeof ImportRunView>[0]> = {}) {
-  return render(
+  return render(viewElement(props));
+}
+
+/** The view inside its providers, for `render` and `rerender`. */
+function viewElement(props: Partial<Parameters<typeof ImportRunView>[0]> = {}) {
+  return (
     <Providers>
       <MemoryRouter>
         <ImportRunView
@@ -150,7 +155,7 @@ function renderView(props: Partial<Parameters<typeof ImportRunView>[0]> = {}) {
           {...props}
         />
       </MemoryRouter>
-    </Providers>,
+    </Providers>
   );
 }
 
@@ -263,6 +268,28 @@ describe("ImportRunView", () => {
     expect(openPathInExplorer).toHaveBeenCalledWith(
       "/home/sam/.local/share/app.messagecrate.desktop/logs/import-iphone.log",
     );
+  });
+
+  it("keeps the import log once the run ends and its directory is gone", async () => {
+    const staging = "/home/sam/message-crate/staging-iphone";
+    const view = renderView({
+      stagingDir: staging,
+      steps: stepsAt("convert", { Staging: "done", Media: "done", Upload: "active" }),
+    });
+    await within(stageRow("Upload")).findByRole("button", { name: "import-iphone.log" });
+
+    view.rerender(
+      viewElement({
+        phase: "done",
+        running: false,
+        stagingDir: null,
+        steps: stepsAt("convert", { Staging: "done", Media: "done", Upload: "done" }),
+      }),
+    );
+
+    expect(
+      within(stageRow("Upload")).getByRole("button", { name: "import-iphone.log" }),
+    ).toBeInTheDocument();
   });
 
   it("shows the options group only when Obfuscate is on", () => {

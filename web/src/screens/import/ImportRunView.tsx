@@ -196,32 +196,33 @@ function FinishedExits({ importId }: { importId: number }) {
 }
 
 /**
- * The Import Run's one screen: the run's stages as a list, each holding what
- * it made, with each Review as a row in that list where the run stops for
- * the person. A finished run leads with where to go next; its errors, and
- * only its errors, sit in a table under the list.
- */
-/**
  * The log of the Import Run whose directory is `stagingDir`, in the Logs
- * Directory, as the desktop names it. Null until it answers, and when there
- * is no run directory.
+ * Directory, as the desktop names it. Null until it answers. When the run
+ * ends its directory is deleted and `stagingDir` goes, but the log stays, so
+ * with `keep` the last log named is kept rather than dropped.
  */
-function useImportRunLog(stagingDir: string | null): string | null {
+function useImportRunLog(stagingDir: string | null, keep: boolean): string | null {
   const [log, setLog] = useState<string | null>(null);
   useEffect(() => {
+    if (!stagingDir) {
+      if (!keep) setLog(null);
+      return;
+    }
     setLog(null);
-    if (!stagingDir) return;
     let live = true;
     invokeImportRunLog(stagingDir).then(
       (path) => {
         if (live) setLog(path);
       },
-      () => {},
+      (caught: unknown) => {
+        // The run goes on without the link; the reason is worth a line.
+        console.error("Could not name the Import Run's log", caught);
+      },
     );
     return () => {
       live = false;
     };
-  }, [stagingDir]);
+  }, [stagingDir, keep]);
   return log;
 }
 
@@ -230,6 +231,12 @@ function fileName(path: string): string {
   return path.split(/[/\\]/).pop() || path;
 }
 
+/**
+ * The Import Run's one screen: the run's stages as a list, each holding what
+ * it made, with each Review as a row in that list where the run stops for
+ * the person. A finished run leads with where to go next; its errors, and
+ * only its errors, sit in a table under the list.
+ */
 export default function ImportRunView({
   phase,
   steps,
@@ -309,7 +316,7 @@ export default function ImportRunView({
   cancelDisabled?: boolean;
 }) {
   const trimmedStaging = stagingDir?.trim() || null;
-  const logPath = useImportRunLog(trimmedStaging);
+  const logPath = useImportRunLog(trimmedStaging, phase === "done");
   const mode = form?.attachmentMedia ?? "copy";
   const done = phase === "done";
   const succeeded =
