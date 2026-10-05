@@ -90,12 +90,14 @@ Do **not** use the `X-smssync-*` header namespace. This format is not Plus-compa
 - Phone: `+15555550119@sms.local` (E.164 in local-part; `+` allowed in addr-spec via quoting if required by the builder).
 - Email / Apple identity: `user=example.com@identity.local` or a documented safe encoding of the raw identity — never name-only as the sole identifier.
 - Display name may appear in the phrase (`Alice <+1555…@sms.local>`).
+- The local part is the identity, with its `@` written as `=` when it holds one `@` and no `=`. When that is not an RFC 5322 `dot-atom-text`, or holds a `%`, each byte outside `atext`, and each `%` and `.`, is written as `%XX`, as for `Message-ID` below: the identity `Ann Lee` is `Ann%20Lee@sms.local`. A space or line break written as it was would break the header. Two identities never share an address. The identity itself is read from its `X-ME-*` header, never from the address. The mbox `From_` line names the same address, and a group chat's `…@chat.local` address writes its chat identifier the same way.
 
 ### Message-ID
 
 - Prefer source guid when present (iMessage): `<{apple-guid}@imessage.local>`.
 - Otherwise: `<{sha256-fingerprint}@message-crate.local>` matching CSV `guid` construction where possible.
 - Must be stable across re-exports of the same logical message.
+- A guid that is not an RFC 5322 `dot-atom-text`, or that holds a `%`, has each byte outside `atext`, and each `%` and `.`, written as `%XX`: the guid `a b.c` is `<a%20b%2Ec@message-crate.local>`. A line break written as it was would end the mail's headers. Two guids never share a `Message-ID`, and a reply's `In-Reply-To` and `References` name its parent the same way. The guid itself is read from `X-ME-Guid`.
 
 ### From / To / Cc mapping
 
@@ -105,7 +107,7 @@ Browse-oriented so mail-client **Correspondents** / Subject columns stay readabl
 
 **1:1 outgoing:** `From` = `Me <owner>`; `To` = peer.
 
-**Group incoming:** `From` = actual sender; `To` = one conversation address (`Group Title <sanitized-chat-id@chat.local>`); full roster in `X-ME-Participants` only.
+**Group incoming:** `From` = actual sender; `To` = one conversation address (`Group Title <chat-id@chat.local>`); full roster in `X-ME-Participants` only.
 
 **Group outgoing:** `From` = `Me <owner>`; `To` = same conversation address; roster in `X-ME-Participants`.
 
@@ -180,7 +182,7 @@ SMS writers use `sms` / `mms` only. Absence of iMessage-only headers means “no
 
 **v1: embed bytes as MIME parts** so offline mail clients show media.
 
-- `Content-Type` from known mime; fallback `application/octet-stream`
+- `Content-Type` from known mime; fallback `application/octet-stream`, also for a type that is not a `type/subtype` pair of RFC 2045 tokens, such as one holding a space or a line break. The type itself is read from `X-ME-Attachment-Meta`.
 - `Content-Disposition: attachment; filename="…"` using original name when known
 - Part order is significant: index `0..n-1` of non-body MIME attachments matches `X-ME-Attachment-Meta` and iMessage `parts[].attachment_indices`
 
