@@ -114,17 +114,17 @@ struct ProgressBatcher {
     total: usize,
     done: usize,
     /// Conversations sent in this window.
-    chunk_sent: u64,
+    window_sent: u64,
     /// Conversations in this window the journal says were sent before.
-    chunk_sent_before: u64,
-    chunk_messages: u64,
-    chunk_bytes: u64,
-    chunk_import_ms: u64,
+    window_sent_before: u64,
+    window_messages: u64,
+    window_bytes: u64,
+    window_import_ms: u64,
     /// When this window began: when the batcher was made, or when it wrote
     /// its previous line. The window's wall time is measured from here, so it
     /// covers every conversation the line counts.
-    chunk_started: Instant,
-    chunk_count: usize,
+    window_started: Instant,
+    window_count: usize,
 }
 
 impl ProgressBatcher {
@@ -133,13 +133,13 @@ impl ProgressBatcher {
         Self {
             total,
             done: 0,
-            chunk_sent: 0,
-            chunk_sent_before: 0,
-            chunk_messages: 0,
-            chunk_bytes: 0,
-            chunk_import_ms: 0,
-            chunk_started: Instant::now(),
-            chunk_count: 0,
+            window_sent: 0,
+            window_sent_before: 0,
+            window_messages: 0,
+            window_bytes: 0,
+            window_import_ms: 0,
+            window_started: Instant::now(),
+            window_count: 0,
         }
     }
 
@@ -147,12 +147,12 @@ impl ProgressBatcher {
     /// window is full.
     fn note_ok(&mut self, messages: u64, profile: &UploadProfile) -> Option<String> {
         self.done = self.done.saturating_add(1);
-        self.chunk_count = self.chunk_count.saturating_add(1);
-        self.chunk_sent = self.chunk_sent.saturating_add(1);
-        self.chunk_messages = self.chunk_messages.saturating_add(messages);
-        self.chunk_bytes = self.chunk_bytes.saturating_add(profile.asset_bytes);
-        self.chunk_import_ms = self
-            .chunk_import_ms
+        self.window_count = self.window_count.saturating_add(1);
+        self.window_sent = self.window_sent.saturating_add(1);
+        self.window_messages = self.window_messages.saturating_add(messages);
+        self.window_bytes = self.window_bytes.saturating_add(profile.asset_bytes);
+        self.window_import_ms = self
+            .window_import_ms
             .saturating_add(profile.message_import_ms);
         self.line_if_full()
     }
@@ -160,8 +160,8 @@ impl ProgressBatcher {
     /// Record a conversation skipped because the journal says it was sent before.
     fn note_skipped(&mut self) -> Option<String> {
         self.done = self.done.saturating_add(1);
-        self.chunk_count = self.chunk_count.saturating_add(1);
-        self.chunk_sent_before = self.chunk_sent_before.saturating_add(1);
+        self.window_count = self.window_count.saturating_add(1);
+        self.window_sent_before = self.window_sent_before.saturating_add(1);
         self.line_if_full()
     }
 
@@ -172,40 +172,40 @@ impl ProgressBatcher {
 
     /// The window's line when this window is full or the run is complete.
     fn line_if_full(&mut self) -> Option<String> {
-        (self.chunk_count >= PROGRESS_BATCH_SIZE || self.done >= self.total)
-            .then(|| self.take_chunk_line())
+        (self.window_count >= PROGRESS_BATCH_SIZE || self.done >= self.total)
+            .then(|| self.take_window_line())
     }
 
     /// Write any leftover partial window at the end of the run.
     fn flush_remainder(&mut self) -> Option<String> {
-        (self.chunk_count > 0).then(|| self.take_chunk_line())
+        (self.window_count > 0).then(|| self.take_window_line())
     }
 
     /// Format the current window's line, then start the next window.
-    fn take_chunk_line(&mut self) -> String {
+    fn take_window_line(&mut self) -> String {
         let mut line = format!(
             "Finished {} of {}.",
             self.done,
             count_of(self.total as u64, "conversation", "conversations"),
         );
-        if self.chunk_sent > 0 {
+        if self.window_sent > 0 {
             // The import time is each conversation's own clock added up, so it
             // can exceed the window's wall time when conversations share an
             // import request.
             line.push_str(&format!(
                 " In the last {} the Upload sent {} with {} and {} of Assets. \
-                 Importing their messages took {}, counted per conversation.",
-                format_ms_seconds(elapsed_ms(self.chunk_started)),
-                count_of(self.chunk_sent, "conversation", "conversations"),
-                count_of(self.chunk_messages, "message", "messages"),
-                media::format_bytes(self.chunk_bytes),
-                format_ms_seconds(self.chunk_import_ms),
+                 Importing their messages took {}, added up across the conversations.",
+                format_ms_seconds(elapsed_ms(self.window_started)),
+                count_of(self.window_sent, "conversation", "conversations"),
+                count_of(self.window_messages, "message", "messages"),
+                media::format_bytes(self.window_bytes),
+                format_ms_seconds(self.window_import_ms),
             ));
         }
-        if self.chunk_sent_before > 0 {
+        if self.window_sent_before > 0 {
             line.push_str(&format!(
                 " {} had been sent before.",
-                count_of(self.chunk_sent_before, "conversation", "conversations"),
+                count_of(self.window_sent_before, "conversation", "conversations"),
             ));
         }
         *self = Self {
@@ -384,7 +384,7 @@ mod tests {
         assert!(
             tenth.ends_with(
                 " the Upload sent 10 conversations with 20 messages and 7.0 MB of Assets. \
-                 Importing their messages took 33.0s, counted per conversation."
+                 Importing their messages took 33.0s, added up across the conversations."
             ),
             "{tenth}"
         );
@@ -422,7 +422,7 @@ mod tests {
         assert!(
             line.ends_with(
                 " the Upload sent 1 conversation with 1 message and 500 B of Assets. \
-                 Importing their messages took 0.2s, counted per conversation."
+                 Importing their messages took 0.2s, added up across the conversations."
             ),
             "{line}"
         );
@@ -436,7 +436,12 @@ mod tests {
         let mut batcher = ProgressBatcher::new(1);
         std::thread::sleep(std::time::Duration::from_millis(150));
         let line = batcher.note_ok(1, &UploadProfile::default()).unwrap();
-        assert!(!line.contains("In the last 0.0s"), "{line}");
+        let seconds: f64 = line
+            .strip_prefix("Finished 1 of 1 conversation. In the last ")
+            .and_then(|rest| rest.split_once('s'))
+            .and_then(|(seconds, _)| seconds.parse().ok())
+            .unwrap_or_else(|| panic!("{line}"));
+        assert!(seconds >= 0.1, "{line}");
     }
 
     /// Conversations the journal says were sent before are named apart, so

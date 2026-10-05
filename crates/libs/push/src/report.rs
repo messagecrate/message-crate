@@ -100,10 +100,10 @@ pub struct PushReport {
     pub ok: bool,
     /// `true` when the cancel flag stopped the run. The conversations it did
     /// not finish sending are in `conversations_cancelled`, and the journal
-    /// leaves them for the next Upload. A failed request also stops the run
-    /// and leaves `cancelled` rows, but this stays `false`, so a caller can
-    /// tell a pause from a failure. A session the server refused mid-run
-    /// stops the run through the same flag, so it is `true` then too.
+    /// leaves them for the next Upload. Only the cancel flag stops a run: a
+    /// failed request fails its conversations and the run goes on. A session
+    /// the server refused mid-run stops the run through the same flag, so it
+    /// is `true` then too.
     pub cancelled: bool,
     /// `true` when the server refused the session token during the run (it
     /// expired or was ended), which stopped the run as for a cancel. The
@@ -262,24 +262,32 @@ pub(crate) fn format_ms_seconds(ms: u64) -> String {
 /// what it did with the conversations, messages and Assets it read.
 pub fn format_push_summary(report: &PushReport) -> String {
     let elapsed = format_duration_ms(report.elapsed_ms);
-    // A run that left conversations unsent is paused, whatever stopped it:
-    // the person, a refused session, or a failed request (CONTEXT.md, Pause).
-    let ending = if report.ok {
-        format!("The Upload completed in {elapsed}.")
-    } else if report.session_refused {
-        format!("The Upload paused after {elapsed}, because the server refused the session.")
-    } else if report.cancelled {
-        format!("The Upload paused after {elapsed}.")
-    } else if report.conversations_cancelled > 0 {
-        format!("The Upload paused after {elapsed}, because a request failed.")
-    } else {
+    // A run that left conversations for the next Upload is paused (CONTEXT.md,
+    // Pause). A cancel that came after the last conversation was sent leaves
+    // none, so that run completed, whatever `ok` says.
+    let ending = if report.conversations_cancelled > 0 {
+        if report.session_refused {
+            format!("The Upload paused after {elapsed}, because the server refused the session.")
+        } else {
+            format!("The Upload paused after {elapsed}.")
+        }
+    } else if report.conversations_failed > 0 || report.messages_failed > 0 {
         format!("The Upload completed in {elapsed}, with errors.")
+    } else {
+        format!("The Upload completed in {elapsed}.")
     };
-    let reason = "because the server already held them or the Upload left them out";
+    // `assets_skipped` counts attachments whose Asset did not go up: the
+    // server already held it, its file had no path, was missing or was too
+    // large, or the Upload sent text only.
     let not_uploaded = match report.assets_skipped {
         0 => String::new(),
-        1 => format!(" The file of 1 attachment was not uploaded, {reason}."),
-        n => format!(" The files of {n} attachments were not uploaded, {reason}."),
+        1 => " The Asset of 1 attachment was not uploaded, because the server already \
+               held it, its file was missing or too large, or the Upload sent text only."
+            .to_string(),
+        n => format!(
+            " The Assets of {n} attachments were not uploaded, because the server already \
+             held them, their files were missing or too large, or the Upload sent text only."
+        ),
     };
     format!(
         "{ending}\n\
@@ -359,6 +367,7 @@ mod tests {
     #[test]
     fn format_push_summary_writes_sentences() {
         let report = PushReport {
+            ok: false,
             elapsed_ms: 12_000,
             conversations_ok: 8,
             conversations_failed: 1,
@@ -370,13 +379,14 @@ mod tests {
         };
         assert_eq!(
             format_push_summary(&report),
-            "The Upload completed in 12s.\n\
+            "The Upload completed in 12s, with errors.\n\
              Sent 8 of 10 conversations, with 1 failed, 1 sent before, \
              and 0 left for the next Upload.\n\
              The Upload tried to send 100 messages: the server added 90 and already held 10, \
              and the requests for 0 failed.\n\
-             Uploaded 4 Assets. The files of 2 attachments were not uploaded, \
-             because the server already held them or the Upload left them out."
+             Uploaded 4 Assets. The Assets of 2 attachments were not uploaded, \
+             because the server already held them, their files were missing or too large, \
+             or the Upload sent text only."
         );
     }
 
@@ -400,14 +410,18 @@ mod tests {
             "{summary}"
         );
         assert!(
-            summary.contains("Uploaded 1 Asset. The file of 1 attachment was not uploaded, "),
+            summary.contains(
+                "Uploaded 1 Asset. The Asset of 1 attachment was not uploaded, because the \
+                 server already held it, its file was missing or too large, or the Upload \
+                 sent text only."
+            ),
             "{summary}"
         );
     }
 
     /// The first line says how the Upload ended, from the report's fields: a
-    /// run that left conversations for the next Upload is paused, never
-    /// "completed".
+    /// run that left conversations for the next Upload is paused, and only
+    /// such a run.
     #[test]
     fn format_push_summary_says_how_the_upload_ended() {
         let first_line = |report: PushReport| {
@@ -438,12 +452,14 @@ mod tests {
             }),
             "The Upload paused after 1m00s, because the server refused the session."
         );
+        // A cancel after the last conversation was sent left nothing for the
+        // next Upload, so the Upload completed.
         assert_eq!(
             first_line(PushReport {
-                conversations_cancelled: 6,
+                cancelled: true,
                 ..not_ok.clone()
             }),
-            "The Upload paused after 1m00s, because a request failed."
+            "The Upload completed in 1m00s."
         );
         assert_eq!(
             first_line(PushReport {
