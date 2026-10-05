@@ -560,19 +560,36 @@ impl BatchContext {
 /// Import result: the import counts plus optional dedupe counts.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct CreateImportBatchResponse {
+    /// Source id of the Import Run the batch belongs to, such as `imessage`.
     source: String,
+    /// Id of the account the batch imported into.
     account: i64,
     #[serde(flatten)]
     counts: ImportCounts,
+    /// What the cross-source dedupe pass after this batch did, counted over
+    /// the whole account rather than the batch alone. Null when the Import
+    /// Run was created with `dedupe` off, because then no pass runs.
     dedupe: Option<DedupeCounts>,
 }
 
 /// Cross-source dedupe outcome.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct DedupeCounts {
+    /// Content keys the pass wrote: one for each message whose key was
+    /// missing or whose inputs changed. A content key is a fingerprint of a
+    /// message's conversation, direction, sender, time, text and attachments.
+    /// This is not a count of duplicates.
     keys_filled: u64,
+    /// Groups of messages that share one content key and come from two or
+    /// more sources. Copies one source alone holds are not a group.
     exact_groups: u64,
+    /// Messages hidden as exact duplicates. In each group, the source with
+    /// the most copies sets how many stay shown, and the rest are hidden.
     exact_flagged: u64,
+    /// Messages hidden as near duplicates: a message that matches one from
+    /// another source in the same conversation, from the same sender in the
+    /// same direction, within 2 seconds, with the same text or the same
+    /// attachments.
     near_flagged: u64,
 }
 
@@ -580,12 +597,23 @@ pub(crate) struct DedupeCounts {
 /// names the account.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct CreateImportRequest {
+    /// Source id the run imports, such as `imessage` or `whatsapp`, which
+    /// every message the run brings in records. It holds lowercase letters,
+    /// digits, `-` and `_`, starts with a letter or a digit, and is at most
+    /// 64 characters. Any other id, one with a space around it included, is
+    /// refused with `422 Unprocessable Entity`.
     pub(crate) source: String,
+    /// What happens to the messages this source brought in before: `replace`
+    /// removes them on the run's first batch, and `append` keeps them and
+    /// adds only new ones. `append` when the request leaves it out.
     #[serde(default)]
     pub(crate) mode: ImportMode,
     /// Run cross-source soft-dedupe after each batch.
     #[serde(default)]
     pub(crate) dedupe: bool,
+    /// Name of the program that runs the import, such as
+    /// `message-crate-push`, stored on the run as given. Null when the
+    /// request leaves it out.
     #[serde(default)]
     pub(crate) tool: Option<String>,
     /// Stage the run opens at. Defaults to `parse`.
@@ -614,6 +642,8 @@ pub(crate) struct CreateImportRequest {
 /// The new Import Run's id.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct CreateImportResponse {
+    /// Id of the new Import Run, which its routes name in their path, as
+    /// `/v1/imports/{id}`.
     pub(crate) id: i64,
 }
 
@@ -625,20 +655,37 @@ pub(crate) struct CreateImportResponse {
 pub(crate) struct CompleteImportRequest {
     /// How the run ended: `completed`, `completed_with_issues` or `failed`.
     pub(crate) status: String,
+    /// Bytes the Upload sent, as the client counted them. Null or left out
+    /// keeps the count the run already holds.
     #[serde(default)]
     pub(crate) bytes_uploaded: Option<i64>,
+    /// How long the whole run took, in milliseconds, as the client timed it.
+    /// Null or left out stores none.
     #[serde(default)]
     pub(crate) duration_ms: Option<i64>,
+    /// Milliseconds Staging spent reading the backup ("Parse backup"). Null
+    /// or left out stores none.
     #[serde(default)]
     pub(crate) parse_ms: Option<i64>,
+    /// Milliseconds Staging spent copying the attachments ("Attachments").
+    /// Null or left out stores none.
     #[serde(default)]
     pub(crate) attachments_ms: Option<i64>,
+    /// Milliseconds Staging spent writing the conversation files ("Preparing
+    /// messages"). Null or left out stores none.
     #[serde(default)]
     pub(crate) prepare_ms: Option<i64>,
+    /// Milliseconds the Upload took. Null or left out stores none.
     #[serde(default)]
     pub(crate) upload_ms: Option<i64>,
+    /// The run's final counts as the client made them, such as files and
+    /// messages parsed, inserted, deduplicated and failed. It becomes the
+    /// run's `summary` and replaces the plan the last Review stored there.
+    /// Null or left out leaves the run with no summary.
     #[serde(default)]
     pub(crate) summary: Option<serde_json::Value>,
+    /// The run's Import Errors: every item that failed or was skipped. An
+    /// empty list when the request leaves it out.
     #[serde(default)]
     pub(crate) issues: Vec<ImportIssueRequest>,
     /// The run's notes, apart from its Import Errors. A note never makes a
@@ -684,10 +731,16 @@ fn note_row(note: ImportNoteRequest) -> crate::db::imports::ImportNoteRow {
 /// One error or skip a Stage of the Import Run reported.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct ImportIssueRequest {
+    /// `error` when the item failed, or `skip` when the run left it out
+    /// without importing it, such as an attachment it did not upload. Any
+    /// other word is refused with `422 Unprocessable Entity`.
     pub(crate) kind: String,
     /// Stage the issue came from.
     pub(crate) stage: crate::db::imports::ImportIssueStage,
+    /// What the issue is about, such as a conversation file or an
+    /// attachment's path.
     pub(crate) item: String,
+    /// Why the item failed or was skipped, in one sentence.
     pub(crate) reason: String,
 }
 
@@ -789,10 +842,15 @@ pub(crate) struct ImportNote {
 /// One stored import issue.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct ImportIssue {
+    /// `error` when the item failed, or `skip` when the run left it out
+    /// without importing it.
     pub(crate) kind: String,
     /// Stage the issue came from.
     pub(crate) stage: crate::db::imports::ImportIssueStage,
+    /// What the issue is about, such as a conversation file or an
+    /// attachment's path.
     item: String,
+    /// Why the item failed or was skipped.
     reason: String,
 }
 
@@ -863,8 +921,12 @@ pub(crate) struct ImportRunSummary {
     pub(crate) source_fingerprint: serde_json::Value,
     /// Addresses the backup's device sent from (JSON array), or null.
     pub(crate) source_identities: serde_json::Value,
-    /// What the person approved at the last Review they passed, or null. The
-    /// column `PATCH /v1/imports/{id}` writes with its `summary`.
+    /// What the person approved at the last Review they passed, which
+    /// `PATCH /v1/imports/{id}` writes with its `summary`. A cancelled run
+    /// keeps it. A run that completed or failed holds instead the final
+    /// counts its `POST /v1/imports/{id}/complete` sent, and null when that
+    /// request sent none, because completing replaces the plan. Null too
+    /// while no Review has stored one.
     pub(crate) summary: serde_json::Value,
     /// How many issues the run recorded.
     pub(crate) issue_count: u64,

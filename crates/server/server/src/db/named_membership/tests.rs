@@ -562,6 +562,34 @@ async fn patch_members_with_a_foreign_member_writes_nothing() {
     }
 }
 
+/// The bug: an id of 0 or below in `add` was dropped unseen, so a call
+/// holding one answered `200` as if it were not there.
+#[tokio::test]
+async fn patch_members_refuses_an_id_to_add_of_zero_or_below() {
+    let fixture = crate::test_support::test_fixture().await;
+    let account = fixture.account_with_id(101, "alice").await;
+    let mut conn = fixture.conn().await;
+    let a = insert_contact(&mut conn, account, "Ada").await;
+    let (id, _) = create_set(group_spec(), &mut conn, account, "Family")
+        .await
+        .unwrap();
+    for bad in [0, -1] {
+        let err = patch_members(group_spec(), &mut conn, account, id, &[bad, a], &[])
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, MembershipError::BadRequest(ref msg) if msg == &format!("contact {bad} not found")),
+            "{bad}: {err:?}"
+        );
+    }
+    assert!(
+        list_member_ids_of(group_spec(), &mut conn, account, id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
 /// An id to remove that names no member is ignored: the set is already in
 /// the state the caller asked for, and `removed` counts only deleted rows.
 #[tokio::test]

@@ -12949,7 +12949,8 @@
         "properties": {
           "account_id": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "Id of the account the numbers are for."
           },
           "estimated_message_bytes": {
             "type": "integer",
@@ -12967,7 +12968,8 @@
             "description": "Bytes of message text the account holds: every body and subject, added up."
           },
           "username": {
-            "type": "string"
+            "type": "string",
+            "description": "The username the account logs in with."
           }
         }
       },
@@ -13022,7 +13024,8 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/TopAttachment"
-            }
+            },
+            "description": "The account's 100 largest attachments, largest first. An attachment\nof 0 bytes or of unknown size is left out."
           },
           "total_bytes": {
             "type": "integer",
@@ -13136,13 +13139,16 @@
         ],
         "properties": {
           "already_present": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "True when the server held the Asset before this request, which then\nstored nothing and answers `200 OK`. False when this request stored\nit and answers `201 Created`."
           },
           "assets_path": {
-            "type": "string"
+            "type": "string",
+            "description": "Where the server keeps the file, relative to the account's assets\ndirectory: the fingerprint's first two hex digits as a directory, then\nthe fingerprint, as `ab/ab12…`."
           },
           "sha256": {
-            "type": "string"
+            "type": "string",
+            "description": "SHA-256 fingerprint of the stored bytes, 64 lowercase hex digits,\nwhich names the Asset in its routes' paths."
           }
         }
       },
@@ -13182,7 +13188,8 @@
             "description": "SHA-256 fingerprint of the file the parts assemble into."
           },
           "upload_id": {
-            "type": "string"
+            "type": "string",
+            "description": "Id of the upload, given when it started, which its routes name in\ntheir path."
           }
         }
       },
@@ -13608,27 +13615,31 @@
               "integer",
               "null"
             ],
-            "format": "int64"
+            "format": "int64",
+            "description": "Milliseconds Staging spent copying the attachments (\"Attachments\").\nNull or left out stores none."
           },
           "bytes_uploaded": {
             "type": [
               "integer",
               "null"
             ],
-            "format": "int64"
+            "format": "int64",
+            "description": "Bytes the Upload sent, as the client counted them. Null or left out\nkeeps the count the run already holds."
           },
           "duration_ms": {
             "type": [
               "integer",
               "null"
             ],
-            "format": "int64"
+            "format": "int64",
+            "description": "How long the whole run took, in milliseconds, as the client timed it.\nNull or left out stores none."
           },
           "issues": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ImportIssueRequest"
-            }
+            },
+            "description": "The run's Import Errors: every item that failed or was skipped. An\nempty list when the request leaves it out."
           },
           "notes": {
             "type": "array",
@@ -13642,26 +13653,31 @@
               "integer",
               "null"
             ],
-            "format": "int64"
+            "format": "int64",
+            "description": "Milliseconds Staging spent reading the backup (\"Parse backup\"). Null\nor left out stores none."
           },
           "prepare_ms": {
             "type": [
               "integer",
               "null"
             ],
-            "format": "int64"
+            "format": "int64",
+            "description": "Milliseconds Staging spent writing the conversation files (\"Preparing\nmessages\"). Null or left out stores none."
           },
           "status": {
             "type": "string",
             "description": "How the run ended: `completed`, `completed_with_issues` or `failed`."
           },
-          "summary": {},
+          "summary": {
+            "description": "The run's final counts as the client made them, such as files and\nmessages parsed, inserted, deduplicated and failed. It becomes the\nrun's `summary` and replaces the plan the last Review stored there.\nNull or left out leaves the run with no summary."
+          },
           "upload_ms": {
             "type": [
               "integer",
               "null"
             ],
-            "format": "int64"
+            "format": "int64",
+            "description": "Milliseconds the Upload took. Null or left out stores none."
           }
         }
       },
@@ -14119,13 +14135,15 @@
           "bytes": {
             "type": "integer",
             "format": "int64",
+            "description": "Size of the whole file in bytes. A size over the attachment size limit\nin the Server Settings is refused with `422 Unprocessable Entity`.",
             "minimum": 0
           },
           "mime": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Media type of the file, such as `image/jpeg`. The server stores it\nbeside the Asset and serves the Asset with it. Null, blank or left\nout stores none."
           }
         }
       },
@@ -14141,32 +14159,37 @@
         ],
         "properties": {
           "already_present": {
-            "type": "boolean"
+            "type": "boolean",
+            "description": "True when the server already held the Asset: the answer is `200 OK`\nand nothing needs uploading. False when an upload was started and the\nanswer is `201 Created`."
           },
           "assets_path": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Where the server keeps the Asset it already held, relative to the\naccount's assets directory, as `ab/ab12…`. Null when an upload was\nstarted."
           },
           "part_size": {
             "type": [
               "integer",
               "null"
             ],
+            "description": "Size in bytes of every part but the last, which may be smaller. A part\nlarger than this is refused. Null when no upload was started.",
             "minimum": 0
           },
           "sha256": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "SHA-256 fingerprint of the Asset the server already held. Null when an\nupload was started."
           },
           "upload_id": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Id of the new upload, which its part and completion routes name in\ntheir path. Null when the server already held the Asset and started\nno upload."
           }
         }
       },
@@ -14270,7 +14293,8 @@
             "properties": {
               "account": {
                 "type": "integer",
-                "format": "int64"
+                "format": "int64",
+                "description": "Id of the account the batch imported into."
               },
               "dedupe": {
                 "oneOf": [
@@ -14280,10 +14304,12 @@
                   {
                     "type": "null"
                   }
-                ]
+                ],
+                "description": "What the cross-source dedupe pass after this batch did, counted over\nthe whole account rather than the batch alone. Null when the Import\nRun was created with `dedupe` off, because then no pass runs."
               },
               "source": {
-                "type": "string"
+                "type": "string",
+                "description": "Source id of the Import Run the batch belongs to, such as `imessage`."
               }
             }
           }
@@ -14312,7 +14338,8 @@
             "description": "Import form snapshot, stored so the screen can be restored.\n\nCredentials are stripped before storage: a `backupPassword` or\n`whatsappKey` posted here is dropped rather than persisted."
           },
           "mode": {
-            "$ref": "#/components/schemas/ImportMode"
+            "$ref": "#/components/schemas/ImportMode",
+            "description": "What happens to the messages this source brought in before: `replace`\nremoves them on the run's first batch, and `append` keeps them and\nadds only new ones. `append` when the request leaves it out."
           },
           "run_dir": {
             "type": [
@@ -14322,7 +14349,8 @@
             "description": "Absolute path to the run directory on the client that owns this Import Run."
           },
           "source": {
-            "type": "string"
+            "type": "string",
+            "description": "Source id the run imports, such as `imessage` or `whatsapp`, which\nevery message the run brings in records. It holds lowercase letters,\ndigits, `-` and `_`, starts with a letter or a digit, and is at most\n64 characters. Any other id, one with a space around it included, is\nrefused with `422 Unprocessable Entity`."
           },
           "source_fingerprint": {
             "description": "Source path, size, mtime, and message count."
@@ -14345,7 +14373,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Name of the program that runs the import, such as\n`message-crate-push`, stored on the run as given. Null when the\nrequest leaves it out."
           }
         }
       },
@@ -14358,7 +14387,8 @@
         "properties": {
           "id": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "Id of the new Import Run, which its routes name in their path, as\n`/v1/imports/{id}`."
           }
         }
       },
@@ -14370,7 +14400,8 @@
         ],
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "description": "Name of the new set, which the server trims. A name that is blank,\nover 80 characters, or reserved (such as `trash`) is refused with\n`422 Unprocessable Entity`. So is a Contact Group name holding `;`,\nbecause the address book separates Contact Group names with it. A\nname another set of the kind has, in any letter case, is refused with\n`409 Conflict`."
           }
         }
       },
@@ -14383,10 +14414,12 @@
         ],
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "description": "Name of the Saved Search, which the server trims. A name that is\nblank or over 80 characters is refused with `422 Unprocessable\nEntity`. A name another of the account's Saved Searches has, in any\nletter case, is refused with `409 Conflict`."
           },
           "query": {
-            "type": "string"
+            "type": "string",
+            "description": "The query in the search language, trimmed and stored as written. The\nserver does not check it when storing it, so a query a list cannot\nrun is refused when it runs. A blank query is refused with `422\nUnprocessable Entity`."
           }
         }
       },
@@ -14444,21 +14477,25 @@
           "exact_flagged": {
             "type": "integer",
             "format": "int64",
+            "description": "Messages hidden as exact duplicates. In each group, the source with\nthe most copies sets how many stay shown, and the rest are hidden.",
             "minimum": 0
           },
           "exact_groups": {
             "type": "integer",
             "format": "int64",
+            "description": "Groups of messages that share one content key and come from two or\nmore sources. Copies one source alone holds are not a group.",
             "minimum": 0
           },
           "keys_filled": {
             "type": "integer",
             "format": "int64",
+            "description": "Content keys the pass wrote: one for each message whose key was\nmissing or whose inputs changed. A content key is a fingerprint of a\nmessage's conversation, direction, sender, time, text and attachments.\nThis is not a count of duplicates.",
             "minimum": 0
           },
           "near_flagged": {
             "type": "integer",
             "format": "int64",
+            "description": "Messages hidden as near duplicates: a message that matches one from\nanother source in the same conversation, from the same sender in the\nsame direction, within 2 seconds, with the same text or the same\nattachments.",
             "minimum": 0
           }
         }
@@ -14751,6 +14788,7 @@
             "properties": {
               "kind": {
                 "type": "string",
+                "description": "Names this form, `everything`. Every non-trashed message the account holds. The other forms are `query` and `selection`.",
                 "enum": [
                   "everything"
                 ]
@@ -14768,6 +14806,7 @@
             "properties": {
               "kind": {
                 "type": "string",
+                "description": "Names this form, `query`. What a query in the search language finds on one of two lists. The other forms are `everything` and `selection`.",
                 "enum": [
                   "query"
                 ]
@@ -14799,6 +14838,7 @@
               },
               "kind": {
                 "type": "string",
+                "description": "Names this form, `selection`. Conversations and messages picked by hand. The other forms are `everything` and `query`.",
                 "enum": [
                   "selection"
                 ]
@@ -15101,13 +15141,16 @@
         ],
         "properties": {
           "item": {
-            "type": "string"
+            "type": "string",
+            "description": "What the issue is about, such as a conversation file or an\nattachment's path."
           },
           "kind": {
-            "type": "string"
+            "type": "string",
+            "description": "`error` when the item failed, or `skip` when the run left it out\nwithout importing it."
           },
           "reason": {
-            "type": "string"
+            "type": "string",
+            "description": "Why the item failed or was skipped."
           },
           "stage": {
             "$ref": "#/components/schemas/ImportIssueStage",
@@ -15126,13 +15169,16 @@
         ],
         "properties": {
           "item": {
-            "type": "string"
+            "type": "string",
+            "description": "What the issue is about, such as a conversation file or an\nattachment's path."
           },
           "kind": {
-            "type": "string"
+            "type": "string",
+            "description": "`error` when the item failed, or `skip` when the run left it out\nwithout importing it, such as an attachment it did not upload. Any\nother word is refused with `422 Unprocessable Entity`."
           },
           "reason": {
-            "type": "string"
+            "type": "string",
+            "description": "Why the item failed or was skipped, in one sentence."
           },
           "stage": {
             "$ref": "#/components/schemas/ImportIssueStage",
@@ -15406,7 +15452,7 @@
             "description": "Lifecycle status."
           },
           "summary": {
-            "description": "What the person approved at the last Review they passed, or null. The\ncolumn `PATCH /v1/imports/{id}` writes with its `summary`."
+            "description": "What the person approved at the last Review they passed, which\n`PATCH /v1/imports/{id}` writes with its `summary`. A cancelled run\nkeeps it. A run that completed or failed holds instead the final\ncounts its `POST /v1/imports/{id}/complete` sent, and null when that\nrequest sent none, because completing replaces the plan. Null too\nwhile no Review has stored one."
           },
           "tool": {
             "type": [
@@ -15866,10 +15912,12 @@
         "properties": {
           "id": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "Id of the Contact Group or Message Tag, which its routes name in their\npath."
           },
           "name": {
-            "type": "string"
+            "type": "string",
+            "description": "The name as stored: trimmed, at most 80 characters, and unique among\nthe account's sets of this kind whatever its letter case."
           }
         }
       },
@@ -17565,7 +17613,7 @@
                   "description": "Lifecycle status."
                 },
                 "summary": {
-                  "description": "What the person approved at the last Review they passed, or null. The\ncolumn `PATCH /v1/imports/{id}` writes with its `summary`."
+                  "description": "What the person approved at the last Review they passed, which\n`PATCH /v1/imports/{id}` writes with its `summary`. A cancelled run\nkeeps it. A run that completed or failed holds instead the final\ncounts its `POST /v1/imports/{id}/complete` sent, and null when that\nrequest sent none, because completing replaces the plan. Null too\nwhile no Review has stored one."
                 },
                 "tool": {
                   "type": [
@@ -17880,10 +17928,12 @@
               "properties": {
                 "id": {
                   "type": "integer",
-                  "format": "int64"
+                  "format": "int64",
+                  "description": "Id of the Contact Group or Message Tag, which its routes name in their\npath."
                 },
                 "name": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "The name as stored: trimmed, at most 80 characters, and unique among\nthe account's sets of this kind whatever its letter case."
                 }
               }
             },
@@ -18532,11 +18582,13 @@
           "bytes": {
             "type": "integer",
             "format": "int64",
+            "description": "Bytes the server wrote for the part.",
             "minimum": 0
           },
           "part": {
             "type": "integer",
             "format": "int32",
+            "description": "Number of the part written, counted from 1, as the path gave it.",
             "minimum": 0
           }
         }
@@ -18742,19 +18794,22 @@
         "properties": {
           "account_id": {
             "type": "integer",
-            "format": "int64"
+            "format": "int64",
+            "description": "Id of the account the credential acts for."
           },
           "sources": {
             "type": "array",
             "items": {
               "type": "string"
-            }
+            },
+            "description": "Source ids the account's messages came from, such as `imessage` or\n`whatsapp`, in the order their first messages were imported, earliest\nfirst."
           },
           "username": {
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "The username the account logs in with. Null only when the account was\ndeleted between the credential check and this read."
           }
         }
       },
@@ -19052,14 +19107,16 @@
             "items": {
               "type": "integer",
               "format": "int64"
-            }
+            },
+            "description": "Ids to put in the set: contact ids for a Contact Group, conversation\nids for a Message Tag. An id the account does not hold, 0 and below\nincluded, is refused with `422 Unprocessable Entity`, and then nothing\nchanges. An id already in the set is left as it is. Empty when left\nout, and `add` and `remove` both empty is refused with `422\nUnprocessable Entity`."
           },
           "remove": {
             "type": "array",
             "items": {
               "type": "integer",
               "format": "int64"
-            }
+            },
+            "description": "Ids to take out of the set. An id that is not in it is ignored. An id\nin both `add` and `remove` is taken out. Empty when left out."
           }
         }
       },
@@ -19074,11 +19131,13 @@
           "added": {
             "type": "integer",
             "format": "int64",
+            "description": "Members the request put in the set, not counting ids that were\nalready in it.",
             "minimum": 0
           },
           "removed": {
             "type": "integer",
             "format": "int64",
+            "description": "Members the request took out of the set, not counting ids that were\nnot in it.",
             "minimum": 0
           }
         }
@@ -19091,7 +19150,8 @@
         ],
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "description": "The set's new name, under the rules a new set's name follows. A change\nto the letter case of the set's own name is allowed."
           }
         }
       },
@@ -19104,10 +19164,12 @@
         ],
         "properties": {
           "name": {
-            "type": "string"
+            "type": "string",
+            "description": "The Saved Search's new name, under the rules a new one's name\nfollows. A change to the letter case of its own name is allowed."
           },
           "query": {
-            "type": "string"
+            "type": "string",
+            "description": "The new query in the search language, under the rules a new one's\nquery follows."
           }
         }
       },

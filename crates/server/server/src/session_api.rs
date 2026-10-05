@@ -67,8 +67,14 @@ impl CreateSessionResponse {
 /// The logged-in credential's account, username, and import sources.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct Session {
+    /// Source ids the account's messages came from, such as `imessage` or
+    /// `whatsapp`, in the order their first messages were imported, earliest
+    /// first.
     sources: Vec<String>,
+    /// Id of the account the credential acts for.
     account_id: i64,
+    /// The username the account logs in with. Null only when the account was
+    /// deleted between the credential check and this read.
     username: Option<String>,
 }
 
