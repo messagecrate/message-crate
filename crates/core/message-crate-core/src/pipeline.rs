@@ -114,6 +114,24 @@ pub const NAME_ONLY_CHAT: &str = "name_only_chat";
 pub const NAME_ONLY_CHAT_NOTE: &str = "This chat names its person with no phone number or email \
      address, so the conversation is kept under the name alone.";
 
+/// The report counter for parts of a message left out because they could
+/// not be read, each message sent as an [`unreadable_parts_note`].
+pub const SKIPPED_UNREADABLE_PART: &str = "skipped_unreadable_part";
+
+/// The note an exporter sends for a message it kept with `n` parts left out
+/// because they could not be read.
+pub fn unreadable_parts_note(n: u64) -> String {
+    match n {
+        1 => "1 part of this message could not be read and was left out. The message itself is \
+              kept."
+            .into(),
+        n => format!(
+            "{n} parts of this message could not be read and were left out. The message itself \
+             is kept."
+        ),
+    }
+}
+
 /// The reason an exporter gives for a CSV it cannot read, before the
 /// parser's own words.
 pub const CSV_NOT_READ: &str = "This CSV could not be read and was left out";

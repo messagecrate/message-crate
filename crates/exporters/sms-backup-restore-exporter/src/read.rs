@@ -22,6 +22,7 @@ use sbr::{
 };
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 const EXPORT_SOURCE: &str = "sms-backup-restore";
 const EXPORT_TOOL: &str = "SMS Backup & Restore";
@@ -50,14 +51,42 @@ pub struct ReadReport {
     pub skipped_draft_or_outbox: u64,
     /// MMS dropped with no participants.
     pub skipped_empty_participants: u64,
-    /// Parts with undecodable base64.
-    pub skipped_unreadable_part: u64,
-    /// Character references dropped because they are not a character.
-    pub dropped_character_references: u64,
     /// Repeated copies of a message dropped, one copy of each kept.
     pub duplicates_dropped: u64,
     /// What could not be read, each with the file it was in.
     pub errors: Vec<ReadError>,
+    /// Each kept message with a part or character references left out of
+    /// it, so the run can name it.
+    pub left_out: Vec<LeftOut>,
+}
+
+/// One message the read kept with a part or character references left out
+/// of it, and the file it is in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LeftOut {
+    /// The file, as a path.
+    pub file: String,
+    /// The message, by its time and its `address` attribute as the file
+    /// writes it, such as `message of 2014-05-22T15:41:01Z with +15555550101`.
+    pub message: String,
+    /// What was left out of it.
+    pub counts: LeftOutCounts,
+}
+
+/// What the read left out of one message.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LeftOutCounts {
+    /// Parts left out because their `data` is not base64.
+    pub unreadable_parts: u64,
+    /// Character references left out because they are not a character.
+    pub dropped_character_references: u64,
+}
+
+impl LeftOutCounts {
+    /// Whether nothing was left out.
+    pub fn is_empty(self) -> bool {
+        self == Self::default()
+    }
 }
 
 /// Something in one backup file the reader could not read.
@@ -85,6 +114,23 @@ impl std::fmt::Display for ReadError {
 }
 
 impl ReadReport {
+    /// Parts left out of kept messages because their `data` is not base64.
+    pub fn skipped_unreadable_part(&self) -> u64 {
+        self.left_out
+            .iter()
+            .map(|m| m.counts.unreadable_parts)
+            .sum()
+    }
+
+    /// Character references left out of kept messages because they are not
+    /// a character.
+    pub fn dropped_character_references(&self) -> u64 {
+        self.left_out
+            .iter()
+            .map(|m| m.counts.dropped_character_references)
+            .sum()
+    }
+
     /// One log line for each kind of message the read dropped or skipped,
     /// leaving out the kinds it found none of, then one line for every
     /// error, so a person can tell what did not come across.
@@ -127,13 +173,13 @@ impl ReadReport {
                 "MMS with no participants",
             ),
             (
-                self.skipped_unreadable_part,
+                self.skipped_unreadable_part(),
                 "Skipped",
                 "message part that could not be read",
                 "message parts that could not be read",
             ),
             (
-                self.dropped_character_references,
+                self.dropped_character_references(),
                 "Dropped",
                 "character reference that is not a character",
                 "character references that are not characters",
@@ -205,6 +251,10 @@ struct PendingMessage {
     contact_name: String,
     android_type: String,
     source_fields: serde_json::Map<String, serde_json::Value>,
+    /// The file the message was read from, shared by every message in it.
+    file: Arc<str>,
+    /// What the read left out of the message.
+    left_out: LeftOutCounts,
 }
 
 #[derive(Debug, Default)]
@@ -247,8 +297,6 @@ fn merge_stats(report: &mut ReadReport, stats: ParseStats) {
     report.skipped_unknown_type += stats.skipped_unknown_type;
     report.skipped_draft_or_outbox += stats.skipped_draft_or_outbox;
     report.skipped_empty_participants += stats.skipped_empty_participants;
-    report.skipped_unreadable_part += stats.skipped_unreadable_part;
-    report.dropped_character_references += stats.dropped_character_references;
 }
 
 /// Pending attachments for a message's decoded parts, each payload written
@@ -343,9 +391,11 @@ fn chat_id(record: &Record) -> String {
     }
 }
 
-/// Append a parsed SMS or MMS to its conversation, creating the conversation on first sight.
+/// Append a parsed SMS or MMS from `file` to its conversation, creating the
+/// conversation on first sight.
 fn add_record(
     conversations: &mut BTreeMap<String, PendingConversation>,
+    file: &Arc<str>,
     record: Record,
     attachments: Vec<PendingAttachment>,
 ) -> Result<()> {
@@ -381,6 +431,11 @@ fn add_record(
         contact_name: record.contact_name,
         android_type: record.android_type,
         source_fields,
+        file: Arc::clone(file),
+        left_out: LeftOutCounts {
+            unreadable_parts: record.unreadable_parts,
+            dropped_character_references: record.dropped_character_references,
+        },
     });
     Ok(())
 }
@@ -491,6 +546,15 @@ fn to_document(
             } else {
                 report.received += 1;
             }
+            // Named only now that dedupe has run, because a repeated copy
+            // dropped there can change which time the message keeps.
+            if !message.left_out.is_empty() {
+                report.left_out.push(LeftOut {
+                    file: message.file.to_string(),
+                    message: describe(message, conversation),
+                    counts: message.left_out,
+                });
+            }
             ir_message(id, message, &owner)
         })
         .collect();
@@ -512,6 +576,34 @@ fn to_document(
     };
     document.finalize_stats();
     document
+}
+
+/// A message as a person can find it in its file: `message of <UTC time>
+/// with <address>`, the `address` attribute as the file writes it, so a
+/// search of the file finds it. An MMS with no `address` attribute names
+/// every identity in its conversation instead.
+fn describe(message: &PendingMessage, conversation: &PendingConversation) -> String {
+    let (ms, _) = message.time();
+    let time =
+        format_local_ts(ms.div_euclid(1000)).map_or_else(|| ms.to_string(), |(_, utc, _)| utc);
+    let address = message
+        .source_fields
+        .get("attrs")
+        .and_then(|attrs| attrs.get("address"))
+        .and_then(serde_json::Value::as_str)
+        .filter(|address| !address.trim().is_empty());
+    let with = address.map_or_else(
+        || {
+            let identities: Vec<&str> = conversation
+                .participants
+                .iter()
+                .map(|(handle, _)| handle.as_str())
+                .collect();
+            identities.join(", ")
+        },
+        str::to_string,
+    );
+    format!("message of {time} with {with}")
 }
 
 /// The IR message for one pending message. `owner` (handle, display name)
@@ -648,6 +740,7 @@ pub fn read_backup(
     let mut conversations = BTreeMap::new();
     for path in paths {
         check_cancel(options.cancel)?;
+        let file: Arc<str> = path.display().to_string().into();
         // Each record's attachment payloads go to the spool as the record is
         // parsed; staging waits until every conversation is built. Messages
         // that parse before an XML error are kept; stats are merged even
@@ -666,7 +759,7 @@ pub fn read_backup(
                     return Err(stop);
                 }
             };
-            match add_record(&mut conversations, record, attachments) {
+            match add_record(&mut conversations, &file, record, attachments) {
                 Ok(()) => Ok(()),
                 Err(error) => {
                     // Keep parsing the rest of the file; one bad record

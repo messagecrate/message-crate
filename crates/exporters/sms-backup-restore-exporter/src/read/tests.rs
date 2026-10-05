@@ -512,3 +512,47 @@ fn the_byte_total_stays_the_same_when_the_spool_holds_no_file() {
         Some((2, 5))
     );
 }
+
+/// A message kept with a part or character references left out is named by
+/// its file, its time and its `address` attribute as the file writes it, so
+/// the run can say which one it is (#1707). A repeated copy is named once,
+/// and a message the read skips is not named at all.
+#[test]
+fn a_message_kept_with_something_left_out_is_named() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("input.xml");
+    let copy = r#"<sms address="(555) 555-0101" date="1400773261000" type="1" body="a&#0;b"/>"#;
+    fs::write(
+        &input,
+        format!(
+            r#"<smses>{copy}{copy}<sms address="+15555550101" date="1400773300000" type="3" body="&#0;"/><mms date="1400773900000" msg_box="1" address="+15555550101~+15555550102"><parts><part ct="text/plain" text="photo&#0;"/><part ct="image/jpeg" name="pic.jpg" data="%%%"/></parts><addrs><addr address="+15555550101" type="137"/></addrs></mms></smses>"#
+        ),
+    )
+    .unwrap();
+    let owner = vec!["+15555550100".to_string()];
+    let (_, report) = read_backup(&input, opts(&owner, None, None)).unwrap();
+    let file = input.display().to_string();
+    assert_eq!(
+        report.left_out,
+        [
+            LeftOut {
+                file: file.clone(),
+                message: "message of 2014-05-22T15:41:01Z with (555) 555-0101".into(),
+                counts: LeftOutCounts {
+                    unreadable_parts: 0,
+                    dropped_character_references: 1,
+                },
+            },
+            LeftOut {
+                file,
+                message: "message of 2014-05-22T15:51:40Z with +15555550101~+15555550102".into(),
+                counts: LeftOutCounts {
+                    unreadable_parts: 1,
+                    dropped_character_references: 1,
+                },
+            },
+        ]
+    );
+    assert_eq!(report.skipped_unreadable_part(), 1);
+    assert_eq!(report.dropped_character_references(), 2);
+}

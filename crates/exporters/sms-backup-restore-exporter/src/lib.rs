@@ -14,7 +14,8 @@ pub mod testutil;
 mod write;
 
 pub use read::{
-    ReadError, ReadOptions, ReadReport, read_backup, spooled_attachments, stage_read_attachments,
+    LeftOut, LeftOutCounts, ReadError, ReadOptions, ReadReport, read_backup, spooled_attachments,
+    stage_read_attachments,
 };
 pub use run::run;
 pub use write::SbrArchive;

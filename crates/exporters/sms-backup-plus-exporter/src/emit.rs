@@ -603,20 +603,11 @@ impl<'a> EmlIngest<'a> {
             ParsedEmlKind::Flat { msg } => {
                 self.report.bump("flat_eml", 1);
                 if msg.unreadable_parts > 0 {
-                    let text = match msg.unreadable_parts {
-                        1 => "1 part of this message could not be read and was left out. The \
-                              message itself is kept."
-                            .to_string(),
-                        n => format!(
-                            "{n} parts of this message could not be read and were left out. \
-                             The message itself is kept."
-                        ),
-                    };
                     self.report.caveat(
-                        "skipped_unreadable_part",
+                        message_crate_core::SKIPPED_UNREADABLE_PART,
                         msg.unreadable_parts,
                         msg.eml_path.as_str(),
-                        text,
+                        message_crate_core::unreadable_parts_note(msg.unreadable_parts),
                     );
                 }
                 self.add_parsed(*msg)?;
