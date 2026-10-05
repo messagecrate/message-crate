@@ -581,7 +581,7 @@ mod tests {
     #[test]
     fn resolve_media_rejects_file_only_under_cwd_like_path() {
         // Media roots passed to convert must be explicit (input / JSON parent /
-        // work dir). A path that only exists under a separate "CWD-like" tree
+        // work directory). A path that only exists under a separate "CWD-like" tree
         // must not resolve when that tree is omitted from the allowlist.
         let allowed = tempfile::tempdir().unwrap();
         let cwd_like = tempfile::tempdir().unwrap();

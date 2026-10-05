@@ -328,14 +328,18 @@ impl<'a> AccountPass<'a> {
         };
         let cleaned = crate::asset_store::sweep_incoming(&assets_dir, opts.dry_run);
         if cleaned > 0 {
-            println!("  {cleaned_verb} {cleaned} abandoned upload temp(s) under .incoming/");
+            let files = crate::counts::words(
+                cleaned,
+                "1 abandoned temporary upload file",
+                "{n} abandoned temporary upload files",
+            );
+            println!("  {cleaned_verb} {files} under .incoming/");
         }
         let left = crate::asset_store::sweep_shard_temps(&assets_dir, opts.dry_run)
             + crate::asset_store::sweep_shard_temps(&converted_dir, opts.dry_run);
         if left > 0 {
-            println!(
-                "  {cleaned_verb} {left} temporary file(s) a killed write left in the shard directories"
-            );
+            let files = crate::counts::words(left, "1 temporary file", "{n} temporary files");
+            println!("  {cleaned_verb} {files} a killed write left in the shard directories");
         }
         Self::new(cfg, opts, work_dir, account_id, stop, Log::Print)
     }

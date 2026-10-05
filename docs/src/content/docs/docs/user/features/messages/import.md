@@ -210,7 +210,7 @@ The Staging row shows:
 Each run gets a new directory in the Staging Directory, named `staging-` followed by the source and the date and time.
 The Staging Directory is `~/message-crate` unless **Settings → System** names another **Staging directory**.
 
-While Staging reads the backup, it keeps two kinds of working files in the Scratch Directory, `scratch` in the operating system's app-data directory, never in the Staging Directory: the databases it decrypts from an encrypted iPhone backup, and the attachments it reads out of an SMS Backup & Restore, GO SMS Pro or SMS Backup+ backup.
+While Staging reads the backup, it keeps its working files in the Scratch Directory, `scratch` in the operating system's app-data directory, never in the Staging Directory: the databases it decrypts from an encrypted iPhone backup, WhatsApp's files read out of a phone backup (decrypted first when the iPhone backup is encrypted), and the attachments it reads out of an SMS Backup & Restore, GO SMS Pro or SMS Backup+ backup.
 They are deleted when Staging ends, whether it finished or failed.
 If the app was closed or stopped during Staging, they are deleted the next time the app starts.
 Before it writes, Staging checks that the disk holding the Scratch Directory and the disk holding the Staging Directory each have room, and stops with the space it needs when one does not.

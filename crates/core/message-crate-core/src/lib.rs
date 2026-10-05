@@ -32,7 +32,7 @@ pub use counter::{
     ATTACHMENTS_MISSING, ATTACHMENTS_SAVED, CONVERSATION_FILES_PREPARING, CONVERSATIONS_OBFUSCATED,
     CONVERSATIONS_RESUMED, Counter, DUPLICATES_DROPPED, NAME_ONLY_CHAT, NOT_SMS_OR_MMS_LEFT_OUT,
     NOTIFICATIONS, SKIPPED_INVALID_DATE, SKIPPED_UNKNOWN_ADDRESS, SKIPPED_UNKNOWN_TYPE,
-    SKIPPED_UNREADABLE_PART, count_of_files, error_line, note_line,
+    SKIPPED_UNREADABLE_PART, count_of, count_of_files, error_line, note_line,
 };
 pub use exporters::{
     ApplePlatform, AttachmentMedia, CONVERT_COMPRESS_FFMPEG_REQUIRED, Exporter, Form,
@@ -49,6 +49,7 @@ pub use process::{
 pub use progress::{ProgressEvent, ProgressSink, emit_progress};
 pub use run::{finish_run, run_pipeline};
 pub use scratch::{
-    ATTACHMENT_SPOOL_DIRECTORY, IMESSAGE_READER_DIRECTORY, ScratchDir, sweep_scratch,
+    ATTACHMENT_SPOOL_DIRECTORY, IMESSAGE_READER_DIRECTORY, ScratchDir, WHATSAPP_DIRECTORY,
+    sweep_scratch,
 };
 pub use transforms::ExportTransforms;

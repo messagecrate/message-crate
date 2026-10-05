@@ -65,9 +65,21 @@ fn words(n: u64, one: &str, many: &str) -> String {
     }
 }
 
+/// `n` of a thing, singular for one: `count_of(1, "message", "messages")` is
+/// `1 message` and `count_of(3, "message", "messages")` is `3 messages`. It
+/// words a count inside a longer log line, where a [`Counter`]'s whole line
+/// does not fit.
+pub fn count_of(n: u64, one: &str, many: &str) -> String {
+    if n == 1 {
+        format!("1 {one}")
+    } else {
+        format!("{n} {many}")
+    }
+}
+
 /// `n` files, singular for one, such as `1 file` or `3 files`.
 pub fn count_of_files(n: u64) -> String {
-    words(n, "1 file", "{n} files")
+    count_of(n, "file", "files")
 }
 
 /// Repeated copies of a message dropped, one copy of each kept.
@@ -201,6 +213,17 @@ mod tests {
             DUPLICATES_DROPPED.line(0),
             "Dropped 0 repeated copies of messages"
         );
+    }
+
+    /// A count inside a line is singular for one and plural for every other
+    /// count, 0 included.
+    #[test]
+    fn a_count_is_singular_for_one_and_plural_for_every_other_count() {
+        assert_eq!(count_of(1, "message", "messages"), "1 message");
+        assert_eq!(count_of(3, "message", "messages"), "3 messages");
+        assert_eq!(count_of(0, "message", "messages"), "0 messages");
+        assert_eq!(count_of_files(1), "1 file");
+        assert_eq!(count_of_files(2), "2 files");
     }
 
     /// Two counters with one key are one counter, whatever their words, so

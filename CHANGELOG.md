@@ -391,6 +391,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **A WhatsApp import keeps its working files out of the
+  Staging Directory.** WhatsApp's files read out of an iPhone backup,
+  decrypted when the backup is encrypted, sat in a directory inside the
+  Staging Directory, and stayed there in the clear when the app was stopped
+  during Staging. They now go in the Scratch Directory, are deleted when the
+  run ends, and are deleted the next time the app starts if it was stopped.
+  Before it reads them out, the import checks that the disk holding the
+  Scratch Directory has room for them, and stops with the space it needs
+  when it does not.
 - 2026-10-05 **An Import Run whose session has ended logs you out and
   waits for you.** When your session ended while an import waited at a
   review, and you then approved it, cancelled it, or resumed an Upload, the
@@ -846,6 +855,21 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-05 **An EML or mbox export of a message whose id or address holds
+  a line break converts whole.** A line break in a message's id or in the
+  phone number or address it was sent from or to ended the mail's headers
+  early, so converting the file lost the message's details or refused the
+  whole file. The same went for an attachment whose file type held one. Such
+  a value is now written so the mail stays whole, and converting the file
+  gives it back exactly as it was exported.
+- 2026-10-05 **The rest of the log says each count in plain words too.**
+  The lines around a run's summary still wrote counts as "1 file(s)" or
+  "3 conversion(s)": converting attachments, an Export from a server, and
+  the server's own commands. They now say "1 file" and "3 conversions",
+  and the words around a count agree with it, such as "1 conversion failed.
+  That original stays without a Thumbnail". An SMS Backup+ run with
+  verbose logging no longer ends with two lines of raw counts, because its
+  summary already gives each of those counts in words.
 - 2026-10-05 **An EML or mbox export keeps every space of a message's
   details.** A run of spaces in a message's details, such as a name, a
   transcription, an earlier version or a detail from the source app, could

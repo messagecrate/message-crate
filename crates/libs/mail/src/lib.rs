@@ -101,7 +101,7 @@ pub struct MailMessage {
     pub group_title: Option<String>,
     /// Roster → `X-ME-Participants` JSON.
     pub participants: Vec<Participant>,
-    /// Owner E.164 (or handle) used for From/To mapping.
+    /// Owner E.164 (or other identity) used for From/To mapping.
     pub owner_identity: String,
     /// Outgoing From display name; defaults to `"Me"` when absent.
     pub owner_display_name: Option<String>,
@@ -161,7 +161,7 @@ struct AttachmentMetaCell<'a> {
 
 /// Conversation directory stem (shared per-conversation filename stem).
 fn conversation_stem(msg: &MailMessage) -> String {
-    let participant_handles: Vec<String> = msg
+    let participant_identities: Vec<String> = msg
         .participants
         .iter()
         .map(|p| p.identity.clone())
@@ -170,7 +170,7 @@ fn conversation_stem(msg: &MailMessage) -> String {
         &msg.conversation_type,
         &msg.chat_identifier,
         msg.group_title.as_deref(),
-        &participant_handles,
+        &participant_identities,
         msg.filename_suffix.as_deref(),
     )
 }
@@ -325,30 +325,20 @@ fn write_mboxrd_record(writer: &mut impl Write, msg: &MailMessage) -> Result<()>
 
 /// The address for the mbox `From_` line: the sender for incoming, the owner otherwise.
 fn envelope_sender(msg: &MailMessage) -> String {
-    let handle = match msg.message.direction {
+    let identity = match msg.message.direction {
         IrDirection::Incoming => msg
             .message
             .sender_identity
             .as_deref()
             .and_then(message_ir::trimmed)
-            .or_else(|| peer_handle(msg).and_then(message_ir::trimmed))
+            .or_else(|| peer_identity(msg).and_then(message_ir::trimmed))
             .unwrap_or("unknown"),
         IrDirection::Outgoing => {
             let owner = msg.owner_identity.trim();
             if owner.is_empty() { "me" } else { owner }
         }
     };
-    // Envelope address must not contain spaces.
-    if handle.contains('@') {
-        format!("{}@{IDENTITY_ADDRESS_DOMAIN}", handle.replace('@', "="))
-    } else if handle
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '_' | '.'))
-    {
-        format!("{handle}@{SMS_ADDRESS_DOMAIN}")
-    } else {
-        "MAILER-DAEMON@message-crate.local".into()
-    }
+    synthetic_email(identity)
 }
 
 /// The classic `Wed Jun 30 21:49:08 1993` form of a timestamp, in UTC.
@@ -395,35 +385,66 @@ fn guid_prefix8(guid: &str) -> String {
     }
 }
 
-/// Synthetic RFC5322 address for a phone or Apple handle.
-///
-/// Phones → `+E164@sms.local`. Email / other handles containing `@` →
-/// `local=domain@identity.local` (`MAIL_ARCHIVE` encoding).
-fn synthetic_address(handle: &str, display_name: Option<&str>) -> Address<'static> {
-    let handle = handle.trim();
-    let email = if handle.is_empty() {
-        format!("unknown@{SMS_ADDRESS_DOMAIN}")
-    } else if handle.contains('@') {
-        let encoded = handle.replace('@', "=");
-        format!("{encoded}@{IDENTITY_ADDRESS_DOMAIN}")
-    } else {
-        format!("{handle}@{SMS_ADDRESS_DOMAIN}")
-    };
+/// Synthetic RFC5322 address for an identity, with its display name.
+fn synthetic_address(identity: &str, display_name: Option<&str>) -> Address<'static> {
     let name = display_name.and_then(message_ir::nonempty);
-    Address::new_address(name, email)
+    Address::new_address(name, synthetic_email(identity))
 }
 
-/// The owner's address: their handle (or `me`) with their display name (or
-/// `Me`).
+/// The address an identity is written as in `From`, `To` and the mbox
+/// `From_` line: `+15555550101@sms.local`, or
+/// `sam=example.com@identity.local` for an identity holding an `@`. The
+/// local part is [`address_local_part`]'s. Written as it was, a line break
+/// in an identity ended the header, and the mail no longer read. An absent
+/// identity is written as `unknown`, as the callers name one. The identity
+/// itself is kept in its `X-ME-*` header.
+fn synthetic_email(identity: &str) -> String {
+    let identity = identity.trim();
+    if identity.is_empty() {
+        return format!("unknown@{SMS_ADDRESS_DOMAIN}");
+    }
+    let domain = if identity.contains('@') {
+        IDENTITY_ADDRESS_DOMAIN
+    } else {
+        SMS_ADDRESS_DOMAIN
+    };
+    format!("{}@{domain}", address_local_part(identity))
+}
+
+/// The local part of the address `text`, an identity or a chat identifier,
+/// is written as.
+///
+/// A text holding one `@` and no `=` has the `@` written as `=`, so
+/// `sam@example.com` reads `sam=example.com`. An address cannot hold a
+/// second `@`. Every other text keeps its `@`, which [`dot_atom`] then
+/// encodes. The result goes through [`dot_atom`], so text an address can
+/// hold is written as it is, and no space or line break is left in it.
+///
+/// Two texts never share a local part, because a mail client groups mails
+/// by address. A local part written as it is holds no `%`, and each `=` in
+/// it is the one `@` of a text with no `=`, or the text's own `=` when it
+/// holds no `@`. An encoded one decodes to its text, with any `=` in place
+/// of the one `@` only when the text held no `=`.
+fn address_local_part(text: &str) -> String {
+    let one_at_no_equals = text.matches('@').count() == 1 && !text.contains('=');
+    if one_at_no_equals {
+        dot_atom(&text.replace('@', "="))
+    } else {
+        dot_atom(text)
+    }
+}
+
+/// The owner's address: their identity (or `me`) with their display name
+/// (or `Me`).
 fn owner_address(msg: &MailMessage) -> Address<'static> {
-    let handle = msg.owner_identity.trim();
-    let handle = if handle.is_empty() { "me" } else { handle };
+    let identity = msg.owner_identity.trim();
+    let identity = if identity.is_empty() { "me" } else { identity };
     let display = msg
         .owner_display_name
         .as_deref()
         .and_then(message_ir::trimmed)
         .unwrap_or(OWNER_DISPLAY_NAME);
-    synthetic_address(handle, Some(display))
+    synthetic_address(identity, Some(display))
 }
 
 /// One browseable address for a group chat (roster stays in `X-ME-Participants`).
@@ -436,29 +457,16 @@ fn conversation_address(msg: &MailMessage) -> Address<'static> {
             let id = msg.chat_identifier.trim();
             if id.is_empty() { "group" } else { id }
         });
-    let local = sanitize_addr_local(msg.chat_identifier.trim()).unwrap_or_else(|| "group".into());
+    let id = msg.chat_identifier.trim();
+    let local = if id.is_empty() {
+        "group".to_string()
+    } else {
+        address_local_part(id)
+    };
     Address::new_address(
         Some(display.to_string()),
         format!("{local}@{CHAT_ADDRESS_DOMAIN}"),
     )
-}
-
-/// An address local part with the characters an email local part cannot hold replaced.
-fn sanitize_addr_local(raw: &str) -> Option<String> {
-    if raw.is_empty() {
-        return None;
-    }
-    let mut out = String::with_capacity(raw.len());
-    for ch in raw.chars() {
-        if ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '_' | '.' | '=') {
-            out.push(ch);
-        } else if ch == '@' {
-            out.push('=');
-        } else {
-            out.push('_');
-        }
-    }
-    if out.is_empty() { None } else { Some(out) }
 }
 
 /// The display name the participants list gives for `peer`.
@@ -501,8 +509,72 @@ fn message_id_domain(msg: &MailMessage) -> &'static str {
     }
 }
 
+/// The `Message-ID` of the message whose guid is `guid`, without its angle
+/// brackets: `{guid}@{domain}`, the guid written by [`dot_atom`]. A reply's
+/// `In-Reply-To` and `References` name its parent by the same id.
+///
+/// Written as it was, a line break in a guid ended the mail's headers. Two
+/// guids never share an id, because a mail client threads replies by it.
+/// The guid itself is kept in `X-ME-Guid`.
+fn message_id(guid: &str, domain: &str) -> String {
+    format!("{}@{domain}", dot_atom(guid))
+}
+
+/// `text` as the left side of an address or a `Message-ID`.
+///
+/// Text that is a `dot-atom-text` (RFC 5322 section 3.2.3) with no `%` is
+/// written as it is, as every guid a source app gives and every phone number
+/// and email address is. Every other text has each byte that is not
+/// `atext`, and each `%` and `.`, written as `%XX`, so no space or line
+/// break is left in it. Two texts never give the same result: text written
+/// as it is holds no `%`, and encoded text does (the empty text alone is
+/// written as nothing).
+fn dot_atom(text: &str) -> String {
+    let is_atext = |b: u8| b.is_ascii_alphanumeric() || b"!#$&'*+-/=?^_`{|}~".contains(&b);
+    let verbatim = !text.is_empty()
+        && text
+            .split('.')
+            .all(|atom| !atom.is_empty() && atom.bytes().all(is_atext));
+    if verbatim {
+        return text.to_string();
+    }
+    let mut encoded = String::with_capacity(text.len() * 3);
+    for b in text.bytes() {
+        if is_atext(b) {
+            encoded.push(char::from(b));
+        } else {
+            encoded.push_str(&format!("%{b:02X}"));
+        }
+    }
+    encoded
+}
+
+/// The `Content-Type` of an attachment's MIME part: its type when that is a
+/// `type/subtype` pair of RFC 2045 tokens (section 5.1), else
+/// `application/octet-stream`.
+///
+/// Written as it was, a line break in the type ended the part's headers,
+/// and the part's bytes were lost. The type itself is kept in
+/// `X-ME-Attachment-Meta`, which the reader takes it from.
+fn part_content_type(mime: Option<&str>) -> &str {
+    let is_token = |s: &str| {
+        !s.is_empty()
+            && s.bytes()
+                .all(|b| b.is_ascii_graphic() && !b"()<>@,;:\\\"/[]?=".contains(&b))
+    };
+    match mime {
+        Some(m)
+            if m.split_once('/')
+                .is_some_and(|(t, s)| is_token(t) && is_token(s)) =>
+        {
+            m
+        }
+        _ => "application/octet-stream",
+    }
+}
+
 /// The other party's handle in a 1:1 conversation; groups have none.
-fn peer_handle(msg: &MailMessage) -> Option<&str> {
+fn peer_identity(msg: &MailMessage) -> Option<&str> {
     if msg.conversation_type.eq_ignore_ascii_case("group") {
         return None;
     }
@@ -642,7 +714,7 @@ fn opt_header<'m>(
 fn build_eml(msg: &MailMessage) -> Result<Vec<u8>> {
     let (from, to) = envelope_addresses(msg);
     let date_secs = msg.message.timestamp_unix_ms.div_euclid(1000);
-    let message_id = format!("{}@{}", msg.message.guid, message_id_domain(msg));
+    let message_id = message_id(&msg.message.guid, message_id_domain(msg));
     let mut builder = MessageBuilder::new()
         .from(from)
         .to(to)
@@ -659,12 +731,7 @@ fn build_eml(msg: &MailMessage) -> Result<Vec<u8>> {
         let mut parts = Vec::with_capacity(msg.attachments.len() + 1);
         parts.push(text);
         for (i, att) in msg.attachments.iter().enumerate() {
-            let mime = att
-                .meta
-                .mime_type
-                .as_deref()
-                .filter(|m| !m.is_empty())
-                .unwrap_or("application/octet-stream");
+            let mime = part_content_type(att.meta.mime_type.as_deref());
             let filename = att
                 .meta
                 .original_name
@@ -742,7 +809,7 @@ fn envelope_addresses(msg: &MailMessage) -> (Address<'static>, Address<'static>)
         };
         return (from, conversation_address(msg));
     }
-    let peer = peer_handle(msg)
+    let peer = peer_identity(msg)
         .and_then(message_ir::trimmed)
         .unwrap_or_else(|| {
             let id = msg.chat_identifier.trim();
@@ -860,7 +927,7 @@ fn imessage_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> Messa
     };
     let mut builder = opt_header(builder, headers::IS_REPLY, im.is_reply.then_some("true"));
     if let Some(guid) = im.in_reply_to_guid.as_deref().filter(|s| !s.is_empty()) {
-        let mid = format!("{guid}@{}", message_id_domain(msg));
+        let mid = message_id(guid, message_id_domain(msg));
         builder = builder.in_reply_to(mid.clone()).references(mid);
         builder = x_me_header(builder, headers::THREAD_ORIGINATOR_GUID, guid);
     }
@@ -943,7 +1010,7 @@ fn conversation_subject_label(msg: &MailMessage) -> String {
         return "group".to_string();
     }
 
-    if let Some(peer) = peer_handle(msg).and_then(message_ir::trimmed) {
+    if let Some(peer) = peer_identity(msg).and_then(message_ir::trimmed) {
         if let Some(n) = peer_display_name(msg, peer) {
             return n.to_string();
         }
