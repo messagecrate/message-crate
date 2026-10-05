@@ -412,10 +412,14 @@ pub async fn set_membership(
 
 /// Drop non-positive ids, sort, and dedupe a caller's member id list.
 fn clean_ids(ids: &[i64]) -> Vec<i64> {
-    let mut out: Vec<i64> = ids.iter().copied().filter(|id| *id > 0).collect();
-    out.sort_unstable();
-    out.dedup();
-    out
+    sorted_ids(ids.iter().copied().filter(|id| *id > 0).collect())
+}
+
+/// `ids` sorted, each once.
+fn sorted_ids(mut ids: Vec<i64>) -> Vec<i64> {
+    ids.sort_unstable();
+    ids.dedup();
+    ids
 }
 
 /// Sets for this account with their ids, A–Z, excluding reserved leftovers.
@@ -617,9 +621,7 @@ pub async fn patch_members(
     // An id to add of 0 or below is kept, unlike one to remove: it names no
     // row, so the check below refuses it as it refuses any other id the
     // caller does not hold, rather than the call dropping it unseen.
-    let mut add = add.to_vec();
-    add.sort_unstable();
-    add.dedup();
+    let mut add = sorted_ids(add.to_vec());
     add.retain(|id| !remove.contains(id));
     if add.is_empty() && remove.is_empty() {
         return Err(MembershipError::BadRequest(format!(

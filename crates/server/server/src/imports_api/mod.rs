@@ -1247,14 +1247,6 @@ pub(crate) async fn create_import(
         // Blank answers as missing does: one validation failure.
         return Err(ApiError::validation("source is required"));
     }
-    // `validate_source_id` checks the id trimmed, and the id is stored as
-    // given, so a space around it is refused here like any other character
-    // a source id cannot hold.
-    if body.source.trim() != body.source {
-        return Err(ApiError::validation(
-            "source id must not start or end with a space",
-        ));
-    }
     validate_source_id(&body.source).map_err(|e| ApiError::validation(e.to_string()))?;
     let account = resolve_import_account(&auth);
     let stage = body.stage.unwrap_or(crate::db::imports::ImportStage::Parse);

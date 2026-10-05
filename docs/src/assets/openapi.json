@@ -14788,7 +14788,7 @@
             "properties": {
               "kind": {
                 "type": "string",
-                "description": "Names this form, `everything`: every non-trashed message the account holds. The other forms are `query` and `selection`.",
+                "description": "Names this form, `everything`. Every non-trashed message the account holds. The other forms are `query` and `selection`.",
                 "enum": [
                   "everything"
                 ]
@@ -14806,7 +14806,7 @@
             "properties": {
               "kind": {
                 "type": "string",
-                "description": "Names this form, `query`: what a query in the search language finds on one of two lists. The other forms are `everything` and `selection`.",
+                "description": "Names this form, `query`. What a query in the search language finds on one of two lists. The other forms are `everything` and `selection`.",
                 "enum": [
                   "query"
                 ]
@@ -14838,7 +14838,7 @@
               },
               "kind": {
                 "type": "string",
-                "description": "Names this form, `selection`: conversations and messages picked by hand. The other forms are `everything` and `query`.",
+                "description": "Names this form, `selection`. Conversations and messages picked by hand. The other forms are `everything` and `query`.",
                 "enum": [
                   "selection"
                 ]
@@ -19108,7 +19108,7 @@
               "type": "integer",
               "format": "int64"
             },
-            "description": "Ids to put in the set: contact ids for a Contact Group, conversation\nids for a Message Tag. An id the account does not hold, 0 and below\nincluded, is refused with `422 Unprocessable Entity`, and then nothing\nchanges. An id\nalready in the set is left as it is. Empty when left out, and `add`\nand `remove` both empty is refused with `422 Unprocessable Entity`."
+            "description": "Ids to put in the set: contact ids for a Contact Group, conversation\nids for a Message Tag. An id the account does not hold, 0 and below\nincluded, is refused with `422 Unprocessable Entity`, and then nothing\nchanges. An id already in the set is left as it is. Empty when left\nout, and `add` and `remove` both empty is refused with `422\nUnprocessable Entity`."
           },
           "remove": {
             "type": "array",

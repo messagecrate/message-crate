@@ -1521,12 +1521,12 @@ released versions carry their date on the heading.
   Contact Group's or Message Tag's name, showed no description in the HTTP
   API reference. Each now says what it holds and when it is empty, and a
   check fails on a new field that has none.
-- 2026-10-05 **An Import Run's source id and a Contact Group or Message Tag
-  change refuse what they used to take silently.** A source id with a space
-  before or after it made an Import Run whose source held the space. A member
-  id of 0 or below put into a Contact Group or a Message Tag was dropped
-  without a word. Both are now refused with `422 Unprocessable Entity`, as any
-  other id they cannot take is.
+- 2026-10-05 **The server refuses two requests it used to take silently.**
+  An import whose source name had a space before or after it started, and
+  its messages carried the space in their source. A change to a Contact
+  Group or a Message Tag that named a contact or conversation by an
+  impossible number left that one out without a word. Both are now refused
+  as invalid, as any other source name or member the server cannot take is.
 - 2026-10-05 **The HTTP API reference describes every optional field.** An
   optional field that holds a group of values or one of a set of choices,
   such as the identity a contact change links or the service it is on, had

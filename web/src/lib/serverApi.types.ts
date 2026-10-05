@@ -2727,13 +2727,13 @@ export interface components {
          */
         ExportScope: {
             /**
-             * @description Names this form, `everything`: every non-trashed message the account holds. The other forms are `query` and `selection`.
+             * @description Names this form, `everything`. Every non-trashed message the account holds. The other forms are `query` and `selection`.
              * @enum {string}
              */
             kind: "everything";
         } | {
             /**
-             * @description Names this form, `query`: what a query in the search language finds on one of two lists. The other forms are `everything` and `selection`.
+             * @description Names this form, `query`. What a query in the search language finds on one of two lists. The other forms are `everything` and `selection`.
              * @enum {string}
              */
             kind: "query";
@@ -2752,7 +2752,7 @@ export interface components {
             /** @description Conversation ids whose every message is exported. */
             conversation_ids?: number[];
             /**
-             * @description Names this form, `selection`: conversations and messages picked by hand. The other forms are `everything` and `query`.
+             * @description Names this form, `selection`. Conversations and messages picked by hand. The other forms are `everything` and `query`.
              * @enum {string}
              */
             kind: "selection";
@@ -5106,9 +5106,9 @@ export interface components {
              * @description Ids to put in the set: contact ids for a Contact Group, conversation
              *     ids for a Message Tag. An id the account does not hold, 0 and below
              *     included, is refused with `422 Unprocessable Entity`, and then nothing
-             *     changes. An id
-             *     already in the set is left as it is. Empty when left out, and `add`
-             *     and `remove` both empty is refused with `422 Unprocessable Entity`.
+             *     changes. An id already in the set is left as it is. Empty when left
+             *     out, and `add` and `remove` both empty is refused with `422
+             *     Unprocessable Entity`.
              */
             add?: number[];
             /**

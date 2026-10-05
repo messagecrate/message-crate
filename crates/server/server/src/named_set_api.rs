@@ -54,9 +54,9 @@ pub(crate) struct UpdateMembersRequest {
     /// Ids to put in the set: contact ids for a Contact Group, conversation
     /// ids for a Message Tag. An id the account does not hold, 0 and below
     /// included, is refused with `422 Unprocessable Entity`, and then nothing
-    /// changes. An id
-    /// already in the set is left as it is. Empty when left out, and `add`
-    /// and `remove` both empty is refused with `422 Unprocessable Entity`.
+    /// changes. An id already in the set is left as it is. Empty when left
+    /// out, and `add` and `remove` both empty is refused with `422
+    /// Unprocessable Entity`.
     #[serde(default)]
     pub(crate) add: Vec<i64>,
     /// Ids to take out of the set. An id that is not in it is ignored. An id

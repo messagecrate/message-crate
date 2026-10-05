@@ -75,8 +75,8 @@ fn each_root_schema(spec: &mut OpenApi, f: &mut impl FnMut(&mut RefOr<Schema>)) 
 /// When `schema` is a `oneOf` of two or more objects that each require one
 /// property, the tag, holding a single string that differs in every form,
 /// give each form's tag that has no description one that names the form,
-/// says what it means from the first sentence of the form's own description,
-/// and names the others.
+/// repeats the first sentence of the form's own description, and names the
+/// others.
 fn describe_tag(schema: &mut Schema) {
     let Schema::OneOf(one_of) = schema else {
         return;
@@ -117,12 +117,12 @@ fn describe_tag(schema: &mut Schema) {
             .filter(|other| *other != value)
             .map(String::as_str)
             .collect();
-        let meaning = form.description.as_deref().map(form_meaning);
+        let meaning = form.description.as_deref().and_then(form_meaning);
         if let Some(RefOr::T(Schema::Object(field))) = form.properties.get_mut(&tag)
             && field.description.is_none()
         {
             let names = match meaning {
-                Some(meaning) => format!("Names this form, `{value}`: {meaning}"),
+                Some(meaning) => format!("Names this form, `{value}`. {meaning}"),
                 None => format!("Names this form, `{value}`."),
             };
             field.description = Some(format!(
@@ -133,19 +133,20 @@ fn describe_tag(schema: &mut Schema) {
     }
 }
 
-/// The first sentence of a form's own description, its doc comment, to
-/// follow a colon: on one line, with its first letter lower case unless the
-/// word is an acronym such as `SMS`.
-fn form_meaning(description: &str) -> String {
+/// The first sentence of a form's own description, its doc comment, on one
+/// line and in its own letter case, ending in a full stop. `None` when the
+/// description is blank.
+fn form_meaning(description: &str) -> Option<String> {
     let flat = description.split_whitespace().collect::<Vec<_>>().join(" ");
     let (first, _) = split_first_sentence(&flat);
-    let mut chars = first.chars();
-    match (chars.next(), chars.next()) {
-        (Some(initial), Some(next)) if !next.is_uppercase() => {
-            format!("{}{}", initial.to_lowercase(), &first[initial.len_utf8()..])
-        }
-        _ => first.to_string(),
+    if first.is_empty() {
+        return None;
     }
+    Some(if first.ends_with(['.', '?', '!']) {
+        first.to_string()
+    } else {
+        format!("{first}.")
+    })
 }
 
 /// The one string `form` requires its property `name` to hold, when `name` is
@@ -337,31 +338,35 @@ mod tests {
         let forms = tags_described(json!([
             described_form("everything", "Every message the account holds."),
             described_form("query", "What a query finds.\nOn one of two lists. More."),
-            described_form("sms", "SMS messages only.")
+            described_form("sms", "SMS messages only")
         ]));
         assert_eq!(
             forms[0]["properties"]["kind"]["description"],
-            "Names this form, `everything`: every message the account holds. \
+            "Names this form, `everything`. Every message the account holds. \
              The other forms are `query` and `sms`."
         );
         assert_eq!(
             forms[1]["properties"]["kind"]["description"],
-            "Names this form, `query`: what a query finds. \
+            "Names this form, `query`. What a query finds. \
              The other forms are `everything` and `sms`."
         );
         assert_eq!(
             forms[2]["properties"]["kind"]["description"],
-            "Names this form, `sms`: SMS messages only. \
+            "Names this form, `sms`. SMS messages only. \
              The other forms are `everything` and `query`."
         );
     }
 
     #[test]
     fn a_form_with_no_description_is_named_alone() {
-        let forms = tags_described(json!([form("one"), form("two")]));
+        let forms = tags_described(json!([form("one"), described_form("two", "  ")]));
         assert_eq!(
             forms[0]["properties"]["kind"]["description"],
             "Names this form, `one`. The other forms are `two`."
+        );
+        assert_eq!(
+            forms[1]["properties"]["kind"]["description"],
+            "Names this form, `two`. The other forms are `one`."
         );
     }
 
