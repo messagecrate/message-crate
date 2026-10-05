@@ -322,10 +322,10 @@ impl ContactEditor<'_> {
 
     /// Whether the handle may come to this contact. A handle belongs to one
     /// contact per account (the primary key on `contact_handles`). One on a
-    /// contact with no name is an Unknown an import made, or one a removed
-    /// identity went to, so it comes freely, the way an address book load
-    /// takes it (`docs/architecture/contacts-identities-and-messages.md`). One
-    /// on a named contact is refused: it must be removed there first.
+    /// contact with no name is an Unknown, whatever made it, so it comes
+    /// freely, the way an address book load takes it
+    /// (`docs/architecture/contacts-identities-and-messages.md`). One on a
+    /// named contact is refused: it must be removed there first.
     async fn claim(&mut self, handle_id: i64) -> Result<Claim, ContactEditError> {
         match contact_id_for_handle(&mut *self.conn, self.account_id, handle_id).await? {
             Some(owner) if owner == self.contact_id => Ok(Claim::Here),
