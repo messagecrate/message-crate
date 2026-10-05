@@ -248,12 +248,6 @@ released versions carry their date on the heading.
 
 ### Design
 
-- 2026-10-05 **The size in an Export's "Fetched" line counts only what the
-  Export fetched.** A program that ran an Export into a directory already
-  holding some of its Assets could read "Fetched 0 Assets (5.0 MB) and kept
-  3 already on disk". It now reads "Fetched 0 Assets (0 B) and kept 3
-  already on disk". The app gives every Export a new directory, so nothing
-  changes on screen.
 - 2026-10-04 **A program that reads Import Runs from the server finds each
   run's directory under a new name.** The old name read as the Staging
   Directory, which holds every run's directory. Nothing changes on screen.
@@ -405,6 +399,10 @@ released versions carry their date on the heading.
   one completes. An Upload whose session the server refused always pauses,
   and its log now says "so the Upload paused" where it said "so the Upload
   stopped".
+- 2026-10-05 **A journal line a crash cut inside a character no longer
+  stops every later Upload.** Such a line stopped every Upload of that
+  directory until its journal was deleted by hand. It is now skipped and
+  named in the Upload's log like any other line the Upload cannot read.
 - 2026-10-05 **A journal line the Upload cannot read is named in the
   Upload's log.** It went to standard error as "warning: journal … line … is
   corrupt (…). The affected entries will be re-submitted (server dedup is
@@ -966,6 +964,13 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-05 **A line of an Export's record of fetched Assets that cannot
+  be read is named in the Export's log.** The Export skipped such a line
+  without a word, and a line a crash cut inside a character stopped every
+  later Export into that directory. Both are now skipped and named: "Line 4
+  of …, the record of fetched Assets, could not be read (…), so the Export
+  skips it. An Asset that line recorded is not fetched again while its file
+  is in the directory."
 - 2026-10-05 **The log of an Export from a server says it fetches Assets,
   and writes its warnings as sentences.** It read "Downloading 2 assets with
   8 workers (0 already downloaded)…" and "Downloaded 2 assets (22 B) and
@@ -975,7 +980,10 @@ released versions carry their date on the heading.
   completion reads "Export Run 7 completion failed (…): …. The Export wrote
   every file all the same", and an attachment path that would leave the
   Export's directory reads "Attachment path … would leave the Export's
-  directory, so the file is written at … instead".
+  directory, so the file is written at … instead". An Export run again into
+  a directory where an earlier one stopped early counts the files already
+  there as kept, and the size counts only what it fetched. Nothing changes
+  on screen for that.
 - 2026-10-05 **Two attachments whose names differ only in their extension
   both arrive whole in an Export from a server.** The Export wrote each
   attachment it fetched to a temporary file named after the attachment

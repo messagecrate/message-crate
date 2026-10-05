@@ -16,7 +16,9 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use httpmock::prelude::*;
-use message_crate_pull::{ExportQueryList, ProgressEvent, PullConfig, PullReport, journal, run};
+use message_crate_pull::{
+    ExportQueryList, ProgressEvent, PullConfig, PullJournalState, PullReport, journal, run,
+};
 use message_ir::{Deletion, EarlierVersion, Reaction};
 use message_ir_format::{EXPORT_SENTINEL, read_conversation_jsonl};
 use serde_json::{Value, json};
@@ -259,6 +261,22 @@ fn config(out_dir: &Path, base_url: String) -> PullConfig {
         cancel: None,
         asset_fetch_workers: 1,
     }
+}
+
+/// The journal a run against `server` wrote in `out_dir` for `alice`. The
+/// run writes every line itself, so the test fails on any line
+/// `journal::load` could not read.
+fn load_journal(out_dir: &Path, server: &MockServer) -> PullJournalState {
+    let mut unreadable = Vec::new();
+    let state = journal::load(
+        &journal::journal_path(out_dir),
+        &server.base_url(),
+        "alice",
+        &mut |sentence| unreadable.push(sentence),
+    )
+    .unwrap();
+    assert!(unreadable.is_empty(), "{unreadable:#?}");
+    state
 }
 
 /// The report `run` returns for the three-message fixture.
@@ -506,7 +524,7 @@ fn the_journal_lists_every_asset_and_marks_the_run_finished() {
 
     run(&config(&out, server.base_url()), None).unwrap();
 
-    let state = journal::load(&journal::journal_path(&out), &server.base_url(), "alice").unwrap();
+    let state = load_journal(&out, &server);
     assert_eq!(
         state.assets,
         HashSet::from([MENU_SHA.to_string(), PHOTO_SHA.to_string()])
@@ -556,6 +574,56 @@ fn a_second_run_over_the_same_directory_fetches_nothing_it_already_has() {
     );
 }
 
+/// A line of the pull-state file the Export cannot read is named in the
+/// Export's log, by its line in the file, and costs no fetch: the Assets it
+/// might have recorded are on disk and are kept (#1910).
+#[test]
+fn an_unreadable_journal_line_is_a_sentence_in_the_exports_log() {
+    let server = MockServer::start();
+    let _auth = mock_auth(&server);
+    let _run = mock_run(&server);
+    let _pages = mock_pages(&server, "sms-backup-restore");
+    let menu = mock_asset(&server, MENU_SHA, MENU_BYTES);
+    let photo = mock_asset(&server, PHOTO_SHA, PHOTO_BYTES);
+    let dir = tempdir().unwrap();
+    let out = dir.path().join("pulled");
+    let cfg = config(&out, server.base_url());
+    run(&cfg, None).unwrap();
+    let path = journal::journal_path(&out);
+    let mut text = fs::read_to_string(&path).unwrap();
+    let line = text.lines().count() + 1;
+    text.push_str("{not json\n");
+    fs::write(&path, text).unwrap();
+
+    let mut lines = Vec::new();
+    let report = {
+        let mut progress = |event| {
+            if let ProgressEvent::Log(line) = event {
+                lines.push(line);
+            }
+        };
+        run(&cfg, Some(&mut progress)).unwrap()
+    };
+
+    assert_eq!(report, report_for(&out, 0, 2));
+    assert_eq!(menu.calls(), 1);
+    assert_eq!(photo.calls(), 1);
+    let prefix = format!(
+        "Line {line} of {}, the record of fetched Assets, could not be read (",
+        path.display()
+    );
+    let named: Vec<&String> = lines.iter().filter(|l| l.starts_with(&prefix)).collect();
+    assert_eq!(named.len(), 1, "{lines:#?}");
+    assert!(
+        named[0].ends_with(
+            "), so the Export skips it. An Asset that line recorded is not fetched \
+             again while its file is in the directory."
+        ),
+        "{}",
+        named[0]
+    );
+}
+
 #[test]
 fn a_file_the_journal_lists_but_the_disk_lost_is_fetched_again() {
     let server = MockServer::start();
@@ -583,10 +651,56 @@ fn a_file_the_journal_lists_but_the_disk_lost_is_fetched_again() {
 
 /// A run that stopped after writing its Assets but before recording them in
 /// the pull-state file leaves files the next run keeps without fetching. The
-/// "Fetched" line counts only the bytes this run fetched, so it reads "0 B"
-/// rather than the size of the files it kept.
+/// "Fetching" line counts each of them as already on disk, as the fetch does,
+/// so it agrees with the "Fetched" line after it, and the "Fetched" line
+/// counts only the bytes this run fetched.
 #[test]
-fn a_file_on_disk_the_journal_does_not_list_is_kept_and_adds_no_fetched_bytes() {
+fn a_file_on_disk_the_journal_does_not_list_is_kept_and_counted_as_on_disk() {
+    let server = MockServer::start();
+    let _auth = mock_auth(&server);
+    let _run = mock_run(&server);
+    let _pages = mock_pages(&server, "sms-backup-restore");
+    let menu = mock_asset(&server, MENU_SHA, MENU_BYTES);
+    let photo = mock_asset(&server, PHOTO_SHA, PHOTO_BYTES);
+    let dir = tempdir().unwrap();
+    let out = dir.path().join("pulled");
+    let cfg = config(&out, server.base_url());
+    run(&cfg, None).unwrap();
+    fs::remove_file(journal::journal_path(&out)).unwrap();
+    fs::remove_file(out.join("attachments/menu.pdf")).unwrap();
+
+    let mut lines = Vec::new();
+    let report = {
+        let mut progress = |event| {
+            if let ProgressEvent::Log(line) = event {
+                lines.push(line);
+            }
+        };
+        run(&cfg, Some(&mut progress)).unwrap()
+    };
+
+    assert_eq!(report, report_for(&out, 1, 1));
+    assert_eq!(menu.calls(), 2);
+    assert_eq!(photo.calls(), 1);
+    let asset_lines: Vec<&str> = lines
+        .iter()
+        .map(String::as_str)
+        .filter(|line| line.starts_with("Fetching ") || line.starts_with("Fetched "))
+        .collect();
+    assert_eq!(
+        asset_lines,
+        [
+            "Fetching 1 Asset with 1 worker (1 already on disk)…",
+            "Fetched 1 Asset (13 B) and kept 1 already on disk",
+        ]
+    );
+}
+
+/// With every Asset already on disk, a run logs no "Fetching" or "Fetched"
+/// line whether or not the pull-state file lists the Assets, because what is
+/// on disk, not the pull-state file, decides what is fetched.
+#[test]
+fn every_file_on_disk_logs_no_fetch_lines_whether_or_not_the_journal_lists_it() {
     let server = MockServer::start();
     let _auth = mock_auth(&server);
     let _run = mock_run(&server);
@@ -613,9 +727,13 @@ fn a_file_on_disk_the_journal_does_not_list_is_kept_and_adds_no_fetched_bytes() 
     assert_eq!(menu.calls(), 1);
     assert_eq!(photo.calls(), 1);
     assert!(
-        lines.contains(&"Fetched 0 Assets (0 B) and kept 2 already on disk".to_string()),
+        !lines
+            .iter()
+            .any(|line| line.starts_with("Fetching ") || line.starts_with("Fetched ")),
         "{lines:#?}"
     );
+    let state = load_journal(&out, &server);
+    assert!(state.assets.contains(MENU_SHA) && state.assets.contains(PHOTO_SHA));
 }
 
 #[test]
@@ -645,7 +763,7 @@ fn a_cancel_requested_before_the_run_records_nothing_on_the_server() {
     assert_eq!(complete.calls(), 0);
     assert_eq!(cancel.calls(), 0);
     assert!(!out.join(CONVERSATION_FILE).exists());
-    let state = journal::load(&journal::journal_path(&out), &server.base_url(), "alice").unwrap();
+    let state = load_journal(&out, &server);
     assert!(!state.export_complete);
 }
 
@@ -881,7 +999,7 @@ fn an_asset_the_server_does_not_have_fails_the_run_and_cancels_it_on_the_server(
     assert_eq!(complete.calls(), 0);
     assert!(!out.join("attachments/menu.pdf").exists());
     assert!(!out.join(CONVERSATION_FILE).exists());
-    let state = journal::load(&journal::journal_path(&out), &server.base_url(), "alice").unwrap();
+    let state = load_journal(&out, &server);
     assert!(!state.export_complete);
 }
 
@@ -932,7 +1050,7 @@ fn bytes_whose_sha256_is_not_the_one_asked_for_fail_the_run_and_are_not_kept() {
         Vec::<String>::new(),
         "the temporary file is removed"
     );
-    let state = journal::load(&journal::journal_path(&out), &server.base_url(), "alice").unwrap();
+    let state = load_journal(&out, &server);
     assert!(
         !state.assets.contains(PHOTO_SHA),
         "the photo is not journalled"

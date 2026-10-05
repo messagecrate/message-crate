@@ -3,7 +3,7 @@
 //! JSON Lines means one JSON object per line. Message Crate is the HTTP server
 //! that stores imported messages.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -323,7 +323,9 @@ impl<'a> Pull<'a> {
         // Load the pull journal so a later Export Run does not fetch the Assets
         // already on disk again.
         let journal_path = crate::journal::journal_path(&cfg.out_dir);
-        let journal = crate::journal::load(&journal_path, &cfg.base_url, &username)?;
+        let journal = crate::journal::load(&journal_path, &cfg.base_url, &username, &mut |line| {
+            emit(out, ProgressEvent::Log(line));
+        })?;
         Ok(Self {
             cfg,
             session: HttpSession::new()?,
@@ -504,8 +506,12 @@ impl<'a> Pull<'a> {
         Ok(fetched)
     }
 
-    /// Fetch every referenced Asset the journal does not already
-    /// have, and journal each one that is now on disk so a later run skips it.
+    /// Fetch every referenced Asset whose file is not already at its path,
+    /// and journal each one now on disk that the journal does not list.
+    ///
+    /// A file at its path is kept whether or not the journal lists it, so the
+    /// "Fetching" line counts as already on disk the same Assets the
+    /// "Fetched" line counts as kept.
     ///
     /// # Errors
     ///
@@ -516,37 +522,41 @@ impl<'a> Pull<'a> {
         out: &mut Option<&mut ProgressFn<'_>>,
     ) -> Result<AssetCounts> {
         let cfg = self.cfg;
-        let to_fetch = assets_to_fetch(assets, &self.journal.assets, &cfg.out_dir);
-        let kept_by_journal = assets.len() as u64 - to_fetch.len() as u64;
-        if to_fetch.is_empty() {
-            return Ok(AssetCounts {
-                fetched: 0,
-                kept: kept_by_journal,
-            });
-        }
-        emit(
-            out,
-            ProgressEvent::Log(format!(
-                "Fetching {} with {} ({} already on disk)…",
-                count_of(to_fetch.len() as u64, "Asset", "Assets"),
-                count_of(cfg.asset_fetch_workers as u64, "worker", "workers"),
-                kept_by_journal
-            )),
-        );
-        let stats = fetch_assets_parallel(FetchAssetsParallelArgs {
-            session: &self.session,
-            base_url: &cfg.base_url,
-            token: &cfg.token,
-            assets: &to_fetch,
-            out_dir: &cfg.out_dir,
-            workers: cfg.asset_fetch_workers,
-            cancel: cfg.cancel.as_ref(),
-        })?;
-        let counts = AssetCounts {
-            fetched: stats.fetched,
-            kept: stats.kept + kept_by_journal,
+        let to_fetch = assets_to_fetch(assets, &cfg.out_dir);
+        let kept = assets.len() as u64 - to_fetch.len() as u64;
+        let fetched = if to_fetch.is_empty() {
+            0
+        } else {
+            emit(
+                out,
+                ProgressEvent::Log(format!(
+                    "Fetching {} with {} ({} already on disk)…",
+                    count_of(to_fetch.len() as u64, "Asset", "Assets"),
+                    count_of(cfg.asset_fetch_workers as u64, "worker", "workers"),
+                    kept
+                )),
+            );
+            let stats = fetch_assets_parallel(FetchAssetsParallelArgs {
+                session: &self.session,
+                base_url: &cfg.base_url,
+                token: &cfg.token,
+                assets: &to_fetch,
+                out_dir: &cfg.out_dir,
+                workers: cfg.asset_fetch_workers,
+                cancel: cfg.cancel.as_ref(),
+            })?;
+            emit(
+                out,
+                ProgressEvent::Log(format!(
+                    "Fetched {} ({}) and kept {} already on disk",
+                    count_of(stats.fetched, "Asset", "Assets"),
+                    media::format_bytes(stats.bytes),
+                    kept
+                )),
+            );
+            stats.fetched
         };
-        for sha in to_fetch.keys() {
+        for sha in assets.keys() {
             if !self.journal.assets.contains(sha) {
                 let event = crate::journal::PullJournalEvent::AssetOk {
                     url: cfg.base_url.clone(),
@@ -565,16 +575,7 @@ impl<'a> Pull<'a> {
                 }
             }
         }
-        emit(
-            out,
-            ProgressEvent::Log(format!(
-                "Fetched {} ({}) and kept {} already on disk",
-                count_of(counts.fetched, "Asset", "Assets"),
-                media::format_bytes(stats.bytes),
-                counts.kept
-            )),
-        );
-        Ok(counts)
+        Ok(AssetCounts { fetched, kept })
     }
 
     /// Write one JSON Lines file per conversation and return how many.
@@ -784,30 +785,21 @@ struct AssetFetchJob {
 
 #[derive(Default)]
 struct AssetFetchStats {
-    /// The bytes this run fetched. A file already at its path adds nothing.
+    /// The bytes this run fetched.
     bytes: u64,
     fetched: u64,
-    kept: u64,
 }
 
-/// Assets whose SHA-256 fingerprint is not already on disk from a prior run.
-///
-/// SHA-256 is a short hex fingerprint of the file bytes. The journal lists
-/// fingerprints already fetched; those Assets are kept, not fetched again, when
-/// their files still exist.
-fn assets_to_fetch(
-    assets: &HashMap<String, String>,
-    journal_assets: &HashSet<String>,
-    out_dir: &Path,
-) -> HashMap<String, String> {
-    let mut to_fetch = HashMap::new();
-    for (sha, rel) in assets {
-        if journal_assets.contains(sha) && out_dir.join(rel).is_file() {
-            continue;
-        }
-        to_fetch.insert(sha.clone(), rel.clone());
-    }
-    to_fetch
+/// The Assets in `assets` (SHA-256 to path under `out_dir`) whose file is not
+/// at its path. A file at its path is kept whether or not the journal lists
+/// it, because an earlier run can stop after writing a file but before
+/// journaling it.
+fn assets_to_fetch(assets: &HashMap<String, String>, out_dir: &Path) -> HashMap<String, String> {
+    assets
+        .iter()
+        .filter(|(_, rel)| !out_dir.join(rel).is_file())
+        .map(|(sha, rel)| (sha.clone(), rel.clone()))
+        .collect()
 }
 
 /// What [`fetch_assets_parallel`] fetches, from where, and how: the
@@ -827,10 +819,9 @@ struct FetchAssetsParallelArgs<'a> {
 /// the bytes fetched.
 ///
 /// The same pattern as the Upload's `upload_assets`: the jobs are collected,
-/// then [`parallel_for_each`] runs them. An Asset whose file is already at its
-/// path is not fetched: it is counted as `kept`, and its size is left out
-/// of the bytes, which are only what this run fetched. Each fetch retries a
-/// transient HTTP failure, as the Upload does.
+/// then [`parallel_for_each`] runs them. `assets` holds only Assets whose file
+/// is not at its path ([`assets_to_fetch`]). Each fetch retries a transient
+/// HTTP failure, as the Upload does.
 ///
 /// # Errors
 ///
@@ -845,20 +836,14 @@ fn fetch_assets_parallel(args: FetchAssetsParallelArgs<'_>) -> Result<AssetFetch
         workers,
         cancel,
     } = args;
-    let mut jobs: Vec<AssetFetchJob> = Vec::with_capacity(assets.len());
-    let mut stats = AssetFetchStats::default();
-
-    for (sha256, rel) in assets {
-        let dest = out_dir.join(rel);
-        if dest.is_file() {
-            stats.kept += 1;
-            continue;
-        }
-        jobs.push(AssetFetchJob {
+    let jobs: Vec<AssetFetchJob> = assets
+        .iter()
+        .map(|(sha256, rel)| AssetFetchJob {
             sha256: sha256.clone(),
-            dest,
-        });
-    }
+            dest: out_dir.join(rel),
+        })
+        .collect();
+    let mut stats = AssetFetchStats::default();
 
     let results = parallel_for_each(&jobs, workers, cancel, |job| {
         with_retries(MAX_RETRIES, || {
