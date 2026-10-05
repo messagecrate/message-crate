@@ -146,7 +146,7 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
                 staging_media(&transforms),
                 // A file found missing is logged only by a run that then
                 // stages: a cloned copy of `attachments/` reads no file.
-                config.log.as_ref().filter(|_| stages_again),
+                config.log.as_ref().filter(|_| stages_from_input),
             ),
         };
         let needed = counted.bytes_to_write(config.output_format);

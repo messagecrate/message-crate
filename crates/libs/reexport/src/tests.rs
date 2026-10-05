@@ -1553,25 +1553,11 @@ fn a_conversion_the_staging_disk_cannot_hold_is_refused_before_writing() {
 
 /// An attachment with no file in the input adds nothing to the disk check,
 /// whatever size its record names: neither a path with nothing there nor a
-/// record the input already marked missing is copied (#1743). With the
-/// media converted, the run stages from the sources the check counted, and
-/// both attachments come out missing with the reason the input gave kept.
+/// record the input already marked missing is copied (#1743).
 #[test]
 fn the_disk_check_of_a_conversion_leaves_out_an_attachment_with_no_file() {
     let source = tempfile::tempdir().unwrap();
-    fs::create_dir_all(source.path()).unwrap();
-    clean_previous_ir_output(source.path()).unwrap();
-    let mut doc = message_ir::testutil::sample_document("two huge videos");
-    let mut gone = attachment("gone.mov", Some("attachments/gone.mov"));
-    gone.size_bytes = Some(u64::MAX / 2);
-    let mut marked = attachment("marked.mov", None);
-    marked.size_bytes = Some(u64::MAX / 2);
-    marked.missing_reason = Some("file_missing".to_string());
-    doc.messages[0].attachments = vec![gone, marked];
-    let mut sink =
-        FormatSink::open(source.path(), OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
-    sink.write_document(doc).unwrap();
-    sink.finish(&mut ExportReport::default()).unwrap();
+    write_huge_attachments_with_no_file(source.path(), "file_missing");
     let destination = tempfile::tempdir().unwrap();
 
     for format in [OutputFormat::Csv, OutputFormat::Mbox] {
@@ -1581,10 +1567,25 @@ fn the_disk_check_of_a_conversion_leaves_out_an_attachment_with_no_file() {
         )
         .unwrap_or_else(|err| panic!("{format:?}: {err}"));
     }
+}
 
+/// With the media converted, a conversion stages from the sources its disk
+/// check counted: both attachments with no file come out missing, and the
+/// one the input gave a reason keeps it (#1743).
+#[test]
+fn a_converted_conversion_stages_from_the_sources_its_disk_check_counted() {
+    // Converting needs FFmpeg even when no attachment has a file.
+    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+        return;
+    };
+    let source = tempfile::tempdir().unwrap();
+    write_huge_attachments_with_no_file(source.path(), "too_large");
+    let destination = tempfile::tempdir().unwrap();
     let mut converted = config(source.path(), destination.path(), OutputFormat::Jsonl);
     converted.media.mode = MediaMode::Convert;
+
     let report = convert_export(source.path(), &converted).unwrap();
+
     assert_eq!(report.report.extra(ATTACHMENTS_MISSING), 2);
     let out = read_output(destination.path(), OutputFormat::Jsonl);
     let reasons: Vec<_> = out.messages[0]
@@ -1592,7 +1593,25 @@ fn the_disk_check_of_a_conversion_leaves_out_an_attachment_with_no_file() {
         .iter()
         .map(|att| att.missing_reason.as_deref())
         .collect();
-    assert_eq!(reasons, [Some("file_missing"), Some("file_missing")]);
+    assert_eq!(reasons, [Some("file_missing"), Some("too_large")]);
+}
+
+/// A JSON Lines export in `dir` whose two attachments name a size no disk
+/// holds and have no file: one at a path with nothing there, one with no
+/// path and `reason` as its `missing_reason`.
+fn write_huge_attachments_with_no_file(dir: &Path, reason: &str) {
+    fs::create_dir_all(dir).unwrap();
+    clean_previous_ir_output(dir).unwrap();
+    let mut doc = message_ir::testutil::sample_document("two huge videos");
+    let mut gone = attachment("gone.mov", Some("attachments/gone.mov"));
+    gone.size_bytes = Some(u64::MAX / 2);
+    let mut marked = attachment("marked.mov", None);
+    marked.size_bytes = Some(u64::MAX / 2);
+    marked.missing_reason = Some(reason.to_string());
+    doc.messages[0].attachments = vec![gone, marked];
+    let mut sink = FormatSink::open(dir, OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
+    sink.write_document(doc).unwrap();
+    sink.finish(&mut ExportReport::default()).unwrap();
 }
 
 /// What an earlier conversion left in the output's `attachments/` is
