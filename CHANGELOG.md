@@ -867,9 +867,10 @@ released versions carry their date on the heading.
   Each message's file is named partly after its id. A slash in the id made
   the export of the whole conversation fail everywhere, and a line break or
   a character such as `:` or `?` made it fail on Windows. Those characters
-  are now written as a `%` and two hex digits, and so is any `%` beside
-  them, so every file name works on Linux, macOS and Windows. Messages whose
-  ids hold none of those characters keep the file names they had.
+  are now written as a `%` and two hex digits. A `%` in the same part of the
+  id is written that way too. Every file name now works on Linux, macOS and
+  Windows. Messages whose ids hold none of those characters keep the file
+  names they had.
 - 2026-10-05 **The rest of the log says each count in plain words too.**
   The lines around a run's summary still wrote counts as "1 file(s)" or
   "3 conversion(s)": converting attachments, an Export from a server, and

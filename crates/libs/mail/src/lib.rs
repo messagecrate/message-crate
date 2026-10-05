@@ -376,9 +376,10 @@ fn local_date_time_parts(secs: i64) -> Option<(String, String)> {
 /// Eight characters that every file system accepts are written as they are.
 /// Every guid a source app gives holds only such characters. When the
 /// eight hold any other character, each such character and each `%` is
-/// written as `%XX` for each of its UTF-8 bytes. Two guids never share a
-/// part unless their eight characters match: a part written as it is has
-/// eight characters, and an encoded part has more. The name begins with the
+/// written as `%XX` for each of its UTF-8 bytes. Among guids with fewer
+/// than eight hex digits, two share a part only when their padded eight
+/// characters match: a part written as it is has eight characters, and an
+/// encoded part has more. The name begins with the
 /// sequence number and ends in `.eml`, so it is never a name Windows
 /// reserves and never ends in a dot or a space. The guid itself is kept in
 /// `X-ME-Guid`.
