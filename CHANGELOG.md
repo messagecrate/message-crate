@@ -831,6 +831,14 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-05 **Converting an EML or mbox file refuses a damaged message
+  instead of quietly dropping what it could not read.** A message whose
+  attachment details, app message, message parts or details from the source
+  app could not be read was converted as if it had none, so a conversion
+  could lose every attachment's name and type without saying so. Such a
+  message now stops the conversion with a message that names what could not
+  be read and says to export the backup again, as a damaged list of
+  participants, reactions or earlier versions already did.
 - 2026-10-04 **Exporting to CSV, and reading an EML or mbox file back,
   type a phone number written with `tel:` as a phone number.** The
   `identity_type` column of a CSV export, and a participant read back from

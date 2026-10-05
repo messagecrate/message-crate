@@ -575,31 +575,19 @@ fn a_mail_that_names_addresses_handles_is_refused() {
     assert_eq!(
         format!("{err:#}"),
         "This mail was written by an earlier Message Crate, which named each address a \
-         handle (X-ME-Sender-Handle); export the backup again"
+         handle (X-ME-Sender-Handle). Export the backup again"
     );
 }
 
 /// An earlier mail with no owner and no sender address carries none of the
-/// `X-ME-*-Handle` headers, but its roster still says `handle`. A roster that
-/// does not read is refused rather than read as nobody.
+/// `X-ME-*-Handle` headers, but its participants still say `handle`.
+/// Participants that do not read are refused rather than read as nobody.
 #[test]
-fn a_mail_whose_roster_does_not_read_is_refused() {
-    let eml = concat!(
-        "X-ME-Chat-Identifier: chat1000000005\r\n",
-        "X-ME-Conversation-Type: group\r\n",
-        "X-ME-Guid: g1\r\n",
-        "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
-        "X-ME-Direction: outgoing\r\n",
-        "X-ME-Participants: [{\"handle\":\"+15555550101\"},{\"handle\":\"+15555550102\"}]\r\n",
-        "\r\n",
-        "hello\r\n",
-    );
-    let err = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap_err();
-    assert!(
-        format!("{err:#}").starts_with(
-            "This mail's roster (X-ME-Participants) does not read; it may have been written by an earlier Message Crate, so export the backup again"
-        ),
-        "{err:#}"
+fn a_mail_whose_participants_do_not_read_is_refused() {
+    assert_json_header_is_refused(
+        "X-ME-Participants",
+        r#"[{"handle":"+15555550101"},{"handle":"+15555550102"}]"#,
+        "participants",
     );
 }
 
@@ -635,7 +623,7 @@ fn a_mail_that_keeps_reactions_in_x_me_tapbacks_is_refused() {
     assert_eq!(
         format!("{err:#}"),
         "This mail was written by an earlier Message Crate, which kept reactions in \
-         X-ME-Tapbacks; export the backup again"
+         X-ME-Tapbacks. Export the backup again"
     );
 }
 
@@ -643,21 +631,7 @@ fn a_mail_that_keeps_reactions_in_x_me_tapbacks_is_refused() {
 /// reactions.
 #[test]
 fn a_mail_whose_reactions_do_not_read_is_refused() {
-    let eml = concat!(
-        "X-ME-Chat-Identifier: +15555550101\r\n",
-        "X-ME-Guid: g1\r\n",
-        "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
-        "X-ME-Reactions: [{\"part_index\":0}]\r\n",
-        "\r\n",
-        "hello\r\n",
-    );
-    let err = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap_err();
-    assert!(
-        format!("{err:#}").starts_with(
-            "This mail's reactions (X-ME-Reactions) do not read; export the backup again"
-        ),
-        "{err:#}"
-    );
+    assert_json_header_is_refused("X-ME-Reactions", r#"[{"part_index":0}]"#, "reactions");
 }
 
 /// Each mark a message carries is written in `X-ME-Deletion` and read back
@@ -702,7 +676,7 @@ fn a_mail_that_keeps_the_deleted_mark_in_x_me_is_deleted_is_refused() {
     assert_eq!(
         format!("{err:#}"),
         "This mail was written by an earlier Message Crate, which kept the deleted mark in \
-         X-ME-Is-Deleted; export the backup again"
+         X-ME-Is-Deleted. Export the backup again"
     );
 }
 
@@ -723,28 +697,71 @@ fn a_mail_that_keeps_the_edit_history_in_x_me_edits_is_refused() {
     assert_eq!(
         format!("{err:#}"),
         "This mail was written by an earlier Message Crate, which kept the edit history in \
-         X-ME-Edits; export the backup again"
+         X-ME-Edits. Export the backup again"
     );
 }
 
 /// Earlier versions that do not read are refused rather than read as none.
 #[test]
 fn a_mail_whose_earlier_versions_do_not_read_is_refused() {
-    let eml = concat!(
-        "X-ME-Chat-Identifier: +15555550101\r\n",
-        "X-ME-Guid: g1\r\n",
-        "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
-        "X-ME-Earlier-Versions: [{\"part_index\":0}]\r\n",
-        "\r\n",
-        "hello\r\n",
+    assert_json_header_is_refused(
+        "X-ME-Earlier-Versions",
+        r#"[{"part_index":0}]"#,
+        "earlier versions",
+    );
+}
+
+/// A header value that is not JSON at all.
+const BROKEN_JSON: &str = r#"[{"broken""#;
+
+/// Read a mail whose JSON header `header` carries `value`, which does not
+/// read, and assert it is refused with the message that names `what` and the
+/// header.
+fn assert_json_header_is_refused(header: &str, value: &str, what: &str) {
+    let eml = format!(
+        "X-ME-Chat-Identifier: +15555550101\r\n\
+         X-ME-Guid: g1\r\n\
+         X-ME-Timestamp-Unix-Ms: 1400773261000\r\n\
+         X-ME-Service: imessage\r\n\
+         {header}: {value}\r\n\
+         \r\n\
+         hello\r\n"
     );
     let err = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap_err();
     assert!(
-        format!("{err:#}").starts_with(
-            "This mail's earlier versions (X-ME-Earlier-Versions) do not read; export the backup again"
-        ),
+        format!("{err:#}").starts_with(&format!(
+            "This mail's {what} ({header}) cannot be read. It may have been written by an \
+             earlier Message Crate, so export the backup again"
+        )),
         "{err:#}"
     );
+}
+
+/// Source fields that do not read are refused rather than read as none (#1716).
+#[test]
+fn a_mail_whose_source_fields_do_not_read_is_refused() {
+    assert_json_header_is_refused("X-ME-Source-Fields", BROKEN_JSON, "source fields");
+}
+
+/// Attachment metadata that does not read is refused rather than read as
+/// none, which would lose every attachment's name, type and fingerprint on
+/// Convert (#1716).
+#[test]
+fn a_mail_whose_attachment_metadata_does_not_read_is_refused() {
+    assert_json_header_is_refused("X-ME-Attachment-Meta", BROKEN_JSON, "attachment metadata");
+}
+
+/// Message parts that do not read are refused rather than read as none (#1716).
+#[test]
+fn a_mail_whose_message_parts_do_not_read_is_refused() {
+    assert_json_header_is_refused("X-ME-Parts", BROKEN_JSON, "message parts");
+}
+
+/// An app message that does not read is refused rather than read as none
+/// (#1716).
+#[test]
+fn a_mail_whose_app_message_does_not_read_is_refused() {
+    assert_json_header_is_refused("X-ME-App", BROKEN_JSON, "app message");
 }
 
 /// A mark that names neither Deleted in the source app nor Unsent is
