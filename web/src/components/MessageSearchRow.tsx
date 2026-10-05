@@ -90,9 +90,7 @@ export default function MessageSearchRow({
         ) : null}
       </span>
       {message.deletion === "deleted_in_source_app" ? (
-        <span className="text-[0.75rem] text-muted">
-          Deleted in {sourceLabel(message.source)}
-        </span>
+        <span className="text-[0.75rem] text-muted">Deleted in {sourceLabel(message.source)}</span>
       ) : null}
     </PlainButton>
   );
