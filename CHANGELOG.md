@@ -391,6 +391,14 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **An Upload paused while its last request is in flight
+  completes.** Such a pause left nothing to send. Every conversation still
+  landed. Yet the desktop app kept the Import Run paused, and offered to
+  resume a run with nothing left in it. A pause now keeps the Import Run
+  paused only when it leaves a conversation for the next Upload, so this
+  one completes. An Upload whose session the server refused always pauses,
+  and its log now says "so the Upload paused" where it said "so the Upload
+  stopped".
 - 2026-10-05 **A journal line a crash cut inside a character no longer
   stops every later Upload.** Such a line stopped every Upload of that
   directory until its journal was deleted by hand. It is now skipped and

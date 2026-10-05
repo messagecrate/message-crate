@@ -98,15 +98,17 @@ pub struct UploadProfile {
 pub struct PushReport {
     /// `true` when no conversation failed and the run was not cancelled.
     pub ok: bool,
-    /// `true` when the cancel flag stopped the run. The conversations it did
-    /// not finish sending are in `conversations_cancelled`, and the journal
-    /// leaves them for the next Upload. Only the cancel flag stops a run: a
+    /// `true` when the run halted before it finished, so the Upload is paused.
+    /// The cancel flag halts it when it leaves conversations unsent: they are
+    /// in `conversations_cancelled`, and the journal leaves them for the next
+    /// Upload. A cancel that arrives after the last request went out halts
+    /// nothing, so it is `false` then. Only the cancel flag halts a run: a
     /// failed request fails its conversations and the run goes on. A session
-    /// the server refused mid-run stops the run through the same flag, so it
-    /// is `true` then too.
+    /// the server refused mid-run halts the run through the same flag, and
+    /// it is `true` then even when no conversation was left unsent.
     pub cancelled: bool,
     /// `true` when the server refused the session token during the run (it
-    /// expired or was ended), which stopped the run as for a cancel. The
+    /// expired or was ended), which halted the run as for a cancel. The
     /// requests it refused fail no conversation. The caller ends the session
     /// on its side as well, since every later request would be refused.
     pub session_refused: bool,
@@ -237,14 +239,15 @@ pub fn format_duration_ms(ms: u64) -> String {
 
 /// Three-way Import Run status for `/v1/imports/{id}/complete`, read from the
 /// Upload's report rather than from whether the Upload returned. `failed` has a
-/// zero floor: aborted, or nothing landed at all. A skip-only repeat Upload is a
-/// no-op, not a failure. Item-level failures beside successes are
+/// zero floor: cancelled (the run halted, see [`PushReport::cancelled`]), or
+/// nothing landed at all. A skip-only repeat Upload is a no-op,
+/// not a failure. Item-level failures beside successes are
 /// `completed_with_issues`.
-pub fn outcome_status(report: &PushReport, aborted: bool) -> &'static str {
+pub fn outcome_status(report: &PushReport) -> &'static str {
     let nothing_landed = report.conversations_total > 0
         && report.conversations_ok == 0
         && report.conversations_skipped == 0;
-    if aborted || nothing_landed {
+    if report.cancelled || nothing_landed {
         return "failed";
     }
     if report.conversations_failed > 0 || report.messages_failed > 0 {
@@ -262,10 +265,10 @@ pub(crate) fn format_ms_seconds(ms: u64) -> String {
 /// what it did with the conversations, messages and Assets it read.
 pub fn format_push_summary(report: &PushReport) -> String {
     let elapsed = format_duration_ms(report.elapsed_ms);
-    // A run that left conversations for the next Upload is paused (CONTEXT.md,
-    // Pause). A cancel that came after the last conversation was sent leaves
-    // none, so that run completed, whatever `ok` says.
-    let ending = if report.conversations_cancelled > 0 {
+    // A run that halted is paused (CONTEXT.md, Pause). A cancel that came
+    // after the last conversation was sent halted nothing, so that run
+    // completed.
+    let ending = if report.cancelled {
         if report.session_refused {
             format!("The Upload paused after {elapsed}, because the server refused the session.")
         } else {
@@ -452,14 +455,16 @@ mod tests {
             }),
             "The Upload paused after 1m00s, because the server refused the session."
         );
-        // A cancel after the last conversation was sent left nothing for the
-        // next Upload, so the Upload completed.
+        // A refused session halts the Upload even when the batch it refused
+        // carried only a conversation that had already failed.
         assert_eq!(
             first_line(PushReport {
                 cancelled: true,
+                session_refused: true,
+                conversations_failed: 1,
                 ..not_ok.clone()
             }),
-            "The Upload completed in 1m00s."
+            "The Upload paused after 1m00s, because the server refused the session."
         );
         assert_eq!(
             first_line(PushReport {
@@ -491,35 +496,37 @@ mod tests {
     #[test]
     fn outcome_status_matches_the_spec_verdicts() {
         // Clean run.
-        assert_eq!(outcome_status(&sample_report(), false), "completed");
+        assert_eq!(outcome_status(&sample_report()), "completed");
 
-        // Aborted is failed regardless of counts.
-        assert_eq!(outcome_status(&sample_report(), true), "failed");
+        // Cancelled is failed regardless of counts.
+        let mut cancelled = sample_report();
+        cancelled.cancelled = true;
+        assert_eq!(outcome_status(&cancelled), "failed");
 
         // Nothing landed at all: the zero floor.
         let mut nothing = sample_report();
         nothing.ok = false;
         nothing.conversations_ok = 0;
         nothing.conversations_failed = 10;
-        assert_eq!(outcome_status(&nothing, false), "failed");
+        assert_eq!(outcome_status(&nothing), "failed");
 
         // A skip-only repeat Upload is a no-op, not a failure.
         let mut skips = sample_report();
         skips.conversations_ok = 0;
         skips.conversations_skipped = 10;
-        assert_eq!(outcome_status(&skips, false), "completed");
+        assert_eq!(outcome_status(&skips), "completed");
 
         // Item-level failures beside successes.
         let mut partial = sample_report();
         partial.ok = false;
         partial.conversations_ok = 8;
         partial.conversations_failed = 2;
-        assert_eq!(outcome_status(&partial, false), "completed_with_issues");
+        assert_eq!(outcome_status(&partial), "completed_with_issues");
 
         // Message failures inside ok conversations.
         let mut msgs = sample_report();
         msgs.messages_failed = 3;
-        assert_eq!(outcome_status(&msgs, false), "completed_with_issues");
+        assert_eq!(outcome_status(&msgs), "completed_with_issues");
     }
 
     #[test]
