@@ -495,7 +495,7 @@ impl<'a> AccountPass<'a> {
         };
         let cleaned = crate::asset_store::sweep_incoming(&assets_dir, opts.dry_run);
         if cleaned > 0 {
-            let files = crate::counts::words(
+            let files = words(
                 cleaned,
                 "1 abandoned temporary upload file",
                 "{n} abandoned temporary upload files",
@@ -505,7 +505,7 @@ impl<'a> AccountPass<'a> {
         let left = crate::asset_store::sweep_shard_temps(&assets_dir, opts.dry_run)
             + crate::asset_store::sweep_shard_temps(&converted_dir, opts.dry_run);
         if left > 0 {
-            let files = crate::counts::words(left, "1 temporary file", "{n} temporary files");
+            let files = words(left, "1 temporary file", "{n} temporary files");
             println!("  {cleaned_verb} {files} a killed write left in the shard directories");
         }
         Self::new(cfg, opts, work_dir, account_id, stop, Log::Print)
@@ -762,8 +762,9 @@ impl<'a> AccountPass<'a> {
     /// Stop naming the damaged `version` that `row` names and delete it, or
     /// say so in a dry run. It is not made again, because its original is
     /// missing or the original no longer gets such a version, and the rows
-    /// must not go on naming a file the server would serve as if whole. Every row of the account that names it is cleared,
-    /// then the file is deleted.
+    /// must not go on naming a file the server would serve as if whole.
+    /// Every row of the account that names it is cleared, then the file is
+    /// deleted.
     ///
     /// True when it was dropped, or would be in a dry run, and false when
     /// the rows name none.
@@ -912,7 +913,8 @@ fn is_part_path(path: &str) -> bool {
 /// What one stored original needs, decided before any file is touched.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Plan {
-    /// A `.part` left by an interrupted transfer: delete it, never hand it to ffmpeg.
+    /// A `.part` left by an interrupted transfer: delete it, never hand it to
+    /// ffmpeg.
     RemoveIncomplete,
     /// Leave the original and its versions as they are.
     Skip(SkipReason),
@@ -1076,7 +1078,8 @@ fn mime_for_ext(ext: &str) -> &'static str {
     media::mime_for_ext(ext).unwrap_or("application/octet-stream")
 }
 
-/// Write derived bytes into the content-addressed store; the same bytes always land at the same path.
+/// Write derived bytes into the content-addressed store; the same bytes
+/// always land at the same path.
 ///
 /// A file already at that path is kept only when its bytes hash to the
 /// fingerprint in its name. Anything else, such as a version cut short by an
@@ -1122,7 +1125,8 @@ fn store_derived_bytes(derived_dir: &Path, buf: &[u8], ext: &str) -> Result<Vers
     })
 }
 
-/// Read a derived file from `work_dir` and store it like [`store_derived_bytes`].
+/// Read a derived file from `work_dir` and store it like
+/// [`store_derived_bytes`].
 fn store_derived_file(derived_dir: &Path, file_path: &Path, ext: &str) -> Result<VersionFile> {
     let buf = fs::read(file_path)?;
     store_derived_bytes(derived_dir, &buf, ext)
