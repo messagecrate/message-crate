@@ -185,8 +185,8 @@ pub(crate) fn parts_are_trivial_text_duplicate(message_text: &str, parts: Option
 
 /// CSV `identity_type` cell: the sender's identity type, as
 /// [`phone::Handle::parse`] types the sender identity. Empty when the message
-/// has no sender identity or the sender identity is blank, which is no
-/// address.
+/// has no sender identity, or when the sender identity is blank, because a
+/// blank one is not an address.
 fn sender_identity_type_cell(sender_identity: Option<&str>) -> &'static str {
     sender_identity
         .and_then(phone::Handle::parse)

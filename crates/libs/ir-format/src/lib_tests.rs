@@ -312,6 +312,20 @@ fn roundtrip_json_and_jsonl() {
     }
 }
 
+/// The CSV `identity_type` cell of `doc`'s first message, written to `dir`.
+fn sender_identity_type_cell(dir: &Path, doc: &ConversationDocument) -> String {
+    let csv_path = write_conversation_csv(dir, doc).unwrap();
+    let mut rdr = csv::Reader::from_path(&csv_path).unwrap();
+    let identity_type_idx = rdr
+        .headers()
+        .unwrap()
+        .iter()
+        .position(|c| c == "identity_type")
+        .unwrap();
+    let row = rdr.records().next().unwrap().unwrap();
+    row.get(identity_type_idx).unwrap().to_string()
+}
+
 #[test]
 fn csv_serializes_identity_type_in_cell_and_column() {
     fn first_row_cols(csv: &str) -> (Vec<String>, csv::StringRecord) {
@@ -344,20 +358,13 @@ fn csv_serializes_identity_type_in_cell_and_column() {
     );
     // Dedicated column carries the sender identity type.
     assert_eq!(row.get(identity_type_idx).unwrap(), "phone");
-    // Empty sender identity yields an empty cell, never "other".
-    let mut doc = message_ir::testutil::sample_document("hello ir");
-    doc.messages[0].sender_identity = None;
-    let csv_path = write_conversation_csv(tmp.path(), &doc).unwrap();
-    let csv = fs::read_to_string(&csv_path).unwrap();
-    let (cols, row) = first_row_cols(&csv);
-    let identity_type_idx = cols.iter().position(|c| c == "identity_type").unwrap();
-    assert_eq!(row.get(identity_type_idx).unwrap(), "");
-    // A blank sender identity is no address either: an empty cell.
-    doc.messages[0].sender_identity = Some("  ".into());
-    let csv_path = write_conversation_csv(tmp.path(), &doc).unwrap();
-    let csv = fs::read_to_string(&csv_path).unwrap();
-    let (_, row) = first_row_cols(&csv);
-    assert_eq!(row.get(identity_type_idx).unwrap(), "");
+    // A missing or blank sender identity is not an address: an empty cell,
+    // never "other".
+    for sender in [None, Some("  ")] {
+        let mut doc = message_ir::testutil::sample_document("hello ir");
+        doc.messages[0].sender_identity = sender.map(str::to_string);
+        assert_eq!(sender_identity_type_cell(tmp.path(), &doc), "");
+    }
 }
 
 /// An address written with `tel:` is a phone number in the CSV
@@ -371,16 +378,7 @@ fn a_tel_address_is_a_phone_identity_in_csv_eml_and_mbox() {
     doc.messages[0].sender_identity = Some(tel.into());
     let tmp = tempfile::tempdir().unwrap();
 
-    let csv_path = write_conversation_csv(tmp.path(), &doc).unwrap();
-    let mut rdr = csv::Reader::from_path(&csv_path).unwrap();
-    let identity_type_idx = rdr
-        .headers()
-        .unwrap()
-        .iter()
-        .position(|c| c == "identity_type")
-        .unwrap();
-    let row = rdr.records().next().unwrap().unwrap();
-    assert_eq!(row.get(identity_type_idx).unwrap(), "phone");
+    assert_eq!(sender_identity_type_cell(tmp.path(), &doc), "phone");
 
     let eml_dir = write_format(tmp.path(), OutputFormat::Eml, doc.clone()).unwrap();
     let mbox_path = write_format(tmp.path(), OutputFormat::Mbox, doc).unwrap();

@@ -760,9 +760,9 @@ released versions carry their date on the heading.
 - 2026-10-04 **Exporting to CSV, and reading an EML or mbox file back,
   type a phone number written with `tel:` as a phone number.** The
   `identity_type` column of a CSV export, and a participant read back from
-  an EML or mbox file, now follow the one rule every import uses. Before, `tel:+15555550157` was typed `other` there
-  and `phone` everywhere else, so the same person could arrive as two
-  identities.
+  an EML or mbox file, now follow the one rule every import uses. Before,
+  `tel:+15555550157` was typed `other` there and `phone` everywhere else,
+  so the same person could arrive as two identities.
 - 2026-10-04 **Converting no longer asks for room for an attachment whose
   file is missing.** Convert checks the disk for room before it starts,
   and that check counted the size an attachment's record gave even when
