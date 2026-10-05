@@ -6,7 +6,7 @@ use message_crate_core::{
 };
 use message_ir_format::{EXPORT_SENTINEL, FormatSink};
 
-use super::{CONVERTING, EXPORT_DIRECTORY_NAME, ExportDirectories, ExportKind, PULLED};
+use super::{CONVERTING, EXPORT_DIRECTORY_NAME, ExportDirectories, ExportKind, PULLED, sweep};
 
 /// An Export Directory in its own temporary app-data directory.
 fn exports() -> (tempfile::TempDir, ExportDirectories) {
@@ -258,9 +258,8 @@ fn the_start_up_sweep_deletes_an_interrupted_export_and_keeps_a_running_one() {
     // Another app process, started at the same time, sweeps too. A process
     // another test forks holds a copy of every open marker until it runs its
     // program, so the sweep is repeated for a while rather than once.
-    let sweeper = ExportDirectories::in_app_data(app_data.path());
     for _ in 0..200 {
-        sweeper.sweep();
+        sweep(next_start.root());
         if !Path::new(&interrupted.dir).exists() {
             break;
         }
@@ -283,4 +282,34 @@ fn the_start_up_sweep_deletes_an_interrupted_export_and_keeps_a_running_one() {
         "{:?}",
         names(next_start.root())
     );
+}
+
+#[test]
+fn the_sweep_leaves_a_run_that_is_still_being_made() {
+    let (_app_data, exports) = exports();
+    std::fs::create_dir_all(exports.root()).unwrap();
+    // `create` has made the marker and not yet the directory.
+    let marker = exports.root().join("export-2026-10-04-1430-csv.running");
+    std::fs::write(&marker, "").unwrap();
+
+    sweep(exports.root());
+
+    assert!(marker.is_file());
+}
+
+#[test]
+fn a_finished_run_is_never_swept_even_with_files_left_in_it() {
+    let (_app_data, exports) = exports();
+    let made = exports
+        .create(ExportKind::Export, "csv", "2026-10-04-1430", None)
+        .unwrap();
+    std::fs::create_dir_all(&made.converting).unwrap();
+    std::fs::write(Path::new(&made.converting).join("a.csv"), "x").unwrap();
+    exports.finish(&made.dir).unwrap();
+    // Something the finish could not delete, as an open file on Windows.
+    std::fs::create_dir_all(&made.pulled).unwrap();
+
+    sweep(exports.root());
+
+    assert!(Path::new(&made.dir).join("a.csv").is_file());
 }

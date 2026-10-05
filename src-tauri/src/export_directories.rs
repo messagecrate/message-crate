@@ -17,7 +17,7 @@
 //! `<name>.running`, which this process holds locked. Finishing or
 //! discarding the directory removes the marker. A marker nobody holds is what
 //! a run the app did not see to its end left behind (the app quit or
-//! crashed), and [`ExportDirectories::sweep`] deletes that run's directory at
+//! crashed), and [`sweep`] deletes that run's directory at
 //! the next start, with the copy of the messages it held. A marker another
 //! app process holds is left alone.
 //!
@@ -69,7 +69,7 @@ impl ExportKind {
     }
 
     /// Whether `name` is a name this module gives a directory.
-    fn names(name: &str) -> bool {
+    fn is_given_name(name: &str) -> bool {
         Self::ALL.iter().any(|kind| {
             name.strip_prefix(kind.as_str())
                 .is_some_and(|rest| rest.starts_with('-'))
@@ -141,7 +141,7 @@ impl ExportDirectories {
         }
         std::fs::create_dir_all(&self.root)
             .map_err(|error| format!("Could not make {}: {error}", self.root.display()))?;
-        let root = canonical(&self.root)?;
+        let root = self.canonical_root()?;
         if let Some(chosen) = chosen.map(str::trim).filter(|chosen| !chosen.is_empty())
             && let Ok(chosen) = Path::new(chosen).canonicalize()
             && root.starts_with(&chosen)
@@ -179,6 +179,8 @@ impl ExportDirectories {
             marker
                 .lock()
                 .map_err(|error| format!("Could not lock {}: {error}", marker_path.display()))?;
+            // A sweep never removes a marker with no directory beside it, so
+            // the marker is still this one.
             let dir = root.join(&name);
             match std::fs::create_dir(&dir) {
                 Ok(()) => break (dir, marker),
@@ -207,13 +209,20 @@ impl ExportDirectories {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
+    /// The Export Directory, resolved.
+    fn canonical_root(&self) -> Result<PathBuf, String> {
+        self.root
+            .canonicalize()
+            .map_err(|error| format!("Could not resolve {}: {error}", self.root.display()))
+    }
+
     /// `path`, resolved, with the Export Directory resolved, when both are on
     /// disk and `path` is absolute.
     fn resolve(&self, path: &Path) -> Option<(PathBuf, PathBuf)> {
         if !path.is_absolute() {
             return None;
         }
-        Some((self.root.canonicalize().ok()?, path.canonicalize().ok()?))
+        Some((self.canonical_root().ok()?, path.canonicalize().ok()?))
     }
 
     /// `dir`, resolved, when it is an Export's or Convert's directory directly
@@ -229,19 +238,24 @@ impl ExportDirectories {
         let named = dir
             .file_name()
             .and_then(|name| name.to_str())
-            .is_some_and(ExportKind::names);
+            .is_some_and(ExportKind::is_given_name);
         if dir.parent() != Some(root.as_path()) || !named || !dir.is_dir() {
             return Err(not_ours());
         }
         Ok(dir)
     }
 
-    /// Drop this process's hold on `dir`'s marker and remove the marker.
-    fn release(&self, dir: &Path) {
-        self.running_markers().remove(dir);
-        let mut marker = dir.as_os_str().to_owned();
-        marker.push(RUNNING);
-        let _ = std::fs::remove_file(PathBuf::from(marker));
+    /// Drop this process's hold on `dir`'s marker, removing the marker first
+    /// when `remove` says so. The marker goes before the lock does, so a
+    /// sweep that was waiting for the lock finds no marker and leaves the
+    /// directory alone. A marker kept but no longer held has the next start's
+    /// sweep delete the directory.
+    fn release(&self, dir: &Path, remove: bool) {
+        let held = self.running_markers().remove(dir);
+        if remove {
+            let _ = std::fs::remove_file(marker_of(dir));
+        }
+        drop(held);
     }
 
     /// Finish the directory `dir` after its Export or Convert succeeded: move
@@ -257,6 +271,9 @@ impl ExportDirectories {
     /// is.
     pub fn finish(&self, dir: &str) -> Result<Option<PathBuf>, String> {
         let dir = self.own(dir)?;
+        // The result is written, so nothing sweeps this directory any more,
+        // even when what follows fails part-way.
+        self.release(&dir, true);
         let converting = dir.join(CONVERTING);
         if converting.exists() {
             let stuck = |error: std::io::Error| {
@@ -288,7 +305,6 @@ impl ExportDirectories {
         if journal.exists() {
             std::fs::remove_file(&journal).map_err(|e| left_over(&journal, e))?;
         }
-        self.release(&dir);
         let empty = std::fs::read_dir(&dir)
             .map_err(|e| left_over(&dir, e))?
             .next()
@@ -313,48 +329,11 @@ impl ExportDirectories {
             return Ok(());
         }
         let dir = self.own(dir)?;
-        self.release(&dir);
-        std::fs::remove_dir_all(&dir).map_err(|error| format!("{}: {error}", dir.display()))
-    }
-
-    /// Delete the directories of the runs no process holds a marker for: the
-    /// ones whose app quit or crashed before the run ended, with the copy of
-    /// the messages they may hold. Called once at start-up; a directory
-    /// another app process is writing is kept, since it holds its marker.
-    pub fn sweep(&self) {
-        let Ok(entries) = std::fs::read_dir(&self.root) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            let marker_path = entry.path();
-            let Some(name) = entry
-                .file_name()
-                .to_str()
-                .and_then(|name| name.strip_suffix(RUNNING))
-                .map(str::to_owned)
-            else {
-                continue;
-            };
-            if !ExportKind::names(&name) {
-                continue;
-            }
-            let Ok(marker) = File::options().write(true).open(&marker_path) else {
-                continue;
-            };
-            if marker.try_lock().is_err() {
-                continue;
-            }
-            let dir = self.root.join(&name);
-            let gone = match std::fs::symlink_metadata(&dir) {
-                Ok(meta) if meta.is_dir() => std::fs::remove_dir_all(&dir).is_ok(),
-                Ok(_) => false,
-                Err(error) => error.kind() == std::io::ErrorKind::NotFound,
-            };
-            drop(marker);
-            if gone {
-                let _ = std::fs::remove_file(&marker_path);
-            }
-        }
+        let removed = std::fs::remove_dir_all(&dir);
+        // A directory that could not be deleted keeps its marker, so the next
+        // start's sweep deletes it.
+        self.release(&dir, removed.is_ok());
+        removed.map_err(|error| format!("{}: {error}", dir.display()))
     }
 
     /// `path`, resolved, when it is the Export Directory or inside it, for
@@ -365,10 +344,71 @@ impl ExportDirectories {
     }
 }
 
-/// `path`, resolved.
-fn canonical(path: &Path) -> Result<PathBuf, String> {
-    path.canonicalize()
-        .map_err(|error| format!("Could not resolve {}: {error}", path.display()))
+/// The marker beside the directory `dir`.
+fn marker_of(dir: &Path) -> PathBuf {
+    let mut marker = dir.as_os_str().to_owned();
+    marker.push(RUNNING);
+    PathBuf::from(marker)
+}
+
+/// Delete the directories in the Export Directory `root` whose marker no
+/// process holds: the runs whose app quit or crashed before they ended, with
+/// the copy of the messages they may hold. Called once at start-up; a
+/// directory another app process is writing is kept, since it holds its
+/// marker.
+///
+/// A marker with no directory beside it belongs to a run being made, and is
+/// left alone. A marker its run removed while this sweep waited for the lock
+/// is no longer the file at its path, and is left alone too, so a run that
+/// just finished keeps its result.
+pub fn sweep(root: &Path) {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let marker_path = entry.path();
+        let Some(name) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.strip_suffix(RUNNING))
+            .map(str::to_owned)
+        else {
+            continue;
+        };
+        if !ExportKind::is_given_name(&name) {
+            continue;
+        }
+        let Ok(marker) = File::options().write(true).open(&marker_path) else {
+            continue;
+        };
+        if marker.try_lock().is_err() || !still_at(&marker, &marker_path) {
+            continue;
+        }
+        let dir = root.join(&name);
+        let is_dir = std::fs::symlink_metadata(&dir).is_ok_and(|meta| meta.is_dir());
+        if is_dir && std::fs::remove_dir_all(&dir).is_ok() {
+            let _ = std::fs::remove_file(&marker_path);
+        }
+        drop(marker);
+    }
+}
+
+/// Whether `file` is still the file at `path`.
+#[cfg(unix)]
+fn still_at(file: &File, path: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    match (file.metadata(), std::fs::metadata(path)) {
+        (Ok(open), Ok(now)) => open.dev() == now.dev() && open.ino() == now.ino(),
+        _ => false,
+    }
+}
+
+/// Whether `file` is still the file at `path`. Windows does not remove a
+/// file another handle has open until that handle closes, so the path being
+/// there is enough.
+#[cfg(not(unix))]
+fn still_at(_file: &File, path: &Path) -> bool {
+    path.exists()
 }
 
 /// The local date and time as `YYYY-MM-DD-HHMM`, for an export's directory.

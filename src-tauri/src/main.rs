@@ -56,8 +56,8 @@ fn main() {
             // in the Export Directory is deleted now, on a thread of its own.
             // A run another app process has under way holds its marker and
             // is kept.
-            let swept = ExportDirectories::in_app_data(&app_data_dir);
-            std::thread::spawn(move || swept.sweep());
+            let exports_root = exports.root().to_path_buf();
+            std::thread::spawn(move || export_directories::sweep(&exports_root));
             app.manage(exports);
             // What killed runs left in the cache directory's scratch directories
             // (decrypted databases, attachment payloads) is deleted now,
