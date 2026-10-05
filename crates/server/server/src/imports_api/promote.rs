@@ -237,14 +237,7 @@ impl Promote<'_> {
             ));
         }
 
-        let phase = Self::begin(format_args!(
-            "Matching each message read to its stored message, {}…",
-            words(
-                as_count(msg_map.len()),
-                "1 paired as it was written",
-                "{n} paired as they were written"
-            )
-        ));
+        let phase = Self::begin("Matching each message read to its stored message…");
         staging::write_message_map(self.tx, self.account_id, &msg_map).await?;
         self.done(phase, "Each message read is matched to its stored message");
 
@@ -290,9 +283,9 @@ impl Promote<'_> {
     /// [`Self::index_fts`] indexes once after and reinstalls the sync
     /// triggers dropped here.
     async fn pause_fts_triggers(&mut self) -> Result<()> {
-        let phase = Self::begin("Pausing the search index triggers…");
+        let phase = Self::begin("Turning off the search index triggers…");
         schema::drop_messages_fts_triggers(self.tx).await?;
-        self.done(phase, "The search index triggers are paused");
+        self.done(phase, "The search index triggers are off");
         Ok(())
     }
 
@@ -493,7 +486,7 @@ impl Promote<'_> {
         self.done(
             phase,
             format!(
-                "Indexed {} and {} for search, and restored the search index triggers",
+                "Indexed {} and {} for search, and turned the search index triggers back on",
                 words(as_count(indexed), "1 message", "{n} messages"),
                 words(
                     as_count(versions),

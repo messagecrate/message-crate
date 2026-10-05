@@ -653,7 +653,7 @@ function writeRunRecord(runDir: string, build: () => RunRecord): Promise<void> {
  * a crash loses only what arrived while the last write was on its way to
  * disk. The record is the one a stop now would leave (`recordToCarry`): an
  * Upload's rows about a conversation not yet on the server wait apart, and
- * an earlier stop's rows about a conversation this Upload has since sent
+ * an earlier pause's rows about a conversation this Upload has since sent
  * go.
  */
 async function saveCarriedRecord(

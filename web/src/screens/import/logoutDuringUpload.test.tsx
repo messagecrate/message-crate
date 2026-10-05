@@ -121,7 +121,7 @@ const form = {
   assetMaxBytes: 512 * MIB,
 };
 
-/** What `run.rs` reports when the cancel flag stops the Upload after 200 of 681. */
+/** What `run.rs` reports when the cancel flag pauses the Upload after 200 of 681. */
 function pausedReport(): UploadFinishedReport {
   return {
     ok: false,
@@ -192,7 +192,7 @@ describe("logging out during an Upload", () => {
     saveRunRecordMock.mockReset();
     cancelMock.mockReset();
     deleteRunDirMock.mockReset();
-    // The Upload stops when the cancel flag is set, the way `run.rs` does.
+    // The Upload pauses when the cancel flag is set, the way `run.rs` does.
     cancelMock.mockImplementation(() =>
       finishUpload?.({ summary: "Upload", report: pausedReport() }),
     );
@@ -313,7 +313,7 @@ describe("logging out during an Upload", () => {
   it("ends the session when the server refuses the Upload's session, and records no failure", async () => {
     const result = await startUpload();
 
-    // What run.rs reports when a 401 stops the Upload after 200 of 681.
+    // What run.rs reports when a 401 pauses the Upload after 200 of 681.
     act(() => {
       finishUpload?.({ summary: "Upload", report: { ...pausedReport(), session_refused: true } });
     });

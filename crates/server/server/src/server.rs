@@ -1387,7 +1387,7 @@ pub async fn run(cfg: Config) -> anyhow::Result<()> {
         listener.local_addr()?
     );
     eprintln!(
-        "`message-crate-server dump-openapi` lists every route, and [server] openapi_ui = true serves them at /docs"
+        "`message-crate-server dump-openapi` lists every route, and [server] openapi_ui = true serves the API reference at /docs"
     );
     let on_signal = {
         let demo_build = demo_build.clone();

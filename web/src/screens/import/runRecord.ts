@@ -234,7 +234,7 @@ function isOnServer(status: ConversationStatus | undefined): boolean {
 }
 
 /**
- * Sort an earlier stop's rows by what this part's Upload said of their
+ * Sort an earlier pause's rows by what this part's Upload said of their
  * conversation. A row about a whole conversation this Upload reported on is
  * stale, and goes: this Upload reports that conversation itself. A
  * conversation this Upload sent (`ok`) was read again, so its other earlier

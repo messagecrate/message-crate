@@ -285,7 +285,7 @@ pub async fn database_is_new(cfg: &Config) -> Result<bool> {
 /// and the owner can add the Demo Account later.
 pub async fn seed_new_database(cfg: &Config) {
     let size = DemoSize::Medium;
-    eprintln!("The database is new, so the Demo Account is added, with the {size} data set…");
+    eprintln!("The database is new, so the Demo Account is added, with the {size} Demo Data set…");
     let started = std::time::Instant::now();
     // Seeding runs before the server listens, on this thread, so no stop
     // can arrive while it generates and nothing sets the flag.
@@ -937,7 +937,7 @@ async fn load_demo_address_book(
             "1 identity from an Unknown",
             "{n} identities from Unknowns"
         ),
-        counts.identities_added
+        words(counts.identities_added, "1 identity", "{n} identities")
     );
     Ok(counts)
 }

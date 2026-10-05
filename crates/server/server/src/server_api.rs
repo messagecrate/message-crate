@@ -563,7 +563,7 @@ impl DemoBuild {
                     DemoBuildState::Failed(format!("{error:#}"))
                 }
                 Err(stopped) if stopped.is_cancelled() => {
-                    tracing::warn!("The Demo Account build did not finish: {STOPPED_DURING_BUILD}");
+                    tracing::warn!("The server stopped before the Demo Account build finished");
                     if let Err(error) =
                         crate::reset_demo::remove_part_built_demo_account(&cfg, &db).await
                     {

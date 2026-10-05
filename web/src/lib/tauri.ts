@@ -216,7 +216,7 @@ export interface UploadFinishedReport {
   conversations_total: number;
   conversations_failed: number;
   conversations_skipped: number;
-  /** Conversations a stop left unsent; the next Upload sends them. */
+  /** Conversations a pause left unsent; the next Upload sends them. */
   conversations_cancelled: number;
   results: Array<{
     file: string;

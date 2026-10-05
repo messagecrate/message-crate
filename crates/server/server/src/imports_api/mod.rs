@@ -314,17 +314,17 @@ pub async fn import_jsonl_files_on_conn(
         "  Importing {}",
         crate::counts::words(paths.len() as u64, "1 JSONL file", "{n} JSONL files")
     ));
-    if opts.mode == ImportMode::Replace {
+    if opts.mode == ImportMode::Replace && !wipe_sources.is_empty() {
         let names = wipe_sources.join(", ");
         say(&format!(
             "  {}",
             crate::counts::words(
                 wipe_sources.len() as u64,
                 &format!(
-                    "The account's messages from source {names} are deleted once the files are read"
+                    "The account's messages from source {names} are deleted if the import succeeds"
                 ),
                 &format!(
-                    "The account's messages from the {{n}} sources {names} are deleted once the files are read"
+                    "The account's messages from the {{n}} sources {names} are deleted if the import succeeds"
                 ),
             )
         ));
