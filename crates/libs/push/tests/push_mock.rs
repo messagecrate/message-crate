@@ -205,6 +205,15 @@ fn authenticate_and_push_text_only_conversation() {
             .is_some()
     );
     import.assert();
+    // The log names the account and the Import Run in sentences, not as
+    // `name=value` (#1842).
+    let log = fs::read_to_string(dir.path().join("message-crate-push.log")).unwrap();
+    assert!(log.contains("Authenticated as alice (1)"), "{log}");
+    assert!(
+        log.contains("Recording Import Run 42 for sms-backup-restore"),
+        "{log}"
+    );
+    assert!(log.contains("Import Run 42 completed"), "{log}");
 
     // Second run should skip via journal.
     let report2 = run(&cfg, None).unwrap();
@@ -277,6 +286,11 @@ fn reuses_supplied_import_run_without_starting_or_completing_one() {
         "the Upload must not complete an Import Run it was handed"
     );
     import.assert();
+    let log = fs::read_to_string(dir.path().join("message-crate-push.log")).unwrap();
+    assert!(
+        log.contains("Reusing Import Run 99 for sms-backup-restore"),
+        "{log}"
+    );
 }
 
 /// A push that started its own Import Run completes it once, with the

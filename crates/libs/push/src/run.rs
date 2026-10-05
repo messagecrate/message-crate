@@ -410,20 +410,13 @@ fn login(cfg: &PushConfig, stop: CancelFlag, out: &mut Reporter<'_, '_>) -> Resu
         .as_deref()
         .and_then(message_ir::trimmed)
         .map_or_else(|| auth.account_id.to_string(), str::to_string);
-    out.log(&format!(
-        "authenticated username={username} account={}",
-        auth.account_id
-    ));
     out.event(ProgressEvent::Auth {
         account_id: auth.account_id,
         username: username.clone(),
     });
-    out.event(ProgressEvent::Log(format!("Authenticated as {username}")));
+    out.show(format!("Authenticated as {username} ({})", auth.account_id));
     if cfg.skip_attachments {
-        out.show_as(
-            "skip_attachments=true (text-only import)",
-            "Skipping attachments (text-only import)".into(),
-        );
+        out.show("Skipping attachments (text-only import)".into());
     }
     Ok(Session {
         http,
@@ -504,19 +497,13 @@ fn start_import_run(
         .flatten()
         .unwrap_or_else(|| "unknown".to_string());
     if let Some(import_id) = cfg.import_id {
-        out.show_as(
-            &format!("using provided Import Run id={import_id}"),
-            format!("Reusing Import Run {import_id} ({source})"),
-        );
+        out.show(format!("Reusing Import Run {import_id} for {source}"));
         return Ok(import_id);
     }
     let id = session
         .start_import(&source, cfg.mode, Some("message-crate-push"))
         .context("start the Import Run on the server")?;
-    out.show_as(
-        &format!("Import Run id={id} source={source}"),
-        format!("Recording Import Run {id} ({source})"),
-    );
+    out.show(format!("Recording Import Run {id} for {source}"));
     Ok(id)
 }
 
@@ -730,6 +717,6 @@ fn complete_import_run(
             },
         )
         .with_context(|| format!("complete import run {import_id}"))?;
-    out.log(&format!("import run {import_id} completed"));
+    out.log(&format!("Import Run {import_id} completed"));
     Ok(())
 }

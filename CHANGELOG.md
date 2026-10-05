@@ -391,6 +391,13 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **The Upload's log names its account and Import Run in
+  sentences.** It wrote "authenticated username=sam account=1", "using
+  provided Import Run id=7", "Import Run id=7 source=sms" and
+  "skip_attachments=true (text-only import)". It now writes "Authenticated as sam (1)", "Reusing
+  Import Run 7 for sms", "Recording Import Run 7 for sms" and "Skipping
+  attachments (text-only import)", the same lines the desktop app shows
+  while the Upload runs.
 - 2026-10-05 **An import's log says its counts in words, not as
   `name=value`.** The Upload, the attachment conversion, and the server's
   import, duplicate check and `process-assets` command wrote counts such as
