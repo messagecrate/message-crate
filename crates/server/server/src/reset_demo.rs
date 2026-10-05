@@ -190,8 +190,10 @@ async fn dedupe_and_process_assets(
 /// `None` when every attachment converted.
 fn conversion_warning(errors: u64) -> Option<String> {
     (errors > 0).then(|| {
-        format!(
-            "{errors} demo attachment(s) failed conversion; originals stay in place and reset-demo continues"
+        crate::counts::words(
+            errors,
+            "1 demo attachment failed conversion; its original stays in place and reset-demo continues",
+            "{n} demo attachments failed conversion; their originals stay in place and reset-demo continues",
         )
     })
 }

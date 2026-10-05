@@ -1035,3 +1035,17 @@ fn collect_media_files_keeps_media_and_leaves_everything_else() {
          ffmpeg temp file"
     );
 }
+
+/// The line that starts a pass words its file count singular for one, so a
+/// single attachment reads `1 file` (#1815).
+#[test]
+fn the_starting_line_counts_one_file_and_many_files() {
+    assert_eq!(
+        starting_line("Converting", 1, 500),
+        "Converting attachments (1 file, 500 B)…"
+    );
+    assert_eq!(
+        starting_line("Compressing", 3, 2_000),
+        "Compressing attachments (3 files, 2.0 KB)…"
+    );
+}

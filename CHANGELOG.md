@@ -401,6 +401,15 @@ released versions carry their date on the heading.
   an invalid date" and "Read 7 SMS", and a count of 0 is left out. A file
   that could not be read is an `error:` line in both. This holds for every
   kind of backup, not only SMS Backup & Restore.
+- 2026-10-05 **The rest of the log says each count in plain words too.**
+  The lines around a run's summary still wrote counts as "1 file(s)" or
+  "3 conversion(s)": converting attachments, an Export from a server, and
+  the server's own commands. They now say "1 file" and "3 conversions",
+  and the words around a count agree with it, such as "1 conversion failed;
+  that original stays without a Thumbnail". An SMS Backup+ run with
+  verbose logging no longer ends with `parsed:` and `done:` lines of
+  `key=value` counts, because its summary already gives each of those
+  counts in words.
 - 2026-10-05 **An SMS Backup & Restore import names each message it kept
   with something left out.** A picture or other part whose data could not be
   read, and a character the backup wrote as a code that is not a character,

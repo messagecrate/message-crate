@@ -696,8 +696,12 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
     opened.close().await;
     if stats.errors > 0 {
         bail!(
-            "{} conversion(s) failed; those originals stay without a Thumbnail or a browser preview",
-            stats.errors
+            "{}",
+            crate::counts::words(
+                stats.errors,
+                "1 conversion failed; that original stays without a Thumbnail or a browser preview",
+                "{n} conversions failed; those originals stay without a Thumbnail or a browser preview",
+            )
         );
     }
     Ok(())

@@ -482,8 +482,9 @@ fn a_second_run_over_the_same_directory_downloads_nothing_it_already_has() {
             "Backup query: (all messages)".to_string(),
             "Previous backup completed successfully. Running to check for new messages…"
                 .to_string(),
-            "Export run 7: 3 message(s) in 1 conversation(s), 2 attachment(s) (22 B)".to_string(),
-            format!("Wrote 1 conversation(s), 3 message(s) → {}", out.display()),
+            "Export Run 7 holds 3 messages in 1 conversation, with 2 attachments (22 B)"
+                .to_string(),
+            format!("Wrote 1 conversation and 3 messages to {}", out.display()),
         ]
     );
 }
@@ -689,7 +690,7 @@ fn a_query_becomes_the_runs_query_scope_and_progress_narrates_the_run() {
             ProgressEvent::Log("Authenticated as alice (1)".into()),
             ProgressEvent::Log("Backup query: from:sam".into()),
             ProgressEvent::Log(
-                "Export run 7: 3 message(s) in 1 conversation(s), 2 attachment(s) (22 B)".into()
+                "Export Run 7 holds 3 messages in 1 conversation, with 2 attachments (22 B)".into()
             ),
             ProgressEvent::Page {
                 messages: 2,
@@ -699,12 +700,10 @@ fn a_query_becomes_the_runs_query_scope_and_progress_narrates_the_run() {
                 messages: 1,
                 total_so_far: 3,
             },
-            ProgressEvent::Log(
-                "Downloading 2 unique asset(s) with 1 worker(s) (0 skipped from journal)…".into()
-            ),
+            ProgressEvent::Log("Downloading 2 assets with 1 worker (0 already downloaded)…".into()),
             ProgressEvent::Log("Assets: 2 downloaded, 0 skipped (22 B total bytes)".into()),
             ProgressEvent::Log(format!(
-                "Wrote 1 conversation(s), 3 message(s) → {}",
+                "Wrote 1 conversation and 3 messages to {}",
                 out.display()
             )),
             ProgressEvent::Done(report),

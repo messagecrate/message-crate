@@ -8,7 +8,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use message_crate_core::{CancelFlag, check_cancel, parallel_for_each};
+use message_crate_core::{CancelFlag, check_cancel, count_of, parallel_for_each};
 use message_crate_http::{auth_check as authenticate, with_retries};
 use message_ir_format::mark_export_directory;
 use serde::Serialize;
@@ -231,8 +231,10 @@ pub fn run(cfg: &PullConfig, mut on_progress: Option<&mut ProgressFn<'_>>) -> Re
     emit(
         &mut on_progress,
         ProgressEvent::Log(format!(
-            "Wrote {} conversation(s), {} message(s) → {}",
-            report.conversations, report.messages, report.out_dir
+            "Wrote {} and {} to {}",
+            count_of(report.conversations, "conversation", "conversations"),
+            count_of(report.messages, "message", "messages"),
+            report.out_dir
         )),
     );
     emit(&mut on_progress, ProgressEvent::Done(report.clone()));
@@ -362,15 +364,21 @@ impl<'a> Pull<'a> {
                 TOOL_NAME,
             )
         })?;
+        // The server's counts are never negative; a negative one reads as 0.
+        let count = |n: i64| u64::try_from(n).unwrap_or(0);
         emit(
             out,
             ProgressEvent::Log(format!(
-                "Export run {}: {} message(s) in {} conversation(s), {} attachment(s) ({})",
+                "Export Run {} holds {} in {}, with {} ({})",
                 export.id,
-                export.message_count,
-                export.conversation_count,
-                export.attachment_count,
-                media::format_bytes(u64::try_from(export.total_bytes).unwrap_or(0)),
+                count_of(count(export.message_count), "message", "messages"),
+                count_of(
+                    count(export.conversation_count),
+                    "conversation",
+                    "conversations"
+                ),
+                count_of(count(export.attachment_count), "attachment", "attachments"),
+                media::format_bytes(count(export.total_bytes)),
             )),
         );
         Ok(export)
@@ -517,9 +525,9 @@ impl<'a> Pull<'a> {
         emit(
             out,
             ProgressEvent::Log(format!(
-                "Downloading {} unique asset(s) with {} worker(s) ({} skipped from journal)…",
-                to_download.len(),
-                cfg.asset_download_workers,
+                "Downloading {} with {} ({} already downloaded)…",
+                count_of(to_download.len() as u64, "asset", "assets"),
+                count_of(cfg.asset_download_workers as u64, "worker", "workers"),
                 skipped_by_journal
             )),
         );

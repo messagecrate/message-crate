@@ -187,8 +187,8 @@ pub fn assert_csv_row_in_any(paths: &[PathBuf], expected: &[(&str, &str)]) {
         seen.push((path.display().to_string(), rows));
     }
     panic!(
-        "no row in any of {} export file(s) has {expected:?}; found {seen:#?}",
-        paths.len()
+        "no row in the {} written has {expected:?}; found {seen:#?}",
+        crate::count_of(paths.len() as u64, "exported file", "exported files")
     );
 }
 
