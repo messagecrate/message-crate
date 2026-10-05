@@ -199,10 +199,13 @@ pub fn run(cfg: &PullConfig, mut on_progress: Option<&mut ProgressFn<'_>>) -> Re
         CloseAction::Cancel
     };
     if let Err(error) = pull.close_export(export.id, action) {
-        emit(
-            &mut on_progress,
-            ProgressEvent::Log(format!("warning: {error:#}")),
-        );
+        // A refused completion follows a run whose files are all written; a
+        // refused cancellation follows the failure the run returns below.
+        let line = match action {
+            CloseAction::Complete => format!("{error:#}. The Export wrote every file all the same"),
+            CloseAction::Cancel => format!("{error:#}"),
+        };
+        emit(&mut on_progress, ProgressEvent::Log(line));
     }
     let Written {
         conversations,
@@ -412,6 +415,7 @@ impl<'a> Pull<'a> {
         let conversations = self.write_conversations(fetched.by_conv)?;
         self.finish_journal(
             out,
+            export.id,
             conversations,
             fetched.total_messages,
             &assets,
@@ -521,8 +525,8 @@ impl<'a> Pull<'a> {
         emit(
             out,
             ProgressEvent::Log(format!(
-                "Downloading {} with {} ({} already downloaded)…",
-                count_of(to_download.len() as u64, "asset", "assets"),
+                "Fetching {} with {} ({} already on disk)…",
+                count_of(to_download.len() as u64, "Asset", "Assets"),
                 count_of(cfg.asset_download_workers as u64, "worker", "workers"),
                 skipped_by_journal
             )),
@@ -551,7 +555,9 @@ impl<'a> Pull<'a> {
                     emit(
                         out,
                         ProgressEvent::Log(format!(
-                            "warning: could not record {sha} in the journal: {error:#}"
+                            "Asset {sha} could not be added to {}, the record of \
+                             fetched Assets: {error:#}",
+                            crate::journal::PULL_JOURNAL_NAME
                         )),
                     );
                 }
@@ -560,8 +566,8 @@ impl<'a> Pull<'a> {
         emit(
             out,
             ProgressEvent::Log(format!(
-                "Downloaded {} ({}) and kept {} already downloaded",
-                count_of(counts.downloaded, "asset", "assets"),
+                "Fetched {} ({}) and kept {} already on disk",
+                count_of(counts.downloaded, "Asset", "Assets"),
                 media::format_bytes(stats.bytes),
                 counts.skipped
             )),
@@ -606,13 +612,15 @@ impl<'a> Pull<'a> {
     }
 
     /// Record that this Export Run finished, then rewrite the journal in its
-    /// shortest form. Every asset this run saw is on disk: it was downloaded
+    /// shortest form. Every Asset this run saw is on disk: it was fetched
     /// above, or an earlier run had already fetched it. A journal write
-    /// failure does not fail a run whose files are already written; it is
-    /// reported on the progress log, since the next run will re-download.
+    /// failure does not fail a run whose files are already written, so it
+    /// goes to the progress log. A next run into the same directory still
+    /// skips each Asset whose file is there, journal or not.
     fn finish_journal(
         &self,
         out: &mut Option<&mut ProgressFn<'_>>,
+        export_id: i64,
         conversations: u64,
         messages: u64,
         assets: &AssetCounts,
@@ -629,7 +637,8 @@ impl<'a> Pull<'a> {
             emit(
                 out,
                 ProgressEvent::Log(format!(
-                    "warning: could not record the finished Export Run in the journal: {error:#}"
+                    "Export Run {export_id} could not be recorded as finished in {}: {error:#}",
+                    crate::journal::PULL_JOURNAL_NAME
                 )),
             );
         }
@@ -647,7 +656,10 @@ impl<'a> Pull<'a> {
         ) {
             emit(
                 out,
-                ProgressEvent::Log(format!("warning: could not compact the journal: {error:#}")),
+                ProgressEvent::Log(format!(
+                    "{} could not be rewritten in its shortest form: {error:#}",
+                    crate::journal::PULL_JOURNAL_NAME
+                )),
             );
         }
     }
@@ -748,14 +760,17 @@ fn copy_into_place(from: &Path, dest: &Path, sha256: &str) -> Result<()> {
 }
 
 /// The progress line for an attachment path the export refused, naming the
-/// path written in its place.
+/// path written in its place, or saying the file is not written when the
+/// attachment has no SHA-256.
 fn refused_path_line(path: &str, rel: Option<&str>) -> String {
     match rel {
         Some(rel) => format!(
-            "warning: attachment path {path} would leave the output directory; written at {rel} instead"
+            "Attachment path {path} would leave the Export's directory, \
+             so the file is written at {rel} instead"
         ),
         None => format!(
-            "warning: attachment path {path} would leave the output directory; the conversation file names no path for it"
+            "Attachment path {path} would leave the Export's directory, and the \
+             attachment has no SHA-256 to name another path by, so it is not written"
         ),
     }
 }
@@ -791,17 +806,9 @@ fn assets_needing_download(
     to_download
 }
 
-/// Download unique attachments in parallel using work-stealing workers.
-///
-/// Same pattern as message-crate-push `upload_assets`: jobs are collected, then
-/// [`parallel_for_each`] runs them on `asset_download_workers` threads.
-/// Files already on disk are skipped (counted as `skipped`); each download
-/// retries transient HTTP failures like push does.
-///
-/// # Errors
-///
-/// Returns an error when a download fails after retries, a dest path cannot be
-/// created, or cancel is requested.
+/// What [`download_assets_parallel`] fetches, from where, and how: the
+/// server and session, each Asset's SHA-256 with the path under `out_dir` it
+/// is written at, the number of workers, and the run's cancel flag.
 struct DownloadAssetsParallelArgs<'a> {
     session: &'a crate::http::HttpSession,
     base_url: &'a str,
@@ -812,7 +819,18 @@ struct DownloadAssetsParallelArgs<'a> {
     cancel: Option<&'a CancelFlag>,
 }
 
-/// Download the given assets with a worker pool, skipping any already on disk. Returns the counts and bytes.
+/// Fetch each Asset in `assets` on `workers` threads and return the counts and
+/// bytes.
+///
+/// The same pattern as the Upload's `upload_assets`: the jobs are collected,
+/// then [`parallel_for_each`] runs them. An Asset whose file is already at its
+/// path is not fetched and is counted as `skipped`. Each fetch retries a
+/// transient HTTP failure, as the Upload does.
+///
+/// # Errors
+///
+/// Returns an error when a fetch fails after retries, the size of a file
+/// already at its path cannot be read, or the run is cancelled.
 fn download_assets_parallel(args: DownloadAssetsParallelArgs<'_>) -> Result<AssetDownloadStats> {
     let DownloadAssetsParallelArgs {
         session,

@@ -347,6 +347,64 @@ fn a_pull_records_one_run_and_writes_the_conversation_and_every_asset_once_acros
     );
 }
 
+/// An attachment whose path would leave the Export's directory and that has
+/// no SHA-256 has nowhere else to go: the log says it is not written, the
+/// conversation file names no path for it, and nothing is fetched for it.
+#[test]
+fn an_attachment_path_that_leaves_the_directory_with_no_sha256_is_not_written() {
+    let server = MockServer::start();
+    let _auth = mock_auth(&server);
+    let (_create, complete) = mock_run(&server);
+    let dir = tempdir().unwrap();
+    let out = dir.path().join("pulled");
+    let climbing = "../escape.pdf";
+    let _page = server.mock(|when, then| {
+        when.method(GET)
+            .path(format!("/v1/exports/{EXPORT_ID}/messages"))
+            .query_param("offset", "0");
+        then.status(200).json_body(json!({
+            "items": [message(
+                1, "sms-backup-restore", "guid-1", "2015-03-12T18:05:01Z", "the menu",
+                json!([{
+                    "path": climbing,
+                    "original_name": "escape.pdf",
+                    "mime_type": "application/pdf",
+                    "is_sticker": false
+                }])
+            )],
+            "total": 1,
+            "limit": 1,
+            "offset": 0
+        }));
+    });
+    let assets = server.mock(|when, then| {
+        when.method(GET).path_includes("/v1/assets/");
+        then.status(500);
+    });
+    let mut events = Vec::new();
+    let mut on_progress = |event: ProgressEvent| events.push(event);
+
+    let report = run(&config(&out, server.base_url()), Some(&mut on_progress)).unwrap();
+
+    complete.assert();
+    assert_eq!(assets.calls(), 0, "nothing names a file to fetch");
+    assert!(!dir.path().join("escape.pdf").exists());
+    assert_eq!(report.refused_attachment_paths, [climbing.to_string()]);
+    let doc = read_conversation_jsonl(&out.join(CONVERSATION_FILE)).unwrap();
+    assert_eq!(
+        doc.messages[0].attachments[0].path, None,
+        "the conversation file names no path outside the Export's directory"
+    );
+    let line = format!(
+        "Attachment path {climbing} would leave the Export's directory, and the \
+         attachment has no SHA-256 to name another path by, so it is not written"
+    );
+    assert!(
+        events.contains(&ProgressEvent::Log(line)),
+        "the log says the file is not written: {events:?}"
+    );
+}
+
 /// The server can hold an attachment path that climbs out of a directory or
 /// names an absolute one, because an import that reuses a stored fingerprint
 /// never read the file at that path. Joined onto the output directory, such a
@@ -425,7 +483,8 @@ fn an_attachment_path_that_leaves_the_output_directory_is_written_under_its_fing
     assert_eq!(report.refused_attachment_paths, refused);
     for (path, sha) in [(climbing, MENU_SHA), (absolute.as_str(), PHOTO_SHA)] {
         let line = format!(
-            "warning: attachment path {path} would leave the output directory; written at attachments/{sha} instead"
+            "Attachment path {path} would leave the Export's directory, \
+             so the file is written at attachments/{sha} instead"
         );
         assert!(
             events.contains(&ProgressEvent::Log(line.clone())),
@@ -708,8 +767,8 @@ fn a_query_becomes_the_runs_query_scope_and_progress_narrates_the_run() {
                 messages: 1,
                 total_so_far: 3,
             },
-            ProgressEvent::Log("Downloading 2 assets with 1 worker (0 already downloaded)…".into()),
-            ProgressEvent::Log("Downloaded 2 assets (22 B) and kept 0 already downloaded".into()),
+            ProgressEvent::Log("Fetching 2 Assets with 1 worker (0 already on disk)…".into()),
+            ProgressEvent::Log("Fetched 2 Assets (22 B) and kept 0 already on disk".into()),
             ProgressEvent::Log(format!(
                 "Wrote 1 conversation and 3 messages to {}",
                 out.display()
@@ -912,8 +971,8 @@ fn a_refused_completion_is_a_warning_that_names_the_run_once() {
     assert_eq!(complete.calls(), 1, "a 409 Conflict is not retried");
     assert!(
         events.contains(&ProgressEvent::Log(format!(
-            "warning: Export Run {EXPORT_ID} completion failed (HTTP 409 Conflict): \
-             the run is already closed"
+            "Export Run {EXPORT_ID} completion failed (HTTP 409 Conflict): \
+             the run is already closed. The Export wrote every file all the same"
         ))),
         "{events:?}"
     );
