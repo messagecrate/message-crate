@@ -310,24 +310,17 @@ pub enum ImportLookupError {
         /// Why the run cannot be reused.
         message: String,
     },
-    /// An issue kind other than `error` or `skip`, which no run stores. The
-    /// handlers refuse one before they reach the database.
+    /// An issue kind other than `error` or `skip`, which no run stores.
     #[error("invalid import issue kind '{kind}'; expected 'error' or 'skip'")]
     InvalidIssueKind {
         /// The kind that was asked for.
         kind: String,
     },
-    /// Database failure. It has no `From<anyhow::Error>`, so a refusal
-    /// written as an `anyhow` error does not compile into a database fault
-    /// (#1682); a caller that means one wraps it here by name.
+    /// Database failure. It holds a `sqlx::Error` and nothing else, so a
+    /// refusal written as an `anyhow` error does not compile into a database
+    /// fault (#1682).
     #[error(transparent)]
-    Db(anyhow::Error),
-}
-
-impl From<sqlx::Error> for ImportLookupError {
-    fn from(value: sqlx::Error) -> Self {
-        Self::Db(value.into())
-    }
+    Db(#[from] sqlx::Error),
 }
 
 /// Everything recorded when a run begins.
@@ -838,8 +831,9 @@ async fn insert_notes(
     Ok(())
 }
 
-/// Only `error` and `skip` are stored issue kinds.
-fn validate_issue_kind(kind: &str) -> std::result::Result<(), ImportLookupError> {
+/// Only `error` and `skip` are stored issue kinds. The handlers call this
+/// before they open a connection, and the database functions call it again.
+pub(crate) fn validate_issue_kind(kind: &str) -> std::result::Result<(), ImportLookupError> {
     match kind {
         "error" | "skip" => Ok(()),
         other => Err(ImportLookupError::InvalidIssueKind {

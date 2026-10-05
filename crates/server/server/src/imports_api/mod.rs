@@ -693,14 +693,7 @@ pub(crate) struct ImportIssueRequest {
 
 fn validate_import_issues(issues: &[ImportIssueRequest]) -> Result<(), ApiError> {
     for issue in issues {
-        match issue.kind.as_str() {
-            "error" | "skip" => {}
-            other => {
-                return Err(ApiError::validation(format!(
-                    "invalid import issue kind '{other}'; expected 'error' or 'skip'"
-                )));
-            }
-        }
+        crate::db::imports::validate_issue_kind(&issue.kind)?;
     }
     Ok(())
 }

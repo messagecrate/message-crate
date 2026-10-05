@@ -785,7 +785,7 @@ impl From<crate::db::imports::ImportLookupError> for ApiError {
             err @ crate::db::imports::ImportLookupError::InvalidIssueKind { .. } => {
                 Self::validation(err.to_string())
             }
-            crate::db::imports::ImportLookupError::Db(err) => Self::Internal(err),
+            crate::db::imports::ImportLookupError::Db(err) => Self::Internal(err.into()),
         }
     }
 }
