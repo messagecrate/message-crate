@@ -12802,13 +12802,13 @@
           "app": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/AppKind",
-                "description": "Which app last used the account's session, the desktop app or the\nwebsite, or `null` when the account has no session or no request on it\nhas named an app."
+                "$ref": "#/components/schemas/AppKind"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "Which app last used the account's session, the desktop app or the\nwebsite, or `null` when the account has no session or no request on it\nhas named an app."
           },
           "app_build": {
             "type": [
@@ -13045,13 +13045,13 @@
           "service": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/IdentityService",
-                "description": "The service to link it on; the phone service when omitted. It never\ndecides the identity's type, which comes from the address. A new email\naddress on WhatsApp is refused."
+                "$ref": "#/components/schemas/IdentityService"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "The service to link it on; the phone service when omitted. It never\ndecides the identity's type, which comes from the address. A new email\naddress on WhatsApp is refused."
           }
         }
       },
@@ -13367,13 +13367,13 @@
           "app": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/AppKind",
-                "description": "The app the request named, `desktop` or `website`."
+                "$ref": "#/components/schemas/AppKind"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "The app the request named, `desktop` or `website`."
           },
           "app_build": {
             "type": [
@@ -13445,13 +13445,13 @@
           "credential": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/RunCredential",
-                "description": "A run: what started it. `null` for a run the server started itself."
+                "$ref": "#/components/schemas/RunCredential"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "A run: what started it. `null` for a run the server started itself."
           },
           "id": {
             "type": "integer",
@@ -13477,13 +13477,13 @@
           "mode": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/LoadMode",
-                "description": "`address_book_loaded`: `append` or `edit`."
+                "$ref": "#/components/schemas/LoadMode"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "`address_book_loaded`: `append` or `edit`."
           },
           "permissions_added": {
             "type": [
@@ -13508,35 +13508,35 @@
           "reason": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/AuditReason",
-                "description": "`session_ended`: how the Session ended. `login_refused`: why."
+                "$ref": "#/components/schemas/AuditReason"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "`session_ended`: how the Session ended. `login_refused`: why."
           },
           "scope_kind": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/ExportScopeKind",
-                "description": "An Export Run: `everything`, `query` or `selection`. Never the query\nor the picked ids."
+                "$ref": "#/components/schemas/ExportScopeKind"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "An Export Run: `everything`, `query` or `selection`. Never the query\nor the picked ids."
           },
           "scope_list": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/ExportQueryList",
-                "description": "An Export Run with a query: the list it was for, `conversations` or\n`messages`."
+                "$ref": "#/components/schemas/ExportQueryList"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "An Export Run with a query: the list it was for, `conversations` or\n`messages`."
           },
           "source": {
             "type": [
@@ -13548,13 +13548,13 @@
           "status": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/RunStatus",
-                "description": "A run: its status as the run's own list spells it."
+                "$ref": "#/components/schemas/RunStatus"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "A run: its status as the run's own list spells it."
           },
           "username": {
             "type": [
@@ -14333,13 +14333,13 @@
           "stage": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/ImportStage",
-                "description": "Stage the run opens at. Defaults to `parse`."
+                "$ref": "#/components/schemas/ImportStage"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "Stage the run opens at. Defaults to `parse`."
           },
           "tool": {
             "type": [
@@ -14569,13 +14569,13 @@
           "size": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/DemoDataSize",
-                "description": "The size being built, while `status` is `building`."
+                "$ref": "#/components/schemas/DemoDataSize"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "The size being built, while `status` is `building`."
           },
           "status": {
             "$ref": "#/components/schemas/DemoAccountStatus",
@@ -15389,13 +15389,13 @@
           "stage": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/ImportStage",
-                "description": "Where a running run is; null once it is over."
+                "$ref": "#/components/schemas/ImportStage"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "Where a running run is; null once it is over."
           },
           "started_at": {
             "type": "string",
@@ -15686,13 +15686,13 @@
           "deletion": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/Deletion",
-                "description": "`deleted_in_source_app` for a message the person deleted in the\napp it came from before the backup, `unsent` for one its sender\ntook back; `null` for neither. The message is listed and found\nlike any other either way."
+                "$ref": "#/components/schemas/Deletion"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "`deleted_in_source_app` for a message the person deleted in the\napp it came from before the backup, `unsent` for one its sender\ntook back; `null` for neither. The message is listed and found\nlike any other either way."
           },
           "earlier_versions": {
             "type": "array",
@@ -16146,13 +16146,13 @@
                 "app": {
                   "oneOf": [
                     {
-                      "$ref": "#/components/schemas/AppKind",
-                      "description": "Which app last used the account's session, the desktop app or the\nwebsite, or `null` when the account has no session or no request on it\nhas named an app."
+                      "$ref": "#/components/schemas/AppKind"
                     },
                     {
                       "type": "null"
                     }
-                  ]
+                  ],
+                  "description": "Which app last used the account's session, the desktop app or the\nwebsite, or `null` when the account has no session or no request on it\nhas named an app."
                 },
                 "app_build": {
                   "type": [
@@ -16435,13 +16435,13 @@
                 "app": {
                   "oneOf": [
                     {
-                      "$ref": "#/components/schemas/AppKind",
-                      "description": "The app the request named, `desktop` or `website`."
+                      "$ref": "#/components/schemas/AppKind"
                     },
                     {
                       "type": "null"
                     }
-                  ]
+                  ],
+                  "description": "The app the request named, `desktop` or `website`."
                 },
                 "app_build": {
                   "type": [
@@ -16513,13 +16513,13 @@
                 "credential": {
                   "oneOf": [
                     {
-                      "$ref": "#/components/schemas/RunCredential",
-                      "description": "A run: what started it. `null` for a run the server started itself."
+                      "$ref": "#/components/schemas/RunCredential"
                     },
                     {
                       "type": "null"
                     }
-                  ]
+                  ],
+                  "description": "A run: what started it. `null` for a run the server started itself."
                 },
                 "id": {
                   "type": "integer",
@@ -16545,13 +16545,13 @@
                 "mode": {
                   "oneOf": [
                     {
-                      "$ref": "#/components/schemas/LoadMode",
-                      "description": "`address_book_loaded`: `append` or `edit`."
+                      "$ref": "#/components/schemas/LoadMode"
                     },
                     {
                       "type": "null"
                     }
-                  ]
+                  ],
+                  "description": "`address_book_loaded`: `append` or `edit`."
                 },
                 "permissions_added": {
                   "type": [
@@ -16576,35 +16576,35 @@
                 "reason": {
                   "oneOf": [
                     {
-                      "$ref": "#/components/schemas/AuditReason",
-                      "description": "`session_ended`: how the Session ended. `login_refused`: why."
+                      "$ref": "#/components/schemas/AuditReason"
                     },
                     {
                       "type": "null"
                     }
-                  ]
+                  ],
+                  "description": "`session_ended`: how the Session ended. `login_refused`: why."
                 },
                 "scope_kind": {
                   "oneOf": [
                     {
-                      "$ref": "#/components/schemas/ExportScopeKind",
-                      "description": "An Export Run: `everything`, `query` or `selection`. Never the query\nor the picked ids."
+                      "$ref": "#/components/schemas/ExportScopeKind"
                     },
                     {
                       "type": "null"
                     }
-                  ]
+                  ],
+                  "description": "An Export Run: `everything`, `query` or `selection`. Never the query\nor the picked ids."
                 },
                 "scope_list": {
                   "oneOf": [
                     {
-                      "$ref": "#/components/schemas/ExportQueryList",
-                      "description": "An Export Run with a query: the list it was for, `conversations` or\n`messages`."
+                      "$ref": "#/components/schemas/ExportQueryList"
                     },
                     {
                       "type": "null"
                     }
-                  ]
+                  ],
+                  "description": "An Export Run with a query: the list it was for, `conversations` or\n`messages`."
                 },
                 "source": {
                   "type": [
@@ -16616,13 +16616,13 @@
                 "status": {
                   "oneOf": [
                     {
-                      "$ref": "#/components/schemas/RunStatus",
-                      "description": "A run: its status as the run's own list spells it."
+                      "$ref": "#/components/schemas/RunStatus"
                     },
                     {
                       "type": "null"
                     }
-                  ]
+                  ],
+                  "description": "A run: its status as the run's own list spells it."
                 },
                 "username": {
                   "type": [
@@ -17548,13 +17548,13 @@
                 "stage": {
                   "oneOf": [
                     {
-                      "$ref": "#/components/schemas/ImportStage",
-                      "description": "Where a running run is; null once it is over."
+                      "$ref": "#/components/schemas/ImportStage"
                     },
                     {
                       "type": "null"
                     }
-                  ]
+                  ],
+                  "description": "Where a running run is; null once it is over."
                 },
                 "started_at": {
                   "type": "string",
@@ -17721,13 +17721,13 @@
                 "deletion": {
                   "oneOf": [
                     {
-                      "$ref": "#/components/schemas/Deletion",
-                      "description": "`deleted_in_source_app` for a message the person deleted in the\napp it came from before the backup, `unsent` for one its sender\ntook back; `null` for neither. The message is listed and found\nlike any other either way."
+                      "$ref": "#/components/schemas/Deletion"
                     },
                     {
                       "type": "null"
                     }
-                  ]
+                  ],
+                  "description": "`deleted_in_source_app` for a message the person deleted in the\napp it came from before the backup, `unsent` for one its sender\ntook back; `null` for neither. The message is listed and found\nlike any other either way."
                 },
                 "earlier_versions": {
                   "type": "array",
@@ -18473,13 +18473,13 @@
           "service": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/IdentityService",
-                "description": "The service the identity is on. When omitted, the identity is found on\nthe phone service first, then WhatsApp."
+                "$ref": "#/components/schemas/IdentityService"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "The service the identity is on. When omitted, the identity is found on\nthe phone service first, then WhatsApp."
           }
         }
       },
@@ -18971,13 +18971,13 @@
           "service": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/IdentityService",
-                "description": "The service of the new address. The previous address is found on\nits own service whatever this names: on the named service first when\nit is there under more than one, else the phone service, then\nWhatsApp. When omitted, the new address takes the service of the\nprevious one. It never decides the new identity's type, which comes\nfrom the address, and a new email address on WhatsApp is refused."
+                "$ref": "#/components/schemas/IdentityService"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "The service of the new address. The previous address is found on\nits own service whatever this names: on the named service first when\nit is there under more than one, else the phone service, then\nWhatsApp. When omitted, the new address takes the service of the\nprevious one. It never decides the new identity's type, which comes\nfrom the address, and a new email address on WhatsApp is refused."
           }
         }
       },
@@ -18988,13 +18988,13 @@
           "add_identity": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/AddContactIdentityRequest",
-                "description": "Identity to link."
+                "$ref": "#/components/schemas/AddContactIdentityRequest"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "Identity to link."
           },
           "name": {
             "type": [
@@ -19006,24 +19006,24 @@
           "remove_identity": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/RemoveContactIdentityRequest",
-                "description": "Identity to unlink."
+                "$ref": "#/components/schemas/RemoveContactIdentityRequest"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "Identity to unlink."
           },
           "update_identity": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/UpdateContactIdentityRequest",
-                "description": "Identity to replace."
+                "$ref": "#/components/schemas/UpdateContactIdentityRequest"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "Identity to replace."
           }
         }
       },

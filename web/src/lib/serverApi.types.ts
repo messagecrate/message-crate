@@ -1583,6 +1583,11 @@ export interface components {
              * @description Account id.
              */
             account_id: number;
+            /**
+             * @description Which app last used the account's session, the desktop app or the
+             *     website, or `null` when the account has no session or no request on it
+             *     has named an app.
+             */
             app: components["schemas"]["AppKind"] | null;
             /**
              * @description The Build that app reported, such as `0.9.0+343fe0d8`. `null` exactly
@@ -1724,6 +1729,11 @@ export interface components {
         AddContactIdentityRequest: {
             /** @description The address to link. */
             address: string;
+            /**
+             * @description The service to link it on; the phone service when omitted. It never
+             *     decides the identity's type, which comes from the address. A new email
+             *     address on WhatsApp is refused.
+             */
             service?: components["schemas"]["IdentityService"] | null;
         };
         /** @description One named API token as shown in Settings: label, permissions, and masked secret. */
@@ -1847,6 +1857,7 @@ export interface components {
             api_token_hint: string | null;
             /** @description The API token's label as it was then. */
             api_token_label: string | null;
+            /** @description The app the request named, `desktop` or `website`. */
             app: components["schemas"]["AppKind"] | null;
             /** @description That app's Build, such as `0.9.0+343fe0d8`. `null` exactly when `app` is. */
             app_build: string | null;
@@ -1891,6 +1902,7 @@ export interface components {
              * @description Conversations an Export Run matched, or deleted for good.
              */
             conversations: number | null;
+            /** @description A run: what started it. `null` for a run the server started itself. */
             credential: components["schemas"]["RunCredential"] | null;
             /**
              * Format: int64
@@ -1908,16 +1920,27 @@ export interface components {
              * @description Messages a run accepted or matched.
              */
             messages: number | null;
+            /** @description `address_book_loaded`: `append` or `edit`. */
             mode: components["schemas"]["LoadMode"] | null;
             /** @description `permissions_changed`: permissions turned on. */
             permissions_added: components["schemas"]["Permission"][] | null;
             /** @description `permissions_changed`: permissions turned off. */
             permissions_removed: components["schemas"]["Permission"][] | null;
+            /** @description `session_ended`: how the Session ended. `login_refused`: why. */
             reason: components["schemas"]["AuditReason"] | null;
+            /**
+             * @description An Export Run: `everything`, `query` or `selection`. Never the query
+             *     or the picked ids.
+             */
             scope_kind: components["schemas"]["ExportScopeKind"] | null;
+            /**
+             * @description An Export Run with a query: the list it was for, `conversations` or
+             *     `messages`.
+             */
             scope_list: components["schemas"]["ExportQueryList"] | null;
             /** @description An Import Run: the source it imported, such as `imessage`. */
             source: string | null;
+            /** @description A run: its status as the run's own list spells it. */
             status: components["schemas"]["RunStatus"] | null;
             /**
              * @description The username of the account the entry is about, as it was; for a
@@ -2320,6 +2343,7 @@ export interface components {
             source_fingerprint?: unknown;
             /** @description Addresses the backup's device sent from, when the client read them. */
             source_identities?: unknown;
+            /** @description Stage the run opens at. Defaults to `parse`. */
             stage?: components["schemas"]["ImportStage"] | null;
             tool?: string | null;
         };
@@ -2425,6 +2449,7 @@ export interface components {
         DemoAccount: {
             /** @description Why the last build failed, while `status` is `failed`. */
             error: string | null;
+            /** @description The size being built, while `status` is `building`. */
             size: components["schemas"]["DemoDataSize"] | null;
             /** @description Whether it exists, is being built, or failed to build. */
             status: components["schemas"]["DemoAccountStatus"];
@@ -2903,6 +2928,7 @@ export interface components {
             source_fingerprint: unknown;
             /** @description Addresses the backup's device sent from (JSON array), or null. */
             source_identities: unknown;
+            /** @description Where a running run is; null once it is over. */
             stage: components["schemas"]["ImportStage"] | null;
             /** @description UTC time the run started. */
             started_at: string;
@@ -3063,6 +3089,12 @@ export interface components {
             attachments: components["schemas"]["Attachment"][];
             /** @description The conversation this message belongs to. */
             conversation: components["schemas"]["MessageConversation"];
+            /**
+             * @description `deleted_in_source_app` for a message the person deleted in the
+             *     app it came from before the backup, `unsent` for one its sender
+             *     took back; `null` for neither. The message is listed and found
+             *     like any other either way.
+             */
             deletion: components["schemas"]["Deletion"] | null;
             /**
              * @description The earlier versions of an edited message, oldest first within
@@ -3340,6 +3372,11 @@ export interface components {
                  * @description Account id.
                  */
                 account_id: number;
+                /**
+                 * @description Which app last used the account's session, the desktop app or the
+                 *     website, or `null` when the account has no session or no request on it
+                 *     has named an app.
+                 */
                 app: components["schemas"]["AppKind"] | null;
                 /**
                  * @description The Build that app reported, such as `0.9.0+343fe0d8`. `null` exactly
@@ -3474,6 +3511,7 @@ export interface components {
                 api_token_hint: string | null;
                 /** @description The API token's label as it was then. */
                 api_token_label: string | null;
+                /** @description The app the request named, `desktop` or `website`. */
                 app: components["schemas"]["AppKind"] | null;
                 /** @description That app's Build, such as `0.9.0+343fe0d8`. `null` exactly when `app` is. */
                 app_build: string | null;
@@ -3518,6 +3556,7 @@ export interface components {
                  * @description Conversations an Export Run matched, or deleted for good.
                  */
                 conversations: number | null;
+                /** @description A run: what started it. `null` for a run the server started itself. */
                 credential: components["schemas"]["RunCredential"] | null;
                 /**
                  * Format: int64
@@ -3535,16 +3574,27 @@ export interface components {
                  * @description Messages a run accepted or matched.
                  */
                 messages: number | null;
+                /** @description `address_book_loaded`: `append` or `edit`. */
                 mode: components["schemas"]["LoadMode"] | null;
                 /** @description `permissions_changed`: permissions turned on. */
                 permissions_added: components["schemas"]["Permission"][] | null;
                 /** @description `permissions_changed`: permissions turned off. */
                 permissions_removed: components["schemas"]["Permission"][] | null;
+                /** @description `session_ended`: how the Session ended. `login_refused`: why. */
                 reason: components["schemas"]["AuditReason"] | null;
+                /**
+                 * @description An Export Run: `everything`, `query` or `selection`. Never the query
+                 *     or the picked ids.
+                 */
                 scope_kind: components["schemas"]["ExportScopeKind"] | null;
+                /**
+                 * @description An Export Run with a query: the list it was for, `conversations` or
+                 *     `messages`.
+                 */
                 scope_list: components["schemas"]["ExportQueryList"] | null;
                 /** @description An Import Run: the source it imported, such as `imessage`. */
                 source: string | null;
+                /** @description A run: its status as the run's own list spells it. */
                 status: components["schemas"]["RunStatus"] | null;
                 /**
                  * @description The username of the account the entry is about, as it was; for a
@@ -4012,6 +4062,7 @@ export interface components {
                 source_fingerprint: unknown;
                 /** @description Addresses the backup's device sent from (JSON array), or null. */
                 source_identities: unknown;
+                /** @description Where a running run is; null once it is over. */
                 stage: components["schemas"]["ImportStage"] | null;
                 /** @description UTC time the run started. */
                 started_at: string;
@@ -4078,6 +4129,12 @@ export interface components {
                 attachments: components["schemas"]["Attachment"][];
                 /** @description The conversation this message belongs to. */
                 conversation: components["schemas"]["MessageConversation"];
+                /**
+                 * @description `deleted_in_source_app` for a message the person deleted in the
+                 *     app it came from before the backup, `unsent` for one its sender
+                 *     took back; `null` for neither. The message is listed and found
+                 *     like any other either way.
+                 */
                 deletion: components["schemas"]["Deletion"] | null;
                 /**
                  * @description The earlier versions of an edited message, oldest first within
@@ -4501,6 +4558,10 @@ export interface components {
         RemoveContactIdentityRequest: {
             /** @description The address to unlink. */
             address: string;
+            /**
+             * @description The service the identity is on. When omitted, the identity is found on
+             *     the phone service first, then WhatsApp.
+             */
             service?: components["schemas"]["IdentityService"] | null;
         };
         /** @description The new password. */
@@ -4771,14 +4832,25 @@ export interface components {
             address: string;
             /** @description The address currently linked. */
             previous_address: string;
+            /**
+             * @description The service of the new address. The previous address is found on
+             *     its own service whatever this names: on the named service first when
+             *     it is there under more than one, else the phone service, then
+             *     WhatsApp. When omitted, the new address takes the service of the
+             *     previous one. It never decides the new identity's type, which comes
+             *     from the address, and a new email address on WhatsApp is refused.
+             */
             service?: components["schemas"]["IdentityService"] | null;
         };
         /** @description Body for `PATCH /v1/contacts/{id}`. Exactly one mutation field should be set. */
         UpdateContactRequest: {
+            /** @description Identity to link. */
             add_identity?: components["schemas"]["AddContactIdentityRequest"] | null;
             /** @description New display name; `None` leaves it unchanged. */
             name?: string | null;
+            /** @description Identity to unlink. */
             remove_identity?: components["schemas"]["RemoveContactIdentityRequest"] | null;
+            /** @description Identity to replace. */
             update_identity?: components["schemas"]["UpdateContactIdentityRequest"] | null;
         };
         /** @description New stage for a running Import Run. */

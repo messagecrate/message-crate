@@ -570,6 +570,59 @@ async fn call_with(
     }
 }
 
+/// Every field's description sits on the field, where openapi-typescript
+/// reads it into the web app's generated types (`field_descriptions`). An
+/// optional field typed by a schema, a `oneOf` of one `$ref` and `null`, must
+/// carry no description inside the `$ref`'s branch. A choice between schemas
+/// keeps a description on each branch, and is not such a field. Walks the
+/// whole document, since a schema no operation answers is still generated.
+#[test]
+fn every_field_description_sits_on_the_field() {
+    let doc: Value = serde_json::from_str(&dump_openapi_json()).unwrap();
+    let mut broken = BTreeSet::new();
+    descriptions_inside_branches(&doc, "#", &mut broken);
+    assert!(
+        broken.is_empty(),
+        "these fields keep their description inside a `oneOf` branch: {broken:#?}"
+    );
+}
+
+/// Add to `out`, as its JSON pointer, each property under `value` that is a
+/// `oneOf` of one `$ref` and `null`, with no description of its own, whose
+/// `$ref` branch carries a description: what `field_descriptions` lifts.
+fn descriptions_inside_branches(value: &Value, at: &str, out: &mut BTreeSet<String>) {
+    match value {
+        Value::Object(object) => {
+            let fields = object.get("properties").and_then(Value::as_object);
+            for (field, schema) in fields.into_iter().flatten() {
+                let branches = schema["oneOf"]
+                    .as_array()
+                    .map(Vec::as_slice)
+                    .unwrap_or_default();
+                let (refs, others): (Vec<&Value>, Vec<&Value>) = branches
+                    .iter()
+                    .partition(|branch| branch.get("$ref").is_some());
+                let optional_schema = refs.len() == 1
+                    && !others.is_empty()
+                    && others.iter().all(|branch| branch["type"] == "null")
+                    && schema.get("description").is_none();
+                if optional_schema && refs[0].get("description").is_some() {
+                    out.insert(format!("{at}/properties/{field}"));
+                }
+            }
+            for (key, child) in object {
+                descriptions_inside_branches(child, &format!("{at}/{key}"), out);
+            }
+        }
+        Value::Array(items) => {
+            for (i, child) in items.iter().enumerate() {
+                descriptions_inside_branches(child, &format!("{at}/{i}"), out);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Add to `out` each property of `schema` that it does not require, as
 /// `at.field`, looking into the objects it holds but not into a schema it
 /// names, which is checked on its own.

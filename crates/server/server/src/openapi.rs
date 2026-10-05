@@ -253,12 +253,14 @@ pub fn api_openapi() -> OpenApiRouter<AppState> {
 }
 
 /// Finish the assembled document with the parts no handler writes: the
-/// shared error responses and one-sentence summaries ([`shared_parts`]), and
+/// shared error responses and one-sentence summaries ([`shared_parts`]),
+/// every field's description on the field ([`field_descriptions`]), and
 /// every field of a success answer required ([`response_fields`]).
 /// The server and the dump both call this, so what `/openapi.json` serves
 /// and what is checked in are one document.
 pub(crate) fn finish(spec: &mut utoipa::openapi::OpenApi) {
     shared_parts::apply(spec);
+    field_descriptions::lift(spec);
     response_fields::require_every_field(spec);
 }
 
@@ -290,6 +292,7 @@ pub fn write_openapi(path: Option<&Path>) -> anyhow::Result<()> {
     Ok(())
 }
 
+pub(crate) mod field_descriptions;
 pub(crate) mod response_fields;
 pub(crate) mod shared_parts;
 
