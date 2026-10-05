@@ -52,6 +52,15 @@ pub use schema_version::{
 /// (`docs/adr/0014-gpl-code-only-behind-a-process-boundary.md`).
 pub use imessage_reader_protocol::Reaction;
 
+/// The storage id of [`IrConversationType::Orphaned`], what every chat id of
+/// an orphaned conversation starts with, and that chat id. Defined in
+/// `imessage-reader-protocol` beside [`Reaction`], for the same reason: the
+/// Apple Messages Reader writes orphaned conversations in the shape the
+/// conversation file carries.
+pub use imessage_reader_protocol::{
+    ORPHANED_CHAT_ID_PREFIX, ORPHANED_CONVERSATION_TYPE, orphaned_chat_id,
+};
+
 /// Why a message's content is gone in the app it came from: Deleted in the
 /// source app, or Unsent. Serialized `deleted_in_source_app` / `unsent`.
 ///
@@ -105,8 +114,8 @@ impl std::fmt::Display for UnknownDeletion {
 
 impl std::error::Error for UnknownDeletion {}
 
-/// Schema version written into every [`ConversationDocument`] (currently 8).
-pub const SCHEMA_VERSION: u32 = 8;
+/// Schema version written into every [`ConversationDocument`] (currently 9).
+pub const SCHEMA_VERSION: u32 = 9;
 
 /// One exported chat: export metadata, conversation roster and stats, and messages.
 ///
@@ -114,7 +123,7 @@ pub const SCHEMA_VERSION: u32 = 8;
 /// parses. See the [common message](https://messagecrate.app/docs/developer/architecture/common-message/) page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationDocument {
-    /// Schema version written into this document (currently 8).
+    /// Schema version written into this document (currently 9).
     pub schema_version: u32,
     /// Where and how this export was produced.
     pub export: ExportMeta,
@@ -142,7 +151,7 @@ pub struct ExportMeta {
     pub owner_display_name: Option<String>,
 }
 
-/// Individual or group chat.
+/// The shape of a conversation: one-to-one, group, or orphaned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum IrConversationType {
@@ -150,21 +159,30 @@ pub enum IrConversationType {
     Individual,
     /// Chat with multiple peers.
     Group,
+    /// Orphaned messages: ones the backup holds without recording which
+    /// conversation they were said in. One sender's sit in a conversation
+    /// with that sender as its only participant, keyed by
+    /// [`orphaned_chat_id`]; the account holder's sit in one with no
+    /// participants. Neither one-to-one nor a group.
+    Orphaned,
 }
 
 impl IrConversationType {
-    /// Lowercase storage id (`individual` / `group`).
+    /// Lowercase storage id (`individual` / `group` / `orphaned`).
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Individual => "individual",
             Self::Group => "group",
+            Self::Orphaned => ORPHANED_CONVERSATION_TYPE,
         }
     }
 
-    /// Parse a storage id; anything but `group` (case-insensitive) is `Individual`.
+    /// Parse a storage id, ignoring case; anything but `group` or `orphaned`
+    /// is `Individual`.
     pub fn parse(s: &str) -> Self {
         match s.trim().to_ascii_lowercase().as_str() {
             "group" => Self::Group,
+            ORPHANED_CONVERSATION_TYPE => Self::Orphaned,
             _ => Self::Individual,
         }
     }
@@ -1242,7 +1260,11 @@ mod storage_id_round_trip_tests {
 
     #[test]
     fn conversation_type() {
-        for v in [IrConversationType::Individual, IrConversationType::Group] {
+        for v in [
+            IrConversationType::Individual,
+            IrConversationType::Group,
+            IrConversationType::Orphaned,
+        ] {
             assert_eq!(IrConversationType::parse(v.as_str()), v);
             assert_matches_serde(v, v.as_str());
         }

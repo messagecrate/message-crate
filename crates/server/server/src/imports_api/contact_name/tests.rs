@@ -262,8 +262,9 @@ async fn a_fresh_contact_takes_the_number_on_every_service() {
 
 /// A conversation header line. `participants` is the JSON array body.
 fn header(chat: &str, kind: &str, participants: &str) -> String {
+    let version = message_ir::SCHEMA_VERSION;
     format!(
-        r#"{{"schema_version":8,"export":{{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{chat}","conversation_type":"{kind}","group_title":null,"participants":[{participants}],"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
+        r#"{{"schema_version":{version},"export":{{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null}},"conversation":{{"chat_identifier":"{chat}","conversation_type":"{kind}","group_title":null,"participants":[{participants}],"stats":{{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183462000}}}}}}"#
     )
 }
 
@@ -274,10 +275,155 @@ fn incoming(guid: &str, sender: &str) -> String {
     )
 }
 
-/// `orphaned.jsonl` as an exporter writes it: messages with no conversation
-/// of their own, under a header that names nobody.
-fn orphaned(message: &str) -> String {
-    header("orphaned", "individual", "") + "\n" + message + "\n"
+/// An outgoing message line: one the account holder sent.
+fn outgoing(guid: &str) -> String {
+    format!(
+        r#"{{"guid":"{guid}","timestamp_unix_ms":1426183462000,"direction":"outgoing","service":"imessage","message_kind":"imessage","sender_identity":null,"sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}}"#
+    )
+}
+
+/// One participant entry: `identity`, named `name`.
+fn person(identity: &str, name: &str) -> String {
+    format!(r#"{{"identity":"{identity}","display_name":"{name}"}}"#)
+}
+
+/// The orphaned messages one sender sent, as the Apple Messages reader
+/// writes them: a conversation of type `orphaned`, keyed `orphaned:` and the
+/// sender's address, with the sender as its only participant.
+fn orphaned_from(sender: &str, name: &str, guid: &str) -> String {
+    header(
+        &format!("orphaned:{sender}"),
+        "orphaned",
+        &person(sender, name),
+    ) + "\n"
+        + &incoming(guid, sender)
+        + "\n"
+}
+
+/// The orphaned messages the account holder sent, which record no
+/// recipient: one conversation of type `orphaned`, keyed `orphaned:`, with no
+/// participants.
+fn unknown_recipient(guids: &[&str]) -> String {
+    let mut out = header("orphaned:", "orphaned", "") + "\n";
+    for guid in guids {
+        out += &outgoing(guid);
+        out += "\n";
+    }
+    out
+}
+
+/// A backup holding Ada's one-to-one conversation and orphaned messages:
+/// one from Ada, one from Bob, and two the account holder sent.
+fn backup_with_orphaned_messages() -> String {
+    header("+15555550154", "individual", &person("+15555550154", "Ada"))
+        + "\n"
+        + &incoming("g-ada", "+15555550154")
+        + "\n"
+        + &orphaned_from("+15555550154", "Ada", "g-ada-orphaned")
+        + &orphaned_from("+15555550155", "Bob", "g-bob-orphaned")
+        + &unknown_recipient(&["g-mine-1", "g-mine-2"])
+}
+
+/// What [`backup_with_orphaned_messages`] imports as, by either path: Ada's
+/// one-to-one conversation as it was, and three orphaned conversations, one
+/// for each sender and one for the holder's, which `kind:orphaned` lists and
+/// `kind:direct` and `kind:group` do not. Only Ada and Bob are people: no
+/// conversation key gets a contact.
+async fn assert_imported_as_three_orphaned_conversations(
+    conn: &mut sqlx::SqliteConnection,
+    account_id: i64,
+) {
+    let conversations: Vec<(String, String, i64)> = sqlx::query_as(
+        "SELECT h.raw, c.conversation_type,
+                (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id)
+         FROM conversations c JOIN handles h ON h.id = c.chat_handle_id
+         WHERE c.account_id = $1
+         ORDER BY h.raw",
+    )
+    .bind(account_id)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap();
+    let expected = [
+        ("+15555550154", "individual", 1),
+        ("orphaned:", "orphaned", 2),
+        ("orphaned:+15555550154", "orphaned", 1),
+        ("orphaned:+15555550155", "orphaned", 1),
+    ]
+    .map(|(chat, kind, n)| (chat.to_string(), kind.to_string(), n));
+    assert_eq!(conversations, expected);
+
+    let linked: Vec<String> = sqlx::query_scalar(
+        "SELECT h.raw FROM contact_handles ch
+         JOIN handles h ON h.id = ch.handle_id
+         WHERE ch.account_id = $1
+         ORDER BY h.raw",
+    )
+    .bind(account_id)
+    .fetch_all(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(
+        linked,
+        ["+15555550154", "+15555550155"],
+        "only the senders are people"
+    );
+
+    assert_eq!(
+        listed_conversations(conn, account_id, "kind:orphaned").await,
+        [
+            (Some("Ada · Missing recipient"), vec!["+15555550154"]),
+            (Some("Bob · Missing recipient"), vec!["+15555550155"]),
+            (Some("Unknown recipient"), vec![]),
+        ]
+        .map(|(label, people)| (
+            label.map(str::to_string),
+            people.into_iter().map(str::to_string).collect::<Vec<_>>()
+        ))
+    );
+    assert_eq!(
+        listed_conversations(conn, account_id, "kind:direct").await,
+        [(None, vec!["+15555550154".to_string()])],
+        "Ada's one-to-one conversation is the only direct one"
+    );
+    assert_eq!(
+        listed_conversations(conn, account_id, "kind:group").await,
+        []
+    );
+}
+
+/// The conversations `q` lists, as (title, participant identities), by title.
+async fn listed_conversations(
+    conn: &mut sqlx::SqliteConnection,
+    account_id: i64,
+    q: &str,
+) -> Vec<(Option<String>, Vec<String>)> {
+    let page = crate::db::conversations::list_conversations_sorted(
+        conn,
+        account_id,
+        q,
+        &crate::db::conversations::DEFAULT_CONVERSATION_SORT,
+        50,
+        0,
+        crate::search::tests::clock(),
+    )
+    .await
+    .unwrap();
+    let mut out: Vec<(Option<String>, Vec<String>)> = page
+        .items
+        .into_iter()
+        .map(|c| {
+            (
+                c.label,
+                c.participants
+                    .into_iter()
+                    .map(|p| p.identity.unwrap_or_default())
+                    .collect(),
+            )
+        })
+        .collect();
+    out.sort();
+    out
 }
 
 /// Run one import of `files` (name, body) through the real entry point.
@@ -324,8 +470,7 @@ async fn assert_every_met_handle_has_a_live_contact(conn: &mut sqlx::SqliteConne
                          JOIN conversations c ON c.id = p.conversation_id
                          WHERE c.account_id = $1)
              OR h.id IN (SELECT chat_handle_id FROM conversations
-                         WHERE account_id = $1 AND conversation_type = 'individual'
-                           AND source_file <> 'orphaned.jsonl'))
+                         WHERE account_id = $1 AND conversation_type = 'individual'))
            AND h.id NOT IN (
              SELECT ch.handle_id FROM contact_handles ch
              WHERE ch.account_id = $1
@@ -343,63 +488,100 @@ async fn assert_every_met_handle_has_a_live_contact(conn: &mut sqlx::SqliteConne
     );
 }
 
-/// Report (a): a sender with no conversation header to name them (the
-/// messages in `orphaned.jsonl`) and a group sender the group's header left
-/// out both used to get a handle and no contact, because the sender path only
-/// joined an existing sibling's contact.
+/// Report (a): a group sender the group's header left out used to get a
+/// handle and no contact, because the sender path only joined an existing
+/// sibling's contact.
 #[tokio::test]
 async fn a_sender_no_header_names_still_gets_a_contact() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     import_files(
         &mut conn,
-        &[
-            (
-                "orphaned.jsonl",
-                orphaned(&incoming("g-orphan", "+15555550154")),
-            ),
-            (
-                "group.jsonl",
-                header(
-                    "chat1000000701",
-                    "group",
-                    r#"{"identity":"+15555550123","display_name":null}"#,
-                ) + "\n"
-                    + &incoming("g-group", "+15555550156")
-                    + "\n",
-            ),
-        ],
+        &[(
+            "group.jsonl",
+            header(
+                "chat1000000701",
+                "group",
+                r#"{"identity":"+15555550123","display_name":null}"#,
+            ) + "\n"
+                + &incoming("g-group", "+15555550156")
+                + "\n",
+        )],
     )
     .await;
     assert_every_met_handle_has_a_live_contact(&mut conn).await;
 }
 
-/// `orphaned.jsonl` arrives under an `individual` header whose chat id is
-/// `orphaned`. That id names the file's conversation, not a person, so it
-/// gets no contact; it used to get a nameless one.
+/// Orphaned messages from two senders make two conversations on the
+/// desktop app's import path, and the holder's a third, as
+/// [`assert_imported_as_three_orphaned_conversations`] says.
 #[tokio::test]
-async fn the_orphaned_conversation_is_not_a_person() {
+async fn orphaned_messages_make_one_conversation_per_sender_and_one_for_the_holder() {
     let (pool, _dir) = crate::db::engine::test_pool().await;
     let mut conn = pool.acquire().await.unwrap();
     import_files(
         &mut conn,
-        &[(
-            "orphaned.jsonl",
-            orphaned(&incoming("g-orphan", "+15555550159")),
-        )],
+        &[("backup.jsonl", backup_with_orphaned_messages())],
     )
     .await;
-    let linked: Vec<String> = sqlx::query_scalar(
-        "SELECT h.raw FROM contact_handles ch
-         JOIN handles h ON h.id = ch.handle_id
-         WHERE ch.account_id = $1
+    assert_imported_as_three_orphaned_conversations(&mut conn, TEST_ACCOUNT).await;
+}
+
+/// The same backup through the HTTP batch path, where every file is
+/// `_import.jsonl`, imports the same way: no conversation key becomes a
+/// person, and reading an orphaned conversation shows its sender alone
+/// (#1169, S1-2).
+#[tokio::test]
+async fn the_orphaned_conversation_over_http_is_not_a_person() {
+    let (fixture, account) = crate::test_support::fixture_with_account().await;
+    crate::imports_api::tests::completed_run(
+        &fixture.state,
+        &account.token,
+        "imessage",
+        backup_with_orphaned_messages(),
+    )
+    .await;
+    let mut conn = fixture.state.db.acquire().await.unwrap();
+    assert_imported_as_three_orphaned_conversations(&mut conn, account.account_id).await;
+
+    let orphaned: Vec<i64> = sqlx::query_scalar(
+        "SELECT c.id FROM conversations c JOIN handles h ON h.id = c.chat_handle_id
+         WHERE c.account_id = $1 AND c.conversation_type = 'orphaned'
          ORDER BY h.raw",
     )
-    .bind(TEST_ACCOUNT)
+    .bind(account.account_id)
     .fetch_all(&mut *conn)
     .await
     .unwrap();
-    assert_eq!(linked, ["+15555550159"], "only the sender is a person");
+    let mut read = Vec::new();
+    for id in orphaned {
+        let conversation: serde_json::Value = crate::test_support::get_json(
+            &fixture.state,
+            &format!("/v1/conversations/{id}"),
+            &account.token,
+        )
+        .await;
+        let people: Vec<&str> = conversation["participants"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["identity"].as_str().unwrap())
+            .collect();
+        read.push((
+            conversation["label"].as_str().unwrap().to_string(),
+            people.join(","),
+        ));
+    }
+    assert_eq!(
+        read,
+        [
+            ("Unknown recipient", ""),
+            ("Ada · Missing recipient", "+15555550154"),
+            ("Bob · Missing recipient", "+15555550155"),
+        ]
+        .map(|(label, people)| (label.to_string(), people.to_string())),
+        "reading each orphaned conversation shows its sender alone, and no key"
+    );
 }
 
 /// Report (b): a sender whose number is on a trashed contact under another
@@ -430,8 +612,14 @@ async fn a_sender_is_never_linked_to_a_trashed_contact() {
     import_files(
         &mut conn,
         &[(
-            "orphaned.jsonl",
-            orphaned(&incoming("g-trashed", "+15555550157")),
+            "group.jsonl",
+            header(
+                "chat1000000702",
+                "group",
+                r#"{"identity":"+15555550123","display_name":null}"#,
+            ) + "\n"
+                + &incoming("g-trashed", "+15555550157")
+                + "\n",
         )],
     )
     .await;

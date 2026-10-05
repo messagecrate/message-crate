@@ -18,7 +18,7 @@ fn writes_json_csv_jsonl_and_eml() {
     assert!(json_path.ends_with("+15555550101.json"));
     let raw = fs::read_to_string(&json_path).unwrap();
     let parsed: ConversationDocument = serde_json::from_str(&raw).unwrap();
-    assert_eq!(parsed.schema_version, 8);
+    assert_eq!(parsed.schema_version, 9);
     assert_eq!(parsed.messages[0].text, "hello ir");
     assert!(parsed.messages[0].attachments.is_empty());
     assert_eq!(
@@ -49,7 +49,7 @@ fn writes_json_csv_jsonl_and_eml() {
     let jsonl = fs::read_to_string(&jsonl_path).unwrap();
     let mut lines = jsonl.lines();
     let header: Value = serde_json::from_str(lines.next().unwrap()).unwrap();
-    assert_eq!(header["schema_version"], 8);
+    assert_eq!(header["schema_version"], 9);
     assert!(header.get("messages").is_none());
     assert_eq!(header["conversation"]["stats"]["message_count"], 1);
     let msg_line: Value = serde_json::from_str(lines.next().unwrap()).unwrap();
@@ -457,7 +457,7 @@ fn json_refuses_a_version_3_file_by_name() {
     assert_eq!(refusal.found, 3);
     assert_eq!(
         refusal.to_string(),
-        "This file is schema version 3; Message Crate reads version 8"
+        "This file is schema version 3; Message Crate reads version 9"
     );
 }
 
@@ -478,23 +478,23 @@ fn jsonl_refuses_a_version_3_file_by_name() {
     assert!(format!("{err:#}").contains("schema version 3"), "{err:#}");
 }
 
-/// A version-7 file keeps an Apple Messages edit history in
-/// `imessage.edits`; version 8 keeps the earlier versions in the message's
-/// `edits`. The reader refuses it by its version rather than reading the
-/// message with its earlier versions gone.
+/// A version-8 file puts every orphaned message in one `individual`
+/// conversation named `orphaned`; version 9 gives them conversations of
+/// type `orphaned`. The reader refuses it by its version rather than reading
+/// that conversation as one with a person named "orphaned".
 #[test]
-fn jsonl_refuses_a_version_7_file_by_name() {
+fn jsonl_refuses_a_version_8_file_by_name() {
     let tmp = tempfile::tempdir().unwrap();
-    let path = tmp.path().join("v7.jsonl");
+    let path = tmp.path().join("v8.jsonl");
     fs::write(
         &path,
         concat!(
-            r#"{"schema_version":7,"export":{"source":"imessage","tool":"t","tool_version":"1","owner_identity":"+15555550100","owner_display_name":null},"#,
-            r#""conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550101","display_name":"Sam","identity_type":"phone"}],"#,
+            r#"{"schema_version":8,"export":{"source":"imessage","tool":"t","tool_version":"1","owner_identity":"+15555550100","owner_display_name":null},"#,
+            r#""conversation":{"chat_identifier":"orphaned","conversation_type":"individual","group_title":null,"participants":[],"#,
             r#""stats":{"message_count":1,"attachment_count":0,"first_timestamp_unix_ms":1400773261000,"last_timestamp_unix_ms":1400773261000}}}"#,
             "\n",
             r#"{"guid":"g1","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hi","attachments":[],"#,
-            r#""imessage":{"is_reply":false,"edits":[{"part_index":0,"text":"hello"}]},"source":null}"#,
+            r#""imessage":null,"source":null}"#,
             "\n",
         ),
     )
@@ -503,10 +503,10 @@ fn jsonl_refuses_a_version_7_file_by_name() {
     let refusal = err
         .downcast_ref::<message_ir::UnsupportedSchemaVersion>()
         .expect("typed refusal");
-    assert_eq!(refusal.found, 7);
+    assert_eq!(refusal.found, 8);
     assert_eq!(
         refusal.to_string(),
-        "This file is schema version 7; Message Crate reads version 8"
+        "This file is schema version 8; Message Crate reads version 9"
     );
 }
 
