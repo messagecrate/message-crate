@@ -4,6 +4,7 @@
 use chrono::NaiveDate;
 
 use crate::db::contacts::UNKNOWN_CONTACT_SQL;
+use crate::db::conversation_messages::earlier_versions_holder_sql;
 use crate::db::conversations::{conversation_title_sql, is_with_yourself_sql};
 
 use super::bridge::{ListCtx, MessageAgg, Sql, TrashScope};
@@ -296,6 +297,12 @@ fn emit_text(ctx: &ListCtx, out: &mut Sql, term: &TextTerm) {
         // file-name match makes any part of a file name findable, and the
         // earlier versions' own index finds a word an edit took out.
         //
+        // A version finds each message that shows it: the message holding
+        // it, and the one that message is hidden under as a duplicate when
+        // that one shows it (`earlier_versions_holder_sql`, #1757). Asking
+        // the holder of both, rather than taking `duplicate_of` alone, keeps
+        // the hits to the versions the answer lists.
+        //
         // One `IN` over the union of the id sets, so the planner walks the
         // matching ids rather than every message of the account: an `OR`
         // between the index and an `EXISTS` on attachments forced that scan
@@ -307,10 +314,16 @@ fn emit_text(ctx: &ListCtx, out: &mut Sql, term: &TextTerm) {
             free_text_match(out, "coalesce(a.original_name, '')", term);
             if ctx.earlier_versions {
                 out.push(
-                    " UNION ALL SELECT mv.message_id FROM message_versions mv WHERE mv.id IN (",
+                    " UNION ALL SELECT s.id FROM message_versions mv \
+                     JOIN messages h ON h.id = mv.message_id \
+                     JOIN messages s ON s.id IN (h.id, h.duplicate_of) \
+                     WHERE mv.id IN (",
                 );
                 fts::matching_version_ids(out, term);
-                out.push(")");
+                out.push(&format!(
+                    ") AND ({}) = h.id",
+                    earlier_versions_holder_sql("s")
+                ));
             }
             out.push(")");
         }

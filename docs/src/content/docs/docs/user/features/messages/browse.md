@@ -129,6 +129,7 @@ The line **Matched an earlier version** sits above them, and the version holding
 **Find** opens a match the same way when only an earlier version holds the word.
 Every other edited message stays closed, including one the search found by its final text.
 Apple Messages is the source that records edits today.
+When the same phone is imported through Apple Messages and through a backup that records no edits, such as iMazing, the Message Crate shows one copy of each message, and that copy lists the earlier versions whichever backup it came from.
 
 ### Photos, videos, and recordings
 

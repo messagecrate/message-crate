@@ -260,17 +260,17 @@ async fn mark_earlier_version_matches(
         return Ok(());
     }
 
-    // Every version of those messages with whether it matched, read in
+    // Every version those messages show with whether it matched, read in
     // `EARLIER_VERSION_ORDER`, the order `load_earlier_versions` read them
     // into each message, so the n-th row of a message is its n-th version.
     let mut matched: HashMap<i64, Vec<bool>> = HashMap::new();
     for chunk in only_earlier.chunks(SQLITE_IN_CHUNK) {
         // Each value is bound where its `?` is written.
         let mut sql = Sql::default();
-        sql.push("SELECT message_id, id IN (");
+        sql.push("SELECT s.id, v.id IN (");
         sql.push(matching_sql);
         sql.params.extend_from_slice(matching_params);
-        sql.push(") FROM message_versions WHERE message_id IN (");
+        sql.push(&format!(") {} WHERE s.id IN (", earlier_versions_from()));
         for (i, id) in chunk.iter().enumerate() {
             if i > 0 {
                 sql.push(", ");
@@ -576,13 +576,51 @@ async fn load_tapbacks(
     .await
 }
 
-/// The order a message's earlier versions are read in, everywhere: by
-/// message, then oldest first within each part, which is the order they
-/// were stored in.
-const EARLIER_VERSION_ORDER: &str = "message_id, id";
+/// The id of the message whose earlier versions the message `alias` shows,
+/// as an SQL expression over that alias: its own id when it holds any, or
+/// else the lowest id among the duplicates hidden under it
+/// (`duplicate_of`) that hold any. NULL when none of them holds one.
+///
+/// Why: dedupe keeps the copy of the source imported first, and only Apple
+/// Messages records edits, so the copy shown can be one from a backup that
+/// records none, such as iMazing, while the copy that holds the earlier
+/// versions is hidden (#1757). One holder rather than every copy's
+/// versions together, so two copies that both record the edits never list
+/// them twice. Every reader of earlier versions goes through this one
+/// expression: [`EARLIER_VERSIONS_FROM`] for the versions a message shows,
+/// and the Messages list's free text, which finds a message by the versions
+/// it shows ([`crate::search`]).
+pub(crate) fn earlier_versions_holder_sql(alias: &str) -> String {
+    format!(
+        "CASE WHEN EXISTS (SELECT 1 FROM message_versions hv WHERE hv.message_id = {alias}.id) \
+         THEN {alias}.id \
+         ELSE (SELECT MIN(hd.id) FROM messages hd \
+               WHERE hd.duplicate_of = {alias}.id \
+                 AND EXISTS (SELECT 1 FROM message_versions hdv WHERE hdv.message_id = hd.id)) \
+         END"
+    )
+}
 
-/// Earlier-version rows for these messages, grouped by message id, each
+/// The `FROM` of the earlier versions each message shows: one row per
+/// version `v`, beside the message `s` that shows it, through
+/// [`earlier_versions_holder_sql`]. The caller adds `WHERE s.id IN (...)`
+/// and orders by [`EARLIER_VERSION_ORDER`].
+fn earlier_versions_from() -> String {
+    format!(
+        "FROM messages s JOIN message_versions v ON v.message_id = ({})",
+        earlier_versions_holder_sql("s")
+    )
+}
+
+/// The order a message's earlier versions are read in, everywhere: by the
+/// message that shows them, then oldest first within each part, which is
+/// the order they were stored in.
+const EARLIER_VERSION_ORDER: &str = "s.id, v.id";
+
+/// The earlier versions these messages show, grouped by message id, each
 /// message's in the order they were stored: oldest first within each part.
+/// A message shows its own, or a hidden duplicate's
+/// ([`earlier_versions_holder_sql`]).
 async fn load_earlier_versions(
     conn: &mut SqliteConnection,
     message_ids: &[i64],
@@ -592,10 +630,11 @@ async fn load_earlier_versions(
         message_ids,
         |placeholders| {
             format!(
-                "SELECT message_id, part_index, text, edited_at
-                 FROM message_versions
-                 WHERE message_id IN ({placeholders})
-                 ORDER BY {EARLIER_VERSION_ORDER}"
+                "SELECT s.id, v.part_index, v.text, v.edited_at
+                 {from}
+                 WHERE s.id IN ({placeholders})
+                 ORDER BY {EARLIER_VERSION_ORDER}",
+                from = earlier_versions_from(),
             )
         },
         |row| {

@@ -453,6 +453,19 @@ async fn import_apple_messages_file(
     name: &str,
     contents: &str,
 ) -> crate::imports_api::ImportCounts {
+    import_conversation_file(fixture, account_id, name, contents, "imessage").await
+}
+
+/// Import one conversation file, `contents`, from the backup source
+/// `source` into `account_id` through the whole pipeline, from a directory
+/// named `name`.
+async fn import_conversation_file(
+    fixture: &TestFixture,
+    account_id: i64,
+    name: &str,
+    contents: &str,
+    source: &str,
+) -> crate::imports_api::ImportCounts {
     let dir = fixture.dir().join(name);
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join(format!("{name}.jsonl"));
@@ -466,7 +479,7 @@ async fn import_apple_messages_file(
             assets_dir: &assets,
             asset_root: &dir,
             mode: crate::imports_api::ImportMode::Append,
-            source: "imessage",
+            source,
             account_id,
             fill_content_keys: false,
             import_id: None,
@@ -863,6 +876,112 @@ async fn an_append_from_an_earlier_backup_keeps_a_stored_messages_later_edit() {
     let once = message_by_guid(&page, "guid-never-edited");
     assert_eq!(once["text"], "Something changed here", "{page}");
     assert_eq!(earlier_texts(&once), ["Nothing changed here"], "{page}");
+}
+
+/// [`APPLE_MESSAGES_EDITS`] as an iMazing backup of the same iPhone holds
+/// it: the same messages with their final text, under iMazing's own guids,
+/// and no earlier versions, because iMazing records no edits.
+fn imazing_copy_of_apple_messages_edits() -> String {
+    let copy = APPLE_MESSAGES_EDITS
+        .replace(r#""source":"imessage""#, r#""source":"imazing""#)
+        .replace(r#""guid":"guid-"#, r#""guid":"imazing-"#)
+        .replace(
+            r#""edits":[{"part_index":0,"text":"Meet at the library","edited_at_unix_ms":1578309000000},{"part_index":0,"text":"Meet at the museum","edited_at_unix_ms":1578309030000}],"#,
+            "",
+        )
+        .replace(
+            r#""edits":[{"part_index":0,"text":"The library opens at eight","edited_at_unix_ms":1578309060000}],"#,
+            "",
+        );
+    assert!(!copy.contains("edits"), "the iMazing copy holds no edits");
+    copy
+}
+
+/// The same edited message from an iMazing backup, imported first, and from
+/// Apple Messages: dedupe keeps the iMazing copy, which holds no earlier
+/// versions, and hides the Apple Messages copy, which holds them. The copy
+/// shown lists the hidden copy's earlier versions, and a word only one of
+/// them holds finds the copy shown, marked as found by that version. Asked
+/// for by its source, the hidden copy is found by its own versions too.
+#[tokio::test]
+async fn the_copy_shown_takes_the_earlier_versions_of_a_hidden_duplicate() {
+    let (fixture, alice) = fixture_with_account().await;
+    import_conversation_file(
+        &fixture,
+        alice.account_id,
+        "imazing",
+        &imazing_copy_of_apple_messages_edits(),
+        "imazing",
+    )
+    .await;
+    import_edits(&fixture, alice.account_id).await;
+    let mut conn = fixture.conn().await;
+    crate::dedupe::dedupe_cross_source(&mut conn, alice.account_id, None, 2)
+        .await
+        .unwrap();
+    let hidden_under: Option<String> = sqlx::query_scalar(
+        "SELECT w.guid FROM messages m JOIN messages w ON w.id = m.duplicate_of
+         WHERE m.guid = 'guid-edited-twice'",
+    )
+    .fetch_optional(&mut *conn)
+    .await
+    .unwrap();
+    assert_eq!(
+        hidden_under.as_deref(),
+        Some("imazing-edited-twice"),
+        "dedupe keeps the copy of the source imported first"
+    );
+    drop(conn);
+
+    let page: serde_json::Value =
+        get_json(&fixture.state, "/v1/messages?sort=date", &alice.token).await;
+    assert_eq!(
+        guids(&page),
+        [
+            "imazing-edited-twice",
+            "imazing-edited-final-match",
+            "imazing-never-edited"
+        ],
+        "{page}"
+    );
+    let shown = message_by_guid(&page, "imazing-edited-twice");
+    assert_eq!(
+        earlier_texts(&shown),
+        ["Meet at the library", "Meet at the museum"],
+        "{page}"
+    );
+    let never = message_by_guid(&page, "imazing-never-edited");
+    assert_eq!(earlier_texts(&never), Vec::<&str>::new(), "{page}");
+
+    let museum: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=museum&sort=date",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(guids(&museum), ["imazing-edited-twice"], "{museum}");
+    let hit = message_by_guid(&museum, "imazing-edited-twice");
+    assert_eq!(hit["matched_earlier_version"], true, "{museum}");
+    let matched: Vec<bool> = hit["earlier_versions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v["matched"].as_bool().unwrap())
+        .collect();
+    assert_eq!(matched, [false, true], "{museum}");
+
+    let own: serde_json::Value = get_json(
+        &fixture.state,
+        "/v1/messages?q=museum%20source%3Aimessage&sort=date",
+        &alice.token,
+    )
+    .await;
+    assert_eq!(guids(&own), ["guid-edited-twice"], "{own}");
+    assert_eq!(
+        earlier_texts(&message_by_guid(&own, "guid-edited-twice")),
+        ["Meet at the library", "Meet at the museum"],
+        "{own}"
+    );
 }
 
 /// Deleting an edited message deletes its earlier versions and their search
