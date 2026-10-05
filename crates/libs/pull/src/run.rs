@@ -379,7 +379,7 @@ impl<'a> Pull<'a> {
         Ok(export)
     }
 
-    /// Close the run with `complete` or `cancel`, retrying a transient failure.
+    /// Close the run by `action`, retrying a transient failure.
     fn close_export(&self, export_id: i64, action: CloseAction) -> Result<ExportRun> {
         let cfg = self.cfg;
         with_retries(MAX_RETRIES, || {

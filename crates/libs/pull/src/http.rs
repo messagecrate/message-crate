@@ -175,7 +175,7 @@ pub fn download_asset(
         bail!("invalid SHA-256 digest for an Asset: {sha256}");
     }
     let what = format!("Asset {sha_clean} fetch");
-    let failed = || format!("{what} failed");
+    let fetch_failed = || format!("{what} failed");
     let base = trim_base_url(base_url);
     // The fingerprint alone names the attachment, and the token names the
     // account; the route takes no query.
@@ -186,7 +186,7 @@ pub fn download_asset(
         .request_url(Method::GET, url, token)
         .timeout(Duration::from_secs(300))
         .send()
-        .with_context(failed)?;
+        .with_context(fetch_failed)?;
 
     let status = response.status();
     if status.as_u16() == 401 {
@@ -204,12 +204,12 @@ pub fn download_asset(
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("mkdir {}", parent.display()))
-            .with_context(failed)?;
+            .with_context(fetch_failed)?;
     }
     // Write to a temp file then rename, so a partial download (crash, cancel,
     // network drop) never leaves a truncated file at the destination path.
     let tmp = dest.with_extension("part");
-    let written = write_part_file(&mut response, &tmp).with_context(failed);
+    let written = write_part_file(&mut response, &tmp).with_context(fetch_failed);
     let (digest, len) = match written {
         Ok(written) => written,
         Err(error) => {
@@ -233,7 +233,7 @@ pub fn download_asset(
     // and a resumed Pull skips an asset the journal names.
     if let Err(error) = message_ir::rename_into_place(&tmp, dest) {
         let _ = std::fs::remove_file(&tmp);
-        return Err(error.context(failed()));
+        return Err(error.context(fetch_failed()));
     }
     Ok(len)
 }
@@ -330,16 +330,22 @@ mod tests {
     /// label, not the route, and keeps the connection's own error beneath it.
     #[test]
     fn a_request_that_cannot_connect_leads_with_its_label() {
-        // Port 1 is reserved and nothing listens on it, so the connection is refused.
+        // A port the system just handed out and nobody holds any more refuses
+        // the connection at once.
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
         let http = HttpSession::new().unwrap();
         let err = create_export(
             &http,
-            "http://127.0.0.1:1",
+            &format!("http://127.0.0.1:{port}"),
             "mc_test",
             &ExportScope::Everything,
             "message-crate-pull",
         )
-        .expect_err("nothing listens on port 1");
+        .expect_err("nothing listens on that port");
         assert_eq!(err.to_string(), "Export Run start failed");
         assert!(err.source().is_some(), "the cause stays beneath the label");
     }
