@@ -533,7 +533,7 @@ fn aggregates_multiple_conversations_into_one_import_request() {
     );
     assert_eq!(import.calls(), 1);
     let log = read_log(dir.path());
-    assert!(log.contains("Import request accepted: 2 conversations and 2 messages from "));
+    assert!(log.contains("Import Run 7 batch accepted: 2 conversations and 2 messages from "));
 }
 
 #[test]
