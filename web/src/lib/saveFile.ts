@@ -33,20 +33,6 @@ export async function saveFile(fileName: string, contents: Blob): Promise<boolea
   return true;
 }
 
-/**
- * In the desktop app, show the Save dialog with `fileName` filled in and have
- * the app download `url`, a Media Link to an attachment's original, to the
- * file the person chose. The app copies the server's answer to the disk as it
- * arrives, so a video of hundreds of megabytes is never held in the window or
- * sent to the app whole, as `saveFile` would have it.
- *
- * Returns false when the person closed the dialog without choosing a place,
- * and true once the file is written.
- */
-export async function saveDownload(fileName: string, url: string): Promise<boolean> {
-  return await invoke<boolean>("save_download", { url, fileName });
-}
-
 /** `value` as a JSON string, with every character outside ASCII written as `\uXXXX`. */
 function asciiJson(value: string): string {
   return JSON.stringify(value).replace(

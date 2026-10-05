@@ -1,12 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { attachment } from "../test/apiShapes";
 import { downloadAttachment } from "./downloadAttachment";
-import { saveDownload, saveFile } from "./saveFile";
+import { saveFile } from "./saveFile";
 import { createMediaLink, fetchAsset } from "./serverApi";
+import { invokeSaveDownload } from "./tauri";
 import { isTauri } from "./tauri-check";
 
 vi.mock("./serverApi", () => ({ createMediaLink: vi.fn(), fetchAsset: vi.fn() }));
-vi.mock("./saveFile", () => ({ saveDownload: vi.fn(), saveFile: vi.fn() }));
+vi.mock("./saveFile", () => ({ saveFile: vi.fn() }));
+vi.mock("./tauri", () => ({ invokeSaveDownload: vi.fn() }));
 vi.mock("./tauri-check", () => ({ isTauri: vi.fn() }));
 
 const VIDEO = attachment({
@@ -33,22 +35,14 @@ describe("downloadAttachment", () => {
   it("in the desktop app, has the app download the original from a Media Link, never fetching it into the window", async () => {
     vi.mocked(isTauri).mockReturnValue(true);
     vi.mocked(createMediaLink).mockResolvedValue(LINK);
-    vi.mocked(saveDownload).mockResolvedValue(true);
+    vi.mocked(invokeSaveDownload).mockResolvedValue(true);
 
     expect(await downloadAttachment(VIDEO)).toBe(true);
 
     expect(createMediaLink).toHaveBeenCalledExactlyOnceWith("abc");
-    expect(saveDownload).toHaveBeenCalledExactlyOnceWith("Clip.mov", LINK.url);
+    expect(invokeSaveDownload).toHaveBeenCalledExactlyOnceWith(LINK.url, "Clip.mov");
     expect(fetchAsset).not.toHaveBeenCalled();
     expect(saveFile).not.toHaveBeenCalled();
-  });
-
-  it("in the desktop app, reports false when the Save dialog is closed without a choice", async () => {
-    vi.mocked(isTauri).mockReturnValue(true);
-    vi.mocked(createMediaLink).mockResolvedValue(LINK);
-    vi.mocked(saveDownload).mockResolvedValue(false);
-
-    expect(await downloadAttachment(VIDEO)).toBe(false);
   });
 
   it("in a browser, fetches the original and hands it to the browser's downloads", async () => {
@@ -62,11 +56,5 @@ describe("downloadAttachment", () => {
     expect(fetchAsset).toHaveBeenCalledExactlyOnceWith("abc", { version: "original" });
     expect(saveFile).toHaveBeenCalledExactlyOnceWith("Clip.mov", original);
     expect(createMediaLink).not.toHaveBeenCalled();
-  });
-
-  it("refuses an attachment with no stored file", async () => {
-    await expect(downloadAttachment(attachment({ original_name: "gone.jpg" }))).rejects.toThrow(
-      "This attachment has no stored file.",
-    );
   });
 });

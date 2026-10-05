@@ -456,10 +456,11 @@ security scheme with its scopes, so every route says which it accepts.
   Why: a media element (`<img>`, `<video>`, `<audio>`) loads its own `src`
   and cannot send a header, and a video that streams must be loaded by the
   element itself (`docs/architecture/media.md`, rule 1). The desktop app's
-  download of an original takes one for the same reason: the window hands the
-  link to the app, and the app copies the answer to the file the person chose
-  as it arrives, so a video of hundreds of megabytes is never held whole in
-  the window or sent to the app as bytes.
+  download of an original takes one too. The app copies the answer to the
+  file the person chose as it arrives, so a video of hundreds of megabytes is
+  never held whole in the window or sent to the app as bytes. The window holds
+  the Session and the app does not, and a link that reads one asset for an
+  hour reaches far less than the Session token would.
   How: the value is `<account_id>.<expires>.<signature>`, an HMAC-SHA256
   under a key the server makes when it starts and never writes down, over
   the account, the asset's fingerprint, the expiry and the hash of the
@@ -512,7 +513,8 @@ What each reaches:
   read one may not read the others, and the owner reads none.
 - `POST /v1/assets/{sha256}/media-links` takes an account's Session only.
   Why: only a screen has a media element to put a link in, or a download for
-  the desktop app to make, and a program sends its token in the header. The owner holds no attachment to read.
+  the desktop app to make, and a program sends its token in the header. The
+  owner holds no attachment to read.
 - `HEAD /v1/assets/{sha256}` also accepts the `import` scope: a program that
   can only push may ask whether an asset exists, and may not read it.
 - Permanent deletion (`DELETE /v1/conversations/{id}`,

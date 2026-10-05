@@ -432,6 +432,20 @@ export interface PathStat {
   modifiedUnixMs: number | null;
 }
 
+/**
+ * Show the Save dialog with `fileName` filled in, and have the desktop app
+ * download `url`, a Media Link to an attachment's original, to the file the
+ * person chose. The app writes the server's answer to the disk as it arrives,
+ * so a video of hundreds of megabytes is never held in the window or sent to
+ * the app whole (#1739).
+ *
+ * Resolves false when the person closed the dialog without choosing a place,
+ * and true once the file is written.
+ */
+export async function invokeSaveDownload(url: string, fileName: string): Promise<boolean> {
+  return invoke<boolean>("save_download", { url, fileName });
+}
+
 /** Whether a path exists and whether it is a file or directory. */
 export async function invokePathStat(path: string): Promise<PathStat> {
   return invoke("path_stat", { path });

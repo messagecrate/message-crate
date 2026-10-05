@@ -1,6 +1,7 @@
 import { attachmentName } from "./attachmentMedia";
-import { saveDownload, saveFile } from "./saveFile";
+import { saveFile } from "./saveFile";
 import { createMediaLink, fetchAsset } from "./serverApi";
+import { invokeSaveDownload } from "./tauri";
 import { isTauri } from "./tauri-check";
 import type { MessageAttachment } from "./types";
 
@@ -21,7 +22,7 @@ export async function downloadAttachment(attachment: MessageAttachment): Promise
   const name = attachmentName(attachment);
   if (isTauri()) {
     const link = await createMediaLink(attachment.sha256);
-    return saveDownload(name, link.url);
+    return invokeSaveDownload(link.url, name);
   }
   const original = await fetchAsset(attachment.sha256, { version: "original" });
   return saveFile(name, original);

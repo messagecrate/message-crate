@@ -235,7 +235,6 @@ pub async fn save_file(app: AppHandle, request: tauri::ipc::Request<'_>) -> Resu
         .and_then(|value| value.to_str().ok())
         .map(file_name_from_header)
         .transpose()?
-        .filter(|name| !name.trim().is_empty())
         .ok_or("The file to save came without its name")?;
 
     let Some(path) = choose_save_path(&app, &file_name).await? else {
@@ -255,14 +254,17 @@ pub async fn save_file(app: AppHandle, request: tauri::ipc::Request<'_>) -> Resu
 ///
 /// # Errors
 ///
-/// Returns an error when the dialog's thread fails, or when the choice is not
-/// a file path.
+/// Returns an error when `file_name` is empty or blank, when the dialog's
+/// thread fails, or when the choice is not a file path.
 pub(crate) async fn choose_save_path(
     app: &AppHandle,
     file_name: &str,
 ) -> Result<Option<PathBuf>, String> {
     use tauri_plugin_dialog::DialogExt;
 
+    if file_name.trim().is_empty() {
+        return Err("The file to save came without its name".into());
+    }
     let mut dialog = app.dialog().file().set_file_name(file_name);
     if let Some(extension) = Path::new(file_name)
         .extension()

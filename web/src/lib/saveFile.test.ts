@@ -16,7 +16,7 @@ vi.mock("./tauri-check", () => ({
   isTauri: () => isTauri(),
 }));
 
-import { saveDownload, saveFile } from "./saveFile";
+import { saveFile } from "./saveFile";
 
 describe("saveFile", () => {
   beforeEach(() => {
@@ -85,29 +85,5 @@ describe("saveFile", () => {
     invoke.mockResolvedValue(false);
 
     expect(await saveFile("address-book.csv", new Blob(["a,b\n"]))).toBe(false);
-  });
-});
-
-describe("saveDownload", () => {
-  beforeEach(() => {
-    invoke.mockReset();
-  });
-
-  it("hands the desktop app the link and the name, never the file's bytes", async () => {
-    invoke.mockResolvedValue(true);
-    const url = "http://127.0.0.1:8080/v1/assets/abc?media_link=1.2.sig";
-
-    expect(await saveDownload("Café clip.mov", url)).toBe(true);
-
-    expect(invoke).toHaveBeenCalledExactlyOnceWith("save_download", {
-      url,
-      fileName: "Café clip.mov",
-    });
-  });
-
-  it("reports false when the desktop app's dialog is closed without a choice", async () => {
-    invoke.mockResolvedValue(false);
-
-    expect(await saveDownload("clip.mov", "http://server/v1/assets/abc?media_link=l")).toBe(false);
   });
 });

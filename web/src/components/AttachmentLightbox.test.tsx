@@ -14,7 +14,7 @@ vi.mock("../lib/serverApi", () => ({
   fetchAsset: vi.fn(),
   fetchAssetObjectUrl: vi.fn(),
 }));
-vi.mock("../lib/saveFile", () => ({ saveDownload: vi.fn(), saveFile: vi.fn() }));
+vi.mock("../lib/saveFile", () => ({ saveFile: vi.fn() }));
 
 const render = renderWithProviders;
 
