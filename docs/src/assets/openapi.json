@@ -15727,7 +15727,7 @@
           },
           "is_group": {
             "type": "boolean",
-            "description": "True for a group conversation, by the rule the conversation list's\n`is_group` follows, so a client never reads `conversation_type` to\ndecide whether it is a group. `conversation_type` is read only to\ntell a conversation of orphaned messages from a one-to-one one."
+            "description": "True for a group conversation, by the rule the conversation list's\n`is_group` follows, so a client never reads `conversation_type` to\ndecide whether it is a group. `conversation_type` is read only to\ntell a conversation of orphaned messages from a one-to-one\nconversation."
           },
           "label": {
             "type": [
