@@ -55,7 +55,10 @@ csv = "1.4.0"
 regex = "1.13.0"
 clap = { version = "4.6.1", features = ["derive"] }
 tempfile = "3.27.0"
-reqwest = { version = "0.12.25", default-features = false, features = ["rustls-tls", "json"] }
+# Trust what the operating system trusts (`rustls-tls-native-roots`) as well as
+# the bundled webpki roots (`rustls-tls`), so a server signed by a private CA
+# the system trusts works over HTTPS, as it does in the desktop app's webview.
+reqwest = { version = "0.12.25", default-features = false, features = ["rustls-tls", "rustls-tls-native-roots", "json"] }
 quick-xml = "0.42.0"
 thiserror = "2.0.19"
 

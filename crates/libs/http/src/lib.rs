@@ -72,6 +72,11 @@ const POOL_MAX_IDLE_PER_HOST: usize = 64;
 /// One client per `HttpSession`; the connection pool keeps
 /// `POOL_MAX_IDLE_PER_HOST` idle connections per host for the worker threads.
 ///
+/// The client trusts the certificate authorities the operating system trusts
+/// as well as the bundled webpki roots (the workspace's reqwest features), so
+/// a server signed by a private authority the computer trusts works over
+/// HTTPS, as it does in the desktop app's webview.
+///
 /// # Errors
 ///
 /// Returns an error when the reqwest client cannot be built.

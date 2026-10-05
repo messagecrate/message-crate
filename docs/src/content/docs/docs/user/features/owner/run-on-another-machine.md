@@ -71,6 +71,12 @@ With the server elsewhere, the login card reads **Disconnected**.
 **Use this address** stays unavailable until **Address** holds a different address from the one in use.
 **Cancel** returns to the login card and keeps the old address.
 
+### Does an `https://` address with a private certificate work?
+
+Yes, when the desktop app's computer trusts the certificate authority that signed it.
+The desktop app trusts the authorities the operating system trusts as well as the public ones it carries, so a certificate from mkcert or Caddy's internal authority works once that authority is installed on the computer.
+A certificate that neither trusts is refused, and the desktop app has no setting to skip that check.
+
 ### Does the server need to be told about the desktop app?
 
 No.
