@@ -352,6 +352,12 @@ fn csv_serializes_identity_type_in_cell_and_column() {
     let (cols, row) = first_row_cols(&csv);
     let identity_type_idx = cols.iter().position(|c| c == "identity_type").unwrap();
     assert_eq!(row.get(identity_type_idx).unwrap(), "");
+    // A blank sender identity is no address either: an empty cell.
+    doc.messages[0].sender_identity = Some("  ".into());
+    let csv_path = write_conversation_csv(tmp.path(), &doc).unwrap();
+    let csv = fs::read_to_string(&csv_path).unwrap();
+    let (_, row) = first_row_cols(&csv);
+    assert_eq!(row.get(identity_type_idx).unwrap(), "");
 }
 
 /// An address written with `tel:` is a phone number in the CSV
