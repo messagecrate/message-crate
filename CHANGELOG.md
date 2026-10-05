@@ -1119,6 +1119,11 @@ released versions carry their date on the heading.
   the window.** In a window narrower than the list plus the drawer, its right
   side ran past the window's edge and was cut off. It now stays inside the
   window, and in a window as narrow as a phone it covers the list instead.
+- 2026-10-04 **The contact drawer opened from a conversation lines up with a
+  list that appears after it.** When the list showed up only once the drawer
+  was already open, the drawer stayed against the right edge of the window,
+  as if there were no list, until the window was resized. It now moves to the
+  list's edge as soon as the list appears, and back when the list goes.
 - 2026-10-04 **The Contact Identity card and the selected-contacts card fit
   inside their panel.** The Contact Identity card, and the card that sums up
   the contacts you selected, were a little wider than the panel they sit in,
