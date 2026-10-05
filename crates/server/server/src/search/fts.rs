@@ -26,9 +26,14 @@ pub(crate) fn matching_ids(out: &mut Sql, term: &TextTerm) {
 /// `term`, asked once for the whole search as [`matching_ids`] is. The caller
 /// turns them into message ids through `message_versions`.
 pub(crate) fn matching_version_ids(out: &mut Sql, term: &TextTerm) {
-    out.push("SELECT rowid FROM message_versions_fts WHERE message_versions_fts MATCH ");
+    out.push(VERSION_IDS_MATCHING);
     out.bind_text(match_expr(term));
 }
+
+/// The ids of the earlier versions an FTS5 query matches, up to the `?` its
+/// caller binds the query to.
+pub(crate) const VERSION_IDS_MATCHING: &str =
+    "SELECT rowid FROM message_versions_fts WHERE message_versions_fts MATCH ";
 
 /// One term as an FTS5 query: a quoted phrase, with `*` after it for a prefix.
 fn match_expr(term: &TextTerm) -> String {

@@ -110,6 +110,19 @@ impl Filter {
         self.rank_query.as_deref()
     }
 
+    /// A `SELECT` of the ids of the earlier versions that hold one of the
+    /// query's free-text words not behind `-` or `not`, with the one value
+    /// it binds: the versions a hit found only by an earlier version was
+    /// found by. `None` when the query has no such word.
+    pub fn matching_earlier_version_ids(&self) -> Option<(String, SqlParam)> {
+        self.rank_query.as_ref().map(|query| {
+            (
+                format!("{}?", fts::VERSION_IDS_MATCHING),
+                SqlParam::Text(query.clone()),
+            )
+        })
+    }
+
     /// The same filter with its free-text words reading only each
     /// message's final text, never an earlier version: its WHERE fragment
     /// and values, in [`Self::where_sql`]'s form. A hit of this filter that

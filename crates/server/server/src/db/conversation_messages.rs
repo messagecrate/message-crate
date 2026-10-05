@@ -228,14 +228,14 @@ async fn mark_earlier_version_matches(
     filter: &crate::search::Filter,
     page: &mut [Message],
 ) -> Result<(), ApiError> {
-    let (Some((final_where, final_params)), Some(rank_query)) =
-        (filter.final_text(), filter.rank_query())
+    let (Some((final_where, final_params)), Some((matching_sql, matching_param))) =
+        (filter.final_text(), filter.matching_earlier_version_ids())
     else {
         return Ok(());
     };
     let edited: Vec<i64> = page
         .iter()
-        .filter(|m| !m.edits.is_empty())
+        .filter(|m| !m.earlier_versions.is_empty())
         .map(|m| m.id)
         .collect();
     let mut only_earlier = Vec::new();
@@ -259,29 +259,24 @@ async fn mark_earlier_version_matches(
         return Ok(());
     }
 
-    // Each matching version as its message and its place among the
-    // message's versions, the order `load_earlier_versions` reads them in.
-    let mut matched: HashMap<i64, Vec<usize>> = HashMap::new();
+    // Every version of those messages with whether it matched, read in
+    // `EARLIER_VERSION_ORDER`, the order `load_earlier_versions` read them
+    // into each message, so the n-th row of a message is its n-th version.
+    let mut matched: HashMap<i64, Vec<bool>> = HashMap::new();
     for chunk in only_earlier.chunks(SQLITE_IN_CHUNK) {
         let sql = format!(
-            "SELECT mv.message_id,
-                    (SELECT COUNT(*) FROM message_versions w
-                     WHERE w.message_id = mv.message_id AND w.id < mv.id)
-             FROM message_versions mv
-             WHERE mv.message_id IN ({ids})
-               AND mv.id IN (SELECT rowid FROM message_versions_fts
-                             WHERE message_versions_fts MATCH ?)",
+            "SELECT message_id, id IN ({matching_sql})
+             FROM message_versions
+             WHERE message_id IN ({ids})
+             ORDER BY {EARLIER_VERSION_ORDER}",
             ids = vec!["?"; chunk.len()].join(", "),
         );
-        let mut params: Vec<SqlParam> = chunk.iter().map(|id| SqlParam::Int(*id)).collect();
-        params.push(SqlParam::Text(rank_query.to_string()));
+        let mut params = vec![matching_param.clone()];
+        params.extend(chunk.iter().map(|id| SqlParam::Int(*id)));
         for row in (&mut *conn).fetch_all(bind_all(&sql, &params)).await? {
             let message_id: i64 = row.try_get(0)?;
-            let position: i64 = row.try_get(1)?;
-            matched
-                .entry(message_id)
-                .or_default()
-                .push(usize::try_from(position).unwrap_or(usize::MAX));
+            let is_match: bool = row.try_get::<i64, _>(1)? != 0;
+            matched.entry(message_id).or_default().push(is_match);
         }
     }
     for message in page.iter_mut() {
@@ -289,10 +284,9 @@ async fn mark_earlier_version_matches(
             continue;
         }
         message.matched_earlier_version = true;
-        for position in matched.get(&message.id).into_iter().flatten() {
-            if let Some(version) = message.edits.get_mut(*position) {
-                version.matched = true;
-            }
+        let flags = matched.remove(&message.id).unwrap_or_default();
+        for (version, is_match) in message.earlier_versions.iter_mut().zip(flags) {
+            version.matched = is_match;
         }
     }
     Ok(())
@@ -496,7 +490,7 @@ async fn fetch_message_page(
                 tapbacks: tapbacks.get(&r.id).cloned().unwrap_or_default(),
                 // The column's CHECK admits only the two marks or NULL.
                 deletion: r.deletion.as_deref().and_then(Deletion::parse),
-                edits: earlier_versions.remove(&r.id).unwrap_or_default(),
+                earlier_versions: earlier_versions.remove(&r.id).unwrap_or_default(),
                 matched_earlier_version: false,
             }
         })
@@ -574,6 +568,11 @@ async fn load_tapbacks(
     .await
 }
 
+/// The order a message's earlier versions are read in, everywhere: by
+/// message, then oldest first within each part, which is the order they
+/// were stored in.
+const EARLIER_VERSION_ORDER: &str = "message_id, id";
+
 /// Earlier-version rows for these messages, grouped by message id, each
 /// message's in the order they were stored: oldest first within each part.
 async fn load_earlier_versions(
@@ -588,7 +587,7 @@ async fn load_earlier_versions(
                 "SELECT message_id, part_index, text, edited_at
                  FROM message_versions
                  WHERE message_id IN ({placeholders})
-                 ORDER BY message_id, id"
+                 ORDER BY {EARLIER_VERSION_ORDER}"
             )
         },
         |row| {
