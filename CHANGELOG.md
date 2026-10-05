@@ -391,6 +391,13 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **The server's import command names the line of a conversation
+  it refuses for its source.** Before it imports a directory, the command
+  reads every conversation's source. A conversation with no source, with a
+  source name it does not accept, or with a second source in one file
+  stopped the import without saying which line, and a source name it did
+  not accept did not name the file either. Each now names the file and the
+  line of that conversation, as every other refusal does.
 - 2026-10-05 **A WhatsApp import keeps its working files out of the
   Staging Directory.** WhatsApp's files read out of an iPhone backup,
   decrypted when the backup is encrypted, sat in a directory inside the

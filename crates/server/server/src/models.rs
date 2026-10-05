@@ -40,6 +40,32 @@ pub struct ConversationRecord {
     pub export_source: Option<String>,
 }
 
+impl ConversationRecord {
+    /// The source id a directory import files this conversation under: its
+    /// header's `export.source`, trimmed.
+    ///
+    /// # Errors
+    ///
+    /// Refuses the header on its line when `export.source` is missing or
+    /// blank, or is not a valid source id: the sender's to fix in the file.
+    pub fn directory_source(&self) -> Result<&str, ImportFailure> {
+        let refuse = |detail: String| ImportFailure::Invalid {
+            line: self.line,
+            detail,
+        };
+        let Some(source) = self.export_source.as_deref().and_then(message_ir::trimmed) else {
+            return Err(refuse(format!(
+                "conversation '{}' has no export.source, which a directory import needs \
+                 unless --source names one",
+                self.chat_identifier
+            )));
+        };
+        crate::config::validate_source_id(source)
+            .map_err(|err| refuse(format!("export.source '{source}' is not valid: {err:#}")))?;
+        Ok(source)
+    }
+}
+
 /// One participant of an imported conversation.
 #[derive(Debug, Clone)]
 pub struct ParticipantRecord {
