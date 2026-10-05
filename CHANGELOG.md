@@ -396,8 +396,8 @@ released versions carry their date on the heading.
   read, and a character the backup wrote as a code that is not a character,
   such as `&#0;`, are left out and the message is kept. The run used to count
   them and say nothing more. Each such message is now a note on the run that
-  names its file, its time and its address, such as
-  `smses.xml (message of 2014-05-22T15:51:40Z with +15555550101)`. A
+  names its file, its time and the identities in its conversation, such as
+  `/backups/smses.xml (message of 2014-05-22T15:51:40Z with +15555550101)`. A
   repeated copy of a message is named once, and a message the import skips
   is not named.
 - 2026-10-04 **An iMazing import keeps each of two pictures sent in one
