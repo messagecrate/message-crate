@@ -4776,12 +4776,15 @@ async fn c2_4_a_name_only_contact_counts_its_group() {
 async fn s6_1_with_follows_an_identity_an_address_book_moved() {
     let fixture = test_fixture().await;
     let mut conn = fixture.state.db.acquire().await.unwrap();
+    let header =
+        conversation_header("imessage", "+15555550123").participant("+15555550123", Some("Ada"));
+    let message = r#"{"guid":"g-s6-1","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}
+"#;
     import_jsonl_text(
         &mut conn,
         TEST_ACCOUNT,
         "imessage",
-        &format!("{}\n{}", conversation_header("imessage", "+15555550123").participant("+15555550123", Some("Ada")), r#"{"guid":"g-s6-1","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"hi","attachments":[],"imessage":null,"source":null}
-"#),
+        &format!("{header}\n{message}"),
     )
     .await;
     let a = contact_named(&mut conn, "Ada").await;

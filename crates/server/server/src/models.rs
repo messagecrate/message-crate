@@ -521,8 +521,11 @@ mod tests {
 
     #[test]
     fn parses_ir_sms_without_imessage_bag() {
+        let header = conversation_header("sms-backup-restore", "+15555550101")
+            .participant("+15555550101", Some("Sam"))
+            .to_string();
         let lines = [
-            conversation_header("sms-backup-restore", "+15555550101").participant("+15555550101", Some("Sam")).to_string(),
+            header,
             r#"{"guid":"g1","timestamp_unix_ms":1400773261000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}"#.to_string(),
         ];
         let records = parse_ir_lines(lines).unwrap();
