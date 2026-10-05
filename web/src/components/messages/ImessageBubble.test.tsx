@@ -26,6 +26,8 @@ function message(partial: Partial<Message> = {}): Message {
     text: "hi",
     attachments: [],
     tapbacks: [],
+    edits: [],
+    matched_earlier_version: false,
     conversation: {
       id: 1,
       chat_identifier: "x",

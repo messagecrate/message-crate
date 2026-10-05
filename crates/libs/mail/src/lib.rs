@@ -768,6 +768,12 @@ fn conversation_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> M
                 msg.message.deletion.map(|d| d.as_str().to_string()),
             ),
             (
+                headers::EARLIER_VERSIONS,
+                (!msg.message.edits.is_empty()).then(|| {
+                    header_safe_json(serde_json::to_string(&msg.message.edits).unwrap_or_default())
+                }),
+            ),
+            (
                 headers::ANDROID_TYPE,
                 source
                     .and_then(|src| src.android_type)
@@ -810,7 +816,6 @@ fn imessage_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> Messa
             (headers::ANNOUNCEMENT, im.announcement.clone()),
             (headers::READ_RECEIPT, im.read_receipt_rfc3339.clone()),
             (headers::PARTS, value_as_string(im.parts.as_ref())),
-            (headers::EDITS, value_as_string(im.edits.as_ref())),
             (headers::APP, value_as_string(im.app.as_ref())),
             (headers::BALLOON_BUNDLE_ID, im.balloon_bundle_id.clone()),
             (headers::BALLOON_KIND, im.balloon_kind.clone()),

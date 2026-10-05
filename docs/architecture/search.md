@@ -65,7 +65,8 @@ Each rule holds on every list, and each has its reason.
   A query with no such word refuses `relevance` with `validation-failed`
   rather than answering in another order, and `-relevance` is refused too:
   best match first is its only direction. A message matched only by an
-  attachment's file name has no rank and follows every ranked one. The rank
+  attachment's file name, or only by an earlier version of an edited
+  message, has no rank and follows every ranked one. The rank
   is read from the index once for the whole search, never per row (#413).
   Why: a word that only excludes says nothing about how well a message
   matches, and a silent fallback to date would show an order the person did
@@ -208,9 +209,30 @@ Case and accents:
 Free text on Messages goes to the full-text index (SQLite's FTS5 table),
 which indexes the body, the subject, attachment file
 names, and transcriptions, together with a contains match on attachment file
-names. Punctuation inside a term splits it into words that must appear next
-to each other in that order, and a term that is only punctuation or emoji
-finds no message text.
+names and a second FTS5 table, `message_versions_fts`, over each earlier
+version of an edited message. Punctuation inside a term splits it into words
+that must appear next to each other in that order, and a term that is only
+punctuation or emoji finds no message text.
+
+**A word an earlier version holds finds the message, and the answer says
+so.** Each free-text word matches a message when its final text (the body,
+subject, and attachment text above) holds it or any one of its earlier
+versions does; the words of one query may be found in different versions.
+The `body:` word reads the final body only. A hit the query would not find
+by its final text alone, with every free-text word reading only
+`messages_fts` and the file names, was found by an earlier version: the
+Messages list answers it with `matched_earlier_version`, and with `matched`
+on each earlier version that holds one of the query's free-text words that
+are not behind `-` or `not`. A hit the final text matches carries neither,
+even when an earlier version holds the word too. A free-text word behind `-`
+or `not` leaves out a message any version of which holds it, so such a word
+can never make a message a hit by an earlier version, and a query whose
+free-text words are all negated marks nothing. Why a table of its own rather
+than a column of `messages_fts`: one index row per version is what lets the
+answer name the version, and a word typed in an earlier version and in the
+final text is told apart by asking the final text's index alone (#1143,
+#1644). The web app opens such a hit with the matching version shown
+(#1648).
 
 ## Lists
 
@@ -243,7 +265,7 @@ below use these phrases for them:
 |---|---|---|---|---|
 | Contacts | one contact | the contact's name, and the raw and normalized form of each of its identities | a contact in the trash is left out | `trashed:` |
 | Conversations | one conversation | the title, the conversation's own identity (its raw form, except for the keys below), the raw form of each participant's identity, and each participant's name. For a conversation known only by a name, its own identity is read as the name after the `name:` prefix; a group conversation's id, whatever its shape, and the `nameless:` key of the conversation that names nobody, are read as nothing (#1696, #1706). Why: every name key contains `name:`, so `nam` would find them all. A group conversation's id is the source's own id, which nobody knows it by. Every group conversation from one source shares the shape of its id (`group:…`, a WhatsApp `…@g.us`), so `group` or `g.us` would find them all. A group conversation is found by its title and its members | a conversation in the trash is left out; a conversation whose every message is a duplicate is left out | `trashed:` lifts the first; `source:` and `import:` lift the second |
-| Messages | one message | the full-text index (above) and attachment file names | a message whose conversation is in the trash is left out; a duplicate message is left out | `trashed:` lifts the first; `source:` and `import:` lift the second |
+| Messages | one message | the full-text indexes (above): the final text and every earlier version, and attachment file names | a message whose conversation is in the trash is left out; a duplicate message is left out | `trashed:` lifts the first; `source:` and `import:` lift the second |
 
 A word lifts its default wherever it appears in the query, negated or inside
 an `or` included. Why these words: `trashed:` is the question of the trash

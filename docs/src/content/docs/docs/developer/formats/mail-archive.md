@@ -117,7 +117,7 @@ Reverse import (EML/MBOX → common-message JSON) is available via [`message-ir-
 
 Prefix: **`X-ME-`** (Message Crate). JSON header values are compact single-line JSON.
 
-A mail an earlier Message Crate wrote names its addresses with `X-ME-Sender-Handle`, `X-ME-Owner-Handle` or `X-ME-Message-Owner-Handle`. The reader refuses such a mail, naming the header, rather than read it with no sender: export the backup again. A mail that keeps its reactions in `X-ME-Tapbacks`, as an earlier Message Crate wrote them, is refused the same way rather than read with its reactions gone, and so is an `X-ME-Reactions` that does not read. A mail that keeps the deleted mark in `X-ME-Is-Deleted`, as an earlier Message Crate wrote it, is refused the same way rather than read with its mark gone, and so is an `X-ME-Deletion` that names neither mark. An `X-ME-Participants` roster that does not read, such as one whose entries say `handle`, is refused too, with the same advice, rather than read as nobody. The writer escapes `=?` in every JSON header as `=\u003f`, so a name that looks like an RFC 2047 encoded word is not decoded on the way back.
+A mail an earlier Message Crate wrote names its addresses with `X-ME-Sender-Handle`, `X-ME-Owner-Handle` or `X-ME-Message-Owner-Handle`. The reader refuses such a mail, naming the header, rather than read it with no sender: export the backup again. A mail that keeps its reactions in `X-ME-Tapbacks`, as an earlier Message Crate wrote them, is refused the same way rather than read with its reactions gone, and so is an `X-ME-Reactions` that does not read. A mail that keeps the deleted mark in `X-ME-Is-Deleted`, as an earlier Message Crate wrote it, is refused the same way rather than read with its mark gone, and so is an `X-ME-Deletion` that names neither mark. A mail that keeps an edit history in `X-ME-Edits`, as an earlier Message Crate wrote it, is refused the same way rather than read with its earlier versions gone, and so is an `X-ME-Earlier-Versions` that does not read. An `X-ME-Participants` roster that does not read, such as one whose entries say `handle`, is refused too, with the same advice, rather than read as nobody. The writer escapes `=?` in every JSON header as `=\u003f`, so a name that looks like an RFC 2047 encoded word is not decoded on the way back.
 
 | Header | Values | Notes |
 |--------|----------------|-------|
@@ -144,6 +144,7 @@ A mail an earlier Message Crate wrote names its addresses with `X-ME-Sender-Hand
 | `X-ME-Attachment-Meta` | JSON array | Parallel to MIME attachment parts (see Attachments) |
 | `X-ME-Reactions` | JSON array | The message's `reactions`, each a `Reaction` (see Reactions); omitted when it has none |
 | `X-ME-Deletion` | `deleted_in_source_app` \| `unsent` | The message's `deletion` mark; omitted when it has neither |
+| `X-ME-Earlier-Versions` | JSON array | The message's `edits`, each an `EarlierVersion` (`part_index`, `text`, `edited_at_unix_ms`); omitted when it has none |
 
 ### Message-kind taxonomy (shared)
 
@@ -265,7 +266,7 @@ MIME: `multipart/mixed` (or `related`) with flattened `text/plain` first, then a
 ### Edits / unsends
 
 - Body = **current** visible text (empty if unsent).
-- `X-ME-Edits`: JSON array aligned with CSV `EditEventRecord`: `{ part_index, status, text, timestamp?, timestamp_utc?, guid? }` with `status` ∈ `original` \| `edited` \| `unsent`.
+- `X-ME-Earlier-Versions`: JSON array of the earlier versions, as CSV `earlier_versions_json`: `{ part_index, text, edited_at_unix_ms? }`, oldest first within each part.
 - `X-ME-Deletion: deleted_in_source_app` for a message deleted in Messages, `X-ME-Deletion: unsent` for one unsent whole.
 - Do not invent separate “edit event” EMLs.
 
@@ -312,7 +313,7 @@ Normal sticker sends: image MIME part + `X-ME-Attachment-Meta` (`is_sticker`, `s
 | Text / media | Body + MIME parts | same |
 | Tapback | Short reply-like message | `X-ME-Tapback-*` + association |
 | Balloon | Summary (+ optional image/JSON part) | `X-ME-App` |
-| Edits | Current text only | `X-ME-Edits` |
+| Edits | Current text only | `X-ME-Earlier-Versions` |
 | Effects | Trailing “Sent with …” line | `X-ME-Send-Effect` |
 | Parts / mentions | Flattened text | `X-ME-Parts` |
 
@@ -342,7 +343,8 @@ Normal sticker sends: image MIME part + `X-ME-Attachment-Meta` (`is_sticker`, `s
 | `participants_json` (iMessage) | `X-ME-Participants` |
 | `reactions_json` | `X-ME-Reactions` |
 | `deletion` | `X-ME-Deletion` |
-| `parts_json` / `edits_json` / `app_json` | `X-ME-Parts` / `X-ME-Edits` / `X-ME-App` |
+| `earlier_versions_json` | `X-ME-Earlier-Versions` |
+| `parts_json` / `app_json` | `X-ME-Parts` / `X-ME-App` |
 | `send_effect` | `X-ME-Send-Effect` |
 | `thread_originator_*` | `In-Reply-To` + `X-ME-Thread-*` |
 

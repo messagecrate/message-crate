@@ -554,6 +554,7 @@ fn ir_message(
         attachments: message.attachments.iter().map(ir_attachment).collect(),
         reactions: Vec::new(),
         deletion: None,
+        edits: Vec::new(),
         imessage: None,
         source: IrSource {
             android_type: message.android_type.trim().parse().ok(),

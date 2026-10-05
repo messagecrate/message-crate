@@ -8,9 +8,9 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use chrono::{DateTime, NaiveDateTime};
 use message_ir::{
-    ConversationDocument, ConversationMeta, ConversationStats, Deletion, ExportMeta, IrAttachment,
-    IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind, IrParticipant,
-    IrService, IrSource, Reaction, SCHEMA_VERSION,
+    ConversationDocument, ConversationMeta, ConversationStats, Deletion, EarlierVersion,
+    ExportMeta, IrAttachment, IrConversationType, IrDirection, IrImessage, IrMessage,
+    IrMessageKind, IrParticipant, IrService, IrSource, Reaction, SCHEMA_VERSION,
 };
 use serde_json::json;
 
@@ -131,12 +131,35 @@ pub fn to_ir_message(msg: &Message, skip_attachments: bool) -> Result<IrMessage>
         attachments,
         reactions: msg.tapbacks.iter().filter_map(reaction_from_row).collect(),
         deletion: msg.deletion.map(deletion_from_api),
+        edits: msg
+            .edits
+            .iter()
+            .map(earlier_version_from_api)
+            .collect::<Result<_>>()
+            .with_context(|| format!("message {} earlier versions", msg.id))?,
         imessage: imessage.into_option(),
         source: IrSource {
             android_type: None,
             fields: source_fields,
         }
         .into_option(),
+    })
+}
+
+/// One earlier version the server stores, as the conversation file writes
+/// it: its time back in milliseconds.
+fn earlier_version_from_api(
+    version: &message_crate_api_types::EarlierVersion,
+) -> Result<EarlierVersion> {
+    Ok(EarlierVersion {
+        part_index: u32::try_from(version.part_index)
+            .with_context(|| format!("part index {}", version.part_index))?,
+        text: version.text.clone(),
+        edited_at_unix_ms: version
+            .edited_at
+            .as_deref()
+            .map(parse_timestamp_unix_ms)
+            .transpose()?,
     })
 }
 
@@ -385,7 +408,9 @@ mod tests {
           ],
           "tapbacks": [
             { "part_index": 0, "kind": "loved", "is_from_me": true }
-          ]
+          ],
+          "edits": [],
+          "matched_earlier_version": false
         }
       ],
       "total": 1,
@@ -671,6 +696,8 @@ mod tests {
             attachments: vec![],
             tapbacks: vec![],
             deletion: None,
+            edits: Vec::new(),
+            matched_earlier_version: false,
         };
         let ir = to_ir_message(&msg, false).unwrap();
         assert_eq!(ir.guid, "g1");
@@ -717,6 +744,48 @@ mod tests {
             msg.deletion = Some(api);
             assert_eq!(to_ir_message(&msg, false).unwrap().deletion, Some(ir));
         }
+    }
+
+    /// Each earlier version the server returns is written on the exported
+    /// message with its part, text and time, in the order the server gave.
+    #[test]
+    fn earlier_versions_are_exported_with_their_times() {
+        let mut msg = seed_message_with_participant(Participant {
+            identity: Some("+1".into()),
+            name: "Sam".into(),
+            service: None,
+            contact_id: None,
+        });
+        assert!(to_ir_message(&msg, false).unwrap().edits.is_empty());
+        msg.edits = vec![
+            message_crate_api_types::EarlierVersion {
+                part_index: 0,
+                text: "helo".into(),
+                edited_at: Some("2015-03-12T18:05:22Z".into()),
+                matched: true,
+            },
+            message_crate_api_types::EarlierVersion {
+                part_index: 1,
+                text: "second".into(),
+                edited_at: None,
+                matched: false,
+            },
+        ];
+        assert_eq!(
+            to_ir_message(&msg, false).unwrap().edits,
+            vec![
+                EarlierVersion {
+                    part_index: 0,
+                    text: "helo".into(),
+                    edited_at_unix_ms: Some(1_426_183_522_000),
+                },
+                EarlierVersion {
+                    part_index: 1,
+                    text: "second".into(),
+                    edited_at_unix_ms: None,
+                },
+            ]
+        );
     }
 
     /// A participant `name` distinct from the handle carries through as the
@@ -780,6 +849,8 @@ mod tests {
             attachments: vec![],
             tapbacks: vec![],
             deletion: None,
+            edits: Vec::new(),
+            matched_earlier_version: false,
         }
     }
 }

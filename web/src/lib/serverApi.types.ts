@@ -2432,6 +2432,30 @@ export interface components {
             /** @description The run's notes so far. The list is empty when the run recorded none. */
             notes: components["schemas"]["ImportNoteRequest"][];
         };
+        /** @description One earlier version of one part of an edited message. */
+        EarlierVersion: {
+            /**
+             * @description When this version was written: RFC 3339 in UTC with a `Z` suffix,
+             *     as `Message.timestamp`. The original's is when it was sent, a
+             *     later version's is when the edit that wrote it was made. `None`
+             *     when the source does not record it.
+             */
+            edited_at?: string | null;
+            /**
+             * @description True when the message's `matched_earlier_version` is, and this
+             *     version holds a free-text word of the query: the version a search
+             *     found the message by. False everywhere else.
+             */
+            matched: boolean;
+            /**
+             * Format: int64
+             * @description The part of the message this version belongs to; 0 for the first
+             *     or only part.
+             */
+            part_index: number;
+            /** @description The part's text in this version. */
+            text: string;
+        };
         /**
          * @description Which list an Export Run's query is for (`docs/architecture/http-api.md`,
          *     "Runs"). The list decides which search words the query may use and what
@@ -3019,6 +3043,12 @@ export interface components {
             conversation: components["schemas"]["MessageConversation"];
             deletion?: components["schemas"]["Deletion"] | null;
             /**
+             * @description The earlier versions of an edited message, oldest first within
+             *     each part; `text` is the final version. Empty for a message never
+             *     edited, or from a source that records no edits.
+             */
+            edits: components["schemas"]["EarlierVersion"][];
+            /**
              * @description Export GUID for replies and grouping. Every message has one,
              *     because the import refuses a message without one.
              */
@@ -3034,6 +3064,14 @@ export interface components {
             is_from_me: boolean;
             /** @description True when part of a reply thread. */
             is_reply: boolean;
+            /**
+             * @description True in a Messages search answer (`GET /v1/messages` with `q`)
+             *     when the message is a hit only because of its earlier versions:
+             *     its final text alone does not match the query, and the versions
+             *     that hold a free-text word of it carry `matched`. False for a hit
+             *     its final text matches, and on every other route.
+             */
+            matched_earlier_version: boolean;
             /**
              * Format: int64
              * @description Replies in this thread.
@@ -4009,6 +4047,12 @@ export interface components {
                 conversation: components["schemas"]["MessageConversation"];
                 deletion?: components["schemas"]["Deletion"] | null;
                 /**
+                 * @description The earlier versions of an edited message, oldest first within
+                 *     each part; `text` is the final version. Empty for a message never
+                 *     edited, or from a source that records no edits.
+                 */
+                edits: components["schemas"]["EarlierVersion"][];
+                /**
                  * @description Export GUID for replies and grouping. Every message has one,
                  *     because the import refuses a message without one.
                  */
@@ -4024,6 +4068,14 @@ export interface components {
                 is_from_me: boolean;
                 /** @description True when part of a reply thread. */
                 is_reply: boolean;
+                /**
+                 * @description True in a Messages search answer (`GET /v1/messages` with `q`)
+                 *     when the message is a hit only because of its earlier versions:
+                 *     its final text alone does not match the query, and the versions
+                 *     that hold a free-text word of it carry `matched`. False for a hit
+                 *     its final text matches, and on every other route.
+                 */
+                matched_earlier_version: boolean;
                 /**
                  * Format: int64
                  * @description Replies in this thread.

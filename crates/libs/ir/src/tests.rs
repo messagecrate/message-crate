@@ -77,13 +77,6 @@ fn one_field_set() -> Vec<(&'static str, IrImessage)> {
             },
         ),
         (
-            "edits",
-            IrImessage {
-                edits: json(),
-                ..IrImessage::default()
-            },
-        ),
-        (
             "app",
             IrImessage {
                 app: json(),
@@ -161,7 +154,7 @@ fn any_one_imessage_field_makes_it_worth_keeping() {
     let cases = one_field_set();
     assert_eq!(
         cases.len(),
-        18,
+        17,
         "one case per field on IrImessage; add or remove one with the field"
     );
     for (field, value) in cases {

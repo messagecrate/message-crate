@@ -21,6 +21,15 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-04 **An edited Apple Messages message keeps every earlier
+  version, and search finds it by any of them.** A message edited in Apple
+  Messages is imported with its final text and each version before it, with
+  the time each one was written. Searching Messages for a word that only an
+  earlier version held finds the message. A later import of the same
+  message adds only the versions it does not have yet. Export keeps the
+  earlier versions, so a conversation exported and imported again keeps them
+  too. The conversation shows them, and which one a search found, in a
+  coming release.
 - 2026-10-04 **A message deleted in Apple Messages, or unsent, is kept and
   marked.** A message deleted in Apple Messages that its recently deleted
   list still holds is imported with its text and marked Deleted in the
@@ -1427,6 +1436,12 @@ released versions carry their date on the heading.
   exports, and for an Import Run an earlier build left paused. Export the
   backup again with this build, then import or convert the new files; discard
   a paused run and start the import again.
+- Message files exported before an edited message kept its earlier versions
+  are refused when you import or convert them, rather than read with those
+  versions lost. This holds for JSON, JSONL, CSV, EML and mbox exports, and
+  for an Import Run an earlier build left paused. Export the backup again
+  with this build, then import or convert the new files; discard a paused run
+  and start the import again.
 - `reset-demo` no longer writes a configuration file, and reads the one given
   with `--config`. If an earlier `reset-demo` replaced your configuration
   file, the server stops at startup with a missing `[server]` section: put

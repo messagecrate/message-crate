@@ -39,6 +39,8 @@ function message(over: Partial<Message> = {}): Message {
     },
     attachments: [],
     tapbacks: [],
+    edits: [],
+    matched_earlier_version: false,
     ...over,
   };
 }

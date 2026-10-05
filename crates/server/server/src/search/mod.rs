@@ -88,6 +88,7 @@ pub struct Filter {
     where_sql: String,
     params: Vec<SqlParam>,
     rank_query: Option<String>,
+    final_text: Option<(String, Vec<SqlParam>)>,
 }
 
 impl Filter {
@@ -109,6 +110,18 @@ impl Filter {
         self.rank_query.as_deref()
     }
 
+    /// The same filter with its free-text words reading only each
+    /// message's final text, never an earlier version: its WHERE fragment
+    /// and values, in [`Self::where_sql`]'s form. A hit of this filter that
+    /// the final-text filter does not match was found only by an earlier
+    /// version. `None` on the other lists, and for a query with no
+    /// free-text word to rank by, which no earlier version can add a hit to.
+    pub fn final_text(&self) -> Option<(&str, &[SqlParam])> {
+        self.final_text
+            .as_ref()
+            .map(|(sql, params)| (sql.as_str(), params.as_slice()))
+    }
+
     /// This filter narrowed by one more fragment, `AND`-ed inside the
     /// parentheses. `fragment` is written against the list's base alias with
     /// `?` placeholders, and `params` are its values in textual order. An
@@ -118,8 +131,13 @@ impl Filter {
     /// would.
     #[must_use]
     pub fn and_where(mut self, fragment: &str, params: impl IntoIterator<Item = SqlParam>) -> Self {
+        let params: Vec<SqlParam> = params.into_iter().collect();
         self.where_sql = format!("({} AND {fragment})", self.where_sql);
-        self.params.extend(params);
+        self.params.extend(params.iter().cloned());
+        if let Some((sql, final_params)) = self.final_text.as_mut() {
+            *sql = format!("({sql} AND {fragment})");
+            final_params.extend(params);
+        }
         self
     }
 }
@@ -153,6 +171,7 @@ pub fn compile_messages_of_conversations(req: CompileRequest<'_>) -> Result<Filt
         ),
         params,
         rank_query: None,
+        final_text: None,
     })
 }
 

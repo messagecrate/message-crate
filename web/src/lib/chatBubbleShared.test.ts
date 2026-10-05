@@ -26,6 +26,8 @@ function message(partial: Partial<Message> & Pick<Message, "conversation">): Mes
     text: "hi",
     attachments: [],
     tapbacks: [],
+    edits: [],
+    matched_earlier_version: false,
     ...partial,
   };
 }

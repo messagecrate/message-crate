@@ -13,7 +13,8 @@ use crate::db::handles::{
     HandleIdCache, handle_type_of, upsert_handle_row, upsert_handle_row_cached,
 };
 use crate::db::staging::{
-    self as db_staging, StagingAttachment, StagingConversation, StagingMessage, StagingTapback,
+    self as db_staging, StagingAttachment, StagingConversation, StagingEarlierVersion,
+    StagingMessage, StagingTapback,
 };
 use crate::import_media;
 use crate::jsonl::{self, ReadRecordsError};
@@ -844,7 +845,8 @@ struct PendingStagingMessage {
     sort_order: i64,
 }
 
-/// Bulk-insert one chunk of message rows, then their attachments and tapbacks keyed by the ids returned.
+/// Bulk-insert one chunk of message rows, then their attachments, tapbacks
+/// and earlier versions keyed by the ids returned.
 async fn flush_staging_message_chunk(
     tx: &mut SqliteConnection,
     stmts: &mut StagingInserts,
@@ -861,6 +863,7 @@ async fn flush_staging_message_chunk(
 
     let mut att_rows = Vec::new();
     let mut tap_rows = Vec::new();
+    let mut version_rows = Vec::new();
     for row in chunk {
         // Consume the RETURNING id so a conflicted row (duplicate guid) is
         // skipped instead of attaching children to another message.
@@ -877,10 +880,22 @@ async fn flush_staging_message_chunk(
         for tap in &row.msg.tapbacks {
             tap_rows.push(tapback_row(tx, stmts, stats, message_id, row, tap).await?);
         }
+        version_rows.extend(
+            row.msg
+                .earlier_versions
+                .iter()
+                .map(|version| StagingEarlierVersion {
+                    message_id,
+                    part_index: version.part_index,
+                    text: &version.text,
+                    edited_at: version.edited_at.as_deref(),
+                }),
+        );
     }
 
     stats.attachments += db_staging::insert_attachments(tx, &att_rows).await?;
     stats.tapbacks += db_staging::insert_tapbacks(tx, &tap_rows).await?;
+    db_staging::insert_earlier_versions(tx, &version_rows).await?;
     Ok(())
 }
 

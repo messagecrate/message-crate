@@ -36,6 +36,7 @@ pub const CSV_HEADERS: &[&str] = &[
     "attachments_json",
     "reactions_json",
     "deletion",
+    "earlier_versions_json",
     "message_kind",
     "export_source",
     "export_tool",
@@ -55,7 +56,6 @@ pub const CSV_HEADERS: &[&str] = &[
     "thread_originator_part",
     "num_replies",
     "parts_json",
-    "edits_json",
     "app_json",
     "balloon_bundle_id",
     "balloon_kind",
@@ -241,6 +241,7 @@ struct MessageCells {
     timestamp_unix_ms: String,
     attachments_json: String,
     reactions_json: String,
+    earlier_versions_json: String,
     android_type: String,
     source_fields_json: String,
     imessage: ImessageCells,
@@ -276,6 +277,11 @@ impl MessageCells {
             } else {
                 json_cell(&msg.reactions)
             },
+            earlier_versions_json: if msg.edits.is_empty() {
+                String::new()
+            } else {
+                json_cell(&msg.edits)
+            },
             android_type: msg
                 .source
                 .as_ref()
@@ -306,7 +312,6 @@ struct ImessageCells {
     thread_originator_part: String,
     num_replies: String,
     parts_json: String,
-    edits_json: String,
     app_json: String,
     balloon_bundle_id: String,
     balloon_kind: String,
@@ -337,7 +342,6 @@ impl ImessageCells {
             thread_originator_part: number_cell(im.thread_originator_part),
             num_replies: number_cell(im.num_replies),
             parts_json: parts_cell_for_csv(text, im.parts.as_ref()),
-            edits_json: value_cell(im.edits.as_ref()),
             app_json: value_cell(im.app.as_ref()),
             balloon_bundle_id: text_cell(im.balloon_bundle_id.as_deref()),
             balloon_kind: text_cell(im.balloon_kind.as_deref()),
@@ -393,6 +397,7 @@ fn csv_record<'a>(
         cells.attachments_json.as_str(),
         cells.reactions_json.as_str(),
         msg.deletion.map_or("", Deletion::as_str),
+        cells.earlier_versions_json.as_str(),
         msg.message_kind.as_str(),
         doc.export.source.as_str(),
         doc.export.tool.as_str(),
@@ -412,7 +417,6 @@ fn csv_record<'a>(
         im.thread_originator_part.as_str(),
         im.num_replies.as_str(),
         im.parts_json.as_str(),
-        im.edits_json.as_str(),
         im.app_json.as_str(),
         im.balloon_bundle_id.as_str(),
         im.balloon_kind.as_str(),

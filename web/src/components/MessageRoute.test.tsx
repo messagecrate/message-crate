@@ -120,6 +120,8 @@ function message(id: number, conversationId: number): Message {
     },
     attachments: [],
     tapbacks: [],
+    edits: [],
+    matched_earlier_version: false,
   };
 }
 

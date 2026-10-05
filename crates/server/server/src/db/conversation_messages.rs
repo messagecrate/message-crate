@@ -1,5 +1,6 @@
 //! The message row loader shared by every route that reads messages: their
-//! conversation, attachments and tapbacks, joined and grouped.
+//! conversation, attachments, tapbacks and earlier versions, joined and
+//! grouped.
 //!
 //! The row shapes themselves live in `message-crate-api-types`, where `message-crate-pull`
 //! reads them from the same definition rather than a hand-written mirror.
@@ -16,12 +17,14 @@ use std::collections::HashMap;
 use sqlx::SqliteConnection;
 use sqlx::{Executor, Row};
 
-pub use message_crate_api_types::{Attachment, Deletion, Message, MessageConversation, Tapback};
+pub use message_crate_api_types::{
+    Attachment, Deletion, EarlierVersion, Message, MessageConversation, Tapback,
+};
 
 use crate::db::conversations::is_group_type;
 use crate::db::ownership::owns_conversation;
 use crate::db::participant_names::load_for_conversations;
-use crate::db::sql::{SqlParam, bind_all, bind_args, group_rows_by_id};
+use crate::db::sql::{SQLITE_IN_CHUNK, SqlParam, bind_all, bind_args, group_rows_by_id};
 use crate::paging::{Direction, Page, SortKey};
 use crate::server::ApiError;
 
@@ -205,7 +208,94 @@ pub async fn load_message_list_page(
     offset: usize,
 ) -> Result<Vec<Message>, ApiError> {
     let (sql, params) = message_list_page_sql(filter, order, limit, offset)?;
-    fetch_message_page(conn, &sql, &params).await
+    let mut page = fetch_message_page(conn, &sql, &params).await?;
+    mark_earlier_version_matches(conn, filter, &mut page).await?;
+    Ok(page)
+}
+
+/// Mark each hit on `page` that `filter` found only by an earlier version:
+/// an edited message the filter's final-text copy ([`Filter::final_text`])
+/// does not match. Such a hit gets `matched_earlier_version`, and each of
+/// its earlier versions that holds one of the query's free-text words gets
+/// `matched`. A filter with no final-text copy marks nothing.
+///
+/// Two statements for the whole page, each over the page's edited messages
+/// only, never one per message.
+///
+/// [`Filter::final_text`]: crate::search::Filter::final_text
+async fn mark_earlier_version_matches(
+    conn: &mut SqliteConnection,
+    filter: &crate::search::Filter,
+    page: &mut [Message],
+) -> Result<(), ApiError> {
+    let (Some((final_where, final_params)), Some(rank_query)) =
+        (filter.final_text(), filter.rank_query())
+    else {
+        return Ok(());
+    };
+    let edited: Vec<i64> = page
+        .iter()
+        .filter(|m| !m.edits.is_empty())
+        .map(|m| m.id)
+        .collect();
+    let mut only_earlier = Vec::new();
+    for chunk in edited.chunks(SQLITE_IN_CHUNK) {
+        let sql = format!(
+            "SELECT m.id {from_sql} WHERE m.id IN ({ids}) AND {final_where}",
+            from_sql = messages_from_sql(),
+            ids = vec!["?"; chunk.len()].join(", "),
+        );
+        let mut params: Vec<SqlParam> = chunk.iter().map(|id| SqlParam::Int(*id)).collect();
+        params.extend_from_slice(final_params);
+        let final_hits: Vec<i64> = (&mut *conn)
+            .fetch_all(bind_all(&sql, &params))
+            .await?
+            .iter()
+            .map(|row| row.try_get(0))
+            .collect::<Result<_, _>>()?;
+        only_earlier.extend(chunk.iter().filter(|id| !final_hits.contains(id)));
+    }
+    if only_earlier.is_empty() {
+        return Ok(());
+    }
+
+    // Each matching version as its message and its place among the
+    // message's versions, the order `load_earlier_versions` reads them in.
+    let mut matched: HashMap<i64, Vec<usize>> = HashMap::new();
+    for chunk in only_earlier.chunks(SQLITE_IN_CHUNK) {
+        let sql = format!(
+            "SELECT mv.message_id,
+                    (SELECT COUNT(*) FROM message_versions w
+                     WHERE w.message_id = mv.message_id AND w.id < mv.id)
+             FROM message_versions mv
+             WHERE mv.message_id IN ({ids})
+               AND mv.id IN (SELECT rowid FROM message_versions_fts
+                             WHERE message_versions_fts MATCH ?)",
+            ids = vec!["?"; chunk.len()].join(", "),
+        );
+        let mut params: Vec<SqlParam> = chunk.iter().map(|id| SqlParam::Int(*id)).collect();
+        params.push(SqlParam::Text(rank_query.to_string()));
+        for row in (&mut *conn).fetch_all(bind_all(&sql, &params)).await? {
+            let message_id: i64 = row.try_get(0)?;
+            let position: i64 = row.try_get(1)?;
+            matched
+                .entry(message_id)
+                .or_default()
+                .push(usize::try_from(position).unwrap_or(usize::MAX));
+        }
+    }
+    for message in page.iter_mut() {
+        if !only_earlier.contains(&message.id) {
+            continue;
+        }
+        message.matched_earlier_version = true;
+        for position in matched.get(&message.id).into_iter().flatten() {
+            if let Some(version) = message.edits.get_mut(*position) {
+                version.matched = true;
+            }
+        }
+    }
+    Ok(())
 }
 
 /// The statement [`load_message_list_page`] runs, and its parameters.
@@ -367,6 +457,7 @@ async fn fetch_message_page(
     let msg_ids: Vec<i64> = page_rows.iter().map(|r| r.id).collect();
     let attachments = load_attachments(conn, &msg_ids).await?;
     let tapbacks = load_tapbacks(conn, &msg_ids).await?;
+    let mut earlier_versions = load_earlier_versions(conn, &msg_ids).await?;
 
     Ok(page_rows
         .into_iter()
@@ -405,6 +496,8 @@ async fn fetch_message_page(
                 tapbacks: tapbacks.get(&r.id).cloned().unwrap_or_default(),
                 // The column's CHECK admits only the two marks or NULL.
                 deletion: r.deletion.as_deref().and_then(Deletion::parse),
+                edits: earlier_versions.remove(&r.id).unwrap_or_default(),
+                matched_earlier_version: false,
             }
         })
         .collect())
@@ -474,6 +567,38 @@ async fn load_tapbacks(
                     emoji: row.try_get(3)?,
                     is_from_me: row.try_get::<i64, _>(4)? != 0,
                     sender: row.try_get(5)?,
+                },
+            ))
+        },
+    )
+    .await
+}
+
+/// Earlier-version rows for these messages, grouped by message id, each
+/// message's in the order they were stored: oldest first within each part.
+async fn load_earlier_versions(
+    conn: &mut SqliteConnection,
+    message_ids: &[i64],
+) -> Result<HashMap<i64, Vec<EarlierVersion>>, ApiError> {
+    group_rows_by_id(
+        conn,
+        message_ids,
+        |placeholders| {
+            format!(
+                "SELECT message_id, part_index, text, edited_at
+                 FROM message_versions
+                 WHERE message_id IN ({placeholders})
+                 ORDER BY message_id, id"
+            )
+        },
+        |row| {
+            Ok((
+                row.try_get::<i64, _>(0)?,
+                EarlierVersion {
+                    part_index: row.try_get(1)?,
+                    text: row.try_get(2)?,
+                    edited_at: row.try_get(3)?,
+                    matched: false,
                 },
             ))
         },

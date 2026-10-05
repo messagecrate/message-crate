@@ -79,8 +79,13 @@ pub(crate) const ANNOUNCEMENT: &str = "X-ME-Announcement";
 pub(crate) const READ_RECEIPT: &str = "X-ME-Read-Receipt";
 /// Message parts as JSON.
 pub(crate) const PARTS: &str = "X-ME-Parts";
-/// Edit history as JSON.
-pub(crate) const EDITS: &str = "X-ME-Edits";
+/// An edited message's earlier versions as JSON, a list of
+/// `message_ir::EarlierVersion`.
+pub(crate) const EARLIER_VERSIONS: &str = "X-ME-Earlier-Versions";
+/// The header an earlier Message Crate kept the Apple Messages edit history
+/// in. The reader refuses a mail that carries it: nothing reads it, so the
+/// mail would lose its earlier versions.
+pub(crate) const EARLIER_EDITS: &str = "X-ME-Edits";
 /// The header an earlier Message Crate kept Apple Messages reactions in.
 /// The reader refuses a mail that carries it: nothing reads it, so the mail
 /// would lose its reactions.

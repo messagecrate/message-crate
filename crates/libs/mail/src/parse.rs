@@ -5,7 +5,8 @@ use crate::{MailAttachment, MailMessage, Participant};
 use anyhow::{Context, Result, bail};
 use mailparse::{MailHeader, MailHeaderMap, ParsedMail};
 use message_ir::{
-    Deletion, IrDirection, IrImessage, IrMessage, IrMessageKind, IrService, IrSource, Reaction,
+    Deletion, EarlierVersion, IrDirection, IrImessage, IrMessage, IrMessageKind, IrService,
+    IrSource, Reaction,
 };
 use serde::Deserialize;
 use std::fs;
@@ -58,6 +59,13 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             hn::EARLIER_IS_DELETED
         );
     }
+    if headers.get_first_header(hn::EARLIER_EDITS).is_some() {
+        bail!(
+            "This mail was written by an earlier Message Crate, which kept the edit history in {}; \
+             export the backup again",
+            hn::EARLIER_EDITS
+        );
+    }
 
     let chat_identifier = required_header(headers, hn::CHAT_IDENTIFIER)?;
     let conversation_type = header_or(headers, hn::CONVERSATION_TYPE, "individual");
@@ -89,6 +97,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     let attachments = merge_attachments(&mail, headers);
     let reactions = parse_reactions(headers)?;
     let deletion = parse_deletion(headers)?;
+    let edits = parse_earlier_versions(headers)?;
 
     let source = {
         let android_type =
@@ -118,7 +127,6 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             announcement: optional_header(headers, hn::ANNOUNCEMENT),
             read_receipt_rfc3339: optional_header(headers, hn::READ_RECEIPT),
             parts: header_json(headers, hn::PARTS),
-            edits: header_json(headers, hn::EDITS),
             app: header_json(headers, hn::APP),
             balloon_bundle_id: optional_header(headers, hn::BALLOON_BUNDLE_ID),
             balloon_kind: optional_header(headers, hn::BALLOON_KIND),
@@ -158,6 +166,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             attachments: Vec::new(),
             reactions,
             deletion,
+            edits,
             imessage,
             source,
         },
@@ -283,6 +292,20 @@ fn parse_reactions(headers: &[MailHeader<'_>]) -> Result<Vec<Reaction>> {
         format!(
             "This mail's reactions ({}) do not read; export the backup again",
             hn::REACTIONS
+        )
+    })
+}
+
+/// The message's earlier versions from `X-ME-Earlier-Versions`, or none
+/// when the header is absent.
+fn parse_earlier_versions(headers: &[MailHeader<'_>]) -> Result<Vec<EarlierVersion>> {
+    let Some(raw) = optional_header(headers, hn::EARLIER_VERSIONS) else {
+        return Ok(Vec::new());
+    };
+    serde_json::from_str(&raw).with_context(|| {
+        format!(
+            "This mail's earlier versions ({}) do not read; export the backup again",
+            hn::EARLIER_VERSIONS
         )
     })
 }
@@ -435,6 +458,7 @@ mod tests {
                 attachments: Vec::new(),
                 reactions: Vec::new(),
                 deletion: None,
+                edits: Vec::new(),
                 imessage: None,
                 source: Some(IrSource {
                     android_type: Some(2),
@@ -485,6 +509,18 @@ mod tests {
                 reactor_display_name: Some("Me".into()),
             },
         ];
+        let edits = vec![
+            EarlierVersion {
+                part_index: 0,
+                text: "full bg".into(),
+                edited_at_unix_ms: Some(1_400_773_261_000),
+            },
+            EarlierVersion {
+                part_index: 1,
+                text: "=?utf-8?Q?=22?= second\npart".into(),
+                edited_at_unix_ms: None,
+            },
+        ];
         let imessage = message_ir::IrImessage {
             is_reply: true,
             in_reply_to_guid: Some("parent-guid-1111".into()),
@@ -495,7 +531,6 @@ mod tests {
             announcement: Some("named the conversation".into()),
             read_receipt_rfc3339: Some("2014-05-22T15:41:01Z".into()),
             parts: serde_json::from_str(r#"[{"index":0,"kind":"run","text":"hi"}]"#).ok(),
-            edits: serde_json::from_str(r#"[{"part":0,"texts":["hi","hi!"]}]"#).ok(),
             app: serde_json::from_str(r#"{"name":"Games"}"#).ok(),
             balloon_bundle_id: Some("com.apple.messages.URLBalloonProvider".into()),
             balloon_kind: Some("url".into()),
@@ -539,6 +574,7 @@ mod tests {
                 attachments: Vec::new(),
                 reactions: reactions.clone(),
                 deletion: Some(message_ir::Deletion::Unsent),
+                edits: edits.clone(),
                 imessage: Some(imessage.clone()),
                 source: Some(IrSource {
                     android_type: Some(1),
@@ -594,6 +630,10 @@ mod tests {
             "each reaction keeps its reactor, even a name that looks like an encoded word"
         );
         assert_eq!(parsed.message.deletion, Some(message_ir::Deletion::Unsent));
+        assert_eq!(
+            parsed.message.edits, edits,
+            "each earlier version keeps its part, text and time"
+        );
 
         // The whole extension bag must survive field for field.
         let parsed_bag = parsed.message.imessage.as_ref().expect("imessage bag");
@@ -658,6 +698,7 @@ mod tests {
                 attachments: Vec::new(),
                 reactions: Vec::new(),
                 deletion: None,
+                edits: Vec::new(),
                 imessage: None,
                 source: None,
             },

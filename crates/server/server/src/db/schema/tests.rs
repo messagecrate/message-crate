@@ -768,9 +768,9 @@ fn split_ddl_keeps_trigger_bodies_intact() {
     let create = include_str!("../../../../../../schema/sql/fts_triggers_create.sql");
     let drop = include_str!("../../../../../../schema/sql/fts_triggers_drop.sql");
     let fts = include_str!("../../../../../../schema/sql/fts_virtual.sql");
-    assert_eq!(split_ddl(create).len(), 6, "six sync triggers");
-    assert_eq!(split_ddl(drop).len(), 6);
-    assert_eq!(split_ddl(fts).len(), 1);
+    assert_eq!(split_ddl(create).len(), 9, "nine sync triggers");
+    assert_eq!(split_ddl(drop).len(), 9);
+    assert_eq!(split_ddl(fts).len(), 2);
     for stmt in split_ddl(create) {
         assert!(
             stmt.starts_with("CREATE TRIGGER"),

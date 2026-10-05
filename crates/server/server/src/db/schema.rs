@@ -269,8 +269,9 @@ pub async fn ensure_schema(conn: &mut SqliteConnection) -> Result<()> {
 /// Marker that current full-text search (FTS) sync trigger definitions are installed.
 pub const MESSAGES_FTS_TRIGGERS_META_KEY: &str = "messages_fts_triggers_v1";
 
-/// Full-text search index over message body/subject plus attachment text:
-/// a contentless FTS5 virtual table with sync triggers.
+/// Full-text search indexes over message body/subject plus attachment text,
+/// and over each earlier version of an edited message: contentless FTS5
+/// virtual tables with sync triggers.
 async fn ensure_messages_fts(conn: &mut SqliteConnection) -> Result<()> {
     execute_batch(conn, FTS_VIRTUAL_DDL).await?;
 
@@ -431,6 +432,27 @@ pub(crate) async fn index_messages_fts_from_promote_map(
     )
     .bind(min_new_message_id)
     .bind(min_new_attachment_id)
+    .execute(&mut *conn)
+    .await?;
+    Ok(n.rows_affected())
+}
+
+/// Index the earlier versions above `min_new_version_id`, the highest
+/// `message_versions.id` that existed before this promotion inserted any:
+/// the ones the promotion added while the sync triggers were paused.
+///
+/// # Errors
+///
+/// Returns an error when the insert fails.
+pub(crate) async fn index_message_versions_fts(
+    conn: &mut SqliteConnection,
+    min_new_version_id: i64,
+) -> Result<u64> {
+    let n = sqlx::query(
+        "INSERT INTO message_versions_fts(rowid, text)
+         SELECT id, text FROM message_versions WHERE id > $1",
+    )
+    .bind(min_new_version_id)
     .execute(&mut *conn)
     .await?;
     Ok(n.rows_affected())

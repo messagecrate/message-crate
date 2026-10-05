@@ -4,7 +4,7 @@
 use imessage_database::{
     message_types::{
         app::AppMessage,
-        edited::{EditStatus, EditedMessage},
+        edited::EditedMessage,
         expressives::Expressive,
         text_effects::text_effect::TextEffect,
         url::URLMessage,
@@ -22,23 +22,13 @@ use imessage_database::{
         plist::parse_ns_keyed_archiver,
     },
 };
+use imessage_reader_protocol::EarlierVersion;
 use rusqlite::Connection;
 use serde::Serialize;
 use serde_json::{Value, json};
 use std::path::Path;
 
 use crate::body::{AttachmentResolver, resolve_run};
-
-/// One historical edit (or unsent marker) for a body part.
-#[derive(Serialize)]
-pub(crate) struct EditEventRecord {
-    pub part_index: usize,
-    pub status: &'static str,
-    pub text: String,
-    pub timestamp: Option<String>,
-    pub timestamp_utc: Option<String>,
-    pub guid: Option<String>,
-}
 
 /// One logical message body part.
 #[derive(Serialize)]
@@ -53,19 +43,6 @@ pub(crate) struct PartRecord {
     pub effects: Vec<String>,
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub emoji_image: bool,
-}
-
-/// Local and UTC RFC 3339 strings from a date result, or `(None, None)` on error.
-pub(crate) fn optional_rfc3339(
-    result: Result<
-        chrono::DateTime<chrono::Local>,
-        imessage_database::error::message::MessageError,
-    >,
-) -> (Option<String>, Option<String>) {
-    match result {
-        Ok(date) => (Some(date.to_rfc3339()), Some(date.to_utc().to_rfc3339())),
-        Err(_) => (None, None),
-    }
 }
 
 /// Screen-effect label (slam, loud, invisible ink, and similar), if any.
@@ -99,37 +76,28 @@ fn effect_label(effect: &TextEffect) -> String {
     }
 }
 
-/// Build edit-history records from parsed [`EditedMessage`] metadata.
-pub(crate) fn build_edit_records(edited: &EditedMessage, offset: &i64) -> Vec<EditEventRecord> {
+/// The earlier versions of an edited message from its parsed
+/// [`EditedMessage`] metadata: every entry of each part's edit history but
+/// the last, which is the text the message holds now. Each version's time is
+/// the date its history entry carries, the send time for the first.
+/// An unsent part has no history and so no earlier version; the message's
+/// `deletion` says what was unsent.
+pub(crate) fn build_earlier_versions(edited: &EditedMessage, offset: i64) -> Vec<EarlierVersion> {
     let mut out = Vec::new();
     for (part_index, part) in edited.parts.iter().enumerate() {
-        let status = match part.status {
-            EditStatus::Edited => "edited",
-            EditStatus::Unsent => "unsent",
-            EditStatus::Original => "original",
-        };
-        if part.edit_history.is_empty() {
-            if matches!(part.status, EditStatus::Unsent | EditStatus::Edited) {
-                out.push(EditEventRecord {
-                    part_index,
-                    status,
-                    text: String::new(),
-                    timestamp: None,
-                    timestamp_utc: None,
-                    guid: None,
-                });
-            }
+        let Ok(part_index) = u32::try_from(part_index) else {
             continue;
-        }
-        for event in &part.edit_history {
-            let (timestamp, timestamp_utc) = optional_rfc3339(get_local_time(event.date, *offset));
-            out.push(EditEventRecord {
+        };
+        let Some((_final, earlier)) = part.edit_history.split_last() else {
+            continue;
+        };
+        for event in earlier {
+            out.push(EarlierVersion {
                 part_index,
-                status,
                 text: event.text.clone(),
-                timestamp,
-                timestamp_utc,
-                guid: event.guid.clone(),
+                edited_at_unix_ms: get_local_time(event.date, offset)
+                    .ok()
+                    .map(|date| date.timestamp_millis()),
             });
         }
     }
@@ -486,9 +454,8 @@ pub(crate) fn parse_thread_part(part: &str) -> Option<u32> {
 mod tests {
     use super::*;
     use imessage_database::{
-        error::message::MessageError,
         message_types::{
-            edited::{EditedEvent, EditedMessagePart},
+            edited::{EditStatus, EditedEvent, EditedMessagePart},
             expressives::{BubbleEffect, Expressive},
             text_effects::{style::Style, text_effect::TextEffect},
         },
@@ -594,20 +561,6 @@ mod tests {
     }
 
     #[test]
-    fn a_date_becomes_two_rfc3339_strings_and_an_error_becomes_none() {
-        // The offset is the 1970-to-2001 epoch difference, as the session
-        // carries it; a stamp of zero is then Apple's epoch.
-        let (local, utc) = optional_rfc3339(get_local_time(0, get_offset()));
-        assert_eq!(utc.as_deref(), Some("2001-01-01T00:00:00+00:00"));
-        assert!(local.is_some());
-
-        assert_eq!(
-            optional_rfc3339(Err(MessageError::InvalidTimestamp(0))),
-            (None, None)
-        );
-    }
-
-    #[test]
     fn an_expressive_is_its_label_and_no_expressive_is_none() {
         assert_eq!(
             expressive_label(Expressive::Bubble(BubbleEffect::Slam)).as_deref(),
@@ -637,10 +590,18 @@ mod tests {
         assert!(effect_label(&TextEffect::Styles(vec![Style::Bold])).starts_with("styles:"));
     }
 
-    /// An unsent part with no history still gets one record, so the app
-    /// knows a part was unsent; an original part with no history gets none.
+    /// Every entry of an edited part's history but the last is an earlier
+    /// version, with the time its entry carries; the last is the message's
+    /// own text. A part never edited, and an unsent part with no history,
+    /// give none.
     #[test]
-    fn edit_records_follow_the_edit_history_and_mark_unsent_parts() {
+    fn earlier_versions_are_each_parts_history_but_its_final_text() {
+        let event = |date: i64, text: &str| EditedEvent {
+            date,
+            text: text.to_string(),
+            components: Vec::new(),
+            guid: None,
+        };
         let edited = EditedMessage {
             parts: vec![
                 EditedMessagePart {
@@ -653,40 +614,28 @@ mod tests {
                 },
                 EditedMessagePart {
                     status: EditStatus::Edited,
-                    edit_history: vec![
-                        EditedEvent {
-                            date: 0,
-                            text: "first".to_string(),
-                            components: Vec::new(),
-                            guid: None,
-                        },
-                        EditedEvent {
-                            date: 60,
-                            text: "second".to_string(),
-                            components: Vec::new(),
-                            guid: Some("edit-guid".to_string()),
-                        },
-                    ],
+                    edit_history: vec![event(0, "first"), event(60, "second"), event(120, "third")],
                 },
             ],
         };
 
-        let records = build_edit_records(&edited, &get_offset());
-        assert_eq!(records.len(), 3);
-        assert_eq!((records[0].part_index, records[0].status), (1, "unsent"));
-        assert_eq!(records[0].text, "");
-        assert_eq!(records[0].timestamp_utc, None);
-        assert_eq!((records[1].part_index, records[1].status), (2, "edited"));
-        assert_eq!(records[1].text, "first");
+        let versions = build_earlier_versions(&edited, get_offset());
+        // Apple's epoch, 2001-01-01, in Unix milliseconds.
+        let epoch_ms = 978_307_200_000;
         assert_eq!(
-            records[1].timestamp_utc.as_deref(),
-            Some("2001-01-01T00:00:00+00:00")
-        );
-        assert_eq!(records[2].text, "second");
-        assert_eq!(records[2].guid.as_deref(), Some("edit-guid"));
-        assert_eq!(
-            records[2].timestamp_utc.as_deref(),
-            Some("2001-01-01T00:01:00+00:00")
+            versions,
+            vec![
+                EarlierVersion {
+                    part_index: 2,
+                    text: "first".to_string(),
+                    edited_at_unix_ms: Some(epoch_ms),
+                },
+                EarlierVersion {
+                    part_index: 2,
+                    text: "second".to_string(),
+                    edited_at_unix_ms: Some(epoch_ms + 60_000),
+                },
+            ]
         );
     }
 

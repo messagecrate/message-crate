@@ -365,6 +365,7 @@ fn inline_and_missing_attachments_reach_a_file_backed_export() {
             owner_display_name: None,
             reactions: Vec::new(),
             deletion: None,
+            edits: Vec::new(),
             imessage: None,
             attachments: vec![
                 attachment(AttachmentSource::Inline { text: SVG.into() }),
@@ -440,6 +441,7 @@ fn a_jsonl_run_reports_its_conversations_and_messages() {
             owner_display_name: None,
             reactions: Vec::new(),
             deletion: None,
+            edits: Vec::new(),
             imessage: None,
             attachments: Vec::new(),
         }))
@@ -525,6 +527,7 @@ fn encrypted_export_script(dir: &Path, video: &str, photo: &str) -> String {
             owner_display_name: None,
             reactions: Vec::new(),
             deletion: None,
+            edits: Vec::new(),
             imessage: None,
             attachments: vec![
                 attachment("IMG_0001.MOV", "video/quicktime"),
