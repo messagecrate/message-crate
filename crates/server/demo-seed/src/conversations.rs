@@ -11,7 +11,7 @@ use std::sync::atomic::AtomicBool;
 use anyhow::{Context, Result};
 use chrono::{Duration, Utc};
 use message_ir::{
-    ConversationHeader, ConversationMeta, ConversationStats, ExportMeta, IrAttachment,
+    ConversationHeader, ConversationMeta, ConversationStats, Deletion, ExportMeta, IrAttachment,
     IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind, IrParticipant,
     IrService, Reaction, SCHEMA_VERSION,
 };
@@ -404,6 +404,7 @@ impl<R: Rng> Seeder<'_, R> {
                         from_me,
                         &mut origin_guid,
                     );
+                    mark_deletion(&mut msg, i, &self.cfg.messages);
                 }
                 SourceFlavor::SmsBackupRestore => {
                     self.decorate_android_message(&mut msg, i, msg_count);
@@ -902,6 +903,26 @@ impl<R: Rng> Seeder<'_, R> {
             self.cfg.messages.apple_fallback_transport_fraction,
             &mut *self.rng,
         );
+    }
+}
+
+/// Mark the message Deleted in the source app or Unsent when `i` falls on
+/// either stride. Only Apple Messages records the marks (#1143), so only its
+/// one-to-one conversations call this. An Unsent message keeps nothing, and
+/// only an iMessage can be unsent, so a message with an attachment, one sent as
+/// SMS or RCS, or a reply is left unmarked rather than made into one no backup
+/// holds.
+fn mark_deletion(msg: &mut IrMessage, i: usize, messages: &crate::config::MessagesConfig) {
+    let on = |stride: usize| stride > 0 && i > 0 && i.is_multiple_of(stride);
+    let can_be_unsent = msg.attachments.is_empty()
+        && msg.service == IrService::IMessage
+        && msg.imessage.as_ref().is_none_or(|im| !im.is_reply);
+    if on(messages.unsent_stride) && can_be_unsent {
+        msg.deletion = Some(Deletion::Unsent);
+        msg.text.clear();
+        msg.reactions.clear();
+    } else if on(messages.deleted_in_source_app_stride) {
+        msg.deletion = Some(Deletion::DeletedInSourceApp);
     }
 }
 

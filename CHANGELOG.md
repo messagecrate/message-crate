@@ -21,6 +21,13 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-04 **The conversation shows which messages were deleted in the app
+  they came from, and which were unsent.** A message deleted in the source
+  app keeps its text in a faded bubble with a dashed outline, and the line
+  under it reads like "4:56 PM · Deleted in Apple Messages". An unsent
+  message is an empty faded bubble with a dashed outline that reads
+  "Unsent", with its time under it. Every source draws them the same way.
+  The Demo Account has a few of each in its Apple Messages conversations.
 - 2026-10-04 **A message deleted in Apple Messages, or unsent, is kept and
   marked.** A message deleted in Apple Messages that its recently deleted
   list still holds is imported with its text and marked Deleted in the
@@ -30,8 +37,7 @@ released versions carry their date on the heading.
   other, and `deleted:yes` or `deleted:no` on Messages narrows to them or
   away from them. Nothing is hidden. A later import of the same message
   that carries the mark adds it to the message already there. Export keeps
-  the mark, so a conversation exported and imported again keeps it too. The
-  conversation shows the mark in a coming release.
+  the mark, so a conversation exported and imported again keeps it too.
 - 2026-10-04 **A long conversation scrolls without downloading its photos,
   and videos and voice notes play in place.** A photo or video shows as a
   small thumbnail, loaded only when its message scrolls near the screen,

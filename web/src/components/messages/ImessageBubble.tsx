@@ -54,6 +54,8 @@ export default function ImessageBubble({
       showSender={!mine && (showSender ?? nameSender)}
       senderLabel={senderName(message)}
       timeLabel={time}
+      deletion={message.deletion}
+      source={message.source}
       footer={footer}
     >
       {bubbleBody(body, highlight)}

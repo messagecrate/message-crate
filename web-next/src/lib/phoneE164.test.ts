@@ -7,7 +7,7 @@ describe("toPhoneE164 guarded policy", () => {
     assert.equal(toPhoneE164("5555550100"), "+15555550100");
     assert.equal(toPhoneE164("15555550100"), "+15555550100");
     assert.equal(toPhoneE164("+15555550100"), "+15555550100");
-    assert.equal(toPhoneE164("+44 20 7183 8750"), "+442071838750");
+    assert.equal(toPhoneE164("+44 20 7946 0750"), "+442079460750");
     assert.equal(toPhoneE164("+1-542-555-0100"), "+15425550100");
   });
 
@@ -27,7 +27,7 @@ describe("formatPhoneDisplay", () => {
   });
 
   it("formats UK E.164 with international spacing", () => {
-    assert.equal(formatPhoneDisplay("+447911123456"), "+44 7911 123456");
+    assert.equal(formatPhoneDisplay("+447700900456"), "+44 7700 900456");
   });
 
   it("leaves emails unchanged", () => {

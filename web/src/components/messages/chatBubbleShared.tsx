@@ -1,7 +1,11 @@
 import type { CSSProperties, ReactNode } from "react";
+import { sourceLabel } from "../../lib/exportSources";
 import { highlightText } from "../../lib/highlightText";
 import { useTimeZone } from "../../lib/timeZone";
 import type { Message, MessageAttachment, MessageTapback } from "../../lib/types";
+
+/** A message's mark: Deleted in the source app, or Unsent. */
+type Deletion = NonNullable<Message["deletion"]>;
 
 type BubblePalette = "imessage" | "sms";
 
@@ -117,6 +121,64 @@ export function tapbackGroups(m: Message): TapbackGroup[] {
   return [...groups.values()];
 }
 
+/**
+ * A chat bubble's shape, marked or not: round corners with the tail corner on
+ * the author's side, its width, padding and text size. Each caller adds colours.
+ */
+function bubbleShape(mine: boolean): string {
+  const corners = mine ? "rounded-[18px] rounded-br-[4px]" : "rounded-[18px] rounded-bl-[4px]";
+  return `${corners} max-w-[min(78%,34rem)] whitespace-pre-wrap break-words px-[0.7rem] py-[0.45rem] text-[0.9375rem] leading-[1.35]`;
+}
+
+/**
+ * Whether a marked message gets a `MarkedBubble`: always when Unsent, and when
+ * Deleted in the source app only if it kept something to draw in it. A message
+ * that kept nothing is its time and note alone, as an empty unmarked message
+ * draws no bubble, rather than an empty dashed outline.
+ */
+function drawsMarkedBubble(deletion: Deletion, keptSomething: boolean): boolean {
+  return deletion === "unsent" || keptSomething;
+}
+
+/**
+ * The bubble of a marked message, which `ChatBubbleRow` and
+ * `ServiceBubbleShell` both draw, so every source shows the marks alike
+ * (#1143): no fill, a dashed outline and muted text, from the theme.
+ *
+ * A message Deleted in the source app keeps `children`: its text, its
+ * attachments and its reactions. An Unsent message is the empty bubble that
+ * reads "Unsent" and nothing else, because its sender took all of it back.
+ */
+function MarkedBubble({
+  deletion,
+  mine,
+  children,
+}: {
+  deletion: Deletion;
+  mine: boolean;
+  children?: ReactNode;
+}) {
+  return (
+    <div
+      className={`${bubbleShape(mine)} w-fit border border-dashed border-muted bg-transparent text-muted ${
+        mine ? "ml-auto" : ""
+      }`}
+    >
+      {deletion === "unsent" ? "Unsent" : children}
+    </div>
+  );
+}
+
+/**
+ * The note beside the time of a message Deleted in the source app, naming the
+ * source as the product does: "· Deleted in Apple Messages". An Unsent message
+ * says so in its bubble, and an unmarked one carries no note.
+ */
+function DeletionNote({ deletion, source }: { deletion?: Deletion | null; source: string }) {
+  if (deletion !== "deleted_in_source_app") return null;
+  return <span>· Deleted in {sourceLabel(source)}</span>;
+}
+
 /** Bubble fill/text color per palette (theme vars switch with data-theme). */
 function bubbleColorClasses(palette: BubblePalette, mine: boolean): string {
   if (mine) {
@@ -132,7 +194,12 @@ function senderColorClass(palette: BubblePalette): string {
   return palette === "imessage" ? "text-[var(--imessage-sent)]" : "text-[var(--sms-sent)]";
 }
 
-/** Chat-row chrome: aligned bubble, optional sender label, timestamp under bubble. */
+/**
+ * Chat-row chrome: aligned bubble, optional sender label, timestamp under bubble.
+ *
+ * A marked message is a `MarkedBubble` holding `children` and `footer`, and the
+ * time of one Deleted in the source app reads "<time> · Deleted in <source>".
+ */
 export function ChatBubbleRow({
   messageId,
   mine,
@@ -141,6 +208,8 @@ export function ChatBubbleRow({
   showSender,
   senderLabel,
   timeLabel,
+  deletion,
+  source,
   meta,
   children,
   footer,
@@ -152,11 +221,14 @@ export function ChatBubbleRow({
   showSender?: boolean;
   senderLabel?: string;
   timeLabel: string;
+  /** The message's mark, which draws the bubble muted and dashed. */
+  deletion?: Deletion | null;
+  /** The message's import source, which the Deleted in the source app note names. */
+  source: string;
   meta?: ReactNode;
   children?: ReactNode;
   footer?: ReactNode;
 }) {
-  const radius = mine ? "rounded-[18px] rounded-br-[4px]" : "rounded-[18px] rounded-bl-[4px]";
   const hasBubble = children != null && children !== false && children !== "";
 
   return (
@@ -174,9 +246,16 @@ export function ChatBubbleRow({
         </div>
       ) : null}
 
-      {hasBubble ? (
+      {deletion && drawsMarkedBubble(deletion, hasBubble || Boolean(footer)) ? (
+        <MarkedBubble deletion={deletion} mine={mine}>
+          {children}
+          {footer ? <div className={hasBubble ? "mt-[0.2rem]" : "mt-0"}>{footer}</div> : null}
+        </MarkedBubble>
+      ) : null}
+
+      {!deletion && hasBubble ? (
         <div
-          className={`${radius} ${bubbleColorClasses(palette, mine)} max-w-[min(78%,34rem)] whitespace-pre-wrap break-words px-[0.7rem] py-[0.45rem] text-[0.9375rem] leading-[1.35] ${
+          className={`${bubbleShape(mine)} ${bubbleColorClasses(palette, mine)} ${
             mine ? "" : "shadow-bubble"
           }`}
         >
@@ -184,7 +263,7 @@ export function ChatBubbleRow({
         </div>
       ) : null}
 
-      {footer ? (
+      {!deletion && footer ? (
         <div
           className={`max-w-[min(78%,34rem)] ${
             hasBubble ? "mt-[0.2rem]" : "mt-0"
@@ -196,6 +275,7 @@ export function ChatBubbleRow({
 
       <div className="mt-[0.15rem] flex items-center gap-[0.4rem] px-[0.35rem] text-[0.688rem] text-muted">
         <span>{timeLabel}</span>
+        <DeletionNote deletion={deletion} source={source} />
         {meta}
       </div>
     </div>
@@ -227,6 +307,9 @@ export function ServiceRow({
 /**
  * Shared branded-service row: ServiceRow + sender/time header.
  * Color and header alignment stay per-service; body is `children`.
+ *
+ * A marked message's body is a `MarkedBubble`, as in `ChatBubbleRow`, and the
+ * time of one Deleted in the source app reads "<time> · Deleted in <source>".
  */
 export function ServiceBubbleShell({
   message,
@@ -248,6 +331,9 @@ export function ServiceBubbleShell({
 }) {
   const mine = message.is_from_me;
   const zone = useTimeZone();
+  const deletion = message.deletion;
+  const keptSomething =
+    Boolean(message.text?.trim()) || message.attachments.length > 0 || message.tapbacks.length > 0;
   return (
     <ServiceRow messageId={String(message.id)} isActive={isActive}>
       <div
@@ -261,9 +347,20 @@ export function ServiceBubbleShell({
         >
           {senderName(message)}
         </span>
-        <span className={timeClassName}>{formatMessageTime(message.timestamp, zone)}</span>
+        <span className={timeClassName}>
+          {formatMessageTime(message.timestamp, zone)}{" "}
+          <DeletionNote deletion={deletion} source={message.source} />
+        </span>
       </div>
-      {children}
+      {deletion ? (
+        drawsMarkedBubble(deletion, keptSomething) ? (
+          <MarkedBubble deletion={deletion} mine={mine}>
+            {children}
+          </MarkedBubble>
+        ) : null
+      ) : (
+        <div className="text-text">{children}</div>
+      )}
     </ServiceRow>
   );
 }
@@ -280,7 +377,7 @@ export function ServiceMessageText({
 }) {
   return (
     <div
-      className={`whitespace-pre-wrap text-[0.875rem] leading-[1.5] text-text ${
+      className={`whitespace-pre-wrap text-[0.875rem] leading-[1.5] ${
         mine ? "text-right" : "text-left"
       }`}
     >
