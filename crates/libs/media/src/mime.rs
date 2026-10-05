@@ -124,7 +124,7 @@ pub fn kind_for_mime(mime: &str) -> Option<Kind> {
 }
 
 /// Media kind for a file extension (dotted or bare, case-insensitive);
-/// `None` for extensions the media pass does not process (including `.pdf`
+/// `None` for extensions media conversion does not process (including `.pdf`
 /// and `.vcf`, which have MIME types but are not media).
 pub fn kind_for_ext(ext: &str) -> Option<Kind> {
     let bare = ext.trim_start_matches('.');

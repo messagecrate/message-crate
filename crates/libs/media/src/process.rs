@@ -177,7 +177,7 @@ enum Outcome {
 
 pub(crate) use crate::mime::Kind;
 
-/// List the files a media pass would touch under `root`.
+/// List the files media conversion would touch under `root`.
 ///
 /// Every non-temp file [`classify`] recognizes, recursively, sorted so two
 /// runs enumerate in the same order. Callers hand the result — or a subset of

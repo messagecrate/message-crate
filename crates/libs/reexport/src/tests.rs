@@ -741,7 +741,7 @@ fn copy_dir_recursive_refuses_a_missing_source() {
 
 #[test]
 fn apply_reexport_convert_restages_attachments_and_marks_missing_files() {
-    // The media pass refuses to start without ffmpeg, whatever the files
+    // Media conversion refuses to start without ffmpeg, whatever the files
     // are, so there is nothing to assert on a machine without it.
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
@@ -1310,12 +1310,12 @@ fn converting_a_mail_export_writes_its_attachments() {
     }
 }
 
-/// Convert and Compress stage the attachments again before the media pass.
+/// Convert and Compress stage the attachments again before media conversion.
 /// The bytes a mail export holds in memory must reach that pass too, and
 /// not come out `file_missing` because there was no file to read (#1072).
 #[test]
 fn converting_a_mail_export_with_a_media_pass_writes_its_attachments() {
-    // The media pass refuses to start without ffmpeg.
+    // Media conversion refuses to start without ffmpeg.
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;
     };

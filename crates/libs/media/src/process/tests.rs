@@ -394,7 +394,7 @@ fn write_test_video_at(path: &Path, codec: &[&str], rate: u32) {
     run_ffmpeg(&args).expect("generate test video");
 }
 
-/// One file through a media pass: its remap target, or `None` when skipped.
+/// One file through media conversion: its remap target, or `None` when skipped.
 fn process_single(
     dir: &Path,
     file: &Path,
