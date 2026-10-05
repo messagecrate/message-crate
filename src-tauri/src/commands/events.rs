@@ -28,8 +28,13 @@ pub const ERROR: &str = "extract:error";
 /// is not silent.
 pub fn emit(app: &AppHandle, event: &str, payload: impl Serialize + Clone) {
     if let Err(error) = app.emit(event, payload) {
-        eprintln!("warning: {event} event not delivered: {error}");
+        eprintln!("{}", undelivered_line(event, &error));
     }
+}
+
+/// The process log's line for an event no window received.
+fn undelivered_line(event: &str, error: &dyn std::fmt::Display) -> String {
+    format!("The desktop app could not send the {event} event to its window: {error}")
 }
 
 /// An issue sink that sends each row to the window as `extract:issue` the
@@ -178,6 +183,16 @@ pub(crate) fn log_to_run(app: &AppHandle, run_log: &crate::app_directories::RunL
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The line for an event no window received is a sentence, with no
+    /// `warning:` prefix (#1889).
+    #[test]
+    fn an_undelivered_event_is_a_sentence() {
+        assert_eq!(
+            undelivered_line(LOG, &"no window"),
+            "The desktop app could not send the extract:log event to its window: no window"
+        );
+    }
 
     #[test]
     fn typed_events_map_onto_the_ui_steps() {

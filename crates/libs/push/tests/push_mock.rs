@@ -241,6 +241,56 @@ fn authenticate_and_push_text_only_conversation() {
     assert_eq!(report2.conversations_skipped, 1);
 }
 
+/// A journal line that cannot be read goes to the Upload's log as a sentence,
+/// where a person reading a paused Upload looks, and the Upload sends the
+/// conversation again (#1889).
+#[test]
+fn a_corrupt_journal_line_is_a_sentence_in_the_uploads_log() {
+    let server = MockServer::start();
+    let _auth = mock_session(&server);
+    let _run = mock_import_start_and_complete(&server, 42);
+    let import = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/42/batches");
+        then.status(200).json_body(json!({
+            "source": "sms-backup-restore",
+            "account": 1,
+            "messages": 1,
+            "messages_appended": 1,
+            "conversations": 1,
+            "attachments": 0,
+            "assets_copied": 0,
+            "assets_missing": 0,
+            "mode": "append"
+        }));
+    });
+
+    let dir = tempdir().unwrap();
+    write_jsonl(dir.path(), &sample_doc());
+    let journal = dir.path().join(".import-state.jsonl");
+    fs::write(&journal, "{not json\n").unwrap();
+
+    let (report, shown) = run_showing(&text_only_config(dir.path(), server.base_url()));
+
+    assert!(report.ok);
+    assert_eq!(report.conversations_ok, 1, "the conversation is sent again");
+    import.assert();
+    let log = read_log(dir.path());
+    let line = log
+        .lines()
+        .find(|line| line.starts_with("Line 1 of the Upload's journal "))
+        .unwrap_or_else(|| panic!("{log}"));
+    assert!(line.contains(&journal.display().to_string()), "{line}");
+    assert!(
+        line.ends_with(
+            "The Upload sends what that line recorded again, and the server skips \
+             what it already holds."
+        ),
+        "{line}"
+    );
+    assert!(shown.iter().any(|shown| shown == line), "{shown:?}");
+    assert!(!log.contains("warning:"), "{log}");
+}
+
 #[test]
 fn reuses_supplied_import_run_without_starting_or_completing_one() {
     let server = MockServer::start();

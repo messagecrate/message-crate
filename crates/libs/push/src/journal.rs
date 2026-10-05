@@ -88,6 +88,16 @@ impl JournalState {
     }
 }
 
+/// The Upload's log line for a journal line that could not be read.
+fn corrupt_line_sentence(path: &Path, line: usize, error: &serde_json::Error) -> String {
+    format!(
+        "Line {line} of the Upload's journal {} could not be read ({error}). \
+         The Upload sends what that line recorded again, and the server skips \
+         what it already holds.",
+        path.display()
+    )
+}
+
 /// Path of `.import-state.jsonl` inside the export directory.
 pub fn journal_path(input: &Path) -> PathBuf {
     input.join(JOURNAL_NAME)
@@ -95,23 +105,22 @@ pub fn journal_path(input: &Path) -> PathBuf {
 
 /// Read the journal and keep events that match this server URL and username.
 ///
-/// A missing file is treated as an empty journal. A corrupt line is skipped
-/// after a warning; those entries will be uploaded again. The server ignores
-/// true duplicates.
+/// A missing file is treated as an empty journal. A corrupt line is skipped,
+/// and `on_corrupt` gets one sentence for the Upload's log saying so; what the
+/// line recorded is sent again, and the server skips what it already holds.
 ///
 /// # Errors
 ///
 /// Returns an error when the file cannot be opened or a line cannot be read.
-pub fn load(path: &Path, url: &str, username: &str) -> Result<JournalState> {
+pub fn load(
+    path: &Path,
+    url: &str,
+    username: &str,
+    on_corrupt: &mut dyn FnMut(String),
+) -> Result<JournalState> {
     let mut state = JournalState::default();
     let events: Vec<JournalEvent> = jsonl_journal::load_events("journal", path, &mut |i, e| {
-        eprintln!(
-            "warning: journal {} line {} is corrupt ({}). \
-             The affected entries will be re-submitted (server dedup is safe).",
-            path.display(),
-            i,
-            e
-        );
+        on_corrupt(corrupt_line_sentence(path, i, e));
     })?;
     for event in events {
         match event {
@@ -225,16 +234,24 @@ pub struct RunJournal {
 
 impl RunJournal {
     /// Load the journal for this server target, or start empty when `fresh` is
-    /// set (force mode and replace mode both ignore earlier progress).
+    /// set (force mode and replace mode both ignore earlier progress). Each
+    /// line that could not be read goes to `on_corrupt` as a sentence for the
+    /// Upload's log.
     ///
     /// # Errors
     ///
     /// Returns an error when an existing journal file cannot be read.
-    pub fn open(path: PathBuf, url: &str, username: &str, fresh: bool) -> Result<Self> {
+    pub fn open(
+        path: PathBuf,
+        url: &str,
+        username: &str,
+        fresh: bool,
+        on_corrupt: &mut dyn FnMut(String),
+    ) -> Result<Self> {
         let state = if fresh {
             JournalState::default()
         } else {
-            load(&path, url, username)?
+            load(&path, url, username, on_corrupt)?
         };
         Ok(Self {
             state,
@@ -388,7 +405,7 @@ mod tests {
         )
         .unwrap();
 
-        let state = load(&path, "http://server", "alice").unwrap();
+        let state = load(&path, "http://server", "alice", &mut |_| {}).unwrap();
 
         assert!(
             state
@@ -428,6 +445,43 @@ mod tests {
         ]
     }
 
+    /// A corrupt line is skipped, and the sentence for the Upload's log names
+    /// its line number and the journal, with no `warning:` prefix (#1889).
+    #[test]
+    fn a_corrupt_line_is_skipped_and_named_in_one_sentence() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(JOURNAL_NAME);
+        append(&path, &success_events("http://server", "alice", "kept")[2]).unwrap();
+        let mut text = fs::read_to_string(&path).unwrap();
+        text.push_str("{not json\n");
+        fs::write(&path, text).unwrap();
+
+        let mut lines = Vec::new();
+        let state = load(&path, "http://server", "alice", &mut |line| {
+            lines.push(line)
+        })
+        .unwrap();
+
+        assert!(state.files.contains("file-kept.jsonl"));
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(
+            lines[0].starts_with(&format!(
+                "Line 2 of the Upload's journal {} could not be read (",
+                path.display()
+            )),
+            "{}",
+            lines[0]
+        );
+        assert!(
+            lines[0].ends_with(
+                "). The Upload sends what that line recorded again, and the server \
+                 skips what it already holds."
+            ),
+            "{}",
+            lines[0]
+        );
+    }
+
     #[test]
     fn load_keeps_only_events_for_this_server_and_username() {
         let dir = tempfile::tempdir().unwrap();
@@ -441,7 +495,7 @@ mod tests {
             append(&path, event).unwrap();
         }
 
-        let state = load(&path, "http://server", "alice").unwrap();
+        let state = load(&path, "http://server", "alice", &mut |_| {}).unwrap();
 
         let expected_assets: HashSet<String> = ["sha-mine".to_string()].into();
         assert_eq!(state.assets, expected_assets);
@@ -456,12 +510,14 @@ mod tests {
     fn a_recorded_asset_is_skipped_after_reopening_the_journal() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join(JOURNAL_NAME);
-        let mut journal = RunJournal::open(path.clone(), "http://server", "alice", false).unwrap();
+        let mut journal =
+            RunJournal::open(path.clone(), "http://server", "alice", false, &mut |_| {}).unwrap();
         assert!(!journal.has_asset("sha-1"));
         journal.asset_ok("sha-1").unwrap();
         drop(journal);
 
-        let reopened = RunJournal::open(path, "http://server", "alice", false).unwrap();
+        let reopened =
+            RunJournal::open(path, "http://server", "alice", false, &mut |_| {}).unwrap();
         assert!(reopened.has_asset("sha-1"));
         assert!(!reopened.has_asset("sha-2"));
     }
@@ -485,9 +541,9 @@ mod tests {
         state.assets.insert("bbb".into());
         compact(&path, "http://b", "bob", &state).unwrap();
 
-        let a = load(&path, "http://a", "alice").unwrap();
+        let a = load(&path, "http://a", "alice", &mut |_| {}).unwrap();
         assert!(a.assets.contains("aaa"));
-        let b = load(&path, "http://b", "bob").unwrap();
+        let b = load(&path, "http://b", "bob", &mut |_| {}).unwrap();
         assert!(b.assets.contains("bbb"));
         assert!(!b.files.contains("chat.jsonl"));
     }
@@ -519,7 +575,8 @@ mod tests {
         state.files.insert("alice-a.jsonl".into());
         compact(&path, "http://a", "alice", &state).unwrap();
 
-        let files = |url: &str, username: &str| load(&path, url, username).unwrap().files;
+        let files =
+            |url: &str, username: &str| load(&path, url, username, &mut |_| {}).unwrap().files;
         assert_eq!(files("http://a", "alice"), ["alice-a.jsonl".into()].into());
         assert_eq!(files("http://a", "bob"), ["bob-a.jsonl".into()].into());
         assert_eq!(files("http://b", "alice"), ["alice-b.jsonl".into()].into());

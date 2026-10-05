@@ -397,6 +397,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **A journal line the Upload cannot read is named in the
+  Upload's log.** It went to standard error as "warning: journal … line … is
+  corrupt (…). The affected entries will be re-submitted (server dedup is
+  safe).", where a person reading a paused Upload's log did not see it. The
+  log now says "Line 3 of the Upload's journal … could not be read (…). The
+  Upload sends what that line recorded again, and the server skips what it
+  already holds." The desktop app's own line for an event no window received
+  reads "The desktop app could not send the … event to its window: …", with
+  no "warning:" in front.
 - 2026-10-05 **The Upload's log writes its progress, skips, failures,
   timings and summary as sentences.** The log wrote shorthand such as
   "skip …: …", "files 10/25: …", "PROFILE … read_ms=… total_ms=…" and a
