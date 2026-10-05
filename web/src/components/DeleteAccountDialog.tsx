@@ -18,8 +18,8 @@ export type RunDirectoriesCheck = {
  * set, so the dialog asks for it only then and confirms with none otherwise.
  * `error` is why the last confirm failed; the dialog stays open to retry.
  *
- * `runDirectories`, in the desktop app, are the account's Staging
- * Directories on this computer, deleted with the account. The dialog names them before
+ * `runDirectories`, in the desktop app, are the account's run
+ * directories on this computer, deleted with the account. The dialog names them before
  * the person confirms, and holds the confirm while it looks for them.
  *
  * The typed username and password live in `DeleteAccountForm`, which exists

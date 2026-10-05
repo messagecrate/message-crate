@@ -1296,7 +1296,7 @@ describe("useImportJob wiring", () => {
     expect(invokeDeleteRunDirMock).not.toHaveBeenCalled();
   });
 
-  it("a successful import still finishes when deleting the staging directory fails", async () => {
+  it("a successful import still finishes when deleting the run directory fails", async () => {
     createRunDirMock.mockResolvedValue("/staging/run-5");
     runMock.mockImplementationOnce(runResult({ summary: "Upload finished.", report: okReport() }));
     invokeDeleteRunDirMock.mockRejectedValueOnce(new Error("permission denied"));

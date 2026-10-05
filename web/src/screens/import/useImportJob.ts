@@ -42,7 +42,7 @@ import {
   onExtractEvents,
   probeFfmpegTools,
   type SizeVerdict,
-  type StagingConfig,
+  type RunDirConfig,
   type StagingSummary,
   type TauriJobResult,
   type TranscodeFinishedReport,
@@ -819,7 +819,7 @@ function runJob(invokeFn: () => Promise<void>): Promise<TauriJobResult> {
  * `applyProgress` already knows to draw that on the Staging row, so this
  * only has to make sure the event reaches it.
  */
-async function summarizeStagingWithProgress(config: StagingConfig): Promise<StagingSummary> {
+async function summarizeStagingWithProgress(config: RunDirConfig): Promise<StagingSummary> {
   const unlisten = await onExtractEvents({
     onLog: () => {},
     onProgress: applyProgress,

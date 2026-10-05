@@ -323,9 +323,9 @@ export default function ImportRunView({
    */
   cancelDisabled?: boolean;
 }) {
-  const trimmedStaging = runDir?.trim() || null;
+  const trimmedRunDir = runDir?.trim() || null;
   const done = phase === "done";
-  const logPath = useImportRunLog(trimmedStaging, done);
+  const logPath = useImportRunLog(trimmedRunDir, done);
   const mode = form?.attachmentMedia ?? "copy";
   const succeeded =
     summaryView?.status === "completed" || summaryView?.status === "completed_with_issues";
@@ -346,15 +346,15 @@ export default function ImportRunView({
   const cancelButton = stopButton("Cancel");
 
   function stagingContent(): ReactNode {
-    if (!trimmedStaging && !stagingSummary && !form) return null;
+    if (!trimmedRunDir && !stagingSummary && !form) return null;
     return (
       <FactGroups>
-        {trimmedStaging ? (
+        {trimmedRunDir ? (
           <FactGroup
             title="This Import Run's directory"
             value={
-              <OpenPathButton path={trimmedStaging} className={PATH_LINK}>
-                {trimmedStaging}
+              <OpenPathButton path={trimmedRunDir} className={PATH_LINK}>
+                {trimmedRunDir}
               </OpenPathButton>
             }
           />

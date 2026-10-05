@@ -57,7 +57,7 @@ export async function invokeCancel(): Promise<void> {
  * wherever the setting points now, so changing the setting never strands a
  * run that started under the earlier one.
  */
-export interface StagingConfig {
+export interface RunDirConfig {
   run_dir: string;
 }
 
@@ -137,7 +137,7 @@ export interface StagingSummary {
 }
 
 /** Recompute what a staged directory holds, for the first review. */
-export async function invokeSummarizeStaging(config: StagingConfig): Promise<StagingSummary> {
+export async function invokeSummarizeStaging(config: RunDirConfig): Promise<StagingSummary> {
   return invoke("summarize_staging", {
     args: { runDir: config.run_dir },
   });
@@ -148,7 +148,7 @@ export async function invokeSummarizeStaging(config: StagingConfig): Promise<Sta
  * approves it. Reports through the `extract:*` events like every other long
  * job, so `awaitTauriJob` drives it exactly as it drives extract and the Upload.
  */
-export async function invokeTranscodeStaging(config: StagingConfig): Promise<void> {
+export async function invokeTranscodeStaging(config: RunDirConfig): Promise<void> {
   return invoke("transcode_staging", {
     args: { runDir: config.run_dir },
   });

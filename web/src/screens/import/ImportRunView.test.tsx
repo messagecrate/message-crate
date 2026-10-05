@@ -241,7 +241,7 @@ describe("ImportRunView", () => {
     expect(labels).toEqual(["Staging", "Staging Review", "Upload"]);
   });
 
-  it("puts the backup path under the heading and the staging directory in the Staging row", async () => {
+  it("puts the backup path under the heading and the run directory in the Staging row", async () => {
     const user = setupUser();
     const staging = "/home/sam/message-crate/staging-iphone";
     renderView({ runDir: staging });
