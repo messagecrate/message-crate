@@ -84,7 +84,7 @@ describe("ConvertSection", () => {
       await fillDirectories("/home/demo/export-json", "/home/demo/export-csv");
       expect(convertButton()).toBeDisabled();
       expect(screen.getByRole("status").textContent).toBe(
-        "An export is running. Convert can start once it ends.",
+        "An Export is running. Convert can start once it ends.",
       );
     } finally {
       release();
@@ -220,7 +220,7 @@ describe("ConvertSection", () => {
     );
   });
 
-  it("locks both directory fields while a conversion runs", async () => {
+  it("locks both directory fields while a Convert runs", async () => {
     let release: () => void = () => {};
     const held = new Promise<void>((resolve) => {
       release = resolve;

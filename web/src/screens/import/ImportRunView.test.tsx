@@ -364,7 +364,7 @@ describe("ImportRunView", () => {
       expect(review.getByRole("button", { name: "Upload to Message Crate" })).toBeDisabled();
       expect(review.getByRole("button", { name: "Cancel this import" })).toBeEnabled();
       expect(review.getByRole("status")).toHaveTextContent(
-        "A conversion in Settings is running. Upload to Message Crate can start once it ends.",
+        "A Convert is running. Upload to Message Crate can start once it ends.",
       );
     } finally {
       release();
