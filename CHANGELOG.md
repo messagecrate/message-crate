@@ -248,11 +248,11 @@ released versions carry their date on the heading.
 
 ### Design
 
-- 2026-10-04 **The import code names a Review, the Media stage, the Upload
-  and an Import Run as the screens do.** Its internals no longer say gate,
-  pass, push or import session for them. On screen, an Import Run that
-  stopped during Media now reads "The Media stage did not finish" instead of
-  "The media step did not finish".
+- 2026-10-04 **Import says "Media stage" where it said "media step" or
+  "Media pass".** An Import Run that stopped during Media offers to carry on
+  with "The Media stage did not finish", and starting something else while
+  Media runs names "the Media stage" as what is running. The import
+  internals were renamed to match, with nothing else to see.
 - 2026-10-04 **Every answer from the server carries the same fields.** A
   field with nothing in it is sent empty instead of being left out, so a
   program that talks to the server always finds the fields it expects.
