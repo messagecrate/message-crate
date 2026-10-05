@@ -1082,14 +1082,14 @@ fn is_asset_download(request: &axum::extract::Request) -> bool {
     let Some(rest) = request.uri().path().strip_prefix("/v1/assets/") else {
         return false;
     };
-    let (sha256, is_version) = match rest
+    let (sha256, is_preview_or_thumbnail) = match rest
         .strip_suffix("/preview")
         .or_else(|| rest.strip_suffix("/thumbnail"))
     {
         Some(sha256) => (sha256, true),
         None => (rest, false),
     };
-    !sha256.is_empty() && !sha256.contains('/') && (is_get || is_version)
+    !sha256.is_empty() && !sha256.contains('/') && (is_get || is_preview_or_thumbnail)
 }
 
 /// The path segments after `/v1/assets/` of a `PUT`, or `None` for any other
