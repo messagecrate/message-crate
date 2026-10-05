@@ -114,7 +114,7 @@ impl std::fmt::Display for UnknownDeletion {
 
 impl std::error::Error for UnknownDeletion {}
 
-/// Schema version written into every [`ConversationDocument`] (currently 9).
+/// Schema version written into every [`ConversationDocument`].
 pub const SCHEMA_VERSION: u32 = 9;
 
 /// One exported chat: export metadata, conversation roster and stats, and messages.
@@ -123,7 +123,7 @@ pub const SCHEMA_VERSION: u32 = 9;
 /// parses. See the [common message](https://messagecrate.app/docs/developer/architecture/common-message/) page.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationDocument {
-    /// Schema version written into this document (currently 9).
+    /// Schema version written into this document ([`SCHEMA_VERSION`]).
     pub schema_version: u32,
     /// Where and how this export was produced.
     pub export: ExportMeta,
@@ -970,7 +970,7 @@ pub fn parse_json_value(s: &str) -> Value {
 /// and CSV header row).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationHeader {
-    /// Schema version written into this header (currently 4).
+    /// Schema version written into this header ([`SCHEMA_VERSION`]).
     pub schema_version: u32,
     /// Where and how this export was produced.
     pub export: ExportMeta,
