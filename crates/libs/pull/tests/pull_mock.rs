@@ -16,7 +16,9 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use httpmock::prelude::*;
-use message_crate_pull::{ExportQueryList, ProgressEvent, PullConfig, PullReport, journal, run};
+use message_crate_pull::{
+    ExportQueryList, ProgressEvent, PullConfig, PullJournalState, PullReport, journal, run,
+};
 use message_ir::{Deletion, EarlierVersion, Reaction};
 use message_ir_format::{EXPORT_SENTINEL, read_conversation_jsonl};
 use serde_json::{Value, json};
@@ -259,6 +261,22 @@ fn config(out_dir: &Path, base_url: String) -> PullConfig {
         cancel: None,
         asset_fetch_workers: 1,
     }
+}
+
+/// The journal a run against `server` wrote in `out_dir` for `alice`. The
+/// run writes every line itself, so the test fails on any line
+/// `journal::load` could not read.
+fn load_journal(out_dir: &Path, server: &MockServer) -> PullJournalState {
+    let mut unreadable = Vec::new();
+    let state = journal::load(
+        &journal::journal_path(out_dir),
+        &server.base_url(),
+        "alice",
+        &mut |sentence| unreadable.push(sentence),
+    )
+    .unwrap();
+    assert!(unreadable.is_empty(), "{unreadable:#?}");
+    state
 }
 
 /// The report `run` returns for the three-message fixture.
@@ -506,13 +524,7 @@ fn the_journal_lists_every_asset_and_marks_the_run_finished() {
 
     run(&config(&out, server.base_url()), None).unwrap();
 
-    let state = journal::load(
-        &journal::journal_path(&out),
-        &server.base_url(),
-        "alice",
-        &mut |_| {},
-    )
-    .unwrap();
+    let state = load_journal(&out, &server);
     assert_eq!(
         state.assets,
         HashSet::from([MENU_SHA.to_string(), PHOTO_SHA.to_string()])
@@ -720,15 +732,7 @@ fn every_file_on_disk_logs_no_fetch_lines_whether_or_not_the_journal_lists_it() 
             .any(|line| line.starts_with("Fetching ") || line.starts_with("Fetched ")),
         "{lines:#?}"
     );
-    let mut unreadable = Vec::new();
-    let state = journal::load(
-        &journal::journal_path(&out),
-        &server.base_url(),
-        "alice",
-        &mut |sentence| unreadable.push(sentence),
-    )
-    .unwrap();
-    assert!(unreadable.is_empty(), "{unreadable:#?}");
+    let state = load_journal(&out, &server);
     assert!(state.assets.contains(MENU_SHA) && state.assets.contains(PHOTO_SHA));
 }
 
@@ -759,13 +763,7 @@ fn a_cancel_requested_before_the_run_records_nothing_on_the_server() {
     assert_eq!(complete.calls(), 0);
     assert_eq!(cancel.calls(), 0);
     assert!(!out.join(CONVERSATION_FILE).exists());
-    let state = journal::load(
-        &journal::journal_path(&out),
-        &server.base_url(),
-        "alice",
-        &mut |_| {},
-    )
-    .unwrap();
+    let state = load_journal(&out, &server);
     assert!(!state.export_complete);
 }
 
@@ -1001,13 +999,7 @@ fn an_asset_the_server_does_not_have_fails_the_run_and_cancels_it_on_the_server(
     assert_eq!(complete.calls(), 0);
     assert!(!out.join("attachments/menu.pdf").exists());
     assert!(!out.join(CONVERSATION_FILE).exists());
-    let state = journal::load(
-        &journal::journal_path(&out),
-        &server.base_url(),
-        "alice",
-        &mut |_| {},
-    )
-    .unwrap();
+    let state = load_journal(&out, &server);
     assert!(!state.export_complete);
 }
 
@@ -1058,13 +1050,7 @@ fn bytes_whose_sha256_is_not_the_one_asked_for_fail_the_run_and_are_not_kept() {
         Vec::<String>::new(),
         "the temporary file is removed"
     );
-    let state = journal::load(
-        &journal::journal_path(&out),
-        &server.base_url(),
-        "alice",
-        &mut |_| {},
-    )
-    .unwrap();
+    let state = load_journal(&out, &server);
     assert!(
         !state.assets.contains(PHOTO_SHA),
         "the photo is not journalled"
