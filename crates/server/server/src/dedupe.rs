@@ -21,8 +21,9 @@ const CONTENT_KEY_WRITE_LOG_EVERY: usize = 50_000;
 /// Column order matches the SELECT in [`ContentKeyInputs::load`]:
 /// `id`, `conversation_id`, `chat_id` (chat handle `normalized`),
 /// `conversation_type`, `is_from_me`, `timestamp`, `body`,
-/// `sender_normalized` ([`sender_for_key_sql`]). Two SQL columns are both named `normalized`, so
-/// this stays a positional tuple rather than `FromRow`.
+/// `sender_normalized` ([`sender_for_key_sql`]). The chat handle column is
+/// `normalized` and the sender is an expression with no name, so this stays a
+/// positional tuple rather than `FromRow`.
 type ContentKeyRow = (
     i64,
     i64,
