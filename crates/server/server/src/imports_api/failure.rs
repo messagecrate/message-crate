@@ -216,7 +216,10 @@ mod tests {
         };
         assert_eq!(
             f.to_string(),
-            "This file is schema version 3; Message Crate reads version 9 (line 1 of the file)."
+            format!(
+                "This file is schema version 3; Message Crate reads version {} (line 1 of the file).",
+                message_ir::SCHEMA_VERSION
+            )
         );
     }
 
