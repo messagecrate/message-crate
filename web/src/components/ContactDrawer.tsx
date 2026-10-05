@@ -56,16 +56,16 @@ function useDrawerLeft(open: boolean): number | null {
       frame = requestAnimationFrame(measure);
     };
 
-    const columnSize = new ResizeObserver(scheduleMeasure);
+    const columnResizes = new ResizeObserver(scheduleMeasure);
 
     // Watches the list column now in the page and measures it on the next
     // frame, when it is not the column watched already.
     const followColumn = () => {
       const found = document.querySelector<HTMLElement>("[data-list-column]");
       if (found === column) return;
-      if (column) columnSize.unobserve(column);
+      if (column) columnResizes.unobserve(column);
       column = found;
-      if (column) columnSize.observe(column);
+      if (column) columnResizes.observe(column);
       scheduleMeasure();
     };
 
@@ -73,7 +73,9 @@ function useDrawerLeft(open: boolean): number | null {
     pageChanges.observe(document.body, { childList: true, subtree: true });
 
     followColumn();
-    // The first placement is read now, before the drawer paints.
+    // The first placement is read now, before the drawer paints. The frame
+    // `followColumn` just scheduled measures the same column again, as the
+    // ResizeObserver's first report would; an unchanged edge sets no state.
     measure();
     window.addEventListener("resize", scheduleMeasure);
 
@@ -81,7 +83,7 @@ function useDrawerLeft(open: boolean): number | null {
       cancelAnimationFrame(frame);
       window.removeEventListener("resize", scheduleMeasure);
       pageChanges.disconnect();
-      columnSize.disconnect();
+      columnResizes.disconnect();
     };
   }, [open]);
 
