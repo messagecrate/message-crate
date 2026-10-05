@@ -3,8 +3,9 @@
 use anyhow::{Context, Result};
 use chrono::{TimeZone, Utc};
 use message_ir::{
-    ConversationHeader, HandleService, HandleType, IrAttachment, IrDirection, IrMessage,
-    IrMessageKind, Reaction, check_schema_version_in_json, nonempty, trimmed,
+    ConversationHeader, Deletion, EarlierVersion, HandleService, HandleType, IrAttachment,
+    IrDirection, IrMessage, IrMessageKind, IrParticipant, Reaction, check_schema_version_in_json,
+    nonempty, trimmed,
 };
 use phone::Handle;
 use serde_json::Value;
@@ -127,7 +128,7 @@ pub struct MessageRecord {
     /// Replies in this thread.
     pub num_replies: i64,
     /// Deleted in the source app or Unsent; `None` for neither.
-    pub deletion: Option<message_ir::Deletion>,
+    pub deletion: Option<Deletion>,
     /// The earlier versions of an edited message, in the order the file
     /// lists them; `text` is the final version.
     pub earlier_versions: Vec<EarlierVersionRecord>,
@@ -403,7 +404,7 @@ fn message_from_ir(
 
 /// One earlier version as the server stores it, its time in the form a
 /// message's timestamp takes.
-fn earlier_version_from_ir(version: &message_ir::EarlierVersion) -> Result<EarlierVersionRecord> {
+fn earlier_version_from_ir(version: &EarlierVersion) -> Result<EarlierVersionRecord> {
     let edited_at = version
         .edited_at_unix_ms
         .map(|ms| {
@@ -425,7 +426,7 @@ fn earlier_version_from_ir(version: &message_ir::EarlierVersion) -> Result<Earli
 /// address gets an identity of type `other` whose value is the name, so the
 /// same name on one service is one identity and one contact on every import
 /// (`docs/architecture/contacts-identities-and-messages.md`).
-fn participant_from_ir(p: &message_ir::IrParticipant) -> Option<ParticipantRecord> {
+fn participant_from_ir(p: &IrParticipant) -> Option<ParticipantRecord> {
     let name_alias = p.display_name.clone();
     if let Some(handle) = p.identity.as_deref().and_then(nonempty) {
         return Some(ParticipantRecord {
@@ -517,6 +518,8 @@ fn format_utc_timestamp(secs: i64) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use message_ir::UnsupportedSchemaVersion;
+
     use crate::test_support::conversation_header;
 
     #[test]
@@ -720,8 +723,8 @@ mod tests {
         let failure = parse_ir_lines([header]).unwrap_err();
         assert_eq!(
             failure,
-            crate::imports_api::ImportFailure::SchemaVersion {
-                refusal: message_ir::UnsupportedSchemaVersion { found: 3 },
+            ImportFailure::SchemaVersion {
+                refusal: UnsupportedSchemaVersion { found: 3 },
                 line: 1
             }
         );
@@ -731,7 +734,7 @@ mod tests {
     fn parse_ir_lines_reports_a_non_json_line_as_a_failure() {
         let failure = parse_ir_lines(["this is not json"]).unwrap_err();
         match failure {
-            crate::imports_api::ImportFailure::NotJson { line, .. } => assert_eq!(line, 1),
+            ImportFailure::NotJson { line, .. } => assert_eq!(line, 1),
             other => panic!("expected NotJson, got {other:?}"),
         }
     }
@@ -740,7 +743,7 @@ mod tests {
     fn parse_ir_lines_reports_a_message_before_any_header_as_a_failure() {
         let failure = parse_ir_lines([r#"{"guid":"m1"}"#]).unwrap_err();
         match failure {
-            crate::imports_api::ImportFailure::Invalid { line, detail } => {
+            ImportFailure::Invalid { line, detail } => {
                 assert_eq!(line, 1);
                 assert!(
                     detail.contains("before the conversation header"),
@@ -759,10 +762,11 @@ mod tests {
         let msg = r#"{"guid":"g1","timestamp_unix_ms":9223372036854775807,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}"#;
         let failure = parse_ir_lines([header, msg.to_string()]).unwrap_err();
         match failure {
-            crate::imports_api::ImportFailure::Invalid { line, .. } => assert_eq!(line, 2),
+            ImportFailure::Invalid { line, .. } => assert_eq!(line, 2),
             other => panic!("expected Invalid, got {other:?}"),
         }
     }
+
     /// A message the guid index cannot see would be stored again by every
     /// retried batch (#1162), so the whole file is refused, naming every
     /// line that has no guid, before anything is staged.
@@ -780,7 +784,7 @@ mod tests {
         let failure = parse_ir_lines(lines).unwrap_err();
         assert_eq!(
             failure,
-            crate::imports_api::ImportFailure::MissingGuid {
+            ImportFailure::MissingGuid {
                 lines: vec![3, 4],
                 total: 2
             }
