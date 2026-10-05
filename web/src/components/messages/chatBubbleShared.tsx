@@ -1,8 +1,10 @@
-import type { CSSProperties, ReactNode } from "react";
+import { type CSSProperties, type ReactNode, useId, useState } from "react";
 import { deletedInSourceText, UNSENT_TEXT } from "../../lib/deletionMarkText";
 import { highlightText } from "../../lib/highlightText";
 import { useTimeZone } from "../../lib/timeZone";
 import type { Message, MessageAttachment, MessageTapback } from "../../lib/types";
+import { focusRing } from "../../lib/uiStyles";
+import PlainButton from "../PlainButton";
 
 /** A message's mark: Deleted in the source app, or Unsent. */
 type Deletion = NonNullable<Message["deletion"]>;
@@ -179,6 +181,134 @@ function DeletionNote({ deletion, source }: { deletion?: Deletion | null; source
   return <span>· {deletedInSourceText(source)}</span>;
 }
 
+/** One earlier version of one part of an edited message, as the server sends it. */
+type EarlierVersion = Message["earlier_versions"][number];
+
+/** What the line under a search hit found only by an earlier version reads. */
+const MATCHED_EARLIER_VERSION_TEXT = "Matched an earlier version";
+
+/**
+ * Whether an edited message's earlier versions are open, and the control
+ * that opens and closes them (#1143). They are closed by default, because
+ * reading them is rare. A message a search found only by an earlier version
+ * opens them, when it is drawn so or when it becomes so, as a Find match
+ * does on a message already on screen. When the search moves on, as Find
+ * stepping to the next match does, they close again, so only the message the
+ * search reached is open, unless the person pressed "Edited" meanwhile: then
+ * they stay as the person left them.
+ */
+function useEarlierVersions(
+  message: Pick<Message, "earlier_versions" | "matched_earlier_version">,
+) {
+  const matched = message.matched_earlier_version;
+  const [open, setOpen] = useState(matched);
+  /** Whether the person pressed "Edited" since a search last opened them. */
+  const [pressed, setPressed] = useState(false);
+  const [wasMatched, setWasMatched] = useState(matched);
+  if (matched !== wasMatched) {
+    setWasMatched(matched);
+    if (matched) {
+      // Versions the person already opened stay theirs to close.
+      if (!open) setPressed(false);
+      setOpen(true);
+    } else if (!pressed) {
+      setOpen(false);
+    }
+  }
+  const panelId = useId();
+  const edited = message.earlier_versions.length > 0;
+  return {
+    edited,
+    open: edited && open,
+    toggle: () => {
+      setPressed(true);
+      setOpen((o) => !o);
+    },
+    panelId,
+    versions: message.earlier_versions,
+    matched,
+  };
+}
+
+type EarlierVersionsState = ReturnType<typeof useEarlierVersions>;
+
+/**
+ * "· Edited" after a message's time: the control that opens its earlier
+ * versions under the bubble and closes them. Nothing for a message never
+ * edited.
+ */
+function EditedControl({ state }: { state: EarlierVersionsState }) {
+  if (!state.edited) return null;
+  return (
+    <span>
+      ·{" "}
+      <PlainButton
+        aria-expanded={state.open}
+        aria-controls={state.open ? state.panelId : undefined}
+        onPress={state.toggle}
+        className={`cursor-pointer rounded-sm border-none bg-transparent p-0 text-[length:inherit] text-muted underline decoration-dotted underline-offset-2 hover:text-text ${focusRing}`}
+      >
+        Edited
+      </PlainButton>
+    </span>
+  );
+}
+
+/**
+ * An edited message's earlier versions, oldest first, each with the time it
+ * was written, under the bubble on the author's side. A search hit found only
+ * by an earlier version says so above them, and the versions that hold a word
+ * of the search are drawn highlighted.
+ */
+function EarlierVersionsList({ state, mine }: { state: EarlierVersionsState; mine: boolean }) {
+  const zone = useTimeZone();
+  if (!state.open) return null;
+  return (
+    <div
+      id={state.panelId}
+      className={`mt-[0.2rem] flex w-fit max-w-[min(78%,34rem)] flex-col gap-[0.2rem] ${
+        mine ? "ml-auto items-end" : "items-start"
+      }`}
+    >
+      {state.matched ? (
+        <div className="px-[0.35rem] text-[0.688rem] font-semibold text-text">
+          {MATCHED_EARLIER_VERSION_TEXT}
+        </div>
+      ) : null}
+      <ol
+        aria-label="Earlier versions"
+        className={`m-0 flex list-none flex-col gap-[0.2rem] p-0 ${mine ? "items-end" : "items-start"}`}
+      >
+        {state.versions.map((version) => (
+          <EarlierVersionItem
+            key={`${version.part_index}\u0000${version.edited_at ?? ""}\u0000${version.text}`}
+            version={version}
+            zone={zone}
+          />
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function EarlierVersionItem({ version, zone }: { version: EarlierVersion; zone: string }) {
+  return (
+    <li
+      data-matched={version.matched ? "" : undefined}
+      className={`rounded-[12px] border border-border px-[0.6rem] py-[0.3rem] text-[0.813rem] leading-[1.35] ${
+        version.matched ? "bg-search-mark text-text" : "bg-transparent text-muted"
+      }`}
+    >
+      {version.edited_at ? (
+        <div className="text-[0.688rem] text-muted">
+          {formatMessageTime(version.edited_at, zone)}
+        </div>
+      ) : null}
+      <div className="whitespace-pre-wrap break-words">{version.text}</div>
+    </li>
+  );
+}
+
 /** Bubble fill/text color per palette (theme vars switch with data-theme). */
 function bubbleColorClasses(palette: BubblePalette, mine: boolean): string {
   if (mine) {
@@ -199,41 +329,43 @@ function senderColorClass(palette: BubblePalette): string {
  *
  * A marked message is a `MarkedBubble` holding `children` and `footer`, and the
  * time of one Deleted in the source app reads "<time> · Deleted in <source>".
+ * The time of an edited message reads "<time> · Edited", and "Edited" opens
+ * its earlier versions under the bubble.
  */
 export function ChatBubbleRow({
-  messageId,
-  mine,
+  message,
   isActive,
   palette,
   showSender,
   senderLabel,
   timeLabel,
-  deletion,
-  source,
   meta,
   children,
   footer,
 }: {
-  messageId: string;
-  mine: boolean;
+  /**
+   * The message: its id, its author's side, its mark (which draws the bubble
+   * muted and dashed), the source the Deleted in the source app note names,
+   * and its earlier versions.
+   */
+  message: Message;
   isActive?: boolean;
   palette: BubblePalette;
   showSender?: boolean;
   senderLabel?: string;
   timeLabel: string;
-  /** The message's mark, which draws the bubble muted and dashed. */
-  deletion?: Deletion | null;
-  /** The message's import source, which the Deleted in the source app note names. */
-  source: string;
   meta?: ReactNode;
   children?: ReactNode;
   footer?: ReactNode;
 }) {
   const hasBubble = children != null && children !== false && children !== "";
+  const mine = message.is_from_me;
+  const { deletion, source } = message;
+  const versions = useEarlierVersions(message);
 
   return (
     <div
-      id={`msg-${messageId}`}
+      id={`msg-${message.id}`}
       className={`flex flex-col px-4 py-[0.2rem] ${
         mine ? "mb-[0.15rem] items-end" : "mb-[0.4rem] items-start"
       } ${isActive ? "bg-search-active" : "bg-transparent"}`}
@@ -276,8 +408,11 @@ export function ChatBubbleRow({
       <div className="mt-[0.15rem] flex items-center gap-[0.4rem] px-[0.35rem] text-[0.688rem] text-muted">
         <span>{timeLabel}</span>
         <DeletionNote deletion={deletion} source={source} />
+        <EditedControl state={versions} />
         {meta}
       </div>
+
+      <EarlierVersionsList state={versions} mine={mine} />
     </div>
   );
 }
@@ -310,6 +445,8 @@ export function ServiceRow({
  *
  * A marked message's body is a `MarkedBubble`, as in `ChatBubbleRow`, and the
  * time of one Deleted in the source app reads "<time> · Deleted in <source>".
+ * An edited message reads "<time> · Edited" and opens its earlier versions
+ * under its body, as in `ChatBubbleRow`.
  */
 export function ServiceBubbleShell({
   message,
@@ -334,6 +471,7 @@ export function ServiceBubbleShell({
   const deletion = message.deletion;
   const keptSomething =
     Boolean(message.text?.trim()) || message.attachments.length > 0 || message.tapbacks.length > 0;
+  const versions = useEarlierVersions(message);
   return (
     <ServiceRow messageId={String(message.id)} isActive={isActive}>
       <div
@@ -349,7 +487,8 @@ export function ServiceBubbleShell({
         </span>
         <span className={timeClassName}>
           {formatMessageTime(message.timestamp, zone)}{" "}
-          <DeletionNote deletion={deletion} source={message.source} />
+          <DeletionNote deletion={deletion} source={message.source} />{" "}
+          <EditedControl state={versions} />
         </span>
       </div>
       {deletion ? (
@@ -361,6 +500,7 @@ export function ServiceBubbleShell({
       ) : (
         <div className="text-text">{children}</div>
       )}
+      <EarlierVersionsList state={versions} mine={mine} />
     </ServiceRow>
   );
 }

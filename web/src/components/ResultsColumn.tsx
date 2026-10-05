@@ -1,8 +1,10 @@
 import { type Key, ToggleButton, ToggleButtonGroup } from "react-aria-components";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { matchedVersionIndexes } from "../lib/earlierVersionMatch";
 import { messageSortParam } from "../lib/messageSearchSort";
 import {
   AT_PARAM,
+  MATCHED_PARAM,
   MESSAGE_SORT_PARAM,
   messagesSearch,
   openedAt,
@@ -131,11 +133,14 @@ export default function ResultsColumn({
           selectedId={openedAt(searchParams)}
           onSelect={(message) =>
             // `q` stays what the person typed, and the tag rides beside it,
-            // so the conversation route lists what this list searched.
+            // so the conversation route lists what this list searched. A
+            // result found only by an earlier version names the versions, so
+            // the conversation opens them (#1143).
             navigate(
               `/messages/${message.conversation.id}${messagesSearch(searchParams, {
                 [TAG_PARAM]: tag ?? "",
                 [AT_PARAM]: String(message.id),
+                [MATCHED_PARAM]: matchedVersionIndexes(message).join(","),
               })}`,
             )
           }

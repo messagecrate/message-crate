@@ -81,6 +81,8 @@ reply_stride = 100
 # Apple Messages one-to-one messages marked Deleted in the source app or Unsent.
 deleted_in_source_app_stride = 300
 unsent_stride = 790
+# Apple Messages one-to-one messages edited, with their earlier versions kept.
+edited_stride = 170
 # iMessage-tree messages that fall back to SMS/RCS (visible transport badges).
 apple_fallback_transport_fraction = 0.20
 

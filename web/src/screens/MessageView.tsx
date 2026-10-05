@@ -17,18 +17,22 @@ import { conversationYears, useConversationMessages } from "./message/useConvers
  * The conversation panel, the right-hand side of the Messages screen, shown
  * the way a phone shows a conversation (#1391). `openAt` opens it at one
  * message, highlighted, with the messages around it, for a search result
- * (#313); without it, the panel opens at the newest message.
+ * (#313); without it, the panel opens at the newest message. `openMatched`
+ * names the earlier versions the search found that message by, when it found
+ * it only by them, and the message opens them, highlighted (#1143).
  */
 export default function MessageView({
   conversation,
   openAt = null,
+  openMatched,
   onOpenContact,
 }: {
   conversation: Conversation;
   openAt?: number | null;
+  openMatched?: readonly number[];
   onOpenContact?: (contactId: string, preview: ContactPreview | null) => void;
 }) {
-  const thread = useConversationMessages(conversation.id, openAt);
+  const thread = useConversationMessages(conversation.id, openAt, openMatched);
   const { messages, find } = thread;
 
   const [lightboxItems, setLightboxItems] = useState<MessageAttachment[] | null>(null);
