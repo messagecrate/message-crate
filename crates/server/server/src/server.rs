@@ -1434,7 +1434,7 @@ async fn serve_until_shutdown(
 /// requests before exiting.
 async fn shutdown_signal() {
     stop_requested().await;
-    eprintln!("shutting down");
+    eprintln!("The server is shutting down");
 }
 
 /// Resolve on Ctrl-C, or on SIGTERM on Unix. `docker stop` and a service
@@ -1452,7 +1452,9 @@ pub(crate) async fn stop_requested() {
             // Without a SIGTERM handler the process still stops on SIGTERM,
             // only without draining; Ctrl-C keeps working.
             Err(e) => {
-                eprintln!("cannot listen for SIGTERM: {e}");
+                eprintln!(
+                    "The server cannot listen for SIGTERM, so SIGTERM stops it without finishing the requests in flight: {e}"
+                );
                 std::future::pending::<()>().await;
             }
         }

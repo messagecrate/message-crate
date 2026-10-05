@@ -180,19 +180,20 @@ async fn dedupe_and_process_assets(
     )
     .await
     .context("process-assets after prepared demo import")?;
-    if let Some(warning) = not_done_warning(&process_stats) {
-        eprintln!("warning: {warning}");
+    if let Some(line) = not_done_line(&process_stats) {
+        eprintln!("{line}");
     }
     Ok((dedupe_stats, process_stats))
 }
 
-/// The warning printed when processing the demo originals could not do
+/// The line printed when processing the demo originals could not do
 /// everything, naming each count of what it could not do, or `None` when it
-/// did everything.
-fn not_done_warning(stats: &process_assets::ProcessAssetsStats) -> Option<String> {
+/// did everything. `reset-demo`, a new database's seeding and the owner's
+/// rebuild all print it, so it names none of them.
+fn not_done_line(stats: &process_assets::ProcessAssetsStats) -> Option<String> {
     stats
         .failures()
-        .map(|failures| format!("the Demo Account has {failures}. reset-demo continues"))
+        .map(|failures| format!("The Demo Account has {failures}. Its build goes on all the same"))
 }
 
 struct ResetPreparedStats {
@@ -312,9 +313,9 @@ where
     match built {
         Ok(messages) => Some(messages),
         Err(error) => {
-            eprintln!("warning: could not add the Demo Account: {error:#}");
+            eprintln!("The Demo Account could not be added: {error:#}");
             eprintln!(
-                "  this Message Crate starts without it; `message-crate-server reset-demo` adds it"
+                "  This Message Crate starts without it. `message-crate-server reset-demo` adds it"
             );
             None
         }
@@ -377,7 +378,10 @@ where
     if seeded.is_err()
         && let Err(error) = remove_any_if_exists(&seeding).and_then(|()| remove_sidecars(&seeding))
     {
-        eprintln!("warning: could not remove the unfinished new database: {error:#}");
+        eprintln!(
+            "The unfinished new database at {} could not be removed: {error:#}",
+            seeding.display()
+        );
     }
     seeded
 }
@@ -557,7 +561,7 @@ async fn whole_demo_account_or_none(
         Ok(stats) => Ok(stats.import.messages),
         Err(error) => {
             if let Err(error) = remove_failed_demo_build(cfg, db).await {
-                eprintln!("warning: could not remove the partly added Demo Account: {error:#}");
+                eprintln!("The partly built Demo Account could not be removed: {error:#}");
             }
             Err(error)
         }
@@ -1968,7 +1972,8 @@ fn cleanup_reset_backups(swaps: &[Swap<'_>]) {
     for swap in swaps {
         if let Err(error) = remove_any_if_exists(&swap.backup) {
             eprintln!(
-                "warning: reset-demo installed or restored active state but could not remove backup {}: {error:#}",
+                "The {} is in place, but its backup at {} could not be removed: {error:#}",
+                swap.what,
                 swap.backup.display()
             );
         }
@@ -1992,7 +1997,9 @@ async fn vacuum_after_demo(db: &SqlitePool) {
     let mut conn = match db.acquire().await {
         Ok(conn) => conn,
         Err(err) => {
-            eprintln!("  sql:      warning: vacuum after demo failed to open a connection: {err}");
+            eprintln!(
+                "  sql:      VACUUM did not run, because no connection could be opened: {err}"
+            );
             return;
         }
     };

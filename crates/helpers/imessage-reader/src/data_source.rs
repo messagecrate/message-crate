@@ -136,7 +136,7 @@ impl DataSource {
             Ok(index) => Some(index),
             Err(e) => {
                 emit_log(format!(
-                    "Unable to build contacts index: {e}\nContinuing without contact names..."
+                    "The contacts database could not be read, so no contact is named from it: {e}"
                 ));
                 None
             }

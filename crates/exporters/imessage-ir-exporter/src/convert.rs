@@ -572,7 +572,8 @@ fn read_attachment(
         let bytes = fs::read(&temp);
         if let Err(why) = fs::remove_file(&temp) {
             options.emit_log(format!(
-                "Unable to remove decrypted temp file {}: {why}",
+                "The decrypted copy of attachment {} at {} could not be removed: {why}",
+                path.display(),
                 temp.display()
             ));
         }
@@ -580,7 +581,10 @@ fn read_attachment(
             not_decrypted.record(
                 options,
                 path,
-                format!("read the decrypted copy {}: {e}", temp.display()),
+                format!(
+                    "its decrypted copy at {} could not be read: {e}",
+                    temp.display()
+                ),
             );
             Vec::new()
         }));

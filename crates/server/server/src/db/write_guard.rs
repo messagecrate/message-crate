@@ -137,7 +137,7 @@ unsafe extern "C" fn authorize(
     };
     if writes && autocommit && GUARDED_TABLES.contains(&table.as_ref()) {
         eprintln!(
-            "a write to `{table}` outside a transaction: run it in crate::db::begin_write (#1628)"
+            "A write to `{table}` ran outside a transaction. It belongs in crate::db::begin_write (#1628)"
         );
         return ffi::SQLITE_DENY;
     }

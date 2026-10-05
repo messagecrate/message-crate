@@ -11,7 +11,7 @@ use sqlx::SqliteConnection;
 async fn run_sql_warn(conn: &mut SqliteConnection, statements: &[&str]) {
     for sql in statements {
         if let Err(err) = sqlx::query(sql).execute(&mut *conn).await {
-            eprintln!("  sql:      warning: {sql} failed: {err}");
+            eprintln!("  sql:      {sql} failed: {err}");
         }
     }
 }

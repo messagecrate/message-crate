@@ -1636,6 +1636,33 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-05 **The server, the demo seed and an Import Run's log write their
+  last warnings as sentences.** Lines on standard error started with
+  "warning:", "stopping:" or "skip —", and a few lines in an Import Run's log
+  started "Unable to" or "could not". Each now says what happened, for
+  example:
+  - "warning: could not add the Demo Account: …" is now "The Demo Account
+    could not be added: …", and the line after it starts with a capital.
+  - "warning: the Demo Account has 1 original whose Preview or Thumbnail
+    could not be made. reset-demo continues" is now "The Demo Account has 1
+    original whose Preview or Thumbnail could not be made. Its build goes on
+    all the same", since a new database and Owner Home build the Demo
+    Account too.
+  - "warning: could not write server.ready back: …" is now "server.ready
+    could not be written back, so sqlite-web goes on waiting: …".
+  - "warning: installed the generated demo bundle but could not remove
+    backup …" is now "The new Demo Data is in place, but the backup of the
+    previous one at … could not be removed: …".
+  - "shutting down" is now "The server is shutting down", and
+    `process-assets` says "Stopping." when it is stopped.
+  - "Unable to remove decrypted temp file …" is now "The decrypted copy of
+    attachment … at … could not be removed: …".
+  - "Unable to build contacts index: …" and "Unable to read a contacts
+    source: …" are now "The contacts database could not be read, so no
+    contact is named from it: …" and "A contacts source could not be read,
+    so no contact is named from it: …".
+  - "could not read …" for WhatsApp's preferences is now "WhatsApp's
+    preferences file … could not be read: …".
 - 2026-10-05 **`process-assets` says what it did to an incomplete original
   and a damaged or shared Preview or Thumbnail.** A transfer that never
   finished leaves an incomplete original. When one could not be removed,
