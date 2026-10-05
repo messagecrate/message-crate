@@ -17,23 +17,21 @@ use crate::db::{WriteTx, begin_write};
 
 const CONTENT_KEY_WRITE_LOG_EVERY: usize = 50_000;
 
-/// One production message that still needs a content fingerprint.
-///
-/// Column order matches the SELECT in [`ContentKeyInputs::load`]:
-/// `id`, `conversation_id`, `chat_id` (chat handle `normalized`),
-/// `conversation_type`, `is_from_me`, `timestamp`, `body`,
-/// `sender_normalized`. Two SQL columns are both named `normalized`, so
-/// this stays a positional tuple rather than `FromRow`.
-type ContentKeyRow = (
-    i64,
-    i64,
-    String,
-    String,
-    i64,
-    String,
-    Option<String>,
-    Option<String>,
-);
+/// One production message that still needs a content fingerprint, as
+/// [`ContentKeyInputs::load`] selects it.
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct ContentKeyRow {
+    id: i64,
+    conversation_id: i64,
+    /// The chat handle's normalized address.
+    chat_id: String,
+    conversation_type: String,
+    is_from_me: i64,
+    timestamp: String,
+    body: Option<String>,
+    /// The sender the message is matched by ([`sender_for_key_sql`]).
+    sender_normalized: Option<String>,
+}
 
 /// Collapse whitespace so minor text differences do not split the same SMS.
 pub fn normalize_body(body: Option<&str>) -> String {
@@ -105,27 +103,26 @@ fn content_key_for_row(
     group_handles: &HashMap<i64, Vec<String>>,
     shas_by_msg: &HashMap<i64, Vec<String>>,
 ) -> Option<(i64, String)> {
-    let (id, conversation_id, chat_id, conversation_type, is_from_me, ts, body, sender_norm) = row;
     let empty: &[String] = &[];
-    let shas = shas_by_msg.get(id).map_or(empty, Vec::as_slice);
-    let group_identity = if is_group_type(conversation_type) {
+    let shas = shas_by_msg.get(&row.id).map_or(empty, Vec::as_slice);
+    let group_identity = if is_group_type(&row.conversation_type) {
         Some(chat_identity_for_content_key(
-            chat_id,
-            group_handles.get(conversation_id).map(Vec::as_slice),
+            &row.chat_id,
+            group_handles.get(&row.conversation_id).map(Vec::as_slice),
         ))
     } else {
         None
     };
-    let identity = group_identity.as_deref().unwrap_or(chat_id);
+    let identity = group_identity.as_deref().unwrap_or(&row.chat_id);
     let key = compute_content_key(
         identity,
-        *is_from_me != 0,
-        sender_norm.as_deref(),
-        ts,
-        body.as_deref(),
+        row.is_from_me != 0,
+        row.sender_normalized.as_deref(),
+        &row.timestamp,
+        row.body.as_deref(),
         shas,
     )?;
-    Some((*id, key))
+    Some((row.id, key))
 }
 
 /// Fingerprint every row in parallel.
@@ -380,6 +377,24 @@ async fn recompute_content_keys(
     Ok(keys.len() as u64)
 }
 
+/// The sender a message is matched by, as a SQL expression over the message's
+/// conversation `c` and its sender's handle `hs`: the sender's normalized
+/// address, or NULL in a conversation with yourself.
+///
+/// The holder is nobody's sender in a conversation with yourself, so an
+/// import drops the sender of each received note there (#1094). A copy
+/// imported before the chat's address was linked still names the holder, and
+/// one imported after does not; matching both with no sender lets the two
+/// copies of a received note pair (#1661). The question is asked of the
+/// identities the account has now, as every read of a conversation with
+/// yourself asks it.
+fn sender_for_key_sql() -> String {
+    format!(
+        "CASE WHEN {with_yourself} THEN NULL ELSE hs.normalized END",
+        with_yourself = crate::db::conversations::is_with_yourself_sql("c"),
+    )
+}
+
 /// Everything the content-key hash reads, loaded in three queries so the
 /// hashing runs off the database thread with no lookups of its own.
 struct ContentKeyInputs {
@@ -405,16 +420,17 @@ impl ContentKeyInputs {
         };
         let sql = format!(
             r"
-            SELECT m.id, m.conversation_id, h.normalized, c.conversation_type,
+            SELECT m.id, m.conversation_id, h.normalized AS chat_id, c.conversation_type,
                    m.is_from_me, m.timestamp, m.body,
-                   hs.normalized
+                   {sender} AS sender_normalized
             FROM messages m
             JOIN conversations c ON c.id = m.conversation_id
             JOIN handles h ON h.id = c.chat_handle_id
             LEFT JOIN handles hs ON hs.id = m.sender_handle_id
             {filter}
             ORDER BY m.id
-            "
+            ",
+            sender = sender_for_key_sql(),
         );
         let rows: Vec<ContentKeyRow> = sqlx::query_as(&sql)
             .bind(account_id)
@@ -453,8 +469,8 @@ impl ContentKeyInputs {
         }
 
         // One scan for attachment hashes belonging to this account's message id range.
-        let min_id = rows.first().map_or(0, |r| r.0);
-        let max_id = rows.last().map_or(0, |r| r.0);
+        let min_id = rows.first().map_or(0, |r| r.id);
+        let max_id = rows.last().map_or(0, |r| r.id);
         let att_rows: Vec<(i64, String)> = sqlx::query_as(
             r"
             SELECT a.message_id, a.sha256
@@ -736,20 +752,22 @@ async fn load_near_rows(
         String,
         String,
     );
-    let msg_rows: Vec<NearDedupeRow> = sqlx::query_as(
+    let msg_sql = format!(
         r"
         SELECT m.id, m.conversation_id, m.source, m.is_from_me, m.timestamp, m.body,
-               COALESCE(hs.normalized, ''), COALESCE(m.content_key, '')
+               COALESCE({sender}, ''), COALESCE(m.content_key, '')
         FROM messages m
         JOIN conversations c ON c.id = m.conversation_id
         LEFT JOIN handles hs ON hs.id = m.sender_handle_id
         WHERE c.account_id = $1
           AND m.duplicate_of IS NULL
         ",
-    )
-    .bind(account_id)
-    .fetch_all(&mut *conn)
-    .await?;
+        sender = sender_for_key_sql(),
+    );
+    let msg_rows: Vec<NearDedupeRow> = sqlx::query_as(&msg_sql)
+        .bind(account_id)
+        .fetch_all(&mut *conn)
+        .await?;
 
     let att_rows: Vec<(i64, String)> = sqlx::query_as(
         r"
