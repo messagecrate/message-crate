@@ -723,7 +723,7 @@ mod tests {
         let failure = parse_ir_lines([header]).unwrap_err();
         assert_eq!(
             failure,
-            crate::imports_api::ImportFailure::SchemaVersion {
+            ImportFailure::SchemaVersion {
                 refusal: UnsupportedSchemaVersion { found: 3 },
                 line: 1
             }
@@ -734,7 +734,7 @@ mod tests {
     fn parse_ir_lines_reports_a_non_json_line_as_a_failure() {
         let failure = parse_ir_lines(["this is not json"]).unwrap_err();
         match failure {
-            crate::imports_api::ImportFailure::NotJson { line, .. } => assert_eq!(line, 1),
+            ImportFailure::NotJson { line, .. } => assert_eq!(line, 1),
             other => panic!("expected NotJson, got {other:?}"),
         }
     }
@@ -743,7 +743,7 @@ mod tests {
     fn parse_ir_lines_reports_a_message_before_any_header_as_a_failure() {
         let failure = parse_ir_lines([r#"{"guid":"m1"}"#]).unwrap_err();
         match failure {
-            crate::imports_api::ImportFailure::Invalid { line, detail } => {
+            ImportFailure::Invalid { line, detail } => {
                 assert_eq!(line, 1);
                 assert!(
                     detail.contains("before the conversation header"),
@@ -762,7 +762,7 @@ mod tests {
         let msg = r#"{"guid":"g1","timestamp_unix_ms":9223372036854775807,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":"Sam","subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}"#;
         let failure = parse_ir_lines([header, msg.to_string()]).unwrap_err();
         match failure {
-            crate::imports_api::ImportFailure::Invalid { line, .. } => assert_eq!(line, 2),
+            ImportFailure::Invalid { line, .. } => assert_eq!(line, 2),
             other => panic!("expected Invalid, got {other:?}"),
         }
     }
@@ -784,7 +784,7 @@ mod tests {
         let failure = parse_ir_lines(lines).unwrap_err();
         assert_eq!(
             failure,
-            crate::imports_api::ImportFailure::MissingGuid {
+            ImportFailure::MissingGuid {
                 lines: vec![3, 4],
                 total: 2
             }
