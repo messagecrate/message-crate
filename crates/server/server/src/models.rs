@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use chrono::{TimeZone, Utc};
 use message_ir::{
     ConversationHeader, HandleService, HandleType, IrAttachment, IrDirection, IrMessage,
-    IrMessageKind, Reaction, check_schema_version_in_json, trimmed,
+    IrMessageKind, Reaction, check_schema_version_in_json, nonempty, trimmed,
 };
 use phone::Handle;
 use serde_json::Value;
@@ -238,11 +238,7 @@ pub fn parse_ir_lines(
             out.push(ExportRecord::Conversation(conversation_from_ir(
                 &header, line_no,
             )));
-            header_owner = header
-                .export
-                .owner_identity
-                .as_deref()
-                .and_then(message_ir::nonempty);
+            header_owner = header.export.owner_identity.as_deref().and_then(nonempty);
             saw_header = true;
         } else {
             if !saw_header {
@@ -386,7 +382,7 @@ fn message_from_ir(
         owner: msg
             .owner_identity
             .as_deref()
-            .and_then(message_ir::nonempty)
+            .and_then(nonempty)
             .or_else(|| header_owner.map(str::to_string)),
         service: Some(msg.service.as_str().to_string()),
         subject: msg.subject.clone().filter(|s| !s.is_empty()),
@@ -431,14 +427,14 @@ fn earlier_version_from_ir(version: &message_ir::EarlierVersion) -> Result<Earli
 /// (`docs/architecture/contacts-identities-and-messages.md`).
 fn participant_from_ir(p: &message_ir::IrParticipant) -> Option<ParticipantRecord> {
     let name_alias = p.display_name.clone();
-    if let Some(handle) = p.identity.as_deref().and_then(message_ir::nonempty) {
+    if let Some(handle) = p.identity.as_deref().and_then(nonempty) {
         return Some(ParticipantRecord {
             handle,
             name_alias,
             handle_type: p.identity_type,
         });
     }
-    let name = p.display_name.as_deref().and_then(message_ir::nonempty)?;
+    let name = p.display_name.as_deref().and_then(nonempty)?;
     Some(ParticipantRecord {
         handle: name,
         name_alias,
@@ -454,11 +450,11 @@ fn sender_identity(
     address: Option<&str>,
     name: Option<&str>,
 ) -> Option<(String, Option<HandleType>)> {
-    if let Some(address) = address.and_then(message_ir::nonempty) {
+    if let Some(address) = address.and_then(nonempty) {
         let kind = sender_handle_type(Some(address.as_str()));
         return Some((address, kind));
     }
-    let name = name.and_then(message_ir::nonempty)?;
+    let name = name.and_then(nonempty)?;
     Some((name, Some(HandleType::Other)))
 }
 

@@ -110,10 +110,12 @@ async fn complete_import_rejects_invalid_issue_kind() {
         },
     )
     .await
-    .unwrap_err()
-    .to_string();
+    .unwrap_err();
 
-    assert!(err.contains("invalid import issue kind"));
+    assert!(matches!(
+        err,
+        ImportLookupError::InvalidIssueKind { ref kind } if kind == "warning"
+    ));
 
     let issue_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM import_issues WHERE import_id = $1")
@@ -535,10 +537,7 @@ async fn complete_import_refuses_a_run_that_has_finished() {
     let err = complete_import(&mut conn, ACCOUNT_ID, discarded, &with_issue())
         .await
         .unwrap_err();
-    assert!(matches!(
-        err.downcast_ref::<ImportLookupError>(),
-        Some(ImportLookupError::InvalidRun { .. })
-    ));
+    assert!(matches!(err, ImportLookupError::InvalidRun { .. }));
     let row = get_owned_import(&mut conn, ACCOUNT_ID, discarded)
         .await
         .unwrap();
@@ -559,10 +558,7 @@ async fn complete_import_refuses_a_run_that_has_finished() {
     )
     .await
     .unwrap_err();
-    assert!(matches!(
-        err.downcast_ref::<ImportLookupError>(),
-        Some(ImportLookupError::InvalidRun { .. })
-    ));
+    assert!(matches!(err, ImportLookupError::InvalidRun { .. }));
     let row = get_owned_import(&mut conn, ACCOUNT_ID, completed)
         .await
         .unwrap();

@@ -395,8 +395,8 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
 
 /// Check the session token and pick the account name the rest of the run uses.
 ///
-/// The session token decides which account this run uses. The username the server
-/// returns wins; the account id is the fallback when that is empty.
+/// The session token decides which account this run uses, and the run names
+/// it by the username the server returns.
 ///
 /// # Errors
 ///
@@ -405,11 +405,7 @@ fn login(cfg: &PushConfig, stop: CancelFlag, out: &mut Reporter<'_, '_>) -> Resu
     let url = cfg.base_url.trim_end_matches('/').to_string();
     let http = HttpSession::new()?;
     let auth = http.auth_check(&url, &cfg.token)?;
-    let username = auth
-        .username
-        .as_deref()
-        .and_then(message_ir::trimmed)
-        .map_or_else(|| auth.account_id.to_string(), str::to_string);
+    let username = auth.username.clone();
     out.log(&format!(
         "authenticated username={username} account={}",
         auth.account_id
