@@ -391,6 +391,16 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **The Upload's log and the desktop app say the same
+  sentences.** The log wrote "authenticated username=sam account=1",
+  "using provided Import Run id=7", "Import Run id=7 source=sms",
+  "skip_attachments=true (text-only import)", "session refused: stopped"
+  and "session refused at login: stopped", while the desktop app showed
+  other words for the same lines. Both now say "Authenticated as sam (1)",
+  "Reusing Import Run 7 for sms", "Recording Import Run 7 for sms",
+  "Skipping attachments (text-only import)", "The server no longer accepts
+  this session, so the Upload stopped" and "… so the Upload did not
+  start".
 - 2026-10-05 **One import of two backups keeps the attachments and
   reactions of both.** When one import carried two backups holding the same
   message, the message kept only the attachments and reactions of the file
