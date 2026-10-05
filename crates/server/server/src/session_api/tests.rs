@@ -10,44 +10,25 @@ use crate::test_support::{
 
 const TEST_ACCOUNT: i64 = 7;
 
-/// Every Session the server answers names its account, so the reference
-/// marks `account_id` required, and a client generated from it never has to
-/// handle a Session without one.
+/// Every Session the server answers names its account by id and username, so
+/// the reference types `account_id` an integer and `username` a string, never
+/// null. Every property of a success answer is required, so a client
+/// generated from the reference never has to handle a Session without them.
+/// `openapi/document_rules.rs` checks that over the whole document.
 #[tokio::test]
-async fn the_reference_marks_a_sessions_account_id_required() {
+async fn the_reference_types_a_sessions_account_id_and_username() {
     let (fixture, account) = fixture_with_account().await;
     let body: serde_json::Value = get_json(&fixture.state, "/v1/session", &account.token).await;
     assert_eq!(body["account_id"], account.account_id, "{body}");
-
-    let doc: serde_json::Value =
-        serde_json::from_str(&crate::openapi::dump_openapi_json()).unwrap();
-    let session = &doc["components"]["schemas"]["Session"];
-    assert!(
-        session["required"]
-            .as_array()
-            .is_some_and(|r| r.iter().any(|f| f == "account_id")),
-        "{session}"
-    );
-    assert_eq!(
-        session["properties"]["account_id"]["type"], "integer",
-        "{session}"
-    );
-}
-
-/// Every Session the server answers names its account's username, so the
-/// reference types `username` a string, never null, and a client generated
-/// from it never has to handle a Session without one. That every property of
-/// a success answer is required is checked over the whole document
-/// (`openapi/document_rules.rs`).
-#[tokio::test]
-async fn the_reference_types_a_sessions_username_a_string() {
-    let (fixture, account) = fixture_with_account().await;
-    let body: serde_json::Value = get_json(&fixture.state, "/v1/session", &account.token).await;
     assert_eq!(body["username"], account.username, "{body}");
 
     let doc: serde_json::Value =
         serde_json::from_str(&crate::openapi::dump_openapi_json()).unwrap();
     let session = &doc["components"]["schemas"]["Session"];
+    assert_eq!(
+        session["properties"]["account_id"]["type"], "integer",
+        "{session}"
+    );
     assert_eq!(
         session["properties"]["username"]["type"], "string",
         "{session}"

@@ -2121,18 +2121,18 @@ async fn a_reset_leaves_a_demo_that_logs_in_and_holds_nothing_old() {
 }
 
 #[test]
-fn the_conversion_warning_names_the_failed_attachments_and_is_silent_at_zero() {
-    assert_eq!(conversion_warning(0), None);
+fn the_not_made_warning_names_the_originals_and_is_silent_at_zero() {
+    assert_eq!(not_made_warning(0), None);
     assert_eq!(
-        conversion_warning(1).as_deref(),
+        not_made_warning(1).as_deref(),
         Some(
-            "1 demo attachment failed conversion. Its original stays in place, and reset-demo continues"
+            "1 demo original whose Preview or Thumbnail could not be made stays as it was, and reset-demo continues"
         )
     );
     assert_eq!(
-        conversion_warning(2).as_deref(),
+        not_made_warning(2).as_deref(),
         Some(
-            "2 demo attachments failed conversion. Their originals stay in place, and reset-demo continues"
+            "2 demo originals whose Preview or Thumbnail could not be made stay as they were, and reset-demo continues"
         )
     );
 }

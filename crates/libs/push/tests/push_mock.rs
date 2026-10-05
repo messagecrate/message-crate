@@ -12,7 +12,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use httpmock::prelude::*;
-use message_crate_push::{AuthError, ProgressEvent, PushConfig, authenticate, run};
+use message_crate_push::{AuthError, ProgressEvent, PushConfig, PushReport, authenticate, run};
 use message_ir::{
     ConversationDocument, ConversationMeta, ConversationStats, ExportMeta, IrAttachment,
     IrConversationType, IrDirection, IrMessage, IrMessageKind, IrParticipant, IrService,
@@ -145,6 +145,25 @@ fn text_only_config(dir: &Path, base_url: String) -> PushConfig {
     }
 }
 
+/// The Upload's log that `text_only_config` names under `dir`.
+fn read_log(dir: &Path) -> String {
+    fs::read_to_string(dir.join("message-crate-push.log")).unwrap()
+}
+
+/// Run the Upload `cfg` describes, with the lines the desktop app shows.
+fn run_showing(cfg: &PushConfig) -> (PushReport, Vec<String>) {
+    let mut shown = Vec::new();
+    let report = {
+        let mut progress = |event| {
+            if let ProgressEvent::Log(line) = event {
+                shown.push(line);
+            }
+        };
+        run(cfg, Some(&mut progress)).unwrap()
+    };
+    (report, shown)
+}
+
 #[test]
 fn authenticate_and_push_text_only_conversation() {
     let server = MockServer::start();
@@ -194,7 +213,7 @@ fn authenticate_and_push_text_only_conversation() {
     write_jsonl(dir.path(), &sample_doc());
 
     let cfg = text_only_config(dir.path(), server.base_url());
-    let report = run(&cfg, None).unwrap();
+    let (report, shown) = run_showing(&cfg);
     assert!(report.ok);
     assert_eq!(report.conversations_ok, 1);
     let report_json = serde_json::to_value(&report).unwrap();
@@ -205,6 +224,17 @@ fn authenticate_and_push_text_only_conversation() {
             .is_some()
     );
     import.assert();
+    // The log and the desktop app's lines name the account and the Import
+    // Run in the same sentences, not as `name=value` (#1842).
+    let log = read_log(dir.path());
+    for line in [
+        "Authenticated as alice (1)",
+        "Recording Import Run 42 for sms-backup-restore",
+    ] {
+        assert!(log.contains(line), "{log}");
+        assert!(shown.iter().any(|shown| shown == line), "{shown:?}");
+    }
+    assert!(log.contains("Import Run 42 completed"), "{log}");
 
     // Second run should skip via journal.
     let report2 = run(&cfg, None).unwrap();
@@ -277,6 +307,11 @@ fn reuses_supplied_import_run_without_starting_or_completing_one() {
         "the Upload must not complete an Import Run it was handed"
     );
     import.assert();
+    let log = read_log(dir.path());
+    assert!(
+        log.contains("Reusing Import Run 99 for sms-backup-restore"),
+        "{log}"
+    );
 }
 
 /// A push that started its own Import Run completes it once, with the
@@ -399,7 +434,7 @@ fn a_refused_completion_is_an_error_the_push_returns() {
     );
     let message = format!("{error:#}");
     assert!(
-        message.contains("import run 42") && message.contains("intentional completion failure"),
+        message.contains("Import Run 42") && message.contains("intentional completion failure"),
         "{message}"
     );
     let written: serde_json::Value = serde_json::from_str(
@@ -450,7 +485,7 @@ fn a_refused_completion_outranks_a_report_that_cannot_be_written() {
     let error = run(&cfg, None).expect_err("a refused completion fails the push");
 
     let message = format!("{error:#}");
-    assert!(message.contains("import run 42"), "{message}");
+    assert!(message.contains("Import Run 42"), "{message}");
 }
 
 #[test]
@@ -496,7 +531,7 @@ fn aggregates_multiple_conversations_into_one_import_request() {
         report.messages_inserted + report.messages_deduped + report.messages_failed
     );
     assert_eq!(import.calls(), 1);
-    let log = fs::read_to_string(dir.path().join("message-crate-push.log")).unwrap();
+    let log = read_log(dir.path());
     assert!(log.contains("Import request accepted: 2 conversations and 2 messages from "));
 }
 
@@ -919,15 +954,7 @@ fn profiles_attachment_upload_phases() {
         cancel: None,
         import_id: None,
     };
-    let mut progress_lines = Vec::new();
-    let report = {
-        let mut progress = |event| {
-            if let ProgressEvent::Log(line) = event {
-                progress_lines.push(line);
-            }
-        };
-        run(&cfg, Some(&mut progress)).unwrap()
-    };
+    let (report, progress_lines) = run_showing(&cfg);
 
     assert!(
         head.calls() >= 1,
@@ -2243,6 +2270,11 @@ fn a_push_that_skips_attachments_sends_text_and_uploads_nothing() {
     assert_eq!(assets.calls(), 0, "a text-only push uploads no file");
     assert_eq!(report.assets_uploaded, 0);
     assert_eq!(journaled_guids(dir.path()), vec!["guid-1".to_string()]);
+    let log = read_log(dir.path());
+    assert!(
+        log.contains("Skipping attachments (text-only import)"),
+        "{log}"
+    );
 }
 
 /// Each import request carries one backup source, so conversations from two
@@ -3062,12 +3094,17 @@ fn a_refused_session_stops_the_push_as_a_pause_and_fails_no_conversation() {
         ..text_only_config(dir.path(), server.base_url())
     };
 
-    let report = run(&cfg, None).unwrap();
+    let (report, shown) = run_showing(&cfg);
 
     assert!(
         report.session_refused,
         "the report says the session was refused"
     );
+    // The log and the desktop app say why in the same sentence (#1842).
+    let stopped = "The server no longer accepts this session, so the Upload stopped. \
+                   The next Upload sends what this one did not.";
+    assert!(read_log(dir.path()).contains(stopped));
+    assert!(shown.iter().any(|line| line == stopped), "{shown:?}");
     assert!(
         report.cancelled,
         "a refused session stops the push as a pause"
@@ -3164,10 +3201,14 @@ fn a_session_refused_at_login_stops_the_push_as_a_pause() {
         ..text_only_config(dir.path(), server.base_url())
     };
 
-    let report = run(&cfg, None).unwrap();
+    let (report, shown) = run_showing(&cfg);
 
     assert!(report.session_refused);
     assert!(report.cancelled);
+    let not_started = "The server no longer accepts this session, so the Upload did not start. \
+                       The next Upload sends every conversation.";
+    assert!(read_log(dir.path()).contains(not_started));
+    assert!(shown.iter().any(|line| line == not_started), "{shown:?}");
     assert_eq!(report.conversations_failed, 0);
     assert_eq!(report.conversations_cancelled, 2);
     assert_eq!(report.conversations_total, 2);
