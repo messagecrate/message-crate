@@ -240,12 +240,12 @@ impl StagingDirectories {
         loop {
             // An earlier run of that name, perhaps in another Staging
             // Directory or before the clock went back, left its log.
-            let taken = import_run_log(&self.logs, &directory).exists();
-            match if taken {
-                Err(std::io::ErrorKind::AlreadyExists.into())
-            } else {
-                std::fs::create_dir(&directory)
-            } {
+            if import_run_log(&self.logs, &directory).exists() {
+                n += 1;
+                directory = root.join(format!("{base}-{n}"));
+                continue;
+            }
+            match std::fs::create_dir(&directory) {
                 Ok(()) => break,
                 Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                     n += 1;

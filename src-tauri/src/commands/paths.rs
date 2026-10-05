@@ -379,16 +379,18 @@ pub(crate) fn resolve_staging_root(staging_root: &str) -> Result<PathBuf, String
     Ok(root)
 }
 
-/// Resolve `raw` to an absolute path that must stay under `staging_root`.
+/// Resolve `raw` to an absolute path that must stay under `root`, a
+/// directory this app opens things in: a run directory, or the Logs
+/// Directory. `root` is held to the rules of a Staging Directory setting
+/// ([`resolve_staging_root`]): absolute, and not a file system's root.
 ///
 /// When the path already exists it is canonicalized, so a symbolic link cannot
-/// escape the staging tree. When it does not exist yet (for example a staging
-/// directory that extract is about to create), it is resolved through
-/// [`resolve_on_disk`], the same way as the root, so the two compare in one
-/// form.
-pub(crate) fn resolve_openable_path(raw: &str, staging_root: &str) -> Result<PathBuf, String> {
+/// escape the root. When it does not exist yet (for example a log not written
+/// yet), it is resolved through [`resolve_on_disk`], the same way as the root,
+/// so the two compare in one form.
+pub(crate) fn resolve_openable_path(raw: &str, root: &str) -> Result<PathBuf, String> {
     let candidate = resolve_absolute(raw, "Path is empty", "Path must be absolute")?;
-    let root = resolve_staging_root(staging_root)?;
+    let root = resolve_staging_root(root)?;
 
     if candidate.exists() {
         let canonical = candidate

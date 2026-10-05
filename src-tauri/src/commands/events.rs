@@ -169,6 +169,12 @@ impl From<anyhow::Error> for ExtractErrorEvent {
     }
 }
 
+/// Send `line` to the window's log and add it to the Import Run's log.
+pub(crate) fn log_to_run(app: &AppHandle, run_log: &crate::app_directories::RunLog, line: String) {
+    run_log.line(&line);
+    emit(app, LOG, line);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

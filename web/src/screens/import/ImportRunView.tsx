@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Button from "../../components/Button";
 import { type ImportSummaryView, NOTES_HELP } from "../../components/import/ImportSummaryPanel";
@@ -203,11 +203,19 @@ function FinishedExits({ importId }: { importId: number }) {
  */
 function useImportRunLog(stagingDir: string | null, keep: boolean): string | null {
   const [log, setLog] = useState<string | null>(null);
+  // The run directory the log was last asked for: `keep` changing on its own
+  // asks again for nothing.
+  const askedFor = useRef<string | null>(null);
   useEffect(() => {
     if (!stagingDir) {
-      if (!keep) setLog(null);
+      if (!keep) {
+        askedFor.current = null;
+        setLog(null);
+      }
       return;
     }
+    if (askedFor.current === stagingDir) return;
+    askedFor.current = stagingDir;
     setLog(null);
     let live = true;
     invokeImportRunLog(stagingDir).then(
@@ -316,9 +324,9 @@ export default function ImportRunView({
   cancelDisabled?: boolean;
 }) {
   const trimmedStaging = stagingDir?.trim() || null;
-  const logPath = useImportRunLog(trimmedStaging, phase === "done");
-  const mode = form?.attachmentMedia ?? "copy";
   const done = phase === "done";
+  const logPath = useImportRunLog(trimmedStaging, done);
+  const mode = form?.attachmentMedia ?? "copy";
   const succeeded =
     summaryView?.status === "completed" || summaryView?.status === "completed_with_issues";
   const hasMedia = steps.some((step) => step.label === MEDIA_LABEL);

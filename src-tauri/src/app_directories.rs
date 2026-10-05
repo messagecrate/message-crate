@@ -70,6 +70,12 @@ impl RunLog {
         Self { file }
     }
 
+    /// Add the error that stopped the stage to the log, as the window shows
+    /// it.
+    pub fn error(&self, error: &anyhow::Error) {
+        self.line(&format!("Error: {error:#}"));
+    }
+
     /// Add `line` to the log. A line that cannot be written is dropped: the
     /// window has it.
     pub fn line(&self, line: &str) {

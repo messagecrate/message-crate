@@ -259,9 +259,11 @@ pub fn transcode_staging(
     let issues = events::issue_sink(&app);
     spawn_job(app, job, move || {
         if has_media_step {
-            let line = "Converting and compressing attachments…";
-            run_log.line(line);
-            events::emit(&app_handle, events::LOG, line.to_string());
+            events::log_to_run(
+                &app_handle,
+                &run_log,
+                "Converting and compressing attachments…".to_string(),
+            );
         }
 
         // Not `move`: the closure only needs `&app_handle` (`emit` takes
@@ -294,7 +296,7 @@ pub fn transcode_staging(
         // generic path a cancelled `extract` run already goes through. See
         // this function's doc comment for why the earlier quiet-cancel
         // special case was removed.
-        let report = outcome.inspect_err(|error| run_log.line(&format!("Error: {error:#}")))?;
+        let report = outcome.inspect_err(|error| run_log.error(error))?;
 
         let summary = transcode_summary(&report);
         run_log.line(&summary);

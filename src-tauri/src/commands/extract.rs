@@ -204,8 +204,7 @@ pub fn extract(
     let log_app = app_handle.clone();
     let sink_log = run_log.clone();
     config.log = Some(LogSink::new(move |line: &str| {
-        sink_log.line(line);
-        events::emit(&log_app, events::LOG, line.to_string());
+        events::log_to_run(&log_app, &sink_log, line.to_string());
     }));
     let progress_app = app_handle.clone();
     config.progress = Some(ProgressSink::new(move |event| {
@@ -219,11 +218,10 @@ pub fn extract(
 
     spawn_job(app, job, move || {
         let run_result = run_staging(&config, &output_dir, &media_settings)
-            .inspect_err(|error| run_log.line(&format!("Error: {error:#}")))?;
+            .inspect_err(|error| run_log.error(error))?;
         let payload = finished_payload(&run_result);
         for line in run_result.messages {
-            run_log.line(&line);
-            events::emit(&app_handle, events::LOG, line);
+            events::log_to_run(&app_handle, &run_log, line);
         }
         Ok(payload)
     });
