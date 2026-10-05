@@ -1288,7 +1288,7 @@ impl std::fmt::Display for ConversationHeaderLine {
 /// `tests/fixtures/`, `contents`, with its header's `schema_version` set to
 /// [`message_ir::SCHEMA_VERSION`]. A schema version bump then reaches the
 /// committed files the way it reaches [`conversation_header`], with no file
-/// edited by hand (#1855). Only the header line is rewritten; every message
+/// edited by hand (#1855). Only the header line is rewritten. Every message
 /// line stays as the exporter wrote it.
 pub fn at_current_schema_version(contents: &str) -> String {
     let (header, messages) = contents
