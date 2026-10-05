@@ -93,26 +93,26 @@ fn a_time_that_does_not_parse_gives_no_content_key() {
 #[test]
 fn parallel_content_keys_match_serial() {
     let rows = vec![
-        (
-            1,
-            10,
-            "+14075550106".into(),
-            "individual".into(),
-            1,
-            "2015-03-12T18:04:22Z".into(),
-            Some("hi".into()),
-            None,
-        ),
-        (
-            2,
-            11,
-            "chat-group".into(),
-            "group".into(),
-            0,
-            "2015-03-12T18:04:23Z".into(),
-            Some("yo".into()),
-            Some("+15555550128".into()),
-        ),
+        ContentKeyRow {
+            id: 1,
+            conversation_id: 10,
+            chat_id: "+14075550106".into(),
+            conversation_type: "individual".into(),
+            is_from_me: 1,
+            timestamp: "2015-03-12T18:04:22Z".into(),
+            body: Some("hi".into()),
+            sender_normalized: None,
+        },
+        ContentKeyRow {
+            id: 2,
+            conversation_id: 11,
+            chat_id: "chat-group".into(),
+            conversation_type: "group".into(),
+            is_from_me: 0,
+            timestamp: "2015-03-12T18:04:23Z".into(),
+            body: Some("yo".into()),
+            sender_normalized: Some("+15555550128".into()),
+        },
     ];
     let mut groups = HashMap::new();
     groups.insert(11, vec!["+15555550128".into(), "+15555550129".into()]);
@@ -148,17 +148,15 @@ fn parallel_content_keys_match_serial() {
 /// case, so a group's message keys the same whatever case its type is in.
 #[test]
 fn a_group_is_keyed_as_a_group_whatever_the_case_of_its_type() {
-    let row = |conversation_type: &str| {
-        (
-            2,
-            11,
-            "chat-group".to_string(),
-            conversation_type.to_string(),
-            0,
-            "2015-03-12T18:04:23Z".to_string(),
-            Some("yo".to_string()),
-            Some("+15555550128".to_string()),
-        )
+    let row = |conversation_type: &str| ContentKeyRow {
+        id: 2,
+        conversation_id: 11,
+        chat_id: "chat-group".to_string(),
+        conversation_type: conversation_type.to_string(),
+        is_from_me: 0,
+        timestamp: "2015-03-12T18:04:23Z".to_string(),
+        body: Some("yo".to_string()),
+        sender_normalized: Some("+15555550128".to_string()),
     };
     let mut groups = HashMap::new();
     groups.insert(11, vec!["+15555550128".into(), "+15555550129".into()]);

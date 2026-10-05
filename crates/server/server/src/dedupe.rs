@@ -16,24 +16,21 @@ use crate::db::{WriteTx, begin_write};
 
 const CONTENT_KEY_WRITE_LOG_EVERY: usize = 50_000;
 
-/// One production message that still needs a content fingerprint.
-///
-/// Column order matches the SELECT in [`ContentKeyInputs::load`]:
-/// `id`, `conversation_id`, `chat_id` (chat handle `normalized`),
-/// `conversation_type`, `is_from_me`, `timestamp`, `body`,
-/// `sender_normalized` ([`sender_for_key_sql`]). The chat handle column is
-/// `normalized` and the sender is an expression with no name, so this stays a
-/// positional tuple rather than `FromRow`.
-type ContentKeyRow = (
-    i64,
-    i64,
-    String,
-    String,
-    i64,
-    String,
-    Option<String>,
-    Option<String>,
-);
+/// One production message that still needs a content fingerprint, as
+/// [`ContentKeyInputs::load`] selects it.
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct ContentKeyRow {
+    id: i64,
+    conversation_id: i64,
+    /// The chat handle's normalized address.
+    chat_id: String,
+    conversation_type: String,
+    is_from_me: i64,
+    timestamp: String,
+    body: Option<String>,
+    /// The sender the message is matched by ([`sender_for_key_sql`]).
+    sender_normalized: Option<String>,
+}
 
 /// Collapse whitespace so minor text differences do not split the same SMS.
 pub fn normalize_body(body: Option<&str>) -> String {
@@ -105,27 +102,26 @@ fn content_key_for_row(
     group_handles: &HashMap<i64, Vec<String>>,
     shas_by_msg: &HashMap<i64, Vec<String>>,
 ) -> Option<(i64, String)> {
-    let (id, conversation_id, chat_id, conversation_type, is_from_me, ts, body, sender_norm) = row;
     let empty: &[String] = &[];
-    let shas = shas_by_msg.get(id).map_or(empty, Vec::as_slice);
-    let group_identity = if is_group_type(conversation_type) {
+    let shas = shas_by_msg.get(&row.id).map_or(empty, Vec::as_slice);
+    let group_identity = if is_group_type(&row.conversation_type) {
         Some(chat_identity_for_content_key(
-            chat_id,
-            group_handles.get(conversation_id).map(Vec::as_slice),
+            &row.chat_id,
+            group_handles.get(&row.conversation_id).map(Vec::as_slice),
         ))
     } else {
         None
     };
-    let identity = group_identity.as_deref().unwrap_or(chat_id);
+    let identity = group_identity.as_deref().unwrap_or(&row.chat_id);
     let key = compute_content_key(
         identity,
-        *is_from_me != 0,
-        sender_norm.as_deref(),
-        ts,
-        body.as_deref(),
+        row.is_from_me != 0,
+        row.sender_normalized.as_deref(),
+        &row.timestamp,
+        row.body.as_deref(),
         shas,
     )?;
-    Some((*id, key))
+    Some((row.id, key))
 }
 
 /// Fingerprint every row in parallel.
@@ -407,9 +403,9 @@ impl ContentKeyInputs {
         };
         let sql = format!(
             r"
-            SELECT m.id, m.conversation_id, h.normalized, c.conversation_type,
+            SELECT m.id, m.conversation_id, h.normalized AS chat_id, c.conversation_type,
                    m.is_from_me, m.timestamp, m.body,
-                   {sender}
+                   {sender} AS sender_normalized
             FROM messages m
             JOIN conversations c ON c.id = m.conversation_id
             JOIN handles h ON h.id = c.chat_handle_id
@@ -456,8 +452,8 @@ impl ContentKeyInputs {
         }
 
         // One scan for attachment hashes belonging to this account's message id range.
-        let min_id = rows.first().map_or(0, |r| r.0);
-        let max_id = rows.last().map_or(0, |r| r.0);
+        let min_id = rows.first().map_or(0, |r| r.id);
+        let max_id = rows.last().map_or(0, |r| r.id);
         let att_rows: Vec<(i64, String)> = sqlx::query_as(
             r"
             SELECT a.message_id, a.sha256
