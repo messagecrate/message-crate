@@ -401,6 +401,13 @@ released versions carry their date on the heading.
   "Skipping attachments (text-only import)", "The server no longer accepts
   this session, so the Upload stopped" and "… so the Upload did not
   start".
+- 2026-10-05 **One import of two backups keeps the attachments and
+  reactions of both.** When one import carried two backups holding the same
+  message, the message kept only the attachments and reactions of the file
+  read first, so a Like only the newer backup held was lost. Two separate
+  imports of the same files kept it. The message now takes the attachments
+  and reactions of both, each one once, and a file one backup has and the
+  other lacks fills in the missing attachment, as a second import does.
 - 2026-10-05 **An import's log says its counts in words, not as
   `name=value`.** The Upload, the attachment conversion, and the server's
   import, duplicate check and `process-assets` command wrote counts such as
@@ -1549,6 +1556,12 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-05 **The Session always names its username.** `GET /v1/session`
+  described `username` as possibly empty, so every program reading it had to
+  allow for a Session with no username. It always carries one now. An
+  account deleted at the moment its Session is read answers
+  `401 Unauthorized`, as a credential naming no account does, instead of a
+  Session without a username.
 - 2026-10-05 **The HTTP API reference describes every field.** 59 fields,
   among them the Import Run's mode and source, an upload's part size, and a
   Contact Group's or Message Tag's name, showed no description in the HTTP
