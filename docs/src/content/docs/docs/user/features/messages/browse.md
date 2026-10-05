@@ -106,6 +106,18 @@ A line with the day, such as `Thu, Jul 2`, separates the days; outside the curre
 Every message has its time under it.
 In a group Conversation, the sender's name is above the first message of each run: a run ends at a new day, a new sender, or a gap of an hour or more.
 
+### Deleted and unsent messages
+
+A message deleted in the app it came from, before the backup was made, is kept when the backup still holds it.
+Its bubble keeps the text, faded, with a dashed outline, and the line under it names the app, like `4:56 PM · Deleted in Apple Messages`.
+A message its sender unsent is an empty faded bubble with a dashed outline that reads **Unsent**, with its time under it.
+The backup holds no text for an unsent message, so the bubble has none to show.
+
+Neither mark hides a message, and search finds both like any other.
+`deleted:yes` narrows a search to marked messages, and `deleted:no` leaves them out ([Search](/docs/user/features/messages/search/)).
+Apple Messages is the source that records the marks today.
+Moving a Conversation to the Trash is a separate thing, done inside Message Crate ([Trash](/docs/user/features/messages/trash/)).
+
 ### Photos, videos, and recordings
 
 A photo or a video shows as its thumbnail, a small copy the server makes after each import, 200 pixels tall in the Conversation.

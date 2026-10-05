@@ -157,6 +157,13 @@ pub struct MessagesConfig {
     pub other_base_stride: usize,
     pub tapback_stride: usize,
     pub reply_stride: usize,
+    /// Every this many messages of an Apple Messages one-to-one conversation,
+    /// one is marked Deleted in the source app and keeps its text; 0 marks none.
+    pub deleted_in_source_app_stride: usize,
+    /// Every this many messages of an Apple Messages one-to-one conversation,
+    /// one is marked Unsent and loses its text; 0 marks none. A message with an
+    /// attachment is left unmarked, because an Unsent message keeps nothing.
+    pub unsent_stride: usize,
     /// Share of messages in the iMessage folder that are marked as SMS or RCS
     /// so the conversation view can show those labels.
     pub apple_fallback_transport_fraction: f64,
