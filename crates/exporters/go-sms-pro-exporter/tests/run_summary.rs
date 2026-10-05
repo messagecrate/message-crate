@@ -80,10 +80,10 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
     assert!(written.contains("\"hello\""), "{written}");
     assert!(written.contains("\"reply\""), "{written}");
     for line in [
-        "  skipped 2 invalid-date rows",
-        "  skipped_unknown_address: 1",
-        "  skipped_unknown_type: 1",
-        "  xml_messages_seen: 6",
+        "  Skipped 2 messages with an invalid date",
+        "  Skipped 1 message with no usable address",
+        "  Skipped 1 message of an unknown type",
+        "  Read 6 messages from the XML",
     ] {
         assert!(
             result.messages.iter().any(|l| l == line),
@@ -151,7 +151,7 @@ fn run_names_the_first_twenty_bad_address_rows_and_counts_the_rest() {
         result
             .messages
             .iter()
-            .any(|l| l == "  skipped_unknown_address: 22"),
+            .any(|l| l == "  Skipped 22 messages with no usable address"),
         "{:?}",
         result.messages
     );

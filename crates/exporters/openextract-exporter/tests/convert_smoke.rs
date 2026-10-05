@@ -49,7 +49,7 @@ fn convert_all_conversations_keys_the_chat_by_its_number() {
     assert_eq!(report.conversations, 1);
     assert_eq!(report.messages, 2);
     // The source gave a number, so nothing is name-only.
-    assert_eq!(report.extra.get("name_only_chat").copied().unwrap_or(0), 0);
+    assert_eq!(report.extra(message_crate_core::NAME_ONLY_CHAT), 0);
 
     let out = tmp.path().join("+15555550122.csv");
     let body = fs::read_to_string(&out).expect("read csv");

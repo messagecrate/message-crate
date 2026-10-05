@@ -197,8 +197,8 @@ fn xml_writes_only_sms_and_mms_and_the_log_names_what_was_left_out() {
     );
     assert!(
         result.messages.contains(
-            &"Left out 3 message(s) that are not SMS or MMS, because SMS Backup & Restore \
-              holds only SMS and MMS"
+            &"Left out 3 messages that are not SMS or MMS, because SMS Backup & Restore holds \
+              only SMS and MMS"
                 .to_string()
         ),
         "{:?}",
@@ -442,8 +442,8 @@ fn run_from_an_sms_backup_logs_the_reader_counts_and_every_error() {
         "Skipped 1 message of an unknown type",
         "Skipped 1 draft or unsent message",
         "Skipped 1 MMS with no participants",
-        "Skipped 1 message part that could not be read",
-        "Dropped 1 character reference that is not a character",
+        "Left out 1 message part that could not be read",
+        "Left out 1 character reference that is not a character",
     ] {
         assert!(
             logged.iter().any(|line| line == expected),
@@ -455,7 +455,7 @@ fn run_from_an_sms_backup_logs_the_reader_counts_and_every_error() {
         assert!(
             logged
                 .iter()
-                .any(|line| line.starts_with("xml warning: ") && line.contains(&name)),
+                .any(|line| line.starts_with("error: ") && line.contains(&name)),
             "an error for {name} in the log: {logged:#?}"
         );
     }
@@ -545,8 +545,8 @@ fn log_lines_append_the_media_lines_after_the_count() {
         vec![
             "Detected input format: json".to_string(),
             "Conversations: 1".to_string(),
-            "  saved 4 attachments".to_string(),
-            "Obfuscated 2 conversation(s)".to_string(),
+            "  Saved 4 attachments".to_string(),
+            "Obfuscated 2 conversations".to_string(),
         ]
     );
 }
@@ -771,7 +771,7 @@ fn apply_reexport_convert_restages_attachments_and_marks_missing_files() {
     )
     .unwrap();
     assert_eq!(report.attachments_saved, 1, "one file was on disk to stage");
-    assert_eq!(report.extra("attachments_missing"), 2);
+    assert_eq!(report.extra(ATTACHMENTS_MISSING), 2);
 
     let staged = &document.messages[0].attachments[0];
     assert_eq!(
@@ -1347,11 +1347,11 @@ fn a_mail_attachment_without_bytes_keeps_its_reason_and_is_counted() {
     assert_eq!(unsent.path, None);
     assert_eq!(unsent.missing_reason.as_deref(), Some("too_large"));
     assert_eq!(report.report.attachments_saved, 1);
-    assert_eq!(report.report.extra("attachments_missing"), 1);
+    assert_eq!(report.report.extra(ATTACHMENTS_MISSING), 1);
     assert!(
         report
             .log_lines()
-            .contains(&"  1 attachments missing".to_string()),
+            .contains(&"  Left out 1 attachment whose file is missing".to_string()),
         "{:?}",
         report.log_lines()
     );
@@ -1436,8 +1436,8 @@ fn sms_backup_plus_writes_only_sms_and_mms_and_says_what_it_left_out() {
     assert!(mail.contains("X-smssync-type: 1"), "{mail}");
     assert!(
         report.log_lines().contains(
-            &"Left out 3 message(s) that are not SMS or MMS, because SMS Backup+ holds \
-              only SMS and MMS"
+            &"Left out 3 messages that are not SMS or MMS, because SMS Backup+ holds only SMS \
+              and MMS"
                 .to_string()
         ),
         "{:?}",
@@ -1594,6 +1594,86 @@ fn a_converted_conversion_stages_from_the_sources_its_disk_check_counted() {
         .map(|att| att.missing_reason.as_deref())
         .collect();
     assert_eq!(reasons, [Some("file_missing"), Some("too_large")]);
+}
+
+/// Convert `source`, which holds one conversation with one PNG attachment,
+/// to JSON Lines with the media cloned, converted and compressed. Each run's
+/// `attachments/` must hold exactly the one file the conversation names: a
+/// JPEG once the media is converted or compressed. A second file there is
+/// a copy the disk check did not count (#1759).
+fn assert_converted_writes_each_attachment_once(source: &Path) {
+    // Converting needs FFmpeg.
+    let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
+        return;
+    };
+    for mode in [MediaMode::Clone, MediaMode::Convert, MediaMode::Compress] {
+        let destination = tempfile::tempdir().unwrap();
+        let mut converted = config(source, destination.path(), OutputFormat::Jsonl);
+        converted.media.mode = mode;
+
+        convert_export(source, &converted).unwrap();
+
+        let out = read_output(destination.path(), OutputFormat::Jsonl);
+        let named = out.messages[0].attachments[0].path.clone().unwrap();
+        let written: Vec<_> = snapshot(&destination.path().join("attachments"))
+            .into_iter()
+            .map(|(path, _)| format!("attachments/{}", path.to_string_lossy().replace('\\', "/")))
+            .collect();
+        assert_eq!(written, std::slice::from_ref(&named), "{mode:?}");
+        let extension = if mode == MediaMode::Clone {
+            ".png"
+        } else {
+            ".jpg"
+        };
+        assert!(named.ends_with(extension), "{mode:?}: {named}");
+    }
+}
+
+/// A conversion of an export stages every attachment from the input when
+/// it converts or compresses the media, so it copies none of the input's
+/// `attachments/`. The copy stayed beside the staged files, and the convert
+/// pass converted it too (#1759).
+#[test]
+fn a_converted_conversion_writes_each_attachment_once() {
+    let source = tempfile::tempdir().unwrap();
+    clean_previous_ir_output(source.path()).unwrap();
+    let mut doc = message_ir::testutil::sample_document("a photo");
+    let mut photo = attachment("photo.png", Some("attachments/photo.png"));
+    photo.mime_type = Some("image/png".into());
+    doc.messages[0].attachments = vec![photo];
+    let mut sink =
+        FormatSink::open(source.path(), OutputFormat::Jsonl, ExportTransforms::none()).unwrap();
+    sink.write_document(doc).unwrap();
+    sink.finish(&mut ExportReport::default()).unwrap();
+    fs::create_dir_all(source.path().join("attachments")).unwrap();
+    fs::write(
+        source.path().join("attachments/photo.png"),
+        media::testutil::PNG_1X1_RGB,
+    )
+    .unwrap();
+
+    assert_converted_writes_each_attachment_once(source.path());
+}
+
+/// A conversion of an SMS Backup & Restore backup takes every attachment
+/// from the backup's XML, so it copies none of an `attachments/` beside
+/// the backup, which the disk check never counted (#1759).
+#[test]
+fn a_converted_sms_backup_writes_each_attachment_once() {
+    let source = tempfile::tempdir().unwrap();
+    let png = media::testutil::PNG_1X1_RGB_BASE64;
+    let backup = format!(
+        r#"<smses><mms date="1400773400000" msg_box="1" address="+15555550101"><parts><part ct="image/png" name="photo.png" data="{png}"/></parts><addrs><addr address="+15555550101" type="137"/><addr address="+15555550100" type="151"/></addrs></mms></smses>"#
+    );
+    fs::write(source.path().join("smses.xml"), backup).unwrap();
+    fs::create_dir_all(source.path().join("attachments")).unwrap();
+    fs::write(
+        source.path().join("attachments/stray.txt"),
+        b"not in the backup",
+    )
+    .unwrap();
+
+    assert_converted_writes_each_attachment_once(source.path());
 }
 
 /// A JSON Lines export in `dir` whose two attachments name a size no disk

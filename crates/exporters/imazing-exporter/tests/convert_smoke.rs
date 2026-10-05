@@ -29,9 +29,9 @@ fn convert_messages_keys_the_chat_by_its_number() {
 
     assert_eq!(report.conversations, 1);
     assert_eq!(report.messages, 3);
-    assert_eq!(report.extra.get("messages_files").copied().unwrap_or(0), 1);
-    assert_eq!(report.extra.get("whatsapp_files").copied().unwrap_or(0), 0);
-    assert_eq!(report.extra.get("name_only_chat").copied().unwrap_or(0), 0);
+    assert_eq!(report.extra(crate::emit::MESSAGES_FILES), 1);
+    assert_eq!(report.extra(crate::emit::WHATSAPP_FILES), 0);
+    assert_eq!(report.extra(message_crate_core::NAME_ONLY_CHAT), 0);
 
     let out = tmp.path().join("+13215550100.csv");
     let body = fs::read_to_string(&out).expect("read csv");
@@ -79,7 +79,7 @@ fn convert_whatsapp_csv_direct() {
 
     assert_eq!(report.conversations, 1);
     assert_eq!(report.messages, 3);
-    assert_eq!(report.extra.get("whatsapp_files").copied().unwrap_or(0), 1);
+    assert_eq!(report.extra(crate::emit::WHATSAPP_FILES), 1);
     let out = tmp.path().join("+13215550100__whatsapp.csv");
     let body = fs::read_to_string(&out).expect("read csv");
     assert!(body.contains("WhatsApp"));
@@ -122,8 +122,8 @@ fn convert_export_root_recursively_keeps_services_separate() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let report = convert(&root, tmp.path()).expect("convert");
 
-    assert_eq!(report.extra.get("messages_files").copied().unwrap_or(0), 2);
-    assert_eq!(report.extra.get("whatsapp_files").copied().unwrap_or(0), 1);
+    assert_eq!(report.extra(crate::emit::MESSAGES_FILES), 2);
+    assert_eq!(report.extra(crate::emit::WHATSAPP_FILES), 1);
     assert!(report.conversations >= 3);
     assert!(tmp.path().join("+13215550100.csv").is_file());
     assert!(tmp.path().join("+13215550100__whatsapp.csv").is_file());
@@ -138,14 +138,7 @@ fn convert_export_root_recursively_keeps_services_separate() {
     let body = fs::read_to_string(tmp.path().join(group)).unwrap();
     assert!(body.contains("group"));
     assert!(body.contains("Notification") || body.contains("notification"));
-    assert!(
-        report
-            .extra
-            .get("unresolved_group_participants")
-            .copied()
-            .unwrap_or(0)
-            >= 1
-    );
+    assert!(report.extra(crate::emit::UNRESOLVED_GROUP_PARTICIPANTS) >= 1);
 }
 
 #[test]

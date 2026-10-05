@@ -111,5 +111,5 @@ Every other file stays, other XML files included.
 ## Limits
 
 - Attachments reach the output only when they are present in the input directory, because Convert copies them from its `attachments` directory and never fetches them from the server.
-- Android XML holds only SMS and MMS, because SMS Backup & Restore cannot describe an iMessage, a WhatsApp message or any other kind. Convert leaves every other message out and its log says how many: `Left out 3 message(s) that are not SMS or MMS, because SMS Backup & Restore holds only SMS and MMS`. JSON or JSON Lines is the format to choose when those messages matter.
+- Android XML holds only SMS and MMS, because SMS Backup & Restore cannot describe an iMessage, a WhatsApp message or any other kind. Convert leaves every other message out and its log says how many: `Left out 3 messages that are not SMS or MMS, because SMS Backup & Restore holds only SMS and MMS`. JSON or JSON Lines is the format to choose when those messages matter.
 - EML (SMS Backup+) holds only SMS and MMS. Its mail is read back by the SMS Backup+ import, not by Convert.

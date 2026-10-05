@@ -150,7 +150,7 @@ fn a_named_peer_with_no_address_gets_a_conversation_of_their_own() {
     let out = tmp.path().join("out");
 
     let report = convert(&input, &out);
-    assert_eq!(report.extra("unknown_chat_messages"), 1);
+    assert_eq!(report.extra(crate::emit::UNKNOWN_CHAT_MESSAGES), 1);
 
     let docs = documents(&out);
     let alice = docs
@@ -234,9 +234,9 @@ fn ordinary_mail_is_skipped_and_counted_as_not_sms() {
 
     let report = convert(&input, &out);
 
-    assert_eq!(report.extra("skipped_not_sms_backup_plus"), 2);
-    assert_eq!(report.extra("skipped_parse_error"), 0);
-    assert_eq!(report.extra("flat_eml"), 1);
+    assert_eq!(report.extra(crate::emit::SKIPPED_NOT_SMS_BACKUP_PLUS), 2);
+    assert_eq!(report.extra(crate::emit::SKIPPED_PARSE_ERROR), 0);
+    assert_eq!(report.extra(crate::emit::FLAT_EML), 1);
     assert_eq!(report.messages, 1);
     let docs = documents(&out);
     assert_eq!(
@@ -270,7 +270,7 @@ fn files_under_duplicate_and_exclude_are_skipped() {
     let report = convert(&input, &out);
 
     assert_eq!(
-        report.extra("flat_eml"),
+        report.extra(crate::emit::FLAT_EML),
         1,
         "only the top-level file is read"
     );
@@ -298,7 +298,7 @@ fn an_input_under_a_directory_named_duplicate_is_read() {
 
     let report = convert(&input, &out);
 
-    assert_eq!(report.extra("flat_eml"), 1);
+    assert_eq!(report.extra(crate::emit::FLAT_EML), 1);
     assert_eq!(report.messages, 1);
 }
 

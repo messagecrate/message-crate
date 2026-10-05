@@ -1,7 +1,7 @@
 //! Write [`ConversationDocument`] messages as SMS Backup & Restore XML.
 
 use anyhow::{Context, Result};
-use message_crate_core::{ExportReport, NOT_SMS_OR_MMS_LEFT_OUT};
+use message_crate_core::{Counter, ExportReport, NOT_SMS_OR_MMS_LEFT_OUT};
 use message_ir::{
     ConversationDocument, IrAttachment, IrConversationType, IrDirection, IrMessage, IrMessageKind,
     IrParticipant, nonempty, trimmed,
@@ -23,7 +23,11 @@ const MMS_ADDR_TO: &str = "151";
 /// The export report counter for characters left out of `smses.xml`
 /// because XML 1.0 cannot carry them (U+0000 to U+001F other than tab,
 /// line feed and carriage return).
-pub(crate) const CHARACTERS_LEFT_OUT: &str = "control_characters_left_out";
+pub(crate) const CHARACTERS_LEFT_OUT: Counter = Counter::new(
+    "control_characters_left_out",
+    "Left out 1 control character that XML cannot carry",
+    "Left out {n} control characters that XML cannot carry",
+);
 
 /// Session that appends conversations into a single `{output}/smses.xml`.
 pub(crate) struct SbrBackupSession {

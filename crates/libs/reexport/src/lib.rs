@@ -4,8 +4,9 @@ use anyhow::{Context, Result, bail};
 use media::{CompressOptions, MediaMode};
 pub use message_crate_core::RunResult;
 use message_crate_core::{
-    ATTACHMENTS_MISSING, ExportReport, ExportTransforms, ExporterConfig, LogSink, MediaConfig,
-    OutputFormat, SourceConfig, attachment_size_hint, document_messages, prepare_outputs,
+    ATTACHMENTS_MISSING, ATTACHMENTS_SAVED, ExportReport, ExportTransforms, ExporterConfig,
+    LogSink, MediaConfig, OutputFormat, SourceConfig, attachment_size_hint, document_messages,
+    prepare_outputs,
 };
 use message_ir::{ConversationDocument, IrMessage};
 use message_ir_format::{
@@ -70,13 +71,13 @@ impl ReexportReport {
         lines.push(format!("Conversations: {}", self.report.conversations));
         if self.report.attachments_saved > 0 {
             lines.push(format!(
-                "  saved {} attachments",
-                self.report.attachments_saved
+                "  {}",
+                ATTACHMENTS_SAVED.line(self.report.attachments_saved)
             ));
         }
         let missing = self.report.extra(ATTACHMENTS_MISSING);
         if missing > 0 {
-            lines.push(format!("  {missing} attachments missing"));
+            lines.push(format!("  {}", ATTACHMENTS_MISSING.line(missing)));
         }
         lines.extend(self.report.media_lines());
         lines
@@ -135,7 +136,10 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
     // no file there counts for nothing (#1743). What the clean will free
     // counts as free, and a run that will not fit leaves the earlier output
     // as it was. The input's attachments are staged from the sources
-    // counted here; a backup's are staged by its own step below.
+    // counted here; a backup's are staged by its own step below. Either
+    // way each attachment is on the disk once: a backup's staged files are
+    // staged again under the same names, and the convert pass replaces each
+    // one in place, so the check counts one copy (#1759).
     let mut from_input = None;
     if copy_attachments {
         let counted = match &sms_backup {
@@ -159,7 +163,12 @@ fn convert_export(input_dir: &Path, config: &ExporterConfig) -> Result<ReexportR
 
     clean_previous_ir_output(&config.output)?;
 
-    if copy_attachments {
+    // The input's `attachments/` is copied only when nothing stages the
+    // attachments again. A run that stages from the input writes every
+    // attachment from there, and a backup's attachments come from its XML,
+    // so a copy would stay beside the staged files on a disk the check
+    // counted for one copy (#1759).
+    if copy_attachments && from_input.is_none() && sms_backup.is_none() {
         copy_attachments_dir(input_dir, &config.output)?;
     }
     let mut report = ExportReport::default();
