@@ -247,7 +247,7 @@ fn authenticate_and_push_text_only_conversation() {
 /// where a person reading a paused Upload looks, and the Upload sends the
 /// conversation again (#1889).
 #[test]
-fn a_corrupt_journal_line_is_a_sentence_in_the_uploads_log() {
+fn an_unreadable_journal_line_is_a_sentence_in_the_uploads_log() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
     let _run = mock_import_start_and_complete(&server, 42);
