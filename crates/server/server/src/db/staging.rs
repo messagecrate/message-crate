@@ -1068,8 +1068,9 @@ pub async fn promote_tapbacks(conn: &mut SqliteConnection) -> Result<u64> {
 /// A message production already held keeps the versions it has: an append
 /// skips such a message and keeps its text, so versions from a later backup,
 /// which edited it again, would list the text it holds as an earlier one and
-/// lose the text that replaced it. A message sent again unchanged gets
-/// nothing twice for the same reason. Returns how many were inserted.
+/// lose the text that replaced it. A message read again from the same
+/// backup is not inserted, so its versions are not added a second time.
+/// Returns how many were inserted.
 ///
 /// # Errors
 ///
