@@ -180,6 +180,7 @@ describe("ConvertSection", () => {
       input_dir: "/home/demo/export-json",
       output_dir: "/home/demo/export-csv",
       output_format: "csv",
+      started_from: "convert",
     });
     expect(await screen.findByText(/Conversion complete\. CSV \(\.csv\) written to/)).toBeTruthy();
   });

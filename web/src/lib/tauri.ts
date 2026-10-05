@@ -380,6 +380,9 @@ export async function invokeFormat(config: {
   input_dir: string;
   output_dir: string;
   output_format: ExportFormat;
+  /** The screen that started the run, which the desktop names it by when it
+   * refuses another one while this runs. */
+  started_from: "export" | "convert";
   /** When the Export Run started, in epoch milliseconds: SMS Backup+ mail
    * records it as its backup time. Left out by Settings → Convert, which is a
    * run of its own. */
@@ -389,6 +392,7 @@ export async function invokeFormat(config: {
     inputDir: config.input_dir,
     outputDir: config.output_dir,
     outputFormat: config.output_format,
+    startedFrom: config.started_from,
     runStartedMs: config.run_started_ms ?? null,
   });
 }

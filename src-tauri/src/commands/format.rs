@@ -11,7 +11,7 @@ use super::events;
 use super::jobs::{spawn_job, start_job};
 use super::last_log_line_or;
 use super::paths::scratch_dir;
-use crate::state::AppState;
+use crate::state::{AppState, JobName};
 
 /// Ask this process to rewrite an extract directory in a different file format.
 ///
@@ -32,6 +32,7 @@ pub fn format(
     input_dir: String,
     output_dir: String,
     output_format: String,
+    started_from: StartedFrom,
     run_started_ms: Option<i64>,
 ) -> Result<(), String> {
     let fmt = match output_format.as_str() {
@@ -52,7 +53,7 @@ pub fn format(
         .transpose()?;
 
     let scratch_dir = scratch_dir(&app)?;
-    let job = start_job(&state, "a format conversion")?;
+    let job = start_job(&state, started_from.job_name())?;
     let cancel = job.cancel_flag();
 
     let app_handle = app.clone();
@@ -86,4 +87,46 @@ pub fn format(
     });
 
     Ok(())
+}
+
+/// The screen that started a `format` run. It runs for Settings → Convert,
+/// and as the second step of every Export other than JSON Lines; a refused
+/// start names it as that screen does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum StartedFrom {
+    /// The Export screen, for its format step.
+    Export,
+    /// Settings → Convert.
+    Convert,
+}
+
+impl StartedFrom {
+    fn job_name(self) -> JobName {
+        match self {
+            Self::Export => JobName::Export,
+            Self::Convert => JobName::Convert,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn job_name(started_from: &str) -> JobName {
+        serde_json::from_value::<StartedFrom>(serde_json::json!(started_from))
+            .unwrap()
+            .job_name()
+    }
+
+    #[test]
+    fn a_format_run_inside_an_export_is_named_export() {
+        assert_eq!(job_name("export"), JobName::Export);
+    }
+
+    #[test]
+    fn a_format_run_from_settings_is_named_convert() {
+        assert_eq!(job_name("convert"), JobName::Convert);
+    }
 }

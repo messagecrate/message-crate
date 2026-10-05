@@ -178,6 +178,7 @@ export default function ExportScreen() {
                   input_dir: exportDir.pulled,
                   output_dir: chosen || exportDir.converting,
                   output_format: format,
+                  started_from: "export",
                   run_started_ms: runStartedMs,
                 }),
               ),
