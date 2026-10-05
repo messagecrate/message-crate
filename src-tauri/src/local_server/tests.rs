@@ -7,13 +7,31 @@ use httpmock::prelude::*;
 use std::net::TcpListener;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// An address nothing listens on: bound once to pick a free port, then let go.
-fn free_address() -> SocketAddr {
-    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    wait_until_free(address);
-    address
+/// A loopback port that nothing listens on, held for as long as the value
+/// lives.
+///
+/// Its socket is bound and never listens, so a connection to the port is
+/// refused, and no other socket can bind the port while it is held. A port
+/// that is only let go of can be bound by any process on this computer, and
+/// a test suite running beside this one binds ports all the time. A start
+/// watched at such an address saw that process answer, and failed (#1783).
+struct FreePort {
+    /// Where nothing listens.
+    address: SocketAddr,
+    /// The bound socket keeping the port.
+    _held: socket2::Socket,
+}
+
+fn free_port() -> FreePort {
+    let socket = socket2::Socket::new(socket2::Domain::IPV4, socket2::Type::STREAM, None).unwrap();
+    socket
+        .bind(&SocketAddr::from(([127, 0, 0, 1], 0)).into())
+        .unwrap();
+    let address = socket.local_addr().unwrap().as_socket().unwrap();
+    FreePort {
+        address,
+        _held: socket,
+    }
 }
 
 /// Wait for a listener this test let go of to be gone. A process another
@@ -68,7 +86,8 @@ fn launch_at(address: SocketAddr, program: &Path, data_dir: &Path) -> Launch {
 
 #[test]
 fn probe_reports_a_free_port() {
-    assert_eq!(probe(free_address()), Probe::Free);
+    let port = free_port();
+    assert_eq!(probe(port.address), Probe::Free);
 }
 
 #[test]
@@ -343,7 +362,8 @@ fn another_program_on_the_port_is_reported_by_port_number() {
 fn a_missing_server_program_fails_the_start_and_names_it() {
     let dir = tempfile::tempdir().unwrap();
     let program = dir.path().join("absent");
-    let launch = launch_at(free_address(), &program, dir.path());
+    let port = free_port();
+    let launch = launch_at(port.address, &program, dir.path());
 
     let server = LocalServer::default();
     server.ensure_started(launch);
@@ -361,7 +381,8 @@ fn a_missing_server_program_fails_the_start_and_names_it() {
 #[test]
 fn the_first_start_is_the_one_with_no_database() {
     let dir = tempfile::tempdir().unwrap();
-    let launch = launch_at(free_address(), Path::new("unused"), dir.path());
+    let port = free_port();
+    let launch = launch_at(port.address, Path::new("unused"), dir.path());
     assert!(launch.is_first_start());
     std::fs::write(dir.path().join(DATABASE_FILE), b"").unwrap();
     assert!(!launch.is_first_start());
@@ -485,7 +506,8 @@ mod with_a_script {
     fn a_server_that_stops_while_starting_fails_with_what_it_wrote() {
         let dir = tempfile::tempdir().unwrap();
         let program = script(dir.path(), "echo 'database is locked' >&2\nexit 3");
-        let launch = launch_at(free_address(), &program, dir.path());
+        let port = free_port();
+        let launch = launch_at(port.address, &program, dir.path());
 
         let server = LocalServer::default();
         server.ensure_started(launch);
@@ -508,7 +530,8 @@ mod with_a_script {
             dir.path(),
             &format!("echo 'any words at all' >&2\nexit {OPERATION_LOCK_HELD_EXIT_CODE}"),
         );
-        let launch = launch_at(free_address(), &program, dir.path());
+        let port = free_port();
+        let launch = launch_at(port.address, &program, dir.path());
 
         let server = LocalServer::default();
         server.ensure_started(launch);
@@ -534,7 +557,8 @@ mod with_a_script {
     fn stop_ends_the_server_the_app_started() {
         let dir = tempfile::tempdir().unwrap();
         let program = script(dir.path(), "exec sleep 600");
-        let launch = launch_at(free_address(), &program, dir.path());
+        let port = free_port();
+        let launch = launch_at(port.address, &program, dir.path());
 
         let server = LocalServer::default();
         server.ensure_started(launch);
@@ -567,7 +591,8 @@ mod with_a_script {
             dir.path(),
             &format!("echo \"$5\" >> {}\nexec sleep 600", binds.display()),
         );
-        let address = free_address();
+        let port = free_port();
+        let address = port.address;
         let server = LocalServer::default();
         server.ensure_started(Launch {
             open_to_network: true,
