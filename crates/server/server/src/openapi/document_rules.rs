@@ -587,6 +587,45 @@ fn every_field_description_sits_on_the_field() {
     );
 }
 
+/// Every field in the reference has a description, written from the doc
+/// comment on its Rust field, so the reference and the web app's generated
+/// types say what each one holds. Walks the whole document, as the rule
+/// above does.
+#[test]
+fn every_field_has_a_description() {
+    let doc: Value = serde_json::from_str(&dump_openapi_json()).unwrap();
+    let mut undescribed = BTreeSet::new();
+    fields_without_description(&doc, "#", &mut undescribed);
+    assert!(
+        undescribed.is_empty(),
+        "these fields have no description; give each Rust field a doc comment: {undescribed:#?}"
+    );
+}
+
+/// Add to `out`, as its JSON pointer, each property under `value` whose
+/// schema has no `description`.
+fn fields_without_description(value: &Value, at: &str, out: &mut BTreeSet<String>) {
+    match value {
+        Value::Object(object) => {
+            let fields = object.get("properties").and_then(Value::as_object);
+            for (field, schema) in fields.into_iter().flatten() {
+                if schema.get("description").is_none() {
+                    out.insert(format!("{at}/properties/{field}"));
+                }
+            }
+            for (key, child) in object {
+                fields_without_description(child, &format!("{at}/{key}"), out);
+            }
+        }
+        Value::Array(items) => {
+            for (i, child) in items.iter().enumerate() {
+                fields_without_description(child, &format!("{at}/{i}"), out);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Add to `out`, as its JSON pointer, each property under `value` that is a
 /// `oneOf` of one `$ref` and `null`, with no description of its own, whose
 /// `$ref` branch carries a description: what `field_descriptions` lifts.

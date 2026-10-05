@@ -599,8 +599,16 @@ fn open_nofollow_read(path: &Path) -> Result<File> {
 /// Stored asset fingerprint and path.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct Asset {
+    /// SHA-256 fingerprint of the stored bytes, 64 lowercase hex digits,
+    /// which names the Asset in its routes' paths.
     sha256: String,
+    /// Where the server keeps the file, relative to the account's assets
+    /// directory: the fingerprint's first two hex digits as a directory, then
+    /// the fingerprint, as `ab/ab12…`.
     assets_path: String,
+    /// True when the server held the Asset before this request, which then
+    /// stored nothing and answers `200 OK`. False when this request stored
+    /// it and answers `201 Created`.
     already_present: bool,
 }
 
@@ -1099,7 +1107,12 @@ pub(crate) async fn replace_asset(
 /// Total bytes and optional MIME type for a chunked upload.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct CreateAssetUploadRequest {
+    /// Size of the whole file in bytes. A size over the attachment size limit
+    /// in the Server Settings is refused with `422 Unprocessable Entity`.
     bytes: u64,
+    /// Media type of the file, such as `image/jpeg`. The server stores it
+    /// beside the Asset and serves the Asset with it. Null, blank or left
+    /// out stores none.
     #[serde(default)]
     mime: Option<String>,
 }
@@ -1107,17 +1120,32 @@ pub(crate) struct CreateAssetUploadRequest {
 /// Upload id and part size, or the already-stored asset.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct CreateAssetUploadResponse {
+    /// Id of the new upload, which its part and completion routes name in
+    /// their path. Null when the server already held the Asset and started
+    /// no upload.
     upload_id: Option<String>,
+    /// Size in bytes of every part but the last, which may be smaller. A part
+    /// larger than this is refused. Null when no upload was started.
     part_size: Option<usize>,
+    /// SHA-256 fingerprint of the Asset the server already held. Null when an
+    /// upload was started.
     sha256: Option<String>,
+    /// Where the server keeps the Asset it already held, relative to the
+    /// account's assets directory, as `ab/ab12…`. Null when an upload was
+    /// started.
     assets_path: Option<String>,
+    /// True when the server already held the Asset: the answer is `200 OK`
+    /// and nothing needs uploading. False when an upload was started and the
+    /// answer is `201 Created`.
     already_present: bool,
 }
 
 /// Bytes written for one part.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct ReplaceAssetUploadPartResponse {
+    /// Number of the part written, counted from 1, as the path gave it.
     part: u32,
+    /// Bytes the server wrote for the part.
     bytes: u64,
 }
 
@@ -1339,6 +1367,8 @@ pub(crate) async fn complete_asset_upload(
 /// have arrived.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct AssetUpload {
+    /// Id of the upload, given when it started, which its routes name in
+    /// their path.
     upload_id: String,
     /// SHA-256 fingerprint of the file the parts assemble into.
     sha256: String,

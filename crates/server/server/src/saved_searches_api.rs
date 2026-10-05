@@ -17,14 +17,26 @@ use crate::server::{ApiError, AppState, Created, FullAccess};
 /// The name and query of a new saved search.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct CreateSavedSearchRequest {
+    /// Name of the Saved Search, which the server trims. A name that is
+    /// blank or over 80 characters is refused with `422 Unprocessable
+    /// Entity`. A name another of the account's Saved Searches has, in any
+    /// letter case, is refused with `409 Conflict`.
     name: String,
+    /// The query in the search language, trimmed and stored as written. The
+    /// server does not check it when storing it, so a query a list cannot
+    /// run is refused when it runs. A blank query is refused with `422
+    /// Unprocessable Entity`.
     query: String,
 }
 
 /// A saved search's new name and query.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct UpdateSavedSearchRequest {
+    /// The Saved Search's new name, under the rules a new one's name
+    /// follows. A change to the letter case of its own name is allowed.
     name: String,
+    /// The new query in the search language, under the rules a new one's
+    /// query follows.
     query: String,
 }
 

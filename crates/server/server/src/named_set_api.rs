@@ -20,27 +20,45 @@ use crate::server::{ApiError, AppState, Created, FullAccess};
 /// One Contact Group or Message Tag: its id and name.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct NamedSet {
+    /// Id of the Contact Group or Message Tag, which its routes name in their
+    /// path.
     pub(crate) id: i64,
+    /// The name as stored: trimmed, at most 80 characters, and unique among
+    /// the account's sets of this kind whatever its letter case.
     pub(crate) name: String,
 }
 
 /// The name of a new set.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct CreateNamedSetRequest {
+    /// Name of the new set, which the server trims. A name that is blank,
+    /// over 80 characters, reserved (such as `trash`) or, for a Contact
+    /// Group, holds `;` is refused with `422 Unprocessable Entity`. A name
+    /// another set of the kind has, in any letter case, is refused with
+    /// `409 Conflict`.
     pub(crate) name: String,
 }
 
 /// The new name for an existing set.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct UpdateNamedSetRequest {
+    /// The set's new name, under the rules a new set's name follows. A change
+    /// to the letter case of the set's own name is allowed.
     pub(crate) name: String,
 }
 
 /// Members to put in and take out of one set, in one request.
 #[derive(Debug, Deserialize, utoipa::ToSchema)]
 pub(crate) struct UpdateMembersRequest {
+    /// Ids to put in the set: contact ids for a Contact Group, conversation
+    /// ids for a Message Tag. An id the account does not hold is refused
+    /// with `422 Unprocessable Entity`, and then nothing changes. An id
+    /// already in the set is left as it is. Empty when left out, and `add`
+    /// and `remove` both empty is refused with `422 Unprocessable Entity`.
     #[serde(default)]
     pub(crate) add: Vec<i64>,
+    /// Ids to take out of the set. An id that is not in it is ignored. An id
+    /// in both `add` and `remove` is taken out. Empty when left out.
     #[serde(default)]
     pub(crate) remove: Vec<i64>,
 }
@@ -48,7 +66,11 @@ pub(crate) struct UpdateMembersRequest {
 /// How many memberships a patch created and how many it removed.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct UpdateMembersResponse {
+    /// Members the request put in the set, not counting ids that were
+    /// already in it.
     pub(crate) added: u64,
+    /// Members the request took out of the set, not counting ids that were
+    /// not in it.
     pub(crate) removed: u64,
 }
 

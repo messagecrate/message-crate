@@ -347,7 +347,9 @@ pub struct ServerStorage {
 /// One account's share of the messages held: an id, a username and numbers.
 #[derive(Debug, Serialize, Deserialize, utoipa::ToSchema)]
 pub struct AccountMessages {
+    /// Id of the account the numbers are for.
     pub account_id: i64,
+    /// The account's username, as the User Accounts table lists it.
     pub username: String,
     /// Messages the account holds.
     pub message_count: i64,

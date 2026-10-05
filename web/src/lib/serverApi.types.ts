@@ -1666,7 +1666,10 @@ export interface components {
         AccountImportRuns: components["schemas"]["Page_ImportRunSummary"] | components["schemas"]["Page_OwnerImportRun"];
         /** @description One account's share of the messages held: an id, a username and numbers. */
         AccountMessages: {
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Id of the account the numbers are for.
+             */
             account_id: number;
             /**
              * Format: int64
@@ -1684,6 +1687,7 @@ export interface components {
              * @description Bytes of message text the account holds: every body and subject, added up.
              */
             text_bytes: number;
+            /** @description The account's username, as the User Accounts table lists it. */
             username: string;
         };
         /**
@@ -1718,6 +1722,10 @@ export interface components {
              *     a measure of the database, and who they are with is the holder's.
              */
             conversation_count: number;
+            /**
+             * @description The account's 100 largest attachments, largest first. An attachment
+             *     of 0 bytes or of unknown size is left out.
+             */
             top_attachments: components["schemas"]["TopAttachment"][];
             /**
              * Format: int64
@@ -1772,8 +1780,22 @@ export interface components {
         AppKind: "desktop" | "website";
         /** @description Stored asset fingerprint and path. */
         Asset: {
+            /**
+             * @description True when the server held the Asset before this request, which then
+             *     stored nothing and answers `200 OK`. False when this request stored
+             *     it and answers `201 Created`.
+             */
             already_present: boolean;
+            /**
+             * @description Where the server keeps the file, relative to the account's assets
+             *     directory: the fingerprint's first two hex digits as a directory, then
+             *     the fingerprint, as `ab/ab12…`.
+             */
             assets_path: string;
+            /**
+             * @description SHA-256 fingerprint of the stored bytes, 64 lowercase hex digits,
+             *     which names the Asset in its routes' paths.
+             */
             sha256: string;
         };
         /**
@@ -1792,6 +1814,10 @@ export interface components {
             received_parts: number[];
             /** @description SHA-256 fingerprint of the file the parts assemble into. */
             sha256: string;
+            /**
+             * @description Id of the upload, given when it started, which its routes name in
+             *     their path.
+             */
             upload_id: string;
         };
         /** @description One attachment of an exported message. */
@@ -1967,26 +1993,59 @@ export interface components {
          *     client knows only what the resume sent.
          */
         CompleteImportRequest: {
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Milliseconds Staging spent copying the attachments ("Attachments").
+             *     Null or left out stores none.
+             */
             attachments_ms?: number | null;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Bytes the Upload sent, as the client counted them. Null or left out
+             *     keeps the count the run already holds.
+             */
             bytes_uploaded?: number | null;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description How long the whole run took, in milliseconds, as the client timed it.
+             *     Null or left out stores none.
+             */
             duration_ms?: number | null;
+            /**
+             * @description The run's Import Errors: every item that failed or was skipped. An
+             *     empty list when the request leaves it out.
+             */
             issues?: components["schemas"]["ImportIssueRequest"][];
             /**
              * @description The run's notes, apart from its Import Errors. A note never makes a
              *     run `completed_with_issues`.
              */
             notes?: components["schemas"]["ImportNoteRequest"][];
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Milliseconds Staging spent reading the backup ("Parse backup"). Null
+             *     or left out stores none.
+             */
             parse_ms?: number | null;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Milliseconds Staging spent writing the conversation files ("Preparing
+             *     messages"). Null or left out stores none.
+             */
             prepare_ms?: number | null;
             /** @description How the run ended: `completed`, `completed_with_issues` or `failed`. */
             status: string;
+            /**
+             * @description The run's final counts as the client made them, such as files and
+             *     messages parsed, inserted, deduplicated and failed. It becomes the
+             *     run's `summary` and replaces the plan the last Review stored there.
+             *     Null or left out leaves the run with no summary.
+             */
             summary?: unknown;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Milliseconds the Upload took. Null or left out stores none.
+             */
             upload_ms?: number | null;
         };
         /** @description Full contact view: every identity with stats, plus totals across them. */
@@ -2245,16 +2304,48 @@ export interface components {
         };
         /** @description Total bytes and optional MIME type for a chunked upload. */
         CreateAssetUploadRequest: {
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Size of the whole file in bytes. A size over the attachment size limit
+             *     in the Server Settings is refused with `422 Unprocessable Entity`.
+             */
             bytes: number;
+            /**
+             * @description Media type of the file, such as `image/jpeg`. The server stores it
+             *     beside the Asset and serves the Asset with it. Null, blank or left
+             *     out stores none.
+             */
             mime?: string | null;
         };
         /** @description Upload id and part size, or the already-stored asset. */
         CreateAssetUploadResponse: {
+            /**
+             * @description True when the server already held the Asset: the answer is `200 OK`
+             *     and nothing needs uploading. False when an upload was started and the
+             *     answer is `201 Created`.
+             */
             already_present: boolean;
+            /**
+             * @description Where the server keeps the Asset it already held, relative to the
+             *     account's assets directory, as `ab/ab12…`. Null when an upload was
+             *     started.
+             */
             assets_path: string | null;
+            /**
+             * @description Size in bytes of every part but the last, which may be smaller. A part
+             *     larger than this is refused. Null when no upload was started.
+             */
             part_size: number | null;
+            /**
+             * @description SHA-256 fingerprint of the Asset the server already held. Null when an
+             *     upload was started.
+             */
             sha256: string | null;
+            /**
+             * @description Id of the new upload, which its part and completion routes name in
+             *     their path. Null when the server already held the Asset and started
+             *     no upload.
+             */
             upload_id: string | null;
         };
         /** @description What an address book load changed. */
@@ -2314,9 +2405,18 @@ export interface components {
         };
         /** @description Import result: the import counts plus optional dedupe counts. */
         CreateImportBatchResponse: components["schemas"]["ImportCounts"] & {
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Id of the account the batch imported into.
+             */
             account: number;
+            /**
+             * @description What the cross-source dedupe pass after this batch did, counted over
+             *     the whole account rather than the batch alone. Null when the Import
+             *     Run was created with `dedupe` off, because then no pass runs.
+             */
             dedupe: components["schemas"]["DedupeCounts"] | null;
+            /** @description Source id of the Import Run the batch belongs to, such as `imessage`. */
             source: string;
         };
         /**
@@ -2335,9 +2435,21 @@ export interface components {
              *     `whatsappKey` posted here is dropped rather than persisted.
              */
             form?: unknown;
+            /**
+             * @description What happens to the messages this source brought in before: `replace`
+             *     removes them on the run's first batch, and `append` keeps them and
+             *     adds only new ones. `append` when the request leaves it out.
+             */
             mode?: components["schemas"]["ImportMode"];
             /** @description Absolute path to the run directory on the client that owns this Import Run. */
             run_dir?: string | null;
+            /**
+             * @description Source id the run imports, such as `imessage` or `whatsapp`, which
+             *     every message the run brings in records. It holds lowercase letters,
+             *     digits, `-` and `_`, starts with a letter or a digit, and is at most
+             *     64 characters; any other id is refused with `422 Unprocessable
+             *     Entity`.
+             */
             source: string;
             /** @description Source path, size, mtime, and message count. */
             source_fingerprint?: unknown;
@@ -2345,20 +2457,48 @@ export interface components {
             source_identities?: unknown;
             /** @description Stage the run opens at. Defaults to `parse`. */
             stage?: components["schemas"]["ImportStage"] | null;
+            /**
+             * @description Name of the program that runs the import, such as
+             *     `message-crate-push`, stored on the run as given. Null when the
+             *     request leaves it out.
+             */
             tool?: string | null;
         };
         /** @description The new Import Run's id. */
         CreateImportResponse: {
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Id of the new Import Run, which its routes name in their path, as
+             *     `/v1/imports/{id}`.
+             */
             id: number;
         };
         /** @description The name of a new set. */
         CreateNamedSetRequest: {
+            /**
+             * @description Name of the new set, which the server trims. A name that is blank,
+             *     over 80 characters, reserved (such as `trash`) or, for a Contact
+             *     Group, holds `;` is refused with `422 Unprocessable Entity`. A name
+             *     another set of the kind has, in any letter case, is refused with
+             *     `409 Conflict`.
+             */
             name: string;
         };
         /** @description The name and query of a new saved search. */
         CreateSavedSearchRequest: {
+            /**
+             * @description Name of the Saved Search, which the server trims. A name that is
+             *     blank or over 80 characters is refused with `422 Unprocessable
+             *     Entity`. A name another of the account's Saved Searches has, in any
+             *     letter case, is refused with `409 Conflict`.
+             */
             name: string;
+            /**
+             * @description The query in the search language, trimmed and stored as written. The
+             *     server does not check it when storing it, so a query a list cannot
+             *     run is refused when it runs. A blank query is refused with `422
+             *     Unprocessable Entity`.
+             */
             query: string;
         };
         /** @description Username and password, the body of `POST /v1/session`. */
@@ -2382,13 +2522,33 @@ export interface components {
         };
         /** @description Cross-source dedupe outcome. */
         DedupeCounts: {
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Messages hidden as exact duplicates. Each group stays shown as many
+             *     times as the one source holding the message most often holds it, and
+             *     the rest of the group is hidden.
+             */
             exact_flagged: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Groups of messages that share one content key.
+             */
             exact_groups: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Content keys the pass wrote: one for each message whose key was
+             *     missing or whose inputs changed. A content key is a fingerprint of a
+             *     message's conversation, direction, sender, time, text and attachments.
+             *     This is not a count of duplicates.
+             */
             keys_filled: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Messages hidden as near duplicates: a message that matches one from
+             *     another source in the same conversation, from the same sender in the
+             *     same direction, within 2 seconds, with the same text or the same
+             *     attachments.
+             */
             near_flagged: number;
         };
         /**
@@ -2565,10 +2725,16 @@ export interface components {
          *     search language, or conversations and messages picked by hand.
          */
         ExportScope: {
-            /** @enum {string} */
+            /**
+             * @description Names this form, `everything`. The other forms are `query` and `selection`.
+             * @enum {string}
+             */
             kind: "everything";
         } | {
-            /** @enum {string} */
+            /**
+             * @description Names this form, `query`. The other forms are `everything` and `selection`.
+             * @enum {string}
+             */
             kind: "query";
             /**
              * @description The list the query is for. `messages` hands over the messages the
@@ -2584,7 +2750,10 @@ export interface components {
         } | {
             /** @description Conversation ids whose every message is exported. */
             conversation_ids?: number[];
-            /** @enum {string} */
+            /**
+             * @description Names this form, `selection`. The other forms are `everything` and `query`.
+             * @enum {string}
+             */
             kind: "selection";
             /** @description Message ids exported on their own. */
             message_ids?: number[];
@@ -2780,16 +2949,35 @@ export interface components {
         };
         /** @description One stored import issue. */
         ImportIssue: {
+            /**
+             * @description What the issue is about, such as a conversation file or an
+             *     attachment's path.
+             */
             item: string;
+            /**
+             * @description `error` when the item failed, or `skip` when the run left it out
+             *     without importing it.
+             */
             kind: string;
+            /** @description Why the item failed or was skipped. */
             reason: string;
             /** @description Stage the issue came from. */
             stage: components["schemas"]["ImportIssueStage"];
         };
         /** @description One error or skip a Stage of the Import Run reported. */
         ImportIssueRequest: {
+            /**
+             * @description What the issue is about, such as a conversation file or an
+             *     attachment's path.
+             */
             item: string;
+            /**
+             * @description `error` when the item failed, or `skip` when the run left it out
+             *     without importing it, such as an attachment it did not upload. Any
+             *     other word is refused with `422 Unprocessable Entity`.
+             */
             kind: string;
+            /** @description Why the item failed or was skipped, in one sentence. */
             reason: string;
             /** @description Stage the issue came from. */
             stage: components["schemas"]["ImportIssueStage"];
@@ -2935,8 +3123,11 @@ export interface components {
             /** @description Lifecycle status. */
             status: components["schemas"]["ImportStatus"];
             /**
-             * @description What the person approved at the last Review they passed, or null. The
-             *     column `PATCH /v1/imports/{id}` writes with its `summary`.
+             * @description While the run is running, what the person approved at the last Review
+             *     they passed, which `PATCH /v1/imports/{id}` writes with its `summary`.
+             *     Once the run is over, the final counts its
+             *     `POST /v1/imports/{id}/complete` sent instead. Null when neither wrote
+             *     one.
              */
             summary: unknown;
             /** @description Importing tool, e.g. `message-crate-push`. */
@@ -3212,8 +3403,16 @@ export interface components {
         };
         /** @description One Contact Group or Message Tag: its id and name. */
         NamedSet: {
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Id of the Contact Group or Message Tag, which its routes name in their
+             *     path.
+             */
             id: number;
+            /**
+             * @description The name as stored: trimmed, at most 80 characters, and unique among
+             *     the account's sets of this kind whatever its letter case.
+             */
             name: string;
         };
         /**
@@ -4069,8 +4268,11 @@ export interface components {
                 /** @description Lifecycle status. */
                 status: components["schemas"]["ImportStatus"];
                 /**
-                 * @description What the person approved at the last Review they passed, or null. The
-                 *     column `PATCH /v1/imports/{id}` writes with its `summary`.
+                 * @description While the run is running, what the person approved at the last Review
+                 *     they passed, which `PATCH /v1/imports/{id}` writes with its `summary`.
+                 *     Once the run is over, the final counts its
+                 *     `POST /v1/imports/{id}/complete` sent instead. Null when neither wrote
+                 *     one.
                  */
                 summary: unknown;
                 /** @description Importing tool, e.g. `message-crate-push`. */
@@ -4226,8 +4428,16 @@ export interface components {
         Page_NamedSet: {
             /** @description The rows on this page. */
             items: {
-                /** Format: int64 */
+                /**
+                 * Format: int64
+                 * @description Id of the Contact Group or Message Tag, which its routes name in their
+                 *     path.
+                 */
                 id: number;
+                /**
+                 * @description The name as stored: trimmed, at most 80 characters, and unique among
+                 *     the account's sets of this kind whatever its letter case.
+                 */
                 name: string;
             }[];
             /** @description Page size used. */
@@ -4591,9 +4801,15 @@ export interface components {
         };
         /** @description Bytes written for one part. */
         ReplaceAssetUploadPartResponse: {
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Bytes the server wrote for the part.
+             */
             bytes: number;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Number of the part written, counted from 1, as the path gave it.
+             */
             part: number;
         };
         /** @description Body for adding or resetting the Demo Account. */
@@ -4731,9 +4947,21 @@ export interface components {
         };
         /** @description The logged-in credential's account, username, and import sources. */
         Session: {
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Id of the account the credential acts for.
+             */
             account_id: number;
+            /**
+             * @description Source ids the account's messages came from, such as `imessage` or
+             *     `whatsapp`, in the order their first messages were imported, earliest
+             *     first.
+             */
             sources: string[];
+            /**
+             * @description The username the account logs in with. Null only when the account was
+             *     deleted between the credential check and this read.
+             */
             username: string | null;
         };
         /** @description One tapback reaction on an exported message. */
@@ -4871,23 +5099,54 @@ export interface components {
         };
         /** @description Members to put in and take out of one set, in one request. */
         UpdateMembersRequest: {
+            /**
+             * @description Ids to put in the set: contact ids for a Contact Group, conversation
+             *     ids for a Message Tag. An id the account does not hold is refused
+             *     with `422 Unprocessable Entity`, and then nothing changes. An id
+             *     already in the set is left as it is. Empty when left out, and `add`
+             *     and `remove` both empty is refused with `422 Unprocessable Entity`.
+             */
             add?: number[];
+            /**
+             * @description Ids to take out of the set. An id that is not in it is ignored. An id
+             *     in both `add` and `remove` is taken out. Empty when left out.
+             */
             remove?: number[];
         };
         /** @description How many memberships a patch created and how many it removed. */
         UpdateMembersResponse: {
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Members the request put in the set, not counting ids that were
+             *     already in it.
+             */
             added: number;
-            /** Format: int64 */
+            /**
+             * Format: int64
+             * @description Members the request took out of the set, not counting ids that were
+             *     not in it.
+             */
             removed: number;
         };
         /** @description The new name for an existing set. */
         UpdateNamedSetRequest: {
+            /**
+             * @description The set's new name, under the rules a new set's name follows. A change
+             *     to the letter case of the set's own name is allowed.
+             */
             name: string;
         };
         /** @description A saved search's new name and query. */
         UpdateSavedSearchRequest: {
+            /**
+             * @description The Saved Search's new name, under the rules a new one's name
+             *     follows. A change to the letter case of its own name is allowed.
+             */
             name: string;
+            /**
+             * @description The new query in the search language, under the rules a new one's
+             *     query follows.
+             */
             query: string;
         };
         /** @description Body for changing the server settings. Omitted fields are left alone. */

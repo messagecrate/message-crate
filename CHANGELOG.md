@@ -1496,6 +1496,11 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-05 **The HTTP API reference describes every field.** 59 fields,
+  among them the Import Run's mode and source, an upload's part size, and a
+  Contact Group's or Message Tag's name, showed no description in the HTTP
+  API reference. Each now says what it holds and when it is empty, and a
+  check fails on a new field that has none.
 - 2026-10-05 **The HTTP API reference describes every optional field.** An
   optional field that holds a group of values or one of a set of choices,
   such as the identity a contact change links or the service it is on, had
