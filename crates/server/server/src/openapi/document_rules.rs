@@ -570,6 +570,56 @@ async fn call_with(
     }
 }
 
+/// Every field's description sits on the field, where openapi-typescript
+/// reads it into the web app's generated types, never inside a `oneOf`
+/// branch beside a `$ref` (`field_descriptions`). Walks the whole document,
+/// since a schema no operation answers is still generated.
+#[test]
+fn every_field_description_sits_on_the_field() {
+    let doc: Value = serde_json::from_str(&dump_openapi_json()).unwrap();
+    let mut broken = BTreeSet::new();
+    descriptions_inside_branches(&doc, "#", &mut broken);
+    assert!(
+        broken.is_empty(),
+        "these fields keep their description inside a `oneOf` branch: {broken:#?}"
+    );
+}
+
+/// Add to `out` each property under `value` whose `oneOf` has a `$ref` branch
+/// carrying a description, as its JSON pointer.
+fn descriptions_inside_branches(value: &Value, at: &str, out: &mut BTreeSet<String>) {
+    match value {
+        Value::Object(object) => {
+            for (field, schema) in object
+                .get("properties")
+                .and_then(Value::as_object)
+                .into_iter()
+                .flatten()
+            {
+                let inside = schema["oneOf"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .any(|branch| {
+                        branch.get("$ref").is_some() && branch.get("description").is_some()
+                    });
+                if inside {
+                    out.insert(format!("{at}/properties/{field}"));
+                }
+            }
+            for (key, child) in object {
+                descriptions_inside_branches(child, &format!("{at}/{key}"), out);
+            }
+        }
+        Value::Array(items) => {
+            for (i, child) in items.iter().enumerate() {
+                descriptions_inside_branches(child, &format!("{at}/{i}"), out);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Add to `out` each property of `schema` that it does not require, as
 /// `at.field`, looking into the objects it holds but not into a schema it
 /// names, which is checked on its own.
