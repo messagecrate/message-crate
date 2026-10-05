@@ -438,6 +438,14 @@ one expression the conversation list, the conversation page, the Messages list,
 `title:`, `in:` and plain text all read
 ([#1094](https://github.com/messagecrate/message-crate/issues/1094)).
 
+Dedupe matches a received note in a conversation with yourself with no sender,
+in the content key and in the near-time pass alike (`dedupe.rs`,
+`sender_for_key_sql`, through `is_with_yourself_sql`). Why: a copy imported
+before the chat's address was linked still names the holder as its sender, and
+a copy imported after has none; without this the two copies would not pair, and
+the note would show twice
+([#1661](https://github.com/messagecrate/message-crate/issues/1661)).
+
 **Orphaned messages sit in conversations of their own kind.** A backup can hold
 a message without recording which conversation it was said in. The ones one
 person sent sit in a conversation with that person as its only participant,
