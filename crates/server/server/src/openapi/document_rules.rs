@@ -34,7 +34,7 @@ use serde_json::Value;
 
 use super::credential_matrix::{self, Operation, Shared, World};
 use super::dump_openapi_json;
-use super::response_fields;
+use super::response_fields::{self, schema_named};
 use super::shared_parts::{PROBLEM_TYPES, split_first_sentence};
 use crate::paging::MAX_LIST_OFFSET;
 use crate::problem::{Problem, ProblemType};
@@ -57,6 +57,17 @@ async fn every_operation_keeps_the_rules_the_document_can_show() {
             broken.push(format!("{}: {rule}", op.label()));
         }
     }
+    // Every component a success answer holds, including the ones a page
+    // holds without naming them ("Fields").
+    let mut optional = BTreeSet::new();
+    for name in response_fields::answer_schemas(&doc) {
+        optional_fields(&doc["components"]["schemas"][&name], &name, &mut optional);
+    }
+    broken.extend(
+        optional
+            .into_iter()
+            .map(|field| format!("{field} is optional in a success answer")),
+    );
 
     // Each operation gets accounts and rows of its own, so a call the server
     // wrongly accepts (a delete, a logout) cannot change what the next
@@ -162,19 +173,11 @@ fn read_rules(doc: &Value, op: &Operation, spec: &Value) -> Vec<String> {
     }
 
     // Every field of a success answer is sent, `null` when it has no value
-    // ("Fields"), so the document requires every one. A schema a request
-    // names too keeps the request's optional fields.
-    let requests = response_fields::request_schemas(doc);
+    // ("Fields"), so the document requires every one. A schema it names is
+    // checked once, over the whole document.
     let mut optional = BTreeSet::new();
     for schema in response_fields::success_schemas(spec) {
-        optional_fields(
-            doc,
-            schema,
-            "answer",
-            &requests,
-            &mut BTreeSet::new(),
-            &mut optional,
-        );
+        optional_fields(schema, "answer", &mut optional);
     }
     broken.extend(
         optional
@@ -567,24 +570,10 @@ async fn call_with(
     }
 }
 
-/// Add to `out` each property of `schema`, and of the schemas it names, that
-/// it does not require, as `Schema.field`. A schema in `requests` is passed
-/// over, and so is one already in `seen`.
-fn optional_fields(
-    doc: &Value,
-    schema: &Value,
-    at: &str,
-    requests: &BTreeSet<String>,
-    seen: &mut BTreeSet<String>,
-    out: &mut BTreeSet<String>,
-) {
-    if let Some(name) = schema_named(schema) {
-        if !requests.contains(name) && seen.insert(name.to_string()) {
-            let named = &doc["components"]["schemas"][name];
-            optional_fields(doc, named, name, requests, seen, out);
-        }
-        return;
-    }
+/// Add to `out` each property of `schema` that it does not require, as
+/// `at.field`, looking into the objects it holds but not into a schema it
+/// names, which is checked on its own.
+fn optional_fields(schema: &Value, at: &str, out: &mut BTreeSet<String>) {
     let required: BTreeSet<&str> = schema["required"]
         .as_array()
         .into_iter()
@@ -596,16 +585,16 @@ fn optional_fields(
         if !required.contains(field.as_str()) {
             out.insert(at.clone());
         }
-        optional_fields(doc, field_schema, &at, requests, seen, out);
+        optional_fields(field_schema, &at, out);
     }
     for key in ["items", "additionalProperties"] {
         if schema[key].is_object() {
-            optional_fields(doc, &schema[key], at, requests, seen, out);
+            optional_fields(&schema[key], at, out);
         }
     }
     for key in ["allOf", "oneOf", "anyOf"] {
         for branch in schema[key].as_array().into_iter().flatten() {
-            optional_fields(doc, branch, at, requests, seen, out);
+            optional_fields(branch, at, out);
         }
     }
 }
@@ -621,7 +610,10 @@ fn resolved<'d>(doc: &'d Value, schema: &'d Value) -> &'d Value {
 /// Add to `out` each property `schema` declares that `value` does not carry,
 /// as `answer.field.field`, looking into every object `value` holds. Of a
 /// choice (`oneOf`, `anyOf`), the branches `value` fits are tried, and a
-/// value that carries every property of one of them leaves nothing out.
+/// value that carries every property of one of them leaves nothing out. A
+/// branch is told from another by its type and its `enum` tags only, so a
+/// value of a branch with no tag, such as a page of `ExportRun` beside a page
+/// of `OwnerExportRun`, passes when it carries every property of the other.
 fn left_out(doc: &Value, schema: &Value, value: &Value, at: &str, out: &mut BTreeSet<String>) {
     let schema = resolved(doc, schema);
     if value.is_null() {
@@ -731,13 +723,6 @@ fn is_kebab(segment: &str) -> bool {
                     .chars()
                     .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
         })
-}
-
-/// The schema name a `$ref` points at.
-fn schema_named(reference: &Value) -> Option<&str> {
-    reference["$ref"]
-        .as_str()
-        .and_then(|r| r.strip_prefix("#/components/schemas/"))
 }
 
 /// The page schemas a `200` answers: the page it names, or each page of a

@@ -22,6 +22,7 @@ describe("ApiTokensTable focus", () => {
             created_at: "1767225600",
             last_accessed_at: null,
             expires_at: null,
+            disabled: false,
           },
         ]}
         busy={false}

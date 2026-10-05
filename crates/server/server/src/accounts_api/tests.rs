@@ -221,7 +221,7 @@ async fn a_created_account_logs_in_with_the_password_the_owner_chose() {
     let id = created["account_id"].as_i64().unwrap();
     assert_eq!(location, member(id));
     assert!(
-        created["token"].is_null(),
+        created.get("token") == Some(&serde_json::Value::Null),
         "the owner's creation opens no session: {created}"
     );
     assert_eq!(created["username"], "carol");
@@ -2268,7 +2268,11 @@ async fn the_storage_route_sums_attachment_bytes_and_lists_the_largest_first() {
     assert_eq!(owner_top[0]["size_bytes"], 3000);
     for file in owner_top {
         for held_back in ["conversation_id", "conversation_title", "chat_identifier"] {
-            assert!(file[held_back].is_null(), "{held_back}: {file}");
+            assert_eq!(
+                file.get(held_back),
+                Some(&serde_json::Value::Null),
+                "{held_back}: {file}"
+            );
         }
     }
 }

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { SearchList } from "../lib/searchFields";
 import { getConversation, listConversationMessages, trashConversation } from "../lib/serverApi";
 import type { Conversation, Message } from "../lib/types";
+import { message as baseMessage } from "../test/apiShapes";
 import { mockedAuth, Providers } from "../test/providers";
 import { searchFieldsFor } from "../test/searchFields";
 import { setupUser } from "../test/user";
@@ -100,17 +101,10 @@ function conv(id: number, label: string): Conversation {
 }
 
 function message(id: number, conversationId: number): Message {
-  return {
+  return baseMessage({
     id,
-    source: "imessage",
     guid: `g${id}`,
     timestamp: "2024-01-01T10:00:00Z",
-    sort_order: 0,
-    is_from_me: false,
-    is_announcement: false,
-    is_reply: false,
-    num_replies: 0,
-    sender: null,
     text: "photo",
     conversation: {
       id: conversationId,
@@ -121,17 +115,7 @@ function message(id: number, conversationId: number): Message {
       label: null,
       participants: [],
     },
-    attachments: [],
-    tapbacks: [],
-    earlier_versions: [],
-    matched_earlier_version: false,
-    deletion: null,
-    owner: null,
-    service: null,
-    subject: null,
-    thread_originator_guid: null,
-    thread_originator_part: null,
-  };
+  });
 }
 
 function renderAt(path: string, state?: unknown) {

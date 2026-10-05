@@ -7,34 +7,15 @@ import {
   senderName,
   tapbackGroups,
 } from "../components/messages/chatBubbleShared";
-import { participant } from "../test/apiShapes";
+import { message as baseMessage, participant } from "../test/apiShapes";
 import type { Message, MessageTapback } from "./types";
 
 function message(partial: Partial<Message> & Pick<Message, "conversation">): Message {
-  return {
-    id: 1,
-    source: "imessage",
+  return baseMessage({
     service: "iMessage",
-    guid: "g1",
-    timestamp: "2026-08-11T15:04:00Z",
-    is_from_me: false,
-    is_announcement: false,
-    is_reply: false,
-    num_replies: 0,
-    sort_order: 0,
-    sender: null,
-    subject: null,
     text: "hi",
-    attachments: [],
-    tapbacks: [],
-    earlier_versions: [],
-    matched_earlier_version: false,
-    deletion: null,
-    owner: null,
-    thread_originator_guid: null,
-    thread_originator_part: null,
     ...partial,
-  };
+  });
 }
 
 describe("formatMessageTime", () => {

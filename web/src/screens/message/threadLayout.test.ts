@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Message } from "../../lib/types";
+import { message as baseMessage } from "../../test/apiShapes";
 import { dayLabel, threadRows } from "./threadLayout";
 
 function message(
@@ -8,20 +9,13 @@ function message(
   from: { me: true } | { sender: string },
   isGroup = true,
 ): Message {
-  return {
+  return baseMessage({
     id,
-    source: "imessage",
     service: "iMessage",
-    guid: "g1",
     timestamp,
     is_from_me: "me" in from,
     sender: "sender" in from ? from.sender : null,
-    subject: null,
     text: `m${id}`,
-    is_announcement: false,
-    is_reply: false,
-    num_replies: 0,
-    sort_order: 0,
     conversation: {
       id: 1,
       chat_identifier: "c",
@@ -31,15 +25,7 @@ function message(
       label: null,
       participants: [],
     },
-    attachments: [],
-    tapbacks: [],
-    earlier_versions: [],
-    matched_earlier_version: false,
-    deletion: null,
-    owner: null,
-    thread_originator_guid: null,
-    thread_originator_part: null,
-  };
+  });
 }
 
 const NOW = new Date("2026-08-01T12:00:00Z");

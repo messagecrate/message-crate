@@ -1817,7 +1817,7 @@ export interface components {
              * @description The account the entry is about, or `null` when it is about none, or
              *     the account has been deleted.
              */
-            account_id?: number | null;
+            account_id: number | null;
             /** @description What happened. */
             action: components["schemas"]["AuditAction"];
             /** @description Who acted. */
@@ -1827,12 +1827,12 @@ export interface components {
              *     Only on the entries about the reader's own account: the owner never
              *     reads another account's.
              */
-            api_token_hint?: string | null;
+            api_token_hint: string | null;
             /** @description The API token's label as it was then. */
-            api_token_label?: string | null;
-            app?: components["schemas"]["AppKind"] | null;
+            api_token_label: string | null;
+            app: components["schemas"]["AppKind"] | null;
             /** @description That app's Build, such as `0.9.0+343fe0d8`. `null` exactly when `app` is. */
-            app_build?: string | null;
+            app_build: string | null;
             /**
              * @description When, RFC 3339 UTC: the run's start for a run, the expiry for a
              *     session that expired.
@@ -1842,39 +1842,39 @@ export interface components {
              * Format: int64
              * @description Attachments a run accepted or matched, or deleted for good.
              */
-            attachments?: number | null;
+            attachments: number | null;
             /**
              * Format: int64
              * @description Bytes an Import Run uploaded, or an Export Run's attachments total.
              */
-            bytes?: number | null;
+            bytes: number | null;
             /**
              * Format: int64
              * @description Contacts forgotten when the trash was emptied, or written to an
              *     exported address book.
              */
-            contacts?: number | null;
+            contacts: number | null;
             /**
              * Format: int64
              * @description `address_book_loaded`: contacts made.
              */
-            contacts_created?: number | null;
+            contacts_created: number | null;
             /**
              * Format: int64
              * @description `address_book_loaded`: contacts removed.
              */
-            contacts_deleted?: number | null;
+            contacts_deleted: number | null;
             /**
              * Format: int64
              * @description `address_book_loaded`: contacts renamed or changed.
              */
-            contacts_updated?: number | null;
+            contacts_updated: number | null;
             /**
              * Format: int64
              * @description Conversations an Export Run matched, or deleted for good.
              */
-            conversations?: number | null;
-            credential?: components["schemas"]["RunCredential"] | null;
+            conversations: number | null;
+            credential: components["schemas"]["RunCredential"] | null;
             /**
              * Format: int64
              * @description The row's id: the entry's, the Import Run's or the Export Run's. For a
@@ -1885,28 +1885,28 @@ export interface components {
              * Format: int64
              * @description Identities written to an exported address book.
              */
-            identities?: number | null;
+            identities: number | null;
             /**
              * Format: int64
              * @description Messages a run accepted or matched.
              */
-            messages?: number | null;
-            mode?: components["schemas"]["LoadMode"] | null;
+            messages: number | null;
+            mode: components["schemas"]["LoadMode"] | null;
             /** @description `permissions_changed`: permissions turned on. */
-            permissions_added?: components["schemas"]["Permission"][] | null;
+            permissions_added: components["schemas"]["Permission"][] | null;
             /** @description `permissions_changed`: permissions turned off. */
-            permissions_removed?: components["schemas"]["Permission"][] | null;
-            reason?: components["schemas"]["AuditReason"] | null;
-            scope_kind?: components["schemas"]["ExportScopeKind"] | null;
-            scope_list?: components["schemas"]["ExportQueryList"] | null;
+            permissions_removed: components["schemas"]["Permission"][] | null;
+            reason: components["schemas"]["AuditReason"] | null;
+            scope_kind: components["schemas"]["ExportScopeKind"] | null;
+            scope_list: components["schemas"]["ExportQueryList"] | null;
             /** @description An Import Run: the source it imported, such as `imessage`. */
-            source?: string | null;
-            status?: components["schemas"]["RunStatus"] | null;
+            source: string | null;
+            status: components["schemas"]["RunStatus"] | null;
             /**
              * @description The username of the account the entry is about, as it was; for a
              *     refused login, the username as typed. Kept after the account is deleted.
              */
-            username?: string | null;
+            username: string | null;
         };
         /**
          * @description How a Session ended, or why a login was refused.
@@ -2009,7 +2009,7 @@ export interface components {
          */
         ContactSelectionSummary: {
             /** @description When the contact sent its last message; `null` when it sent none. */
-            end_date?: string | null;
+            end_date: string | null;
             /**
              * Format: int64
              * @description Group conversations with the contact.
@@ -2038,7 +2038,7 @@ export interface components {
             /** @description The contact's preferred name; empty when it has none. */
             name: string;
             /** @description When the contact sent its first message; `null` when it sent none. */
-            start_date?: string | null;
+            start_date: string | null;
         };
         /** @description Contact row for the list: name, addresses, groups. */
         ContactSummary: {
@@ -2046,9 +2046,9 @@ export interface components {
              * @description Normalized (and raw when distinct) address strings of the contact's
              *     identities, for client-side filter and label.
              */
-            addresses?: string[];
+            addresses: string[];
             /** @description Group names on this contact (A–Z). */
-            groups?: string[];
+            groups: string[];
             /**
              * Format: int64
              * @description Contact id.
@@ -2067,7 +2067,7 @@ export interface components {
              *     account owner sent, or another member of a group chat, does not
              *     count. The same question `last-message:` asks on Contacts.
              */
-            last_heard_at?: string | null;
+            last_heard_at: string | null;
             /** @description When the contact’s address-book shape last changed (`datetime('now')`). */
             last_modified: string;
             /** @description The contact's preferred name; empty when it has none. */
@@ -3178,7 +3178,7 @@ export interface components {
              */
             conversation_count: number;
             /** @description UTC time the run finished, when it has. */
-            finished_at?: string | null;
+            finished_at: string | null;
             /**
              * Format: int64
              * @description Export Run id.
@@ -3201,7 +3201,7 @@ export interface components {
             /** @description Lifecycle status. */
             status: components["schemas"]["ExportStatus"];
             /** @description Exporting tool, e.g. `message-crate-pull`, when the client named one. */
-            tool?: string | null;
+            tool: string | null;
             /**
              * Format: int64
              * @description Sum of the known sizes of those distinct attachments, in bytes.

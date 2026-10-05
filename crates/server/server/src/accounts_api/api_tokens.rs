@@ -537,7 +537,7 @@ mod tests {
         assert_eq!(item["created_at"], created["created_at"], "{listed}");
         assert!(item["last_accessed_at"].is_string(), "{listed}");
         assert!(
-            item["token_hint"].is_null(),
+            item.get("token_hint") == Some(&serde_json::Value::Null),
             "the owner never reads any part of a secret: {listed}"
         );
 

@@ -632,19 +632,26 @@ mod tests {
         let json = serde_json::to_string(&message).expect("serializes");
         let written: serde_json::Value = serde_json::from_str(&json).expect("valid JSON");
         assert_eq!(
-            written["service"],
-            serde_json::Value::Null,
+            written.get("service"),
+            Some(&serde_json::Value::Null),
             "a message with no service carries the key as null: {json}"
         );
-        assert!(written.as_object().unwrap().contains_key("service"));
         assert_eq!(
-            written["conversation"]["label"],
-            serde_json::Value::Null,
-            "{json}"
-        );
-        assert_eq!(
-            written["conversation"]["participants"][0]["contact_id"],
-            serde_json::Value::Null,
+            written["conversation"],
+            serde_json::json!({
+                "id": 9,
+                "chat_identifier": "+15555550100",
+                "conversation_type": "individual",
+                "is_group": false,
+                "group_title": null,
+                "label": null,
+                "participants": [{
+                    "name": "Sarah Vale",
+                    "identity": null,
+                    "service": null,
+                    "contact_id": null,
+                }],
+            }),
             "{json}"
         );
         assert_eq!(

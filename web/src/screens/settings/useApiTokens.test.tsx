@@ -51,11 +51,12 @@ const token: ApiTokenItem = {
   token_hint: "mc-api-la..op",
   last_accessed_at: null,
   expires_at: null,
+  disabled: false,
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
-  list.mockResolvedValue([{ ...token, disabled: false }]);
+  list.mockResolvedValue([token]);
   client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
   });

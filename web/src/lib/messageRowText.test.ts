@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attachment, participant } from "../test/apiShapes";
+import { attachment, message as baseMessage, participant } from "../test/apiShapes";
 import { messageConversationName, messageRowText, messageSenderName } from "./messageRowText";
 import type { Message, MessageConversation } from "./types";
 
@@ -17,31 +17,15 @@ function conversation(over: Partial<MessageConversation> = {}): MessageConversat
 }
 
 function message(over: Partial<Message> = {}): Message {
-  return {
+  return baseMessage({
     id: 10,
-    source: "imessage",
     guid: "g10",
     timestamp: "2024-01-01T10:00:00Z",
-    sort_order: 0,
-    is_from_me: false,
-    is_announcement: false,
-    is_reply: false,
-    num_replies: 0,
     sender: "+15555550100",
     text: "hello",
     conversation: conversation(),
-    attachments: [],
-    tapbacks: [],
-    earlier_versions: [],
-    matched_earlier_version: false,
-    deletion: null,
-    owner: null,
-    service: null,
-    subject: null,
-    thread_originator_guid: null,
-    thread_originator_part: null,
     ...over,
-  };
+  });
 }
 
 describe("messageConversationName", () => {

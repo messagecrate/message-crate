@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { missingAttachmentChipLabel } from "../../lib/missingAttachmentLabel";
 import { TimeZoneContext } from "../../lib/timeZone";
 import type { Message } from "../../lib/types";
-import { attachment, participant } from "../../test/apiShapes";
+import { attachment, message as baseMessage, participant } from "../../test/apiShapes";
 import type { MessageBubbleProps } from "./chatBubbleShared";
 import DiscordBubble from "./DiscordBubble";
 import ImessageBubble from "./ImessageBubble";
@@ -75,28 +75,12 @@ const ATTACHMENT = attachment({
 const ATTACHMENT_LABEL = missingAttachmentChipLabel(ATTACHMENT);
 
 function message(partial: Partial<Message>): Message {
-  return {
+  return baseMessage({
     id: 7,
-    source: "imessage",
     service: "iMessage",
     guid: "g7",
-    timestamp: "2026-08-11T15:04:00Z",
-    is_from_me: false,
-    is_announcement: false,
-    is_reply: false,
-    num_replies: 0,
-    sort_order: 0,
     sender: "+15555550100",
-    subject: null,
     text: "See you at noon",
-    attachments: [],
-    tapbacks: [],
-    earlier_versions: [],
-    matched_earlier_version: false,
-    deletion: null,
-    owner: null,
-    thread_originator_guid: null,
-    thread_originator_part: null,
     conversation: {
       id: 1,
       chat_identifier: "+15555550100",
@@ -107,7 +91,7 @@ function message(partial: Partial<Message>): Message {
       participants: [participant({ identity: "+15555550100", name: "Ada" })],
     },
     ...partial,
-  };
+  });
 }
 
 /** The bubble in UTC, so its time reads the same on every machine. */

@@ -6,7 +6,7 @@ import { CANNOT_PLAY_HERE, NO_PLAYABLE_COPY, STOPPED } from "../hooks/useStreame
 import { saveFile } from "../lib/saveFile";
 import { createMediaLink, fetchAsset, fetchAssetObjectUrl } from "../lib/serverApi";
 import type { Message, MessageAttachment } from "../lib/types";
-import { attachment, participant } from "../test/apiShapes";
+import { attachment, message as baseMessage, participant } from "../test/apiShapes";
 import { installIntersectionObserver, scrollNear } from "../test/intersectionObserver";
 import { renderWithProviders } from "../test/providers";
 import { setupUser } from "../test/user";
@@ -39,28 +39,10 @@ afterEach(() => {
 });
 
 function message(attachments: MessageAttachment[]): Message {
-  return {
-    id: 1,
-    source: "imessage",
+  return baseMessage({
     service: "iMessage",
-    guid: "g1",
-    timestamp: "2026-08-11T15:04:00Z",
-    is_from_me: false,
-    is_announcement: false,
-    is_reply: false,
-    num_replies: 0,
-    sort_order: 0,
     sender: "+1555",
-    subject: null,
-    text: null,
     attachments,
-    tapbacks: [],
-    earlier_versions: [],
-    matched_earlier_version: false,
-    deletion: null,
-    owner: null,
-    thread_originator_guid: null,
-    thread_originator_part: null,
     conversation: {
       id: 1,
       chat_identifier: "x",
@@ -70,7 +52,7 @@ function message(attachments: MessageAttachment[]): Message {
       label: null,
       participants: [participant({ identity: "+1555", name: "Ada" })],
     },
-  };
+  });
 }
 
 /** Each fetch of attachment bytes: whose, and which version. */

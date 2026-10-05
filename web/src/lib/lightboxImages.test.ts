@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { attachment, participant } from "../test/apiShapes";
+import { attachment, message as baseMessage, participant } from "../test/apiShapes";
 import { lightboxImages } from "./lightboxImages";
 import type { Message, MessageAttachment } from "./types";
 
@@ -8,28 +8,12 @@ function photo(name: string): MessageAttachment {
 }
 
 function message(id: number, attachments: MessageAttachment[]): Message {
-  return {
+  return baseMessage({
     id,
-    source: "imessage",
     service: "iMessage",
-    guid: "g1",
-    timestamp: "2026-08-11T15:04:00Z",
-    is_from_me: false,
-    is_announcement: false,
-    is_reply: false,
-    num_replies: 0,
     sort_order: id,
     sender: "+1555",
-    subject: null,
-    text: null,
     attachments,
-    tapbacks: [],
-    earlier_versions: [],
-    matched_earlier_version: false,
-    deletion: null,
-    owner: null,
-    thread_originator_guid: null,
-    thread_originator_part: null,
     conversation: {
       id: 1,
       chat_identifier: "x",
@@ -39,7 +23,7 @@ function message(id: number, attachments: MessageAttachment[]): Message {
       label: null,
       participants: [participant({ identity: "+1555", name: "Ada" })],
     },
-  };
+  });
 }
 
 describe("lightboxImages", () => {

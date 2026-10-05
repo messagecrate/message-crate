@@ -1,12 +1,13 @@
 import { formatUnixDate } from "../../lib/formatDate";
+import type { components } from "../../lib/serverApi.types";
 
 /** Show a stored API Token hint, which the server writes as `mc-api-xx..yy`. */
-export function displayTokenHint(hint: string | null | undefined): string {
+export function displayTokenHint(hint: string | null): string {
   return hint?.trim() || "mc-api-..";
 }
 
 /** Date a token was created, was last used, or expires: "Never" when there is none. */
-export function formatTokenDate(secs: string | null | undefined): string {
+export function formatTokenDate(secs: string | null): string {
   return formatUnixDate(secs);
 }
 
@@ -18,19 +19,7 @@ export function permissionsLabel(token: { can_import: boolean; can_export: boole
   return parts.length > 0 ? parts.join(" / ") : "None";
 }
 
-export type ApiTokenItem = {
-  id: number;
-  label: string;
-  can_import: boolean;
-  can_export: boolean;
-  /** Masked secret, e.g. `mc-api-Sd..mE`. Null in the owner's list of another account's tokens. */
-  token_hint: string | null;
-  created_at: string;
-  /** Unix seconds string, or null if never used. */
-  last_accessed_at: string | null;
-  /** Unix seconds string, or null when the token never expires. */
-  expires_at: string | null;
-};
+export type ApiTokenItem = components["schemas"]["ApiToken"];
 
 export const thClass = "px-3 py-2 text-left text-[0.75rem] font-bold text-muted";
 export const tdClass = "px-3 py-2 text-[0.75rem] text-text align-middle";

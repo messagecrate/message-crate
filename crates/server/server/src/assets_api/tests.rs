@@ -1595,7 +1595,7 @@ async fn an_attachment_with_a_preview_reports_its_media_type() {
     assert_eq!(attachments[0]["preview_mime_type"], "image/jpeg");
     assert_eq!(attachments[1]["sha256"], seeded.without_preview);
     assert!(
-        attachments[1]["preview_mime_type"].is_null(),
+        attachments[1].get("preview_mime_type") == Some(&serde_json::Value::Null),
         "an attachment with no preview must not claim one: {}",
         attachments[1]
     );

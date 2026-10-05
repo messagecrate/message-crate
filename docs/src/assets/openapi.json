@@ -13286,7 +13286,31 @@
           "id",
           "action",
           "at",
-          "actor"
+          "actor",
+          "account_id",
+          "api_token_hint",
+          "api_token_label",
+          "app",
+          "app_build",
+          "attachments",
+          "bytes",
+          "contacts",
+          "contacts_created",
+          "contacts_deleted",
+          "contacts_updated",
+          "conversations",
+          "credential",
+          "identities",
+          "messages",
+          "mode",
+          "permissions_added",
+          "permissions_removed",
+          "reason",
+          "scope_kind",
+          "scope_list",
+          "source",
+          "status",
+          "username"
         ],
         "properties": {
           "account_id": {
@@ -13705,7 +13729,9 @@
           "individual_conversations",
           "group_conversations",
           "individual_message_count",
-          "group_message_count"
+          "group_message_count",
+          "end_date",
+          "start_date"
         ],
         "properties": {
           "end_date": {
@@ -13765,7 +13791,10 @@
           "name",
           "unknown",
           "identity_count",
-          "last_modified"
+          "last_modified",
+          "addresses",
+          "groups",
+          "last_heard_at"
         ],
         "properties": {
           "addresses": {
@@ -15835,7 +15864,9 @@
           "conversation_count",
           "attachment_count",
           "total_bytes",
-          "messages_delivered"
+          "messages_delivered",
+          "finished_at",
+          "tool"
         ],
         "properties": {
           "attachment_count": {

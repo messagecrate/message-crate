@@ -227,10 +227,9 @@ released versions carry their date on the heading.
 
 ### Design
 
-- 2026-10-04 **Every answer from the server carries every field.** A field
-  with no value now arrives as `null` instead of being left out, so a program
-  written against the server's reference finds the same fields in every
-  answer of one kind, and the reference marks each of them as always there.
+- 2026-10-04 **Every answer from the server carries the same fields.** A
+  field with nothing in it is sent empty instead of being left out, so a
+  program that talks to the server always finds the fields it expects.
   Nothing changes on screen.
 - 2026-10-04 **A reaction travels on the message it reacts to.** An Apple
   Messages tapback or emoji reaction is written into an export on the
