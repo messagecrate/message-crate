@@ -239,7 +239,7 @@ pub(crate) async fn work_through(
         match done {
             Ok(made) => stats.add(&made),
             Err(error) => {
-                stats.errors += 1;
+                stats.not_made += 1;
                 tracing::warn!(
                     account_id = asset.account_id,
                     sha256 = asset.sha256,
@@ -254,7 +254,12 @@ pub(crate) async fn work_through(
         tracing::info!(
             thumbnails = stats.thumbnails,
             previews = stats.derived,
-            failures = stats.errors,
+            removed = stats.removed,
+            dropped = stats.dropped,
+            shared = stats.shared,
+            not_made = stats.not_made,
+            not_removed = stats.not_removed,
+            not_dropped = stats.not_dropped,
             "the queued Assets are done"
         );
     }

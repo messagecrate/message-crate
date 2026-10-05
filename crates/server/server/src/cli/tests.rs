@@ -227,6 +227,53 @@ async fn process_assets_fails_when_a_preview_or_thumbnail_was_not_made_and_names
     );
 }
 
+/// An incomplete original that cannot be removed fails `process-assets`
+/// with its own count, not as a Preview or Thumbnail that could not be made,
+/// because nothing was being made (#1849).
+#[cfg(unix)]
+#[tokio::test]
+async fn process_assets_fails_when_an_incomplete_original_was_not_removed_and_names_it() {
+    use crate::process_assets::tests::{ACCOUNT, attach_stored_blob, seed_message, with_read_only};
+
+    let dir = tempfile::tempdir().unwrap();
+    let config = server_config(dir.path());
+    with_alice(&config).await;
+    // The process_assets fixtures seed rows for ACCOUNT, which must be alice.
+    assert_eq!(ACCOUNT, ALICE);
+    let shard = {
+        let opened = open(&config).await;
+        let mut conn = opened.conn().await.unwrap();
+        let message_id = seed_message(&mut conn, "imessage").await;
+        let sha = "c".repeat(64);
+        attach_stored_blob(&opened, &mut conn, message_id, &sha, ".part", b"half").await;
+        opened.cfg.paths.assets_dir_for_account(ALICE).join("cc")
+    };
+
+    let Some(result) = with_read_only(
+        &shard,
+        run(Cli {
+            command: Commands::ProcessAssets(ProcessAssetsArgs {
+                config: config.clone(),
+                force: false,
+                dry_run: false,
+                skip_image: false,
+                skip_video: false,
+                skip_audio: false,
+                db: None,
+            }),
+        }),
+    )
+    .await
+    else {
+        return;
+    };
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "1 incomplete original that could not be removed"
+    );
+}
+
 /// S7-12: `process-assets --db` with a path where no database is exits with
 /// an error naming it and creates no file, instead of processing an empty
 /// new database and exiting 0.

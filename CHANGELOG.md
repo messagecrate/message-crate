@@ -1563,17 +1563,31 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-05 **`process-assets` says what it did to an incomplete original
+  and a damaged or shared Preview or Thumbnail.** A transfer that never
+  finished leaves an incomplete original. When one could not be removed,
+  `process-assets` ended with "1 original whose Preview or Thumbnail could
+  not be made", although nothing was being made. A removed incomplete
+  original, a dropped damaged Preview or Thumbnail, and an existing one given
+  to more attachments counted in "left 1 original as it was". The line that
+  ends the run now adds "removed 1 incomplete original", "dropped 1 damaged
+  Preview or Thumbnail" and "shared 1 existing Preview or Thumbnail with more
+  attachments". On a failure it adds "1 incomplete original that could not be
+  removed" and "1 damaged Preview or Thumbnail that could not be dropped".
+  Each is there only when it happened. The run ends with an error naming
+  each failure. The `reset-demo` summary has a line for each count, and its
+  warning now reads "the Demo Account has 1 original whose Preview or
+  Thumbnail could not be made. reset-demo continues".
 - 2026-10-05 **`process-assets` and `reset-demo` no longer call a failed
   Thumbnail a failed conversion.** When the Preview or Thumbnail of an
   original could not be made, `process-assets` ended with "1 conversion
   failed. That original stays without a Thumbnail or a browser preview",
   also when only the Thumbnail failed, and `reset-demo` warned "1 demo
   attachment failed conversion". They now say "1 original whose Preview
-  or Thumbnail could not be made" and "1 demo original whose Preview or
-  Thumbnail could not be made stays as it was". The `reset-demo`
-  summary's "Browser previews" section, with its "converted for web",
-  "left as-is" and "conversion failures" lines, is now "Previews and
-  Thumbnails", with "Previews made", "Thumbnails made", "left as they
+  or Thumbnail could not be made", in the error and in the warning. The
+  `reset-demo` summary's "Browser previews" section, with its "converted
+  for web", "left as-is" and "conversion failures" lines, is now "Previews
+  and Thumbnails", with "Previews made", "Thumbnails made", "left as they
   were" and "not made". It also gives the count of Thumbnails, which it
   left out. Stopping `process-assets` says it stops the Preview or
   Thumbnail being made.

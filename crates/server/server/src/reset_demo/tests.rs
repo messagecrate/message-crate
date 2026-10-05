@@ -2066,7 +2066,7 @@ async fn a_reset_leaves_a_demo_that_logs_in_and_holds_nothing_old() {
     // left to fill; what shows it ran is the hidden duplicate below.
     assert_eq!(stats.dedupe_keys_filled, 0);
     assert_eq!(stats.import.messages, 4);
-    assert_eq!(stats.process_assets.errors, 0);
+    assert_eq!(stats.process_assets.not_made, 0);
     let hidden = count(
         &mut conn,
         "SELECT COUNT(*) FROM messages WHERE account_id = $1 AND duplicate_of IS NOT NULL",
@@ -2120,19 +2120,34 @@ async fn a_reset_leaves_a_demo_that_logs_in_and_holds_nothing_old() {
     assert_eq!(server["demo_account"], true);
 }
 
+/// The warning names what processing the demo originals could not do,
+/// count by count, and is silent when it did everything (#1849).
 #[test]
-fn the_not_made_warning_names_the_originals_and_is_silent_at_zero() {
-    assert_eq!(not_made_warning(0), None);
+fn the_not_done_warning_names_each_count_and_is_silent_at_zero() {
+    use crate::process_assets::ProcessAssetsStats;
+
+    assert_eq!(not_done_warning(&ProcessAssetsStats::default()), None);
     assert_eq!(
-        not_made_warning(1).as_deref(),
+        not_done_warning(&ProcessAssetsStats {
+            not_made: 1,
+            ..ProcessAssetsStats::default()
+        })
+        .as_deref(),
         Some(
-            "1 demo original whose Preview or Thumbnail could not be made stays as it was, and reset-demo continues"
+            "the Demo Account has 1 original whose Preview or Thumbnail could not be made. \
+             reset-demo continues"
         )
     );
     assert_eq!(
-        not_made_warning(2).as_deref(),
+        not_done_warning(&ProcessAssetsStats {
+            not_made: 2,
+            not_removed: 1,
+            ..ProcessAssetsStats::default()
+        })
+        .as_deref(),
         Some(
-            "2 demo originals whose Preview or Thumbnail could not be made stay as they were, and reset-demo continues"
+            "the Demo Account has 2 originals whose Preview or Thumbnail could not be made \
+             and 1 incomplete original that could not be removed. reset-demo continues"
         )
     );
 }
