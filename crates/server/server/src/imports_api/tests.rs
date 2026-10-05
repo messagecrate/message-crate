@@ -796,15 +796,21 @@ async fn append_keeps_a_later_edit_against_an_earlier_backup_listing_more_versio
 }
 
 /// What a reader sees of the message `g-edit`: its text and content key,
-/// its earlier versions, and which words find it through each search index.
-async fn edit_snapshot(
-    conn: &mut sqlx::SqliteConnection,
-) -> (
-    (String, Option<String>),
-    Vec<(i64, String, Option<String>)>,
-    Vec<i64>,
-) {
-    let text_key = text_and_key(conn).await;
+/// its earlier versions, and how many entries of each search index each
+/// word finds.
+#[derive(Debug, PartialEq)]
+struct EditSnapshot {
+    text: String,
+    content_key: Option<String>,
+    /// `(part_index, text, edited_at)`, in the order stored.
+    versions: Vec<(i64, String, Option<String>)>,
+    /// `(word, index, entries found)`.
+    hits: Vec<(&'static str, &'static str, i64)>,
+}
+
+/// The [`EditSnapshot`] of `g-edit` in `conn`.
+async fn edit_snapshot(conn: &mut sqlx::SqliteConnection) -> EditSnapshot {
+    let (text, content_key) = text_and_key(conn).await;
     let versions =
         sqlx::query_as("SELECT part_index, text, edited_at FROM message_versions ORDER BY id")
             .fetch_all(&mut *conn)
@@ -820,10 +826,15 @@ async fn edit_snapshot(
             .fetch_one(&mut *conn)
             .await
             .unwrap();
-            hits.push(n);
+            hits.push((word, table, n));
         }
     }
-    (text_key, versions, hits)
+    EditSnapshot {
+        text,
+        content_key,
+        versions,
+        hits,
+    }
 }
 
 /// One import carrying an earlier and a later backup of a message the
@@ -860,8 +871,8 @@ async fn one_import_of_two_backups_gives_a_new_message_the_later_edit_in_either_
         let (_pool, mut conn) = open_verify(&alone).await;
         edit_snapshot(&mut conn).await
     };
-    assert_eq!(expected.0.0, "see you at eight");
-    assert_eq!(expected.1.len(), 2);
+    assert_eq!(expected.text, "see you at eight");
+    assert_eq!(expected.versions.len(), 2);
 
     for (name, files) in [
         ("earlier-first.db", [earlier.clone(), later.clone()]),

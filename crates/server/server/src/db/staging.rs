@@ -287,6 +287,32 @@ pub struct StagingEarlierVersion<'a> {
     pub edited_at: Option<&'a str>,
 }
 
+impl<'a> StagingEarlierVersion<'a> {
+    /// The staging row of `version`, one earlier version of the staged
+    /// message `message_id`.
+    pub fn from_record(message_id: i64, version: &'a crate::models::EarlierVersionRecord) -> Self {
+        Self {
+            message_id,
+            part_index: version.part_index,
+            text: &version.text,
+            edited_at: version.edited_at.as_deref(),
+        }
+    }
+}
+
+/// The key staging keeps one message row under
+/// (`ix_staging_messages_account_source_guid`): one guid of one source in
+/// one account.
+#[derive(Debug, Clone, Copy)]
+pub struct StagedMessageKey<'a> {
+    /// The account the message is imported into.
+    pub account_id: i64,
+    /// The source the import stamps on the message.
+    pub source: &'a str,
+    /// The source's own id for the message.
+    pub guid: &'a str,
+}
+
 /// Bind counts, in lockstep with the `INSERT` column lists below.
 const MESSAGE_BIND_COLUMNS: usize = 19;
 const ATTACHMENT_BIND_COLUMNS: usize = 10;
@@ -467,7 +493,7 @@ pub async fn insert_earlier_versions(
     Ok(inserted)
 }
 
-/// Give the message staged under `(account_id, source, guid)` the text
+/// Give the message staged under `key` the text
 /// `body` and the earlier versions `versions` of another copy of it from
 /// the same import, when that copy records a later edit
 /// ([`later_edit_sql`]). Returns whether it did.
@@ -484,18 +510,16 @@ pub async fn insert_earlier_versions(
 /// Returns an error when a statement fails.
 pub async fn take_later_staged_copy(
     conn: &mut SqliteConnection,
-    account_id: i64,
-    source: &str,
-    guid: &str,
+    key: StagedMessageKey<'_>,
     body: Option<&str>,
     versions: &[crate::models::EarlierVersionRecord],
 ) -> Result<bool> {
     let Some(staged): Option<i64> = sqlx::query_scalar(
         "SELECT id FROM staging_messages WHERE account_id = $1 AND source = $2 AND guid = $3",
     )
-    .bind(account_id)
-    .bind(source)
-    .bind(guid)
+    .bind(key.account_id)
+    .bind(key.source)
+    .bind(key.guid)
     .fetch_optional(&mut *conn)
     .await?
     else {
@@ -526,12 +550,7 @@ pub async fn take_later_staged_copy(
         .await?;
     let rows: Vec<StagingEarlierVersion<'_>> = versions
         .iter()
-        .map(|v| StagingEarlierVersion {
-            message_id: staged,
-            part_index: v.part_index,
-            text: &v.text,
-            edited_at: v.edited_at.as_deref(),
-        })
+        .map(|version| StagingEarlierVersion::from_record(staged, version))
         .collect();
     insert_earlier_versions(conn, &rows).await?;
     Ok(true)

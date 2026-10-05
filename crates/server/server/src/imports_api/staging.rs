@@ -13,8 +13,8 @@ use crate::db::handles::{
     HandleIdCache, handle_type_of, upsert_handle_row, upsert_handle_row_cached,
 };
 use crate::db::staging::{
-    self as db_staging, StagingAttachment, StagingConversation, StagingEarlierVersion,
-    StagingMessage, StagingTapback,
+    self as db_staging, StagedMessageKey, StagingAttachment, StagingConversation,
+    StagingEarlierVersion, StagingMessage, StagingTapback,
 };
 use crate::import_media;
 use crate::jsonl::{self, ReadRecordsError};
@@ -880,12 +880,7 @@ async fn flush_staging_message_chunk(
             row.msg
                 .earlier_versions
                 .iter()
-                .map(|version| StagingEarlierVersion {
-                    message_id,
-                    part_index: version.part_index,
-                    text: &version.text,
-                    edited_at: version.edited_at.as_deref(),
-                }),
+                .map(|version| StagingEarlierVersion::from_record(message_id, version)),
         );
     }
 
@@ -895,9 +890,11 @@ async fn flush_staging_message_chunk(
     for row in later_copies {
         db_staging::take_later_staged_copy(
             tx,
-            stmts.account_id,
-            source,
-            &row.msg.guid,
+            StagedMessageKey {
+                account_id: stmts.account_id,
+                source,
+                guid: &row.msg.guid,
+            },
             row.body.as_deref(),
             &row.msg.earlier_versions,
         )
