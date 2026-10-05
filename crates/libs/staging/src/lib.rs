@@ -22,6 +22,7 @@
 //! `message-crate-core`. Why this is its own crate:
 //! `docs/adr/0012-four-crates-in-the-export-pipeline.md`.
 
+mod counted_attachments;
 mod export_writer;
 mod headroom;
 mod media_settings;
@@ -30,6 +31,7 @@ mod staging_summary;
 mod transcode;
 mod write_queue;
 
+pub use counted_attachments::{CountedAttachments, PathSources};
 pub use export_writer::{ExportWriter, ExportWriterParts};
 pub use headroom::{Disk, bytes_embedded, bytes_to_copy, bytes_to_write, check_headroom};
 pub use media_settings::{MEDIA_SETTINGS_FILE, read_media_settings, write_media_settings};

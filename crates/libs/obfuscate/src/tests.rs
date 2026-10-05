@@ -40,7 +40,7 @@ fn known_answers_for_a_fixed_key() {
     let mut phones = Obfuscator::new(key(KEY));
     for (raw, expected) in [
         ("+15555550100", "+10490970433"),
-        ("+44 20 7183 8750", "+44 39 2603 3624"),
+        ("+44 20 7946 0750", "+44 65 3142 7756"),
         ("7535", "7032"),
         ("(555) 555-0102", "(075) 458-7648"),
     ] {
@@ -277,12 +277,12 @@ fn phone_keeps_country_calling_code() {
     assert_eq!(us_digits.len(), 11);
     assert_ne!(&us_digits[1..], "5555550119");
 
-    let uk = a.obfuscate_phone("+44 20 7183 8750");
+    let uk = a.obfuscate_phone("+44 20 7946 0750");
     assert!(uk.starts_with("+44"));
     let uk_digits: String = uk.chars().filter(|c| c.is_ascii_digit()).collect();
     assert!(uk_digits.starts_with("44"));
     assert_eq!(uk_digits.len(), 12);
-    assert_ne!(&uk_digits[2..], "2071838750");
+    assert_ne!(&uk_digits[2..], "2079460750");
 
     // Short codes have no country code to preserve; length still matches.
     let short = a.obfuscate_phone("7535");

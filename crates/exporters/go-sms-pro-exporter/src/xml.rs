@@ -406,8 +406,10 @@ mod tests {
 
     #[test]
     fn a_number_with_its_country_keeps_it() {
-        let (msgs, _) = received_from("+6595550100");
-        assert_eq!(msgs[0].other.key(), "+6595550100");
+        // +65 5555 0100 is no one's number. The note on the `phone` crate's
+        // `mod tests` says why.
+        let (msgs, _) = received_from("+6555550100");
+        assert_eq!(msgs[0].other.key(), "+6555550100");
     }
 
     #[test]

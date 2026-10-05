@@ -19,7 +19,7 @@ mod transforms;
 pub use attachment_jobs::{
     AttachmentJob, AttachmentProgress, LoadError, attachment_jobs, attachment_size_hint,
     document_messages, mime_for_rel, report_attachment_progress, run_attachment_jobs,
-    stage_attachment_jobs, stage_conversation_attachments,
+    stage_attachment_jobs,
 };
 pub use attachments::{attachment_date_prefix, attachment_dest_name, digest_prefix};
 pub use config::{

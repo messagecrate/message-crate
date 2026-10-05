@@ -814,20 +814,20 @@ mod tests {
             }],
             packaging_stem_suffix: None,
         };
-        let mut sources: Vec<Option<AttachmentSource>> = doc
-            .messages
-            .iter()
-            .flat_map(|msg| msg.attachments.iter().map(|att| spool.source(att)))
-            .map(|spooled| spooled.map(|(source, _)| source))
-            .collect();
-        report.attachments_saved += message_crate_core::stage_conversation_attachments(
+        report.attachments_saved += message_staging::CountedAttachments::new(
             doc.messages.iter_mut(),
-            &att_dir,
-            &message_crate_core::MediaConfig::default(),
-            |i| match sources.get_mut(i) {
-                Some(Some(source)) => message_staging::load_attachment_source(source),
-                _ => Ok(None),
+            message_crate_core::MediaConfig::default(),
+            message_staging::PathSources::OnDisk,
+            |att| {
+                spool
+                    .source(att)
+                    .unwrap_or((AttachmentSource::Missing, None))
             },
+            None,
+        )
+        .stage(
+            &att_dir,
+            message_staging::load_attachment_source,
             None,
             None,
             None,

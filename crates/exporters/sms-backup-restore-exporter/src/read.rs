@@ -4,7 +4,7 @@ use anyhow::{Result, bail};
 use media::{CompressOptions, MediaMode};
 use message_crate_core::{
     CancelFlag, LogSink, MediaConfig, ProgressSink, check_cancel, discover_files,
-    document_messages, is_cancelled, stage_conversation_attachments,
+    document_messages, is_cancelled,
 };
 use message_csv::format_local_ts;
 use message_ir::{
@@ -13,7 +13,9 @@ use message_ir::{
     IrService, IrSource, MessageCopy, MessageGuid, MessageIdentity, SCHEMA_VERSION, TimePrecision,
     one_copy_per_message, owner_sender,
 };
-use message_staging::{AttachmentSpool, load_attachment_source};
+use message_staging::{
+    AttachmentSource, AttachmentSpool, CountedAttachments, PathSources, load_attachment_source,
+};
 use phone::{Handle, OwnerHandleSet};
 use sbr::{
     AttachmentBlob, ConversationKind, ParseStats, Record, infer_owner_phones, parse_file_with,
@@ -297,34 +299,30 @@ pub fn stage_read_attachments(
     documents: &mut [ConversationDocument],
     options: &ReadOptions<'_>,
 ) -> Result<()> {
-    let mut sources: Vec<_> = documents
-        .iter()
-        .flat_map(|doc| doc.messages.iter())
-        .flat_map(|msg| msg.attachments.iter())
-        .map(|att| {
-            options
-                .spool
-                .and_then(|spool| spool.source(att))
-                .map(|(source, _)| source)
-        })
-        .collect();
     let mode = if options.spool.is_some() {
         options.media
     } else {
         MediaMode::Disabled
     };
     let attachments_dir = options.attachments_dir.unwrap_or_else(|| Path::new(""));
-    stage_conversation_attachments(
+    CountedAttachments::new(
         document_messages(documents),
-        attachments_dir,
-        &MediaConfig {
+        MediaConfig {
             mode,
             compress: options.compress.clone(),
         },
-        |i| match sources.get_mut(i) {
-            Some(Some(source)) => load_attachment_source(source),
-            _ => Ok(None),
+        PathSources::OnDisk,
+        |att| {
+            options
+                .spool
+                .and_then(|spool| spool.source(att))
+                .unwrap_or((AttachmentSource::Missing, None))
         },
+        options.log,
+    )
+    .stage(
+        attachments_dir,
+        load_attachment_source,
         options.log,
         options.progress,
         options.cancel,

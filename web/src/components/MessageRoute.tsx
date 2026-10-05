@@ -2,7 +2,7 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from "reac
 import { apiErrorMessage } from "../lib/apiErrorMessage";
 import { asMessagesLocationState } from "../lib/messagesLocationState";
 import { keys } from "../lib/queryKeys";
-import { AT_PARAM, openedAt } from "../lib/resultsView";
+import { AT_PARAM, conversationListQuery, listedTag, openedAt } from "../lib/resultsView";
 import { useRouteQuery } from "../lib/routeQuery";
 import { getConversation } from "../lib/serverApi";
 import MessageView from "../screens/MessageView";
@@ -28,8 +28,9 @@ export default function MessageRoute() {
   const [searchParams] = useSearchParams();
 
   const conversationSearch = searchParams.get("q") || "";
-  const conversationFilter = searchParams.get("f") || "";
-  const query = conversationFilter || conversationSearch;
+  // A conversation opened from a tag page names the tag apart from `q`.
+  const tag = listedTag(searchParams);
+  const query = conversationListQuery(searchParams, tag);
   // A result in the Messages list opens its conversation at the message.
   const at = openedAt(searchParams);
 
@@ -66,11 +67,12 @@ export default function MessageRoute() {
       <ListColumn>
         <ResultsColumn
           query={query}
+          tag={tag}
           searchTyped={conversationSearch !== ""}
           selectedConversationId={conversationId}
           onSelectConversation={(c) => {
-            // The list is filtered by this location's `q` and `f`, so the
-            // conversation opened keeps them and the list stays as it was.
+            // The list is filtered by this location's `q`, `f` and tag, so
+            // the conversation opened keeps them and the list stays as it was.
             // The message a result opened at belongs to the last one.
             const params = new URLSearchParams(searchParams);
             params.delete(AT_PARAM);

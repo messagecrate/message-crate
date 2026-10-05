@@ -6,7 +6,6 @@ pub use message_crate_core::RunResult;
 use message_crate_core::{
     ATTACHMENTS_MISSING, ExportReport, ExportTransforms, ExporterConfig, MediaConfig, OutputFormat,
     SourceConfig, attachment_size_hint, document_messages, prepare_outputs,
-    stage_conversation_attachments,
 };
 use message_ir::{ConversationDocument, IrMessage};
 use message_ir_format::{
@@ -14,7 +13,10 @@ use message_ir_format::{
     read_conversation_csv, read_conversation_eml_dir, read_conversation_json,
     read_conversation_jsonl, read_conversation_mbox,
 };
-use message_staging::{AttachmentSpool, Disk, bytes_to_write, check_headroom};
+use message_staging::{
+    AttachmentSource, AttachmentSpool, CountedAttachments, Disk, PathSources, bytes_to_write,
+    check_headroom, load_attachment_source,
+};
 use sms_backup_plus_exporter::SmsBackupPlusArchive;
 use sms_backup_restore_exporter::{ReadOptions, SbrArchive, read_backup, stage_read_attachments};
 use std::collections::HashSet;
@@ -184,16 +186,6 @@ fn sms_only_archive(
     }
 }
 
-/// Where one attachment's bytes come from when it is staged again.
-enum Source {
-    /// Held in memory, as a mail export's reader hands them over.
-    Bytes(Vec<u8>),
-    /// A file copied into the output from the input's `attachments/`.
-    File(PathBuf),
-    /// Nothing to stage.
-    None,
-}
-
 /// Stage the attachments again through the shared step: the files copied
 /// from the input, and the bytes a mail export held in memory. A convert or
 /// compress pass then rewrites each document's paths, hashes and MIME
@@ -210,37 +202,35 @@ fn apply_reexport_convert(
     report: &mut ExportReport,
 ) -> Result<()> {
     let output_dir = &config.output;
-    let mut sources: Vec<Source> = Vec::new();
-    let mut reasons: Vec<Option<String>> = Vec::new();
-    for att in documents
-        .iter_mut()
-        .flat_map(|doc| doc.messages.iter_mut())
-        .flat_map(|msg| msg.attachments.iter_mut())
-    {
-        reasons.push(att.missing_reason.clone());
-        sources.push(match (att.bytes.take(), att.path.as_deref()) {
-            (Some(bytes), _) => Source::Bytes(bytes),
-            (None, Some(rel)) => {
-                Source::File(output_dir.join(rel.replace('/', std::path::MAIN_SEPARATOR_STR)))
-            }
-            (None, None) => Source::None,
-        });
-    }
-    let saved = stage_conversation_attachments(
+    let reasons: Vec<Option<String>> = documents
+        .iter()
+        .flat_map(|doc| doc.messages.iter())
+        .flat_map(|msg| msg.attachments.iter())
+        .map(|att| att.missing_reason.clone())
+        .collect();
+    let saved = CountedAttachments::new(
         document_messages(documents),
-        &output_dir.join("attachments"),
-        &MediaConfig {
+        MediaConfig {
             mode: transforms.media,
             compress: transforms.compress.clone(),
         },
-        |i| match sources
-            .get_mut(i)
-            .map(|s| std::mem::replace(s, Source::None))
-        {
-            Some(Source::Bytes(bytes)) => Ok(Some(bytes)),
-            Some(Source::File(path)) => Ok(fs::read(path).ok()),
-            Some(Source::None) | None => Ok(None),
+        PathSources::OnDisk,
+        |att| {
+            let hint = attachment_size_hint(att);
+            let source = match (att.bytes.take(), att.path.as_deref()) {
+                (Some(bytes), _) => AttachmentSource::Bytes(bytes),
+                (None, Some(rel)) => AttachmentSource::Path(
+                    output_dir.join(rel.replace('/', std::path::MAIN_SEPARATOR_STR)),
+                ),
+                (None, None) => AttachmentSource::Missing,
+            };
+            (source, hint)
         },
+        config.log.as_ref(),
+    )
+    .stage(
+        &output_dir.join("attachments"),
+        load_attachment_source,
         config.log.as_ref(),
         config.progress.as_ref(),
         config.cancel.as_ref(),

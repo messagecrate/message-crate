@@ -1,6 +1,8 @@
-//! Shared scaffolding for exporter `convert_smoke` tests (behind `testutil`).
+//! Shared scaffolding for the export crates' tests, such as the exporters'
+//! `convert_smoke` tests and the attachment byte-total tests (behind
+//! `testutil`).
 
-use crate::{ExportReport, ExporterConfig, IssueSink, RunIssue};
+use crate::{ExportReport, ExporterConfig, IssueSink, ProgressEvent, ProgressSink, RunIssue};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -15,6 +17,30 @@ pub fn collect_issues(config: &mut ExporterConfig) -> Arc<Mutex<Vec<RunIssue>>> 
         sink.lock().unwrap().push(issue);
     }));
     issues
+}
+
+/// Every attachment count a test's progress sink received, as
+/// `(done, bytes_done, bytes_total)`.
+pub type AttachmentTotals = Arc<Mutex<Vec<(usize, u64, u64)>>>;
+
+/// A progress sink, and every attachment count it receives as
+/// `(done, bytes_done, bytes_total)`, in the order the run sent them: what a
+/// test of the attachment byte total asserts on.
+pub fn attachment_totals() -> (ProgressSink, AttachmentTotals) {
+    let totals = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&totals);
+    let progress = ProgressSink::unpaced(move |event| {
+        if let ProgressEvent::Attachments {
+            done,
+            bytes_done,
+            bytes_total,
+            ..
+        } = event
+        {
+            sink.lock().unwrap().push((done, bytes_done, bytes_total));
+        }
+    });
+    (progress, totals)
 }
 
 /// The names in `dir`, sorted, without the `.lock` files a scratch folder

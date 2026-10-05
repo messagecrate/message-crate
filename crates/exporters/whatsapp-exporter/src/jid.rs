@@ -33,7 +33,7 @@ const PHONE_PUNCTUATION: [char; 5] = ['+', '-', '(', ')', ' '];
 /// included, so the result is `+` and its digits:
 ///
 /// - `15555550119@s.whatsapp.net` → `+15555550119`
-/// - `6595550100@s.whatsapp.net` → `+6595550100` (Singapore, not `+1 659…`)
+/// - `6555550100@s.whatsapp.net` → `+6555550100` (Singapore, not `+1 655…`)
 /// - `+15555550119` → `+15555550119`
 ///
 /// No regional rule applies, because the country code is already there. The
@@ -84,14 +84,16 @@ mod tests {
     fn jid_to_e164_cases() {
         let cases: &[(&str, Option<&str>)] = &[
             // Singapore, Norway, Denmark: 10 digits that US rules misread.
-            ("6595550100@s.whatsapp.net", Some("+6595550100")),
-            ("4791234567@s.whatsapp.net", Some("+4791234567")),
-            ("4512345678@s.whatsapp.net", Some("+4512345678")),
-            ("447911123456@s.whatsapp.net", Some("+447911123456")),
+            // These numbers and the UK one are no one's. The note on the
+            // `phone` crate's `mod tests` says why.
+            ("6555550100@s.whatsapp.net", Some("+6555550100")),
+            ("4768051234@s.whatsapp.net", Some("+4768051234")),
+            ("4501234567@s.whatsapp.net", Some("+4501234567")),
+            ("447700900456@s.whatsapp.net", Some("+447700900456")),
             ("15555550122@s.whatsapp.net", Some("+15555550122")),
             ("+15555550122", Some("+15555550122")),
             ("  15555550122@s.whatsapp.net  ", Some("+15555550122")),
-            ("+65 9555-0100", Some("+6595550100")),
+            ("+65 5555-0100", Some("+6555550100")),
             ("+1 (555) 555-0122", Some("+15555550122")),
             // Not a person's phone number.
             ("status@broadcast", None),
@@ -144,7 +146,7 @@ mod tests {
             chat_id_from_jid("15555550122@s.whatsapp.net"),
             "+15555550122"
         );
-        assert_eq!(chat_id_from_jid("6595550100@s.whatsapp.net"), "+6595550100");
+        assert_eq!(chat_id_from_jid("6555550100@s.whatsapp.net"), "+6555550100");
         assert_eq!(chat_id_from_jid("status@broadcast"), "status@broadcast");
     }
 }

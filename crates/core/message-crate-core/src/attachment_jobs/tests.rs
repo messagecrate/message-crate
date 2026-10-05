@@ -423,10 +423,11 @@ fn clone_temp_paths_are_unique_per_call() {
 /// One conversation, two attachments, staged end to end.
 ///
 /// Every test above drives `run_attachment_jobs` directly with a hand-built
-/// job list. `stage_conversation_attachments` is the function the exporters
-/// actually call — it walks the documents, builds the jobs, runs them, counts
-/// what was saved, and drops the in-memory bytes — and mutation testing found
-/// it could be replaced with `Ok(())` in its entirety with nothing failing.
+/// job list. `stage_attachment_jobs` over `attachment_jobs` is what the
+/// exporters actually reach, through `message-staging` — it builds the jobs,
+/// runs them, counts what was saved, and drops the in-memory bytes. Mutation
+/// testing found that `stage_conversation_attachments`, the step it replaced,
+/// could be replaced with `Ok(())` in its entirety with nothing failing.
 /// An export would then write no attachment files at all and report success.
 #[test]
 fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
@@ -495,8 +496,8 @@ fn staging_a_conversation_writes_the_files_counts_them_and_frees_the_bytes() {
         packaging_stem_suffix: None,
     }];
 
-    let saved = stage_conversation_attachments(
-        document_messages(&mut documents),
+    let saved = stage_attachment_jobs(
+        attachment_jobs(document_messages(&mut documents)),
         &attachments_dir,
         &media_cfg(MediaMode::Clone),
         load,
@@ -741,8 +742,8 @@ fn staging_frees_the_bytes_the_documents_were_carrying() {
         "the document starts out carrying its bytes"
     );
 
-    stage_conversation_attachments(
-        document_messages(&mut documents),
+    stage_attachment_jobs(
+        attachment_jobs(document_messages(&mut documents)),
         &attachments_dir,
         &media_cfg(MediaMode::Clone),
         |_| Ok(Some(b"bytes held on the document".to_vec())),

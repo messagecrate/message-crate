@@ -72,6 +72,20 @@ describe("colors are theme tokens", () => {
     expect(missing).toEqual([]);
   });
 
+  // A black shadow tuned for the light theme all but disappears on the dark
+  // theme's dark surfaces, so the dark theme sets each shadow itself (#1525).
+  it("the dark theme sets every shadow itself", () => {
+    const block = (selector: string) => {
+      const start = themeCss.indexOf(`${selector} {`);
+      return start < 0 ? "" : themeCss.slice(start, themeCss.indexOf("\n}", start));
+    };
+    const shadows = (css: string) =>
+      [...css.matchAll(/^\s+(--elevation-[\w-]+):/gm)].map((m) => m[1]).sort();
+    const root = shadows(block(":root"));
+    expect(root.length).toBeGreaterThan(0);
+    expect(shadows(block('[data-theme="dark"]'))).toEqual(root);
+  });
+
   it("every avatar color class has a token", () => {
     for (const cls of AVATAR_COLOR_CLASSES) {
       expect(themeCss).toContain(`--color-${cls.replace(/^bg-/, "")}:`);

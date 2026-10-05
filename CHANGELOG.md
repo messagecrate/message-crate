@@ -727,6 +727,15 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-04 **Converting, and exporting Apple Messages to a format other
+  than JSON Lines, no longer count an attachment with no file in the byte
+  total.** The byte total in the progress and in Convert's log counted
+  the size such an attachment's record gave and took it off only when the
+  run reached it, so the total dropped partway through. Every attachment
+  known to have no file is now left out of it before the run starts, as
+  Staging already does. The Apple Messages check for room for the
+  attachment files it writes leaves it out too. Convert's log also names
+  each file it found missing, as Staging's does.
 - 2026-10-04 How an exporter writing a format other than JSON Lines counts
   the size of an attachment with no file was reworked to match Staging,
   with nothing visible.
@@ -852,6 +861,13 @@ released versions carry their date on the heading.
 
 #### Search
 
+- 2026-10-04 **A conversation opened from a Message Tag page keeps the
+  search box as it was.** Opening a conversation from a Message Tag page put
+  `tag:Holiday` into the search box, as though it had been typed, and the
+  Messages list then showed every message with that tag instead of asking
+  for a search. The tag now stays out of the box: the box shows only what
+  was typed, and the lists are the same in the conversation as on the tag
+  page.
 - 2026-10-04 **Searching for part of a group conversation's id no longer
   lists every group conversation.** Each source gives its group
   conversations ids of one shape, such as `group:…`, `chat-…` or `…@g.us`.
@@ -1058,6 +1074,11 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-04 **Panels, menus and drawers stand out on the dark theme.**
+  Their shadows were tuned for the light theme and all but vanished on the
+  dark theme's dark surfaces. The dark theme now has its own, darker
+  shadows, and the drawer that slides in from the right has a thin light
+  edge.
 - 2026-10-04 **Settings fits a phone-width window.** In a window as narrow as
   a phone, Settings scrolled sideways, because its row of tabs was wider than
   the page and the navigation panel kept its full width. The tabs now wrap
