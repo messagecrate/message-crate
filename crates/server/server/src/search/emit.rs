@@ -12,6 +12,7 @@ use super::fts;
 use super::parse::{Expr, FieldTerm, TextTerm};
 use super::value::{Cmp, DateCmp, Value, utc_instant};
 use super::{Filter, ListKind};
+use message_ir::IrConversationType;
 
 /// Contact `ct` is not in the trash.
 pub(crate) const NOT_TRASHED_CONTACT: &str = "NOT EXISTS (SELECT 1 FROM trashed_contacts tct WHERE tct.account_id = ct.account_id AND tct.contact_id = ct.id)";
@@ -1002,10 +1003,12 @@ fn emit_kind_word(
     match (term.spec.word, v) {
         ("kind", Value::Choice(k)) => {
             let ty = match *k {
-                "direct" => "individual",
-                "group" => "group",
-                _ => message_ir::ORPHANED_CONVERSATION_TYPE,
-            };
+                "direct" => IrConversationType::Individual,
+                "group" => IrConversationType::Group,
+                "orphaned" => IrConversationType::Orphaned,
+                _ => return Err(bad_value(term, "needs a value this word accepts.")),
+            }
+            .as_str();
             ctx.conversation(out, |o| {
                 o.push("c.conversation_type = ");
                 o.bind_text(ty);
