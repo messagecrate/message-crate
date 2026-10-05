@@ -66,7 +66,7 @@ pub enum Commands {
     /// --output directory, or all of them to stdout. Does not open the database.
     DumpErrorDocs(DumpArgs),
 
-    /// Make the Thumbnails and browser Previews of stored attachments under `assets_converted/`, for rebuilding and repair
+    /// Make the Thumbnails and Previews of stored attachments under `assets_converted/`, for rebuilding and repair
     ProcessAssets(ProcessAssetsArgs),
 
     /// Claim an unclaimed Message Crate by creating its owner. Refuses one
@@ -587,16 +587,23 @@ async fn run_reset_demo(args: ResetDemoArgs) -> Result<()> {
         stats.dedupe_keys_filled
     );
     println!();
-    println!("Browser previews (assets_converted/; needs ffmpeg)");
+    println!("Previews and Thumbnails (assets_converted/; needs ffmpeg)");
     println!(
-        "  converted for web:     {} (JPEG/MP4/MP3 written)",
+        "  Previews made:         {} (JPEG/MP4/MP3 copies of originals a browser may not show)",
         stats.process_assets.derived
     );
     println!(
-        "  left as-is:            {} (already converted, non-media, or small JPEG)",
+        "  Thumbnails made:       {}",
+        stats.process_assets.thumbnails
+    );
+    println!(
+        "  left as they were:     {} (originals for which nothing was written)",
         stats.process_assets.skipped
     );
-    println!("  conversion failures:   {}", stats.process_assets.errors);
+    println!(
+        "  not made:              {} (originals whose Preview or Thumbnail could not be made)",
+        stats.process_assets.errors
+    );
     Ok(())
 }
 
@@ -650,12 +657,13 @@ fn serve_config(args: ServeArgs) -> Result<Config> {
     Ok(cfg.with_serve_overrides(&root, args.bind, args.static_dir, args.cors_origins))
 }
 
-/// Make the Thumbnails and browser Previews of stored attachments.
+/// Make the Thumbnails and Previews of stored attachments.
 ///
 /// # Errors
 ///
-/// Returns an error after the summary line when any conversion failed, so a
-/// cron job or script that runs the command sees a non-zero exit status.
+/// Returns an error after the summary line when the Preview or Thumbnail of
+/// any original could not be made, so a cron job or script that runs the
+/// command sees a non-zero exit status.
 /// Returns an error too when Ctrl-C or SIGTERM stops it, after killing the
 /// ffmpeg that runs and removing what it wrote (#1729). A second Ctrl-C or
 /// SIGTERM ends it at once.
@@ -668,7 +676,7 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
         async move {
             crate::server::stop_requested().await;
             eprintln!(
-                "stopping: the conversion that runs is stopped and its part-made file removed"
+                "stopping: the Preview or Thumbnail being made is stopped and its part-made file removed"
             );
             stop.store(true, Ordering::Relaxed);
             // The handlers stay installed, so without this a second Ctrl-C
@@ -699,8 +707,8 @@ async fn run_process_assets(args: ProcessAssetsArgs) -> Result<()> {
             "{}",
             crate::counts::words(
                 stats.errors,
-                "1 conversion failed. That original stays without a Thumbnail or a browser preview",
-                "{n} conversions failed. Those originals stay without a Thumbnail or a browser preview",
+                "1 original whose Preview or Thumbnail could not be made",
+                "{n} originals whose Preview or Thumbnail could not be made",
             )
         );
     }

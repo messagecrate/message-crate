@@ -1546,6 +1546,20 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-05 **`process-assets` and `reset-demo` no longer call a failed
+  Thumbnail a failed conversion.** When the Preview or Thumbnail of an
+  original could not be made, `process-assets` ended with "1 conversion
+  failed. That original stays without a Thumbnail or a browser preview",
+  also when only the Thumbnail failed, and `reset-demo` warned "1 demo
+  attachment failed conversion". They now say "1 original whose Preview
+  or Thumbnail could not be made" and "1 demo original whose Preview or
+  Thumbnail could not be made stays as it was". The `reset-demo`
+  summary's "Browser previews" section, with its "converted for web",
+  "left as-is" and "conversion failures" lines, is now "Previews and
+  Thumbnails", with "Previews made", "Thumbnails made", "left as they
+  were" and "not made". It also gives the count of Thumbnails, which it
+  left out. Stopping `process-assets` says it stops the Preview or
+  Thumbnail being made.
 - 2026-10-05 **The Session always names its username.** `GET /v1/session`
   described `username` as possibly empty, so every program reading it had to
   allow for a Session with no username. It always carries one now. An
