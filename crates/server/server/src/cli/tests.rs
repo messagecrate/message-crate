@@ -221,7 +221,7 @@ async fn process_assets_fails_when_a_conversion_failed_and_names_the_count() {
 
     assert_eq!(
         err.to_string(),
-        "1 conversion failed. That original stays without a Thumbnail or a browser preview"
+        "The Preview or Thumbnail of 1 original could not be made"
     );
 }
 

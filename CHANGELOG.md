@@ -1539,6 +1539,16 @@ released versions carry their date on the heading.
 
 #### The server
 
+- 2026-10-05 **`process-assets` and `reset-demo` name a Preview or Thumbnail
+  that could not be made as such.** When the Preview or Thumbnail of an
+  original could not be made, `process-assets` ended with "1 conversion
+  failed. That original stays without a Thumbnail or a browser preview",
+  also when only the Thumbnail failed. It now ends with "The Preview or
+  Thumbnail of 1 original could not be made". The `reset-demo` summary's
+  "Browser previews" section, with its "converted for web", "left as-is"
+  and "conversion failures" lines, is now "Previews and Thumbnails", with
+  "Previews made", "Thumbnails made", "left as they were" and "not made".
+  It also gives the count of Thumbnails, which it left out.
 - 2026-10-05 **The HTTP API reference describes every optional field.** An
   optional field that holds a group of values or one of a set of choices,
   such as the identity a contact change links or the service it is on, had
