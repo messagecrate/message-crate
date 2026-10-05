@@ -397,6 +397,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **The Upload's log writes its progress, skips, failures,
+  timings and summary as sentences.** The log wrote shorthand such as
+  "skip …: …", "files 10/25: …", "PROFILE … read_ms=… total_ms=…" and a
+  "==== Summary ====" block of labels. It now writes lines such as "Did not
+  upload …: …", "Finished 10 of 25 conversations. In the last 12.3s the
+  Upload sent 10 conversations with 20 messages and 7.0 MB of Assets." and
+  "The Upload completed in 1m00s." An Upload that left conversations for
+  the next Upload ends with "The Upload paused after …", where it used to
+  say it completed with errors.
 - 2026-10-05 **The Upload's log writes its warnings as sentences.** An
   attachment whose recorded SHA-256 did not match the file was logged as
   "WARN … sha256 mismatch for …: claimed …, got …", and a report the Upload

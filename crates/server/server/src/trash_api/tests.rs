@@ -2,9 +2,9 @@ use axum::http::StatusCode;
 
 use crate::db::trash::{Trashable, move_to_trash};
 use crate::test_support::{
-    RegisteredAccount, SeedConversation, SeedMessage, TestFixture, attach_stored_file,
+    RegisteredAccount, SeedConversation, SeedMessage, TestFixture, attach_stored_file, attachment,
     conversation_header, delete_status, fake_sha256, fixture_with_account, get_json, get_status,
-    register_via_api, seed_conversation,
+    message_line, register_via_api, seed_conversation,
 };
 
 /// One `imessage` conversation with one message on `handle`, returning its id.
@@ -192,9 +192,16 @@ async fn start_run(fixture: &TestFixture, account: &RegisteredAccount) -> i64 {
 
 /// One batch of one incoming message whose attachment is the file `sha`.
 fn batch_naming(sha: &str) -> String {
-    let message = format!(
-        r#"{{"guid":"g-new","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"new","attachments":[{{"path":"attachments/photo.bin","original_name":"photo.bin","mime_type":"application/octet-stream","digest_sha256":"{sha}","is_sticker":false,"transcription":null,"sticker_effect":null}}],"imessage":null,"source":null}}"#
-    );
+    let message = message_line("g-new", "new")
+        .sender("+15555550123")
+        .attachment(message_ir::IrAttachment {
+            digest_sha256: Some(sha.to_string()),
+            ..attachment(
+                "attachments/photo.bin",
+                "photo.bin",
+                "application/octet-stream",
+            )
+        });
     format!(
         "{}\n{message}\n",
         conversation_header("imessage", "+15555550123").participant("+15555550123", None),
@@ -423,9 +430,13 @@ async fn a_short_stored_fingerprint_does_not_stop_empty_trash() {
 /// attachment is the file `sha`.
 fn batch_from_source(source: &str, handle: &str, sha: &str) -> String {
     let header = conversation_header(source, handle).participant(handle, None);
-    let message = format!(
-        r#"{{"guid":"g-{source}","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"{handle}","sender_display_name":null,"subject":null,"text":"from {source}","attachments":[{{"path":"attachments/photo.jpg","original_name":"photo.jpg","mime_type":"image/jpeg","digest_sha256":"{sha}","is_sticker":false,"transcription":null,"sticker_effect":null}}],"imessage":null,"source":null}}"#
-    );
+    let message = message_line(&format!("g-{source}"), &format!("from {source}"))
+        .sms()
+        .sender(handle)
+        .attachment(message_ir::IrAttachment {
+            digest_sha256: Some(sha.to_string()),
+            ..attachment("attachments/photo.jpg", "photo.jpg", "image/jpeg")
+        });
     format!("{header}\n{message}\n")
 }
 

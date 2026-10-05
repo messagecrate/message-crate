@@ -1,7 +1,7 @@
 use super::*;
 use crate::config::PathsConfig;
 use crate::imports_api::IMPORT_CONTACT_GROUP_NAME_SQL;
-use crate::test_support::{MessageRow, conversation_header};
+use crate::test_support::{MessageRow, conversation_header, message_line};
 use sqlx::SqliteConnection;
 use std::collections::BTreeSet;
 
@@ -31,11 +31,8 @@ username = "demo"
     .expect("write contacts");
     let conversation = |source: &str, chat: &str, guid: &str| {
         let header = conversation_header(source, chat).participant(chat, None);
-        format!(
-            r#"{header}
-{{"guid":"{guid}","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"{chat}","sender_display_name":null,"subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}}
-"#
-        )
+        let message = message_line(guid, "hello").sms().sender(chat);
+        format!("{header}\n{message}\n")
     };
     fs::write(
         root.join("staging").join(IMESSAGE_SOURCE).join("a.jsonl"),
@@ -1869,7 +1866,9 @@ fn write_overlap_conversation(bundle: &Path) {
     let overlap = format!(
         "{}\n{}\n",
         conversation_header("sms-backup-restore", "+15555550101").participant("+15555550101", None),
-        r#"{"guid":"pg-demo-sbr-overlap","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"sms","message_kind":"sms","sender_identity":"+15555550101","sender_display_name":null,"subject":null,"text":"hello","attachments":[],"imessage":null,"source":null}"#,
+        message_line("pg-demo-sbr-overlap", "hello")
+            .sms()
+            .sender("+15555550101"),
     );
     fs::write(
         bundle
