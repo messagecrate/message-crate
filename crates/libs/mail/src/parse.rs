@@ -96,9 +96,9 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     let owner_identity = optional_header(headers, hn::OWNER_IDENTITY).unwrap_or_default();
     let owner_display_name = optional_header(headers, hn::OWNER_DISPLAY_NAME);
     let subject = optional_header(headers, hn::SUBJECT);
-    let export_source = header_or(headers, hn::EXPORT_SOURCE, "");
-    let export_tool = header_or(headers, hn::EXPORT_TOOL, "");
-    let export_tool_version = header_or(headers, hn::EXPORT_TOOL_VERSION, "");
+    let export_source = optional_header(headers, hn::EXPORT_SOURCE).unwrap_or_default();
+    let export_tool = optional_header(headers, hn::EXPORT_TOOL).unwrap_or_default();
+    let export_tool_version = optional_header(headers, hn::EXPORT_TOOL_VERSION).unwrap_or_default();
 
     let text = extract_text_body(&mail).unwrap_or_default();
     let attachments = merge_attachments(&mail, headers)?;
@@ -130,16 +130,16 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             send_effect: optional_header(headers, hn::SEND_EFFECT),
             shared_location: optional_header(headers, hn::SHARED_LOCATION),
             announcement: optional_header(headers, hn::ANNOUNCEMENT),
-            read_receipt_rfc3339: optional_header(headers, hn::READ_RECEIPT),
+            read_receipt_rfc3339: typed_header(headers, hn::READ_RECEIPT),
             parts: json_header(headers, hn::PARTS, "message parts")?,
             app: json_header(headers, hn::APP, "app message")?,
             balloon_bundle_id: optional_header(headers, hn::BALLOON_BUNDLE_ID),
-            balloon_kind: optional_header(headers, hn::BALLOON_KIND),
+            balloon_kind: typed_header(headers, hn::BALLOON_KIND),
             associated_guid: optional_header(headers, hn::ASSOCIATED_GUID),
             associated_part: header_u32(headers, hn::ASSOCIATED_PART),
-            tapback_kind: optional_header(headers, hn::TAPBACK_KIND),
+            tapback_kind: typed_header(headers, hn::TAPBACK_KIND),
             tapback_emoji: optional_header(headers, hn::TAPBACK_EMOJI),
-            tapback_action: optional_header(headers, hn::TAPBACK_ACTION),
+            tapback_action: typed_header(headers, hn::TAPBACK_ACTION),
         };
         if bag.is_empty() { None } else { Some(bag) }
     };
@@ -294,11 +294,6 @@ fn typed_header(headers: &[MailHeader<'_>], name: &str) -> Option<String> {
     optional_header(headers, name)
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
-}
-
-/// A header value, or `default` when missing.
-fn header_or(headers: &[MailHeader<'_>], name: &str, default: &str) -> String {
-    optional_header(headers, name).unwrap_or_else(|| default.to_string())
 }
 
 /// True when the header is `true`, the only value the writer gives it.

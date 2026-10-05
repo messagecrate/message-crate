@@ -551,7 +551,9 @@ const Q_LINE_MAX: usize = 76;
 /// 5322 section 2.2.3 allows), so a run of spaces where a fold fell came
 /// back as one. A reader also drops the spaces that open a value,
 /// and decodes anything that looks like an RFC 2047 encoded word
-/// (`=?utf-8?Q?…?=`), so a value holding one came back decoded.
+/// (`=?utf-8?Q?…?=`), so a value holding one came back decoded. The spaces
+/// that close a value are lost to anything that strips the end of a line,
+/// such as a hand edit, so a value ending in a space is encoded too.
 ///
 /// A value that none of that can change is written as it is: printable
 /// ASCII and single spaces between them, with no `=?`, short enough that

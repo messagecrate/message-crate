@@ -784,7 +784,9 @@ fn a_mail_whose_deletion_names_no_mark_is_refused() {
 }
 
 /// A copy of [`base_sms`] whose every free-text `X-ME-*` value is `value`:
-/// each plain-text header, and a string inside each JSON header.
+/// each plain-text header, and a string inside each JSON header. Headers
+/// whose value is a number, a flag or a name from a fixed list are read
+/// trimmed (`typed_header`), so they keep their written values.
 ///
 /// The `From` address of a group conversation is the owner's for an
 /// outgoing message and the sender's for an incoming one. `From` is not an
@@ -830,15 +832,11 @@ fn with_every_x_me_text(value: &str, direction: IrDirection) -> MailMessage {
     im.send_effect = text();
     im.shared_location = text();
     im.announcement = text();
-    im.read_receipt_rfc3339 = text();
     im.parts = Some(serde_json::json!([{ "index": 0, "text": value }]));
     im.app = Some(serde_json::json!({ "title": value }));
     im.balloon_bundle_id = text();
-    im.balloon_kind = text();
     im.associated_guid = text();
-    im.tapback_kind = text();
     im.tapback_emoji = text();
-    im.tapback_action = text();
     msg.attachments = vec![MailAttachment {
         bytes: b"x".to_vec(),
         meta: message_ir::AttachmentMeta {
@@ -975,6 +973,8 @@ fn generated_values_read_back_as_written() {
         state ^= state << 17;
         (state % bound as u64) as usize
     };
+    // Each value is written and read four times (two directions, EML and
+    // mbox), so 1000 values keep the test to a few seconds.
     let values: Vec<String> = (0..1000)
         .map(|_| {
             let len = 1 + next(120);
@@ -1002,6 +1002,10 @@ fn a_typed_header_that_ends_in_a_space_reads_as_its_value() {
         "X-ME-Deletion: unsent \r\n",
         "X-ME-Is-Reply: true \r\n",
         "X-ME-Num-Replies: 3 \r\n",
+        "X-ME-Read-Receipt: 2014-05-22T15:41:01Z \r\n",
+        "X-ME-Balloon-Kind: url \r\n",
+        "X-ME-Tapback-Kind: loved \r\n",
+        "X-ME-Tapback-Action: add \r\n",
         "\r\n",
         "hello\r\n",
     );
@@ -1019,4 +1023,11 @@ fn a_typed_header_that_ends_in_a_space_reads_as_its_value() {
     let im = msg.message.imessage.unwrap();
     assert!(im.is_reply);
     assert_eq!(im.num_replies, Some(3));
+    assert_eq!(
+        im.read_receipt_rfc3339.as_deref(),
+        Some("2014-05-22T15:41:01Z")
+    );
+    assert_eq!(im.balloon_kind.as_deref(), Some("url"));
+    assert_eq!(im.tapback_kind.as_deref(), Some("loved"));
+    assert_eq!(im.tapback_action.as_deref(), Some("add"));
 }
