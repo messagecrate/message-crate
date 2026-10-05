@@ -278,25 +278,20 @@ fn queue_attachments(
         .collect()
 }
 
-/// Stage the attachments [`read_backup`] left in `options.spool` into
-/// `options.attachments_dir`, reading one spooled file at a time. A caller
-/// stages only once the read has succeeded, so a backup the read refuses
-/// writes nothing outside the spool.
-///
-/// # Errors
-///
-/// Returns an error when an attachment cannot be staged or the run is
-/// cancelled.
-pub fn stage_read_attachments(
-    documents: &mut [ConversationDocument],
+/// Every attachment of `documents` paired with the payload [`read_backup`]
+/// left in `options.spool`, and counted, so a caller can check the disk for
+/// room before it cleans or writes anything (#1743). An attachment the
+/// spool does not hold, or every one when the run copies no attachments,
+/// has no file and counts for nothing.
+pub fn spooled_attachments<'a>(
+    documents: &'a mut [ConversationDocument],
     options: &ReadOptions<'_>,
-) -> Result<()> {
+) -> CountedAttachments<'a> {
     let mode = if options.spool.is_some() {
         options.media
     } else {
         MediaMode::Disabled
     };
-    let attachments_dir = options.attachments_dir.unwrap_or_else(|| Path::new(""));
     CountedAttachments::new(
         document_messages(documents),
         MediaConfig {
@@ -312,14 +307,31 @@ pub fn stage_read_attachments(
         },
         options.log,
     )
-    .stage(
-        attachments_dir,
-        load_attachment_source,
-        options.log,
-        options.progress,
-        options.cancel,
-    )
-    .map_err(anyhow::Error::msg)?;
+}
+
+/// Stage the attachments [`read_backup`] left in `options.spool` into
+/// `options.attachments_dir`, reading one spooled file at a time. A caller
+/// stages only once the read has succeeded, so a backup the read refuses
+/// writes nothing outside the spool.
+///
+/// # Errors
+///
+/// Returns an error when an attachment cannot be staged or the run is
+/// cancelled.
+pub fn stage_read_attachments(
+    documents: &mut [ConversationDocument],
+    options: &ReadOptions<'_>,
+) -> Result<()> {
+    let attachments_dir = options.attachments_dir.unwrap_or_else(|| Path::new(""));
+    spooled_attachments(documents, options)
+        .stage(
+            attachments_dir,
+            load_attachment_source,
+            options.log,
+            options.progress,
+            options.cancel,
+        )
+        .map_err(anyhow::Error::msg)?;
     Ok(())
 }
 

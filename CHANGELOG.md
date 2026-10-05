@@ -21,13 +21,17 @@ released versions carry their date on the heading.
 
 ### Features
 
-- 2026-10-04 **The conversation shows which messages were deleted in the app
-  they came from, and which were unsent.** A message deleted in the source
-  app keeps its text in a faded bubble with a dashed outline, and the line
-  under it reads like "4:56 PM · Deleted in Apple Messages". An unsent
-  message is an empty faded bubble with a dashed outline that reads
-  "Unsent", with its time under it. Every source draws them the same way.
-  The Demo Account has a few of each in its Apple Messages conversations.
+- 2026-10-04 **The conversation and the Messages list show which messages
+  were deleted in the app they came from, and which were unsent.** A message
+  deleted in the source app keeps its text in a faded bubble with a dashed
+  outline, and the line under it reads like "4:56 PM · Deleted in Apple
+  Messages". An unsent message is an empty faded bubble with a dashed
+  outline that reads "Unsent", with its time under it. Every source draws
+  them the same way. The Messages list marks them too: a row for a message
+  deleted in the source app keeps its text, with a faded "Deleted in Apple
+  Messages" line under it, and a row for an unsent message reads "Unsent" in
+  place of its text. The Demo Account has a few of each in its Apple
+  Messages conversations.
 - 2026-10-04 **A message deleted in Apple Messages, or unsent, is kept and
   marked.** A message deleted in Apple Messages that its recently deleted
   list still holds is imported with its text and marked Deleted in the
@@ -724,6 +728,20 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-04 **Converting no longer asks for room for an attachment whose
+  file is missing.** Convert checks the disk for room before it starts,
+  and that check counted the size an attachment's record gave even when
+  the file was not in the export being converted, so a conversion could
+  be refused for space it would never use. An attachment with no file is
+  now left out of the check, and a refused conversion still leaves the
+  earlier output as it was.
+- 2026-10-04 **Exporting Apple Messages to EML or MBOX with attachments
+  embedded no longer asks for room for a file that is gone.** From a Mac,
+  or from an iPhone backup that is not encrypted, the check for room
+  counted an attachment whose file was missing at the size Messages
+  recorded. It now counts nothing for it, and the log names the file. In
+  an encrypted iPhone backup the files are inside the backup, so each one
+  is still counted at its recorded size.
 - 2026-10-04 **Converting, and exporting Apple Messages to a format other
   than JSON Lines, no longer count an attachment with no file in the byte
   total.** The byte total in the progress and in Convert's log counted
@@ -1071,6 +1089,11 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-04 **On the light theme, the contact drawer's shadow falls on the
+  list it covers.** The drawer opens from the right, and its shadow fell to
+  the right, under the drawer itself, so the drawer's left edge had no
+  shadow. It now falls to the left, as on the dark theme and as the Sources
+  drawer's does.
 - 2026-10-04 **Panels, menus and drawers stand out on the dark theme.**
   Their shadows were tuned for the light theme and all but vanished on the
   dark theme's dark surfaces. The dark theme now has its own, darker
