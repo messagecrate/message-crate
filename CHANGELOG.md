@@ -248,6 +248,12 @@ released versions carry their date on the heading.
 
 ### Design
 
+- 2026-10-05 **The size in an Export's "Fetched" line counts only what the
+  Export fetched.** A program that ran an Export into a directory already
+  holding some of its Assets could read "Fetched 0 Assets (5.0 MB) and kept
+  3 already on disk". It now reads "Fetched 0 Assets (0 B) and kept 3
+  already on disk". The app gives every Export a new directory, so nothing
+  changes on screen.
 - 2026-10-04 **A program that reads Import Runs from the server finds each
   run's directory under a new name.** The old name read as the Staging
   Directory, which holds every run's directory. Nothing changes on screen.
@@ -917,12 +923,6 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
-- 2026-10-05 **The size in an Export's "Fetched" line counts only what the
-  Export fetched.** An Export run again into the same directory added the
-  size of each Asset it found there to the line when the directory's record
-  of fetched Assets did not list it, as after an Export that stopped part way.
-  Such a run could read "Fetched 0 Assets (5.0 MB) and kept 3 already on
-  disk". It now reads "Fetched 0 Assets (0 B) and kept 3 already on disk".
 - 2026-10-05 **The log of an Export from a server says it fetches Assets,
   and writes its warnings as sentences.** It read "Downloading 2 assets with
   8 workers (0 already downloaded)…" and "Downloaded 2 assets (22 B) and
