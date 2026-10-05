@@ -13,11 +13,12 @@ use anyhow::Result;
 /// are two fingerprints, so the workers that fetch them at once never share a
 /// file. The name is 70 bytes whatever `dest` is called, so an Asset whose
 /// own name is near the 255-byte limit of a file name still has room for
-/// one. And a resumed Export fetches the Asset to the same name again, so a
-/// file a crash left behind is written over and renamed away rather than
-/// kept for good. One Export fetches each fingerprint once, and copies it to
-/// its other paths only after every fetch has finished, one at a time, so
-/// nothing else writes this name while a write to it runs. That holds
+/// one. And a later Export Run into the same directory fetches the Asset to
+/// the same name again, so a file a crash left behind is written over and
+/// renamed away rather than kept for good. One Export fetches each
+/// fingerprint once, and copies it to its other paths only after every
+/// fetch has finished, one at a time, so nothing else writes this name while
+/// a write to it runs. That holds
 /// because of `run.rs`: `note_asset_refs` keys the Assets by their
 /// lowercased fingerprint, `fetch_assets_parallel` makes one job per key,
 /// and `place_other_paths` runs after it returns. The directory is
@@ -30,7 +31,7 @@ fn part_path(dest: &Path, sha256: &str) -> PathBuf {
 /// file ([`part_path`]), with [`message_ir::write_atomic_via`]: `write` fills
 /// the temporary file, which is synced and renamed onto `dest` only when
 /// `write` succeeds, and removed when it fails. A synced rename matters,
-/// because the pull journal records the Asset next, and a resumed Export
+/// because the pull journal records the Asset next, and a later Export Run
 /// skips an Asset the journal names whose file exists.
 ///
 /// # Errors

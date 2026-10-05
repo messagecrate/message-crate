@@ -221,7 +221,7 @@ fn mock_pages<'a>(
 }
 
 /// `GET /v1/assets/{sha256}`, answering `bytes`. The fingerprint alone names
-/// the attachment and the token names the account, and the server refuses a
+/// the Asset and the token names the account, and the server refuses a
 /// parameter a route does not declare, so a fetch that still sent
 /// `source=` or `account=` would not match.
 fn mock_asset<'a>(server: &'a MockServer, sha256: &str, bytes: &[u8]) -> httpmock::Mock<'a> {

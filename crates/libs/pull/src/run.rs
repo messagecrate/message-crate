@@ -57,7 +57,7 @@ pub struct PullConfig {
     pub asset_fetch_workers: usize,
 }
 
-/// Final summary of an Export Run (conversations, messages, attachment counts).
+/// Final summary of an Export Run (conversations, messages, and the Assets fetched and kept).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct PullReport {
     /// Account id the token resolved to.
@@ -319,7 +319,7 @@ impl<'a> Pull<'a> {
                 }
             }),
         );
-        // Load the local skip log so a later run does not fetch again Assets already on disk.
+        // Load the local skip log so a later run does not fetch Assets already on disk again.
         let journal_path = crate::journal::journal_path(&cfg.out_dir);
         let journal = crate::journal::load(&journal_path, &cfg.base_url, &username)?;
         Ok(Self {
@@ -743,7 +743,7 @@ fn place_other_paths(
 
 /// Copy `from`, the Asset whose SHA-256 is `sha256`, to `dest` through the
 /// Asset's own temporary file beside `dest` ([`write_asset`]), so a crash
-/// never leaves a short file that a resume would take as finished, and a
+/// never leaves a short file that a later Export Run would take as finished, and a
 /// file already beside `dest` under another name is left alone.
 ///
 /// # Errors
@@ -791,7 +791,8 @@ struct AssetFetchStats {
 /// Assets whose SHA-256 fingerprint is not already on disk from a prior run.
 ///
 /// SHA-256 is a short hex fingerprint of the file bytes. The journal lists
-/// fingerprints already fetched; those files are skipped when they still exist.
+/// fingerprints already fetched; those Assets are kept, not fetched again, when
+/// their files still exist.
 fn assets_to_fetch(
     assets: &HashMap<String, String>,
     journal_assets: &HashSet<String>,
@@ -937,7 +938,7 @@ mod out_dir_tests {
 
     #[test]
     fn runs_again_over_a_directory_it_already_prepared() {
-        // A second pull into the same directory is the resume path.
+        // A second pull into the same directory is a later Export Run over it.
         let dir = tempfile::tempdir().unwrap();
         let out = dir.path().join("pulled");
 

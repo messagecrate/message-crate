@@ -116,7 +116,8 @@ pub fn compact(path: &Path, url: &str, username: &str, state: &PullJournalState)
             });
         }
         if state.export_complete {
-            // Counts are unused on resume; an `export_complete` row only means the last run finished.
+            // A later Export Run ignores the counts; an `export_complete` row
+            // only means the last run finished.
             events.push(PullJournalEvent::ExportComplete {
                 url: url.to_string(),
                 username: username.to_string(),
@@ -211,8 +212,8 @@ mod tests {
 
     /// `append` is what a pull actually calls, once per asset, and nothing
     /// called it: every test here wrote the file by hand or went through
-    /// `compact`. Replacing it with a no-op made a pull that resumed from
-    /// nothing and fetched every Asset again, with the suite green.
+    /// `compact`. Replacing it with a no-op made a later Export Run start
+    /// from nothing and fetch every Asset again, with the suite green.
     #[test]
     fn appended_events_are_on_disk_and_load_back() {
         let dir = tempfile::tempdir().unwrap();
@@ -228,7 +229,7 @@ mod tests {
         )
         .unwrap();
 
-        // Loading between the two appends is the resume case: a pull that was
+        // Loading between the two appends is a later Export Run after one that was
         // interrupted after one asset must find that one asset.
         let after_first = load(&path, "http://server", "alice").unwrap();
         assert!(after_first.assets.contains("aaa"));

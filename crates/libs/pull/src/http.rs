@@ -179,7 +179,7 @@ pub fn fetch_asset(
     let what = format!("Asset {sha_clean} fetch");
     let fetch_failed = || format!("{what} failed");
     let base = trim_base_url(base_url);
-    // The fingerprint alone names the attachment, and the token names the
+    // The fingerprint alone names the Asset, and the token names the
     // account; the route takes no query.
     let url = reqwest::Url::parse(&format!("{base}/v1/assets/{sha_clean}"))
         .with_context(|| format!("invalid server address {base}"))?;
