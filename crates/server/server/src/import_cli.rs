@@ -9,7 +9,9 @@ use anyhow::{Context, Result, bail};
 use crate::config::validate_source_id;
 use crate::db::account_profile;
 use crate::dedupe::{self, DedupeStats};
-use crate::imports_api::{self, ImportCounts, ImportMode, ImportOptions};
+use crate::imports_api::{
+    self, ImportCounts, ImportError, ImportFailure, ImportMode, ImportOptions,
+};
 use crate::jsonl;
 use crate::models::ExportRecord;
 use crate::open_db::OpenDb;
@@ -83,9 +85,6 @@ impl SourcePlan {
                  export.source in the message-ir header (or pass --source)",
                 input.display()
             );
-        }
-        for source in discovered.keys() {
-            validate_source_id(source)?;
         }
         Ok(Self {
             runs: discovered,
@@ -260,29 +259,35 @@ fn jsonl_paths(
 ///
 /// # Errors
 ///
-/// Returns an error when a JSON Lines file cannot be read, a conversation
-/// has no `export.source`, or one file holds conversations of two sources.
+/// Returns an error when a JSON Lines file cannot be read, and an
+/// [`ImportError::Rejected`] naming the file and the header's line when a
+/// conversation has no `export.source`, has one that is not a valid source
+/// id, or names a second source in one file.
 fn files_by_source(paths: &[PathBuf]) -> Result<BTreeMap<String, Vec<PathBuf>>> {
     let mut runs: BTreeMap<String, Vec<PathBuf>> = BTreeMap::new();
     for path in paths {
+        let refuse = |failure: ImportFailure| ImportError::Rejected {
+            failure,
+            file: path.clone(),
+        };
         let mut file_source: Option<String> = None;
         // `read_records` refuses a file with no conversation header.
         for record in jsonl::read_records(path)? {
             if let ExportRecord::Conversation(c) = record {
-                let Some(source) = c.export_source.as_deref().and_then(message_ir::trimmed) else {
-                    bail!(
-                        "{}: conversation '{}' is missing export.source \
-                         (required for CLI directory import; or pass --source)",
-                        path.display(),
-                        c.chat_identifier
-                    );
-                };
+                let source = c.directory_source().map_err(refuse)?;
                 match &file_source {
-                    Some(first) if first != source => bail!(
-                        "{}: holds conversations of two sources, '{first}' and '{source}'; \
-                         each file is imported in the Import Run of its one source",
-                        path.display()
-                    ),
+                    Some(first) if first != source => {
+                        return Err(refuse(ImportFailure::Invalid {
+                            line: c.line,
+                            detail: format!(
+                                "conversation '{}' has export.source '{source}', but the \
+                                 file's earlier conversations have '{first}'; each file is \
+                                 imported in the Import Run of its one source",
+                                c.chat_identifier
+                            ),
+                        })
+                        .into());
+                    }
                     Some(_) => {}
                     None => file_source = Some(source.to_string()),
                 }
@@ -501,6 +506,88 @@ mod tests {
         let message = format!("{err:#}");
         assert!(message.contains("/exports/phone"), "{message}");
         assert!(message.contains("entry unreadable"), "{message}");
+    }
+
+    /// A file whose second conversation, its header on line 3, carries
+    /// `source` as its `export.source`.
+    fn file_whose_second_header_has_source(dir: &Path, source: &str) -> PathBuf {
+        let second = conversation_with("+14075550108").replace(
+            r#""source":"sms-backup-restore""#,
+            &format!(r#""source":{source}"#),
+        );
+        let path = dir.join("two.jsonl");
+        fs::write(&path, format!("{}{second}", conversation_with(PHONE))).unwrap();
+        path
+    }
+
+    /// The rule the scan refuses `path` with. The refusal must be on line
+    /// `line` of that file and print as every other refusal of a file does:
+    /// the file, then the line and the rule.
+    fn scan_refusal(path: &Path, line: usize) -> String {
+        let err = files_by_source(&[path.to_path_buf()]).expect_err("the scan refuses the file");
+        let printed = format!("{err:#}");
+        match err.downcast::<ImportError>() {
+            Ok(ImportError::Rejected {
+                failure:
+                    ImportFailure::Invalid {
+                        line: refused_line,
+                        detail,
+                    },
+                file,
+            }) => {
+                assert_eq!(file, path);
+                assert_eq!(refused_line, line);
+                assert_eq!(
+                    printed,
+                    format!("{}: Line {line} of the file: {detail}.", path.display())
+                );
+                detail
+            }
+            other => panic!("expected a rejection of a line, got {other:?}"),
+        }
+    }
+
+    /// A header with a blank `export.source` is the sender's to fix, so the
+    /// scan names the file and the header's line.
+    #[test]
+    fn the_scan_refuses_a_header_without_a_source_on_its_line() {
+        let tmp = TempDir::new().unwrap();
+        let path = file_whose_second_header_has_source(tmp.path(), r#""  ""#);
+
+        assert_eq!(
+            scan_refusal(&path, 3),
+            "conversation '+14075550108' has no export.source, which a directory import \
+             needs unless --source names one"
+        );
+    }
+
+    /// A header whose `export.source` is not a valid source id is refused on
+    /// its line too, naming the file.
+    #[test]
+    fn the_scan_refuses_an_invalid_source_id_on_its_line() {
+        let tmp = TempDir::new().unwrap();
+        let path = file_whose_second_header_has_source(tmp.path(), r#""SMS Backup""#);
+
+        assert_eq!(
+            scan_refusal(&path, 3),
+            "export.source 'SMS Backup' is not valid: source id 'SMS Backup' must use only \
+             lowercase letters, digits, hyphens, and underscores"
+        );
+    }
+
+    /// A file whose conversations name two sources is refused on the header
+    /// that names the second.
+    #[test]
+    fn the_scan_refuses_a_second_source_on_its_line() {
+        let tmp = TempDir::new().unwrap();
+        let path = file_whose_second_header_has_source(tmp.path(), r#""imessage""#);
+
+        assert_eq!(
+            scan_refusal(&path, 3),
+            "conversation '+14075550108' has export.source 'imessage', but the file's \
+             earlier conversations have 'sms-backup-restore'; each file is imported in the \
+             Import Run of its one source"
+        );
     }
 
     #[test]
