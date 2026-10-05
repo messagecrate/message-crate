@@ -56,25 +56,24 @@ function useDrawerLeft(open: boolean): number | null {
       frame = requestAnimationFrame(measure);
     };
 
-    const sizes = new ResizeObserver(scheduleMeasure);
+    const columnSize = new ResizeObserver(scheduleMeasure);
 
-    // Watches the list column now in the page, if it is not watched already.
-    // Returns whether the column changed.
+    // Watches the list column now in the page and measures it on the next
+    // frame, when it is not the column watched already.
     const followColumn = () => {
       const found = document.querySelector<HTMLElement>("[data-list-column]");
-      if (found === column) return false;
-      if (column) sizes.unobserve(column);
+      if (found === column) return;
+      if (column) columnSize.unobserve(column);
       column = found;
-      if (column) sizes.observe(column);
-      return true;
+      if (column) columnSize.observe(column);
+      scheduleMeasure();
     };
 
-    const pageChanges = new MutationObserver(() => {
-      if (followColumn()) scheduleMeasure();
-    });
+    const pageChanges = new MutationObserver(followColumn);
     pageChanges.observe(document.body, { childList: true, subtree: true });
 
     followColumn();
+    // The first placement is read now, before the drawer paints.
     measure();
     window.addEventListener("resize", scheduleMeasure);
 
@@ -82,7 +81,7 @@ function useDrawerLeft(open: boolean): number | null {
       cancelAnimationFrame(frame);
       window.removeEventListener("resize", scheduleMeasure);
       pageChanges.disconnect();
-      sizes.disconnect();
+      columnSize.disconnect();
     };
   }, [open]);
 
