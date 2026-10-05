@@ -2066,7 +2066,7 @@ async fn a_reset_leaves_a_demo_that_logs_in_and_holds_nothing_old() {
     // left to fill; what shows it ran is the hidden duplicate below.
     assert_eq!(stats.dedupe_keys_filled, 0);
     assert_eq!(stats.import.messages, 4);
-    assert_eq!(stats.process_assets.errors, 0);
+    assert_eq!(stats.process_assets.not_made, 0);
     let hidden = count(
         &mut conn,
         "SELECT COUNT(*) FROM messages WHERE account_id = $1 AND duplicate_of IS NOT NULL",
@@ -2129,22 +2129,25 @@ fn the_not_done_warning_names_each_count_and_is_silent_at_zero() {
     assert_eq!(not_done_warning(&ProcessAssetsStats::default()), None);
     assert_eq!(
         not_done_warning(&ProcessAssetsStats {
-            errors: 1,
+            not_made: 1,
             ..ProcessAssetsStats::default()
         })
         .as_deref(),
-        Some("reset-demo continues past 1 original whose Preview or Thumbnail could not be made")
+        Some(
+            "in the Demo Account, 1 original whose Preview or Thumbnail could not be made. \
+             reset-demo continues"
+        )
     );
     assert_eq!(
         not_done_warning(&ProcessAssetsStats {
-            errors: 2,
+            not_made: 2,
             not_removed: 1,
             ..ProcessAssetsStats::default()
         })
         .as_deref(),
         Some(
-            "reset-demo continues past 2 originals whose Preview or Thumbnail could not be made \
-             and 1 incomplete original that could not be removed"
+            "in the Demo Account, 2 originals whose Preview or Thumbnail could not be made \
+             and 1 incomplete original that could not be removed. reset-demo continues"
         )
     );
 }

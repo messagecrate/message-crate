@@ -245,7 +245,7 @@ fn the_pass_makes_a_thumbnail_of_each_image_and_video_and_a_preview_only_for_hev
             .unwrap();
 
         assert_eq!(
-            (made.thumbnails, made.derived, made.errors),
+            (made.thumbnails, made.derived, made.not_made),
             (3, 1, 0),
             "{made:?}"
         );

@@ -68,11 +68,15 @@ pub struct ProcessAssetsStats {
     /// Damaged Previews and Thumbnails dropped, because they could not be
     /// made again: their original is missing or no longer gets one.
     pub dropped: u64,
-    /// Originals for which nothing was written, removed or dropped: not
-    /// media, already done, or of a kind the options leave alone.
+    /// Originals for which nothing was written, removed, dropped or shared:
+    /// not media, already done, or of a kind the options leave alone.
     pub skipped: u64,
+    /// Existing Previews and Thumbnails given to attachment rows of their
+    /// original that named none, such as the rows of a second source
+    /// imported after they were made.
+    pub shared: u64,
     /// Originals whose Preview or Thumbnail could not be made.
-    pub errors: u64,
+    pub not_made: u64,
     /// Incomplete originals that could not be removed.
     pub not_removed: u64,
     /// Damaged Previews and Thumbnails that could not be dropped.
@@ -87,8 +91,9 @@ impl ProcessAssetsStats {
         self.thumbnails += other.thumbnails;
         self.removed += other.removed;
         self.dropped += other.dropped;
+        self.shared += other.shared;
         self.skipped += other.skipped;
-        self.errors += other.errors;
+        self.not_made += other.not_made;
         self.not_removed += other.not_removed;
         self.not_dropped += other.not_dropped;
     }
@@ -102,15 +107,15 @@ impl ProcessAssetsStats {
         if outcome.thumbnail {
             self.thumbnails += 1;
         }
-        if outcome.removed {
-            self.removed += 1;
+        match outcome.removal {
+            Some(Ok(())) => self.removed += 1,
+            Some(Err(_)) => self.not_removed += 1,
+            None => {}
         }
         self.dropped += outcome.dropped;
+        self.shared += outcome.shared;
         if outcome.not_made.is_some() {
-            self.errors += 1;
-        }
-        if outcome.not_removed.is_some() {
-            self.not_removed += 1;
+            self.not_made += 1;
         }
         self.not_dropped += outcome.not_dropped.len() as u64;
         if outcome.left_as_it_was() {
@@ -134,12 +139,8 @@ impl ProcessAssetsStats {
     /// Each count of what could not be done that is above zero, in words.
     fn failure_counts(&self) -> Vec<String> {
         let mut failures = Vec::new();
-        if self.errors > 0 {
-            failures.push(words(
-                self.errors,
-                "1 original whose Preview or Thumbnail could not be made",
-                "{n} originals whose Preview or Thumbnail could not be made",
-            ));
+        if self.not_made > 0 {
+            failures.push(self.not_made_words());
         }
         if self.not_removed > 0 {
             failures.push(words(
@@ -156,6 +157,16 @@ impl ProcessAssetsStats {
             ));
         }
         failures
+    }
+
+    /// The count of originals whose Preview or Thumbnail could not be made,
+    /// in words.
+    fn not_made_words(&self) -> String {
+        words(
+            self.not_made,
+            "1 original whose Preview or Thumbnail could not be made",
+            "{n} originals whose Preview or Thumbnail could not be made",
+        )
     }
 }
 
@@ -204,7 +215,7 @@ fn media_type(row: &StoredOriginal) -> Option<String> {
 /// Returns an error when no account is named and the database has none, a
 /// query fails, or an account's asset directories cannot be prepared. An
 /// original whose Preview or Thumbnail cannot be made is counted in
-/// `errors`, an incomplete original that cannot be removed in
+/// `not_made`, an incomplete original that cannot be removed in
 /// `not_removed`, and a damaged version that cannot be dropped in
 /// `not_dropped`. Each is printed, and the run goes on.
 pub async fn run(
@@ -250,8 +261,8 @@ pub async fn run(
 
 /// The line that ends `process-assets`: each count of `stats` in words,
 /// singular for one, and `(dry run)` when nothing was written. The counts of
-/// incomplete originals and damaged versions, which most runs never meet,
-/// are left out at zero.
+/// incomplete originals, damaged versions and shared versions, which most
+/// runs never meet, are left out at zero.
 fn done_line(stats: &ProcessAssetsStats, dry_run: bool) -> String {
     let mut parts = vec![
         words(stats.scanned, "read 1 original", "read {n} originals"),
@@ -275,14 +286,21 @@ fn done_line(stats: &ProcessAssetsStats, dry_run: bool) -> String {
             "dropped {n} damaged Previews or Thumbnails",
         ));
     }
+    if stats.shared > 0 {
+        parts.push(words(
+            stats.shared,
+            "shared 1 existing Preview or Thumbnail with more attachments",
+            "shared {n} existing Previews or Thumbnails with more attachments",
+        ));
+    }
     parts.push(words(
         stats.skipped,
         "left 1 original as it was",
         "left {n} originals as they were",
     ));
-    if stats.errors == 0 {
+    if stats.not_made == 0 {
         // Said at zero too, so every run says whether anything failed.
-        parts.push("0 originals whose Preview or Thumbnail could not be made".to_string());
+        parts.push(stats.not_made_words());
     }
     parts.extend(stats.failure_counts());
     format!(
@@ -373,15 +391,17 @@ struct Outcome {
     preview: bool,
     /// A Thumbnail was written, or would be in a dry run.
     thumbnail: bool,
-    /// The original was incomplete and was removed, or would be in a dry
-    /// run.
-    removed: bool,
+    /// The original was incomplete: removed, or would be in a dry run, or
+    /// why it could not be removed. `None` when it is not incomplete or no
+    /// file was there.
+    removal: Option<Result<()>>,
     /// Damaged versions dropped, or that would be in a dry run.
     dropped: u64,
+    /// Existing versions given to rows that named none, or that would be in
+    /// a dry run.
+    shared: u64,
     /// Why a Preview or Thumbnail that was wanted was not made.
     not_made: Option<anyhow::Error>,
-    /// Why the incomplete original could not be removed.
-    not_removed: Option<anyhow::Error>,
     /// Why each damaged version that could not be dropped stayed.
     not_dropped: Vec<anyhow::Error>,
 }
@@ -401,16 +421,22 @@ impl Outcome {
     fn failures(&self) -> impl Iterator<Item = &anyhow::Error> {
         self.not_made
             .iter()
-            .chain(&self.not_removed)
+            .chain(
+                self.removal
+                    .as_ref()
+                    .and_then(|removal| removal.as_ref().err()),
+            )
             .chain(&self.not_dropped)
     }
 
-    /// Nothing was written, removed or dropped, and nothing failed.
+    /// Nothing was written, removed, dropped or shared, and nothing
+    /// failed.
     fn left_as_it_was(&self) -> bool {
         !self.preview
             && !self.thumbnail
-            && !self.removed
+            && self.removal.is_none()
             && self.dropped == 0
+            && self.shared == 0
             && self.failures().next().is_none()
     }
 }
@@ -570,10 +596,12 @@ impl<'a> AccountPass<'a> {
         };
         let versions = match plan(row, self.opts, on_disk) {
             Plan::RemoveIncomplete => {
-                let removed = self.remove_incomplete(row, &source_path);
                 return Outcome {
-                    removed: removed.as_ref().is_ok_and(|removed| *removed),
-                    not_removed: removed.err(),
+                    removal: match self.remove_incomplete(row, &source_path) {
+                        Ok(true) => Some(Ok(())),
+                        Ok(false) => None,
+                        Err(err) => Some(Err(err)),
+                    },
                     ..Outcome::default()
                 };
             }
@@ -592,7 +620,10 @@ impl<'a> AccountPass<'a> {
             } == PreviewFile::Damaged;
             let done = match need {
                 Need::Nothing => Ok(false),
-                Need::Share => self.share_existing(db, row, version).await.map(|()| false),
+                Need::Share => self.share_existing(db, row, version).await.map(|shared| {
+                    outcome.shared += u64::from(shared);
+                    false
+                }),
                 Need::Drop => {
                     outcome.count_drop(version, self.drop_damaged(db, row, version).await);
                     Ok(false)
@@ -674,7 +705,7 @@ impl<'a> AccountPass<'a> {
     /// the other rows already name. A file imported from a second source
     /// after its versions were made has such rows; without this they would
     /// never say a version exists, because the original is not converted
-    /// again.
+    /// again. True when rows were pointed at it, or would be in a dry run.
     ///
     /// # Errors
     ///
@@ -684,15 +715,15 @@ impl<'a> AccountPass<'a> {
         db: &SqlitePool,
         row: &StoredOriginal,
         version: Version,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let named = row.named(version);
         if named.rows_without == 0 {
-            return Ok(());
+            return Ok(false);
         }
         let (Some(sha256), Some(assets_path), Some(mime_type)) =
             (named.sha256, named.assets_path, named.mime_type)
         else {
-            return Ok(());
+            return Ok(false);
         };
         let blob = VersionFile {
             sha256,
@@ -705,9 +736,9 @@ impl<'a> AccountPass<'a> {
                 self.label(row),
                 blob.assets_path
             ));
-            return Ok(());
+            return Ok(true);
         }
-        versions_db::record(
+        let named = versions_db::record(
             &mut *db.acquire().await?,
             version,
             self.account_id,
@@ -715,12 +746,16 @@ impl<'a> AccountPass<'a> {
             &blob,
         )
         .await?;
+        if named == 0 {
+            // Every row of the original was deleted since it was read.
+            return Ok(false);
+        }
         self.log.say(format!(
             "{} -> {} (existing {version})",
             self.label(row),
             blob.assets_path
         ));
-        Ok(())
+        Ok(true)
     }
 
     /// Stop naming the damaged `version` that `row` names and delete it, or

@@ -648,14 +648,14 @@ fn stats(
     derived: u64,
     thumbnails: u64,
     skipped: u64,
-    errors: u64,
+    not_made: u64,
 ) -> ProcessAssetsStats {
     ProcessAssetsStats {
         scanned,
         derived,
         thumbnails,
         skipped,
-        errors,
+        not_made,
         ..ProcessAssetsStats::default()
     }
 }
@@ -870,9 +870,19 @@ fn a_second_source_imported_after_the_preview_was_made_gets_the_preview() {
             attach_stored_blob(&opened, &mut conn, message_id, SHA, ".bmp", BMP_1X1).await;
         assert_eq!(derived_of(&mut conn, whatsapp_attachment).await, None);
 
+        // The Thumbnail and the Preview are shared with the new rows, so the
+        // original is not left as it was (#1849).
         assert_eq!(
             run(&opened, &opts, &NOT_STOPPED).await.unwrap(),
-            stats(1, 0, 0, 1, 0)
+            ProcessAssetsStats {
+                shared: 2,
+                ..stats(1, 0, 0, 0, 0)
+            }
+        );
+        assert_eq!(
+            run(&opened, &opts, &NOT_STOPPED).await.unwrap(),
+            stats(1, 0, 0, 1, 0),
+            "once every row names them, nothing is shared again"
         );
 
         let preview = derived_of(&mut conn, imessage_attachment).await;
@@ -1362,6 +1372,61 @@ async fn a_damaged_preview_the_original_no_longer_gets_is_counted_as_dropped() {
     assert_eq!(derived_of(&mut conn, second).await, None);
 }
 
+/// A Thumbnail given to the rows of a second source is counted as shared,
+/// not as an original left as it was (#1849). The PNG needs no Preview, so
+/// the run makes nothing and needs no ffmpeg.
+#[tokio::test]
+async fn an_existing_thumbnail_given_to_more_attachments_is_counted_as_shared() {
+    let (opened, _dir, first) = fixture_with("imessage", ".png", PNG_1X1_RGB).await;
+    let mut conn = opened.conn().await.unwrap();
+    let bytes = b"a whole Thumbnail";
+    let thumbnail_sha = crate::assets_api::Sha256::of_bytes(bytes).to_string();
+    let rel = format!("{}/{thumbnail_sha}.jpg", &thumbnail_sha[..2]);
+    let thumbnail = opened
+        .cfg
+        .paths
+        .assets_converted_dir_for_account(ACCOUNT)
+        .join(&rel);
+    fs::create_dir_all(thumbnail.parent().unwrap()).unwrap();
+    fs::write(&thumbnail, bytes).unwrap();
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    sqlx::query(
+        "UPDATE attachments
+         SET thumbnail_sha256 = $1, thumbnail_assets_path = $2, thumbnail_mime_type = 'image/jpeg'
+         WHERE id = $3",
+    )
+    .bind(&thumbnail_sha)
+    .bind(&rel)
+    .bind(first)
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    let message_id = seed_message(&mut conn, "sms").await;
+    let second = attach_stored_blob(&opened, &mut conn, message_id, SHA, ".png", PNG_1X1_RGB).await;
+
+    assert_eq!(
+        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
+            .await
+            .unwrap(),
+        ProcessAssetsStats {
+            shared: 1,
+            ..stats(1, 0, 0, 0, 0)
+        }
+    );
+    assert_eq!(
+        thumbnail_of(&mut conn, second).await,
+        thumbnail_of(&mut conn, first).await
+    );
+    assert_eq!(
+        run(&opened, &ProcessAssetsOptions::default(), &NOT_STOPPED)
+            .await
+            .unwrap(),
+        stats(1, 0, 0, 1, 0),
+        "once every row names it, nothing is shared again"
+    );
+}
+
 /// A damaged Preview that cannot be deleted is counted as not dropped,
 /// apart from an original whose Preview or Thumbnail could not be made
 /// (#1849).
@@ -1738,8 +1803,8 @@ async fn a_live_pass_keeps_its_work_directory_young() {
 
 /// The line that ends `process-assets` words each count singular for one
 /// and plural for every other count (#1825), and names an incomplete
-/// original and a damaged version by what happened to them, not as a
-/// Preview or Thumbnail left as it was or not made (#1849).
+/// original, a damaged version and a shared version by what happened to
+/// them, not as an original left as it was or one not made (#1849).
 #[test]
 fn the_done_line_counts_one_and_many() {
     let one = ProcessAssetsStats {
@@ -1748,15 +1813,17 @@ fn the_done_line_counts_one_and_many() {
         thumbnails: 1,
         removed: 1,
         dropped: 1,
+        shared: 1,
         skipped: 1,
-        errors: 1,
+        not_made: 1,
         not_removed: 1,
         not_dropped: 1,
     };
     assert_eq!(
         done_line(&one, false),
         "done: read 1 original, made 1 Preview and 1 Thumbnail, removed 1 incomplete original, \
-         dropped 1 damaged Preview or Thumbnail, left 1 original as it was, \
+         dropped 1 damaged Preview or Thumbnail, \
+         shared 1 existing Preview or Thumbnail with more attachments, left 1 original as it was, \
          1 original whose Preview or Thumbnail could not be made, \
          1 incomplete original that could not be removed, \
          1 damaged Preview or Thumbnail that could not be dropped"
@@ -1767,24 +1834,27 @@ fn the_done_line_counts_one_and_many() {
         thumbnails: 3,
         removed: 2,
         dropped: 3,
+        shared: 2,
         skipped: 0,
-        errors: 2,
+        not_made: 2,
         not_removed: 3,
         not_dropped: 4,
     };
     assert_eq!(
         done_line(&many, true),
         "done: read 9 originals, made 2 Previews and 3 Thumbnails, removed 2 incomplete originals, \
-         dropped 3 damaged Previews or Thumbnails, left 0 originals as they were, \
+         dropped 3 damaged Previews or Thumbnails, \
+         shared 2 existing Previews or Thumbnails with more attachments, \
+         left 0 originals as they were, \
          2 originals whose Preview or Thumbnail could not be made, \
          3 incomplete originals that could not be removed, \
          4 damaged Previews or Thumbnails that could not be dropped (dry run)"
     );
 }
 
-/// Most runs meet no incomplete original and no damaged version, so the
-/// line leaves those counts out at zero, and still says that no Preview or
-/// Thumbnail failed.
+/// Most runs meet no incomplete original, damaged version or version to
+/// share, so the line leaves those counts out at zero, and still says that
+/// no Preview or Thumbnail failed.
 #[test]
 fn the_done_line_leaves_out_what_the_run_never_met() {
     assert_eq!(
@@ -1799,8 +1869,8 @@ fn the_done_line_leaves_out_what_the_run_never_met() {
 #[test]
 fn the_failures_name_each_count_and_nothing_at_zero() {
     assert_eq!(stats(3, 1, 1, 1, 0).failures(), None);
-    let not_made = |errors| ProcessAssetsStats {
-        errors,
+    let not_made = |not_made| ProcessAssetsStats {
+        not_made,
         ..ProcessAssetsStats::default()
     };
     assert_eq!(
@@ -1850,7 +1920,7 @@ fn the_failures_name_each_count_and_nothing_at_zero() {
     );
     assert_eq!(
         ProcessAssetsStats {
-            errors: 1,
+            not_made: 1,
             not_removed: 1,
             not_dropped: 1,
             ..ProcessAssetsStats::default()

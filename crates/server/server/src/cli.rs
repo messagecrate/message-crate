@@ -588,38 +588,57 @@ async fn run_reset_demo(args: ResetDemoArgs) -> Result<()> {
     );
     println!();
     println!("Previews and Thumbnails (assets_converted/; needs ffmpeg)");
-    println!(
-        "  Previews made:         {} (JPEG/MP4/MP3 copies of originals a browser may not show)",
-        stats.process_assets.derived
-    );
-    println!(
-        "  Thumbnails made:       {}",
-        stats.process_assets.thumbnails
-    );
-    println!(
-        "  incomplete removed:    {} (originals a transfer never finished)",
-        stats.process_assets.removed
-    );
-    println!(
-        "  damaged dropped:       {} (Previews and Thumbnails that could not be made again)",
-        stats.process_assets.dropped
-    );
-    println!(
-        "  left as they were:     {} (originals for which nothing was written, removed or dropped)",
-        stats.process_assets.skipped
-    );
-    println!(
-        "  not made:              {} (originals whose Preview or Thumbnail could not be made)",
-        stats.process_assets.errors
-    );
-    println!(
-        "  not removed:           {} (incomplete originals that could not be removed)",
-        stats.process_assets.not_removed
-    );
-    println!(
-        "  not dropped:           {} (damaged Previews and Thumbnails that could not be dropped)",
-        stats.process_assets.not_dropped
-    );
+    let rows = [
+        (
+            "Previews made",
+            stats.process_assets.derived,
+            "JPEG/MP4/MP3 copies of originals a browser may not show",
+        ),
+        ("Thumbnails made", stats.process_assets.thumbnails, ""),
+        (
+            "incomplete originals removed",
+            stats.process_assets.removed,
+            "left by a transfer that never finished",
+        ),
+        (
+            "damaged ones dropped",
+            stats.process_assets.dropped,
+            "Previews and Thumbnails that could not be made again",
+        ),
+        (
+            "existing ones shared",
+            stats.process_assets.shared,
+            "Previews and Thumbnails given to more attachments",
+        ),
+        (
+            "left as they were",
+            stats.process_assets.skipped,
+            "originals for which nothing was done",
+        ),
+        (
+            "not made",
+            stats.process_assets.not_made,
+            "originals whose Preview or Thumbnail could not be made",
+        ),
+        (
+            "not removed",
+            stats.process_assets.not_removed,
+            "incomplete originals that could not be removed",
+        ),
+        (
+            "not dropped",
+            stats.process_assets.not_dropped,
+            "damaged Previews and Thumbnails that could not be dropped",
+        ),
+    ];
+    for (label, count, what) in rows {
+        let label = format!("{label}:");
+        if what.is_empty() {
+            println!("  {label:<30} {count}");
+        } else {
+            println!("  {label:<30} {count} ({what})");
+        }
+    }
     Ok(())
 }
 
