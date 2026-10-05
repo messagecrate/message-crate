@@ -2985,8 +2985,8 @@ async fn contact_delete_makes_it_unknown_and_leaves_its_conversations_alone() {
     let mut conn = fixture.conn().await;
     assert_eq!(
         contact_name_and_origin(&mut conn, id).await,
-        (String::new(), "import".into()),
-        "the name goes and the row is an import's again"
+        (String::new(), "user".into()),
+        "the name goes and the row keeps the origin it was made with"
     );
     assert_eq!(
         trashed_contact_row_count(&mut conn, account.account_id, id).await,

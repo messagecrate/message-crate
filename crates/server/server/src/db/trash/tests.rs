@@ -853,8 +853,8 @@ async fn delete_trashed_contact_makes_it_unknown_and_leaves_its_conversations() 
     assert_eq!(outcome, DeleteOutcome::Deleted(Vec::new()));
     assert_eq!(
         contact_row(&mut conn, contact_id).await,
-        Some((String::new(), "import".into())),
-        "the row stays, nameless and an import's again"
+        Some((String::new(), "user".into())),
+        "the row stays, nameless, with the origin it was made with"
     );
     assert_eq!(
         count(
@@ -1015,7 +1015,7 @@ async fn empty_trash_takes_everything_trashed_and_only_that() {
     }
     assert_eq!(
         contact_row(&mut conn, trashed_contact).await,
-        Some((String::new(), "import".into()))
+        Some((String::new(), "user".into()))
     );
     assert_eq!(
         contact_row(&mut conn, kept_contact).await,
@@ -1140,7 +1140,7 @@ async fn deleting_the_second_contact_leaves_the_first_as_it_was() {
     assert_eq!(outcome, DeleteOutcome::Deleted(Vec::new()));
     assert_eq!(
         contact_row(&mut conn, second).await,
-        Some((String::new(), "import".into()))
+        Some((String::new(), "user".into()))
     );
     assert_eq!(
         contact_row(&mut conn, first).await,
