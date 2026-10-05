@@ -9,6 +9,7 @@ use message_ir::{
     IrSource, Reaction,
 };
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 use std::fs;
 use std::path::Path;
 
@@ -30,8 +31,8 @@ struct AttachmentMetaCell {
 /// # Errors
 ///
 /// Returns an error when the bytes are not a valid email, a required
-/// `X-ME-*` header is missing, the roster in `X-ME-Participants` does not
-/// read, or the mail names its addresses with the handle headers an earlier
+/// `X-ME-*` header is missing, an `X-ME-*` JSON header does not read, or the
+/// mail names its addresses with the handle headers an earlier
 /// Message Crate wrote.
 pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     let mail = mailparse::parse_mail(bytes).context("parse eml bytes")?;
@@ -42,27 +43,27 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     {
         bail!(
             "This mail was written by an earlier Message Crate, which named each address a \
-             handle ({earlier}); export the backup again"
+             handle ({earlier}). Export the backup again"
         );
     }
     if headers.get_first_header(hn::EARLIER_TAPBACKS).is_some() {
         bail!(
-            "This mail was written by an earlier Message Crate, which kept reactions in {}; \
-             export the backup again",
+            "This mail was written by an earlier Message Crate, which kept reactions in {}. \
+             Export the backup again",
             hn::EARLIER_TAPBACKS
         );
     }
     if headers.get_first_header(hn::EARLIER_IS_DELETED).is_some() {
         bail!(
-            "This mail was written by an earlier Message Crate, which kept the deleted mark in {}; \
-             export the backup again",
+            "This mail was written by an earlier Message Crate, which kept the deleted mark in {}. \
+             Export the backup again",
             hn::EARLIER_IS_DELETED
         );
     }
     if headers.get_first_header(hn::EARLIER_X_ME_EDITS).is_some() {
         bail!(
-            "This mail was written by an earlier Message Crate, which kept the edit history in {}; \
-             export the backup again",
+            "This mail was written by an earlier Message Crate, which kept the edit history in {}. \
+             Export the backup again",
             hn::EARLIER_X_ME_EDITS
         );
     }
@@ -94,7 +95,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     let export_tool_version = header_or(headers, hn::EXPORT_TOOL_VERSION, "");
 
     let text = extract_text_body(&mail).unwrap_or_default();
-    let attachments = merge_attachments(&mail, headers);
+    let attachments = merge_attachments(&mail, headers)?;
     let reactions = parse_reactions(headers)?;
     let deletion = parse_deletion(headers)?;
     let edits = parse_earlier_versions(headers)?;
@@ -102,9 +103,7 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     let source = {
         let android_type =
             optional_header(headers, hn::ANDROID_TYPE).and_then(|s| s.trim().parse::<i32>().ok());
-        let fields = optional_header(headers, hn::SOURCE_FIELDS)
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_default();
+        let fields = json_header(headers, hn::SOURCE_FIELDS, "source fields")?.unwrap_or_default();
         let src = IrSource {
             android_type,
             fields,
@@ -126,8 +125,8 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
             shared_location: optional_header(headers, hn::SHARED_LOCATION),
             announcement: optional_header(headers, hn::ANNOUNCEMENT),
             read_receipt_rfc3339: optional_header(headers, hn::READ_RECEIPT),
-            parts: header_json(headers, hn::PARTS),
-            app: header_json(headers, hn::APP),
+            parts: json_header(headers, hn::PARTS, "message parts")?,
+            app: json_header(headers, hn::APP, "app message")?,
             balloon_bundle_id: optional_header(headers, hn::BALLOON_BUNDLE_ID),
             balloon_kind: optional_header(headers, hn::BALLOON_KIND),
             associated_guid: optional_header(headers, hn::ASSOCIATED_GUID),
@@ -174,9 +173,28 @@ pub fn mail_message_from_eml_bytes(bytes: &[u8]) -> Result<MailMessage> {
     })
 }
 
-/// Parse a JSON header, or `None` when the header is missing.
-fn header_json(headers: &[MailHeader<'_>], name: &str) -> Option<serde_json::Value> {
-    serde_json::from_str(&optional_header(headers, name)?).ok()
+/// The JSON in header `name`, or `None` when the header is absent.
+///
+/// A value that does not read is refused, naming `what` it holds and the
+/// header. Read as empty, a broken `X-ME-Attachment-Meta` would lose every
+/// attachment's metadata on Convert without a word. The most likely writer
+/// of such a value is an earlier Message Crate that named a field
+/// differently, such as `handle` where this one reads `identity` in
+/// `X-ME-Participants`.
+fn json_header<T: DeserializeOwned>(
+    headers: &[MailHeader<'_>],
+    name: &str,
+    what: &str,
+) -> Result<Option<T>> {
+    let Some(raw) = optional_header(headers, name) else {
+        return Ok(None);
+    };
+    serde_json::from_str(&raw).map(Some).with_context(|| {
+        format!(
+            "This mail's {what} ({name}) cannot be read. It may have been written by an earlier \
+             Message Crate, so export the backup again"
+        )
+    })
 }
 
 /// Read an mboxrd file and parse each record into [`MailMessage`].
@@ -285,44 +303,18 @@ fn parse_deletion(headers: &[MailHeader<'_>]) -> Result<Option<Deletion>> {
 /// The message's reactions from `X-ME-Reactions`, or none when the header is
 /// absent.
 fn parse_reactions(headers: &[MailHeader<'_>]) -> Result<Vec<Reaction>> {
-    let Some(raw) = optional_header(headers, hn::REACTIONS) else {
-        return Ok(Vec::new());
-    };
-    serde_json::from_str(&raw).with_context(|| {
-        format!(
-            "This mail's reactions ({}) do not read; export the backup again",
-            hn::REACTIONS
-        )
-    })
+    Ok(json_header(headers, hn::REACTIONS, "reactions")?.unwrap_or_default())
 }
 
 /// The message's earlier versions from `X-ME-Earlier-Versions`, or none
 /// when the header is absent.
 fn parse_earlier_versions(headers: &[MailHeader<'_>]) -> Result<Vec<EarlierVersion>> {
-    let Some(raw) = optional_header(headers, hn::EARLIER_VERSIONS) else {
-        return Ok(Vec::new());
-    };
-    serde_json::from_str(&raw).with_context(|| {
-        format!(
-            "This mail's earlier versions ({}) do not read; export the backup again",
-            hn::EARLIER_VERSIONS
-        )
-    })
+    Ok(json_header(headers, hn::EARLIER_VERSIONS, "earlier versions")?.unwrap_or_default())
 }
 
-/// Participants from the JSON header, or none when it is absent.
-///
-/// A roster that does not read is refused rather than read as nobody: an
-/// earlier Message Crate wrote `handle` where this one reads `identity`, and
-/// read as empty such a conversation would lose everyone in it.
+/// Participants from `X-ME-Participants`, or none when it is absent.
 fn parse_participants(headers: &[MailHeader<'_>]) -> Result<Vec<Participant>> {
-    let Some(raw) = optional_header(headers, hn::PARTICIPANTS) else {
-        return Ok(Vec::new());
-    };
-    serde_json::from_str(&raw).context(
-        "This mail's roster (X-ME-Participants) does not read; it may have been written by an \
-         earlier Message Crate, so export the backup again",
-    )
+    Ok(json_header(headers, hn::PARTICIPANTS, "participants")?.unwrap_or_default())
 }
 
 /// The message text: the body of a simple mail, or the first `text/plain` part.
@@ -355,10 +347,12 @@ fn extract_text_body(mail: &ParsedMail<'_>) -> Option<String> {
 }
 
 /// Attachments from the MIME parts, matched to the metadata header by position.
-fn merge_attachments(mail: &ParsedMail<'_>, headers: &[MailHeader<'_>]) -> Vec<MailAttachment> {
-    let meta: Vec<AttachmentMetaCell> = optional_header(headers, hn::ATTACHMENT_META)
-        .and_then(|raw| serde_json::from_str(&raw).ok())
-        .unwrap_or_default();
+fn merge_attachments(
+    mail: &ParsedMail<'_>,
+    headers: &[MailHeader<'_>],
+) -> Result<Vec<MailAttachment>> {
+    let meta: Vec<AttachmentMetaCell> =
+        json_header(headers, hn::ATTACHMENT_META, "attachment metadata")?.unwrap_or_default();
 
     let mut mime_atts = Vec::new();
     collect_mime_attachments(mail, &mut mime_atts);
@@ -386,7 +380,7 @@ fn merge_attachments(mail: &ParsedMail<'_>, headers: &[MailHeader<'_>]) -> Vec<M
             sticker_effect: m.and_then(|c| c.sticker_effect.clone()),
         });
     }
-    out
+    Ok(out)
 }
 
 /// Collect every attachment part's bytes, file name, and MIME type.
