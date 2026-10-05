@@ -36,6 +36,14 @@ A directory that holds one of:
 
 The phone number the WhatsApp account is registered to is also required, because an Android backup doesn't record it.
 
+### Room on disk
+
+Import has `wtsexporter` decrypt `msgstore.db.crypt15` into the Scratch Directory, `scratch` in the operating system's app-data directory, while it reads it.
+The decrypted database is larger than the `.crypt15` file, because the backup is compressed, and for a long-used WhatsApp account it can run to several GB.
+Nothing knows that size before the database is written, so Import can't check for room first, as it does for every other backup.
+A disk that fills part-way stops the run with `Not enough space on the disk that holds the Scratch Directory: reading this backup filled it before it finished.`
+The part already written is deleted with the rest of the run's working files, so the import can run again once that disk has room.
+
 ### Without root: the 64-digit key
 
 WhatsApp can protect its backup with a key the person holds.

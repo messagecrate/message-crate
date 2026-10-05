@@ -2,6 +2,7 @@
 
 use crate::ios_backup::DecryptedWhatsapp;
 use anyhow::{Context, Result, bail};
+use message_staging::{Disk, disk_full};
 use std::env;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -130,7 +131,8 @@ pub(crate) fn resolve_wtsexporter() -> Result<PathBuf> {
 /// # Errors
 ///
 /// Returns an error when the work directory is missing, the process cannot start, or
-/// wtsexporter exits with a non-zero status.
+/// wtsexporter exits with a non-zero status; when its output says the disk
+/// is full, the error is the free-space sentence for the Scratch Directory.
 pub(crate) fn run_wtsexporter(
     bin: &Path,
     args: &WtsexporterArgs,
@@ -161,6 +163,14 @@ pub(crate) fn run_wtsexporter(
         String::from_utf8_lossy(&output.stderr)
     );
     if !output.status.success() {
+        // wtsexporter writes everything into the work directory, under the
+        // Scratch Directory: the decrypted msgstore.db, the extract and the
+        // JSON. A decrypted Android database has no size until it is written,
+        // so no check can measure it first; a disk that fills is reported
+        // as a check would report it (#1820).
+        if names_a_full_disk(&combined) {
+            return Err(disk_full(Disk::Scratch));
+        }
         bail!(
             "wtsexporter failed ({}){}\n{}",
             output.status,
@@ -176,6 +186,17 @@ pub(crate) fn run_wtsexporter(
         );
     }
     Ok(combined)
+}
+
+/// Whether wtsexporter's output says a write failed because its disk is
+/// full: Python's words for `ENOSPC`, and Windows' for its own error.
+fn names_a_full_disk(output: &str) -> bool {
+    [
+        "No space left on device",
+        "There is not enough space on the disk",
+    ]
+    .iter()
+    .any(|words| output.contains(words))
 }
 
 /// The wtsexporter command for `args`, writing media to `out_dir` and JSON
@@ -433,7 +454,7 @@ fn write_key_file(work_dir: &Path, hex_key: &str) -> Result<PathBuf> {
 mod tests {
     use super::{
         Platform, WtsexporterArgs, android_crypt_backup, extracts_ios_backup, input_search_root,
-        resolve_forwarded_paths, wtsexporter_command,
+        resolve_forwarded_paths, run_wtsexporter, wtsexporter_command,
     };
     use crate::ios_backup::DecryptedWhatsapp;
     use std::fs;
@@ -811,5 +832,134 @@ mod tests {
         };
         assert!(!extracts_ios_backup(&no_backup).unwrap());
         assert!(!extracts_ios_backup(&android_args(&backup, None)).unwrap());
+    }
+
+    /// Held while a test writes a stand-in wtsexporter and runs it. A file
+    /// still open for writing cannot be run ("Text file busy"), and a test
+    /// that starts a process on another thread holds a copy of every open
+    /// file until that process starts; one at a time, no stand-in is being
+    /// written while another starts.
+    #[cfg(unix)]
+    static STAND_IN: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// A stand-in for wtsexporter in `dir`: it writes part of a decrypted
+    /// `msgstore.db` into its working directory, as the real one does before
+    /// its disk fills, prints `error` and exits 1. The caller holds
+    /// [`STAND_IN`] until it has run it.
+    #[cfg(unix)]
+    fn failing_wtsexporter(dir: &Path, error: &str) -> std::path::PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let bin = dir.join("wtsexporter");
+        fs::write(
+            &bin,
+            format!("#!/bin/sh\nprintf partial > msgstore.db\necho '{error}' >&2\nexit 1\n"),
+        )
+        .unwrap();
+        fs::set_permissions(&bin, fs::Permissions::from_mode(0o755)).unwrap();
+        bin
+    }
+
+    /// The Android arguments for a run whose work directory is `work`.
+    #[cfg(unix)]
+    fn android_run_args(input: &Path, work: &Path) -> WtsexporterArgs {
+        WtsexporterArgs {
+            work_dir: work.to_path_buf(),
+            ..android_args(input, Some("deadbeef"))
+        }
+    }
+
+    /// wtsexporter decrypts an Android backup's `msgstore.db` into the work
+    /// directory, under the Scratch Directory. When that disk fills, the run
+    /// says so in the sentence every free-space check gives, naming the
+    /// Scratch Directory's disk, in place of wtsexporter's raw error (#1820).
+    #[cfg(unix)]
+    #[test]
+    fn a_full_scratch_disk_is_reported_as_the_free_space_sentence() {
+        let _one_at_a_time = STAND_IN
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let dir = tempdir().unwrap();
+        let input = dir.path().join("backup");
+        let work = dir.path().join("work");
+        fs::create_dir_all(&input).unwrap();
+        fs::create_dir_all(&work).unwrap();
+        let bin = failing_wtsexporter(dir.path(), "OSError: [Errno 28] No space left on device");
+
+        let err = run_wtsexporter(
+            &bin,
+            &android_run_args(&input, &work),
+            &work.join("result.json"),
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(
+            err.starts_with("Not enough space on the disk that holds the Scratch Directory"),
+            "{err}"
+        );
+        assert!(!err.contains("wtsexporter failed"), "{err}");
+        assert!(!err.contains("Errno 28"), "{err}");
+    }
+
+    /// Any other wtsexporter failure is reported as wtsexporter gave it.
+    #[cfg(unix)]
+    #[test]
+    fn any_other_wtsexporter_failure_is_reported_as_it_is() {
+        let _one_at_a_time = STAND_IN
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let dir = tempdir().unwrap();
+        let input = dir.path().join("backup");
+        let work = dir.path().join("work");
+        fs::create_dir_all(&input).unwrap();
+        fs::create_dir_all(&work).unwrap();
+        let bin = failing_wtsexporter(dir.path(), "ValueError: The key is incorrect");
+
+        let err = run_wtsexporter(
+            &bin,
+            &android_run_args(&input, &work),
+            &work.join("result.json"),
+        )
+        .unwrap_err()
+        .to_string();
+
+        assert!(err.starts_with("wtsexporter failed ("), "{err}");
+        assert!(err.contains("ValueError: The key is incorrect"), "{err}");
+    }
+
+    /// The partial `msgstore.db` a full disk leaves is in the run's work
+    /// directory, so it goes when the run lets go of that directory, as it
+    /// does when wtsexporter's error ends the run.
+    #[cfg(unix)]
+    #[test]
+    fn the_partial_database_goes_with_the_work_directory() {
+        let _one_at_a_time = STAND_IN
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let dir = tempdir().unwrap();
+        let input = dir.path().join("backup");
+        fs::create_dir_all(&input).unwrap();
+        let work = message_crate_core::ScratchDir::create(
+            &dir.path()
+                .join("scratch")
+                .join(message_crate_core::WHATSAPP_DIRECTORY),
+        )
+        .unwrap();
+        let bin = failing_wtsexporter(dir.path(), "OSError: [Errno 28] No space left on device");
+
+        run_wtsexporter(
+            &bin,
+            &android_run_args(&input, work.path()),
+            &work.path().join("result.json"),
+        )
+        .unwrap_err();
+        let partial = work.path().join("msgstore.db");
+        assert!(
+            partial.is_file(),
+            "wtsexporter wrote into the work directory"
+        );
+
+        drop(work);
+        assert!(!partial.exists(), "the partial database is deleted");
     }
 }

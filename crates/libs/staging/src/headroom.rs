@@ -99,16 +99,37 @@ pub(crate) fn headroom_shortfall(needed: u64, available: u64, disk: Disk) -> Opt
     }
     let required = media::format_bytes(required);
     let available = media::format_bytes(available);
+    let short = not_enough_space(disk);
     Some(match disk {
-        Disk::Staging => format!(
-            "Not enough space on the staging disk: this backup needs about {required}, \
-             and {available} is free."
-        ),
+        Disk::Staging => {
+            format!("{short}: this backup needs about {required}, and {available} is free.")
+        }
         Disk::Scratch => format!(
-            "Not enough space on the disk that holds the Scratch Directory: reading this \
-             backup needs about {required} more there, and {available} is free."
+            "{short}: reading this backup needs about {required} more there, and \
+             {available} is free."
         ),
     })
+}
+
+/// The error for a write that ran out of room part-way on `disk`, where no
+/// check could measure the need first: wtsexporter decrypting an Android
+/// WhatsApp backup, whose decrypted size nothing knows until it is written.
+/// It opens as [`check_headroom`]'s sentence does, so the person reads the
+/// same words whichever way the disk ran short.
+pub fn disk_full(disk: Disk) -> anyhow::Error {
+    anyhow::anyhow!(
+        "{}: reading this backup filled it before it finished. Free some space there \
+         and run the import again.",
+        not_enough_space(disk)
+    )
+}
+
+/// The opening of every sentence about a short disk, naming which one.
+fn not_enough_space(disk: Disk) -> &'static str {
+    match disk {
+        Disk::Staging => "Not enough space on the staging disk",
+        Disk::Scratch => "Not enough space on the disk that holds the Scratch Directory",
+    }
 }
 
 #[cfg(test)]
@@ -159,6 +180,17 @@ mod tests {
             msg.starts_with("Not enough space on the disk that holds the Scratch Directory"),
             "{msg}"
         );
+    }
+
+    /// A disk that filled part-way is named the way a check names it.
+    #[test]
+    fn a_full_disk_is_named_as_a_short_one_is() {
+        for disk in [Disk::Staging, Disk::Scratch] {
+            let full = disk_full(disk).to_string();
+            let short = headroom_shortfall(2 * 1024 * 1024 * 1024, 1024, disk).unwrap();
+            let opening = |text: &str| text.split(':').next().unwrap().to_string();
+            assert_eq!(opening(&full), opening(&short), "{full}");
+        }
     }
 
     /// The check reads the disk that holds the directory it is given.

@@ -17,6 +17,21 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 Bullets under the version still in development carry the date they landed;
 released versions carry their date on the heading.
 
+## [0.10.2] — in development
+
+### Fixes
+
+#### Importing
+
+- 2026-10-05 **A WhatsApp import from Android that fills the disk says so
+  plainly.** The encrypted WhatsApp backup is decrypted into the Scratch
+  Directory, and its decrypted size isn't known until it is written, so no
+  check can measure it first. When that disk filled, the run stopped with
+  `wtsexporter`'s own error. It now stops with "Not enough space on the disk
+  that holds the Scratch Directory", the sentence every other free-space check
+  gives, and the part already written is deleted. The WhatsApp guide says the
+  decrypted database can run to several GB and where it is written.
+
 ## [0.10.1] - 2026-10-05
 
 ### Features
