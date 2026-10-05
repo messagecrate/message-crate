@@ -1086,6 +1086,12 @@ released versions carry their date on the heading.
 - 2026-10-03 **The contact drawer opened from a conversation covers the
   column resize handles.** It sat below the handles, so a handle could show
   through it.
+- 2026-10-04 **The contact drawer opened from a conversation stays inside
+  the window.** In a window narrower than the list plus the drawer, its right
+  side ran past the window's edge and was cut off. It now ends at the
+  window's edge, and in a window as narrow as a phone it covers the list
+  instead. The table of a contact's numbers and addresses no longer runs a
+  little past its card's edge either.
 
 #### Accounts, Settings and screens
 
