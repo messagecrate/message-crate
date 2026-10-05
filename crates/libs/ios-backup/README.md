@@ -5,7 +5,7 @@ Read an iPhone backup before, or beside, an import. An iPhone backup is a contai
 - `ios_backup_encrypted_flag`: whether `Manifest.plist` marks the backup encrypted.
 - `ios_backup_phone_number`: the phone number in `Info.plist`.
 - `backup_identities`: the addresses the device sent from, for the Import identity check. It also reads a Mac `chat.db`.
-- `decrypt_ios_backup_domain`: every file of one domain of an encrypted backup, decrypted into a directory. The WhatsApp importer uses it.
+- `decrypt_ios_backup_domain`: every file of one domain of an encrypted backup, decrypted into a directory, once the caller has checked the bytes the backup's manifest gives for them. The WhatsApp importer uses it.
 
 Opening a backup's databases and decrypting its files needs `imessage-database` and `crabapple`, which are GPL-3.0-or-later, so that work happens in the separate program [`imessage-reader`](../../helpers/imessage-reader/). `Helper` finds that program, starts it, and reads its answer over [`imessage-reader-protocol`](../../helpers/imessage-reader-protocol/); `ScratchDir` (from `message-crate-core`) is the directory one request decrypts into, under the Scratch Directory. [`imessage-ir-exporter`](../../exporters/imessage-ir-exporter/) starts the program through the same two types for an export. Why: [ADR 0014](../../../docs/adr/0014-gpl-code-only-behind-a-process-boundary.md).
 

@@ -1,14 +1,16 @@
 //! The scratch directories a run writes into, under the desktop app's
 //! Scratch Directory.
 //!
-//! Two things a run writes are not output: the attachment spool (each
+//! Three things a run writes are not output: the attachment spool (each
 //! attachment payload an SMS Backup & Restore, GO SMS Pro or SMS Backup+
-//! file carries, written to disk as it is parsed) and the databases
-//! `imessage-reader` decrypts out of an encrypted iPhone backup. Both are
-//! plain copies of personal data that no screen names, so they live in
+//! file carries, written to disk as it is parsed), the databases
+//! `imessage-reader` decrypts out of an encrypted iPhone backup, and the
+//! WhatsApp importer's work directory (WhatsApp's files decrypted out of an
+//! encrypted iPhone backup, and what wtsexporter extracts and writes). All
+//! are plain copies of personal data that no screen names, so they live in
 //! directories under the Scratch Directory ([`IMESSAGE_READER_DIRECTORY`],
-//! [`ATTACHMENT_SPOOL_DIRECTORY`]), never in the output directory the person
-//! chose. The app deletes a request's directory when the request ends, and
+//! [`ATTACHMENT_SPOOL_DIRECTORY`], [`WHATSAPP_DIRECTORY`]), never in the
+//! output directory the person chose. The app deletes a request's directory when the request ends, and
 //! [`sweep_scratch`] at app start, and every new request, delete what a
 //! killed one left.
 //!
@@ -37,8 +39,17 @@ pub const IMESSAGE_READER_DIRECTORY: &str = "imessage-reader";
 /// spool.
 pub const ATTACHMENT_SPOOL_DIRECTORY: &str = "attachment-spool";
 
+/// The directory under the Scratch Directory that holds each WhatsApp run's
+/// work directory: what wtsexporter extracts and writes, and WhatsApp's files
+/// decrypted out of an encrypted iPhone backup.
+pub const WHATSAPP_DIRECTORY: &str = "whatsapp";
+
 /// Every scratch directory [`sweep_scratch`] cleans.
-const SCRATCH_DIRECTORIES: [&str; 2] = [IMESSAGE_READER_DIRECTORY, ATTACHMENT_SPOOL_DIRECTORY];
+const SCRATCH_DIRECTORIES: [&str; 3] = [
+    IMESSAGE_READER_DIRECTORY,
+    ATTACHMENT_SPOOL_DIRECTORY,
+    WHATSAPP_DIRECTORY,
+];
 
 /// The lock file, in the root and in each request's directory.
 pub(crate) const LOCK: &str = ".lock";
@@ -189,7 +200,8 @@ mod tests {
     use crate::testutil::names_in;
 
     use super::{
-        ATTACHMENT_SPOOL_DIRECTORY, IMESSAGE_READER_DIRECTORY, LOCK, ScratchDir, sweep_scratch,
+        ATTACHMENT_SPOOL_DIRECTORY, IMESSAGE_READER_DIRECTORY, LOCK, ScratchDir,
+        WHATSAPP_DIRECTORY, sweep_scratch,
     };
 
     /// A request's directory sits under the root and is gone, with what the
@@ -270,21 +282,26 @@ mod tests {
     }
 
     /// When the app starts, the sweep deletes what killed runs left in the
-    /// attachment spool's directory and the reader's directory, and keeps the
-    /// directory a running job holds, in either (#1421, #1402).
+    /// attachment spool's directory, the reader's directory and WhatsApp's,
+    /// and keeps the directory a running job holds, in each (#1421, #1402,
+    /// #1651).
     #[test]
     fn the_start_up_sweep_deletes_a_killed_run_s_scratch_and_keeps_a_running_one() {
         let scratch = tempfile::tempdir().unwrap();
         let spool_root = scratch.path().join(ATTACHMENT_SPOOL_DIRECTORY);
         let reader_root = scratch.path().join(IMESSAGE_READER_DIRECTORY);
+        let whatsapp_root = scratch.path().join(WHATSAPP_DIRECTORY);
         killed_request(&spool_root, "request-killed", "2cf24dba");
         killed_request(&reader_root, "request-killed", "crabapple-sms-x.db");
+        killed_request(&whatsapp_root, "request-killed", "ChatStorage.sqlite");
         let running_spool = ScratchDir::create(&spool_root).unwrap();
         fs::write(running_spool.path().join("e3b0c442"), b"payload").unwrap();
         let running_reader = ScratchDir::create(&reader_root).unwrap();
+        let running_whatsapp = ScratchDir::create(&whatsapp_root).unwrap();
         // Made after the running requests, so their own clean-up did not
         // see it: only the sweep can.
         killed_request(&spool_root, "request-later", "9f86d081");
+        killed_request(&whatsapp_root, "request-later", "result.json");
         fs::write(scratch.path().join("unrelated"), b"kept").unwrap();
 
         sweep_scratch(scratch.path());
@@ -301,6 +318,7 @@ mod tests {
         };
         assert_eq!(names_in(&spool_root), own(&running_spool));
         assert_eq!(names_in(&reader_root), own(&running_reader));
+        assert_eq!(names_in(&whatsapp_root), own(&running_whatsapp));
         assert!(running_spool.path().join("e3b0c442").exists());
         assert!(
             scratch.path().join("unrelated").exists(),

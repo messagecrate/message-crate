@@ -20,10 +20,10 @@ phone = { path = "../../libs/phone" }
 plist = "1.9.0"
 serde = { workspace = true }
 serde_json = { workspace = true }
-tempfile = { workspace = true }
 
 [dev-dependencies]
 message-crate-core = { path = "../../core/message-crate-core", features = ["testutil"] }
+tempfile = { workspace = true }
 
 [lints]
 workspace = true

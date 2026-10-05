@@ -5,11 +5,14 @@
 //! other way, so the app decrypts WhatsApp's app-group domain into the
 //! run's work dir first (through `imessage-reader`, the only program here
 //! that can decrypt an iPhone backup) and wtsexporter reads that directory as
-//! it reads a backup someone extracted by hand.
+//! it reads a backup someone extracted by hand. The work dir is under the
+//! Scratch Directory, and the domain is measured against that disk before
+//! anything is decrypted.
 
 use anyhow::{Result, bail};
 use ios_backup::{DecryptedDomain, decrypt_ios_backup_domain, ios_backup_encrypted_flag};
 use message_crate_core::{ExporterConfig, WhatsappConfig};
+use message_staging::{Disk, check_headroom};
 use std::path::{Path, PathBuf};
 
 /// The app-group domain WhatsApp keeps its data under in an iPhone backup.
@@ -34,7 +37,8 @@ pub(crate) struct DecryptedWhatsapp {
 ///
 /// Returns an error when the backup is encrypted and no password was given,
 /// a password was given for a backup that is not encrypted, the password is
-/// wrong, or the backup does not hold WhatsApp.
+/// wrong, the disk that holds `work` cannot hold WhatsApp's files, or the
+/// backup does not hold WhatsApp.
 pub(crate) fn decrypt_if_encrypted(
     source: &WhatsappConfig,
     work: &Path,
@@ -47,6 +51,9 @@ pub(crate) fn decrypt_if_encrypted(
             password,
             domain,
             work,
+            // The decrypted files go under the Scratch Directory, so its
+            // disk is checked for room before the first one is written.
+            |bytes| check_headroom(work, bytes, Disk::Scratch),
             config.log.clone(),
             config.progress.clone(),
         )

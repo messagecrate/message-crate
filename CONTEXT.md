@@ -499,8 +499,10 @@ _Avoid_: Log Folder, Run Log Directory
 
 **Scratch Directory**:
 The directory where a run writes what is neither its output nor kept: the
-attachment spool and the databases the Apple Messages Reader decrypts from
-an encrypted iPhone backup. A run deletes what it wrote there when it ends,
+attachment spool, the databases the Apple Messages Reader decrypts from
+an encrypted iPhone backup, and a WhatsApp run's work files (WhatsApp's
+files decrypted from an encrypted iPhone backup, and what wtsexporter
+extracts). A run deletes what it wrote there when it ends,
 and the desktop app deletes what a killed run left when it starts. It
 belongs in the Message Crate Directory; until #1053 builds that, it is
 `scratch` in the operating system's app-data directory.

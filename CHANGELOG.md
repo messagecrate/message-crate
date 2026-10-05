@@ -391,6 +391,15 @@ released versions carry their date on the heading.
 
 #### Importing
 
+- 2026-10-05 **A WhatsApp import keeps its working files out of the
+  Staging Directory.** WhatsApp's files decrypted from an encrypted iPhone
+  backup, and what the WhatsApp reader extracted, sat in a directory inside
+  the Staging Directory, and stayed there in the clear when the app was
+  stopped during Staging. They now go in the Scratch Directory, are deleted
+  when the run ends, and are deleted the next time the app starts if it was
+  stopped. Before decrypting, the import checks that the disk holding the
+  Scratch Directory has room for WhatsApp's files, and stops with the space
+  it needs when it does not.
 - 2026-10-05 **An import's log and Convert's log say each count in the same
   plain words.** Converting and importing one SMS Backup & Restore backup
   used to word its counts two ways: Convert wrote "Skipped 1 message with no
