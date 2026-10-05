@@ -4,7 +4,7 @@ use message_crate_core::{ExportReport, OutputFormat};
 use message_ir::{
     ConversationMeta, ConversationStats, EarlierVersion, ExportMeta, HandleType,
     IrConversationType, IrImessage, IrMessage, IrMessageKind, IrParticipant, IrService, IrSource,
-    MessageGuid, MessageIdentity, Reaction, SCHEMA_VERSION,
+    MessageGuid, MessageIdentity, Reaction, ReplyTo, SCHEMA_VERSION,
 };
 use serde_json::{Value, json};
 use std::fs;
@@ -56,6 +56,7 @@ fn doc_with_image_attachment() -> ConversationDocument {
             reactions: vec![],
             deletion: None,
             edits: Vec::new(),
+            reply_to: None,
             imessage: None,
             source: None,
         }],
@@ -271,11 +272,11 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
                 text: "LEAK-19".into(),
                 edited_at_unix_ms: Some(1),
             }],
+            reply_to: Some(ReplyTo {
+                guid: Some("LEAK-28".into()),
+                part_index: Some(0),
+            }),
             imessage: Some(IrImessage {
-                is_reply: true,
-                in_reply_to_guid: Some("LEAK-28".into()),
-                thread_originator_part: Some(0),
-                num_replies: Some(1),
                 send_effect: Some("slam".into()),
                 shared_location: Some("LEAK-16".into()),
                 announcement: Some("LEAK-17".into()),
@@ -498,10 +499,9 @@ fn obfuscate_makes_each_guid_again_and_keeps_replies_pointing_at_their_target() 
     let mut reply = doc.messages[0].clone();
     reply.guid = original("hi", reply.timestamp_unix_ms + 1);
     reply.timestamp_unix_ms += 1;
-    reply.imessage = Some(IrImessage {
-        is_reply: true,
-        in_reply_to_guid: Some(doc.messages[0].guid.clone()),
-        ..IrImessage::default()
+    reply.reply_to = Some(ReplyTo {
+        guid: Some(doc.messages[0].guid.clone()),
+        part_index: None,
     });
     doc.messages.push(reply);
     let before: Vec<String> = doc.messages.iter().map(|m| m.guid.clone()).collect();
@@ -519,11 +519,9 @@ fn obfuscate_makes_each_guid_again_and_keeps_replies_pointing_at_their_target() 
     assert_ne!(after.messages[0].guid, after.messages[1].guid);
     assert_eq!(
         after.messages[1]
-            .imessage
+            .reply_to
             .as_ref()
-            .unwrap()
-            .in_reply_to_guid
-            .as_deref(),
+            .and_then(|r| r.guid.as_deref()),
         Some(after.messages[0].guid.as_str()),
         "the reply points at its target's new guid"
     );
@@ -538,8 +536,8 @@ fn obfuscate_makes_each_guid_again_and_keeps_replies_pointing_at_their_target() 
 }
 
 /// Two conversations for the cross-conversation tests: A holds one message,
-/// and B holds one whose iMessage extension is `link` with A's message's id.
-fn two_conversations(link: impl FnOnce(String) -> IrImessage) -> Vec<ConversationDocument> {
+/// and B holds one that `link` points at A's message's id.
+fn two_conversations(link: impl FnOnce(&mut IrMessage, &str)) -> Vec<ConversationDocument> {
     let mut a = doc_with_image_attachment();
     a.messages[0].attachments.clear();
     a.messages[0].guid = "a-target".into();
@@ -547,7 +545,7 @@ fn two_conversations(link: impl FnOnce(String) -> IrImessage) -> Vec<Conversatio
     b.conversation.chat_identifier = "+15555550102".into();
     b.messages[0].attachments.clear();
     b.messages[0].guid = "b-link".into();
-    b.messages[0].imessage = Some(link("a-target".into()));
+    link(&mut b.messages[0], "a-target");
     vec![a, b]
 }
 
@@ -564,7 +562,7 @@ fn obfuscate_all(docs: &mut [ConversationDocument]) {
     apply_transforms(docs, tmp.path(), &transforms).unwrap();
 }
 
-/// A reply (`in_reply_to_guid`) or a tapback (`associated_guid`).
+/// A reply (`reply_to.guid`) or a tapback (`associated_guid`).
 #[derive(Clone, Copy, Debug)]
 enum Link {
     Reply,
@@ -572,28 +570,30 @@ enum Link {
 }
 
 impl Link {
-    /// The extension that makes this link name `target`.
-    fn to(self, target: &str) -> IrImessage {
+    /// Make `msg` name `target` by this link.
+    fn set(self, msg: &mut IrMessage, target: &str) {
         let target = Some(target.to_owned());
         match self {
-            Link::Reply => IrImessage {
-                is_reply: true,
-                in_reply_to_guid: target,
-                ..IrImessage::default()
-            },
-            Link::Tapback => IrImessage {
-                associated_guid: target,
-                ..IrImessage::default()
-            },
+            Link::Reply => {
+                msg.reply_to = Some(ReplyTo {
+                    guid: target,
+                    part_index: None,
+                });
+            }
+            Link::Tapback => {
+                msg.imessage = Some(IrImessage {
+                    associated_guid: target,
+                    ..IrImessage::default()
+                });
+            }
         }
     }
 
     /// The id this link names in `msg`.
     fn target(self, msg: &IrMessage) -> Option<&str> {
-        let im = msg.imessage.as_ref()?;
         match self {
-            Link::Reply => im.in_reply_to_guid.as_deref(),
-            Link::Tapback => im.associated_guid.as_deref(),
+            Link::Reply => msg.reply_to.as_ref()?.guid.as_deref(),
+            Link::Tapback => msg.imessage.as_ref()?.associated_guid.as_deref(),
         }
     }
 }
@@ -604,7 +604,7 @@ impl Link {
 #[test]
 fn obfuscate_points_a_reply_or_tapback_at_its_target_in_another_conversation() {
     for link in [Link::Reply, Link::Tapback] {
-        let mut docs = two_conversations(|target| link.to(&target));
+        let mut docs = two_conversations(|msg, target| link.set(msg, target));
         obfuscate_all(&mut docs);
         assert_ne!(docs[0].messages[0].guid, "a-target", "{link:?}");
         assert_eq!(
@@ -622,11 +622,12 @@ fn obfuscate_points_a_reply_or_tapback_at_its_target_in_another_conversation() {
 fn obfuscate_points_a_reply_or_tapback_at_the_copy_in_its_own_conversation() {
     for link in [Link::Reply, Link::Tapback] {
         for linking_first in [true, false] {
-            let mut docs = two_conversations(|_| IrImessage::default());
+            let mut docs = two_conversations(|msg, _| msg.imessage = Some(IrImessage::default()));
             let mut copy = docs[0].messages[0].clone();
             copy.imessage = None;
+            copy.reply_to = None;
             docs[1].messages.insert(0, copy);
-            docs[1].messages[1].imessage = Some(link.to("a-target"));
+            link.set(&mut docs[1].messages[1], "a-target");
             if linking_first {
                 docs.reverse();
             }
@@ -654,19 +655,9 @@ fn obfuscate_points_a_reply_or_tapback_at_the_copy_in_its_own_conversation() {
 /// out, keeps the keyed stand-in: its original id does not survive.
 #[test]
 fn obfuscate_replaces_a_target_outside_the_export_with_its_stand_in() {
-    let mut docs = two_conversations(|_| IrImessage {
-        is_reply: true,
-        in_reply_to_guid: Some("not-exported".into()),
-        ..IrImessage::default()
-    });
+    let mut docs = two_conversations(|msg, _| Link::Reply.set(msg, "not-exported"));
     obfuscate_all(&mut docs);
-    let target = docs[1].messages[0]
-        .imessage
-        .as_ref()
-        .unwrap()
-        .in_reply_to_guid
-        .clone()
-        .unwrap();
+    let target = Link::Reply.target(&docs[1].messages[0]).unwrap().to_owned();
     assert_ne!(target, "not-exported");
     assert_eq!(target.len(), 64);
     assert!(

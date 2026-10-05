@@ -18,7 +18,7 @@ use sqlx::SqliteConnection;
 use sqlx::{Executor, Row};
 
 pub use message_crate_api_types::{
-    Attachment, Deletion, EarlierVersion, Message, MessageConversation, Tapback,
+    Attachment, Deletion, EarlierVersion, Message, MessageConversation, ReplyTo, Tapback,
 };
 
 use crate::db::conversations::is_group_type;
@@ -52,8 +52,8 @@ struct RawRow {
     body: Option<String>,
     is_announcement: bool,
     is_reply: bool,
-    thread_originator_guid: Option<String>,
-    thread_originator_part: Option<i64>,
+    reply_to_guid: Option<String>,
+    reply_to_part: Option<i64>,
     num_replies: i64,
     deletion: Option<String>,
     chat_identifier: String,
@@ -61,6 +61,14 @@ struct RawRow {
     group_title: Option<String>,
     label: Option<String>,
 }
+
+/// A message's reply count: the replies that name `m` as the message they
+/// quote, as `ix_messages_reply_to` keys them. Counted when read rather than
+/// stored, so it always equals the replies a person can open from it; a
+/// duplicate is not one of them.
+const NUM_REPLIES_SQL: &str = "SELECT COUNT(*) FROM messages r
+     WHERE r.account_id = m.account_id AND r.source = m.source
+       AND r.reply_to_guid = m.guid AND r.duplicate_of IS NULL";
 
 /// FROM clause for message queries. The compiled filter mentions only `m`;
 /// these joins are here for the SELECT list, which reports the conversation
@@ -400,14 +408,15 @@ fn message_page_sql(
     let sql = format!(
         "SELECT m.id, m.conversation_id, m.source, m.service, m.guid, m.timestamp,
                 m.sort_order, m.is_from_me, hs.raw AS sender, m.subject, m.body,
-                m.is_announcement, m.is_reply, m.thread_originator_guid,
-                m.thread_originator_part, m.num_replies,
+                m.is_announcement, m.is_reply, m.reply_to_guid, m.reply_to_part,
+                ({num_replies}) AS num_replies,
                 hc.raw AS chat_identifier, c.conversation_type, c.group_title,
                 ho.raw AS owner, {label} AS label, m.deletion
          {from_sql}
          WHERE {where_sql}
          ORDER BY {order_by} LIMIT ? OFFSET ?",
-        label = crate::db::conversations::conversation_title_sql("c")
+        label = crate::db::conversations::conversation_title_sql("c"),
+        num_replies = NUM_REPLIES_SQL,
     );
     let mut params = params.to_vec();
     // An `offset` too large for SQLite's `i64` is past the end of any table,
@@ -441,8 +450,8 @@ async fn fetch_message_page(
                 body: row.try_get(10)?,
                 is_announcement: row.try_get::<i64, _>(11)? != 0,
                 is_reply: row.try_get::<i64, _>(12)? != 0,
-                thread_originator_guid: row.try_get(13)?,
-                thread_originator_part: row.try_get(14)?,
+                reply_to_guid: row.try_get(13)?,
+                reply_to_part: row.try_get(14)?,
                 num_replies: row.try_get(15)?,
                 chat_identifier: row.try_get(16)?,
                 conversation_type: row.try_get(17)?,
@@ -481,9 +490,10 @@ async fn fetch_message_page(
                 subject: r.subject,
                 text: r.body,
                 is_announcement: r.is_announcement,
-                is_reply: r.is_reply,
-                thread_originator_guid: r.thread_originator_guid,
-                thread_originator_part: r.thread_originator_part,
+                reply_to: r.is_reply.then_some(ReplyTo {
+                    guid: r.reply_to_guid,
+                    part_index: r.reply_to_part,
+                }),
                 num_replies: r.num_replies,
                 conversation: MessageConversation {
                     id: r.conversation_id,

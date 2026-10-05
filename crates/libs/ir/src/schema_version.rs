@@ -3,12 +3,12 @@
 //! Every reader of a [`ConversationDocument`](crate::ConversationDocument) or
 //! its JSON Lines header — the format reader, the push client, the server's
 //! import — refuses a version other than [`SCHEMA_VERSION`] with the same
-//! words, and refuses it before parsing the rest of the file: a version-8
-//! file is not expected to match version 9 (version 8 put every orphaned
-//! message in one `individual` conversation named `orphaned`, which version 9
-//! would read as a person of that name), and the person should read "schema
-//! version 8", not whichever field failed first or a contact named
-//! "orphaned".
+//! words, and refuses it before parsing the rest of the file: a version-9
+//! file is not expected to match version 10 (version 9 kept a reply's link in
+//! `imessage.is_reply` and `imessage.in_reply_to_guid`, which version 10 would
+//! pass over, so every reply would arrive as a plain message), and the person
+//! should read "schema version 9", not a file that imports without its
+//! replies.
 
 use crate::SCHEMA_VERSION;
 use serde::Deserialize;
@@ -81,17 +81,17 @@ mod tests {
         assert_eq!(check_schema_version(SCHEMA_VERSION), Ok(()));
     }
 
-    /// Version 8 put every orphaned message in one `individual` conversation
-    /// named `orphaned`; version 9 gives them conversations of type
-    /// `orphaned`, one for each sender. A version-8 file is refused by its
-    /// version, never read with that conversation taken for a person.
+    /// Version 9 kept a reply's link in the Apple extension's `is_reply` and
+    /// `in_reply_to_guid`; version 10 keeps it in the message's own
+    /// `reply_to`, for every source. A version-9 file is refused by its
+    /// version, never read with its replies taken for plain messages.
     #[test]
-    fn refuses_a_version_8_file_by_name() {
+    fn refuses_a_version_9_file_by_name() {
         assert_eq!(
-            check_schema_version_in_json(r#"{"schema_version":8,"export":{}}"#)
+            check_schema_version_in_json(r#"{"schema_version":9,"export":{}}"#)
                 .unwrap_err()
                 .to_string(),
-            format!("This file is schema version 8; Message Crate reads version {SCHEMA_VERSION}")
+            format!("This file is schema version 9; Message Crate reads version {SCHEMA_VERSION}")
         );
     }
 

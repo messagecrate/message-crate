@@ -84,9 +84,7 @@ fn message(
         "subject": null,
         "text": text,
         "is_announcement": false,
-        "is_reply": false,
-        "thread_originator_guid": null,
-        "thread_originator_part": null,
+        "reply_to": null,
         "num_replies": 0,
         "conversation": {
             "id": 9,

@@ -3,7 +3,8 @@
 
 use crate::jid::{chat_id_from_jid, is_channel_jid, is_group_jid, is_status_jid, jid_to_e164};
 use crate::parse::{
-    ChatJson, MessageJson, load_chat_store, media_path, message_text, timestamp_ms, timestamp_secs,
+    ChatJson, MessageJson, is_reply, key_string, load_chat_store, media_path, message_text,
+    timestamp_ms, timestamp_secs,
 };
 use anyhow::{Context, Result};
 use message_crate_core::{
@@ -13,7 +14,7 @@ use message_crate_core::{
 use message_csv::{format_local_ts, json_cell};
 use message_ir::{
     ExportMeta, HandleType, IrAttachment, IrParticipant, IrService, IrSource, PendingAttachment,
-    PendingConversation, PendingMessage, ProjectionHooks, SortKeyUnit,
+    PendingConversation, PendingMessage, PendingReply, ProjectionHooks, SortKeyUnit,
 };
 use message_staging::{AttachmentSource, ExportWriter};
 use serde_json::Map;
@@ -240,6 +241,16 @@ fn ingest_chat(
             extra: {
                 let mut e = BTreeMap::new();
                 e.insert("key_id".into(), key_id_string(msg));
+                e.insert(
+                    "full_key_id".into(),
+                    key_string(msg.full_key_id.as_ref()).unwrap_or_default(),
+                );
+                if is_reply(msg) {
+                    e.insert(
+                        "reply_key_id".into(),
+                        key_string(msg.reply_key_id.as_ref()).unwrap_or_default(),
+                    );
+                }
                 e.insert("reply_json".into(), optional_json(msg.reply.as_ref()));
                 e.insert("reactions_json".into(), reactions_json(&msg.reactions));
                 e.insert(
@@ -471,6 +482,23 @@ impl ProjectionHooks for WhatsappProjection {
     /// messages with identical text.
     fn vendor_key(&self, msg: &PendingMessage) -> Option<String> {
         message_ir::trimmed(msg.extra_str("key_id")).map(str::to_string)
+    }
+
+    /// `full_key_id`, the whole id a reply names in its `reply_key_id`.
+    /// `key_id` is not used: on an iPhone it is a 17-character prefix that
+    /// two messages can share.
+    fn reply_key(&self, msg: &PendingMessage) -> Option<String> {
+        message_ir::trimmed(msg.extra_str("full_key_id")).map(str::to_string)
+    }
+
+    /// A message that quotes another, linked by `reply_key_id` to the message
+    /// of the same chat whose `full_key_id` it equals. A reply from a JSON
+    /// with no `reply_key_id` is still a reply, with no link.
+    fn reply(&self, msg: &PendingMessage) -> Option<PendingReply> {
+        msg.extra.get("reply_key_id").map(|quoted| PendingReply {
+            quoted_key: message_ir::trimmed(quoted).map(str::to_string),
+            part_index: None,
+        })
     }
 
     fn attachment_to_ir(&self, att: &PendingAttachment, msg: &PendingMessage) -> IrAttachment {

@@ -217,14 +217,12 @@ pub struct StagingMessage<'a> {
     pub body: Option<&'a str>,
     /// 1 for a system bubble.
     pub is_announcement: i64,
-    /// 1 for a threaded reply.
+    /// 1 for a reply, whether or not the message it quotes is named.
     pub is_reply: i64,
-    /// GUID of the message a reply refers to.
-    pub thread_originator_guid: Option<&'a str>,
-    /// Part index within the originator for a multi-part reply.
-    pub thread_originator_part: Option<i64>,
-    /// Replies hanging off this message.
-    pub num_replies: i64,
+    /// The guid of the message a reply quotes, when it was in the export.
+    pub reply_to_guid: Option<&'a str>,
+    /// The part of the quoted message a reply answers.
+    pub reply_to_part: Option<i64>,
     /// Deleted in the source app, Unsent, or `None` for neither.
     pub deletion: Option<message_ir::Deletion>,
     /// Stable order within the conversation when timestamps collide.
@@ -343,7 +341,7 @@ const TAPBACK_COLUMNS: &[&str] = &[
 ];
 
 /// Bind counts, in lockstep with the `INSERT` column lists below.
-const MESSAGE_BIND_COLUMNS: usize = 19;
+const MESSAGE_BIND_COLUMNS: usize = 18;
 const ATTACHMENT_BIND_COLUMNS: usize = ATTACHMENT_COLUMNS.len();
 const TAPBACK_BIND_COLUMNS: usize = TAPBACK_COLUMNS.len();
 const EARLIER_VERSION_BIND_COLUMNS: usize = 4;
@@ -370,8 +368,7 @@ pub async fn insert_messages(
         INSERT INTO staging_messages (
             conversation_id, account_id, source, guid, timestamp, is_from_me,
             sender_handle_id, owner_handle_id, service, subject, body, is_announcement, is_reply,
-            thread_originator_guid, thread_originator_part, num_replies, deletion, sort_order,
-            import_id
+            reply_to_guid, reply_to_part, deletion, sort_order, import_id
         ) VALUES {}
         ON CONFLICT DO NOTHING
         RETURNING id, sort_order
@@ -394,9 +391,8 @@ pub async fn insert_messages(
             .bind(row.body)
             .bind(row.is_announcement)
             .bind(row.is_reply)
-            .bind(row.thread_originator_guid)
-            .bind(row.thread_originator_part)
-            .bind(row.num_replies)
+            .bind(row.reply_to_guid)
+            .bind(row.reply_to_part)
             .bind(row.deletion.map(message_ir::Deletion::as_str))
             .bind(row.sort_order)
             .bind(row.import_id);
@@ -980,14 +976,12 @@ const INSERT_MESSAGES_FROM_STAGING: &str = r"
         INSERT INTO messages (
             conversation_id, account_id, source, guid, timestamp, is_from_me,
             sender_handle_id, owner_handle_id, service, subject, body, is_announcement, is_reply,
-            thread_originator_guid, thread_originator_part, num_replies, deletion, sort_order,
-            import_id
+            reply_to_guid, reply_to_part, deletion, sort_order, import_id
         )
         SELECT
             cm.prod_id, sm.account_id, sm.source, sm.guid, sm.timestamp, sm.is_from_me,
             sm.sender_handle_id, sm.owner_handle_id, sm.service, sm.subject, sm.body, sm.is_announcement, sm.is_reply,
-            sm.thread_originator_guid, sm.thread_originator_part, sm.num_replies, sm.deletion,
-            sm.sort_order, sm.import_id
+            sm.reply_to_guid, sm.reply_to_part, sm.deletion, sm.sort_order, sm.import_id
         FROM staging_messages sm
         JOIN _promote_conv_map cm ON cm.staging_id = sm.conversation_id
         WHERE sm.account_id = $1

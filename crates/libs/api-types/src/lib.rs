@@ -393,13 +393,12 @@ api_shape! {
         pub text: Option<String>,
         /// True for group announcements.
         pub is_announcement: bool,
-        /// True when part of a reply thread.
-        pub is_reply: bool,
-        /// GUID of the message this replies to.
-        pub thread_originator_guid: Option<String>,
-        /// Part index of the originator (for tapbacks).
-        pub thread_originator_part: Option<i64>,
-        /// Replies in this thread.
+        /// The message this one replies to; `null` for a message that is not
+        /// a reply.
+        pub reply_to: Option<ReplyTo>,
+        /// How many replies name this message in their `reply_to.guid`: the
+        /// replies a person can open from it, counted when read. A duplicate
+        /// is not counted.
         pub num_replies: i64,
         /// The conversation this message belongs to.
         pub conversation: MessageConversation,
@@ -422,6 +421,20 @@ api_shape! {
         /// that hold a free-text word of it carry `matched`. False for a hit
         /// its final text matches, and on every other route.
         pub matched_earlier_version: bool,
+    }
+}
+
+api_shape! {
+    /// The message a reply quotes. A message that carries one is a reply,
+    /// whether or not the quoted message could be named.
+    pub struct ReplyTo {
+        /// The quoted message's `guid`, when that message was in the same
+        /// export as the reply; `null` when the backup named a message the
+        /// export did not hold, or named none.
+        pub guid: Option<String>,
+        /// The part of the quoted message the reply answers; 0 for the first
+        /// or only part. `null` when the source does not record one.
+        pub part_index: Option<i64>,
     }
 }
 
@@ -588,9 +601,7 @@ mod tests {
             subject: None,
             text: None,
             is_announcement: false,
-            is_reply: false,
-            thread_originator_guid: None,
-            thread_originator_part: None,
+            reply_to: None,
             num_replies: 0,
             conversation: MessageConversation {
                 id: 9,

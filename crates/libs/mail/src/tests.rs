@@ -31,6 +31,7 @@ fn base_sms() -> MailMessage {
             reactions: Vec::new(),
             deletion: None,
             edits: Vec::new(),
+            reply_to: None,
             imessage: None,
             source: Some(message_ir::IrSource {
                 android_type: Some(1),
@@ -339,10 +340,10 @@ fn caller_id_owner_display_and_imessage_extension_headers() {
     msg.owner_display_name = Some("+15555550100".into());
     msg.export_source = "imessage".into();
     msg.message.message_kind = message_ir::IrMessageKind::IMessage;
-    im_mut(&mut msg).is_reply = true;
-    im_mut(&mut msg).in_reply_to_guid = Some("parent-guid-1111".into());
-    im_mut(&mut msg).thread_originator_part = Some(0);
-    im_mut(&mut msg).num_replies = Some(2);
+    msg.message.reply_to = Some(message_ir::ReplyTo {
+        guid: Some("parent-guid-1111".into()),
+        part_index: Some(0),
+    });
     im_mut(&mut msg).send_effect = Some("Sent with Balloons".into());
     msg.message.text = "hello\n\nSent with Balloons".into();
     im_mut(&mut msg).parts =
@@ -372,18 +373,16 @@ fn caller_id_owner_display_and_imessage_extension_headers() {
         Some("true")
     );
     assert_eq!(
-        headers
-            .get_first_value("X-ME-Thread-Originator-Guid")
-            .as_deref(),
+        headers.get_first_value("X-ME-Reply-To-Guid").as_deref(),
         Some("parent-guid-1111")
+    );
+    assert_eq!(
+        headers.get_first_value("X-ME-Reply-To-Part").as_deref(),
+        Some("0")
     );
     assert_eq!(
         headers.get_first_value("X-ME-Send-Effect").as_deref(),
         Some("Sent with Balloons")
-    );
-    assert_eq!(
-        headers.get_first_value("X-ME-Num-Replies").as_deref(),
-        Some("2")
     );
     let irt = headers.get_first_value("In-Reply-To").unwrap();
     assert!(irt.contains("parent-guid-1111@imessage.local"), "{irt}");
@@ -399,7 +398,6 @@ fn tapback_and_handwriting_svg_headers() {
     im_mut(&mut msg).associated_part = Some(0);
     im_mut(&mut msg).tapback_kind = Some("loved".into());
     im_mut(&mut msg).tapback_action = Some("add".into());
-    im_mut(&mut msg).in_reply_to_guid = Some("parent-guid".into());
     msg.message.text = "Loved a message".into();
     msg.attachments = vec![MailAttachment {
         bytes: b"<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>".to_vec(),
@@ -627,6 +625,52 @@ fn a_mail_that_keeps_reactions_in_x_me_tapbacks_is_refused() {
     );
 }
 
+/// An earlier Message Crate kept a reply's link in
+/// `X-ME-Thread-Originator-Guid`, which no reader looks for now, so the mail
+/// is refused rather than read as a reply that quotes nothing.
+#[test]
+fn a_mail_that_keeps_a_reply_link_in_x_me_thread_originator_guid_is_refused() {
+    let eml = concat!(
+        "X-ME-Chat-Identifier: +15555550101\r\n",
+        "X-ME-Guid: g1\r\n",
+        "X-ME-Timestamp-Unix-Ms: 1400773261000\r\n",
+        "X-ME-Is-Reply: true\r\n",
+        "X-ME-Thread-Originator-Guid: parent-guid\r\n",
+        "\r\n",
+        "hello\r\n",
+    );
+    let err = crate::mail_message_from_eml_bytes(eml.as_bytes()).unwrap_err();
+    assert_eq!(
+        format!("{err:#}"),
+        "This mail was written by an earlier Message Crate, which kept a reply's link in \
+         X-ME-Thread-Originator-Guid. Export the backup again"
+    );
+}
+
+/// A reply whose quoted message is not in the export writes `X-ME-Is-Reply`
+/// alone, with no `In-Reply-To`, and reads back as a reply with no link.
+#[test]
+fn a_reply_with_no_link_reads_back_as_a_reply() {
+    let mut msg = base_sms();
+    msg.message.reply_to = Some(message_ir::ReplyTo::default());
+    let eml = build_eml(&msg).unwrap();
+    let mail = mailparse::parse_mail(&eml).unwrap();
+    let headers = mail.get_headers();
+    assert_eq!(
+        headers.get_first_value("X-ME-Is-Reply").as_deref(),
+        Some("true")
+    );
+    assert_eq!(headers.get_first_value("X-ME-Reply-To-Guid"), None);
+    assert_eq!(headers.get_first_value("In-Reply-To"), None);
+    let back = crate::mail_message_from_eml_bytes(&eml).unwrap();
+    assert_eq!(back.message.reply_to, Some(message_ir::ReplyTo::default()));
+
+    msg.message.reply_to = None;
+    let eml = build_eml(&msg).unwrap();
+    let back = crate::mail_message_from_eml_bytes(&eml).unwrap();
+    assert_eq!(back.message.reply_to, None, "a message that is not a reply");
+}
+
 /// A reactions header that does not read is refused rather than read as no
 /// reactions.
 #[test]
@@ -835,7 +879,10 @@ fn with_every_x_me_text(value: &str, direction: IrDirection) -> MailMessage {
     im.balloon_bundle_id = text();
     im.associated_guid = text();
     im.tapback_emoji = text();
-    im.in_reply_to_guid = text();
+    msg.message.reply_to = Some(message_ir::ReplyTo {
+        guid: text(),
+        part_index: None,
+    });
     msg.attachments = vec![MailAttachment {
         bytes: b"x".to_vec(),
         meta: message_ir::AttachmentMeta {
@@ -976,7 +1023,7 @@ fn a_typed_header_that_ends_in_a_space_reads_as_its_value() {
         "X-ME-Android-Type: 2 \r\n",
         "X-ME-Deletion: unsent \r\n",
         "X-ME-Is-Reply: true \r\n",
-        "X-ME-Num-Replies: 3 \r\n",
+        "X-ME-Reply-To-Part: 3 \r\n",
         "X-ME-Read-Receipt: 2014-05-22T15:41:01Z \r\n",
         "X-ME-Balloon-Kind: url \r\n",
         "X-ME-Tapback-Kind: loved \r\n",
@@ -995,9 +1042,14 @@ fn a_typed_header_that_ends_in_a_space_reads_as_its_value() {
     );
     assert_eq!(msg.message.source.unwrap().android_type, Some(2));
     assert_eq!(msg.message.deletion, Some(message_ir::Deletion::Unsent));
+    assert_eq!(
+        msg.message.reply_to,
+        Some(message_ir::ReplyTo {
+            guid: None,
+            part_index: Some(3),
+        })
+    );
     let im = msg.message.imessage.unwrap();
-    assert!(im.is_reply);
-    assert_eq!(im.num_replies, Some(3));
     assert_eq!(
         im.read_receipt_rfc3339.as_deref(),
         Some("2014-05-22T15:41:01Z")
@@ -1054,7 +1106,10 @@ fn a_guid_with_a_line_break_keeps_the_mail_headers_whole() {
     parent.message.guid = "c\r\n\r\nd".into();
     let mut msg = base_sms();
     msg.message.guid = "a\r\n\r\nb".into();
-    im_mut(&mut msg).in_reply_to_guid = Some("c\r\n\r\nd".into());
+    msg.message.reply_to = Some(message_ir::ReplyTo {
+        guid: Some("c\r\n\r\nd".into()),
+        part_index: None,
+    });
 
     for read in <[MailMessage; 2]>::from(written_and_read_back(&msg)) {
         assert_eq!(x_me_values(&read), x_me_values(&msg));

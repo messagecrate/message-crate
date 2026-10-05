@@ -13,7 +13,7 @@ use chrono::{Duration, Utc};
 use message_ir::{
     ConversationHeader, ConversationMeta, ConversationStats, Deletion, EarlierVersion, ExportMeta,
     IrAttachment, IrConversationType, IrDirection, IrImessage, IrMessage, IrMessageKind,
-    IrParticipant, IrService, Reaction, SCHEMA_VERSION, orphaned_chat_id,
+    IrParticipant, IrService, Reaction, ReplyTo, SCHEMA_VERSION, orphaned_chat_id,
 };
 use rand::Rng;
 use rand::RngExt;
@@ -332,6 +332,7 @@ impl SharedMessage {
             reactions: Vec::new(),
             deletion: None,
             edits: Vec::new(),
+            reply_to: None,
             imessage: None,
             source: None,
         }
@@ -735,10 +736,10 @@ impl<R: Rng> Seeder<'_, R> {
             }
             if messages.reply_stride > 0 && i % messages.reply_stride == 0 && origin_guid.is_some()
             {
-                let im = msg.imessage.get_or_insert_with(IrImessage::default);
-                im.is_reply = true;
-                im.in_reply_to_guid.clone_from(&origin_guid);
-                im.thread_originator_part = Some(0);
+                msg.reply_to = Some(ReplyTo {
+                    guid: origin_guid.clone(),
+                    part_index: Some(0),
+                });
             }
             if i % (messages.reply_stride.max(1) + 17) == 0 {
                 origin_guid = Some(guid.clone());
@@ -916,15 +917,13 @@ impl<R: Rng> Seeder<'_, R> {
             && origin_guid.is_some()
             && msg_count >= 25
         {
-            let im = msg.imessage.get_or_insert_with(IrImessage::default);
-            im.is_reply = true;
-            im.in_reply_to_guid.clone_from(origin_guid);
-            im.thread_originator_part = Some(0);
+            msg.reply_to = Some(ReplyTo {
+                guid: origin_guid.clone(),
+                part_index: Some(0),
+            });
         }
         if i.is_multiple_of(messages.reply_stride.max(1) + 29) {
             *origin_guid = Some(msg.guid.clone());
-            let im = msg.imessage.get_or_insert_with(IrImessage::default);
-            im.num_replies = Some(self.rng.random_range(1..4));
         }
         maybe_mark_as_sms_or_rcs(
             msg,
@@ -942,9 +941,8 @@ impl<R: Rng> Seeder<'_, R> {
 /// holds.
 fn mark_deletion(msg: &mut IrMessage, i: usize, messages: &crate::config::MessagesConfig) {
     let on = |stride: usize| stride > 0 && i > 0 && i.is_multiple_of(stride);
-    let can_be_unsent = msg.attachments.is_empty()
-        && msg.service == IrService::IMessage
-        && msg.imessage.as_ref().is_none_or(|im| !im.is_reply);
+    let can_be_unsent =
+        msg.attachments.is_empty() && msg.service == IrService::IMessage && msg.reply_to.is_none();
     if on(messages.unsent_stride) && can_be_unsent {
         msg.deletion = Some(Deletion::Unsent);
         msg.text.clear();
@@ -1115,6 +1113,7 @@ impl<R: Rng> Seeder<'_, R> {
             reactions: Vec::new(),
             deletion: None,
             edits: Vec::new(),
+            reply_to: None,
             imessage: None,
             source: None,
         }

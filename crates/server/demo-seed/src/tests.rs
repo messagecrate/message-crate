@@ -264,13 +264,9 @@ fn every_conversation_file_is_a_current_schema_document_and_the_counts_match_the
         let mut written = std::collections::HashSet::new();
         for message in &doc.messages {
             tapbacks += message.reactions.len();
-            let Some(im) = message.imessage.as_ref() else {
-                written.insert(message.guid.as_str());
-                continue;
-            };
-            if im.is_reply {
+            if let Some(reply_to) = message.reply_to.as_ref() {
                 replies += 1;
-                let target = im.in_reply_to_guid.as_deref().unwrap_or("");
+                let target = reply_to.guid.as_deref().unwrap_or("");
                 assert!(
                     written.contains(target),
                     "{source}/{}: reply {} names {target:?}, which was not written before it",
@@ -1002,7 +998,7 @@ fn the_medium_set_marks_a_few_apple_messages_deleted_in_the_source_app_and_unsen
                     // an empty message threaded under another.
                     assert_eq!(message.service, IrService::IMessage, "{}", message.guid);
                     assert!(
-                        message.imessage.as_ref().is_none_or(|im| !im.is_reply),
+                        message.reply_to.is_none(),
                         "{} is an Unsent reply",
                         message.guid
                     );

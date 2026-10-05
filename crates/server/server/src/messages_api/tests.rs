@@ -6,7 +6,7 @@ use crate::test_support::{
     attachment, conversation_header, expect_problem, fixture_with_account, get_json, get_raw,
     get_status, message_line, register_via_api, seed_conversation,
 };
-use message_ir::{IrAttachment, IrImessage, Reaction};
+use message_ir::{IrAttachment, IrImessage, IrService, Reaction};
 
 /// Two conversations for alice (a direct thread and a group), and one for bob
 /// that must never appear in alice's results.
@@ -297,6 +297,7 @@ fn ir_message(
     is_sticker: bool,
     reactions: Vec<Reaction>,
     imessage: Option<IrImessage>,
+    is_reply: bool,
 ) -> String {
     let mut message = message_line(guid, text)
         .at(ms)
@@ -316,6 +317,9 @@ fn ir_message(
     }
     if let Some(imessage) = imessage {
         message = message.imessage(imessage);
+    }
+    if is_reply {
+        message = message.reply_to(None);
     }
     message.to_string()
 }
@@ -357,10 +361,8 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
             reaction_by("liked", None, 0, "+15555550167"),
             reaction_by("emoji", Some("🎉"), 1, "+15555550161"),
         ],
-        Some(IrImessage {
-            is_reply: true,
-            ..IrImessage::default()
-        }),
+        None,
+        true,
     );
     let announcement = ir_message(
         "g-announce",
@@ -372,6 +374,7 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
             announcement: Some("named the conversation Reactions".into()),
             ..IrImessage::default()
         }),
+        false,
     );
     let plain = ir_message(
         "g-plain",
@@ -380,6 +383,7 @@ async fn import_reactions_and_flags(fixture: &TestFixture, account_id: i64) {
         false,
         Vec::new(),
         None,
+        false,
     );
     let dir = fixture.dir().join("reactions");
     std::fs::create_dir_all(&dir).unwrap();
@@ -1316,7 +1320,7 @@ async fn reactions_and_message_flags_are_read_back_as_imported() {
 
     let flags = |m: &serde_json::Value| {
         (
-            m["is_reply"].as_bool().unwrap(),
+            !m["reply_to"].is_null(),
             m["is_announcement"].as_bool().unwrap(),
             // `is_sticker` is left out of the JSON when false.
             m["attachments"][0]["is_sticker"] == true,
@@ -1325,6 +1329,81 @@ async fn reactions_and_message_flags_are_read_back_as_imported() {
     assert_eq!(flags(&reply), (true, false, true), "{reply}");
     assert_eq!(flags(&announcement), (false, true, false), "{announcement}");
     assert_eq!(flags(&plain), (false, false, false), "{plain}");
+}
+
+/// A message's reply count is the number of replies that name it, counted
+/// when read: a reply whose quoted message was not in the export is a reply
+/// that counts toward nothing, and a reply later flagged as a duplicate stops
+/// counting, so the count always equals the replies a person can open.
+#[tokio::test]
+async fn the_reply_count_is_the_replies_that_link_to_the_message() {
+    let (fixture, alice) = fixture_with_account().await;
+    let header = conversation_header("whatsapp", "+15555550123").participant("+15555550123", None);
+    let line = |guid: &str, ms: i64| {
+        message_line(guid, guid)
+            .at(ms)
+            .service(IrService::Whatsapp)
+            .sender("+15555550123")
+    };
+    let lines = [
+        line("g-origin", 1_426_183_462_000),
+        line("g-reply-1", 1_426_183_463_000).reply_to(Some("g-origin")),
+        line("g-reply-2", 1_426_183_464_000).reply_to(Some("g-origin")),
+        line("g-reply-3", 1_426_183_465_000).reply_to(Some("g-origin")),
+        line("g-unlinked", 1_426_183_466_000).reply_to(None),
+        line("g-plain", 1_426_183_467_000),
+    ];
+    let mut contents = header.line();
+    for message in &lines {
+        contents.push_str(&message.line());
+    }
+    let counts =
+        import_conversation_file(&fixture, alice.account_id, "replies", &contents, "whatsapp")
+            .await;
+    assert_eq!(counts.messages, 6);
+
+    let read = || async {
+        let page: serde_json::Value = get_json(&fixture.state, "/v1/messages", &alice.token).await;
+        page["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|m| {
+                (
+                    m["guid"].as_str().unwrap().to_string(),
+                    (m["num_replies"].as_i64().unwrap(), m["reply_to"].clone()),
+                )
+            })
+            .collect::<std::collections::BTreeMap<_, _>>()
+    };
+    let linked = serde_json::json!({ "guid": "g-origin", "part_index": null });
+    let messages = read().await;
+    assert_eq!(messages["g-origin"], (3, serde_json::Value::Null));
+    assert_eq!(messages["g-reply-1"], (0, linked.clone()));
+    assert_eq!(
+        messages["g-unlinked"],
+        (0, serde_json::json!({ "guid": null, "part_index": null })),
+        "a reply whose quoted message is not in the export"
+    );
+    assert_eq!(messages["g-plain"], (0, serde_json::Value::Null));
+
+    let mut conn = fixture.conn().await;
+    let mut tx = crate::db::begin_write(&mut conn).await.unwrap();
+    sqlx::query(
+        "UPDATE messages SET duplicate_of = (SELECT id FROM messages WHERE guid = 'g-reply-2')
+         WHERE guid = 'g-reply-3'",
+    )
+    .execute(&mut *tx)
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    drop(conn);
+    let messages = read().await;
+    assert!(!messages.contains_key("g-reply-3"), "a duplicate is hidden");
+    assert_eq!(
+        messages["g-origin"].0, 2,
+        "a duplicate is not a reply a person can open"
+    );
 }
 
 #[tokio::test]

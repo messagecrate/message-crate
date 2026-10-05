@@ -1,11 +1,11 @@
 //! Emptiness, which decides whether a message's extensions are written at all.
 //!
-//! `IrImessage::is_empty` is twenty `&&` clauses and `IrSource::is_empty` is
+//! `IrImessage::is_empty` is thirteen clauses and `IrSource::is_empty` is
 //! two, and neither had a test — this crate had no test module. Every clause
 //! could be dropped on its own with the whole workspace green, and the effect
 //! of dropping one is silent: `into_option` returns `None`, the exporter writes
 //! `imessage: null`, and that field is gone from the export with nothing said.
-//! A tapback, a reply thread, a send effect — each is one clause.
+//! A tapback, a send effect, an app balloon — each is one clause.
 
 use super::*;
 
@@ -13,34 +13,6 @@ use super::*;
 fn one_field_set() -> Vec<(&'static str, IrImessage)> {
     let json = || Some(serde_json::json!([{"index": 0}]));
     vec![
-        (
-            "is_reply",
-            IrImessage {
-                is_reply: true,
-                ..IrImessage::default()
-            },
-        ),
-        (
-            "in_reply_to_guid",
-            IrImessage {
-                in_reply_to_guid: Some("parent-guid".into()),
-                ..IrImessage::default()
-            },
-        ),
-        (
-            "thread_originator_part",
-            IrImessage {
-                thread_originator_part: Some(0),
-                ..IrImessage::default()
-            },
-        ),
-        (
-            "num_replies",
-            IrImessage {
-                num_replies: Some(0),
-                ..IrImessage::default()
-            },
-        ),
         (
             "send_effect",
             IrImessage {
@@ -136,7 +108,7 @@ fn one_field_set() -> Vec<(&'static str, IrImessage)> {
 }
 
 /// A default `IrImessage` carries nothing, so the exporter writes no
-/// `imessage` object rather than an object of twenty nulls.
+/// `imessage` object rather than an object of thirteen nulls.
 #[test]
 fn an_imessage_with_nothing_set_is_empty() {
     let blank = IrImessage::default();
@@ -154,7 +126,7 @@ fn any_one_imessage_field_makes_it_worth_keeping() {
     let cases = one_field_set();
     assert_eq!(
         cases.len(),
-        17,
+        13,
         "one case per field on IrImessage; add or remove one with the field"
     );
     for (field, value) in cases {

@@ -467,3 +467,69 @@ fn status_updates_and_channel_posts_are_skipped_and_counted() {
     assert_eq!(report.extra(crate::emit::SKIPPED_STATUS_UPDATES), 2);
     assert_eq!(report.extra(crate::emit::SKIPPED_CHANNEL_POSTS), 1);
 }
+
+/// The guid of the message in `doc` whose text is `text`.
+fn guid_of<'a>(doc: &'a message_ir::ConversationDocument, text: &str) -> &'a str {
+    &message_of(doc, text).guid
+}
+
+/// The message in `doc` whose text is `text`.
+fn message_of<'a>(
+    doc: &'a message_ir::ConversationDocument,
+    text: &str,
+) -> &'a message_ir::IrMessage {
+    doc.messages
+        .iter()
+        .find(|m| m.text == text)
+        .unwrap_or_else(|| panic!("no message {text:?}"))
+}
+
+/// A quoted reply links to the message it quotes in the same chat, found by
+/// `reply_key_id` equal to that message's `full_key_id`. On an iPhone two
+/// messages can share the 17-character `key_id`, so the whole key decides
+/// which one is quoted. A reply whose quoted message is not in the chat, or
+/// one from an older JSON with no `reply_key_id`, is still a reply, with no
+/// link, and a key that names a message in another chat links nothing.
+#[test]
+fn a_reply_links_to_the_message_it_quotes_in_the_same_chat() {
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/replies.json");
+    let json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&fixture).expect("read fixture"))
+            .expect("parse fixture");
+
+    let (_, documents) = convert_to_documents(&json);
+    let sam = &documents["+15555550122"];
+    let saturday = guid_of(sam, "Or Saturday");
+
+    assert_eq!(message_of(sam, "Lunch on Friday?").reply_to, None);
+    assert_eq!(message_of(sam, "Or Saturday").reply_to, None);
+    assert_eq!(
+        message_of(sam, "Saturday works").reply_to,
+        Some(message_ir::ReplyTo {
+            guid: Some(saturday.to_string()),
+            part_index: None,
+        }),
+        "the whole key picks the second of two messages that share a key_id"
+    );
+    let no_link = Some(message_ir::ReplyTo {
+        guid: None,
+        part_index: None,
+    });
+    assert_eq!(
+        message_of(sam, "About that photo from last year").reply_to,
+        no_link,
+        "the quoted message is not in the export"
+    );
+    assert_eq!(
+        message_of(sam, "From an older export").reply_to,
+        no_link,
+        "an older JSON names no reply_key_id"
+    );
+
+    let ada = &documents["+15555550133"];
+    assert_eq!(
+        message_of(ada, "Did Sam say Saturday?").reply_to,
+        no_link,
+        "a key from another chat links nothing"
+    );
+}

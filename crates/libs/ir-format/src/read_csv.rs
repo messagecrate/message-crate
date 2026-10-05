@@ -7,7 +7,7 @@ use message_csv::{AttachmentCell, ParticipantCell};
 use message_ir::{
     ConversationDocument, ConversationHeader, ConversationMeta, ConversationStats, EarlierVersion,
     ExportMeta, IrAttachment, IrConversationType, IrDirection, IrImessage, IrMessage,
-    IrMessageKind, IrParticipant, IrService, Reaction, SCHEMA_VERSION, nonempty,
+    IrMessageKind, IrParticipant, IrService, Reaction, ReplyTo, SCHEMA_VERSION, nonempty,
     parse_android_type,
 };
 use serde_json::Value;
@@ -111,26 +111,18 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
         get("source_fields_json"),
     );
 
-    let is_reply = message_csv::parse_bool(get("is_reply"));
+    let reply_to = reply_to_from_cells(
+        message_csv::parse_bool(get("is_reply")),
+        get("reply_to_guid"),
+        get("reply_to_part"),
+    );
     // A mark the CSV names wrongly is refused rather than read as none.
     let deletion = message_ir::parse_deletion(get("deletion")).context("bad deletion")?;
-    let thread_originator_part = {
-        let s = get("thread_originator_part");
-        if s.is_empty() { None } else { s.parse().ok() }
-    };
-    let num_replies = {
-        let s = get("num_replies");
-        if s.is_empty() { None } else { s.parse().ok() }
-    };
     let associated_part = {
         let s = get("associated_part");
         if s.is_empty() { None } else { s.parse().ok() }
     };
     let imessage = imessage_from_parts(IrImessage {
-        is_reply,
-        in_reply_to_guid: nonempty(get("thread_originator_guid")),
-        thread_originator_part,
-        num_replies,
         send_effect: nonempty(get("send_effect")),
         shared_location: nonempty(get("shared_location")),
         announcement: nonempty(get("announcement")),
@@ -161,8 +153,23 @@ fn message_from_record(cols: &HashMap<&str, usize>, row: &csv::StringRecord) -> 
         reactions,
         deletion,
         edits,
+        reply_to,
         imessage,
         source,
+    })
+}
+
+/// The message a reply quotes, from the `is_reply`, `reply_to_guid` and
+/// `reply_to_part` cells; `None` for a row that is not a reply.
+fn reply_to_from_cells(is_reply: bool, guid: &str, part: &str) -> Option<ReplyTo> {
+    let guid = nonempty(guid);
+    (is_reply || guid.is_some()).then(|| ReplyTo {
+        guid,
+        part_index: if part.is_empty() {
+            None
+        } else {
+            part.parse().ok()
+        },
     })
 }
 

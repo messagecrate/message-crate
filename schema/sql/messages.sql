@@ -75,14 +75,14 @@ CREATE TABLE IF NOT EXISTS messages (
     body TEXT,
     -- 1 = system/announcement bubble; 0 = normal user message.
     is_announcement INTEGER NOT NULL DEFAULT 0,
-    -- 1 = this message is a threaded reply; 0 = top-level.
+    -- 1 = a reply, whether or not the message it quotes is known; 0 = not a reply.
     is_reply INTEGER NOT NULL DEFAULT 0,
-    -- GUID of the message this reply refers to (when is_reply = 1).
-    thread_originator_guid TEXT,
-    -- Part index within the originator message for multi-part replies.
-    thread_originator_part INTEGER,
-    -- Count of replies hanging off this message (denormalized from the source).
-    num_replies INTEGER NOT NULL DEFAULT 0,
+    -- The guid of the message a reply quotes, when that message was in the
+    -- same export; NULL otherwise. A message's reply count is the number of
+    -- messages whose reply_to_guid is its guid, counted when read.
+    reply_to_guid TEXT,
+    -- The part of the quoted message a reply answers; NULL when not recorded.
+    reply_to_part INTEGER,
     -- 'deleted_in_source_app': the person deleted it in the app it came from
     -- before the backup; 'unsent': its sender took it back. NULL for neither.
     -- The message is listed and searched like any other either way.
@@ -125,6 +125,12 @@ CREATE INDEX IF NOT EXISTS ix_messages_import_id
     ON messages (import_id)
     WHERE import_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS ix_messages_source ON messages (source);
+-- A message's reply count is read by counting the replies that name it, the
+-- same account, source and guid that ix_messages_account_source_guid keys it
+-- by; this answers that count without a scan.
+CREATE INDEX IF NOT EXISTS ix_messages_reply_to
+    ON messages (account_id, source, reply_to_guid)
+    WHERE reply_to_guid IS NOT NULL;
 
 -- File or media part attached to a message.
 CREATE TABLE IF NOT EXISTS attachments (

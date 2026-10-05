@@ -126,8 +126,8 @@ impl std::fmt::Display for ConversationHeaderLine {
 ///
 /// It starts as an incoming iMessage sent at 1426183462000 (2015-03-12
 /// 18:04:22 UTC), with no sender, subject, attachments, reactions, deletion,
-/// edits, `imessage` extensions or vendor leftovers, and each method sets one
-/// more field. `Display` writes the line as JSON without a trailing newline.
+/// edits, reply, `imessage` extensions or vendor leftovers, and each method
+/// sets one more field. `Display` writes the line as JSON without a trailing newline.
 ///
 /// A line that is not valid message-ir, such as one missing a required field
 /// or holding the wrong type, cannot be built here. A test of how the server
@@ -153,6 +153,7 @@ pub fn message_line(guid: &str, text: &str) -> MessageLine {
         reactions: Vec::new(),
         deletion: None,
         edits: Vec::new(),
+        reply_to: None,
         imessage: None,
         source: None,
     })
@@ -241,6 +242,16 @@ impl MessageLine {
     /// One more earlier version of the message, after the ones already set.
     pub fn edit(mut self, earlier: message_ir::EarlierVersion) -> Self {
         self.0.edits.push(earlier);
+        self
+    }
+
+    /// A reply that quotes the message `guid`, or a reply whose quoted
+    /// message is not named when `guid` is `None`.
+    pub fn reply_to(mut self, guid: Option<&str>) -> Self {
+        self.0.reply_to = Some(message_ir::ReplyTo {
+            guid: guid.map(str::to_string),
+            part_index: None,
+        });
         self
     }
 
