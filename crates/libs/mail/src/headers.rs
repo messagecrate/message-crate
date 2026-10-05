@@ -85,7 +85,7 @@ pub(crate) const EARLIER_VERSIONS: &str = "X-ME-Earlier-Versions";
 /// The header an earlier Message Crate kept the Apple Messages edit history
 /// in. The reader refuses a mail that carries it: nothing reads it, so the
 /// mail would lose its earlier versions.
-pub(crate) const EARLIER_EDIT_HISTORY: &str = "X-ME-Edits";
+pub(crate) const EARLIER_X_ME_EDITS: &str = "X-ME-Edits";
 /// The header an earlier Message Crate kept Apple Messages reactions in.
 /// The reader refuses a mail that carries it: nothing reads it, so the mail
 /// would lose its reactions.
