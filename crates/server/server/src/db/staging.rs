@@ -287,6 +287,32 @@ pub struct StagingEarlierVersion<'a> {
     pub edited_at: Option<&'a str>,
 }
 
+impl<'a> StagingEarlierVersion<'a> {
+    /// The staging row of `version`, one earlier version of the staged
+    /// message `message_id`.
+    pub fn from_record(message_id: i64, version: &'a crate::models::EarlierVersionRecord) -> Self {
+        Self {
+            message_id,
+            part_index: version.part_index,
+            text: &version.text,
+            edited_at: version.edited_at.as_deref(),
+        }
+    }
+}
+
+/// The key staging keeps one message row under
+/// (`ix_staging_messages_account_source_guid`): one guid of one source in
+/// one account.
+#[derive(Debug, Clone, Copy)]
+pub struct StagingMessageKey<'a> {
+    /// The account the message is imported into.
+    pub account_id: i64,
+    /// The source the import stamps on the message.
+    pub source: &'a str,
+    /// The source's own id for the message.
+    pub guid: &'a str,
+}
+
 /// Bind counts, in lockstep with the `INSERT` column lists below.
 const MESSAGE_BIND_COLUMNS: usize = 19;
 const ATTACHMENT_BIND_COLUMNS: usize = 10;
@@ -465,6 +491,69 @@ pub async fn insert_earlier_versions(
         inserted += chunk.len() as u64;
     }
     Ok(inserted)
+}
+
+/// Give the message staged under `key` the text `body` and the earlier
+/// versions `versions` of another copy of it from the same import, when
+/// that copy records a later edit ([`later_edit_sql`]). Returns whether it
+/// did.
+///
+/// Staging keeps one row per guid and skips a second copy, so without this
+/// the copy staged first counted whatever its age: one import of an
+/// earlier and a later backup of a new message could store the earlier
+/// text (#1806). The staged row's versions are replaced, never added to,
+/// so the message holds exactly the later copy's. The caller passes a
+/// copy after the staged row's own versions are written.
+///
+/// # Errors
+///
+/// Returns an error when a statement fails.
+pub async fn take_later_staged_copy(
+    conn: &mut SqliteConnection,
+    key: StagingMessageKey<'_>,
+    body: Option<&str>,
+    versions: &[crate::models::EarlierVersionRecord],
+) -> Result<bool> {
+    let Some(staged): Option<i64> = sqlx::query_scalar(
+        "SELECT id FROM staging_messages WHERE account_id = $1 AND source = $2 AND guid = $3",
+    )
+    .bind(key.account_id)
+    .bind(key.source)
+    .bind(key.guid)
+    .fetch_optional(&mut *conn)
+    .await?
+    else {
+        return Ok(false);
+    };
+    let n = i64::try_from(versions.len())?;
+    let newest = versions.iter().filter_map(|v| v.edited_at.as_deref()).max();
+    let later: bool = sqlx::query_scalar(&format!(
+        "SELECT {} FROM staging_message_versions WHERE message_id = $3",
+        later_edit_sql("$1", "$2", "COUNT(*)", "MAX(edited_at)")
+    ))
+    .bind(n)
+    .bind(newest)
+    .bind(staged)
+    .fetch_one(&mut *conn)
+    .await?;
+    if !later {
+        return Ok(false);
+    }
+    sqlx::query("UPDATE staging_messages SET body = $1 WHERE id = $2")
+        .bind(body)
+        .bind(staged)
+        .execute(&mut *conn)
+        .await?;
+    sqlx::query("DELETE FROM staging_message_versions WHERE message_id = $1")
+        .bind(staged)
+        .execute(&mut *conn)
+        .await?;
+    let rows: Vec<StagingEarlierVersion<'_>> = versions
+        .iter()
+        .map(|version| StagingEarlierVersion::from_record(staged, version))
+        .collect();
+    insert_earlier_versions(conn, &rows).await?;
+    Ok(true)
 }
 
 // ── Promotion: staging rows into the production tables ───────────────────
@@ -942,35 +1031,54 @@ pub async fn promote_deletion_marks(conn: &mut SqliteConnection) -> Result<u64> 
     .rows_affected())
 }
 
-/// Write `_promote_edit_map`: each message production held before this
-/// promotion, those at or below `messages_before`, whose staged row records
-/// a later edit than the message holds. Returns how many messages it names.
+/// Whether one copy of a message records a later edit than another, as an
+/// SQL expression over four SQL values: the copy's earlier-version count
+/// `n` and newest `edited_at` `newest`, and the other copy's `held_n` and
+/// `held_newest`. The one rule for which of two copies of a message is the
+/// later backup, for a stored message ([`write_edit_map`]) and for two
+/// copies staged in one import ([`take_later_staged_copy`]).
 ///
-/// An append skips a message production already holds, so a later backup in
-/// which it was edited again reaches it only here. The staged row is the
-/// later one when its newest earlier version is newer than the message's,
-/// or as new and it lists more of them. When either side records no times,
-/// the row with more earlier versions saw more edits and is the later one.
-/// The count alone misleads when times exist: a part unsent after its edits
-/// loses its earlier versions, so a later backup can list fewer than an
-/// earlier one. A row that is not later, the same backup read again or an
-/// earlier one, leaves the message as it is. Of two staged rows for one
-/// message, from two files of one import, the later one is compared.
+/// The copy is the later one when its newest earlier version is newer than
+/// the other's, or as new and it lists more of them. When either side
+/// records no times, the copy with more earlier versions saw more edits
+/// and is the later one. The count alone misleads when times exist: a part
+/// unsent after its edits loses its earlier versions, so a later backup can
+/// list fewer than an earlier one. A copy that is not later, the same
+/// backup read again or an earlier one, leaves the other as it is.
 ///
 /// The newest earlier version is the edit before the last one: the time of
 /// a part's last edit is recorded nowhere. So a later backup that differs
 /// only by an unsent part, or by one edit after an unsend, can read as not
-/// later, and the message keeps the earlier text (#1804).
+/// later (#1804).
 ///
 /// `edited_at` is one fixed whole-second UTC form on both sides
 /// (`models::earlier_version_from_ir`), so the text orders as the time.
+fn later_edit_sql(n: &str, newest: &str, held_n: &str, held_newest: &str) -> String {
+    format!(
+        "CASE \
+             WHEN {newest} IS NOT NULL AND {held_newest} IS NOT NULL \
+                 THEN {newest} > {held_newest} OR ({newest} = {held_newest} AND {n} > {held_n}) \
+             ELSE {n} > {held_n} \
+         END"
+    )
+}
+
+/// Write `_promote_edit_map`: each message production held before this
+/// promotion, those at or below `messages_before`, whose staged row records
+/// a later edit than the message holds ([`later_edit_sql`]). Returns how
+/// many messages it names.
+///
+/// An append skips a message production already holds, so a later backup in
+/// which it was edited again reaches it only here. A message has one staged
+/// row: staging keeps one row per guid, the later copy when one import
+/// carries two ([`take_later_staged_copy`]).
 ///
 /// # Errors
 ///
 /// Returns an error when a statement fails.
 pub async fn write_edit_map(conn: &mut SqliteConnection, messages_before: i64) -> Result<u64> {
     reset_id_map(conn, "_promote_edit_map").await?;
-    Ok(sqlx::query(
+    let sql = format!(
         r"
         INSERT INTO _promote_edit_map (staging_id, prod_id)
         SELECT staging_id, prod_id
@@ -983,11 +1091,7 @@ pub async fn write_edit_map(conn: &mut SqliteConnection, messages_before: i64) -
                 (SELECT COUNT(*) FROM message_versions v WHERE v.message_id = mm.prod_id)
                     AS held_n,
                 (SELECT MAX(v.edited_at) FROM message_versions v WHERE v.message_id = mm.prod_id)
-                    AS held_newest,
-                ROW_NUMBER() OVER (
-                    PARTITION BY mm.prod_id
-                    ORDER BY sv.newest DESC, sv.n DESC, mm.staging_id DESC
-                ) AS pick
+                    AS held_newest
             FROM _promote_msg_map mm
             JOIN (
                 SELECT message_id, COUNT(*) AS n, MAX(edited_at) AS newest
@@ -996,18 +1100,15 @@ pub async fn write_edit_map(conn: &mut SqliteConnection, messages_before: i64) -
             ) sv ON sv.message_id = mm.staging_id
             WHERE mm.prod_id <= $1
         )
-        WHERE pick = 1
-          AND CASE
-              WHEN newest IS NOT NULL AND held_newest IS NOT NULL
-                  THEN newest > held_newest OR (newest = held_newest AND n > held_n)
-              ELSE n > held_n
-          END
+        WHERE {later}
         ",
-    )
-    .bind(messages_before)
-    .execute(&mut *conn)
-    .await?
-    .rows_affected())
+        later = later_edit_sql("n", "newest", "held_n", "held_newest"),
+    );
+    Ok(sqlx::query(&sql)
+        .bind(messages_before)
+        .execute(&mut *conn)
+        .await?
+        .rows_affected())
 }
 
 /// What [`promote_later_edits`] did.

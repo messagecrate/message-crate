@@ -93,26 +93,26 @@ fn a_time_that_does_not_parse_gives_no_content_key() {
 #[test]
 fn parallel_content_keys_match_serial() {
     let rows = vec![
-        (
-            1,
-            10,
-            "+14075550106".into(),
-            "individual".into(),
-            1,
-            "2015-03-12T18:04:22Z".into(),
-            Some("hi".into()),
-            None,
-        ),
-        (
-            2,
-            11,
-            "chat-group".into(),
-            "group".into(),
-            0,
-            "2015-03-12T18:04:23Z".into(),
-            Some("yo".into()),
-            Some("+15555550128".into()),
-        ),
+        ContentKeyRow {
+            id: 1,
+            conversation_id: 10,
+            chat_id: "+14075550106".into(),
+            conversation_type: "individual".into(),
+            is_from_me: 1,
+            timestamp: "2015-03-12T18:04:22Z".into(),
+            body: Some("hi".into()),
+            sender_normalized: None,
+        },
+        ContentKeyRow {
+            id: 2,
+            conversation_id: 11,
+            chat_id: "chat-group".into(),
+            conversation_type: "group".into(),
+            is_from_me: 0,
+            timestamp: "2015-03-12T18:04:23Z".into(),
+            body: Some("yo".into()),
+            sender_normalized: Some("+15555550128".into()),
+        },
     ];
     let mut groups = HashMap::new();
     groups.insert(11, vec!["+15555550128".into(), "+15555550129".into()]);
@@ -148,17 +148,15 @@ fn parallel_content_keys_match_serial() {
 /// case, so a group's message keys the same whatever case its type is in.
 #[test]
 fn a_group_is_keyed_as_a_group_whatever_the_case_of_its_type() {
-    let row = |conversation_type: &str| {
-        (
-            2,
-            11,
-            "chat-group".to_string(),
-            conversation_type.to_string(),
-            0,
-            "2015-03-12T18:04:23Z".to_string(),
-            Some("yo".to_string()),
-            Some("+15555550128".to_string()),
-        )
+    let row = |conversation_type: &str| ContentKeyRow {
+        id: 2,
+        conversation_id: 11,
+        chat_id: "chat-group".to_string(),
+        conversation_type: conversation_type.to_string(),
+        is_from_me: 0,
+        timestamp: "2015-03-12T18:04:23Z".to_string(),
+        body: Some("yo".to_string()),
+        sender_normalized: Some("+15555550128".to_string()),
     };
     let mut groups = HashMap::new();
     groups.insert(11, vec!["+15555550128".into(), "+15555550129".into()]);
@@ -1181,6 +1179,77 @@ async fn the_holders_own_address_does_not_change_a_groups_content_key() {
         .unwrap();
 
     assert_eq!(duplicate_of(&mut conn, ids[1]).await, Some(ids[0]));
+}
+
+/// One received note in a conversation with yourself, held by two sources:
+/// one imported before the chat's address was linked, which keeps the holder
+/// as its sender, and one imported after, which has no sender (#1094).
+/// Returns `(before_link, after_link)`.
+async fn received_notes_to_yourself(
+    conn: &mut SqliteConnection,
+    later_timestamp: &str,
+) -> (i64, i64) {
+    setup_account(conn).await;
+    let notes = conversation(conn, "+15555550199", "individual").await;
+    let holder = handle(conn, "+15555550199").await;
+    let before_link = MessageRow {
+        source: "imazing",
+        guid: Some("a-1".into()),
+        timestamp: "2015-03-12T18:04:22Z",
+        is_from_me: false,
+        sender_handle_id: Some(holder),
+        body: Some("buy milk"),
+        ..MessageRow::new(TEST_ACCOUNT_ID, notes)
+    }
+    .insert(conn)
+    .await;
+    crate::test_support::link_identity(conn, TEST_ACCOUNT_ID, holder).await;
+    let after_link = MessageRow {
+        source: "imessage",
+        guid: Some("b-1".into()),
+        timestamp: later_timestamp,
+        is_from_me: false,
+        sender_handle_id: None,
+        body: Some("buy milk"),
+        ..MessageRow::new(TEST_ACCOUNT_ID, notes)
+    }
+    .insert(conn)
+    .await;
+    (before_link, after_link)
+}
+
+/// The holder is nobody's sender in a conversation with yourself, so the
+/// content key leaves the sender out and the two copies pair (#1661).
+#[tokio::test]
+async fn a_received_note_to_yourself_pairs_across_the_link_of_its_address() {
+    let (pool, _dir) = engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let (before_link, after_link) =
+        received_notes_to_yourself(&mut conn, "2015-03-12T18:04:22Z").await;
+
+    let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
+        .await
+        .unwrap();
+
+    assert_eq!(stats.exact_flagged, 1);
+    assert_eq!(duplicate_of(&mut conn, after_link).await, Some(before_link));
+}
+
+/// The near-time pass leaves the sender out the same way, so copies whose
+/// sources recorded the time a second apart pair too (#1661).
+#[tokio::test]
+async fn a_received_note_to_yourself_a_second_apart_pairs_across_the_link_of_its_address() {
+    let (pool, _dir) = engine::test_pool().await;
+    let mut conn = pool.acquire().await.unwrap();
+    let (before_link, after_link) =
+        received_notes_to_yourself(&mut conn, "2015-03-12T18:04:23Z").await;
+
+    let stats = dedupe_cross_source(&mut conn, TEST_ACCOUNT_ID, None, 2)
+        .await
+        .unwrap();
+
+    assert_eq!(stats.near_flagged, 1);
+    assert_eq!(duplicate_of(&mut conn, after_link).await, Some(before_link));
 }
 
 /// A dedupe that fails part way leaves the duplicates it found last time
