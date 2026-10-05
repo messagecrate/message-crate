@@ -60,17 +60,19 @@ impl Drop for Job {
 
 /// Start a job called `name`, with a cancel flag of its own.
 ///
+/// `name` is what the screens call the work, as a `CONTEXT.md` term written
+/// to start a sentence ("Staging", "The Upload"), because the refusal below
+/// puts both names in front of the person. "Job" is a word for the code only.
+///
 /// # Errors
 ///
-/// Returns an error naming the job that is running when another job runs, or
-/// if another thread panicked while holding the shared state lock.
+/// Returns an error naming what is running and what was asked for when
+/// another job runs, or if another thread panicked while holding the shared
+/// state lock.
 pub(crate) fn start_job(state: &Arc<Mutex<AppState>>, name: &'static str) -> Result<Job, String> {
     let mut st = state.lock().map_err(|e| e.to_string())?;
     if let Some(running) = &st.job {
-        return Err(format!(
-            "Another job is running: {}. Start this one once that one ends, or cancel it.",
-            running.name
-        ));
+        return Err(running_text(running.name, name));
     }
     let cancel: CancelFlag = Arc::new(AtomicBool::new(false));
     st.job = Some(RunningJob {
@@ -81,6 +83,13 @@ pub(crate) fn start_job(state: &Arc<Mutex<AppState>>, name: &'static str) -> Res
         state: Arc::clone(state),
         cancel,
     })
+}
+
+/// Why `start` can't start while `running` runs, in the words the web app
+/// uses for the same refusal (`desktopJobRunningText` in
+/// `web/src/lib/desktopJob.ts`).
+fn running_text(running: &str, start: &str) -> String {
+    format!("{running} is running. {start} can start once it ends.")
 }
 
 /// Ask the job that is running to stop. Does nothing when no job runs.
@@ -155,27 +164,27 @@ mod tests {
     }
 
     #[test]
-    fn a_job_cannot_start_while_another_runs_and_the_refusal_names_it() {
+    fn a_job_cannot_start_while_another_runs_and_the_refusal_names_both() {
         let state = new_state();
-        let _export = start_job(&state, "a download from the server").unwrap();
-        let error = start_job(&state, "an extract")
+        let _export = start_job(&state, "Export").unwrap();
+        let error = start_job(&state, "Staging")
             .err()
             .expect("a second job is refused");
-        assert!(error.contains("a download from the server"), "{error}");
+        assert_eq!(error, "Export is running. Staging can start once it ends.");
     }
 
     #[test]
     fn a_job_can_start_once_the_one_before_it_has_ended() {
         let state = new_state();
-        let first = start_job(&state, "an extract").unwrap();
+        let first = start_job(&state, "Staging").unwrap();
         drop(first);
-        assert!(start_job(&state, "an upload").is_ok());
+        assert!(start_job(&state, "The Upload").is_ok());
     }
 
     #[test]
     fn cancel_stops_the_running_job() {
         let state = new_state();
-        let job = start_job(&state, "an upload").unwrap();
+        let job = start_job(&state, "The Upload").unwrap();
         let flag = job.cancel_flag();
         cancel_running_job(&state).unwrap();
         assert!(flag.load(Ordering::Relaxed));
@@ -184,11 +193,11 @@ mod tests {
     #[test]
     fn a_cancel_does_not_reach_a_job_started_after_it() {
         let state = new_state();
-        let first = start_job(&state, "an extract").unwrap();
+        let first = start_job(&state, "Staging").unwrap();
         let first_flag = first.cancel_flag();
         cancel_running_job(&state).unwrap();
         drop(first);
-        let second = start_job(&state, "an upload").unwrap();
+        let second = start_job(&state, "The Upload").unwrap();
         assert!(first_flag.load(Ordering::Relaxed));
         assert!(!second.cancel_flag().load(Ordering::Relaxed));
     }
@@ -197,7 +206,7 @@ mod tests {
     fn a_cancel_with_no_job_running_does_nothing() {
         let state = new_state();
         cancel_running_job(&state).unwrap();
-        let job = start_job(&state, "an extract").unwrap();
+        let job = start_job(&state, "Staging").unwrap();
         assert!(!job.cancel_flag().load(Ordering::Relaxed));
     }
 
@@ -207,12 +216,12 @@ mod tests {
     #[test]
     fn a_job_has_ended_by_the_time_its_outcome_is_reported() {
         let state = new_state();
-        let job = start_job(&state, "an extract").unwrap();
+        let job = start_job(&state, "Staging").unwrap();
         let end = run_job(job, || Ok("done".into()));
         assert_eq!(end.unwrap(), "done");
         assert!(state.lock().unwrap().job.is_none());
 
-        let job = start_job(&state, "an extract").unwrap();
+        let job = start_job(&state, "Staging").unwrap();
         assert!(run_job(job, || panic!("bug")).is_err());
         assert!(state.lock().unwrap().job.is_none());
     }
@@ -220,7 +229,7 @@ mod tests {
     fn run(
         run: impl FnOnce() -> Result<String, ExtractErrorEvent>,
     ) -> Result<String, ExtractErrorEvent> {
-        run_job(start_job(&new_state(), "a test job").unwrap(), run)
+        run_job(start_job(&new_state(), "Export").unwrap(), run)
     }
 
     #[test]

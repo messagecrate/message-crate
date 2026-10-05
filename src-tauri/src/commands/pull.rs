@@ -52,7 +52,7 @@ pub fn pull(
     app: tauri::AppHandle,
     args: PullArgs,
 ) -> Result<(), String> {
-    let job = start_job(&state, "a download from the server")?;
+    let job = start_job(&state, "Export")?;
     let cancel = job.cancel_flag();
 
     let app_handle = app.clone();

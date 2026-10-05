@@ -52,7 +52,7 @@ pub fn format(
         .transpose()?;
 
     let scratch_dir = scratch_dir(&app)?;
-    let job = start_job(&state, "a format conversion")?;
+    let job = start_job(&state, "Convert")?;
     let cancel = job.cancel_flag();
 
     let app_handle = app.clone();

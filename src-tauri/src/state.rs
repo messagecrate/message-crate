@@ -16,7 +16,8 @@ pub struct AppState {
 /// The one desktop job that is running.
 #[derive(Debug)]
 pub struct RunningJob {
-    /// What the job is, in words for the error that refuses a second job.
+    /// What runs, as the screens name it: a `CONTEXT.md` term written to
+    /// start a sentence, for the error that refuses a second job.
     pub name: &'static str,
     /// This job's own cancel flag. The `cancel` command sets it, and the job
     /// reads it between steps and stops when it is true. A new flag is made

@@ -1192,6 +1192,12 @@ released versions carry their date on the heading.
 
 #### Accounts, Settings and screens
 
+- 2026-10-04 **The desktop app names what is running in the words its
+  screens use.** When an Import, an Export or a Convert asked to start while
+  another was running, the app said "Another job is running: an extract",
+  naming the work with words that appear nowhere else. It now names both
+  sides the way the screens do, as in "Export is running. Staging can start
+  once it ends."
 - 2026-10-04 **On the light theme, the contact drawer's shadow falls on the
   list it covers.** The drawer opens from the right, and its shadow fell to
   the right, under the drawer itself, so the drawer's left edge had no

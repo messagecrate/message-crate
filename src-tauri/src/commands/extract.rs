@@ -191,7 +191,7 @@ pub fn extract(
     )?;
     config.resume = args.resume.unwrap_or(false);
 
-    let job = start_job(&state, "an extract")?;
+    let job = start_job(&state, "Staging")?;
 
     let app_handle = app.clone();
     config.cancel = Some(job.cancel_flag());

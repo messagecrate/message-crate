@@ -103,7 +103,7 @@ pub fn upload(
     args: UploadArgs,
 ) -> Result<(), String> {
     let logs = logs_dir(&app)?;
-    let job = start_job(&state, "an upload")?;
+    let job = start_job(&state, "The Upload")?;
     let cancel = job.cancel_flag();
     let app_handle = app.clone();
     spawn_job(app, job, move || {

@@ -246,7 +246,7 @@ pub fn transcode_staging(
 ) -> Result<(), String> {
     let (run_dir, options) = staged_directory(&directories, &args.run_dir)?;
     let run_log = RunLog::open(&super::paths::logs_dir(&app)?, &run_dir);
-    let job = start_job(&state, "the Media stage")?;
+    let job = start_job(&state, "The Media Stage")?;
     let cancel = job.cancel_flag();
     let media_stage_converts = matches!(
         options.mode,
