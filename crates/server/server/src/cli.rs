@@ -404,7 +404,7 @@ async fn run_import(args: ImportArgs) -> Result<()> {
     println!("Import into {}", opened.location().display());
     println!("  input:         {}", stats.input_dir.display());
     println!("  sources:       {}", stats.sources.join(", "));
-    print!("{}", format_import_stats(&stats.import));
+    print!("{}", format_import_counts(&stats.import));
     match stats.dedupe {
         Some(dedupe) => {
             println!("Cross-source soft-dedupe (hide the same SMS across sources)");
@@ -456,7 +456,7 @@ fn format_discarded_import(
 }
 
 /// The counts from one import stage, one line each, ready to print.
-fn format_import_stats(import: &crate::imports_api::ImportStats) -> String {
+fn format_import_counts(import: &crate::imports_api::ImportCounts) -> String {
     let mut out = String::new();
     let _ = writeln!(out, "  files:         {}", import.files);
     let _ = writeln!(out, "  conversations: {}", import.conversations);

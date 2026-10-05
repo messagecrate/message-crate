@@ -14175,7 +14175,7 @@
       "CreateImportBatchResponse": {
         "allOf": [
           {
-            "$ref": "#/components/schemas/ImportStats"
+            "$ref": "#/components/schemas/ImportCounts"
           },
           {
             "type": "object",
@@ -14204,7 +14204,7 @@
             }
           }
         ],
-        "description": "Import result: stats plus optional dedupe counts."
+        "description": "Import result: the import counts plus optional dedupe counts."
       },
       "CreateImportRequest": {
         "type": "object",
@@ -14857,6 +14857,117 @@
           }
         }
       },
+      "ImportCounts": {
+        "type": "object",
+        "description": "Counters for one import run (staging and promote results).",
+        "required": [
+          "conversations",
+          "participants",
+          "messages",
+          "attachments",
+          "tapbacks",
+          "files",
+          "assets_copied",
+          "assets_deduped",
+          "assets_missing",
+          "contacts_created",
+          "messages_deduped",
+          "messages_appended",
+          "mode",
+          "phones_needing_review",
+          "other_identities"
+        ],
+        "properties": {
+          "assets_copied": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Unique media files written to the asset store.",
+            "minimum": 0
+          },
+          "assets_deduped": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Media files already present under the same fingerprint, skipped.",
+            "minimum": 0
+          },
+          "assets_missing": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Attachment files referenced but not found on disk.",
+            "minimum": 0
+          },
+          "attachments": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Attachment records (message–media links) imported.",
+            "minimum": 0
+          },
+          "contacts_created": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Contacts the import created for participants nothing else owned.",
+            "minimum": 0
+          },
+          "conversations": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Conversations imported.",
+            "minimum": 0
+          },
+          "files": {
+            "type": "integer",
+            "format": "int64",
+            "description": "JSONL files imported.",
+            "minimum": 0
+          },
+          "messages": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Messages imported.",
+            "minimum": 0
+          },
+          "messages_appended": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Messages added by an append-mode import.",
+            "minimum": 0
+          },
+          "messages_deduped": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Messages hidden as duplicates within this import.",
+            "minimum": 0
+          },
+          "mode": {
+            "$ref": "#/components/schemas/ImportMode",
+            "description": "Import mode."
+          },
+          "other_identities": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Identities of type `other` this import met for people: a name the\nbackup gave with no address, or a sender such as `AMAZON`. Each one is\na person the exporter could not tie to an address, so a count above\nzero says the import is incomplete.",
+            "minimum": 0
+          },
+          "participants": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Participant rows imported.",
+            "minimum": 0
+          },
+          "phones_needing_review": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Flagged phone identities (ambiguous; review note set) inserted by this import.",
+            "minimum": 0
+          },
+          "tapbacks": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Tapback reactions imported.",
+            "minimum": 0
+          }
+        }
+      },
       "ImportIssue": {
         "type": "object",
         "description": "One stored import issue.",
@@ -15193,117 +15304,6 @@
           "media_review",
           "upload"
         ]
-      },
-      "ImportStats": {
-        "type": "object",
-        "description": "Counters for one import run (staging and promote results).",
-        "required": [
-          "conversations",
-          "participants",
-          "messages",
-          "attachments",
-          "tapbacks",
-          "files",
-          "assets_copied",
-          "assets_deduped",
-          "assets_missing",
-          "contacts_created",
-          "messages_deduped",
-          "messages_appended",
-          "mode",
-          "phones_needing_review",
-          "other_identities"
-        ],
-        "properties": {
-          "assets_copied": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Unique media files written to the asset store.",
-            "minimum": 0
-          },
-          "assets_deduped": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Media files already present under the same fingerprint, skipped.",
-            "minimum": 0
-          },
-          "assets_missing": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Attachment files referenced but not found on disk.",
-            "minimum": 0
-          },
-          "attachments": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Attachment records (message–media links) imported.",
-            "minimum": 0
-          },
-          "contacts_created": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Contacts the import created for participants nothing else owned.",
-            "minimum": 0
-          },
-          "conversations": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Conversations imported.",
-            "minimum": 0
-          },
-          "files": {
-            "type": "integer",
-            "format": "int64",
-            "description": "JSONL files imported.",
-            "minimum": 0
-          },
-          "messages": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Messages imported.",
-            "minimum": 0
-          },
-          "messages_appended": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Messages added by an append-mode import.",
-            "minimum": 0
-          },
-          "messages_deduped": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Messages hidden as duplicates within this import.",
-            "minimum": 0
-          },
-          "mode": {
-            "$ref": "#/components/schemas/ImportMode",
-            "description": "Import mode."
-          },
-          "other_identities": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Identities of type `other` this import met for people: a name the\nbackup gave with no address, or a sender such as `AMAZON`. Each one is\na person the exporter could not tie to an address, so a count above\nzero says the import is incomplete.",
-            "minimum": 0
-          },
-          "participants": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Participant rows imported.",
-            "minimum": 0
-          },
-          "phones_needing_review": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Flagged phone identities (ambiguous; review note set) inserted by this import.",
-            "minimum": 0
-          },
-          "tapbacks": {
-            "type": "integer",
-            "format": "int64",
-            "description": "Tapback reactions imported.",
-            "minimum": 0
-          }
-        }
       },
       "ImportStatus": {
         "type": "string",

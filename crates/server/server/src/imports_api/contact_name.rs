@@ -6,7 +6,7 @@ use anyhow::Result;
 use message_ir::{HandleType, trimmed};
 use sqlx::SqliteConnection;
 
-use super::ImportStats;
+use super::ImportCounts;
 use crate::db::contacts;
 use crate::db::handles::{
     HandleIdCache, handle_type_of, normalize_handle, upsert_handle_row_cached,
@@ -43,7 +43,7 @@ pub(super) async fn ensure_contact_for_handle(
     import_id: Option<i64>,
     handle_id: i64,
     backup_name: Option<&str>,
-    stats: &mut ImportStats,
+    stats: &mut ImportCounts,
 ) -> Result<i64> {
     let name = backup_name.and_then(trimmed).unwrap_or("");
     let trashed = match ensure_sibling_contact_link(tx, account_id, import_id, handle_id).await? {
@@ -89,7 +89,11 @@ pub(super) async fn ensure_contact_for_handle(
 /// `other` that is a person is a name with no address, or a sender such as
 /// `AMAZON`: something the exporter could not tie to an address, which the
 /// run's counts name.
-pub(super) fn count_other_identity(handle_type: HandleType, cached: bool, stats: &mut ImportStats) {
+pub(super) fn count_other_identity(
+    handle_type: HandleType,
+    cached: bool,
+    stats: &mut ImportCounts,
+) {
     if handle_type == HandleType::Other && !cached {
         stats.other_identities += 1;
     }
@@ -134,7 +138,7 @@ pub(super) async fn resolve_incoming_sender_handle(
     account_id: i64,
     import_id: Option<i64>,
     sender: IncomingSender<'_>,
-    stats: &mut ImportStats,
+    stats: &mut ImportCounts,
 ) -> Result<Option<i64>> {
     if sender.is_from_me {
         return Ok(None);

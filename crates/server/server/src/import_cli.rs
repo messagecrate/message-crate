@@ -9,7 +9,7 @@ use anyhow::{Context, Result, bail};
 use crate::config::validate_source_id;
 use crate::db::account_profile;
 use crate::dedupe::{self, DedupeStats};
-use crate::imports_api::{self, ImportMode, ImportOptions, ImportStats};
+use crate::imports_api::{self, ImportCounts, ImportMode, ImportOptions};
 use crate::jsonl;
 use crate::models::ExportRecord;
 use crate::open_db::OpenDb;
@@ -44,7 +44,7 @@ pub struct CliImportStats {
     /// Source ids written, one Import Run each.
     pub sources: Vec<String>,
     /// Import stage counts, summed over the runs.
-    pub import: ImportStats,
+    pub import: ImportCounts,
     /// Dedupe counts when the pass ran, `None` when skipped.
     pub dedupe: Option<DedupeStats>,
 }
@@ -121,13 +121,13 @@ pub async fn run(opened: &OpenDb, opts: &CliImportOptions) -> Result<CliImportSt
     let mut conn = opened.conn().await?;
     account_profile::ensure_account_row(&mut conn, opts.account_id).await?;
 
-    let mut import_stats = ImportStats {
+    let mut import_counts = ImportCounts {
         mode: opts.mode,
         ..Default::default()
     };
     for (source, files) in &plan.runs {
         let run = import_under_session(&opened.cfg, opts, &mut conn, source, files, &plan).await?;
-        import_stats.add_run(&run);
+        import_counts.add_run(&run);
     }
     let dedupe = if opts.skip_dedupe {
         None
@@ -144,7 +144,7 @@ pub async fn run(opened: &OpenDb, opts: &CliImportOptions) -> Result<CliImportSt
     Ok(CliImportStats {
         input_dir: input.clone(),
         sources: plan.sources(),
-        import: import_stats,
+        import: import_counts,
         dedupe,
     })
 }
@@ -180,7 +180,7 @@ async fn import_under_session(
     source: &str,
     paths: &[PathBuf],
     plan: &SourcePlan,
-) -> Result<ImportStats> {
+) -> Result<ImportCounts> {
     let account_id = opts.account_id;
     let assets_dir = opts
         .assets_dir

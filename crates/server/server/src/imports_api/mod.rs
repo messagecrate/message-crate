@@ -117,7 +117,7 @@ impl<'a> ImportOptions<'a> {
 
 /// Counters for one import run (staging and promote results).
 #[derive(Debug, Default, Clone, Serialize, utoipa::ToSchema)]
-pub struct ImportStats {
+pub struct ImportCounts {
     /// Conversations imported.
     pub conversations: u64,
     /// Participant rows imported.
@@ -153,9 +153,9 @@ pub struct ImportStats {
     pub other_identities: u64,
 }
 
-impl ImportStats {
+impl ImportCounts {
     /// Add one staged file's counts onto the running import totals.
-    fn merge_file(&mut self, other: &ImportStats) {
+    fn merge_file(&mut self, other: &ImportCounts) {
         self.conversations += other.conversations;
         self.participants += other.participants;
         self.messages += other.messages;
@@ -169,7 +169,7 @@ impl ImportStats {
 
     /// Add a whole import run's counts onto a running total, files and assets
     /// included; the demo reset imports three sources in turn.
-    pub fn add_run(&mut self, other: &ImportStats) {
+    pub fn add_run(&mut self, other: &ImportCounts) {
         self.merge_file(other);
         self.files += other.files;
         self.assets_copied += other.assets_copied;
@@ -215,7 +215,7 @@ impl OwnedSession {
     /// Mark the session succeeded with the run's counts, or failed. Not
     /// being able to record the outcome is a warning on stderr, never an
     /// error: the import's own result is what the caller returns.
-    pub(crate) async fn finish(self, conn: &mut SqliteConnection, result: &Result<ImportStats>) {
+    pub(crate) async fn finish(self, conn: &mut SqliteConnection, result: &Result<ImportCounts>) {
         let outcome = match result {
             Ok(stats) => CompleteImportArgs::succeeded(stats.messages, stats.attachments),
             Err(_) => CompleteImportArgs::failed(),
@@ -269,7 +269,7 @@ pub(crate) async fn import_jsonl_files(
     db_path: &Path,
     paths: &[PathBuf],
     opts: &ImportOptions<'_>,
-) -> Result<ImportStats> {
+) -> Result<ImportCounts> {
     if let Some(parent) = db_path.parent()
         && !parent.as_os_str().is_empty()
     {
@@ -304,7 +304,7 @@ pub async fn import_jsonl_files_on_conn(
     paths: &[PathBuf],
     opts: &ImportOptions<'_>,
     schema_mode: ImportSchemaMode,
-) -> Result<ImportStats, ImportError> {
+) -> Result<ImportCounts, ImportError> {
     let wipe_sources = prepare_import(conn, opts, schema_mode)
         .await
         .map_err(ImportError::Internal)?;
@@ -320,7 +320,7 @@ pub async fn import_jsonl_files_on_conn(
         ));
     }
 
-    let mut stats = ImportStats {
+    let mut stats = ImportCounts {
         mode: opts.mode,
         ..Default::default()
     };
@@ -438,7 +438,7 @@ async fn stage_all_files(
     tx: &mut SqliteConnection,
     paths: &[PathBuf],
     opts: &ImportOptions<'_>,
-    stats: &mut ImportStats,
+    stats: &mut ImportCounts,
     started: Instant,
 ) -> Result<AssetStats, ImportError> {
     let total_files = paths.len();
@@ -499,7 +499,7 @@ async fn promote_step(
     tx: &mut SqliteConnection,
     opts: &ImportOptions<'_>,
     wipe_sources: &[String],
-    stats: &mut ImportStats,
+    stats: &mut ImportCounts,
 ) -> Result<(), promote::PromoteError> {
     let promote_stats = promote::promote_append(
         tx,
@@ -552,13 +552,13 @@ impl BatchContext {
     }
 }
 
-/// Import result: stats plus optional dedupe counts.
+/// Import result: the import counts plus optional dedupe counts.
 #[derive(Debug, Serialize, utoipa::ToSchema)]
 pub(crate) struct CreateImportBatchResponse {
     source: String,
     account: i64,
     #[serde(flatten)]
-    stats: ImportStats,
+    stats: ImportCounts,
     #[serde(skip_serializing_if = "Option::is_none")]
     dedupe: Option<DedupeCounts>,
 }

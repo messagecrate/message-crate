@@ -1742,13 +1742,13 @@ export interface components {
             upload_ms?: number | null;
         };
         /** @description Import result: stats plus optional dedupe counts. */
-        ImportResponse: components["schemas"]["ImportStats"] & {
+        ImportResponse: components["schemas"]["ImportCounts"] & {
             account: string;
             dedupe?: null | components["schemas"]["DedupeResponse"];
             source: string;
         };
         /** @description Counters for one import run (staging and promote results). */
-        ImportStats: {
+        ImportCounts: {
             /**
              * Format: int64
              * @description Unique media files written to the asset store.

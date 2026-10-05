@@ -26,7 +26,7 @@ use super::contact_name::{
     IncomingSender, count_other_identity, ensure_contact_for_handle, is_account_identity,
     resolve_incoming_sender_handle,
 };
-use super::{ImportFailure, ImportOptions, ImportStats};
+use super::{ImportCounts, ImportFailure, ImportOptions};
 
 /// Why staging a file stopped: a refusal the sender can fix by changing the
 /// file, or a fault of the server.
@@ -339,7 +339,7 @@ pub(super) async fn import_file_to_staging(
     path: &Path,
     asset_stats: &mut AssetStats,
     media_work: &Path,
-) -> Result<ImportStats, StagingError> {
+) -> Result<ImportCounts, StagingError> {
     let mut staging = FileStaging {
         tx,
         stmts,
@@ -351,7 +351,7 @@ pub(super) async fn import_file_to_staging(
             .to_string(),
         asset_stats,
         media_work,
-        stats: ImportStats::default(),
+        stats: ImportCounts::default(),
     };
     // `jsonl::read_records` refuses a file whose first record is not a
     // conversation header, so every message here follows one.
@@ -421,7 +421,7 @@ struct FileStaging<'a> {
     source_file: String,
     asset_stats: &'a mut AssetStats,
     media_work: &'a Path,
-    stats: ImportStats,
+    stats: ImportCounts,
 }
 
 impl FileStaging<'_> {
@@ -464,7 +464,7 @@ impl FileStaging<'_> {
         conversation: StagedConversation,
         mut prepared_messages: Vec<(MessageRecord, Vec<PreparedAttachment>)>,
     ) -> Result<()> {
-        let mut stats = ImportStats::default();
+        let mut stats = ImportCounts::default();
         // The title's time: the latest message of this copy, when it has a
         // title. Every timestamp has one fixed RFC 3339 form, so the greatest
         // string is the latest instant.
@@ -691,7 +691,7 @@ async fn insert_participant(
     conversation_id: i64,
     (handle, name_alias, handle_type): StagedParticipant,
     platform: HandleService,
-    stats: &mut ImportStats,
+    stats: &mut ImportCounts,
 ) -> Result<()> {
     // Prefer the source-provided type; fall back to `Handle::parse`.
     let handle_type = handle_type.unwrap_or_else(|| handle_type_of(&handle));
@@ -753,7 +753,7 @@ async fn resolve_message_rows(
     first_sort_order: i64,
     platform: HandleService,
     header_types: &HashMap<String, HandleType>,
-    stats: &mut ImportStats,
+    stats: &mut ImportCounts,
 ) -> Result<Vec<PendingStagingMessage>> {
     let mut rows = Vec::with_capacity(prepared.len());
     for (sort_order, (msg, attachments)) in (first_sort_order..).zip(prepared) {
@@ -848,7 +848,7 @@ struct PendingStagingMessage {
 async fn flush_staging_message_chunk(
     tx: &mut SqliteConnection,
     stmts: &mut StagingInserts,
-    stats: &mut ImportStats,
+    stats: &mut ImportCounts,
     conversation_id: i64,
     source: &str,
     assets_dir: &Path,
@@ -963,7 +963,7 @@ fn attachment_row(
 async fn tapback_row(
     tx: &mut SqliteConnection,
     stmts: &mut StagingInserts,
-    stats: &mut ImportStats,
+    stats: &mut ImportCounts,
     message_id: i64,
     row: &PendingStagingMessage,
     tap: &TapbackRecord,

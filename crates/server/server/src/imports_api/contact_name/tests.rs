@@ -31,7 +31,7 @@ async fn an_import_creates_the_contact_with_the_backup_name() {
     .await
     .unwrap();
 
-    let mut stats = ImportStats::default();
+    let mut stats = ImportCounts::default();
     let contact_id = ensure_contact_for_handle(
         &mut conn,
         TEST_ACCOUNT,
@@ -65,7 +65,7 @@ async fn a_later_backup_names_a_contact_an_earlier_one_left_nameless() {
     .await
     .unwrap();
 
-    let mut stats = ImportStats::default();
+    let mut stats = ImportCounts::default();
     let first =
         ensure_contact_for_handle(&mut conn, TEST_ACCOUNT, None, handle_id, None, &mut stats)
             .await
@@ -97,7 +97,7 @@ async fn an_import_replaces_a_trashed_contact_with_a_fresh_one() {
     let (mut conn, _pool, _dir) = account().await;
     let met = insert_handle(&mut conn, "+15555550163", "imessage").await;
     let unmentioned = insert_handle(&mut conn, "+15555550164", "imessage").await;
-    let mut stats = ImportStats::default();
+    let mut stats = ImportCounts::default();
     let old =
         ensure_contact_for_handle(&mut conn, TEST_ACCOUNT, None, met, Some("Ada"), &mut stats)
             .await
@@ -210,7 +210,7 @@ async fn a_fresh_contact_takes_the_number_on_every_service() {
     let (mut conn, _pool, _dir) = account().await;
     let on_whatsapp = insert_handle(&mut conn, "+15555550165", "whatsapp").await;
     let on_phone = insert_handle(&mut conn, "+15555550165", "phone").await;
-    let mut stats = ImportStats::default();
+    let mut stats = ImportCounts::default();
     let old = ensure_contact_for_handle(
         &mut conn,
         TEST_ACCOUNT,
@@ -409,7 +409,7 @@ async fn the_orphaned_conversation_is_not_a_person() {
 async fn a_sender_is_never_linked_to_a_trashed_contact() {
     let (mut conn, _pool, _dir) = account().await;
     let on_whatsapp = insert_handle(&mut conn, "+15555550157", "whatsapp").await;
-    let mut stats = ImportStats::default();
+    let mut stats = ImportCounts::default();
     let trashed = ensure_contact_for_handle(
         &mut conn,
         TEST_ACCOUNT,
@@ -516,7 +516,7 @@ async fn a_second_spelling_does_not_rename_anyone() {
     .await
     .unwrap();
 
-    let mut stats = ImportStats::default();
+    let mut stats = ImportCounts::default();
     let contact_id = ensure_contact_for_handle(
         &mut conn,
         TEST_ACCOUNT,
@@ -574,7 +574,7 @@ async fn an_import_does_not_overwrite_a_name_the_person_typed() {
     let handle_id = insert_handle(&mut conn, "+15555550168", "imessage").await;
     let contact_id = made_by_the_person(&mut conn, handle_id, "Ada Lovelace").await;
 
-    let mut stats = ImportStats::default();
+    let mut stats = ImportCounts::default();
     ensure_contact_for_handle(
         &mut conn,
         TEST_ACCOUNT,
@@ -597,7 +597,7 @@ async fn an_import_names_a_nameless_contact_the_person_made() {
     let handle_id = insert_handle(&mut conn, "+15555550169", "imessage").await;
     let contact_id = made_by_the_person(&mut conn, handle_id, "").await;
 
-    let mut stats = ImportStats::default();
+    let mut stats = ImportCounts::default();
     let met = ensure_contact_for_handle(
         &mut conn,
         TEST_ACCOUNT,
@@ -638,7 +638,7 @@ async fn an_import_names_a_nameless_contact_a_load_made() {
     assert_eq!(origin, "address_book");
     assert_eq!(name_of(&mut conn, contact_id).await, "");
 
-    let mut stats = ImportStats::default();
+    let mut stats = ImportCounts::default();
     let met = ensure_contact_for_handle(
         &mut conn,
         TEST_ACCOUNT,
