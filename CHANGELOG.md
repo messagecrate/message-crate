@@ -398,9 +398,8 @@ released versions carry their date on the heading.
   convs=1 parts=2 msgs=3". Each now reads like "2 conversations and 2
   messages", "processed 1 file, skipped 0 files" and "promoted 1
   conversation, 2 participants, 3 messages, 1 attachment and 0 tapbacks",
-  singular for one. The server's
-  `import` command no longer prints its duplicate counts twice, because its
-  summary already gives them.
+  singular for one. The server's `import` command no longer prints its
+  duplicate counts twice, because its summary already gives them.
 - 2026-10-05 **A WhatsApp import keeps its working files out of the
   Staging Directory.** WhatsApp's files read out of an iPhone backup,
   decrypted when the backup is encrypted, sat in a directory inside the
