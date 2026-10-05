@@ -3,8 +3,16 @@ import { Outlet, useLocation, useNavigate, useSearchParams } from "react-router-
 import { contactBrowseQuery } from "../lib/contactBrowseQuery";
 import { groupFromSlug, slugFromPath, slugPath } from "../lib/contactGroups";
 import { asMessagesLocationState } from "../lib/messagesLocationState";
-import { tagFromSlug, tagListQuery } from "../lib/messageTags";
-import { MESSAGE_SORT_PARAM, messagesSearch, resultsView, VIEW_PARAM } from "../lib/resultsView";
+import { tagFromSlug } from "../lib/messageTags";
+import {
+  conversationListQuery,
+  listedTag,
+  MESSAGE_SORT_PARAM,
+  messagesSearch,
+  resultsView,
+  TAG_PARAM,
+  VIEW_PARAM,
+} from "../lib/resultsView";
 import { useListQuery } from "../lib/searchFields";
 import { trashed } from "../lib/searchQuery";
 import type { Conversation } from "../lib/types";
@@ -129,7 +137,9 @@ export default function AppLayout() {
   const tagSlugParam = slugFromPath(pathname, "/tag");
   const activeTag = tagSlugParam ? tagFromSlug(tagSlugParam, tags) : null;
   const tagPage = setPageState(tagSlugParam, tagsLoading, activeTag);
-  const tagFilter = noTagMode ? "none" : activeTag;
+  // On `/messages/:id` the tag of the page the conversation was opened from
+  // rides in the address apart from `q`, so Export starts from it too.
+  const tagFilter = noTagMode ? "none" : isMessageRoute ? listedTag(searchParams) : activeTag;
 
   const conversationSearch = searchParams.get("q") || "";
   const conversationFilter = searchParams.get("f") || "";
@@ -198,7 +208,7 @@ export default function AppLayout() {
         });
         return;
       }
-      navigate(`/${messagesSearch(searchParams, { q, at: "" })}`);
+      navigate(`/${messagesSearch(searchParams, { q, [TAG_PARAM]: "", at: "" })}`);
     } else if (noTagMode) {
       navigate(`/no-tag${messagesSearch(searchParams, { q, at: "" })}`);
     } else if (tagSlugParam !== null) {
@@ -225,19 +235,17 @@ export default function AppLayout() {
 
   const trashListQuery = trashed(trashSearch);
 
-  const threadListQuery = tagListQuery(tagFilter, conversationFilter || conversationSearch);
+  const threadListQuery = conversationListQuery(searchParams, tagFilter);
 
-  // The message route filters its list by `q` and `f` alone, so the
-  // conversation opened carries the list's query in them. The message route's
-  // path has no tag, so a tag page's tag goes into `q`.
+  // The message route filters its list by `q`, `f` and the tag, so the
+  // conversation opened carries the list's query in them. Its path has no
+  // tag, so a tag page's tag rides in its own parameter, and `q` stays what
+  // the person typed (#1562).
   const handleConversationSelect = (c: Conversation) => {
     const params = new URLSearchParams();
-    if (tagFilter) {
-      params.set("q", threadListQuery);
-    } else {
-      if (conversationSearch) params.set("q", conversationSearch);
-      if (conversationFilter) params.set("f", conversationFilter);
-    }
+    if (conversationSearch) params.set("q", conversationSearch);
+    if (conversationFilter) params.set("f", conversationFilter);
+    if (tagFilter) params.set(TAG_PARAM, tagFilter);
     // The results view and the Messages list's picked sort stay for when the
     // person switches back.
     for (const key of [VIEW_PARAM, MESSAGE_SORT_PARAM]) {
@@ -316,6 +324,7 @@ export default function AppLayout() {
                   ) : (
                     <ResultsColumn
                       query={threadListQuery}
+                      tag={tagFilter}
                       searchTyped={conversationSearch !== ""}
                       selectedConversationId={null}
                       onSelectConversation={handleConversationSelect}
