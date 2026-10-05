@@ -891,7 +891,7 @@ async fn one_import_of_two_backups_gives_a_new_message_the_later_edit_in_either_
 
 /// One attachment of a message in a conversation file, missing unless
 /// `digest` names stored bytes.
-fn kids_attachment(name: &str, digest: Option<&str>) -> String {
+fn attachment_json(name: &str, digest: Option<&str>) -> String {
     let (digest, missing) = match digest {
         Some(digest) => (format!(r#""{digest}""#), "null"),
         None => ("null".to_string(), r#""not_found""#),
@@ -902,16 +902,16 @@ fn kids_attachment(name: &str, digest: Option<&str>) -> String {
 }
 
 /// One reaction of kind `kind` from `+15555550167` to a message.
-fn kids_reaction(kind: &str) -> String {
+fn reaction_json(kind: &str) -> String {
     format!(
         r#"{{"part_index":0,"kind":"{kind}","is_from_me":false,"reactor_identity":"+15555550167"}}"#
     )
 }
 
 /// A conversation file holding the message `g-kids` with `attachments`
-/// and `reactions` (from [`kids_attachment`] and [`kids_reaction`]),
+/// and `reactions` (from [`attachment_json`] and [`reaction_json`]),
 /// after the messages in `before`, written to `name` under `dir`.
-fn kids_file(
+fn file_with_children(
     dir: &Path,
     name: &str,
     before: &[String],
@@ -919,14 +919,14 @@ fn kids_file(
     reactions: &[String],
 ) -> PathBuf {
     let header = r#"{"schema_version":9,"export":{"source":"imessage","tool":"test","tool_version":"0","owner_identity":null,"owner_display_name":null},"conversation":{"chat_identifier":"+15555550123","conversation_type":"individual","group_title":null,"participants":[{"identity":"+15555550123","display_name":null},{"identity":"+15555550167","display_name":null}],"stats":{"message_count":2,"attachment_count":3,"first_timestamp_unix_ms":1426183462000,"last_timestamp_unix_ms":1426183463000}}}"#;
-    let kids = format!(
+    let message = format!(
         r#"{{"guid":"g-kids","timestamp_unix_ms":1426183463000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"look","attachments":[{}],"reactions":[{}],"imessage":null,"source":null}}"#,
         attachments.join(","),
         reactions.join(","),
     );
     let mut lines = vec![header.to_string()];
     lines.extend(before.iter().cloned());
-    lines.push(kids);
+    lines.push(message);
     write_jsonl(dir, name, &(lines.join("\n") + "\n"))
 }
 
@@ -985,28 +985,28 @@ async fn one_import_of_two_backups_keeps_the_attachments_and_reactions_of_both()
     let digest = assets_api::sha256_hex(b"late-bytes");
     let blob = format!(
         r#"{{"guid":"g-blob","timestamp_unix_ms":1426183462000,"direction":"incoming","service":"imessage","message_kind":"imessage","sender_identity":"+15555550123","sender_display_name":null,"subject":null,"text":"blob","attachments":[{}],"imessage":null,"source":null}}"#,
-        kids_attachment("blob.bin", None),
+        attachment_json("blob.bin", None),
     );
-    let earlier = kids_file(
+    let earlier = file_with_children(
         tmp.path(),
         "earlier.jsonl",
         &[],
         &[
-            kids_attachment("same.bin", None),
-            kids_attachment("late.bin", None),
+            attachment_json("same.bin", None),
+            attachment_json("late.bin", None),
         ],
-        &[kids_reaction("loved")],
+        &[reaction_json("loved")],
     );
-    let later = kids_file(
+    let later = file_with_children(
         tmp.path(),
         "later.jsonl",
         &[blob],
         &[
-            kids_attachment("same.bin", None),
-            kids_attachment("late.bin", Some(&digest)),
-            kids_attachment("new.bin", None),
+            attachment_json("same.bin", None),
+            attachment_json("late.bin", Some(&digest)),
+            attachment_json("new.bin", None),
         ],
-        &[kids_reaction("loved"), kids_reaction("liked")],
+        &[reaction_json("loved"), reaction_json("liked")],
     );
 
     for (name, files) in [
