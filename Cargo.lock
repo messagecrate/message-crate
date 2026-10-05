@@ -1989,7 +1989,7 @@ version = "0.1.0"
 
 [[package]]
 name = "message-crate-server"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "argon2",

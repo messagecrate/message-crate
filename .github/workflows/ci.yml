@@ -602,7 +602,7 @@ jobs:
 
           - Tauri v2 desktop app with all exporters included
           - Push and pull against a server, format conversion, contacts preview
-          - Server Docker image: \`bitrealm/message-crate:${TAG}\`
+          - Server Docker image: \`bitrealm/message-crate:${TAG#v}\`
           - User Guide and developer docs: https://messagecrate.app/docs/user/ and https://messagecrate.app/docs/developer/
 
           ## Installers
@@ -615,5 +615,5 @@ jobs:
           ## Docker
 
           \`\`\`bash
-          docker pull bitrealm/message-crate:${TAG}
+          docker pull bitrealm/message-crate:${TAG#v}
           \`\`\`"

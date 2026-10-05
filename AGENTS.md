@@ -500,7 +500,7 @@ The Build asks git for the commit. Where there is no `.git`, which is the case i
 
 To push a Docker image without a release, start CI by hand with `gh workflow run ci.yml --ref <branch> -f push_docker_image=true`. After every CI job passes it pushes `bitrealm/message-crate:sha-<commit>` only, never `latest` or a version tag, and that image reports the Build with the commit.
 
-**Product version files** (keep these in lockstep; current value is `0.10.0`; CI's `version` job fails when they disagree, and on a `v*` tag when the tag disagrees with them):
+**Product version files** (keep these in lockstep; current value is `0.10.1`; CI's `version` job fails when they disagree, and on a `v*` tag when the tag disagrees with them):
 
 - `src-tauri/Cargo.toml` — the value the other three are compared against
 - `src-tauri/tauri.conf.json` — installer version

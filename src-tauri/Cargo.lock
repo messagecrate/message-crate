@@ -2333,7 +2333,7 @@ dependencies = [
 
 [[package]]
 name = "message-crate-desktop"
-version = "0.10.0"
+version = "0.10.1"
 dependencies = [
  "anyhow",
  "build-version",
