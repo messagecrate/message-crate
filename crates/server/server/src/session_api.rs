@@ -37,21 +37,19 @@ pub struct CreateSessionResponse {
     pub token: String,
     /// Account id the session belongs to.
     pub account_id: i64,
-    /// Account username (falls back to the account id).
+    /// The username the account logs in with.
     pub username: String,
 }
 
 impl CreateSessionResponse {
     /// Open the Session for an existing account, replacing the one it had,
-    /// and record the login. Uses the account id when the row has no username.
+    /// and record the login. `username` is the one the account's row holds.
     async fn for_existing_account(
         conn: &mut SqliteConnection,
         account_id: i64,
+        username: String,
         app: Option<&ConnectingApp>,
     ) -> anyhow::Result<CreateSessionResponse> {
-        let username = account_profile::username_for_account(conn, account_id)
-            .await?
-            .unwrap_or_else(|| account_id.to_string());
         let mut tx = crate::db::begin_write(conn).await?;
         let token = session_tokens::open_session(&mut tx, account_id, &username, app).await?;
         account_profile::record_login(&mut tx, account_id).await?;
@@ -73,14 +71,15 @@ pub(crate) struct Session {
     sources: Vec<String>,
     /// Id of the account the credential acts for.
     account_id: i64,
-    /// The username the account logs in with. Null only when the account was
-    /// deleted between the credential check and this read.
-    username: Option<String>,
+    /// The username the account logs in with.
+    username: String,
 }
 
 /// The Session the bearer token names: its account, username, and import
 /// sources. A session token and an API token both answer, because a program
 /// checking its token needs the same facts as a browser restoring a login.
+/// An account deleted after its credential was checked answers
+/// `401 Unauthorized`, as a credential naming no account does.
 #[utoipa::path(
     get,
     path = "/v1/session",
@@ -111,10 +110,20 @@ async fn list_account_sources(pool: &SqlitePool, account_id: i64) -> Result<Vec<
     Ok(dedupe::source_priority_from_db(&mut conn, account_id).await?)
 }
 
-/// Username for an account id, when the account has one.
-async fn load_username(pool: &SqlitePool, account_id: i64) -> Result<Option<String>, ApiError> {
+/// Username for the credential's account. An account deleted between the
+/// credential check and this read answers `401 Unauthorized`, as a credential
+/// naming no account does.
+async fn load_username(pool: &SqlitePool, account_id: i64) -> Result<String, ApiError> {
     let mut conn = pool.acquire().await?;
-    Ok(account_profile::username_for_account(&mut conn, account_id).await?)
+    account_profile::username_for_account(&mut conn, account_id)
+        .await?
+        .ok_or_else(ApiError::account_gone)
+}
+
+/// The answer to every refused login, whatever was wrong, so the answer does
+/// not tell a guesser which part failed.
+fn invalid_login() -> ApiError {
+    ApiError::InvalidCredentials("invalid username or password".into())
 }
 
 /// Log in: verify a local username and password and answer the Session, a
@@ -167,7 +176,16 @@ pub async fn create_session(
 
     let password = req.password.clone();
 
-    let Some(account_id) = account_id else {
+    // The username the account's row holds. An account deleted since the
+    // lookup above is a username nobody holds by now, so it takes the same
+    // branch, with the same timing and the same Audit Trail entry.
+    let account = match account_id {
+        Some(id) => account_profile::username_for_account(&mut conn, id)
+            .await?
+            .map(|stored| (id, stored)),
+        None => None,
+    };
+    let Some((account_id, stored_username)) = account else {
         let _ = verify_password(dummy_password_hash(), &password);
         audit_trail::record_refused_login(
             &mut conn,
@@ -177,9 +195,7 @@ pub async fn create_session(
             app,
         )
         .await?;
-        return Err(ApiError::InvalidCredentials(
-            "invalid username or password".into(),
-        ));
+        return Err(invalid_login());
     };
 
     // The Demo Account cannot be entered while it is being built: until the
@@ -187,14 +203,9 @@ pub async fn create_session(
     // The login card is told there is no Demo Account, so the answer here is
     // the one for a username that does not exist.
     if account_id == account_profile::DEMO_ACCOUNT_ID && state.demo_build.is_building() {
-        return Err(ApiError::InvalidCredentials(
-            "invalid username or password".into(),
-        ));
+        return Err(invalid_login());
     }
 
-    let stored_username = account_profile::username_for_account(&mut conn, account_id)
-        .await?
-        .unwrap_or_else(|| username.clone());
     let account = Some((account_id, stored_username.as_str()));
     let password_hash = account_profile::load_password_hash(&mut conn, account_id).await?;
     if !verify_login_password(password_hash.as_deref(), &password) {
@@ -206,14 +217,12 @@ pub async fn create_session(
             app,
         )
         .await?;
-        return Err(ApiError::InvalidCredentials(
-            "invalid username or password".into(),
-        ));
+        return Err(invalid_login());
     }
 
     let auth = account_profile::load_account_auth(&mut conn, account_id)
         .await?
-        .ok_or_else(|| ApiError::InvalidCredentials("invalid username or password".into()))?;
+        .ok_or_else(invalid_login)?;
     if auth.disabled {
         audit_trail::record_refused_login(
             &mut conn,
@@ -226,7 +235,9 @@ pub async fn create_session(
         return Err(ApiError::AccountDisabled("this account is disabled".into()));
     }
 
-    let body = CreateSessionResponse::for_existing_account(&mut conn, account_id, app).await?;
+    let body =
+        CreateSessionResponse::for_existing_account(&mut conn, account_id, stored_username, app)
+            .await?;
 
     Ok(Created {
         location: "/v1/session".to_string(),

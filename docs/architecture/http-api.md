@@ -839,6 +839,11 @@ reason: nothing but a promotion reads them.
 A test of a route's answer goes through the router, checks a failure with
 `expect_problem` (status, `type` and `request_id`, not only the sentence), and
 takes its database and account from the shared fixtures in `test_support.rs`.
+A state the router cannot reach is the one exception: a row deleted between
+the credential check and the handler's read, say, because the check refuses
+the request first. Such a test serves the handler on a router of its own,
+under `request_id::layer`, hands it the identity the check would have made,
+and reads the answer over HTTP with `expect_problem` like any other.
 A rule every route follows is tested once over the whole document, as above,
 not again per route.
 

@@ -294,7 +294,7 @@ impl<'a> Pull<'a> {
     fn login(cfg: &'a PullConfig, out: &mut Option<&mut ProgressFn<'_>>) -> Result<Self> {
         let auth = authenticate(&cfg.base_url, &cfg.token).map_err(|e| anyhow::anyhow!("{e}"))?;
         let account = auth.account_id;
-        let username = auth.username.unwrap_or_else(|| account.to_string());
+        let username = auth.username;
         emit(
             out,
             ProgressEvent::Auth {
