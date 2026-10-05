@@ -17,10 +17,6 @@ Version numbers follow [Semantic Versioning](https://semver.org/spec/v2.0.0.html
 Bullets under the version still in development carry the date they landed;
 released versions carry their date on the heading.
 
-## [0.10.1] — in development
-
-Nothing yet.
-
 ## [0.10.0] - 2026-10-05
 
 ### Features
@@ -104,7 +100,7 @@ Nothing yet.
   files of 50 MB, and deletes the oldest file when a new one starts. The owner
   can read it through the server's interface, newest first, narrow it to
   errors or warnings, search it, and download a whole file. No other account
-  can. A Logs screen on Owner Home that shows it comes next. The log never
+  can. The log never
   holds a password, a token, a search, message text, an attachment or a contact's
   name, phone number or email address.
 - **A search word the other list takes stays in the box.**
@@ -291,15 +287,14 @@ Nothing yet.
   message it reacts to, with the person who reacted named, and an import
   stores it under that person. Export writes the reactions the server keeps
   the same way, so a conversation exported and imported again keeps them.
-  Every app's reactions will take this one shape; Apple Messages is the first,
-  and WhatsApp follows in a coming release.
+  Every app's reactions take this one shape; Apple Messages is the first.
 - **The server sends an attachment a piece at a time.** A video
   or voice note can start playing before the whole file has arrived, and a
   player can jump to any point in it without downloading what comes before.
   The server also hands the app a short-lived link to one attachment, which
   works for an hour and ends when you log out, so a player built into the
-  page can load it. The app's players start using both in a coming release;
-  nothing on screen changes yet. The architecture notes record how
+  page can load it.
+  Nothing on screen changes yet. The architecture notes record how
   attachments are to be shown: a small thumbnail in the conversation, the
   original or a browser-ready copy chosen by file type when one is opened,
   and the original whenever one is downloaded.
