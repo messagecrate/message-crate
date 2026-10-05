@@ -2281,7 +2281,6 @@ dependencies = [
  "anyhow",
  "chrono",
  "media",
- "message-csv",
  "message-ir",
  "obfuscate",
  "sha2 0.11.0",

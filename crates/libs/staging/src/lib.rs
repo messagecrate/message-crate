@@ -16,9 +16,10 @@
 //! afterwards, on its own and resumable. The desktop app runs it as an
 //! Import Run's Media stage, and a local export runs it through the write
 //! queue. [`summarize_staging`] reads a run directory back for the Staging
-//! Review.
-//! Both work to the media settings Staging recorded in the directory
-//! ([`write_media_settings`], [`read_media_settings`]).
+//! Review. The Staging Review and the desktop app's Media stage both work to
+//! the media settings Staging recorded in the directory
+//! ([`write_media_settings`], [`read_media_settings`]); a local export passes
+//! its own.
 //!
 //! Formats live in `message-ir-format`; the run model in
 //! `message-crate-core`. Why this is its own crate:

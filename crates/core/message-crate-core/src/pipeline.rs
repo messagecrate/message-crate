@@ -183,7 +183,7 @@ pub struct ExportReport {
     pub duplicates_dropped: u64,
     /// Attachment files saved to the output.
     pub attachments_saved: u64,
-    /// The Media stage over the staged attachments.
+    /// What media conversion did to the staged attachments.
     pub media: MediaReport,
     /// Documents whose handles, names and bodies were obfuscated.
     pub obfuscated_docs: u64,

@@ -1311,10 +1311,10 @@ fn converting_a_mail_export_writes_its_attachments() {
 }
 
 /// Convert and Compress stage the attachments again before media conversion.
-/// The bytes a mail export holds in memory must reach that pass too, and
+/// The bytes a mail export holds in memory must reach media conversion too, and
 /// not come out `file_missing` because there was no file to read (#1072).
 #[test]
-fn converting_a_mail_export_with_a_media_pass_writes_its_attachments() {
+fn converting_a_mail_export_with_media_conversion_writes_its_attachments() {
     // Media conversion refuses to start without ffmpeg.
     let Some(_tools) = media::testutil::real_ffmpeg_test_guard() else {
         return;

@@ -351,7 +351,7 @@ impl StagingDirectories {
     }
 
     /// Resolve `path` for opening: a run directory this app made, or a file
-    /// or directory inside one, such as its Upload journal.
+    /// or directory inside one, such as its Upload log.
     ///
     /// # Errors
     ///
