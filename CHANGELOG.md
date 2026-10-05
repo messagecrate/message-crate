@@ -918,10 +918,11 @@ released versions carry their date on the heading.
 #### Exporting and converting
 
 - 2026-10-05 **The size in an Export's "Fetched" line counts only what the
-  Export fetched.** An Export into a directory that already held some of its
-  Assets added their size to the line, so a resumed Export could read
-  "Fetched 0 Assets (5.0 MB) and kept 3 already on disk". It now reads
-  "Fetched 0 Assets (0 B) and kept 3 already on disk".
+  Export fetched.** An Export run again into the same directory added the
+  size of each Asset it found there to the line when the directory's record
+  of fetched Assets did not list it, as after an Export that stopped part way.
+  Such a run could read "Fetched 0 Assets (5.0 MB) and kept 3 already on
+  disk". It now reads "Fetched 0 Assets (0 B) and kept 3 already on disk".
 - 2026-10-05 **The log of an Export from a server says it fetches Assets,
   and writes its warnings as sentences.** It read "Downloading 2 assets with
   8 workers (0 already downloaded)…" and "Downloaded 2 assets (22 B) and
