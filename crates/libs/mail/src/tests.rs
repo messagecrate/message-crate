@@ -788,12 +788,10 @@ fn a_mail_whose_deletion_names_no_mark_is_refused() {
 /// whose value is a number, a flag or a name from a fixed list are read
 /// trimmed (`typed_header`), so they keep their written values.
 ///
-/// The `From` address of a group conversation is the owner's for an
-/// outgoing message and the sender's for an incoming one. `From` is not an
-/// `X-ME-*` header, so the identity it names keeps its phone number and the
-/// other identity takes `value`: run both directions to cover both. The guid
-/// and the reply guid name the mail in `Message-ID` and `In-Reply-To` as
-/// well, so [`assert_every_value_reads_back`] checks them apart.
+/// The values that also fill a standard header take `value` too: the guid
+/// and the reply guid (`Message-ID`, `In-Reply-To`, `References`), the
+/// sender, owner and participant identities (`From`, `To` and the mbox
+/// `From_` line) and the attachment's type (its part's `Content-Type`).
 fn with_every_x_me_text(value: &str, direction: IrDirection) -> MailMessage {
     let text = || Some(value.to_string());
     let mut msg = base_sms();
@@ -806,10 +804,10 @@ fn with_every_x_me_text(value: &str, direction: IrDirection) -> MailMessage {
     msg.export_source = value.into();
     msg.export_tool = value.into();
     msg.export_tool_version = value.into();
-    match direction {
-        IrDirection::Outgoing => msg.message.sender_identity = text(),
-        IrDirection::Incoming => msg.owner_identity = value.into(),
-    }
+    msg.participants[0].identity = value.into();
+    msg.owner_identity = value.into();
+    msg.message.guid = value.into();
+    msg.message.sender_identity = text();
     msg.message.sender_display_name = text();
     msg.message.owner_identity = text();
     msg.message.subject = text();
@@ -837,12 +835,13 @@ fn with_every_x_me_text(value: &str, direction: IrDirection) -> MailMessage {
     im.balloon_bundle_id = text();
     im.associated_guid = text();
     im.tapback_emoji = text();
+    im.in_reply_to_guid = text();
     msg.attachments = vec![MailAttachment {
         bytes: b"x".to_vec(),
         meta: message_ir::AttachmentMeta {
             path: None,
             original_name: text(),
-            mime_type: Some("text/plain".into()),
+            mime_type: text(),
             digest_sha256: None,
             size_bytes: Some(1),
             missing_reason: None,
@@ -868,6 +867,7 @@ fn x_me_values(msg: &MailMessage) -> serde_json::Value {
         "export_tool_version": msg.export_tool_version,
         "message": msg.message,
         "attachment_names": msg.attachments.iter().map(|a| &a.meta.original_name).collect::<Vec<_>>(),
+        "attachment_types": msg.attachments.iter().map(|a| &a.meta.mime_type).collect::<Vec<_>>(),
         "transcriptions": msg.attachments.iter().map(|a| &a.transcription).collect::<Vec<_>>(),
         "sticker_effects": msg.attachments.iter().map(|a| &a.sticker_effect).collect::<Vec<_>>(),
     })
@@ -893,8 +893,7 @@ fn assert_every_value_reads_back(values: &[String]) {
                 let from_mbox = crate::mail_messages_from_mbox(&mbox);
                 from_eml.is_ok_and(|m| x_me_values(&m) == written)
                     && from_mbox.is_ok_and(|m| m.len() == 1 && x_me_values(&m[0]) == written)
-            })
-            && guid_headers_read_back(value);
+            });
         if !same {
             changed.push(value);
         }
@@ -906,30 +905,6 @@ fn assert_every_value_reads_back(values: &[String]) {
         values.len(),
         &changed[..changed.len().min(5)]
     );
-}
-
-/// True when `value`, as a message's guid and reply guid, reads back from
-/// `X-ME-Guid` and `X-ME-Thread-Originator-Guid` as written. Only the two
-/// headers are read, because the guid also names the mail in `Message-ID`
-/// and `In-Reply-To`, which are not `X-ME-*` headers. A value with a line
-/// break is not tried: written into `Message-ID` as it is, the line break
-/// ends the mail's headers (#1816).
-fn guid_headers_read_back(value: &str) -> bool {
-    if value.contains(['\r', '\n']) {
-        return true;
-    }
-    let mut msg = base_sms();
-    msg.message.guid = value.into();
-    im_mut(&mut msg).in_reply_to_guid = Some(value.into());
-    let eml = build_eml(&msg).unwrap();
-    let Ok((headers, _)) = mailparse::parse_headers(&eml) else {
-        return false;
-    };
-    headers.get_first_value("X-ME-Guid").as_deref() == Some(value)
-        && headers
-            .get_first_value("X-ME-Thread-Originator-Guid")
-            .as_deref()
-            == Some(value)
 }
 
 /// A run of spaces next to the characters RFC 2047 encoded words are made
@@ -1030,4 +1005,177 @@ fn a_typed_header_that_ends_in_a_space_reads_as_its_value() {
     assert_eq!(im.balloon_kind.as_deref(), Some("url"));
     assert_eq!(im.tapback_kind.as_deref(), Some("loved"));
     assert_eq!(im.tapback_action.as_deref(), Some("add"));
+}
+
+/// `msg` as a mail written to an EML file and to an mbox, each read back.
+fn written_and_read_back(msg: &MailMessage) -> (MailMessage, MailMessage) {
+    let from_eml = crate::mail_message_from_eml_bytes(&build_eml(msg).unwrap()).unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+    let mbox =
+        write_mail_package(tmp.path(), MailPackage::Mbox, std::slice::from_ref(msg)).unwrap();
+    let mut from_mbox = crate::mail_messages_from_mbox(&mbox).unwrap();
+    assert_eq!(from_mbox.len(), 1, "the mbox holds one mail");
+    (from_eml, from_mbox.remove(0))
+}
+
+/// The value of header `name` in the mail `msg` is written as, checked to
+/// be one line.
+fn standard_header(msg: &MailMessage, name: &str) -> String {
+    let eml = build_eml(msg).unwrap();
+    let (headers, _) = mailparse::parse_headers(&eml).unwrap();
+    let header = headers
+        .get_first_header(name)
+        .unwrap_or_else(|| panic!("no {name} header"));
+    let raw = header.get_value_raw();
+    assert!(
+        !raw.contains(&b'\r') && !raw.contains(&b'\n'),
+        "{name} spans lines: {:?}",
+        String::from_utf8_lossy(raw)
+    );
+    header.get_value()
+}
+
+/// A guid holding a line break, written into `Message-ID` as it was, ended
+/// the mail's headers there: every `X-ME-*` header after it was read as the
+/// body (#1816). The guid and the reply guid now read back exactly, and the
+/// reply's `In-Reply-To` still names its parent's `Message-ID`.
+#[test]
+fn a_guid_with_a_line_break_keeps_the_mail_headers_whole() {
+    let mut parent = base_sms();
+    parent.message.guid = "c\r\n\r\nd".into();
+    let mut msg = base_sms();
+    msg.message.guid = "a\r\n\r\nb".into();
+    im_mut(&mut msg).in_reply_to_guid = Some("c\r\n\r\nd".into());
+
+    for read in <[MailMessage; 2]>::from(written_and_read_back(&msg)) {
+        assert_eq!(x_me_values(&read), x_me_values(&msg));
+    }
+    let message_id = standard_header(&parent, "Message-ID");
+    assert!(
+        message_id.starts_with('<')
+            && message_id.ends_with("@message-crate.local>")
+            && !message_id.contains(char::is_whitespace),
+        "Message-ID was {message_id:?}"
+    );
+    assert_eq!(standard_header(&msg, "In-Reply-To"), message_id);
+    assert_eq!(standard_header(&msg, "References"), message_id);
+    assert_ne!(standard_header(&msg, "Message-ID"), message_id);
+}
+
+/// Two guids that differ only in characters a `Message-ID` cannot hold still
+/// name their mails apart, because a mail client threads replies by it.
+#[test]
+fn guids_that_differ_in_unsafe_characters_keep_different_message_ids() {
+    let ids: Vec<String> = [
+        "a b", "a\tb", "a\r\nb", "a%20b", "a@b", "a.b", "a..b", ".ab", "",
+    ]
+    .into_iter()
+    .map(|guid| {
+        let mut msg = base_sms();
+        msg.message.guid = guid.into();
+        standard_header(&msg, "Message-ID")
+    })
+    .collect();
+    let distinct: std::collections::BTreeSet<&String> = ids.iter().collect();
+    assert_eq!(distinct.len(), ids.len(), "Message-IDs were {ids:?}");
+}
+
+/// An identity holding a line break, written into the `From` or `To`
+/// address as it was, made the mail unreadable (mailparse: "Header cannot
+/// start with a space") or broke the mbox `From_` line (#1816). Every
+/// identity now reads back exactly, from an incoming sender, the owner and a
+/// 1:1 peer, in a group and a 1:1 conversation, in both directions.
+#[test]
+fn an_identity_with_a_line_break_keeps_the_address_headers_whole() {
+    for conversation_type in ["group", "individual"] {
+        for direction in [IrDirection::Incoming, IrDirection::Outgoing] {
+            for (sender, owner, peer) in [
+                ("a\r\n b", "c\r\n d", "e\r\n f"),
+                (
+                    "a\r\n b@example.com",
+                    "c\r\n d@example.com",
+                    "e\r\n f@example.com",
+                ),
+            ] {
+                let mut msg = base_sms();
+                msg.conversation_type = conversation_type.into();
+                msg.message.direction = direction;
+                msg.message.sender_identity = Some(sender.into());
+                msg.owner_identity = owner.into();
+                msg.participants[0].identity = peer.into();
+                let case = format!("{conversation_type} {direction:?} {sender:?}");
+
+                let (from_eml, from_mbox) = written_and_read_back(&msg);
+                for read in [&from_eml, &from_mbox] {
+                    assert_eq!(x_me_values(read), x_me_values(&msg), "{case}");
+                }
+                for name in ["From", "To"] {
+                    let value = standard_header(&msg, name);
+                    let addrs = mailparse::addrparse(&value).unwrap();
+                    let [mailparse::MailAddr::Single(addr)] = &addrs[..] else {
+                        panic!("{case}: {name} was {value:?}");
+                    };
+                    assert!(
+                        !addr.addr.contains(char::is_whitespace),
+                        "{case}: {name} was {value:?}"
+                    );
+                }
+
+                let tmp = tempfile::tempdir().unwrap();
+                let mbox = write_mail_package(tmp.path(), MailPackage::Mbox, &[msg]).unwrap();
+                let text = fs::read_to_string(&mbox).unwrap();
+                let envelope = text.lines().next().unwrap();
+                let fields: Vec<&str> = envelope.split(' ').collect();
+                assert_eq!(fields.len(), 7, "{case}: From_ line was {envelope:?}");
+                assert_eq!(text.lines().filter(|l| l.starts_with("From ")).count(), 1);
+            }
+        }
+    }
+}
+
+/// An attachment type holding a line break, written into its part's
+/// `Content-Type` as it was, ended the part's headers there. The part is now
+/// written as `application/octet-stream`, and the type, the bytes and the
+/// other attachments read back exactly.
+#[test]
+fn an_attachment_type_with_a_line_break_keeps_its_part_whole() {
+    let attachment = |mime: &str, bytes: &[u8]| MailAttachment {
+        bytes: bytes.to_vec(),
+        meta: message_ir::AttachmentMeta {
+            path: None,
+            original_name: Some("a.txt".into()),
+            mime_type: Some(mime.into()),
+            digest_sha256: None,
+            size_bytes: Some(bytes.len() as u64),
+            missing_reason: None,
+        },
+        is_sticker: false,
+        transcription: None,
+        sticker_effect: None,
+    };
+    let mut msg = base_sms();
+    msg.attachments = vec![
+        attachment("text/plain\r\n\r\nX-Injected: 1", b"first"),
+        attachment("image/png", b"second"),
+    ];
+
+    for read in <[MailMessage; 2]>::from(written_and_read_back(&msg)) {
+        let read: Vec<(Option<String>, Vec<u8>)> = read
+            .attachments
+            .iter()
+            .map(|a| (a.meta.mime_type.clone(), a.bytes.clone()))
+            .collect();
+        let written: Vec<(Option<String>, Vec<u8>)> = msg
+            .attachments
+            .iter()
+            .map(|a| (a.meta.mime_type.clone(), a.bytes.clone()))
+            .collect();
+        assert_eq!(read, written);
+    }
+    let eml = String::from_utf8(build_eml(&msg).unwrap()).unwrap();
+    assert!(!eml.contains("\r\nX-Injected"), "{eml}");
+    assert!(
+        eml.contains("Content-Type: application/octet-stream"),
+        "{eml}"
+    );
 }

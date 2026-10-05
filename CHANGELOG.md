@@ -831,6 +831,13 @@ released versions carry their date on the heading.
 
 #### Exporting and converting
 
+- 2026-10-05 **An EML or mbox export of a message whose id or address holds
+  a line break converts whole.** A line break in a message's id or in the
+  phone number or address it was sent from or to ended the mail's headers
+  early, so converting the file lost the message's details or refused the
+  whole file. The same went for an attachment whose file type held one. Such
+  a value is now written so the mail stays whole, and converting the file
+  gives it back exactly as it was exported.
 - 2026-10-05 **An EML or mbox export keeps every space of a message's
   details.** A run of spaces in a message's details, such as a name, a
   transcription, an earlier version or a detail from the source app, could

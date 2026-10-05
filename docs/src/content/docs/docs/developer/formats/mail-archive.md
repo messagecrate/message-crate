@@ -90,12 +90,14 @@ Do **not** use the `X-smssync-*` header namespace. This format is not Plus-compa
 - Phone: `+15555550119@sms.local` (E.164 in local-part; `+` allowed in addr-spec via quoting if required by the builder).
 - Email / Apple identity: `user=example.com@identity.local` or a documented safe encoding of the raw identity — never name-only as the sole identifier.
 - Display name may appear in the phrase (`Alice <+1555…@sms.local>`).
+- The local part keeps letters, digits, `+`, `-`, `_`, `.` and `=`, writes `@` as `=`, and writes every other character as `_`, a space or a line break among them. A line break written as it was would end the header. The identity itself is read from its `X-ME-*` header, never from the address. The mbox `From_` line names the same address.
 
 ### Message-ID
 
 - Prefer source guid when present (iMessage): `<{apple-guid}@imessage.local>`.
 - Otherwise: `<{sha256-fingerprint}@message-crate.local>` matching CSV `guid` construction where possible.
 - Must be stable across re-exports of the same logical message.
+- A guid that is not an RFC 5322 `dot-atom-text`, or that holds a `%`, has each byte outside `atext`, and each `%` and `.`, written as `%XX`: the guid `a b.c` is `<a%20b%2Ec@message-crate.local>`. A line break written as it was would end the mail's headers. Two guids never share a `Message-ID`, and a reply's `In-Reply-To` and `References` name its parent the same way. The guid itself is read from `X-ME-Guid`.
 
 ### From / To / Cc mapping
 
@@ -180,7 +182,7 @@ SMS writers use `sms` / `mms` only. Absence of iMessage-only headers means “no
 
 **v1: embed bytes as MIME parts** so offline mail clients show media.
 
-- `Content-Type` from known mime; fallback `application/octet-stream`
+- `Content-Type` from known mime; fallback `application/octet-stream`, also for a type that is not a `type/subtype` pair of RFC 2045 tokens, such as one holding a space or a line break. The type itself is read from `X-ME-Attachment-Meta`.
 - `Content-Disposition: attachment; filename="…"` using original name when known
 - Part order is significant: index `0..n-1` of non-body MIME attachments matches `X-ME-Attachment-Meta` and iMessage `parts[].attachment_indices`
 

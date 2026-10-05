@@ -338,17 +338,7 @@ fn envelope_sender(msg: &MailMessage) -> String {
             if owner.is_empty() { "me" } else { owner }
         }
     };
-    // Envelope address must not contain spaces.
-    if handle.contains('@') {
-        format!("{}@{IDENTITY_ADDRESS_DOMAIN}", handle.replace('@', "="))
-    } else if handle
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '_' | '.'))
-    {
-        format!("{handle}@{SMS_ADDRESS_DOMAIN}")
-    } else {
-        "MAILER-DAEMON@message-crate.local".into()
-    }
+    synthetic_email(handle)
 }
 
 /// The classic `Wed Jun 30 21:49:08 1993` form of a timestamp, in UTC.
@@ -400,17 +390,29 @@ fn guid_prefix8(guid: &str) -> String {
 /// Phones → `+E164@sms.local`. Email / other handles containing `@` →
 /// `local=domain@identity.local` (`MAIL_ARCHIVE` encoding).
 fn synthetic_address(handle: &str, display_name: Option<&str>) -> Address<'static> {
-    let handle = handle.trim();
-    let email = if handle.is_empty() {
-        format!("unknown@{SMS_ADDRESS_DOMAIN}")
-    } else if handle.contains('@') {
-        let encoded = handle.replace('@', "=");
-        format!("{encoded}@{IDENTITY_ADDRESS_DOMAIN}")
-    } else {
-        format!("{handle}@{SMS_ADDRESS_DOMAIN}")
-    };
     let name = display_name.and_then(message_ir::nonempty);
-    Address::new_address(name, email)
+    Address::new_address(name, synthetic_email(handle))
+}
+
+/// The address a handle is written as in `From`, `To` and the mbox `From_`
+/// line: `+15555550101@sms.local`, or `sam=example.com@identity.local` for a
+/// handle holding an `@`.
+///
+/// The local part is [`sanitize_addr_local`]'s, so every character an
+/// address cannot hold, a space or a line break among them, is `_`. Written
+/// as it was, a line break in a handle ended the header, and the mail no
+/// longer read. The handle itself is kept in its `X-ME-*` header.
+fn synthetic_email(handle: &str) -> String {
+    let handle = handle.trim();
+    let domain = if handle.contains('@') {
+        IDENTITY_ADDRESS_DOMAIN
+    } else {
+        SMS_ADDRESS_DOMAIN
+    };
+    match sanitize_addr_local(handle) {
+        Some(local) => format!("{local}@{domain}"),
+        None => format!("unknown@{SMS_ADDRESS_DOMAIN}"),
+    }
 }
 
 /// The owner's address: their handle (or `me`) with their display name (or
@@ -498,6 +500,62 @@ fn message_id_domain(msg: &MailMessage) -> &'static str {
         MESSAGE_ID_DOMAIN_IMESSAGE
     } else {
         MESSAGE_ID_DOMAIN_DEFAULT
+    }
+}
+
+/// The `Message-ID` of the message whose guid is `guid`, without its angle
+/// brackets: `{guid}@{domain}`. A reply's `In-Reply-To` and `References`
+/// name its parent by the same id.
+///
+/// A guid that is a `dot-atom-text` (RFC 5322 section 3.2.3) with no `%` is
+/// written as it is, as every guid a source app gives is. Every other guid
+/// has each byte that is not `atext`, and each `%` and `.`, written as `%XX`,
+/// so no space or line break reaches the header. Written as it was, a line
+/// break in a guid ended the mail's headers. Two guids never share an id,
+/// because a mail client threads replies by it: an id written as it is holds
+/// no `%`, and an encoded one does (the empty guid alone is written as
+/// nothing). The guid itself is kept in `X-ME-Guid`.
+fn message_id(guid: &str, domain: &str) -> String {
+    let is_atext = |b: u8| b.is_ascii_alphanumeric() || b"!#$&'*+-/=?^_`{|}~".contains(&b);
+    let verbatim = !guid.is_empty()
+        && guid
+            .split('.')
+            .all(|atom| !atom.is_empty() && atom.bytes().all(is_atext));
+    if verbatim {
+        return format!("{guid}@{domain}");
+    }
+    let mut left = String::with_capacity(guid.len() * 3);
+    for b in guid.bytes() {
+        if is_atext(b) {
+            left.push(char::from(b));
+        } else {
+            left.push_str(&format!("%{b:02X}"));
+        }
+    }
+    format!("{left}@{domain}")
+}
+
+/// The `Content-Type` of an attachment's MIME part: its type when that is a
+/// `type/subtype` pair of RFC 2045 tokens (section 5.1), else
+/// `application/octet-stream`.
+///
+/// Written as it was, a line break in the type ended the part's headers,
+/// and the part's bytes were lost. The type itself is kept in
+/// `X-ME-Attachment-Meta`, which the reader takes it from.
+fn part_content_type(mime: Option<&str>) -> &str {
+    let is_token = |s: &str| {
+        !s.is_empty()
+            && s.bytes()
+                .all(|b| b.is_ascii_graphic() && !b"()<>@,;:\\\"/[]?=".contains(&b))
+    };
+    match mime {
+        Some(m)
+            if m.split_once('/')
+                .is_some_and(|(t, s)| is_token(t) && is_token(s)) =>
+        {
+            m
+        }
+        _ => "application/octet-stream",
     }
 }
 
@@ -642,7 +700,7 @@ fn opt_header<'m>(
 fn build_eml(msg: &MailMessage) -> Result<Vec<u8>> {
     let (from, to) = envelope_addresses(msg);
     let date_secs = msg.message.timestamp_unix_ms.div_euclid(1000);
-    let message_id = format!("{}@{}", msg.message.guid, message_id_domain(msg));
+    let message_id = message_id(&msg.message.guid, message_id_domain(msg));
     let mut builder = MessageBuilder::new()
         .from(from)
         .to(to)
@@ -659,12 +717,7 @@ fn build_eml(msg: &MailMessage) -> Result<Vec<u8>> {
         let mut parts = Vec::with_capacity(msg.attachments.len() + 1);
         parts.push(text);
         for (i, att) in msg.attachments.iter().enumerate() {
-            let mime = att
-                .meta
-                .mime_type
-                .as_deref()
-                .filter(|m| !m.is_empty())
-                .unwrap_or("application/octet-stream");
+            let mime = part_content_type(att.meta.mime_type.as_deref());
             let filename = att
                 .meta
                 .original_name
@@ -860,7 +913,7 @@ fn imessage_headers<'m>(builder: MessageBuilder<'m>, msg: &MailMessage) -> Messa
     };
     let mut builder = opt_header(builder, headers::IS_REPLY, im.is_reply.then_some("true"));
     if let Some(guid) = im.in_reply_to_guid.as_deref().filter(|s| !s.is_empty()) {
-        let mid = format!("{guid}@{}", message_id_domain(msg));
+        let mid = message_id(guid, message_id_domain(msg));
         builder = builder.in_reply_to(mid.clone()).references(mid);
         builder = x_me_header(builder, headers::THREAD_ORIGINATOR_GUID, guid);
     }
