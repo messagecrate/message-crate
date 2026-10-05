@@ -1,5 +1,5 @@
 //! Everything an Upload says while it runs: the on-disk log, the live progress
-//! callback, and the "files N/M" batching that keeps big imports readable.
+//! callback, and the batched progress line that keeps big imports readable.
 //!
 //! [`Reporter`] is the one object the rest of the crate talks to. It owns the
 //! log file, the optional progress callback, and the [`ProgressBatcher`], so
@@ -13,7 +13,9 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use message_crate_core::count_of;
 
-use crate::report::{FileResult, PushReport, UploadProfile, elapsed_ms, format_profile_line};
+use crate::report::{
+    FileResult, PushReport, UploadProfile, elapsed_ms, format_ms_seconds, format_profile_line,
+};
 
 /// Events the desktop app can show while an Upload is running.
 #[derive(Debug, Clone)]
@@ -67,7 +69,7 @@ pub enum ProgressEvent {
 /// Callback type for live progress (desktop log panel, tests).
 pub type ProgressFn<'a> = dyn FnMut(ProgressEvent) + Send + 'a;
 
-/// How many finished conversations are grouped into one "files N/M …" log line.
+/// How many finished conversations are grouped into one progress line.
 /// Printing every single chat would flood the log on a big import.
 const PROGRESS_BATCH_SIZE: usize = 10;
 
@@ -106,108 +108,113 @@ impl LogWriter {
     }
 }
 
-/// Collects successes and writes one progress line every [`PROGRESS_BATCH_SIZE`] files.
+/// Collects finished conversations and writes one progress line every
+/// [`PROGRESS_BATCH_SIZE`] of them.
 struct ProgressBatcher {
     total: usize,
     done: usize,
-    chunk_conversations: u64,
-    chunk_messages: u64,
-    chunk_bytes: u64,
-    chunk_import_ms: u64,
-    /// Wall clock for the current progress chunk (first note until the line is written).
-    chunk_started: Option<Instant>,
-    chunk_count: usize,
+    /// Conversations sent in this window.
+    window_sent: u64,
+    /// Conversations in this window the journal says were sent before.
+    window_sent_before: u64,
+    window_messages: u64,
+    window_bytes: u64,
+    window_import_ms: u64,
+    /// When this window began: when the batcher was made, or when it wrote
+    /// its previous line. The window's wall time is measured from here, so it
+    /// covers every conversation the line counts.
+    window_started: Instant,
+    window_count: usize,
 }
 
 impl ProgressBatcher {
-    /// Start a batcher that writes a line when a chunk of successes is full.
+    /// Start a batcher that writes a line when a window of conversations is full.
     fn new(total: usize) -> Self {
         Self {
             total,
             done: 0,
-            chunk_conversations: 0,
-            chunk_messages: 0,
-            chunk_bytes: 0,
-            chunk_import_ms: 0,
-            chunk_started: None,
-            chunk_count: 0,
+            window_sent: 0,
+            window_sent_before: 0,
+            window_messages: 0,
+            window_bytes: 0,
+            window_import_ms: 0,
+            window_started: Instant::now(),
+            window_count: 0,
         }
     }
 
-    /// Start the chunk wall clock on the first success or skip in this window.
-    fn begin_chunk_if_needed(&mut self) {
-        if self.chunk_started.is_none() {
-            self.chunk_started = Some(Instant::now());
-        }
-    }
-
-    /// Record one successful conversation. Returns a log line when the batch is full.
+    /// Record one conversation the Upload sent. Returns a log line when the
+    /// window is full.
     fn note_ok(&mut self, messages: u64, profile: &UploadProfile) -> Option<String> {
-        self.begin_chunk_if_needed();
         self.done = self.done.saturating_add(1);
-        self.chunk_count = self.chunk_count.saturating_add(1);
-        self.chunk_conversations = self.chunk_conversations.saturating_add(1);
-        self.chunk_messages = self.chunk_messages.saturating_add(messages);
-        self.chunk_bytes = self.chunk_bytes.saturating_add(profile.asset_bytes);
-        self.chunk_import_ms = self
-            .chunk_import_ms
+        self.window_count = self.window_count.saturating_add(1);
+        self.window_sent = self.window_sent.saturating_add(1);
+        self.window_messages = self.window_messages.saturating_add(messages);
+        self.window_bytes = self.window_bytes.saturating_add(profile.asset_bytes);
+        self.window_import_ms = self
+            .window_import_ms
             .saturating_add(profile.message_import_ms);
         self.line_if_full()
     }
 
-    /// Record a conversation skipped because the journal says it already imported.
+    /// Record a conversation skipped because the journal says it was sent before.
     fn note_skipped(&mut self) -> Option<String> {
-        self.begin_chunk_if_needed();
         self.done = self.done.saturating_add(1);
-        self.chunk_count = self.chunk_count.saturating_add(1);
-        self.chunk_conversations = self.chunk_conversations.saturating_add(1);
+        self.window_count = self.window_count.saturating_add(1);
+        self.window_sent_before = self.window_sent_before.saturating_add(1);
         self.line_if_full()
     }
 
-    /// Count a failure toward "done" without adding it to the success chunk totals.
+    /// Count a failure toward "done" without adding it to the window's totals.
     fn note_failed(&mut self) {
         self.done = self.done.saturating_add(1);
     }
 
-    /// The chunk line when this window is full or the run is complete.
+    /// The window's line when this window is full or the run is complete.
     fn line_if_full(&mut self) -> Option<String> {
-        (self.chunk_count >= PROGRESS_BATCH_SIZE || self.done >= self.total)
-            .then(|| self.take_chunk_line())
+        (self.window_count >= PROGRESS_BATCH_SIZE || self.done >= self.total)
+            .then(|| self.take_window_line())
     }
 
-    /// Write any leftover partial batch at the end of the run.
+    /// Write any leftover partial window at the end of the run.
     fn flush_remainder(&mut self) -> Option<String> {
-        (self.chunk_count > 0).then(|| self.take_chunk_line())
+        (self.window_count > 0).then(|| self.take_window_line())
     }
 
-    /// Format the current chunk line, then zero the counters for the next chunk.
-    fn take_chunk_line(&mut self) -> String {
-        // Wall time for this progress window — not the sum of per-file clocks
-        // (those overlap when prepares run ahead of imports).
-        let wall_ms = self.chunk_started.map_or(0, elapsed_ms);
-        let line = format!(
-            "files {}/{}: {} and {}, {} sent, {} importing, {} in all",
+    /// Format the current window's line, then start the next window.
+    fn take_window_line(&mut self) -> String {
+        let mut line = format!(
+            "Finished {} of {}.",
             self.done,
-            self.total,
-            count_of(self.chunk_conversations, "conversation", "conversations"),
-            count_of(self.chunk_messages, "message", "messages"),
-            media::format_bytes(self.chunk_bytes),
-            format_ms_seconds(self.chunk_import_ms),
-            format_ms_seconds(wall_ms),
+            count_of(self.total as u64, "conversation", "conversations"),
         );
-        self.chunk_conversations = 0;
-        self.chunk_messages = 0;
-        self.chunk_bytes = 0;
-        self.chunk_import_ms = 0;
-        self.chunk_started = None;
-        self.chunk_count = 0;
+        if self.window_sent > 0 {
+            // The import time is each conversation's own clock added up, so it
+            // can exceed the window's wall time when conversations share an
+            // import request.
+            line.push_str(&format!(
+                " In the last {} the Upload sent {} with {} and {} of Assets. \
+                 Importing their messages took {}, added up across the conversations.",
+                format_ms_seconds(elapsed_ms(self.window_started)),
+                count_of(self.window_sent, "conversation", "conversations"),
+                count_of(self.window_messages, "message", "messages"),
+                media::format_bytes(self.window_bytes),
+                format_ms_seconds(self.window_import_ms),
+            ));
+        }
+        if self.window_sent_before > 0 {
+            line.push_str(&format!(
+                " {} had been sent before.",
+                count_of(self.window_sent_before, "conversation", "conversations"),
+            ));
+        }
+        *self = Self {
+            total: self.total,
+            done: self.done,
+            ..Self::new(self.total)
+        };
         line
     }
-}
-
-/// Format a millisecond count as seconds with one decimal place.
-fn format_ms_seconds(ms: u64) -> String {
-    format!("{:.1}s", ms as f64 / 1000.0)
 }
 
 /// The single outlet for everything an Upload says.
@@ -222,7 +229,7 @@ pub(crate) struct Reporter<'p, 'f> {
 }
 
 impl<'p, 'f> Reporter<'p, 'f> {
-    /// Open the log file. The "files N/M" counter starts at zero until
+    /// Open the log file. The progress line's counter starts at zero until
     /// [`Reporter::expect_files`] says how many conversations the run has.
     ///
     /// # Errors
@@ -236,7 +243,7 @@ impl<'p, 'f> Reporter<'p, 'f> {
         })
     }
 
-    /// Tell the "files N/M" counter how many conversations this run covers.
+    /// Tell the progress line how many conversations this run covers.
     pub(crate) fn expect_files(&mut self, total: usize) {
         self.batcher = ProgressBatcher::new(total);
     }
@@ -276,33 +283,33 @@ impl<'p, 'f> Reporter<'p, 'f> {
         });
     }
 
-    /// Record a successful conversation in the "files N/M" counter.
+    /// Record a successful conversation in the progress line.
     pub(crate) fn note_ok(&mut self, messages: u64, profile: &UploadProfile) {
         if let Some(line) = self.batcher.note_ok(messages, profile) {
             self.show(line);
         }
     }
 
-    /// Record a skipped conversation in the "files N/M" counter.
+    /// Record a skipped conversation in the progress line.
     pub(crate) fn note_skipped(&mut self) {
         if let Some(line) = self.batcher.note_skipped() {
             self.show(line);
         }
     }
 
-    /// Record a failed conversation: flush the pending "files N/M" success line
-    /// first so failure text is not mixed into it, then log the failure and,
-    /// when known, its PROFILE timings so slow failures stay diagnosable.
+    /// Record a failed conversation: flush the pending progress line first so
+    /// failure text is not mixed into it, then log the failure and, when
+    /// known, where its time went so slow failures stay diagnosable.
     pub(crate) fn note_failed(&mut self, name: &str, error: &str, profile: Option<&UploadProfile>) {
         self.flush_file_counter();
         self.batcher.note_failed();
-        self.show(format!("fail {name}: {error}"));
+        self.show(format!("{name} failed: {error}"));
         if let Some(profile) = profile {
             self.show(format_profile_line(name, profile));
         }
     }
 
-    /// Write any partial "files N/M" line (end of run, or before an error line).
+    /// Write any partial progress line (end of run, or before an error line).
     pub(crate) fn flush_file_counter(&mut self) {
         if let Some(line) = self.batcher.flush_remainder() {
             self.show(line);
@@ -312,7 +319,7 @@ impl<'p, 'f> Reporter<'p, 'f> {
     /// Write Import Errors skip rows for attachments that were not uploaded.
     pub(crate) fn attachment_skips(&mut self, skips: &[AttachmentSkip]) {
         for skip in skips {
-            self.show(format!("skip {}: {}", skip.item, skip.reason));
+            self.show(format!("Did not upload {}: {}", skip.item, skip.reason));
             self.event(ProgressEvent::Issue {
                 kind: "skip".into(),
                 step: "upload".into(),
@@ -329,7 +336,7 @@ impl<'p, 'f> Reporter<'p, 'f> {
     /// A `skipped` conversation gets no row: the Upload's journal skips only a
     /// conversation an earlier part of the same run sent, so it is on the
     /// server and is not a problem.
-    /// The log already carries the `fail` line for each failure, so this
+    /// The log already carries the "… failed: …" line for each failure, so this
     /// goes to the callback only.
     pub(crate) fn conversation_issues(&mut self, results: &[FileResult]) {
         for result in results {
@@ -371,14 +378,18 @@ mod tests {
         }
         let tenth = batcher.note_ok(2, &profile).unwrap();
         assert!(
-            tenth.starts_with(
-                "files 10/25: 10 conversations and 20 messages, 7.0 MB sent, 33.0s importing, "
+            tenth.starts_with("Finished 10 of 25 conversations. In the last "),
+            "{tenth}"
+        );
+        assert!(
+            tenth.ends_with(
+                " the Upload sent 10 conversations with 20 messages and 7.0 MB of Assets. \
+                 Importing their messages took 33.0s, added up across the conversations."
             ),
             "{tenth}"
         );
-        // The time in all is wall-clock for the progress window, not the sum of profile.total_ms.
-        assert!(tenth.ends_with(" in all"));
-        assert!(!tenth.contains("55.0s in all"));
+        // The window's time is its wall clock, not the sum of profile.total_ms.
+        assert!(!tenth.contains("last 55.0s"), "{tenth}");
         assert!(!tenth.contains('='));
         lines.push(tenth);
         for _ in 0..15 {
@@ -387,8 +398,10 @@ mod tests {
             }
         }
         assert_eq!(lines.len(), 3);
-        assert!(lines[1].starts_with("files 20/25: 10 conversations and 10 messages, "));
-        assert!(lines[2].starts_with("files 25/25: 5 conversations and 5 messages, "));
+        assert!(lines[1].starts_with("Finished 20 of 25 conversations. In the last "));
+        assert!(lines[1].contains(" sent 10 conversations with 10 messages "));
+        assert!(lines[2].starts_with("Finished 25 of 25 conversations. In the last "));
+        assert!(lines[2].contains(" sent 5 conversations with 5 messages "));
     }
 
     /// A window of one conversation with one message words both counts
@@ -403,9 +416,57 @@ mod tests {
         };
         let line = batcher.note_ok(1, &profile).unwrap();
         assert!(
-            line.starts_with(
-                "files 1/1: 1 conversation and 1 message, 500 B sent, 0.2s importing, "
+            line.starts_with("Finished 1 of 1 conversation. In the last "),
+            "{line}"
+        );
+        assert!(
+            line.ends_with(
+                " the Upload sent 1 conversation with 1 message and 500 B of Assets. \
+                 Importing their messages took 0.2s, added up across the conversations."
             ),
+            "{line}"
+        );
+    }
+
+    /// The window's clock starts before its first conversation is worked on,
+    /// so a window of one conversation counts that conversation's time rather
+    /// than reading 0.0s.
+    #[test]
+    fn the_window_time_covers_its_first_conversation() {
+        let mut batcher = ProgressBatcher::new(1);
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        let line = batcher.note_ok(1, &UploadProfile::default()).unwrap();
+        let seconds: f64 = line
+            .strip_prefix("Finished 1 of 1 conversation. In the last ")
+            .and_then(|rest| rest.split_once('s'))
+            .and_then(|(seconds, _)| seconds.parse().ok())
+            .unwrap_or_else(|| panic!("{line}"));
+        assert!(seconds >= 0.1, "{line}");
+    }
+
+    /// Conversations the journal says were sent before are named apart, so
+    /// the line never says they were sent again, and a failure in the window
+    /// counts toward "Finished" only.
+    #[test]
+    fn conversations_sent_before_are_named_apart_from_those_sent() {
+        let mut batcher = ProgressBatcher::new(3);
+        assert!(batcher.note_skipped().is_none());
+        batcher.note_failed();
+        let line = batcher.note_skipped().unwrap();
+        assert_eq!(
+            line,
+            "Finished 3 of 3 conversations. 2 conversations had been sent before."
+        );
+
+        let mut batcher = ProgressBatcher::new(2);
+        assert!(batcher.note_ok(4, &UploadProfile::default()).is_none());
+        let line = batcher.note_skipped().unwrap();
+        assert!(
+            line.contains(" the Upload sent 1 conversation with 4 messages "),
+            "{line}"
+        );
+        assert!(
+            line.ends_with(" 1 conversation had been sent before."),
             "{line}"
         );
     }
