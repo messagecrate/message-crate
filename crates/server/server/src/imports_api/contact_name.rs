@@ -3,13 +3,13 @@
 use std::collections::HashSet;
 
 use anyhow::Result;
-use message_ir::{HandleType, trimmed};
+use message_ir::{HandleService, HandleType, trimmed};
 use sqlx::SqliteConnection;
 
 use super::ImportCounts;
 use crate::db::contacts;
 use crate::db::handles::{
-    HandleIdCache, handle_type_of, normalize_handle, upsert_handle_row_cached,
+    HandleIdCache, handle_type_on, normalize_handle, upsert_handle_row_cached,
 };
 use crate::db::import_contacts::{self, ContactReason};
 use crate::db::trash;
@@ -109,11 +109,11 @@ pub(super) struct IncomingSender<'a> {
     /// The sender's address as the backup recorded it, or the name it gave
     /// with no address (typed `Other`), when it recorded either.
     pub address: Option<&'a str>,
-    /// The address's type when the source stated it; `Handle::parse` of the
-    /// address when it did not.
+    /// The address's type when the source stated it, else its shape decides.
+    /// Either way the service has the last word ([`handle_type_on`]).
     pub handle_type: Option<HandleType>,
-    /// Platform the message arrived on: `phone` or `whatsapp`.
-    pub platform: &'a str,
+    /// Service the message arrived on: `phone` or `whatsapp`.
+    pub service: HandleService,
 }
 
 /// True when `address`, read as `handle_type`, is one of the account's
@@ -146,16 +146,14 @@ pub(super) async fn resolve_incoming_sender_handle(
     let Some(address) = sender.address.and_then(trimmed) else {
         return Ok(None);
     };
-    let handle_type = sender
-        .handle_type
-        .unwrap_or_else(|| handle_type_of(address));
+    let handle_type = handle_type_on(address, sender.handle_type, sender.service);
     let (handle_id, flagged, cached) = upsert_handle_row_cached(
         tx,
         cache,
         account_id,
         address,
         handle_type,
-        Some(sender.platform),
+        Some(sender.service.as_str()),
     )
     .await?;
     if flagged {

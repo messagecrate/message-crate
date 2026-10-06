@@ -24,12 +24,34 @@ pub fn normalize_handle(raw: &str, handle_type: HandleType) -> (String, Option<S
     phone::normalize_typed_handle(raw, handle_type)
 }
 
-/// The type of an address the source did not type: [`phone::Handle::parse`],
-/// the one rule for what an address is. It reads the address alone and never
-/// the service, so one address has one type wherever it arrives (#1432). A
-/// blank address is `Other`.
+/// The shape of an address the source did not type: [`phone::Handle::parse`],
+/// the one rule for what an address looks like. A blank address is `Other`.
+/// An import never stores this type without asking the service first:
+/// [`handle_type_on`] does both.
 pub fn handle_type_of(address: &str) -> HandleType {
     phone::Handle::parse(address).map_or(HandleType::Other, |handle| handle.kind())
+}
+
+/// The type an import gives an address it meets on `service`: the service
+/// decides which types are valid, and the shape picks among them.
+///
+/// `stated` is the type the source gave, else the shape ([`handle_type_of`])
+/// decides. WhatsApp carries phone numbers and its own ids (`…@lid`,
+/// `…@g.us`, `…@s.whatsapp.net`), which are `Other`, so an address with an
+/// `@` on WhatsApp is `Other` however it looks (#1671). iMessage reaches an
+/// email address and shares the phone service with SMS, and an address has
+/// one type on one service, so the shape's type stands there; how SMS's
+/// phone-only rule is held on that service is #1958. A phone number is a
+/// phone number on every service (#1144).
+pub fn handle_type_on(
+    address: &str,
+    stated: Option<HandleType>,
+    service: HandleService,
+) -> HandleType {
+    match (service, stated.unwrap_or_else(|| handle_type_of(address))) {
+        (HandleService::Whatsapp, HandleType::Email) => HandleType::Other,
+        (_, kind) => kind,
+    }
 }
 
 /// A new identity refused because its service cannot carry its type: an
