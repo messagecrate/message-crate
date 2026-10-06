@@ -48,6 +48,7 @@ CSV output contains one row per message. Conversation and export identity are re
 | `export_tool_version` | Source version recorded by the importer. |
 | `owner_identity` | Phone number or email for the person whose backup was exported. |
 | `owner_display_name` | Display name for the owner. |
+| `backup_taken_at_unix_ms` | When the backup the export was read from was made, in Unix milliseconds; blank when the export does not say. |
 | `message_owner_identity` | The owner's own address on this message: the one it was sent from or received at. Apple Messages records it per message, so one conversation can hold rows from a phone number and an Apple ID. Empty when the source records no owner per message, and `owner_identity` then stands for the row. |
 | `android_type` | Original Android SMS type or MMS box number, or empty for other sources. |
 | `source_fields_json` | Compact JSON containing source-specific fields that do not have shared columns. |

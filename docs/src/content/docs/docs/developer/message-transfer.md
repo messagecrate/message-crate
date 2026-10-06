@@ -41,7 +41,7 @@ Each conversation is one text file whose name ends in `.jsonl`. JSON Lines means
 Pictures and other media sit next to those files in `attachments/`.
 
 ```jsonl title="One conversation file"
-{"schema_version":10,"export":{"source":"sms-backup-restore","tool":"SMS Backup & Restore","owner_identity":"+15555550100","owner_display_name":"Me"},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","participants":[{"identity":"+15555550101","display_name":"Sam"}]}}
+{"schema_version":11,"export":{"source":"sms-backup-restore","tool":"SMS Backup & Restore","owner_identity":"+15555550100","owner_display_name":"Me","backup_taken_at_unix_ms":1400800000000},"conversation":{"chat_identifier":"+15555550101","conversation_type":"individual","participants":[{"identity":"+15555550101","display_name":"Sam"}]}}
 {"guid":"msg-1","timestamp_unix_ms":1400773261000,"direction":"outgoing","service":"sms","text":"Hello"}
 ```
 

@@ -39,7 +39,13 @@ Selecting the row again, or the **×** button, closes it.
 
 Three labels sit at the top: **Type**, the source, **Mode**, `Append` or `Replace`, and **Status**.
 
-Five figures follow: **Started**, **Finished**, **Messages**, **Attachments**, and **Bytes uploaded**.
+Six figures follow: **Started**, **Finished**, **Messages**, **Attachments**, **Bytes uploaded**, and **Issues**.
+
+**Backup** names the backup the run read, as the desktop app recorded it, and when that backup was made, so two imports of one phone can be told apart.
+The date comes from the backup itself: an iPhone backup's own date, the date an SMS Backup & Restore file records, or the date its files were last written where the backup records none.
+When the run read two backups, it shows the later.
+"The backup does not say when it was made" appears for a backup that records no date.
+The owner, reading another account's runs, does not see this line.
 
 A list of four steps comes next, each with the time it took: **Parse backup**, **Attachments**, **Preparing messages**, and **Upload to Message Crate**.
 
