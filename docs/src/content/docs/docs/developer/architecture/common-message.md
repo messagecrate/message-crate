@@ -226,7 +226,7 @@ Attachment **bytes** are never stored in JSON/JSONL (`#[serde(skip)]`). Paths + 
 ## JSONL layout
 
 ```text
-{"schema_version":11,"export":{…},"conversation":{…}}
+{"schema_version":12,"export":{…},"conversation":{…}}
 {"guid":"…","timestamp_unix_ms":…, …}
 …
 ```
