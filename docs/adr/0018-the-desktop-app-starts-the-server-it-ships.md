@@ -56,12 +56,21 @@ remove than an app.
 
 ## Consequences
 
-The server program is stopped by killing it. Its database survives that, and
-the only work a kill interrupts is an import the closing app was running.
+The server ends one of two ways.
 
-If the app crashes, its server keeps running. The next launch finds a Message
-Crate answering and uses it; that server then stays until the computer
-restarts or the person ends it.
+- **The app closes normally.** The app kills the server. Its database
+  survives that, and the only work a kill interrupts is an import the closing
+  app was running. The kill does not reach an ffmpeg the server runs; #1737
+  is about ending that too.
+- **The app is gone without closing**, because it crashed or was killed. The
+  app starts the server with `--exit-with-parent` and the app's process id,
+  so the server notices and stops itself, the way it stops on Ctrl-C or
+  SIGTERM: ffmpeg stopped and the work in flight finished (#1934). On Unix it
+  checks its parent process every two seconds. On Windows it waits on the
+  app's process handle, which the system signals the moment the app ends.
+
+A server started any other way, by Docker or `./scripts/run-dev.sh`, is not
+given the flag and watches nothing.
 
 The installer grows by the size of the server program. The server and the app
 are always the same version, since they are built together.

@@ -177,7 +177,13 @@ describe("ConversationList", () => {
       });
       renderList();
       const user = setupUser();
-      await user.click(await screen.findByRole("checkbox", { name: "Select Chat 1" }));
+      // Drawing the first rows takes 100 to 230 ms on an idle machine and crossed
+      // findBy's 1000 ms default at a load average near 160 (#1654). 4000 ms leaves
+      // the rest of the test inside Vitest's 5000 ms budget, and the wait still ends
+      // the moment the row appears.
+      await user.click(
+        await screen.findByRole("checkbox", { name: "Select Chat 1" }, { timeout: 4000 }),
+      );
       await user.click(screen.getByRole("checkbox", { name: "Select Chat 2" }));
 
       // Two of 3,000 are ticked.

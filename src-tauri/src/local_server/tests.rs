@@ -151,9 +151,10 @@ fn the_server_is_started_on_this_computer_with_no_config_file() {
             cors_origins: vec!["http://localhost:5173".into()],
             ..launch.clone()
         }
-        .arguments()[7..],
+        .arguments()[9..],
         ["--cors-origin", "http://localhost:5173"]
     );
+    // The app names itself, so the server ends if the app crashes (#1934).
     assert_eq!(
         launch.arguments(),
         [
@@ -163,7 +164,9 @@ fn the_server_is_started_on_this_computer_with_no_config_file() {
             "--bind",
             "127.0.0.1:8080",
             "--static-dir",
-            "/site"
+            "/site",
+            "--exit-with-parent",
+            &std::process::id().to_string(),
         ]
     );
 }

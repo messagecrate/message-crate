@@ -10,16 +10,12 @@ use std::time::Instant;
 
 use message_crate_serve_protocol::OPERATION_LOCK_HELD_EXIT_CODE;
 
-use common::{Running, WAIT, create_database, listen, serve};
+use common::{Running, WAIT, empty_message_crate, listen, serve};
 
 #[test]
 fn serve_says_it_listens_and_a_second_serve_exits_with_the_lock_held_code() {
     let root = tempfile::tempdir().unwrap();
-    let data_dir = root.path().join("data");
-    let static_dir = root.path().join("static");
-    std::fs::create_dir_all(&data_dir).unwrap();
-    std::fs::create_dir_all(&static_dir).unwrap();
-    create_database(root.path(), &data_dir);
+    let (data_dir, static_dir) = empty_message_crate(root.path());
 
     let (_first, address) = listen(&mut serve(&data_dir, &static_dir));
     // The address it bound, not the `:0` it was given.
