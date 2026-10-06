@@ -49,8 +49,9 @@ const PAGE_KEYS: [&str; 4] = ["items", "total", "limit", "offset"];
 /// The one page with a key beside the four, and the one route that answers
 /// it: `GET /v1/messages` says how it read its search in `search`
 /// (`docs/architecture/http-api.md`, "Lists"). Named here, route and schema
-/// both, so a second page with a fifth key fails the rules rather than
-/// passing under a name that does not start with `Page_`.
+/// both. Any other schema with the four keys is a page too, whatever its
+/// name ([`page_schemas`]), so a second page with a fifth key fails the
+/// rules.
 struct PageException {
     method: &'static str,
     path: &'static str,
@@ -228,7 +229,7 @@ fn read_rules(doc: &Value, op: &Operation, spec: &Value) -> Vec<String> {
         ));
     }
 
-    for page in page_schemas(doc, op, spec) {
+    for page in page_schemas(doc, spec) {
         let required: BTreeSet<&str> = page["required"]
             .as_array()
             .into_iter()
@@ -371,7 +372,7 @@ async fn called_rules(doc: &Value, world: &World<'_>, op: &Operation, spec: &Val
         }
     }
 
-    if op.method == "get" && !page_schemas(doc, op, spec).is_empty() {
+    if op.method == "get" && !page_schemas(doc, spec).is_empty() {
         let mut out_of_range = vec!["limit=0", "limit=501"];
         // A browse list says its offset ceiling in the parameter's own
         // description, and must keep to it.
@@ -944,29 +945,40 @@ fn is_kebab(segment: &str) -> bool {
 
 /// The page schemas a `200` answers: the page it names, or each page of a
 /// choice between pages, as an account's history answers the account in
-/// full and the owner without content, or [`PAGE_EXCEPTION`]'s page on its
-/// own route. Empty when it answers no page.
-fn page_schemas<'d>(doc: &'d Value, op: &Operation, spec: &Value) -> Vec<&'d Value> {
+/// full and the owner without content. A schema is a page by its shape,
+/// whatever its name: it has all four [`PAGE_KEYS`], so a page under a name
+/// that does not start with `Page_` is still held to the page rules. Empty
+/// when it answers no page.
+fn page_schemas<'d>(doc: &'d Value, spec: &Value) -> Vec<&'d Value> {
     let schemas = &doc["components"]["schemas"];
     let Some(name) =
         schema_named(&spec["responses"]["200"]["content"]["application/json"]["schema"])
     else {
         return Vec::new();
     };
-    if name.starts_with("Page_") || (PAGE_EXCEPTION.is(op) && name == PAGE_EXCEPTION.schema) {
+    if is_page(&schemas[name]) {
         return vec![&schemas[name]];
     }
-    let choices: Vec<&str> = schemas[name]["oneOf"]
+    let choices: Vec<&Value> = schemas[name]["oneOf"]
         .as_array()
         .into_iter()
         .flatten()
         .filter_map(schema_named)
+        .map(|c| &schemas[c])
         .collect();
-    if !choices.is_empty() && choices.iter().all(|c| c.starts_with("Page_")) {
-        choices.into_iter().map(|c| &schemas[c]).collect()
+    if !choices.is_empty() && choices.iter().all(|c| is_page(c)) {
+        choices
     } else {
         Vec::new()
     }
+}
+
+/// Whether `schema` has the shape of a page: all four [`PAGE_KEYS`] among
+/// its properties.
+fn is_page(schema: &Value) -> bool {
+    PAGE_KEYS
+        .iter()
+        .all(|key| schema["properties"].get(*key).is_some())
 }
 
 /// What the operation says about its `offset`.

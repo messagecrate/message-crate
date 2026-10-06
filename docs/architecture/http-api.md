@@ -267,7 +267,7 @@ second convention.
 The Messages list, `GET /v1/messages`, is the one page with a key beside the
 four: `search`, which says how the server read the request. `search.sort` is
 the order the page is in, spelled as the `sort` parameter takes it, and
-`search.terms` is the free-text terms the query ranks by, each a `text` and
+`search.terms` holds the free-text terms the query ranks by, each a `text` and
 whether it is a `prefix`. The key describes the query, not the rows, so every
 page of one query carries the same value.
 Why: with no `sort`, the server picks the order from the query, best match
@@ -281,8 +281,11 @@ grammar that nothing held to the first (#1538).
 Rejected: a route of its own that reads a query and answers its terms. A
 query is not a resource, and every new search would wait for that answer
 before it could ask for its first page in the right order.
+
 `openapi/document_rules.rs` names the route and its schema,
 `ListMessagesResponse`, and fails any other page with a key beyond the four.
+It knows a page by its four keys, not by its name, so a page under a new
+name is held to the same rule.
 
 A `POST` that reads the rows its body names — contact summaries, unmatched
 identities — answers the whole of that body as one page and takes no `offset`
