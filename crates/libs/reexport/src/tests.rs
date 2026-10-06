@@ -450,13 +450,20 @@ fn run_from_an_sms_backup_logs_the_reader_counts_and_every_error() {
             "{expected:?} in the log: {logged:#?}"
         );
     }
+    // Every file it could not read is a sentence naming it, under the
+    // Import Errors heading (#1920).
+    let heading = logged
+        .iter()
+        .position(|line| line == "Import Errors")
+        .unwrap_or_else(|| panic!("no Import Errors heading in the log: {logged:#?}"));
     for n in 1..=6 {
         let name = format!("broken-{n}.xml");
         assert!(
-            logged
+            logged[heading + 1..]
                 .iter()
-                .any(|line| line.starts_with("error: ") && line.contains(&name)),
-            "an error for {name} in the log: {logged:#?}"
+                .any(|line| line.starts_with("  The file ")
+                    && line.contains(&format!("{name} could not be read in full: "))),
+            "an Import Error for {name} in the log: {logged:#?}"
         );
     }
     // The run's summary lines follow everything logged as it ran.

@@ -91,14 +91,21 @@ fn run_writes_the_conversation_and_reports_every_skip_and_error() {
             result.messages
         );
     }
-    let errors: Vec<&String> = result
+    // The file it could not read is a sentence naming it, under the Import
+    // Errors heading, and the summary ends there: a run with no note gives
+    // no Notes heading (#1920).
+    let heading = result
         .messages
         .iter()
-        .filter(|l| l.starts_with("  error: "))
-        .collect();
+        .position(|l| l == "  Import Errors")
+        .unwrap_or_else(|| panic!("no Import Errors heading in {:?}", result.messages));
+    let broken = input.join("gosms_sys_2_broken.xml").display().to_string();
+    let errors = &result.messages[heading + 1..];
     assert_eq!(errors.len(), 1, "{:?}", result.messages);
     assert!(
-        errors[0].contains("gosms_sys_2_broken.xml"),
+        errors[0].starts_with(&format!(
+            "    The file {broken} could not be read and was left out: "
+        )),
         "{}",
         errors[0]
     );
