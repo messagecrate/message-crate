@@ -496,8 +496,17 @@ fn a_refused_completion_is_an_error_the_push_returns() {
 
     let dir = tempdir().unwrap();
     write_jsonl(dir.path(), &sample_doc());
-    let error = run(&text_only_config(dir.path(), server.base_url()), None)
-        .expect_err("a refused completion fails the push");
+    let mut finished = false;
+    let mut on_progress = |event: ProgressEvent| {
+        if let ProgressEvent::Finished(_) = event {
+            finished = true;
+        }
+    };
+    let error = run(
+        &text_only_config(dir.path(), server.base_url()),
+        Some(&mut on_progress),
+    )
+    .expect_err("a refused completion fails the push");
 
     assert_eq!(
         complete.calls(),
@@ -517,6 +526,101 @@ fn a_refused_completion_is_an_error_the_push_returns() {
     assert_eq!(
         written["ok"], false,
         "the report on disk does not call the push a success"
+    );
+    assert_eq!(
+        written["completion_refused"], true,
+        "the report on disk says the server refused the completion"
+    );
+    assert!(!finished, "a push that fails does not say it finished");
+}
+
+/// A cancelled push that started its own Import Run returns its report when
+/// the server refuses to complete the run, rather than the refusal: the
+/// caller tells a pause from a failure by `cancelled`, so the cancel must
+/// reach it. The report says the server refused the completion, and the
+/// push says it finished (#1635).
+#[test]
+fn a_cancelled_push_whose_completion_is_refused_returns_its_report() {
+    let server = MockServer::start();
+    let _auth = mock_session(&server);
+    let _run = mock_import_start(&server, 42);
+    let _import = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/42/batches");
+        then.status(200).json_body(json!({
+            "messages": 1,
+            "messages_appended": 1,
+            "conversations": 1
+        }));
+    });
+    let complete = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/42/complete");
+        then.status(500).json_body(json!({
+            "type": "about:blank",
+            "title": "Internal server error",
+            "status": 500,
+            "detail": "intentional completion failure"
+        }));
+    });
+
+    let dir = tempdir().unwrap();
+    write_jsonl(dir.path(), &sample_doc());
+    write_jsonl(dir.path(), &sample_doc_for("+15555550102", "guid-2"));
+    write_jsonl(dir.path(), &sample_doc_for("+15555550103", "guid-3"));
+    let cancel = Arc::new(AtomicBool::new(false));
+    let cfg = PushConfig {
+        batch_size: 1,
+        prepare_ahead: 1,
+        prepare_workers: 1,
+        cancel: Some(cancel.clone()),
+        ..text_only_config(dir.path(), server.base_url())
+    };
+
+    // Cancel as soon as the first conversation is on the server, and keep
+    // the report the push says it finished with.
+    let mut finished = None;
+    let flag = cancel.clone();
+    let mut on_progress = |event: ProgressEvent| match event {
+        ProgressEvent::FileDone {
+            status: FileStatus::Ok,
+            ..
+        } => {
+            flag.store(true, Ordering::SeqCst);
+        }
+        ProgressEvent::Finished(report) => finished = Some(report),
+        _ => {}
+    };
+    let report = run(&cfg, Some(&mut on_progress))
+        .expect("a cancelled push returns its report when the completion is refused");
+
+    assert_eq!(
+        complete.calls(),
+        1,
+        "the push asks to complete the run once"
+    );
+    assert!(report.cancelled, "the report says the push paused");
+    assert!(
+        report.completion_refused,
+        "the report says the server refused the completion"
+    );
+    assert!(!report.ok, "a refused completion is not ok");
+    assert!(!report.session_refused, "the session was not refused");
+    let finished = finished.expect("the push says it finished");
+    assert!(finished.cancelled && finished.completion_refused);
+    let written: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(dir.path().join("message-crate-push-report.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(written["cancelled"], true);
+    assert_eq!(written["completion_refused"], true);
+    assert_eq!(written["ok"], false);
+    let log = read_log(dir.path());
+    assert!(
+        log.contains(
+            "The server refused to complete Import Run 42, so it still holds the run as \
+             running: Import Run 42 completion failed (HTTP 500 Internal Server Error): \
+             intentional completion failure"
+        ),
+        "{log}"
     );
 }
 

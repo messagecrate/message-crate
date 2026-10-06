@@ -262,10 +262,13 @@ impl RunPaths {
 ///
 /// Returns an error when setup fails, a worker disconnects, the report cannot
 /// be written, or the server refuses to complete the Import Run this Upload
-/// started. A conversation that fails is recorded in the report and the
-/// run goes on to the next one. A session the server stops accepting during
-/// the run is not an error: the run stops as for a cancel, and the report
-/// says so in `session_refused`.
+/// started and the run did not halt. A conversation that fails is recorded
+/// in the report and the run goes on to the next one. A session the server
+/// stops accepting during the run is not an error: the run stops as for a
+/// cancel, and the report says so in `session_refused`. A refused completion
+/// of a run that halted is not an error either: the report comes back with
+/// `cancelled` and `completion_refused` both `true` and `ok` `false`, and
+/// [`ProgressEvent::Finished`] fires, so the caller still sees the pause.
 pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<PushReport> {
     // A refused session stops the run through the cancel flag, so the run
     // always has one.
@@ -345,6 +348,7 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
         ok: counted.failed == 0 && !cancelled,
         cancelled,
         session_refused,
+        completion_refused: false,
         account: session.auth.account_id,
         username: session.username.clone(),
         mode: cfg.mode,
@@ -369,17 +373,29 @@ pub fn run(cfg: &PushConfig, progress: Option<&mut ProgressFn<'_>>) -> Result<Pu
     // completion leaves a report that is not `ok` beside the error. A
     // refused session cannot complete it: the run stays open on the server
     // for the next Upload.
-    let completed = if cfg.import_id.is_none() && !session_refused {
+    let mut completed = if cfg.import_id.is_none() && !session_refused {
         complete_import_run(&session, import_id, &report, &mut out)
     } else {
         Ok(())
     };
-    if completed.is_err() {
+    if let Err(error) = &completed {
         report.ok = false;
+        report.completion_refused = true;
+        // A paused run returns its report, not the refusal: the caller tells
+        // a pause from a failure by `cancelled`, which the error would hide
+        // (#1635). The refusal goes to the log instead.
+        if cancelled {
+            out.show(format!(
+                "The server refused to complete Import Run {import_id}, so it still holds \
+                 the run as running: {error:#}"
+            ));
+            completed = Ok(());
+        }
     }
     let written = write_report(&paths.report, &report);
-    // A refused completion is the error that matters: the server still holds
-    // the run. A report that could not be written as well goes to the log.
+    // A refused completion of a run that did not pause is the error that
+    // matters: the server still holds the run. A report that could not be
+    // written as well goes to the log.
     if let (Err(_), Err(write_error)) = (&completed, &written) {
         out.log(&format!(
             "The Upload's report could not be written: {write_error:#}"

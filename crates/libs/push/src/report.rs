@@ -112,6 +112,16 @@ pub struct PushReport {
     /// requests it refused fail no conversation. The caller ends the session
     /// on its side as well, since every later request would be refused.
     pub session_refused: bool,
+    /// `true` when the server refused to complete the Import Run this Upload
+    /// started, so it still holds the run as running and `ok` is `false`.
+    /// Only a run that halted (`cancelled`) is returned with this set: the
+    /// caller tells a pause from a failure by `cancelled`, so the report
+    /// reaches it and [`crate::ProgressEvent::Finished`] fires. A refused
+    /// completion of a run that did not halt is the error `run` returns
+    /// instead, and the report on disk carries the flag. Always `false` when
+    /// the caller handed the Upload its Import Run, since the caller then
+    /// completes it.
+    pub completion_refused: bool,
     /// Account id the token resolved to.
     pub account: i64,
     /// Username the server reports for that account.
@@ -345,6 +355,7 @@ mod tests {
             ok: true,
             cancelled: false,
             session_refused: false,
+            completion_refused: false,
             account: 1,
             username: "user".into(),
             mode: ImportMode::Append,
