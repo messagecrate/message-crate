@@ -467,12 +467,12 @@ fn a_push_where_nothing_lands_completes_its_import_run_as_failed() {
     );
 }
 
-/// A push that started its own Import Run returns an error when the server
-/// refuses to complete it, and the report it leaves on disk is not `ok`:
-/// the server still holds the run as running, so nothing may report the
-/// push as a success.
+/// An Upload that started its own Import Run and did not pause returns an
+/// error when the server refuses to complete the run, and the report it
+/// leaves on disk is not `ok`: the server still holds the run as running, so
+/// nothing may report the Upload as a success.
 #[test]
-fn a_refused_completion_is_an_error_the_push_returns() {
+fn a_refused_completion_is_an_error_the_upload_returns() {
     let server = MockServer::start();
     let _auth = mock_session(&server);
     let _run = mock_import_start(&server, 42);
@@ -496,13 +496,22 @@ fn a_refused_completion_is_an_error_the_push_returns() {
 
     let dir = tempdir().unwrap();
     write_jsonl(dir.path(), &sample_doc());
-    let error = run(&text_only_config(dir.path(), server.base_url()), None)
-        .expect_err("a refused completion fails the push");
+    let mut finished = false;
+    let mut on_progress = |event: ProgressEvent| {
+        if let ProgressEvent::Finished(_) = event {
+            finished = true;
+        }
+    };
+    let error = run(
+        &text_only_config(dir.path(), server.base_url()),
+        Some(&mut on_progress),
+    )
+    .expect_err("a refused completion fails the Upload");
 
     assert_eq!(
         complete.calls(),
         1,
-        "the push asks to complete the run once"
+        "the Upload asks to complete the run once"
     );
     assert_eq!(
         format!("{error:#}"),
@@ -518,11 +527,145 @@ fn a_refused_completion_is_an_error_the_push_returns() {
         written["ok"], false,
         "the report on disk does not call the push a success"
     );
+    assert_eq!(
+        written["completion_refused"], true,
+        "the report on disk says the server refused the completion"
+    );
+    assert!(!finished, "an Upload that fails does not say it finished");
+}
+
+/// Run an Upload of three conversations into Import Run 42 that the Upload
+/// starts itself, and pause it as soon as the first conversation is on the
+/// server. The test mocks `/v1/imports/42/complete`. Returns what `run`
+/// returned and the report `ProgressEvent::Finished` carried, if it fired.
+fn run_paused_upload(
+    server: &MockServer,
+    dir: &Path,
+) -> (anyhow::Result<PushReport>, Option<PushReport>) {
+    let _import = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/42/batches");
+        then.status(200).json_body(json!({
+            "messages": 1,
+            "messages_appended": 1,
+            "conversations": 1
+        }));
+    });
+    write_jsonl(dir, &sample_doc());
+    write_jsonl(dir, &sample_doc_for("+15555550102", "guid-2"));
+    write_jsonl(dir, &sample_doc_for("+15555550103", "guid-3"));
+    let cancel = Arc::new(AtomicBool::new(false));
+    let cfg = PushConfig {
+        batch_size: 1,
+        prepare_ahead: 1,
+        prepare_workers: 1,
+        cancel: Some(cancel.clone()),
+        ..text_only_config(dir, server.base_url())
+    };
+    let mut finished = None;
+    let mut on_progress = |event: ProgressEvent| match event {
+        ProgressEvent::FileDone {
+            status: FileStatus::Ok,
+            ..
+        } => cancel.store(true, Ordering::SeqCst),
+        ProgressEvent::Finished(report) => finished = Some(report),
+        _ => {}
+    };
+    let result = run(&cfg, Some(&mut on_progress));
+    (result, finished)
+}
+
+/// A paused Upload that started its own Import Run returns its report when
+/// the server refuses to complete the run, rather than the refusal. The
+/// caller tells a pause from a failure by `cancelled`, so the pause must
+/// reach it. The report says the completion was refused, and the Upload says
+/// it finished (#1635).
+#[test]
+fn a_paused_upload_whose_completion_is_refused_returns_its_report() {
+    let server = MockServer::start();
+    let _auth = mock_session(&server);
+    let _run = mock_import_start(&server, 42);
+    let complete = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/42/complete");
+        then.status(500).json_body(json!({
+            "type": "about:blank",
+            "title": "Internal server error",
+            "status": 500,
+            "detail": "intentional completion failure"
+        }));
+    });
+
+    let dir = tempdir().unwrap();
+    let (result, finished) = run_paused_upload(&server, dir.path());
+    let report = result.expect("a paused Upload returns its report when the completion is refused");
+
+    assert_eq!(
+        complete.calls(),
+        1,
+        "the Upload asks to complete the run once"
+    );
+    assert!(report.cancelled, "the report says the Upload paused");
+    assert!(
+        report.completion_refused,
+        "the report says the completion was refused"
+    );
+    assert!(!report.ok, "a refused completion is not ok");
+    assert!(!report.session_refused, "the session was not refused");
+    let finished = finished.expect("the Upload says it finished");
+    assert!(finished.cancelled && finished.completion_refused);
+    let written: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string(dir.path().join("message-crate-push-report.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(written["cancelled"], true);
+    assert_eq!(written["completion_refused"], true);
+    assert_eq!(written["ok"], false);
+    let log = read_log(dir.path());
+    assert!(
+        log.contains(
+            "The Upload could not complete its Import Run, so the server may still hold it \
+             as running: Import Run 42 completion failed (HTTP 500 Internal Server Error): \
+             intentional completion failure"
+        ),
+        "{log}"
+    );
+}
+
+/// A paused Upload whose completion the server refuses because the session
+/// ended returns a report that says the session was refused, so the caller
+/// still ends the session on its side.
+#[test]
+fn a_paused_upload_whose_completion_refuses_the_session_says_so() {
+    let server = MockServer::start();
+    let _auth = mock_session(&server);
+    let _run = mock_import_start(&server, 42);
+    let _complete = server.mock(|when, then| {
+        when.method(POST).path("/v1/imports/42/complete");
+        then.status(401).json_body(json!({
+            "type": "about:blank",
+            "title": "Unauthorized",
+            "status": 401
+        }));
+    });
+
+    let dir = tempdir().unwrap();
+    let (result, finished) = run_paused_upload(&server, dir.path());
+    let report = result.expect("a paused Upload returns its report");
+
+    assert!(report.cancelled && report.completion_refused && !report.ok);
+    assert!(
+        report.session_refused,
+        "the report says the server refused the session"
+    );
+    assert!(
+        finished
+            .expect("the Upload says it finished")
+            .session_refused
+    );
 }
 
 /// When the completion is refused and the report cannot be written either,
-/// the push returns the refusal: the run the server still holds is what the
-/// caller must hear about.
+/// the Upload returns the refusal: the run the server still holds is what
+/// the caller must hear about.
 #[test]
 fn a_refused_completion_outranks_a_report_that_cannot_be_written() {
     let server = MockServer::start();
@@ -555,7 +698,7 @@ fn a_refused_completion_outranks_a_report_that_cannot_be_written() {
         report_path: Some(report_path),
         ..text_only_config(dir.path(), server.base_url())
     };
-    let error = run(&cfg, None).expect_err("a refused completion fails the push");
+    let error = run(&cfg, None).expect_err("a refused completion fails the Upload");
 
     let message = format!("{error:#}");
     assert!(message.contains("Import Run 42"), "{message}");
