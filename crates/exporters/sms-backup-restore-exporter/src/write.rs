@@ -54,10 +54,13 @@ impl SbrBackupSession {
     }
 
     /// Write the SMS and MMS of one conversation as SBR `<sms>` or `<mms>`
-    /// elements, and count every other message as left out. A conversation
+    /// elements, note its backup date for the file's `backup_date`, and
+    /// count every other message as left out. A conversation
     /// with no SMS or MMS writes nothing.
     pub fn append_document(&mut self, doc: &ConversationDocument) -> Result<()> {
         self.not_sms_or_mms += doc.messages.iter().filter(|m| !m.is_sms_or_mms()).count() as u64;
+        self.writer
+            .note_backup_date(doc.export.backup_taken_at_unix_ms);
         for msg in document_to_sbr_messages(doc, &self.output_dir)? {
             self.writer.write_message(&msg)?;
         }
