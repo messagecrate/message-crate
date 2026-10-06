@@ -86,6 +86,7 @@ fn document_from_mail_messages(messages: &[MailMessage]) -> Result<ConversationD
         tool_version: first.export_tool_version.clone(),
         owner_identity: nonempty(&first.owner_identity),
         owner_display_name: first.owner_display_name.as_deref().and_then(nonempty),
+        backup_taken_at_unix_ms: first.backup_taken_at_unix_ms,
     };
 
     let participants: Vec<IrParticipant> = first

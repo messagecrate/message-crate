@@ -3,7 +3,8 @@
 //! An iPhone backup is a container that several sources read: Apple Messages
 //! keeps its database in it, and WhatsApp keeps its files in an app-group
 //! domain of it. This crate answers the questions asked of the backup
-//! itself: whether it is encrypted ([`ios_backup_encrypted_flag`]), which
+//! itself: whether it is encrypted ([`ios_backup_encrypted_flag`]), when it
+//! was made ([`ios_backup_date_unix_ms`]), which
 //! phone number it names ([`ios_backup_phone_number`]), which addresses its
 //! device sent from ([`backup_identities`], which also reads a Mac
 //! `chat.db`), the files of one domain of a backup that is not encrypted,
@@ -34,7 +35,7 @@ pub mod reader_build;
 #[cfg(all(unix, any(test, feature = "testutil")))]
 pub mod testutil;
 
-pub use backup::{ios_backup_domain_files, ios_backup_encrypted_flag};
+pub use backup::{ios_backup_date_unix_ms, ios_backup_domain_files, ios_backup_encrypted_flag};
 pub use backup_domain::{DecryptedDomain, decrypt_ios_backup_domain};
 pub use helper::Helper;
 pub use identity::{backup_identities, ios_backup_phone_number};

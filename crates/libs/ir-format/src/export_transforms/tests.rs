@@ -18,6 +18,7 @@ fn doc_with_image_attachment() -> ConversationDocument {
             tool_version: "0".into(),
             owner_identity: None,
             owner_display_name: None,
+            backup_taken_at_unix_ms: None,
         },
         conversation: ConversationMeta {
             chat_identifier: "+15555550101".into(),
@@ -218,6 +219,7 @@ fn doc_with_a_marker_in_every_field() -> ConversationDocument {
             tool_version: "10.20".into(),
             owner_identity: Some("LEAK-01".into()),
             owner_display_name: Some("LEAK-02".into()),
+            backup_taken_at_unix_ms: Some(1_790_793_912_000),
         },
         conversation: ConversationMeta {
             chat_identifier: "LEAK-03".into(),

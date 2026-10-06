@@ -163,4 +163,52 @@ describe("Import history", () => {
     expect(await screen.findByRole("heading", { name: "Import Errors" })).toBeInTheDocument();
     expect(getAccountImport).toHaveBeenCalledWith(1, expect.anything(), undefined);
   });
+
+  it("shows the backup a run read beside when that backup was made", async () => {
+    const listed = { ...anImport(1) };
+    listAccountImports.mockResolvedValue({ items: [listed], total: 1, limit: 50, offset: 0 });
+    getAccountImport.mockResolvedValue({
+      ...listed,
+      summary: null,
+      contacts_new: 0,
+      contacts_changed: 0,
+      issues: [],
+      source_fingerprint: { path: "/backups/iPhone/00008110", size: 12, mtime_ms: 1 },
+      backup_taken_at: "2026-09-30T18:45:12.000Z",
+    });
+    const user = setupUser();
+    renderWithProviders(<StorageSection />);
+    const heading = await screen.findByRole("heading", { name: "Import history" });
+    const section = within(heading.parentElement as HTMLElement);
+    await user.click(await section.findByRole("button", { expanded: false }));
+
+    const backup = await screen.findByText("Backup");
+    const [file, made] = Array.from(backup.parentElement?.querySelectorAll("dd") ?? []);
+    expect(file?.textContent).toBe("/backups/iPhone/00008110");
+    expect(made?.textContent).toMatch(/^Made .*2026/);
+  });
+
+  it("says when a run's backup does not say when it was made", async () => {
+    const listed = { ...anImport(1) };
+    listAccountImports.mockResolvedValue({ items: [listed], total: 1, limit: 50, offset: 0 });
+    getAccountImport.mockResolvedValue({
+      ...listed,
+      summary: null,
+      contacts_new: 0,
+      contacts_changed: 0,
+      issues: [],
+      source_fingerprint: null,
+      backup_taken_at: null,
+    });
+    const user = setupUser();
+    renderWithProviders(<StorageSection />);
+    const heading = await screen.findByRole("heading", { name: "Import history" });
+    const section = within(heading.parentElement as HTMLElement);
+    await user.click(await section.findByRole("button", { expanded: false }));
+
+    const backup = await screen.findByText("Backup");
+    const [file, made] = Array.from(backup.parentElement?.querySelectorAll("dd") ?? []);
+    expect(file?.textContent).toBe("Not recorded");
+    expect(made?.textContent).toBe("The backup does not say when it was made");
+  });
 });

@@ -149,6 +149,7 @@ A mail an earlier Message Crate wrote names its addresses with `X-ME-Sender-Hand
 | `X-ME-Export-Source` | string | e.g. `sms-backup-restore` |
 | `X-ME-Export-Tool` | string | |
 | `X-ME-Export-Tool-Version` | string | |
+| `X-ME-Backup-Taken-At-Unix-Ms` | integer string | When the backup was made, in Unix milliseconds; omitted when the export does not say. A value that is not a whole number is refused |
 | `X-ME-Android-Type` | integer string | Optional; SMS `type` / MMS `msg_box` |
 | `X-ME-Source-Fields` | JSON | Optional full-fidelity bag (CSV `source_fields_json` / PDU extras) |
 | `X-ME-Attachment-Meta` | JSON array | Parallel to MIME attachment parts (see Attachments) |
@@ -350,6 +351,7 @@ Normal sticker sends: image MIME part + `X-ME-Attachment-Meta` (`is_sticker`, `s
 | `source_fields_json` / PDU extras | `X-ME-Source-Fields` |
 | `export_*` | `X-ME-Export-*` |
 | `owner_identity` / `owner_display_name` | `X-ME-Owner-*` |
+| `backup_taken_at_unix_ms` | `X-ME-Backup-Taken-At-Unix-Ms` |
 | `message_owner_identity` | `X-ME-Message-Owner-Identity` |
 | `participants_json` (iMessage) | `X-ME-Participants` |
 | `reactions_json` | `X-ME-Reactions` |

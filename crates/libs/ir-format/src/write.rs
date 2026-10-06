@@ -46,6 +46,7 @@ pub const CSV_HEADERS: &[&str] = &[
     "export_tool_version",
     "owner_identity",
     "owner_display_name",
+    "backup_taken_at_unix_ms",
     "message_owner_identity",
     "android_type",
     "source_fields_json",
@@ -214,6 +215,11 @@ pub(crate) fn write_conversation_csv(
             })
             .collect::<Vec<_>>(),
     );
+    let backup_taken_at = doc
+        .export
+        .backup_taken_at_unix_ms
+        .map(|ms| ms.to_string())
+        .unwrap_or_default();
 
     message_ir::write_atomic(&path, |out| {
         let mut wtr = csv::Writer::from_writer(out);
@@ -221,8 +227,14 @@ pub(crate) fn write_conversation_csv(
             .with_context(|| format!("write header {}", path.display()))?;
         for msg in &doc.messages {
             let cells = MessageCells::new(msg)?;
-            wtr.write_record(csv_record(doc, &participants_json, msg, &cells))
-                .with_context(|| format!("write row {}", path.display()))?;
+            wtr.write_record(csv_record(
+                doc,
+                &participants_json,
+                &backup_taken_at,
+                msg,
+                &cells,
+            ))
+            .with_context(|| format!("write row {}", path.display()))?;
         }
         wtr.flush()?;
         Ok(())
@@ -366,9 +378,10 @@ fn bool_cell(value: bool) -> &'static str {
 fn csv_record<'a>(
     doc: &'a ConversationDocument,
     participants_json: &'a str,
+    backup_taken_at: &'a str,
     msg: &'a IrMessage,
     cells: &'a MessageCells,
-) -> [&'a str; 46] {
+) -> [&'a str; 47] {
     let im = &cells.imessage;
     [
         doc.conversation.chat_identifier.as_str(),
@@ -403,6 +416,7 @@ fn csv_record<'a>(
         doc.export.tool_version.as_str(),
         doc.export.owner_identity.as_deref().unwrap_or(""),
         doc.export.owner_display_name.as_deref().unwrap_or(""),
+        backup_taken_at,
         msg.owner_identity.as_deref().unwrap_or(""),
         cells.android_type.as_str(),
         cells.source_fields_json.as_str(),
@@ -479,6 +493,7 @@ pub fn document_to_mail_messages(
             export_source: doc.export.source.clone(),
             export_tool: doc.export.tool.clone(),
             export_tool_version: doc.export.tool_version.clone(),
+            backup_taken_at_unix_ms: doc.export.backup_taken_at_unix_ms,
             filename_suffix: doc.packaging_stem_suffix.clone(),
             message: msg.clone(),
             attachments,

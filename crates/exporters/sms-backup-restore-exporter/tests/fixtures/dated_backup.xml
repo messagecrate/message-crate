@@ -1,0 +1,5 @@
+<?xml version='1.0' encoding='UTF-8' standalone='yes' ?>
+<smses count="2" backup_set="7a1c2f4e-0d6b-4c51-9f0e-1b2a3c4d5e6f" backup_date="1790793912000" type="full">
+  <sms protocol="0" address="+15555550101" date="1790700000000" type="1" body="from the newer backup" contact_name="Sam" />
+  <sms protocol="0" address="+15555550102" date="1790710000000" type="2" body="only in the newer backup" contact_name="Alex" />
+</smses>

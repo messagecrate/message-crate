@@ -44,6 +44,7 @@ async fn reset_for_account_leaves_other_accounts() {
                 deletion: None,
                 sort_order: 0,
                 import_id: None,
+                backup_taken_at: None,
             }],
         )
         .await

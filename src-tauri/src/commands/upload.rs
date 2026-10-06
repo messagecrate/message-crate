@@ -377,6 +377,7 @@ mod tests {
                 tool_version: "10.26.003".into(),
                 owner_identity: Some("+15555550100".into()),
                 owner_display_name: Some("Me".into()),
+                backup_taken_at_unix_ms: None,
             },
             "conversation": ConversationMeta {
                 chat_identifier: "+15555550101".into(),

@@ -276,6 +276,17 @@ impl Promote<'_> {
                 words(as_count(unindexed), "1 search entry", "{n} search entries"),
             ),
         );
+
+        let phase = Self::begin("Recording which backup each changed message came from…");
+        let dated = staging::promote_backup_dates(self.tx).await?;
+        self.done(
+            phase,
+            words(
+                dated,
+                "1 message now holds a later backup",
+                "{n} messages now hold a later backup",
+            ),
+        );
         Ok(messages_before)
     }
 

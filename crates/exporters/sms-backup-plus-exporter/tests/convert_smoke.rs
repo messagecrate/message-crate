@@ -386,3 +386,51 @@ fn a_run_that_copies_no_attachments_still_records_their_size() {
     assert_eq!(picture.path, None, "nothing was copied");
     assert_eq!(picture.size_bytes, Some(22));
 }
+
+/// SMS Backup+ records no backup date, so the conversation file says the
+/// newest modification time of the mail files read.
+#[test]
+fn the_backup_date_is_the_newest_mail_files_modification_time() {
+    use message_crate_core::testutil::{
+        TEST_BACKUP_TAKEN_AT_UNIX_MS, jsonl_backup_dates, set_modified_unix_ms,
+    };
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let input = tmp.path().join("in");
+    fs::create_dir_all(&input).unwrap();
+    for (name, modified) in [
+        ("flat_received.eml", TEST_BACKUP_TAKEN_AT_UNIX_MS),
+        (
+            "flat_smssync_276_sam.eml",
+            TEST_BACKUP_TAKEN_AT_UNIX_MS - 60_000,
+        ),
+    ] {
+        let path = input.join(name);
+        fs::copy(fixtures().join(name), &path).unwrap();
+        set_modified_unix_ms(&path, modified);
+    }
+    let output = tmp.path().join("out");
+    let cache = tempfile::tempdir().unwrap();
+    convert_export(ConvertExportArgs {
+        inputs: &[input.as_path()],
+        output_dir: &output,
+        scratch_dir: cache.path(),
+        owner_phones: &["+15555550100".into()],
+        owner_emails: &["owner@example.com".into()],
+        verbose: false,
+        transforms: ExportTransforms::none(),
+        output_format: OutputFormat::Jsonl,
+        cancel: None,
+        log: None,
+        issues: None,
+        resume: false,
+    })
+    .expect("convert");
+    let dates = jsonl_backup_dates(&output);
+    assert!(!dates.is_empty());
+    assert!(
+        dates
+            .iter()
+            .all(|d| *d == Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)),
+        "{dates:?}"
+    );
+}

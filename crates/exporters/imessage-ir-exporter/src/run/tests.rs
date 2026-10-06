@@ -968,3 +968,57 @@ fn every_format_refuses_attachments_the_staging_disk_cannot_hold() {
         );
     }
 }
+
+/// An iPhone backup is dated by its `Manifest.plist`, which is readable
+/// whether or not the backup is encrypted.
+#[test]
+fn an_iphone_backup_is_dated_by_its_manifest() {
+    let backup = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/dated-backup");
+    let source = Source {
+        db_path: backup,
+        platform: Platform::Ios,
+        backup_password: None,
+    };
+    // 2026-09-30T18:45:12Z
+    assert_eq!(backup_taken_at_unix_ms(&source), Some(1_790_793_912_000));
+}
+
+/// A Mac's `chat.db` records no backup date, so it is dated by when
+/// Messages last wrote it, to the database or to its write-ahead log.
+#[test]
+fn a_mac_chat_db_is_dated_by_its_modification_time() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("chat.db");
+    fs::write(&db, b"not read here").unwrap();
+    message_crate_core::testutil::set_modified_unix_ms(
+        &db,
+        message_crate_core::testutil::TEST_BACKUP_TAKEN_AT_UNIX_MS,
+    );
+    let source = Source {
+        db_path: db,
+        platform: Platform::MacOs,
+        backup_password: None,
+    };
+    assert_eq!(
+        backup_taken_at_unix_ms(&source),
+        Some(message_crate_core::testutil::TEST_BACKUP_TAKEN_AT_UNIX_MS)
+    );
+    // Messages keeps chat.db in write-ahead mode: a row written since the
+    // last checkpoint moves only chat.db-wal's time.
+    let wal = dir.path().join("chat.db-wal");
+    fs::write(&wal, b"not read here").unwrap();
+    message_crate_core::testutil::set_modified_unix_ms(
+        &wal,
+        message_crate_core::testutil::TEST_BACKUP_TAKEN_AT_UNIX_MS + 3_600_000,
+    );
+    assert_eq!(
+        backup_taken_at_unix_ms(&source),
+        Some(message_crate_core::testutil::TEST_BACKUP_TAKEN_AT_UNIX_MS + 3_600_000)
+    );
+    let undated = Source {
+        db_path: dir.path().join("missing.db"),
+        platform: Platform::Ios,
+        backup_password: None,
+    };
+    assert_eq!(backup_taken_at_unix_ms(&undated), None);
+}

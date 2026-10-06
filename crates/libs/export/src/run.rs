@@ -16,7 +16,10 @@ use serde::Serialize;
 use crate::http::{CloseAction, ExportMessagesArgs, HttpSession};
 use crate::journal::{self, ExportJournalEvent, ExportJournalState, ServerTarget};
 use crate::part_file::write_asset;
-use crate::project::{ExportPath, build_document, conversation_key, export_path, to_ir_message};
+use crate::project::{
+    ExportPath, build_document, common_backup_taken_at, conversation_key, export_path,
+    to_ir_message,
+};
 use message_crate_api_types::{ExportQueryList, ExportRun, ExportScope, Message};
 
 /// Page size for `GET /v1/exports/{id}/messages`; the server's maximum.
@@ -496,13 +499,13 @@ impl<'a> Export<'a> {
                     }
                 }
                 let ir = to_ir_message(&msg, cfg.skip_attachments)?;
-                fetched
+                let (seed, messages) = fetched
                     .by_conv
                     .entry(conversation_key(&msg))
                     // Keep first message as seed for conversation metadata.
-                    .or_insert_with(|| (msg.clone(), Vec::new()))
-                    .1
-                    .push(ir);
+                    .or_insert_with(|| (msg.clone(), Vec::new()));
+                common_backup_taken_at(seed, &msg);
+                messages.push(ir);
             }
             match next_offset(offset, limit, page.total) {
                 Some(next) => offset = next,

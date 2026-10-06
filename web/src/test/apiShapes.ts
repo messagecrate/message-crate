@@ -59,6 +59,7 @@ export function message(fields: Partial<Schema["Message"]> = {}): Schema["Messag
     tapbacks: [],
     earlier_versions: [],
     matched_earlier_version: false,
+    backup_taken_at: null,
     conversation: {
       id: 1,
       chat_identifier: "x",

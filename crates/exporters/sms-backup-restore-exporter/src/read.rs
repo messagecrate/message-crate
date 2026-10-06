@@ -535,6 +535,7 @@ fn to_document(
     id: &str,
     conversation: &PendingConversation,
     owner_identity: Option<&str>,
+    backup_taken_at_unix_ms: Option<i64>,
     report: &mut ReadReport,
 ) -> ConversationDocument {
     let export = ExportMeta {
@@ -543,6 +544,7 @@ fn to_document(
         tool_version: EXPORT_TOOL_VERSION.into(),
         owner_identity: owner_identity.map(str::to_string),
         owner_display_name: None,
+        backup_taken_at_unix_ms,
     };
     let owner = owner_sender(&export);
     let messages = conversation
@@ -747,6 +749,9 @@ pub fn read_backup(
         .and_then(OwnerHandleSet::primary_owner_handle);
     let mut report = ReadReport::default();
     let mut conversations = BTreeMap::new();
+    // When each file's backup was made: its `backup_date`, or the file's
+    // modification time when it has none.
+    let mut backup_dates: HashMap<Arc<str>, i64> = HashMap::new();
     for path in paths {
         check_cancel(options.cancel)?;
         let file: Arc<str> = path.display().to_string().into();
@@ -779,6 +784,12 @@ pub fn read_backup(
             }
         });
         merge_stats(&mut report, stats);
+        if let Some(date) = stats
+            .backup_date_unix_ms
+            .or_else(|| message_crate_core::file_modified_unix_ms(&path))
+        {
+            backup_dates.insert(file.clone(), date);
+        }
         if let Some(error) = spool_error {
             return Err(error);
         }
@@ -803,10 +814,17 @@ pub fn read_backup(
         if conversation.messages.is_empty() {
             continue;
         }
+        // A conversation read from two backups is as new as the newer one.
+        let backup_taken_at_unix_ms = conversation
+            .messages
+            .iter()
+            .filter_map(|message| backup_dates.get(&message.file).copied())
+            .max();
         documents.push(to_document(
             &id,
             &conversation,
             owner_identity.as_deref(),
+            backup_taken_at_unix_ms,
             &mut report,
         ));
         report.conversations += 1;

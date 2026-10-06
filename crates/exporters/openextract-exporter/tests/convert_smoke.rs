@@ -483,3 +483,33 @@ fn a_files_key_does_not_depend_on_the_other_files() {
     let alone = guids(&alone["orphaned:"]);
     assert!(alone.is_subset(&together), "{alone:?} not in {together:?}");
 }
+
+/// OpenExtract writes no date of its own, so the conversation file says the
+/// CSV's modification time: when OpenExtract wrote it.
+#[test]
+fn the_backup_date_is_the_csv_files_modification_time() {
+    use message_crate_core::testutil::{
+        TEST_BACKUP_TAKEN_AT_UNIX_MS, jsonl_backup_dates, set_modified_unix_ms,
+    };
+    let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
+    let input = tempfile::tempdir().expect("tempdir");
+    let csv = input.path().join("all_conversations.csv");
+    fs::copy(fixture.join("all_conversations.csv"), &csv).expect("copy fixture");
+    set_modified_unix_ms(&csv, TEST_BACKUP_TAKEN_AT_UNIX_MS);
+
+    let output = tempfile::tempdir().expect("tempdir");
+    convert_export(ConvertExportArgs {
+        input: &csv,
+        output: output.path(),
+        transforms: ExportTransforms::none(),
+        output_format: OutputFormat::Jsonl,
+        cancel: None,
+        resume: false,
+        issues: None,
+    })
+    .expect("convert");
+    assert_eq!(
+        jsonl_backup_dates(output.path()),
+        vec![Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)]
+    );
+}

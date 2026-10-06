@@ -556,3 +556,76 @@ fn a_message_kept_with_something_left_out_is_named() {
     assert_eq!(report.skipped_unreadable_part(), 1);
     assert_eq!(report.dropped_character_references(), 2);
 }
+
+/// The fixture's root says when SMS Backup & Restore made the backup.
+fn dated_fixture() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/dated_backup.xml")
+}
+
+/// The backup date of each conversation read from `input`, by chat id.
+fn backup_dates(input: &Path) -> Vec<(String, Option<i64>)> {
+    let owners = ["+15555550100".to_string()];
+    let (docs, _) = read_backup(input, opts(&owners, None, None)).unwrap();
+    docs.into_iter()
+        .map(|doc| {
+            (
+                doc.conversation.chat_identifier,
+                doc.export.backup_taken_at_unix_ms,
+            )
+        })
+        .collect()
+}
+
+/// The root element's `backup_date` decides, not when the file was copied.
+#[test]
+fn the_backup_date_is_the_files_backup_date_attribute() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("dated_backup.xml");
+    fs::copy(dated_fixture(), &input).unwrap();
+    message_crate_core::testutil::set_modified_unix_ms(&input, 1_000_000_000_000);
+    assert_eq!(
+        backup_dates(&input),
+        [
+            ("+15555550101".to_string(), Some(1_790_793_912_000)),
+            ("+15555550102".to_string(), Some(1_790_793_912_000)),
+        ]
+    );
+}
+
+/// A file without `backup_date` is dated by when it was last changed.
+#[test]
+fn a_file_without_a_backup_date_is_dated_by_its_modification_time() {
+    let dir = tempfile::tempdir().unwrap();
+    let input = dir.path().join("undated.xml");
+    fs::write(
+        &input,
+        r#"<smses count="1"><sms address="+15555550101" date="1400773261000" type="1" body="hello" /></smses>"#,
+    )
+    .unwrap();
+    message_crate_core::testutil::set_modified_unix_ms(&input, 1_500_000_000_000);
+    assert_eq!(
+        backup_dates(&input),
+        [("+15555550101".to_string(), Some(1_500_000_000_000))]
+    );
+}
+
+/// Two backups in one directory: a conversation both hold is as new as the
+/// newer, and one only the older holds keeps the older's date.
+#[test]
+fn a_conversation_in_two_backups_is_as_new_as_the_newer() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::copy(dated_fixture(), dir.path().join("newer.xml")).unwrap();
+    fs::write(
+        dir.path().join("older.xml"),
+        r#"<smses count="2" backup_date="1780000000000"><sms address="+15555550101" date="1400773261000" type="1" body="from the older backup" /><sms address="+15555550103" date="1400773271000" type="1" body="only in the older backup" /></smses>"#,
+    )
+    .unwrap();
+    assert_eq!(
+        backup_dates(dir.path()),
+        [
+            ("+15555550101".to_string(), Some(1_790_793_912_000)),
+            ("+15555550102".to_string(), Some(1_790_793_912_000)),
+            ("+15555550103".to_string(), Some(1_780_000_000_000)),
+        ]
+    );
+}

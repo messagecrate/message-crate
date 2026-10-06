@@ -54,6 +54,7 @@ struct RawRow {
     reply_to: Option<ReplyTo>,
     reply_count: i64,
     deletion: Option<String>,
+    backup_taken_at: Option<String>,
     chat_identifier: String,
     conversation_type: String,
     group_title: Option<String>,
@@ -474,7 +475,7 @@ fn message_page_sql(
                 m.is_announcement, m.is_reply, m.reply_to_guid, m.reply_to_part,
                 ({reply_count}) AS reply_count,
                 hc.raw AS chat_identifier, c.conversation_type, c.group_title,
-                ho.raw AS owner, {label} AS label, m.deletion
+                ho.raw AS owner, {label} AS label, m.deletion, m.backup_taken_at
          {from_sql}
          WHERE {where_sql}
          ORDER BY {order_by} LIMIT ? OFFSET ?",
@@ -527,6 +528,7 @@ async fn fetch_message_page(
                 owner: row.try_get(19)?,
                 label: row.try_get(20)?,
                 deletion: row.try_get(21)?,
+                backup_taken_at: row.try_get(22)?,
             })
         })
         .collect::<Result<Vec<RawRow>, ApiError>>()?;
@@ -574,6 +576,7 @@ async fn fetch_message_page(
                 // The column's CHECK admits only the two marks or NULL.
                 deletion: r.deletion.as_deref().and_then(Deletion::parse),
                 earlier_versions: earlier_versions.remove(&r.id).unwrap_or_default(),
+                backup_taken_at: r.backup_taken_at,
                 matched_earlier_version: false,
             }
         })

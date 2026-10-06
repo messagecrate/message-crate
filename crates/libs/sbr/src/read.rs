@@ -147,9 +147,14 @@ pub struct Record {
     pub dropped_character_references: u64,
 }
 
-/// Counters for seen and skipped messages.
+/// Counters for seen and skipped messages, and when the file's backup was
+/// made.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct ParseStats {
+    /// The root `<smses>` element's `backup_date`: when SMS Backup & Restore
+    /// made the backup, in Unix milliseconds. `None` when the file has no
+    /// such attribute or it is not a number.
+    pub backup_date_unix_ms: Option<i64>,
     /// Number of `<sms>` elements encountered.
     pub sms_seen: u64,
     /// Number of `<mms>` elements encountered.
@@ -827,6 +832,7 @@ where
     loop {
         match xml.read_event_into(&mut buf) {
             Ok(Event::Start(e)) => match e.name().as_ref().to_ascii_lowercase().as_str() {
+                "smses" => stats.backup_date_unix_ms = backup_date(&attrs(&e, &mut 0)),
                 "sms" => {
                     dropped = 0;
                     sms = attrs(&e, &mut dropped);
@@ -842,6 +848,7 @@ where
                 _ => {}
             },
             Ok(Event::Empty(e)) => match e.name().as_ref().to_ascii_lowercase().as_str() {
+                "smses" => stats.backup_date_unix_ms = backup_date(&attrs(&e, &mut 0)),
                 "sms" => {
                     let mut own = 0;
                     let attrs = attrs(&e, &mut own);
@@ -886,6 +893,12 @@ where
         buf.clear();
     }
     Ok(())
+}
+
+/// The root element's `backup_date` in Unix milliseconds, as SMS Backup &
+/// Restore writes it, or `None` when it is missing or not a number.
+fn backup_date(attrs: &HashMap<String, String>) -> Option<i64> {
+    get(attrs, "backup_date").trim().parse().ok()
 }
 
 #[cfg(test)]
@@ -1319,6 +1332,45 @@ mod tests {
         let path = writer.finish().unwrap();
         let (records, _) = parse_reader(std::fs::read(&path).unwrap().as_slice(), None).unwrap();
         assert_eq!(records[0].text, "line1\nline2\ttab");
+    }
+
+    /// The newest backup date noted is written as the root `backup_date`,
+    /// which the reader reads back, and a file with none noted has none.
+    #[test]
+    fn the_backup_date_noted_survives_a_round_trip() {
+        let dir = tempfile::tempdir().unwrap();
+        let written = |name: &str, dates: &[Option<i64>]| {
+            let mut writer = crate::SbrBackupWriter::create(&dir.path().join(name)).unwrap();
+            for &date in dates {
+                writer.note_backup_date(date);
+            }
+            let attrs: BTreeMap<String, String> = [
+                ("protocol", "0"),
+                ("address", "+15555550101"),
+                ("date", "1"),
+                ("type", "1"),
+                ("body", "hi"),
+            ]
+            .into_iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+            writer
+                .write_message(&crate::SbrMessage::sms(attrs))
+                .unwrap();
+            let path = writer.finish().unwrap();
+            parse_reader(std::fs::read(&path).unwrap().as_slice(), None)
+                .unwrap()
+                .1
+                .backup_date_unix_ms
+        };
+        assert_eq!(
+            written(
+                "dated.xml",
+                &[Some(1_788_256_800_000), None, Some(1_790_793_912_000)]
+            ),
+            Some(1_790_793_912_000)
+        );
+        assert_eq!(written("undated.xml", &[None]), None);
     }
 
     #[test]

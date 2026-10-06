@@ -381,7 +381,12 @@ The record of the run stays under **Import history** in [**Settings → Storage*
 
 A second import of the same backup creates no duplicates.
 The Message Crate recognises the messages it already holds and skips them, so a newer backup of the same phone adds only what is new.
-A message edited again since the first import is the exception: it takes the newer backup's text and earlier versions ([Edited messages](/docs/user/features/messages/browse/#edited-messages)).
+A message that changed since the first import is the exception: it takes the newer backup's text, earlier versions, and mark ([Edited messages](/docs/user/features/messages/browse/#edited-messages)).
+A message recovered after it was deleted loses its **Deleted in the source app** mark, and a message unsent since is marked **Unsent**.
 An older backup imported after a newer one leaves the message as it is.
-One import that carries an older and a newer backup of the same phone gives an edited message the newer backup's text and earlier versions, whichever order the files are in.
+One import that carries an older and a newer backup of the same phone gives each message the newer backup's text, earlier versions, and mark, whichever order the files are in.
+
+Which backup is newer comes from the backup's own date: the date an iPhone backup records, the date an SMS Backup & Restore file records, or the date its files were last written where the backup records none.
+**Settings → Storage → Import history** shows it beside the backup each run read.
+A backup that records no date at all keeps a mark once given, and takes a newer text only when its edits are newer.
 It also keeps the attachments and reactions each backup holds of a message, each one once, so one import of two backups stores what two separate imports of them store.

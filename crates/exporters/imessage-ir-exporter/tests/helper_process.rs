@@ -84,6 +84,30 @@ fn exports_a_mac_chat_db_through_the_helper_process() {
     assert!(all.contains("\"attachments/"), "{all}");
 }
 
+/// Every conversation file of a Mac `chat.db` export says the database's
+/// modification time as when the backup was made.
+#[test]
+fn every_conversation_file_says_when_the_chat_db_was_last_written() {
+    use message_crate_core::testutil::{
+        TEST_BACKUP_TAKEN_AT_UNIX_MS, jsonl_backup_dates, set_modified_unix_ms,
+    };
+    helper_binary();
+    let dir = tempfile::tempdir().unwrap();
+    let db_path = write_chat_db(dir.path());
+    set_modified_unix_ms(&db_path, TEST_BACKUP_TAKEN_AT_UNIX_MS);
+    let output = dir.path().join("out");
+
+    imessage_ir_exporter::run(&config(&db_path, &output, None)).unwrap();
+    let dates = jsonl_backup_dates(&output);
+    assert_eq!(dates.len(), 7, "{dates:?}");
+    assert!(
+        dates
+            .iter()
+            .all(|d| *d == Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)),
+        "{dates:?}"
+    );
+}
+
 /// Every file below `dir`, recursively.
 fn walk(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();

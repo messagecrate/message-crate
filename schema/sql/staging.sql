@@ -77,7 +77,12 @@ CREATE TABLE IF NOT EXISTS staging_messages (
     -- Stable order within the conversation when timestamps collide.
     sort_order INTEGER NOT NULL,
     -- Import run that staged this row (`imports.id`).
-    import_id INTEGER REFERENCES imports(id) ON DELETE SET NULL
+    import_id INTEGER REFERENCES imports(id) ON DELETE SET NULL,
+    -- When the backup this row was read from was made, in the form timestamp
+    -- holds; NULL when its file did not say. Between two copies of one message
+    -- from one source, the copy from the later backup decides its deletion mark
+    -- and text (docs/architecture/contacts-identities-and-messages.md).
+    backup_taken_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS ix_staging_messages_conversation_timestamp

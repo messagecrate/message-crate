@@ -919,6 +919,10 @@ pub(crate) struct ImportRunSummary {
     pub(crate) source_fingerprint: serde_json::Value,
     /// Addresses the backup's device sent from (JSON array), or null.
     pub(crate) source_identities: serde_json::Value,
+    /// When the backup the run read was made, UTC: the newest date its
+    /// conversation files name (`export.backup_taken_at_unix_ms`). Null until
+    /// a file that names one is imported, and for a run whose files name none.
+    pub(crate) backup_taken_at: Option<String>,
     /// What the person approved at the last Review they passed, which
     /// `PATCH /v1/imports/{id}` writes with its `summary`. A cancelled run
     /// keeps it. A run that completed or failed holds instead the final
@@ -962,6 +966,7 @@ impl From<crate::db::imports::ListedImport> for ImportRunSummary {
             form: crate::db::imports::json_column(row.form_json),
             source_fingerprint: crate::db::imports::json_column(row.source_fingerprint),
             source_identities: crate::db::imports::json_column(row.source_identities),
+            backup_taken_at: row.backup_taken_at,
             summary: crate::db::imports::json_column(row.summary_json),
             issue_count: listed.issue_count,
             note_count: listed.note_count,

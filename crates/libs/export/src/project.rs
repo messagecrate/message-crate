@@ -22,6 +22,10 @@ pub fn conversation_key(msg: &Message) -> String {
 }
 
 /// Build one conversation document from a seed message and the mapped rows.
+///
+/// The document's backup date is the seed's `backup_taken_at`, which the
+/// Export Run keeps only while every message of the conversation has the
+/// same one ([`common_backup_taken_at`]), and none otherwise.
 pub fn build_document(
     source: &str,
     seed: &Message,
@@ -59,6 +63,10 @@ pub fn build_document(
             tool_version: env!("CARGO_PKG_VERSION").into(),
             owner_identity: shared_owner(&messages),
             owner_display_name: Some("Me".into()),
+            backup_taken_at_unix_ms: seed
+                .backup_taken_at
+                .as_deref()
+                .and_then(|at| parse_timestamp_unix_ms(at).ok()),
         },
         conversation: ConversationMeta {
             chat_identifier: seed.conversation.chat_identifier.clone(),
@@ -74,6 +82,20 @@ pub fn build_document(
         },
         messages,
         packaging_stem_suffix: None,
+    }
+}
+
+/// Clear `seed`'s `backup_taken_at` when `msg`'s differs from it, so the
+/// conversation file names a backup date only when every message of the
+/// conversation came from that one backup. The file carries one date for
+/// all its messages, and any one date would be wrong for some of them when
+/// they differ: the newest would make a message decided by an older backup
+/// win over a backup made between the two, and would date a message that
+/// had none. With no date, an import of the file keeps the rules for files
+/// without one.
+pub fn common_backup_taken_at(seed: &mut Message, msg: &Message) {
+    if msg.backup_taken_at != seed.backup_taken_at {
+        seed.backup_taken_at = None;
     }
 }
 
@@ -617,6 +639,50 @@ mod tests {
         assert_eq!(doc.conversation.stats.message_count, 2);
     }
 
+    /// The file says the backup its messages came from when they all came
+    /// from one, and nothing when any two differ or none says.
+    #[test]
+    fn a_document_says_its_backup_only_when_every_message_came_from_it() {
+        let participant = || Participant {
+            identity: Some("+1".into()),
+            name: "Sam".into(),
+            service: None,
+            contact_id: None,
+        };
+        let backup_of = |seed: &Message| {
+            build_document("imessage", seed, vec![])
+                .export
+                .backup_taken_at_unix_ms
+        };
+        let dated = |at: Option<&str>| {
+            let mut msg = seed_message_with_participant(participant());
+            msg.backup_taken_at = at.map(str::to_string);
+            msg
+        };
+        let later = Some("2026-09-30T18:45:12.000Z");
+        let earlier = Some("2026-09-01T10:00:00.000Z");
+
+        assert_eq!(backup_of(&dated(None)), None);
+
+        let mut seed = dated(later);
+        common_backup_taken_at(&mut seed, &dated(later));
+        assert_eq!(backup_of(&seed), Some(1_790_793_912_000));
+
+        let mut seed = dated(earlier);
+        common_backup_taken_at(&mut seed, &dated(later));
+        common_backup_taken_at(&mut seed, &dated(None));
+        assert_eq!(backup_of(&seed), None, "two backups: no one date is right");
+
+        let mut seed = dated(later);
+        common_backup_taken_at(&mut seed, &dated(None));
+        common_backup_taken_at(&mut seed, &dated(later));
+        assert_eq!(
+            backup_of(&seed),
+            None,
+            "a message without a date stays without one"
+        );
+    }
+
     /// Whether the conversation is a group comes from the server's
     /// `is_group`, never from reading `conversation_type` again.
     #[test]
@@ -727,6 +793,7 @@ mod tests {
             tapbacks: vec![],
             deletion: None,
             earlier_versions: Vec::new(),
+            backup_taken_at: None,
             matched_earlier_version: false,
         };
         let ir = to_ir_message(&msg, false).unwrap();
@@ -878,6 +945,7 @@ mod tests {
             tapbacks: vec![],
             deletion: None,
             earlier_versions: Vec::new(),
+            backup_taken_at: None,
             matched_earlier_version: false,
         }
     }

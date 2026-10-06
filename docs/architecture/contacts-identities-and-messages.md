@@ -405,10 +405,43 @@ otherwise keep an older title against a newer one. A title of only spaces counts
 as no title. The rule is the same in one batch as across several, in any order.
 Why: a group is renamed over time, so the copy whose messages run later carries
 the name the group has now. An old backup uploaded after a newer one can't bring the old
-name back, because its messages stop earlier. The time a backup was made is not
-recorded by every source, and the time an exporter ran says nothing about the
-backup, so neither decides it
+name back, because its messages stop earlier. The backup date a conversation
+file carries (`export.backup_taken_at_unix_ms`) is missing where a source records
+none, and for several sources is a file's modification time, which copying the
+file can change; the time an exporter ran says nothing about the backup; so
+neither decides the title
 ([#1408](https://github.com/messagecrate/message-crate/issues/1408)).
+
+**Between two copies of one message from one source, the copy from the later
+backup decides its mark and text.** One message from one source is one row
+(`UNIQUE (account_id, source, guid)` on `messages`, and the same on
+`staging_messages`), so a second backup of the same phone meets the copy
+already there, in the same import or a later one. The conversation file says
+when its backup was made (`export.backup_taken_at_unix_ms`), staging keeps
+that date on each staged row, and `messages.backup_taken_at` keeps the date of
+the backup that decided the stored copy. When both copies have a date, the
+copy from the later backup gives the message its deletion mark, mark or no
+mark, and its text and earlier versions, whatever the versions' times say; a
+copy from an earlier backup changes neither. The duplicate flag follows the
+text, because the dedupe compares the text. The date is kept to the
+millisecond, the form every stored time takes. When either copy has no date,
+or the two dates are equal, nothing says which backup is newer, so the rules
+for files without one hold: a copy with a mark adds it and one without leaves
+the mark held, and a copy takes the text when its newest earlier version is
+newer
+(`later_edit_sql` in `db/staging.rs`). Attachments and reactions add from
+either copy, because a backup that lacks one does not say it is gone. The
+rule is the same in one import as across several, in any file order
+(`later_backup_sql` in `db/staging.rs`, `add_staged_copy` in
+`imports_api/staging.rs`). Why: a person recovers a deleted message and
+unsends or edits a sent one between two backups, and only the backup's own
+date says which state is the newer; the message's own times record when it
+was written, not when a part was unsent, so they cannot tell
+([#1741](https://github.com/messagecrate/message-crate/issues/1741),
+[#1804](https://github.com/messagecrate/message-crate/issues/1804),
+[#1924](https://github.com/messagecrate/message-crate/issues/1924)). An append
+with dedupe off still leaves a changed message's duplicate flag until the next
+dedupe ([#1805](https://github.com/messagecrate/message-crate/issues/1805)).
 
 **A participant's display name has one rule.** The contact's name, else what
 that backup called them in that conversation, else the identity. One loader

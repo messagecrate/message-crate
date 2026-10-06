@@ -516,6 +516,7 @@ mod tests {
                 tool_version: "0".into(),
                 owner_identity: Some("+15555550100".into()),
                 owner_display_name: None,
+                backup_taken_at_unix_ms: None,
             }
         }
 

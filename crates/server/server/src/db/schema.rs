@@ -375,7 +375,8 @@ pub(crate) async fn create_messages_secondary_indexes(conn: &mut SqliteConnectio
 /// The stored messages, those at or below `$1` (`min_new_message_id`), whose
 /// index row a promotion removes and writes again: each one that gained an
 /// attachment above `$2` (`min_new_attachment_id`), took a later edit, or
-/// is marked by a staged row. One set for the delete and the insert in
+/// whose mark `staging::promote_deletion_marks` changed, set or cleared
+/// (`_promote_mark_map`). One set for the delete and the insert in
 /// [`index_messages_fts_from_promote_map`], so a row removed is always a row
 /// considered for writing again.
 const STORED_MESSAGES_TO_REINDEX: &str = "
@@ -384,9 +385,7 @@ const STORED_MESSAGES_TO_REINDEX: &str = "
     UNION
     SELECT prod_id FROM _promote_edit_map
     UNION
-    SELECT pm.prod_id FROM _promote_msg_map pm
-    JOIN staging_messages sm ON sm.id = pm.staging_id
-    WHERE sm.deletion IS NOT NULL AND pm.prod_id <= $1";
+    SELECT prod_id FROM _promote_mark_map WHERE prod_id <= $1";
 
 /// Bulk-index promoted messages (joined via temp `_promote_msg_map`).
 /// Call after attachment rows exist so `attachment_text` is complete.
@@ -407,14 +406,14 @@ const STORED_MESSAGES_TO_REINDEX: &str = "
 /// attachment above it was inserted by this promotion. The same goes for an
 /// existing message that took a later edit, which `_promote_edit_map`
 /// names: its index row holds the text the edit replaced, and for an
-/// existing message a staged row marks, whose mark
-/// `staging::promote_deletion_marks` may have changed.
+/// existing message whose mark `staging::promote_deletion_marks` changed,
+/// which `_promote_mark_map` names.
 ///
 /// An Unsent message is given no index row, as the sync triggers give it
 /// none (`fts_triggers_create.sql`): it shows none of its text, so a word of
 /// that text must not find it (#1758). A stored message this promotion marks
 /// Unsent loses its row here, and one whose Unsent mark becomes Deleted in
-/// the source app is written again.
+/// the source app, or is cleared by a later backup, is written again.
 pub(crate) async fn index_messages_fts_from_promote_map(
     conn: &mut SqliteConnection,
     min_new_message_id: i64,

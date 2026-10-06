@@ -42,6 +42,9 @@ pub struct ConversationRecord {
     pub participants: Vec<ParticipantRecord>,
     /// IR `export.source` — used as `messages.source` for directory import.
     pub export_source: Option<String>,
+    /// When the backup the file was read from was made, in the form a
+    /// message's timestamp takes; `None` when the file does not say.
+    pub backup_taken_at: Option<String>,
 }
 
 impl ConversationRecord {
@@ -236,9 +239,12 @@ pub fn parse_ir_lines(
                     line: line_no,
                     detail: format!("the conversation header is not valid: {e}"),
                 })?;
-            out.push(ExportRecord::Conversation(conversation_from_ir(
-                &header, line_no,
-            )));
+            let conversation =
+                conversation_from_ir(&header, line_no).map_err(|e| ImportFailure::Invalid {
+                    line: line_no,
+                    detail: format!("{e:#}"),
+                })?;
+            out.push(ExportRecord::Conversation(conversation));
             header_owner = header.export.owner_identity.as_deref().and_then(nonempty);
             saw_header = true;
         } else {
@@ -299,7 +305,12 @@ fn is_ir_header(value: &Value) -> bool {
 }
 
 /// Map a JSON Lines header onto the server's conversation record.
-fn conversation_from_ir(header: &ConversationHeader, line: usize) -> ConversationRecord {
+///
+/// # Errors
+///
+/// Returns an error when the backup date is outside the times a timestamp
+/// can hold.
+fn conversation_from_ir(header: &ConversationHeader, line: usize) -> Result<ConversationRecord> {
     let export_source = {
         let s = header.export.source.trim();
         if s.is_empty() {
@@ -308,7 +319,15 @@ fn conversation_from_ir(header: &ConversationHeader, line: usize) -> Conversatio
             Some(s.to_string())
         }
     };
-    ConversationRecord {
+    let backup_taken_at = header
+        .export
+        .backup_taken_at_unix_ms
+        .map(|ms| {
+            format_utc_timestamp(ms)
+                .with_context(|| format!("unrepresentable backup_taken_at_unix_ms {ms}"))
+        })
+        .transpose()?;
+    Ok(ConversationRecord {
         line,
         chat_identifier: header.conversation.chat_identifier.clone(),
         // Platform identity for handles (phone | whatsapp), not SMS/iMessage/RCS.
@@ -331,7 +350,8 @@ fn conversation_from_ir(header: &ConversationHeader, line: usize) -> Conversatio
             .filter_map(participant_from_ir)
             .collect(),
         export_source,
-    }
+        backup_taken_at,
+    })
 }
 
 /// Map one IR message onto the server's message record. `header_owner` is the

@@ -21,6 +21,19 @@ released versions carry their date on the heading.
 
 ### Features
 
+- 2026-10-05: **The newer backup decides when a message changed between two
+  backups of one phone.** Every message file now says when its backup was
+  made: an iPhone backup's own date, the date an SMS Backup & Restore file
+  records, an iMazing export's date, or when the backup's files were last
+  written for a source that records none. Importing two backups of the same
+  phone, in one import or two and in either order, gives each message the
+  newer backup's text, earlier versions and Deleted in the source app or
+  Unsent mark, so a message recovered after it was deleted loses its mark,
+  and a message unsent after the older backup reads as unsent. An older
+  backup imported after a newer one changes nothing. Import details under
+  Settings → Storage show the backup each import read and when it was made.
+  Message files exported before they said when their backup was made are
+  refused, and the backup must be exported again with this build.
 - 2026-10-05: **A WhatsApp reply now names the message it quotes.** When
   the quoted message is in the same chat of the same backup, the reply is
   linked to it, as Apple Messages replies already were: a mail export threads
@@ -164,6 +177,10 @@ released versions carry their date on the heading.
 - If you have a program that reads messages from the HTTP API, a message's
   `timestamp` and an earlier version's `edited_at` now carry three digits of
   milliseconds, such as `2015-03-12T18:04:22.250Z`, where they had none.
+- Message files exported before they said when their backup was made are
+  refused when you import or convert them. Export the backup again with
+  this build. A program that reads the HTTP API finds the backup's date in
+  a message's `backup_taken_at` and an Import Run's `backup_taken_at`.
 
 ## [0.10.1] - 2026-10-05
 

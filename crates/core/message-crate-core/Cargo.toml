@@ -12,16 +12,19 @@ message-csv = { path = "../../libs/csv", optional = true }
 message-ir = { path = "../../libs/ir" }
 media = { path = "../../libs/media" }
 obfuscate = { path = "../../libs/obfuscate" }
+serde_json = { workspace = true, optional = true }
 sha2 = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 
 [features]
-# The CSV reader is only for `testutil`, which reads exports back in tests.
-testutil = ["dep:message-csv"]
+# The CSV and JSON readers are only for `testutil`, which reads exports back
+# in tests.
+testutil = ["dep:message-csv", "dep:serde_json"]
 
 [dev-dependencies]
 message-csv = { path = "../../libs/csv" }
+serde_json = { workspace = true }
 media = { path = "../../libs/media", features = ["testutil"] }
 
 [lints]

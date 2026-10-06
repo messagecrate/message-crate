@@ -137,10 +137,18 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         whatsapp_directories: HashSet::new(),
         report: ExportReport::with_issues(issues.cloned()),
     };
-    for (csv_index, discovered) in discover_csv_files(input)?.iter().enumerate() {
+    let discovered_files = discover_csv_files(input)?;
+    for (csv_index, discovered) in discovered_files.iter().enumerate() {
         message_crate_core::check_cancel(cancel)?;
         ingest.ingest_file(csv_index, discovered)?;
     }
+    // An iMazing export records no date inside it, so the backup is as new
+    // as the newest CSV iMazing wrote: the export date.
+    let backup_taken_at_unix_ms = message_crate_core::newest_file_modified_unix_ms(
+        discovered_files
+            .iter()
+            .map(|discovered| discovered.path.as_path()),
+    );
     if copy_attachments {
         ingest.attach_unnamed_files()?;
         ingest.tell_apart_files_of_one_name();
@@ -158,6 +166,7 @@ pub(crate) fn convert_export(args: ConvertExportArgs<'_>) -> Result<ExportReport
         EXPORT_TOOL_VERSION,
         None,
         None,
+        backup_taken_at_unix_ms,
     );
     let mut documents = Vec::new();
     let mut sources = Vec::new();

@@ -431,6 +431,7 @@ fn imports_discard_prints_the_import_run_or_that_there_was_none() {
         form_json: None,
         source_fingerprint: None,
         source_identities: None,
+        backup_taken_at: None,
     };
     assert_eq!(
         format_discarded_import("alice", Some(&row)),

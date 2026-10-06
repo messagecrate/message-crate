@@ -134,6 +134,36 @@ impl ExportOptions {
     pub fn check_cancel(&self) -> Result<()> {
         message_crate_core::check_cancel(self.cancel.as_ref()).map_err(|e| anyhow!(e))
     }
+
+    /// When the Messages data was backed up, in Unix milliseconds: an
+    /// iPhone backup's `Manifest.plist` date, or the last time Messages
+    /// wrote a Mac's `chat.db`: the newest modification time of `chat.db`
+    /// and its `-wal` and `-shm` files, because Messages keeps the database
+    /// in write-ahead mode and new rows reach `chat.db` itself only at a
+    /// checkpoint. `None` when neither can be read.
+    pub fn backup_taken_at_unix_ms(&self) -> Option<i64> {
+        backup_taken_at_unix_ms(&self.source)
+    }
+}
+
+/// [`ExportOptions::backup_taken_at_unix_ms`] for `source`.
+pub(crate) fn backup_taken_at_unix_ms(source: &Source) -> Option<i64> {
+    match source.platform {
+        Platform::Ios => ios_backup::ios_backup_date_unix_ms(&source.db_path),
+        Platform::MacOs => {
+            let sidecar = |suffix: &str| {
+                let mut name = source.db_path.clone().into_os_string();
+                name.push(suffix);
+                std::path::PathBuf::from(name)
+            };
+            let (wal, shm) = (sidecar("-wal"), sidecar("-shm"));
+            message_crate_core::newest_file_modified_unix_ms([
+                source.db_path.as_path(),
+                wal.as_path(),
+                shm.as_path(),
+            ])
+        }
+    }
 }
 
 /// Build options from [`ExporterConfig`], start the `imessage-reader`

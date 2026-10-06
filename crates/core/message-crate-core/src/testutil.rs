@@ -370,3 +370,44 @@ pub fn assert_run_wrote_jsonl(
         .collect::<Vec<_>>()
         .join("\n")
 }
+
+/// The backup date the exporters' tests give a source: 2026-09-30T18:45:12Z,
+/// in Unix milliseconds. A date of the test's own, so a test that reads it
+/// back cannot pass by reading the time it ran at.
+pub const TEST_BACKUP_TAKEN_AT_UNIX_MS: i64 = 1_790_793_912_000;
+
+/// Set `path`'s modification time to `unix_ms`, the way a backup file keeps
+/// the time it was written.
+///
+/// # Panics
+///
+/// Panics when the file cannot be opened or its time cannot be set.
+pub fn set_modified_unix_ms(path: &Path, unix_ms: i64) {
+    let at = std::time::UNIX_EPOCH
+        + std::time::Duration::from_millis(u64::try_from(unix_ms).expect("a time after 1970"));
+    fs::File::options()
+        .write(true)
+        .open(path)
+        .expect("open the file to date")
+        .set_modified(at)
+        .expect("set the file's modification time");
+}
+
+/// Every JSON Lines file's `export.backup_taken_at_unix_ms` under `dir`, in
+/// file name order.
+///
+/// # Panics
+///
+/// Panics when a file cannot be read or its first line is not JSON.
+pub fn jsonl_backup_dates(dir: &Path) -> Vec<Option<i64>> {
+    jsonl_names(dir)
+        .iter()
+        .map(|name| {
+            let text = fs::read_to_string(dir.join(name)).expect("read jsonl");
+            let header: serde_json::Value =
+                serde_json::from_str(text.lines().next().expect("a header line"))
+                    .expect("the header is JSON");
+            header["export"]["backup_taken_at_unix_ms"].as_i64()
+        })
+        .collect()
+}

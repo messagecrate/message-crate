@@ -42,6 +42,9 @@ pub(crate) struct ConvertRequest<'a> {
     /// so on every message as the address it was held at. `None` records no
     /// owner, which leaves the conversations counted toward no identity.
     pub owner_identity: Option<String>,
+    /// When the backup was made, in Unix milliseconds, stamped on the export
+    /// header ([`backup_taken_at_unix_ms`](crate::run::backup_taken_at_unix_ms)).
+    pub backup_taken_at_unix_ms: Option<i64>,
     pub output_format: OutputFormat,
     /// Checked between chats (cooperative cancellation).
     pub cancel: Option<&'a CancelFlag>,
@@ -64,6 +67,7 @@ pub(crate) fn convert_json(request: ConvertRequest<'_>) -> Result<ExportReport> 
         transforms,
         media_search_roots,
         owner_identity,
+        backup_taken_at_unix_ms,
         output_format,
         cancel,
         resume,
@@ -107,6 +111,7 @@ pub(crate) fn convert_json(request: ConvertRequest<'_>) -> Result<ExportReport> 
             EXPORT_TOOL_VERSION,
             owner_identity,
             None,
+            backup_taken_at_unix_ms,
         ),
     };
     let mut documents = Vec::new();

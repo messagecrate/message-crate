@@ -112,6 +112,9 @@ pub struct MailMessage {
     pub export_tool: String,
     /// → `X-ME-Export-Tool-Version`.
     pub export_tool_version: String,
+    /// When the backup was made, in Unix milliseconds →
+    /// `X-ME-Backup-Taken-At-Unix-Ms`; `None` when the export does not say.
+    pub backup_taken_at_unix_ms: Option<i64>,
     /// Optional stem suffix (e.g. `"__whatsapp"`) for conversation directory / mbox names.
     pub filename_suffix: Option<String>,
     /// The message itself (headers read guid, timestamp, direction, service,
@@ -911,6 +914,10 @@ fn conversation_headers<'m>(
                 msg.message.sender_display_name.clone(),
             ),
             (headers::OWNER_IDENTITY, Some(msg.owner_identity.clone())),
+            (
+                headers::BACKUP_TAKEN_AT_UNIX_MS,
+                msg.backup_taken_at_unix_ms.map(|ms| ms.to_string()),
+            ),
             (headers::OWNER_DISPLAY_NAME, msg.owner_display_name.clone()),
             (
                 headers::MESSAGE_OWNER_IDENTITY,

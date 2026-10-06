@@ -123,3 +123,41 @@ fn jsonl_drains_the_write_queue_and_a_second_run_resumes_it() {
         })
     });
 }
+
+/// GO SMS Pro writes no date of its own, so the conversation file says the
+/// newest modification time of the files it wrote, XML and PDU alike.
+#[test]
+fn the_backup_date_is_the_newest_files_modification_time() {
+    use message_crate_core::testutil::{
+        TEST_BACKUP_TAKEN_AT_UNIX_MS, jsonl_backup_dates, set_modified_unix_ms,
+    };
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let input = tmp.path().join("backup");
+    write_backup(&input);
+    set_modified_unix_ms(
+        &input.join("gosms_sys_smoke.xml"),
+        TEST_BACKUP_TAKEN_AT_UNIX_MS - 60_000,
+    );
+    set_modified_unix_ms(
+        &input.join("I_1609459200_1_0.pdu"),
+        TEST_BACKUP_TAKEN_AT_UNIX_MS,
+    );
+    let output = tmp.path().join("out");
+    let cache = tempfile::tempdir().unwrap();
+    convert_export(ConvertExportArgs {
+        input_dir: &input,
+        output_dir: &output,
+        scratch_dir: cache.path(),
+        owner_phones: &["+15555550100".into()],
+        transforms: ExportTransforms::none(),
+        output_format: OutputFormat::Jsonl,
+        cancel: None,
+        resume: false,
+        issues: None,
+    })
+    .expect("convert");
+    assert_eq!(
+        jsonl_backup_dates(&output),
+        vec![Some(TEST_BACKUP_TAKEN_AT_UNIX_MS)]
+    );
+}

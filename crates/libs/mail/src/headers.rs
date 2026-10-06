@@ -23,6 +23,8 @@ pub(crate) const EXPORT_SOURCE: &str = "X-ME-Export-Source";
 pub(crate) const EXPORT_TOOL: &str = "X-ME-Export-Tool";
 /// Export tool version.
 pub(crate) const EXPORT_TOOL_VERSION: &str = "X-ME-Export-Tool-Version";
+/// When the backup the export was read from was made, in Unix milliseconds.
+pub(crate) const BACKUP_TAKEN_AT_UNIX_MS: &str = "X-ME-Backup-Taken-At-Unix-Ms";
 /// Group chat title.
 pub(crate) const GROUP_TITLE: &str = "X-ME-Group-Title";
 /// Conversation roster as JSON.
