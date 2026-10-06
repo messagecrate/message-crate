@@ -193,7 +193,6 @@ fn earlier_version_from_api(
     })
 }
 
-/// The mark a server message carries, as the conversation file writes it.
 /// The precision the server stored, as the conversation file writes it.
 fn time_precision_from_api(precision: message_crate_api_types::TimePrecision) -> TimePrecision {
     match precision {
@@ -202,6 +201,7 @@ fn time_precision_from_api(precision: message_crate_api_types::TimePrecision) ->
     }
 }
 
+/// The mark a server message carries, as the conversation file writes it.
 fn deletion_from_api(deletion: message_crate_api_types::Deletion) -> Deletion {
     match deletion {
         message_crate_api_types::Deletion::DeletedInSourceApp => Deletion::DeletedInSourceApp,
