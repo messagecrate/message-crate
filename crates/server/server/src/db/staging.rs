@@ -3,8 +3,8 @@
 //! `staging_conversations`, `staging_participants`, `staging_messages`,
 //! `staging_attachments`, `staging_tapbacks` and `staging_message_versions`,
 //! and the temp id maps
-//! (`_promote_conv_map`, `_promote_msg_map`, `_promote_edit_map`) the
-//! promotion joins through.
+//! (`_promote_conv_map`, `_promote_msg_map`, `_promote_mark_map`,
+//! `_promote_edit_map`) the promotion joins through.
 //!
 //! `imports_api::staging` fills the tables and `imports_api::promote` runs
 //! the promotion. Those stages sequence the statements, log them and keep
@@ -1259,28 +1259,45 @@ fn later_backup_sql(staged: &str, held: &str) -> String {
 /// earlier or the same backup changes nothing. When either has no date, a
 /// staged row with no mark leaves the stored mark as it is: a backup that
 /// does not say a message was deleted does not say it was restored, and
-/// nothing says which backup is newer. The search index follows the mark
-/// when the promotion indexes (`schema::index_messages_fts_from_promote_map`):
-/// a message marked Unsent loses its index row, because it shows none of its
-/// text (#1758). Returns how many messages changed.
+/// nothing says which backup is newer.
+///
+/// Each message whose mark changes is named in `_promote_mark_map`, so the
+/// search index follows the mark when the promotion indexes
+/// (`schema::index_messages_fts_from_promote_map`): a message marked Unsent
+/// loses its index row, because it shows none of its text (#1758), and one
+/// whose Unsent mark a later backup clears or turns into Deleted in the
+/// source app has it written again. Returns how many messages changed.
 ///
 /// # Errors
 ///
 /// Returns an error when the update fails.
 pub async fn promote_deletion_marks(conn: &mut SqliteConnection) -> Result<u64> {
+    reset_id_map(conn, "_promote_mark_map").await?;
     let sql = format!(
+        r"
+        INSERT INTO _promote_mark_map (staging_id, prod_id)
+        SELECT mm.staging_id, mm.prod_id
+        FROM _promote_msg_map mm
+        JOIN staging_messages sm ON sm.id = mm.staging_id
+        JOIN messages m ON m.id = mm.prod_id
+        WHERE m.deletion IS NOT sm.deletion
+          AND COALESCE({later}, sm.deletion IS NOT NULL)
+        ",
+        later = later_backup_sql("sm.backup_taken_at", "m.backup_taken_at"),
+    );
+    sqlx::query(&sql).execute(&mut *conn).await?;
+    Ok(sqlx::query(
         r"
         UPDATE messages
         SET deletion = sm.deletion
-        FROM _promote_msg_map mm
-        JOIN staging_messages sm ON sm.id = mm.staging_id
-        WHERE messages.id = mm.prod_id
-          AND messages.deletion IS NOT sm.deletion
-          AND COALESCE({later}, sm.deletion IS NOT NULL)
+        FROM _promote_mark_map pm
+        JOIN staging_messages sm ON sm.id = pm.staging_id
+        WHERE messages.id = pm.prod_id
         ",
-        later = later_backup_sql("sm.backup_taken_at", "messages.backup_taken_at"),
-    );
-    Ok(sqlx::query(&sql).execute(&mut *conn).await?.rows_affected())
+    )
+    .execute(&mut *conn)
+    .await?
+    .rows_affected())
 }
 
 /// Give each stored message the backup date of its staged row when that

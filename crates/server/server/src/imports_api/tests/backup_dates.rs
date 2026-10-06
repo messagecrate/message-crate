@@ -156,6 +156,46 @@ async fn the_later_backup_decides_the_deletion_mark_in_every_order() {
     }
 }
 
+/// Backup A marks the message Unsent, so it has no search index row
+/// (#1758); backup B, made later, carries it unmarked with the same text.
+/// In every order the message is unmarked and a word of its text finds it:
+/// a later backup that clears the mark gives the index row back.
+#[tokio::test]
+async fn a_later_backup_that_clears_an_unsent_mark_makes_the_text_searchable() {
+    let tmp = TempDir::new().unwrap();
+    let file = |name: &str, backup: i64, deletion: Option<Deletion>| {
+        backup_file(
+            tmp.path(),
+            name,
+            &Copy {
+                backup: Some(backup),
+                text: "zqlighthouse",
+                versions: &[],
+                deletion,
+            },
+        )
+    };
+    let unsent = file(
+        "unsent-earlier.jsonl",
+        EARLIER_BACKUP,
+        Some(Deletion::Unsent),
+    );
+    let shown = file("shown-later.jsonl", LATER_BACKUP, None);
+    for held in every_order(tmp.path(), "unsent", [&unsent, &shown]).await {
+        assert_eq!(held.deletion, None, "{held:?}");
+    }
+    for name in ["together", "together-reversed", "apart", "apart-reversed"] {
+        let (_pool, mut conn) = open_verify(&tmp.path().join(format!("unsent-{name}.db"))).await;
+        let hits: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM messages_fts WHERE messages_fts MATCH 'zqlighthouse'",
+        )
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+        assert_eq!(hits, 1, "{name}: the text is searchable again");
+    }
+}
+
 /// The scenario of #1804: backup A lists part 1's earlier versions
 /// [x@t0, y@t100]; backup B, made later, after part 1 was unsent (which
 /// drops its versions) and part 0 was edited, lists part 0's [a@t0] only.
