@@ -152,7 +152,7 @@ pub(crate) async fn list_messages(
     .await?;
     let filter = message_filter(auth.account_id, &list.q, list.clock)?;
     let order = if list.order.is_empty() {
-        default_message_list_sort(filter.rank_query().is_some()).to_vec()
+        default_message_list_sort(!filter.ranked_terms().is_empty()).to_vec()
     } else {
         list.order
     };
