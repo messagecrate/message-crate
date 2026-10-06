@@ -116,7 +116,7 @@ When an exporter keeps one copy of a message that its source recorded twice ([Id
 
 The server keeps the flag and answers it as `time_precision` on a message. Within one source, it shows a whole-second message once when the source also holds it with milliseconds in the same second: the whole-second copy is hidden as the duplicate, and the message is shown with its milliseconds, unless another source holds it too and that source's copy is the one shown. An SMS Backup+ message imported once from a mail timed by `Date` and once from one timed by `X-smssync-date` is one message.
 
-CSV carries it in the `time_precision` column, and EML and MBOX in the `X-ME-Time-Precision` header. A blank or unknown value is refused rather than guessed.
+CSV carries it in the `time_precision` column, and EML and MBOX in the `X-ME-Time-Precision` header. A blank or unknown value is refused rather than guessed. SMS Backup & Restore XML has no place for it: an Export Run that writes XML leaves it out, and the XML reads back as `milliseconds`, the precision its `date` attribute holds, whatever the server stored.
 
 ### When the backup was made
 
