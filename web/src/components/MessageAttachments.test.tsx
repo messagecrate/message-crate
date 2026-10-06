@@ -67,6 +67,7 @@ const photo = attachment({
   mime_type: "image/jpeg",
   sha256: "aaa",
   thumbnail_mime_type: "image/jpeg",
+  shown_as_is: true,
 });
 
 const heic = attachment({
@@ -222,12 +223,17 @@ describe("a video in the conversation", () => {
     expect(fetches()).toEqual([{ sha256: "ccc", version: "thumbnail" }]);
   });
 
-  it("streams the original of an MP4, a type every browser plays", async () => {
+  it("streams the original of an H.264 MP4, which the server says every browser plays", async () => {
     const user = setupUser();
     renderWithProviders(
       <MessageAttachments
         message={message([
-          attachment({ original_name: "clip.mp4", mime_type: "video/mp4", sha256: "ddd" }),
+          attachment({
+            original_name: "clip.mp4",
+            mime_type: "video/mp4",
+            sha256: "ddd",
+            shown_as_is: true,
+          }),
         ])}
       />,
     );
@@ -265,16 +271,44 @@ describe("a video in the conversation", () => {
     renderWithProviders(
       <MessageAttachments
         message={message([
-          attachment({ original_name: "hevc.mp4", mime_type: "video/mp4", sha256: "ddd" }),
+          attachment({
+            original_name: "damaged.mp4",
+            mime_type: "video/mp4",
+            sha256: "ddd",
+            shown_as_is: true,
+          }),
         ])}
       />,
     );
-    await user.click(screen.getByRole("button", { name: "Play hevc.mp4" }));
-    failVideo(await screen.findByLabelText("hevc.mp4", { selector: "video" }), 4);
+    await user.click(screen.getByRole("button", { name: "Play damaged.mp4" }));
+    failVideo(await screen.findByLabelText("damaged.mp4", { selector: "video" }), 4);
 
     expect(screen.getByText(CANNOT_PLAY_HERE)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Play damaged.mp4" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Download damaged.mp4" })).toBeInTheDocument();
+  });
+
+  it("says a HEVC MP4 with no Preview yet cannot be played, and never streams the original", () => {
+    // Its type is MP4, and only the server, which reads the codec, can say
+    // the original is not shown as it is.
+    renderWithProviders(
+      <MessageAttachments
+        message={message([
+          attachment({
+            original_name: "hevc.mp4",
+            mime_type: "video/mp4",
+            sha256: "fff",
+            thumbnail_mime_type: "image/jpeg",
+            shown_as_is: false,
+          }),
+        ])}
+      />,
+    );
+
+    expect(screen.getByText(NO_PLAYABLE_COPY)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Play hevc.mp4" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download hevc.mp4" })).toBeInTheDocument();
+    expect(createMediaLink).not.toHaveBeenCalled();
   });
 
   it("says a HEVC video with no Preview yet cannot be played, and offers the download", () => {

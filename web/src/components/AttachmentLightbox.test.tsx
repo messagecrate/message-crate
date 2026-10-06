@@ -26,6 +26,7 @@ const items: MessageAttachment[] = [
     sha256: "aaa",
     is_sticker: false,
     transcription: null,
+    shown_as_is: true,
   }),
   attachment({
     path: "second.png",
@@ -34,6 +35,7 @@ const items: MessageAttachment[] = [
     sha256: "bbb",
     is_sticker: false,
     transcription: null,
+    shown_as_is: true,
   }),
 ];
 
@@ -163,16 +165,17 @@ describe("AttachmentLightbox buttons", () => {
 });
 
 /**
- * The viewer chooses the version by the photo's type before it fetches a
- * byte, never by a load that failed (`docs/architecture/media.md`, rule 2):
- * the original of a type every browser shows, the Preview of one browsers
- * often cannot, and neither while that Preview is not made yet.
+ * The viewer chooses the version before it fetches a byte, never by a load
+ * that failed (`docs/architecture/media.md`, rule 2), from the server's
+ * `shown_as_is`: the original when every browser shows it, else the Preview,
+ * and neither while that Preview is not made yet.
  */
 describe("AttachmentLightbox and the type rule", () => {
   const jpeg = attachment({
     original_name: "IMG_0002.jpg",
     mime_type: "image/jpeg",
     sha256: "jjj",
+    shown_as_is: true,
   });
   const heic = attachment({
     original_name: "IMG_0001.heic",

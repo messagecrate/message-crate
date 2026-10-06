@@ -59,10 +59,15 @@ still gets a Preview, because a list that holds a type most browsers show
 would fail in the one that does not, and an MP3 copy of a voice note costs
 little.
 
-The web app reads the rule in `fullVersion` (`web/src/lib/attachmentMedia.ts`).
-It opens the Preview when the attachment has one (`preview_mime_type`), the original when its type is one of the six above, and neither otherwise.
-It reads the type in the server's order for a stored original, which is named by its fingerprint alone and has no extension: the type the import declared, then the extension of the export's name for the file, then of its path in the export.
-It cannot read an MP4's codec, so a HEVC MP4 plays its original until its Preview is made, and its Preview after.
+The `/v1` Attachment's `shown_as_is` is the one place a client reads the
+decision.
+The server's media pass (rule 4) decides it with `media::browser_shows` when it looks at the Asset, the same call that spares the Asset a Preview, and stores it on the Asset's attachment rows (`attachments.shown_as_is`), so a read never runs ffprobe.
+It is false until the pass has looked at the file.
+Without ffmpeg the pass still decides it, so a photo opens as it is on a server that cannot convert, and an MP4 counts as not shown as it is until a pass with ffprobe reads its codec.
+
+The web app reads it in `fullVersion` (`web/src/lib/attachmentMedia.ts`) and keeps no list of types of its own.
+It opens the original when `shown_as_is` is true, the Preview when it is false and the attachment has one (`preview_mime_type`), and neither otherwise, so a HEVC MP4 with no Preview yet says that no copy a browser can show exists yet.
+Why the server answers it rather than the web app repeating the list: a second list could drift from the server's, and only the server can read an MP4's video codec (#1738).
 
 Why: the viewer used to fetch the original and fall back to the Preview only
 when the browser failed to show it. The result depended on the browser, so a
@@ -161,7 +166,8 @@ Import Run to replay.
 
 Without ffmpeg the pass makes nothing and leaves the queue as it is, so the
 Assets wait for a server that has it, at its next start or after the next
-Import Run. The Docker image has ffmpeg. The desktop app's server looks for
+Import Run. It still records whether each queued original is shown as it is
+(rule 2). The Docker image has ffmpeg. The desktop app's server looks for
 it where the `media` crate does: beside the program, in `MESSAGE_CRATE_BIN`,
 then on `PATH` (`docs/adr/0019-the-desktop-app-downloads-the-programs-it-needs.md`
 is the decided way it gets there).
