@@ -13,7 +13,7 @@ use super::fts;
 use super::parse::{Expr, FieldTerm, TextTerm};
 use super::value::{Cmp, DateCmp, Value, utc_instant};
 use super::{Filter, ListKind};
-use message_ir::IrConversationType;
+use message_ir::{Deletion, IrConversationType};
 
 /// Contact `ct` is not in the trash.
 pub(crate) const NOT_TRASHED_CONTACT: &str = "NOT EXISTS (SELECT 1 FROM trashed_contacts tct WHERE tct.account_id = ct.account_id AND tct.contact_id = ct.id)";
@@ -361,7 +361,8 @@ fn emit_one(ctx: &ListCtx, out: &mut Sql, term: &FieldTerm, v: &Value) -> Result
         }
         "date" | "first-message" | "last-message" | "messages" | "conversations" | "groups"
         | "participants" | "attachments" => emit_measure_word(ctx, out, term, v),
-        "deleted" => emit_deleted_word(ctx, out, term, v),
+        "deleted" => emit_deletion_word(ctx, out, term, v, Deletion::DeletedInSourceApp),
+        "unsent" => emit_deletion_word(ctx, out, term, v, Deletion::Unsent),
         other => Err(QueryError::new(
             QueryErrorKind::BadValue,
             term.span.clone(),
@@ -1110,23 +1111,26 @@ fn emit_kind_word(
     }
 }
 
-/// `deleted:`, a Messages word: `yes` is a message marked Deleted in the
-/// source app or Unsent, `no` one with neither mark. It reads the base row's
-/// own `m.deletion`, so it needs no bridge, and a NULL column is `no`, which
-/// keeps `deleted:yes` and `-deleted:yes` a split of the list.
-fn emit_deleted_word(
+/// `deleted:` and `unsent:`, Messages words with one mark each (#1935):
+/// `deleted:yes` is a message marked Deleted in the source app, `unsent:yes`
+/// one marked Unsent, and each word's `no` is a message without that mark.
+/// Both read the base row's own `m.deletion`, so they need no bridge.
+/// `IS NOT` counts a NULL column as `no`, which keeps `q` and `-q` a split
+/// of the list.
+fn emit_deletion_word(
     ctx: &ListCtx,
     out: &mut Sql,
     term: &FieldTerm,
     v: &Value,
+    mark: Deletion,
 ) -> Result<(), QueryError> {
     match (ctx.list, v) {
         (ListKind::Messages, Value::Choice("yes")) => {
-            out.push("m.deletion IS NOT NULL");
+            out.push(&format!("m.deletion = '{}'", mark.as_str()));
             Ok(())
         }
         (ListKind::Messages, Value::Choice("no")) => {
-            out.push("m.deletion IS NULL");
+            out.push(&format!("m.deletion IS NOT '{}'", mark.as_str()));
             Ok(())
         }
         _ => Err(bad_value(term, "needs yes or no.")),
